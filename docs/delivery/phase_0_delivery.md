@@ -31,10 +31,14 @@
 ├── Roan-on-X-the-Math-Needed-for-Trading-on-Polymarket-Complete-Roadmap(1).pdf
 ├── docs/
 │   ├── SYSTEM_DESIGN_RESEARCH.md
-│   ├── phase_0_architecture.md
-│   ├── phase_0_delivery.md
-│   ├── phase_0_execution.md
-│   ├── phase_0_learning.md
+│   ├── architecture/
+│   │   └── phase_0_architecture.md
+│   ├── delivery/
+│   │   └── phase_0_delivery.md
+│   ├── execution/
+│   │   └── phase_0_execution.md
+│   ├── learning/
+│   │   └── phase_0_learning.md
 │   └── superpowers/
 │       └── plans/
 │           └── 2026-04-25-phase-0-implementation.md
@@ -91,19 +95,19 @@
 
 见：
 
-- `docs/phase_0_learning.md`
+- `docs/learning/phase_0_learning.md`
 
 ## 执行文档
 
 见：
 
-- `docs/phase_0_execution.md`
+- `docs/execution/phase_0_execution.md`
 
 ## 架构文档
 
 见：
 
-- `docs/phase_0_architecture.md`
+- `docs/architecture/phase_0_architecture.md`
 
 ## 测试与验收
 

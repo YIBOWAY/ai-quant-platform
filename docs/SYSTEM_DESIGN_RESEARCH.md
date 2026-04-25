@@ -1136,9 +1136,12 @@ Phase 0 只做工程基础，不做交易策略。
 ├── pyproject.toml
 ├── docs/
 │   ├── SYSTEM_DESIGN_RESEARCH.md
-│   ├── phase_0_architecture.md
-│   ├── phase_0_execution.md
-│   └── phase_0_learning.md
+│   ├── architecture/
+│   │   └── phase_0_architecture.md
+│   ├── execution/
+│   │   └── phase_0_execution.md
+│   └── learning/
+│       └── phase_0_learning.md
 ├── src/
 │   └── quant_system/
 │       ├── __init__.py

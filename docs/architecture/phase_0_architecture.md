@@ -65,10 +65,14 @@ flowchart TD
 ├── Roan-on-X-the-Math-Needed-for-Trading-on-Polymarket-Complete-Roadmap(1).pdf
 ├── docs/
 │   ├── SYSTEM_DESIGN_RESEARCH.md
-│   ├── phase_0_architecture.md
-│   ├── phase_0_delivery.md
-│   ├── phase_0_execution.md
-│   └── phase_0_learning.md
+│   ├── architecture/
+│   │   └── phase_0_architecture.md
+│   ├── delivery/
+│   │   └── phase_0_delivery.md
+│   ├── execution/
+│   │   └── phase_0_execution.md
+│   └── learning/
+│       └── phase_0_learning.md
 ├── src/
 │   └── quant_system/
 │       ├── __init__.py

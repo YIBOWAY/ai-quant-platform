@@ -24,7 +24,7 @@
 - Create `src/quant_system/core/interfaces.py`: Phase 0 plugin contracts for Factor, Strategy, and PortfolioOptimizer.
 - Create package `__init__.py` files.
 - Create tests under `tests/`: CLI, settings, logging, risk defaults, and interface contract tests.
-- Create docs: `docs/phase_0_learning.md`, `docs/phase_0_execution.md`, `docs/phase_0_architecture.md`.
+- Create docs: `docs/learning/phase_0_learning.md`, `docs/execution/phase_0_execution.md`, `docs/architecture/phase_0_architecture.md`.
 - Initialize git repository because Phase 0 includes establishing the repo.
 
 ## Tasks

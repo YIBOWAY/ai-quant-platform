@@ -10,10 +10,9 @@ build/
 dist/
 .worktrees/
 worktrees/
-logs/
-data/
-reports/
+/logs/
+/data/
+/reports/
 
 # Reference PDFs (kept locally, not committed)
 *.pdf
-

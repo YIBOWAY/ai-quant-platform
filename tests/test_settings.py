@@ -1,6 +1,7 @@
 from pydantic import ValidationError
 
 from quant_system.config.settings import (
+    ApiKeySettings,
     SafetySettings,
     Settings,
     load_settings,
@@ -64,3 +65,11 @@ def test_reload_settings_clears_the_cache() -> None:
     assert isinstance(second, Settings)
     assert first is not second
 
+
+def test_api_key_settings_redact_secrets_in_json_dump() -> None:
+    settings = ApiKeySettings(alpha_vantage_api_key="example-secret")
+
+    dumped = settings.model_dump(mode="json")
+
+    assert dumped["alpha_vantage_api_key"] == "**********"
+    assert "example-secret" not in str(dumped)
