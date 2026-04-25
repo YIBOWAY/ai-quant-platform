@@ -1,0 +1,10 @@
+name: ai-quant
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - -e .[dev]
+# Tip: configure a faster pip index in your local pip config if needed, e.g.
+# `pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple`.

@@ -1,0 +1,19 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+.worktrees/
+worktrees/
+logs/
+data/
+reports/
+
+# Reference PDFs (kept locally, not committed)
+*.pdf
+
