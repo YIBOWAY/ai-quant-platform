@@ -23,18 +23,23 @@ def test_target_position_keeps_strategy_output_separate_from_orders() -> None:
 
 
 def test_factor_context_carries_point_in_time_frames() -> None:
-    prices = pd.DataFrame({"close": [100.0]})
-    universe = pd.DataFrame({"asset": ["SPY"]})
-    ctx = FactorContext(prices=prices, universe=universe)
+    ohlcv = pd.DataFrame({"close": [100.0]})
+    ctx = FactorContext(ohlcv=ohlcv)
 
-    assert ctx.prices.equals(prices)
-    assert ctx.universe.equals(universe)
+    assert ctx.ohlcv.equals(ohlcv)
 
 
 def test_phase_0_protocols_expose_expected_methods() -> None:
     assert "compute" in Factor.__dict__
-    assert "on_bar" in Strategy.__dict__
+    assert "target_weights" in Strategy.__dict__
     assert "solve" in PortfolioOptimizer.__dict__
+
+
+def test_factor_protocol_signature_matches_phase_2_base_factor() -> None:
+    hints = get_type_hints(Factor.compute)
+
+    assert hints["ohlcv"] is pd.DataFrame
+    assert hints["return"] is pd.DataFrame
 
 
 def test_optimizer_signature_mentions_risk_model_and_constraints() -> None:

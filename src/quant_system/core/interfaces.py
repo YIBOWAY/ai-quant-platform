@@ -7,12 +7,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class FactorContext(BaseModel):
-    """Point-in-time inputs needed by factor implementations."""
+    """Point-in-time inputs needed by factor implementations.
+
+    Phase 2 ``BaseFactor`` accepts a long OHLCV DataFrame directly, but newer
+    callers may prefer to pass an explicit context that pairs prices with a
+    universe definition and free-form metadata.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    prices: pd.DataFrame
-    universe: pd.DataFrame
+    ohlcv: pd.DataFrame
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -53,20 +57,34 @@ class Constraint(BaseModel):
 
 
 class Factor(Protocol):
+    """Canonical factor contract.
+
+    Implementations such as Phase 2 ``BaseFactor`` consume a long-format OHLCV
+    DataFrame and return a long-format factor result frame with columns
+    ``symbol, signal_ts, tradeable_ts, factor_id, factor_version, factor_name,
+    lookback, value``.
+    """
+
     factor_id: str
     factor_version: str
     lookback: int
 
-    def compute(self, ctx: FactorContext) -> pd.Series:
-        """Return factor values indexed by asset and timestamp."""
+    def compute(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
+        """Return factor values for every actionable bar."""
 
 
 class Strategy(Protocol):
-    strategy_id: str
-    strategy_version: str
+    """Canonical strategy contract.
 
-    def on_bar(self, ctx: StrategyContext) -> list[TargetPosition]:
-        """Return desired target positions without creating orders."""
+    A strategy converts a per-timestamp view of the market into target
+    weights or quantities. It must not place orders; the backtest or paper
+    trading engine owns order generation and execution.
+    """
+
+    def target_weights(
+        self, timestamp: pd.Timestamp
+    ) -> list[TargetPosition] | None:
+        """Return target positions for the timestamp, or ``None`` to skip."""
 
 
 class PortfolioOptimizer(Protocol):
