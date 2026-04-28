@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     app_name: str = "AI Quant Research Platform"
     environment: Literal["local", "test", "paper", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    api_cors_origins: list[str] = Field(
+        default_factory=lambda: ["http://127.0.0.1:3000", "http://localhost:3000"]
+    )
     safety: SafetySettings = Field(default_factory=SafetySettings)
     data: DataSettings = Field(default_factory=DataSettings)
     api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)

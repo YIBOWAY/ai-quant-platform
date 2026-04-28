@@ -268,3 +268,21 @@ A: 配置 `QS_TIINGO_API_TOKEN` 到 `.env`，把命令换成 `data ingest-tiingo
 
 **Q: 这套东西可以直接连 IBKR / Alpaca 上线交易吗？**  
 A: 不可以。当前只有本地 paper broker 和 dry proposal，没有真实 broker adapter，也没有任何 live trading。任何尝试在当前代码上加真实 `place_order(...)` 都违反 [docs/SYSTEM_DESIGN_RESEARCH.md](SYSTEM_DESIGN_RESEARCH.md) 里的安全边界。
+
+## How to start the API server
+
+Phase 9 增加了本地 HTTP API，主要给 Web 前端读取结果和触发本地 sample 任务：
+
+```powershell
+conda activate ai-quant
+python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api]"
+quant-system serve --host 127.0.0.1 --port 8765
+```
+
+健康检查：
+
+```powershell
+curl http://127.0.0.1:8765/api/health
+```
+
+默认只绑定本机 `127.0.0.1`，所有响应都会带 `safety` 状态。API 不提供真实下单、钱包签名、broker 或 live trading 路由。

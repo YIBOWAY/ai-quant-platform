@@ -363,6 +363,20 @@ flowchart LR
     L --> J
 ```
 
+#### 3.8.1 Phase 9 HTTP API Surface
+
+Phase 9 在已有 CLI 之上增加本地 HTTP API，供前端读取研究结果和触发轻量 sample 任务。该接口层必须保持“薄包装”：
+
+- API 复用 Phase 1-8 的现有函数，不复制业务逻辑。
+- 所有 JSON 响应都带 `safety` footer：`dry_run=true`、`paper_trading=true`、`live_trading_enabled=false`、`kill_switch=true`、`bind_address`。
+- 默认只绑定 `127.0.0.1`；`0.0.0.0` 必须同时要求 CLI `--bind-public` 和 `QS_API_ALLOW_PUBLIC_BIND=I_UNDERSTAND`。
+- `/api/settings` 必须脱敏任何 key、secret、token、password、private 字段。
+- Agent API 只能写 candidate pool 和 review lock，不能 import / exec 候选源码，也不能注册因子。
+- Prediction market API 只调用 sample provider 和 dry pipeline；拒绝 Polymarket API key，不发 HTTP、不签名、不提交订单。
+- 不提供 `/api/orders/submit`、`/api/broker/*`、`/api/live/*`、`submit`、`sign`、`redeem` 等真实交易或签名路由。
+
+Phase 9 暴露的接口包括 health、settings、symbols、ohlcv、factors、backtests、benchmark、experiments、paper、agent candidates/tasks/review、prediction-market sample scan/dry-arbitrage。
+
 ### 3.9 跨层插件接口契约（为论文思路接入预留）
 
 本节不属于 AI Agent，独立列出仅因前序章节已覆盖各层职责，这里集中给出跨层共享接口。

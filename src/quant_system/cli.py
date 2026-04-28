@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -139,6 +140,54 @@ def doctor() -> None:
     typer.echo("Phase 0 foundation is available")
     typer.echo(f"Safety mode: dry_run={settings.safety.dry_run}, {live_state}")
     typer.echo(f"Environment: {settings.environment}")
+
+
+@app.command("serve")
+def serve_api(
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Bind address for the local API server."),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Port for the local API server."),
+    ] = 8765,
+    reload: Annotated[
+        bool,
+        typer.Option("--reload", help="Reload the API server when source files change."),
+    ] = False,
+    bind_public: Annotated[
+        bool,
+        typer.Option(
+            "--bind-public",
+            help="Allow binding to 0.0.0.0 after explicit environment confirmation.",
+        ),
+    ] = False,
+) -> None:
+    """Start the Phase 9 localhost HTTP API."""
+    if host == "0.0.0.0":
+        if not bind_public:
+            raise typer.BadParameter("0.0.0.0 requires --bind-public")
+        if os.getenv("QS_API_ALLOW_PUBLIC_BIND") != "I_UNDERSTAND":
+            raise typer.BadParameter(
+                "0.0.0.0 requires QS_API_ALLOW_PUBLIC_BIND=I_UNDERSTAND"
+            )
+        os.environ["QS_API_BIND_PUBLIC_CONFIRMED"] = "I_UNDERSTAND"
+    os.environ["QS_API_BIND_ADDRESS"] = host
+
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise typer.BadParameter(
+            'API dependencies are missing. Install with: pip install -e ".[api]"'
+        ) from exc
+    uvicorn.run(
+        "quant_system.api.server:create_app",
+        factory=True,
+        host=host,
+        port=port,
+        reload=reload,
+    )
 
 
 @data_app.command("ingest-sample")
