@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -23,6 +24,14 @@ from quant_system.experiments.runner import (
 from quant_system.factors.pipeline import FactorResearchResult, run_sample_factor_research
 from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
 from quant_system.logging.setup import configure_logging
+from quant_system.prediction_market.data.sample_provider import SamplePredictionMarketProvider
+from quant_system.prediction_market.execution_threshold import (
+    ExecutionThresholdConfig,
+    ProfitThresholdChecker,
+)
+from quant_system.prediction_market.optimizer.greedy_stub import GreedyStub
+from quant_system.prediction_market.pipeline import run_dry_arbitrage, scan_market
+from quant_system.prediction_market.reporting import write_prediction_market_report
 
 _API_SECRET_FIELDS: frozenset[str] = frozenset(
     {
@@ -50,6 +59,9 @@ backtest_app = typer.Typer(help="Run Phase 3 backtest commands.")
 experiment_app = typer.Typer(help="Run Phase 4 experiment-management commands.")
 paper_app = typer.Typer(help="Run Phase 5 paper-trading commands.")
 agent_app = typer.Typer(help="Run Phase 7 AI research assistant commands.")
+prediction_market_app = typer.Typer(
+    help="Run Phase 8 prediction-market dry scanning commands."
+)
 
 
 def _version_callback(value: bool) -> None:
@@ -677,6 +689,88 @@ def agent_review(
     )
 
 
+@prediction_market_app.command("scan-sample")
+def prediction_market_scan_sample(
+    output_dir: Annotated[
+        str,
+        typer.Option("--output-dir", help="Prediction market artifact output directory."),
+    ] = "data/pm_sample",
+) -> None:
+    """Scan deterministic sample prediction-market data."""
+    provider = SamplePredictionMarketProvider()
+    candidates = scan_market(provider=provider)
+    report_path = write_prediction_market_report(
+        candidates=candidates,
+        trades=[],
+        output_dir=output_dir,
+    )
+    typer.echo(f"candidates={len(candidates)} report={report_path}")
+    for candidate in candidates:
+        typer.echo(
+            " ".join(
+                [
+                    f"candidate_id={candidate.candidate_id}",
+                    f"market_id={candidate.market_id}",
+                    f"scanner={candidate.scanner_id}",
+                    f"edge_bps={candidate.edge_bps:.2f}",
+                    f"direction={candidate.direction}",
+                ]
+            )
+        )
+
+
+@prediction_market_app.command("dry-arbitrage")
+def prediction_market_dry_arbitrage(
+    output_dir: Annotated[
+        str,
+        typer.Option("--output-dir", help="Prediction market artifact output directory."),
+    ] = "data/pm_sample",
+    optimizer_name: Annotated[
+        Literal["greedy"],
+        typer.Option("--optimizer", help="Dry optimizer stub to use."),
+    ] = "greedy",
+) -> None:
+    """Write dry proposed trades from sample data; never submit orders."""
+    provider = SamplePredictionMarketProvider()
+    optimizer = GreedyStub()
+    threshold = ProfitThresholdChecker(ExecutionThresholdConfig())
+    candidates = scan_market(provider=provider)
+    trades = run_dry_arbitrage(
+        provider=provider,
+        optimizer=optimizer,
+        threshold=threshold,
+        output_dir=output_dir,
+    )
+    report_path = write_prediction_market_report(
+        candidates=candidates,
+        trades=trades,
+        output_dir=output_dir,
+    )
+    typer.echo(f"proposed_trades={len(trades)} report={report_path}")
+    for trade in trades:
+        typer.echo(
+            " ".join(
+                [
+                    f"proposal_id={trade.proposal_id}",
+                    f"dry_run={trade.dry_run}",
+                    f"capital={trade.capital:.2f}",
+                    f"expected_profit={trade.expected_profit:.2f}",
+                ]
+            )
+        )
+
+
+@prediction_market_app.command("doctor")
+def prediction_market_doctor() -> None:
+    """Print Phase 8 optional dependency and live-integration status."""
+    scipy_available = importlib.util.find_spec("scipy") is not None
+    typer.echo("prediction_market_phase=8")
+    typer.echo(f"scipy_available={scipy_available}")
+    typer.echo("live_api_disabled=yes")
+    typer.echo("orders_disabled=yes")
+    typer.echo("signing_disabled=yes")
+
+
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
 app.add_typer(factor_app, name="factor")
@@ -684,6 +778,7 @@ app.add_typer(backtest_app, name="backtest")
 app.add_typer(experiment_app, name="experiment")
 app.add_typer(paper_app, name="paper")
 app.add_typer(agent_app, name="agent")
+app.add_typer(prediction_market_app, name="prediction-market")
 
 
 def _emit_ingestion_summary(result: IngestionResult) -> None:

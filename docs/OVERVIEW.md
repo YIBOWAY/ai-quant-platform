@@ -5,13 +5,13 @@
 读完之后你能：
 
 - 知道每个目录在干嘛
-- 知道四条 CLI 命令分别会产出什么
+- 知道主要 CLI 命令分别会产出什么
 - 知道哪些事情**绝不会**发生（关键安全边界）
 - 知道接下来去看哪份文档
 
 ## 这个项目是什么
 
-一个**本地运行**的量化研究脚手架。从历史行情数据出发，研究"什么样的信号可能赚钱"，然后在本地用模拟器验证"扣掉成本之后还有没有钱赚"。
+一个**本地运行**的量化研究脚手架。从历史行情数据出发，研究"什么样的信号可能赚钱"，然后在本地用模拟器验证"扣掉成本之后还有没有钱赚"。后续模块还包含 AI 研究助手和 prediction market 只读扩展骨架。
 
 它**不是**：
 
@@ -19,12 +19,15 @@
 - ❌ 自动下单机器人
 - ❌ 接券商 API 的 paper trading 网关
 - ❌ AI 自动选策略上线的工具
+- ❌ Polymarket 自动下单机器人
 
 它**是**：
 
 - ✅ 数据 → 因子 → 回测 → 实验对比的本地研究流水线
-- ✅ 一个为后续 Phase 5（风控 + paper trading）做铺垫的基座
+- ✅ 一个已经包含风控 + paper trading 的本地模拟平台
 - ✅ 输出标准化、可复现、AI Agent 可读的研究产出
+- ✅ AI 研究助手的 candidate pool + 人工 review 流程
+- ✅ prediction market / Polymarket 扩展的只读接口骨架
 
 ## 关键术语（看完这一节就够用了）
 
@@ -44,7 +47,7 @@
 | walk-forward | 把时间切成"训练段-验证段"反复滑动，避免一次回测过拟合 |
 | PIT（point-in-time） | "这一刻就只能看到这一刻已经发生的事情"；防止未来函数 |
 
-## 五个 Phase 是怎么叠起来的
+## 八个 Phase 是怎么叠起来的
 
 ```
 Phase 0  项目骨架（配置 / 日志 / CLI / 安全默认值）
@@ -57,7 +60,13 @@ Phase 3  回测层（信号 → 目标权重 → 订单 → 模拟成交 → 资
    │
 Phase 4  实验层（多因子合成 + 参数 sweep + walk-forward + 对比报告）
    │
-Phase 5  （未来）风控 + Paper Trading
+Phase 5  风控 + Paper Trading（已实现）
+   │
+Phase 6  真实 broker adapter（暂缓，不接实盘）
+   │
+Phase 7  AI 研究助手（已实现，candidate pool + 人工 review）
+   │
+Phase 8  Prediction Market 扩展（已实现，只读 + dry proposal 占位）
 ```
 
 每一层只依赖上一层，不依赖下一层。所以你可以单独跑因子研究而不碰回测，也可以单独跑回测而不碰实验框架。
@@ -74,6 +83,9 @@ src/quant_system/
 ├── factors/       Phase 2：因子基类、注册表、IC/分组评估、报告
 ├── backtest/      Phase 3：策略 / 订单 / 券商模拟 / 组合 / 引擎 / 指标
 ├── experiments/   Phase 4：实验配置 / 参数展开 / walk-forward / 多因子打分
+├── execution/     Phase 5：订单管理 / paper broker / paper trading loop
+├── agent/         Phase 7：AI 研究助手 / 候选池 / 审计日志
+├── prediction_market/ Phase 8：prediction market 只读 scanner / dry proposal
 └── cli.py         所有命令行入口（quant-system <subcommand>）
 
 tests/             每个模块都有对应单测，pytest 一键跑通
@@ -202,7 +214,7 @@ con.sql("SELECT * FROM backtest_equity_curve ORDER BY timestamp DESC LIMIT 10").
 A: 能。所有 `*-sample` 命令用的是 `SampleOHLCVProvider`，确定性地造数据，跟 API Key 无关。Tiingo 命令才需要 `QS_TIINGO_API_TOKEN`。
 
 **Q: 测试怎么跑？**  
-A: 在 `ai-quant` 环境下 `python -m pytest`。当前共 68+ 个测试，全部应当通过。
+A: 在 `ai-quant` 环境下 `python -m pytest`。当前共 100+ 个测试，全部应当通过。
 
 **Q: 我想加自己的因子？**  
 A: 继承 [src/quant_system/factors/base.py](../src/quant_system/factors/base.py) 里的 `BaseFactor`，实现 `_compute_values`，在 [registry.py](../src/quant_system/factors/registry.py) 里注册一下。可参考 [examples.py](../src/quant_system/factors/examples.py) 里的 `MomentumFactor`。
@@ -211,4 +223,4 @@ A: 继承 [src/quant_system/factors/base.py](../src/quant_system/factors/base.py
 A: 配置 `QS_TIINGO_API_TOKEN` 到 `.env`，把命令换成 `data ingest-tiingo`，再用 `data/<output-dir>/raw/*.parquet` 喂给后续 phase。
 
 **Q: 这套东西可以直接连 IBKR / Alpaca 上线交易吗？**  
-A: 不可以。Phase 5 之前没有任何实盘 / paper trading 接入。任何尝试在当前代码上加 `place_order(...)` 都违反 [docs/SYSTEM_DESIGN_RESEARCH.md](SYSTEM_DESIGN_RESEARCH.md) 里的安全边界。
+A: 不可以。当前只有本地 paper broker 和 dry proposal，没有真实 broker adapter，也没有任何 live trading。任何尝试在当前代码上加真实 `place_order(...)` 都违反 [docs/SYSTEM_DESIGN_RESEARCH.md](SYSTEM_DESIGN_RESEARCH.md) 里的安全边界。
