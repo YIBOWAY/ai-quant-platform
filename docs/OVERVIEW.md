@@ -46,6 +46,11 @@
 | max drawdown | 最大回撤：历史最高点到之后最低点的跌幅 |
 | walk-forward | 把时间切成"训练段-验证段"反复滑动，避免一次回测过拟合 |
 | PIT（point-in-time） | "这一刻就只能看到这一刻已经发生的事情"；防止未来函数 |
+| kill switch | 一键禁掉所有下单的全局开关，默认 on |
+| candidate pool | AI Agent 产物的隔离区，必须人工 review 才能进下一步 |
+| approved.lock | 人工 review 通过后落在候选目录里的标志文件，**不等于自动注册** |
+| dry proposal | Phase 8 prediction market 输出的纸面方案，纯本地 JSON，不会下单 |
+| mispricing edge | YES + NO 价格偏离 1 时的潜在套利空间，单位通常是 bps |
 
 ## 八个 Phase 是怎么叠起来的
 
@@ -166,6 +171,45 @@ quant-system experiment run-sample `
 每次实验会自动落到 `data/quickstart_phase4/experiments/<experiment_id>/` 下，**不会**覆盖之前的实验。打开 `agent_summary.json` 就是一份给 AI Agent 用的研究摘要。
 
 要跑自定义实验？写一个 JSON 配置丢进 `quant-system experiment run-config --config path/to/config.json` 即可（schema 见 [phase_4_architecture.md](architecture/phase_4_architecture.md)）。
+
+### 7. 跑一遍 paper trading（Phase 5）
+
+把 Phase 4 算出来的 score frame 直接喂给本地 paper broker，验证风控+订单+成交闭环。**默认 kill switch=on，要看到成交必须显式 `--no-kill-switch`。**
+
+```powershell
+quant-system paper run-sample `
+  --symbol SPY --symbol AAPL --symbol QQQ `
+  --start 2024-01-02 --end 2024-02-15 `
+  --lookback 3 --top-n 2 --initial-cash 100000 `
+  --no-kill-switch `
+  --output-dir data/quickstart_phase5
+```
+
+输出：`paper/orders.parquet`、`paper/fills.parquet`、`paper/equity_curve.parquet`、`reports/paper_trading_report.md`。任何超限订单会被拒并落 `risk_breaches.parquet`。
+
+### 8. 让 AI Agent 起草一个候选因子（Phase 7）
+
+完全离线、确定性 stub LLM，**不会 import 或执行生成的代码**。
+
+```powershell
+quant-system agent propose-factor `
+  --goal "low-vol momentum on liquid ETFs" `
+  --universe SPY,QQQ `
+  --output-dir data/quickstart_phase7
+quant-system agent list-candidates --output-dir data/quickstart_phase7
+```
+
+候选写到 `agent/candidates/<id>/factor.py.candidate`（注意是 `.candidate` 后缀），元数据里 `safety.auto_promotion=false`。要"批准"这个候选只是创建一个 lock 文件 —— **不会**把它注册进真实因子库；后续真要用必须人工改名 + code review + 测试。
+
+### 9. 扫一遍 prediction market 假数据（Phase 8）
+
+```powershell
+quant-system prediction-market scan-sample --output-dir data/quickstart_phase8
+quant-system prediction-market dry-arbitrage --output-dir data/quickstart_phase8
+quant-system prediction-market doctor
+```
+
+输出 `prediction_market/proposals/*.json`：纯纸面 proposal，**不会**发 HTTP、不会签名、不会下单。`doctor` 永远会显示 `live API disabled`。
 
 ## 安全边界（请逐条阅读）
 
