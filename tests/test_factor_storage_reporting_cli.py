@@ -75,8 +75,14 @@ def test_factor_run_sample_cli_generates_report_and_artifacts(tmp_path) -> None:
 
     assert result.exit_code == 0
     assert "factor_results=" in result.output
+    assert "sample data 是确定性合成序列" in result.stderr
+    assert "Tiingo 数据复核" in result.stderr
     assert Path(tmp_path, "factors", "factor_results.parquet").exists()
     assert Path(tmp_path, "factors", "factor_signals.parquet").exists()
     assert Path(tmp_path, "factors", "factor_ic.parquet").exists()
     assert Path(tmp_path, "factors", "quantile_returns.parquet").exists()
     assert Path(tmp_path, "reports", "factor_report.md").exists()
+    factor_results = pd.read_parquet(Path(tmp_path, "factors", "factor_results.parquet"))
+    assert {"momentum", "volatility", "liquidity", "rsi", "macd"}.issubset(
+        set(factor_results["factor_id"])
+    )

@@ -179,3 +179,36 @@ Phase 2 复用已有依赖：
 - 增加实验数据库
 - 增加 HTML 或图表报告
 - 接入 Phase 3 回测引擎
+
+## 扩展因子库
+
+Phase 2 的默认 `factor list` 只展示少量核心示例因子，避免默认输出过载。论文型或批量型因子库必须显式注册。
+
+当前支持的可选库：
+
+- `alpha101`：Kakushadze 2016, *101 Formulaic Alphas* 的前 10 条公式因子。
+
+查看可选库因子：
+
+```powershell
+python -m quant_system.cli factor register-library --name alpha101
+```
+
+命令会在当前 CLI 调用内构建一个扩展 registry，输出新增的 `alpha101_001` 到 `alpha101_010`。它不会污染默认 `factor list`。
+
+在代码中使用：
+
+```python
+from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
+
+registry = build_default_factor_registry()
+register_alpha101_library(registry)
+factor = registry.create("alpha101_001")
+```
+
+设计约束：
+
+- `rank()` 只在同一 `signal_ts` 横截面内计算。
+- `ts_rank()` / `correlation()` / `delay()` / `delta()` 等时间序列算子只在同一 `symbol` 内滚动。
+- Alpha101 因子不会默认注册，避免 `factor list` 超过 10 个因子。
+- Alpha#5 优先使用输入中的 `vwap` 字段；没有 `vwap` 时使用典型价代理，报告和研究结论需要显式说明这一点。

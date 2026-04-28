@@ -13,6 +13,7 @@
 - Phase 2：因子研究层 MVP，支持基础因子、因子注册、因子计算、IC / Rank IC、分组收益、因子报告和命令行生成
 - Phase 3：回测引擎 MVP，支持信号输入、订单生成、模拟成交、交易成本、滑点、资金持仓跟踪、交易记录、资金曲线和基础绩效报告
 - Phase 4：实验管理 MVP，支持多因子标准化、方向配置、加权合成、参数 sweep、walk-forward、实验对比报告和 AI 可读摘要
+- Phase 5：风控与 Paper Trading MVP，支持交易前风控、订单生命周期、paper broker、部分成交、交易日志、风控违规日志和模拟交易报告
 
 当前没有实现：
 
@@ -21,6 +22,7 @@
 - 券商接口
 - AI 自动上线策略
 - 复杂机器学习模型
+- 高频低延迟执行
 - Polymarket 套利执行
 
 ## 安全边界
@@ -92,6 +94,12 @@ python -m quant_system.cli backtest run-sample --symbol SPY --symbol AAPL --symb
 python -m quant_system.cli experiment run-sample --symbol SPY --symbol AAPL --symbol QQQ --start 2024-01-02 --end 2024-03-15 --lookback 3 --lookback 5 --top-n 1 --top-n 2 --output-dir data/phase4_sample
 ```
 
+运行 Phase 5 样例模拟交易：
+
+```powershell
+python -m quant_system.cli paper run-sample --symbol SPY --symbol AAPL --start 2024-01-02 --end 2024-01-12 --initial-cash 100000 --max-order-value 20000 --max-position-size 0.60 --no-kill-switch --output-dir data/phase5_sample
+```
+
 运行测试：
 
 ```powershell
@@ -122,7 +130,11 @@ ruff check .
 - `docs/execution/phase_4_execution.md`：Phase 4 执行文档
 - `docs/architecture/phase_4_architecture.md`：Phase 4 架构文档
 - `docs/delivery/phase_4_delivery.md`：Phase 4 交付清单
+- `docs/learning/phase_5_learning.md`：Phase 5 学习文档
+- `docs/execution/phase_5_execution.md`：Phase 5 执行文档
+- `docs/architecture/phase_5_architecture.md`：Phase 5 架构文档
+- `docs/delivery/phase_5_delivery.md`：Phase 5 交付清单
 
 ## 下一步
 
-Phase 4 完成后暂停。确认后进入 Phase 5：风控与 Paper Trading。
+Phase 5 完成后暂停。确认后进入 Phase 6：实盘接口适配层。

@@ -3,7 +3,13 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from quant_system.factors.base import BaseFactor, FactorMetadata
-from quant_system.factors.examples import LiquidityFactor, MomentumFactor, VolatilityFactor
+from quant_system.factors.examples import (
+    LiquidityFactor,
+    MACDFactor,
+    MomentumFactor,
+    RSIFactor,
+    VolatilityFactor,
+)
 
 
 class FactorRegistry:
@@ -38,4 +44,14 @@ def build_default_factor_registry() -> FactorRegistry:
     registry.register(MomentumFactor)
     registry.register(VolatilityFactor)
     registry.register(LiquidityFactor)
+    registry.register(RSIFactor)
+    registry.register(MACDFactor)
+    return registry
+
+
+def register_alpha101_library(registry: FactorRegistry) -> FactorRegistry:
+    from quant_system.factors.library.alpha101 import ALPHA101_FACTORS
+
+    for factor_cls in ALPHA101_FACTORS:
+        registry.register(factor_cls)
     return registry

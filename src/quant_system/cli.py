@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import typer
 
@@ -9,6 +9,7 @@ from quant_system import __version__
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
 from quant_system.config.settings import load_settings, reload_settings
 from quant_system.data.pipeline import IngestionResult, run_sample_ingestion, run_tiingo_ingestion
+from quant_system.execution.pipeline import PaperTradingRunResult, run_sample_paper_trading
 from quant_system.experiments.config import load_experiment_config
 from quant_system.experiments.runner import (
     ExperimentResult,
@@ -16,7 +17,7 @@ from quant_system.experiments.runner import (
     run_sample_experiment,
 )
 from quant_system.factors.pipeline import FactorResearchResult, run_sample_factor_research
-from quant_system.factors.registry import build_default_factor_registry
+from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
 from quant_system.logging.setup import configure_logging
 
 _API_SECRET_FIELDS: frozenset[str] = frozenset(
@@ -43,6 +44,7 @@ data_app = typer.Typer(help="Run Phase 1 data-layer commands.")
 factor_app = typer.Typer(help="Run Phase 2 factor-research commands.")
 backtest_app = typer.Typer(help="Run Phase 3 backtest commands.")
 experiment_app = typer.Typer(help="Run Phase 4 experiment-management commands.")
+paper_app = typer.Typer(help="Run Phase 5 paper-trading commands.")
 
 
 def _version_callback(value: bool) -> None:
@@ -209,6 +211,40 @@ def list_factors() -> None:
         )
 
 
+@factor_app.command("register-library")
+def register_factor_library(
+    name: Annotated[
+        Literal["alpha101"],
+        typer.Option("--name", help="Optional factor library to register explicitly."),
+    ],
+) -> None:
+    """Register and display an optional factor library for this CLI invocation."""
+    registry = build_default_factor_registry()
+    before = set(registry.factor_ids())
+    if name == "alpha101":
+        register_alpha101_library(registry)
+    registered_ids = [
+        factor_id for factor_id in registry.factor_ids() if factor_id not in before
+    ]
+    typer.echo(
+        f"library={name} registered_factors={len(registered_ids)} "
+        f"total_factors={len(registry.factor_ids())}"
+    )
+    for factor_id in registered_ids:
+        metadata = registry.create(factor_id).metadata
+        typer.echo(
+            " ".join(
+                [
+                    f"factor_id={metadata.factor_id}",
+                    f"name={metadata.factor_name}",
+                    f"version={metadata.factor_version}",
+                    f"lookback={metadata.lookback}",
+                    f"direction={metadata.direction}",
+                ]
+            )
+        )
+
+
 @factor_app.command("run-sample")
 def run_sample_factors(
     symbols: Annotated[
@@ -229,6 +265,10 @@ def run_sample_factors(
         int,
         typer.Option(help="Number of buckets for quantile return analysis."),
     ] = 5,
+    source: Annotated[
+        Literal["sample"],
+        typer.Option("--source", help="Data source for this sample research run."),
+    ] = "sample",
     output_dir: Annotated[
         str | None,
         typer.Option(
@@ -237,6 +277,13 @@ def run_sample_factors(
     ] = None,
 ) -> None:
     """Run the Phase 2 sample factor research pipeline."""
+    if source == "sample":
+        typer.secho(
+            "sample data 是确定性合成序列，RSI/MACD 等振荡类因子的统计意义有限，"
+            "请用 Tiingo 数据复核",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
     result = run_sample_factor_research(
         symbols=symbols or ["SPY", "AAPL", "QQQ"],
         start=start,
@@ -383,11 +430,89 @@ def run_config_experiment_command(
     _emit_experiment_summary(result)
 
 
+@paper_app.command("run-sample")
+def run_sample_paper_command(
+    symbols: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--symbol",
+            "-s",
+            help="Symbol to include. Repeat the option for multiple symbols.",
+        ),
+    ] = None,
+    start: Annotated[str, typer.Option(help="Start date, for example 2024-01-02.")] = "",
+    end: Annotated[str, typer.Option(help="End date, for example 2024-01-12.")] = "",
+    initial_cash: Annotated[
+        float,
+        typer.Option("--initial-cash", help="Starting cash for the paper account."),
+    ] = 100_000.0,
+    max_position_size: Annotated[
+        float,
+        typer.Option("--max-position-size", help="Maximum single-symbol position share."),
+    ] = 0.50,
+    max_order_value: Annotated[
+        float,
+        typer.Option("--max-order-value", help="Maximum notional value per order."),
+    ] = 20_000.0,
+    max_daily_loss: Annotated[
+        float,
+        typer.Option("--max-daily-loss", help="Maximum daily loss share."),
+    ] = 0.02,
+    max_drawdown: Annotated[
+        float,
+        typer.Option("--max-drawdown", help="Maximum drawdown share."),
+    ] = 0.10,
+    allowed_symbols: Annotated[
+        list[str] | None,
+        typer.Option("--allowed-symbol", help="Allowed symbol. Repeat to build allowlist."),
+    ] = None,
+    blocked_symbols: Annotated[
+        list[str] | None,
+        typer.Option("--blocked-symbol", help="Blocked symbol. Repeat to build blocklist."),
+    ] = None,
+    kill_switch: Annotated[
+        bool | None,
+        typer.Option(
+            "--kill-switch/--no-kill-switch",
+            help="Override the global kill switch for this paper run.",
+        ),
+    ] = None,
+    max_fill_ratio_per_tick: Annotated[
+        float,
+        typer.Option("--max-fill-ratio-per-tick", help="Partial fill ratio per tick."),
+    ] = 1.0,
+    output_dir: Annotated[
+        str | None,
+        typer.Option(
+            help="Override output directory. Defaults to QS_DATA_DIR/QS_REPORTS_DIR settings.",
+        ),
+    ] = None,
+) -> None:
+    """Run the Phase 5 sample paper-trading loop."""
+    result = run_sample_paper_trading(
+        symbols=symbols or ["SPY", "AAPL"],
+        start=start,
+        end=end,
+        output_dir=output_dir,
+        initial_cash=initial_cash,
+        max_position_size=max_position_size,
+        max_order_value=max_order_value,
+        max_daily_loss=max_daily_loss,
+        max_drawdown=max_drawdown,
+        allowed_symbols=allowed_symbols or [],
+        blocked_symbols=blocked_symbols or [],
+        kill_switch=kill_switch,
+        max_fill_ratio_per_tick=max_fill_ratio_per_tick,
+    )
+    _emit_paper_summary(result)
+
+
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
 app.add_typer(factor_app, name="factor")
 app.add_typer(backtest_app, name="backtest")
 app.add_typer(experiment_app, name="experiment")
+app.add_typer(paper_app, name="paper")
 
 
 def _emit_ingestion_summary(result: IngestionResult) -> None:
@@ -450,6 +575,24 @@ def _emit_experiment_summary(result: ExperimentResult) -> None:
                 f"folds={result.folds_path}",
                 f"agent_summary={result.agent_summary_path}",
                 f"report={result.report_path}",
+            ]
+        )
+    )
+
+
+def _emit_paper_summary(result: PaperTradingRunResult) -> None:
+    typer.echo(
+        " ".join(
+            [
+                f"orders={result.order_count}",
+                f"trades={result.trade_count}",
+                f"risk_breaches={result.risk_breach_count}",
+                f"final_equity={result.final_equity:.2f}",
+                f"orders_path={result.orders_path}",
+                f"order_events={result.order_events_path}",
+                f"trades_path={result.trades_path}",
+                f"risk_breaches_path={result.risk_breaches_path}",
+                f"paper_report={result.report_path}",
             ]
         )
     )

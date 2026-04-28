@@ -158,3 +158,27 @@ python -m quant_system.cli factor run-sample --symbol SPY --symbol AAPL --symbol
 ## 暂停点
 
 Phase 2 完成后暂停，等待确认后再进入 Phase 3：回测引擎 MVP。
+
+## 扩展因子库交付补充
+
+本阶段后续补充了可选 Alpha101 因子库，用于验证“读论文 -> 实现因子 -> 注册 -> 测试 -> 文档”的可复制流程。
+
+新增文件：
+
+- `src/quant_system/factors/library/__init__.py`
+- `src/quant_system/factors/library/alpha101.py`
+- `tests/test_factors_alpha101.py`
+
+新增命令：
+
+```powershell
+python -m quant_system.cli factor register-library --name alpha101
+```
+
+验收标准：
+
+- 默认 `factor list` 仍只显示核心示例因子，不自动混入 Alpha101。
+- `factor register-library --name alpha101` 输出 `alpha101_001` 到 `alpha101_010`。
+- Alpha101 的 `rank()` 按同一 `signal_ts` 横截面计算。
+- Alpha101 的时间序列算子按同一 `symbol` 滚动计算。
+- 每条 Alpha101 因子都有确定性输入的测试。

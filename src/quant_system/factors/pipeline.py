@@ -12,7 +12,13 @@ from quant_system.factors.evaluation import (
     calculate_information_coefficients,
     calculate_quantile_returns,
 )
-from quant_system.factors.examples import LiquidityFactor, MomentumFactor, VolatilityFactor
+from quant_system.factors.examples import (
+    LiquidityFactor,
+    MACDFactor,
+    MomentumFactor,
+    RSIFactor,
+    VolatilityFactor,
+)
 from quant_system.factors.reporting import generate_factor_report
 from quant_system.factors.storage import LocalFactorStorage
 
@@ -113,6 +119,8 @@ def run_sample_factor_research(
         MomentumFactor(lookback=lookback),
         VolatilityFactor(lookback=lookback),
         LiquidityFactor(lookback=lookback),
+        RSIFactor(lookback=lookback),
+        MACDFactor(lookback=lookback),
     ]
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
     signal_frame = build_factor_signal_frame(factor_results)
