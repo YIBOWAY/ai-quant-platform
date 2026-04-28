@@ -408,6 +408,7 @@ GET    /api/experiments                    → list
 GET    /api/experiments/{id}               → detail (runs, folds, agent_summary)
 
 POST   /api/paper/run                      → kick paper trading
+GET    /api/paper                          → list paper-trading runs
 GET    /api/paper/{id}                     → detail (orders, fills, breaches, equity)
 
 GET    /api/agent/candidates               → list (filter by status)
