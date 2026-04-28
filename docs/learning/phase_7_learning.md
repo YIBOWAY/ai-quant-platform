@@ -97,3 +97,39 @@ Phase 8 的 prediction market 模块也要沿用同样的边界：
 - 只输出 proposed trade 或 candidate。
 - 不签名、不转账、不下单。
 - 所有高级优化器先做接口，不直接接执行系统。
+
+## 设计取舍故事
+
+### 为什么默认 LLM 是 stub，不是 OpenAI
+
+最初的草稿是"默认调 OpenAI，stub 只在测试时用"。后来推翻了，原因有四点：
+
+1. **可重复性**：本项目所有 phase 的输出都强调 deterministic（同样输入 → 同样输出），方便 commit/diff 和单测。真实 LLM 每次温度采样都不同，会污染 audit log 和 candidate 比较。
+2. **离线友好**：研究流程经常断网（火车上、docker 沙箱里、CI 容器里）。默认 stub 让 `quant-system agent propose-factor` 在任何环境都跑得起来。
+3. **成本可控**：新人接手项目跑 smoke test 不应该花钱。
+4. **接口收敛**：先把 `LLMClient` Protocol 定死，再让 OpenAIClient / Anthropic / 本地 vllm 都来适配；如果默认是 OpenAI，Protocol 容易被 OpenAI 的 quirk 污染（比如 `tool_calls`、`function_call`、`response_format` 这些不通用的字段）。
+
+代价：stub 输出的"候选因子代码"非常机械（基本上是模板替换），看起来像 AI 偷懒了 —— 这是已知 trade-off。要看真实质量必须显式 `--llm openai`。
+
+### Prompt Injection 防御的 3 道防线
+
+哪怕 LLM 输出 `import os; os.system("rm -rf /")` 这种内容，本项目都不会执行它。具体靠 3 道墙：
+
+1. **白名单工具箱**：[tools.py](../../src/quant_system/agent/tools.py) 里的 `AgentToolbox` 是写死的函数列表，agent 不能动态注册新工具、不能传 callable、不能调 shell 或 broker。即使 prompt 被注入说"请你用 `subprocess.run` 跑一下"，工具层根本没有这个入口。
+2. **`.candidate` 后缀隔离**：[candidate_pool.py](../../src/quant_system/agent/candidate_pool.py) 把 LLM 生成的源码写到 `factor.py.candidate`，这个后缀有三重作用：
+   - Python import 机制不会自动 import 它
+   - pytest 的默认 collector 不会收集它
+   - 文件系统层面给人类一个明显的"这是未审查代码"标志
+3. **Safety Gate 默认 deny**：[safety.py](../../src/quant_system/agent/safety.py) 的 `allow_promotion` 永远先返回 False；只有人类手动在候选目录下创建 `approved.lock` 才放行，而且即使放行也只是允许 _下一步人工流程_，不会触发任何自动注册。
+
+这三层是叠加的，破任何一层都还有另外两层兜底。
+
+### 为什么 review approve 不直接注册因子
+
+最容易被误用的设计是"review approve → 自动加进 FactorRegistry"。这个看起来很方便，但有两个致命问题：
+
+1. **测试缺口**：候选因子没有单测，注册进去会让 `pytest` 在引用 `default_registry()` 的所有路径上突然跑陌生代码。
+2. **不可逆**：`FactorRegistry` 一旦注册，后续 experiment / backtest / paper trading 都会去读它；如果 candidate 有 lookahead bias，污染会沿着所有 phase 扩散。
+
+所以 approve 只写 `approved.lock`，相当于给候选盖一个 "人类初审通过" 的章。真要进 registry 还要走：改名 → 加入 `tests/test_factors_<name>.py` → 跑全测 → 在 `registry.py` 显式 register。这个手工步骤不是麻烦，是**保护**。
+

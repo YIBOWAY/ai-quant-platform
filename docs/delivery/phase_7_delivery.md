@@ -64,3 +64,39 @@ quant-system agent review --candidate-id <id> --decision approve --note "reviewe
 - `quant-system agent review --decision approve` 只写 `approved.lock`。
 - `python -m pytest` 全部通过。
 - `ruff check .` 无错误。
+
+## 演练结果摘要
+
+为了证明上述功能是真的能跑通，本节记录一次端到端 smoke run 的产出。
+
+命令：
+
+```powershell
+conda activate ai-quant
+quant-system agent propose-factor --goal "low-vol momentum on liquid ETFs" --universe SPY,QQQ --output-dir data/_smoke_p7
+quant-system agent list-candidates --output-dir data/_smoke_p7
+```
+
+输出（节选）：
+
+```text
+candidate_id=factor-low_vol_momentum_on_liquid_etfs-9dd9f29f3b
+status=pending
+path=data\_smoke_p7\agent\candidates\factor-low_vol_momentum_on_liquid_etfs-9dd9f29f3b\factor.py.candidate
+metadata=data\_smoke_p7\agent\candidates\factor-low_vol_momentum_on_liquid_etfs-9dd9f29f3b\metadata.json
+```
+
+落盘验证：
+
+| 路径 | 是否存在 | 说明 |
+| --- | --- | --- |
+| `agent/candidates/<id>/factor.py.candidate` | ✅ | 候选源码，**未被 import 或执行** |
+| `agent/candidates/<id>/metadata.json` | ✅ | 包含 `safety.auto_promotion=false` |
+| `agent/candidates/<id>/reviews.jsonl` | ✅ | 空文件，等待人工 review |
+| `agent/audit/<task_id>.jsonl` | ✅ | 包含 `task / tool_call / candidate_written` 三类事件 |
+| `approved.lock` | ❌ | 未 review，符合默认拒绝行为 |
+| `FactorRegistry` 是否新增条目 | ❌ | 即使 approve，也不会自动注册 |
+
+测试：`pytest tests/test_agent_*` → 全部通过；`ruff check .` clean。
+
+注意：本次 smoke 使用默认 `StubLLMClient`，候选源码内容是确定性模板，不代表真实 LLM 的产出质量。要看真实质量需 `--llm openai` + 配置 `QS_OPENAI_API_KEY`。

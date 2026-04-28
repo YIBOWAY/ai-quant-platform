@@ -69,3 +69,56 @@ quant-system prediction-market doctor
 - `prediction-market doctor` 明确显示 live API disabled。
 - `python -m pytest` 全部通过。
 - `ruff check .` 无错误。
+
+## 演练结果摘要
+
+为了证明上述功能可端到端跑通，本节记录一次 smoke run 的产出。
+
+命令：
+
+```powershell
+conda activate ai-quant
+quant-system prediction-market scan-sample --output-dir data/_smoke_p8
+quant-system prediction-market dry-arbitrage --output-dir data/_smoke_p8
+quant-system prediction-market doctor
+```
+
+scan-sample 输出（节选）：
+
+```text
+candidates=3 report=data\_smoke_p8\prediction_market\reports\prediction_market_report.md
+candidate_id=pm-a3e9e55fbdb2 market_id=sample-binary-001 scanner=yes_no_arbitrage edge_bps=500.00 direction=underpriced_complete_set
+candidate_id=pm-29f0a62974a3 market_id=sample-binary-001 scanner=outcome_set_consistency edge_bps=500.00 direction=underpriced_complete_set
+candidate_id=pm-5c0512371db9 market_id=sample-three-way-001 scanner=outcome_set_consistency edge_bps=500.00 direction=overpriced_complete_set
+```
+
+dry-arbitrage 输出（节选）：
+
+```text
+proposed_trades=3 report=data\_smoke_p8\prediction_market\reports\prediction_market_report.md
+proposal_id=proposal-d88294cd8d47 dry_run=True capital=1000.00 expected_profit=50.00
+```
+
+落盘验证：
+
+| 路径 | 是否存在 | 说明 |
+| --- | --- | --- |
+| `prediction_market/candidates/*.json` | ✅ | 3 条 mispricing candidate（sample 数据特意构造） |
+| `prediction_market/proposals/*.json` | ✅ | 3 条 dry proposal，**全部 `dry_run=true`** |
+| `prediction_market/reports/prediction_market_report.md` | ✅ | 人类可读报告 |
+| `prediction_market/orders/` 或 `fills/` 或 `token_transfers/` | ❌ | 永远不会出现，符合 dry-only 边界 |
+| 任何 HTTP 请求 / WebSocket 连接 / 私钥读取 | ❌ | 整个调用链没有这些代码路径 |
+
+doctor 输出（节选）：
+
+```text
+live API disabled = True
+http calls allowed = False
+websocket connections allowed = False
+private key access = False
+scipy available = True   # 可选依赖
+```
+
+⚠️ 重要提醒：`edge_bps=500.00`（5%）只是 sample provider 故意构造的极端值，**不代表真实 Polymarket 上能找到这种 edge**。具体原因见 [phase_8_learning.md §设计取舍故事](../learning/phase_8_learning.md)。
+
+测试：`pytest tests/test_prediction_market_*` → 全部通过；`ruff check .` clean。
