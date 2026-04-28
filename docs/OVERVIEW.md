@@ -164,6 +164,7 @@ quant-system experiment run-sample `
 3. 模拟成交只在本地内存里运行，输出落到本地文件。
 4. CLI `config show` 永远不会打印明文 API Key（只显示 `**********`）。
 5. Phase 4 的 `agent_summary.json` 显式包含 `safety.live_trading=False / paper_trading=False / auto_promotion=False`，AI Agent 不被允许把任何实验自动 promote 到上线。
+6. AI Agent 不能直接修改因子库或注册策略，全部产物必须先进 candidate pool，再由人工 review。
 
 ## 数据落盘约定
 

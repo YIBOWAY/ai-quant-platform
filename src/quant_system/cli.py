@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import typer
 
 from quant_system import __version__
+from quant_system.agent.llm.base import LLMClient
+from quant_system.agent.llm.stub import StubLLMClient
+from quant_system.agent.runner import AgentRunner
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
 from quant_system.config.settings import load_settings, reload_settings
 from quant_system.data.pipeline import IngestionResult, run_sample_ingestion, run_tiingo_ingestion
@@ -45,6 +49,7 @@ factor_app = typer.Typer(help="Run Phase 2 factor-research commands.")
 backtest_app = typer.Typer(help="Run Phase 3 backtest commands.")
 experiment_app = typer.Typer(help="Run Phase 4 experiment-management commands.")
 paper_app = typer.Typer(help="Run Phase 5 paper-trading commands.")
+agent_app = typer.Typer(help="Run Phase 7 AI research assistant commands.")
 
 
 def _version_callback(value: bool) -> None:
@@ -83,6 +88,21 @@ def _mask_secrets(payload: Any) -> Any:
     if isinstance(payload, list):
         return [_mask_secrets(item) for item in payload]
     return payload
+
+
+def _parse_universe(value: str) -> list[str]:
+    return [symbol.strip().upper() for symbol in value.split(",") if symbol.strip()]
+
+
+def _build_agent_llm(name: Literal["stub", "openai"]) -> LLMClient:
+    if name == "stub":
+        return StubLLMClient()
+    from quant_system.agent.llm.openai_client import OpenAIClient
+
+    try:
+        return OpenAIClient()
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @config_app.command("show")
@@ -507,12 +527,163 @@ def run_sample_paper_command(
     _emit_paper_summary(result)
 
 
+@agent_app.command("propose-factor")
+def agent_propose_factor(
+    goal: Annotated[str, typer.Option("--goal", help="Research goal for the candidate factor.")],
+    universe: Annotated[
+        str,
+        typer.Option("--universe", help="Comma-separated symbols, for example SPY,QQQ."),
+    ] = "SPY,QQQ",
+    output_dir: Annotated[
+        str,
+        typer.Option("--output-dir", help="Agent artifact output directory."),
+    ] = "data/agent_run",
+    llm_name: Annotated[
+        Literal["stub", "openai"],
+        typer.Option("--llm", help="LLM backend. Defaults to deterministic stub."),
+    ] = "stub",
+) -> None:
+    """Create an inert candidate factor file for human review."""
+    artifact = AgentRunner(
+        output_dir=output_dir,
+        llm=_build_agent_llm(llm_name),
+    ).propose_factor(goal=goal, universe=_parse_universe(universe))
+    _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
+
+
+@agent_app.command("propose-experiment")
+def agent_propose_experiment(
+    goal: Annotated[str, typer.Option("--goal", help="Research goal for the experiment.")],
+    universe: Annotated[
+        str,
+        typer.Option("--universe", help="Comma-separated symbols, for example SPY,QQQ."),
+    ] = "SPY,QQQ",
+    output_dir: Annotated[
+        str,
+        typer.Option("--output-dir", help="Agent artifact output directory."),
+    ] = "data/agent_run",
+    llm_name: Annotated[
+        Literal["stub", "openai"],
+        typer.Option("--llm", help="LLM backend. Defaults to deterministic stub."),
+    ] = "stub",
+) -> None:
+    """Create an experiment config candidate for human review."""
+    artifact = AgentRunner(
+        output_dir=output_dir,
+        llm=_build_agent_llm(llm_name),
+    ).propose_experiment(goal=goal, universe=_parse_universe(universe))
+    _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
+
+
+@agent_app.command("summarize")
+def agent_summarize(
+    experiment_id: Annotated[
+        str,
+        typer.Option("--experiment-id", help="Experiment id to summarize."),
+    ],
+    output_dir: Annotated[
+        str,
+        typer.Option("--output-dir", help="Agent artifact output directory."),
+    ] = "data/agent_run",
+    llm_name: Annotated[
+        Literal["stub", "openai"],
+        typer.Option("--llm", help="LLM backend. Defaults to deterministic stub."),
+    ] = "stub",
+) -> None:
+    """Summarize a local experiment for human review only."""
+    artifact = AgentRunner(
+        output_dir=output_dir,
+        llm=_build_agent_llm(llm_name),
+    ).summarize(experiment_id=experiment_id)
+    _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
+
+
+@agent_app.command("audit-leakage")
+def agent_audit_leakage(
+    factor_id: Annotated[str, typer.Option("--factor-id", help="Factor id to inspect.")],
+    output_dir: Annotated[
+        str,
+        typer.Option("--output-dir", help="Agent artifact output directory."),
+    ] = "data/agent_run",
+    llm_name: Annotated[
+        Literal["stub", "openai"],
+        typer.Option("--llm", help="LLM backend. Defaults to deterministic stub."),
+    ] = "stub",
+) -> None:
+    """Write a point-in-time and look-ahead checklist candidate."""
+    artifact = AgentRunner(
+        output_dir=output_dir,
+        llm=_build_agent_llm(llm_name),
+    ).audit_leakage(factor_id=factor_id)
+    _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
+
+
+@agent_app.command("list-candidates")
+def agent_list_candidates(
+    output_dir: Annotated[
+        str,
+        typer.Option("--output-dir", help="Agent artifact output directory."),
+    ] = "data/agent_run",
+) -> None:
+    """List candidate artifacts and their review status."""
+    candidates = AgentRunner(output_dir=output_dir).list_candidates()
+    if not candidates:
+        typer.echo("no_candidates=true")
+        return
+    for candidate in candidates:
+        path = Path(output_dir, "agent", "candidates", candidate["candidate_id"])
+        typer.echo(
+            " ".join(
+                [
+                    f"candidate_id={candidate['candidate_id']}",
+                    f"type={candidate['artifact_type']}",
+                    f"status={candidate['status']}",
+                    f"path={path}",
+                ]
+            )
+        )
+
+
+@agent_app.command("review")
+def agent_review(
+    candidate_id: Annotated[
+        str,
+        typer.Option("--candidate-id", help="Candidate id from list-candidates."),
+    ],
+    decision: Annotated[
+        Literal["approve", "reject"],
+        typer.Option("--decision", help="Manual review decision."),
+    ],
+    note: Annotated[str, typer.Option("--note", help="Manual review note.")],
+    output_dir: Annotated[
+        str,
+        typer.Option("--output-dir", help="Agent artifact output directory."),
+    ] = "data/agent_run",
+) -> None:
+    """Record a manual review; approve only writes an approval lock."""
+    record = AgentRunner(output_dir=output_dir).review(
+        candidate_id=candidate_id,
+        decision=decision,
+        note=note,
+    )
+    typer.echo(
+        " ".join(
+            [
+                f"candidate_id={record.candidate_id}",
+                f"decision={record.decision}",
+                "registration=manual_required",
+            ]
+        )
+    )
+
+
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
 app.add_typer(factor_app, name="factor")
 app.add_typer(backtest_app, name="backtest")
 app.add_typer(experiment_app, name="experiment")
 app.add_typer(paper_app, name="paper")
+app.add_typer(agent_app, name="agent")
 
 
 def _emit_ingestion_summary(result: IngestionResult) -> None:
@@ -593,6 +764,19 @@ def _emit_paper_summary(result: PaperTradingRunResult) -> None:
                 f"trades_path={result.trades_path}",
                 f"risk_breaches_path={result.risk_breaches_path}",
                 f"paper_report={result.report_path}",
+            ]
+        )
+    )
+
+
+def _emit_agent_artifact(candidate_id: str, path: Any, metadata_path: Any) -> None:
+    typer.echo(
+        " ".join(
+            [
+                f"candidate_id={candidate_id}",
+                "status=pending",
+                f"path={path}",
+                f"metadata={metadata_path}",
             ]
         )
     )
