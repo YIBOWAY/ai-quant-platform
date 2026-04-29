@@ -1,5 +1,6 @@
 import { Clock, Database, FileJson, SlidersHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { ExperimentTabs } from "@/components/forms/ExperimentTabs";
 import { getBacktests, getExperiments } from "@/lib/api";
 
 export default async function Experiments() {
@@ -71,6 +72,7 @@ export default async function Experiments() {
         </div>
 
         <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto p-6 lg:grid-cols-2">
+          <ExperimentTabs />
           <EmptyState
             title="Sweep heatmap unavailable"
             description="No parameter sweep matrix is available from the current API response."

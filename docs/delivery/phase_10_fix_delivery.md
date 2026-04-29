@@ -10,7 +10,7 @@ platform local-only, paper-only, and safe by default.
 - [x] P0-1 Sidebar routes and `/settings` page aligned with existing frontend routes.
 - [x] P0-2 Fake telemetry, decorative metrics, fake logs, and misleading widgets removed.
 - [x] P0-3 OHLCV provider factory and source labels.
-- [ ] P0-4 Interactive client forms for POST workflows.
+- [x] P0-4 Interactive client forms for POST workflows.
 - [ ] P0-5 LLM settings and masked LLM config endpoint.
 - [ ] P0-6 CORS default includes frontend port 3001.
 - [ ] P1-1 Dark readable native `<option>` styling.
@@ -56,6 +56,27 @@ python -m pytest -q                      PASS
 ruff check .                              PASS
 cd src/frontend && npm run lint           PASS
 cd src/frontend && npm run build          PASS
+```
+
+### P0-4
+
+Added frontend-only dependencies:
+
+- `@tanstack/react-query`: mutation state for synchronous local API calls.
+- `react-hook-form` + `zod`: accessible forms with local validation.
+- `sonner`: success/error toasts after local run requests.
+
+```text
+python -m pytest -q                      PASS
+ruff check .                              PASS
+cd src/frontend && npm run lint           PASS
+cd src/frontend && npm run build          PASS
+manual API smoke                          backtest, factor, paper, agent task,
+                                          agent review, prediction-market scan,
+                                          dry-arbitrage all returned success
+manual frontend smoke                     /backtest, /factor-lab, /paper-trading,
+                                          /agent-studio, /data-explorer,
+                                          /order-book all returned 200
 ```
 
 ## Manual Smoke Output

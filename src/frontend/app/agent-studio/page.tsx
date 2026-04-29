@@ -1,5 +1,6 @@
 import { Bot, Cpu, Network, ShieldCheck } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { AgentTaskForm } from "@/components/forms/AgentTaskForm";
 import { getAgentCandidates, getFactors } from "@/lib/api";
 
 export default async function AgentStudio() {
@@ -74,18 +75,11 @@ export default async function AgentStudio() {
           </div>
         </div>
 
-        <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-2">
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <AgentTaskForm candidates={candidates.candidates} />
           <EmptyState
             title="Source preview not loaded"
-            description="P0-4 will load selected candidate details from /api/agent/candidates/{id}."
-          />
-          <EmptyState
-            title="Task form pending"
-            description="P0-4 will submit propose-factor, propose-experiment, summarize and audit-leakage tasks."
-          />
-          <EmptyState
-            title="Review dialog pending"
-            description="Approve will only create approved.lock after a second confirmation."
+            description="Candidate source is shown only after loading a specific candidate detail as plain text."
           />
           <EmptyState
             title="Audit timeline pending"

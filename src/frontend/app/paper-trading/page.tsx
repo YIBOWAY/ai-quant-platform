@@ -1,5 +1,6 @@
 import { Activity, AlertCircle, ShieldAlert, Wallet } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { PaperRunForm } from "@/components/forms/PaperRunForm";
 import { formatMoney, getHealth, getPaperRuns } from "@/lib/api";
 
 export default async function PaperTrading() {
@@ -97,11 +98,10 @@ export default async function PaperTrading() {
           </div>
         </div>
         <div className="mt-6">
-          <EmptyState
-            title="Run control pending"
-            description="P0-4 will add a form that keeps kill_switch enabled."
-            action={<Wallet size={18} className="text-text-secondary" />}
-          />
+          <PaperRunForm />
+          <div className="mt-4 flex items-center gap-2 font-body-sm text-text-secondary">
+            <Wallet size={18} /> Runs are local batch simulations only.
+          </div>
         </div>
       </aside>
     </div>

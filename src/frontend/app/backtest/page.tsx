@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/EmptyState";
+import { BacktestForm } from "@/components/forms/BacktestForm";
 import { formatPercent, getBacktests, getBenchmark } from "@/lib/api";
 
 export default async function Backtest() {
@@ -28,10 +29,7 @@ export default async function Backtest() {
             <div className="font-label-caps text-text-secondary">Benchmark</div>
             <div className="mt-2 font-data-mono text-text-primary">{benchmark.symbol}</div>
           </div>
-          <EmptyState
-            title="Run form pending"
-            description="This panel will submit POST /api/backtests/run in P0-4."
-          />
+          <BacktestForm />
         </div>
       </aside>
 

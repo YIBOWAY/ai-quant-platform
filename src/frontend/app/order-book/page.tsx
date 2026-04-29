@@ -1,5 +1,6 @@
 import { BookOpen } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { PMRunForm } from "@/components/forms/PMRunForm";
 import { getPredictionMarkets } from "@/lib/api";
 
 export default async function OrderBookPage() {
@@ -30,9 +31,10 @@ export default async function OrderBookPage() {
           </div>
         ))}
       </section>
+      <PMRunForm />
       <EmptyState
-        title="Scanner controls pending"
-        description="P0-4 will add sample scan and dry-arbitrage buttons. No live key input will be shown."
+        title="Live integration disabled"
+        description="This page only runs sample scan and dry proposal workflows."
       />
     </div>
   );

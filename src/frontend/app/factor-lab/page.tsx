@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/EmptyState";
+import { FactorRunForm } from "@/components/forms/FactorRunForm";
 import { getFactors } from "@/lib/api";
 
 export default async function FactorLab() {
@@ -40,10 +41,7 @@ export default async function FactorLab() {
 
         <div className="rounded border border-border-subtle bg-bg-surface p-4">
           <h2 className="mb-4 font-headline-lg text-text-primary">Analysis Config</h2>
-          <EmptyState
-            title="Run form pending"
-            description="This panel will submit POST /api/factors/run in P0-4."
-          />
+          <FactorRunForm />
         </div>
       </aside>
 

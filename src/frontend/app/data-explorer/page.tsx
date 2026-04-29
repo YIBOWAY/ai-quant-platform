@@ -1,5 +1,6 @@
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
+import { DataExplorerControls } from "@/components/forms/DataExplorerControls";
 import { getOhlcv, getSymbols } from "@/lib/api";
 
 function closeBarHeight(close: number, min: number, max: number) {
@@ -9,10 +10,23 @@ function closeBarHeight(close: number, min: number, max: number) {
   return 10 + ((close - min) / (max - min)) * 80;
 }
 
-export default async function DataExplorer() {
+type DataExplorerProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function single(value: string | string[] | undefined, fallback: string) {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+export default async function DataExplorer({ searchParams }: DataExplorerProps) {
+  const params = (await searchParams) ?? {};
+  const symbol = single(params.symbol, "SPY").toUpperCase();
+  const start = single(params.start, "2024-01-02");
+  const end = single(params.end, "2024-01-12");
+  const provider = single(params.provider, "sample");
   const [symbols, ohlcv] = await Promise.all([
     getSymbols(),
-    getOhlcv("SPY", "2024-01-02", "2024-01-12"),
+    getOhlcv(symbol, start, end, provider),
   ]);
   const latest = ohlcv.rows.at(-1);
   const closes = ohlcv.rows.map((row) => row.close);
@@ -23,43 +37,10 @@ export default async function DataExplorer() {
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="flex-none border-b border-border-subtle bg-bg-surface p-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="font-label-caps uppercase text-text-secondary">Universe</label>
-              <select className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary focus:border-info focus:ring-1 focus:ring-info">
-                {symbols.symbols.map((symbol) => (
-                  <option key={symbol}>{symbol}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="font-label-caps uppercase text-text-secondary">Asset</label>
-              <input
-                className="h-8 w-24 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary focus:border-info focus:ring-1 focus:ring-info"
-                type="text"
-                defaultValue={ohlcv.symbol}
-                readOnly
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="font-label-caps uppercase text-text-secondary">Date Range</label>
-              <div className="flex items-center gap-2">
-                <input
-                  className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary focus:border-info focus:ring-1 focus:ring-info"
-                  type="date"
-                  defaultValue="2024-01-02"
-                  readOnly
-                />
-                <span className="text-text-secondary">-</span>
-                <input
-                  className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary focus:border-info focus:ring-1 focus:ring-info"
-                  type="date"
-                  defaultValue="2024-01-12"
-                  readOnly
-                />
-              </div>
-            </div>
-          </div>
+          <DataExplorerControls
+            symbols={symbols.symbols}
+            initial={{ symbol: ohlcv.symbol, start, end, provider: provider === "tiingo" ? "tiingo" : "sample" }}
+          />
 
           <div className="flex items-center gap-3">
             <DataSourceBadge source={ohlcv.source} />
