@@ -1,17 +1,25 @@
-import { Map, Layers } from "lucide-react";
+import { Layers } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { getSymbols } from "@/lib/api";
 
 export default async function PositionMapPage() {
   const symbols = await getSymbols();
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center h-full min-h-[50vh] text-zinc-400">
-      <Layers size={48} className="mb-4 text-zinc-600" />
-      <h2 className="text-xl font-semibold mb-2 font-sans tracking-tight text-zinc-200">Position Map</h2>
-      <p className="text-sm font-sans max-w-md text-center">
-        Available local symbols from the API: {symbols.symbols.join(", ")}.
-        This view remains a visualization placeholder until portfolio maps are added.
-      </p>
+    <div className="flex h-full flex-1 flex-col gap-4 overflow-y-auto p-container-padding">
+      <header className="rounded border border-border-subtle bg-bg-surface p-4">
+        <div className="flex items-center gap-2">
+          <Layers size={18} className="text-primary" />
+          <h1 className="font-headline-lg text-text-primary">Position Map</h1>
+        </div>
+        <p className="mt-2 font-body-sm text-text-secondary">
+          Available local symbols from the API: {symbols.symbols.join(", ")}.
+        </p>
+      </header>
+      <EmptyState
+        title="Portfolio map not implemented"
+        description="No position-map metric is shown until a real portfolio time series is selected."
+      />
     </div>
   );
 }
