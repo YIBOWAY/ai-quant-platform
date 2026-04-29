@@ -9,12 +9,38 @@ This check verifies that the Next.js frontend in `src/frontend/` can run locally
 - Backend API: `http://127.0.0.1:8765`
 - Frontend: `http://127.0.0.1:3000`
 
+## Backend Startup Options
+
+The backend is a FastAPI app. The standard direct startup command is:
+
+```powershell
+python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
+```
+
+Meaning:
+
+- `python -m uvicorn`: start the ASGI server used by FastAPI.
+- `quant_system.api.server:create_app`: load the app factory from the project.
+- `--factory`: tell uvicorn that `create_app` must be called to build the app.
+- `--host 127.0.0.1`: bind only to this machine.
+- `--port 8765`: expose the backend API on port `8765`.
+
+The project CLI also provides this convenience wrapper:
+
+```powershell
+quant-system serve --host 127.0.0.1 --port 8765
+```
+
+That wrapper still calls `uvicorn` internally. It exists to keep the same project CLI style as `data`, `factor`, `backtest`, `paper`, and to enforce local-safe defaults such as blocking public bind unless explicitly confirmed.
+
+Full web testing needs two services at the same time: backend on `8765`, frontend on `3000`.
+
 ## Commands Used
 
 ```powershell
 conda activate ai-quant
 python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev]"
-quant-system serve --host 127.0.0.1 --port 8765
+python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
 ```powershell
@@ -23,6 +49,25 @@ npm install
 npm run lint
 npm run build
 npm run dev -- -p 3000
+```
+
+One-command local start from repository root:
+
+```powershell
+conda activate ai-quant
+.\scripts\start_phase9_full_stack.ps1
+```
+
+If port `3000` is already occupied:
+
+```powershell
+.\scripts\start_phase9_full_stack.ps1 -FrontendPort 3001
+```
+
+Stop:
+
+```powershell
+.\scripts\stop_phase9_full_stack.ps1
 ```
 
 ## Backend Smoke Result

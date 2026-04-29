@@ -279,6 +279,14 @@ python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api]"
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
+等价的标准 FastAPI 启动方式是：
+
+```powershell
+python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
+```
+
+`quant-system serve` 只是项目 CLI 包装，内部启动的仍然是 `uvicorn`。
+
 健康检查：
 
 ```powershell
