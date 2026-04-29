@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from quant_system.api.dependencies import OutputDirDep
+from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.common import dataframe_records
+from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.data.providers.sample import SampleOHLCVProvider
 from quant_system.data.storage import LocalDataStorage
 
@@ -29,6 +30,8 @@ def ohlcv(
     start: str,
     end: str,
     output_dir: OutputDirDep,
+    settings: SettingsDep,
+    provider: str | None = None,
 ) -> dict:
     normalized_symbol = symbol.upper().strip()
     storage = LocalDataStorage(base_dir=output_dir)
@@ -40,7 +43,16 @@ def ohlcv(
             frame = local
             source = "local"
     if frame is None:
-        frame = SampleOHLCVProvider().fetch_ohlcv([normalized_symbol], start=start, end=end)
+        active_provider, source = build_ohlcv_provider(settings, requested=provider)
+        try:
+            frame = active_provider.fetch_ohlcv([normalized_symbol], start=start, end=end)
+        except Exception as exc:
+            frame = SampleOHLCVProvider().fetch_ohlcv(
+                [normalized_symbol],
+                start=start,
+                end=end,
+            )
+            source = f"sample ({source} failed: {exc.__class__.__name__})"
     return {
         "symbol": normalized_symbol,
         "source": source,

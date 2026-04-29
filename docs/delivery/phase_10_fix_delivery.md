@@ -9,7 +9,7 @@ platform local-only, paper-only, and safe by default.
 
 - [x] P0-1 Sidebar routes and `/settings` page aligned with existing frontend routes.
 - [x] P0-2 Fake telemetry, decorative metrics, fake logs, and misleading widgets removed.
-- [ ] P0-3 OHLCV provider factory and source labels.
+- [x] P0-3 OHLCV provider factory and source labels.
 - [ ] P0-4 Interactive client forms for POST workflows.
 - [ ] P0-5 LLM settings and masked LLM config endpoint.
 - [ ] P0-6 CORS default includes frontend port 3001.
@@ -45,6 +45,17 @@ Route smoke on 127.0.0.1:3001             /, /data-explorer, /factor-lab,
                                           /backtest, /experiments, /paper-trading,
                                           /agent-studio, /order-book, /position-map,
                                           /settings all returned 200
+```
+
+### P0-3
+
+```text
+python -m pytest tests/test_provider_factory.py tests/test_api_data_provider_param.py -q
+6 passed
+python -m pytest -q                      PASS
+ruff check .                              PASS
+cd src/frontend && npm run lint           PASS
+cd src/frontend && npm run build          PASS
 ```
 
 ## Manual Smoke Output

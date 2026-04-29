@@ -65,6 +65,7 @@ export type BacktestsResponse = ApiEnvelope & {
 
 export type BenchmarkResponse = ApiEnvelope & {
   symbol: string;
+  source: string;
   equity_curve: Array<{ timestamp: string; equity: number }>;
   metrics: {
     total_return: number;
@@ -165,8 +166,11 @@ export function getSymbols() {
   });
 }
 
-export function getOhlcv(symbol = "SPY", start = "2024-01-02", end = "2024-01-12") {
+export function getOhlcv(symbol = "SPY", start = "2024-01-02", end = "2024-01-12", provider?: string) {
   const params = new URLSearchParams({ symbol, start, end });
+  if (provider) {
+    params.set("provider", provider);
+  }
   return apiGet<OhlcvResponse>(`/api/ohlcv?${params.toString()}`, {
     symbol,
     source: "fallback",
@@ -189,10 +193,19 @@ export function getBacktests() {
   });
 }
 
-export function getBenchmark(symbol = "SPY", start = "2024-01-02", end = "2024-01-12") {
+export function getBenchmark(
+  symbol = "SPY",
+  start = "2024-01-02",
+  end = "2024-01-12",
+  provider?: string,
+) {
   const params = new URLSearchParams({ symbol, start, end });
+  if (provider) {
+    params.set("provider", provider);
+  }
   return apiGet<BenchmarkResponse>(`/api/benchmark?${params.toString()}`, {
     symbol,
+    source: "fallback",
     equity_curve: [],
     metrics: {
       total_return: 0,
