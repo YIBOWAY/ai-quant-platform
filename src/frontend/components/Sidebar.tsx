@@ -7,8 +7,11 @@ import {
   Zap,
   LineChart,
   FlaskConical,
-  Shield,
+  Wallet,
   Settings,
+  Database,
+  BookOpen,
+  Map,
   FileText,
   HelpCircle,
   User,
@@ -20,11 +23,14 @@ export function Sidebar() {
 
   const navItems = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Agent Studio", href: "/agent-studio", icon: Zap },
-    { name: "Backtester", href: "/backtest", icon: LineChart },
+    { name: "Data Explorer", href: "/data-explorer", icon: Database },
     { name: "Factor Lab", href: "/factor-lab", icon: FlaskConical },
-    { name: "Risk Manager", href: "/paper-trading", icon: Shield },
+    { name: "Backtester", href: "/backtest", icon: LineChart },
     { name: "Experiments", href: "/experiments", icon: FlaskConical },
+    { name: "Paper Trading", href: "/paper-trading", icon: Wallet },
+    { name: "Agent Studio", href: "/agent-studio", icon: Zap },
+    { name: "Order Book", href: "/order-book", icon: BookOpen },
+    { name: "Position Map", href: "/position-map", icon: Map },
     { name: "Settings", href: "/settings", icon: Settings },
   ];
 

@@ -111,6 +111,8 @@ export type PredictionMarketResponse = ApiEnvelope & {
   provider: string;
 };
 
+export type SettingsResponse = ApiEnvelope & Record<string, unknown>;
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 
 const FALLBACK_SAFETY: SafetyFooter = {
@@ -145,6 +147,12 @@ export function getHealth() {
     status: "offline",
     app_name: "AI Quant Research Platform",
     environment: "local",
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getSettings() {
+  return apiGet<SettingsResponse>("/api/settings", {
     safety: FALLBACK_SAFETY,
   });
 }
