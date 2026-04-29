@@ -156,7 +156,12 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "paper", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     api_cors_origins: list[str] = Field(
-        default_factory=lambda: ["http://127.0.0.1:3000", "http://localhost:3000"]
+        default_factory=lambda: [
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
+            "http://localhost:3000",
+            "http://localhost:3001",
+        ]
     )
     safety: SafetySettings = Field(default_factory=SafetySettings)
     data: DataSettings = Field(default_factory=DataSettings)
