@@ -1,10 +1,14 @@
 import { Bot, Cpu, Network, ShieldCheck } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { AgentTaskForm } from "@/components/forms/AgentTaskForm";
-import { getAgentCandidates, getFactors } from "@/lib/api";
+import { getAgentCandidates, getAgentLlmConfig, getFactors } from "@/lib/api";
 
 export default async function AgentStudio() {
-  const [candidates, factors] = await Promise.all([getAgentCandidates(), getFactors()]);
+  const [candidates, factors, llmConfig] = await Promise.all([
+    getAgentCandidates(),
+    getFactors(),
+    getAgentLlmConfig(),
+  ]);
   const latestCandidate = candidates.candidates[0];
 
   return (
@@ -14,6 +18,10 @@ export default async function AgentStudio() {
           <h1 className="font-headline-lg text-text-primary">Agent Studio</h1>
           <p className="mt-1 font-body-sm text-text-secondary">
             Candidates are inert files until manual review.
+          </p>
+          <p className="mt-2 font-data-mono text-[10px] uppercase text-text-secondary">
+            llm={llmConfig.provider} model={llmConfig.model ?? "none"} key=
+            {llmConfig.has_api_key ? "set" : "unset"}
           </p>
         </div>
         <div className="flex-1 overflow-y-auto">

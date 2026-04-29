@@ -4,8 +4,9 @@ import json
 
 from fastapi import APIRouter, HTTPException
 
+from quant_system.agent.llm import build_llm_client
 from quant_system.agent.runner import AgentRunner
-from quant_system.api.dependencies import OutputDirDep
+from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.agent import AgentReviewRequest, AgentTaskRequest
 from quant_system.api.schemas.common import resolve_run_dir
 
@@ -60,8 +61,13 @@ def candidate_detail(candidate_id: str, output_dir: OutputDirDep) -> dict:
 def run_agent_task(
     request: AgentTaskRequest,
     output_dir: OutputDirDep,
+    settings: SettingsDep,
 ) -> dict:
-    runner = AgentRunner(output_dir=output_dir)
+    try:
+        llm = build_llm_client(settings)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    runner = AgentRunner(output_dir=output_dir, llm=llm)
     if request.task_type == "propose-factor":
         artifact = runner.propose_factor(goal=request.goal, universe=request.universe)
     elif request.task_type == "propose-experiment":
@@ -104,4 +110,15 @@ def review_candidate(
         "candidate_id": record.candidate_id,
         "decision": record.decision,
         "registration": "manual_required",
+    }
+
+
+@router.get("/agent/llm-config")
+def llm_config(settings: SettingsDep) -> dict:
+    return {
+        "provider": settings.llm.provider,
+        "model": settings.llm.model,
+        "base_url": settings.llm.base_url,
+        "timeout": settings.llm.timeout,
+        "has_api_key": settings.llm.api_key is not None,
     }

@@ -11,7 +11,7 @@ platform local-only, paper-only, and safe by default.
 - [x] P0-2 Fake telemetry, decorative metrics, fake logs, and misleading widgets removed.
 - [x] P0-3 OHLCV provider factory and source labels.
 - [x] P0-4 Interactive client forms for POST workflows.
-- [ ] P0-5 LLM settings and masked LLM config endpoint.
+- [x] P0-5 LLM settings and masked LLM config endpoint.
 - [ ] P0-6 CORS default includes frontend port 3001.
 - [ ] P1-1 Dark readable native `<option>` styling.
 - [ ] P1-2 Loading, error, and empty state components across pages.
@@ -77,6 +77,17 @@ manual API smoke                          backtest, factor, paper, agent task,
 manual frontend smoke                     /backtest, /factor-lab, /paper-trading,
                                           /agent-studio, /data-explorer,
                                           /order-book all returned 200
+```
+
+### P0-5
+
+```text
+python -m pytest tests/test_settings_llm_alias.py tests/test_api_agent_llm_config.py tests/test_llm_factory.py -q
+5 passed
+python -m pytest -q                      PASS
+ruff check .                              PASS
+cd src/frontend && npm run lint           PASS
+cd src/frontend && npm run build          PASS
 ```
 
 ## Manual Smoke Output

@@ -4,7 +4,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, ValidationError, field_serializer, model_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    SecretStr,
+    ValidationError,
+    field_serializer,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LIVE_TRADING_CONFIRMATION_PHRASE = "I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"
@@ -99,6 +106,43 @@ class ApiKeySettings(BaseSettings):
         return "**********" if value else None
 
 
+class LLMSettings(BaseSettings):
+    """Optional LLM routing for the Phase 7 research assistant."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    provider: Literal["stub", "openai", "xai"] = Field(
+        default="stub",
+        validation_alias=AliasChoices("QS_LLM_PROVIDER", "LLM_PROVIDER"),
+    )
+    api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("QS_LLM_API_KEY", "LLM_API_KEY"),
+    )
+    base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("QS_LLM_BASE_URL", "LLM_BASE_URL"),
+    )
+    model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("QS_LLM_MODEL", "LLM_MODEL"),
+    )
+    timeout: int = Field(
+        default=60,
+        validation_alias=AliasChoices("QS_LLM_TIMEOUT", "LLM_TIMEOUT"),
+        gt=0,
+    )
+
+    @field_serializer("api_key", when_used="json")
+    def serialize_llm_secret(self, value: SecretStr | None) -> str | None:
+        return "**********" if value else None
+
+
 class Settings(BaseSettings):
     """Application-level settings."""
 
@@ -117,6 +161,7 @@ class Settings(BaseSettings):
     safety: SafetySettings = Field(default_factory=SafetySettings)
     data: DataSettings = Field(default_factory=DataSettings)
     api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)
+    llm: LLMSettings = Field(default_factory=LLMSettings)
 
 
 # Note on env loading:

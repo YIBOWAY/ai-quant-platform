@@ -45,6 +45,7 @@ _API_SECRET_FIELDS: frozenset[str] = frozenset(
         "twitter_api_key",
         "twitter_api_key_secret",
         "twitter_bearer_token",
+        "api_key",
     }
 )
 _MANUAL_SECRET_FIELDS: frozenset[str] = frozenset({"manual_live_trading_confirmation"})

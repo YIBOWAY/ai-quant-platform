@@ -106,6 +106,14 @@ export type AgentCandidatesResponse = ApiEnvelope & {
   candidates: CandidateSummary[];
 };
 
+export type AgentLlmConfigResponse = ApiEnvelope & {
+  provider: string;
+  model: string | null;
+  base_url: string | null;
+  timeout: number;
+  has_api_key: boolean;
+};
+
 export type PredictionMarketResponse = ApiEnvelope & {
   markets: Array<{ market_id: string; question: string; outcomes: Array<{ name: string }> }>;
   order_books: Array<{ token_id: string; bids: unknown[]; asks: unknown[] }>;
@@ -236,6 +244,17 @@ export function getExperiments() {
 export function getAgentCandidates() {
   return apiGet<AgentCandidatesResponse>("/api/agent/candidates", {
     candidates: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getAgentLlmConfig() {
+  return apiGet<AgentLlmConfigResponse>("/api/agent/llm-config", {
+    provider: "stub",
+    model: null,
+    base_url: null,
+    timeout: 60,
+    has_api_key: false,
     safety: FALLBACK_SAFETY,
   });
 }
