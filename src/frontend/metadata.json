@@ -1,0 +1,6 @@
+{
+  "name": "Quantum Core Algorithmic Trading Platform",
+  "description": "An advanced quantitative algorithmic trading platform and agent studio dashboard. Features backtesting, paper trading risk management, alpha factor lab, and a system log monitor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

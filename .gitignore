@@ -13,6 +13,7 @@ worktrees/
 /logs/
 /data/
 /reports/
+/output/
 
 # Reference PDFs (kept locally, not committed)
 *.pdf
