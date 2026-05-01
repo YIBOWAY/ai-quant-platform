@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from quant_system.prediction_market.backtest import PredictionMarketBacktestResult
 from quant_system.prediction_market.models import MispricingCandidate, ProposedTrade
 
 
@@ -45,5 +46,59 @@ def write_prediction_market_report(
             f"| {trade.proposal_id} | {trade.capital:.2f} | "
             f"{trade.expected_profit:.2f} | {trade.dry_run} |"
         )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def write_phase11_backtest_report(
+    *,
+    result: PredictionMarketBacktestResult,
+    chart_index: dict,
+    output_dir: str | Path,
+    run_id: str,
+    provider: str,
+) -> Path:
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    result_path = root / "result.json"
+    result_path.write_text(
+        result.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    path = root / "report.md"
+    lines = [
+        "# Phase 11 Polymarket Read-Only Research Report",
+        "",
+        f"- run_id: `{run_id}`",
+        f"- provider: `{provider}`",
+        "- mode: read-only research / quasi-backtest",
+        "- live trading: disabled",
+        "- wallet signing: not implemented",
+        "- real order placement: not implemented",
+        "",
+        "## Metrics",
+        "",
+        f"- markets scanned: {result.metrics.market_count}",
+        f"- opportunities: {result.metrics.opportunity_count}",
+        f"- trigger rate: {result.metrics.trigger_rate:.4f}",
+        f"- mean net edge bps: {result.metrics.mean_edge_bps:.2f}",
+        f"- total estimated edge: {result.metrics.total_estimated_edge:.2f}",
+        "",
+        "## Assumptions",
+        "",
+    ]
+    lines.extend(f"- {item}" for item in result.assumptions)
+    lines.extend(["", "## Charts", ""])
+    for chart in chart_index.get("charts", []):
+        lines.append(f"- [{chart['title']}]({chart['path']})")
+    lines.extend(
+        [
+            "",
+            "## Interpretation",
+            "",
+            "These results are hypothetical observations from snapshots. "
+            "They are not execution results and are not investment advice.",
+        ]
+    )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
