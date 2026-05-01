@@ -81,13 +81,14 @@
 | Icon | Label | 路由 | Phase |
 | --- | --- | --- | --- |
 | `LayoutDashboard` | Dashboard | `/` | 全局 |
-| `Database` | Data Explorer | `/data` | Phase 1 |
-| `FlaskConical` | Factor Lab | `/factors` | Phase 2 |
+| `Database` | Data Explorer | `/data-explorer` | Phase 1 |
+| `FlaskConical` | Factor Lab | `/factor-lab` | Phase 2 |
 | `LineChart` | Backtest & Compare | `/backtest` | Phase 3 |
 | `Beaker` | Experiments | `/experiments` | Phase 4 |
-| `Wallet` | Paper Trading | `/paper` | Phase 5 |
-| `Bot` | Agent Studio | `/agent` | Phase 7 |
-| `Globe2` | Prediction Market | `/prediction-market` | Phase 8 |
+| `Wallet` | Paper Trading | `/paper-trading` | Phase 5 |
+| `Bot` | Agent Studio | `/agent-studio` | Phase 7 |
+| `BookOpen` | Order Book | `/order-book` | Phase 8 |
+| `Layers` | Position Map | `/position-map` | Phase 5 visualization |
 | `Settings` | Settings | `/settings` | 全局 |
 
 底部加一个折叠的 "Safety & Limits" 面板，永远展示：
