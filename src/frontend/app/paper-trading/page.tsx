@@ -1,5 +1,6 @@
 import { Activity, AlertCircle, ShieldAlert, Wallet } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { PaperRunForm } from "@/components/forms/PaperRunForm";
 import { formatMoney, getHealth, getPaperRuns } from "@/lib/api";
 
@@ -11,6 +12,7 @@ export default async function PaperTrading() {
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-base xl:flex-row">
       <div className="flex-1 space-y-6 overflow-y-auto p-4 lg:p-6">
+        <ErrorBanner messages={[health.apiError, paperRuns.apiError]} />
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="rounded border border-border-subtle bg-surface p-4">
             <h3 className="mb-2 font-label-caps uppercase text-text-secondary">Final Equity</h3>

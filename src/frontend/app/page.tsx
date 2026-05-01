@@ -10,6 +10,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import {
   formatMoney,
   formatPercent,
@@ -62,6 +63,16 @@ export default async function Dashboard() {
   return (
     <div className="flex h-full flex-col overflow-hidden xl:flex-row">
       <div className="flex-1 space-y-6 overflow-y-auto p-gutter lg:p-container-padding">
+        <ErrorBanner
+          messages={[
+            health.apiError,
+            symbols.apiError,
+            factors.apiError,
+            backtests.apiError,
+            paperRuns.apiError,
+            candidates.apiError,
+          ]}
+        />
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
             title="Registered Factors"

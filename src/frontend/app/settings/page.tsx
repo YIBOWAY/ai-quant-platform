@@ -1,3 +1,4 @@
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { SettingsThemeSwitcher } from "@/components/SettingsThemeSwitcher";
 import { getSettings } from "@/lib/api";
 
@@ -21,11 +22,7 @@ export default async function SettingsPage() {
           </p>
         </header>
 
-        {settings.apiError ? (
-          <div className="rounded border border-danger/40 bg-danger/10 p-4 font-body-sm text-danger">
-            Backend unavailable: {settings.apiError}
-          </div>
-        ) : null}
+        <ErrorBanner messages={[settings.apiError]} />
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_1fr]">
           <SettingsThemeSwitcher />

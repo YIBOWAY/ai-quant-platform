@@ -115,9 +115,30 @@ export type AgentLlmConfigResponse = ApiEnvelope & {
 };
 
 export type PredictionMarketResponse = ApiEnvelope & {
-  markets: Array<{ market_id: string; question: string; outcomes: Array<{ name: string }> }>;
-  order_books: Array<{ token_id: string; bids: unknown[]; asks: unknown[] }>;
+  markets: Array<{ market_id: string; question: string; outcomes: Array<{ name: string; token_id?: string }> }>;
+  order_books: Array<{
+    market_id?: string;
+    token_id: string;
+    bids: Array<{ price?: number; size?: number }>;
+    asks: Array<{ price?: number; size?: number }>;
+  }>;
   provider: string;
+};
+
+export type PredictionMarketBacktestResponse = ApiEnvelope & {
+  run_id: string;
+  provider: string;
+  metrics: {
+    market_count: number;
+    opportunity_count: number;
+    trigger_rate: number;
+    mean_edge_bps: number;
+    max_edge_bps: number;
+    total_estimated_edge: number;
+    max_drawdown: number;
+  };
+  chart_index: { charts: Array<{ name: string; path: string; title: string }> };
+  report_path: string;
 };
 
 export type SettingsResponse = ApiEnvelope & Record<string, unknown>;
@@ -259,8 +280,9 @@ export function getAgentLlmConfig() {
   });
 }
 
-export function getPredictionMarkets() {
-  return apiGet<PredictionMarketResponse>("/api/prediction-market/markets", {
+export function getPredictionMarkets(provider = "sample") {
+  const params = new URLSearchParams({ provider });
+  return apiGet<PredictionMarketResponse>(`/api/prediction-market/markets?${params.toString()}`, {
     markets: [],
     order_books: [],
     provider: "fallback",

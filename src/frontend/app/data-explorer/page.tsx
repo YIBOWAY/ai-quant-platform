@@ -1,5 +1,6 @@
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { DataExplorerControls } from "@/components/forms/DataExplorerControls";
 import { getOhlcv, getSymbols } from "@/lib/api";
 
@@ -36,6 +37,7 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="flex-none border-b border-border-subtle bg-bg-surface p-4">
+        <ErrorBanner messages={[symbols.apiError, ohlcv.apiError]} />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <DataExplorerControls
             symbols={symbols.symbols}

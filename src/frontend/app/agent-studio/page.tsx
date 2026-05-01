@@ -1,5 +1,6 @@
 import { Bot, Cpu, Network, ShieldCheck } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { AgentTaskForm } from "@/components/forms/AgentTaskForm";
 import { getAgentCandidates, getAgentLlmConfig, getFactors } from "@/lib/api";
 
@@ -84,6 +85,7 @@ export default async function AgentStudio() {
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <ErrorBanner messages={[candidates.apiError, factors.apiError, llmConfig.apiError]} />
           <AgentTaskForm candidates={candidates.candidates} />
           <EmptyState
             title="Source preview not loaded"

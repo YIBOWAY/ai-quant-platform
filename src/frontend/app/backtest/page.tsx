@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { BacktestForm } from "@/components/forms/BacktestForm";
 import { formatPercent, getBacktests, getBenchmark } from "@/lib/api";
 
@@ -34,6 +35,7 @@ export default async function Backtest() {
       </aside>
 
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+        <ErrorBanner messages={[backtests.apiError, benchmark.apiError]} />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded border border-border-subtle bg-bg-surface p-3">
             <span className="font-label-caps text-text-secondary">Total Return</span>

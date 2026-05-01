@@ -1,13 +1,20 @@
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { FactorRunForm } from "@/components/forms/FactorRunForm";
 import { getFactors } from "@/lib/api";
+
+const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
 export default async function FactorLab() {
   const factors = await getFactors();
   const firstFactor = factors.factors[0];
 
   return (
-    <main className="flex h-full gap-6 overflow-y-auto p-container-padding">
+    <main className="h-full overflow-y-auto p-container-padding">
+      <div className="mb-4">
+        <ErrorBanner messages={[factors.apiError]} />
+      </div>
+      <div className="flex gap-6">
       <aside className="flex w-[300px] flex-shrink-0 flex-col gap-6">
         <div className="rounded border border-border-subtle bg-bg-surface p-4">
           <h2 className="mb-4 font-headline-lg text-text-primary">Factor Definition</h2>
@@ -16,7 +23,9 @@ export default async function FactorLab() {
               <label className="font-label-caps text-text-secondary">AVAILABLE FACTORS</label>
               <select className="w-full rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-mono focus:border-accent-success focus:outline-none">
                 {factors.factors.map((factor) => (
-                  <option key={factor.factor_id}>{factor.factor_id}</option>
+                  <option key={factor.factor_id} style={optionStyle}>
+                    {factor.factor_id}
+                  </option>
                 ))}
               </select>
             </div>
@@ -62,6 +71,7 @@ export default async function FactorLab() {
           title="Distribution unavailable"
           description="No synthetic histogram is shown; this will use real factor values."
         />
+      </div>
       </div>
     </main>
   );

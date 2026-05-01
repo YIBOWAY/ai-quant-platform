@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
+import { useIsHydrated } from "@/lib/hydration";
 
 const backtestSchema = z.object({
   symbols: z.string().min(1, "Enter at least one symbol"),
@@ -27,6 +28,7 @@ type BacktestRunResponse = {
 
 export function BacktestForm() {
   const router = useRouter();
+  const isHydrated = useIsHydrated();
   const form = useForm<BacktestFormValues>({
     resolver: zodResolver(backtestSchema),
     defaultValues: {
@@ -54,8 +56,10 @@ export function BacktestForm() {
 
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
 
+  const runBacktest = form.handleSubmit((values) => mutation.mutate(values));
+
   return (
-    <form className="flex flex-col gap-4" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+    <form className="flex flex-col gap-4" onSubmit={(event) => event.preventDefault()}>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
         Symbols
         <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" {...form.register("symbols")} />
@@ -97,8 +101,9 @@ export function BacktestForm() {
       {error ? <p className="font-body-sm text-danger">{error}</p> : null}
       <button
         className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={mutation.isPending}
-        type="submit"
+        disabled={!isHydrated || mutation.isPending}
+        onClick={() => void runBacktest()}
+        type="button"
       >
         {mutation.isPending ? "Running..." : "Run Backtest"}
       </button>

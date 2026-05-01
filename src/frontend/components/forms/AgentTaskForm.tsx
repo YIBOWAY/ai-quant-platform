@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import type { CandidateSummary } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
+import { useIsHydrated } from "@/lib/hydration";
 
 const taskSchema = z.object({
   task_type: z.enum(["propose-factor", "propose-experiment", "summarize", "audit-leakage"]),
@@ -21,6 +22,8 @@ const taskSchema = z.object({
 const reviewSchema = z.object({
   note: z.string().min(1, "Review note is required"),
 });
+
+const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
 type TaskValues = z.infer<typeof taskSchema>;
 type ReviewValues = z.infer<typeof reviewSchema>;
@@ -39,6 +42,7 @@ function ReviewDialog({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const isHydrated = useIsHydrated();
   const form = useForm<ReviewValues>({
     resolver: zodResolver(reviewSchema),
     defaultValues: { note: "" },
@@ -56,6 +60,7 @@ function ReviewDialog({
     },
   });
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
+  const writeReview = form.handleSubmit((values) => mutation.mutate(values));
 
   return (
     <>
@@ -65,6 +70,7 @@ function ReviewDialog({
             ? "border-accent-success/40 text-accent-success"
             : "border-danger/40 text-danger"
         }`}
+        disabled={!isHydrated}
         onClick={() => setOpen(true)}
         type="button"
       >
@@ -85,7 +91,7 @@ function ReviewDialog({
                 Rejecting creates a `rejected.lock` file only.
               </p>
             )}
-            <form className="mt-4 flex flex-col gap-3" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+            <form className="mt-4 flex flex-col gap-3" onSubmit={(event) => event.preventDefault()}>
               <label className="flex flex-col gap-1 font-body-sm text-text-primary">
                 Review note
                 <textarea className="min-h-24 rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("note")} />
@@ -95,7 +101,7 @@ function ReviewDialog({
                 <button className="rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary" onClick={() => setOpen(false)} type="button">
                   Cancel
                 </button>
-                <button className="rounded bg-warning px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={mutation.isPending} type="submit">
+                <button className="rounded bg-warning px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={!isHydrated || mutation.isPending} onClick={() => void writeReview()} type="button">
                   {mutation.isPending ? "Writing lock..." : "Confirm"}
                 </button>
               </div>
@@ -117,6 +123,7 @@ export function RejectDialog({ candidate }: { candidate: CandidateSummary }) {
 
 export function AgentTaskForm({ candidates }: { candidates: CandidateSummary[] }) {
   const router = useRouter();
+  const isHydrated = useIsHydrated();
   const form = useForm<TaskValues>({
     resolver: zodResolver(taskSchema),
     defaultValues: {
@@ -143,18 +150,19 @@ export function AgentTaskForm({ candidates }: { candidates: CandidateSummary[] }
   });
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
   const firstPending = candidates.find((candidate) => candidate.status === "pending") ?? candidates[0];
+  const runTask = form.handleSubmit((values) => mutation.mutate(values));
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
-      <form className="flex flex-col gap-4 rounded border border-border-subtle bg-bg-surface p-4" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+      <form className="flex flex-col gap-4 rounded border border-border-subtle bg-bg-surface p-4" onSubmit={(event) => event.preventDefault()}>
         <h2 className="font-headline-lg text-text-primary">Run Agent Task</h2>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Task type
           <select className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("task_type")}>
-            <option>propose-factor</option>
-            <option>propose-experiment</option>
-            <option>summarize</option>
-            <option>audit-leakage</option>
+            <option style={optionStyle}>propose-factor</option>
+            <option style={optionStyle}>propose-experiment</option>
+            <option style={optionStyle}>summarize</option>
+            <option style={optionStyle}>audit-leakage</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
@@ -176,7 +184,7 @@ export function AgentTaskForm({ candidates }: { candidates: CandidateSummary[] }
           </label>
         </div>
         {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-        <button className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={mutation.isPending} type="submit">
+        <button className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={!isHydrated || mutation.isPending} onClick={() => void runTask()} type="button">
           {mutation.isPending ? "Running..." : "Run task"}
         </button>
       </form>

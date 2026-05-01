@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
+import { useIsHydrated } from "@/lib/hydration";
 
 const paperSchema = z.object({
   symbols: z.string().min(1, "Enter at least one symbol"),
@@ -26,6 +27,7 @@ type PaperRunResponse = {
 export function PaperRunForm() {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const isHydrated = useIsHydrated();
   const form = useForm<PaperFormValues>({
     resolver: zodResolver(paperSchema),
     defaultValues: {
@@ -50,9 +52,11 @@ export function PaperRunForm() {
   });
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
 
+  const runPaper = form.handleSubmit((values) => mutation.mutate(values));
+
   return (
     <>
-      <form className="flex flex-col gap-4" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+      <form className="flex flex-col gap-4" onSubmit={(event) => event.preventDefault()}>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Symbols
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" {...form.register("symbols")} />
@@ -78,6 +82,7 @@ export function PaperRunForm() {
         <button
           aria-pressed="true"
           className="flex items-center justify-between rounded border border-warning/40 bg-warning/10 px-3 py-2 font-body-sm text-warning"
+          disabled={!isHydrated}
           onClick={() => setDialogOpen(true)}
           type="button"
         >
@@ -89,8 +94,9 @@ export function PaperRunForm() {
         {error ? <p className="font-body-sm text-danger">{error}</p> : null}
         <button
           className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={mutation.isPending}
-          type="submit"
+          disabled={!isHydrated || mutation.isPending}
+          onClick={() => void runPaper()}
+          type="button"
         >
           {mutation.isPending ? "Running..." : "Run Paper Trading"}
         </button>

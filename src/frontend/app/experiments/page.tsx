@@ -1,5 +1,6 @@
 import { Clock, Database, FileJson, SlidersHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { ExperimentTabs } from "@/components/forms/ExperimentTabs";
 import { getBacktests, getExperiments } from "@/lib/api";
 
@@ -72,6 +73,9 @@ export default async function Experiments() {
         </div>
 
         <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto p-6 lg:grid-cols-2">
+          <div className="lg:col-span-2">
+            <ErrorBanner messages={[experiments.apiError, backtests.apiError]} />
+          </div>
           <ExperimentTabs />
           <EmptyState
             title="Sweep heatmap unavailable"
