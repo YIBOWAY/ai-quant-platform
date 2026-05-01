@@ -143,6 +143,59 @@ class LLMSettings(BaseSettings):
         return "**********" if value else None
 
 
+class PredictionMarketSettings(BaseSettings):
+    """Read-only prediction market research settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_",
+        extra="ignore",
+    )
+
+    provider: Literal["sample", "polymarket"] = Field(
+        default="sample",
+        validation_alias=AliasChoices("QS_PREDICTION_MARKET_PROVIDER", "QS_PROVIDER"),
+    )
+    polymarket_gamma_base_url: str = Field(
+        default="https://gamma-api.polymarket.com",
+        validation_alias=AliasChoices("QS_POLYMARKET_GAMMA_BASE_URL"),
+    )
+    polymarket_clob_base_url: str = Field(
+        default="https://clob.polymarket.com",
+        validation_alias=AliasChoices("QS_POLYMARKET_CLOB_BASE_URL"),
+    )
+    polymarket_request_timeout_seconds: int = Field(
+        default=10,
+        validation_alias=AliasChoices("QS_POLYMARKET_REQUEST_TIMEOUT_SECONDS"),
+        gt=0,
+    )
+    polymarket_max_retries: int = Field(
+        default=2,
+        validation_alias=AliasChoices("QS_POLYMARKET_MAX_RETRIES"),
+        ge=0,
+        le=5,
+    )
+    polymarket_rate_limit_per_second: float = Field(
+        default=2.0,
+        validation_alias=AliasChoices("QS_POLYMARKET_RATE_LIMIT_PER_SECOND"),
+        gt=0,
+    )
+    polymarket_cache_dir: Path = Field(
+        default=Path("data/prediction_market"),
+        validation_alias=AliasChoices("QS_POLYMARKET_CACHE_DIR"),
+    )
+    polymarket_read_only: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_POLYMARKET_READ_ONLY"),
+    )
+
+    @model_validator(mode="after")
+    def require_read_only(self) -> PredictionMarketSettings:
+        if not self.polymarket_read_only:
+            raise ValueError("polymarket_read_only must remain true in Phase 11")
+        return self
+
+
 class Settings(BaseSettings):
     """Application-level settings."""
 
@@ -167,6 +220,9 @@ class Settings(BaseSettings):
     data: DataSettings = Field(default_factory=DataSettings)
     api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    prediction_market: PredictionMarketSettings = Field(
+        default_factory=PredictionMarketSettings
+    )
 
 
 # Note on env loading:
