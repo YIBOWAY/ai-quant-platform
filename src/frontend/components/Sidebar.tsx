@@ -15,7 +15,8 @@ import {
   FileText,
   HelpCircle,
   User,
-  Plus
+  Plus,
+  ListFilter
 } from "lucide-react";
 
 export function Sidebar() {
@@ -24,6 +25,7 @@ export function Sidebar() {
   const navItems = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
     { name: "Data Explorer", href: "/data-explorer", icon: Database },
+    { name: "Options Screener", href: "/options-screener", icon: ListFilter },
     { name: "Factor Lab", href: "/factor-lab", icon: FlaskConical },
     { name: "Backtester", href: "/backtest", icon: LineChart },
     { name: "Experiments", href: "/experiments", icon: FlaskConical },

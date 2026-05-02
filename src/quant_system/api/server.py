@@ -17,6 +17,8 @@ from quant_system.api.routes import (
     experiments,
     factors,
     health,
+    market_data,
+    options,
     paper,
     prediction_market,
 )
@@ -74,6 +76,8 @@ def create_app(
     app.include_router(health.router, prefix="/api", tags=["health"])
     app.include_router(settings_routes.router, prefix="/api", tags=["settings"])
     app.include_router(data.router, prefix="/api", tags=["data"])
+    app.include_router(market_data.router, prefix="/api", tags=["market-data"])
+    app.include_router(options.router, prefix="/api", tags=["options"])
     app.include_router(factors.router, prefix="/api", tags=["factors"])
     app.include_router(backtest.router, prefix="/api", tags=["backtests"])
     app.include_router(benchmark.router, prefix="/api", tags=["benchmark"])

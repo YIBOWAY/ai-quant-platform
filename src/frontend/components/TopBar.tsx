@@ -9,6 +9,7 @@ export function TopBar() {
 
   const topNavItems = [
     { name: "Market Data", href: "/data-explorer" },
+    { name: "Options", href: "/options-screener" },
     { name: "Order Book", href: "/order-book" },
     { name: "Position Map", href: "/position-map" },
   ];

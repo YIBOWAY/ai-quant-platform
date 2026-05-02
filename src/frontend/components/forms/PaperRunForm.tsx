@@ -14,7 +14,10 @@ const paperSchema = z.object({
   symbols: z.string().min(1, "Enter at least one symbol"),
   start: z.string().min(1, "Start date is required"),
   end: z.string().min(1, "End date is required"),
+  provider: z.enum(["sample", "futu", "tiingo"]),
   initial_cash: z.coerce.number().positive(),
+  lookback: z.coerce.number().int().positive(),
+  top_n: z.coerce.number().int().positive(),
   max_fill_ratio_per_tick: z.coerce.number().positive().max(1),
 });
 
@@ -23,6 +26,8 @@ type PaperFormValues = z.infer<typeof paperSchema>;
 type PaperRunResponse = {
   run_id: string;
 };
+
+const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
 export function PaperRunForm() {
   const router = useRouter();
@@ -34,7 +39,10 @@ export function PaperRunForm() {
       symbols: "SPY,QQQ",
       start: "2024-01-02",
       end: "2024-02-15",
+      provider: "futu",
       initial_cash: 100000,
+      lookback: 5,
+      top_n: 1,
       max_fill_ratio_per_tick: 1,
     },
   });
@@ -72,9 +80,36 @@ export function PaperRunForm() {
           </label>
         </div>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          Data Source
+          <select
+            className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
+            {...form.register("provider")}
+          >
+            <option value="futu" style={optionStyle}>
+              futu
+            </option>
+            <option value="sample" style={optionStyle}>
+              sample
+            </option>
+            <option value="tiingo" style={optionStyle}>
+              tiingo
+            </option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Initial Cash
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
         </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            Lookback
+            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("lookback", { valueAsNumber: true })} />
+          </label>
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            Top N
+            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("top_n", { valueAsNumber: true })} />
+          </label>
+        </div>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Max Fill Ratio
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" max={1} min={0.01} step={0.01} type="number" {...form.register("max_fill_ratio_per_tick", { valueAsNumber: true })} />

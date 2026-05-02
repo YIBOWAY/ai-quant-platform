@@ -28,6 +28,7 @@ def _default_sdk_loader() -> SdkBindings:
             AuType,
             KLType,
             OpenQuoteContext,
+            OptionType,
             Session,
         )
     except Exception as exc:  # pragma: no cover - depends on local SDK install
@@ -39,6 +40,7 @@ def _default_sdk_loader() -> SdkBindings:
         AuType=AuType,
         KLType=KLType,
         OpenQuoteContext=OpenQuoteContext,
+        OptionType=OptionType,
         RET_OK=RET_OK,
         Session=Session,
     )
@@ -104,6 +106,95 @@ class FutuMarketDataProvider:
             provider=self.provider_name,
             interval=interval,
         )
+
+    def fetch_option_expirations(self, underlying: str) -> pd.DataFrame:
+        _plain_symbol, futu_symbol = self.normalize_symbol(underlying)
+        sdk = self._sdk_loader()
+        context = self._create_context(sdk)
+        try:
+            ret, data = context.get_option_expiration_date(futu_symbol)
+            if ret != sdk.RET_OK:
+                raise self._map_provider_failure(futu_symbol, data)
+            if data is None or data.empty:
+                raise FutuProviderError(
+                    "no_data",
+                    f"no option expirations returned for {futu_symbol}",
+                )
+            frame = data.copy()
+            frame["underlying"] = futu_symbol
+            return frame
+        finally:
+            self._safe_close(context)
+
+    def fetch_option_chain(
+        self,
+        underlying: str,
+        *,
+        expiration: str,
+        option_type: str = "ALL",
+    ) -> pd.DataFrame:
+        _plain_symbol, futu_symbol = self.normalize_symbol(underlying)
+        sdk = self._sdk_loader()
+        context = self._create_context(sdk)
+        try:
+            ret, data = context.get_option_chain(
+                futu_symbol,
+                start=expiration,
+                end=expiration,
+                option_type=self._resolve_option_type(sdk, option_type),
+            )
+            if ret != sdk.RET_OK:
+                raise self._map_provider_failure(futu_symbol, data)
+            if data is None or data.empty:
+                raise FutuProviderError(
+                    "no_data",
+                    f"no option chain returned for {futu_symbol} {expiration}",
+                )
+            return self._normalize_option_chain(data, underlying=futu_symbol)
+        finally:
+            self._safe_close(context)
+
+    def fetch_option_quotes(
+        self,
+        underlying: str,
+        *,
+        expiration: str,
+        option_type: str = "ALL",
+    ) -> pd.DataFrame:
+        chain = self.fetch_option_chain(
+            underlying,
+            expiration=expiration,
+            option_type=option_type,
+        )
+        codes = chain["symbol"].dropna().astype(str).tolist()
+        if not codes:
+            return chain
+        snapshots = self.fetch_market_snapshots(codes)
+        if snapshots.empty:
+            return chain
+        return chain.merge(snapshots, how="left", on="symbol", suffixes=("", "_snapshot"))
+
+    def fetch_market_snapshots(self, symbols: list[str]) -> pd.DataFrame:
+        if not symbols:
+            return pd.DataFrame()
+        sdk = self._sdk_loader()
+        context = self._create_context(sdk)
+        try:
+            ret, data = context.get_market_snapshot(symbols)
+            if ret != sdk.RET_OK:
+                raise self._map_provider_failure(",".join(symbols[:3]), data)
+            if data is None or data.empty:
+                raise FutuProviderError("no_data", "no snapshot data returned")
+            return self._normalize_snapshots(data)
+        finally:
+            self._safe_close(context)
+
+    def fetch_underlying_snapshot(self, symbol: str) -> dict[str, object]:
+        _plain_symbol, futu_symbol = self.normalize_symbol(symbol)
+        frame = self.fetch_market_snapshots([futu_symbol])
+        if frame.empty:
+            raise FutuProviderError("no_data", f"no snapshot data returned for {futu_symbol}")
+        return frame.iloc[0].to_dict()
 
     @staticmethod
     def normalize_symbol(symbol: str) -> tuple[str, str]:
@@ -215,6 +306,60 @@ class FutuMarketDataProvider:
         normalized = interval.lower().strip()
         intraday = {"1h", "60m", "30m", "15m", "5m", "1m"}
         return sdk.Session.ALL if normalized in intraday else sdk.Session.NONE
+
+    @staticmethod
+    def _resolve_option_type(sdk: SdkBindings, option_type: str) -> Any:
+        normalized = option_type.upper().strip()
+        if normalized == "CALL":
+            return sdk.OptionType.CALL
+        if normalized == "PUT":
+            return sdk.OptionType.PUT
+        return sdk.OptionType.ALL
+
+    @staticmethod
+    def _normalize_option_chain(frame: pd.DataFrame, *, underlying: str) -> pd.DataFrame:
+        normalized = pd.DataFrame(
+            {
+                "symbol": frame.get("code"),
+                "name": frame.get("name"),
+                "underlying": frame.get("stock_owner", underlying),
+                "option_type": frame.get("option_type"),
+                "strike": pd.to_numeric(frame.get("strike_price"), errors="coerce"),
+                "expiry": frame.get("strike_time"),
+            }
+        )
+        return normalized.dropna(subset=["symbol"]).reset_index(drop=True)
+
+    @staticmethod
+    def _normalize_snapshots(frame: pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "symbol": frame.get("code"),
+                "update_time": frame.get("update_time"),
+                "last": pd.to_numeric(frame.get("last_price"), errors="coerce"),
+                "bid": pd.to_numeric(frame.get("bid_price"), errors="coerce"),
+                "ask": pd.to_numeric(frame.get("ask_price"), errors="coerce"),
+                "bid_size": pd.to_numeric(frame.get("bid_vol"), errors="coerce"),
+                "ask_size": pd.to_numeric(frame.get("ask_vol"), errors="coerce"),
+                "volume": pd.to_numeric(frame.get("volume"), errors="coerce"),
+                "open_interest": pd.to_numeric(
+                    frame.get("option_open_interest"),
+                    errors="coerce",
+                ),
+                "implied_volatility": pd.to_numeric(
+                    frame.get("option_implied_volatility"),
+                    errors="coerce",
+                ),
+                "delta": pd.to_numeric(frame.get("option_delta"), errors="coerce"),
+                "gamma": pd.to_numeric(frame.get("option_gamma"), errors="coerce"),
+                "theta": pd.to_numeric(frame.get("option_theta"), errors="coerce"),
+                "vega": pd.to_numeric(frame.get("option_vega"), errors="coerce"),
+                "contract_size": pd.to_numeric(
+                    frame.get("option_contract_size"),
+                    errors="coerce",
+                ),
+            }
+        ).dropna(subset=["symbol"]).reset_index(drop=True)
 
     @staticmethod
     def _map_provider_failure(symbol: str, payload: object) -> FutuProviderError:

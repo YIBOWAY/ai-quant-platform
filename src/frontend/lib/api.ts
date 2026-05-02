@@ -37,6 +37,20 @@ export type OhlcvResponse = ApiEnvelope & {
   rows: OhlcvRow[];
 };
 
+export type MarketDataHistoryResponse = ApiEnvelope & {
+  symbol: string;
+  ticker: string;
+  source: string;
+  frequency: string;
+  row_count: number;
+  rows: OhlcvRow[];
+  metadata: {
+    provider: string;
+    requested_provider: string;
+    fetched_at: string | null;
+  };
+};
+
 export type FactorMetadata = {
   factor_id: string;
   factor_name: string;
@@ -50,8 +64,32 @@ export type FactorsResponse = ApiEnvelope & {
   factors: FactorMetadata[];
 };
 
+export type PreviewRecord = Record<string, unknown>;
+
+export type FactorRunSummary = {
+  id: string;
+  source?: string;
+  row_count: number;
+  signal_count: number;
+  paths?: Record<string, string>;
+};
+
+export type FactorRunsResponse = ApiEnvelope & {
+  runs: FactorRunSummary[];
+};
+
+export type FactorRunDetailResponse = ApiEnvelope & {
+  run_id: string;
+  metadata: Record<string, unknown>;
+  factor_results: PreviewRecord[];
+  signals: PreviewRecord[];
+  information_coefficients: PreviewRecord[];
+  quantile_returns: PreviewRecord[];
+};
+
 export type BacktestSummary = {
   id: string;
+  source?: string;
   metrics?: {
     total_return?: number;
     sharpe?: number;
@@ -61,6 +99,16 @@ export type BacktestSummary = {
 
 export type BacktestsResponse = ApiEnvelope & {
   backtests: BacktestSummary[];
+};
+
+export type BacktestDetailResponse = ApiEnvelope & {
+  id: string;
+  metadata: Record<string, unknown>;
+  metrics: Record<string, unknown>;
+  equity_curve: PreviewRecord[];
+  orders: PreviewRecord[];
+  positions: PreviewRecord[];
+  trade_blotter: PreviewRecord[];
 };
 
 export type BenchmarkResponse = ApiEnvelope & {
@@ -79,16 +127,27 @@ export type BenchmarkResponse = ApiEnvelope & {
 
 export type PaperRunSummary = {
   id: string;
+  source?: string;
   summary?: {
     order_count?: number;
     trade_count?: number;
     risk_breach_count?: number;
     final_equity?: number;
+    signal_count?: number;
   };
 };
 
 export type PaperRunsResponse = ApiEnvelope & {
   paper_runs: PaperRunSummary[];
+};
+
+export type PaperRunDetailResponse = ApiEnvelope & {
+  id: string;
+  metadata: Record<string, unknown>;
+  orders: PreviewRecord[];
+  order_events: PreviewRecord[];
+  trades: PreviewRecord[];
+  risk_breaches: PreviewRecord[];
 };
 
 export type ExperimentsResponse = ApiEnvelope & {
@@ -104,6 +163,14 @@ export type CandidateSummary = {
 
 export type AgentCandidatesResponse = ApiEnvelope & {
   candidates: CandidateSummary[];
+};
+
+export type AgentCandidateDetailResponse = ApiEnvelope & {
+  candidate_id: string;
+  metadata: Record<string, unknown>;
+  source_preview: string;
+  audit: string[];
+  reviews: string[];
 };
 
 export type AgentLlmConfigResponse = ApiEnvelope & {
@@ -123,11 +190,13 @@ export type PredictionMarketResponse = ApiEnvelope & {
     asks: Array<{ price?: number; size?: number }>;
   }>;
   provider: string;
+  cache_status?: string;
 };
 
 export type PredictionMarketBacktestResponse = ApiEnvelope & {
   run_id: string;
   provider: string;
+  cache_status?: string;
   metrics: {
     market_count: number;
     opportunity_count: number;
@@ -139,6 +208,53 @@ export type PredictionMarketBacktestResponse = ApiEnvelope & {
   };
   chart_index: { charts: Array<{ name: string; path: string; title: string }> };
   report_path: string;
+};
+
+export type PredictionMarketCollectResponse = ApiEnvelope & {
+  provider: string;
+  iteration_count: number;
+  market_count: number;
+  snapshot_record_count: number;
+  history_dir: string;
+  first_timestamp: string | null;
+  last_timestamp: string | null;
+  cache_status?: string;
+};
+
+export type PredictionMarketTimeseriesResponse = ApiEnvelope & {
+  run_id: string;
+  provider: string;
+  metrics: {
+    provider: string;
+    market_count: number;
+    snapshot_count: number;
+    market_snapshot_count: number;
+    opportunity_count: number;
+    simulated_trade_count: number;
+    trigger_rate: number;
+    mean_edge_bps: number;
+    median_edge_bps: number;
+    max_edge_bps: number;
+    cumulative_estimated_profit: number;
+    max_drawdown: number;
+    daily_volatility_proxy: number;
+  };
+  chart_index: {
+    charts: Array<{ name: string; path: string; title: string; url: string }>;
+  };
+  report_path: string;
+  report_url: string;
+  history_dir: string;
+};
+
+export type PredictionMarketTimeseriesDetailResponse = ApiEnvelope & {
+  run_id: string;
+  result: Record<string, unknown>;
+  chart_index: {
+    charts: Array<{ name: string; path: string; title: string; url: string }>;
+  };
+  report_path: string;
+  report_url: string;
 };
 
 export type SettingsResponse = ApiEnvelope & Record<string, unknown>;
@@ -208,6 +324,30 @@ export function getOhlcv(symbol = "SPY", start = "2024-01-02", end = "2024-01-12
   });
 }
 
+export function getMarketDataHistory(
+  ticker = "SPY",
+  start = "2024-01-02",
+  end = "2024-01-12",
+  freq = "1d",
+  provider = "futu",
+) {
+  const params = new URLSearchParams({ ticker, start, end, freq, provider });
+  return apiGet<MarketDataHistoryResponse>(`/api/market-data/history?${params.toString()}`, {
+    symbol: ticker,
+    ticker,
+    source: "fallback",
+    frequency: freq,
+    row_count: 0,
+    rows: [],
+    metadata: {
+      provider: "fallback",
+      requested_provider: provider,
+      fetched_at: null,
+    },
+    safety: FALLBACK_SAFETY,
+  });
+}
+
 export function getFactors() {
   return apiGet<FactorsResponse>("/api/factors", {
     factors: [],
@@ -215,9 +355,41 @@ export function getFactors() {
   });
 }
 
+export function getFactorRuns() {
+  return apiGet<FactorRunsResponse>("/api/factors/runs", {
+    runs: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getFactorRunDetail(runId: string) {
+  return apiGet<FactorRunDetailResponse>(`/api/factors/${runId}`, {
+    run_id: runId,
+    metadata: {},
+    factor_results: [],
+    signals: [],
+    information_coefficients: [],
+    quantile_returns: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
 export function getBacktests() {
   return apiGet<BacktestsResponse>("/api/backtests", {
     backtests: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getBacktestDetail(runId: string) {
+  return apiGet<BacktestDetailResponse>(`/api/backtests/${runId}`, {
+    id: runId,
+    metadata: {},
+    metrics: {},
+    equity_curve: [],
+    orders: [],
+    positions: [],
+    trade_blotter: [],
     safety: FALLBACK_SAFETY,
   });
 }
@@ -255,6 +427,18 @@ export function getPaperRuns() {
   });
 }
 
+export function getPaperRunDetail(runId: string) {
+  return apiGet<PaperRunDetailResponse>(`/api/paper/${runId}`, {
+    id: runId,
+    metadata: {},
+    orders: [],
+    order_events: [],
+    trades: [],
+    risk_breaches: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
 export function getExperiments() {
   return apiGet<ExperimentsResponse>("/api/experiments", {
     experiments: [],
@@ -265,6 +449,17 @@ export function getExperiments() {
 export function getAgentCandidates() {
   return apiGet<AgentCandidatesResponse>("/api/agent/candidates", {
     candidates: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getAgentCandidateDetail(candidateId: string) {
+  return apiGet<AgentCandidateDetailResponse>(`/api/agent/candidates/${candidateId}`, {
+    candidate_id: candidateId,
+    metadata: {},
+    source_preview: "",
+    audit: [],
+    reviews: [],
     safety: FALLBACK_SAFETY,
   });
 }
@@ -280,12 +475,21 @@ export function getAgentLlmConfig() {
   });
 }
 
-export function getPredictionMarkets(provider = "sample") {
-  const params = new URLSearchParams({ provider });
+export function getPredictionMarkets(
+  provider = "sample",
+  cacheMode = "prefer_cache",
+  limit = 6,
+) {
+  const params = new URLSearchParams({
+    provider,
+    cache_mode: cacheMode,
+    limit: String(limit),
+  });
   return apiGet<PredictionMarketResponse>(`/api/prediction-market/markets?${params.toString()}`, {
     markets: [],
     order_books: [],
     provider: "fallback",
+    cache_status: "unavailable",
     safety: FALLBACK_SAFETY,
   });
 }

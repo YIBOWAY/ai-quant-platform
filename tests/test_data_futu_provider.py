@@ -9,8 +9,18 @@ from quant_system.data.providers.futu import FutuMarketDataProvider, FutuProvide
 
 
 class _FakeContext:
-    def __init__(self, responses: list[tuple[int, pd.DataFrame, object | None]]) -> None:
-        self._responses = list(responses)
+    def __init__(
+        self,
+        responses: list[tuple[int, pd.DataFrame, object | None]] | None = None,
+        *,
+        expirations: tuple[int, pd.DataFrame | str] | None = None,
+        chain: tuple[int, pd.DataFrame | str] | None = None,
+        snapshots: tuple[int, pd.DataFrame | str] | None = None,
+    ) -> None:
+        self._responses = list(responses or [])
+        self._expirations = expirations
+        self._chain = chain
+        self._snapshots = snapshots
         self.closed = False
         self.calls: list[dict[str, object]] = []
 
@@ -22,6 +32,24 @@ class _FakeContext:
 
     def close(self) -> None:
         self.closed = True
+
+    def get_option_expiration_date(self, code: str):
+        self.calls.append({"method": "get_option_expiration_date", "code": code})
+        if self._expirations is None:
+            raise AssertionError("unexpected get_option_expiration_date call")
+        return self._expirations
+
+    def get_option_chain(self, code: str, **kwargs):
+        self.calls.append({"method": "get_option_chain", "code": code, **kwargs})
+        if self._chain is None:
+            raise AssertionError("unexpected get_option_chain call")
+        return self._chain
+
+    def get_market_snapshot(self, symbols: list[str]):
+        self.calls.append({"method": "get_market_snapshot", "symbols": symbols})
+        if self._snapshots is None:
+            raise AssertionError("unexpected get_market_snapshot call")
+        return self._snapshots
 
 
 def _sdk() -> SimpleNamespace:
@@ -37,6 +65,7 @@ def _sdk() -> SimpleNamespace:
         ),
         AuType=SimpleNamespace(QFQ="QFQ"),
         Session=SimpleNamespace(NONE="NONE", ALL="ALL"),
+        OptionType=SimpleNamespace(ALL="ALL", CALL="CALL", PUT="PUT"),
     )
 
 
@@ -147,3 +176,71 @@ def test_futu_provider_rejects_unsupported_interval() -> None:
 
     with pytest.raises(FutuProviderError, match="unsupported Futu interval"):
         provider.fetch_ohlcv(["AAPL"], start="2024-01-02", end="2024-01-02", interval="2h")
+
+
+def test_futu_provider_fetches_option_expirations() -> None:
+    expirations = pd.DataFrame(
+        [
+            {
+                "strike_time": "2026-05-08",
+                "option_expiry_date_distance": 6,
+                "expiration_cycle": "WEEK",
+            }
+        ]
+    )
+    fake_context = _FakeContext([], expirations=(0, expirations))
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: fake_context,
+        sdk_loader=_sdk,
+    )
+
+    frame = provider.fetch_option_expirations("AAPL")
+
+    assert frame.loc[0, "underlying"] == "US.AAPL"
+    assert frame.loc[0, "strike_time"] == "2026-05-08"
+    assert fake_context.closed is True
+
+
+def test_futu_provider_fetches_option_quotes_with_missing_fields() -> None:
+    chain = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL260508P200000",
+                "name": "AAPL 260508 200.00P",
+                "stock_owner": "US.AAPL",
+                "option_type": "PUT",
+                "strike_price": 200.0,
+                "strike_time": "2026-05-08",
+            }
+        ]
+    )
+    snapshots = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL260508P200000",
+                "update_time": "2026-05-01 15:19:50",
+                "last_price": 1.2,
+                "bid_price": 1.1,
+                "ask_price": 1.3,
+                "volume": 5,
+            }
+        ]
+    )
+    contexts = [
+        _FakeContext([], chain=(0, chain)),
+        _FakeContext([], snapshots=(0, snapshots)),
+    ]
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: contexts.pop(0),
+        sdk_loader=_sdk,
+    )
+
+    frame = provider.fetch_option_quotes("AAPL", expiration="2026-05-08", option_type="PUT")
+
+    assert len(frame) == 1
+    assert frame.loc[0, "symbol"] == "US.AAPL260508P200000"
+    assert frame.loc[0, "option_type"] == "PUT"
+    assert frame.loc[0, "strike"] == 200.0
+    assert frame.loc[0, "bid"] == 1.1
+    assert frame.loc[0, "ask"] == 1.3
+    assert pd.isna(frame.loc[0, "implied_volatility"])

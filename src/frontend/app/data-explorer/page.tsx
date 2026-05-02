@@ -2,7 +2,7 @@ import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { DataExplorerControls } from "@/components/forms/DataExplorerControls";
-import { getOhlcv, getSymbols } from "@/lib/api";
+import { getMarketDataHistory, getSymbols } from "@/lib/api";
 
 function closeBarHeight(close: number, min: number, max: number) {
   if (max <= min) {
@@ -24,10 +24,11 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
   const symbol = single(params.symbol, "SPY").toUpperCase();
   const start = single(params.start, "2024-01-02");
   const end = single(params.end, "2024-01-12");
-  const provider = single(params.provider, "sample");
+  const freq = single(params.freq, "1d");
+  const provider = single(params.provider, "futu");
   const [symbols, ohlcv] = await Promise.all([
     getSymbols(),
-    getOhlcv(symbol, start, end, provider),
+    getMarketDataHistory(symbol, start, end, freq, provider),
   ]);
   const latest = ohlcv.rows.at(-1);
   const closes = ohlcv.rows.map((row) => row.close);
@@ -41,13 +42,25 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
         <div className="flex flex-wrap items-end justify-between gap-4">
           <DataExplorerControls
             symbols={symbols.symbols}
-            initial={{ symbol: ohlcv.symbol, start, end, provider: provider === "tiingo" ? "tiingo" : "sample" }}
+            initial={{
+              symbol: ohlcv.symbol,
+              start,
+              end,
+              freq:
+                freq === "1h" || freq === "30m" || freq === "15m" || freq === "5m" || freq === "1m"
+                  ? freq
+                  : "1d",
+              provider: provider === "sample" || provider === "tiingo" ? provider : "futu",
+            }}
           />
 
           <div className="flex items-center gap-3">
             <DataSourceBadge source={ohlcv.source} />
             <span className="font-data-mono text-[10px] uppercase text-text-secondary">
               rows: {ohlcv.rows.length}
+            </span>
+            <span className="font-data-mono text-[10px] uppercase text-text-secondary">
+              freq: {ohlcv.frequency}
             </span>
           </div>
         </div>
@@ -140,6 +153,12 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
 
         <div className="flex w-[300px] flex-col gap-4 overflow-y-auto bg-bg-surface p-4">
           <h3 className="font-label-caps uppercase text-text-secondary">Data Quality Metrics</h3>
+          <div className="rounded border border-border-subtle bg-surface-muted p-3">
+            <div className="font-label-caps text-text-secondary">Fetched At</div>
+            <div className="mt-2 break-all font-data-mono text-[11px] text-text-primary">
+              {ohlcv.metadata.fetched_at ?? "--"}
+            </div>
+          </div>
           <EmptyState
             title="Quality report not connected"
             description="Coverage, missing-day and anomaly checks are waiting for /api/data/quality."

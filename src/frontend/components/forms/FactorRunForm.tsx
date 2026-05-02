@@ -13,6 +13,7 @@ const factorSchema = z.object({
   symbols: z.string().min(1, "Enter at least one symbol"),
   start: z.string().min(1, "Start date is required"),
   end: z.string().min(1, "End date is required"),
+  provider: z.enum(["sample", "futu", "tiingo"]),
   lookback: z.coerce.number().int().positive(),
   quantiles: z.coerce.number().int().min(2),
 });
@@ -23,6 +24,8 @@ type FactorRunResponse = {
   run_id: string;
 };
 
+const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+
 export function FactorRunForm() {
   const router = useRouter();
   const isHydrated = useIsHydrated();
@@ -32,6 +35,7 @@ export function FactorRunForm() {
       symbols: "SPY,QQQ",
       start: "2024-01-02",
       end: "2024-02-15",
+      provider: "futu",
       lookback: 5,
       quantiles: 5,
     },
@@ -67,6 +71,23 @@ export function FactorRunForm() {
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="date" {...form.register("end")} />
         </label>
       </div>
+      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        Data Source
+        <select
+          className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
+          {...form.register("provider")}
+        >
+          <option value="futu" style={optionStyle}>
+            futu
+          </option>
+          <option value="sample" style={optionStyle}>
+            sample
+          </option>
+          <option value="tiingo" style={optionStyle}>
+            tiingo
+          </option>
+        </select>
+      </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Lookback

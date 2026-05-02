@@ -7,6 +7,9 @@ function badgeClass(source: string) {
   if (normalized.includes("failed") || normalized.includes("missing token")) {
     return "border-danger/40 bg-danger/10 text-danger";
   }
+  if (normalized.startsWith("futu")) {
+    return "border-accent-success/40 bg-accent-success/10 text-accent-success";
+  }
   if (normalized.startsWith("tiingo")) {
     return "border-accent-success/40 bg-accent-success/10 text-accent-success";
   }

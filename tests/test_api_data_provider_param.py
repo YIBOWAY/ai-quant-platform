@@ -30,6 +30,58 @@ def _fake_tiingo_frame() -> pd.DataFrame:
     )
 
 
+def _fake_futu_frame() -> pd.DataFrame:
+    timestamp = pd.Timestamp("2024-01-02", tz="UTC")
+    return normalize_ohlcv_dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "symbol": "SPY",
+                    "timestamp": timestamp,
+                    "open": 459.51,
+                    "high": 460.98,
+                    "low": 457.88,
+                    "close": 459.99,
+                    "volume": 123007793,
+                    "event_ts": timestamp,
+                    "knowledge_ts": timestamp + pd.Timedelta(minutes=1),
+                }
+            ]
+        ),
+        provider="futu",
+        interval="1d",
+    )
+
+
+def test_ohlcv_provider_param_uses_futu_when_requested(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    def fake_fetch(self, symbols, *, start, end, interval="1d"):
+        return _fake_futu_frame()
+
+    monkeypatch.setattr(
+        "quant_system.data.provider_factory.FutuMarketDataProvider.fetch_ohlcv",
+        fake_fetch,
+    )
+    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+
+    response = client.get(
+        "/api/ohlcv",
+        params={
+            "symbol": "SPY",
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "futu",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "futu"
+    assert payload["rows"][0]["close"] == 459.99
+
+
 def test_ohlcv_provider_param_uses_tiingo_when_requested(
     tmp_path,
     monkeypatch,
