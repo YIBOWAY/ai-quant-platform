@@ -128,3 +128,36 @@ def test_options_screener_avoids_wide_spread() -> None:
 
     assert result.candidates[0].rating == "Avoid"
     assert "spread too wide" in result.candidates[0].notes
+
+
+def test_options_screener_applies_income_filters_and_normalizes_iv() -> None:
+    class PercentIvProvider(_FakeProvider):
+        def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):
+            frame = super().fetch_option_quotes(
+                underlying,
+                expiration=expiration,
+                option_type=option_type,
+            )
+            frame.loc[0, "implied_volatility"] = 45.0
+            frame.loc[0, "open_interest"] = 10
+            return frame
+
+    result = run_options_screener(
+        provider=PercentIvProvider(),
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            min_apr=100,
+            min_open_interest=100,
+            max_hv_iv=0.0,
+            hv_iv_filter=True,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    candidate = result.candidates[0]
+    assert candidate.implied_volatility == 0.45
+    assert "APR below minimum" in candidate.notes
+    assert "open interest below minimum" in candidate.notes
+    assert "IV/HV filter failed" in candidate.notes

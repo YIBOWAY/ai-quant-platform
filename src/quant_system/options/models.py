@@ -14,7 +14,12 @@ class OptionsScreenerConfig(BaseModel):
     min_iv: float = Field(default=0.0, ge=0)
     max_delta: float = Field(default=0.35, ge=0, le=1)
     min_premium: float = Field(default=0.10, ge=0)
+    min_apr: float = Field(default=0.0, ge=0)
+    min_dte: int = Field(default=0, ge=0)
+    max_dte: int = Field(default=365, ge=0)
     max_spread_pct: float = Field(default=0.35, ge=0)
+    min_open_interest: float = Field(default=0.0, ge=0)
+    max_hv_iv: float = Field(default=10.0, ge=0)
     trend_filter: bool = True
     hv_iv_filter: bool = False
     provider: Literal["futu"] = "futu"
@@ -37,6 +42,7 @@ class OptionsScreenerCandidate(BaseModel):
     open_interest: float | None = None
     implied_volatility: float | None = None
     historical_volatility: float | None = None
+    hv_iv_ratio: float | None = None
     delta: float | None = None
     gamma: float | None = None
     theta: float | None = None

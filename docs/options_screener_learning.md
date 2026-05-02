@@ -17,13 +17,27 @@ It is not an advice engine and it does not trade.
 |---|---|
 | Ticker | US stock ticker, for example `AAPL` |
 | Strategy | `Sell Put` or `Covered Call` |
-| Expiration | Optional expiration date |
+| Expiration | Pulled from Futu OpenD and selected from a dropdown |
 | Min premium | Minimum acceptable mid premium |
+| Min APR | Minimum simplified annualized premium estimate |
+| Min / Max DTE | Expiration window in days |
 | Min IV | Optional IV floor |
 | Max delta | Optional absolute delta cap |
 | Max spread percentage | Rejects illiquid contracts with wide bid/ask spread |
+| Min open interest | Rejects thin contracts with too little open interest |
+| Max HV/IV | Rejects cases where realized volatility is too high versus IV |
 | Trend filter | Optional simple trend check from recent stock history |
 | HV/IV filter | Optional comparison between implied volatility and computed historical volatility |
+
+## Presets
+
+The frontend includes three presets:
+
+- `Conservative`: lower delta, tighter spread, higher open interest, HV/IV filter on.
+- `Balanced`: middle settings for normal seller-style screening.
+- `Aggressive`: wider limits and fewer filters for broader candidate discovery.
+
+Presets only change form parameters. They do not create trades.
 
 ## Sell Put Metrics
 
@@ -99,6 +113,8 @@ http://127.0.0.1:3001/options-screener
 ```
 
 5. Try `AAPL`, `Sell Put`, provider `futu`.
+6. Choose an expiration from the dropdown. The option chain preview refreshes automatically.
+7. Pick a preset or edit parameters manually, then run the screener.
 
 ## Common Mistakes
 

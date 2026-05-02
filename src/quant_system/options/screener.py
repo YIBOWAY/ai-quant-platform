@@ -119,7 +119,14 @@ def _build_candidate(
     spread_pct = _spread_pct(bid, ask, mid)
     iv = _safe_float(row.get("implied_volatility"))
     delta = _safe_float(row.get("delta"))
-    hv_iv_pass = _hv_iv_pass(iv, historical_volatility) if config.hv_iv_filter else None
+    open_interest = _safe_float(row.get("open_interest"))
+    iv = _normalize_volatility(iv)
+    hv_iv_ratio = _hv_iv_ratio(historical_volatility, iv)
+    hv_iv_pass = (
+        hv_iv_ratio is not None and hv_iv_ratio <= config.max_hv_iv
+        if config.hv_iv_filter
+        else None
+    )
     option_type = "PUT" if config.strategy_type == "sell_put" else "CALL"
     distance = _distance_pct(
         strategy_type=config.strategy_type,
@@ -141,6 +148,9 @@ def _build_candidate(
         spread_pct=spread_pct,
         iv=iv,
         delta=delta,
+        annualized_yield=annualized_yield,
+        days_to_expiry=dte,
+        open_interest=open_interest,
         trend_pass=trend_pass,
         hv_iv_pass=hv_iv_pass,
     )
@@ -157,9 +167,10 @@ def _build_candidate(
         ask=ask,
         mid=mid,
         volume=_safe_float(row.get("volume")),
-        open_interest=_safe_float(row.get("open_interest")),
+        open_interest=open_interest,
         implied_volatility=iv,
         historical_volatility=historical_volatility,
+        hv_iv_ratio=hv_iv_ratio,
         delta=delta,
         gamma=_safe_float(row.get("gamma")),
         theta=_safe_float(row.get("theta")),
@@ -186,6 +197,9 @@ def _candidate_notes(
     spread_pct: float | None,
     iv: float | None,
     delta: float | None,
+    annualized_yield: float | None = None,
+    days_to_expiry: int | None = None,
+    open_interest: float | None = None,
     trend_pass: bool | None,
     hv_iv_pass: bool | None,
 ) -> list[str]:
@@ -196,6 +210,16 @@ def _candidate_notes(
         notes.append("premium below minimum")
     if spread_pct is None or spread_pct > config.max_spread_pct:
         notes.append("spread too wide")
+    if annualized_yield is None or annualized_yield * 100 < config.min_apr:
+        notes.append("APR below minimum")
+    if days_to_expiry is None:
+        notes.append("DTE missing")
+    elif days_to_expiry < config.min_dte or days_to_expiry > config.max_dte:
+        notes.append("DTE outside range")
+    if open_interest is None:
+        notes.append("open interest missing")
+    elif open_interest < config.min_open_interest:
+        notes.append("open interest below minimum")
     if iv is None:
         notes.append("IV missing")
     elif iv < config.min_iv:
@@ -217,6 +241,7 @@ def _rating(notes: list[str]) -> str:
         "spread too wide",
         "trend filter failed",
         "IV/HV filter failed",
+        "DTE outside range",
     }
     if any(note in hard_failures for note in notes):
         return "Avoid"
@@ -233,6 +258,20 @@ def _safe_float(value: object) -> float | None:
     if math.isnan(parsed):
         return None
     return parsed
+
+
+def _normalize_volatility(value: float | None) -> float | None:
+    if value is None:
+        return None
+    # Futu may return option_implied_volatility as either 0.224 or 22.4.
+    # Internally the platform uses decimal volatility, so 22.4 becomes 0.224.
+    return value / 100 if value > 2 else value
+
+
+def _hv_iv_ratio(hv: float | None, iv: float | None) -> float | None:
+    if hv is None or iv is None or iv <= 0:
+        return None
+    return hv / iv
 
 
 def _mid_price(bid: float | None, ask: float | None) -> float | None:

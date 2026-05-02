@@ -28,6 +28,16 @@ type PaperRunResponse = {
 };
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+const DEFAULTS: PaperFormValues = {
+  symbols: "SPY,QQQ",
+  start: "2024-01-02",
+  end: "2024-02-15",
+  provider: "futu",
+  initial_cash: 100000,
+  lookback: 5,
+  top_n: 1,
+  max_fill_ratio_per_tick: 1,
+};
 
 export function PaperRunForm() {
   const router = useRouter();
@@ -35,16 +45,7 @@ export function PaperRunForm() {
   const isHydrated = useIsHydrated();
   const form = useForm<PaperFormValues>({
     resolver: zodResolver(paperSchema),
-    defaultValues: {
-      symbols: "SPY,QQQ",
-      start: "2024-01-02",
-      end: "2024-02-15",
-      provider: "futu",
-      initial_cash: 100000,
-      lookback: 5,
-      top_n: 1,
-      max_fill_ratio_per_tick: 1,
-    },
+    defaultValues: DEFAULTS,
   });
   const mutation = useMutation({
     mutationFn: (values: PaperFormValues) =>
@@ -64,25 +65,26 @@ export function PaperRunForm() {
 
   return (
     <>
-      <form className="flex flex-col gap-4" onSubmit={(event) => event.preventDefault()}>
+      <form className="flex flex-col gap-4" onSubmit={runPaper}>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Symbols
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" {...form.register("symbols")} />
+          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.symbols} {...form.register("symbols")} />
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
             Start
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="date" {...form.register("start")} />
+            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.start} type="date" {...form.register("start")} />
           </label>
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
             End
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="date" {...form.register("end")} />
+            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.end} type="date" {...form.register("end")} />
           </label>
         </div>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Data Source
           <select
             className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
+            defaultValue={DEFAULTS.provider}
             {...form.register("provider")}
           >
             <option value="futu" style={optionStyle}>
@@ -98,21 +100,21 @@ export function PaperRunForm() {
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Initial Cash
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
+          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.initial_cash} type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
             Lookback
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("lookback", { valueAsNumber: true })} />
+            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.lookback} type="number" {...form.register("lookback", { valueAsNumber: true })} />
           </label>
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
             Top N
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("top_n", { valueAsNumber: true })} />
+            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.top_n} type="number" {...form.register("top_n", { valueAsNumber: true })} />
           </label>
         </div>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Max Fill Ratio
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" max={1} min={0.01} step={0.01} type="number" {...form.register("max_fill_ratio_per_tick", { valueAsNumber: true })} />
+          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.max_fill_ratio_per_tick} max={1} min={0.01} step={0.01} type="number" {...form.register("max_fill_ratio_per_tick", { valueAsNumber: true })} />
         </label>
         <button
           aria-pressed="true"
@@ -130,8 +132,7 @@ export function PaperRunForm() {
         <button
           className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!isHydrated || mutation.isPending}
-          onClick={() => void runPaper()}
-          type="button"
+          type="submit"
         >
           {mutation.isPending ? "Running..." : "Run Paper Trading"}
         </button>

@@ -80,9 +80,13 @@ curl -X POST "http://127.0.0.1:8765/api/options/screener" `
 
 - `/data-explorer` loads with provider `futu`.
 - Ticker, date range, and frequency can be changed.
+- Market Data accepts manually typed tickers and renders a true OHLC candlestick chart.
+- Long date ranges use sparse time-axis labels instead of one label per bar.
 - Data source badge shows `futu` when OpenD returns data.
 - `/data-explorer?lang=zh` renders Chinese labels.
 - `/options-screener` can run a Futu-backed screen.
+- `/options-screener` loads Futu expiration dates into a dropdown and refreshes the option-chain preview as expiration changes.
+- `/options-screener` includes conservative / balanced / aggressive presets for seller-style screening.
 - `/options-screener?lang=zh` renders Chinese labels.
 - Factor Lab, Backtester, and Paper Trading forms default to provider `futu`.
 - No page exposes order placement or account unlock controls.
@@ -119,6 +123,8 @@ Automated browser smoke:
 11 passed (1.2m)
 options_screener_ui_ok
 data_explorer_zh_ui_ok
+options_zh_ok expirations=36 selected=2026-05-12 label=2026-05-12 · 10 DTE
+data_explorer_ok tick_labels=10
 ```
 
 Quality gates:

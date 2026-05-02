@@ -63,12 +63,18 @@ Example body:
 ```json
 {
   "ticker": "AAPL",
-  "strategy": "sell_put",
+  "strategy_type": "sell_put",
   "provider": "futu",
+  "expiration": "2026-05-12",
   "min_premium": 0.1,
-  "max_spread_pct": 0.5,
+  "min_apr": 10,
+  "min_dte": 10,
+  "max_dte": 60,
+  "max_spread_pct": 0.15,
+  "min_open_interest": 50,
+  "max_hv_iv": 1.5,
   "trend_filter": true,
-  "hv_iv_filter": false
+  "hv_iv_filter": true
 }
 ```
 
@@ -77,7 +83,7 @@ Example:
 ```powershell
 curl -X POST "http://127.0.0.1:8765/api/options/screener" `
   -H "Content-Type: application/json" `
-  -d "{\"ticker\":\"AAPL\",\"strategy\":\"sell_put\",\"provider\":\"futu\"}"
+  -d "{\"ticker\":\"AAPL\",\"strategy_type\":\"sell_put\",\"expiration\":\"2026-05-12\",\"provider\":\"futu\",\"min_apr\":10,\"min_dte\":10,\"max_dte\":60,\"max_spread_pct\":0.15,\"min_open_interest\":50}"
 ```
 
 Response includes:
@@ -86,6 +92,7 @@ Response includes:
 - selected expiration
 - candidate count
 - candidate table
+- DTE / spread / open-interest / APR filter effects
 - assumptions
 - safety footer
 

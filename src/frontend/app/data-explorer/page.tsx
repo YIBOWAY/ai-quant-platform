@@ -1,15 +1,9 @@
+import { CandlestickChart } from "@/components/CandlestickChart";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { DataExplorerControls } from "@/components/forms/DataExplorerControls";
 import { getMarketDataHistory, getSymbols } from "@/lib/api";
-
-function closeBarHeight(close: number, min: number, max: number) {
-  if (max <= min) {
-    return 50;
-  }
-  return 10 + ((close - min) / (max - min)) * 80;
-}
 
 type DataExplorerProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -46,6 +40,8 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
           volume: "成交量",
           quality: "数据质量",
           fetchedAt: "获取时间",
+          chartTitle: "历史 K 线",
+          chartHint: "真实 OHLCV K 线。长区间只显示少量时间刻度，避免横轴拥挤。",
           noRows: "没有行情数据",
           noRowsDescription: "后端没有返回这个标的和时间范围的数据。",
           qualityTitle: "质量报告未接入",
@@ -66,6 +62,8 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
           volume: "VOLUME",
           quality: "Data Quality Metrics",
           fetchedAt: "Fetched At",
+          chartTitle: "Historical K-Line",
+          chartHint: "Real OHLCV candlesticks. Long ranges show sparse axis ticks to keep the chart readable.",
           noRows: "No OHLCV rows",
           noRowsDescription: "The backend returned no rows for the selected symbol and range.",
           qualityTitle: "Quality report not connected",
@@ -85,9 +83,6 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
     getMarketDataHistory(symbol, start, end, freq, provider),
   ]);
   const latest = ohlcv.rows.at(-1);
-  const closes = ohlcv.rows.map((row) => row.close);
-  const minClose = closes.length ? Math.min(...closes) : 0;
-  const maxClose = closes.length ? Math.max(...closes) : 0;
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -97,7 +92,7 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
           <DataExplorerControls
             symbols={symbols.symbols}
             initial={{
-              symbol: ohlcv.symbol,
+              symbol: ohlcv.symbol || symbol,
               start,
               end,
               freq:
@@ -142,25 +137,15 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
             </div>
 
             {ohlcv.rows.length ? (
-              <div className="flex h-[360px] items-end gap-1 rounded border border-border-subtle bg-surface-muted p-4">
-                {ohlcv.rows.map((row) => {
-                  const up = row.close >= row.open;
-                  return (
-                    <div
-                      key={row.timestamp}
-                      className="flex min-w-3 flex-1 flex-col items-center justify-end gap-1"
-                      title={`${row.timestamp} close=${row.close}`}
-                    >
-                      <div
-                        className={up ? "w-full bg-accent-success" : "w-full bg-danger"}
-                        style={{ height: `${closeBarHeight(row.close, minClose, maxClose)}%` }}
-                      />
-                      <span className="max-w-16 truncate font-data-mono text-[9px] text-text-secondary">
-                        {row.timestamp.slice(5, 10)}
-                      </span>
-                    </div>
-                  );
-                })}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <div>
+                    <h2 className="font-label-caps uppercase text-text-secondary">{text.chartTitle}</h2>
+                    <p className="font-body-sm text-text-secondary">{text.chartHint}</p>
+                  </div>
+                  <DataSourceBadge source={ohlcv.source} />
+                </div>
+                <CandlestickChart rows={ohlcv.rows} />
               </div>
             ) : (
               <EmptyState
