@@ -19,8 +19,62 @@ function single(value: string | string[] | undefined, fallback: string) {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+function paramsWithLang(params: Record<string, string | string[] | undefined>, lang: string) {
+  const normalized = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (typeof value === "string") {
+      normalized.set(key, value);
+    }
+  });
+  normalized.set("lang", lang);
+  return `/data-explorer?${normalized.toString()}`;
+}
+
 export default async function DataExplorer({ searchParams }: DataExplorerProps) {
   const params = (await searchParams) ?? {};
+  const locale = single(params.lang, "en") === "zh" ? "zh" : "en";
+  const text =
+    locale === "zh"
+      ? {
+          currency: "美元",
+          rawData: "原始行情",
+          timestamp: "时间",
+          open: "开盘",
+          high: "最高",
+          low: "最低",
+          close: "收盘",
+          volume: "成交量",
+          quality: "数据质量",
+          fetchedAt: "获取时间",
+          noRows: "没有行情数据",
+          noRowsDescription: "后端没有返回这个标的和时间范围的数据。",
+          qualityTitle: "质量报告未接入",
+          qualityDescription: "覆盖率、缺失交易日和异常检测等待 /api/data/quality。",
+          auditTitle: "详细审计日志不可用",
+          auditDescription: "数据审计时间线计划在后续阶段接入。",
+          languageLabel: "English",
+          languageHref: paramsWithLang(params, "en"),
+        }
+      : {
+          currency: "USD",
+          rawData: "Raw Data Feed",
+          timestamp: "TIMESTAMP (UTC)",
+          open: "OPEN",
+          high: "HIGH",
+          low: "LOW",
+          close: "CLOSE",
+          volume: "VOLUME",
+          quality: "Data Quality Metrics",
+          fetchedAt: "Fetched At",
+          noRows: "No OHLCV rows",
+          noRowsDescription: "The backend returned no rows for the selected symbol and range.",
+          qualityTitle: "Quality report not connected",
+          qualityDescription: "Coverage, missing-day and anomaly checks are waiting for /api/data/quality.",
+          auditTitle: "Detailed audit log unavailable",
+          auditDescription: "Data audit timelines are scheduled in FIX_PLAN P2-5.",
+          languageLabel: "中文",
+          languageHref: paramsWithLang(params, "zh"),
+        };
   const symbol = single(params.symbol, "SPY").toUpperCase();
   const start = single(params.start, "2024-01-02");
   const end = single(params.end, "2024-01-12");
@@ -52,6 +106,7 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
                   : "1d",
               provider: provider === "sample" || provider === "tiingo" ? provider : "futu",
             }}
+            locale={locale}
           />
 
           <div className="flex items-center gap-3">
@@ -62,6 +117,9 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
             <span className="font-data-mono text-[10px] uppercase text-text-secondary">
               freq: {ohlcv.frequency}
             </span>
+            <a className="font-body-sm text-info" href={text.languageHref}>
+              {text.languageLabel}
+            </a>
           </div>
         </div>
       </div>
@@ -72,7 +130,7 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
             <div className="mb-4 flex items-start justify-between">
               <div>
                 <div className="flex items-baseline gap-2 font-headline-lg text-text-primary">
-                  {ohlcv.symbol} <span className="font-data-mono text-data-mono text-text-secondary">USD</span>
+                  {ohlcv.symbol} <span className="font-data-mono text-data-mono text-text-secondary">{text.currency}</span>
                 </div>
                 <div className="mt-1 flex gap-4 font-data-mono text-data-mono">
                   <span className="text-accent-success">O: {latest?.open.toFixed(2) ?? "--"}</span>
@@ -106,27 +164,27 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
               </div>
             ) : (
               <EmptyState
-                title="No OHLCV rows"
-                description="The backend returned no rows for the selected symbol and range."
+                title={text.noRows}
+                description={text.noRowsDescription}
               />
             )}
           </div>
 
           <div className="h-1/3 border-t border-border-subtle bg-bg-surface">
             <div className="flex items-center justify-between border-b border-border-subtle bg-surface-container-low px-4 py-2">
-              <span className="font-label-caps uppercase text-text-secondary">Raw Data Feed</span>
+              <span className="font-label-caps uppercase text-text-secondary">{text.rawData}</span>
               <DataSourceBadge source={ohlcv.source} />
             </div>
             <div className="h-[calc(100%-41px)] overflow-auto p-4">
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-border-subtle">
-                    <th className="pb-2 font-label-caps text-text-secondary">TIMESTAMP (UTC)</th>
-                    <th className="pb-2 text-right font-label-caps text-text-secondary">OPEN</th>
-                    <th className="pb-2 text-right font-label-caps text-text-secondary">HIGH</th>
-                    <th className="pb-2 text-right font-label-caps text-text-secondary">LOW</th>
-                    <th className="pb-2 text-right font-label-caps text-text-secondary">CLOSE</th>
-                    <th className="pb-2 text-right font-label-caps text-text-secondary">VOLUME</th>
+                    <th className="pb-2 font-label-caps text-text-secondary">{text.timestamp}</th>
+                    <th className="pb-2 text-right font-label-caps text-text-secondary">{text.open}</th>
+                    <th className="pb-2 text-right font-label-caps text-text-secondary">{text.high}</th>
+                    <th className="pb-2 text-right font-label-caps text-text-secondary">{text.low}</th>
+                    <th className="pb-2 text-right font-label-caps text-text-secondary">{text.close}</th>
+                    <th className="pb-2 text-right font-label-caps text-text-secondary">{text.volume}</th>
                   </tr>
                 </thead>
                 <tbody className="font-data-mono text-data-mono text-text-primary">
@@ -152,20 +210,20 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
         </div>
 
         <div className="flex w-[300px] flex-col gap-4 overflow-y-auto bg-bg-surface p-4">
-          <h3 className="font-label-caps uppercase text-text-secondary">Data Quality Metrics</h3>
+          <h3 className="font-label-caps uppercase text-text-secondary">{text.quality}</h3>
           <div className="rounded border border-border-subtle bg-surface-muted p-3">
-            <div className="font-label-caps text-text-secondary">Fetched At</div>
+            <div className="font-label-caps text-text-secondary">{text.fetchedAt}</div>
             <div className="mt-2 break-all font-data-mono text-[11px] text-text-primary">
               {ohlcv.metadata.fetched_at ?? "--"}
             </div>
           </div>
           <EmptyState
-            title="Quality report not connected"
-            description="Coverage, missing-day and anomaly checks are waiting for /api/data/quality."
+            title={text.qualityTitle}
+            description={text.qualityDescription}
           />
           <EmptyState
-            title="Detailed audit log unavailable"
-            description="Data audit timelines are scheduled in FIX_PLAN P2-5."
+            title={text.auditTitle}
+            description={text.auditDescription}
           />
         </div>
       </div>

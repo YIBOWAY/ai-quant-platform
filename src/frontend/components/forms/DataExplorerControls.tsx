@@ -16,15 +16,36 @@ const controlSchema = z.object({
 type ControlValues = z.infer<typeof controlSchema>;
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+const labels = {
+  en: {
+    universe: "Universe",
+    start: "Start",
+    end: "End",
+    frequency: "Frequency",
+    source: "Source",
+    load: "Load",
+  },
+  zh: {
+    universe: "标的",
+    start: "开始日期",
+    end: "结束日期",
+    frequency: "周期",
+    source: "数据源",
+    load: "加载数据",
+  },
+};
 
 export function DataExplorerControls({
   symbols,
   initial,
+  locale = "en",
 }: {
   symbols: string[];
   initial: ControlValues;
+  locale?: "en" | "zh";
 }) {
   const router = useRouter();
+  const text = labels[locale];
   const form = useForm<ControlValues>({
     resolver: zodResolver(controlSchema),
     defaultValues: initial,
@@ -35,11 +56,14 @@ export function DataExplorerControls({
       className="flex flex-wrap items-end gap-4"
       onSubmit={form.handleSubmit((values) => {
         const params = new URLSearchParams(values);
+        if (locale === "zh") {
+          params.set("lang", "zh");
+        }
         router.push(`/data-explorer?${params.toString()}`);
       })}
     >
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        Universe
+        {text.universe}
         <select className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary focus:border-info focus:ring-1 focus:ring-info" {...form.register("symbol")}>
           {symbols.map((symbol) => (
             <option key={symbol} style={optionStyle}>
@@ -49,15 +73,15 @@ export function DataExplorerControls({
         </select>
       </label>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        Start
+        {text.start}
         <input className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary focus:border-info focus:ring-1 focus:ring-info" type="date" {...form.register("start")} />
       </label>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        End
+        {text.end}
         <input className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary focus:border-info focus:ring-1 focus:ring-info" type="date" {...form.register("end")} />
       </label>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        Frequency
+        {text.frequency}
         <select className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary focus:border-info focus:ring-1 focus:ring-info" {...form.register("freq")}>
           <option style={optionStyle}>1d</option>
           <option style={optionStyle}>1h</option>
@@ -68,7 +92,7 @@ export function DataExplorerControls({
         </select>
       </label>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        Source
+        {text.source}
         <select className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary focus:border-info focus:ring-1 focus:ring-info" {...form.register("provider")}>
           <option style={optionStyle}>futu</option>
           <option style={optionStyle}>sample</option>
@@ -79,7 +103,7 @@ export function DataExplorerControls({
         className="h-8 rounded bg-accent-success px-3 font-body-sm font-semibold text-on-primary"
         type="submit"
       >
-        Load
+        {text.load}
       </button>
     </form>
   );
