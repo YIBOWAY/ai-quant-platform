@@ -472,13 +472,18 @@ Rollback granularity:
 
 ## 17. Official Skills / SDK Installation Note
 
-The official Futu Codex skills referenced by the user are **not available** in the current Codex local skills/plugins directories.
+The official Futu skills were installed into the global Codex skills directory:
 
-Fallback plan:
+- `futuapi`
+- `install-futu-opend`
+
+The local OpenD GUI was already installed and running, so this project did not reinstall OpenD.
+
+Verification path:
 
 1. verify the existing local OpenD GUI first
 2. verify whether the Futu Python SDK is already installed inside `ai-quant`
-3. if missing, install it only into `ai-quant`
+3. install `futu-api` only into `ai-quant` if missing
 4. document the manual equivalent steps in `docs/futu_environment_setup.md`
 
 ## 18. ASCII Flow Diagram

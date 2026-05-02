@@ -27,9 +27,14 @@ Do not:
 
 ## 3. Official Skills Status In This Codex Environment
 
-The official Futu OpenD skills mentioned in the product docs were **not available** in the current local Codex skills/plugins directories during verification.
+The official Futu OpenD skills have been installed into the global Codex skills directory:
 
-Manual equivalent path used here:
+- `C:\Users\86189\.codex\skills\futuapi`
+- `C:\Users\86189\.codex\skills\install-futu-opend`
+
+The installed `futuapi` skill includes both quote and trade helper scripts. This project only uses the quote/read-only side.
+
+Manual equivalent path used for repository verification:
 
 1. verify the existing local OpenD GUI first
 2. verify the Python package inside `ai-quant`
