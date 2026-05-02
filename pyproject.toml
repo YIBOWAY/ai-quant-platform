@@ -14,6 +14,7 @@ authors = [
 ]
 dependencies = [
   "duckdb>=0.10",
+  "futu-api>=10.4.6408",
   "numpy>=1.26,<2",
   "pandas>=2.1,<3",
   "pyarrow>=14",

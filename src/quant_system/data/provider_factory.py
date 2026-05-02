@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from quant_system.config.settings import Settings
 from quant_system.data.providers.base import HistoricalDataProvider
+from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.data.providers.sample import SampleOHLCVProvider
 from quant_system.data.providers.tiingo import TiingoEODProvider
 
@@ -17,6 +18,17 @@ def build_ohlcv_provider(
     token = settings.api_keys.tiingo_api_token
     token_value = token.get_secret_value().strip() if token else ""
 
+    if name == "futu":
+        if settings.futu.enabled:
+            return (
+                FutuMarketDataProvider(
+                    host=settings.futu.host,
+                    port=settings.futu.port,
+                    request_timeout_seconds=settings.futu.request_timeout_seconds,
+                ),
+                "futu",
+            )
+        return SampleOHLCVProvider(), "sample (futu: disabled)"
     if name == "tiingo" and token_value:
         return TiingoEODProvider(api_token=token), "tiingo"
     if name == "tiingo" and not token_value:

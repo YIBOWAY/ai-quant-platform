@@ -106,6 +106,26 @@ class ApiKeySettings(BaseSettings):
         return "**********" if value else None
 
 
+class FutuSettings(BaseSettings):
+    """Read-only Futu / OpenD connectivity settings for market data."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_",
+        extra="ignore",
+    )
+
+    enabled: bool = True
+    host: str = "127.0.0.1"
+    port: int = Field(default=11111, ge=1, le=65535)
+    market: Literal["US"] = "US"
+    request_timeout_seconds: int = Field(default=15, gt=0)
+    default_kline_freq: str = "1d"
+    cache_dir: Path = Path("data/futu")
+    use_cache: bool = True
+    options_enabled: bool = True
+
+
 class LLMSettings(BaseSettings):
     """Optional LLM routing for the Phase 7 research assistant."""
 
@@ -219,6 +239,7 @@ class Settings(BaseSettings):
     safety: SafetySettings = Field(default_factory=SafetySettings)
     data: DataSettings = Field(default_factory=DataSettings)
     api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)
+    futu: FutuSettings = Field(default_factory=FutuSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     prediction_market: PredictionMarketSettings = Field(
         default_factory=PredictionMarketSettings
