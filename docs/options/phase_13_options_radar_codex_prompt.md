@@ -220,12 +220,13 @@ $env:PYTHONPATH = "."
 
 ---
 
-## 子阶段 13-8：Futu LV2 / 限制告知
+## 子阶段 13-8：Futu 行情权限 / 限制告知
 
 更新 [futu_options_data_provider.md](../futu/futu_options_data_provider.md) 增加章节 "Required entitlements"：
 
-- 美股期权报价（IV / Greeks / OI / 实时 bid-ask）需要 **美股 LV2 行情订阅**（Futu/moomoo APP 内购买）。
-- 没有 LV2 时这些字段会为空 → 全部走入硬约束失败 → radar 输出空。
+- 美股期权报价（IV / Greeks / OI / 实时 bid-ask）在 **Futu 美股 LV1 行情**（即默认高级行情）下已**全量包含**，无需额外购买 LV2。本项目当前用 LV1 账号已验证能拉到期权链、snapshot 中的 IV / Greeks / OI / mid 全部字段。
+- 股票 本身的 LV2 深度报价与期权 radar 需要的字段无关，不需要升级。
+- 如果未来发现某些字段为空，优先排查：账号未实名 / OpenD 未登录 / 市场未开盘 / 合约本身不活跃，**不要**误判为需要 LV2。
 - OpenD 必须本地运行；账户必须实名 + 登录。
 - 接口限频 10 次 / 30 秒 / 接口；`get_market_snapshot` 单次 ≤ 400。
 - 大陆地区新开 Futu 美股账户合规收紧（早年开户可继续用）。

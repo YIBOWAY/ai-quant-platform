@@ -134,7 +134,7 @@ data/                     本地缓存、实验、报告、历史快照
 | 文件 | 作用 |
 |---|---|
 | [futu/futu_integration_design.md](futu/futu_integration_design.md) | Futu 整体集成设计（只读 + OpenD） |
-| [futu/futu_options_data_provider.md](futu/futu_options_data_provider.md) | Futu 期权数据 provider 与 LV2 行情依赖 |
+| [futu/futu_options_data_provider.md](futu/futu_options_data_provider.md) | Futu 期权数据 provider（LV1 已含全部期权行情权限） |
 | [futu/futu_market_data_provider.md](futu/futu_market_data_provider.md) | Futu 行情 provider |
 | [futu/futu_environment_setup.md](futu/futu_environment_setup.md) | OpenD 本地部署 |
 | [futu/futu_troubleshooting.md](futu/futu_troubleshooting.md) | Futu 接入常见问题 |

@@ -28,7 +28,7 @@
 
 ### C. 仍待跟进
 - C2（限速）：`fetch_market_snapshots` 仍按 400 batch 一次性调，单标的扫描尚未达到 Futu 接口频控阈值。**Phase 13 全市场扫描需要在 batch 间加 token bucket 限速。**
-- C3（LV2 行情依赖）：`option_implied_volatility / option_delta / option_open_interest` 在没有 LV2 订阅时会大量为空，导致筛选器输出全 Avoid。需要在 [docs/futu/futu_options_data_provider.md](../futu/futu_options_data_provider.md) 显式提示。
+- C3（行情权限说明）：`option_implied_volatility / option_delta / option_open_interest` 需 Futu 美股行情权限。实测表明 **Futu 美股 LV1（默认高级行情）已包含全量期权字段**，无需额外购买 LV2。若字段为空，优先排查：OpenD 未登录 / 账号未实名 / 合约不活跃。需要在 [docs/futu/futu_options_data_provider.md](../futu/futu_options_data_provider.md) 显式注明。
 
 ---
 
@@ -130,7 +130,7 @@
 - **前端**：`/options-radar` 路由 — 日期 + sector + DTE 桶 + 策略筛选；CSV 导出；safety banner。
 - **IV Rank**：靠每日扫描自动累积 IV 历史；满 30 天后启用。
 - **Earnings**：通过 `yfinance` 离线缓存美股下季度财报日历。
-- **Futu 限制必须在 README 显式声明**：账户实名 + 美股 LV2 行情 + OpenD 在线 + 自用研究、不对外提供数据 API。
+- **Futu 限制必须在 README 显式声明**：账号实名 + 美股行情权限（LV1 即可覆盖期权） + OpenD 在线 + 自用研究、不对外提供数据 API。
 
 ---
 

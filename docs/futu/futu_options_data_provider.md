@@ -75,21 +75,43 @@ and batches quote snapshots so it does not exceed Futu's per-request symbol limi
 
 Missing fields are returned as `null`. The system does not invent IV or Greeks.
 
-## Permission Notes
+## Permission Notes (Required entitlements)
 
-The user reported:
+This project's owner runs with:
 
-- US stock LV3 data
-- US options LV1 data
+- US stock **LV3** data
+- US options **LV1** data
 
-Manual verification showed that OpenD can return:
+**Important — Futu US options entitlement model:** Futu's US options market-data
+tier is **LV1 only**. There is no separate "LV2" upgrade for US options;
+LV1 already includes the full set of fields this screener / radar uses
+(real-time bid / ask / mid, IV, delta / gamma / theta / vega, open interest,
+volume). Earlier internal drafts that mentioned an "LV2 dependency" were
+incorrect and have been corrected.
 
-- US stock historical K-line data
-- option expiration dates
-- option chains
-- option quote snapshots with bid, ask, IV, Greeks, open interest, and volume fields
+Manual verification with the LV1 entitlement showed that OpenQuoteContext returns:
 
-Actual field availability may still vary by account, symbol, market session, and Futu permission state.
+- US stock historical K-line data (LV3 stock entitlement covers depth; LV1 stock
+  alone is also sufficient for OHLCV used by this project)
+- `get_option_expiration_date` — option expirations
+- `get_option_chain` — full chain with strikes
+- `get_market_snapshot` on option codes — bid, ask, IV, delta, gamma, theta,
+  vega, open interest, volume, turnover, total_market_val
+
+If a field comes back null, do **not** assume an LV2 upgrade is needed.
+Re-check in this order:
+
+1. OpenD process running and logged in?
+2. Account real-name verified?
+3. Market session open (US options quotes are sparse pre/post-market)?
+4. Contract itself liquid (very far OTM weeklies often have empty quotes)?
+5. Per-interface rate limit (10 calls / 30s) not exhausted?
+
+## Stock-side note
+
+The screener's underlying snapshot (price, volume, market cap) is read from the
+stock symbol, not the option code. LV1 stock entitlement is sufficient there
+too; LV2/LV3 only adds order-book depth which the screener does not use.
 
 ## Manual Verification
 
