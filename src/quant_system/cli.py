@@ -15,6 +15,7 @@ from quant_system.agent.runner import AgentRunner
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
 from quant_system.config.settings import load_settings, reload_settings
 from quant_system.data.pipeline import IngestionResult, run_sample_ingestion, run_tiingo_ingestion
+from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.execution.pipeline import PaperTradingRunResult, run_sample_paper_trading
 from quant_system.experiments.config import load_experiment_config
 from quant_system.experiments.runner import (
@@ -25,7 +26,6 @@ from quant_system.experiments.runner import (
 from quant_system.factors.pipeline import FactorResearchResult, run_sample_factor_research
 from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
 from quant_system.logging.setup import configure_logging
-from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.options.earnings_calendar import EarningsCalendar
 from quant_system.options.models import OptionsScreenerConfig
 from quant_system.options.radar import OptionsRadarConfig, run_options_radar
@@ -1069,7 +1069,12 @@ def options_daily_scan(
             except Exception as exc:
                 typer.echo(f"provider_check=failed reason={type(exc).__name__}: {exc}")
                 raise typer.Exit(code=3) from exc
-        typer.echo("provider_check=skipped" if active_provider_name == "sample" else "provider_check=ok")
+        provider_check = (
+            "provider_check=skipped"
+            if active_provider_name == "sample"
+            else "provider_check=ok"
+        )
+        typer.echo(provider_check)
         return
 
     report = run_options_radar(

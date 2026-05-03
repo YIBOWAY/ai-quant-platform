@@ -11,7 +11,6 @@ from quant_system.options.iv_history import IvHistoryStore
 from quant_system.options.models import OptionsScreenerConfig
 from quant_system.options.radar import (
     OptionsRadarConfig,
-    OptionsRadarReport,
     compute_global_score,
     run_options_radar,
 )

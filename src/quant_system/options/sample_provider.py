@@ -41,7 +41,12 @@ class SampleOptionsProvider:
                 ask = round(mid + spread / 2, 2)
                 rows.append(
                     {
-                        "symbol": _sample_option_symbol(futu_symbol, expiration, active_type, strike),
+                        "symbol": _sample_option_symbol(
+                            futu_symbol,
+                            expiration,
+                            active_type,
+                            strike,
+                        ),
                         "underlying": futu_symbol,
                         "option_type": active_type,
                         "expiry": expiration,
@@ -79,7 +84,8 @@ class SampleOptionsProvider:
         for symbol in symbols:
             plain, _futu_symbol = self.normalize_symbol(symbol)
             base = self._base_price(plain) * 0.9
-            for index, timestamp in enumerate(pd.date_range(start=start, end=end, freq="B", tz="UTC")):
+            dates = pd.date_range(start=start, end=end, freq="B", tz="UTC")
+            for index, timestamp in enumerate(dates):
                 close = base + index * 0.12
                 rows.append(
                     {
@@ -108,7 +114,12 @@ def _sample_delta(option_type: str, strike: float, underlying_price: float) -> f
     return round(min(max(0.50 - distance * 2.5, 0.05), 0.95), 3)
 
 
-def _sample_option_symbol(futu_symbol: str, expiration: str, option_type: str, strike: float) -> str:
+def _sample_option_symbol(
+    futu_symbol: str,
+    expiration: str,
+    option_type: str,
+    strike: float,
+) -> str:
     code = option_type[0]
     date_part = expiration.replace("-", "")[2:]
     strike_part = f"{int(round(strike * 1000)):08d}"
