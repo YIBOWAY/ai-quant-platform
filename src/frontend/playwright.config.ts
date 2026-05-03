@@ -1,8 +1,28 @@
+import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 const runE2E = process.env.PW_E2E === "1";
-const repoRoot = path.resolve(process.cwd(), "../..");
+const repoRoot = findRepoRoot(process.cwd());
+const frontendRoot = path.join(repoRoot, "src", "frontend");
+const reuseExistingServer = process.env.PW_REUSE_SERVER === "1";
+
+function findRepoRoot(start: string) {
+  let current = path.resolve(start);
+  while (true) {
+    if (
+      fs.existsSync(path.join(current, "pyproject.toml")) &&
+      fs.existsSync(path.join(current, "src", "frontend", "package.json"))
+    ) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      throw new Error(`Unable to locate repository root from ${start}`);
+    }
+    current = parent;
+  }
+}
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -25,14 +45,14 @@ export default defineConfig({
             "python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765",
           cwd: repoRoot,
           url: "http://127.0.0.1:8765/api/health",
-          reuseExistingServer: true,
+          reuseExistingServer,
           timeout: 60_000,
         },
         {
           command: "npm run dev -- --hostname 127.0.0.1 --port 3001",
-          cwd: process.cwd(),
+          cwd: frontendRoot,
           url: "http://127.0.0.1:3001",
-          reuseExistingServer: true,
+          reuseExistingServer,
           timeout: 120_000,
           env: {
             DISABLE_HMR: "true",

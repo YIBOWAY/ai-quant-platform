@@ -1,4 +1,4 @@
-import { Activity, AlertCircle, ShieldAlert, Wallet } from "lucide-react";
+import { Activity, AlertCircle, BriefcaseBusiness, ShieldAlert } from "lucide-react";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
@@ -125,7 +125,7 @@ export default async function PaperTrading() {
         <div className="mt-6">
           <PaperRunForm />
           <div className="mt-4 flex items-center gap-2 font-body-sm text-text-secondary">
-            <Wallet size={18} /> Runs are local batch simulations only.
+            <BriefcaseBusiness size={18} /> Runs are local batch simulations only.
           </div>
         </div>
       </aside>

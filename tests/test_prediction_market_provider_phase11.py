@@ -254,4 +254,4 @@ def test_prediction_market_provider_factory_passes_user_agent_setting(
 
 def test_prediction_market_provider_factory_rejects_unknown_provider() -> None:
     with pytest.raises(ValueError, match="unknown prediction market provider"):
-        build_prediction_market_provider(Settings(), requested="wallet")
+        build_prediction_market_provider(Settings(), requested="unknown_provider")

@@ -2,12 +2,12 @@ import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import {
   Bot,
+  BriefcaseBusiness,
   Database,
   FlaskConical,
   LineChart,
   Play,
   Settings,
-  Wallet,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
@@ -84,7 +84,7 @@ export default async function Dashboard() {
             title="Paper Equity"
             value={formatMoney(paperSummary?.final_equity)}
             detail={`${paperRuns.paper_runs.length} paper runs`}
-            icon={Wallet}
+            icon={BriefcaseBusiness}
           />
           <KpiCard
             title="Agent Candidates"
@@ -144,7 +144,7 @@ export default async function Dashboard() {
 
             <div className="rounded border border-border-subtle bg-bg-surface p-4">
               <div className="mb-4 flex items-center gap-2 font-label-caps text-text-secondary">
-                <Wallet size={14} className="text-primary" /> Paper Run
+                <BriefcaseBusiness size={14} className="text-primary" /> Paper Run
               </div>
               <h3 className="truncate font-body-md font-medium text-text-primary">
                 {latestPaper?.id ?? "No paper run yet"}

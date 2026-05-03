@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BriefcaseBusiness,
   LayoutDashboard,
   Zap,
   LineChart,
   FlaskConical,
-  Wallet,
   Settings,
   Database,
   BookOpen,
@@ -30,7 +30,7 @@ export function Sidebar() {
     { name: "Factor Lab", href: "/factor-lab", icon: FlaskConical },
     { name: "Backtester", href: "/backtest", icon: LineChart },
     { name: "Experiments", href: "/experiments", icon: FlaskConical },
-    { name: "Paper Trading", href: "/paper-trading", icon: Wallet },
+    { name: "Paper Trading", href: "/paper-trading", icon: BriefcaseBusiness },
     { name: "Agent Studio", href: "/agent-studio", icon: Zap },
     { name: "Order Book", href: "/order-book", icon: BookOpen },
     { name: "Position Map", href: "/position-map", icon: Map },

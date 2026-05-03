@@ -75,7 +75,7 @@ export function PMRunForm() {
     <div className="rounded border border-border-subtle bg-bg-surface p-4">
       <h2 className="font-headline-lg text-text-primary">Read-Only Scanner</h2>
       <p className="mt-1 font-body-sm text-text-secondary">
-        Polymarket mode fetches public market data only. This form never accepts or sends keys, wallets, signatures, or orders.
+        Polymarket mode fetches public market data only. This form never accepts or sends keys, custody access, signatures, or orders.
       </p>
       <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3" onSubmit={(event) => event.preventDefault()}>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">

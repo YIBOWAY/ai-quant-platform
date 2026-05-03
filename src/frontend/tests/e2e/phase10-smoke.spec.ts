@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
-test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
+test.beforeEach(() => {
+  test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
+});
 
 const routes = [
   "/",

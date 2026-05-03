@@ -48,7 +48,7 @@ class PolymarketReadOnlyProvider:
     """Read-only Polymarket REST provider.
 
     This class performs public market-data GET requests only. It intentionally
-    has no order submission, signing, wallet, private-key, token-transfer, or
+    has no order submission, signing, custody-access, private-key, token-transfer, or
     redeem methods.
     """
 

@@ -31,7 +31,7 @@ export default async function OrderBookPage({ searchParams }: OrderBookPageProps
         </div>
         <p className="mt-2 max-w-2xl font-body-sm text-text-secondary">
           Loaded {predictionMarkets.order_books.length} read-only order books from the local API.
-          Polymarket support is research-only: no wallet signing, no live trading, no real orders.
+          Polymarket support is research-only: no signing, no live trading, no real orders.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <PredictionMarketDataControls

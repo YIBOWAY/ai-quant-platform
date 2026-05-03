@@ -141,7 +141,7 @@ export function PMHistoryBacktestForm() {
         <h2 className="font-headline-lg text-text-primary">Historical Snapshot Replay</h2>
         <p className="mt-1 font-body-sm text-text-secondary">
           Read-only history collection and simulated replay only. No real fills, no real
-          trading, no signing, no wallet.
+          trading, no signing, no account custody.
         </p>
       </div>
 
