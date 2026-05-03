@@ -7,13 +7,14 @@
 - 常用命令速查表
 - 安全边界清单
 
-当前状态已经推进到 **Phase 12**。平台现在包含：
+当前状态已经推进到 **Phase 13**。平台现在包含：
 
 - 股票真实历史数据驱动的因子研究、回测、模拟交易
 - 只读的 Polymarket 公开数据接入
 - 预测市场历史快照采集
 - 预测市场按时间推进的历史回放
 - 前后端联动页面
+- 每日全市场卖方期权雷达（只读研究，不下单）
 
 红线不变：
 
@@ -111,7 +112,7 @@ data/                     本地缓存、实验、报告、历史快照
 | 10 | 前后端修正与联调 | - | [phase_10_execution.md](execution/phase_10_execution.md) | [phase_10_learning.md](learning/phase_10_learning.md) | [phase_10_fix_delivery.md](delivery/phase_10_fix_delivery.md) |
 | 11 | Polymarket 真实只读 + 准回测 | [phase_11_architecture.md](architecture/phase_11_architecture.md) | [phase_11_execution.md](execution/phase_11_execution.md) | [phase_11_learning.md](learning/phase_11_learning.md) | [phase_11_delivery.md](delivery/phase_11_delivery.md) |
 | 12 | Polymarket 历史采集 + 时间序列回放 + Futu 行情 / 期权卖方筛选器 | [phase_12_architecture.md](architecture/phase_12_architecture.md) | [phase_12_execution.md](execution/phase_12_execution.md) | [phase_12_learning.md](learning/phase_12_learning.md) | [phase_12_delivery.md](delivery/phase_12_delivery.md) |
-| 13 | 每日全市场期权卖方扫描器 (Options Radar) — 设计中 | [options/phase_13_options_radar_codex_prompt.md](options/phase_13_options_radar_codex_prompt.md) | - | - | - |
+| 13 | 每日全市场期权卖方扫描器 (Options Radar) | [phase_13_architecture.md](architecture/phase_13_architecture.md) | [phase_13_execution.md](execution/phase_13_execution.md) | [phase_13_learning.md](learning/phase_13_learning.md) | [phase_13_delivery.md](delivery/phase_13_delivery.md) |
 
 ---
 
@@ -143,6 +144,7 @@ data/                     本地缓存、实验、报告、历史快照
 | [options/options_screener_learning.md](options/options_screener_learning.md) | 卖方期权筛选器入门 |
 | [options/options_screener_review_2026_05_03.md](options/options_screener_review_2026_05_03.md) | 2026-05-03 卖方策略 review + 预设重定标 |
 | [options/phase_13_options_radar_codex_prompt.md](options/phase_13_options_radar_codex_prompt.md) | Phase 13 全市场扫描器 Codex prompt |
+| [phases/phase_13_design_spec.md](phases/phase_13_design_spec.md) | Phase 13 Options Radar 设计冻结 |
 
 ---
 
@@ -265,9 +267,10 @@ quant-system prediction-market timeseries-backtest --provider sample
 
 ## 9. 当前状态
 
-- 后端测试、代码检查、前端 lint/build、浏览器联调都已覆盖到 Phase 12
+- 后端测试、代码检查、前端 lint/build、浏览器联调都已覆盖到 Phase 13
 - 股票三条主链已经能走真实历史数据
 - Polymarket 已支持只读历史采集与时间序列回放
+- Options Radar 已支持本地 universe、离线财报缓存、IV Rank 积累、每日快照和前端查看
 - 预测市场仍然是研究用途，不具备真实交易能力
 
 ---

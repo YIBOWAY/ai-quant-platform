@@ -113,6 +113,20 @@ The screener's underlying snapshot (price, volume, market cap) is read from the
 stock symbol, not the option code. LV1 stock entitlement is sufficient there
 too; LV2/LV3 only adds order-book depth which the screener does not use.
 
+## Phase 13 Options Radar Notes
+
+Options Radar uses the same read-only Futu quote path. It respects Futu's
+documented pacing of 10 quote calls per 30 seconds and keeps snapshot batches at
+or below 200 symbols by default.
+
+Futu was also tested for `US.VIX` and `US.VIX3M` on 2026-05-03. The local OpenD
+session returned "unknown stock" for both codes while `US.SPY` K-line data
+worked. Because of that, Phase 13 ports the VIX regime classifier as a tested
+hook, but does not wire live VIX data into runtime scans yet.
+
+Futu OpenAPI terms do not allow this project to redistribute market data as an
+external data API. The radar is for local self-use research only.
+
 ## Manual Verification
 
 ```powershell
