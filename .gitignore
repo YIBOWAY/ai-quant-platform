@@ -17,3 +17,20 @@ worktrees/
 
 # Reference PDFs (kept locally, not committed)
 *.pdf
+
+# Local agent / IDE config
+.claude/
+
+# Local Futu / FastAPI / Next.js dev logs
+.futu-ui-backend.err.log
+.futu-ui-backend.out.log
+.futu-ui-frontend.log
+*.log
+
+# Playwright run artefacts
+src/frontend/test-results/
+src/frontend/playwright-report/
+
+# Bundled local snapshot (kept locally, not committed)
+quantum-core-algorithmic-trading-platform.zip
+src/quantum-core-algorithmic-trading-platform.zip
