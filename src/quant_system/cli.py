@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import pandas as pd
 import typer
 
 from quant_system import __version__
@@ -27,12 +28,14 @@ from quant_system.factors.pipeline import FactorResearchResult, run_sample_facto
 from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
 from quant_system.logging.setup import configure_logging
 from quant_system.options.earnings_calendar import EarningsCalendar
+from quant_system.options.market_regime import VixRegimeSnapshot, compute_vix_regime
 from quant_system.options.models import OptionsScreenerConfig
 from quant_system.options.radar import OptionsRadarConfig, run_options_radar
 from quant_system.options.radar_storage import RadarSnapshotStore
 from quant_system.options.rate_limiter import RateLimitedFutuProvider, TokenBucket
 from quant_system.options.sample_provider import SampleOptionsProvider
 from quant_system.options.universe import OptionsUniverse
+from quant_system.options.vix_data import load_vix_history
 from quant_system.prediction_market.charts import (
     write_prediction_market_timeseries_charts,
 )
@@ -1077,6 +1080,20 @@ def options_daily_scan(
         typer.echo(provider_check)
         return
 
+    market_regime = _load_market_regime(settings, run_date)
+    if market_regime is not None:
+        typer.echo(
+            " ".join(
+                [
+                    f"market_regime={market_regime.volatility_regime}",
+                    f"w_vix={market_regime.w_vix}",
+                    f"vix_density={market_regime.vix_density}",
+                    f"term_ratio={market_regime.term_ratio}",
+                ]
+            )
+        )
+    else:
+        typer.echo("market_regime=Unknown reason=no_vix_history")
     report = run_options_radar(
         provider=active_provider,
         universe=universe,
@@ -1089,6 +1106,7 @@ def options_daily_scan(
         iv_history_dir=active_output_dir / "iv_history",
         earnings_calendar=EarningsCalendar.load(settings.options_radar.earnings_calendar_path),
         run_date=run_date,
+        market_regime=market_regime,
     )
     data_path, meta_path = RadarSnapshotStore(active_output_dir).write(report)
     typer.echo(
@@ -1129,6 +1147,15 @@ def options_refresh_earnings() -> None:
     )
 
 
+@options_app.command("refresh-vix")
+def options_refresh_vix() -> None:
+    """Print the manual VIX history refresh command (Yahoo source, read-only)."""
+    typer.echo(
+        "python scripts/refresh_vix_history.py "
+        "--output data/options_universe/vix_history.csv --lookback-days 400"
+    )
+
+
 def _build_options_radar_provider(settings, provider: Literal["futu", "sample"]):
     if provider == "sample":
         return SampleOptionsProvider()
@@ -1144,6 +1171,31 @@ def _build_options_radar_provider(settings, provider: Literal["futu", "sample"])
             max_tokens=settings.options_radar.futu_rate_limit_per_30s,
             refill_seconds=30,
         ),
+    )
+
+
+def _load_market_regime(settings, run_date: str | None) -> VixRegimeSnapshot | None:
+    """Load offline VIX/VIX3M history and compute the seller regime weight.
+
+    Reads the CSV produced by ``scripts/refresh_vix_history.py`` (Yahoo
+    Chart REST source). When the file is missing or empty, returns ``None``
+    so the radar runs without any regime penalty rather than failing.
+    """
+    path = settings.options_radar.vix_history_path
+    daily_vix, daily_vix3m = load_vix_history(path)
+    if daily_vix.empty:
+        return None
+    if run_date:
+        try:
+            signal_date = pd.Timestamp(run_date)
+        except (TypeError, ValueError):
+            signal_date = daily_vix.index.max()
+    else:
+        signal_date = daily_vix.index.max()
+    return compute_vix_regime(
+        daily_vix,
+        daily_vix3m,
+        signal_date=signal_date,
     )
 
 

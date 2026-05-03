@@ -47,6 +47,11 @@ const copy = {
     rows: "Rows",
     scanned: "Scanned",
     failed: "Failed",
+    regime: "Market regime",
+    regimeUnknown: "Unknown — run `quant-system options refresh-vix` then re-scan to populate VIX history.",
+    regimeNormal: "Normal — full sizing weight (w=1.00).",
+    regimeElevated: "Elevated — sellers throttled (w=0.75).",
+    regimePanic: "Panic — sellers heavily down-weighted (w=0.35).",
     zh: "中文",
     details: "Details",
     headings: ["Symbol", "Sector", "Strategy", "Expiry", "Strike", "Mid", "APR", "IV", "IVR", "Delta", "OI", "Spread", "Earnings", "Score", "Rating", ""],
@@ -68,6 +73,11 @@ const copy = {
     rows: "候选",
     scanned: "已扫描",
     failed: "失败",
+    regime: "市场状态",
+    regimeUnknown: "未知 —— 请先运行 `quant-system options refresh-vix` 刷新 VIX 历史后再扫描。",
+    regimeNormal: "Normal —— 卖方仓位权重 100%（w=1.00）。",
+    regimeElevated: "Elevated —— 卖方仓位降到 75%（w=0.75）。",
+    regimePanic: "Panic —— 卖方仓位降到 35%（w=0.35）。",
     zh: "English",
     details: "详情",
     headings: ["标的", "行业", "策略", "到期", "行权价", "中间价", "年化", "IV", "IVR", "Delta", "未平仓", "价差", "财报", "分数", "评级", ""],
@@ -111,6 +121,7 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
     [scanQuery.data?.candidates],
   );
   const csv = useMemo(() => buildCsv(candidates), [candidates]);
+  const regime = useMemo(() => deriveRegime(candidates), [candidates]);
 
   function exportCsv() {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -213,6 +224,7 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
           <ShieldCheck size={18} />
           {text.safety}
         </div>
+        <RegimeBanner regime={regime} text={text} />
         <section className="mb-4 grid grid-cols-3 gap-3">
           <Metric label={text.rows} value={String(candidates.length)} />
           <Metric label={text.scanned} value={String(scanQuery.data?.scanned_tickers ?? 0)} />
@@ -290,6 +302,55 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded border border-border-subtle bg-bg-surface p-3">
       <div className="font-label-caps text-text-secondary">{label}</div>
       <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">{value}</div>
+    </div>
+  );
+}
+
+type RegimeInfo = {
+  label: "Normal" | "Elevated" | "Panic" | "Unknown";
+  penalty: number | null;
+};
+
+function deriveRegime(candidates: OptionsRadarCandidate[]): RegimeInfo {
+  for (const candidate of candidates) {
+    if (candidate.market_regime) {
+      return {
+        label: candidate.market_regime as RegimeInfo["label"],
+        penalty: candidate.market_regime_penalty ?? null,
+      };
+    }
+  }
+  return { label: "Unknown", penalty: null };
+}
+
+function RegimeBanner({
+  regime,
+  text,
+}: {
+  regime: RegimeInfo;
+  text: (typeof copy)["en"];
+}) {
+  const palette: Record<RegimeInfo["label"], string> = {
+    Normal: "border-accent-success/40 bg-accent-success/10 text-accent-success",
+    Elevated: "border-warning/40 bg-warning/10 text-warning",
+    Panic: "border-accent-danger/40 bg-accent-danger/10 text-accent-danger",
+    Unknown: "border-border-subtle bg-bg-surface text-text-secondary",
+  };
+  const detail =
+    regime.label === "Normal"
+      ? text.regimeNormal
+      : regime.label === "Elevated"
+        ? text.regimeElevated
+        : regime.label === "Panic"
+          ? text.regimePanic
+          : text.regimeUnknown;
+  return (
+    <div className={`mb-4 rounded border p-3 font-body-sm ${palette[regime.label]}`}>
+      <div className="flex items-center justify-between">
+        <span className="font-label-caps">{text.regime}</span>
+        <span className="font-data-mono text-sm font-bold">{regime.label}</span>
+      </div>
+      <p className="mt-1 leading-snug">{detail}</p>
     </div>
   );
 }

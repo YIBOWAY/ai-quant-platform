@@ -192,6 +192,10 @@ class OptionsRadarSettings(BaseSettings):
         default=Path("data/options_universe/earnings_calendar.csv"),
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_EARNINGS_CALENDAR_PATH"),
     )
+    vix_history_path: Path = Field(
+        default=Path("data/options_universe/vix_history.csv"),
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_VIX_HISTORY_PATH"),
+    )
 
     @model_validator(mode="after")
     def validate_dte_window(self) -> OptionsRadarSettings:
