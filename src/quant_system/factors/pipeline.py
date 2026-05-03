@@ -5,8 +5,8 @@ from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
-from quant_system.config.settings import load_settings
-from quant_system.data.providers.sample import SampleOHLCVProvider
+from quant_system.config.settings import Settings, load_settings
+from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.factors.base import FACTOR_RESULT_COLUMNS, BaseFactor
 from quant_system.factors.evaluation import (
     calculate_information_coefficients,
@@ -26,6 +26,7 @@ from quant_system.factors.storage import LocalFactorStorage
 class FactorResearchResult(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    source: str
     row_count: int
     signal_count: int
     factor_results_path: Path
@@ -104,7 +105,17 @@ def _cross_sectional_zscore(values: pd.Series) -> pd.Series:
     return (clean - mean) / std
 
 
-def run_sample_factor_research(
+def build_default_factors(*, lookback: int) -> list[BaseFactor]:
+    return [
+        MomentumFactor(lookback=lookback),
+        VolatilityFactor(lookback=lookback),
+        LiquidityFactor(lookback=lookback),
+        RSIFactor(lookback=lookback),
+        MACDFactor(lookback=lookback),
+    ]
+
+
+def run_factor_research(
     *,
     symbols: list[str],
     start: str,
@@ -112,16 +123,13 @@ def run_sample_factor_research(
     output_dir: str | Path | None = None,
     lookback: int = 20,
     quantiles: int = 5,
+    provider: str | None = None,
+    settings: Settings | None = None,
 ) -> FactorResearchResult:
-    provider = SampleOHLCVProvider()
-    ohlcv = provider.fetch_ohlcv(symbols, start=start, end=end)
-    factors: list[BaseFactor] = [
-        MomentumFactor(lookback=lookback),
-        VolatilityFactor(lookback=lookback),
-        LiquidityFactor(lookback=lookback),
-        RSIFactor(lookback=lookback),
-        MACDFactor(lookback=lookback),
-    ]
+    active_settings = settings or load_settings()
+    ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
+    ohlcv = ohlcv_provider.fetch_ohlcv(symbols, start=start, end=end)
+    factors = build_default_factors(lookback=lookback)
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
     signal_frame = build_factor_signal_frame(factor_results)
     ic_frame = calculate_information_coefficients(factor_results, ohlcv, horizon=1)
@@ -137,13 +145,14 @@ def run_sample_factor_research(
         ic_frame=ic_frame,
         quantile_frame=quantile_frame,
     )
-    storage = _build_storage(output_dir)
+    storage = _build_storage(output_dir, settings=active_settings)
     factor_results_path = storage.save_factor_results(factor_results)
     signal_frame_path = storage.save_signal_frame(signal_frame)
     ic_path = storage.save_information_coefficients(ic_frame)
     quantile_returns_path = storage.save_quantile_returns(quantile_frame)
     report_path = storage.save_report(report)
     return FactorResearchResult(
+        source=source,
         row_count=len(factor_results),
         signal_count=len(signal_frame),
         factor_results_path=factor_results_path,
@@ -154,10 +163,34 @@ def run_sample_factor_research(
     )
 
 
-def _build_storage(output_dir: str | Path | None) -> LocalFactorStorage:
+def run_sample_factor_research(
+    *,
+    symbols: list[str],
+    start: str,
+    end: str,
+    output_dir: str | Path | None = None,
+    lookback: int = 20,
+    quantiles: int = 5,
+) -> FactorResearchResult:
+    return run_factor_research(
+        symbols=symbols,
+        start=start,
+        end=end,
+        output_dir=output_dir,
+        lookback=lookback,
+        quantiles=quantiles,
+        provider="sample",
+    )
+
+
+def _build_storage(
+    output_dir: str | Path | None,
+    *,
+    settings: Settings | None = None,
+) -> LocalFactorStorage:
     if output_dir is not None:
         return LocalFactorStorage(base_dir=output_dir)
-    data_settings = load_settings().data
+    data_settings = (settings or load_settings()).data
     return LocalFactorStorage(
         base_dir=data_settings.data_dir,
         reports_dir=data_settings.reports_dir,

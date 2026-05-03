@@ -184,6 +184,10 @@ class PredictionMarketSettings(BaseSettings):
         default="https://clob.polymarket.com",
         validation_alias=AliasChoices("QS_POLYMARKET_CLOB_BASE_URL"),
     )
+    polymarket_data_api_base_url: str = Field(
+        default="https://data-api.polymarket.com",
+        validation_alias=AliasChoices("QS_POLYMARKET_DATA_API_BASE_URL"),
+    )
     polymarket_request_timeout_seconds: int = Field(
         default=10,
         validation_alias=AliasChoices("QS_POLYMARKET_REQUEST_TIMEOUT_SECONDS"),
@@ -203,6 +207,37 @@ class PredictionMarketSettings(BaseSettings):
     polymarket_cache_dir: Path = Field(
         default=Path("data/prediction_market"),
         validation_alias=AliasChoices("QS_POLYMARKET_CACHE_DIR"),
+    )
+    history_dir: Path = Field(
+        default=Path("data/prediction_market/history"),
+        validation_alias=AliasChoices("QS_PREDICTION_MARKET_HISTORY_DIR"),
+    )
+    polymarket_cache_ttl_seconds: int = Field(
+        default=300,
+        validation_alias=AliasChoices("QS_POLYMARKET_CACHE_TTL_SECONDS"),
+        ge=0,
+    )
+    polymarket_cache_stale_if_error_seconds: int = Field(
+        default=86_400,
+        validation_alias=AliasChoices("QS_POLYMARKET_CACHE_STALE_IF_ERROR_SECONDS"),
+        ge=0,
+    )
+    polymarket_user_agent: str = Field(
+        default="ai-quant-platform/phase11",
+        validation_alias=AliasChoices("QS_POLYMARKET_USER_AGENT"),
+        min_length=1,
+    )
+    collector_default_interval_seconds: float = Field(
+        default=30.0,
+        validation_alias=AliasChoices(
+            "QS_PREDICTION_MARKET_COLLECTOR_DEFAULT_INTERVAL_SECONDS"
+        ),
+        gt=0,
+    )
+    backtest_default_fee_bps: float = Field(
+        default=0.0,
+        validation_alias=AliasChoices("QS_PREDICTION_MARKET_BACKTEST_DEFAULT_FEE_BPS"),
+        ge=0,
     )
     polymarket_read_only: bool = Field(
         default=True,

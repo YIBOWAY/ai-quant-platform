@@ -85,7 +85,12 @@ class CandidatePool:
         if not self.candidates_dir.exists():
             return []
         candidates: list[dict[str, Any]] = []
-        for metadata_path in sorted(self.candidates_dir.glob("*/metadata.json")):
+        metadata_paths = sorted(
+            self.candidates_dir.glob("*/metadata.json"),
+            key=lambda path: (path.stat().st_mtime_ns, path.parent.name),
+            reverse=True,
+        )
+        for metadata_path in metadata_paths:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             candidate_dir = metadata_path.parent
             if (candidate_dir / "approved.lock").exists():

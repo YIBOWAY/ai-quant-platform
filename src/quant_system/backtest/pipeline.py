@@ -9,15 +9,19 @@ from quant_system.backtest.models import BacktestConfig
 from quant_system.backtest.reporting import generate_backtest_report
 from quant_system.backtest.storage import LocalBacktestStorage
 from quant_system.backtest.strategy import ScoreSignalStrategy
-from quant_system.config.settings import load_settings
-from quant_system.data.providers.sample import SampleOHLCVProvider
-from quant_system.factors.examples import LiquidityFactor, MomentumFactor, VolatilityFactor
-from quant_system.factors.pipeline import build_factor_signal_frame, compute_factor_pipeline
+from quant_system.config.settings import Settings, load_settings
+from quant_system.data.provider_factory import build_ohlcv_provider
+from quant_system.factors.pipeline import (
+    build_default_factors,
+    build_factor_signal_frame,
+    compute_factor_pipeline,
+)
 
 
 class BacktestRunResult(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    source: str
     equity_curve_path: Path
     trade_blotter_path: Path
     orders_path: Path
@@ -29,7 +33,7 @@ class BacktestRunResult(BaseModel):
     max_drawdown: float
 
 
-def run_sample_backtest(
+def run_backtest(
     *,
     symbols: list[str],
     start: str,
@@ -40,14 +44,13 @@ def run_sample_backtest(
     initial_cash: float = 100_000.0,
     commission_bps: float = 1.0,
     slippage_bps: float = 5.0,
+    provider: str | None = None,
+    settings: Settings | None = None,
 ) -> BacktestRunResult:
-    provider = SampleOHLCVProvider()
-    ohlcv = provider.fetch_ohlcv(symbols, start=start, end=end)
-    factors = [
-        MomentumFactor(lookback=lookback),
-        VolatilityFactor(lookback=lookback),
-        LiquidityFactor(lookback=lookback),
-    ]
+    active_settings = settings or load_settings()
+    ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
+    ohlcv = ohlcv_provider.fetch_ohlcv(symbols, start=start, end=end)
+    factors = build_default_factors(lookback=lookback)
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
     signal_frame = build_factor_signal_frame(factor_results)
     config = BacktestConfig(
@@ -57,7 +60,7 @@ def run_sample_backtest(
     )
     strategy = ScoreSignalStrategy(signal_frame, top_n=top_n, target_gross_exposure=1.0)
     result = BacktestEngine(config).run(ohlcv, strategy)
-    storage = _build_storage(output_dir)
+    storage = _build_storage(output_dir, settings=active_settings)
     equity_curve_path = storage.save_frame(
         result.equity_curve,
         filename="equity_curve.parquet",
@@ -87,6 +90,7 @@ def run_sample_backtest(
     )
     report_path = storage.save_report(report)
     return BacktestRunResult(
+        source=source,
         equity_curve_path=equity_curve_path,
         trade_blotter_path=trade_blotter_path,
         orders_path=orders_path,
@@ -99,10 +103,40 @@ def run_sample_backtest(
     )
 
 
-def _build_storage(output_dir: str | Path | None) -> LocalBacktestStorage:
+def run_sample_backtest(
+    *,
+    symbols: list[str],
+    start: str,
+    end: str,
+    output_dir: str | Path | None = None,
+    lookback: int = 20,
+    top_n: int = 3,
+    initial_cash: float = 100_000.0,
+    commission_bps: float = 1.0,
+    slippage_bps: float = 5.0,
+) -> BacktestRunResult:
+    return run_backtest(
+        symbols=symbols,
+        start=start,
+        end=end,
+        output_dir=output_dir,
+        lookback=lookback,
+        top_n=top_n,
+        initial_cash=initial_cash,
+        commission_bps=commission_bps,
+        slippage_bps=slippage_bps,
+        provider="sample",
+    )
+
+
+def _build_storage(
+    output_dir: str | Path | None,
+    *,
+    settings: Settings | None = None,
+) -> LocalBacktestStorage:
     if output_dir is not None:
         return LocalBacktestStorage(base_dir=output_dir)
-    data_settings = load_settings().data
+    data_settings = (settings or load_settings()).data
     return LocalBacktestStorage(
         base_dir=data_settings.data_dir,
         reports_dir=data_settings.reports_dir,

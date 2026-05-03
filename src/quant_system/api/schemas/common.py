@@ -57,6 +57,16 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def sorted_metadata_paths(root: Path) -> list[Path]:
+    if not root.exists():
+        return []
+    return sorted(
+        root.glob("*/metadata.json"),
+        key=lambda path: (path.stat().st_mtime_ns, path.parent.name),
+        reverse=True,
+    )
+
+
 def dataframe_records(frame: pd.DataFrame, *, limit: int | None = None) -> list[dict[str, Any]]:
     if limit is not None:
         frame = frame.head(limit)
@@ -65,6 +75,8 @@ def dataframe_records(frame: pd.DataFrame, *, limit: int | None = None) -> list[
 
 
 def read_parquet_records(path: Path, *, limit: int | None = None) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
     return dataframe_records(pd.read_parquet(path), limit=limit)
 
 

@@ -7,14 +7,19 @@ from pydantic import BaseModel, ConfigDict
 
 from quant_system.backtest.models import TargetWeight
 from quant_system.backtest.strategy import ScoreSignalStrategy
-from quant_system.config.settings import load_settings
-from quant_system.data.providers.sample import SampleOHLCVProvider
+from quant_system.config.settings import Settings, load_settings
+from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.execution.models import OrderRequest, OrderSide
 from quant_system.execution.order_manager import OrderManager
 from quant_system.execution.paper_broker import PaperBroker
 from quant_system.execution.portfolio import PaperPortfolio
 from quant_system.execution.reporting import generate_paper_trading_report
 from quant_system.execution.storage import LocalPaperTradingStorage
+from quant_system.factors.pipeline import (
+    build_default_factors,
+    build_factor_signal_frame,
+    compute_factor_pipeline,
+)
 from quant_system.risk.engine import RiskEngine
 from quant_system.risk.models import RiskContext, RiskLimits
 
@@ -22,6 +27,8 @@ from quant_system.risk.models import RiskContext, RiskLimits
 class PaperTradingRunResult(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    source: str = "sample"
+    signal_count: int = 0
     orders_path: Path
     order_events_path: Path
     trades_path: Path
@@ -31,6 +38,65 @@ class PaperTradingRunResult(BaseModel):
     trade_count: int
     risk_breach_count: int
     final_equity: float
+
+
+def run_paper_trading(
+    *,
+    symbols: list[str],
+    start: str,
+    end: str,
+    output_dir: str | Path | None = None,
+    initial_cash: float = 100_000.0,
+    lookback: int = 20,
+    top_n: int = 3,
+    target_gross_exposure: float = 1.0,
+    max_position_size: float = 0.50,
+    max_order_value: float = 20_000.0,
+    max_daily_loss: float = 0.02,
+    max_drawdown: float = 0.10,
+    allowed_symbols: list[str] | None = None,
+    blocked_symbols: list[str] | None = None,
+    kill_switch: bool | None = None,
+    max_fill_ratio_per_tick: float = 1.0,
+    commission_bps: float = 0.0,
+    slippage_bps: float = 0.0,
+    min_order_value: float = 0.0,
+    provider: str | None = None,
+    settings: Settings | None = None,
+) -> PaperTradingRunResult:
+    active_settings = settings or load_settings()
+    ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
+    ohlcv = ohlcv_provider.fetch_ohlcv(symbols, start=start, end=end)
+    factor_results = compute_factor_pipeline(
+        ohlcv,
+        factors=build_default_factors(lookback=lookback),
+    )
+    signal_frame = build_factor_signal_frame(factor_results)
+    result = run_signal_paper_trading(
+        ohlcv=ohlcv,
+        signal_frame=signal_frame,
+        output_dir=output_dir,
+        top_n=top_n,
+        target_gross_exposure=target_gross_exposure,
+        initial_cash=initial_cash,
+        max_position_size=max_position_size,
+        max_order_value=max_order_value,
+        max_daily_loss=max_daily_loss,
+        max_drawdown=max_drawdown,
+        allowed_symbols=allowed_symbols,
+        blocked_symbols=blocked_symbols,
+        kill_switch=kill_switch,
+        max_fill_ratio_per_tick=max_fill_ratio_per_tick,
+        commission_bps=commission_bps,
+        slippage_bps=slippage_bps,
+        min_order_value=min_order_value,
+    )
+    return result.model_copy(
+        update={
+            "source": source,
+            "signal_count": len(signal_frame),
+        }
+    )
 
 
 def run_sample_paper_trading(
@@ -53,7 +119,7 @@ def run_sample_paper_trading(
 ) -> PaperTradingRunResult:
     settings = load_settings()
     effective_kill_switch = settings.safety.kill_switch if kill_switch is None else kill_switch
-    provider = SampleOHLCVProvider()
+    provider, source = build_ohlcv_provider(settings, requested="sample")
     ohlcv = provider.fetch_ohlcv(symbols, start=start, end=end)
     portfolio = PaperPortfolio(initial_cash=initial_cash)
     broker = PaperBroker(
@@ -117,6 +183,7 @@ def run_sample_paper_trading(
         ohlcv=ohlcv,
         output_dir=output_dir,
         kill_switch=effective_kill_switch,
+        source=source,
     )
 
 
@@ -304,6 +371,7 @@ def _persist_paper_run(
     ohlcv: pd.DataFrame,
     output_dir: str | Path | None,
     kill_switch: bool,
+    source: str = "sample",
     report_filename: str = "paper_trading_report.md",
 ) -> PaperTradingRunResult:
     final_prices = _last_close_prices(ohlcv)
@@ -382,6 +450,7 @@ def _persist_paper_run(
     )
     report_path = storage.save_report(report, filename=report_filename)
     return PaperTradingRunResult(
+        source=source,
         orders_path=orders_path,
         order_events_path=order_events_path,
         trades_path=trades_path,

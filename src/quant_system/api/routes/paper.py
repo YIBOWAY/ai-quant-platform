@@ -5,9 +5,14 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
-from quant_system.api.schemas.common import make_run_id, read_parquet_records, resolve_run_dir
+from quant_system.api.schemas.common import (
+    make_run_id,
+    read_parquet_records,
+    resolve_run_dir,
+    sorted_metadata_paths,
+)
 from quant_system.api.schemas.paper import PaperRunRequest
-from quant_system.execution.pipeline import run_sample_paper_trading
+from quant_system.execution.pipeline import run_paper_trading
 
 router = APIRouter()
 
@@ -25,21 +30,38 @@ def run_paper(
         )
     run_id = make_run_id("paper")
     run_dir = api_runs_dir / "paper" / run_id
-    result = run_sample_paper_trading(
+    result = run_paper_trading(
         symbols=request.symbols,
         start=request.start,
         end=request.end,
         output_dir=run_dir,
         initial_cash=request.initial_cash,
+        lookback=request.lookback,
+        top_n=request.top_n,
         kill_switch=request.enable_kill_switch,
         max_fill_ratio_per_tick=request.max_fill_ratio_per_tick,
+        provider=request.provider,
+        settings=settings,
     )
     metadata = {
         "run_id": run_id,
+        "source": result.source,
+        "signal_count": result.signal_count,
         "order_count": result.order_count,
         "trade_count": result.trade_count,
         "risk_breach_count": result.risk_breach_count,
         "final_equity": result.final_equity,
+        "request": {
+            "symbols": request.symbols,
+            "start": request.start,
+            "end": request.end,
+            "provider": request.provider,
+            "initial_cash": request.initial_cash,
+            "lookback": request.lookback,
+            "top_n": request.top_n,
+            "max_fill_ratio_per_tick": request.max_fill_ratio_per_tick,
+            "enable_kill_switch": request.enable_kill_switch,
+        },
         "paths": {
             "orders": str(result.orders_path),
             "order_events": str(result.order_events_path),
@@ -60,10 +82,15 @@ def run_paper(
 def list_paper(api_runs_dir: ApiRunsDirDep) -> dict:
     root = api_runs_dir / "paper"
     paper_runs = []
-    if root.exists():
-        for metadata_path in sorted(root.glob("*/metadata.json")):
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            paper_runs.append({"id": metadata["run_id"], "summary": metadata})
+    for metadata_path in sorted_metadata_paths(root):
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        paper_runs.append(
+            {
+                "id": metadata["run_id"],
+                "source": metadata.get("source", "sample"),
+                "summary": metadata,
+            }
+        )
     return {"paper_runs": paper_runs}
 
 

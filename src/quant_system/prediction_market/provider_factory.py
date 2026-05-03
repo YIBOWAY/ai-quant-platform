@@ -10,6 +10,7 @@ def build_prediction_market_provider(
     settings: Settings,
     *,
     requested: str | None = None,
+    cache_mode: str | None = None,
 ) -> tuple[PredictionMarketDataProvider, str]:
     name = (requested or settings.prediction_market.provider).lower().strip()
     if name == "sample":
@@ -20,9 +21,15 @@ def build_prediction_market_provider(
             PolymarketReadOnlyProvider(
                 gamma_base_url=config.polymarket_gamma_base_url,
                 clob_base_url=config.polymarket_clob_base_url,
+                data_api_base_url=config.polymarket_data_api_base_url,
                 timeout_seconds=config.polymarket_request_timeout_seconds,
                 max_retries=config.polymarket_max_retries,
                 rate_limit_per_second=config.polymarket_rate_limit_per_second,
+                cache_dir=config.polymarket_cache_dir,
+                cache_ttl_seconds=config.polymarket_cache_ttl_seconds,
+                cache_stale_if_error_seconds=config.polymarket_cache_stale_if_error_seconds,
+                cache_mode=(cache_mode or "prefer_cache"),
+                user_agent=config.polymarket_user_agent,
             ),
             "polymarket",
         )

@@ -14,6 +14,7 @@ const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
 const pmSchema = z.object({
   provider: z.enum(["sample", "polymarket"]),
+  cache_mode: z.enum(["prefer_cache", "refresh", "network_only"]),
   min_edge_bps: z.coerce.number().nonnegative(),
   max_capital_per_leg: z.coerce.number().nonnegative(),
   capital_limit: z.coerce.number().nonnegative(),
@@ -33,6 +34,7 @@ export function PMRunForm() {
     resolver: zodResolver(pmSchema),
     defaultValues: {
       provider: "sample",
+      cache_mode: "prefer_cache",
       min_edge_bps: 200,
       max_capital_per_leg: 1000,
       capital_limit: 1000,
@@ -81,6 +83,14 @@ export function PMRunForm() {
           <select className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("provider")}>
             <option style={optionStyle} value="sample">sample</option>
             <option style={optionStyle} value="polymarket">polymarket read-only</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          Cache mode
+          <select className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("cache_mode")}>
+            <option style={optionStyle} value="prefer_cache">prefer_cache</option>
+            <option style={optionStyle} value="refresh">refresh</option>
+            <option style={optionStyle} value="network_only">network_only</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
@@ -140,6 +150,7 @@ export function PMRunForm() {
           <Metric label="Opportunities" value={String(backtestResult.metrics.opportunity_count)} />
           <Metric label="Trigger rate" value={`${(backtestResult.metrics.trigger_rate * 100).toFixed(2)}%`} />
           <Metric label="Total est. edge" value={backtestResult.metrics.total_estimated_edge.toFixed(2)} />
+          <Metric label="Cache status" value={backtestResult.cache_status ?? "live"} />
           <div className="rounded border border-border-subtle bg-surface-muted p-3 md:col-span-3">
             <div className="font-body-sm text-text-secondary">Report</div>
             <div className="mt-1 break-all font-data-mono text-xs text-text-primary">{backtestResult.report_path}</div>

@@ -1,18 +1,21 @@
 import { Activity, AlertCircle, ShieldAlert, Wallet } from "lucide-react";
+import { DataPreviewTable } from "@/components/DataPreviewTable";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { PaperRunForm } from "@/components/forms/PaperRunForm";
-import { formatMoney, getHealth, getPaperRuns } from "@/lib/api";
+import { formatMoney, getHealth, getPaperRunDetail, getPaperRuns } from "@/lib/api";
 
 export default async function PaperTrading() {
   const [health, paperRuns] = await Promise.all([getHealth(), getPaperRuns()]);
   const latestRun = paperRuns.paper_runs[0];
+  const detail = latestRun ? await getPaperRunDetail(latestRun.id) : null;
   const latest = latestRun?.summary;
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-base xl:flex-row">
       <div className="flex-1 space-y-6 overflow-y-auto p-4 lg:p-6">
-        <ErrorBanner messages={[health.apiError, paperRuns.apiError]} />
+        <ErrorBanner messages={[health.apiError, paperRuns.apiError, detail?.apiError]} />
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="rounded border border-border-subtle bg-surface p-4">
             <h3 className="mb-2 font-label-caps uppercase text-text-secondary">Final Equity</h3>
@@ -49,10 +52,15 @@ export default async function PaperTrading() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded border border-border-subtle bg-surface-dim p-3">
               <div className="font-label-caps text-text-secondary">latest run</div>
-              <div className="mt-1 truncate font-data-mono text-text-primary">
-                {latestRun?.id ?? "No paper run yet"}
-              </div>
+            <div className="mt-1 truncate font-data-mono text-text-primary">
+              {latestRun?.id ?? "No paper run yet"}
             </div>
+            {latestRun?.source ? (
+              <div className="mt-2">
+                <DataSourceBadge source={latestRun.source} />
+              </div>
+            ) : null}
+          </div>
             <div className="rounded border border-border-subtle bg-surface-dim p-3">
               <div className="font-label-caps text-text-secondary">kill switch</div>
               <div className="mt-1 font-data-mono text-warning">
@@ -63,14 +71,29 @@ export default async function PaperTrading() {
         </section>
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <EmptyState
-            title="Equity curve not selected"
-            description="Run or open a paper trading result to display the real equity curve."
+          <DataPreviewTable
+            title="Trades"
+            description="Latest simulated paper trades."
+            rows={detail?.trades ?? []}
+            emptyTitle="No trades recorded"
+            emptyDescription="This run may have produced orders without fills, or no run exists yet."
           />
-          <EmptyState
-            title="Order lifecycle table pending"
-            description="Order and fill details will be rendered from /api/paper/{id}."
+          <DataPreviewTable
+            title="Order Lifecycle"
+            description="Order status events from the newest paper run."
+            rows={detail?.order_events ?? []}
+            emptyTitle="Order lifecycle table pending"
+            emptyDescription="Order and fill details will be rendered after a paper run completes."
           />
+          <div className="lg:col-span-2">
+            <DataPreviewTable
+              title="Risk Breaches"
+              description="Latest rule hits captured by the paper trading engine."
+              rows={detail?.risk_breaches ?? []}
+              emptyTitle="No risk breaches logged"
+              emptyDescription="This run did not emit any risk breach rows."
+            />
+          </div>
         </section>
       </div>
 

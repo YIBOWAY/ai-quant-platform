@@ -2,7 +2,12 @@ import { Bot, Cpu, Network, ShieldCheck } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { AgentTaskForm } from "@/components/forms/AgentTaskForm";
-import { getAgentCandidates, getAgentLlmConfig, getFactors } from "@/lib/api";
+import {
+  getAgentCandidateDetail,
+  getAgentCandidates,
+  getAgentLlmConfig,
+  getFactors,
+} from "@/lib/api";
 
 export default async function AgentStudio() {
   const [candidates, factors, llmConfig] = await Promise.all([
@@ -11,6 +16,9 @@ export default async function AgentStudio() {
     getAgentLlmConfig(),
   ]);
   const latestCandidate = candidates.candidates[0];
+  const latestDetail = latestCandidate
+    ? await getAgentCandidateDetail(latestCandidate.candidate_id)
+    : null;
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-base">
@@ -85,16 +93,74 @@ export default async function AgentStudio() {
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          <ErrorBanner messages={[candidates.apiError, factors.apiError, llmConfig.apiError]} />
+          <ErrorBanner
+            messages={[
+              candidates.apiError,
+              factors.apiError,
+              llmConfig.apiError,
+              latestDetail?.apiError,
+            ]}
+          />
           <AgentTaskForm candidates={candidates.candidates} />
-          <EmptyState
-            title="Source preview not loaded"
-            description="Candidate source is shown only after loading a specific candidate detail as plain text."
-          />
-          <EmptyState
-            title="Audit timeline pending"
-            description="Structured audit log viewing is scheduled separately."
-          />
+          {latestDetail?.source_preview ? (
+            <section className="rounded border border-border-subtle bg-bg-surface p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-headline-lg text-text-primary">Source Preview</h2>
+                  <p className="mt-1 font-body-sm text-text-secondary">
+                    Latest candidate file read from disk as plain text only.
+                  </p>
+                </div>
+                <span className="font-data-mono text-[10px] uppercase text-text-secondary">
+                  {latestDetail.candidate_id}
+                </span>
+              </div>
+              <pre className="max-h-80 overflow-auto rounded border border-border-subtle bg-surface-muted p-3 font-code-sm text-text-primary">
+                {latestDetail.source_preview}
+              </pre>
+            </section>
+          ) : (
+            <EmptyState
+              title="Source preview not loaded"
+              description="Candidate source is shown only after loading a specific candidate detail as plain text."
+            />
+          )}
+          {latestDetail?.audit.length || latestDetail?.reviews.length ? (
+            <section className="rounded border border-border-subtle bg-bg-surface p-4">
+              <h2 className="font-headline-lg text-text-primary">Audit Timeline</h2>
+              <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                <div>
+                  <h3 className="font-label-caps text-text-secondary">Audit Events</h3>
+                  <ul className="mt-2 space-y-2 font-data-mono text-xs text-text-primary">
+                    {(latestDetail?.audit ?? []).slice(0, 12).map((entry, index) => (
+                      <li key={`audit-${index}`} className="rounded border border-border-subtle bg-surface-muted p-2">
+                        {entry}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="font-label-caps text-text-secondary">Review Events</h3>
+                  {(latestDetail?.reviews ?? []).length ? (
+                    <ul className="mt-2 space-y-2 font-data-mono text-xs text-text-primary">
+                      {latestDetail.reviews.slice(0, 12).map((entry, index) => (
+                        <li key={`review-${index}`} className="rounded border border-border-subtle bg-surface-muted p-2">
+                          {entry}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 font-body-sm text-text-secondary">No review records yet.</p>
+                  )}
+                </div>
+              </div>
+            </section>
+          ) : (
+            <EmptyState
+              title="Audit timeline pending"
+              description="This candidate has no audit or review rows yet."
+            />
+          )}
         </div>
       </div>
     </div>

@@ -74,3 +74,29 @@ def test_agent_candidate_detail_rejects_path_traversal(tmp_path) -> None:
 
     assert response.status_code == 404
     assert response.json()["safety"]["dry_run"] is True
+
+
+def test_agent_candidates_list_returns_latest_first(tmp_path) -> None:
+    pool = CandidatePool(tmp_path)
+    first = pool.write_candidate(
+        task_id="task-001",
+        goal="first",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content="# first\n",
+    )
+    second = pool.write_candidate(
+        task_id="task-002",
+        goal="second",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content="# second\n",
+    )
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/agent/candidates")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["candidates"][0]["candidate_id"] == second.candidate_id
+    assert payload["candidates"][1]["candidate_id"] == first.candidate_id

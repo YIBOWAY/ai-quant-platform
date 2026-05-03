@@ -132,6 +132,39 @@ def test_polymarket_provider_uses_cache_when_network_fails(tmp_path) -> None:
     assert cached_provider.last_cache_status == "stale_cache"
 
 
+def test_polymarket_provider_parses_price_history_and_trades() -> None:
+    def fake_get_json(url: str, timeout: float) -> object:
+        if "prices-history" in url:
+            return {
+                "history": [
+                    {"t": 1_777_557_605, "p": 0.57},
+                    {"t": 1_777_561_205, "p": 0.565},
+                ]
+            }
+        if "data-api" in url and "trades" in url:
+            return [
+                {
+                    "conditionId": "condition-1",
+                    "asset": "token-yes",
+                    "price": 0.57,
+                    "size": 12.5,
+                    "side": "SELL",
+                    "timestamp": 1_777_557_605,
+                }
+            ]
+        raise AssertionError(url)
+
+    provider = PolymarketReadOnlyProvider(get_json=fake_get_json)
+
+    history = provider.get_price_history("token-yes")
+    trades = provider.get_trades("condition-1", limit=5)
+
+    assert history[0].price == 0.57
+    assert history[0].timestamp.endswith("Z")
+    assert trades[0].token_id == "token-yes"
+    assert trades[0].side == "SELL"
+
+
 def test_polymarket_provider_maps_timeout_to_provider_error() -> None:
     def timeout_get_json(url: str, timeout: float) -> object:
         raise TimeoutError("slow")
@@ -200,6 +233,23 @@ def test_prediction_market_provider_factory_builds_polymarket_when_explicit() ->
 
     assert provider.__class__.__name__ == "PolymarketReadOnlyProvider"
     assert label == "polymarket"
+
+
+def test_prediction_market_provider_factory_passes_user_agent_setting(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QS_POLYMARKET_USER_AGENT", "custom-phase11-agent")
+    settings = Settings(
+        prediction_market=PredictionMarketSettings(
+            provider="polymarket",
+            read_only=True,
+        )
+    )
+
+    provider, _ = build_prediction_market_provider(settings, requested="polymarket")
+
+    assert isinstance(provider, PolymarketReadOnlyProvider)
+    assert provider.user_agent == "custom-phase11-agent"
 
 
 def test_prediction_market_provider_factory_rejects_unknown_provider() -> None:

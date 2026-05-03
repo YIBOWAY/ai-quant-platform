@@ -25,6 +25,14 @@ from quant_system.experiments.runner import (
 from quant_system.factors.pipeline import FactorResearchResult, run_sample_factor_research
 from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
 from quant_system.logging.setup import configure_logging
+from quant_system.prediction_market.charts import (
+    write_prediction_market_timeseries_charts,
+)
+from quant_system.prediction_market.collector import (
+    PredictionMarketSnapshotCollector,
+    ensure_no_polymarket_credentials_in_env,
+    seed_sample_history_dataset,
+)
 from quant_system.prediction_market.data.sample_provider import SamplePredictionMarketProvider
 from quant_system.prediction_market.execution_threshold import (
     ExecutionThresholdConfig,
@@ -32,7 +40,16 @@ from quant_system.prediction_market.execution_threshold import (
 )
 from quant_system.prediction_market.optimizer.greedy_stub import GreedyStub
 from quant_system.prediction_market.pipeline import run_dry_arbitrage, scan_market
-from quant_system.prediction_market.reporting import write_prediction_market_report
+from quant_system.prediction_market.provider_factory import build_prediction_market_provider
+from quant_system.prediction_market.reporting import (
+    write_phase12_timeseries_report,
+    write_prediction_market_report,
+)
+from quant_system.prediction_market.storage import PredictionMarketSnapshotStore
+from quant_system.prediction_market.timeseries_backtest import (
+    PredictionMarketTimeseriesBacktestConfig,
+    run_prediction_market_timeseries_backtest,
+)
 
 _API_SECRET_FIELDS: frozenset[str] = frozenset(
     {
@@ -808,6 +825,164 @@ def prediction_market_dry_arbitrage(
                 ]
             )
         )
+
+
+@prediction_market_app.command("collect")
+def prediction_market_collect(
+    provider: Annotated[
+        Literal["sample", "polymarket"],
+        typer.Option("--provider", help="Read-only provider to collect from."),
+    ] = "sample",
+    cache_mode: Annotated[
+        Literal["prefer_cache", "refresh", "network_only"],
+        typer.Option("--cache-mode", help="Cache behavior for polymarket read-only GETs."),
+    ] = "prefer_cache",
+    duration: Annotated[
+        float,
+        typer.Option("--duration", help="Total collection duration in seconds."),
+    ] = 0.0,
+    interval: Annotated[
+        float | None,
+        typer.Option("--interval", help="Polling interval in seconds."),
+    ] = None,
+    out_dir: Annotated[
+        str | None,
+        typer.Option("--out-dir", help="Override history snapshot output directory."),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", help="Maximum number of markets per polling round."),
+    ] = 10,
+) -> None:
+    """Collect read-only prediction-market snapshots into partitioned history files."""
+    settings = reload_settings()
+    ensure_no_polymarket_credentials_in_env()
+    provider_instance, provider_label = build_prediction_market_provider(
+        settings,
+        requested=provider,
+        cache_mode=cache_mode,
+    )
+    history_root = Path(out_dir) if out_dir else settings.prediction_market.history_dir
+    collector = PredictionMarketSnapshotCollector(
+        provider=provider_instance,
+        provider_label=provider_label,
+        store=PredictionMarketSnapshotStore(history_root),
+        interval_seconds=interval or settings.prediction_market.collector_default_interval_seconds,
+        duration_seconds=duration,
+        limit=limit,
+    )
+    summary = collector.run()
+    typer.echo(
+        " ".join(
+            [
+                f"provider={summary.provider}",
+                f"iterations={summary.iteration_count}",
+                f"markets={summary.market_count}",
+                f"records={summary.snapshot_record_count}",
+                f"history_dir={summary.output_root}",
+                f"first_timestamp={summary.first_timestamp or '<none>'}",
+                f"last_timestamp={summary.last_timestamp or '<none>'}",
+            ]
+        )
+    )
+
+
+@prediction_market_app.command("timeseries-backtest")
+def prediction_market_timeseries_backtest(
+    provider: Annotated[
+        Literal["sample", "polymarket"],
+        typer.Option("--provider", help="History provider partition to replay."),
+    ] = "sample",
+    start_time: Annotated[
+        str | None,
+        typer.Option("--start-time", help="Optional ISO timestamp lower bound."),
+    ] = None,
+    end_time: Annotated[
+        str | None,
+        typer.Option("--end-time", help="Optional ISO timestamp upper bound."),
+    ] = None,
+    min_edge_bps: Annotated[
+        float,
+        typer.Option("--min-edge-bps", help="Minimum edge threshold in basis points."),
+    ] = 200.0,
+    capital_limit: Annotated[
+        float,
+        typer.Option("--capital-limit", help="Maximum notional per simulated complete set."),
+    ] = 1_000.0,
+    max_legs: Annotated[
+        int,
+        typer.Option("--max-legs", help="Maximum legs allowed by the threshold checker."),
+    ] = 3,
+    max_markets: Annotated[
+        int,
+        typer.Option("--max-markets", help="Maximum markets per snapshot timestamp."),
+    ] = 50,
+    fee_bps: Annotated[
+        float | None,
+        typer.Option("--fee-bps", help="Optional fee assumption in basis points."),
+    ] = None,
+    display_size_multiplier: Annotated[
+        float,
+        typer.Option("--display-size-multiplier", help="Multiplier applied to top-of-book size."),
+    ] = 1.0,
+    output_dir: Annotated[
+        str,
+        typer.Option("--output-dir", help="Directory for report and chart artifacts."),
+    ] = "data/pm_timeseries",
+    history_dir: Annotated[
+        str | None,
+        typer.Option("--history-dir", help="Optional override for the history snapshot root."),
+    ] = None,
+) -> None:
+    """Replay stored snapshot history with a read-only quasi-backtest."""
+    settings = reload_settings()
+    history_root = Path(history_dir) if history_dir else settings.prediction_market.history_dir
+    if provider == "sample":
+        store = PredictionMarketSnapshotStore(history_root)
+        if not store.load_history_records(provider="sample"):
+            seed_sample_history_dataset(history_root)
+    result = run_prediction_market_timeseries_backtest(
+        store=PredictionMarketSnapshotStore(history_root),
+        config=PredictionMarketTimeseriesBacktestConfig(
+            provider=provider,
+            start_time=start_time,
+            end_time=end_time,
+            min_edge_bps=min_edge_bps,
+            capital_limit=capital_limit,
+            max_legs=max_legs,
+            max_markets=max_markets,
+            fee_bps=(
+                fee_bps
+                if fee_bps is not None
+                else settings.prediction_market.backtest_default_fee_bps
+            ),
+            display_size_multiplier=display_size_multiplier,
+        ),
+    )
+    output_root = Path(output_dir)
+    chart_index = write_prediction_market_timeseries_charts(
+        result=result,
+        output_dir=output_root,
+    )
+    report_path = write_phase12_timeseries_report(
+        result=result,
+        chart_index=chart_index,
+        output_dir=output_root,
+        run_id="cli",
+    )
+    typer.echo(
+        " ".join(
+            [
+                f"provider={result.metrics.provider}",
+                f"snapshots={result.metrics.snapshot_count}",
+                f"opportunities={result.metrics.opportunity_count}",
+                f"simulated_trades={result.metrics.simulated_trade_count}",
+                f"cumulative_estimated_profit={result.metrics.cumulative_estimated_profit:.4f}",
+                f"report={report_path}",
+                f"charts={output_root / 'chart_index.json'}",
+            ]
+        )
+    )
 
 
 @prediction_market_app.command("doctor")

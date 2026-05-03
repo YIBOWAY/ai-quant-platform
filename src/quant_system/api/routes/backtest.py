@@ -4,15 +4,16 @@ import json
 
 from fastapi import APIRouter, HTTPException
 
-from quant_system.api.dependencies import ApiRunsDirDep
+from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.schemas.backtest import BacktestRunRequest
 from quant_system.api.schemas.common import (
     make_run_id,
     read_json,
     read_parquet_records,
     resolve_run_dir,
+    sorted_metadata_paths,
 )
-from quant_system.backtest.pipeline import run_sample_backtest
+from quant_system.backtest.pipeline import run_backtest as execute_backtest
 
 router = APIRouter()
 
@@ -21,10 +22,11 @@ router = APIRouter()
 def run_backtest(
     request: BacktestRunRequest,
     api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
 ) -> dict:
     run_id = make_run_id("backtest")
     run_dir = api_runs_dir / "backtests" / run_id
-    result = run_sample_backtest(
+    result = execute_backtest(
         symbols=request.symbols,
         start=request.start,
         end=request.end,
@@ -34,9 +36,23 @@ def run_backtest(
         initial_cash=request.initial_cash,
         commission_bps=request.commission_bps,
         slippage_bps=request.slippage_bps,
+        provider=request.provider,
+        settings=settings,
     )
     metadata = {
         "run_id": run_id,
+        "source": result.source,
+        "request": {
+            "symbols": request.symbols,
+            "start": request.start,
+            "end": request.end,
+            "provider": request.provider,
+            "lookback": request.lookback,
+            "top_n": request.top_n,
+            "initial_cash": request.initial_cash,
+            "commission_bps": request.commission_bps,
+            "slippage_bps": request.slippage_bps,
+        },
         "metrics": {
             "total_return": result.total_return,
             "sharpe": result.sharpe,
@@ -63,10 +79,15 @@ def run_backtest(
 def list_backtests(api_runs_dir: ApiRunsDirDep) -> dict:
     root = api_runs_dir / "backtests"
     backtests = []
-    if root.exists():
-        for metadata_path in sorted(root.glob("*/metadata.json")):
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            backtests.append({"id": metadata["run_id"], "metrics": metadata.get("metrics", {})})
+    for metadata_path in sorted_metadata_paths(root):
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        backtests.append(
+            {
+                "id": metadata["run_id"],
+                "source": metadata.get("source", "sample"),
+                "metrics": metadata.get("metrics", {}),
+            }
+        )
     return {"backtests": backtests}
 
 

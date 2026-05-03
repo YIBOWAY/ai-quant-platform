@@ -1,11 +1,25 @@
 import { BookOpen } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { PMHistoryBacktestForm } from "@/components/forms/PMHistoryBacktestForm";
+import { PredictionMarketDataControls } from "@/components/forms/PredictionMarketDataControls";
 import { PMRunForm } from "@/components/forms/PMRunForm";
 import { getPredictionMarkets } from "@/lib/api";
 
-export default async function OrderBookPage() {
-  const predictionMarkets = await getPredictionMarkets();
+type OrderBookPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function single(value: string | string[] | undefined, fallback: string) {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+export default async function OrderBookPage({ searchParams }: OrderBookPageProps) {
+  const params = (await searchParams) ?? {};
+  const provider = single(params.provider, "sample");
+  const cacheMode = single(params.cache_mode, "prefer_cache");
+  const limit = Number.parseInt(single(params.limit, "6"), 10);
+  const predictionMarkets = await getPredictionMarkets(provider, cacheMode, limit);
 
   return (
     <div className="flex h-full flex-1 flex-col gap-4 overflow-y-auto p-container-padding text-zinc-400">
@@ -19,6 +33,25 @@ export default async function OrderBookPage() {
           Loaded {predictionMarkets.order_books.length} read-only order books from the local API.
           Polymarket support is research-only: no wallet signing, no live trading, no real orders.
         </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <PredictionMarketDataControls
+            initial={{
+              provider:
+                provider === "polymarket" ? "polymarket" : "sample",
+              cache_mode:
+                cacheMode === "refresh" || cacheMode === "network_only"
+                  ? cacheMode
+                  : "prefer_cache",
+              limit: String(Number.isFinite(limit) ? limit : 6),
+            }}
+          />
+          <span className="font-data-mono text-[10px] uppercase text-text-secondary">
+            provider: {predictionMarkets.provider}
+          </span>
+          <span className="font-data-mono text-[10px] uppercase text-text-secondary">
+            cache: {predictionMarkets.cache_status ?? "live"}
+          </span>
+        </div>
       </header>
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {predictionMarkets.markets.map((market) => (
@@ -46,6 +79,7 @@ export default async function OrderBookPage() {
         ))}
       </section>
       <PMRunForm />
+      <PMHistoryBacktestForm />
       <EmptyState
         title="Live integration disabled"
         description="This page only runs read-only scans, dry proposals, and quasi-backtests."

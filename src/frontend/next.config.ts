@@ -17,9 +17,20 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**', // This allows any path under the hostname
       },
+      {
+        protocol: 'http',
+        hostname: '127.0.0.1',
+        port: '8765',
+        pathname: '/api/prediction-market/**',
+      },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '8765',
+        pathname: '/api/prediction-market/**',
+      },
     ],
   },
-  output: 'standalone',
   transpilePackages: ['motion'],
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.

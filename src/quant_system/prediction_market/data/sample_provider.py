@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from quant_system.prediction_market.models import CLOBOrder, Market, OrderBookSnapshot, Outcome
+from quant_system.prediction_market.models import (
+    CLOBOrder,
+    Market,
+    MarketTrade,
+    OrderBookSnapshot,
+    Outcome,
+    PriceHistoryPoint,
+)
 
 
 class SamplePredictionMarketProvider:
@@ -38,8 +45,9 @@ class SamplePredictionMarketProvider:
             "sample-three-c": 0.40,
         }
 
-    def list_markets(self) -> list[Market]:
-        return list(self._markets)
+    def list_markets(self, limit: int | None = None) -> list[Market]:
+        markets = list(self._markets)
+        return markets if limit is None else markets[:limit]
 
     def get_order_books(self, market_id: str) -> list[OrderBookSnapshot]:
         market = next((item for item in self._markets if item.market_id == market_id), None)
@@ -54,6 +62,43 @@ class SamplePredictionMarketProvider:
             )
             for outcome in market.outcomes
         ]
+
+    def get_price_history(
+        self,
+        token_id: str,
+        *,
+        interval: str = "1d",
+        fidelity: int = 60,
+    ) -> list[PriceHistoryPoint]:
+        ask = self._asks[token_id]
+        return [
+            PriceHistoryPoint(timestamp="2026-01-01T00:00:00Z", price=max(ask - 0.02, 0.01)),
+            PriceHistoryPoint(timestamp="2026-01-02T00:00:00Z", price=ask),
+        ]
+
+    def get_trades(
+        self,
+        condition_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[MarketTrade]:
+        market = next((item for item in self._markets if item.condition_id == condition_id), None)
+        if market is None:
+            return []
+        trades: list[MarketTrade] = []
+        for outcome in market.outcomes:
+            trades.append(
+                MarketTrade(
+                    condition_id=condition_id,
+                    token_id=outcome.token_id,
+                    price=self._asks[outcome.token_id],
+                    size=25,
+                    side="buy",
+                    timestamp="2026-01-02T00:00:00Z",
+                )
+            )
+        return trades[offset : offset + limit]
 
     @staticmethod
     def _build_snapshot(

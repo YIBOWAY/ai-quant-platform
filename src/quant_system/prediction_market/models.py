@@ -68,6 +68,33 @@ class OrderBookSnapshot(BaseModel):
         return min(self.asks, key=lambda order: order.price, default=None)
 
 
+class PriceHistoryPoint(BaseModel):
+    timestamp: str
+    price: float = Field(ge=0, le=1)
+
+
+class MarketTrade(BaseModel):
+    condition_id: str
+    token_id: str
+    price: float = Field(ge=0, le=1)
+    size: float = Field(gt=0)
+    side: Literal["BUY", "SELL", "buy", "sell"]
+    timestamp: str
+
+
+class HistoricalSnapshotRecord(BaseModel):
+    provider: str
+    market_id: str
+    condition_id: str
+    token_id: str
+    timestamp_utc: str
+    fetched_at: str
+    source_type: str
+    source_endpoint: str
+    market: Market
+    order_book: OrderBookSnapshot
+
+
 class MispricingCandidate(BaseModel):
     market_id: str
     condition_id: str

@@ -27,10 +27,11 @@ def scan_market(
     *,
     provider: PredictionMarketDataProvider,
     scanners: list[MispricingScanner] | None = None,
+    max_markets: int | None = None,
 ) -> list[MispricingCandidate]:
     active_scanners = scanners or default_scanners()
     candidates: list[MispricingCandidate] = []
-    for market in provider.list_markets():
+    for market in provider.list_markets(limit=max_markets):
         order_books = provider.get_order_books(market.market_id)
         for scanner in active_scanners:
             candidates.extend(scanner.scan(market=market, order_books=order_books))
@@ -44,11 +45,16 @@ def run_dry_arbitrage(
     threshold: ProfitThresholdChecker,
     output_dir: str | Path,
     scanners: list[MispricingScanner] | None = None,
+    max_markets: int | None = None,
 ) -> list[ProposedTrade]:
     proposals_dir = Path(output_dir) / "prediction_market" / "proposals"
     proposals_dir.mkdir(parents=True, exist_ok=True)
     trades: list[ProposedTrade] = []
-    for candidate in scan_market(provider=provider, scanners=scanners):
+    for candidate in scan_market(
+        provider=provider,
+        scanners=scanners,
+        max_markets=max_markets,
+    ):
         if not threshold.is_allowed(candidate):
             continue
         trade = optimizer.solve(candidate)

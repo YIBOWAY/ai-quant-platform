@@ -29,11 +29,14 @@ export default defineConfig({
           timeout: 60_000,
         },
         {
-          command: "npm run build && npm run start -- -H 127.0.0.1 -p 3001",
+          command: "npm run dev -- --hostname 127.0.0.1 --port 3001",
           cwd: process.cwd(),
           url: "http://127.0.0.1:3001",
           reuseExistingServer: true,
           timeout: 120_000,
+          env: {
+            DISABLE_HMR: "true",
+          },
         },
       ]
     : undefined,

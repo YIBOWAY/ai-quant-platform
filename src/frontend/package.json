@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\" && next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "eslint app components lib tests playwright.config.ts eslint.config.mjs next.config.ts",
     "clean": "next clean",
     "test:e2e": "playwright test"
   },
