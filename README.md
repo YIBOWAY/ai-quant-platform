@@ -1,140 +1,195 @@
-# AI-Assisted Quant Research and Paper-Trading Platform
+# AI-Assisted Quant Research Platform
 
-这是一个从研究开始、逐步走向回测和模拟交易的量化交易工程项目。当前系统仍然只做研究和本地验证，不会真实下单。
+本项目是一套本地运行的量化研究、回测、模拟交易与只读市场研究平台。
 
-> 📘 **第一次接触本项目？** 先读 [docs/OVERVIEW.md](docs/OVERVIEW.md)：零基础导读 + 5 分钟跑通教程 + 术语表 + 安全边界，看完就能上手。
+当前进度：**Phase 13 已完成**。
 
-## 当前状态
+平台可以做：
 
-已完成：
+- 美股 / ETF 历史行情研究，主数据源支持 Futu OpenD，也保留 sample / Tiingo 回退。
+- 因子计算、因子评估、策略回测、实验记录、paper trading。
+- 本地 FastAPI 后端与 Next.js 前端联动。
+- AI 研究助手：只生成候选研究产物，不会自动上线。
+- Polymarket / prediction market 只读数据、历史快照、时间序列回放。
+- Futu 只读期权数据、单标的卖方期权筛选器、每日全市场 Options Radar。
 
-- Phase 0：项目骨架、配置、日志、CLI、安全默认值、最小测试
-- Phase 1：数据层 MVP，支持样例数据、本地 CSV、Tiingo 日线数据、本地 Parquet / DuckDB 保存、数据质量报告
-- Phase 2：因子研究层 MVP，支持基础因子、因子注册、因子计算、IC / Rank IC、分组收益、因子报告和命令行生成
-- Phase 3：回测引擎 MVP，支持信号输入、订单生成、模拟成交、交易成本、滑点、资金持仓跟踪、交易记录、资金曲线和基础绩效报告
-- Phase 4：实验管理 MVP，支持多因子标准化、方向配置、加权合成、参数 sweep、walk-forward、实验对比报告和 AI 可读摘要
-- Phase 5：风控与 Paper Trading MVP，支持交易前风控、订单生命周期、paper broker、部分成交、交易日志、风控违规日志和模拟交易报告
+平台不会做：
 
-当前没有实现：
+- 不实盘交易。
+- 不连接钱包。
+- 不签名。
+- 不下真实订单。
+- 不解锁 Futu 交易账户。
+- 不提供任何 live trading 能力。
 
-- 生产级完整回测引擎
-- 实盘交易
-- 券商接口
-- AI 自动上线策略
-- 复杂机器学习模型
-- 高频低延迟执行
-- Polymarket 套利执行
+## 快速开始
+
+推荐使用已经创建好的 conda 环境：
+
+```powershell
+conda activate ai-quant
+python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev]"
+```
+
+前端依赖：
+
+```powershell
+cd src/frontend
+npm install
+```
+
+## 启动后端
+
+```powershell
+conda activate ai-quant
+quant-system serve --host 127.0.0.1 --port 8765
+```
+
+等价的直接启动方式：
+
+```powershell
+python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
+```
+
+健康检查：
+
+```powershell
+curl http://127.0.0.1:8765/api/health
+```
+
+默认只绑定本机 `127.0.0.1`。
+
+## 启动前端
+
+另开一个 PowerShell：
+
+```powershell
+cd src/frontend
+npm run dev -- --hostname 127.0.0.1 --port 3001
+```
+
+打开：
+
+```text
+http://127.0.0.1:3001
+```
+
+常用页面：
+
+- `/data-explorer`：股票历史行情。
+- `/factor-lab`：因子运行。
+- `/backtest`：回测。
+- `/paper-trading`：模拟交易。
+- `/options-screener`：单标的卖方期权筛选。
+- `/options-radar`：每日全市场卖方期权扫描结果。
+- `/order-book`：Polymarket / prediction market 只读研究页面。
+
+## Futu 只读数据
+
+Futu 用于读取美股和美股期权行情。使用前需要：
+
+1. 本机 OpenD 已运行并登录。
+2. conda 环境 `ai-quant` 已安装 `futu-api`。
+3. `.env` 中 Futu 设置保持只读用途。
+
+验证：
+
+```powershell
+conda activate ai-quant
+python scripts/verify_futu_connection.py
+```
+
+注意：本项目只使用 Futu quote context，不使用交易 context。
+
+## Options Radar
+
+离线样例扫描：
+
+```powershell
+conda activate ai-quant
+quant-system options daily-scan --provider sample --top 5 --date 2026-05-03 --output-dir data\_phase13_sample_scan
+```
+
+真实 Futu dry run：
+
+```powershell
+quant-system options daily-scan --top 5 --dry-run
+```
+
+查看前端：
+
+```text
+http://127.0.0.1:3001/options-radar
+```
+
+## 测试
+
+后端：
+
+```powershell
+conda activate ai-quant
+python -m pytest -q
+ruff check src/quant_system tests
+```
+
+前端：
+
+```powershell
+npm --prefix src/frontend run lint
+npm --prefix src/frontend run build
+```
+
+浏览器联调：
+
+```powershell
+cd src/frontend
+$env:PW_E2E="1"
+npx playwright test --config playwright.config.ts --workers=1
+```
+
+当前已验证结果：
+
+- `pytest`：256 个测试通过。
+- `ruff`：通过。
+- 前端 lint / build：通过。
+- Playwright：14 个浏览器测试通过。
+
+## 重要文档
+
+从这里开始读：
+
+- [docs/OVERVIEW.md](docs/OVERVIEW.md)
+- [docs/INDEX.md](docs/INDEX.md)
+- [docs/SYSTEM_DESIGN_RESEARCH.md](docs/SYSTEM_DESIGN_RESEARCH.md)
+
+当前阶段：
+
+- [docs/architecture/phase_13_architecture.md](docs/architecture/phase_13_architecture.md)
+- [docs/execution/phase_13_execution.md](docs/execution/phase_13_execution.md)
+- [docs/learning/phase_13_learning.md](docs/learning/phase_13_learning.md)
+- [docs/delivery/phase_13_delivery.md](docs/delivery/phase_13_delivery.md)
+
+Futu / 期权：
+
+- [docs/futu/futu_environment_setup.md](docs/futu/futu_environment_setup.md)
+- [docs/futu/futu_market_data_provider.md](docs/futu/futu_market_data_provider.md)
+- [docs/futu/futu_options_data_provider.md](docs/futu/futu_options_data_provider.md)
+- [docs/options/options_screener_learning.md](docs/options/options_screener_learning.md)
+
+Polymarket：
+
+- [docs/polymarket/polymarket_read_only_integration.md](docs/polymarket/polymarket_read_only_integration.md)
+- [docs/polymarket/polymarket_history_collection.md](docs/polymarket/polymarket_history_collection.md)
+- [docs/polymarket/polymarket_timeseries_backtest_learning.md](docs/polymarket/polymarket_timeseries_backtest_learning.md)
 
 ## 安全边界
 
-默认配置保持保守：
+默认安全配置：
 
-- `dry_run = true`
-- `paper_trading = true`
-- `live_trading_enabled = false`
-- `no_live_trade_without_manual_approval = true`
-- `kill_switch = true`
+- `QS_DRY_RUN=true`
+- `QS_PAPER_TRADING=true`
+- `QS_LIVE_TRADING_ENABLED=false`
+- `QS_NO_LIVE_TRADE_WITHOUT_MANUAL_APPROVAL=true`
+- `QS_KILL_SWITCH=true`
 
-当前系统不会真实下单，也不会绕过风控层。
-
-## 安装
-
-推荐使用已经创建的独立环境 `ai-quant`。
-
-```powershell
-conda activate ai-quant
-python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[dev]"
-```
-
-如果需要从头创建环境：
-
-```powershell
-conda env create -f environment.yml
-conda activate ai-quant
-python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[dev]"
-```
-
-## 常用命令
-
-基础检查：
-
-```powershell
-python -m quant_system.cli --help
-python -m quant_system.cli config show
-python -m quant_system.cli doctor
-```
-
-生成样例数据：
-
-```powershell
-python -m quant_system.cli data ingest-sample --symbol SPY --symbol AAPL --start 2024-01-02 --end 2024-01-31 --output-dir data/phase1_sample
-```
-
-查看因子：
-
-```powershell
-python -m quant_system.cli factor list
-```
-
-生成 Phase 2 因子报告：
-
-```powershell
-python -m quant_system.cli factor run-sample --symbol SPY --symbol AAPL --symbol QQQ --start 2024-01-02 --end 2024-02-15 --lookback 3 --output-dir data/phase2_sample
-```
-
-运行 Phase 3 样例回测：
-
-```powershell
-python -m quant_system.cli backtest run-sample --symbol SPY --symbol AAPL --symbol QQQ --start 2024-01-02 --end 2024-02-15 --lookback 3 --top-n 2 --initial-cash 100000 --commission-bps 1 --slippage-bps 5 --output-dir data/phase3_sample
-```
-
-运行 Phase 4 样例实验：
-
-```powershell
-python -m quant_system.cli experiment run-sample --symbol SPY --symbol AAPL --symbol QQQ --start 2024-01-02 --end 2024-03-15 --lookback 3 --lookback 5 --top-n 1 --top-n 2 --output-dir data/phase4_sample
-```
-
-运行 Phase 5 样例模拟交易：
-
-```powershell
-python -m quant_system.cli paper run-sample --symbol SPY --symbol AAPL --start 2024-01-02 --end 2024-01-12 --initial-cash 100000 --max-order-value 20000 --max-position-size 0.60 --no-kill-switch --output-dir data/phase5_sample
-```
-
-运行测试：
-
-```powershell
-python -m pytest
-ruff check .
-```
-
-## 文档
-
-- `docs/SYSTEM_DESIGN_RESEARCH.md`：系统设计调研
-- `docs/learning/phase_0_learning.md`：Phase 0 学习文档
-- `docs/execution/phase_0_execution.md`：Phase 0 执行文档
-- `docs/architecture/phase_0_architecture.md`：Phase 0 架构文档
-- `docs/delivery/phase_0_delivery.md`：Phase 0 交付清单
-- `docs/learning/phase_1_learning.md`：Phase 1 学习文档
-- `docs/execution/phase_1_execution.md`：Phase 1 执行文档
-- `docs/architecture/phase_1_architecture.md`：Phase 1 架构文档
-- `docs/delivery/phase_1_delivery.md`：Phase 1 交付清单
-- `docs/learning/phase_2_learning.md`：Phase 2 学习文档
-- `docs/execution/phase_2_execution.md`：Phase 2 执行文档
-- `docs/architecture/phase_2_architecture.md`：Phase 2 架构文档
-- `docs/delivery/phase_2_delivery.md`：Phase 2 交付清单
-- `docs/learning/phase_3_learning.md`：Phase 3 学习文档
-- `docs/execution/phase_3_execution.md`：Phase 3 执行文档
-- `docs/architecture/phase_3_architecture.md`：Phase 3 架构文档
-- `docs/delivery/phase_3_delivery.md`：Phase 3 交付清单
-- `docs/learning/phase_4_learning.md`：Phase 4 学习文档
-- `docs/execution/phase_4_execution.md`：Phase 4 执行文档
-- `docs/architecture/phase_4_architecture.md`：Phase 4 架构文档
-- `docs/delivery/phase_4_delivery.md`：Phase 4 交付清单
-- `docs/learning/phase_5_learning.md`：Phase 5 学习文档
-- `docs/execution/phase_5_execution.md`：Phase 5 执行文档
-- `docs/architecture/phase_5_architecture.md`：Phase 5 架构文档
-- `docs/delivery/phase_5_delivery.md`：Phase 5 交付清单
-
-## 下一步
-
-Phase 5 完成后暂停。确认后进入 Phase 6：实盘接口适配层。
+这些边界不能被前端、Agent、策略、回测或 API 绕过。
