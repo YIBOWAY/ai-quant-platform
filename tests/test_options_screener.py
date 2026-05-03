@@ -92,6 +92,9 @@ def test_options_screener_scores_sell_put_candidate() -> None:
 
     assert result.ticker == "AAPL"
     assert result.provider == "futu"
+    assert result.expiration is None
+    assert result.scanned_expirations == ["2026-06-19"]
+    assert result.expiration_count == 1
     assert result.underlying_price == 280.0
     assert len(result.candidates) == 1
     candidate = result.candidates[0]
@@ -161,3 +164,147 @@ def test_options_screener_applies_income_filters_and_normalizes_iv() -> None:
     assert "APR below minimum" in candidate.notes
     assert "open interest below minimum" in candidate.notes
     assert "IV/HV filter failed" in candidate.notes
+
+
+def test_options_screener_scans_all_expirations_inside_dte_window() -> None:
+    class MultiExpirationProvider(_FakeProvider):
+        def __init__(self) -> None:
+            self.requested_expirations: list[str] = []
+
+        def fetch_option_expirations(self, underlying: str) -> pd.DataFrame:
+            return pd.DataFrame(
+                [
+                    {"strike_time": "2026-05-08", "option_expiry_date_distance": 5},
+                    {"strike_time": "2026-05-22", "option_expiry_date_distance": 19},
+                    {"strike_time": "2026-06-19", "option_expiry_date_distance": 48},
+                    {"strike_time": "2026-08-21", "option_expiry_date_distance": 110},
+                ]
+            )
+
+        def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):
+            self.requested_expirations.append(expiration)
+            frame = super().fetch_option_quotes(
+                underlying,
+                expiration=expiration,
+                option_type=option_type,
+            )
+            frame.loc[0, "symbol"] = f"US.AAPL{expiration.replace('-', '')}P250000"
+            return frame
+
+    provider = MultiExpirationProvider()
+    result = run_options_screener(
+        provider=provider,
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            min_dte=10,
+            max_dte=60,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert provider.requested_expirations == ["2026-05-22", "2026-06-19"]
+    assert result.scanned_expirations == ["2026-05-22", "2026-06-19"]
+    assert result.expiration_count == 2
+    assert {candidate.expiry for candidate in result.candidates} == {"2026-05-22", "2026-06-19"}
+
+
+def test_options_screener_respects_explicit_expiration_for_compatibility() -> None:
+    class MultiExpirationProvider(_FakeProvider):
+        def __init__(self) -> None:
+            self.requested_expirations: list[str] = []
+
+        def fetch_option_expirations(self, underlying: str) -> pd.DataFrame:
+            return pd.DataFrame(
+                [
+                    {"strike_time": "2026-05-22", "option_expiry_date_distance": 19},
+                    {"strike_time": "2026-06-19", "option_expiry_date_distance": 48},
+                ]
+            )
+
+        def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):
+            self.requested_expirations.append(expiration)
+            return super().fetch_option_quotes(
+                underlying,
+                expiration=expiration,
+                option_type=option_type,
+            )
+
+    provider = MultiExpirationProvider()
+    result = run_options_screener(
+        provider=provider,
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            expiration="2026-06-19",
+            min_dte=10,
+            max_dte=60,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert provider.requested_expirations == ["2026-06-19"]
+    assert result.expiration == "2026-06-19"
+    assert result.scanned_expirations == ["2026-06-19"]
+
+
+def test_options_screener_uses_range_queries_without_exceeding_30_day_span() -> None:
+    class RangeProvider(_FakeProvider):
+        def __init__(self) -> None:
+            self.range_requests: list[tuple[str, str]] = []
+
+        def fetch_option_expirations(self, underlying: str) -> pd.DataFrame:
+            return pd.DataFrame(
+                [
+                    {"strike_time": "2026-05-08", "option_expiry_date_distance": 5},
+                    {"strike_time": "2026-05-22", "option_expiry_date_distance": 19},
+                    {"strike_time": "2026-06-05", "option_expiry_date_distance": 33},
+                    {"strike_time": "2026-06-19", "option_expiry_date_distance": 47},
+                ]
+            )
+
+        def fetch_option_quotes_range(
+            self,
+            underlying: str,
+            *,
+            start_expiration: str,
+            end_expiration: str,
+            option_type: str,
+        ):
+            self.range_requests.append((start_expiration, end_expiration))
+            rows = []
+            for expiration in pd.date_range(start_expiration, end_expiration, freq="14D"):
+                expiry = expiration.strftime("%Y-%m-%d")
+                rows.append(
+                    {
+                        "symbol": f"US.AAPL{expiry.replace('-', '')}P250000",
+                        "option_type": "PUT",
+                        "expiry": expiry,
+                        "strike": 250.0,
+                        "bid": 2.0,
+                        "ask": 2.2,
+                        "volume": 100,
+                        "open_interest": 500,
+                        "implied_volatility": 0.45,
+                        "delta": -0.25,
+                    }
+                )
+            return pd.DataFrame(rows)
+
+    provider = RangeProvider()
+    result = run_options_screener(
+        provider=provider,
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            min_dte=5,
+            max_dte=60,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert provider.range_requests == [("2026-05-08", "2026-06-05")]
+    assert result.expiration_count == 4

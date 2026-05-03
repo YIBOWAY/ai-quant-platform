@@ -18,15 +18,11 @@ def run_options_screener(
     config: OptionsScreenerConfig,
 ) -> OptionsScreenerResult:
     plain_symbol, futu_symbol = provider.normalize_symbol(config.ticker)
-    expiration = config.expiration or _select_nearest_expiration(
-        provider.fetch_option_expirations(plain_symbol)
+    scanned_expirations = _select_expirations(
+        provider.fetch_option_expirations(plain_symbol),
+        config=config,
     )
     option_type = "PUT" if config.strategy_type == "sell_put" else "CALL"
-    option_quotes = provider.fetch_option_quotes(
-        plain_symbol,
-        expiration=expiration,
-        option_type=option_type,
-    )
     underlying_snapshot = provider.fetch_underlying_snapshot(plain_symbol)
     underlying_price = _safe_float(
         underlying_snapshot.get("last")
@@ -36,10 +32,11 @@ def run_options_screener(
     if underlying_price is None or underlying_price <= 0:
         raise ValueError(f"underlying snapshot for {futu_symbol} has no valid price")
 
+    history_start, history_end = _resolve_history_window(config)
     history = provider.fetch_ohlcv(
         [plain_symbol],
-        start=config.history_start,
-        end=config.history_end,
+        start=history_start,
+        end=history_end,
         interval="1d",
     )
     historical_volatility = _historical_volatility(history)
@@ -49,7 +46,18 @@ def run_options_screener(
         underlying_price=underlying_price,
         trend_reference=trend_reference,
     )
+    avg_daily_volume = _average_volume(history, window=20)
+    market_cap = _safe_float(
+        underlying_snapshot.get("market_val")
+        or underlying_snapshot.get("total_market_val")
+    )
     rows = []
+    option_quotes = _fetch_quotes_for_expirations(
+        provider=provider,
+        underlying=plain_symbol,
+        expirations=scanned_expirations,
+        option_type=option_type,
+    )
     for row in option_quotes.to_dict(orient="records"):
         candidate = _build_candidate(
             row=row,
@@ -58,16 +66,15 @@ def run_options_screener(
             underlying_price=underlying_price,
             historical_volatility=historical_volatility,
             trend_pass=trend_pass,
+            avg_daily_volume=avg_daily_volume,
+            market_cap=market_cap,
         )
         rows.append(candidate)
-    filtered = [
-        candidate
-        for candidate in rows
-        if candidate.rating != "Avoid"
-        or (candidate.bid is not None and candidate.ask is not None)
-    ]
+    # Phase 12 fix: keep every row (including Avoid) so the UI/audit can show
+    # why a contract was rejected. The sort ordering already pushes Avoid to
+    # the bottom and `top_n` caps total output.
     ranked = sorted(
-        filtered,
+        rows,
         key=lambda item: (
             {"Strong": 0, "Watch": 1, "Avoid": 2}[item.rating],
             -(item.annualized_yield or 0.0),
@@ -78,13 +85,17 @@ def run_options_screener(
         ticker=plain_symbol,
         provider="futu",
         strategy_type=config.strategy_type,
-        expiration=expiration,
+        expiration=config.expiration,
+        scanned_expirations=scanned_expirations,
+        expiration_count=len(scanned_expirations),
         underlying_price=underlying_price,
         historical_volatility=historical_volatility,
         trend_reference=trend_reference,
-        candidates=ranked[:50],
+        candidates=ranked[: config.top_n],
         assumptions=[
             "Read-only data mode; no order placement is available.",
+            "When expiration is omitted, the screener scans all Futu expirations "
+            "inside the configured DTE window.",
             "Premium uses mid price when bid and ask are available.",
             "Yield estimates are simplified and ignore assignment, taxes, and commissions.",
             "Missing IV/Greeks fields reduce confidence; they are not invented.",
@@ -92,13 +103,97 @@ def run_options_screener(
     )
 
 
-def _select_nearest_expiration(expirations: pd.DataFrame) -> str:
+def _fetch_quotes_for_expirations(
+    *,
+    provider: FutuMarketDataProvider,
+    underlying: str,
+    expirations: list[str],
+    option_type: str,
+) -> pd.DataFrame:
+    if len(expirations) == 1:
+        return provider.fetch_option_quotes(
+            underlying,
+            expiration=expirations[0],
+            option_type=option_type,
+        )
+    fetch_range = getattr(provider, "fetch_option_quotes_range", None)
+    if callable(fetch_range):
+        frames = []
+        for chunk in _chunk_expirations_by_span(expirations, max_days=30):
+            if len(chunk) == 1:
+                frame = provider.fetch_option_quotes(
+                    underlying,
+                    expiration=chunk[0],
+                    option_type=option_type,
+                )
+            else:
+                frame = fetch_range(
+                    underlying,
+                    start_expiration=chunk[0],
+                    end_expiration=chunk[-1],
+                    option_type=option_type,
+                )
+            frames.append(frame.loc[frame["expiry"].astype(str).isin(chunk)])
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True)
+
+    rows = []
+    for expiration in expirations:
+        frame = provider.fetch_option_quotes(
+            underlying,
+            expiration=expiration,
+            option_type=option_type,
+        )
+        rows.extend(frame.to_dict(orient="records"))
+    return pd.DataFrame(rows)
+
+
+def _chunk_expirations_by_span(expirations: list[str], *, max_days: int) -> list[list[str]]:
+    chunks: list[list[str]] = []
+    current: list[str] = []
+    current_start: pd.Timestamp | None = None
+    for expiration in expirations:
+        expiry_ts = pd.Timestamp(expiration)
+        if not current or current_start is None:
+            current = [expiration]
+            current_start = expiry_ts
+            continue
+        if (expiry_ts - current_start).days <= max_days:
+            current.append(expiration)
+            continue
+        chunks.append(current)
+        current = [expiration]
+        current_start = expiry_ts
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _select_expirations(expirations: pd.DataFrame, *, config: OptionsScreenerConfig) -> list[str]:
     frame = expirations.copy()
+    if frame.empty or "strike_time" not in frame.columns:
+        raise ValueError("no option expiration is available")
+    frame["strike_time"] = frame["strike_time"].astype(str)
+    if config.expiration:
+        selected = frame.loc[frame["strike_time"] == config.expiration]
+        if selected.empty:
+            raise ValueError(f"requested expiration is not available: {config.expiration}")
+        return [config.expiration]
     if "option_expiry_date_distance" in frame.columns:
-        frame = frame.loc[pd.to_numeric(frame["option_expiry_date_distance"], errors="coerce") >= 0]
+        distance = pd.to_numeric(frame["option_expiry_date_distance"], errors="coerce")
+    else:
+        distance = frame["strike_time"].map(_days_to_expiry)
+    frame = frame.assign(_dte=distance)
+    frame = frame.loc[
+        frame["_dte"].notna()
+        & (frame["_dte"] >= config.min_dte)
+        & (frame["_dte"] <= config.max_dte)
+    ]
     if frame.empty:
-        raise ValueError("no non-expired option expiration is available")
-    return str(frame.sort_values("strike_time").iloc[0]["strike_time"])
+        raise ValueError("no option expiration is available inside the configured DTE window")
+    ordered = frame.sort_values(["_dte", "strike_time"])["strike_time"].tolist()
+    return [str(value) for value in ordered]
 
 
 def _build_candidate(
@@ -109,6 +204,8 @@ def _build_candidate(
     underlying_price: float,
     historical_volatility: float | None,
     trend_pass: bool | None,
+    avg_daily_volume: float | None,
+    market_cap: float | None,
 ) -> OptionsScreenerCandidate:
     bid = _safe_float(row.get("bid"))
     ask = _safe_float(row.get("ask"))
@@ -153,6 +250,8 @@ def _build_candidate(
         open_interest=open_interest,
         trend_pass=trend_pass,
         hv_iv_pass=hv_iv_pass,
+        avg_daily_volume=avg_daily_volume,
+        market_cap=market_cap,
     )
     rating = _rating(notes)
     return OptionsScreenerCandidate(
@@ -183,6 +282,10 @@ def _build_candidate(
         spread_pct=spread_pct,
         trend_pass=trend_pass,
         hv_iv_pass=hv_iv_pass,
+        avg_daily_volume=avg_daily_volume,
+        market_cap=market_cap,
+        iv_rank=None,           # Phase 13: filled by radar scanner using IV history
+        earnings_date=None,     # Phase 13: filled by radar scanner using calendar source
         rating=rating,
         notes=notes,
     )
@@ -202,12 +305,16 @@ def _candidate_notes(
     open_interest: float | None = None,
     trend_pass: bool | None,
     hv_iv_pass: bool | None,
+    avg_daily_volume: float | None = None,
+    market_cap: float | None = None,
 ) -> list[str]:
     notes: list[str] = []
     if bid is None or ask is None or mid is None or bid <= 0 or ask <= 0:
         notes.append("missing or non-positive bid/ask")
     if mid is not None and mid < config.min_premium:
         notes.append("premium below minimum")
+    if config.min_mid_price > 0 and (mid is None or mid < config.min_mid_price):
+        notes.append("mid below absolute floor")
     if spread_pct is None or spread_pct > config.max_spread_pct:
         notes.append("spread too wide")
     if annualized_yield is None or annualized_yield * 100 < config.min_apr:
@@ -232,18 +339,40 @@ def _candidate_notes(
         notes.append("trend filter failed")
     if config.hv_iv_filter and hv_iv_pass is False:
         notes.append("IV/HV filter failed")
+    if config.min_avg_daily_volume > 0:
+        if avg_daily_volume is None:
+            notes.append("underlying ADV missing")
+        elif avg_daily_volume < config.min_avg_daily_volume:
+            notes.append("underlying ADV below minimum")
+    if config.min_market_cap > 0:
+        if market_cap is None:
+            notes.append("market cap missing")
+        elif market_cap < config.min_market_cap:
+            notes.append("market cap below minimum")
     return notes
 
 
-def _rating(notes: list[str]) -> str:
-    hard_failures = {
+# Hard failures => rating becomes "Avoid". These represent constraints that
+# completely break the trade thesis (no quote, blown spread, wrong trend,
+# expiry outside the user's window, delta past the user's risk cap).
+HARD_FAILURES = frozenset(
+    {
         "missing or non-positive bid/ask",
         "spread too wide",
         "trend filter failed",
         "IV/HV filter failed",
         "DTE outside range",
+        "delta above limit",  # Phase 12 fix: delta is the core seller risk knob
+        "open interest below minimum",
+        "mid below absolute floor",
+        "underlying ADV below minimum",
+        "market cap below minimum",
     }
-    if any(note in hard_failures for note in notes):
+)
+
+
+def _rating(notes: list[str]) -> str:
+    if any(note in HARD_FAILURES for note in notes):
         return "Avoid"
     if notes:
         return "Watch"
@@ -263,9 +392,13 @@ def _safe_float(value: object) -> float | None:
 def _normalize_volatility(value: float | None) -> float | None:
     if value is None:
         return None
-    # Futu may return option_implied_volatility as either 0.224 or 22.4.
-    # Internally the platform uses decimal volatility, so 22.4 becomes 0.224.
-    return value / 100 if value > 2 else value
+    # Futu can return option_implied_volatility as percentage (22.4) or decimal
+    # (0.224) depending on the SDK build. Anything above 5.0 (i.e. >500% IV) is
+    # treated as percentage and divided by 100. Real-world IV almost never
+    # exceeds 5.0 in decimal form, so this threshold is safe and deterministic.
+    if value > 5:
+        return value / 100
+    return value
 
 
 def _hv_iv_ratio(hv: float | None, iv: float | None) -> float | None:
@@ -316,8 +449,10 @@ def _annualized_yield(
 
 
 def _days_to_expiry(expiry: str) -> int | None:
-    expiry_ts = pd.Timestamp(expiry, tz="UTC")
-    today = pd.Timestamp.now(tz="UTC").normalize()
+    # Anchor to America/New_York so a Beijing-time post-close cron does not
+    # produce off-by-one DTE values just because UTC has rolled over.
+    expiry_ts = pd.Timestamp(expiry, tz="America/New_York").normalize()
+    today = pd.Timestamp.now(tz="America/New_York").normalize()
     return max(int((expiry_ts - today).days), 0)
 
 
@@ -347,14 +482,56 @@ def _trend_pass(
     underlying_price: float,
     trend_reference: float | None,
 ) -> bool | None:
-    if trend_reference is None:
+    """Trend gate using the 20-day moving average as a proxy.
+
+    - **sell_put** (collect premium below price): pass when price >= MA20,
+      i.e. trend is up or flat. Selling puts into a strong downtrend
+      maximizes assignment risk.
+    - **covered_call** (cap upside on owned shares): pass when price <= MA20,
+      i.e. trend is flat or weak. Selling calls into a strong uptrend caps
+      gains exactly when the market is paying up.
+    """
+    if trend_reference is None or trend_reference <= 0:
         return None
     if strategy_type == "sell_put":
         return underlying_price >= trend_reference
-    return underlying_price >= trend_reference
+    # covered_call: prefer non-overbought tape
+    return underlying_price <= trend_reference
 
 
 def _hv_iv_pass(iv: float | None, hv: float | None) -> bool | None:
     if iv is None or hv is None:
         return None
     return iv >= hv
+
+
+def _resolve_history_window(config: OptionsScreenerConfig) -> tuple[str, str]:
+    """Resolve the rolling [start, end] window for HV/MA/ADV computation.
+
+    Defaults to (today - lookback_days, today). Explicit history_start/
+    history_end on the config still take precedence for reproducibility in
+    tests and audits.
+    """
+    if config.history_start and config.history_end:
+        return config.history_start, config.history_end
+    today = pd.Timestamp.now(tz="America/New_York").normalize()
+    end = config.history_end or today.strftime("%Y-%m-%d")
+    if config.history_start:
+        return config.history_start, end
+    start = (today - pd.Timedelta(days=config.history_lookback_days)).strftime(
+        "%Y-%m-%d"
+    )
+    return start, end
+
+
+def _average_volume(ohlcv: pd.DataFrame, *, window: int = 20) -> float | None:
+    if ohlcv.empty or "volume" not in ohlcv.columns:
+        return None
+    volumes = pd.to_numeric(
+        ohlcv.sort_values("timestamp")["volume"], errors="coerce"
+    )
+    sample = volumes.tail(window).dropna()
+    if sample.empty:
+        return None
+    value = float(sample.mean())
+    return value if not math.isnan(value) else None

@@ -21,6 +21,10 @@ ContextFactory = Callable[[str, int], Any]
 SdkLoader = Callable[[], SdkBindings]
 
 
+def _batched(items: list[str], batch_size: int) -> list[list[str]]:
+    return [items[index : index + batch_size] for index in range(0, len(items), batch_size)]
+
+
 def _default_sdk_loader() -> SdkBindings:
     try:
         from futu import (
@@ -48,6 +52,7 @@ def _default_sdk_loader() -> SdkBindings:
 
 class FutuMarketDataProvider:
     provider_name = "futu"
+    snapshot_batch_size = 400
 
     def __init__(
         self,
@@ -133,14 +138,29 @@ class FutuMarketDataProvider:
         expiration: str,
         option_type: str = "ALL",
     ) -> pd.DataFrame:
+        return self.fetch_option_chain_range(
+            underlying,
+            start_expiration=expiration,
+            end_expiration=expiration,
+            option_type=option_type,
+        )
+
+    def fetch_option_chain_range(
+        self,
+        underlying: str,
+        *,
+        start_expiration: str,
+        end_expiration: str,
+        option_type: str = "ALL",
+    ) -> pd.DataFrame:
         _plain_symbol, futu_symbol = self.normalize_symbol(underlying)
         sdk = self._sdk_loader()
         context = self._create_context(sdk)
         try:
             ret, data = context.get_option_chain(
                 futu_symbol,
-                start=expiration,
-                end=expiration,
+                start=start_expiration,
+                end=end_expiration,
                 option_type=self._resolve_option_type(sdk, option_type),
             )
             if ret != sdk.RET_OK:
@@ -148,7 +168,8 @@ class FutuMarketDataProvider:
             if data is None or data.empty:
                 raise FutuProviderError(
                     "no_data",
-                    f"no option chain returned for {futu_symbol} {expiration}",
+                    f"no option chain returned for {futu_symbol} "
+                    f"{start_expiration} to {end_expiration}",
                 )
             return self._normalize_option_chain(data, underlying=futu_symbol)
         finally:
@@ -174,18 +195,45 @@ class FutuMarketDataProvider:
             return chain
         return chain.merge(snapshots, how="left", on="symbol", suffixes=("", "_snapshot"))
 
+    def fetch_option_quotes_range(
+        self,
+        underlying: str,
+        *,
+        start_expiration: str,
+        end_expiration: str,
+        option_type: str = "ALL",
+    ) -> pd.DataFrame:
+        chain = self.fetch_option_chain_range(
+            underlying,
+            start_expiration=start_expiration,
+            end_expiration=end_expiration,
+            option_type=option_type,
+        )
+        codes = chain["symbol"].dropna().astype(str).tolist()
+        if not codes:
+            return chain
+        snapshots = self.fetch_market_snapshots(codes)
+        if snapshots.empty:
+            return chain
+        return chain.merge(snapshots, how="left", on="symbol", suffixes=("", "_snapshot"))
+
     def fetch_market_snapshots(self, symbols: list[str]) -> pd.DataFrame:
         if not symbols:
             return pd.DataFrame()
         sdk = self._sdk_loader()
         context = self._create_context(sdk)
         try:
-            ret, data = context.get_market_snapshot(symbols)
-            if ret != sdk.RET_OK:
-                raise self._map_provider_failure(",".join(symbols[:3]), data)
-            if data is None or data.empty:
+            frames = []
+            for batch in _batched(symbols, self.snapshot_batch_size):
+                ret, data = context.get_market_snapshot(batch)
+                if ret != sdk.RET_OK:
+                    raise self._map_provider_failure(",".join(batch[:3]), data)
+                if data is None or data.empty:
+                    continue
+                frames.append(self._normalize_snapshots(data))
+            if not frames:
                 raise FutuProviderError("no_data", "no snapshot data returned")
-            return self._normalize_snapshots(data)
+            return pd.concat(frames, ignore_index=True)
         finally:
             self._safe_close(context)
 
@@ -342,6 +390,11 @@ class FutuMarketDataProvider:
                 "bid_size": pd.to_numeric(frame.get("bid_vol"), errors="coerce"),
                 "ask_size": pd.to_numeric(frame.get("ask_vol"), errors="coerce"),
                 "volume": pd.to_numeric(frame.get("volume"), errors="coerce"),
+                "turnover": pd.to_numeric(frame.get("turnover"), errors="coerce"),
+                "market_val": pd.to_numeric(
+                    frame.get("total_market_val"),
+                    errors="coerce",
+                ),
                 "open_interest": pd.to_numeric(
                     frame.get("option_open_interest"),
                     errors="coerce",

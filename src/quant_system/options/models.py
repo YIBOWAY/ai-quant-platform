@@ -23,8 +23,22 @@ class OptionsScreenerConfig(BaseModel):
     trend_filter: bool = True
     hv_iv_filter: bool = False
     provider: Literal["futu"] = "futu"
-    history_start: str = "2024-01-02"
-    history_end: str = "2024-12-31"
+    # Rolling history window for HV/MA/ADV. None means rolling
+    # [today - lookback_days, today]. Explicit start/end take precedence.
+    history_start: str | None = None
+    history_end: str | None = None
+    history_lookback_days: int = Field(default=90, ge=20, le=365)
+    # Phase 12 fix: extra liquidity / quality screens (Futu data only).
+    top_n: int = Field(default=100, ge=1, le=1000)
+    min_mid_price: float = Field(default=0.0, ge=0)
+    min_avg_daily_volume: float = Field(default=0.0, ge=0)  # underlying ADV (shares/day)
+    min_market_cap: float = Field(default=0.0, ge=0)        # USD; 0 = disabled
+    # Phase 13 placeholders. Both default to 0/disabled because they require
+    # daily IV history and an earnings calendar that Futu OpenAPI does not expose.
+    # The radar scanner (Phase 13) will populate these via persisted snapshots
+    # and an external earnings source (e.g. yfinance).
+    min_iv_rank: float = Field(default=0.0, ge=0, le=100)
+    avoid_earnings_within_days: int = Field(default=0, ge=0)
 
 
 class OptionsScreenerCandidate(BaseModel):
@@ -55,6 +69,10 @@ class OptionsScreenerCandidate(BaseModel):
     spread_pct: float | None = None
     trend_pass: bool | None = None
     hv_iv_pass: bool | None = None
+    avg_daily_volume: float | None = None
+    market_cap: float | None = None
+    iv_rank: float | None = None
+    earnings_date: str | None = None
     rating: Literal["Strong", "Watch", "Avoid"]
     notes: list[str] = Field(default_factory=list)
 
@@ -63,7 +81,9 @@ class OptionsScreenerResult(BaseModel):
     ticker: str
     provider: Literal["futu"]
     strategy_type: StrategyType
-    expiration: str
+    expiration: str | None = None
+    scanned_expirations: list[str] = Field(default_factory=list)
+    expiration_count: int = 0
     underlying_price: float
     historical_volatility: float | None = None
     trend_reference: float | None = None

@@ -244,3 +244,98 @@ def test_futu_provider_fetches_option_quotes_with_missing_fields() -> None:
     assert frame.loc[0, "bid"] == 1.1
     assert frame.loc[0, "ask"] == 1.3
     assert pd.isna(frame.loc[0, "implied_volatility"])
+
+
+def test_futu_provider_fetches_option_quotes_by_expiration_range() -> None:
+    chain = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL260508P200000",
+                "name": "AAPL 260508 200.00P",
+                "stock_owner": "US.AAPL",
+                "option_type": "PUT",
+                "strike_price": 200.0,
+                "strike_time": "2026-05-08",
+            },
+            {
+                "code": "US.AAPL260515P195000",
+                "name": "AAPL 260515 195.00P",
+                "stock_owner": "US.AAPL",
+                "option_type": "PUT",
+                "strike_price": 195.0,
+                "strike_time": "2026-05-15",
+            },
+        ]
+    )
+    snapshots = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL260508P200000",
+                "update_time": "2026-05-01 15:19:50",
+                "last_price": 1.2,
+                "bid_price": 1.1,
+                "ask_price": 1.3,
+            },
+            {
+                "code": "US.AAPL260515P195000",
+                "update_time": "2026-05-01 15:19:50",
+                "last_price": 0.9,
+                "bid_price": 0.8,
+                "ask_price": 1.0,
+            },
+        ]
+    )
+    chain_context = _FakeContext([], chain=(0, chain))
+    snapshot_context = _FakeContext([], snapshots=(0, snapshots))
+    contexts = [chain_context, snapshot_context]
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: contexts.pop(0),
+        sdk_loader=_sdk,
+    )
+
+    frame = provider.fetch_option_quotes_range(
+        "AAPL",
+        start_expiration="2026-05-08",
+        end_expiration="2026-05-15",
+        option_type="PUT",
+    )
+
+    assert len(frame) == 2
+    assert chain_context.calls[0]["start"] == "2026-05-08"
+    assert chain_context.calls[0]["end"] == "2026-05-15"
+    assert snapshot_context.calls[0]["symbols"] == [
+        "US.AAPL260508P200000",
+        "US.AAPL260515P195000",
+    ]
+    assert frame.loc[1, "bid"] == 0.8
+
+
+def test_futu_provider_batches_large_snapshot_requests() -> None:
+    snapshots = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL",
+                "update_time": "2026-05-01 15:19:50",
+                "last_price": 200.0,
+                "bid_price": 199.9,
+                "ask_price": 200.1,
+            }
+        ]
+    )
+    fake_context = _FakeContext([], snapshots=(0, snapshots))
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: fake_context,
+        sdk_loader=_sdk,
+    )
+    provider.snapshot_batch_size = 400
+
+    symbols = [f"US.TEST{index:03d}" for index in range(401)]
+    frame = provider.fetch_market_snapshots(symbols)
+
+    assert len(frame) == 2
+    snapshot_calls = [
+        call for call in fake_context.calls if call["method"] == "get_market_snapshot"
+    ]
+    assert len(snapshot_calls) == 2
+    assert len(snapshot_calls[0]["symbols"]) == 400
+    assert len(snapshot_calls[1]["symbols"]) == 1

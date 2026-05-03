@@ -111,6 +111,9 @@ def test_options_screener_returns_candidates(tmp_path, monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["provider"] == "futu"
+    assert payload["expiration"] is None
+    assert payload["scanned_expirations"] == ["2026-06-19"]
+    assert payload["expiration_count"] == 1
     assert payload["candidates"][0]["rating"] == "Strong"
     assert payload["safety"]["paper_trading"] is True
 
@@ -144,3 +147,30 @@ def test_options_route_maps_futu_error(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "permission_denied"
+
+
+def test_options_screener_returns_400_when_dte_window_has_no_expiration(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "quant_system.api.routes.options.FutuMarketDataProvider.fetch_option_expirations",
+        lambda self, underlying: pd.DataFrame(
+            [{"strike_time": "2026-06-19", "option_expiry_date_distance": 48}]
+        ),
+    )
+    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+
+    response = client.post(
+        "/api/options/screener",
+        json={
+            "ticker": "AAPL",
+            "strategy_type": "sell_put",
+            "min_dte": 1,
+            "max_dte": 7,
+            "provider": "futu",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "invalid_options_screen"
