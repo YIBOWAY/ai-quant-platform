@@ -25,6 +25,14 @@ from quant_system.experiments.runner import (
 from quant_system.factors.pipeline import FactorResearchResult, run_sample_factor_research
 from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
 from quant_system.logging.setup import configure_logging
+from quant_system.data.providers.futu import FutuMarketDataProvider
+from quant_system.options.earnings_calendar import EarningsCalendar
+from quant_system.options.models import OptionsScreenerConfig
+from quant_system.options.radar import OptionsRadarConfig, run_options_radar
+from quant_system.options.radar_storage import RadarSnapshotStore
+from quant_system.options.rate_limiter import RateLimitedFutuProvider, TokenBucket
+from quant_system.options.sample_provider import SampleOptionsProvider
+from quant_system.options.universe import OptionsUniverse
 from quant_system.prediction_market.charts import (
     write_prediction_market_timeseries_charts,
 )
@@ -81,6 +89,7 @@ agent_app = typer.Typer(help="Run Phase 7 AI research assistant commands.")
 prediction_market_app = typer.Typer(
     help="Run Phase 8 prediction-market dry scanning commands."
 )
+options_app = typer.Typer(help="Run read-only options research commands.")
 
 
 def _version_callback(value: bool) -> None:
@@ -123,6 +132,15 @@ def _mask_secrets(payload: Any) -> Any:
 
 def _parse_universe(value: str) -> list[str]:
     return [symbol.strip().upper() for symbol in value.split(",") if symbol.strip()]
+
+
+def _parse_strategies(value: str) -> tuple[Literal["sell_put", "covered_call"], ...]:
+    allowed = {"sell_put", "covered_call"}
+    parsed = tuple(item.strip() for item in value.split(",") if item.strip())
+    invalid = [item for item in parsed if item not in allowed]
+    if invalid:
+        raise typer.BadParameter(f"unsupported strategies: {', '.join(invalid)}")
+    return parsed or ("sell_put", "covered_call")
 
 
 def _build_agent_llm(name: Literal["stub", "openai"]) -> LLMClient:
@@ -996,6 +1014,157 @@ def prediction_market_doctor() -> None:
     typer.echo("signing_disabled=yes")
 
 
+@options_app.command("daily-scan")
+def options_daily_scan(
+    top: Annotated[
+        int,
+        typer.Option("--top", help="Number of universe symbols to scan."),
+    ] = 100,
+    strategies: Annotated[
+        str,
+        typer.Option("--strategies", help="Comma-separated sell_put,covered_call list."),
+    ] = "sell_put,covered_call",
+    run_date: Annotated[
+        str | None,
+        typer.Option("--date", help="Run date label, YYYY-MM-DD. Defaults to US date."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Validate the plan/provider without writing output."),
+    ] = False,
+    provider: Annotated[
+        Literal["futu", "sample"] | None,
+        typer.Option("--provider", help="Read-only options data provider."),
+    ] = None,
+    output_dir: Annotated[
+        str | None,
+        typer.Option("--output-dir", help="Override radar snapshot output directory."),
+    ] = None,
+) -> None:
+    """Run the Phase 13 read-only daily seller-options radar."""
+    settings = reload_settings()
+    active_provider_name = provider or settings.options_radar.provider
+    selected_strategies = _parse_strategies(strategies)
+    universe = OptionsUniverse.load(
+        settings.options_radar.universe_path,
+        top_n=top,
+    )
+    active_output_dir = Path(output_dir) if output_dir else settings.options_radar.output_dir
+    typer.echo(
+        " ".join(
+            [
+                f"dry_run={str(dry_run).lower()}",
+                f"provider={active_provider_name}",
+                f"top={len(universe)}",
+                f"strategies={','.join(selected_strategies)}",
+                f"output_dir={active_output_dir}",
+            ]
+        )
+    )
+    active_provider = _build_options_radar_provider(settings, active_provider_name)
+    if dry_run:
+        if active_provider_name == "futu":
+            try:
+                active_provider.fetch_option_expirations(universe[0].ticker)
+            except Exception as exc:
+                typer.echo(f"provider_check=failed reason={type(exc).__name__}: {exc}")
+                raise typer.Exit(code=3) from exc
+        typer.echo("provider_check=skipped" if active_provider_name == "sample" else "provider_check=ok")
+        return
+
+    report = run_options_radar(
+        provider=active_provider,
+        universe=universe,
+        config=OptionsRadarConfig(
+            base_screen_config=_build_radar_screen_config(settings),
+            strategies=selected_strategies,
+            universe_top_n=top,
+            top_per_ticker=5,
+        ),
+        iv_history_dir=active_output_dir / "iv_history",
+        earnings_calendar=EarningsCalendar.load(settings.options_radar.earnings_calendar_path),
+        run_date=run_date,
+    )
+    data_path, meta_path = RadarSnapshotStore(active_output_dir).write(report)
+    typer.echo(
+        " ".join(
+            [
+                f"run_date={report.run_date}",
+                f"universe_size={report.universe_size}",
+                f"scanned_tickers={report.scanned_tickers}",
+                f"failed_tickers={len(report.failed_tickers)}",
+                f"candidates={len(report.candidates)}",
+                f"data={data_path}",
+                f"meta={meta_path}",
+            ]
+        )
+    )
+    if report.scanned_tickers == 0:
+        raise typer.Exit(code=3)
+    if report.failed_tickers:
+        raise typer.Exit(code=2)
+
+
+@options_app.command("refresh-universe")
+def options_refresh_universe() -> None:
+    """Print the manual universe refresh command."""
+    typer.echo(
+        "python scripts/refresh_options_universe.py --bootstrap-github "
+        "--output data/options_universe/sp500_nasdaq100.csv"
+    )
+
+
+@options_app.command("refresh-earnings")
+def options_refresh_earnings() -> None:
+    """Print the manual earnings refresh command."""
+    typer.echo(
+        "python scripts/refresh_earnings_calendar.py "
+        "--universe data/options_universe/sp500_nasdaq100.csv "
+        "--output data/options_universe/earnings_calendar.csv"
+    )
+
+
+def _build_options_radar_provider(settings, provider: Literal["futu", "sample"]):
+    if provider == "sample":
+        return SampleOptionsProvider()
+    futu_provider = FutuMarketDataProvider(
+        host=settings.futu.host,
+        port=settings.futu.port,
+        request_timeout_seconds=settings.futu.request_timeout_seconds,
+    )
+    futu_provider.snapshot_batch_size = settings.options_radar.snapshot_batch_size
+    return RateLimitedFutuProvider(
+        futu_provider,
+        bucket=TokenBucket(
+            max_tokens=settings.options_radar.futu_rate_limit_per_30s,
+            refill_seconds=30,
+        ),
+    )
+
+
+def _build_radar_screen_config(settings) -> OptionsScreenerConfig:
+    return OptionsScreenerConfig(
+        ticker="SPY",
+        strategy_type="sell_put",
+        min_dte=settings.options_radar.min_dte_for_radar,
+        max_dte=settings.options_radar.max_dte_for_radar,
+        max_delta=0.45,
+        min_premium=0.10,
+        min_apr=0.0,
+        max_spread_pct=0.25,
+        min_open_interest=20,
+        max_hv_iv=1.0,
+        trend_filter=True,
+        hv_iv_filter=False,
+        provider="futu",
+        top_n=100,
+        min_mid_price=0.10,
+        min_avg_daily_volume=100_000,
+        min_market_cap=0.0,
+        avoid_earnings_within_days=7,
+    )
+
+
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
 app.add_typer(factor_app, name="factor")
@@ -1004,6 +1173,7 @@ app.add_typer(experiment_app, name="experiment")
 app.add_typer(paper_app, name="paper")
 app.add_typer(agent_app, name="agent")
 app.add_typer(prediction_market_app, name="prediction-market")
+app.add_typer(options_app, name="options")
 
 
 def _emit_ingestion_summary(result: IngestionResult) -> None:
