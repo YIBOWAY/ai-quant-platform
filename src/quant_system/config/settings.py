@@ -126,6 +126,80 @@ class FutuSettings(BaseSettings):
     options_enabled: bool = True
 
 
+class OptionsRadarSettings(BaseSettings):
+    """Daily read-only seller-options radar settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_ENABLED"),
+    )
+    provider: Literal["futu", "sample"] = Field(
+        default="futu",
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_PROVIDER"),
+    )
+    universe_path: Path = Field(
+        default=Path("data/options_universe/sp500_nasdaq100.csv"),
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_UNIVERSE_PATH"),
+    )
+    universe_top_n: int = Field(
+        default=100,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_UNIVERSE_TOP_N"),
+        ge=1,
+    )
+    output_dir: Path = Field(
+        default=Path("data/options_scans"),
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_OUTPUT_DIR"),
+    )
+    futu_rate_limit_per_30s: int = Field(
+        default=10,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_FUTU_RATE_LIMIT_PER_30S"),
+        ge=1,
+    )
+    futu_request_pause_seconds: float = Field(
+        default=3.1,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_FUTU_REQUEST_PAUSE_SECONDS"),
+        gt=0,
+    )
+    snapshot_batch_size: int = Field(
+        default=200,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_SNAPSHOT_BATCH_SIZE"),
+        ge=1,
+        le=400,
+    )
+    max_dte_for_radar: int = Field(
+        default=60,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_MAX_DTE_FOR_RADAR"),
+        ge=0,
+    )
+    min_dte_for_radar: int = Field(
+        default=7,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_MIN_DTE_FOR_RADAR"),
+        ge=0,
+    )
+    iv_history_lookback_days: int = Field(
+        default=252,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_IV_HISTORY_LOOKBACK_DAYS"),
+        ge=30,
+    )
+    earnings_calendar_path: Path = Field(
+        default=Path("data/options_universe/earnings_calendar.csv"),
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_EARNINGS_CALENDAR_PATH"),
+    )
+
+    @model_validator(mode="after")
+    def validate_dte_window(self) -> OptionsRadarSettings:
+        if self.min_dte_for_radar > self.max_dte_for_radar:
+            raise ValueError("min_dte_for_radar must be <= max_dte_for_radar")
+        return self
+
+
 class LLMSettings(BaseSettings):
     """Optional LLM routing for the Phase 7 research assistant."""
 
@@ -275,6 +349,7 @@ class Settings(BaseSettings):
     data: DataSettings = Field(default_factory=DataSettings)
     api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)
     futu: FutuSettings = Field(default_factory=FutuSettings)
+    options_radar: OptionsRadarSettings = Field(default_factory=OptionsRadarSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     prediction_market: PredictionMarketSettings = Field(
         default_factory=PredictionMarketSettings
