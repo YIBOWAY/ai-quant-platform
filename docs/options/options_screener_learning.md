@@ -17,10 +17,9 @@ It is not an advice engine and it does not trade.
 |---|---|
 | Ticker | US stock ticker, for example `AAPL` |
 | Strategy | `Sell Put` or `Covered Call` |
-| Expiration | Pulled from Futu OpenD and selected from a dropdown |
 | Min premium | Minimum acceptable mid premium |
 | Min APR | Minimum simplified annualized premium estimate |
-| Min / Max DTE | Expiration window in days |
+| Min / Max DTE | Expiration window in days. The backend scans all Futu expirations inside this range automatically. |
 | Min IV | Optional IV floor |
 | Max delta | Optional absolute delta cap |
 | Max spread percentage | Rejects illiquid contracts with wide bid/ask spread |
@@ -113,8 +112,8 @@ http://127.0.0.1:3001/options-screener
 ```
 
 5. Try `AAPL`, `Sell Put`, provider `futu`.
-6. Choose an expiration from the dropdown. The option chain preview refreshes automatically.
-7. Pick a preset or edit parameters manually, then run the screener.
+6. Pick a preset or edit the DTE / delta / spread / open-interest filters manually.
+7. Run the screener. The backend scans every available Futu expiration inside the DTE window and returns the ranked candidates.
 
 ## Common Mistakes
 

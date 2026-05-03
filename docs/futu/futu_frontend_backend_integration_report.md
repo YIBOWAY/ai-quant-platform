@@ -85,7 +85,8 @@ curl -X POST "http://127.0.0.1:8765/api/options/screener" `
 - Data source badge shows `futu` when OpenD returns data.
 - `/data-explorer?lang=zh` renders Chinese labels.
 - `/options-screener` can run a Futu-backed screen.
-- `/options-screener` loads Futu expiration dates into a dropdown and refreshes the option-chain preview as expiration changes.
+- `/options-screener` scans every Futu expiration inside the configured DTE window; no manual expiration selection is required.
+- `/options-screener` no longer shows a raw option-chain preview; the page focuses on seller-style ranked candidates.
 - `/options-screener` includes conservative / balanced / aggressive presets for seller-style screening.
 - `/options-screener?lang=zh` renders Chinese labels.
 - Factor Lab, Backtester, and Paper Trading forms default to provider `futu`.
@@ -93,7 +94,7 @@ curl -X POST "http://127.0.0.1:8765/api/options/screener" `
 
 ## Latest Local Result
 
-Last refreshed: 2026-05-02.
+Last refreshed: 2026-05-03.
 
 OpenD / SDK verification:
 
@@ -112,7 +113,7 @@ Backend / frontend smoke:
 ```text
 health_live=False kill_switch=True
 history_source=futu rows=9 first_close=459.991975474
-options_candidates=44 expiration=2026-05-04 first_rating=Strong first_symbol=US.AAPL260504P297500
+options_candidates=50 scanned_expirations=11 first_rating=Strong first_symbol=US.SPY260512P712000
 frontend_data_explorer_status=200
 frontend_options_zh_status=200
 ```
@@ -120,10 +121,10 @@ frontend_options_zh_status=200
 Automated browser smoke:
 
 ```text
-11 passed (1.2m)
+13 passed (1.6m)
 options_screener_ui_ok
 data_explorer_zh_ui_ok
-options_zh_ok expirations=36 selected=2026-05-12 label=2026-05-12 · 10 DTE
+options_zh_ok scanned_expirations=11 no_manual_expiration_select=True no_chain_preview=True
 data_explorer_ok tick_labels=10
 ```
 

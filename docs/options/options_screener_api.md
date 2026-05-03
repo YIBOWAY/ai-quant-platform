@@ -65,7 +65,6 @@ Example body:
   "ticker": "AAPL",
   "strategy_type": "sell_put",
   "provider": "futu",
-  "expiration": "2026-05-12",
   "min_premium": 0.1,
   "min_apr": 10,
   "min_dte": 10,
@@ -83,18 +82,20 @@ Example:
 ```powershell
 curl -X POST "http://127.0.0.1:8765/api/options/screener" `
   -H "Content-Type: application/json" `
-  -d "{\"ticker\":\"AAPL\",\"strategy_type\":\"sell_put\",\"expiration\":\"2026-05-12\",\"provider\":\"futu\",\"min_apr\":10,\"min_dte\":10,\"max_dte\":60,\"max_spread_pct\":0.15,\"min_open_interest\":50}"
+  -d "{\"ticker\":\"AAPL\",\"strategy_type\":\"sell_put\",\"provider\":\"futu\",\"min_apr\":10,\"min_dte\":10,\"max_dte\":60,\"max_spread_pct\":0.15,\"min_open_interest\":50}"
 ```
 
 Response includes:
 
 - underlying price
-- selected expiration
+- scanned expiration count and scanned expiration dates
 - candidate count
 - candidate table
 - DTE / spread / open-interest / APR filter effects
 - assumptions
 - safety footer
+
+If `expiration` is omitted, the backend scans every Futu expiration inside `min_dte` and `max_dte`, then ranks the combined candidate list. Supplying `expiration` is still accepted for API compatibility, but the frontend does not require it.
 
 ## Error Mapping
 

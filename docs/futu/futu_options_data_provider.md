@@ -8,6 +8,7 @@ It supports:
 
 - option expiration lookup
 - option chain lookup
+- option chain range lookup for seller-style DTE-window scanning
 - option quote snapshot lookup
 - underlying stock snapshot lookup
 - normalized fields for the Options Screener
@@ -45,6 +46,10 @@ Frontend Options Screener
 ```
 
 Only quote APIs are used. No trade context is created.
+
+The seller Options Screener no longer requires a manually selected expiration. It reads Futu
+expiration dates, keeps those inside the configured DTE window, requests chains by date range,
+and batches quote snapshots so it does not exceed Futu's per-request symbol limit.
 
 ## Normalized Option Fields
 

@@ -276,7 +276,7 @@ New page under frontend app structure with:
 - strategy type
   - Sell Put
   - Covered Call / Sell Call
-- expiration selector
+- DTE window; the backend scans matching expirations automatically
 - min IV
 - target delta / max delta
 - min premium

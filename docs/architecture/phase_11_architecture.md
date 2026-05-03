@@ -7,10 +7,11 @@ key handling, order submission, token transfers, or redemption.
 ## Module Responsibilities
 
 - `prediction_market/data/polymarket_readonly.py`: public REST GET requests for
-  markets and order books.
+  markets, order books, price history, and trades.
 - `prediction_market/provider_factory.py`: safe `sample` / `polymarket`
   provider selection.
-- `prediction_market/storage.py`: JSONL snapshot persistence and replay.
+- `prediction_market/storage.py`: JSONL snapshot persistence, HTTP cache, and
+  replay.
 - `prediction_market/backtest.py`: research-only quasi-backtest metrics.
 - `prediction_market/charts.py`: deterministic SVG chart writer.
 - `prediction_market/reporting.py`: markdown and JSON report output.
@@ -25,9 +26,11 @@ flowchart LR
   API --> Factory[Provider factory]
   Factory --> Sample[Sample provider]
   Factory --> PM[Polymarket read-only provider]
-  PM --> PublicREST[Public REST data]
+  PM --> PublicREST[Gamma keyset + CLOB + data API]
+  PM --> Cache[Local HTTP cache]
   Sample --> Scanner[Scanners]
   PM --> Scanner
+  Cache --> Scanner
   Scanner --> Backtest[Quasi-backtest]
   Backtest --> Charts[SVG charts]
   Backtest --> Report[Markdown report]
@@ -42,4 +45,6 @@ execution. API requests containing credential-like fields are rejected.
 
 Phase 11 uses JSONL for cached snapshots because order books are nested,
 human-inspectable, and small enough that adding a chart or database dependency is
-not necessary.
+not necessary. For public REST calls, it also keeps a lightweight HTTP cache so
+the app can replay recent successful responses and degrade to stale cache when a
+read-only endpoint has a transient failure.

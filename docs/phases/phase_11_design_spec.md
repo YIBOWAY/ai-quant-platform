@@ -117,6 +117,13 @@ Provider choices:
 - `replay`: offline dataset provider backed by persisted snapshots. Optional
   when cached data exists.
 
+Implementation note after Phase 11 delivery:
+
+- Real public GET access works in this environment when the request includes a
+  normal read-only `User-Agent` header.
+- Gamma discovery now uses `/markets/keyset` instead of the deprecated
+  `/markets` endpoint.
+
 Selection rules:
 
 - Default: `sample`.
@@ -133,10 +140,14 @@ Config is nested under `Settings.prediction_market` with safe defaults:
 | `QS_PREDICTION_MARKET_PROVIDER` | `sample` | string | default provider | no network |
 | `QS_POLYMARKET_GAMMA_BASE_URL` | `https://gamma-api.polymarket.com` | string | market discovery | read-only |
 | `QS_POLYMARKET_CLOB_BASE_URL` | `https://clob.polymarket.com` | string | order book snapshots | read-only |
+| `QS_POLYMARKET_DATA_API_BASE_URL` | `https://data-api.polymarket.com` | string | public trades endpoint | read-only |
 | `QS_POLYMARKET_REQUEST_TIMEOUT_SECONDS` | `10` | int | HTTP timeout | fail fast |
 | `QS_POLYMARKET_MAX_RETRIES` | `2` | int | transient retries | bounded |
 | `QS_POLYMARKET_RATE_LIMIT_PER_SECOND` | `2.0` | float | request pacing | conservative |
 | `QS_POLYMARKET_CACHE_DIR` | `data/prediction_market` | path | cache directory | local only |
+| `QS_POLYMARKET_CACHE_TTL_SECONDS` | `300` | int | fresh-cache lifetime | reduces duplicate calls |
+| `QS_POLYMARKET_CACHE_STALE_IF_ERROR_SECONDS` | `86400` | int | stale fallback window | safer offline replay |
+| `QS_POLYMARKET_USER_AGENT` | `ai-quant-platform/phase11` | string | public read-only request identity | avoids ambiguous blocked requests |
 | `QS_POLYMARKET_READ_ONLY` | `true` | bool | safety assertion | must remain true |
 
 No config requires secrets.
@@ -147,6 +158,10 @@ No config requires secrets.
 - Retry only GET requests and only for transient network failures.
 - Use a small synchronous sleep between requests to avoid rapid bursts.
 - Do not retry invalid schema responses.
+- Cache policy is selectable per request: `prefer_cache`, `refresh`,
+  `network_only`.
+- If the network fails after a successful cache write, the provider may fall
+  back to stale cache within the configured safety window.
 - Map provider errors to clear HTTP 400/502/504 responses without raw traceback.
 
 ## 10. Error Handling
@@ -172,6 +187,7 @@ Use JSONL, not Parquet, for Phase 11 prediction-market snapshots because:
 Path pattern:
 
 ```text
+data/prediction_market/http_cache/<resource>/<sha256(url)>.json
 data/prediction_market/snapshots/YYYY-MM-DD/<provider>/<market_id>.jsonl
 data/prediction_market/reports/<run_id>/
 ```
