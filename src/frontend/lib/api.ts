@@ -257,6 +257,41 @@ export type PredictionMarketTimeseriesDetailResponse = ApiEnvelope & {
   report_url: string;
 };
 
+export type OptionsRadarCandidate = {
+  ticker: string;
+  sector: string | null;
+  strategy: "sell_put" | "covered_call";
+  symbol: string;
+  expiry: string;
+  strike: number;
+  mid: number | null;
+  annualized_yield: number | null;
+  implied_volatility: number | null;
+  iv_rank: number | null;
+  delta: number | null;
+  open_interest: number | null;
+  spread_pct: number | null;
+  earnings_date: string | null;
+  earnings_in_window: boolean;
+  global_score: number;
+  rating: string;
+  notes: string[];
+  market_regime?: string | null;
+  market_regime_penalty?: number | null;
+};
+
+export type OptionsRadarDatesResponse = ApiEnvelope & {
+  dates: string[];
+};
+
+export type OptionsRadarResponse = ApiEnvelope & {
+  run_date: string;
+  universe_size: number;
+  scanned_tickers: number;
+  failed_tickers: Array<[string, string]>;
+  candidates: OptionsRadarCandidate[];
+};
+
 export type SettingsResponse = ApiEnvelope & Record<string, unknown>;
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
@@ -490,6 +525,46 @@ export function getPredictionMarkets(
     order_books: [],
     provider: "fallback",
     cache_status: "unavailable",
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getOptionsRadarDates() {
+  return apiGet<OptionsRadarDatesResponse>("/api/options/daily-scan/dates", {
+    dates: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getOptionsDailyScan(params: {
+  date?: string;
+  strategy?: string;
+  sector?: string;
+  top?: number;
+  dte_bucket?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params.date) {
+    query.set("date", params.date);
+  }
+  if (params.strategy) {
+    query.set("strategy", params.strategy);
+  }
+  if (params.sector) {
+    query.set("sector", params.sector);
+  }
+  if (params.top !== undefined) {
+    query.set("top", String(params.top));
+  }
+  if (params.dte_bucket) {
+    query.set("dte_bucket", params.dte_bucket);
+  }
+  return apiGet<OptionsRadarResponse>(`/api/options/daily-scan?${query.toString()}`, {
+    run_date: params.date ?? "",
+    universe_size: 0,
+    scanned_tickers: 0,
+    failed_tickers: [],
+    candidates: [],
     safety: FALLBACK_SAFETY,
   });
 }

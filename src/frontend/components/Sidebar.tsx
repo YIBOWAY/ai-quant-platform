@@ -26,6 +26,7 @@ export function Sidebar() {
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
     { name: "Data Explorer", href: "/data-explorer", icon: Database },
     { name: "Options Screener", href: "/options-screener", icon: ListFilter },
+    { name: "Options Radar", href: "/options-radar", icon: ListFilter },
     { name: "Factor Lab", href: "/factor-lab", icon: FlaskConical },
     { name: "Backtester", href: "/backtest", icon: LineChart },
     { name: "Experiments", href: "/experiments", icon: FlaskConical },
