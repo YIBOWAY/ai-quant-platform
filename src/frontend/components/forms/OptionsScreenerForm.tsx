@@ -98,6 +98,11 @@ const copy = {
     strong: "Strong",
     watch: "Watch",
     avoid: "Avoid",
+    regime: "Market regime",
+    regimeUnknown: "Unknown - run `quant-system options refresh-vix` then re-run the screener.",
+    regimeNormal: "Normal - no market-regime score penalty.",
+    regimeElevated: "Elevated - seller ratings discounted (Strong demoted to Watch).",
+    regimePanic: "Panic - seller ratings forced to Avoid for sell_put; covered_call demoted.",
     headings: ["Symbol", "Type", "Expiry", "Strike", "Bid", "Ask", "Mid", "APR", "Spread", "IV", "Delta", "OI", "Rating"],
     parameterHelp: [
       ["DTE Window", "The screener scans every available Futu expiration inside this range and ranks the contracts."],
@@ -143,6 +148,11 @@ const copy = {
     strong: "强烈",
     watch: "观察",
     avoid: "避开",
+    regime: "市场状态",
+    regimeUnknown: "未知 - 请先运行 `quant-system options refresh-vix` 刷新 VIX 历史后再筛选。",
+    regimeNormal: "Normal - 不施加市场状态扣分。",
+    regimeElevated: "Elevated - 卖方候选评分被压低（Strong 自动降级为 Watch）。",
+    regimePanic: "Panic - sell_put 自动强制评级为 Avoid；covered_call 同步降级。",
     headings: ["代码", "类型", "到期日", "行权价", "买价", "卖价", "中间价", "年化", "价差", "IV", "Delta", "未平仓", "评级"],
     parameterHelp: [
       ["DTE 窗口", "筛选器会扫描这个范围内的全部 Futu 到期日，并把合约统一排序。"],
@@ -192,6 +202,8 @@ type ScreenerCandidate = {
   open_interest?: number | null;
   rating: string;
   notes: string[];
+  market_regime?: "Normal" | "Elevated" | "Panic" | "Unknown" | null;
+  market_regime_penalty?: number | null;
 };
 
 type ScreenerResult = {
@@ -204,6 +216,11 @@ type ScreenerResult = {
   underlying_price: number;
   historical_volatility?: number | null;
   trend_reference?: number | null;
+  market_regime?: "Normal" | "Elevated" | "Panic" | "Unknown" | null;
+  market_regime_penalty?: number | null;
+  market_regime_w_vix?: number | null;
+  market_regime_vix_density?: number | null;
+  market_regime_term_ratio?: number | null;
   candidates: ScreenerCandidate[];
   assumptions: string[];
 };
@@ -398,6 +415,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
           </div>
         ) : (
           <div className="flex flex-col gap-4">
+            <RegimeBanner result={result} text={text} />
             <div className="grid grid-cols-4 gap-3">
               <Metric label={text.underlying} value={formatNumber(result.underlying_price)} />
               <Metric
@@ -481,6 +499,49 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded border border-border-subtle bg-bg-surface p-3">
       <div className="font-label-caps text-text-secondary">{label}</div>
       <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">{value}</div>
+    </div>
+  );
+}
+
+type RegimeLabel = "Normal" | "Elevated" | "Panic" | "Unknown";
+
+function RegimeBanner({
+  result,
+  text,
+}: {
+  result: ScreenerResult;
+  text: (typeof copy)["en"] | (typeof copy)["zh"];
+}) {
+  const label: RegimeLabel = (result.market_regime ?? "Unknown") as RegimeLabel;
+  const palette: Record<RegimeLabel, string> = {
+    Normal: "border-accent-success/40 bg-accent-success/10 text-accent-success",
+    Elevated: "border-warning/40 bg-warning/10 text-warning",
+    Panic: "border-accent-danger/40 bg-accent-danger/10 text-accent-danger",
+    Unknown: "border-border-subtle bg-bg-surface text-text-secondary",
+  };
+  const detail =
+    label === "Normal"
+      ? text.regimeNormal
+      : label === "Elevated"
+        ? text.regimeElevated
+        : label === "Panic"
+          ? text.regimePanic
+          : text.regimeUnknown;
+  const penalty = result.market_regime_penalty;
+  const penaltyText =
+    typeof penalty === "number" && Number.isFinite(penalty) && penalty !== 0
+      ? ` (${penalty > 0 ? "+" : ""}${penalty.toFixed(0)})`
+      : "";
+  return (
+    <div className={`rounded border p-3 font-body-sm ${palette[label]}`}>
+      <div className="flex items-center justify-between">
+        <span className="font-label-caps">{text.regime}</span>
+        <span className="font-data-mono text-sm font-bold">
+          {label}
+          {penaltyText}
+        </span>
+      </div>
+      <p className="mt-1 leading-snug">{detail}</p>
     </div>
   );
 }

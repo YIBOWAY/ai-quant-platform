@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BadgeDollarSign,
   BriefcaseBusiness,
   LayoutDashboard,
   Zap,
@@ -27,6 +28,7 @@ export function Sidebar() {
     { name: "Data Explorer", href: "/data-explorer", icon: Database },
     { name: "Options Screener", href: "/options-screener", icon: ListFilter },
     { name: "Options Radar", href: "/options-radar", icon: ListFilter },
+    { name: "Buy-side Options", href: "/options-buyside", icon: BadgeDollarSign },
     { name: "Factor Lab", href: "/factor-lab", icon: FlaskConical },
     { name: "Backtester", href: "/backtest", icon: LineChart },
     { name: "Experiments", href: "/experiments", icon: FlaskConical },
