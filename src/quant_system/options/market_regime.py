@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 import pandas as pd
 
 StrategyName = Literal["sell_put", "covered_call"]
+BuyerStrategyName = Literal[
+    "long_call",
+    "bull_call_spread",
+    "leaps_call",
+    "leaps_call_spread",
+]
 VolatilityRegime = Literal["Normal", "Elevated", "Panic", "Unknown"]
 
 REGIME_W_VIX: dict[VolatilityRegime, float] = {
@@ -86,6 +93,49 @@ def seller_regime_penalty(strategy: StrategyName, regime: VolatilityRegime) -> f
     if regime == "Elevated":
         return -15.0 if strategy == "sell_put" else -5.0
     return 0.0
+
+
+def buyer_regime_penalty(strategy: BuyerStrategyName, regime: VolatilityRegime) -> float:
+    if regime == "Panic":
+        return {
+            "long_call": -40.0,
+            "leaps_call": -20.0,
+            "bull_call_spread": -15.0,
+            "leaps_call_spread": -10.0,
+        }[strategy]
+    if regime == "Elevated":
+        return {
+            "long_call": -20.0,
+            "leaps_call": -10.0,
+            "bull_call_spread": -5.0,
+            "leaps_call_spread": -5.0,
+        }[strategy]
+    return 0.0
+
+
+def load_market_regime(
+    vix_history_path: Path | str,
+    *,
+    run_date: str | None = None,
+) -> VixRegimeSnapshot | None:
+    """Load offline VIX/VIX3M history and compute the seller regime weight.
+
+    Returns ``None`` when the CSV is missing or empty so callers can skip the
+    penalty step without aborting the request.
+    """
+    from quant_system.options.vix_data import load_vix_history
+
+    daily_vix, daily_vix3m = load_vix_history(vix_history_path)
+    if daily_vix.empty:
+        return None
+    if run_date:
+        try:
+            signal_date = pd.Timestamp(run_date)
+        except (TypeError, ValueError):
+            signal_date = daily_vix.index.max()
+    else:
+        signal_date = daily_vix.index.max()
+    return compute_vix_regime(daily_vix, daily_vix3m, signal_date=signal_date)
 
 
 def _mean_term_ratio(
