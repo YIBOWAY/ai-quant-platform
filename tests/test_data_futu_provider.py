@@ -246,6 +246,32 @@ def test_futu_provider_fetches_option_quotes_with_missing_fields() -> None:
     assert pd.isna(frame.loc[0, "implied_volatility"])
 
 
+def test_futu_provider_normalizes_snapshot_rho_and_contract_size() -> None:
+    snapshots = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL260508C200000",
+                "update_time": "2026-05-01 15:19:50",
+                "last_price": 1.2,
+                "bid_price": 1.1,
+                "ask_price": 1.3,
+                "option_rho": 0.018,
+                "option_contract_size": 100,
+            }
+        ]
+    )
+    fake_context = _FakeContext([], snapshots=(0, snapshots))
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: fake_context,
+        sdk_loader=_sdk,
+    )
+
+    frame = provider.fetch_market_snapshots(["US.AAPL260508C200000"])
+
+    assert frame.loc[0, "rho"] == 0.018
+    assert frame.loc[0, "contract_size"] == 100
+
+
 def test_futu_provider_fetches_option_quotes_by_expiration_range() -> None:
     chain = pd.DataFrame(
         [

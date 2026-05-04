@@ -1,10 +1,11 @@
-"""Read-only VIX/VIX3M history loader and Yahoo Chart fetcher.
+"""Read-only VIX/VIX3M history loader with Yahoo and Cboe public sources.
 
 The fetcher mirrors the reference implementation at
 ``E:\\programs\\APEXUSTech_Inter\\quantplatform\\backend\\app\\services\\
-data_fetcher.py::_fetch_yahoo_single``. It performs HTTP GETs against
-``query1.finance.yahoo.com`` only — no Futu connection, no broker context —
-and is used purely to compute the daily seller-options regime weight.
+data_fetcher.py::_fetch_yahoo_single``. It performs public HTTP GETs against
+Yahoo Chart first and Cboe daily CSV as a fallback — no Futu connection, no
+broker context — and is used purely to compute the daily seller-options regime
+weight.
 
 Tickers are CBOE indices ``^VIX`` and ``^VIX3M``. They are not exposed via
 Futu's ``US.VIX`` symbol (Futu returns ``unknown stock`` for those), so a
@@ -18,6 +19,7 @@ import csv
 import logging
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,9 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+CBOE_DAILY_PRICES_URL = (
+    "https://cdn.cboe.com/api/global/us_indices/daily_prices/{symbol}_History.csv"
+)
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/123.0 Safari/537.36"
@@ -80,6 +85,60 @@ def fetch_yahoo_chart(
         logger.warning("vix_fetch_json_error ticker=%s reason=%s", ticker, exc)
         return pd.Series(dtype="float64")
     return _parse_chart_payload(payload)
+
+
+def fetch_cboe_index_history(
+    symbol: str,
+    start: date,
+    end: date,
+    *,
+    http_get: HttpGet | None = None,
+    timeout: float = 10.0,
+) -> pd.Series:
+    """Fetch VIX-family closes from Cboe's public daily CSV endpoint."""
+    if http_get is None:
+        http_get = _default_http_get()
+    url = CBOE_DAILY_PRICES_URL.format(symbol=symbol.upper())
+    headers = {
+        "User-Agent": DEFAULT_USER_AGENT,
+        "Accept": "text/csv, text/plain, */*",
+    }
+    try:
+        response = http_get(url, headers=headers, timeout=timeout)
+    except Exception as exc:  # pragma: no cover - network errors are runtime
+        logger.warning("cboe_vix_fetch_failed symbol=%s reason=%s", symbol, exc)
+        return pd.Series(dtype="float64")
+    status = getattr(response, "status_code", None)
+    if status != 200:
+        logger.warning("cboe_vix_fetch_status symbol=%s status=%s", symbol, status)
+        return pd.Series(dtype="float64")
+    text = str(getattr(response, "text", "") or "")
+    if not text.strip():
+        return pd.Series(dtype="float64")
+    try:
+        frame = pd.read_csv(StringIO(text))
+    except Exception as exc:  # pragma: no cover
+        logger.warning("cboe_vix_csv_error symbol=%s reason=%s", symbol, exc)
+        return pd.Series(dtype="float64")
+    if "DATE" not in frame.columns or "CLOSE" not in frame.columns:
+        logger.warning("cboe_vix_csv_missing_columns symbol=%s", symbol)
+        return pd.Series(dtype="float64")
+    frame["DATE"] = pd.to_datetime(frame["DATE"], errors="coerce")
+    frame["CLOSE"] = pd.to_numeric(frame["CLOSE"], errors="coerce")
+    frame = frame.dropna(subset=["DATE", "CLOSE"])
+    if frame.empty:
+        return pd.Series(dtype="float64")
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    frame = frame[(frame["DATE"] >= start_ts) & (frame["DATE"] <= end_ts)]
+    if frame.empty:
+        return pd.Series(dtype="float64")
+    series = pd.Series(
+        frame["CLOSE"].astype(float).to_numpy(),
+        index=pd.DatetimeIndex(frame["DATE"]),
+        dtype="float64",
+    )
+    return series[~series.index.duplicated(keep="last")].sort_index()
 
 
 def _parse_chart_payload(payload: dict) -> pd.Series:
@@ -177,8 +236,18 @@ def fetch_vix_history(
     lookback_days: int = 400,
     http_get: HttpGet | None = None,
 ) -> tuple[pd.Series, pd.Series]:
-    """Fetch ``^VIX`` and ``^VIX3M`` daily closes ending at ``end``."""
+    """Fetch ``^VIX`` and ``^VIX3M`` daily closes ending at ``end``.
+
+    Yahoo Chart is tried first because it was the original source. Some
+    networks return HTTP 403, so Cboe's public daily CSV endpoint is used as a
+    read-only fallback before the caller decides whether to keep an existing
+    local cache.
+    """
     start = end - timedelta(days=lookback_days)
     vix = fetch_yahoo_chart(VIX_TICKER, start, end, http_get=http_get)
     vix3m = fetch_yahoo_chart(VIX3M_TICKER, start, end, http_get=http_get)
+    if vix.empty:
+        vix = fetch_cboe_index_history("VIX", start, end, http_get=http_get)
+    if vix3m.empty:
+        vix3m = fetch_cboe_index_history("VIX3M", start, end, http_get=http_get)
     return vix, vix3m

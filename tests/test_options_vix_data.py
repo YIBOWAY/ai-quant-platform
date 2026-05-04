@@ -8,6 +8,7 @@ import pytest
 
 from quant_system.options.market_regime import compute_vix_regime
 from quant_system.options.vix_data import (
+    fetch_cboe_index_history,
     fetch_vix_history,
     fetch_yahoo_chart,
     load_vix_history,
@@ -19,9 +20,19 @@ class _FakeResponse:
     def __init__(self, status_code: int, payload: dict | None) -> None:
         self.status_code = status_code
         self._payload = payload
+        self.text = ""
 
     def json(self) -> dict:
         return self._payload or {}
+
+
+class _FakeTextResponse:
+    def __init__(self, status_code: int, text: str) -> None:
+        self.status_code = status_code
+        self.text = text
+
+    def json(self) -> dict:
+        raise AssertionError("Cboe CSV response should not be parsed as JSON")
 
 
 def _payload(timestamps: list[int], closes: list[float | None]) -> dict:
@@ -84,6 +95,53 @@ def test_fetch_yahoo_chart_handles_yahoo_error() -> None:
         http_get=lambda *a, **kw: _FakeResponse(200, payload),
     )
     assert series.empty
+
+
+def test_fetch_cboe_index_history_parses_csv() -> None:
+    csv_text = (
+        "DATE,OPEN,HIGH,LOW,CLOSE\n"
+        "04/30/2026,17.00,17.40,16.70,16.890000\n"
+        "05/01/2026,16.80,17.20,16.60,16.990000\n"
+    )
+    seen = {}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        seen["url"] = url
+        return _FakeTextResponse(200, csv_text)
+
+    series = fetch_cboe_index_history(
+        "VIX",
+        date(2026, 4, 1),
+        date(2026, 5, 3),
+        http_get=fake_get,
+    )
+    assert "cdn.cboe.com" in seen["url"]
+    assert list(series.values) == pytest.approx([16.89, 16.99])
+    assert [item.date().isoformat() for item in series.index] == [
+        "2026-04-30",
+        "2026-05-01",
+    ]
+
+
+def test_fetch_vix_history_falls_back_to_cboe_when_yahoo_blocks() -> None:
+    calls: list[str] = []
+    csv_text = (
+        "DATE,OPEN,HIGH,LOW,CLOSE\n"
+        "04/30/2026,17.00,17.40,16.70,16.890000\n"
+        "05/01/2026,16.80,17.20,16.60,16.990000\n"
+    )
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        if "finance.yahoo.com" in url:
+            return _FakeResponse(403, None)
+        return _FakeTextResponse(200, csv_text)
+
+    vix, vix3m = fetch_vix_history(end=date(2026, 5, 3), http_get=fake_get)
+    assert any("finance.yahoo.com" in item for item in calls)
+    assert any("cdn.cboe.com" in item for item in calls)
+    assert list(vix.values) == pytest.approx([16.89, 16.99])
+    assert list(vix3m.values) == pytest.approx([16.89, 16.99])
 
 
 def test_save_and_load_vix_history_round_trip(tmp_path: Path) -> None:

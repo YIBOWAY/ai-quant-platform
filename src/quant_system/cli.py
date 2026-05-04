@@ -3,10 +3,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-import pandas as pd
 import typer
 
 from quant_system import __version__
@@ -27,15 +27,27 @@ from quant_system.experiments.runner import (
 from quant_system.factors.pipeline import FactorResearchResult, run_sample_factor_research
 from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
 from quant_system.logging.setup import configure_logging
+from quant_system.options.buy_side_decision import (
+    BuySideDecisionRequest,
+    run_buy_side_decision,
+)
 from quant_system.options.earnings_calendar import EarningsCalendar
-from quant_system.options.market_regime import VixRegimeSnapshot, compute_vix_regime
-from quant_system.options.models import OptionsScreenerConfig
+from quant_system.options.market_regime import (
+    VixRegimeSnapshot,
+    load_market_regime,
+)
+from quant_system.options.models import (
+    BuySideEventRisk,
+    BuySideRiskPreference,
+    BuySideViewType,
+    BuySideVolatilityView,
+    OptionsScreenerConfig,
+)
 from quant_system.options.radar import OptionsRadarConfig, run_options_radar
 from quant_system.options.radar_storage import RadarSnapshotStore
 from quant_system.options.rate_limiter import RateLimitedFutuProvider, TokenBucket
 from quant_system.options.sample_provider import SampleOptionsProvider
 from quant_system.options.universe import OptionsUniverse
-from quant_system.options.vix_data import load_vix_history
 from quant_system.prediction_market.charts import (
     write_prediction_market_timeseries_charts,
 )
@@ -1128,6 +1140,112 @@ def options_daily_scan(
         raise typer.Exit(code=2)
 
 
+@options_app.command("buyside-screen")
+def options_buyside_screen(
+    ticker: Annotated[str, typer.Option("--ticker", help="Underlying ticker.")],
+    view: Annotated[
+        BuySideViewType,
+        typer.Option("--view", help="Buy-side thesis view type."),
+    ],
+    target_price: Annotated[
+        float,
+        typer.Option("--target-price", help="User thesis target price."),
+    ],
+    target_date: Annotated[
+        str,
+        typer.Option("--target-date", help="User thesis target date, YYYY-MM-DD."),
+    ],
+    max_loss_budget: Annotated[
+        float | None,
+        typer.Option("--max-loss-budget", help="Optional max loss budget."),
+    ] = None,
+    risk_preference: Annotated[
+        BuySideRiskPreference,
+        typer.Option("--risk-preference", help="aggressive, balanced, or conservative."),
+    ] = "balanced",
+    allow_capped_upside: Annotated[
+        bool,
+        typer.Option(
+            "--allow-capped-upside/--no-allow-capped-upside",
+            help="Allow call-spread structures with capped upside.",
+        ),
+    ] = True,
+    avoid_high_iv: Annotated[
+        bool,
+        typer.Option("--avoid-high-iv", help="Penalize naked long premium in high IV."),
+    ] = False,
+    volatility_view: Annotated[
+        BuySideVolatilityView,
+        typer.Option("--volatility-view", help="Volatility thesis."),
+    ] = "auto",
+    event_risk: Annotated[
+        BuySideEventRisk,
+        typer.Option("--event-risk", help="Known event risk type."),
+    ] = "none",
+    expected_iv_change_vol_points: Annotated[
+        float | None,
+        typer.Option(
+            "--expected-iv-change-vol-points",
+            help="Optional expected IV change in volatility points.",
+        ),
+    ] = None,
+    iv_rank: Annotated[
+        float | None,
+        typer.Option("--iv-rank", help="Optional current IV rank, 0-100."),
+    ] = None,
+    historical_volatility: Annotated[
+        float | None,
+        typer.Option("--historical-volatility", help="Optional HV decimal value."),
+    ] = None,
+    as_of_date: Annotated[
+        str | None,
+        typer.Option("--as-of-date", help="Decision date, YYYY-MM-DD."),
+    ] = None,
+    max_recommendations: Annotated[
+        int,
+        typer.Option("--max-recommendations", help="Maximum recommendations to return."),
+    ] = 10,
+) -> None:
+    """Run the Phase 14 read-only buy-side options assistant."""
+    settings = reload_settings()
+    provider = _build_options_radar_provider(settings, "futu")
+    try:
+        spot_price = _resolve_options_spot(provider.fetch_underlying_snapshot(ticker), ticker)
+        start_expiration, end_expiration = _buyside_expiration_window(view, as_of_date)
+        option_chain = provider.fetch_option_quotes_range(
+            ticker,
+            start_expiration=start_expiration,
+            end_expiration=end_expiration,
+            option_type="CALL",
+        )
+        result = run_buy_side_decision(
+            option_chain,
+            BuySideDecisionRequest(
+                ticker=ticker,
+                spot_price=spot_price,
+                view_type=view,
+                target_price=target_price,
+                target_date=target_date,
+                max_loss_budget=max_loss_budget,
+                risk_preference=risk_preference,
+                allow_capped_upside=allow_capped_upside,
+                avoid_high_iv=avoid_high_iv,
+                volatility_view=volatility_view,
+                event_risk=event_risk,
+                expected_iv_change_vol_points=expected_iv_change_vol_points,
+                iv_rank=iv_rank,
+                historical_volatility=historical_volatility,
+                as_of_date=as_of_date,
+            ),
+            market_regime=_load_market_regime(settings, as_of_date),
+            max_recommendations=max_recommendations,
+        )
+    except Exception as exc:
+        typer.echo(f"buy_side_assistant=failed reason={type(exc).__name__}: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
+
+
 @options_app.command("refresh-universe")
 def options_refresh_universe() -> None:
     """Print the manual universe refresh command."""
@@ -1175,27 +1293,10 @@ def _build_options_radar_provider(settings, provider: Literal["futu", "sample"])
 
 
 def _load_market_regime(settings, run_date: str | None) -> VixRegimeSnapshot | None:
-    """Load offline VIX/VIX3M history and compute the seller regime weight.
-
-    Reads the CSV produced by ``scripts/refresh_vix_history.py`` (Yahoo
-    Chart REST source). When the file is missing or empty, returns ``None``
-    so the radar runs without any regime penalty rather than failing.
-    """
-    path = settings.options_radar.vix_history_path
-    daily_vix, daily_vix3m = load_vix_history(path)
-    if daily_vix.empty:
-        return None
-    if run_date:
-        try:
-            signal_date = pd.Timestamp(run_date)
-        except (TypeError, ValueError):
-            signal_date = daily_vix.index.max()
-    else:
-        signal_date = daily_vix.index.max()
-    return compute_vix_regime(
-        daily_vix,
-        daily_vix3m,
-        signal_date=signal_date,
+    """Thin wrapper around :func:`load_market_regime` for the CLI."""
+    return load_market_regime(
+        settings.options_radar.vix_history_path,
+        run_date=run_date,
     )
 
 
@@ -1219,6 +1320,39 @@ def _build_radar_screen_config(settings) -> OptionsScreenerConfig:
         min_avg_daily_volume=100_000,
         min_market_cap=0.0,
         avoid_earnings_within_days=7,
+    )
+
+
+def _resolve_options_spot(snapshot: dict[str, object], ticker: str) -> float:
+    for key in ("last", "close", "price"):
+        value = snapshot.get(key)
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return parsed
+    raise ValueError(f"no usable underlying price for {ticker}")
+
+
+def _buyside_expiration_window(
+    view: BuySideViewType,
+    as_of_date: str | None,
+) -> tuple[str, str]:
+    start = (
+        date.fromisoformat(as_of_date)
+        if as_of_date
+        else date.today()
+    )
+    if view.startswith("long_term"):
+        min_dte, max_dte = 180, 760
+    elif view == "short_term_speculative_bullish":
+        min_dte, max_dte = 7, 60
+    else:
+        min_dte, max_dte = 14, 120
+    return (
+        (start + timedelta(days=min_dte)).isoformat(),
+        (start + timedelta(days=max_dte)).isoformat(),
     )
 
 

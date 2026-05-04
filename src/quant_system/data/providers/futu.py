@@ -407,6 +407,7 @@ class FutuMarketDataProvider:
                 "gamma": pd.to_numeric(frame.get("option_gamma"), errors="coerce"),
                 "theta": pd.to_numeric(frame.get("option_theta"), errors="coerce"),
                 "vega": pd.to_numeric(frame.get("option_vega"), errors="coerce"),
+                "rho": pd.to_numeric(frame.get("option_rho"), errors="coerce"),
                 "contract_size": pd.to_numeric(
                     frame.get("option_contract_size"),
                     errors="coerce",

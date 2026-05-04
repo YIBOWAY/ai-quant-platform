@@ -5,6 +5,10 @@ import math
 import pandas as pd
 
 from quant_system.data.providers.futu import FutuMarketDataProvider
+from quant_system.options.market_regime import (
+    VixRegimeSnapshot,
+    seller_regime_penalty,
+)
 from quant_system.options.models import (
     OptionsScreenerCandidate,
     OptionsScreenerConfig,
@@ -16,6 +20,7 @@ def run_options_screener(
     *,
     provider: FutuMarketDataProvider,
     config: OptionsScreenerConfig,
+    market_regime: VixRegimeSnapshot | None = None,
 ) -> OptionsScreenerResult:
     plain_symbol, futu_symbol = provider.normalize_symbol(config.ticker)
     scanned_expirations = _select_expirations(
@@ -68,6 +73,7 @@ def run_options_screener(
             trend_pass=trend_pass,
             avg_daily_volume=avg_daily_volume,
             market_cap=market_cap,
+            market_regime=market_regime,
         )
         rows.append(candidate)
     # Phase 12 fix: keep every row (including Avoid) so the UI/audit can show
@@ -91,6 +97,15 @@ def run_options_screener(
         underlying_price=underlying_price,
         historical_volatility=historical_volatility,
         trend_reference=trend_reference,
+        market_regime=market_regime.volatility_regime if market_regime else None,
+        market_regime_penalty=(
+            seller_regime_penalty(config.strategy_type, market_regime.volatility_regime)
+            if market_regime
+            else 0.0
+        ),
+        market_regime_w_vix=market_regime.w_vix if market_regime else None,
+        market_regime_vix_density=market_regime.vix_density if market_regime else None,
+        market_regime_term_ratio=market_regime.term_ratio if market_regime else None,
         candidates=ranked[: config.top_n],
         assumptions=[
             "Read-only data mode; no order placement is available.",
@@ -99,6 +114,8 @@ def run_options_screener(
             "Premium uses mid price when bid and ask are available.",
             "Yield estimates are simplified and ignore assignment, taxes, and commissions.",
             "Missing IV/Greeks fields reduce confidence; they are not invented.",
+            "VIX market regime is read from the offline Yahoo cache and discounts "
+            "seller ratings under Elevated / Panic conditions.",
         ],
     )
 
@@ -206,6 +223,7 @@ def _build_candidate(
     trend_pass: bool | None,
     avg_daily_volume: float | None,
     market_cap: float | None,
+    market_regime: VixRegimeSnapshot | None = None,
 ) -> OptionsScreenerCandidate:
     bid = _safe_float(row.get("bid"))
     ask = _safe_float(row.get("ask"))
@@ -253,7 +271,23 @@ def _build_candidate(
         avg_daily_volume=avg_daily_volume,
         market_cap=market_cap,
     )
+    regime_label = market_regime.volatility_regime if market_regime else None
+    regime_penalty = (
+        seller_regime_penalty(config.strategy_type, market_regime.volatility_regime)
+        if market_regime
+        else 0.0
+    )
+    if regime_label and regime_penalty != 0.0:
+        notes.append(
+            f"market regime is {regime_label}; "
+            f"{config.strategy_type} score discounted by {regime_penalty:+.0f}"
+        )
     rating = _rating(notes)
+    if regime_penalty <= -30 and rating != "Avoid":
+        # Panic + sell_put: too dangerous to keep at Strong/Watch.
+        rating = "Avoid"
+    elif regime_penalty < 0 and rating == "Strong":
+        rating = "Watch"
     return OptionsScreenerCandidate(
         symbol=str(row.get("symbol")),
         underlying=underlying,
@@ -286,6 +320,8 @@ def _build_candidate(
         market_cap=market_cap,
         iv_rank=None,           # Phase 13: filled by radar scanner using IV history
         earnings_date=None,     # Phase 13: filled by radar scanner using calendar source
+        market_regime=regime_label,
+        market_regime_penalty=regime_penalty,
         rating=rating,
         notes=notes,
     )

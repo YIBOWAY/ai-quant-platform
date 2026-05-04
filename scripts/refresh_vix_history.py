@@ -1,6 +1,6 @@
 """Manual refresh of the offline VIX/VIX3M history CSV used by Options Radar.
 
-Source: Yahoo Chart REST API (``query1.finance.yahoo.com``).
+Source: Yahoo Chart REST API first; Cboe public daily CSV fallback.
 This script is read-only research tooling: no orders, no trading context,
 no broker credentials. The output CSV has columns ``date,vix,vix3m`` and
 is consumed by ``quant_system.options.vix_data.load_vix_history``.
@@ -23,7 +23,7 @@ from quant_system.options.vix_data import (
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Refresh the offline VIX history CSV (Yahoo source). "
+            "Refresh the offline VIX history CSV (Yahoo first, Cboe fallback). "
             "Required for Options Radar regime adjustments."
         )
     )
@@ -71,7 +71,7 @@ def main() -> int:
     print(
         " ".join(
             [
-                "source=yahoo_chart",
+                "source=yahoo_chart_or_cboe_csv",
                 f"fetched_at={datetime.now(UTC).isoformat()}",
                 f"vix_rows={len(vix)}",
                 f"vix3m_rows={len(vix3m)}",

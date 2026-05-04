@@ -308,3 +308,63 @@ def test_options_screener_uses_range_queries_without_exceeding_30_day_span() -> 
 
     assert provider.range_requests == [("2026-05-08", "2026-06-05")]
     assert result.expiration_count == 4
+
+
+def test_options_screener_applies_market_regime_to_sell_put() -> None:
+    from quant_system.options.market_regime import VixRegimeSnapshot
+
+    panic = VixRegimeSnapshot(
+        volatility_regime="Panic",
+        w_vix=0.35,
+        vix_density=0.6,
+        term_ratio=1.05,
+        vix_mean=30.0,
+        vix_threshold=22.0,
+    )
+    result = run_options_screener(
+        provider=_FakeProvider(),
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            min_iv=0.2,
+            max_delta=0.35,
+            min_premium=1.0,
+            max_spread_pct=0.2,
+            trend_filter=True,
+            hv_iv_filter=False,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+        market_regime=panic,
+    )
+
+    assert result.market_regime == "Panic"
+    assert result.market_regime_penalty == -40.0
+    assert result.market_regime_w_vix == 0.35
+    candidate = result.candidates[0]
+    assert candidate.market_regime == "Panic"
+    assert candidate.market_regime_penalty == -40.0
+    # Panic + sell_put forces rating to Avoid even when other criteria pass.
+    assert candidate.rating == "Avoid"
+    assert any("market regime is Panic" in note for note in candidate.notes)
+
+
+def test_options_screener_no_regime_means_no_penalty() -> None:
+    result = run_options_screener(
+        provider=_FakeProvider(),
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            min_iv=0.2,
+            max_delta=0.35,
+            min_premium=1.0,
+            max_spread_pct=0.2,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert result.market_regime is None
+    assert result.market_regime_penalty == 0.0
+    assert result.candidates[0].market_regime is None
+    assert result.candidates[0].market_regime_penalty == 0.0
