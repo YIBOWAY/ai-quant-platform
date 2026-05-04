@@ -2,7 +2,7 @@
 
 这是一个本地运行的 AI 量化研究平台。它的目标是帮助你做研究、回测、模拟交易、只读市场扫描和实验管理，而不是直接实盘交易。
 
-当前状态：**Phase 13 已完成**。
+当前状态：**Phase 14 已完成**。
 
 ## 现在能做什么
 
@@ -21,6 +21,7 @@
 - 运行单标的卖方期权筛选器。
 - 每日扫描 `S&P 500 union Nasdaq 100`，生成 Options Radar 快照。
 - 在 `/options-radar` 页面查看筛选结果。
+- 运行买方期权策略助手（看涨方向，只读量化决策辅助），在 `/options-buyside` 页面查看推荐与情景实验室。
 
 Prediction market / Polymarket 方向：
 
@@ -86,5 +87,7 @@ http://127.0.0.1:3001
 3. [SYSTEM_DESIGN_RESEARCH.md](SYSTEM_DESIGN_RESEARCH.md)
 4. [execution/phase_13_execution.md](execution/phase_13_execution.md)
 5. [delivery/phase_13_delivery.md](delivery/phase_13_delivery.md)
+6. [execution/phase_14_execution.md](execution/phase_14_execution.md)
+7. [delivery/phase_14_delivery.md](delivery/phase_14_delivery.md)
 
-如果只想快速验证系统能跑，先看 README 和 Phase 13 执行文档。
+如果只想快速验证系统能跑，先看 README 和 Phase 14 执行文档。

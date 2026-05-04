@@ -7,7 +7,7 @@
 - 常用命令速查表
 - 安全边界清单
 
-当前状态已经推进到 **Phase 13**。平台现在包含：
+当前状态已经推进到 **Phase 14**。平台现在包含：
 
 - 股票真实历史数据驱动的因子研究、回测、模拟交易
 - 只读的 Polymarket 公开数据接入
@@ -15,6 +15,7 @@
 - 预测市场按时间推进的历史回放
 - 前后端联动页面
 - 每日全市场卖方期权雷达（只读研究，不下单）
+- 看涨买方期权策略助手（只读量化决策辅助，不下单）
 
 红线不变：
 
@@ -113,6 +114,7 @@ data/                     本地缓存、实验、报告、历史快照
 | 11 | Polymarket 真实只读 + 准回测 | [phase_11_architecture.md](architecture/phase_11_architecture.md) | [phase_11_execution.md](execution/phase_11_execution.md) | [phase_11_learning.md](learning/phase_11_learning.md) | [phase_11_delivery.md](delivery/phase_11_delivery.md) |
 | 12 | Polymarket 历史采集 + 时间序列回放 + Futu 行情 / 期权卖方筛选器 | [phase_12_architecture.md](architecture/phase_12_architecture.md) | [phase_12_execution.md](execution/phase_12_execution.md) | [phase_12_learning.md](learning/phase_12_learning.md) | [phase_12_delivery.md](delivery/phase_12_delivery.md) |
 | 13 | 每日全市场期权卖方扫描器 (Options Radar) | [phase_13_architecture.md](architecture/phase_13_architecture.md) | [phase_13_execution.md](execution/phase_13_execution.md) | [phase_13_learning.md](learning/phase_13_learning.md) | [phase_13_delivery.md](delivery/phase_13_delivery.md) |
+| 14 | Buy-Side US Options Strategy Assistant | - | [phase_14_execution.md](execution/phase_14_execution.md) | [buyside_strategy_learning.md](options/buyside_strategy_learning.md) | [phase_14_delivery.md](delivery/phase_14_delivery.md) |
 
 ---
 
@@ -142,9 +144,15 @@ data/                     本地缓存、实验、报告、历史快照
 | [futu/futu_frontend_backend_integration_report.md](futu/futu_frontend_backend_integration_report.md) | Futu 前后端联调报告 |
 | [options/options_screener_api.md](options/options_screener_api.md) | 期权筛选器 API 端点参考 |
 | [options/options_screener_learning.md](options/options_screener_learning.md) | 卖方期权筛选器入门 |
+| [options/buyside_strategy_learning.md](options/buyside_strategy_learning.md) | Buy-side options assistant, risk disclosure, and Scenario Lab |
 | [options/options_screener_review_2026_05_03.md](options/options_screener_review_2026_05_03.md) | 2026-05-03 卖方策略 review + 预设重定标 |
 | [options/phase_13_options_radar_codex_prompt.md](options/phase_13_options_radar_codex_prompt.md) | Phase 13 全市场扫描器 Codex prompt |
 | [phases/phase_13_design_spec.md](phases/phase_13_design_spec.md) | Phase 13 Options Radar 设计冻结 |
+
+> Phase 13 期权雷达启用了 V5 双因子 VIX regime，数据源是 Yahoo Chart REST
+> 的 `^VIX` / `^VIX3M` 日线（只读，无 API key）。手动刷新：
+> `python scripts/refresh_vix_history.py --output data/options_universe/vix_history.csv --lookback-days 400`，
+> CSV 缺失时雷达仍能运行，但 `market_regime=Unknown`，不会扣分。
 
 ---
 
@@ -267,10 +275,11 @@ quant-system prediction-market timeseries-backtest --provider sample
 
 ## 9. 当前状态
 
-- 后端测试、代码检查、前端 lint/build、浏览器联调都已覆盖到 Phase 13
+- 后端测试、代码检查、前端 lint/build、浏览器联调都已覆盖到 Phase 14
 - 股票三条主链已经能走真实历史数据
 - Polymarket 已支持只读历史采集与时间序列回放
 - Options Radar 已支持本地 universe、离线财报缓存、IV Rank 积累、每日快照和前端查看
+- 买方期权助手已交付，提供 Long Call / Bull Call Spread / LEAPS Call / LEAPS Call Spread 的只读排序、避坑清单与 Greek 近似情景实验室
 - 预测市场仍然是研究用途，不具备真实交易能力
 
 ---
@@ -282,3 +291,33 @@ quant-system prediction-market timeseries-backtest --provider sample
 1. 扩大真实预测市场历史样本积累窗口
 2. 增加更多 scanner 和参数对比
 3. 把预测市场回放结果纳入更系统的实验管理
+## Phase 14 Addendum: Buy-Side Options Assistant
+
+Phase 14 is delivered as read-only quantitative decision support for bullish
+buy-side option structures. It includes backend research logic, local API / CLI
+wiring, and the frontend page at `/options-buyside`.
+
+| Area | Entry Point |
+|---|---|
+| Option record normalization | `src/quant_system/options/option_data.py` |
+| Buy-side data contracts | `src/quant_system/options/models.py` |
+| Contract metrics | `src/quant_system/options/buy_side_metrics.py` |
+| Strategy candidates | `src/quant_system/options/buy_side_strategy.py` |
+| Scenario Lab | `src/quant_system/options/buy_side_scenarios.py` |
+| Decision API | `POST /api/options/buy-side/assistant` |
+| Debug CLI | `quant-system options buyside-screen` |
+| Frontend page | `/options-buyside` |
+
+Phase 14 docs:
+
+- [options/buyside_strategy_learning.md](options/buyside_strategy_learning.md)
+- [execution/phase_14_execution.md](execution/phase_14_execution.md)
+- [delivery/phase_14_delivery.md](delivery/phase_14_delivery.md)
+- [phases/phase14_multi_sub.md](phases/phase14_multi_sub.md)
+
+Safety note: Phase 14 remains read-only research and quantitative decision
+support. It does not add live trading, Futu account unlock, order placement,
+wallet signing, or broker execution.
+
+The frontend displays the required options risk disclosure and points users to
+OCC's `Characteristics and Risks of Standardized Options`.

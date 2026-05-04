@@ -25,9 +25,23 @@ scans stay deterministic.
 
 ## VIX Regime
 
-The imported VIX idea is useful, but Futu did not return `US.VIX` or `US.VIX3M`
-in the local verification. The code therefore keeps the classification module
-and score hook, but does not fetch VIX at runtime yet.
+Futu does not expose CBOE indices (`US.VIX` returns `unknown stock`), so the
+radar fetches `^VIX` and `^VIX3M` daily closes from the Yahoo Chart REST
+endpoint (`query1.finance.yahoo.com/v8/finance/chart/{ticker}`) via
+`quant_system.options.vix_data`. The implementation mirrors the reference
+project `quantplatform`'s `_fetch_yahoo_single` and is read-only.
+
+The fetched series are cached as `data/options_universe/vix_history.csv`
+(`date,vix,vix3m`) by `scripts/refresh_vix_history.py`. The CLI loads this
+CSV at the start of each daily scan, calls `compute_vix_regime` (V5 dual
+factor: Density + term structure), and passes the resulting snapshot into
+`run_options_radar(market_regime=...)`. Per-strategy penalties
+(`seller_regime_penalty`) flow through to the `global_score` and are
+surfaced as `market_regime` / `market_regime_penalty` on every candidate.
+
+When the CSV is missing or empty, the radar still runs but emits
+`market_regime=Unknown reason=no_vix_history` and applies no penalty,
+rather than failing the scan.
 
 ## Rate Limits
 

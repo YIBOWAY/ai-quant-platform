@@ -92,6 +92,14 @@ Manual Futu probe on 2026-05-03:
 Therefore the radar has a market-regime penalty hook, but does not wire runtime
 VIX data yet. This avoids mixing Yahoo Finance into the daily runtime path.
 
+> **Update 2026-05-03:** the regime is now wired end-to-end. Daily scans
+> read `data/options_universe/vix_history.csv` (refreshed manually via
+> `scripts/refresh_vix_history.py`, source `query1.finance.yahoo.com`),
+> compute the V5 dual-factor regime, and apply per-strategy penalties
+> through `run_options_radar(market_regime=...)`. See
+> `docs/architecture/phase_13_architecture.md#vix-data-source` and
+> `docs/learning/phase_13_learning.md#vix-regime` for the live design.
+
 ## Safety Boundaries
 
 All Phase 13 code is read-only. It never imports or calls Futu trade APIs and

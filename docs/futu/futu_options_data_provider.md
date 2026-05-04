@@ -51,6 +51,74 @@ The seller Options Screener no longer requires a manually selected expiration. I
 expiration dates, keeps those inside the configured DTE window, requests chains by date range,
 and batches quote snapshots so it does not exceed Futu's per-request symbol limit.
 
+## Option Chain Completeness and Filtering Behavior
+
+Futu's official API separates expiration discovery from chain retrieval:
+
+- `get_option_expiration_date(code)` returns the available expiration dates for
+  the underlying. Use this first when the goal is to scan all listed expirations.
+- `get_option_chain(code, start, end, option_type, option_cond_type, data_filter)`
+  returns the static contracts whose expiration dates fall inside the requested
+  `[start, end]` window.
+- The option chain call does **not** return live bid / ask / IV / Greeks by
+  itself. This project then calls `get_market_snapshot` on the returned option
+  codes to fetch quote fields.
+
+Important behavior from the official docs:
+
+| Case | Behavior |
+|---|---|
+| `start` and `end` both set | Return contracts expiring in that explicit date range. |
+| `start=None`, `end` set | `start` defaults to 30 days before `end`. |
+| `start` set, `end=None` | `end` defaults to 30 days after `start`. |
+| both omitted | Range defaults to current date through 30 days later. |
+| no `option_type` | Calls and puts are returned. |
+| no `option_cond_type` | In-the-money and out-of-the-money contracts are returned. |
+| no `data_filter` | No IV / Greek / OI / volume filter is applied. |
+
+The protocol-level documentation states that one chain request covers at most
+about one month of expiration dates. There is no `page_req_key` style pagination
+for this interface. To cover a wider DTE window, this project chunks expiration
+dates into <=30-day spans and calls `get_option_chain` repeatedly. In other
+words:
+
+- A single `get_option_chain` call returns the available strikes/contracts for
+  the requested expiration window, not every expiration ever listed.
+- It is not limited to monthly expirations when weekly expirations are present
+  in the requested window.
+- It is not intentionally limited to liquid strikes unless `data_filter` or
+  `option_cond_type` is explicitly supplied. This project currently uses
+  `option_type` only, leaves `option_cond_type=ALL`, and does not pass
+  `data_filter`, so Futu is responsible for returning all available contracts in
+  that date window.
+- If a listed contract has no usable bid / ask or sparse OI / volume, it should
+  still appear in the static chain when Futu returns it, but the later snapshot
+  step may return nullable or empty quote fields.
+
+Current project behavior:
+
+- `fetch_option_expirations()` calls `get_option_expiration_date`.
+- `fetch_option_chain()` calls one exact expiration window.
+- `fetch_option_chain_range()` calls one explicit start/end range.
+- `run_options_screener()` chunks wider scans into <=30-day date spans before
+  calling `fetch_option_quotes_range()`.
+
+Local read-only check on 2026-05-04 with OpenD logged in:
+
+- `US.SPY` returned 35 expiration dates from 2026-05-04 through 2028-12-15.
+- The first expiration returned 318 contracts: 159 calls, 159 puts, 159 unique
+  strikes.
+- This supports the expected behavior: expirations are discovered separately;
+  each chain call returns the available call / put strikes for the requested
+  expiration window.
+
+Reference:
+
+- Official Futu docs: `get_option_expiration_date` says to use it together with
+  `get_option_chain` to obtain the complete option chain.
+- Official Futu docs: `get_option_chain` documents the 30-day default range
+  behavior, optional filters, and static-contract-only return semantics.
+
 ## Normalized Option Fields
 
 | Field | Meaning |
@@ -121,8 +189,12 @@ or below 200 symbols by default.
 
 Futu was also tested for `US.VIX` and `US.VIX3M` on 2026-05-03. The local OpenD
 session returned "unknown stock" for both codes while `US.SPY` K-line data
-worked. Because of that, Phase 13 ports the VIX regime classifier as a tested
-hook, but does not wire live VIX data into runtime scans yet.
+worked. Because Futu does not expose these CBOE index symbols, Options Radar now
+loads `^VIX` / `^VIX3M` from the local CSV cache maintained by
+`scripts/refresh_vix_history.py`. The refresh script tries Yahoo Chart first and
+falls back to Cboe's public daily CSV when Yahoo returns 403. Daily scans then
+compute the VIX regime and write `market_regime` / `market_regime_penalty` into
+each radar candidate.
 
 Futu OpenAPI terms do not allow this project to redistribute market data as an
 external data API. The radar is for local self-use research only.

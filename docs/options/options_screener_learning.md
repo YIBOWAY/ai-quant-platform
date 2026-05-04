@@ -80,6 +80,16 @@ The rating is intentionally conservative:
 
 The rating is a screening label, not a recommendation.
 
+### Market Regime Adjustment (Phase 13)
+
+The screener now reads the offline VIX cache (`data/options_universe/vix_history.csv`) and computes the same `Normal / Elevated / Panic` regime used by the daily radar. When the regime is non-Normal, seller candidates (`sell_put`, `covered_call`) are demoted:
+
+- `Elevated`: any `Strong` rating is demoted to `Watch`.
+- `Panic`: `sell_put` is forced to `Avoid`; `covered_call` is demoted from `Strong` to `Watch`.
+- `Unknown` (cache missing/empty): no penalty; refresh via `quant-system options refresh-vix`.
+
+The result payload exposes `market_regime`, `market_regime_penalty`, `market_regime_w_vix`, `market_regime_vix_density`, and `market_regime_term_ratio`; the `/options-screener` page renders a colored regime banner above the metrics grid.
+
 ## Important Assumptions
 
 - Premium uses mid price, not guaranteed fill price.

@@ -87,4 +87,17 @@ servers use the current checkout instead of a stale working directory.
 ```powershell
 python scripts/refresh_options_universe.py --bootstrap-github --output data/options_universe/sp500_nasdaq100.csv
 python scripts/refresh_earnings_calendar.py --top 100
+python scripts/refresh_vix_history.py --output data/options_universe/vix_history.csv --lookback-days 400
 ```
+
+The last command pulls `^VIX` / `^VIX3M` daily closes from
+`query1.finance.yahoo.com` (read-only HTTPS GET, no API key) and writes a
+CSV cache. The next `daily-scan` will print a `market_regime=...` line such
+as:
+
+```text
+market_regime=Normal w_vix=1.0 vix_density=0.227 term_ratio=0.899
+```
+
+When the CSV is missing the scan still runs but logs
+`market_regime=Unknown reason=no_vix_history` and applies no penalty.

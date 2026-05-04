@@ -1,8 +1,50 @@
 # AI-Assisted Quant Research Platform
 
+## Phase 14 note: Buy-Side Options Assistant
+
+Phase 14 adds a read-only Buy-Side US Options Strategy Assistant for bullish
+option structures: Long Call, Bull Call Spread, LEAPS Call, and LEAPS Call
+Spread.
+
+It provides research output for option diagnostics, candidate ranking, scenario
+analysis, and a frontend page at `/options-buyside`. It does not add live
+trading, Futu account unlock, order placement, wallet signing, or broker
+execution.
+
+Read:
+
+- [docs/options/buyside_strategy_learning.md](docs/options/buyside_strategy_learning.md)
+- [docs/execution/phase_14_execution.md](docs/execution/phase_14_execution.md)
+- [docs/delivery/phase_14_delivery.md](docs/delivery/phase_14_delivery.md)
+
+Focused validation:
+
+```powershell
+conda activate ai-quant
+python -m pytest -q
+ruff check src/quant_system tests
+npm --prefix src/frontend run lint
+npm --prefix src/frontend run build
+```
+
+Debug CLI:
+
+```powershell
+quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bullish --target-price 220 --target-date 2026-12-31
+```
+
+Frontend:
+
+```text
+http://127.0.0.1:3001/options-buyside
+```
+
+The page displays an options risk disclosure and reminds users to review OCC's
+`Characteristics and Risks of Standardized Options`.
+
 本项目是一套本地运行的量化研究、回测、模拟交易与只读市场研究平台。
 
-当前进度：**Phase 13 已完成**。
+当前进度：**Phase 14 已完成**。
 
 平台可以做：
 
@@ -82,6 +124,7 @@ http://127.0.0.1:3001
 - `/paper-trading`：模拟交易。
 - `/options-screener`：单标的卖方期权筛选。
 - `/options-radar`：每日全市场卖方期权扫描结果。
+- `/options-buyside`：买方期权策略助手。
 - `/order-book`：Polymarket / prediction market 只读研究页面。
 
 ## Futu 只读数据
@@ -116,6 +159,15 @@ quant-system options daily-scan --provider sample --top 5 --date 2026-05-03 --ou
 quant-system options daily-scan --top 5 --dry-run
 ```
 
+刷新 VIX 历史（Yahoo Chart REST，只读，无 API key）：
+
+```powershell
+python scripts/refresh_vix_history.py --output data/options_universe/vix_history.csv --lookback-days 400
+```
+
+刷新后 daily-scan 会输出 `market_regime=Normal/Elevated/Panic` 一行，前端
+`/options-radar` 顶部会显示对应的状态横幅。
+
 查看前端：
 
 ```text
@@ -149,7 +201,7 @@ npx playwright test --config playwright.config.ts --workers=1
 
 当前已验证结果：
 
-- `pytest`：256 个测试通过。
+- `pytest`：320 个测试通过（含买方期权 API 与前端冒烟覆盖）。
 - `ruff`：通过。
 - 前端 lint / build：通过。
 - Playwright：14 个浏览器测试通过。
