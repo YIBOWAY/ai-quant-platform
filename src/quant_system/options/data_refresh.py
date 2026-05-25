@@ -1,0 +1,270 @@
+from __future__ import annotations
+
+import csv
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from urllib.request import Request, urlopen
+
+import pandas as pd
+
+from quant_system.options.universe import OptionsUniverse
+from quant_system.options.vix_data import (
+    fetch_vix_history,
+    load_vix_history,
+    save_vix_history,
+)
+
+SP500_RAW_CSV_URL = (
+    "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/"
+    "refs/heads/main/data/constituents.csv"
+)
+NASDAQ100_RAW_CSV_URL = (
+    "https://raw.githubusercontent.com/Gary-Strauss/NASDAQ100_Constituents/"
+    "master/data/nasdaq100_constituents.csv"
+)
+USER_AGENT = "ai-quant-platform/manual-universe-refresh"
+
+
+def refresh_options_universe(path: Path, *, source: str = "github") -> dict:
+    active_source = _normalize_source(source, public_value="github")
+    if active_source == "sample":
+        rows = _sample_universe_rows()
+    elif active_source == "github":
+        rows = _build_universe_from_github_csv()
+    else:
+        raise ValueError("source must be public, github, or sample")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["ticker", "name", "sector", "exchange", "source"],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    return _result("universe", active_source, path, len(rows))
+
+
+def refresh_earnings_calendar(
+    *,
+    universe_path: Path,
+    output_path: Path,
+    source: str = "yfinance",
+    top: int = 100,
+    today: date | None = None,
+) -> dict:
+    active_source = _normalize_source(source, public_value="yfinance")
+    if active_source == "sample" and not universe_path.exists():
+        refresh_options_universe(universe_path, source="sample")
+
+    entries = OptionsUniverse.load(universe_path, top_n=max(top, 1))
+    if active_source == "sample":
+        rows = _sample_earnings_rows(entries, today=today)
+    elif active_source == "yfinance":
+        rows = _fetch_yfinance_earnings_rows(entries)
+    else:
+        raise ValueError("source must be public, yfinance, or sample")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["ticker", "earnings_date"])
+        writer.writeheader()
+        writer.writerows(rows)
+    return _result("earnings", active_source, output_path, len(rows))
+
+
+def refresh_vix_history(
+    path: Path,
+    *,
+    source: str = "public",
+    lookback_days: int = 400,
+    end: date | None = None,
+) -> dict:
+    active_source = _normalize_source(source, public_value="public")
+    end_date = end or datetime.now(UTC).date()
+    lookback = max(int(lookback_days), 1)
+    if active_source == "sample":
+        vix, vix3m = _sample_vix_series(end_date=end_date, lookback_days=lookback)
+    elif active_source == "public":
+        vix, vix3m = fetch_vix_history(end=end_date, lookback_days=lookback)
+    else:
+        raise ValueError("source must be public or sample")
+
+    if vix.empty and (vix3m is None or vix3m.empty):
+        existing_vix, _existing_vix3m = load_vix_history(path)
+        if not existing_vix.empty:
+            return {
+                **_result("vix", active_source, path, len(existing_vix)),
+                "status": "kept_existing",
+            }
+        raise RuntimeError("empty VIX response and no existing cache")
+
+    output_path = save_vix_history(path, vix, vix3m if vix3m is not None else None)
+    return _result("vix", active_source, Path(output_path), len(vix))
+
+
+def _normalize_source(source: str, *, public_value: str) -> str:
+    active_source = source.lower().strip()
+    return public_value if active_source == "public" else active_source
+
+
+def _result(kind: str, source: str, path: Path, row_count: int) -> dict:
+    return {
+        "kind": kind,
+        "source": source,
+        "status": "refreshed",
+        "row_count": row_count,
+        "output_path": str(path),
+        "fetched_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def _sample_universe_rows() -> list[dict[str, str]]:
+    return [
+        {
+            "ticker": "SPY",
+            "name": "SPDR S&P 500 ETF",
+            "sector": "ETF",
+            "exchange": "US",
+            "source": "both",
+        },
+        {
+            "ticker": "QQQ",
+            "name": "Invesco QQQ Trust",
+            "sector": "ETF",
+            "exchange": "US",
+            "source": "nasdaq100",
+        },
+        {
+            "ticker": "AAPL",
+            "name": "Apple Inc.",
+            "sector": "Information Technology",
+            "exchange": "US",
+            "source": "both",
+        },
+        {
+            "ticker": "MSFT",
+            "name": "Microsoft Corporation",
+            "sector": "Information Technology",
+            "exchange": "US",
+            "source": "both",
+        },
+    ]
+
+
+def _sample_earnings_rows(entries, *, today: date | None) -> list[dict[str, str]]:
+    base_date = today or datetime.now(UTC).date()
+    return [
+        {
+            "ticker": entry.ticker,
+            "earnings_date": (base_date + timedelta(days=14 + index * 7)).isoformat(),
+        }
+        for index, entry in enumerate(entries)
+    ]
+
+
+def _sample_vix_series(*, end_date: date, lookback_days: int) -> tuple[pd.Series, pd.Series]:
+    index = pd.date_range(end=end_date, periods=lookback_days, freq="D")
+    vix = pd.Series([15.0 + (offset % 8) * 0.35 for offset in range(lookback_days)], index=index)
+    vix3m = pd.Series(
+        [17.0 + (offset % 8) * 0.25 for offset in range(lookback_days)],
+        index=index,
+    )
+    return vix, vix3m
+
+
+def _fetch_yfinance_earnings_rows(entries) -> list[dict[str, str]]:
+    try:
+        import yfinance as yf
+    except ImportError as exc:
+        raise RuntimeError("yfinance is required for public earnings refresh") from exc
+
+    rows: list[dict[str, str]] = []
+    for entry in entries:
+        earnings_date = _next_earnings_date(yf, entry.ticker)
+        if earnings_date:
+            rows.append({"ticker": entry.ticker, "earnings_date": earnings_date})
+    return rows
+
+
+def _next_earnings_date(yf_module, ticker: str) -> str | None:
+    try:
+        calendar = yf_module.Ticker(ticker).calendar
+    except Exception:
+        return None
+    if calendar is None:
+        return None
+    raw = None
+    if isinstance(calendar, dict):
+        raw = calendar.get("Earnings Date") or calendar.get("EarningsDate")
+    else:
+        try:
+            raw = calendar.loc["Earnings Date"][0]
+        except Exception:
+            raw = None
+    if raw is None:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        text = str(raw).split()[0]
+        return text if len(text) == 10 else None
+
+
+def _build_universe_from_github_csv() -> list[dict[str, str]]:
+    sp500 = _read_remote_csv(
+        SP500_RAW_CSV_URL,
+        symbol_header="Symbol",
+        name_header="Security",
+        sector_header="GICS Sector",
+        source="sp500",
+    )
+    nasdaq100 = _read_remote_csv(
+        NASDAQ100_RAW_CSV_URL,
+        symbol_header="Ticker",
+        name_header="Company",
+        sector_header="GICS_Sector",
+        source="nasdaq100",
+    )
+    merged: dict[str, dict[str, str]] = {}
+    for row in sp500 + nasdaq100:
+        ticker = row["ticker"]
+        if ticker in merged:
+            merged[ticker]["source"] = "both"
+            continue
+        merged[ticker] = row
+
+    def priority(item: dict[str, str]) -> tuple[int, str]:
+        source_rank = {"both": 0, "nasdaq100": 1, "sp500": 2}[item["source"]]
+        return source_rank, item["ticker"]
+
+    return sorted(merged.values(), key=priority)
+
+
+def _read_remote_csv(
+    url: str,
+    *,
+    symbol_header: str,
+    name_header: str,
+    sector_header: str,
+    source: str,
+) -> list[dict[str, str]]:
+    request = Request(url, headers={"User-Agent": USER_AGENT})
+    with urlopen(request, timeout=30) as response:
+        text = response.read().decode("utf-8-sig")
+    rows: list[dict[str, str]] = []
+    reader = csv.DictReader(text.splitlines())
+    for raw in reader:
+        ticker = str(raw.get(symbol_header, "")).strip().replace(".", "-").upper()
+        if not ticker:
+            continue
+        rows.append(
+            {
+                "ticker": ticker,
+                "name": str(raw.get(name_header, "")).strip(),
+                "sector": str(raw.get(sector_header, "")).strip() or "Unknown",
+                "exchange": "US",
+                "source": source,
+            }
+        )
+    return rows

@@ -150,8 +150,25 @@ export type PaperRunDetailResponse = ApiEnvelope & {
   risk_breaches: PreviewRecord[];
 };
 
+export type ExperimentSummary = {
+  id: string;
+  path: string;
+  best_run_id?: string | null;
+  created_at?: string | null;
+};
+
 export type ExperimentsResponse = ApiEnvelope & {
-  experiments: Array<{ id: string; path: string }>;
+  experiments: ExperimentSummary[];
+};
+
+export type ExperimentDetailResponse = ApiEnvelope & {
+  id: string;
+  path: string;
+  experiment_config?: Record<string, unknown>;
+  agent_summary?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  runs: PreviewRecord[];
+  folds: PreviewRecord[];
 };
 
 export type CandidateSummary = {
@@ -292,6 +309,33 @@ export type OptionsRadarResponse = ApiEnvelope & {
   candidates: OptionsRadarCandidate[];
 };
 
+export type OptionsRadarRunResponse = ApiEnvelope & {
+  run_date: string;
+  provider: string;
+  universe_size: number;
+  scanned_tickers: number;
+  failed_tickers: Array<[string, string]>;
+  candidate_count: number;
+  data_path: string;
+  meta_path: string;
+};
+
+export type OptionsRefreshResponse = ApiEnvelope & {
+  kind: "universe" | "earnings" | "vix";
+  source: string;
+  status: string;
+  row_count: number;
+  output_path: string;
+  fetched_at: string;
+};
+
+export type OptionsRadarSymbolResponse = ApiEnvelope & {
+  ticker: string;
+  run_date: string;
+  candidate_count: number;
+  candidates: OptionsRadarCandidate[];
+};
+
 export type SettingsResponse = ApiEnvelope & Record<string, unknown>;
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
@@ -305,9 +349,12 @@ const FALLBACK_SAFETY: SafetyFooter = {
 };
 
 async function apiGet<T extends ApiEnvelope>(path: string, fallback: T): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60_000);
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       cache: "no-store",
+      signal: controller.signal,
       headers: { accept: "application/json" },
     });
     if (!response.ok) {
@@ -315,11 +362,20 @@ async function apiGet<T extends ApiEnvelope>(path: string, fallback: T): Promise
     }
     return (await response.json()) as T;
   } catch (error) {
+    const aborted =
+      (error instanceof DOMException && error.name === "AbortError") ||
+      controller.signal.aborted;
     return {
       ...fallback,
       safety: fallback.safety ?? FALLBACK_SAFETY,
-      apiError: error instanceof Error ? error.message : "API unavailable",
+      apiError: aborted
+        ? "Request timed out after 60s (backend may be waiting on a provider such as Futu OpenD)."
+        : error instanceof Error
+          ? error.message
+          : "API unavailable",
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -364,9 +420,12 @@ export function getMarketDataHistory(
   start = "2024-01-02",
   end = "2024-01-12",
   freq = "1d",
-  provider = "futu",
+  provider?: string,
 ) {
-  const params = new URLSearchParams({ ticker, start, end, freq, provider });
+  const params = new URLSearchParams({ ticker, start, end, freq });
+  if (provider) {
+    params.set("provider", provider);
+  }
   return apiGet<MarketDataHistoryResponse>(`/api/market-data/history?${params.toString()}`, {
     symbol: ticker,
     ticker,
@@ -376,7 +435,7 @@ export function getMarketDataHistory(
     rows: [],
     metadata: {
       provider: "fallback",
-      requested_provider: provider,
+      requested_provider: provider ?? "default",
       fetched_at: null,
     },
     safety: FALLBACK_SAFETY,
@@ -481,6 +540,16 @@ export function getExperiments() {
   });
 }
 
+export function getExperimentDetail(experimentId: string) {
+  return apiGet<ExperimentDetailResponse>(`/api/experiments/${experimentId}`, {
+    id: experimentId,
+    path: "",
+    runs: [],
+    folds: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
 export function getAgentCandidates() {
   return apiGet<AgentCandidatesResponse>("/api/agent/candidates", {
     candidates: [],
@@ -567,6 +636,23 @@ export function getOptionsDailyScan(params: {
     candidates: [],
     safety: FALLBACK_SAFETY,
   });
+}
+
+export function getOptionsRadarSymbol(ticker: string, date?: string) {
+  const query = new URLSearchParams();
+  if (date) {
+    query.set("date", date);
+  }
+  return apiGet<OptionsRadarSymbolResponse>(
+    `/api/options/daily-scan/symbol/${encodeURIComponent(ticker)}?${query.toString()}`,
+    {
+      ticker: ticker.toUpperCase(),
+      run_date: date ?? "",
+      candidate_count: 0,
+      candidates: [],
+      safety: FALLBACK_SAFETY,
+    },
+  );
 }
 
 export function formatPercent(value: number | undefined, digits = 2) {

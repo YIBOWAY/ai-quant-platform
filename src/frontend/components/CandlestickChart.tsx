@@ -1,3 +1,13 @@
+'use client';
+
+import {
+  CandlestickSeries,
+  createChart,
+  HistogramSeries,
+  type IChartApi,
+  type ISeriesApi,
+} from "lightweight-charts";
+import { useEffect, useMemo, useRef } from "react";
 import type { OhlcvRow } from "@/lib/api";
 
 type CandlestickChartProps = {
@@ -5,110 +15,115 @@ type CandlestickChartProps = {
   height?: number;
 };
 
-function priceToY(value: number, min: number, max: number, height: number, padding: number) {
-  if (max <= min) {
-    return height / 2;
-  }
-  const plotHeight = height - padding * 2;
-  return padding + ((max - value) / (max - min)) * plotHeight;
-}
-
-function labelStep(count: number) {
-  if (count <= 8) {
-    return 1;
-  }
-  return Math.ceil(count / 8);
-}
-
-function shortDate(timestamp: string) {
-  return timestamp.slice(5, 10);
-}
-
 export function CandlestickChart({ rows, height = 360 }: CandlestickChartProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const chartData = useMemo(() => normalizeRows(rows), [rows]);
+
+  useEffect(() => {
+    if (!containerRef.current || chartRef.current) {
+      return;
+    }
+
+    const chart = createChart(containerRef.current, {
+      height,
+      layout: {
+        background: { color: "#101614" },
+        textColor: "#94A3B8",
+      },
+      grid: {
+        vertLines: { color: "rgba(148, 163, 184, 0.12)" },
+        horzLines: { color: "rgba(148, 163, 184, 0.12)" },
+      },
+      rightPriceScale: {
+        borderColor: "rgba(148, 163, 184, 0.22)",
+      },
+      timeScale: {
+        borderColor: "rgba(148, 163, 184, 0.22)",
+        timeVisible: false,
+      },
+      crosshair: {
+        mode: 1,
+      },
+    });
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: "#10C89B",
+      downColor: "#EF4444",
+      borderUpColor: "#10C89B",
+      borderDownColor: "#EF4444",
+      wickUpColor: "#10C89B",
+      wickDownColor: "#EF4444",
+    });
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      color: "rgba(56, 189, 248, 0.42)",
+      priceFormat: { type: "volume" },
+      priceScaleId: "",
+    });
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: {
+        top: 0.78,
+        bottom: 0,
+      },
+    });
+    chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
+
+    const resize = () => {
+      const width = containerRef.current?.clientWidth ?? 0;
+      if (width > 0) {
+        chart.applyOptions({ width, height });
+      }
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chart.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+    };
+  }, [height]);
+
+  useEffect(() => {
+    candleSeriesRef.current?.setData(chartData.candles);
+    volumeSeriesRef.current?.setData(chartData.volume);
+    chartRef.current?.timeScale().fitContent();
+  }, [chartData]);
+
   if (!rows.length) {
     return null;
   }
 
-  const padding = 28;
-  const width = Math.max(760, rows.length * 14);
-  const highs = rows.map((row) => row.high);
-  const lows = rows.map((row) => row.low);
-  const maxPrice = Math.max(...highs);
-  const minPrice = Math.min(...lows);
-  const step = width / rows.length;
-  const candleWidth = Math.max(4, Math.min(10, step * 0.55));
-  const tickStep = labelStep(rows.length);
-
   return (
-    <div className="h-[360px] overflow-x-auto rounded border border-border-subtle bg-surface-muted">
-      <svg
-        aria-label="Historical candlestick chart"
-        className="h-full min-w-full"
-        preserveAspectRatio="none"
-        role="img"
-        viewBox={`0 0 ${width} ${height}`}
-      >
-        <line
-          stroke="rgba(148, 163, 184, 0.22)"
-          strokeWidth="1"
-          x1="0"
-          x2={width}
-          y1={height - padding}
-          y2={height - padding}
-        />
-        {rows.map((row, index) => {
-          const x = index * step + step / 2;
-          const highY = priceToY(row.high, minPrice, maxPrice, height, padding);
-          const lowY = priceToY(row.low, minPrice, maxPrice, height, padding);
-          const openY = priceToY(row.open, minPrice, maxPrice, height, padding);
-          const closeY = priceToY(row.close, minPrice, maxPrice, height, padding);
-          const up = row.close >= row.open;
-          const color = up ? "#10C89B" : "#EF4444";
-          const bodyTop = Math.min(openY, closeY);
-          const bodyHeight = Math.max(2, Math.abs(closeY - openY));
-          const showLabel = index % tickStep === 0 || index === rows.length - 1;
-
-          return (
-            <g key={row.timestamp}>
-              <line
-                stroke={color}
-                strokeLinecap="round"
-                strokeWidth="1.5"
-                x1={x}
-                x2={x}
-                y1={highY}
-                y2={lowY}
-              />
-              <rect
-                fill={color}
-                height={bodyHeight}
-                rx="1"
-                width={candleWidth}
-                x={x - candleWidth / 2}
-                y={bodyTop}
-              />
-              {showLabel ? (
-                <text
-                  fill="#94A3B8"
-                  fontFamily="monospace"
-                  fontSize="10"
-                  textAnchor="middle"
-                  x={x}
-                  y={height - 8}
-                >
-                  {shortDate(row.timestamp)}
-                </text>
-              ) : null}
-            </g>
-          );
-        })}
-        <text fill="#94A3B8" fontFamily="monospace" fontSize="10" x="8" y="16">
-          H {maxPrice.toFixed(2)}
-        </text>
-        <text fill="#94A3B8" fontFamily="monospace" fontSize="10" x="8" y={height - 34}>
-          L {minPrice.toFixed(2)}
-        </text>
-      </svg>
+    <div
+      className="rounded border border-border-subtle bg-surface-muted p-3"
+      data-testid="ohlcv-candlestick-chart"
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-label-caps text-text-secondary">Candles</span>
+        <span className="font-label-caps text-info">Volume</span>
+      </div>
+      <div ref={containerRef} style={{ height }} />
     </div>
   );
+}
+
+function normalizeRows(rows: OhlcvRow[]) {
+  const candles = rows.map((row) => ({
+    time: row.timestamp.slice(0, 10),
+    open: row.open,
+    high: row.high,
+    low: row.low,
+    close: row.close,
+  }));
+  const volume = rows.map((row) => ({
+    time: row.timestamp.slice(0, 10),
+    value: row.volume,
+    color: row.close >= row.open ? "rgba(16, 200, 155, 0.36)" : "rgba(239, 68, 68, 0.36)",
+  }));
+  return { candles, volume };
 }

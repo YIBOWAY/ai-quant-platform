@@ -8,6 +8,7 @@ import pandas as pd
 from quant_system.data.schema import normalize_ohlcv_dataframe
 from quant_system.options.earnings_calendar import EarningsCalendar
 from quant_system.options.iv_history import IvHistoryStore
+from quant_system.options.market_regime import VixRegimeSnapshot
 from quant_system.options.models import OptionsScreenerConfig
 from quant_system.options.radar import (
     OptionsRadarConfig,
@@ -130,6 +131,44 @@ def test_run_options_radar_isolates_ticker_failures_and_sorts(tmp_path: Path) ->
     assert any(candidate.earnings_in_window for candidate in report.candidates)
 
 
+def test_run_options_radar_passes_market_regime_into_screener(tmp_path: Path) -> None:
+    report = run_options_radar(
+        provider=_RadarProvider(),
+        universe=_universe()[:1],
+        config=OptionsRadarConfig(
+            base_screen_config=OptionsScreenerConfig(
+                min_dte=7,
+                max_dte=60,
+                max_delta=0.8,
+                trend_filter=False,
+                history_start="2026-01-02",
+                history_end="2026-05-01",
+            ),
+            universe_top_n=1,
+            top_per_ticker=1,
+            strategies=("sell_put",),
+        ),
+        iv_history_dir=tmp_path / "iv_history",
+        earnings_calendar=EarningsCalendar({}),
+        run_date="2026-05-03",
+        market_regime=VixRegimeSnapshot(
+            volatility_regime="Elevated",
+            w_vix=0.75,
+            vix_density=0.4,
+            term_ratio=0.98,
+            vix_mean=23.0,
+            vix_threshold=20.0,
+        ),
+    )
+
+    assert len(report.candidates) == 1
+    candidate = report.candidates[0]
+    assert candidate.market_regime == "Elevated"
+    assert candidate.market_regime_penalty == -15.0
+    assert candidate.candidate.market_regime == "Elevated"
+    assert candidate.candidate.market_regime_penalty == -15.0
+
+
 def test_compute_global_score_penalizes_wide_spread_and_earnings() -> None:
     strong = compute_global_score(
         rating="Strong",
@@ -157,6 +196,8 @@ def test_radar_snapshot_store_writes_idempotent_jsonl(tmp_path: Path) -> None:
             base_screen_config=OptionsScreenerConfig(
                 min_dte=7,
                 max_dte=60,
+                max_delta=0.8,
+                trend_filter=False,
                 history_start="2026-01-02",
                 history_end="2026-05-01",
             ),

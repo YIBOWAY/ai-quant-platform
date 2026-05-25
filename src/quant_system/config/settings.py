@@ -64,7 +64,7 @@ class DataSettings(BaseSettings):
         extra="ignore",
     )
 
-    default_data_provider: str = "sample"
+    default_data_provider: str = "futu"
     data_dir: Path = Path("data")
     parquet_dir: Path = Path("data/parquet")
     duckdb_path: Path = Path("data/quant_system.duckdb")

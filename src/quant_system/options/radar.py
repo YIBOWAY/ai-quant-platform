@@ -96,7 +96,11 @@ def run_options_radar(
                 }
             )
             try:
-                result = run_options_screener(provider=provider, config=screen_config)
+                result = run_options_screener(
+                    provider=provider,
+                    config=screen_config,
+                    market_regime=market_regime,
+                )
             except Exception as exc:
                 failed.append((entry.ticker, type(exc).__name__))
                 ticker_failed = True

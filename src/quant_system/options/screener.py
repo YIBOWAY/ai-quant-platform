@@ -23,10 +23,12 @@ def run_options_screener(
     market_regime: VixRegimeSnapshot | None = None,
 ) -> OptionsScreenerResult:
     plain_symbol, futu_symbol = provider.normalize_symbol(config.ticker)
+    expiration_frame = provider.fetch_option_expirations(plain_symbol)
     scanned_expirations = _select_expirations(
-        provider.fetch_option_expirations(plain_symbol),
+        expiration_frame,
         config=config,
     )
+    dte_by_expiration = _expiration_dte_map(expiration_frame)
     option_type = "PUT" if config.strategy_type == "sell_put" else "CALL"
     underlying_snapshot = provider.fetch_underlying_snapshot(plain_symbol)
     underlying_price = _safe_float(
@@ -74,13 +76,15 @@ def run_options_screener(
             avg_daily_volume=avg_daily_volume,
             market_cap=market_cap,
             market_regime=market_regime,
+            dte_by_expiration=dte_by_expiration,
         )
         rows.append(candidate)
-    # Phase 12 fix: keep every row (including Avoid) so the UI/audit can show
-    # why a contract was rejected. The sort ordering already pushes Avoid to
-    # the bottom and `top_n` caps total output.
+    rejected_count = sum(1 for item in rows if item.rating == "Avoid")
+    visible_rows = rows if config.include_rejected else [
+        item for item in rows if item.rating != "Avoid"
+    ]
     ranked = sorted(
-        rows,
+        visible_rows,
         key=lambda item: (
             {"Strong": 0, "Watch": 1, "Avoid": 2}[item.rating],
             -(item.annualized_yield or 0.0),
@@ -107,10 +111,13 @@ def run_options_screener(
         market_regime_vix_density=market_regime.vix_density if market_regime else None,
         market_regime_term_ratio=market_regime.term_ratio if market_regime else None,
         candidates=ranked[: config.top_n],
+        rejected_count=rejected_count,
         assumptions=[
             "Read-only data mode; no order placement is available.",
             "When expiration is omitted, the screener scans all Futu expirations "
             "inside the configured DTE window.",
+            "Avoid-rated contracts are hidden by default; set include_rejected=true "
+            "to audit rejected rows.",
             "Premium uses mid price when bid and ask are available.",
             "Yield estimates are simplified and ignore assignment, taxes, and commissions.",
             "Missing IV/Greeks fields reduce confidence; they are not invented.",
@@ -213,6 +220,23 @@ def _select_expirations(expirations: pd.DataFrame, *, config: OptionsScreenerCon
     return [str(value) for value in ordered]
 
 
+def _expiration_dte_map(expirations: pd.DataFrame) -> dict[str, int]:
+    frame = expirations.copy()
+    if frame.empty or "strike_time" not in frame.columns:
+        return {}
+    frame["strike_time"] = frame["strike_time"].astype(str)
+    if "option_expiry_date_distance" in frame.columns:
+        distance = pd.to_numeric(frame["option_expiry_date_distance"], errors="coerce")
+    else:
+        distance = frame["strike_time"].map(_days_to_expiry)
+    frame = frame.assign(_dte=distance)
+    frame = frame.loc[frame["_dte"].notna()]
+    return {
+        str(row["strike_time"]): int(row["_dte"])
+        for row in frame.to_dict(orient="records")
+    }
+
+
 def _build_candidate(
     *,
     row: dict[str, object],
@@ -224,13 +248,18 @@ def _build_candidate(
     avg_daily_volume: float | None,
     market_cap: float | None,
     market_regime: VixRegimeSnapshot | None = None,
+    dte_by_expiration: dict[str, int] | None = None,
 ) -> OptionsScreenerCandidate:
     bid = _safe_float(row.get("bid"))
     ask = _safe_float(row.get("ask"))
     mid = _mid_price(bid, ask)
     strike = _safe_float(row.get("strike")) or 0.0
     expiry = str(row.get("expiry"))
-    dte = _days_to_expiry(expiry)
+    dte = (
+        _safe_int(row.get("option_expiry_date_distance"))
+        or (dte_by_expiration or {}).get(expiry)
+        or _days_to_expiry(expiry)
+    )
     spread_pct = _spread_pct(bid, ask, mid)
     iv = _safe_float(row.get("implied_volatility"))
     delta = _safe_float(row.get("delta"))
@@ -270,6 +299,7 @@ def _build_candidate(
         hv_iv_pass=hv_iv_pass,
         avg_daily_volume=avg_daily_volume,
         market_cap=market_cap,
+        distance_pct=distance,
     )
     regime_label = market_regime.volatility_regime if market_regime else None
     regime_penalty = (
@@ -343,6 +373,7 @@ def _candidate_notes(
     hv_iv_pass: bool | None,
     avg_daily_volume: float | None = None,
     market_cap: float | None = None,
+    distance_pct: float | None = None,
 ) -> list[str]:
     notes: list[str] = []
     if bid is None or ask is None or mid is None or bid <= 0 or ask <= 0:
@@ -371,6 +402,8 @@ def _candidate_notes(
         notes.append("delta missing")
     elif abs(delta) > config.max_delta:
         notes.append("delta above limit")
+    if config.strategy_type == "sell_put" and distance_pct is not None and distance_pct < 0:
+        notes.append("sell put strike is above spot")
     if config.trend_filter and trend_pass is False:
         notes.append("trend filter failed")
     if config.hv_iv_filter and hv_iv_pass is False:
@@ -399,6 +432,7 @@ HARD_FAILURES = frozenset(
         "IV/HV filter failed",
         "DTE outside range",
         "delta above limit",  # Phase 12 fix: delta is the core seller risk knob
+        "sell put strike is above spot",
         "open interest below minimum",
         "mid below absolute floor",
         "underlying ADV below minimum",
@@ -423,6 +457,13 @@ def _safe_float(value: object) -> float | None:
     if math.isnan(parsed):
         return None
     return parsed
+
+
+def _safe_int(value: object) -> int | None:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return None
+    return int(parsed)
 
 
 def _normalize_volatility(value: float | None) -> float | None:

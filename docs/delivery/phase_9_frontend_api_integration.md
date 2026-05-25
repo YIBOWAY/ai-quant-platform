@@ -2,12 +2,14 @@
 
 ## Scope
 
-This check verifies that the Next.js frontend in `src/frontend/` can run locally and read real responses from the Phase 9 backend API.
+This historical check verified that the Next.js frontend in `src/frontend/`
+could run locally and read real responses from the Phase 9 backend API. For
+current run commands, prefer `README.md`.
 
 ## Local Ports
 
 - Backend API: `http://127.0.0.1:8765`
-- Frontend: `http://127.0.0.1:3000`
+- Frontend: `http://127.0.0.1:3001`
 
 ## Backend Startup Options
 
@@ -33,7 +35,8 @@ quant-system serve --host 127.0.0.1 --port 8765
 
 That wrapper still calls `uvicorn` internally. It exists to keep the same project CLI style as `data`, `factor`, `backtest`, `paper`, and to enforce local-safe defaults such as blocking public bind unless explicitly confirmed.
 
-Full web testing needs two services at the same time: backend on `8765`, frontend on `3000`.
+Full web testing needs two services at the same time: backend on `8765`,
+frontend on `3001`.
 
 ## Commands Used
 
@@ -48,7 +51,7 @@ cd src/frontend
 npm install
 npm run lint
 npm run build
-npm run dev -- -p 3000
+npm run dev -- --hostname 127.0.0.1 --port 3001
 ```
 
 One-command local start from repository root:
@@ -58,10 +61,10 @@ conda activate ai-quant
 .\scripts\start_phase9_full_stack.ps1
 ```
 
-If port `3000` is already occupied:
+If port `3001` is already occupied:
 
 ```powershell
-.\scripts\start_phase9_full_stack.ps1 -FrontendPort 3001
+.\scripts\start_phase9_full_stack.ps1 -FrontendPort 3002
 ```
 
 Stop:

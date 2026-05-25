@@ -231,6 +231,31 @@ The page includes:
 - Anti-pitfall checklist.
 - Scenario Lab summary and user-input subjective EV.
 - Required risk disclosure.
+- Concrete selected option legs are shown directly on each recommendation card.
+- Recommendation detail panels expand independently, so several structures can
+  be reviewed side by side.
+
+### Post-Phase 14 UI Adjustments
+
+The thesis form now applies view-type presets when the user changes the bullish
+view. These presets update the risk preference, capped-upside setting, IV view,
+event-risk setting, target date, Scenario Lab ranges, and IV-change assumption.
+They are only form defaults; users can still edit the fields before running the
+assistant.
+
+The UI removed the max-loss budget field from the thesis panel because the
+buy-side assistant already reports max loss per structure and this phase does
+not manage account sizing. Scenario Lab now asks for a horizon date instead of a
+raw day-count string. The frontend converts that date into 0 / midpoint /
+horizon-day checks before calling the API.
+
+The subjective EV panel is a user-input expected-value calculation. It is not a
+market-implied probability model and should not be interpreted as a forecast.
+
+Futu rate-limit responses are handled as temporary provider failures. The
+backend waits once and retries the read-only request. If OpenD still rejects the
+request, the frontend shows a clear provider error and users should wait before
+rerunning the same ticker.
 
 ## Quick Validation
 

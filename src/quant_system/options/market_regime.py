@@ -45,6 +45,7 @@ def compute_vix_regime(
     elevated_ratio: float = 0.97,
     panic_ratio: float = 1.00,
     min_days: int = 10,
+    density_window_months: int = 3,
 ) -> VixRegimeSnapshot:
     vix_upto = daily_vix.loc[:signal_date].dropna()
     if vix_upto.empty:
@@ -59,10 +60,10 @@ def compute_vix_regime(
 
     window = vix_upto.iloc[-lookback_days:]
     threshold = max(vix_floor, float(window.quantile(q)))
-    month_start = signal_date - pd.DateOffset(months=1)
-    vix_month = vix_upto.loc[month_start:]
+    regime_window_start = signal_date - pd.DateOffset(months=density_window_months)
+    vix_month = vix_upto.loc[regime_window_start:]
     if vix_month.empty:
-        vix_month = vix_upto.iloc[-22:]
+        vix_month = vix_upto.iloc[-66:]
 
     density = float((vix_month > threshold).mean())
     high_time = density > density_threshold

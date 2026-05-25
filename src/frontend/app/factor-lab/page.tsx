@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
@@ -63,6 +64,15 @@ export default async function FactorLab() {
                   <div className="mt-2 text-text-secondary">
                     rows={latestRun?.row_count ?? 0} signals={latestRun?.signal_count ?? 0}
                   </div>
+                  {latestRun ? (
+                    <Link
+                      aria-label={`Open ${latestRun.id}`}
+                      className="mt-3 inline-flex rounded border border-border-subtle px-3 py-1.5 font-body-sm text-info"
+                      href={`/factor-lab/${latestRun.id}`}
+                    >
+                      Open run
+                    </Link>
+                  ) : null}
                 </div>
               </div>
             </div>

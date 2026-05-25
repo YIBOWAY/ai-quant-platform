@@ -107,5 +107,55 @@ test.describe("phase13 options radar smoke", () => {
     await expect(page.getByRole("button", { name: /Export CSV/i })).toBeEnabled();
     await page.getByRole("button", { name: /Details/i }).click();
     await expect(page.getByText("fixture candidate")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open Chain/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Run Sample Scan/i })).toBeVisible();
+  });
+
+  test("options radar refreshes local input files from the page", async ({ page }) => {
+    await page.route("**/api/options/refresh/**", async (route) => {
+      const kind = route.request().url().split("/").pop() ?? "universe";
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          kind,
+          source: "sample",
+          status: "refreshed",
+          row_count: kind === "vix" ? 10 : 2,
+          output_path: `data/options_universe/${kind}.csv`,
+          fetched_at: "2099-01-02T00:00:00Z",
+          safety: {
+            dry_run: true,
+            paper_trading: true,
+            live_trading_enabled: false,
+            kill_switch: true,
+            bind_address: "127.0.0.1",
+          },
+        }),
+      });
+    });
+    await page.goto("/options-radar");
+    await page.waitForLoadState("networkidle");
+
+    await page.getByLabel("Refresh source").selectOption("sample");
+    await page.getByRole("button", { name: "Refresh Universe" }).click();
+    await expect(page.getByText("Universe refreshed")).toBeVisible();
+
+    await page.getByRole("button", { name: "Refresh Earnings" }).click();
+    await expect(page.getByText("Earnings refreshed")).toBeVisible();
+
+    await page.getByRole("button", { name: "Refresh VIX" }).click();
+    await expect(page.getByText("VIX refreshed")).toBeVisible();
+  });
+
+  test("options radar can drill into a symbol detail page", async ({ page }) => {
+    await page.goto(`/options-radar/SPY?date=${runDate}&expiry=2099-01-16&option_type=PUT`, {
+      waitUntil: "domcontentloaded",
+    });
+
+    await expect(page.getByRole("heading", { name: /SPY Options Detail/i })).toBeVisible();
+    await expect(page.getByText("Radar Candidates")).toBeVisible();
+    await expect(page.getByText("US.SPY990102P450000")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Live Option Chain" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Load Live Chain/i })).toBeVisible();
   });
 });

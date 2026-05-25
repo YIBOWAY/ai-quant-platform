@@ -32,7 +32,7 @@ GLOBAL REPO CONTEXT
    - src/quant_system/options/models.py
    - src/quant_system/options/screener.py
    - src/quant_system/options/radar.py
-   - src/quant_system/options/futu_provider.py
+   - src/quant_system/data/providers/futu.py
    - src/quant_system/options/market_regime.py
    - src/quant_system/options/iv_history.py
    - src/quant_system/options/vix_data.py
@@ -138,7 +138,7 @@ Read these first, then inspect only what is necessary:
 - src/quant_system/options/models.py
 - src/quant_system/options/screener.py
 - src/quant_system/options/radar.py
-- src/quant_system/options/futu_provider.py
+- src/quant_system/data/providers/futu.py
 - src/quant_system/options/market_regime.py
 - src/quant_system/options/iv_history.py
 - src/quant_system/options/vix_data.py
@@ -185,7 +185,7 @@ Done when:
 
 ## Prompt 1: Futu Data Integration Audit / 先确认现有 Futu 美股期权数据层
 
-先把数据来源摸清楚，再建模型和策略。这个阶段大概率不需要大改代码；目标是确认 src/quant_system/options/futu_provider.py 已经能提供买方模块需要的字段，并把缺失映射补齐。
+先把数据来源摸清楚，再建模型和策略。这个阶段大概率不需要大改代码；目标是确认 src/quant_system/data/providers/futu.py 已经能提供买方模块需要的字段，并把缺失映射补齐。
 
 ```text
 You are Codex-GPT5.5 acting as a senior market data integration engineer.
@@ -199,11 +199,11 @@ Important:
 - Do not reinstall Futu OpenAPI.
 - Do not create a new provider architecture.
 - Do not import any Futu trading context or account unlock API.
-- Reuse src/quant_system/options/futu_provider.py and the existing src/quant_system/options/rate_limiter.py wrapper.
+- Reuse src/quant_system/data/providers/futu.py and the existing Futu rate-limit handling.
 - Respect Futu option-chain rate limits; avoid live calls in tests.
 
 Tasks:
-1. Inspect src/quant_system/options/futu_provider.py, src/quant_system/options/rate_limiter.py, and related tests.
+1. Inspect src/quant_system/data/providers/futu.py and related tests.
 2. Identify available methods for:
     - underlying stock snapshot / spot
     - option expiration dates

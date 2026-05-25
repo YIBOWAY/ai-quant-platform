@@ -3,13 +3,37 @@ from __future__ import annotations
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
-from quant_system.api.dependencies import SettingsDep
+from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.common import dataframe_records
 from quant_system.data.providers.futu import FutuMarketDataProvider, FutuProviderError
 from quant_system.options.buy_side_decision import (
     BuySideAssistantRequest,
     BuySideAssistantResponse,
     run_buy_side_decision,
+)
+from quant_system.options.local_research import (
+    LocalWatchlistStore,
+    build_bull_put_spread_signal,
+    build_hedge_advisor,
+    compute_fear_score,
+    compute_iv_rank_dashboard,
+    compute_market_sentiment,
+    detect_unusual_options_activity,
+    estimate_earnings_iv_crush,
+    evaluate_local_alerts,
+    rank_option_contracts,
+    rank_strategy_templates,
+    research_health_check,
+)
+from quant_system.options.local_tools import (
+    build_strategy_from_template,
+    build_vol_smile,
+    build_vol_surface,
+    calculate_greeks,
+    compute_options_snapshot,
+    implied_volatility,
+    simulate_option_position,
+    strategy_templates,
 )
 from quant_system.options.market_regime import load_market_regime
 from quant_system.options.models import (
@@ -62,6 +86,340 @@ def option_chain(
         "option_type": option_type.upper(),
         "contracts": dataframe_records(frame),
     }
+
+
+@router.get("/options/snapshot/{ticker}")
+def options_snapshot(
+    ticker: str,
+    settings: SettingsDep,
+    provider: str = "futu",
+) -> dict:
+    active_provider = _build_options_provider(settings, provider)
+    try:
+        return compute_options_snapshot(active_provider, ticker)
+    except FutuProviderError as exc:
+        raise _futu_http_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_options_snapshot", "message": str(exc)},
+        ) from exc
+
+
+@router.get("/options/tools/vol-surface/{ticker}")
+def options_vol_surface(
+    ticker: str,
+    settings: SettingsDep,
+    provider: str = "futu",
+    max_expirations: int = 4,
+) -> dict:
+    active_provider = _build_options_provider(settings, provider)
+    try:
+        return build_vol_surface(
+            active_provider,
+            ticker,
+            max_expirations=max(1, min(max_expirations, 8)),
+        )
+    except FutuProviderError as exc:
+        raise _futu_http_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_vol_surface", "message": str(exc)},
+        ) from exc
+
+
+@router.get("/options/tools/vol-smile/{ticker}")
+def options_vol_smile(
+    ticker: str,
+    settings: SettingsDep,
+    provider: str = "futu",
+    expiry: str | None = None,
+) -> dict:
+    active_provider = _build_options_provider(settings, provider)
+    try:
+        return build_vol_smile(active_provider, ticker, expiry=expiry)
+    except FutuProviderError as exc:
+        raise _futu_http_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_vol_smile", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/greeks")
+def options_greeks(payload: dict) -> dict:
+    try:
+        return calculate_greeks(
+            spot=float(payload["spot"]),
+            strike=float(payload["strike"]),
+            expiry_days=int(payload["expiry_days"]),
+            iv=float(payload["iv"]),
+            option_type=str(payload["option_type"]).lower(),  # type: ignore[arg-type]
+            rate=float(payload.get("rate", 0.04)),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_greeks_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/implied-volatility")
+def options_implied_volatility(payload: dict) -> dict:
+    try:
+        iv = implied_volatility(
+            market_price=float(payload["market_price"]),
+            spot=float(payload["spot"]),
+            strike=float(payload["strike"]),
+            expiry_days=int(payload["expiry_days"]),
+            option_type=str(payload["option_type"]).lower(),  # type: ignore[arg-type]
+            rate=float(payload.get("rate", 0.04)),
+        )
+        return {"implied_volatility": iv}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_implied_volatility_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/simulate")
+def options_simulate(payload: dict) -> dict:
+    try:
+        return simulate_option_position(
+            symbol=str(payload["symbol"]),
+            spot=float(payload["spot"]),
+            legs=list(payload["legs"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_simulation_request", "message": str(exc)},
+        ) from exc
+
+
+@router.get("/options/tools/strategy/templates")
+def options_strategy_templates() -> dict:
+    return {"templates": strategy_templates()}
+
+
+@router.post("/options/tools/strategy/build")
+def options_strategy_build(payload: dict) -> dict:
+    try:
+        mode = str(payload.get("mode", "template"))
+        if mode != "template":
+            raise ValueError("only mode=template is supported locally")
+        return build_strategy_from_template(
+            template_id=str(payload["template_id"]),
+            spot=float(payload["spot"]),
+            expiry_days=int(payload["expiry_days"]),
+            strikes=[float(item) for item in payload["strikes"]],
+            iv=float(payload.get("iv", 0.30)),
+            symbol=str(payload.get("symbol", "LOCAL")),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_strategy_build_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/score-contracts")
+def options_score_contracts(payload: dict) -> dict:
+    try:
+        return rank_option_contracts(
+            contracts=list(payload["contracts"]),
+            spot=float(payload["spot"]),
+            objective=str(payload.get("objective", "balanced")),  # type: ignore[arg-type]
+            top_n=int(payload["top_n"]) if "top_n" in payload else None,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_contract_score_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/strategy/rank")
+def options_strategy_rank(payload: dict) -> dict:
+    try:
+        return rank_strategy_templates(
+            market_view=str(payload.get("market_view", "bullish")),
+            spot=float(payload["spot"]),
+            expiry_days=int(payload["expiry_days"]),
+            strikes=[float(item) for item in payload["strikes"]],
+            iv=float(payload.get("iv", 0.30)),
+            symbol=str(payload.get("symbol", "LOCAL")),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_strategy_rank_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/bull-put-signal")
+def options_bull_put_signal(payload: dict) -> dict:
+    try:
+        return build_bull_put_spread_signal(
+            contracts=list(payload["contracts"]),
+            spot=float(payload["spot"]),
+            fear_score=float(payload["fear_score"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_bull_put_signal_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/fear-score")
+def options_fear_score(payload: dict) -> dict:
+    try:
+        return compute_fear_score(
+            vix=payload.get("vix"),
+            iv_rank=payload.get("iv_rank"),
+            rsi_14=payload.get("rsi_14"),
+            options_volume_anomaly=payload.get("options_volume_anomaly"),
+            put_call_ratio=payload.get("put_call_ratio"),
+            consecutive_down_days=payload.get("consecutive_down_days"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_fear_score_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/iv-rank")
+def options_iv_rank(payload: dict) -> dict:
+    try:
+        return compute_iv_rank_dashboard(
+            ticker=str(payload["ticker"]),
+            current_iv=payload.get("current_iv"),
+            history=list(payload.get("history", [])),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_iv_rank_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/market-sentiment")
+def options_market_sentiment(payload: dict) -> dict:
+    try:
+        return compute_market_sentiment(
+            vix=payload.get("vix"),
+            put_call_ratio=payload.get("put_call_ratio"),
+            advance_decline_ratio=payload.get("advance_decline_ratio"),
+            percent_above_200dma=payload.get("percent_above_200dma"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_market_sentiment_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/earnings-crush")
+def options_earnings_crush(payload: dict) -> dict:
+    try:
+        return estimate_earnings_iv_crush(
+            ticker=str(payload["ticker"]),
+            current_iv=float(payload["current_iv"]),
+            historical_pre_post_iv=list(payload.get("historical_pre_post_iv", [])),
+            implied_move_pct=payload.get("implied_move_pct"),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_earnings_crush_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/hedge-advisor")
+def options_hedge_advisor(payload: dict) -> dict:
+    try:
+        return build_hedge_advisor(
+            ticker=str(payload["ticker"]),
+            shares=int(payload["shares"]),
+            cost_basis=float(payload["cost_basis"]),
+            spot=float(payload["spot"]),
+            purpose=str(payload.get("purpose", "protect")),
+            contracts=list(payload.get("contracts", [])),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_hedge_advisor_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/unusual-activity")
+def options_unusual_activity(payload: dict) -> dict:
+    try:
+        return detect_unusual_options_activity(
+            list(payload["contracts"]),
+            min_volume_oi_ratio=float(payload.get("min_volume_oi_ratio", 2.0)),
+            min_volume=float(payload.get("min_volume", 100)),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_unusual_activity_request", "message": str(exc)},
+        ) from exc
+
+
+@router.get("/options/tools/watchlist")
+def options_watchlist(output_dir: OutputDirDep) -> dict:
+    return {"watchlist": _watchlist_store(output_dir).list()}
+
+
+@router.post("/options/tools/watchlist")
+def options_watchlist_add(payload: dict, output_dir: OutputDirDep) -> dict:
+    try:
+        watchlist = _watchlist_store(output_dir).add(
+            str(payload["ticker"]),
+            tags=list(payload.get("tags", [])),
+        )
+        return {"watchlist": watchlist}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_watchlist_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/alerts/evaluate")
+def options_alerts_evaluate(payload: dict) -> dict:
+    try:
+        return evaluate_local_alerts(
+            alerts=list(payload["alerts"]),
+            context=dict(payload["context"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_alert_evaluation_request", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/options/tools/health-check")
+def options_health_check(payload: dict) -> dict:
+    try:
+        return research_health_check(
+            profiles=list(payload.get("profiles", [])),
+            today=payload.get("today"),
+            stale_after_days=int(payload.get("stale_after_days", 14)),
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_health_check_request", "message": str(exc)},
+        ) from exc
 
 
 @router.post("/options/screener")
@@ -156,7 +514,16 @@ def _build_options_provider(settings, provider: str) -> FutuMarketDataProvider:
         host=settings.futu.host,
         port=settings.futu.port,
         request_timeout_seconds=settings.futu.request_timeout_seconds,
+        option_quotes_cache_path=(
+            settings.futu.cache_dir / "options_cache.duckdb"
+            if settings.futu.use_cache
+            else None
+        ),
     )
+
+
+def _watchlist_store(output_dir) -> LocalWatchlistStore:
+    return LocalWatchlistStore(output_dir / "options_tools" / "watchlist.json")
 
 
 def _resolve_spot_price(provider: FutuMarketDataProvider, ticker: str) -> float:
@@ -193,7 +560,7 @@ def _buy_side_expiration_window(request: BuySideAssistantRequest) -> tuple[str, 
 
 def _futu_http_exception(exc: FutuProviderError) -> HTTPException:
     status_code = 502
-    if exc.code in {"opend_unavailable", "provider_timeout"}:
+    if exc.code in {"opend_unavailable", "provider_timeout", "rate_limited"}:
         status_code = 503
     elif exc.code in {"invalid_symbol", "unsupported_interval"}:
         status_code = 400

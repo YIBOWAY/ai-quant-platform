@@ -1,6 +1,8 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 
+const DEFAULT_TIMEOUT_MS = 60_000;
+
 export class ApiClientError extends Error {
   constructor(
     message: string,
@@ -32,10 +34,26 @@ export async function apiRequest<T>(
   init: RequestInit = {},
   retryCount = 0,
 ): Promise<T> {
+  const controller = new AbortController();
+  const externalSignal = init.signal;
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", () => controller.abort(), {
+        once: true,
+      });
+    }
+  }
+  const timeoutId =
+    typeof window !== "undefined"
+      ? window.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+      : (setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS) as unknown as number);
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       credentials: "omit",
+      signal: controller.signal,
       headers: {
         accept: "application/json",
         ...(init.body ? { "content-type": "application/json" } : {}),
@@ -56,11 +74,21 @@ export async function apiRequest<T>(
     if (error instanceof ApiClientError) {
       throw error;
     }
+    const aborted =
+      (error instanceof DOMException && error.name === "AbortError") ||
+      controller.signal.aborted;
+    if (aborted) {
+      throw new ApiClientError(
+        `Request timed out after ${Math.round(DEFAULT_TIMEOUT_MS / 1000)}s. The backend may be waiting on an external provider (e.g. Futu OpenD).`,
+      );
+    }
     if (retryCount < 1) {
       await sleep(80 + Math.random() * 120);
       return apiRequest<T>(path, init, retryCount + 1);
     }
     throw new ApiClientError(error instanceof Error ? error.message : "API unavailable");
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

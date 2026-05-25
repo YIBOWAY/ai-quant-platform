@@ -1,14 +1,17 @@
 'use client';
 
-import { useQuery } from "@tanstack/react-query";
-import { Download, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Download, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import type {
   OptionsRadarCandidate,
   OptionsRadarDatesResponse,
+  OptionsRefreshResponse,
+  OptionsRadarRunResponse,
   OptionsRadarResponse,
 } from "@/lib/api";
-import { apiRequest } from "@/lib/apiClient";
+import { apiPost, apiRequest } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
@@ -28,6 +31,7 @@ const sectors = [
   "Utilities",
   "ETF",
 ];
+type RefreshKind = "universe" | "earnings" | "vix";
 
 const copy = {
   en: {
@@ -49,11 +53,21 @@ const copy = {
     failed: "Failed",
     regime: "Market regime",
     regimeUnknown: "Unknown - run `quant-system options refresh-vix` then re-scan to populate VIX history.",
-    regimeNormal: "Normal - no market-regime score penalty.",
-    regimeElevated: "Elevated - seller candidates receive a moderate score penalty.",
-    regimePanic: "Panic - seller candidates receive a heavy score penalty.",
+    regimeNormal: "Normal - recent three-month VIX/VIX3M cache shows no market-regime score penalty.",
+    regimeElevated: "Elevated - recent three-month VIX/VIX3M cache applies a moderate seller score penalty.",
+    regimePanic: "Panic - recent three-month VIX/VIX3M cache applies a heavy seller score penalty.",
     zh: "中文",
     details: "Details",
+    openChain: "Open Chain",
+    runSample: "Run Sample Scan",
+    running: "Running...",
+    refresh: "Refresh List",
+    refreshSource: "Refresh source",
+    publicSource: "Public data",
+    sampleSource: "Local sample",
+    refreshUniverse: "Refresh Universe",
+    refreshEarnings: "Refresh Earnings",
+    refreshVix: "Refresh VIX",
     headings: ["Symbol", "Sector", "Strategy", "Expiry", "Strike", "Mid", "APR", "IV", "IVR", "Delta", "OI", "Spread", "Earnings", "Score", "Rating", ""],
   },
   zh: {
@@ -80,12 +94,17 @@ const copy = {
     regimePanic: "Panic - 对卖方候选施加较重评分扣分。",
     zh: "English",
     details: "详情",
+    openChain: "Open Chain",
+    runSample: "Run Sample Scan",
+    running: "Running...",
+    refresh: "Refresh List",
     headings: ["标的", "行业", "策略", "到期", "行权价", "中间价", "年化", "IV", "IVR", "Delta", "未平仓", "价差", "财报", "分数", "评级", ""],
   },
 };
 
 export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
   const hydrated = useIsHydrated();
+  const queryClient = useQueryClient();
   const text = copy[locale];
   const [date, setDate] = useState("");
   const [strategy, setStrategy] = useState("all");
@@ -93,6 +112,8 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
   const [dteBucket, setDteBucket] = useState("");
   const [top, setTop] = useState(50);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [refreshSource, setRefreshSource] = useState("public");
+  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
 
   const datesQuery = useQuery({
     queryKey: ["options-radar-dates"],
@@ -122,6 +143,32 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
   );
   const csv = useMemo(() => buildCsv(candidates), [candidates]);
   const regime = useMemo(() => deriveRegime(candidates), [candidates]);
+  const scanMutation = useMutation({
+    mutationFn: () =>
+      apiPost<OptionsRadarRunResponse>("/api/options/daily-scan/run", {
+        provider: "futu",
+        top,
+        strategies: strategy === "all" ? ["sell_put", "covered_call"] : [strategy],
+      }),
+    onSuccess: async (payload) => {
+      setDate(payload.run_date);
+      await queryClient.invalidateQueries({ queryKey: ["options-radar-dates"] });
+      await queryClient.invalidateQueries({ queryKey: ["options-radar"] });
+    },
+  });
+  const refreshMutation = useMutation({
+    mutationFn: (kind: RefreshKind) =>
+      apiPost<OptionsRefreshResponse>(`/api/options/refresh/${kind}`, {
+        source: refreshSource,
+        top,
+      }),
+    onSuccess: async (payload) => {
+      const label = payload.kind === "vix" ? "VIX" : capitalize(payload.kind);
+      setRefreshStatus(`${label} refreshed (${payload.row_count} rows)`);
+      await queryClient.invalidateQueries({ queryKey: ["options-radar-dates"] });
+      await queryClient.invalidateQueries({ queryKey: ["options-radar"] });
+    },
+  });
 
   function exportCsv() {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -208,6 +255,83 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
               value={top}
             />
           </label>
+          <div className="rounded border border-border-subtle bg-surface-muted p-3">
+            <label className="flex flex-col gap-1 font-body-sm">
+              Refresh source
+              <select
+                className="rounded border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary"
+                onChange={(event) => setRefreshSource(event.target.value)}
+                value={refreshSource}
+              >
+                <option style={optionStyle} value="public">
+                  Public data
+                </option>
+                <option style={optionStyle} value="sample">
+                  Local sample
+                </option>
+              </select>
+            </label>
+            <div className="mt-3 grid grid-cols-1 gap-2">
+              <button
+                className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
+                disabled={refreshMutation.isPending}
+                onClick={() => refreshMutation.mutate("universe")}
+                type="button"
+              >
+                <RefreshCw className="mr-2 inline" size={16} />
+                Refresh Universe
+              </button>
+              <button
+                className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
+                disabled={refreshMutation.isPending}
+                onClick={() => refreshMutation.mutate("earnings")}
+                type="button"
+              >
+                <RefreshCw className="mr-2 inline" size={16} />
+                Refresh Earnings
+              </button>
+              <button
+                className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
+                disabled={refreshMutation.isPending}
+                onClick={() => refreshMutation.mutate("vix")}
+                type="button"
+              >
+                <RefreshCw className="mr-2 inline" size={16} />
+                Refresh VIX
+              </button>
+            </div>
+            {refreshStatus ? (
+              <div className="mt-3 rounded border border-accent-success/40 bg-accent-success/10 p-2 font-body-sm text-accent-success">
+                {refreshStatus}
+              </div>
+            ) : null}
+            {refreshMutation.error instanceof Error ? (
+              <div className="mt-3 rounded border border-danger/40 bg-danger/10 p-2 font-body-sm text-danger">
+                {refreshMutation.error.message}
+              </div>
+            ) : null}
+          </div>
+          <button
+            className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:opacity-50"
+            disabled={scanMutation.isPending}
+            onClick={() => scanMutation.mutate()}
+            type="button"
+          >
+            <RefreshCw className="mr-2 inline" size={16} />
+            {scanMutation.isPending ? text.running : text.runSample}
+          </button>
+          <button
+            className="rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:opacity-50"
+            disabled={datesQuery.isFetching || scanQuery.isFetching}
+            onClick={() => {
+              void datesQuery.refetch();
+              void scanQuery.refetch();
+            }}
+            type="button"
+          >
+            <RefreshCw className="mr-2 inline" size={16} />
+            {text.refresh}
+          </button>
           <button
             className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:opacity-50"
             disabled={!csv || candidates.length === 0}
@@ -217,6 +341,11 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
             <Download className="mr-2 inline" size={16} />
             {text.export}
           </button>
+          {scanMutation.error instanceof Error ? (
+            <div className="rounded border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
+              {scanMutation.error.message}
+            </div>
+          ) : null}
         </form>
       </aside>
       <main className="min-w-0 overflow-y-auto p-5">
@@ -230,6 +359,13 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
           <Metric label={text.scanned} value={String(scanQuery.data?.scanned_tickers ?? 0)} />
           <Metric label={text.failed} value={String(scanQuery.data?.failed_tickers.length ?? 0)} />
         </section>
+        {(scanQuery.data?.scanned_tickers ?? 0) <= 1 && candidates.length > 0 ? (
+          <div className="mb-4 rounded border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
+            {locale === "zh"
+              ? "当前快照只包含很少标的，所以表格可能集中在单一股票。运行 quant-system options daily-scan --top 100 可生成更完整的全市场扫描。"
+              : "This snapshot only scanned a very small universe, so the table may concentrate in one ticker. Run quant-system options daily-scan --top 100 for a broader market scan."}
+          </div>
+        ) : null}
         {scanQuery.isLoading ? (
           <div className="rounded border border-border-subtle bg-bg-surface p-6 font-body-sm text-text-secondary">
             Loading daily scan...
@@ -270,19 +406,28 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
                       <td className="px-3 py-2">{fmt(candidate.global_score, 1)}</td>
                       <td className="px-3 py-2">{candidate.rating}</td>
                       <td className="px-3 py-2">
-                        <button
-                          className="text-info"
-                          onClick={() => setExpanded(expanded === candidate.symbol ? null : candidate.symbol)}
-                          type="button"
-                        >
-                          {text.details}
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            className="text-info"
+                            onClick={() => setExpanded(expanded === candidate.symbol ? null : candidate.symbol)}
+                            type="button"
+                          >
+                            {text.details}
+                          </button>
+                          <Link
+                            className="inline-flex items-center gap-1 text-accent-success"
+                            href={`/options-radar/${candidate.ticker}?date=${scanQuery.data?.run_date ?? activeDate}&expiry=${candidate.expiry}&option_type=${candidate.strategy === "sell_put" ? "PUT" : "CALL"}`}
+                          >
+                            {text.openChain}
+                            <ExternalLink size={12} />
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                     {expanded === candidate.symbol ? (
                       <tr className="border-b border-border-subtle/50">
                         <td className="px-3 py-3 font-body-sm text-text-secondary" colSpan={16}>
-                          {candidate.notes.length ? candidate.notes.join(" | ") : "No notes"}
+                          {candidateDetail(candidate, locale)}
                         </td>
                       </tr>
                     ) : null}
@@ -310,6 +455,13 @@ type RegimeInfo = {
   label: "Normal" | "Elevated" | "Panic" | "Unknown";
   penalty: number | null;
 };
+type RegimeCopy = {
+  regime: string;
+  regimeNormal: string;
+  regimeElevated: string;
+  regimePanic: string;
+  regimeUnknown: string;
+};
 
 function deriveRegime(candidates: OptionsRadarCandidate[]): RegimeInfo {
   for (const candidate of candidates) {
@@ -328,7 +480,7 @@ function RegimeBanner({
   text,
 }: {
   regime: RegimeInfo;
-  text: (typeof copy)["en"];
+  text: RegimeCopy;
 }) {
   const palette: Record<RegimeInfo["label"], string> = {
     Normal: "border-accent-success/40 bg-accent-success/10 text-accent-success",
@@ -363,6 +515,28 @@ function pct(value?: number | null) {
   return typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : "--";
 }
 
+function candidateDetail(candidate: OptionsRadarCandidate, locale: "en" | "zh") {
+  if (candidate.notes.length) {
+    return candidate.notes.join(" | ");
+  }
+  const parts = [
+    locale === "zh" ? `合约 ${candidate.symbol}` : `Contract ${candidate.symbol}`,
+    locale === "zh"
+      ? `分数 ${fmt(candidate.global_score, 1)}`
+      : `score ${fmt(candidate.global_score, 1)}`,
+    locale === "zh"
+      ? `市场状态 ${candidate.market_regime ?? "Unknown"}`
+      : `market regime ${candidate.market_regime ?? "Unknown"}`,
+    locale === "zh"
+      ? `价差 ${pct(candidate.spread_pct)}`
+      : `spread ${pct(candidate.spread_pct)}`,
+    locale === "zh"
+      ? `未平仓 ${fmt(candidate.open_interest, 0)}`
+      : `open interest ${fmt(candidate.open_interest, 0)}`,
+  ];
+  return parts.join(" | ");
+}
+
 function buildCsv(candidates: OptionsRadarCandidate[]) {
   const headers = ["ticker", "sector", "strategy", "symbol", "expiry", "strike", "mid", "apr", "iv", "iv_rank", "delta", "oi", "spread", "earnings", "score", "rating"];
   const rows = candidates.map((item) =>
@@ -386,4 +560,8 @@ function buildCsv(candidates: OptionsRadarCandidate[]) {
     ].join(","),
   );
   return [headers.join(","), ...rows].join("\n");
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

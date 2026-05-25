@@ -35,12 +35,12 @@ Supported stock providers:
 - `sample`
 - `tiingo` as rollback compatibility
 
-Frontend research pages now default to `futu`:
+Frontend research pages use these defaults:
 
-- Market Data
-- Factor Lab
-- Backtester
-- Paper Trading
+- Market Data initial load follows `QS_DEFAULT_DATA_PROVIDER`.
+- Market Data returns a clearly labeled sample fallback if the configured
+  default provider fails.
+- Factor Lab, Backtester, and Paper Trading default to `futu` in their forms.
 
 ## Config
 
@@ -52,8 +52,8 @@ Frontend research pages now default to `futu`:
 | `QS_FUTU_MARKET` | `US` | Current market scope |
 | `QS_FUTU_REQUEST_TIMEOUT_SECONDS` | `15` | Request timeout |
 | `QS_FUTU_DEFAULT_KLINE_FREQ` | `1d` | Default K-line frequency |
-| `QS_FUTU_CACHE_DIR` | `data/futu` | Reserved local cache path |
-| `QS_FUTU_USE_CACHE` | `true` | Reserved cache toggle |
+| `QS_FUTU_CACHE_DIR` | `data/futu` | Local Futu cache directory |
+| `QS_FUTU_USE_CACHE` | `true` | Enables the local Futu options DuckDB cache |
 
 ## API Examples
 

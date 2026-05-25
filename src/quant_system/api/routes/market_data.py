@@ -6,6 +6,7 @@ from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.common import dataframe_records
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.data.providers.futu import FutuProviderError
+from quant_system.data.providers.sample import SampleOHLCVProvider
 
 router = APIRouter()
 
@@ -17,25 +18,44 @@ def market_data_history(
     start: str,
     end: str,
     freq: str = "1d",
-    provider: str = "futu",
+    provider: str | None = None,
 ) -> dict:
     symbol = ticker.upper().strip()
+    requested_provider = provider or settings.data.default_data_provider
     active_provider, source = build_ohlcv_provider(settings, requested=provider)
     try:
         frame = active_provider.fetch_ohlcv([symbol], start=start, end=end, interval=freq)
     except FutuProviderError as exc:
-        raise HTTPException(
-            status_code=_status_for_futu_error(exc.code),
-            detail={"code": exc.code, "message": exc.message},
-        ) from exc
+        if provider is None:
+            frame = SampleOHLCVProvider().fetch_ohlcv(
+                [symbol],
+                start=start,
+                end=end,
+                interval=freq,
+            )
+            source = f"sample ({source} failed: {exc.code})"
+        else:
+            raise HTTPException(
+                status_code=_status_for_futu_error(exc.code),
+                detail={"code": exc.code, "message": exc.message},
+            ) from exc
     except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "code": "market_data_provider_failed",
-                "message": f"{source} provider failed: {exc.__class__.__name__}",
-            },
-        ) from exc
+        if provider is None:
+            frame = SampleOHLCVProvider().fetch_ohlcv(
+                [symbol],
+                start=start,
+                end=end,
+                interval=freq,
+            )
+            source = f"sample ({source} failed: {exc.__class__.__name__})"
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "market_data_provider_failed",
+                    "message": f"{source} provider failed: {exc.__class__.__name__}",
+                },
+            ) from exc
 
     return {
         "symbol": symbol,
@@ -48,7 +68,7 @@ def market_data_history(
         ),
         "metadata": {
             "provider": source,
-            "requested_provider": provider,
+            "requested_provider": requested_provider,
             "fetched_at": (
                 frame["knowledge_ts"].max().isoformat()
                 if "knowledge_ts" in frame.columns and not frame.empty

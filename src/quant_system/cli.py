@@ -1281,6 +1281,11 @@ def _build_options_radar_provider(settings, provider: Literal["futu", "sample"])
         host=settings.futu.host,
         port=settings.futu.port,
         request_timeout_seconds=settings.futu.request_timeout_seconds,
+        option_quotes_cache_path=(
+            settings.futu.cache_dir / "options_cache.duckdb"
+            if settings.futu.use_cache
+            else None
+        ),
     )
     futu_provider.snapshot_batch_size = settings.options_radar.snapshot_batch_size
     return RateLimitedFutuProvider(

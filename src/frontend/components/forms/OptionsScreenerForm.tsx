@@ -222,6 +222,7 @@ type ScreenerResult = {
   market_regime_vix_density?: number | null;
   market_regime_term_ratio?: number | null;
   candidates: ScreenerCandidate[];
+  rejected_count?: number;
   assumptions: string[];
 };
 
@@ -416,7 +417,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
         ) : (
           <div className="flex flex-col gap-4">
             <RegimeBanner result={result} text={text} />
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-5 gap-3">
               <Metric label={text.underlying} value={formatNumber(result.underlying_price)} />
               <Metric
                 label={text.scannedExpirations}
@@ -424,39 +425,56 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
               />
               <Metric label="HV" value={formatPercent(result.historical_volatility)} />
               <Metric label={text.candidates} value={String(result.candidates.length)} />
+              <Metric
+                help={
+                  locale === "zh"
+                    ? "被过滤的 Avoid 合约，例如深度价内、零 OI、价差过宽、趋势或 HV/IV 过滤失败。"
+                    : "Avoid-rated contracts filtered out, such as deep ITM, zero OI, wide spread, or failed trend/HV-IV filters."
+                }
+                label={locale === "zh" ? "已过滤" : "Filtered out"}
+                value={String(result.rejected_count ?? 0)}
+              />
             </div>
-            <div className="overflow-x-auto rounded border border-border-subtle bg-bg-surface">
-              <table className="w-full border-collapse text-left">
-                <thead>
-                  <tr className="border-b border-border-subtle">
-                    {text.headings.map((heading) => (
-                      <th className="px-3 py-2 font-label-caps text-text-secondary" key={heading}>
-                        {heading}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="font-data-mono text-data-mono text-text-primary">
-                  {result.candidates.map((candidate) => (
-                    <tr className="border-b border-border-subtle/50" key={candidate.symbol}>
-                      <td className="px-3 py-2">{candidate.symbol}</td>
-                      <td className="px-3 py-2">{candidate.option_type}</td>
-                      <td className="px-3 py-2">{candidate.expiry}</td>
-                      <td className="px-3 py-2">{formatNumber(candidate.strike)}</td>
-                      <td className="px-3 py-2">{formatNumber(candidate.bid)}</td>
-                      <td className="px-3 py-2">{formatNumber(candidate.ask)}</td>
-                      <td className="px-3 py-2">{formatNumber(candidate.mid)}</td>
-                      <td className="px-3 py-2">{formatPercent(candidate.annualized_yield)}</td>
-                      <td className="px-3 py-2">{formatPercent(candidate.spread_pct)}</td>
-                      <td className="px-3 py-2">{formatPercent(candidate.implied_volatility)}</td>
-                      <td className="px-3 py-2">{formatNumber(candidate.delta, 3)}</td>
-                      <td className="px-3 py-2">{formatNumber(candidate.open_interest, 0)}</td>
-                      <td className="px-3 py-2">{ratingLabel(candidate.rating, locale)}</td>
+            {result.candidates.length === 0 ? (
+              <div className="rounded border border-warning/40 bg-warning/10 p-4 font-body-sm text-warning">
+                {locale === "zh"
+                  ? "当前过滤条件下没有合格合约。深度价内、零 OI、价差过宽或趋势失败的 Avoid 合约已从推荐表中隐藏。"
+                  : "No qualifying contracts matched the current filters. Avoid-rated deep ITM, zero-OI, wide-spread, or failed-trend contracts are hidden from recommendations."}
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded border border-border-subtle bg-bg-surface">
+                <table className="w-full border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-border-subtle">
+                      {text.headings.map((heading) => (
+                        <th className="px-3 py-2 font-label-caps text-text-secondary" key={heading}>
+                          {heading}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="font-data-mono text-data-mono text-text-primary">
+                    {result.candidates.map((candidate) => (
+                      <tr className="border-b border-border-subtle/50" key={candidate.symbol}>
+                        <td className="px-3 py-2">{candidate.symbol}</td>
+                        <td className="px-3 py-2">{candidate.option_type}</td>
+                        <td className="px-3 py-2">{candidate.expiry}</td>
+                        <td className="px-3 py-2">{formatNumber(candidate.strike)}</td>
+                        <td className="px-3 py-2">{formatNumber(candidate.bid)}</td>
+                        <td className="px-3 py-2">{formatNumber(candidate.ask)}</td>
+                        <td className="px-3 py-2">{formatNumber(candidate.mid)}</td>
+                        <td className="px-3 py-2">{formatPercent(candidate.annualized_yield)}</td>
+                        <td className="px-3 py-2">{formatPercent(candidate.spread_pct)}</td>
+                        <td className="px-3 py-2">{formatPercent(candidate.implied_volatility)}</td>
+                        <td className="px-3 py-2">{formatNumber(candidate.delta, 3)}</td>
+                        <td className="px-3 py-2">{formatNumber(candidate.open_interest, 0)}</td>
+                        <td className="px-3 py-2">{ratingLabel(candidate.rating, locale)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <div className="rounded border border-border-subtle bg-bg-surface p-4">
               <h3 className="font-label-caps text-text-secondary">{text.assumptions}</h3>
               <ul className="mt-2 list-disc space-y-1 pl-5 font-body-sm text-text-secondary">
@@ -494,11 +512,12 @@ function NumberField({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ help, label, value }: { help?: string; label: string; value: string }) {
   return (
     <div className="rounded border border-border-subtle bg-bg-surface p-3">
       <div className="font-label-caps text-text-secondary">{label}</div>
       <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">{value}</div>
+      {help ? <div className="mt-2 font-body-sm leading-relaxed text-text-secondary">{help}</div> : null}
     </div>
   );
 }

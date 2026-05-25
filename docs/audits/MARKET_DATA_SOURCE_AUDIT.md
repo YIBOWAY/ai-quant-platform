@@ -126,3 +126,9 @@ curl "http://127.0.0.1:8765/api/ohlcv?symbol=SPY&start=2024-01-02&end=2024-01-12
 - ❌ 不要在前端硬编码任何 K 线数据。
 - ❌ 不要把"现实数据"和"sample 数据"在 UI 上混着画却不标 source。
 - ❌ 不要默默 fallback 到 sample 而不告诉用户（用户会以为是真数据，做出错误研究决策）。
+---
+
+> Historical audit note (2026-05-25): this audit explains an older data-source
+> issue. Data Explorer now follows the backend default provider and labels sample
+> fallback clearly. Use `README.md`, `docs/INDEX.md`, and the Futu provider docs
+> for the current state.

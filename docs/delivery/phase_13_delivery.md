@@ -3,12 +3,13 @@
 ## Delivered
 
 - Static `S&P 500 union Nasdaq 100` universe CSV.
-- Manual universe and earnings refresh scripts.
+- Universe, earnings, and VIX refreshes through scripts and the `/options-radar`
+  page.
 - Read-only Futu rate limiter.
 - IV history and IV Rank computation.
 - Offline earnings calendar.
 - VIX regime classifier (V5 dual factor) wired end-to-end via Yahoo Chart REST.
-- Yahoo `^VIX` / `^VIX3M` fetcher + CSV cache + manual refresh script.
+- Yahoo `^VIX` / `^VIX3M` fetcher + CSV cache + refresh script.
 - Cross-ticker Options Radar scanner with per-strategy regime penalty.
 - Single-ticker `/api/options/screener` route + `/options-screener` page now
   share the same VIX regime path: result payload exposes `market_regime` +
@@ -28,9 +29,11 @@
 - Frontend page:
   - `/options-radar`
   - date / strategy / sector / DTE / Top N filters
+  - sample scan and local cache refresh controls
   - safety banner
   - details expansion
   - CSV export
+  - single-symbol drilldown links to `/options-radar/[symbol]`
 
 ## Validation Snapshot
 
@@ -111,11 +114,9 @@ npx playwright test --config playwright.config.ts --workers=1
 
 ## Known Limits
 
-- Universe data is committed and should be refreshed manually.
-- Earnings dates require manual offline refresh.
+- Universe and earnings data can be refreshed from scripts or the Radar UI.
 - IV Rank starts as empty until daily scans accumulate history.
-- VIX history requires a manual Yahoo refresh
-  (`quant-system options refresh-vix`) and is cached at
+- VIX history can be refreshed from scripts or the Radar UI and is cached at
   `data/options_universe/vix_history.csv`. When the cache is missing the
   radar runs without regime adjustment (`market_regime=Unknown`).
 - The single-ticker screener also degrades gracefully to

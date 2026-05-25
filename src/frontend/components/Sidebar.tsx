@@ -17,7 +17,8 @@ import {
   HelpCircle,
   User,
   Plus,
-  ListFilter
+  ListFilter,
+  Wrench
 } from "lucide-react";
 
 export function Sidebar() {
@@ -28,6 +29,7 @@ export function Sidebar() {
     { name: "Data Explorer", href: "/data-explorer", icon: Database },
     { name: "Options Screener", href: "/options-screener", icon: ListFilter },
     { name: "Options Radar", href: "/options-radar", icon: ListFilter },
+    { name: "Options Tools", href: "/options-tools", icon: Wrench },
     { name: "Buy-side Options", href: "/options-buyside", icon: BadgeDollarSign },
     { name: "Factor Lab", href: "/factor-lab", icon: FlaskConical },
     { name: "Backtester", href: "/backtest", icon: LineChart },

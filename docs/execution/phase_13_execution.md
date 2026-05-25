@@ -82,7 +82,11 @@ The Playwright config locates the repository root by walking upward until it
 finds `pyproject.toml` and `src/frontend/package.json`, so the API and frontend
 servers use the current checkout instead of a stale working directory.
 
-## Manual Refresh Commands
+## Refresh Commands And UI
+
+The `/options-radar` page can run a sample scan and refresh the local universe,
+earnings, and VIX caches from public or sample sources. The same refreshes are
+also available from the command line:
 
 ```powershell
 python scripts/refresh_options_universe.py --bootstrap-github --output data/options_universe/sp500_nasdaq100.csv

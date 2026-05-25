@@ -18,6 +18,14 @@ def build_ohlcv_provider(
     token = settings.api_keys.tiingo_api_token
     token_value = token.get_secret_value().strip() if token else ""
 
+    # Smart default: when the configured default is "sample" but a Tiingo
+    # token is actually available, prefer Tiingo so the UI does not silently
+    # show synthetic data. Futu is NOT auto-selected because it depends on a
+    # locally running OpenD process. An explicit `requested` value is always
+    # respected.
+    if requested is None and name == "sample" and token_value:
+        return TiingoEODProvider(api_token=token), "tiingo (auto-selected)"
+
     if name == "futu":
         if settings.futu.enabled:
             return (
@@ -25,6 +33,11 @@ def build_ohlcv_provider(
                     host=settings.futu.host,
                     port=settings.futu.port,
                     request_timeout_seconds=settings.futu.request_timeout_seconds,
+                    option_quotes_cache_path=(
+                        settings.futu.cache_dir / "options_cache.duckdb"
+                        if settings.futu.use_cache
+                        else None
+                    ),
                 ),
                 "futu",
             )

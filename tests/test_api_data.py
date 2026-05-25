@@ -11,7 +11,10 @@ def test_symbols_returns_sample_symbols_when_no_local_cache(tmp_path) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert {"SPY", "QQQ"}.issubset(set(payload["symbols"]))
-    assert payload["source"] == "sample"
+    # The default-symbols basket reflects whichever provider is active. With
+    # a Tiingo token configured the source is reported as "tiingo (default
+    # basket)"; otherwise it falls back to "sample".
+    assert payload["source"] in {"sample", "tiingo (default basket)", "futu (default basket)"}
     assert payload["safety"]["live_trading_enabled"] is False
 
 

@@ -212,6 +212,34 @@ def test_api_buy_side_assistant_maps_opend_unavailable_to_503(
     assert response.json()["detail"]["code"] == "opend_unavailable"
 
 
+def test_api_buy_side_assistant_maps_rate_limit_to_503(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    def fake_snapshot(self, symbol):
+        raise FutuProviderError("rate_limited", "Futu quote rate limit")
+
+    monkeypatch.setattr(
+        "quant_system.api.routes.options.FutuMarketDataProvider.fetch_underlying_snapshot",
+        fake_snapshot,
+    )
+    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+
+    response = client.post(
+        "/api/options/buy-side/assistant",
+        json={
+            "ticker": "SPY",
+            "view_type": "short_term_conservative_bullish",
+            "target_price": 520.0,
+            "target_date": "2026-08-21",
+            "provider": "futu",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "rate_limited"
+
+
 def test_api_buy_side_assistant_invalid_thesis_returns_422(tmp_path) -> None:
     client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
 

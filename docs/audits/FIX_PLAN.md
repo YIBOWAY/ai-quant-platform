@@ -318,3 +318,9 @@ npm run dev -- --port 3001
 - **「再补充 X 页 / X 组件的细化矩阵」** — 我先把矩阵铺满（[UI_FUNCTION_MATRIX.md](UI_FUNCTION_MATRIX.md) §2.5 列出的 backtest/factor/experiments/order-book/position-map 的逐控件清单）再实施。
 
 在收到确认前，本仓库**不会再发生任何代码改动**。
+---
+
+> Historical audit note (2026-05-25): this Phase 9 plan is retained as context.
+> Several items have since been implemented. Use `README.md`, `docs/INDEX.md`,
+> and the current delivery docs as the source of truth for current pages and
+> workflows.

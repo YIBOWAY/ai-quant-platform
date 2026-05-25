@@ -11,7 +11,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -38,7 +38,6 @@ const copy = {
     viewType: "View type",
     targetPrice: "Target price",
     targetDate: "Target date",
-    maxLossBudget: "Max loss budget",
     riskPreference: "Risk preference",
     allowCappedUpside: "Allow capped upside",
     avoidHighIv: "Avoid high IV",
@@ -46,8 +45,9 @@ const copy = {
     eventRisk: "Event risk",
     expectedIvChange: "Expected IV change",
     scenarioSpot: "Scenario spot %",
-    scenarioIv: "Scenario IV points",
-    scenarioDays: "Scenario days",
+    scenarioIv: "Scenario IV point change",
+    scenarioHorizon: "Scenario horizon date",
+    scenarioHorizonHelp: "The lab converts this date into 0 / midpoint / horizon-day checks.",
     run: "Run Assistant",
     running: "Running...",
     empty: "Enter a thesis, then run the assistant to rank Long Call, Bull Call Spread, LEAPS Call, and LEAPS Call Spread candidates.",
@@ -78,7 +78,10 @@ const copy = {
     warnings: "Warnings",
     details: "Details",
     subjectiveEv: "Subjective EV",
-    subjectiveEvHelp: "User-input subjective EV, not market-implied probability.",
+    subjectiveEvHelp: "Enter subjective scenario probabilities. This is your own expected value estimate, not a market-implied probability.",
+    evProbability: "Prob.",
+    evSpot: "Spot %",
+    evIv: "IV pts",
     rows: ["bull", "base", "bear"],
     tableHeadings: [
       "Strategy",
@@ -104,7 +107,6 @@ const copy = {
       breakeven: "Break-even too far?",
       lottery: "Low-delta lottery call?",
       dte: "DTE too short for thesis?",
-      budget: "Max loss exceeds budget?",
       ivDependency: "Strategy depends too much on IV staying high?",
       spotUpIvDown: "If direction is right but IV falls, can it still profit?",
     },
@@ -137,8 +139,9 @@ const copy = {
     eventRisk: "事件风险",
     expectedIvChange: "预期 IV 变化",
     scenarioSpot: "情景价格变化 %",
-    scenarioIv: "情景 IV 点数",
-    scenarioDays: "情景天数",
+    scenarioIv: "情景 IV 点数变化",
+    scenarioHorizon: "情景目标日期",
+    scenarioHorizonHelp: "系统会自动转换为 0 天 / 中点 / 目标日的检查。",
     run: "运行分析",
     running: "分析中...",
     empty: "输入交易假设后运行，系统会排序 Long Call、Bull Call Spread、LEAPS Call 和 LEAPS Call Spread 候选。",
@@ -169,7 +172,10 @@ const copy = {
     warnings: "警告",
     details: "详情",
     subjectiveEv: "主观 EV",
-    subjectiveEvHelp: "这是用户输入的主观期望值，不是市场隐含概率。",
+    subjectiveEvHelp: "输入你自己的看涨 / 基准 / 看跌概率，用于测算主观期望值。这不是市场隐含概率。",
+    evProbability: "概率",
+    evSpot: "价格 %",
+    evIv: "IV 点",
     rows: ["看涨", "基准", "看跌"],
     tableHeadings: [
       "策略",
@@ -195,7 +201,6 @@ const copy = {
       breakeven: "盈亏平衡是否太远？",
       lottery: "是否是低 delta 彩票型期权？",
       dte: "DTE 是否短于观点周期？",
-      budget: "最大亏损是否超过预算？",
       ivDependency: "是否过度依赖 IV 维持高位？",
       spotUpIvDown: "方向对但 IV 下降时还能否盈利？",
     },
@@ -216,7 +221,6 @@ const schema = z.object({
   ]),
   target_price: z.coerce.number().positive(),
   target_date: z.string().min(1),
-  max_loss_budget: z.coerce.number().positive(),
   risk_preference: z.enum(["aggressive", "balanced", "conservative"]),
   allow_capped_upside: z.boolean(),
   avoid_high_iv: z.boolean(),
@@ -225,22 +229,82 @@ const schema = z.object({
   expected_iv_change_vol_points: z.coerce.number(),
   scenario_spot_changes: z.string().min(1),
   scenario_iv_changes: z.string().min(1),
-  scenario_days_passed: z.string().min(1),
+  scenario_horizon_date: z.string().min(1),
   bull_probability: z.coerce.number().min(0).max(1),
   bull_spot_change_pct: z.coerce.number(),
   bull_iv_change_vol_points: z.coerce.number(),
-  bull_days_passed: z.coerce.number().int().min(0),
   base_probability: z.coerce.number().min(0).max(1),
   base_spot_change_pct: z.coerce.number(),
   base_iv_change_vol_points: z.coerce.number(),
-  base_days_passed: z.coerce.number().int().min(0),
   bear_probability: z.coerce.number().min(0).max(1),
   bear_spot_change_pct: z.coerce.number(),
   bear_iv_change_vol_points: z.coerce.number(),
-  bear_days_passed: z.coerce.number().int().min(0),
 });
 
 type FormValues = z.infer<typeof schema>;
+
+const viewPresets: Record<FormValues["view_type"], Partial<FormValues>> = {
+  long_term_aggressive_bullish: {
+    risk_preference: "aggressive",
+    allow_capped_upside: false,
+    avoid_high_iv: false,
+    volatility_view: "auto",
+    event_risk: "none",
+    expected_iv_change_vol_points: -5,
+    target_date: addDaysIso(540),
+    scenario_horizon_date: addDaysIso(180),
+    scenario_spot_changes: "-20,-10,0,10,20,30",
+    scenario_iv_changes: "-15,-10,-5,0,5",
+  },
+  long_term_conservative_bullish: {
+    risk_preference: "conservative",
+    allow_capped_upside: true,
+    avoid_high_iv: true,
+    volatility_view: "prefer_low_iv",
+    event_risk: "none",
+    expected_iv_change_vol_points: -5,
+    target_date: addDaysIso(540),
+    scenario_horizon_date: addDaysIso(180),
+    scenario_spot_changes: "-15,-5,0,8,15,25",
+    scenario_iv_changes: "-15,-10,-5,0,5",
+  },
+  short_term_speculative_bullish: {
+    risk_preference: "aggressive",
+    allow_capped_upside: false,
+    avoid_high_iv: false,
+    volatility_view: "expect_iv_expansion",
+    event_risk: "none",
+    expected_iv_change_vol_points: 5,
+    target_date: addDaysIso(45),
+    scenario_horizon_date: addDaysIso(30),
+    scenario_spot_changes: "-15,-5,0,10,20,30",
+    scenario_iv_changes: "-10,-5,0,5,10",
+  },
+  short_term_conservative_bullish: {
+    risk_preference: "balanced",
+    allow_capped_upside: true,
+    avoid_high_iv: true,
+    volatility_view: "auto",
+    event_risk: "none",
+    expected_iv_change_vol_points: -5,
+    target_date: addDaysIso(60),
+    scenario_horizon_date: addDaysIso(45),
+    scenario_spot_changes: "-10,-5,0,5,10,20",
+    scenario_iv_changes: "-10,-5,0,5",
+  },
+  event_driven_bullish: {
+    risk_preference: "balanced",
+    allow_capped_upside: true,
+    avoid_high_iv: true,
+    volatility_view: "expect_iv_crush",
+    event_risk: "earnings",
+    expected_iv_change_vol_points: -10,
+    target_date: addDaysIso(30),
+    scenario_horizon_date: addDaysIso(14),
+    scenario_spot_changes: "-20,-10,0,10,20,30",
+    scenario_iv_changes: "-20,-10,-5,0,5",
+  },
+};
 
 type StrategyLeg = {
   symbol?: string;
@@ -339,15 +403,14 @@ type AssistantResponse = {
 export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh" }) {
   const hydrated = useIsHydrated();
   const text = copy[locale];
-  const [expanded, setExpanded] = useState<number | null>(0);
+  const [expanded, setExpanded] = useState<number[]>([0]);
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       ticker: "AAPL",
       view_type: "short_term_conservative_bullish",
-      target_price: 220,
-      target_date: "2026-12-31",
-      max_loss_budget: 1200,
+      target_price: 330,
+      target_date: addDaysIso(60),
       risk_preference: "balanced",
       allow_capped_upside: true,
       avoid_high_iv: true,
@@ -356,25 +419,32 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
       expected_iv_change_vol_points: -5,
       scenario_spot_changes: "-10,0,10,20",
       scenario_iv_changes: "-10,-5,0,5",
-      scenario_days_passed: "0,7,14",
+      scenario_horizon_date: addDaysIso(45),
       bull_probability: 0.35,
       bull_spot_change_pct: 12,
       bull_iv_change_vol_points: -5,
-      bull_days_passed: 14,
       base_probability: 0.45,
       base_spot_change_pct: 4,
       base_iv_change_vol_points: -2,
-      base_days_passed: 14,
       bear_probability: 0.2,
       bear_spot_change_pct: -8,
       bear_iv_change_vol_points: 3,
-      bear_days_passed: 14,
     },
   });
-  const maxLossBudget = useWatch({
+  const viewType = useWatch({
     control: form.control,
-    name: "max_loss_budget",
+    name: "view_type",
   });
+
+  useEffect(() => {
+    const preset = viewPresets[viewType];
+    Object.entries(preset).forEach(([key, value]) => {
+      form.setValue(key as keyof FormValues, value, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    });
+  }, [form, viewType]);
 
   const mutation = useMutation<AssistantResponse, ApiClientError, FormValues>({
     mutationFn: (values) => apiPost<AssistantResponse>("/api/options/buy-side/assistant", toPayload(values)),
@@ -413,11 +483,11 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
             </Field>
             <Field label={text.viewType}>
               <select className={inputClass} {...form.register("view_type")}>
-                <option style={optionStyle} value="long_term_aggressive_bullish">Long-term aggressive</option>
-                <option style={optionStyle} value="long_term_conservative_bullish">Long-term conservative</option>
-                <option style={optionStyle} value="short_term_speculative_bullish">Short-term speculative</option>
-                <option style={optionStyle} value="short_term_conservative_bullish">Short-term conservative</option>
-                <option style={optionStyle} value="event_driven_bullish">Event-driven</option>
+                <option style={optionStyle} value="long_term_aggressive_bullish">{viewTypeLabel("long_term_aggressive_bullish", locale)}</option>
+                <option style={optionStyle} value="long_term_conservative_bullish">{viewTypeLabel("long_term_conservative_bullish", locale)}</option>
+                <option style={optionStyle} value="short_term_speculative_bullish">{viewTypeLabel("short_term_speculative_bullish", locale)}</option>
+                <option style={optionStyle} value="short_term_conservative_bullish">{viewTypeLabel("short_term_conservative_bullish", locale)}</option>
+                <option style={optionStyle} value="event_driven_bullish">{viewTypeLabel("event_driven_bullish", locale)}</option>
               </select>
             </Field>
             <Field label={text.targetPrice}>
@@ -426,32 +496,29 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
             <Field label={text.targetDate}>
               <input className={inputClass} {...form.register("target_date")} type="date" />
             </Field>
-            <Field label={text.maxLossBudget}>
-              <input className={inputClass} {...form.register("max_loss_budget")} type="number" step="1" />
-            </Field>
             <Field label={text.riskPreference}>
               <select className={inputClass} {...form.register("risk_preference")}>
-                <option style={optionStyle} value="aggressive">Aggressive</option>
-                <option style={optionStyle} value="balanced">Balanced</option>
-                <option style={optionStyle} value="conservative">Conservative</option>
+                <option style={optionStyle} value="aggressive">{riskPreferenceLabel("aggressive", locale)}</option>
+                <option style={optionStyle} value="balanced">{riskPreferenceLabel("balanced", locale)}</option>
+                <option style={optionStyle} value="conservative">{riskPreferenceLabel("conservative", locale)}</option>
               </select>
             </Field>
             <Field label={text.volatilityView}>
               <select className={inputClass} {...form.register("volatility_view")}>
-                <option style={optionStyle} value="auto">Auto</option>
-                <option style={optionStyle} value="prefer_low_iv">Prefer low IV</option>
-                <option style={optionStyle} value="expect_iv_crush">Expect IV crush</option>
-                <option style={optionStyle} value="expect_iv_expansion">Expect IV expansion</option>
+                <option style={optionStyle} value="auto">{volatilityViewLabel("auto", locale)}</option>
+                <option style={optionStyle} value="prefer_low_iv">{volatilityViewLabel("prefer_low_iv", locale)}</option>
+                <option style={optionStyle} value="expect_iv_crush">{volatilityViewLabel("expect_iv_crush", locale)}</option>
+                <option style={optionStyle} value="expect_iv_expansion">{volatilityViewLabel("expect_iv_expansion", locale)}</option>
               </select>
             </Field>
             <Field label={text.eventRisk}>
               <select className={inputClass} {...form.register("event_risk")}>
-                <option style={optionStyle} value="none">None</option>
-                <option style={optionStyle} value="earnings">Earnings</option>
-                <option style={optionStyle} value="fomc">FOMC</option>
-                <option style={optionStyle} value="cpi">CPI</option>
-                <option style={optionStyle} value="product_event">Product event</option>
-                <option style={optionStyle} value="user_defined">User defined</option>
+                <option style={optionStyle} value="none">{eventRiskLabel("none", locale)}</option>
+                <option style={optionStyle} value="earnings">{eventRiskLabel("earnings", locale)}</option>
+                <option style={optionStyle} value="fomc">{eventRiskLabel("fomc", locale)}</option>
+                <option style={optionStyle} value="cpi">{eventRiskLabel("cpi", locale)}</option>
+                <option style={optionStyle} value="product_event">{eventRiskLabel("product_event", locale)}</option>
+                <option style={optionStyle} value="user_defined">{eventRiskLabel("user_defined", locale)}</option>
               </select>
             </Field>
             <Field label={text.expectedIvChange}>
@@ -475,19 +542,26 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
             <Field label={text.scenarioIv}>
               <input className={inputClass} {...form.register("scenario_iv_changes")} />
             </Field>
-            <Field label={text.scenarioDays}>
-              <input className={inputClass} {...form.register("scenario_days_passed")} />
+            <Field label={text.scenarioHorizon}>
+              <input className={inputClass} {...form.register("scenario_horizon_date")} type="date" />
+              <span className="font-body-sm text-text-secondary">{text.scenarioHorizonHelp}</span>
             </Field>
           </div>
           <div className="rounded border border-border-subtle bg-surface-muted/30 p-3">
             <div className="mb-2 font-label-caps text-text-secondary">{text.subjectiveEv}</div>
+            <p className="mb-3 font-body-sm leading-relaxed text-text-secondary">{text.subjectiveEvHelp}</p>
+            <div className="mb-1 grid grid-cols-[70px_1fr_1fr_1fr] gap-2 font-label-caps text-text-secondary">
+              <span />
+              <span>{text.evProbability}</span>
+              <span>{text.evSpot}</span>
+              <span>{text.evIv}</span>
+            </div>
             {(["bull", "base", "bear"] as const).map((row) => (
-              <div className="mb-2 grid grid-cols-[80px_1fr_1fr_1fr_1fr] gap-2 last:mb-0" key={row}>
-                <div className="pt-2 font-body-sm text-text-secondary">{row}</div>
+              <div className="mb-2 grid grid-cols-[70px_1fr_1fr_1fr] gap-2 last:mb-0" key={row}>
+                <div className="pt-2 font-body-sm text-text-secondary">{scenarioRowLabel(row, locale)}</div>
                 <input className={inputClass} {...form.register(`${row}_probability`)} aria-label={`${row} probability`} type="number" step="0.01" />
                 <input className={inputClass} {...form.register(`${row}_spot_change_pct`)} aria-label={`${row} spot change`} type="number" step="1" />
                 <input className={inputClass} {...form.register(`${row}_iv_change_vol_points`)} aria-label={`${row} iv change`} type="number" step="1" />
-                <input className={inputClass} {...form.register(`${row}_days_passed`)} aria-label={`${row} days passed`} type="number" step="1" />
               </div>
             ))}
           </div>
@@ -553,11 +627,17 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
             <div className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
               {recommendations.slice(0, 4).map((item, index) => (
                 <RecommendationCard
-                  expanded={expanded === index}
+                  expanded={expanded.includes(index)}
                   item={item}
                   key={`${item.strategy_type}-${index}`}
                   locale={locale}
-                  onToggle={() => setExpanded(expanded === index ? null : index)}
+                  onToggle={() =>
+                    setExpanded((current) =>
+                      current.includes(index)
+                        ? current.filter((item) => item !== index)
+                        : [...current, index],
+                    )
+                  }
                   text={text}
                 />
               ))}
@@ -567,7 +647,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
             <ComparisonTable recommendations={recommendations} text={text} />
 
             <SectionHeader title={text.checklist} />
-            <Checklist item={top} maxLossBudget={maxLossBudget} text={text} />
+            <Checklist item={top} text={text} />
 
             <SectionHeader title={text.scenario} />
             <ScenarioLab item={top} text={text} />
@@ -662,6 +742,7 @@ function RecommendationCard({
           <div className="font-data-mono text-2xl font-bold text-accent-success">{num(item.score, 0)}</div>
         </div>
       </div>
+      <SelectedContracts legs={item.legs ?? []} locale={locale} />
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <MiniMetric label={text.buyerScore} value={score(item.buyer_friendliness_score)} accent />
         <MiniMetric label={text.netDebit} value={money(item.net_debit)} />
@@ -792,11 +873,9 @@ function ComparisonTable({
 
 function Checklist({
   item,
-  maxLossBudget,
   text,
 }: {
   item?: Recommendation;
-  maxLossBudget: number;
   text: (typeof copy)["en"];
 }) {
   const checks = [
@@ -807,7 +886,6 @@ function Checklist({
     ["breakeven", hasWarning(item, "BREAK_EVEN_ABOVE_TARGET")],
     ["lottery", hasWarning(item, "LOTTERY_OPTION")],
     ["dte", minDte(item?.legs) !== null && (minDte(item?.legs) ?? 99) < 14],
-    ["budget", item?.max_loss !== undefined && item?.max_loss !== null && item.max_loss > maxLossBudget],
     ["ivDependency", (item?.iv_crash_risk_score ?? 0) > 70],
     ["spotUpIvDown", item?.scenario_summary?.spot_up_iv_down_pnl !== undefined && (item.scenario_summary.spot_up_iv_down_pnl ?? 0) <= 0],
   ] as const;
@@ -892,13 +970,55 @@ function WarningChip({ warning }: { warning: string }) {
   );
 }
 
+function SelectedContracts({
+  legs,
+  locale,
+}: {
+  legs: StrategyLeg[];
+  locale: "en" | "zh";
+}) {
+  if (!legs.length) {
+    return null;
+  }
+  return (
+    <div className="mt-4 rounded border border-border-subtle bg-surface-muted/30 p-3">
+      <div className="mb-2 font-label-caps text-text-secondary">
+        {locale === "zh" ? "所选合约" : "Selected contracts"}
+      </div>
+      <div className="grid gap-2">
+        {legs.map((leg, index) => (
+          <div
+            className="grid grid-cols-[64px_1fr_88px] items-center gap-3 rounded border border-border-subtle/70 bg-bg-surface px-3 py-2"
+            key={`${leg.symbol ?? index}-${leg.side ?? leg.action ?? index}`}
+          >
+            <span className={legActionClass(leg)}>{legActionLabel(leg, locale)}</span>
+            <div className="min-w-0">
+              <div className="truncate font-data-mono text-sm text-text-primary">
+                {leg.symbol ?? "--"}
+              </div>
+              <div className="font-body-sm text-text-secondary">
+                {legTypeLabel(leg, locale)} · {leg.expiry ?? leg.expiration ?? "--"} ·{" "}
+                {typeof leg.strike === "number" ? leg.strike.toFixed(0) : "--"}
+              </div>
+            </div>
+            <div className="text-right font-data-mono text-sm text-text-primary">
+              {money(leg.mid_price ?? leg.premium)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function toPayload(values: FormValues) {
+  const scenarioDays = scenarioDaysFromHorizon(values.scenario_horizon_date);
+  const evDays = scenarioDays.at(-1) ?? 30;
   return {
     ticker: values.ticker.trim().toUpperCase(),
     view_type: values.view_type,
     target_price: values.target_price,
     target_date: values.target_date,
-    max_loss_budget: values.max_loss_budget,
     risk_preference: values.risk_preference,
     allow_capped_upside: values.allow_capped_upside,
     avoid_high_iv: values.avoid_high_iv,
@@ -907,31 +1027,130 @@ function toPayload(values: FormValues) {
     expected_iv_change_vol_points: values.expected_iv_change_vol_points,
     scenario_spot_changes: numberList(values.scenario_spot_changes),
     scenario_iv_changes: numberList(values.scenario_iv_changes),
-    scenario_days_passed: numberList(values.scenario_days_passed).map((item) => Math.max(0, Math.round(item))),
+    scenario_days_passed: scenarioDays,
     user_scenarios: [
       {
         label: "bull",
         probability: values.bull_probability,
         spot_change_pct: values.bull_spot_change_pct,
         iv_change_vol_points: values.bull_iv_change_vol_points,
-        days_passed: values.bull_days_passed,
+        days_passed: evDays,
       },
       {
         label: "base",
         probability: values.base_probability,
         spot_change_pct: values.base_spot_change_pct,
         iv_change_vol_points: values.base_iv_change_vol_points,
-        days_passed: values.base_days_passed,
+        days_passed: evDays,
       },
       {
         label: "bear",
         probability: values.bear_probability,
         spot_change_pct: values.bear_spot_change_pct,
         iv_change_vol_points: values.bear_iv_change_vol_points,
-        days_passed: values.bear_days_passed,
+        days_passed: evDays,
       },
     ],
   };
+}
+
+function addDaysIso(days: number) {
+  const value = new Date();
+  value.setHours(0, 0, 0, 0);
+  value.setDate(value.getDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function daysUntil(dateString: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(`${dateString}T00:00:00`);
+  if (Number.isNaN(target.getTime())) {
+    return 30;
+  }
+  return Math.max(0, Math.round((target.getTime() - today.getTime()) / 86_400_000));
+}
+
+function scenarioDaysFromHorizon(dateString: string) {
+  const horizon = daysUntil(dateString);
+  const midpoint = Math.max(1, Math.round(horizon / 2));
+  return [...new Set([0, midpoint, horizon])].sort((left, right) => left - right);
+}
+
+function viewTypeLabel(value: FormValues["view_type"], locale: "en" | "zh") {
+  const labels = {
+    en: {
+      long_term_aggressive_bullish: "Long-term aggressive bullish",
+      long_term_conservative_bullish: "Long-term conservative bullish",
+      short_term_speculative_bullish: "Short-term speculative bullish",
+      short_term_conservative_bullish: "Short-term conservative bullish",
+      event_driven_bullish: "Event-driven bullish",
+    },
+    zh: {
+      long_term_aggressive_bullish: "长期激进看涨",
+      long_term_conservative_bullish: "长期保守看涨",
+      short_term_speculative_bullish: "短期投机看涨",
+      short_term_conservative_bullish: "短期保守看涨",
+      event_driven_bullish: "事件驱动看涨",
+    },
+  };
+  return labels[locale][value];
+}
+
+function riskPreferenceLabel(value: FormValues["risk_preference"], locale: "en" | "zh") {
+  const labels = {
+    en: { aggressive: "Aggressive", balanced: "Balanced", conservative: "Conservative" },
+    zh: { aggressive: "激进", balanced: "平衡", conservative: "保守" },
+  };
+  return labels[locale][value];
+}
+
+function volatilityViewLabel(value: FormValues["volatility_view"], locale: "en" | "zh") {
+  const labels = {
+    en: {
+      auto: "Auto",
+      prefer_low_iv: "Prefer low IV",
+      expect_iv_crush: "Expect IV crush",
+      expect_iv_expansion: "Expect IV expansion",
+    },
+    zh: {
+      auto: "自动",
+      prefer_low_iv: "偏好低 IV",
+      expect_iv_crush: "预期 IV 回落",
+      expect_iv_expansion: "预期 IV 扩张",
+    },
+  };
+  return labels[locale][value];
+}
+
+function eventRiskLabel(value: FormValues["event_risk"], locale: "en" | "zh") {
+  const labels = {
+    en: {
+      none: "None",
+      earnings: "Earnings",
+      fomc: "FOMC",
+      cpi: "CPI",
+      product_event: "Product event",
+      user_defined: "User defined",
+    },
+    zh: {
+      none: "无",
+      earnings: "财报",
+      fomc: "FOMC",
+      cpi: "CPI",
+      product_event: "产品事件",
+      user_defined: "自定义",
+    },
+  };
+  return labels[locale][value];
+}
+
+function scenarioRowLabel(value: "bull" | "base" | "bear", locale: "en" | "zh") {
+  const labels = {
+    en: { bull: "bull", base: "base", bear: "bear" },
+    zh: { bull: "看涨", base: "基准", bear: "看跌" },
+  };
+  return labels[locale][value];
 }
 
 function numberList(value: string) {
@@ -949,6 +1168,31 @@ function strategyLabel(strategy: string) {
     leaps_call: "LEAPS Call",
     leaps_call_spread: "LEAPS Call Spread",
   }[strategy] ?? strategy;
+}
+
+function legActionLabel(leg: StrategyLeg, locale: "en" | "zh") {
+  const side = (leg.action ?? leg.side ?? "").toLowerCase();
+  const isShort = side === "sell" || side === "short";
+  if (locale === "zh") {
+    return isShort ? "卖出" : "买入";
+  }
+  return isShort ? "Sell" : "Buy";
+}
+
+function legActionClass(leg: StrategyLeg) {
+  const side = (leg.action ?? leg.side ?? "").toLowerCase();
+  const isShort = side === "sell" || side === "short";
+  return isShort
+    ? "rounded border border-warning/40 bg-warning/10 px-2 py-1 text-center font-label-caps text-warning"
+    : "rounded border border-accent-success/40 bg-accent-success/10 px-2 py-1 text-center font-label-caps text-accent-success";
+}
+
+function legTypeLabel(leg: StrategyLeg, locale: "en" | "zh") {
+  const type = (leg.option_type ?? "CALL").toUpperCase();
+  if (locale === "zh") {
+    return type === "PUT" ? "看跌" : "看涨";
+  }
+  return type;
 }
 
 function money(value?: number | null) {

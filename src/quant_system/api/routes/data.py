@@ -11,16 +11,40 @@ from quant_system.data.storage import LocalDataStorage
 router = APIRouter()
 
 _DEFAULT_SAMPLE_SYMBOLS = ["SPY", "QQQ", "IWM", "TLT", "GLD"]
+_DEFAULT_LIVE_SYMBOLS = [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "DIA",
+    "TLT",
+    "GLD",
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "NVDA",
+    "TSLA",
+]
 
 
 @router.get("/symbols")
-def symbols(output_dir: OutputDirDep) -> dict:
+def symbols(output_dir: OutputDirDep, settings: SettingsDep) -> dict:
     storage = LocalDataStorage(base_dir=output_dir)
     if storage.parquet_path.exists():
         frame = storage.load_ohlcv()
         local_symbols = sorted(frame["symbol"].dropna().astype(str).str.upper().unique())
         if local_symbols:
             return {"symbols": local_symbols, "source": "local"}
+    # Reflect the actual active provider so the UI does not silently fall
+    # back to the 5-ticker sample basket when Tiingo/Futu are available.
+    _, active_source = build_ohlcv_provider(settings)
+    base_label = active_source.split()[0]
+    if base_label in {"tiingo", "futu"}:
+        return {
+            "symbols": _DEFAULT_LIVE_SYMBOLS,
+            "source": f"{base_label} (default basket)",
+        }
     return {"symbols": _DEFAULT_SAMPLE_SYMBOLS, "source": "sample"}
 
 

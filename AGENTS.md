@@ -45,19 +45,35 @@ Current options work is split into sell-side and buy-side research modules:
 
 - Sell-side single-ticker screener: `src/quant_system/options/screener.py`.
 - Sell-side cross-ticker radar: `src/quant_system/options/radar.py`.
+- Radar refresh helpers: `src/quant_system/options/data_refresh.py`.
 - Buy-side contracts and scenario data: `src/quant_system/options/models.py`.
 - Buy-side contract diagnostics: `src/quant_system/options/buy_side_metrics.py`.
 - Buy-side candidate generation: `src/quant_system/options/buy_side_strategy.py`.
 - Buy-side scenario lab: `src/quant_system/options/buy_side_scenarios.py`.
+- Local AlphaGBM-style tools and research helpers:
+  `src/quant_system/options/local_tools.py` and
+  `src/quant_system/options/local_research.py`.
+- Durable local option quote cache:
+  `src/quant_system/storage/options_cache.py`.
 - Buy-side decision API: `POST /api/options/buy-side/assistant`.
 - Buy-side debug CLI: `quant-system options buyside-screen`.
 - Buy-side frontend page: `src/frontend/app/options-buyside/page.tsx` (main
   component `src/frontend/components/forms/BuySideOptionsAssistant.tsx`,
   bilingual en/zh, route `/options-buyside`).
+- Local tools frontend page: `src/frontend/app/options-tools/page.tsx` (main
+  component `src/frontend/components/forms/OptionsToolsWorkbench.tsx`).
+- Radar symbol drilldown page: `src/frontend/app/options-radar/[symbol]/page.tsx`.
 
 Buy-side Phase 14 ships with backend logic, API, CLI, and frontend wiring.
 Keep pure decision modules free of live data calls; only the API/CLI layer
 may call the existing read-only Futu quote provider.
+
+Futu options calls can hit OpenD pacing limits. The provider has a short-lived
+in-process option-chain cache plus one read-only retry for typed `rate_limited`
+responses. It also has a local DuckDB-backed option quote cache under
+`data/futu/options_cache.duckdb` when `QS_FUTU_USE_CACHE=true`. Follow
+`docs/architecture/database_cache_plan.md` for cache status and remaining
+storage work.
 
 ## Environment
 

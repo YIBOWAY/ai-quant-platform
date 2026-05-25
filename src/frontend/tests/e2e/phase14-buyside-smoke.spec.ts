@@ -88,6 +88,53 @@ test.describe("phase14 buy-side options assistant smoke", () => {
               ],
               net_debit: 4.8,
             },
+            {
+              strategy_type: "long_call",
+              score: 74,
+              rank: 2,
+              one_line_summary: "Long Call is usable but has more IV exposure.",
+              key_reasons: ["Uncapped upside remains aligned with the thesis."],
+              key_risks: ["HIGH_IV_CRUSH_RISK"],
+              max_loss: 800,
+              max_profit: null,
+              break_even: 208,
+              required_move_pct: 4,
+              theta_burn_7d_pct: 5.2,
+              estimated_iv_crush_loss_pct: 9.5,
+              liquidity_score: 80,
+              risk_reward: null,
+              expected_move_pct: 7.9,
+              target_vs_expected_move_ratio: 0.76,
+              buyer_friendliness_score: 72,
+              iv_crash_risk_score: 48,
+              risk_attribution: { direction: 42, time: 45, volatility: 70, liquidity: 22 },
+              primary_risk_source: "volatility",
+              market_regime: "Normal",
+              market_regime_penalty: 0,
+              warnings: ["HIGH_IV_CRUSH_RISK"],
+              scenario_summary: {
+                best_case_pnl: 900,
+                worst_case_pnl: -800,
+                flat_spot_iv_crush_pnl: -140,
+                spot_up_iv_down_pnl: 260,
+                theta_only_pnl: -42,
+                probability_not_calculated: true,
+              },
+              scenario_ev: null,
+              demotion: null,
+              legs: [
+                {
+                  action: "buy",
+                  option_type: "call",
+                  strike: 200,
+                  expiration: "2026-06-19",
+                  quantity: 1,
+                  premium: 8,
+                  contract_size: 100,
+                },
+              ],
+              net_debit: 8,
+            },
           ],
           warnings: [],
           safety: {
@@ -117,8 +164,11 @@ test.describe("phase14 buy-side options assistant smoke", () => {
     await page.getByRole("button", { name: /Run Assistant/i }).click();
 
     await expect(page.getByRole("heading", { name: "Bull Call Spread" })).toBeVisible();
+    await expect(page.getByText("Selected contracts").first()).toBeVisible();
+    await page.getByRole("button", { name: /Details/i }).nth(1).click();
+    await expect(page.getByText("Reasons")).toHaveCount(2);
     await expect(page.getByText(/Primary risk: volatility/i)).toBeVisible();
     await expect(page.getByText("Anti-Pitfall Checklist")).toBeVisible();
-    await expect(page.getByText("User-input subjective EV, not market-implied probability.")).toBeVisible();
+    await expect(page.getByText(/not a market-implied probability/i).first()).toBeVisible();
   });
 });

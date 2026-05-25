@@ -130,3 +130,9 @@ GET /api/benchmark     200
 ```
 
 后端 9 个核心 endpoint 全部 200，但 **`source=sample` 暴露了 SPY 数据为合成数据**，详见 [MARKET_DATA_SOURCE_AUDIT.md](MARKET_DATA_SOURCE_AUDIT.md)。
+---
+
+> Historical audit note (2026-05-25): this read-only audit captured an earlier
+> frontend state. Several listed gaps have since been implemented. Use
+> `README.md`, `docs/INDEX.md`, and the current delivery docs as the source of
+> truth for current pages and workflows.

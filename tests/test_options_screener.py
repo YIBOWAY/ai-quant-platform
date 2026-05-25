@@ -124,6 +124,7 @@ def test_options_screener_avoids_wide_spread() -> None:
             ticker="AAPL",
             strategy_type="sell_put",
             max_spread_pct=0.2,
+            include_rejected=True,
             history_start="2026-01-02",
             history_end="2026-05-01",
         ),
@@ -131,6 +132,80 @@ def test_options_screener_avoids_wide_spread() -> None:
 
     assert result.candidates[0].rating == "Avoid"
     assert "spread too wide" in result.candidates[0].notes
+
+
+def test_options_screener_hides_rejected_deep_itm_puts_by_default() -> None:
+    class DeepItmProvider(_FakeProvider):
+        def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": "US.AAPL260619P420000",
+                        "option_type": "PUT",
+                        "expiry": expiration,
+                        "strike": 420.0,
+                        "bid": 140.0,
+                        "ask": 141.0,
+                        "volume": 1,
+                        "open_interest": 0,
+                        "implied_volatility": 1.5,
+                        "delta": -0.98,
+                    }
+                ]
+            )
+
+    result = run_options_screener(
+        provider=DeepItmProvider(),
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            max_delta=0.45,
+            min_open_interest=50,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert result.candidates == []
+    assert result.rejected_count == 1
+
+
+def test_options_screener_can_include_rejected_rows_for_audit() -> None:
+    class DeepItmProvider(_FakeProvider):
+        def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": "US.AAPL260619P420000",
+                        "option_type": "PUT",
+                        "expiry": expiration,
+                        "strike": 420.0,
+                        "bid": 140.0,
+                        "ask": 141.0,
+                        "volume": 1,
+                        "open_interest": 0,
+                        "implied_volatility": 1.5,
+                        "delta": -0.98,
+                    }
+                ]
+            )
+
+    result = run_options_screener(
+        provider=DeepItmProvider(),
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            max_delta=0.45,
+            min_open_interest=50,
+            include_rejected=True,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0].rating == "Avoid"
+    assert "sell put strike is above spot" in result.candidates[0].notes
 
 
 def test_options_screener_applies_income_filters_and_normalizes_iv() -> None:
@@ -154,6 +229,7 @@ def test_options_screener_applies_income_filters_and_normalizes_iv() -> None:
             min_open_interest=100,
             max_hv_iv=0.0,
             hv_iv_filter=True,
+            include_rejected=True,
             history_start="2026-01-02",
             history_end="2026-05-01",
         ),
@@ -332,6 +408,7 @@ def test_options_screener_applies_market_regime_to_sell_put() -> None:
             max_spread_pct=0.2,
             trend_filter=True,
             hv_iv_filter=False,
+            include_rejected=True,
             history_start="2026-01-02",
             history_end="2026-05-01",
         ),

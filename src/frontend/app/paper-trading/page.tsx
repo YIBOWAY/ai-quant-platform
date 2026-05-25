@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Activity, AlertCircle, BriefcaseBusiness, ShieldAlert } from "lucide-react";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
@@ -59,6 +60,15 @@ export default async function PaperTrading() {
               <div className="mt-2">
                 <DataSourceBadge source={latestRun.source} />
               </div>
+            ) : null}
+            {latestRun ? (
+              <Link
+                aria-label={`Open ${latestRun.id}`}
+                className="mt-3 inline-flex rounded border border-border-subtle px-3 py-1.5 font-body-sm text-info"
+                href={`/paper-trading/${latestRun.id}`}
+              >
+                Open run
+              </Link>
             ) : null}
           </div>
             <div className="rounded border border-border-subtle bg-surface-dim p-3">

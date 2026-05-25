@@ -115,6 +115,7 @@ class OptionsScreenerConfig(BaseModel):
     # and an external earnings source (e.g. yfinance).
     min_iv_rank: float = Field(default=0.0, ge=0, le=100)
     avoid_earnings_within_days: int = Field(default=0, ge=0)
+    include_rejected: bool = False
 
 
 class OptionsScreenerCandidate(BaseModel):
@@ -171,6 +172,7 @@ class OptionsScreenerResult(BaseModel):
     market_regime_vix_density: float | None = None
     market_regime_term_ratio: float | None = None
     candidates: list[OptionsScreenerCandidate]
+    rejected_count: int = 0
     assumptions: list[str]
 
 

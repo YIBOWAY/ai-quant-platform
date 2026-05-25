@@ -1,8 +1,10 @@
+import Link from "next/link";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
+import { EquityComparisonChart } from "@/components/EquityComparisonChart";
 import { ErrorBanner } from "@/components/ErrorBanner";
-import { BacktestForm } from "@/components/forms/BacktestForm";
+import { BacktestForm, type BacktestFormInitialValues } from "@/components/forms/BacktestForm";
 import {
   formatPercent,
   getBacktestDetail,
@@ -10,14 +12,13 @@ import {
   getBenchmark,
 } from "@/lib/api";
 
-function curveBarWidth(value: number, min: number, max: number) {
-  if (max <= min) {
-    return 40;
-  }
-  return 8 + ((value - min) / (max - min)) * 92;
-}
+type BacktestPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default async function Backtest() {
+export default async function Backtest({ searchParams }: BacktestPageProps) {
+  const params = (await searchParams) ?? {};
+  const initialValues = backtestInitialValuesFromSearch(params);
   const backtests = await getBacktests();
   const latest = backtests.backtests[0];
   const detail = latest ? await getBacktestDetail(latest.id) : null;
@@ -35,24 +36,12 @@ export default async function Backtest() {
     typeof latestRequest?.start === "string" ? latestRequest.start : "2024-01-02";
   const benchmarkEnd =
     typeof latestRequest?.end === "string" ? latestRequest.end : "2024-01-12";
-  const benchmarkProvider =
-    latest?.source?.startsWith("futu")
-      ? "futu"
-      : latest?.source?.startsWith("tiingo")
-        ? "tiingo"
-        : "sample";
   const benchmark = await getBenchmark(
     benchmarkSymbol,
     benchmarkStart,
     benchmarkEnd,
-    benchmarkProvider,
   );
-  const strategyEquity = (detail?.equity_curve ?? []).map((point) => Number(point.equity ?? 0));
-  const benchmarkEquity = benchmark.equity_curve.map((point) => point.equity);
-  const strategyMin = strategyEquity.length ? Math.min(...strategyEquity) : 0;
-  const strategyMax = strategyEquity.length ? Math.max(...strategyEquity) : 0;
-  const benchmarkMin = benchmarkEquity.length ? Math.min(...benchmarkEquity) : 0;
-  const benchmarkMax = benchmarkEquity.length ? Math.max(...benchmarkEquity) : 0;
+  const comparisonRows = buildComparisonRows(detail?.equity_curve ?? [], benchmark.equity_curve);
 
   return (
     <div className="flex h-full flex-1 overflow-hidden bg-base">
@@ -74,12 +63,21 @@ export default async function Backtest() {
                 <DataSourceBadge source={latest.source} />
               </div>
             ) : null}
+            {latest ? (
+              <Link
+                aria-label={`Open ${latest.id}`}
+                className="mt-3 inline-flex rounded border border-border-subtle px-3 py-1.5 font-body-sm text-info"
+                href={`/backtest/${latest.id}`}
+              >
+                Open run
+              </Link>
+            ) : null}
           </div>
           <div className="rounded border border-border-subtle bg-surface-muted p-3">
             <div className="font-label-caps text-text-secondary">Benchmark</div>
             <div className="mt-2 font-data-mono text-text-primary">{benchmark.symbol}</div>
           </div>
-          <BacktestForm />
+          <BacktestForm initialValues={initialValues} />
         </div>
       </aside>
 
@@ -116,64 +114,29 @@ export default async function Backtest() {
         </div>
 
         <section className="rounded border border-border-subtle bg-bg-surface p-4">
-          <h3 className="mb-3 font-label-caps text-text-primary">Benchmark Equity Curve</h3>
-          {benchmark.equity_curve.length ? (
-            <div className="space-y-2">
-              {benchmark.equity_curve.map((point) => (
-                <div key={point.timestamp} className="flex items-center gap-3 font-data-mono text-xs">
-                  <span className="w-32 text-text-secondary">{point.timestamp}</span>
-                  <div className="h-2 flex-1 rounded bg-surface-muted">
-                    <div
-                      className="h-2 rounded bg-info"
-                      style={{
-                        width: `${curveBarWidth(point.equity, benchmarkMin, benchmarkMax)}%`,
-                      }}
-                    />
-                  </div>
-                  <span className="w-16 text-right text-text-primary">
-                    {point.equity.toFixed(4)}
-                  </span>
-                </div>
-              ))}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-label-caps text-text-primary">Strategy vs Benchmark</h3>
+              <p className="mt-1 font-body-sm text-text-secondary">
+                Normalized equity curves from the newest backtest and benchmark API.
+              </p>
             </div>
+            <div className="flex gap-4 font-data-mono text-[11px]">
+              <span className="text-accent-success">Strategy</span>
+              <span className="text-info">Benchmark</span>
+            </div>
+          </div>
+          {comparisonRows.length ? (
+            <EquityComparisonChart rows={comparisonRows} />
           ) : (
-            <EmptyState title="No benchmark rows" description="Benchmark API returned no rows." />
+            <EmptyState
+              title="No equity curve rows"
+              description="Run a backtest to compare the strategy with the benchmark curve."
+            />
           )}
         </section>
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <section className="rounded border border-border-subtle bg-bg-surface p-4">
-            <h3 className="mb-3 font-label-caps text-text-primary">Strategy Equity Curve</h3>
-            {detail?.equity_curve.length ? (
-              <div className="space-y-2">
-                {detail.equity_curve.slice(0, 14).map((point, index) => {
-                  const timestamp = String(point.timestamp ?? `row-${index}`);
-                  const equity = Number(point.equity ?? 0);
-                  return (
-                    <div key={`${timestamp}-${index}`} className="flex items-center gap-3 font-data-mono text-xs">
-                      <span className="w-32 truncate text-text-secondary">{timestamp}</span>
-                      <div className="h-2 flex-1 rounded bg-surface-muted">
-                        <div
-                          className="h-2 rounded bg-accent-success"
-                          style={{
-                            width: `${curveBarWidth(equity, strategyMin, strategyMax)}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="w-20 text-right text-text-primary">
-                        {equity.toFixed(2)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <EmptyState
-                title="Strategy equity curve unavailable"
-                description="Run a backtest to create a local equity curve under api_runs/backtests."
-              />
-            )}
-          </section>
           <DataPreviewTable
             title="Trade Blotter"
             description="Latest simulated trades from the newest backtest run."
@@ -194,4 +157,86 @@ export default async function Backtest() {
       </div>
     </div>
   );
+}
+
+function backtestInitialValuesFromSearch(
+  params: Record<string, string | string[] | undefined>,
+): BacktestFormInitialValues {
+  const provider = stringParam(params.provider);
+  const initialValues: BacktestFormInitialValues = {};
+  const symbols = stringParam(params.symbols);
+  if (symbols) {
+    initialValues.symbols = symbols;
+  }
+  for (const key of ["start", "end"] as const) {
+    const value = stringParam(params[key]);
+    if (value) {
+      initialValues[key] = value;
+    }
+  }
+  if (provider === "sample" || provider === "futu" || provider === "tiingo") {
+    initialValues.provider = provider;
+  }
+  for (const key of [
+    "lookback",
+    "top_n",
+    "initial_cash",
+    "commission_bps",
+    "slippage_bps",
+  ] as const) {
+    const value = numberParam(params[key]);
+    if (value !== undefined) {
+      initialValues[key] = value;
+    }
+  }
+  return initialValues;
+}
+
+function stringParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function numberParam(value: string | string[] | undefined) {
+  const parsed = Number(stringParam(value));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function buildComparisonRows(
+  strategyRows: Array<Record<string, unknown>>,
+  benchmarkRows: Array<{ timestamp: string; equity: number }>,
+) {
+  const strategy = normalizeSeries(
+    strategyRows.map((point, index) => ({
+      timestamp: String(point.timestamp ?? `row-${index}`),
+      value: Number(point.equity ?? 0),
+    })),
+  );
+  const benchmark = normalizeSeries(
+    benchmarkRows.map((point) => ({
+      timestamp: point.timestamp,
+      value: point.equity,
+    })),
+  );
+  const count = Math.max(strategy.length, benchmark.length);
+  return Array.from({ length: count }, (_item, index) => ({
+    timestamp:
+      strategy[index]?.timestamp?.slice(0, 10) ??
+      benchmark[index]?.timestamp?.slice(0, 10) ??
+      `row-${index + 1}`,
+    strategy: strategy[index]?.value ?? null,
+    benchmark: benchmark[index]?.value ?? null,
+  }));
+}
+
+function normalizeSeries(rows: Array<{ timestamp: string; value: number }>) {
+  const first = rows.find((row) => Number.isFinite(row.value) && row.value > 0)?.value;
+  if (!first) {
+    return [];
+  }
+  return rows
+    .filter((row) => Number.isFinite(row.value))
+    .map((row) => ({
+      timestamp: row.timestamp,
+      value: row.value / first,
+    }));
 }

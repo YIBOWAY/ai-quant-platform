@@ -99,9 +99,19 @@ Current project behavior:
 
 - `fetch_option_expirations()` calls `get_option_expiration_date`.
 - `fetch_option_chain()` calls one exact expiration window.
-- `fetch_option_chain_range()` calls one explicit start/end range.
-- `run_options_screener()` chunks wider scans into <=30-day date spans before
-  calling `fetch_option_quotes_range()`.
+- `fetch_option_chain_range()` and `fetch_option_quotes_range()` automatically
+  split wider windows into <=30-day spans before calling Futu. This matters for
+  the buy-side assistant and other long-DTE scans.
+- `run_options_screener()` can pass its configured DTE window directly to the
+  provider; the provider handles safe chunking.
+- `fetch_option_quotes_range()` keeps a short-lived in-process cache for the
+  same underlying / expiration window / option type. This avoids immediately
+  re-hitting Futu's 10-calls-per-30-seconds quote limit when the same page is
+  re-run or refreshed.
+- Successful option quote windows are also persisted in a local DuckDB cache at
+  `data/futu/options_cache.duckdb` when `QS_FUTU_USE_CACHE=true` (the default).
+  This cache is reused across backend restarts by the screener, radar, buy-side
+  assistant, and local options tools.
 
 Local read-only check on 2026-05-04 with OpenD logged in:
 
@@ -230,8 +240,26 @@ curl "http://127.0.0.1:8765/api/options/chain?ticker=AAPL&expiration=2026-05-04&
 | OpenD not running | frontend-readable connection error |
 | No permission | permission error, no traceback |
 | Invalid ticker | validation error |
+| Per-interface rate limit hit | typed `rate_limited` error after one read-only retry |
 | Missing chain fields | nullable fields |
 | Empty option chain | empty list with clear source metadata |
+
+## Interactive Rate-Limit Behavior
+
+OpenD enforces roughly 10 calls per 30 seconds per quote interface. A single
+options request can consume several calls because the platform fetches the
+underlying snapshot, expiration windows, option chains, option snapshots, and
+sometimes stock history for HV/trend checks.
+
+For the interactive pages, `FutuMarketDataProvider` now detects common English
+and Chinese rate-limit messages, waits once for the configured retry interval,
+and retries the same read-only request. If the second attempt still fails, the
+API returns a typed `rate_limited` response so the frontend can show a clear
+temporary error instead of a raw provider message.
+
+For broad scans such as `quant-system options daily-scan --top 100`, expect the
+run to take a long time under Futu pacing. For manual verification, start with a
+smaller `--top 10` or `--top 20`.
 
 ## Safety Boundary
 

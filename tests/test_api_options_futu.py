@@ -4,7 +4,7 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import Settings
+from quant_system.config.settings import OptionsRadarSettings, Settings
 from quant_system.data.providers.futu import FutuProviderError
 from quant_system.data.schema import normalize_ohlcv_dataframe
 
@@ -58,7 +58,10 @@ def test_options_chain_returns_futu_contracts(tmp_path, monkeypatch) -> None:
         "quant_system.api.routes.options.FutuMarketDataProvider.fetch_option_quotes",
         fake_fetch,
     )
-    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+    settings = Settings(
+        options_radar=OptionsRadarSettings(vix_history_path=tmp_path / "missing_vix.csv")
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     response = client.get(
         "/api/options/chain",
@@ -91,7 +94,10 @@ def test_options_screener_returns_candidates(tmp_path, monkeypatch) -> None:
         "quant_system.api.routes.options.FutuMarketDataProvider.fetch_ohlcv",
         lambda self, symbols, *, start, end, interval="1d": _history(),
     )
-    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+    settings = Settings(
+        options_radar=OptionsRadarSettings(vix_history_path=tmp_path / "missing_vix.csv")
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     response = client.post(
         "/api/options/screener",

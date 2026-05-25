@@ -77,12 +77,19 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
   const start = single(params.start, "2024-01-02");
   const end = single(params.end, "2024-01-12");
   const freq = single(params.freq, "1d");
-  const provider = single(params.provider, "futu");
+  const requestedProvider = single(params.provider, "").toLowerCase();
+  const provider =
+    requestedProvider === "sample" || requestedProvider === "futu" || requestedProvider === "tiingo"
+      ? requestedProvider
+      : undefined;
   const [symbols, ohlcv] = await Promise.all([
     getSymbols(),
     getMarketDataHistory(symbol, start, end, freq, provider),
   ]);
   const latest = ohlcv.rows.at(-1);
+  const activeProvider = ohlcv.metadata.requested_provider;
+  const initialProvider =
+    activeProvider === "sample" || activeProvider === "tiingo" ? activeProvider : "futu";
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -99,7 +106,7 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
                 freq === "1h" || freq === "30m" || freq === "15m" || freq === "5m" || freq === "1m"
                   ? freq
                   : "1d",
-              provider: provider === "sample" || provider === "tiingo" ? provider : "futu",
+              provider: initialProvider,
             }}
             locale={locale}
           />

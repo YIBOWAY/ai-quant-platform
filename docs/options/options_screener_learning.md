@@ -80,9 +80,21 @@ The rating is intentionally conservative:
 
 The rating is a screening label, not a recommendation.
 
+By default, the UI and API hide `Avoid` rows from the recommendation table.
+This prevents deep-in-the-money seller contracts, zero-open-interest contracts,
+or failed-trend contracts from appearing as if they were usable candidates.
+For audit/debug work, set `include_rejected=true` in the request body to inspect
+why rows were rejected.
+
+The frontend label `Filtered out` / `已过滤` is the count of those hidden
+`Avoid` rows. It usually means the contract was deep in the money for the
+seller strategy, had zero open interest, had too wide a spread, or failed the
+trend / HV-IV filters. It is not a separate trade status and no order is ever
+created.
+
 ### Market Regime Adjustment (Phase 13)
 
-The screener now reads the offline VIX cache (`data/options_universe/vix_history.csv`) and computes the same `Normal / Elevated / Panic` regime used by the daily radar. When the regime is non-Normal, seller candidates (`sell_put`, `covered_call`) are demoted:
+The screener now reads the offline VIX cache (`data/options_universe/vix_history.csv`) and computes the same `Normal / Elevated / Panic` regime used by the daily radar. The density calculation uses the recent three-month VIX/VIX3M window so a short one-month spike does not dominate the whole market-regime label. Options Radar passes this same regime snapshot into the per-ticker screener during daily scans. When the regime is non-Normal, seller candidates (`sell_put`, `covered_call`) are demoted:
 
 - `Elevated`: any `Strong` rating is demoted to `Watch`.
 - `Panic`: `sell_put` is forced to `Avoid`; `covered_call` is demoted from `Strong` to `Watch`.

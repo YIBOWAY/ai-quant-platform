@@ -22,6 +22,7 @@ const backtestSchema = z.object({
 });
 
 type BacktestFormValues = z.infer<typeof backtestSchema>;
+export type BacktestFormInitialValues = Partial<BacktestFormValues>;
 
 type BacktestRunResponse = {
   run_id: string;
@@ -40,12 +41,17 @@ const DEFAULTS: BacktestFormValues = {
   slippage_bps: 5,
 };
 
-export function BacktestForm() {
+type BacktestFormProps = {
+  initialValues?: BacktestFormInitialValues;
+};
+
+export function BacktestForm({ initialValues }: BacktestFormProps) {
   const router = useRouter();
   const isHydrated = useIsHydrated();
+  const defaults = { ...DEFAULTS, ...initialValues };
   const form = useForm<BacktestFormValues>({
     resolver: zodResolver(backtestSchema),
-    defaultValues: DEFAULTS,
+    defaultValues: defaults,
   });
   const mutation = useMutation({
     mutationFn: (values: BacktestFormValues) =>
@@ -67,23 +73,23 @@ export function BacktestForm() {
     <form className="flex flex-col gap-4" onSubmit={runBacktest}>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
         Symbols
-        <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.symbols} {...form.register("symbols")} />
+        <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={defaults.symbols} {...form.register("symbols")} />
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Start
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.start} type="date" {...form.register("start")} />
+          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.start} type="date" {...form.register("start")} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           End
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.end} type="date" {...form.register("end")} />
+          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.end} type="date" {...form.register("end")} />
         </label>
       </div>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
         Data Source
         <select
           className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
-          defaultValue={DEFAULTS.provider}
+          defaultValue={defaults.provider}
           {...form.register("provider")}
         >
           <option value="futu" style={optionStyle}>
@@ -100,25 +106,25 @@ export function BacktestForm() {
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Lookback
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.lookback} type="number" {...form.register("lookback", { valueAsNumber: true })} />
+          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.lookback} type="number" {...form.register("lookback", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Top N
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.top_n} type="number" {...form.register("top_n", { valueAsNumber: true })} />
+          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.top_n} type="number" {...form.register("top_n", { valueAsNumber: true })} />
         </label>
       </div>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
         Initial Cash
-        <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.initial_cash} type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
+        <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={defaults.initial_cash} type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Commission bps
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.commission_bps} type="number" {...form.register("commission_bps", { valueAsNumber: true })} />
+          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.commission_bps} type="number" {...form.register("commission_bps", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           Slippage bps
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.slippage_bps} type="number" {...form.register("slippage_bps", { valueAsNumber: true })} />
+          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.slippage_bps} type="number" {...form.register("slippage_bps", { valueAsNumber: true })} />
         </label>
       </div>
       {error ? <p className="font-body-sm text-danger">{error}</p> : null}

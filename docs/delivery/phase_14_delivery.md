@@ -47,6 +47,23 @@ the frontend page at `/options-buyside`.
   - `tests/test_options_buy_side_cli.py`
   - `src/frontend/tests/e2e/phase14-buyside-smoke.spec.ts`
 
+## Post-Phase 14 Extensions
+
+After the initial buy-side assistant delivery, the local options research
+surface was extended with:
+
+- Local AlphaGBM-style tools at `/options-tools`.
+- Options Radar sample scan and cache-refresh controls on `/options-radar`.
+- Single-symbol radar drilldown at `/options-radar/[symbol]`.
+- Run detail pages for backtests, factors, and paper-trading simulations.
+- A populated `/position-map` page using latest saved research outputs.
+- Enriched `/experiments` review with sweep, fold, comparison, and send-to-backtest views.
+- A local DuckDB-backed Futu option quote cache shared by options pages.
+- Data Explorer default-provider handling that labels sample fallback clearly.
+
+The original Phase 14 scope remains research-only and does not add any trading
+capability.
+
 ## Safety Status
 
 Phase 14 remains research-only:
@@ -76,7 +93,7 @@ conda activate ai-quant
 python -m pytest -q
 ```
 
-Result: 320 collected tests passed.
+Result: full backend suite passed in the latest validation pass.
 
 ```powershell
 ruff check src/quant_system tests
@@ -102,7 +119,7 @@ $env:PW_E2E="1"
 npx playwright test --config playwright.config.ts --workers=1 tests/e2e/phase14-buyside-smoke.spec.ts
 ```
 
-Result: 1 browser smoke test passed.
+Result: browser smoke test passed.
 
 ## Known Limitations
 
@@ -114,9 +131,54 @@ Result: 1 browser smoke test passed.
 - The assistant compares structures under user assumptions; it does not know the
   user's account, taxes, execution quality, or actual fill prices.
 
+## Follow-Up QA Fixes
+
+After live UI testing, several usability and data-quality issues were tightened:
+
+- Seller screener recommendation tables now hide `Avoid` contracts by default.
+  This keeps deep-in-the-money puts, zero-OI contracts, and failed-filter rows
+  out of the displayed candidate list. Rejected rows remain available through
+  `include_rejected=true` for audit.
+- VIX market-regime classification now uses the recent three-month VIX/VIX3M
+  cache window, matching the intended regime banner behavior.
+- Futu option range queries use a short-lived in-process cache and a local
+  DuckDB-backed option quote cache to reduce repeated requests against the same
+  underlying and DTE window.
+- Options Radar details now show a fallback explanation when a stored snapshot
+  candidate has no notes, and the page warns when a snapshot was generated from
+  only a tiny universe.
+- Buy-side page Chinese selects now render localized labels, view-type changes
+  apply reasonable form presets, max-loss budget was removed from the input
+  form, and Scenario Lab uses a horizon date plus clearer subjective-EV copy.
+- Futu rate-limit responses from OpenD are now typed as `rate_limited` and the
+  provider waits once before retrying the read-only request. This reduces
+  repeated failures when switching from AAPL to SPY / QQQ / NVDA in the
+  interactive options pages.
+- Options Radar now passes the same loaded VIX regime into the per-ticker
+  screener, so the radar and single-name screener use one market-regime
+  classification source for the same scan date.
+- Buy-side recommendation cards now show the concrete selected contracts
+  directly on each card, and multiple cards can keep their details expanded at
+  the same time.
+- A live `quant-system options daily-scan --top 100` attempt was started on
+  2026-05-05 but did not finish within a 30-minute guard timeout because of
+  Futu pacing. A smaller live refresh completed successfully:
+
+```powershell
+conda activate ai-quant
+quant-system options daily-scan --top 10
+```
+
+Result:
+
+```text
+run_date=2026-05-05 universe_size=10 scanned_tickers=10 failed_tickers=0 candidates=50
+data=data\options_scans\2026-05-05.jsonl meta=data\options_scans\2026-05-05_meta.json
+```
+
 ## Definition of Done Status
 
-- Backend tests: passed.
+- Backend tests: full suite passed.
 - Backend lint: passed.
 - Frontend lint/build: passed.
 - Browser smoke: passed.

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import socket
+import time
 from collections.abc import Callable
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 
 import pandas as pd
 
 from quant_system.data.schema import normalize_ohlcv_dataframe
+from quant_system.storage.options_cache import OptionQuotesCache, OptionQuotesCacheKey
 
 
 class FutuProviderError(RuntimeError):
@@ -53,6 +57,11 @@ def _default_sdk_loader() -> SdkBindings:
 class FutuMarketDataProvider:
     provider_name = "futu"
     snapshot_batch_size = 400
+    option_chain_max_span_days = 30
+    option_quotes_cache_ttl_seconds = 900.0
+    _option_quotes_range_cache: ClassVar[
+        dict[tuple[object, ...], tuple[float, pd.DataFrame]]
+    ] = {}
 
     def __init__(
         self,
@@ -62,12 +71,26 @@ class FutuMarketDataProvider:
         request_timeout_seconds: int = 15,
         context_factory: ContextFactory | None = None,
         sdk_loader: SdkLoader = _default_sdk_loader,
+        rate_limit_retry_seconds: float = 30.5,
+        rate_limit_max_retries: int = 1,
+        sleep_func: Callable[[float], None] = time.sleep,
+        option_quotes_cache_path: str | Path | None = None,
     ) -> None:
         self.host = host
         self.port = port
         self.request_timeout_seconds = request_timeout_seconds
         self._context_factory = context_factory
         self._sdk_loader = sdk_loader
+        self.rate_limit_retry_seconds = rate_limit_retry_seconds
+        self.rate_limit_max_retries = rate_limit_max_retries
+        self._sleep_func = sleep_func
+        self._option_quotes_database_cache = (
+            OptionQuotesCache(option_quotes_cache_path)
+            if option_quotes_cache_path is not None
+            else None
+        )
+        self.last_option_quotes_cache_status = "disabled"
+        self.last_option_quotes_cache_error: str | None = None
 
     def fetch_ohlcv(
         self,
@@ -117,9 +140,11 @@ class FutuMarketDataProvider:
         sdk = self._sdk_loader()
         context = self._create_context(sdk)
         try:
-            ret, data = context.get_option_expiration_date(futu_symbol)
-            if ret != sdk.RET_OK:
-                raise self._map_provider_failure(futu_symbol, data)
+            _ret, data = self._call_with_rate_limit_retry(
+                sdk=sdk,
+                symbol=futu_symbol,
+                action=lambda: context.get_option_expiration_date(futu_symbol),
+            )
             if data is None or data.empty:
                 raise FutuProviderError(
                     "no_data",
@@ -153,18 +178,67 @@ class FutuMarketDataProvider:
         end_expiration: str,
         option_type: str = "ALL",
     ) -> pd.DataFrame:
+        windows = self._expiration_windows(
+            start_expiration,
+            end_expiration,
+            max_span_days=self.option_chain_max_span_days,
+        )
+        if len(windows) > 1:
+            frames = []
+            for window_start, window_end in windows:
+                try:
+                    frames.append(
+                        self._fetch_option_chain_range_once(
+                            underlying,
+                            start_expiration=window_start,
+                            end_expiration=window_end,
+                            option_type=option_type,
+                        )
+                    )
+                except FutuProviderError as exc:
+                    if exc.code != "no_data":
+                        raise
+            if not frames:
+                _plain_symbol, futu_symbol = self.normalize_symbol(underlying)
+                raise FutuProviderError(
+                    "no_data",
+                    f"no option chain returned for {futu_symbol} "
+                    f"{start_expiration} to {end_expiration}",
+                )
+            return (
+                pd.concat(frames, ignore_index=True)
+                .drop_duplicates(subset=["symbol"])
+                .reset_index(drop=True)
+            )
+        return self._fetch_option_chain_range_once(
+            underlying,
+            start_expiration=start_expiration,
+            end_expiration=end_expiration,
+            option_type=option_type,
+        )
+
+    def _fetch_option_chain_range_once(
+        self,
+        underlying: str,
+        *,
+        start_expiration: str,
+        end_expiration: str,
+        option_type: str = "ALL",
+    ) -> pd.DataFrame:
         _plain_symbol, futu_symbol = self.normalize_symbol(underlying)
         sdk = self._sdk_loader()
         context = self._create_context(sdk)
         try:
-            ret, data = context.get_option_chain(
-                futu_symbol,
-                start=start_expiration,
-                end=end_expiration,
-                option_type=self._resolve_option_type(sdk, option_type),
+            _ret, data = self._call_with_rate_limit_retry(
+                sdk=sdk,
+                symbol=futu_symbol,
+                action=lambda: context.get_option_chain(
+                    futu_symbol,
+                    start=start_expiration,
+                    end=end_expiration,
+                    option_type=self._resolve_option_type(sdk, option_type),
+                ),
             )
-            if ret != sdk.RET_OK:
-                raise self._map_provider_failure(futu_symbol, data)
             if data is None or data.empty:
                 raise FutuProviderError(
                     "no_data",
@@ -182,18 +256,12 @@ class FutuMarketDataProvider:
         expiration: str,
         option_type: str = "ALL",
     ) -> pd.DataFrame:
-        chain = self.fetch_option_chain(
+        return self.fetch_option_quotes_range(
             underlying,
-            expiration=expiration,
+            start_expiration=expiration,
+            end_expiration=expiration,
             option_type=option_type,
         )
-        codes = chain["symbol"].dropna().astype(str).tolist()
-        if not codes:
-            return chain
-        snapshots = self.fetch_market_snapshots(codes)
-        if snapshots.empty:
-            return chain
-        return chain.merge(snapshots, how="left", on="symbol", suffixes=("", "_snapshot"))
 
     def fetch_option_quotes_range(
         self,
@@ -203,6 +271,27 @@ class FutuMarketDataProvider:
         end_expiration: str,
         option_type: str = "ALL",
     ) -> pd.DataFrame:
+        cache_key = self._option_quotes_cache_key(
+            underlying,
+            start_expiration=start_expiration,
+            end_expiration=end_expiration,
+            option_type=option_type,
+        )
+        cached = self._read_option_quotes_cache(cache_key)
+        if cached is not None:
+            self.last_option_quotes_cache_status = "memory_cache"
+            return cached
+        database_cache_key = self._option_quotes_database_cache_key(
+            underlying,
+            start_expiration=start_expiration,
+            end_expiration=end_expiration,
+            option_type=option_type,
+        )
+        cached = self._read_option_quotes_database_cache(database_cache_key)
+        if cached is not None:
+            self._write_option_quotes_cache(cache_key, cached)
+            self.last_option_quotes_cache_status = "database_cache"
+            return cached
         chain = self.fetch_option_chain_range(
             underlying,
             start_expiration=start_expiration,
@@ -211,11 +300,21 @@ class FutuMarketDataProvider:
         )
         codes = chain["symbol"].dropna().astype(str).tolist()
         if not codes:
+            self._write_option_quotes_cache(cache_key, chain)
+            self._write_option_quotes_database_cache(database_cache_key, chain)
+            self.last_option_quotes_cache_status = "live"
             return chain
         snapshots = self.fetch_market_snapshots(codes)
         if snapshots.empty:
+            self._write_option_quotes_cache(cache_key, chain)
+            self._write_option_quotes_database_cache(database_cache_key, chain)
+            self.last_option_quotes_cache_status = "live"
             return chain
-        return chain.merge(snapshots, how="left", on="symbol", suffixes=("", "_snapshot"))
+        merged = chain.merge(snapshots, how="left", on="symbol", suffixes=("", "_snapshot"))
+        self._write_option_quotes_cache(cache_key, merged)
+        self._write_option_quotes_database_cache(database_cache_key, merged)
+        self.last_option_quotes_cache_status = "live"
+        return merged
 
     def fetch_market_snapshots(self, symbols: list[str]) -> pd.DataFrame:
         if not symbols:
@@ -225,9 +324,11 @@ class FutuMarketDataProvider:
         try:
             frames = []
             for batch in _batched(symbols, self.snapshot_batch_size):
-                ret, data = context.get_market_snapshot(batch)
-                if ret != sdk.RET_OK:
-                    raise self._map_provider_failure(",".join(batch[:3]), data)
+                _ret, data = self._call_with_rate_limit_retry(
+                    sdk=sdk,
+                    symbol=",".join(batch[:3]),
+                    action=lambda batch=batch: context.get_market_snapshot(batch),
+                )
                 if data is None or data.empty:
                     continue
                 frames.append(self._normalize_snapshots(data))
@@ -243,6 +344,10 @@ class FutuMarketDataProvider:
         if frame.empty:
             raise FutuProviderError("no_data", f"no snapshot data returned for {futu_symbol}")
         return frame.iloc[0].to_dict()
+
+    @classmethod
+    def clear_option_quotes_cache(cls) -> None:
+        cls._option_quotes_range_cache.clear()
 
     @staticmethod
     def normalize_symbol(symbol: str) -> tuple[str, str]:
@@ -261,7 +366,52 @@ class FutuMarketDataProvider:
             )
         return normalized, f"US.{normalized}"
 
+    def _call_with_rate_limit_retry(
+        self,
+        *,
+        sdk: SdkBindings,
+        symbol: str,
+        action: Callable[[], tuple[Any, ...]],
+    ) -> tuple[Any, ...]:
+        last_error: FutuProviderError | None = None
+        for attempt in range(self.rate_limit_max_retries + 1):
+            try:
+                result = action()
+            except Exception as exc:
+                raise FutuProviderError(
+                    "provider_timeout",
+                    f"OpenD request failed for {symbol}",
+                ) from exc
+            if result and result[0] == sdk.RET_OK:
+                return result
+            payload = result[1] if len(result) > 1 else result
+            error = self._map_provider_failure(symbol, payload)
+            if error.code == "rate_limited" and attempt < self.rate_limit_max_retries:
+                last_error = error
+                self._sleep_func(self.rate_limit_retry_seconds)
+                continue
+            raise error
+        if last_error is not None:
+            raise last_error
+        raise FutuProviderError(
+            "provider_query_failed",
+            f"Futu request failed for {symbol}",
+        )
+
     def _create_context(self, sdk: SdkBindings) -> Any:
+        # Pre-flight TCP probe so that a closed OpenD fails in <1s rather than
+        # blocking the SDK's internal reconnect loop for minutes.
+        if self._context_factory is None:
+            try:
+                with socket.create_connection(
+                    (self.host, self.port), timeout=2.0
+                ):
+                    pass
+            except OSError as exc:
+                raise FutuProviderError(
+                    "opend_unavailable",
+                    f"unable to connect to OpenD at {self.host}:{self.port}",
+                ) from exc
         try:
             if self._context_factory is not None:
                 return self._context_factory(self.host, self.port)
@@ -271,6 +421,90 @@ class FutuMarketDataProvider:
                 "opend_unavailable",
                 f"unable to connect to OpenD at {self.host}:{self.port}",
             ) from exc
+
+    def _option_quotes_cache_key(
+        self,
+        underlying: str,
+        *,
+        start_expiration: str,
+        end_expiration: str,
+        option_type: str,
+    ) -> tuple[object, ...]:
+        plain_symbol, _futu_symbol = self.normalize_symbol(underlying)
+        namespace = "live" if self._context_factory is None else id(self._context_factory)
+        return (
+            namespace,
+            self.host,
+            self.port,
+            plain_symbol,
+            start_expiration,
+            end_expiration,
+            option_type.upper().strip(),
+        )
+
+    def _read_option_quotes_cache(self, key: tuple[object, ...]) -> pd.DataFrame | None:
+        cached = self._option_quotes_range_cache.get(key)
+        if cached is None:
+            return None
+        created_at, frame = cached
+        if time.monotonic() - created_at > self.option_quotes_cache_ttl_seconds:
+            self._option_quotes_range_cache.pop(key, None)
+            return None
+        return frame.copy()
+
+    def _write_option_quotes_cache(
+        self,
+        key: tuple[object, ...],
+        frame: pd.DataFrame,
+    ) -> None:
+        self._option_quotes_range_cache[key] = (time.monotonic(), frame.copy())
+
+    def _option_quotes_database_cache_key(
+        self,
+        underlying: str,
+        *,
+        start_expiration: str,
+        end_expiration: str,
+        option_type: str,
+    ) -> OptionQuotesCacheKey:
+        plain_symbol, _futu_symbol = self.normalize_symbol(underlying)
+        return OptionQuotesCacheKey(
+            provider=self.provider_name,
+            host=self.host,
+            port=self.port,
+            underlying=plain_symbol,
+            start_expiration=start_expiration,
+            end_expiration=end_expiration,
+            option_type=option_type,
+        )
+
+    def _read_option_quotes_database_cache(
+        self,
+        key: OptionQuotesCacheKey,
+    ) -> pd.DataFrame | None:
+        if self._option_quotes_database_cache is None:
+            return None
+        try:
+            return self._option_quotes_database_cache.read_option_quotes(key)
+        except Exception as exc:  # pragma: no cover - cache should fail open
+            self.last_option_quotes_cache_error = f"{type(exc).__name__}: {exc}"
+            return None
+
+    def _write_option_quotes_database_cache(
+        self,
+        key: OptionQuotesCacheKey,
+        frame: pd.DataFrame,
+    ) -> None:
+        if self._option_quotes_database_cache is None:
+            return
+        try:
+            self._option_quotes_database_cache.write_option_quotes(
+                key,
+                frame,
+                ttl_seconds=self.option_quotes_cache_ttl_seconds,
+            )
+        except Exception as exc:  # pragma: no cover - cache should fail open
+            self.last_option_quotes_cache_error = f"{type(exc).__name__}: {exc}"
 
     def _fetch_symbol_rows(
         self,
@@ -289,8 +523,10 @@ class FutuMarketDataProvider:
         page_req_key = None
         rows: list[dict[str, object]] = []
         while True:
-            try:
-                ret, data, page_req_key = context.request_history_kline(
+            _ret, data, page_req_key = self._call_with_rate_limit_retry(
+                sdk=sdk,
+                symbol=futu_symbol,
+                action=lambda page_req_key=page_req_key: context.request_history_kline(
                     futu_symbol,
                     start=start,
                     end=end,
@@ -299,15 +535,8 @@ class FutuMarketDataProvider:
                     max_count=1000,
                     page_req_key=page_req_key,
                     session=session,
-                )
-            except Exception as exc:
-                raise FutuProviderError(
-                    "provider_timeout",
-                    f"OpenD history request failed for {futu_symbol}",
-                ) from exc
-
-            if ret != sdk.RET_OK:
-                raise self._map_provider_failure(futu_symbol, data)
+                ),
+            )
             if data is None or data.empty:
                 if not rows:
                     raise FutuProviderError("no_data", f"no OHLCV data returned for {futu_symbol}")
@@ -416,9 +645,45 @@ class FutuMarketDataProvider:
         ).dropna(subset=["symbol"]).reset_index(drop=True)
 
     @staticmethod
+    def _expiration_windows(
+        start_expiration: str,
+        end_expiration: str,
+        *,
+        max_span_days: int,
+    ) -> list[tuple[str, str]]:
+        start = pd.Timestamp(start_expiration)
+        end = pd.Timestamp(end_expiration)
+        if end < start:
+            raise FutuProviderError(
+                "invalid_expiration_range",
+                f"end expiration {end_expiration} is before start {start_expiration}",
+            )
+        windows = []
+        current = start
+        while current <= end:
+            window_end = min(
+                current + pd.Timedelta(days=max_span_days - 1),
+                end,
+            )
+            windows.append((current.date().isoformat(), window_end.date().isoformat()))
+            current = window_end + pd.Timedelta(days=1)
+        return windows
+
+    @staticmethod
     def _map_provider_failure(symbol: str, payload: object) -> FutuProviderError:
         message = str(payload)
         lowered = message.lower()
+        if (
+            "rate limit" in lowered
+            or "too many" in lowered
+            or "frequency" in lowered
+            or "频率" in message
+            or "每30秒最多10次" in message
+        ):
+            return FutuProviderError(
+                "rate_limited",
+                f"Futu rate limit for {symbol}: {message}",
+            )
         if "permission" in lowered:
             return FutuProviderError(
                 "permission_denied",

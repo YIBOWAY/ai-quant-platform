@@ -336,6 +336,261 @@ def test_futu_provider_fetches_option_quotes_by_expiration_range() -> None:
     assert frame.loc[1, "bid"] == 0.8
 
 
+def test_futu_provider_retries_once_when_option_chain_hits_rate_limit() -> None:
+    chain = pd.DataFrame(
+        [
+            {
+                "code": "US.SPY260508P200000",
+                "name": "SPY 260508 200.00P",
+                "stock_owner": "US.SPY",
+                "option_type": "PUT",
+                "strike_price": 200.0,
+                "strike_time": "2026-05-08",
+            }
+        ]
+    )
+
+    class RetryContext:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.closed = False
+
+        def get_option_chain(self, code: str, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return 1, "获取期权链频率太高，请求失败，每30秒最多10次。"
+            return 0, chain
+
+        def close(self) -> None:
+            self.closed = True
+
+    sleeps: list[float] = []
+    context = RetryContext()
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: context,
+        sdk_loader=_sdk,
+        rate_limit_retry_seconds=30.5,
+        sleep_func=sleeps.append,
+    )
+
+    frame = provider.fetch_option_chain_range(
+        "SPY",
+        start_expiration="2026-05-08",
+        end_expiration="2026-05-08",
+        option_type="PUT",
+    )
+
+    assert len(frame) == 1
+    assert context.calls == 2
+    assert context.closed is True
+    assert sleeps == [30.5]
+
+
+def test_futu_provider_maps_repeated_rate_limit_to_typed_error() -> None:
+    class RateLimitedContext:
+        def get_market_snapshot(self, symbols: list[str]):
+            return 1, "获取快照频率太高，请求失败，每30秒最多10次。"
+
+        def close(self) -> None:
+            pass
+
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: RateLimitedContext(),
+        sdk_loader=_sdk,
+        rate_limit_max_retries=0,
+    )
+
+    with pytest.raises(FutuProviderError) as exc_info:
+        provider.fetch_market_snapshots(["US.SPY"])
+
+    assert exc_info.value.code == "rate_limited"
+
+
+def test_futu_provider_splits_option_chain_ranges_longer_than_thirty_days() -> None:
+    chain_1 = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL260508C200000",
+                "name": "AAPL 260508 200.00C",
+                "stock_owner": "US.AAPL",
+                "option_type": "CALL",
+                "strike_price": 200.0,
+                "strike_time": "2026-05-08",
+            }
+        ]
+    )
+    chain_2 = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL260619C210000",
+                "name": "AAPL 260619 210.00C",
+                "stock_owner": "US.AAPL",
+                "option_type": "CALL",
+                "strike_price": 210.0,
+                "strike_time": "2026-06-19",
+            }
+        ]
+    )
+    snapshots = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL260508C200000",
+                "update_time": "2026-05-01 15:19:50",
+                "last_price": 4.0,
+                "bid_price": 3.9,
+                "ask_price": 4.1,
+            },
+            {
+                "code": "US.AAPL260619C210000",
+                "update_time": "2026-05-01 15:19:50",
+                "last_price": 6.0,
+                "bid_price": 5.8,
+                "ask_price": 6.2,
+            },
+        ]
+    )
+    chain_context_1 = _FakeContext([], chain=(0, chain_1))
+    chain_context_2 = _FakeContext([], chain=(0, chain_2))
+    snapshot_context = _FakeContext([], snapshots=(0, snapshots))
+    contexts = [chain_context_1, chain_context_2, snapshot_context]
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: contexts.pop(0),
+        sdk_loader=_sdk,
+    )
+
+    frame = provider.fetch_option_quotes_range(
+        "AAPL",
+        start_expiration="2026-05-01",
+        end_expiration="2026-06-15",
+        option_type="CALL",
+    )
+
+    assert len(frame) == 2
+    assert chain_context_1.calls[0]["start"] == "2026-05-01"
+    assert chain_context_1.calls[0]["end"] == "2026-05-30"
+    assert chain_context_2.calls[0]["start"] == "2026-05-31"
+    assert chain_context_2.calls[0]["end"] == "2026-06-15"
+    assert snapshot_context.calls[0]["symbols"] == [
+        "US.AAPL260508C200000",
+        "US.AAPL260619C210000",
+    ]
+
+
+def test_futu_provider_reuses_short_lived_option_quotes_cache() -> None:
+    FutuMarketDataProvider.clear_option_quotes_cache()
+    chain = pd.DataFrame(
+        [
+            {
+                "code": "US.CACHE260508C200000",
+                "name": "CACHE 260508 200.00C",
+                "stock_owner": "US.CACHE",
+                "option_type": "CALL",
+                "strike_price": 200.0,
+                "strike_time": "2026-05-08",
+            }
+        ]
+    )
+    snapshots = pd.DataFrame(
+        [
+            {
+                "code": "US.CACHE260508C200000",
+                "update_time": "2026-05-01 15:19:50",
+                "last_price": 4.0,
+                "bid_price": 3.9,
+                "ask_price": 4.1,
+            }
+        ]
+    )
+    chain_context = _FakeContext([], chain=(0, chain))
+    snapshot_context = _FakeContext([], snapshots=(0, snapshots))
+    contexts = [chain_context, snapshot_context]
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: contexts.pop(0),
+        sdk_loader=_sdk,
+    )
+
+    first = provider.fetch_option_quotes_range(
+        "CACHE",
+        start_expiration="2026-05-01",
+        end_expiration="2026-05-15",
+        option_type="CALL",
+    )
+    second = provider.fetch_option_quotes_range(
+        "CACHE",
+        start_expiration="2026-05-01",
+        end_expiration="2026-05-15",
+        option_type="CALL",
+    )
+
+    assert first.equals(second)
+    assert contexts == []
+    assert len(chain_context.calls) == 1
+    assert len(snapshot_context.calls) == 1
+    FutuMarketDataProvider.clear_option_quotes_cache()
+
+
+def test_futu_provider_reuses_duckdb_option_quotes_cache_across_instances(tmp_path) -> None:
+    FutuMarketDataProvider.clear_option_quotes_cache()
+    cache_path = tmp_path / "options_cache.duckdb"
+    chain = pd.DataFrame(
+        [
+            {
+                "code": "US.CACHE260508C200000",
+                "name": "CACHE 260508 200.00C",
+                "stock_owner": "US.CACHE",
+                "option_type": "CALL",
+                "strike_price": 200.0,
+                "strike_time": "2026-05-08",
+            }
+        ]
+    )
+    snapshots = pd.DataFrame(
+        [
+            {
+                "code": "US.CACHE260508C200000",
+                "update_time": "2026-05-01 15:19:50",
+                "last_price": 4.0,
+                "bid_price": 3.9,
+                "ask_price": 4.1,
+            }
+        ]
+    )
+    chain_context = _FakeContext([], chain=(0, chain))
+    snapshot_context = _FakeContext([], snapshots=(0, snapshots))
+    contexts = [chain_context, snapshot_context]
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: contexts.pop(0),
+        sdk_loader=_sdk,
+        option_quotes_cache_path=cache_path,
+    )
+
+    first = provider.fetch_option_quotes_range(
+        "CACHE",
+        start_expiration="2026-05-01",
+        end_expiration="2026-05-15",
+        option_type="CALL",
+    )
+    FutuMarketDataProvider.clear_option_quotes_cache()
+    cached_provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: pytest.fail("cache hit should not open Futu"),
+        sdk_loader=_sdk,
+        option_quotes_cache_path=cache_path,
+    )
+
+    second = cached_provider.fetch_option_quotes_range(
+        "CACHE",
+        start_expiration="2026-05-01",
+        end_expiration="2026-05-15",
+        option_type="CALL",
+    )
+
+    pd.testing.assert_frame_equal(first, second, check_dtype=False)
+    assert contexts == []
+    assert len(chain_context.calls) == 1
+    assert len(snapshot_context.calls) == 1
+    FutuMarketDataProvider.clear_option_quotes_cache()
+
+
 def test_futu_provider_batches_large_snapshot_requests() -> None:
     snapshots = pd.DataFrame(
         [

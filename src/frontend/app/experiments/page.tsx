@@ -2,11 +2,14 @@ import { Clock, Database, FileJson, SlidersHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { ExperimentTabs } from "@/components/forms/ExperimentTabs";
-import { getBacktests, getExperiments } from "@/lib/api";
+import { getBacktests, getExperimentDetail, getExperiments } from "@/lib/api";
 
 export default async function Experiments() {
   const [experiments, backtests] = await Promise.all([getExperiments(), getBacktests()]);
   const latestExperiment = experiments.experiments[0];
+  const experimentDetail = latestExperiment
+    ? await getExperimentDetail(latestExperiment.id)
+    : null;
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-base">
@@ -24,6 +27,9 @@ export default async function Experiments() {
                   className="rounded border border-border-subtle bg-surface-container p-3"
                 >
                   <div className="font-data-mono text-primary">{experiment.id}</div>
+                  <div className="mt-2 font-data-mono text-[11px] text-text-secondary">
+                    best: {experiment.best_run_id ?? "--"}
+                  </div>
                   <div className="mt-1 truncate font-body-sm text-text-secondary">
                     {experiment.path}
                   </div>
@@ -54,6 +60,9 @@ export default async function Experiments() {
                   <Clock size={14} /> latest: {latestExperiment?.id ?? "--"}
                 </span>
                 <span className="flex items-center gap-1">
+                  <FileJson size={14} /> best: {latestExperiment?.best_run_id ?? "--"}
+                </span>
+                <span className="flex items-center gap-1">
                   <Database size={14} /> /api/experiments
                 </span>
                 <span className="flex items-center gap-1">
@@ -64,35 +73,21 @@ export default async function Experiments() {
           </div>
           <div className="mt-6 flex items-center gap-6 border-b border-border-subtle">
             <span className="border-b-2 border-primary pb-3 font-body-sm font-medium text-primary">
-              Overview
+              Sweep heatmap
             </span>
+            <span className="pb-3 font-body-sm text-text-secondary">Walk-forward folds</span>
+            <span className="pb-3 font-body-sm text-text-secondary">Run comparison</span>
             <span className="flex items-center gap-1 pb-3 font-body-sm text-text-secondary">
               <FileJson size={14} /> Agent summary
             </span>
           </div>
         </div>
 
-        <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto p-6 lg:grid-cols-2">
-          <div className="lg:col-span-2">
-            <ErrorBanner messages={[experiments.apiError, backtests.apiError]} />
-          </div>
-          <ExperimentTabs />
-          <EmptyState
-            title="Sweep heatmap unavailable"
-            description="No parameter sweep matrix is available from the current API response."
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
+          <ErrorBanner
+            messages={[experiments.apiError, backtests.apiError, experimentDetail?.apiError]}
           />
-          <EmptyState
-            title="Walk-forward folds unavailable"
-            description="Fold details are shown only after an experiment detail is selected."
-          />
-          <EmptyState
-            title="Run comparison unavailable"
-            description="Run comparison needs structured experiment run metadata."
-          />
-          <EmptyState
-            title="Agent summary unavailable"
-            description="agent_summary.json will be displayed when present in the experiment directory."
-          />
+          <ExperimentTabs detail={experimentDetail} experiment={latestExperiment} />
         </div>
       </section>
     </div>
