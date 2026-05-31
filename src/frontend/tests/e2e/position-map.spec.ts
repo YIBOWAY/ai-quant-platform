@@ -21,7 +21,7 @@ test.describe("position map", () => {
     });
     expect(response.status()).toBe(200);
 
-    await page.goto("/position-map", { waitUntil: "domcontentloaded" });
+    await page.goto("/position-map?include_sample=1", { waitUntil: "domcontentloaded" });
 
     await expect(page.getByRole("heading", { name: "Position Map" })).toBeVisible();
     await expect(page.getByText("Portfolio Exposure")).toBeVisible();

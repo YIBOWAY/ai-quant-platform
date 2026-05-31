@@ -24,8 +24,23 @@ test.describe("options tools and real chart surfaces", () => {
     await expect(page.getByText("Quality report not connected")).toHaveCount(0);
   });
 
-  test("backtest renders a strategy and benchmark line chart", async ({ page }) => {
-    await page.goto("/backtest", { waitUntil: "domcontentloaded" });
+  test("backtest renders a strategy and benchmark line chart", async ({ page, request }) => {
+    const response = await request.post("http://127.0.0.1:8765/api/backtests/run", {
+      data: {
+        symbols: ["SPY", "QQQ"],
+        start: "2024-01-02",
+        end: "2024-01-18",
+        lookback: 3,
+        top_n: 1,
+        initial_cash: 100000,
+        commission_bps: 1,
+        slippage_bps: 5,
+        provider: "sample",
+      },
+    });
+    expect(response.status()).toBe(200);
+
+    await page.goto("/backtest?include_sample=1", { waitUntil: "domcontentloaded" });
 
     await expect(page.getByTestId("equity-comparison-chart")).toBeVisible();
     await expect(page.getByText("Strategy", { exact: true }).first()).toBeVisible();

@@ -219,3 +219,43 @@ def test_radar_snapshot_store_writes_idempotent_jsonl(tmp_path: Path) -> None:
     assert len(loaded.candidates) == 1
     assert loaded.candidates[0].ticker == "AAA"
     assert store.list_dates() == ["2026-05-03"]
+
+
+def test_radar_snapshot_store_replaces_same_day_snapshot(tmp_path: Path) -> None:
+    config = OptionsRadarConfig(
+        base_screen_config=OptionsScreenerConfig(
+            min_dte=7,
+            max_dte=60,
+            max_delta=0.8,
+            trend_filter=False,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+        universe_top_n=1,
+        top_per_ticker=1,
+        strategies=("sell_put",),
+    )
+    store = RadarSnapshotStore(tmp_path / "scans")
+    first = run_options_radar(
+        provider=_RadarProvider(),
+        universe=_universe()[:1],
+        config=config,
+        iv_history_dir=tmp_path / "iv_history",
+        earnings_calendar=EarningsCalendar({}),
+        run_date="2026-05-03",
+    )
+    second = run_options_radar(
+        provider=_RadarProvider(),
+        universe=_universe()[1:2],
+        config=config,
+        iv_history_dir=tmp_path / "iv_history",
+        earnings_calendar=EarningsCalendar({}),
+        run_date="2026-05-03",
+    )
+
+    store.write(first)
+    store.write(second)
+    loaded = store.read("2026-05-03")
+
+    assert len(loaded.candidates) == 1
+    assert loaded.candidates[0].ticker == "BBB"

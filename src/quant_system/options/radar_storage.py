@@ -19,18 +19,15 @@ class RadarSnapshotStore:
         self.root_dir.mkdir(parents=True, exist_ok=True)
         data_path = self.root_dir / f"{report.run_date}.jsonl"
         meta_path = self.root_dir / f"{report.run_date}_meta.json"
-        existing: dict[tuple[str, str, str], dict] = {}
-        if data_path.exists():
-            for line in data_path.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                payload = json.loads(line)
-                existing[_candidate_key(payload)] = payload
-        for candidate in report.candidates:
-            payload = _candidate_to_json(report.run_date, candidate)
-            existing[_candidate_key(payload)] = payload
+        payloads = {
+            _candidate_key(payload): payload
+            for payload in (
+                _candidate_to_json(report.run_date, candidate)
+                for candidate in report.candidates
+            )
+        }
         with data_path.open("w", encoding="utf-8") as handle:
-            for payload in sorted(existing.values(), key=lambda item: -item["global_score"]):
+            for payload in sorted(payloads.values(), key=lambda item: -item["global_score"]):
                 handle.write(json.dumps(payload, sort_keys=True) + "\n")
         meta_path.write_text(
             json.dumps(
@@ -41,7 +38,7 @@ class RadarSnapshotStore:
                     "universe_size": report.universe_size,
                     "scanned_tickers": report.scanned_tickers,
                     "failed_tickers": report.failed_tickers,
-                    "candidate_count": len(existing),
+                    "candidate_count": len(payloads),
                 },
                 indent=2,
                 sort_keys=True,

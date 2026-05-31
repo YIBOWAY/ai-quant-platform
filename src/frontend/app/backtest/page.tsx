@@ -11,6 +11,7 @@ import {
   getBacktests,
   getBenchmark,
 } from "@/lib/api";
+import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -79,7 +80,7 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
   const text = copy[locale];
   const initialValues = backtestInitialValuesFromSearch(params);
   const backtests = await getBacktests();
-  const latest = backtests.backtests[0];
+  const latest = selectDisplayRun(backtests.backtests, shouldIncludeSampleRuns(params));
   const detail = latest ? await getBacktestDetail(latest.id) : null;
   const latestRequest =
     detail && typeof detail.metadata === "object" && detail.metadata !== null

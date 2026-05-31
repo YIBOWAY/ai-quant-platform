@@ -209,6 +209,87 @@ def test_options_screener_can_include_rejected_rows_for_audit() -> None:
     assert "sell put strike is above spot" in result.candidates[0].notes
 
 
+def test_options_screener_keeps_otm_covered_call_when_only_trend_filter_warns() -> None:
+    class CoveredCallProvider(_FakeProvider):
+        def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):
+            assert option_type == "CALL"
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": "US.AAPL260619C300000",
+                        "option_type": "CALL",
+                        "expiry": expiration,
+                        "strike": 300.0,
+                        "bid": 2.0,
+                        "ask": 2.2,
+                        "volume": 100,
+                        "open_interest": 500,
+                        "implied_volatility": 0.45,
+                        "delta": 0.25,
+                    }
+                ]
+            )
+
+    result = run_options_screener(
+        provider=CoveredCallProvider(),
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="covered_call",
+            min_iv=0.2,
+            max_delta=0.35,
+            min_premium=1.0,
+            max_spread_pct=0.2,
+            trend_filter=True,
+            hv_iv_filter=False,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0].rating == "Watch"
+    assert "trend filter failed" in result.candidates[0].notes
+
+
+def test_options_screener_avoids_itm_covered_call_when_delta_is_missing() -> None:
+    class CoveredCallProvider(_FakeProvider):
+        def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):
+            assert option_type == "CALL"
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": "US.AAPL260619C250000",
+                        "option_type": "CALL",
+                        "expiry": expiration,
+                        "strike": 250.0,
+                        "bid": 30.0,
+                        "ask": 31.0,
+                        "volume": 100,
+                        "open_interest": 500,
+                        "implied_volatility": 0.45,
+                        "delta": 0.0,
+                    }
+                ]
+            )
+
+    result = run_options_screener(
+        provider=CoveredCallProvider(),
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="covered_call",
+            max_delta=0.35,
+            trend_filter=False,
+            hv_iv_filter=False,
+            include_rejected=True,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert result.candidates[0].rating == "Avoid"
+    assert "covered call strike is below spot" in result.candidates[0].notes
+
+
 def test_options_screener_applies_income_filters_and_normalizes_iv() -> None:
     class PercentIvProvider(_FakeProvider):
         def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):

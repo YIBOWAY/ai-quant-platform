@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { FactorRunForm } from "@/components/forms/FactorRunForm";
 import { getFactorRunDetail, getFactorRuns, getFactors } from "@/lib/api";
+import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
@@ -76,11 +77,16 @@ const copy = {
   },
 };
 
-export default async function FactorLab() {
-  const locale = await getServerLocale();
+type FactorLabProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function FactorLab({ searchParams }: FactorLabProps) {
+  const params = (await searchParams) ?? {};
+  const locale = await getServerLocale(params);
   const text = copy[locale];
   const [factors, factorRuns] = await Promise.all([getFactors(), getFactorRuns()]);
-  const latestRun = factorRuns.runs[0];
+  const latestRun = selectDisplayRun(factorRuns.runs, shouldIncludeSampleRuns(params));
   const latestDetail = latestRun ? await getFactorRunDetail(latestRun.id) : null;
   const firstFactor = factors.factors[0];
 

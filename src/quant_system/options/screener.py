@@ -313,7 +313,7 @@ def _build_candidate(
             f"market regime is {regime_label}; "
             f"{config.strategy_type} score discounted by {regime_penalty:+.0f}"
         )
-    rating = _rating(notes)
+    rating = _rating(notes, config.strategy_type)
     if regime_penalty <= -30 and rating != "Avoid":
         # Panic + sell_put: too dangerous to keep at Strong/Watch.
         rating = "Avoid"
@@ -415,6 +415,8 @@ def _candidate_notes(
         notes.append("delta above limit")
     if config.strategy_type == "sell_put" and distance_pct is not None and distance_pct < 0:
         notes.append("sell put strike is above spot")
+    if config.strategy_type == "covered_call" and distance_pct is not None and distance_pct < 0:
+        notes.append("covered call strike is below spot")
     if config.trend_filter and trend_pass is False:
         notes.append("trend filter failed")
     if config.hv_iv_filter and hv_iv_pass is False:
@@ -433,17 +435,17 @@ def _candidate_notes(
 
 
 # Hard failures => rating becomes "Avoid". These represent constraints that
-# completely break the trade thesis (no quote, blown spread, wrong trend,
-# expiry outside the user's window, delta past the user's risk cap).
+# completely break the trade thesis (no quote, blown spread, expiry outside the
+# user's window, delta past the user's risk cap).
 HARD_FAILURES = frozenset(
     {
         "missing or non-positive bid/ask",
         "spread too wide",
-        "trend filter failed",
         "IV/HV filter failed",
         "DTE outside range",
         "delta above limit",  # Phase 12 fix: delta is the core seller risk knob
         "sell put strike is above spot",
+        "covered call strike is below spot",
         "open interest below minimum",
         "mid below absolute floor",
         "underlying ADV below minimum",
@@ -452,8 +454,11 @@ HARD_FAILURES = frozenset(
 )
 
 
-def _rating(notes: list[str]) -> str:
-    if any(note in HARD_FAILURES for note in notes):
+def _rating(notes: list[str], strategy_type: str) -> str:
+    hard_failures = set(HARD_FAILURES)
+    if strategy_type == "sell_put":
+        hard_failures.add("trend filter failed")
+    if any(note in hard_failures for note in notes):
         return "Avoid"
     if notes:
         return "Watch"

@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { PaperRunForm } from "@/components/forms/PaperRunForm";
 import { formatMoney, getHealth, getPaperRunDetail, getPaperRuns } from "@/lib/api";
+import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -67,14 +68,19 @@ const copy = {
   },
 } as const;
 
-export default async function PaperTrading() {
+type PaperTradingProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function PaperTrading({ searchParams }: PaperTradingProps) {
+  const params = (await searchParams) ?? {};
   const [health, paperRuns, locale] = await Promise.all([
     getHealth(),
     getPaperRuns(),
-    getServerLocale(),
+    getServerLocale(params),
   ]);
   const text = copy[locale];
-  const latestRun = paperRuns.paper_runs[0];
+  const latestRun = selectDisplayRun(paperRuns.paper_runs, shouldIncludeSampleRuns(params));
   const detail = latestRun ? await getPaperRunDetail(latestRun.id) : null;
   const latest = latestRun?.summary;
 

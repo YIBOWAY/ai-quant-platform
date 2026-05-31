@@ -22,6 +22,7 @@ import {
   getPaperRuns,
   getSymbols,
 } from "@/lib/api";
+import { selectDisplayRun } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -143,8 +144,8 @@ export default async function Dashboard() {
     getServerLocale(),
   ]);
   const text = copy[locale];
-  const latestBacktest = backtests.backtests[0];
-  const latestPaper = paperRuns.paper_runs[0];
+  const latestBacktest = selectDisplayRun(backtests.backtests);
+  const latestPaper = selectDisplayRun(paperRuns.paper_runs);
   const paperSummary = latestPaper?.summary;
 
   return (

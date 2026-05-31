@@ -100,13 +100,13 @@ test.describe("single run detail routes", () => {
   });
 
   test("list pages link to the latest run details", async ({ page }) => {
-    await page.goto("/backtest", { waitUntil: "domcontentloaded" });
+    await page.goto("/backtest?include_sample=1", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("link", { name: `Open ${backtestRunId}` })).toBeVisible();
 
-    await page.goto("/factor-lab", { waitUntil: "domcontentloaded" });
+    await page.goto("/factor-lab?include_sample=1", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("link", { name: `Open ${factorRunId}` })).toBeVisible();
 
-    await page.goto("/paper-trading", { waitUntil: "domcontentloaded" });
+    await page.goto("/paper-trading?include_sample=1", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("link", { name: `Open ${paperRunId}` })).toBeVisible();
   });
 

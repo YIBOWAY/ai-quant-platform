@@ -14,6 +14,7 @@ import {
   getSymbols,
   type PreviewRecord,
 } from "@/lib/api";
+import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -86,8 +87,13 @@ type ExposureRow = {
   side: "Long" | "Short";
 };
 
-export default async function PositionMapPage() {
-  const locale = await getServerLocale();
+type PositionMapPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function PositionMapPage({ searchParams }: PositionMapPageProps) {
+  const params = (await searchParams) ?? {};
+  const locale = await getServerLocale(params);
   const text = copy[locale];
   const [symbols, backtests, paperRuns, health] = await Promise.all([
     getSymbols(),
@@ -95,8 +101,9 @@ export default async function PositionMapPage() {
     getPaperRuns(),
     getHealth(),
   ]);
-  const latestBacktest = backtests.backtests[0];
-  const latestPaperRun = paperRuns.paper_runs[0];
+  const includeSample = shouldIncludeSampleRuns(params);
+  const latestBacktest = selectDisplayRun(backtests.backtests, includeSample);
+  const latestPaperRun = selectDisplayRun(paperRuns.paper_runs, includeSample);
   const [backtestDetail, paperDetail] = await Promise.all([
     latestBacktest ? getBacktestDetail(latestBacktest.id) : null,
     latestPaperRun ? getPaperRunDetail(latestPaperRun.id) : null,

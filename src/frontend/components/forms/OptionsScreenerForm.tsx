@@ -291,6 +291,7 @@ const rejectionReasonZh: Record<string, string> = {
   "delta missing": "缺少 Delta",
   "delta above limit": "Delta 超过上限",
   "sell put strike is above spot": "卖出看跌行权价高于现价",
+  "covered call strike is below spot": "covered call 行权价低于现价",
   "trend filter failed": "趋势过滤未通过",
   "IV/HV filter failed": "IV/HV 过滤未通过",
   "underlying ADV missing": "缺少正股成交量",
