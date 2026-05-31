@@ -3,7 +3,8 @@ import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { DataExplorerControls } from "@/components/forms/DataExplorerControls";
-import { getMarketDataHistory, getSymbols } from "@/lib/api";
+import { getMarketDataHistory, getSymbols, type OhlcvRow } from "@/lib/api";
+import { getServerLocale } from "@/lib/serverLocale";
 
 type DataExplorerProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -11,6 +12,17 @@ type DataExplorerProps = {
 
 function single(value: string | string[] | undefined, fallback: string) {
   return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function isoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function defaultRange(days = 60) {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - days);
+  return { start: isoDate(start), end: isoDate(end) };
 }
 
 function paramsWithLang(params: Record<string, string | string[] | undefined>, lang: string) {
@@ -26,7 +38,7 @@ function paramsWithLang(params: Record<string, string | string[] | undefined>, l
 
 export default async function DataExplorer({ searchParams }: DataExplorerProps) {
   const params = (await searchParams) ?? {};
-  const locale = single(params.lang, "en") === "zh" ? "zh" : "en";
+  const locale = await getServerLocale(params);
   const text =
     locale === "zh"
       ? {
@@ -44,10 +56,6 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
           chartHint: "真实 OHLCV K 线。长区间只显示少量时间刻度，避免横轴拥挤。",
           noRows: "没有行情数据",
           noRowsDescription: "后端没有返回这个标的和时间范围的数据。",
-          qualityTitle: "质量报告未接入",
-          qualityDescription: "覆盖率、缺失交易日和异常检测等待 /api/data/quality。",
-          auditTitle: "详细审计日志不可用",
-          auditDescription: "数据审计时间线计划在后续阶段接入。",
           languageLabel: "English",
           languageHref: paramsWithLang(params, "en"),
         }
@@ -66,16 +74,13 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
           chartHint: "Real OHLCV candlesticks. Long ranges show sparse axis ticks to keep the chart readable.",
           noRows: "No OHLCV rows",
           noRowsDescription: "The backend returned no rows for the selected symbol and range.",
-          qualityTitle: "Quality report not connected",
-          qualityDescription: "Coverage, missing-day and anomaly checks are waiting for /api/data/quality.",
-          auditTitle: "Detailed audit log unavailable",
-          auditDescription: "Data audit timelines are scheduled in FIX_PLAN P2-5.",
           languageLabel: "中文",
           languageHref: paramsWithLang(params, "zh"),
         };
   const symbol = single(params.symbol, "SPY").toUpperCase();
-  const start = single(params.start, "2024-01-02");
-  const end = single(params.end, "2024-01-12");
+  const fallbackRange = defaultRange(60);
+  const start = single(params.start, fallbackRange.start);
+  const end = single(params.end, fallbackRange.end);
   const freq = single(params.freq, "1d");
   const requestedProvider = single(params.provider, "").toLowerCase();
   const provider =
@@ -87,6 +92,7 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
     getMarketDataHistory(symbol, start, end, freq, provider),
   ]);
   const latest = ohlcv.rows.at(-1);
+  const qualitySummary = summarizeHistoryQuality(ohlcv.rows, ohlcv.frequency);
   const activeProvider = ohlcv.metadata.requested_provider;
   const initialProvider =
     activeProvider === "sample" || activeProvider === "tiingo" ? activeProvider : "futu";
@@ -209,16 +215,77 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
               {ohlcv.metadata.fetched_at ?? "--"}
             </div>
           </div>
-          <EmptyState
-            title={text.qualityTitle}
-            description={text.qualityDescription}
-          />
-          <EmptyState
-            title={text.auditTitle}
-            description={text.auditDescription}
-          />
+          <div className="rounded border border-border-subtle bg-surface-muted p-3">
+            <div className="font-label-caps text-text-secondary">Rows returned</div>
+            <div className="mt-2 font-data-mono text-text-primary">{qualitySummary.rowCount}</div>
+          </div>
+          <div className="rounded border border-border-subtle bg-surface-muted p-3">
+            <div className="font-label-caps text-text-secondary">First row</div>
+            <div className="mt-2 break-all font-data-mono text-[11px] text-text-primary">
+              {qualitySummary.firstTimestamp}
+            </div>
+          </div>
+          <div className="rounded border border-border-subtle bg-surface-muted p-3">
+            <div className="font-label-caps text-text-secondary">Last row</div>
+            <div className="mt-2 break-all font-data-mono text-[11px] text-text-primary">
+              {qualitySummary.lastTimestamp}
+            </div>
+          </div>
+          <div className="rounded border border-border-subtle bg-surface-muted p-3">
+            <div className="font-label-caps text-text-secondary">Estimated missing weekdays</div>
+            <div className="mt-2 font-data-mono text-text-primary">
+              {qualitySummary.estimatedMissingWeekdays}
+            </div>
+          </div>
+          <div className="rounded border border-border-subtle bg-surface-muted p-3">
+            <div className="font-label-caps text-text-secondary">Invalid numeric fields</div>
+            <div className="mt-2 font-data-mono text-text-primary">
+              {qualitySummary.invalidNumericFields}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
+}
+
+function summarizeHistoryQuality(rows: OhlcvRow[], frequency: string) {
+  const firstTimestamp = rows[0]?.timestamp ?? "--";
+  const lastTimestamp = rows.at(-1)?.timestamp ?? "--";
+  const estimatedMissingWeekdays =
+    frequency === "1d" && rows.length
+      ? Math.max(0, countWeekdays(firstTimestamp, lastTimestamp) - rows.length)
+      : 0;
+  const invalidNumericFields = rows.reduce((count, row) => {
+    return (
+      count +
+      [row.open, row.high, row.low, row.close, row.volume].filter(
+        (value) => !Number.isFinite(value),
+      ).length
+    );
+  }, 0);
+  return {
+    rowCount: rows.length,
+    firstTimestamp,
+    lastTimestamp,
+    estimatedMissingWeekdays,
+    invalidNumericFields,
+  };
+}
+
+function countWeekdays(start: string, end: string) {
+  const current = new Date(start);
+  const final = new Date(end);
+  if (Number.isNaN(current.valueOf()) || Number.isNaN(final.valueOf())) {
+    return 0;
+  }
+  let count = 0;
+  while (current <= final) {
+    const day = current.getUTCDay();
+    if (day !== 0 && day !== 6) {
+      count += 1;
+    }
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return count;
 }

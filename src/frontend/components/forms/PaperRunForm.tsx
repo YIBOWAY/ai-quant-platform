@@ -10,6 +10,49 @@ import { z } from "zod";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 
+type Locale = "en" | "zh";
+
+const copy = {
+  en: {
+    symbols: "Symbols",
+    start: "Start",
+    end: "End",
+    dataSource: "Data Source",
+    initialCash: "Initial Cash",
+    lookback: "Lookback",
+    topN: "Top N",
+    maxFillRatio: "Max Fill Ratio",
+    killSwitchEnabled: "kill_switch enabled",
+    readOnly: "READ ONLY",
+    running: "Running...",
+    runPaperTrading: "Run Paper Trading",
+    created: (id: string) => `Paper run created: ${id}`,
+    dialogTitle: "Kill switch is read-only here",
+    dialogBody:
+      "kill_switch is enabled on the backend; the API will reject runs that disable it. Edit `QS_KILL_SWITCH` in `.env` to change.",
+    close: "Close",
+  },
+  zh: {
+    symbols: "标的",
+    start: "开始日期",
+    end: "结束日期",
+    dataSource: "数据源",
+    initialCash: "初始现金",
+    lookback: "回看窗口",
+    topN: "Top N",
+    maxFillRatio: "最大成交比例",
+    killSwitchEnabled: "kill_switch 已启用",
+    readOnly: "只读",
+    running: "运行中...",
+    runPaperTrading: "运行模拟交易",
+    created: (id: string) => `模拟运行已创建：${id}`,
+    dialogTitle: "终止开关在此为只读",
+    dialogBody:
+      "后端已启用 kill_switch；API 会拒绝任何尝试关闭它的运行。请修改 `.env` 中的 `QS_KILL_SWITCH` 进行调整。",
+    close: "关闭",
+  },
+} as const;
+
 const paperSchema = z.object({
   symbols: z.string().min(1, "Enter at least one symbol"),
   start: z.string().min(1, "Start date is required"),
@@ -39,10 +82,11 @@ const DEFAULTS: PaperFormValues = {
   max_fill_ratio_per_tick: 1,
 };
 
-export function PaperRunForm() {
+export function PaperRunForm({ locale = "en" }: { locale?: Locale }) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const isHydrated = useIsHydrated();
+  const text = copy[locale];
   const form = useForm<PaperFormValues>({
     resolver: zodResolver(paperSchema),
     defaultValues: DEFAULTS,
@@ -55,7 +99,7 @@ export function PaperRunForm() {
         enable_kill_switch: true,
       }),
     onSuccess: (payload) => {
-      toast.success(`Paper run created: ${payload.run_id}`);
+      toast.success(text.created(payload.run_id));
       router.refresh();
     },
   });
@@ -67,21 +111,21 @@ export function PaperRunForm() {
     <>
       <form className="flex flex-col gap-4" onSubmit={runPaper}>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Symbols
+          {text.symbols}
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.symbols} {...form.register("symbols")} />
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            Start
+            {text.start}
             <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.start} type="date" {...form.register("start")} />
           </label>
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            End
+            {text.end}
             <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.end} type="date" {...form.register("end")} />
           </label>
         </div>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Data Source
+          {text.dataSource}
           <select
             className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
             defaultValue={DEFAULTS.provider}
@@ -99,21 +143,21 @@ export function PaperRunForm() {
           </select>
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Initial Cash
+          {text.initialCash}
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.initial_cash} type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            Lookback
+            {text.lookback}
             <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.lookback} type="number" {...form.register("lookback", { valueAsNumber: true })} />
           </label>
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            Top N
+            {text.topN}
             <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.top_n} type="number" {...form.register("top_n", { valueAsNumber: true })} />
           </label>
         </div>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Max Fill Ratio
+          {text.maxFillRatio}
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.max_fill_ratio_per_tick} max={1} min={0.01} step={0.01} type="number" {...form.register("max_fill_ratio_per_tick", { valueAsNumber: true })} />
         </label>
         <button
@@ -123,9 +167,9 @@ export function PaperRunForm() {
           onClick={() => setDialogOpen(true)}
           type="button"
         >
-          kill_switch enabled
+          {text.killSwitchEnabled}
           <span className="rounded-full bg-warning px-2 py-0.5 font-data-mono text-[10px] text-on-primary">
-            READ ONLY
+            {text.readOnly}
           </span>
         </button>
         {error ? <p className="font-body-sm text-danger">{error}</p> : null}
@@ -134,24 +178,23 @@ export function PaperRunForm() {
           disabled={!isHydrated || mutation.isPending}
           type="submit"
         >
-          {mutation.isPending ? "Running..." : "Run Paper Trading"}
+          {mutation.isPending ? text.running : text.runPaperTrading}
         </button>
       </form>
 
       {dialogOpen ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded border border-warning/40 bg-bg-surface p-5 shadow-xl" role="alertdialog" aria-modal="true">
-            <h3 className="font-headline-lg text-text-primary">Kill switch is read-only here</h3>
+            <h3 className="font-headline-lg text-text-primary">{text.dialogTitle}</h3>
             <p className="mt-3 font-body-sm text-text-secondary">
-              kill_switch is enabled on the backend; the API will reject runs that disable it.
-              Edit `QS_KILL_SWITCH` in `.env` to change.
+              {text.dialogBody}
             </p>
             <button
               className="mt-5 rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary"
               onClick={() => setDialogOpen(false)}
               type="button"
             >
-              Close
+              {text.close}
             </button>
           </div>
         </div>

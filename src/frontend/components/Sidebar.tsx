@@ -18,27 +18,83 @@ import {
   User,
   Plus,
   ListFilter,
-  Wrench
+  Wrench,
+  ScrollText
 } from "lucide-react";
+import { useLocale } from "@/components/LocaleProvider";
+
+const copy = {
+  en: {
+    tagline: "Local Instance v2.4",
+    newStrategy: "New Strategy",
+    docs: "Docs",
+    support: "Support",
+    role: "Quant Researcher",
+    nav: {
+      dashboard: "Dashboard",
+      dataExplorer: "Data Explorer",
+      optionsScreener: "Options Screener",
+      optionsRadar: "Options Radar",
+      optionsTools: "Options Tools",
+      buySide: "Buy-side Options",
+      factorLab: "Factor Lab",
+      backtester: "Backtester",
+      replications: "Paper Replication",
+      experiments: "Experiments",
+      paperTrading: "Paper Trading",
+      agentStudio: "Agent Studio",
+      orderBook: "Order Book",
+      positionMap: "Position Map",
+      settings: "Settings",
+    },
+  },
+  zh: {
+    tagline: "本地实例 v2.4",
+    newStrategy: "新建策略",
+    docs: "文档",
+    support: "帮助",
+    role: "量化研究员",
+    nav: {
+      dashboard: "仪表盘",
+      dataExplorer: "行情浏览",
+      optionsScreener: "期权筛选器",
+      optionsRadar: "期权雷达",
+      optionsTools: "期权工具",
+      buySide: "买方期权",
+      factorLab: "因子实验室",
+      backtester: "回测器",
+      replications: "策略复现",
+      experiments: "实验管理",
+      paperTrading: "模拟交易",
+      agentStudio: "智能体工作室",
+      orderBook: "预测市场盘口",
+      positionMap: "持仓地图",
+      settings: "设置",
+    },
+  },
+};
 
 export function Sidebar() {
   const pathname = usePathname();
+  const locale = useLocale();
+  const text = copy[locale];
 
   const navItems = [
-    { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Data Explorer", href: "/data-explorer", icon: Database },
-    { name: "Options Screener", href: "/options-screener", icon: ListFilter },
-    { name: "Options Radar", href: "/options-radar", icon: ListFilter },
-    { name: "Options Tools", href: "/options-tools", icon: Wrench },
-    { name: "Buy-side Options", href: "/options-buyside", icon: BadgeDollarSign },
-    { name: "Factor Lab", href: "/factor-lab", icon: FlaskConical },
-    { name: "Backtester", href: "/backtest", icon: LineChart },
-    { name: "Experiments", href: "/experiments", icon: FlaskConical },
-    { name: "Paper Trading", href: "/paper-trading", icon: BriefcaseBusiness },
-    { name: "Agent Studio", href: "/agent-studio", icon: Zap },
-    { name: "Order Book", href: "/order-book", icon: BookOpen },
-    { name: "Position Map", href: "/position-map", icon: Map },
-    { name: "Settings", href: "/settings", icon: Settings },
+    { name: text.nav.dashboard, href: "/", icon: LayoutDashboard },
+    { name: text.nav.dataExplorer, href: "/data-explorer", icon: Database },
+    { name: text.nav.optionsScreener, href: "/options-screener", icon: ListFilter },
+    { name: text.nav.optionsRadar, href: "/options-radar", icon: ListFilter },
+    { name: text.nav.optionsTools, href: "/options-tools", icon: Wrench },
+    { name: text.nav.buySide, href: "/options-buyside", icon: BadgeDollarSign },
+    { name: text.nav.factorLab, href: "/factor-lab", icon: FlaskConical },
+    { name: text.nav.backtester, href: "/backtest", icon: LineChart },
+    { name: text.nav.replications, href: "/replications", icon: ScrollText },
+    { name: text.nav.experiments, href: "/experiments", icon: FlaskConical },
+    { name: text.nav.paperTrading, href: "/paper-trading", icon: BriefcaseBusiness },
+    { name: text.nav.agentStudio, href: "/agent-studio", icon: Zap },
+    { name: text.nav.orderBook, href: "/order-book", icon: BookOpen },
+    { name: text.nav.positionMap, href: "/position-map", icon: Map },
+    { name: text.nav.settings, href: "/settings", icon: Settings },
   ];
 
   return (
@@ -48,15 +104,18 @@ export function Sidebar() {
           QUANTUM_CORE
         </div>
         <div className="font-sans text-xs tracking-tight text-text-secondary">
-          Local Instance v2.4
+          {text.tagline}
         </div>
       </div>
 
       <div className="p-4 border-b border-zinc-800">
-        <button className="w-full py-2 border border-[#00C896] text-[#00C896] rounded font-label-caps hover:bg-[#00C896]/10 transition-colors flex items-center justify-center gap-2">
+        <Link
+          className="w-full py-2 border border-[#00C896] text-[#00C896] rounded font-label-caps hover:bg-[#00C896]/10 transition-colors flex items-center justify-center gap-2"
+          href="/backtest"
+        >
           <Plus size={16} />
-          <span>New Strategy</span>
-        </button>
+          <span>{text.newStrategy}</span>
+        </Link>
       </div>
 
       <div className="flex-1 py-4 overflow-y-auto">
@@ -86,20 +145,20 @@ export function Sidebar() {
         <ul className="space-y-1">
           <li>
             <Link
-              href="#"
+              href="/docs/reversal-momentum"
               className="flex items-center gap-3 px-3 py-1.5 rounded text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200 transition-colors font-sans text-xs tracking-tight"
             >
               <FileText size={16} />
-              <span>Docs</span>
+              <span>{text.docs}</span>
             </Link>
           </li>
           <li>
             <Link
-              href="#"
+              href="/settings"
               className="flex items-center gap-3 px-3 py-1.5 rounded text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200 transition-colors font-sans text-xs tracking-tight"
             >
               <HelpCircle size={16} />
-              <span>Support</span>
+              <span>{text.support}</span>
             </Link>
           </li>
         </ul>
@@ -111,7 +170,7 @@ export function Sidebar() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-sans text-xs font-medium text-text-primary truncate">
-            Quant Researcher
+            {text.role}
           </div>
           <div className="font-sans text-[10px] text-text-secondary truncate">
             ID: QR-9921

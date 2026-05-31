@@ -580,7 +580,7 @@ export function getAgentLlmConfig() {
 }
 
 export function getPredictionMarkets(
-  provider = "sample",
+  provider = "polymarket",
   cacheMode = "prefer_cache",
   limit = 6,
 ) {

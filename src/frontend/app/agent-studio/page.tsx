@@ -8,8 +8,59 @@ import {
   getAgentLlmConfig,
   getFactors,
 } from "@/lib/api";
+import { getServerLocale } from "@/lib/serverLocale";
+
+const copy = {
+  en: {
+    title: "Agent Studio",
+    inertNote: "Candidates are inert files until manual review.",
+    candidatePool: "Candidate Pool",
+    noCandidatesTitle: "No candidates",
+    noCandidatesDesc: "Run an agent task to create a pending candidate.",
+    registryContext: "Registry Context",
+    registeredFactors: "Registered factors:",
+    noCandidateSelected: "No candidate selected",
+    sourcePreviewNote: "Source preview is read as text only. It is never imported or executed.",
+    manualReviewRequired: "manual review required",
+    sourcePreview: "Source Preview",
+    sourcePreviewSub: "Latest candidate file read from disk as plain text only.",
+    sourceNotLoadedTitle: "Source preview not loaded",
+    sourceNotLoadedDesc:
+      "Candidate source is shown only after loading a specific candidate detail as plain text.",
+    auditTimeline: "Audit Timeline",
+    auditEvents: "Audit Events",
+    reviewEvents: "Review Events",
+    noReviewRecords: "No review records yet.",
+    auditPendingTitle: "Audit timeline pending",
+    auditPendingDesc: "This candidate has no audit or review rows yet.",
+  },
+  zh: {
+    title: "智能体工作室",
+    inertNote: "候选在人工复核前仅为惰性文件。",
+    candidatePool: "候选池",
+    noCandidatesTitle: "暂无候选",
+    noCandidatesDesc: "运行一个智能体任务以创建待处理的候选。",
+    registryContext: "注册表上下文",
+    registeredFactors: "已注册因子：",
+    noCandidateSelected: "未选择候选",
+    sourcePreviewNote: "源码预览仅以文本方式读取，绝不会被导入或执行。",
+    manualReviewRequired: "需人工复核",
+    sourcePreview: "源码预览",
+    sourcePreviewSub: "最新候选文件仅以纯文本方式从磁盘读取。",
+    sourceNotLoadedTitle: "源码预览未加载",
+    sourceNotLoadedDesc: "仅在加载特定候选详情后，才会以纯文本方式显示候选源码。",
+    auditTimeline: "审计时间线",
+    auditEvents: "审计事件",
+    reviewEvents: "复核事件",
+    noReviewRecords: "暂无复核记录。",
+    auditPendingTitle: "审计时间线待生成",
+    auditPendingDesc: "该候选尚无审计或复核记录。",
+  },
+} as const;
 
 export default async function AgentStudio() {
+  const locale = await getServerLocale();
+  const text = copy[locale];
   const [candidates, factors, llmConfig] = await Promise.all([
     getAgentCandidates(),
     getFactors(),
@@ -24,9 +75,9 @@ export default async function AgentStudio() {
     <div className="flex h-full w-full overflow-hidden bg-base">
       <aside className="flex h-full w-[300px] shrink-0 flex-col border-r border-border-subtle bg-surface">
         <div className="border-b border-border-subtle bg-surface-dim p-4">
-          <h1 className="font-headline-lg text-text-primary">Agent Studio</h1>
+          <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
           <p className="mt-1 font-body-sm text-text-secondary">
-            Candidates are inert files until manual review.
+            {text.inertNote}
           </p>
           <p className="mt-2 font-data-mono text-[10px] uppercase text-text-secondary">
             llm={llmConfig.provider} model={llmConfig.model ?? "none"} key=
@@ -35,7 +86,7 @@ export default async function AgentStudio() {
         </div>
         <div className="flex-1 overflow-y-auto">
           <div className="border-b border-border-subtle p-4">
-            <h3 className="mb-3 font-label-caps text-text-secondary">Candidate Pool</h3>
+            <h3 className="mb-3 font-label-caps text-text-secondary">{text.candidatePool}</h3>
             {candidates.candidates.length ? (
               <ul className="space-y-2">
                 {candidates.candidates.map((candidate) => (
@@ -57,17 +108,17 @@ export default async function AgentStudio() {
               </ul>
             ) : (
               <EmptyState
-                title="No candidates"
-                description="Run an agent task to create a pending candidate."
+                title={text.noCandidatesTitle}
+                description={text.noCandidatesDesc}
               />
             )}
           </div>
           <div className="p-4">
-            <h3 className="mb-3 font-label-caps text-text-secondary">Registry Context</h3>
+            <h3 className="mb-3 font-label-caps text-text-secondary">{text.registryContext}</h3>
             <div className="flex items-center gap-2 rounded border border-border-subtle bg-surface-variant p-3">
               <Network size={14} className="text-info" />
               <span className="font-body-sm text-text-secondary">
-                Registered factors: {factors.factors.length}
+                {text.registeredFactors} {factors.factors.length}
               </span>
             </div>
           </div>
@@ -80,14 +131,14 @@ export default async function AgentStudio() {
             <div>
               <div className="flex items-center gap-2 font-data-mono text-sm text-text-primary">
                 <Bot size={16} className="text-primary" />
-                {latestCandidate?.candidate_id ?? "No candidate selected"}
+                {latestCandidate?.candidate_id ?? text.noCandidateSelected}
               </div>
               <p className="mt-1 font-body-sm text-text-secondary">
-                Source preview is read as text only. It is never imported or executed.
+                {text.sourcePreviewNote}
               </p>
             </div>
             <span className="flex items-center gap-1 rounded border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning">
-              <ShieldCheck size={12} /> manual review required
+              <ShieldCheck size={12} /> {text.manualReviewRequired}
             </span>
           </div>
         </div>
@@ -101,14 +152,14 @@ export default async function AgentStudio() {
               latestDetail?.apiError,
             ]}
           />
-          <AgentTaskForm candidates={candidates.candidates} />
+          <AgentTaskForm candidates={candidates.candidates} locale={locale} />
           {latestDetail?.source_preview ? (
             <section className="rounded border border-border-subtle bg-bg-surface p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="font-headline-lg text-text-primary">Source Preview</h2>
+                  <h2 className="font-headline-lg text-text-primary">{text.sourcePreview}</h2>
                   <p className="mt-1 font-body-sm text-text-secondary">
-                    Latest candidate file read from disk as plain text only.
+                    {text.sourcePreviewSub}
                   </p>
                 </div>
                 <span className="font-data-mono text-[10px] uppercase text-text-secondary">
@@ -121,16 +172,16 @@ export default async function AgentStudio() {
             </section>
           ) : (
             <EmptyState
-              title="Source preview not loaded"
-              description="Candidate source is shown only after loading a specific candidate detail as plain text."
+              title={text.sourceNotLoadedTitle}
+              description={text.sourceNotLoadedDesc}
             />
           )}
           {latestDetail?.audit.length || latestDetail?.reviews.length ? (
             <section className="rounded border border-border-subtle bg-bg-surface p-4">
-              <h2 className="font-headline-lg text-text-primary">Audit Timeline</h2>
+              <h2 className="font-headline-lg text-text-primary">{text.auditTimeline}</h2>
               <div className="mt-3 grid gap-4 lg:grid-cols-2">
                 <div>
-                  <h3 className="font-label-caps text-text-secondary">Audit Events</h3>
+                  <h3 className="font-label-caps text-text-secondary">{text.auditEvents}</h3>
                   <ul className="mt-2 space-y-2 font-data-mono text-xs text-text-primary">
                     {(latestDetail?.audit ?? []).slice(0, 12).map((entry, index) => (
                       <li key={`audit-${index}`} className="rounded border border-border-subtle bg-surface-muted p-2">
@@ -140,7 +191,7 @@ export default async function AgentStudio() {
                   </ul>
                 </div>
                 <div>
-                  <h3 className="font-label-caps text-text-secondary">Review Events</h3>
+                  <h3 className="font-label-caps text-text-secondary">{text.reviewEvents}</h3>
                   {(latestDetail?.reviews ?? []).length ? (
                     <ul className="mt-2 space-y-2 font-data-mono text-xs text-text-primary">
                       {latestDetail.reviews.slice(0, 12).map((entry, index) => (
@@ -150,15 +201,15 @@ export default async function AgentStudio() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="mt-2 font-body-sm text-text-secondary">No review records yet.</p>
+                    <p className="mt-2 font-body-sm text-text-secondary">{text.noReviewRecords}</p>
                   )}
                 </div>
               </div>
             </section>
           ) : (
             <EmptyState
-              title="Audit timeline pending"
-              description="This candidate has no audit or review rows yet."
+              title={text.auditPendingTitle}
+              description={text.auditPendingDesc}
             />
           )}
         </div>

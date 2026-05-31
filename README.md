@@ -13,6 +13,7 @@ The project is currently delivered through Phase 14. It includes:
 - Futu read-only US stock and options data.
 - Options Income Screener, Options Radar, and Buy-Side Options Assistant.
 - Local AlphaGBM-style options toolbox and local Futu option quote cache.
+- Paper replication workbench for the reversal/momentum strategy.
 
 This project does not add live trading, broker order submission, wallet
 connection, signing, Futu account unlock, or real order placement.
@@ -73,6 +74,8 @@ curl http://127.0.0.1:8765/api/health
 | `/data-explorer` | US equity historical data viewer. |
 | `/factor-lab` | Run factors and inspect factor outputs. |
 | `/backtest` | Run research backtests. |
+| `/replications` | Reproduce the short-term reversal and longer-term momentum paper workflow. |
+| `/docs/reversal-momentum` | Frontend-readable notes for the paper replication. |
 | `/experiments` | Inspect experiment sweeps, folds, comparisons, and send best params to backtest. |
 | `/paper-trading` | Run paper-trading simulation only. |
 | `/position-map` | Inspect latest backtest positions and paper-trading safety state. |
@@ -84,6 +87,10 @@ curl http://127.0.0.1:8765/api/health
 | `/order-book` | Read-only prediction-market research page. |
 | `/agent-studio` | AI research assistant candidate workflows. |
 | `/settings` | Masked local settings. |
+
+The UI is bilingual (English / 中文). Use the language toggle in the top bar to
+switch the whole site; the choice is stored in the `qs_lang` cookie. See
+[docs/frontend/frontend_chinese_version.md](docs/frontend/frontend_chinese_version.md).
 
 ## Futu Read-Only Data
 
@@ -213,6 +220,10 @@ Current options docs:
 - [docs/options/buyside_strategy_learning.md](docs/options/buyside_strategy_learning.md)
 - [docs/options/local_alphagbm_tools.md](docs/options/local_alphagbm_tools.md)
 - [docs/delivery/phase_14_delivery.md](docs/delivery/phase_14_delivery.md)
+
+Paper replication:
+
+- [docs/replications/reversal_momentum_replication.md](docs/replications/reversal_momentum_replication.md)
 
 Local cache plan and current status:
 

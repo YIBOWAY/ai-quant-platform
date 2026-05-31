@@ -43,6 +43,7 @@ quote caching documented below.
 | Futu equity data provider | `src/quant_system/data/providers/futu.py` |
 | Factor pipeline | `src/quant_system/factors/pipeline.py` |
 | Backtest pipeline | `src/quant_system/backtest/pipeline.py` |
+| Reversal/momentum paper replication | `src/quant_system/replication/reversal_momentum.py` |
 | Paper-trading pipeline | `src/quant_system/execution/pipeline.py` |
 | Options seller screener | `src/quant_system/options/screener.py` |
 | Options Radar | `src/quant_system/options/radar.py` |
@@ -76,8 +77,15 @@ quote caching documented below.
 | [options/local_alphagbm_tools.md](options/local_alphagbm_tools.md) | Local AlphaGBM-style options tools and endpoints. |
 | [delivery/phase_14_delivery.md](delivery/phase_14_delivery.md) | Phase 14 delivery and validation record. |
 | [audits/README.md](audits/README.md) | Historical audit notes and current-state pointers. |
+| [audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md](audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md) | Current frontend real-data and sample-labeling review. |
 
-## 5. Polymarket / Prediction-Market Docs
+## 5. Research Replication Docs
+
+| Document | Purpose |
+|---|---|
+| [replications/reversal_momentum_replication.md](replications/reversal_momentum_replication.md) | Local replication guide for the short-term reversal and longer-term momentum paper. |
+
+## 6. Polymarket / Prediction-Market Docs
 
 | Document | Purpose |
 |---|---|
@@ -88,7 +96,7 @@ quote caching documented below.
 | [polymarket/polymarket_troubleshooting.md](polymarket/polymarket_troubleshooting.md) | Troubleshooting guide. |
 | [polymarket/polymarket_safety_boundaries.md](polymarket/polymarket_safety_boundaries.md) | Safety and non-goals. |
 
-## 6. Current Frontend Pages
+## 7. Current Frontend Pages
 
 | Page | Purpose |
 |---|---|
@@ -97,6 +105,8 @@ quote caching documented below.
 | `/factor-lab/[runId]` | Factor run details. |
 | `/backtest` | Backtest runs. |
 | `/backtest/[runId]` | Backtest run details. |
+| `/replications` | Paper replication workbench for reversal and momentum. |
+| `/docs/reversal-momentum` | Frontend-readable replication documentation. |
 | `/experiments` | Experiment sweep, fold, comparison, and best-run review. |
 | `/paper-trading` | Paper-trading simulation. |
 | `/paper-trading/[runId]` | Paper-trading run details. |
@@ -110,7 +120,14 @@ quote caching documented below.
 | `/agent-studio` | AI research assistant workflows. |
 | `/settings` | Masked local settings. |
 
-## 7. Common Commands
+Frontend docs:
+
+| Document | Purpose |
+|---|---|
+| [frontend/frontend_chinese_version.md](frontend/frontend_chinese_version.md) | Site-wide English / 中文 language toggle and how it works. |
+| [frontend/design_brief.md](frontend/design_brief.md) | Frontend design brief and component plan. |
+
+## 8. Common Commands
 
 Backend:
 
@@ -150,7 +167,7 @@ conda activate ai-quant
 quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bullish --target-price 220 --target-date 2026-12-31
 ```
 
-## 8. Safety Checklist
+## 9. Safety Checklist
 
 1. `/api/health` shows `live_trading_enabled=false`.
 2. `/api/orders/submit` returns 404.
@@ -161,7 +178,7 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 7. Futu code uses quote/data context only.
 8. Frontend pages label research-only / read-only outputs clearly.
 
-## 9. Cache Layer Status
+## 10. Cache Layer Status
 
 The first local database-backed cache layer is implemented for Futu option quote
 windows. Read:

@@ -19,13 +19,17 @@ function badgeClass(source: string) {
   return "border-warning/40 bg-warning/10 text-warning";
 }
 
+function displaySource(source: string) {
+  return source.toLowerCase().includes("sample") ? `${source} / not real` : source;
+}
+
 export function DataSourceBadge({ source }: DataSourceBadgeProps) {
   return (
     <span
       className={`rounded border px-2 py-1 font-data-mono text-[10px] uppercase ${badgeClass(source)}`}
       title={source}
     >
-      {source}
+      {displaySource(source)}
     </span>
   );
 }

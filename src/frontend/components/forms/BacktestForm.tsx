@@ -9,6 +9,39 @@ import { z } from "zod";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 
+type Locale = "en" | "zh";
+
+const copy = {
+  en: {
+    symbols: "Symbols",
+    start: "Start",
+    end: "End",
+    dataSource: "Data Source",
+    lookback: "Lookback",
+    topN: "Top N",
+    initialCash: "Initial Cash",
+    commissionBps: "Commission bps",
+    slippageBps: "Slippage bps",
+    running: "Running...",
+    runBacktest: "Run Backtest",
+    created: (id: string) => `Backtest created: ${id}`,
+  },
+  zh: {
+    symbols: "标的",
+    start: "开始日期",
+    end: "结束日期",
+    dataSource: "数据源",
+    lookback: "回看窗口",
+    topN: "Top N",
+    initialCash: "初始资金",
+    commissionBps: "佣金（基点）",
+    slippageBps: "滑点（基点）",
+    running: "运行中...",
+    runBacktest: "运行回测",
+    created: (id: string) => `回测已创建：${id}`,
+  },
+} as const;
+
 const backtestSchema = z.object({
   symbols: z.string().min(1, "Enter at least one symbol"),
   start: z.string().min(1, "Start date is required"),
@@ -43,11 +76,13 @@ const DEFAULTS: BacktestFormValues = {
 
 type BacktestFormProps = {
   initialValues?: BacktestFormInitialValues;
+  locale?: Locale;
 };
 
-export function BacktestForm({ initialValues }: BacktestFormProps) {
+export function BacktestForm({ initialValues, locale = "en" }: BacktestFormProps) {
   const router = useRouter();
   const isHydrated = useIsHydrated();
+  const text = copy[locale];
   const defaults = { ...DEFAULTS, ...initialValues };
   const form = useForm<BacktestFormValues>({
     resolver: zodResolver(backtestSchema),
@@ -60,7 +95,7 @@ export function BacktestForm({ initialValues }: BacktestFormProps) {
         symbols: splitSymbols(values.symbols),
       }),
     onSuccess: (payload) => {
-      toast.success(`Backtest created: ${payload.run_id}`);
+      toast.success(text.created(payload.run_id));
       router.refresh();
     },
   });
@@ -72,21 +107,21 @@ export function BacktestForm({ initialValues }: BacktestFormProps) {
   return (
     <form className="flex flex-col gap-4" onSubmit={runBacktest}>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        Symbols
+        {text.symbols}
         <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={defaults.symbols} {...form.register("symbols")} />
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Start
+          {text.start}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.start} type="date" {...form.register("start")} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          End
+          {text.end}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.end} type="date" {...form.register("end")} />
         </label>
       </div>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        Data Source
+        {text.dataSource}
         <select
           className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
           defaultValue={defaults.provider}
@@ -105,25 +140,25 @@ export function BacktestForm({ initialValues }: BacktestFormProps) {
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Lookback
+          {text.lookback}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.lookback} type="number" {...form.register("lookback", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Top N
+          {text.topN}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.top_n} type="number" {...form.register("top_n", { valueAsNumber: true })} />
         </label>
       </div>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        Initial Cash
+        {text.initialCash}
         <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={defaults.initial_cash} type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Commission bps
+          {text.commissionBps}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.commission_bps} type="number" {...form.register("commission_bps", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Slippage bps
+          {text.slippageBps}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={defaults.slippage_bps} type="number" {...form.register("slippage_bps", { valueAsNumber: true })} />
         </label>
       </div>
@@ -133,7 +168,7 @@ export function BacktestForm({ initialValues }: BacktestFormProps) {
         disabled={!isHydrated || mutation.isPending}
         type="submit"
       >
-        {mutation.isPending ? "Running..." : "Run Backtest"}
+        {mutation.isPending ? text.running : text.runBacktest}
       </button>
     </form>
   );

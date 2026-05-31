@@ -37,6 +37,12 @@ type OptionChainResponse = {
   contracts: OptionContract[];
 };
 
+type OptionsExpirationsResponse = {
+  ticker: string;
+  source: string;
+  expirations: Array<Record<string, unknown>>;
+};
+
 type OptionsRadarSymbolLiveProps = {
   symbol: string;
   expiry?: string;
@@ -55,13 +61,24 @@ export function OptionsRadarSymbolLive({
     queryFn: () => apiRequest<OptionsSnapshotResponse>(`/api/options/snapshot/${symbol}`),
     retry: 0,
   });
+  const expirationsQuery = useQuery({
+    queryKey: ["options-symbol-expirations", symbol],
+    enabled: loadLive,
+    queryFn: () =>
+      apiRequest<OptionsExpirationsResponse>(
+        `/api/options/expirations?ticker=${encodeURIComponent(symbol)}`,
+      ),
+    retry: 0,
+  });
+  const selectedExpiry =
+    expiry ?? firstExpiration(expirationsQuery.data?.expirations ?? []);
   const chainQuery = useQuery({
-    queryKey: ["options-symbol-chain", symbol, expiry, optionType],
-    enabled: loadLive && Boolean(expiry),
+    queryKey: ["options-symbol-chain", symbol, selectedExpiry, optionType],
+    enabled: loadLive && Boolean(selectedExpiry),
     queryFn: () => {
       const params = new URLSearchParams({
         ticker: symbol,
-        expiration: expiry ?? "",
+        expiration: selectedExpiry ?? "",
         option_type: optionType,
       });
       return apiRequest<OptionChainResponse>(`/api/options/chain?${params.toString()}`);
@@ -95,6 +112,7 @@ export function OptionsRadarSymbolLive({
       ) : loadLive ? (
         <div className="mb-4 grid gap-3 md:grid-cols-4">
           <Metric label="Price" value={money(snapshotQuery.data?.price)} />
+          <Metric label="Expiry" value={selectedExpiry ?? "--"} />
           <Metric label="ATM IV" value={pct(snapshotQuery.data?.atm_iv)} />
           <Metric label="IV Rank" value={num(snapshotQuery.data?.iv_rank, 1)} />
           <Metric label="VRP" value={pct(snapshotQuery.data?.vrp)} />
@@ -147,6 +165,21 @@ function WarningLine({ message }: { message: string }) {
       {message}
     </div>
   );
+}
+
+function firstExpiration(rows: Array<Record<string, unknown>>) {
+  for (const row of rows) {
+    const value =
+      row.strike_time ??
+      row.expiration ??
+      row.expiry ??
+      row.date ??
+      row.expiration_date;
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

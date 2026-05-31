@@ -12,6 +12,57 @@ import { useIsHydrated } from "@/lib/hydration";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
+const copy = {
+  en: {
+    title: "Read-Only Scanner",
+    intro:
+      "Polymarket mode fetches public market data only. This form never accepts or sends keys, custody access, signatures, or orders.",
+    provider: "Provider",
+    polymarketReadOnly: "polymarket read-only",
+    cacheMode: "Cache mode",
+    minEdge: "Min edge bps",
+    maxCapitalPerLeg: "Max capital per leg",
+    capitalLimit: "Capital limit",
+    maxLegs: "Max legs",
+    maxMarkets: "Max markets",
+    feeBps: "Fee bps",
+    running: "Running...",
+    runScanner: "Run scanner",
+    generateDryArb: "Generate dry arbitrage",
+    runQuasiBacktest: "Run quasi-backtest",
+    completedToast: "Prediction-market read-only workflow completed",
+    opportunities: "Opportunities",
+    triggerRate: "Trigger rate",
+    totalEdge: "Total est. edge",
+    cacheStatus: "Cache status",
+    report: "Report",
+  },
+  zh: {
+    title: "只读扫描器",
+    intro:
+      "Polymarket 模式仅获取公开市场数据。本表单从不接受或发送密钥、托管权限、签名或订单。",
+    provider: "数据源",
+    polymarketReadOnly: "polymarket 只读",
+    cacheMode: "缓存模式",
+    minEdge: "最小价差 (bps)",
+    maxCapitalPerLeg: "每腿最大资金",
+    capitalLimit: "资金上限",
+    maxLegs: "最大腿数",
+    maxMarkets: "最大市场数",
+    feeBps: "费用 (bps)",
+    running: "运行中…",
+    runScanner: "运行扫描器",
+    generateDryArb: "生成模拟套利",
+    runQuasiBacktest: "运行准回测",
+    completedToast: "预测市场只读流程已完成",
+    opportunities: "机会数",
+    triggerRate: "触发率",
+    totalEdge: "预计总价差",
+    cacheStatus: "缓存状态",
+    report: "报告",
+  },
+} as const;
+
 const pmSchema = z.object({
   provider: z.enum(["sample", "polymarket"]),
   cache_mode: z.enum(["prefer_cache", "refresh", "network_only"]),
@@ -26,14 +77,15 @@ const pmSchema = z.object({
 type PMFormValues = z.infer<typeof pmSchema>;
 type PMAction = "scan" | "dry-arbitrage" | "backtest";
 
-export function PMRunForm() {
+export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
+  const text = copy[locale];
   const [result, setResult] = useState<string>("");
   const [backtestResult, setBacktestResult] = useState<PredictionMarketBacktestResponse | null>(null);
   const isHydrated = useIsHydrated();
   const form = useForm<PMFormValues>({
     resolver: zodResolver(pmSchema),
     defaultValues: {
-      provider: "sample",
+      provider: "polymarket",
       cache_mode: "prefer_cache",
       min_edge_bps: 200,
       max_capital_per_leg: 1000,
@@ -62,7 +114,7 @@ export function PMRunForm() {
       if ("metrics" in payload && "run_id" in payload) {
         setBacktestResult(payload as PredictionMarketBacktestResponse);
       }
-      toast.success("Prediction-market read-only workflow completed");
+      toast.success(text.completedToast);
     },
   });
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
@@ -73,20 +125,20 @@ export function PMRunForm() {
 
   return (
     <div className="rounded border border-border-subtle bg-bg-surface p-4">
-      <h2 className="font-headline-lg text-text-primary">Read-Only Scanner</h2>
+      <h2 className="font-headline-lg text-text-primary">{text.title}</h2>
       <p className="mt-1 font-body-sm text-text-secondary">
-        Polymarket mode fetches public market data only. This form never accepts or sends keys, custody access, signatures, or orders.
+        {text.intro}
       </p>
       <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3" onSubmit={(event) => event.preventDefault()}>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Provider
+          {text.provider}
           <select className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("provider")}>
+            <option style={optionStyle} value="polymarket">{text.polymarketReadOnly}</option>
             <option style={optionStyle} value="sample">sample</option>
-            <option style={optionStyle} value="polymarket">polymarket read-only</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Cache mode
+          {text.cacheMode}
           <select className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("cache_mode")}>
             <option style={optionStyle} value="prefer_cache">prefer_cache</option>
             <option style={optionStyle} value="refresh">refresh</option>
@@ -94,27 +146,27 @@ export function PMRunForm() {
           </select>
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Min edge bps
+          {text.minEdge}
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("min_edge_bps", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Max capital per leg
+          {text.maxCapitalPerLeg}
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("max_capital_per_leg", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Capital limit
+          {text.capitalLimit}
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("capital_limit", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Max legs
+          {text.maxLegs}
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("max_legs", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Max markets
+          {text.maxMarkets}
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("max_markets", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Fee bps
+          {text.feeBps}
           <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("fee_bps", { valueAsNumber: true })} />
         </label>
       </form>
@@ -126,7 +178,7 @@ export function PMRunForm() {
           onClick={() => submit("scan")}
           type="button"
         >
-          {mutation.isPending ? "Running..." : "Run scanner"}
+          {mutation.isPending ? text.running : text.runScanner}
         </button>
         <button
           className="rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
@@ -134,7 +186,7 @@ export function PMRunForm() {
           onClick={() => submit("dry-arbitrage")}
           type="button"
         >
-          {mutation.isPending ? "Running..." : "Generate dry arbitrage"}
+          {mutation.isPending ? text.running : text.generateDryArb}
         </button>
         <button
           className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
@@ -142,17 +194,17 @@ export function PMRunForm() {
           onClick={() => submit("backtest")}
           type="button"
         >
-          {mutation.isPending ? "Running..." : "Run quasi-backtest"}
+          {mutation.isPending ? text.running : text.runQuasiBacktest}
         </button>
       </div>
       {backtestResult ? (
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-          <Metric label="Opportunities" value={String(backtestResult.metrics.opportunity_count)} />
-          <Metric label="Trigger rate" value={`${(backtestResult.metrics.trigger_rate * 100).toFixed(2)}%`} />
-          <Metric label="Total est. edge" value={backtestResult.metrics.total_estimated_edge.toFixed(2)} />
-          <Metric label="Cache status" value={backtestResult.cache_status ?? "live"} />
+          <Metric label={text.opportunities} value={String(backtestResult.metrics.opportunity_count)} />
+          <Metric label={text.triggerRate} value={`${(backtestResult.metrics.trigger_rate * 100).toFixed(2)}%`} />
+          <Metric label={text.totalEdge} value={backtestResult.metrics.total_estimated_edge.toFixed(2)} />
+          <Metric label={text.cacheStatus} value={backtestResult.cache_status ?? "live"} />
           <div className="rounded border border-border-subtle bg-surface-muted p-3 md:col-span-3">
-            <div className="font-body-sm text-text-secondary">Report</div>
+            <div className="font-body-sm text-text-secondary">{text.report}</div>
             <div className="mt-1 break-all font-data-mono text-xs text-text-primary">{backtestResult.report_path}</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {backtestResult.chart_index.charts.map((chart) => (

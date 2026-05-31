@@ -12,9 +12,20 @@ import type {
   OptionsRadarResponse,
 } from "@/lib/api";
 import { apiPost, apiRequest } from "@/lib/apiClient";
+import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+
+// Maps radar column index to a glossary term so headers can show a hint.
+const headingTips: Record<number, GlossaryKey> = {
+  6: "apr",
+  7: "ivRank",
+  8: "ivRank",
+  9: "delta",
+  10: "openInterest",
+  11: "spread",
+};
 const sectors = [
   "Communication Services",
   "Consumer Discretionary",
@@ -37,7 +48,11 @@ const copy = {
   en: {
     title: "Options Radar",
     intro: "Daily read-only scan for seller option candidates. No orders, no account unlock, no live trading.",
-    date: "Run date",
+    date: "Scan date (history)",
+    dateHelp: "This is the day a scan was run and saved — NOT an option expiry. Only days you already scanned appear here. To see today's hottest sell-side options, click \"Run Today's Scan\" below.",
+    freshToday: "Showing today's scan.",
+    freshStale: "Showing the scan from {date} ({days} day(s) ago). Click \"Run Today's Scan\" for fresh data.",
+    freshNone: "No scan has been run yet. Click \"Run Today's Scan\" to generate today's seller candidates.",
     strategy: "Strategy",
     all: "All",
     sellPut: "Sell Put",
@@ -59,7 +74,7 @@ const copy = {
     zh: "中文",
     details: "Details",
     openChain: "Open Chain",
-    runSample: "Run Sample Scan",
+    runSample: "Run Today's Scan",
     running: "Running...",
     refresh: "Refresh List",
     refreshSource: "Refresh source",
@@ -73,7 +88,11 @@ const copy = {
   zh: {
     title: "期权雷达",
     intro: "每日只读扫描卖方期权候选。不会下单、不会解锁账户、不会接入实盘。",
-    date: "扫描日期",
+    date: "扫描日期（历史快照）",
+    dateHelp: "这是“运行并保存扫描”的那一天，不是期权到期日。这里只会出现你扫描过的日期。想看今天最值得当卖方的期权，请点下方的“运行今日扫描”。",
+    freshToday: "正在显示今天的扫描结果。",
+    freshStale: "正在显示 {date} 的扫描结果（{days} 天前）。点“运行今日扫描”获取最新数据。",
+    freshNone: "还没有运行过扫描。点“运行今日扫描”生成今天的卖方候选。",
     strategy: "策略",
     all: "全部",
     sellPut: "卖出看跌",
@@ -94,19 +113,31 @@ const copy = {
     regimePanic: "Panic - 对卖方候选施加较重评分扣分。",
     zh: "English",
     details: "详情",
-    openChain: "Open Chain",
-    runSample: "Run Sample Scan",
-    running: "Running...",
-    refresh: "Refresh List",
+    openChain: "查看期权链",
+    runSample: "运行今日扫描",
+    running: "运行中...",
+    refresh: "刷新列表",
+    refreshSource: "刷新数据源",
+    publicSource: "公开数据",
+    sampleSource: "本地样例",
+    refreshUniverse: "刷新标的池",
+    refreshEarnings: "刷新财报日历",
+    refreshVix: "刷新 VIX",
     headings: ["标的", "行业", "策略", "到期", "行权价", "中间价", "年化", "IV", "IVR", "Delta", "未平仓", "价差", "财报", "分数", "评级", ""],
   },
 };
 
-export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
+export function OptionsRadarView({
+  initialDate = "",
+  locale = "en",
+}: {
+  initialDate?: string;
+  locale?: "en" | "zh";
+}) {
   const hydrated = useIsHydrated();
   const queryClient = useQueryClient();
   const text = copy[locale];
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(initialDate);
   const [strategy, setStrategy] = useState("all");
   const [sector, setSector] = useState("");
   const [dteBucket, setDteBucket] = useState("");
@@ -143,6 +174,10 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
   );
   const csv = useMemo(() => buildCsv(candidates), [candidates]);
   const regime = useMemo(() => deriveRegime(candidates), [candidates]);
+  const freshness = useMemo(
+    () => deriveFreshness(activeDate, datesQuery.data?.dates ?? [], text),
+    [activeDate, datesQuery.data?.dates, text],
+  );
   const scanMutation = useMutation({
     mutationFn: () =>
       apiPost<OptionsRadarRunResponse>("/api/options/daily-scan/run", {
@@ -206,6 +241,7 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
               ))}
             </select>
           </label>
+          <p className="-mt-2 font-body-sm text-text-secondary">{text.dateHelp}</p>
           <label className="flex flex-col gap-1 font-body-sm">
             {text.strategy}
             <select
@@ -257,17 +293,17 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
           </label>
           <div className="rounded border border-border-subtle bg-surface-muted p-3">
             <label className="flex flex-col gap-1 font-body-sm">
-              Refresh source
+              {text.refreshSource}
               <select
                 className="rounded border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary"
                 onChange={(event) => setRefreshSource(event.target.value)}
                 value={refreshSource}
               >
                 <option style={optionStyle} value="public">
-                  Public data
+                  {text.publicSource}
                 </option>
                 <option style={optionStyle} value="sample">
-                  Local sample
+                  {text.sampleSource}
                 </option>
               </select>
             </label>
@@ -279,7 +315,7 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
                 type="button"
               >
                 <RefreshCw className="mr-2 inline" size={16} />
-                Refresh Universe
+                {text.refreshUniverse}
               </button>
               <button
                 className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
@@ -288,7 +324,7 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
                 type="button"
               >
                 <RefreshCw className="mr-2 inline" size={16} />
-                Refresh Earnings
+                {text.refreshEarnings}
               </button>
               <button
                 className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
@@ -297,7 +333,7 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
                 type="button"
               >
                 <RefreshCw className="mr-2 inline" size={16} />
-                Refresh VIX
+                {text.refreshVix}
               </button>
             </div>
             {refreshStatus ? (
@@ -354,6 +390,17 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
           {text.safety}
         </div>
         <RegimeBanner regime={regime} text={text} />
+        {freshness ? (
+          <div
+            className={`mb-4 rounded border p-3 font-body-sm ${
+              freshness.fresh
+                ? "border-accent-success/40 bg-accent-success/10 text-accent-success"
+                : "border-warning/40 bg-warning/10 text-warning"
+            }`}
+          >
+            {freshness.message}
+          </div>
+        ) : null}
         <section className="mb-4 grid grid-cols-3 gap-3">
           <Metric label={text.rows} value={String(candidates.length)} />
           <Metric label={text.scanned} value={String(scanQuery.data?.scanned_tickers ?? 0)} />
@@ -379,9 +426,12 @@ export function OptionsRadarView({ locale = "en" }: { locale?: "en" | "zh" }) {
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b border-border-subtle">
-                  {text.headings.map((heading) => (
+                  {text.headings.map((heading, index) => (
                     <th className="px-3 py-2 font-label-caps text-text-secondary" key={heading}>
-                      {heading}
+                      <span className="inline-flex items-center gap-1">
+                        {heading}
+                        {headingTips[index] ? <InfoTip term={headingTips[index]} locale={locale} /> : null}
+                      </span>
                     </th>
                   ))}
                 </tr>
@@ -473,6 +523,32 @@ function deriveRegime(candidates: OptionsRadarCandidate[]): RegimeInfo {
     }
   }
   return { label: "Unknown", penalty: null };
+}
+
+function deriveFreshness(
+  activeDate: string,
+  dates: string[],
+  text: { freshToday: string; freshStale: string; freshNone: string },
+): { fresh: boolean; message: string } | null {
+  if (dates.length === 0) {
+    return { fresh: false, message: text.freshNone };
+  }
+  if (!activeDate) return null;
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  if (activeDate === todayIso) {
+    return { fresh: true, message: text.freshToday };
+  }
+  const parsed = Date.parse(activeDate);
+  let days = 0;
+  if (!Number.isNaN(parsed)) {
+    const diffMs = Date.parse(todayIso) - parsed;
+    days = Math.max(0, Math.round(diffMs / 86_400_000));
+  }
+  return {
+    fresh: false,
+    message: text.freshStale.replace("{date}", activeDate).replace("{days}", String(days)),
+  };
 }
 
 function RegimeBanner({

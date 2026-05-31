@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
+import type { Locale } from "@/lib/locale";
 
 const factorSchema = z.object({
   symbols: z.string().min(1, "Enter at least one symbol"),
@@ -24,6 +25,31 @@ type FactorRunResponse = {
   run_id: string;
 };
 
+const copy = {
+  en: {
+    symbols: "Symbols",
+    start: "Start",
+    end: "End",
+    dataSource: "Data Source",
+    lookback: "Lookback",
+    quantiles: "Quantiles",
+    running: "Running...",
+    runFactor: "Run Factor",
+    runCreated: (id: string) => `Factor run created: ${id}`,
+  },
+  zh: {
+    symbols: "标的",
+    start: "开始",
+    end: "结束",
+    dataSource: "数据源",
+    lookback: "回看",
+    quantiles: "分位",
+    running: "运行中...",
+    runFactor: "运行因子",
+    runCreated: (id: string) => `已创建因子运行：${id}`,
+  },
+};
+
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 const DEFAULTS: FactorFormValues = {
   symbols: "SPY,QQQ",
@@ -34,7 +60,8 @@ const DEFAULTS: FactorFormValues = {
   quantiles: 5,
 };
 
-export function FactorRunForm() {
+export function FactorRunForm({ locale = "en" }: { locale?: Locale }) {
+  const text = copy[locale];
   const router = useRouter();
   const isHydrated = useIsHydrated();
   const form = useForm<FactorFormValues>({
@@ -48,7 +75,7 @@ export function FactorRunForm() {
         symbols: splitSymbols(values.symbols),
       }),
     onSuccess: (payload) => {
-      toast.success(`Factor run created: ${payload.run_id}`);
+      toast.success(text.runCreated(payload.run_id));
       router.refresh();
     },
   });
@@ -59,21 +86,21 @@ export function FactorRunForm() {
   return (
     <form className="flex flex-col gap-4" onSubmit={runFactor}>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        Symbols
+        {text.symbols}
         <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.symbols} {...form.register("symbols")} />
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Start
+          {text.start}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.start} type="date" {...form.register("start")} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          End
+          {text.end}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.end} type="date" {...form.register("end")} />
         </label>
       </div>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        Data Source
+        {text.dataSource}
         <select
           className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
           defaultValue={DEFAULTS.provider}
@@ -92,11 +119,11 @@ export function FactorRunForm() {
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Lookback
+          {text.lookback}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.lookback} type="number" {...form.register("lookback", { valueAsNumber: true })} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          Quantiles
+          {text.quantiles}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.quantiles} type="number" {...form.register("quantiles", { valueAsNumber: true })} />
         </label>
       </div>
@@ -106,7 +133,7 @@ export function FactorRunForm() {
         disabled={!isHydrated || mutation.isPending}
         type="submit"
       >
-        {mutation.isPending ? "Running..." : "Run Factor"}
+        {mutation.isPending ? text.running : text.runFactor}
       </button>
     </form>
   );

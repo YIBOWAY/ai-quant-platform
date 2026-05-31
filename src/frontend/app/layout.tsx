@@ -5,6 +5,8 @@ import { Sidebar } from '@/components/Sidebar';
 import { TopBar } from '@/components/TopBar';
 import { SafetyStrip } from '@/components/SafetyStrip';
 import { Providers } from '@/components/Providers';
+import { LocaleProvider } from '@/components/LocaleProvider';
+import { getServerLocale } from '@/lib/serverLocale';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -21,18 +23,21 @@ export const metadata: Metadata = {
   description: 'AI Quant Platform',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await getServerLocale();
   return (
-    <html lang="en" className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
+    <html lang={locale === 'zh' ? 'zh' : 'en'} className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="antialiased overflow-hidden selection:bg-accent-success selection:text-bg-base">
-        <Providers>
-          <Sidebar />
-          <TopBar />
-          <SafetyStrip />
-          <main className="fixed top-[100px] left-[240px] right-0 bottom-0 bg-bg-base flex flex-col overflow-hidden">
-            {children}
-          </main>
-        </Providers>
+        <LocaleProvider locale={locale}>
+          <Providers>
+            <Sidebar />
+            <TopBar />
+            <SafetyStrip />
+            <main className="fixed top-[100px] left-[240px] right-0 bottom-0 bg-bg-base flex flex-col overflow-hidden">
+              {children}
+            </main>
+          </Providers>
+        </LocaleProvider>
       </body>
     </html>
   );

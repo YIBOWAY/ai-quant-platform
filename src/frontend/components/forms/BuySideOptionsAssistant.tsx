@@ -16,6 +16,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
+import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
@@ -53,12 +54,15 @@ const copy = {
     empty: "Enter a thesis, then run the assistant to rank Long Call, Bull Call Spread, LEAPS Call, and LEAPS Call Spread candidates.",
     error: "Request failed",
     noMarketData: "not available",
+    dataSource: "Data source",
+    dataSourceValue: "Backend Futu option chain",
     spot: "Spot",
     timestamp: "Timestamp",
     earnings: "Next event",
     ivRank: "IV rank",
     regime: "Market regime",
     qualityWarnings: "Data warnings",
+    rankedStructures: (n: number) => `${n} ranked structures from backend option-chain data`,
     score: "Score",
     buyerScore: "Buyer score",
     bestUse: "Best use",
@@ -147,12 +151,15 @@ const copy = {
     empty: "输入交易假设后运行，系统会排序 Long Call、Bull Call Spread、LEAPS Call 和 LEAPS Call Spread 候选。",
     error: "请求失败",
     noMarketData: "暂无数据",
+    dataSource: "数据来源",
+    dataSourceValue: "后端 Futu 期权链",
     spot: "现价",
     timestamp: "时间戳",
     earnings: "最近事件",
     ivRank: "IV Rank",
     regime: "市场状态",
     qualityWarnings: "数据警告",
+    rankedStructures: (n: number) => `${n} 个结构，来自后端期权链数据`,
     score: "总分",
     buyerScore: "买方友好度",
     bestUse: "适用场景",
@@ -592,11 +599,12 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
           {text.safety}
         </div>
 
-        <section className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <section className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-5">
           <SnapshotMetric label={text.spot} value={money(result?.thesis.spot_price)} />
+          <SnapshotMetric label={text.dataSource} value={result ? text.dataSourceValue : text.noMarketData} />
           <SnapshotMetric label={text.timestamp} value={result?.generated_at ?? result?.thesis.as_of_date ?? text.noMarketData} />
           <SnapshotMetric label={text.earnings} value={text.noMarketData} />
-          <SnapshotMetric label={text.ivRank} value={score(result?.thesis.iv_rank)} />
+          <SnapshotMetric label={text.ivRank} value={score(result?.thesis.iv_rank)} tip="ivRank" locale={locale} />
         </section>
 
         <section className="mb-4 grid grid-cols-[1fr_320px] gap-4">
@@ -612,7 +620,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
           <div className="rounded border border-border-subtle bg-bg-surface p-4">
             <div className="font-label-caps text-text-secondary">{text.qualityWarnings}</div>
             <div className="mt-2 font-body-sm text-text-secondary">
-              {recommendations.length ? `${recommendations.length} ranked structures` : text.empty}
+              {recommendations.length ? text.rankedStructures(recommendations.length) : text.empty}
             </div>
           </div>
         </section>
@@ -684,10 +692,13 @@ function PanelTitle({ icon, title }: { icon: ReactNode; title: string }) {
   );
 }
 
-function SnapshotMetric({ label, value }: { label: string; value: string }) {
+function SnapshotMetric({ label, value, tip, locale = "en" }: { label: string; value: string; tip?: GlossaryKey; locale?: "en" | "zh" }) {
   return (
     <div className="rounded border border-border-subtle bg-bg-surface p-3">
-      <div className="font-label-caps text-text-secondary">{label}</div>
+      <div className="flex items-center gap-1 font-label-caps text-text-secondary">
+        {label}
+        {tip ? <InfoTip term={tip} locale={locale} /> : null}
+      </div>
       <div className="mt-2 break-words font-data-mono text-base font-bold text-text-primary">{value}</div>
     </div>
   );
@@ -748,14 +759,14 @@ function RecommendationCard({
         <MiniMetric label={text.netDebit} value={money(item.net_debit)} />
         <MiniMetric label={text.maxLoss} value={money(item.max_loss)} />
         <MiniMetric label={text.maxProfit} value={money(item.max_profit)} />
-        <MiniMetric label={text.breakEven} value={money(item.break_even)} />
-        <MiniMetric label={text.requiredMove} value={pct(item.required_move_pct)} />
+        <MiniMetric label={text.breakEven} value={money(item.break_even)} tip="breakEven" locale={locale} />
+        <MiniMetric label={text.requiredMove} value={pct(item.required_move_pct)} tip="requiredMove" locale={locale} />
         <MiniMetric label={text.expectedMove} value={pct(item.expected_move_pct)} />
-        <MiniMetric label={text.rewardRisk} value={ratio(item.risk_reward)} />
+        <MiniMetric label={text.rewardRisk} value={ratio(item.risk_reward)} tip="rewardRisk" locale={locale} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <MiniMetric label={text.thetaBurn} value={pct(item.theta_burn_7d_pct)} />
-        <MiniMetric label={text.ivCrush} value={pct(item.estimated_iv_crush_loss_pct)} />
+        <MiniMetric label={text.thetaBurn} value={pct(item.theta_burn_7d_pct)} tip="thetaBurn" locale={locale} />
+        <MiniMetric label={text.ivCrush} value={pct(item.estimated_iv_crush_loss_pct)} tip="ivCrush" locale={locale} />
         <MiniMetric label={text.liquidity} value={score(item.liquidity_score)} />
       </div>
       <div className="mt-4">
@@ -793,10 +804,13 @@ function RecommendationCard({
   );
 }
 
-function MiniMetric({ accent = false, label, value }: { accent?: boolean; label: string; value: string }) {
+function MiniMetric({ accent = false, label, value, tip, locale = "en" }: { accent?: boolean; label: string; value: string; tip?: GlossaryKey; locale?: "en" | "zh" }) {
   return (
     <div className="rounded border border-border-subtle bg-surface-muted/30 p-2">
-      <div className="font-label-caps text-text-secondary">{label}</div>
+      <div className="flex items-center gap-1 font-label-caps text-text-secondary">
+        {label}
+        {tip ? <InfoTip term={tip} locale={locale} /> : null}
+      </div>
       <div className={`mt-1 font-data-mono text-sm font-bold ${accent ? "text-accent-success" : "text-text-primary"}`}>
         {value}
       </div>

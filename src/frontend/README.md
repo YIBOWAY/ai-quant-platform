@@ -24,6 +24,12 @@ http://127.0.0.1:3001
 The frontend reads from the local API. If the backend is offline, pages render a
 safe fallback state and show `API OFFLINE` in the safety strip.
 
+## Language
+
+The UI is bilingual (English / 中文). The top-bar toggle switches the whole site
+and stores the choice in the `qs_lang` cookie. Details:
+[../../docs/frontend/frontend_chinese_version.md](../../docs/frontend/frontend_chinese_version.md).
+
 ## Checks
 
 ```powershell

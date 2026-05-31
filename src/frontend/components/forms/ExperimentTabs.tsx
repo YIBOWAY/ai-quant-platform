@@ -13,23 +13,101 @@ import {
 } from "recharts";
 import { EmptyState } from "@/components/EmptyState";
 import type { ExperimentDetailResponse, ExperimentSummary, PreviewRecord } from "@/lib/api";
+import type { Locale } from "@/lib/locale";
 
 const TABS = [
-  { id: "sweep", label: "Sweep heatmap", heading: "Sweep Heatmap" },
-  { id: "folds", label: "Walk-forward folds", heading: "Walk-forward Folds" },
-  { id: "runs", label: "Run comparison", heading: "Run Comparison" },
-  { id: "summary", label: "Agent summary", heading: "Agent Summary" },
+  { id: "sweep" },
+  { id: "folds" },
+  { id: "runs" },
+  { id: "summary" },
 ] as const;
 const EMPTY_ROWS: PreviewRecord[] = [];
 
 type TabId = (typeof TABS)[number]["id"];
 
+const copy = {
+  en: {
+    tabLabels: {
+      sweep: "Sweep heatmap",
+      folds: "Walk-forward folds",
+      runs: "Run comparison",
+      summary: "Agent summary",
+    },
+    noDetailTitle: "No experiment selected",
+    noDetailDescription:
+      "Create or select a local experiment to review sweep, folds, runs, and summary.",
+    selectedExperiment: "Selected experiment",
+    runs: "runs",
+    folds: "folds",
+    sampleData: "Sample data - illustrative only",
+    sendToBacktest: "Send to Backtest",
+    sweepUnavailableTitle: "Sweep heatmap unavailable",
+    sweepUnavailableDescription: "This experiment does not include experiment_runs.parquet data.",
+    sweepHeatmapTitle: "Sweep Heatmap",
+    sweepHeatmapDescription: "Sharpe by lookback and top_n from the local parameter sweep.",
+    sharpe: "Sharpe",
+    foldsUnavailableTitle: "Walk-forward folds unavailable",
+    foldsUnavailableDescription:
+      "This experiment does not include walk_forward_folds.parquet data.",
+    foldsTitle: "Walk-forward Folds",
+    foldsDescription: "Validation windows and fold metrics for the selected experiment.",
+    runsUnavailableTitle: "Run comparison unavailable",
+    runsUnavailableDescription: "This experiment does not include run-level metric data.",
+    runsTitle: "Run Comparison",
+    runsDescription: "Runs sorted by Sharpe, with total return shown in the detail table.",
+    summaryUnavailableTitle: "Agent summary unavailable",
+    summaryUnavailableDescription:
+      "agent_summary.json was not found in this experiment directory.",
+    summaryTitle: "Agent Summary",
+    summaryDescription:
+      "Read-only agent summary for human review. It does not promote or deploy anything.",
+    copyJson: "Copy JSON",
+  },
+  zh: {
+    tabLabels: {
+      sweep: "参数扫描热力图",
+      folds: "滚动验证折",
+      runs: "运行对比",
+      summary: "代理摘要",
+    },
+    noDetailTitle: "未选择实验",
+    noDetailDescription: "创建或选择一个本地实验以查看扫描、验证折、运行与摘要。",
+    selectedExperiment: "已选实验",
+    runs: "运行",
+    folds: "验证折",
+    sampleData: "样本数据 — 仅供演示",
+    sendToBacktest: "发送至回测",
+    sweepUnavailableTitle: "参数扫描热力图不可用",
+    sweepUnavailableDescription: "此实验不包含 experiment_runs.parquet 数据。",
+    sweepHeatmapTitle: "参数扫描热力图",
+    sweepHeatmapDescription: "来自本地参数扫描的 lookback 与 top_n 对应的 Sharpe。",
+    sharpe: "Sharpe",
+    foldsUnavailableTitle: "滚动验证折不可用",
+    foldsUnavailableDescription: "此实验不包含 walk_forward_folds.parquet 数据。",
+    foldsTitle: "滚动验证折",
+    foldsDescription: "所选实验的验证窗口与折指标。",
+    runsUnavailableTitle: "运行对比不可用",
+    runsUnavailableDescription: "此实验不包含运行级指标数据。",
+    runsTitle: "运行对比",
+    runsDescription: "按 Sharpe 排序的运行，详情表中显示总回报。",
+    summaryUnavailableTitle: "代理摘要不可用",
+    summaryUnavailableDescription: "在此实验目录中未找到 agent_summary.json。",
+    summaryTitle: "代理摘要",
+    summaryDescription: "仅供人工查阅的只读代理摘要。它不会推广或部署任何内容。",
+    copyJson: "复制 JSON",
+  },
+} as const;
+
+type Copy = (typeof copy)[Locale];
+
 type ExperimentTabsProps = {
   detail: ExperimentDetailResponse | null;
   experiment: ExperimentSummary | undefined;
+  locale?: Locale;
 };
 
-export function ExperimentTabs({ detail, experiment }: ExperimentTabsProps) {
+export function ExperimentTabs({ detail, experiment, locale = "en" }: ExperimentTabsProps) {
+  const text = copy[locale];
   const [active, setActive] = useState<TabId>("sweep");
   const [isReady, setIsReady] = useState(false);
   const runs = detail?.runs ?? EMPTY_ROWS;
@@ -50,8 +128,8 @@ export function ExperimentTabs({ detail, experiment }: ExperimentTabsProps) {
   if (!detail) {
     return (
       <EmptyState
-        title="No experiment selected"
-        description="Create or select a local experiment to review sweep, folds, runs, and summary."
+        title={text.noDetailTitle}
+        description={text.noDetailDescription}
       />
     );
   }
@@ -63,17 +141,17 @@ export function ExperimentTabs({ detail, experiment }: ExperimentTabsProps) {
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle p-4">
         <div>
-          <div className="font-label-caps text-text-secondary">Selected experiment</div>
+          <div className="font-label-caps text-text-secondary">{text.selectedExperiment}</div>
           <h3 className="mt-1 break-all font-data-mono text-sm text-text-primary">{detail.id}</h3>
           <div className="mt-2 flex flex-wrap gap-2 font-data-mono text-[10px] uppercase">
             <span className="rounded border border-border-subtle px-2 py-1 text-text-secondary">
-              runs {runs.length}
+              {text.runs} {runs.length}
             </span>
             <span className="rounded border border-border-subtle px-2 py-1 text-text-secondary">
-              folds {folds.length}
+              {text.folds} {folds.length}
             </span>
             <span className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-warning">
-              Sample data - illustrative only
+              {text.sampleData}
             </span>
           </div>
         </div>
@@ -82,7 +160,7 @@ export function ExperimentTabs({ detail, experiment }: ExperimentTabsProps) {
             className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary"
             href={backtestHref}
           >
-            Send to Backtest
+            {text.sendToBacktest}
           </Link>
         ) : null}
       </div>
@@ -99,27 +177,27 @@ export function ExperimentTabs({ detail, experiment }: ExperimentTabsProps) {
             onClick={() => setActive(tab.id)}
             type="button"
           >
-            {tab.label}
+            {text.tabLabels[tab.id]}
           </button>
         ))}
       </div>
 
       <div className="flex-1 p-4">
-        {active === "sweep" ? <SweepHeatmap runs={runs} /> : null}
-        {active === "folds" ? <WalkForwardFolds folds={folds} /> : null}
-        {active === "runs" ? <RunComparison runs={runs} bestRunId={stringValue(bestRun?.run_id)} /> : null}
-        {active === "summary" ? <AgentSummary summary={agentSummary} /> : null}
+        {active === "sweep" ? <SweepHeatmap runs={runs} text={text} /> : null}
+        {active === "folds" ? <WalkForwardFolds folds={folds} text={text} /> : null}
+        {active === "runs" ? <RunComparison runs={runs} bestRunId={stringValue(bestRun?.run_id)} text={text} /> : null}
+        {active === "summary" ? <AgentSummary summary={agentSummary} text={text} /> : null}
       </div>
     </section>
   );
 }
 
-function SweepHeatmap({ runs }: { runs: PreviewRecord[] }) {
+function SweepHeatmap({ runs, text }: { runs: PreviewRecord[]; text: Copy }) {
   if (!runs.length) {
     return (
       <EmptyState
-        title="Sweep heatmap unavailable"
-        description="This experiment does not include experiment_runs.parquet data."
+        title={text.sweepUnavailableTitle}
+        description={text.sweepUnavailableDescription}
       />
     );
   }
@@ -131,8 +209,8 @@ function SweepHeatmap({ runs }: { runs: PreviewRecord[] }) {
   return (
     <div>
       <PanelHeading
-        title="Sweep Heatmap"
-        description="Sharpe by lookback and top_n from the local parameter sweep."
+        title={text.sweepHeatmapTitle}
+        description={text.sweepHeatmapDescription}
       />
       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {runs.map((run) => {
@@ -151,7 +229,7 @@ function SweepHeatmap({ runs }: { runs: PreviewRecord[] }) {
               <div className="mt-3 font-data-mono text-2xl font-semibold text-text-primary">
                 {formatNumber(sharpe, 2)}
               </div>
-              <div className="mt-1 font-body-sm text-text-secondary">Sharpe</div>
+              <div className="mt-1 font-body-sm text-text-secondary">{text.sharpe}</div>
             </div>
           );
         })}
@@ -160,12 +238,12 @@ function SweepHeatmap({ runs }: { runs: PreviewRecord[] }) {
   );
 }
 
-function WalkForwardFolds({ folds }: { folds: PreviewRecord[] }) {
+function WalkForwardFolds({ folds, text }: { folds: PreviewRecord[]; text: Copy }) {
   if (!folds.length) {
     return (
       <EmptyState
-        title="Walk-forward folds unavailable"
-        description="This experiment does not include walk_forward_folds.parquet data."
+        title={text.foldsUnavailableTitle}
+        description={text.foldsUnavailableDescription}
       />
     );
   }
@@ -173,8 +251,8 @@ function WalkForwardFolds({ folds }: { folds: PreviewRecord[] }) {
   return (
     <div>
       <PanelHeading
-        title="Walk-forward Folds"
-        description="Validation windows and fold metrics for the selected experiment."
+        title={text.foldsTitle}
+        description={text.foldsDescription}
       />
       <RecordTable
         columns={[
@@ -193,12 +271,12 @@ function WalkForwardFolds({ folds }: { folds: PreviewRecord[] }) {
   );
 }
 
-function RunComparison({ runs, bestRunId }: { runs: PreviewRecord[]; bestRunId?: string }) {
+function RunComparison({ runs, bestRunId, text }: { runs: PreviewRecord[]; bestRunId?: string; text: Copy }) {
   if (!runs.length) {
     return (
       <EmptyState
-        title="Run comparison unavailable"
-        description="This experiment does not include run-level metric data."
+        title={text.runsUnavailableTitle}
+        description={text.runsUnavailableDescription}
       />
     );
   }
@@ -215,8 +293,8 @@ function RunComparison({ runs, bestRunId }: { runs: PreviewRecord[]; bestRunId?:
   return (
     <div>
       <PanelHeading
-        title="Run Comparison"
-        description="Runs sorted by Sharpe, with total return shown in the detail table."
+        title={text.runsTitle}
+        description={text.runsDescription}
       />
       <div className="mt-4 h-72 rounded border border-border-subtle bg-surface-muted p-3">
         <ResponsiveContainer height="100%" width="100%">
@@ -249,12 +327,12 @@ function RunComparison({ runs, bestRunId }: { runs: PreviewRecord[]; bestRunId?:
   );
 }
 
-function AgentSummary({ summary }: { summary: Record<string, unknown> }) {
+function AgentSummary({ summary, text }: { summary: Record<string, unknown>; text: Copy }) {
   if (!Object.keys(summary).length) {
     return (
       <EmptyState
-        title="Agent summary unavailable"
-        description="agent_summary.json was not found in this experiment directory."
+        title={text.summaryUnavailableTitle}
+        description={text.summaryUnavailableDescription}
       />
     );
   }
@@ -266,15 +344,15 @@ function AgentSummary({ summary }: { summary: Record<string, unknown> }) {
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PanelHeading
-          title="Agent Summary"
-          description="Read-only agent summary for human review. It does not promote or deploy anything."
+          title={text.summaryTitle}
+          description={text.summaryDescription}
         />
         <button
           className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-secondary"
           onClick={() => void navigator.clipboard?.writeText(json)}
           type="button"
         >
-          Copy JSON
+          {text.copyJson}
         </button>
       </div>
       {notes.length ? (

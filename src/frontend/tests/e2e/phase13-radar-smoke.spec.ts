@@ -99,7 +99,7 @@ test.describe("phase13 options radar smoke", () => {
   });
 
   test("options radar page renders fixture and expands notes", async ({ page }) => {
-    await page.goto("/options-radar");
+    await page.goto(`/options-radar?date=${runDate}`);
     await page.waitForLoadState("networkidle");
 
     await expect(page.getByText(/read-only research output/i)).toBeVisible();
@@ -108,7 +108,7 @@ test.describe("phase13 options radar smoke", () => {
     await page.getByRole("button", { name: /Details/i }).click();
     await expect(page.getByText("fixture candidate")).toBeVisible();
     await expect(page.getByRole("link", { name: /Open Chain/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Run Sample Scan/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Run Today's Scan/i })).toBeVisible();
   });
 
   test("options radar refreshes local input files from the page", async ({ page }) => {

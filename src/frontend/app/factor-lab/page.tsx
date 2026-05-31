@@ -5,10 +5,74 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { FactorRunForm } from "@/components/forms/FactorRunForm";
 import { getFactorRunDetail, getFactorRuns, getFactors } from "@/lib/api";
+import { getServerLocale } from "@/lib/serverLocale";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
+const copy = {
+  en: {
+    factorDefinition: "Factor Definition",
+    availableFactors: "AVAILABLE FACTORS",
+    currentMetadata: "CURRENT METADATA",
+    noFactorLoaded: "No factor loaded",
+    latestRun: "LATEST RUN",
+    noFactorRunYet: "No factor run yet",
+    openRunAria: (id: string) => `Open ${id}`,
+    openRun: "Open run",
+    analysisConfig: "Analysis Config",
+    factorValuesTitle: "Factor Values",
+    factorValuesDesc: "Latest factor result rows from the API run.",
+    factorValuesEmptyTitle: "Factor values not loaded",
+    factorValuesEmptyDesc: "Run factor analysis to create a real factor result file.",
+    signalScoresTitle: "Signal Scores",
+    signalScoresDesc: "Latest combined score rows prepared for later strategy use.",
+    signalScoresEmptyTitle: "Signals unavailable",
+    signalScoresEmptyDesc: "Signals appear after a factor run completes.",
+    icReportTitle: "IC Report",
+    icReportDesc: "Information coefficient rows from the latest run.",
+    icReportEmptyTitle: "IC report unavailable",
+    icReportEmptyDesc: "IC and Rank IC require a completed factor run.",
+    quantileReturnsTitle: "Quantile Returns",
+    quantileReturnsDesc: "Grouped return rows from the latest run.",
+    quantileReturnsEmptyTitle: "Quantile returns unavailable",
+    quantileReturnsEmptyDesc: "Grouped returns are not shown until the backend produces them.",
+    noRunsTitle: "No factor runs yet",
+    noRunsDesc: "Use the form on the left to generate the first factor research result.",
+  },
+  zh: {
+    factorDefinition: "因子定义",
+    availableFactors: "可用因子",
+    currentMetadata: "当前元数据",
+    noFactorLoaded: "未加载因子",
+    latestRun: "最新运行",
+    noFactorRunYet: "暂无因子运行",
+    openRunAria: (id: string) => `打开 ${id}`,
+    openRun: "打开运行",
+    analysisConfig: "分析配置",
+    factorValuesTitle: "因子值",
+    factorValuesDesc: "来自 API 运行的最新因子结果行。",
+    factorValuesEmptyTitle: "未加载因子值",
+    factorValuesEmptyDesc: "运行因子分析以生成真实的因子结果文件。",
+    signalScoresTitle: "信号评分",
+    signalScoresDesc: "为后续策略使用准备的最新综合评分行。",
+    signalScoresEmptyTitle: "暂无信号",
+    signalScoresEmptyDesc: "因子运行完成后才会出现信号。",
+    icReportTitle: "IC 报告",
+    icReportDesc: "来自最新运行的信息系数行。",
+    icReportEmptyTitle: "IC 报告不可用",
+    icReportEmptyDesc: "IC 与 Rank IC 需要已完成的因子运行。",
+    quantileReturnsTitle: "分位收益",
+    quantileReturnsDesc: "来自最新运行的分组收益行。",
+    quantileReturnsEmptyTitle: "分位收益不可用",
+    quantileReturnsEmptyDesc: "在后端生成之前不会显示分组收益。",
+    noRunsTitle: "暂无因子运行",
+    noRunsDesc: "使用左侧表单生成第一个因子研究结果。",
+  },
+};
+
 export default async function FactorLab() {
+  const locale = await getServerLocale();
+  const text = copy[locale];
   const [factors, factorRuns] = await Promise.all([getFactors(), getFactorRuns()]);
   const latestRun = factorRuns.runs[0];
   const latestDetail = latestRun ? await getFactorRunDetail(latestRun.id) : null;
@@ -24,10 +88,10 @@ export default async function FactorLab() {
       <div className="flex gap-6">
         <aside className="flex w-[300px] flex-shrink-0 flex-col gap-6">
           <div className="rounded border border-border-subtle bg-bg-surface p-4">
-            <h2 className="mb-4 font-headline-lg text-text-primary">Factor Definition</h2>
+            <h2 className="mb-4 font-headline-lg text-text-primary">{text.factorDefinition}</h2>
             <div className="flex flex-col gap-stack-gap">
               <div className="flex flex-col gap-1">
-                <label className="font-label-caps text-text-secondary">AVAILABLE FACTORS</label>
+                <label className="font-label-caps text-text-secondary">{text.availableFactors}</label>
                 <select className="w-full rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-mono focus:border-accent-success focus:outline-none">
                   {factors.factors.map((factor) => (
                     <option key={factor.factor_id} style={optionStyle}>
@@ -37,7 +101,7 @@ export default async function FactorLab() {
                 </select>
               </div>
               <div className="mt-2 flex flex-col gap-1">
-                <label className="font-label-caps text-text-secondary">CURRENT METADATA</label>
+                <label className="font-label-caps text-text-secondary">{text.currentMetadata}</label>
                 <pre className="rounded border border-border-subtle bg-surface-muted p-3 font-code-sm text-text-mono">
                   {firstFactor
                     ? JSON.stringify(
@@ -49,13 +113,13 @@ export default async function FactorLab() {
                         null,
                         2,
                       )
-                    : "No factor loaded"}
+                    : text.noFactorLoaded}
                 </pre>
               </div>
               <div className="mt-2 flex flex-col gap-1">
-                <label className="font-label-caps text-text-secondary">LATEST RUN</label>
+                <label className="font-label-caps text-text-secondary">{text.latestRun}</label>
                 <div className="rounded border border-border-subtle bg-surface-muted p-3 font-data-mono text-xs text-text-primary">
-                  <div className="truncate">{latestRun?.id ?? "No factor run yet"}</div>
+                  <div className="truncate">{latestRun?.id ?? text.noFactorRunYet}</div>
                   {latestRun?.source ? (
                     <div className="mt-2">
                       <DataSourceBadge source={latestRun.source} />
@@ -66,11 +130,11 @@ export default async function FactorLab() {
                   </div>
                   {latestRun ? (
                     <Link
-                      aria-label={`Open ${latestRun.id}`}
+                      aria-label={text.openRunAria(latestRun.id)}
                       className="mt-3 inline-flex rounded border border-border-subtle px-3 py-1.5 font-body-sm text-info"
                       href={`/factor-lab/${latestRun.id}`}
                     >
-                      Open run
+                      {text.openRun}
                     </Link>
                   ) : null}
                 </div>
@@ -79,47 +143,47 @@ export default async function FactorLab() {
           </div>
 
           <div className="rounded border border-border-subtle bg-bg-surface p-4">
-            <h2 className="mb-4 font-headline-lg text-text-primary">Analysis Config</h2>
-            <FactorRunForm />
+            <h2 className="mb-4 font-headline-lg text-text-primary">{text.analysisConfig}</h2>
+            <FactorRunForm locale={locale} />
           </div>
         </aside>
 
         <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
           <DataPreviewTable
-            title="Factor Values"
-            description="Latest factor result rows from the API run."
+            title={text.factorValuesTitle}
+            description={text.factorValuesDesc}
             rows={latestDetail?.factor_results ?? []}
-            emptyTitle="Factor values not loaded"
-            emptyDescription="Run factor analysis to create a real factor result file."
+            emptyTitle={text.factorValuesEmptyTitle}
+            emptyDescription={text.factorValuesEmptyDesc}
             columns={["factor_id", "symbol", "signal_ts", "tradeable_ts", "value"]}
           />
           <DataPreviewTable
-            title="Signal Scores"
-            description="Latest combined score rows prepared for later strategy use."
+            title={text.signalScoresTitle}
+            description={text.signalScoresDesc}
             rows={latestDetail?.signals ?? []}
-            emptyTitle="Signals unavailable"
-            emptyDescription="Signals appear after a factor run completes."
+            emptyTitle={text.signalScoresEmptyTitle}
+            emptyDescription={text.signalScoresEmptyDesc}
             columns={["symbol", "signal_ts", "tradeable_ts", "score"]}
           />
           <DataPreviewTable
-            title="IC Report"
-            description="Information coefficient rows from the latest run."
+            title={text.icReportTitle}
+            description={text.icReportDesc}
             rows={latestDetail?.information_coefficients ?? []}
-            emptyTitle="IC report unavailable"
-            emptyDescription="IC and Rank IC require a completed factor run."
+            emptyTitle={text.icReportEmptyTitle}
+            emptyDescription={text.icReportEmptyDesc}
           />
           <DataPreviewTable
-            title="Quantile Returns"
-            description="Grouped return rows from the latest run."
+            title={text.quantileReturnsTitle}
+            description={text.quantileReturnsDesc}
             rows={latestDetail?.quantile_returns ?? []}
-            emptyTitle="Quantile returns unavailable"
-            emptyDescription="Grouped returns are not shown until the backend produces them."
+            emptyTitle={text.quantileReturnsEmptyTitle}
+            emptyDescription={text.quantileReturnsEmptyDesc}
           />
           {!latestRun ? (
             <div className="lg:col-span-2">
               <EmptyState
-                title="No factor runs yet"
-                description="Use the form on the left to generate the first factor research result."
+                title={text.noRunsTitle}
+                description={text.noRunsDesc}
               />
             </div>
           ) : null}

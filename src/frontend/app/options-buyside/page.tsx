@@ -1,4 +1,5 @@
 import { BuySideOptionsAssistant } from "@/components/forms/BuySideOptionsAssistant";
+import { getServerLocale } from "@/lib/serverLocale";
 
 type BuySideOptionsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -6,7 +7,7 @@ type BuySideOptionsPageProps = {
 
 export default async function BuySideOptionsPage({ searchParams }: BuySideOptionsPageProps) {
   const params = (await searchParams) ?? {};
-  const locale = params.lang === "zh" ? "zh" : "en";
+  const locale = await getServerLocale(params);
 
   return <BuySideOptionsAssistant locale={locale} />;
 }

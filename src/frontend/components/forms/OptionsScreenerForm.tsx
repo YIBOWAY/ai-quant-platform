@@ -2,13 +2,24 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
+import { useState } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
+import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+
+// Maps screener column index to a glossary term so headers can show a hint.
+const headingTips: Record<number, GlossaryKey> = {
+  7: "apr",
+  8: "spread",
+  9: "ivRank",
+  10: "delta",
+  11: "openInterest",
+};
 // Phase 12 fix (2026-05): every preset now sets every numeric field so that
 // switching presets cannot leave stale values from a previous selection.
 const presets = {
@@ -298,9 +309,10 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
   const run = form.handleSubmit((values) => mutation.mutate(values));
   const result = mutation.data;
 
+  const [preset, setPreset] = useState<keyof typeof presets | "">("");
   function applyPreset(name: keyof typeof presets) {
-    const preset = presets[name];
-    Object.entries(preset).forEach(([key, value]) => {
+    const selected = presets[name];
+    Object.entries(selected).forEach(([key, value]) => {
       form.setValue(key as keyof ScreenerValues, value, { shouldValidate: true });
     });
   }
@@ -344,13 +356,13 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             {text.preset}
             <select
               className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary"
-              defaultValue=""
+              value={preset}
               onChange={(event) => {
                 const value = event.target.value as keyof typeof presets | "";
+                setPreset(value);
                 if (value) {
                   applyPreset(value);
                 }
-                event.currentTarget.value = "";
               }}
             >
               <option style={optionStyle} value="">
@@ -437,18 +449,53 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             </div>
             {result.candidates.length === 0 ? (
               <div className="rounded border border-warning/40 bg-warning/10 p-4 font-body-sm text-warning">
-                {locale === "zh"
-                  ? "当前过滤条件下没有合格合约。深度价内、零 OI、价差过宽或趋势失败的 Avoid 合约已从推荐表中隐藏。"
-                  : "No qualifying contracts matched the current filters. Avoid-rated deep ITM, zero-OI, wide-spread, or failed-trend contracts are hidden from recommendations."}
+                {locale === "zh" ? (
+                  <>
+                    <p className="font-semibold">
+                      已扫描 {result.expiration_count ?? result.scanned_expirations?.length ?? 0} 个到期日、过滤掉
+                      {" "}
+                      {result.rejected_count ?? 0} 个合约，当前过滤条件下没有合格候选。
+                    </p>
+                    <p className="mt-2 text-text-secondary">
+                      这通常说明筛选条件相对该标的过严，而不是程序出错。像 LMT 这类低波动标的，权利金年化往往达不到较高的 Min APR。可以尝试：
+                    </p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5 text-text-secondary">
+                      <li>调低「最低年化 (%)」（当前 IV 越低，能达到的年化越低）。</li>
+                      <li>放宽「最大 Delta」或「最大价差 (%)」。</li>
+                      <li>关闭「趋势过滤」或「HV / IV 择时过滤」。</li>
+                    </ul>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold">
+                      Scanned {result.expiration_count ?? result.scanned_expirations?.length ?? 0} expirations and
+                      filtered out {result.rejected_count ?? 0} contracts — none passed the current filters.
+                    </p>
+                    <p className="mt-2 text-text-secondary">
+                      This usually means the filters are too strict for this ticker, not a malfunction. Low-volatility
+                      names like LMT rarely reach a high Min APR. Try:
+                    </p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5 text-text-secondary">
+                      <li>Lowering Min APR (low IV caps the achievable annualized yield).</li>
+                      <li>Relaxing Max Delta or Max Spread.</li>
+                      <li>Turning off the trend filter or HV/IV timing filter.</li>
+                    </ul>
+                  </>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto rounded border border-border-subtle bg-bg-surface">
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-border-subtle">
-                      {text.headings.map((heading) => (
+                      {text.headings.map((heading, index) => (
                         <th className="px-3 py-2 font-label-caps text-text-secondary" key={heading}>
-                          {heading}
+                          <span className="inline-flex items-center gap-1">
+                            {heading}
+                            {headingTips[index] ? (
+                              <InfoTip term={headingTips[index]} locale={locale} />
+                            ) : null}
+                          </span>
                         </th>
                       ))}
                     </tr>

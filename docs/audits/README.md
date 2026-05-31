@@ -11,4 +11,4 @@ For the current platform state, start with:
 - [../OVERVIEW.md](../OVERVIEW.md)
 - [../delivery/phase_13_delivery.md](../delivery/phase_13_delivery.md)
 - [../delivery/phase_14_delivery.md](../delivery/phase_14_delivery.md)
-
+- [FRONTEND_REAL_DATA_REVIEW_2026-05-31.md](FRONTEND_REAL_DATA_REVIEW_2026-05-31.md)

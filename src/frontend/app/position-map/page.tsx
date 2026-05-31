@@ -14,6 +14,66 @@ import {
   getSymbols,
   type PreviewRecord,
 } from "@/lib/api";
+import { getServerLocale } from "@/lib/serverLocale";
+
+const copy = {
+  en: {
+    title: "Position Map",
+    subtitle:
+      "Latest saved positions, exposure weights, and paper-trading safety state from local runs.",
+    openBacktest: "Open backtest",
+    openPaperRun: "Open paper run",
+    portfolioExposure: "Portfolio Exposure",
+    netExposure: "Net Exposure",
+    openSymbols: "Open Symbols",
+    latestEquity: "Latest Equity",
+    exposureBySymbol: "Exposure by Symbol",
+    exposureBySymbolDesc:
+      "Gross exposure weight from the newest saved backtest position timestamp.",
+    long: "Long",
+    short: "Short",
+    noPositionsTitle: "No saved positions",
+    noPositionsDesc: "Run a backtest to generate position rows for this map.",
+    paperSafetyState: "Paper Safety State",
+    latestPaperRunLabel: "latest paper run",
+    riskBreachesLabel: "risk breaches",
+    none: "none",
+    readOnlyNote: "Read-only map from local simulation artifacts.",
+    latestBacktestPositions: "Latest Backtest Positions",
+    latestBacktestPositionsDesc: "Newest position row per symbol from the latest backtest.",
+    noPositionRowsDesc: "No backtest position rows were found.",
+    availableSymbols: "Available Symbols",
+    availableSymbolsDesc: "Symbols currently available from the local market-data API.",
+    noSymbolsDesc: "No local symbols were returned by the API.",
+  },
+  zh: {
+    title: "持仓地图",
+    subtitle: "来自本地运行的最新保存持仓、敞口权重以及模拟交易安全状态。",
+    openBacktest: "打开回测",
+    openPaperRun: "打开模拟运行",
+    portfolioExposure: "组合敞口",
+    netExposure: "净敞口",
+    openSymbols: "持仓标的数",
+    latestEquity: "最新净值",
+    exposureBySymbol: "按标的的敞口",
+    exposureBySymbolDesc: "取自最新保存的回测持仓时间戳的总敞口权重。",
+    long: "多头",
+    short: "空头",
+    noPositionsTitle: "暂无保存的持仓",
+    noPositionsDesc: "运行一次回测以为该地图生成持仓数据行。",
+    paperSafetyState: "模拟交易安全状态",
+    latestPaperRunLabel: "最新模拟运行",
+    riskBreachesLabel: "风险越界次数",
+    none: "无",
+    readOnlyNote: "基于本地模拟产物的只读地图。",
+    latestBacktestPositions: "最新回测持仓",
+    latestBacktestPositionsDesc: "来自最新回测、每个标的的最新持仓数据行。",
+    noPositionRowsDesc: "未找到回测持仓数据行。",
+    availableSymbols: "可用标的",
+    availableSymbolsDesc: "当前可从本地行情数据 API 获取的标的。",
+    noSymbolsDesc: "API 未返回任何本地标的。",
+  },
+} as const;
 
 type ExposureRow = {
   symbol: string;
@@ -27,6 +87,8 @@ type ExposureRow = {
 };
 
 export default async function PositionMapPage() {
+  const locale = await getServerLocale();
+  const text = copy[locale];
   const [symbols, backtests, paperRuns, health] = await Promise.all([
     getSymbols(),
     getBacktests(),
@@ -61,10 +123,10 @@ export default async function PositionMapPage() {
           <div>
             <div className="flex items-center gap-2">
               <Layers size={18} className="text-accent-success" />
-              <h1 className="font-headline-xl text-text-primary">Position Map</h1>
+              <h1 className="font-headline-xl text-text-primary">{text.title}</h1>
             </div>
             <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">
-              Latest saved positions, exposure weights, and paper-trading safety state from local runs.
+              {text.subtitle}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -73,7 +135,7 @@ export default async function PositionMapPage() {
                 className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary"
                 href={`/backtest/${latestBacktest.id}`}
               >
-                Open backtest
+                {text.openBacktest}
               </Link>
             ) : null}
             {latestPaperRun ? (
@@ -81,7 +143,7 @@ export default async function PositionMapPage() {
                 className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary"
                 href={`/paper-trading/${latestPaperRun.id}`}
               >
-                Open paper run
+                {text.openPaperRun}
               </Link>
             ) : null}
           </div>
@@ -89,19 +151,19 @@ export default async function PositionMapPage() {
       </header>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Portfolio Exposure" value={formatMoney(totals.grossExposure)} />
-        <Metric label="Net Exposure" value={formatMoney(totals.netExposure)} />
-        <Metric label="Open Symbols" value={String(exposureRows.length)} />
-        <Metric label="Latest Equity" value={formatMoney(latestEquity)} />
+        <Metric label={text.portfolioExposure} value={formatMoney(totals.grossExposure)} />
+        <Metric label={text.netExposure} value={formatMoney(totals.netExposure)} />
+        <Metric label={text.openSymbols} value={String(exposureRows.length)} />
+        <Metric label={text.latestEquity} value={formatMoney(latestEquity)} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded border border-border-subtle bg-bg-surface p-4">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="font-label-caps text-text-primary">Exposure by Symbol</h2>
+              <h2 className="font-label-caps text-text-primary">{text.exposureBySymbol}</h2>
               <p className="mt-1 font-body-sm text-text-secondary">
-                Gross exposure weight from the newest saved backtest position timestamp.
+                {text.exposureBySymbolDesc}
               </p>
             </div>
             {latestBacktest?.source ? <DataSourceBadge source={latestBacktest.source} /> : null}
@@ -112,7 +174,9 @@ export default async function PositionMapPage() {
                 <div className="grid gap-2 md:grid-cols-[120px_1fr_110px]" key={row.symbol}>
                   <div>
                     <div className="font-data-mono text-text-primary">{row.symbol}</div>
-                    <div className="font-label-caps text-text-secondary">{row.side}</div>
+                    <div className="font-label-caps text-text-secondary">
+                      {row.side === "Long" ? text.long : text.short}
+                    </div>
                   </div>
                   <div className="flex items-center">
                     <div className="h-3 w-full overflow-hidden rounded bg-surface-container">
@@ -130,8 +194,8 @@ export default async function PositionMapPage() {
             </div>
           ) : (
             <EmptyState
-              title="No saved positions"
-              description="Run a backtest to generate position rows for this map."
+              title={text.noPositionsTitle}
+              description={text.noPositionsDesc}
             />
           )}
         </div>
@@ -139,7 +203,7 @@ export default async function PositionMapPage() {
         <div className="rounded border border-border-subtle bg-bg-surface p-4">
           <div className="mb-4 flex items-center gap-2">
             <ShieldAlert size={18} className="text-warning" />
-            <h2 className="font-label-caps text-text-primary">Paper Safety State</h2>
+            <h2 className="font-label-caps text-text-primary">{text.paperSafetyState}</h2>
           </div>
           <div className="space-y-3 font-body-sm">
             <StatusRow label="paper_trading" value={String(health.safety?.paper_trading ?? true)} />
@@ -148,16 +212,16 @@ export default async function PositionMapPage() {
               value={String(health.safety?.live_trading_enabled ?? false)}
             />
             <StatusRow label="kill_switch" value={String(health.safety?.kill_switch ?? true)} />
-            <StatusRow label="latest paper run" value={latestPaperRun?.id ?? "none"} />
+            <StatusRow label={text.latestPaperRunLabel} value={latestPaperRun?.id ?? text.none} />
             <StatusRow
-              label="risk breaches"
+              label={text.riskBreachesLabel}
               value={String(latestPaperRun?.summary?.risk_breach_count ?? 0)}
               danger={(latestPaperRun?.summary?.risk_breach_count ?? 0) > 0}
             />
           </div>
           <div className="mt-4 flex items-center gap-2 rounded border border-border-subtle bg-surface-muted p-3 font-body-sm text-text-secondary">
             <BriefcaseBusiness size={16} />
-            Read-only map from local simulation artifacts.
+            {text.readOnlyNote}
           </div>
         </div>
       </section>
@@ -165,19 +229,19 @@ export default async function PositionMapPage() {
       <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
         <DataPreviewTable
           columns={["timestamp", "symbol", "quantity", "close_price", "market_value", "weight"]}
-          description="Newest position row per symbol from the latest backtest."
-          emptyDescription="No backtest position rows were found."
-          emptyTitle="Latest Backtest Positions"
+          description={text.latestBacktestPositionsDesc}
+          emptyDescription={text.noPositionRowsDesc}
+          emptyTitle={text.latestBacktestPositions}
           rows={positionTableRows(exposureRows)}
-          title="Latest Backtest Positions"
+          title={text.latestBacktestPositions}
         />
         <DataPreviewTable
           columns={["symbol", "source"]}
-          description="Symbols currently available from the local market-data API."
-          emptyDescription="No local symbols were returned by the API."
-          emptyTitle="Available Symbols"
+          description={text.availableSymbolsDesc}
+          emptyDescription={text.noSymbolsDesc}
+          emptyTitle={text.availableSymbols}
           rows={symbols.symbols.map((symbol) => ({ symbol, source: symbols.source }))}
-          title="Available Symbols"
+          title={text.availableSymbols}
         />
       </section>
     </main>

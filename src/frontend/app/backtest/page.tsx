@@ -11,6 +11,62 @@ import {
   getBacktests,
   getBenchmark,
 } from "@/lib/api";
+import { getServerLocale } from "@/lib/serverLocale";
+
+const copy = {
+  en: {
+    configTitle: "Backtest Config",
+    configSubtitle: "Interactive run controls are connected in P0-4.",
+    latestRun: "Latest run",
+    noBacktest: "No API backtest yet",
+    openAria: (id: string) => `Open ${id}`,
+    openRun: "Open run",
+    benchmark: "Benchmark",
+    totalReturn: "Total Return",
+    bmk: "BMK",
+    sharpeRatio: "Sharpe Ratio",
+    maxDrawdown: "Max Drawdown",
+    strategyVsBenchmark: "Strategy vs Benchmark",
+    normalizedDesc: "Normalized equity curves from the newest backtest and benchmark API.",
+    strategy: "Strategy",
+    noEquityTitle: "No equity curve rows",
+    noEquityDesc: "Run a backtest to compare the strategy with the benchmark curve.",
+    tradeBlotterTitle: "Trade Blotter",
+    tradeBlotterDesc: "Latest simulated trades from the newest backtest run.",
+    tradeBlotterEmptyTitle: "Trade blotter unavailable",
+    tradeBlotterEmptyDesc: "No backtest detail has been created yet.",
+    ordersTitle: "Orders",
+    ordersDesc: "Submitted orders from the newest backtest run.",
+    ordersEmptyTitle: "Order table unavailable",
+    ordersEmptyDesc: "Orders appear after the backtest engine writes a run.",
+  },
+  zh: {
+    configTitle: "回测配置",
+    configSubtitle: "交互式运行控制已在 P0-4 阶段接入。",
+    latestRun: "最新运行",
+    noBacktest: "暂无 API 回测",
+    openAria: (id: string) => `打开 ${id}`,
+    openRun: "打开运行",
+    benchmark: "基准",
+    totalReturn: "总收益",
+    bmk: "基准",
+    sharpeRatio: "夏普比率",
+    maxDrawdown: "最大回撤",
+    strategyVsBenchmark: "策略 vs 基准",
+    normalizedDesc: "来自最新回测与基准 API 的归一化权益曲线。",
+    strategy: "策略",
+    noEquityTitle: "暂无权益曲线数据",
+    noEquityDesc: "运行一次回测以将策略与基准曲线进行对比。",
+    tradeBlotterTitle: "成交记录",
+    tradeBlotterDesc: "来自最新回测运行的模拟成交。",
+    tradeBlotterEmptyTitle: "暂无成交记录",
+    tradeBlotterEmptyDesc: "尚未生成任何回测明细。",
+    ordersTitle: "订单",
+    ordersDesc: "来自最新回测运行的已提交订单。",
+    ordersEmptyTitle: "暂无订单表",
+    ordersEmptyDesc: "回测引擎写入运行后将显示订单。",
+  },
+} as const;
 
 type BacktestPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -18,6 +74,8 @@ type BacktestPageProps = {
 
 export default async function Backtest({ searchParams }: BacktestPageProps) {
   const params = (await searchParams) ?? {};
+  const locale = await getServerLocale(params);
+  const text = copy[locale];
   const initialValues = backtestInitialValuesFromSearch(params);
   const backtests = await getBacktests();
   const latest = backtests.backtests[0];
@@ -47,16 +105,16 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
     <div className="flex h-full flex-1 overflow-hidden bg-base">
       <aside className="flex h-full w-[320px] flex-col overflow-y-auto border-r border-border-subtle bg-bg-surface">
         <div className="border-b border-border-subtle p-4">
-          <h2 className="font-headline-lg text-text-primary">Backtest Config</h2>
+          <h2 className="font-headline-lg text-text-primary">{text.configTitle}</h2>
           <p className="mt-1 font-body-sm text-text-secondary">
-            Interactive run controls are connected in P0-4.
+            {text.configSubtitle}
           </p>
         </div>
         <div className="flex flex-col gap-4 p-4">
           <div className="rounded border border-border-subtle bg-surface-muted p-3">
-            <div className="font-label-caps text-text-secondary">Latest run</div>
+            <div className="font-label-caps text-text-secondary">{text.latestRun}</div>
             <div className="mt-2 truncate font-data-mono text-text-primary">
-              {latest?.id ?? "No API backtest yet"}
+              {latest?.id ?? text.noBacktest}
             </div>
             {latest?.source ? (
               <div className="mt-2">
@@ -65,19 +123,22 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
             ) : null}
             {latest ? (
               <Link
-                aria-label={`Open ${latest.id}`}
+                aria-label={text.openAria(latest.id)}
                 className="mt-3 inline-flex rounded border border-border-subtle px-3 py-1.5 font-body-sm text-info"
                 href={`/backtest/${latest.id}`}
               >
-                Open run
+                {text.openRun}
               </Link>
             ) : null}
           </div>
           <div className="rounded border border-border-subtle bg-surface-muted p-3">
-            <div className="font-label-caps text-text-secondary">Benchmark</div>
+            <div className="font-label-caps text-text-secondary">{text.benchmark}</div>
             <div className="mt-2 font-data-mono text-text-primary">{benchmark.symbol}</div>
+            <div className="mt-2">
+              <DataSourceBadge source={benchmark.source} />
+            </div>
           </div>
-          <BacktestForm initialValues={initialValues} />
+          <BacktestForm initialValues={initialValues} locale={locale} />
         </div>
       </aside>
 
@@ -85,30 +146,30 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
         <ErrorBanner messages={[backtests.apiError, benchmark.apiError, detail?.apiError]} />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded border border-border-subtle bg-bg-surface p-3">
-            <span className="font-label-caps text-text-secondary">Total Return</span>
+            <span className="font-label-caps text-text-secondary">{text.totalReturn}</span>
             <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">
               {formatPercent(latest?.metrics?.total_return)}
             </div>
             <span className="font-data-mono text-[10px] text-text-secondary">
-              BMK: {formatPercent(benchmark.metrics.total_return)}
+              {text.bmk}: {formatPercent(benchmark.metrics.total_return)}
             </span>
           </div>
           <div className="rounded border border-border-subtle bg-bg-surface p-3">
-            <span className="font-label-caps text-text-secondary">Sharpe Ratio</span>
+            <span className="font-label-caps text-text-secondary">{text.sharpeRatio}</span>
             <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">
               {latest?.metrics?.sharpe?.toFixed(2) ?? "--"}
             </div>
             <span className="font-data-mono text-[10px] text-text-secondary">
-              BMK: {benchmark.metrics.sharpe.toFixed(2)}
+              {text.bmk}: {benchmark.metrics.sharpe.toFixed(2)}
             </span>
           </div>
           <div className="rounded border border-border-subtle bg-bg-surface p-3">
-            <span className="font-label-caps text-text-secondary">Max Drawdown</span>
+            <span className="font-label-caps text-text-secondary">{text.maxDrawdown}</span>
             <div className="mt-2 font-data-mono text-lg font-bold text-danger">
               {formatPercent(latest?.metrics?.max_drawdown)}
             </div>
             <span className="font-data-mono text-[10px] text-text-secondary">
-              BMK: {formatPercent(benchmark.metrics.max_drawdown)}
+              {text.bmk}: {formatPercent(benchmark.metrics.max_drawdown)}
             </span>
           </div>
         </div>
@@ -116,41 +177,41 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
         <section className="rounded border border-border-subtle bg-bg-surface p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="font-label-caps text-text-primary">Strategy vs Benchmark</h3>
+              <h3 className="font-label-caps text-text-primary">{text.strategyVsBenchmark}</h3>
               <p className="mt-1 font-body-sm text-text-secondary">
-                Normalized equity curves from the newest backtest and benchmark API.
+                {text.normalizedDesc}
               </p>
             </div>
             <div className="flex gap-4 font-data-mono text-[11px]">
-              <span className="text-accent-success">Strategy</span>
-              <span className="text-info">Benchmark</span>
+              <span className="text-accent-success">{text.strategy}</span>
+              <span className="text-info">{text.benchmark}</span>
             </div>
           </div>
           {comparisonRows.length ? (
             <EquityComparisonChart rows={comparisonRows} />
           ) : (
             <EmptyState
-              title="No equity curve rows"
-              description="Run a backtest to compare the strategy with the benchmark curve."
+              title={text.noEquityTitle}
+              description={text.noEquityDesc}
             />
           )}
         </section>
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <DataPreviewTable
-            title="Trade Blotter"
-            description="Latest simulated trades from the newest backtest run."
+            title={text.tradeBlotterTitle}
+            description={text.tradeBlotterDesc}
             rows={detail?.trade_blotter ?? []}
-            emptyTitle="Trade blotter unavailable"
-            emptyDescription="No backtest detail has been created yet."
+            emptyTitle={text.tradeBlotterEmptyTitle}
+            emptyDescription={text.tradeBlotterEmptyDesc}
           />
           <div className="lg:col-span-2">
             <DataPreviewTable
-              title="Orders"
-              description="Submitted orders from the newest backtest run."
+              title={text.ordersTitle}
+              description={text.ordersDesc}
               rows={detail?.orders ?? []}
-              emptyTitle="Order table unavailable"
-              emptyDescription="Orders appear after the backtest engine writes a run."
+              emptyTitle={text.ordersEmptyTitle}
+              emptyDescription={text.ordersEmptyDesc}
             />
           </div>
         </section>

@@ -18,9 +18,10 @@ test.describe("options tools and real chart surfaces", () => {
   test("data explorer initial load uses the backend default source", async ({ page }) => {
     await page.goto("/data-explorer", { waitUntil: "domcontentloaded" });
 
-    await expect(page.getByLabel("Source")).toHaveValue("sample");
+    await expect(page.getByLabel("Source")).toHaveValue(/^(futu|sample|tiingo)$/);
     await expect(page.getByTestId("ohlcv-candlestick-chart")).toBeVisible();
-    await expect(page.locator('span[title="sample"]').first()).toBeVisible();
+    await expect(page.getByText("Rows returned")).toBeVisible();
+    await expect(page.getByText("Quality report not connected")).toHaveCount(0);
   });
 
   test("backtest renders a strategy and benchmark line chart", async ({ page }) => {
@@ -53,5 +54,29 @@ test.describe("options tools and real chart surfaces", () => {
       page.getByRole("button", { name: "Rank Strategies" }).click(),
     ]);
     await expect(page.getByText("Bull Call Spread")).toBeVisible();
+
+    await page.getByRole("tab", { name: "Signals" }).click();
+    await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/api/options/tools/fear-score")),
+      page.getByRole("button", { name: "Fear Score", exact: true }).click(),
+    ]);
+    await expect(page.getByText('"fear_score"')).toBeVisible();
+    await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/api/options/tools/implied-volatility")),
+      page.getByRole("button", { name: "Implied Volatility" }).click(),
+    ]);
+    await expect(page.getByText('"implied_volatility"')).toBeVisible();
+
+    await page.getByRole("tab", { name: "Research Ops" }).click();
+    await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/api/options/tools/strategy/templates")),
+      page.getByRole("button", { name: "Strategy Templates" }).click(),
+    ]);
+    await expect(page.getByText('"templates"')).toBeVisible();
+    await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/api/options/tools/health-check")),
+      page.getByRole("button", { name: "Health Check" }).click(),
+    ]);
+    await expect(page.getByText('"health_score"')).toBeVisible();
   });
 });
