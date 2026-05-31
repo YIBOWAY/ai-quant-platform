@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { LOCALE_COOKIE, resolveLocale, type Locale } from "./locale";
 
 /**
@@ -8,6 +8,11 @@ import { LOCALE_COOKIE, resolveLocale, type Locale } from "./locale";
 export async function getServerLocale(
   searchParams?: Record<string, string | string[] | undefined>,
 ): Promise<Locale> {
+  const requestHeaders = await headers();
+  const pathLocale = requestHeaders.get("x-qs-locale");
+  if (pathLocale) {
+    return resolveLocale(pathLocale);
+  }
   if (searchParams?.lang) {
     return resolveLocale(searchParams.lang);
   }

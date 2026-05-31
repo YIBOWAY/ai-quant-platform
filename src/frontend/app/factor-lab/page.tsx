@@ -12,6 +12,9 @@ const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 const copy = {
   en: {
     factorDefinition: "Factor Definition",
+    guideTitle: "What to use this for",
+    guideBody:
+      "Use this page to test whether a signal such as momentum or volatility has useful historical behavior before it becomes part of a strategy.",
     availableFactors: "AVAILABLE FACTORS",
     currentMetadata: "CURRENT METADATA",
     noFactorLoaded: "No factor loaded",
@@ -41,6 +44,9 @@ const copy = {
   },
   zh: {
     factorDefinition: "因子定义",
+    guideTitle: "这个页面用来做什么",
+    guideBody:
+      "这里用来验证一个信号，比如动量或波动率，过去是否真的有用；确认后才适合进入策略研究。",
     availableFactors: "可用因子",
     currentMetadata: "当前元数据",
     noFactorLoaded: "未加载因子",
@@ -89,6 +95,10 @@ export default async function FactorLab() {
         <aside className="flex w-[300px] flex-shrink-0 flex-col gap-6">
           <div className="rounded border border-border-subtle bg-bg-surface p-4">
             <h2 className="mb-4 font-headline-lg text-text-primary">{text.factorDefinition}</h2>
+            <div className="mb-4 rounded border border-info/30 bg-info/10 p-3">
+              <div className="font-label-caps text-info">{text.guideTitle}</div>
+              <p className="mt-1 font-body-sm text-text-secondary">{text.guideBody}</p>
+            </div>
             <div className="flex flex-col gap-stack-gap">
               <div className="flex flex-col gap-1">
                 <label className="font-label-caps text-text-secondary">{text.availableFactors}</label>

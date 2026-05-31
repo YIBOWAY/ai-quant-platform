@@ -112,6 +112,7 @@ def run_options_screener(
         market_regime_term_ratio=market_regime.term_ratio if market_regime else None,
         candidates=ranked[: config.top_n],
         rejected_count=rejected_count,
+        rejection_summary=_rejection_summary(rows),
         assumptions=[
             "Read-only data mode; no order placement is available.",
             "When expiration is omitted, the screener scans all Futu expirations "
@@ -355,6 +356,16 @@ def _build_candidate(
         rating=rating,
         notes=notes,
     )
+
+
+def _rejection_summary(candidates: list[OptionsScreenerCandidate]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for candidate in candidates:
+        if candidate.rating != "Avoid":
+            continue
+        for note in candidate.notes:
+            counts[note] = counts.get(note, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 def _candidate_notes(

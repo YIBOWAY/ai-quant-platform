@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Bell, Terminal, Power, Search } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { LocaleToggle } from "@/components/LocaleToggle";
+import { localizePath, splitLocalePath } from "@/lib/locale";
 
 const copy = {
   en: {
@@ -15,7 +16,7 @@ const copy = {
     marketData: "Market Data",
     options: "Options",
     replications: "Replications",
-    orderBook: "Order Book",
+    orderBook: "Polymarket Markets",
     positionMap: "Position Map",
   },
   zh: {
@@ -24,7 +25,7 @@ const copy = {
     marketData: "行情数据",
     options: "期权",
     replications: "策略复现",
-    orderBook: "预测市场盘口",
+    orderBook: "Polymarket 市场",
     positionMap: "持仓地图",
   },
 };
@@ -43,6 +44,7 @@ export function TopBar() {
     { name: text.orderBook, href: "/order-book" },
     { name: text.positionMap, href: "/position-map" },
   ];
+  const activePath = splitLocalePath(pathname).pathname;
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -50,7 +52,7 @@ export function TopBar() {
     if (!symbol) {
       return;
     }
-    router.push(`/data-explorer?symbol=${encodeURIComponent(symbol)}&provider=futu`);
+    router.push(localizePath(`/data-explorer?symbol=${encodeURIComponent(symbol)}&provider=futu`, locale));
   };
 
   return (
@@ -69,11 +71,11 @@ export function TopBar() {
         </form>
         <nav className="flex items-center gap-6 h-full flex-1">
           {topNavItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = activePath === item.href;
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={localizePath(item.href, locale)}
                 className={`transition-colors font-sans text-sm cursor-pointer h-full flex items-center border-b-2 ${
                   isActive
                     ? "text-[#00C896] border-[#00C896]"
@@ -91,7 +93,7 @@ export function TopBar() {
         <LocaleToggle />
         <Link
           className="px-4 py-1.5 bg-[#00C896]/10 border border-[#00C896]/30 text-[#00C896] rounded hover:bg-[#00C896]/20 transition-colors font-label-caps uppercase text-xs font-bold whitespace-nowrap"
-          href="/backtest"
+          href={localizePath("/backtest", locale)}
         >
           {text.runBacktest}
         </Link>
@@ -99,21 +101,21 @@ export function TopBar() {
           <Link
             aria-label="Open radar alerts"
             className="hover:text-[#00C896] transition-colors cursor-pointer w-8 h-8 flex items-center justify-center rounded hover:bg-zinc-900"
-            href="/options-radar"
+            href={localizePath("/options-radar", locale)}
           >
             <Bell size={18} />
           </Link>
           <Link
             aria-label="Open agent console"
             className="hover:text-[#00C896] transition-colors cursor-pointer w-8 h-8 flex items-center justify-center rounded hover:bg-zinc-900"
-            href="/agent-studio"
+            href={localizePath("/agent-studio", locale)}
           >
             <Terminal size={18} />
           </Link>
           <Link
             aria-label="Open settings"
             className="hover:text-[#00C896] transition-colors cursor-pointer w-8 h-8 flex items-center justify-center rounded hover:bg-zinc-900"
-            href="/settings"
+            href={localizePath("/settings", locale)}
           >
             <Power size={18} />
           </Link>

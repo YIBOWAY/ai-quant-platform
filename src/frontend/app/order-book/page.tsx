@@ -15,7 +15,7 @@ const copy = {
   en: {
     sampleWarning:
       "Showing SAMPLE / 模拟数据 — these are not real markets. Switch the provider to Polymarket below to load read-only public market data.",
-    heading: "Prediction Market Order Books",
+    heading: "Polymarket Markets",
     loaded: (count: number) =>
       `Loaded ${count} read-only order books from the local API. Polymarket support is research-only: no signing, no live trading, no real orders.`,
     providerLabel: "provider:",
@@ -30,7 +30,7 @@ const copy = {
   zh: {
     sampleWarning:
       "显示 模拟数据 / SAMPLE —— 这些不是真实市场。请在下方将数据源切换为 Polymarket，以加载只读的公开市场数据。",
-    heading: "预测市场盘口",
+    heading: "Polymarket 市场",
     loaded: (count: number) =>
       `已从本地 API 加载 ${count} 个只读盘口。Polymarket 仅用于研究：不签名、不实盘交易、不下真实订单。`,
     providerLabel: "数据源：",

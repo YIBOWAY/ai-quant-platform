@@ -9,6 +9,7 @@ import { z } from "zod";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
+import { localizePath } from "@/lib/locale";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
@@ -234,6 +235,7 @@ type ScreenerResult = {
   market_regime_term_ratio?: number | null;
   candidates: ScreenerCandidate[];
   rejected_count?: number;
+  rejection_summary?: Record<string, number>;
   assumptions: string[];
 };
 
@@ -258,6 +260,51 @@ function ratingLabel(rating: string, locale: "en" | "zh") {
     return copy.zh.watch;
   }
   return copy.zh.avoid;
+}
+
+const assumptionZh: Record<string, string> = {
+  "Read-only data mode; no order placement is available.": "只读数据模式；不会下单。",
+  "When expiration is omitted, the screener scans all Futu expirations inside the configured DTE window.":
+    "未指定到期日时，后端会扫描 DTE 范围内所有 Futu 到期日。",
+  "Avoid-rated contracts are hidden by default; set include_rejected=true to audit rejected rows.":
+    "默认隐藏 Avoid 合约；需要排查时可启用 include_rejected 查看被过滤行。",
+  "Premium uses mid price when bid and ask are available.": "买卖价可用时，权利金按中间价估算。",
+  "Yield estimates are simplified and ignore assignment, taxes, and commissions.":
+    "收益率是简化估算，未计入行权、税费和佣金。",
+  "Missing IV/Greeks fields reduce confidence; they are not invented.": "缺少 IV 或希腊值会降低可信度，系统不会编造这些数据。",
+  "VIX market regime is read from the offline Yahoo cache and discounts seller ratings under Elevated / Panic conditions.":
+    "VIX 市场状态来自本地缓存；市场偏紧张时会下调卖方候选评级。",
+};
+
+const rejectionReasonZh: Record<string, string> = {
+  "missing or non-positive bid/ask": "缺少有效买卖价",
+  "premium below minimum": "权利金低于最低要求",
+  "mid below absolute floor": "中间价低于最低要求",
+  "spread too wide": "买卖价差过宽",
+  "APR below minimum": "年化收益低于最低要求",
+  "DTE missing": "缺少到期天数",
+  "DTE outside range": "到期天数不在范围内",
+  "open interest missing": "缺少未平仓量",
+  "open interest below minimum": "未平仓量低于要求",
+  "IV missing": "缺少 IV",
+  "IV below minimum": "IV 低于最低要求",
+  "delta missing": "缺少 Delta",
+  "delta above limit": "Delta 超过上限",
+  "sell put strike is above spot": "卖出看跌行权价高于现价",
+  "trend filter failed": "趋势过滤未通过",
+  "IV/HV filter failed": "IV/HV 过滤未通过",
+  "underlying ADV missing": "缺少正股成交量",
+  "underlying ADV below minimum": "正股成交量低于要求",
+  "market cap missing": "缺少市值",
+  "market cap below minimum": "市值低于要求",
+};
+
+function translateAssumption(value: string, locale: "en" | "zh") {
+  return locale === "zh" ? assumptionZh[value] ?? value : value;
+}
+
+function translateRejectionReason(value: string, locale: "en" | "zh") {
+  return locale === "zh" ? rejectionReasonZh[value] ?? value : value;
 }
 
 export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" }) {
@@ -324,7 +371,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
         <p className="mt-1 font-body-sm text-text-secondary">{text.intro}</p>
         <a
           className="mt-3 inline-flex font-body-sm text-info"
-          href={locale === "zh" ? "/options-screener?lang=en" : "/options-screener?lang=zh"}
+          href={localizePath("/options-screener", locale === "zh" ? "en" : "zh")}
         >
           {locale === "zh" ? "English" : "中文"}
         </a>
@@ -459,6 +506,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
                     <p className="mt-2 text-text-secondary">
                       这通常说明筛选条件相对该标的过严，而不是程序出错。像 LMT 这类低波动标的，权利金年化往往达不到较高的 Min APR。可以尝试：
                     </p>
+                    <RejectionSummary locale={locale} summary={result.rejection_summary} />
                     <ul className="mt-1 list-disc space-y-1 pl-5 text-text-secondary">
                       <li>调低「最低年化 (%)」（当前 IV 越低，能达到的年化越低）。</li>
                       <li>放宽「最大 Delta」或「最大价差 (%)」。</li>
@@ -475,6 +523,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
                       This usually means the filters are too strict for this ticker, not a malfunction. Low-volatility
                       names like LMT rarely reach a high Min APR. Try:
                     </p>
+                    <RejectionSummary locale={locale} summary={result.rejection_summary} />
                     <ul className="mt-1 list-disc space-y-1 pl-5 text-text-secondary">
                       <li>Lowering Min APR (low IV caps the achievable annualized yield).</li>
                       <li>Relaxing Max Delta or Max Spread.</li>
@@ -526,7 +575,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
               <h3 className="font-label-caps text-text-secondary">{text.assumptions}</h3>
               <ul className="mt-2 list-disc space-y-1 pl-5 font-body-sm text-text-secondary">
                 {result.assumptions.map((assumption) => (
-                  <li key={assumption}>{assumption}</li>
+                  <li key={assumption}>{translateAssumption(assumption, locale)}</li>
                 ))}
               </ul>
             </div>
@@ -565,6 +614,34 @@ function Metric({ help, label, value }: { help?: string; label: string; value: s
       <div className="font-label-caps text-text-secondary">{label}</div>
       <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">{value}</div>
       {help ? <div className="mt-2 font-body-sm leading-relaxed text-text-secondary">{help}</div> : null}
+    </div>
+  );
+}
+
+function RejectionSummary({
+  locale,
+  summary,
+}: {
+  locale: "en" | "zh";
+  summary?: Record<string, number>;
+}) {
+  const rows = Object.entries(summary ?? {}).slice(0, 5);
+  if (!rows.length) {
+    return null;
+  }
+  return (
+    <div className="mt-3 rounded border border-border-subtle bg-bg-surface/70 p-3">
+      <div className="font-label-caps text-text-secondary">
+        {locale === "zh" ? "主要过滤原因" : "Main filter reasons"}
+      </div>
+      <ul className="mt-2 space-y-1 font-body-sm text-text-secondary">
+        {rows.map(([reason, count]) => (
+          <li className="flex justify-between gap-4" key={reason}>
+            <span>{translateRejectionReason(reason, locale)}</span>
+            <span className="font-data-mono text-text-primary">{count}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

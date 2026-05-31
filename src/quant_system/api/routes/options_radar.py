@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, HTTPException
 
@@ -188,11 +188,13 @@ def options_daily_scan(
         for candidate in report.candidates
         if _matches(candidate, strategy=strategy, sector=sector, dte_bucket=dte_bucket)
     ][: max(top, 0)]
+    freshness = _snapshot_freshness(report.run_date, report.candidates)
     return {
         "run_date": report.run_date,
         "universe_size": report.universe_size,
         "scanned_tickers": report.scanned_tickers,
         "failed_tickers": report.failed_tickers,
+        **freshness,
         "candidates": [_candidate_payload(candidate) for candidate in candidates],
     }
 
@@ -259,6 +261,29 @@ def _candidate_payload(candidate: OptionsRadarCandidate) -> dict:
         "notes": option.notes,
         "market_regime": candidate.market_regime,
         "market_regime_penalty": candidate.market_regime_penalty,
+    }
+
+
+def _snapshot_freshness(
+    run_date: str,
+    candidates: list[OptionsRadarCandidate],
+) -> dict:
+    today = datetime.now(UTC).date()
+    try:
+        snapshot_date = date.fromisoformat(run_date)
+    except ValueError:
+        snapshot_date = today
+    expired_count = 0
+    for candidate in candidates:
+        try:
+            if date.fromisoformat(candidate.candidate.expiry) < today:
+                expired_count += 1
+        except ValueError:
+            continue
+    return {
+        "is_stale": snapshot_date < today,
+        "snapshot_age_days": max((today - snapshot_date).days, 0),
+        "expired_candidate_count": expired_count,
     }
 
 

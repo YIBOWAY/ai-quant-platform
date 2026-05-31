@@ -25,17 +25,6 @@ function defaultRange(days = 60) {
   return { start: isoDate(start), end: isoDate(end) };
 }
 
-function paramsWithLang(params: Record<string, string | string[] | undefined>, lang: string) {
-  const normalized = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (typeof value === "string") {
-      normalized.set(key, value);
-    }
-  });
-  normalized.set("lang", lang);
-  return `/data-explorer?${normalized.toString()}`;
-}
-
 export default async function DataExplorer({ searchParams }: DataExplorerProps) {
   const params = (await searchParams) ?? {};
   const locale = await getServerLocale(params);
@@ -56,8 +45,6 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
           chartHint: "真实 OHLCV K 线。长区间只显示少量时间刻度，避免横轴拥挤。",
           noRows: "没有行情数据",
           noRowsDescription: "后端没有返回这个标的和时间范围的数据。",
-          languageLabel: "English",
-          languageHref: paramsWithLang(params, "en"),
         }
       : {
           currency: "USD",
@@ -74,8 +61,6 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
           chartHint: "Real OHLCV candlesticks. Long ranges show sparse axis ticks to keep the chart readable.",
           noRows: "No OHLCV rows",
           noRowsDescription: "The backend returned no rows for the selected symbol and range.",
-          languageLabel: "中文",
-          languageHref: paramsWithLang(params, "zh"),
         };
   const symbol = single(params.symbol, "SPY").toUpperCase();
   const fallbackRange = defaultRange(60);
@@ -125,9 +110,6 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
             <span className="font-data-mono text-[10px] uppercase text-text-secondary">
               freq: {ohlcv.frequency}
             </span>
-            <a className="font-body-sm text-info" href={text.languageHref}>
-              {text.languageLabel}
-            </a>
           </div>
         </div>
       </div>

@@ -306,6 +306,9 @@ export type OptionsRadarResponse = ApiEnvelope & {
   universe_size: number;
   scanned_tickers: number;
   failed_tickers: Array<[string, string]>;
+  is_stale?: boolean;
+  snapshot_age_days?: number;
+  expired_candidate_count?: number;
   candidates: OptionsRadarCandidate[];
 };
 
@@ -633,6 +636,9 @@ export function getOptionsDailyScan(params: {
     universe_size: 0,
     scanned_tickers: 0,
     failed_tickers: [],
+    is_stale: false,
+    snapshot_age_days: 0,
+    expired_candidate_count: 0,
     candidates: [],
     safety: FALLBACK_SAFETY,
   });

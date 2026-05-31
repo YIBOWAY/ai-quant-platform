@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { localizePath } from "@/lib/locale";
 
 const controlSchema = z.object({
   symbol: z.string().min(1),
@@ -24,7 +25,6 @@ const labels = {
     frequency: "Frequency",
     source: "Source",
     load: "Load",
-    helper: "Type any US ticker, or pick a common ETF from suggestions.",
   },
   zh: {
     ticker: "标的代码",
@@ -33,7 +33,6 @@ const labels = {
     frequency: "周期",
     source: "数据源",
     load: "加载数据",
-    helper: "可输入任意美股代码，也可从常用 ETF 建议中选择。",
   },
 };
 
@@ -61,10 +60,7 @@ export function DataExplorerControls({
           ...values,
           symbol: values.symbol.trim().toUpperCase(),
         });
-        if (locale === "zh") {
-          params.set("lang", "zh");
-        }
-        router.push(`/data-explorer?${params.toString()}`);
+        router.push(localizePath(`/data-explorer?${params.toString()}`, locale));
       })}
     >
       <label className="flex min-w-[160px] flex-col gap-1 font-body-sm text-text-primary">
@@ -79,9 +75,6 @@ export function DataExplorerControls({
             <option key={symbol} value={symbol} />
           ))}
         </datalist>
-        <span className="max-w-[220px] font-body-sm text-[11px] text-text-secondary">
-          {text.helper}
-        </span>
       </label>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
         {text.start}

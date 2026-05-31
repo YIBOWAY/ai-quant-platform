@@ -114,14 +114,14 @@ type SmileResult = {
 };
 
 const tabs: Array<{ id: TabId; icon: typeof Calculator; live: boolean }> = [
-  { id: "greeks", icon: Calculator, live: false },
-  { id: "strategy", icon: ListChecks, live: false },
-  { id: "score", icon: Gauge, live: false },
-  { id: "simulate", icon: LineChart, live: false },
+  { id: "greeks", icon: Calculator, live: true },
+  { id: "strategy", icon: ListChecks, live: true },
+  { id: "score", icon: Gauge, live: true },
+  { id: "simulate", icon: LineChart, live: true },
   { id: "surface", icon: BarChart3, live: true },
   { id: "smile", icon: Activity, live: true },
-  { id: "signals", icon: Gauge, live: false },
-  { id: "researchOps", icon: ListChecks, live: false },
+  { id: "signals", icon: Gauge, live: true },
+  { id: "researchOps", icon: ListChecks, live: true },
 ];
 
 const copy = {
@@ -129,11 +129,11 @@ const copy = {
     brand: "Local AlphaGBM",
     title: "Options Tools",
     intro:
-      "Read-only option research tools. Tabs marked Live use backend/Futu option data. Tabs marked Example use fixed inputs and say so before showing results.",
+      "Read-only option research tools. Market-sensitive calculations first load the entered ticker from backend Futu data, then send those live inputs to local calculators.",
     ticker: "Ticker",
     researchOnly: "Research only",
     live: "Live",
-    example: "Example",
+    example: "Local",
     running: "Running...",
     response: "response",
     requestFailed: "Request failed",
@@ -171,23 +171,23 @@ const copy = {
     },
     greeks: {
       action: "Calculate Greeks",
-      desc: "Price and sensitivity snapshot for a fixed at-the-money call input.",
-      empty: "Run the example calculation to inspect the Greeks table.",
+      desc: "Loads the nearest live option chain, picks the at-the-money call, then calculates price sensitivity.",
+      empty: "Run the calculation to inspect the live-chain Greeks table.",
     },
     strategy: {
       action: "Rank Strategies",
-      desc: "Compares bullish strategy templates with the same fixed spot, IV, DTE, and strike set.",
-      empty: "Run the local ranker to compare strategy templates.",
+      desc: "Compares bullish strategy templates using the live spot, nearest expiry, IV, and listed strikes.",
+      empty: "Run the local ranker with live Futu inputs.",
     },
     score: {
       action: "Score Contracts",
-      desc: "Ranks fixed example contracts by liquidity, volatility value, delta fit, and premium quality.",
-      empty: "Run the scorer to rank the fixed example contracts.",
+      desc: "Ranks the live option chain by liquidity, volatility value, delta fit, and premium quality.",
+      empty: "Run the scorer to rank current listed contracts.",
     },
     simulate: {
       action: "Run Simulation",
-      desc: "Shows expiry profit and loss for a fixed vertical call spread input.",
-      empty: "Run the simulator to see payoff bounds and the expiry curve.",
+      desc: "Builds a simple call spread from the live chain and shows the expiry payoff.",
+      empty: "Run the simulator to see live-chain payoff bounds and the expiry curve.",
     },
     surface: {
       action: "Load Surface",
@@ -201,8 +201,8 @@ const copy = {
     },
     signals: {
       action: "Run Fear Score",
-      desc: "Runs local signal endpoints with explicit example research inputs. These calls do not fetch live data or create orders.",
-      empty: "Choose a signal button to run a local options research endpoint.",
+      desc: "Runs local signal endpoints with live option-chain context where the signal can be derived from the entered ticker.",
+      empty: "Choose a signal button to run a live-chain research endpoint.",
       impliedVolatility: "Implied Volatility",
       bullPutSignal: "Bull Put Signal",
       fearScore: "Fear Score",
@@ -214,7 +214,7 @@ const copy = {
     },
     researchOps: {
       action: "Load Templates",
-      desc: "Runs local strategy library, watchlist, alert, and research health endpoints with explicit example context where needed.",
+      desc: "Runs local strategy library, watchlist, and alert endpoints with live ticker context where market data is needed.",
       empty: "Choose a research operation to call the connected backend endpoint.",
       strategyTemplates: "Strategy Templates",
       buildStrategy: "Build Strategy",
@@ -224,25 +224,25 @@ const copy = {
       healthCheck: "Health Check",
     },
     sourceNotes: {
-      exampleLabel: "Example input",
-      example: "Fixed inputs are sent to backend calculators. This is not live market data.",
+      exampleLabel: "Local input",
+      example: "This call uses user or local context and does not fetch market data.",
       liveLabel: "Live Futu",
-      live: "Fetched through backend read-only Futu option-chain endpoints.",
+      live: "Fetched through backend read-only Futu option-chain endpoints before calculation.",
       researchLabel: "Backend local",
-      research: "Calls backend research endpoints with explicit example context and never creates orders.",
+      research: "Calls backend research endpoints with live ticker context when market data is needed and never creates orders.",
     },
   },
   zh: {
     brand: "Local AlphaGBM",
     title: "期权工具",
     intro:
-      "只读期权研究工具。标为“实时”的标签页使用后端/Futu 期权数据；标为“示例”的标签页使用固定输入，页面会明确说明。",
+      "只读期权研究工具。凡是需要市场数据的计算，都会先从后端读取当前标的的 Futu 期权链，再交给本地计算器处理。",
     ticker: "标的代码",
     researchOnly: "仅供研究",
     live: "实时",
-    example: "示例",
+    example: "本地",
     running: "运行中...",
-    response: "响应",
+    response: "返回结果",
     requestFailed: "请求失败",
     expiryPnl: "到期盈亏",
     tabs: {
@@ -269,115 +269,122 @@ const copy = {
       mid: "中间价",
       breakevens: "盈亏平衡价",
       ticker: "标的",
-      expiry: "到期",
+      expiry: "到期日",
       shape: "形态",
       atmIv: "平值 IV",
-      skew25d: "25Δ 偏斜",
+      skew25d: "25D 偏斜",
       iv: "IV",
       delta: "Delta",
     },
     greeks: {
       action: "计算希腊字母",
-      desc: "针对固定平值看涨期权输入计算价格与敏感度快照。",
-      empty: "运行示例计算以查看希腊字母表。",
+      desc: "读取最近一期实时期权链，选择接近平值的看涨合约，再计算价格敏感度。",
+      empty: "运行计算后，可以查看当前期权链里的希腊字母结果。",
     },
     strategy: {
       action: "策略排名",
-      desc: "使用固定的现价、IV、到期天数与行权价集合，比较看涨策略模板。",
-      empty: "运行本地排名器以比较策略模板。",
+      desc: "使用实时现价、最近到期日、IV 和上市行权价，比较看涨策略模板。",
+      empty: "用 Futu 实时输入运行本地策略排名器。",
     },
     score: {
       action: "合约评分",
-      desc: "按流动性、波动率价值、Delta 匹配度与权利金质量对固定示例合约排名。",
-      empty: "运行评分器以对固定示例合约排名。",
+      desc: "按流动性、波动率价值、Delta 匹配度和权利金质量，对当前期权链里的合约排名。",
+      empty: "运行评分器，给当前上市合约排序。",
     },
     simulate: {
       action: "运行模拟",
-      desc: "展示固定垂直看涨价差输入在到期时的盈亏。",
-      empty: "运行模拟器以查看盈亏边界与到期曲线。",
+      desc: "从实时期权链构建一个简单看涨价差，并显示到期盈亏。",
+      empty: "运行模拟器，查看当前期权链下的盈亏边界和到期曲线。",
     },
     surface: {
       action: "加载曲面",
-      desc: "从已配置的只读行情源获取当前期权 IV 分桶。",
-      empty: (ticker: string) => `点击“加载曲面”以通过富途获取 ${ticker} 的实时 IV 数据。`,
+      desc: "从已配置的只读行情源读取当前期权 IV 分布。",
+      empty: (ticker: string) => `点击“加载曲面”，通过 Futu 读取 ${ticker} 的实时 IV 数据。`,
     },
     smile: {
       action: "加载微笑曲线",
-      desc: "从已配置的只读行情源获取最近到期的波动率微笑。",
-      empty: (ticker: string) => `点击“加载微笑曲线”以通过富途获取 ${ticker} 的实时 IV 微笑数据。`,
+      desc: "从已配置的只读行情源读取最近到期日的波动率微笑。",
+      empty: (ticker: string) => `点击“加载微笑曲线”，通过 Futu 读取 ${ticker} 的实时 IV 微笑数据。`,
     },
     signals: {
       action: "运行恐慌评分",
-      desc: "运行本地信号接口，使用明确的示例研究输入。这些调用不会获取实时数据，也不会创建订单。",
-      empty: "选择一个信号按钮，运行本地期权研究接口。",
+      desc: "运行本地信号接口；凡是能从输入标的推导的信号，都会先读取实时期权链。",
+      empty: "选择一个信号按钮，运行实时期权链研究接口。",
       impliedVolatility: "隐含波动率",
       bullPutSignal: "牛市看跌价差信号",
       fearScore: "恐慌评分",
       ivRank: "IV 排名",
       marketSentiment: "市场情绪",
-      earningsCrush: "财报 IV 崩塌",
-      hedgeAdvisor: "对冲顾问",
+      earningsCrush: "财报 IV 回落",
+      hedgeAdvisor: "对冲建议",
       unusualActivity: "异常活跃度",
     },
     researchOps: {
       action: "加载模板",
-      desc: "运行本地策略库、自选清单、提醒与研究健康检查接口；需要上下文时使用明确示例输入。",
+      desc: "运行本地策略库、自选清单和提醒接口；需要市场数据时会使用当前标的的实时上下文。",
       empty: "选择一个研究操作，调用已连接的后端接口。",
       strategyTemplates: "策略模板",
       buildStrategy: "构建策略",
-      addWatchlist: "添加自选",
+      addWatchlist: "加入自选",
       loadWatchlist: "加载自选",
       evaluateAlerts: "评估提醒",
       healthCheck: "健康检查",
     },
     sourceNotes: {
-      exampleLabel: "示例输入",
-      example: "固定输入会提交给后端计算器；这不是实时行情数据。",
+      exampleLabel: "本地输入",
+      example: "这个调用使用用户输入或本地上下文，不读取行情。",
       liveLabel: "实时 Futu",
-      live: "通过后端只读 Futu 期权链接口获取。",
+      live: "计算前通过后端只读 Futu 期权链接口获取。",
       researchLabel: "本地后端",
-      research: "调用后端研究接口，必要时使用明确示例上下文，不会创建订单。",
+      research: "调用后端研究接口；需要市场数据时使用当前标的上下文，不会创建订单。",
     },
   },
 } as const;
 
 type Copy = (typeof copy)[Locale];
 
-const sampleContracts = [
-  {
-    symbol: "AAPL_PUT_95",
-    option_type: "PUT",
-    strike: 95,
-    bid: 1.1,
-    ask: 1.2,
-    volume: 600,
-    open_interest: 1200,
-    implied_volatility: 0.5,
-    delta: -0.24,
-  },
-  {
-    symbol: "AAPL_CALL_105",
-    option_type: "CALL",
-    strike: 105,
-    bid: 1.4,
-    ask: 1.55,
-    volume: 380,
-    open_interest: 850,
-    implied_volatility: 0.36,
-    delta: 0.35,
-  },
-  {
-    symbol: "AAPL_PUT_90",
-    option_type: "PUT",
-    strike: 90,
-    bid: 0.72,
-    ask: 0.8,
-    volume: 280,
-    open_interest: 700,
-    implied_volatility: 0.46,
-    delta: -0.16,
-  },
-];
+type OptionsSnapshot = {
+  ticker: string;
+  source: string;
+  price: number;
+  nearest_expiry: string;
+  atm_iv?: number | null;
+  hv_30d?: number | null;
+  iv_rank?: number | null;
+  iv_percentile?: number | null;
+};
+
+type LiveContract = {
+  symbol: string;
+  option_type: string;
+  expiry?: string;
+  strike?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  last?: number | null;
+  volume?: number | null;
+  open_interest?: number | null;
+  implied_volatility?: number | null;
+  delta?: number | null;
+};
+
+type OptionsChainResponse = {
+  ticker: string;
+  source: string;
+  expiration: string;
+  contracts: LiveContract[];
+};
+
+type LiveContext = {
+  ticker: string;
+  spot: number;
+  expiry: string;
+  dte: number;
+  atmIv: number | null;
+  hv30d: number | null;
+  ivRank: number | null;
+  contracts: LiveContract[];
+};
 
 export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
   const [activeTab, setActiveTab] = useState<TabId>("greeks");
@@ -442,9 +449,9 @@ export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
         </aside>
 
         <section className="min-w-0 flex-1 overflow-y-auto p-6" role="tabpanel">
-          {activeTab === "greeks" ? <GreeksPanel t={text} locale={locale} /> : null}
-          {activeTab === "strategy" ? <StrategyRankPanel t={text} locale={locale} /> : null}
-          {activeTab === "score" ? <ScoreContractsPanel t={text} locale={locale} /> : null}
+          {activeTab === "greeks" ? <GreeksPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
+          {activeTab === "strategy" ? <StrategyRankPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
+          {activeTab === "score" ? <ScoreContractsPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
           {activeTab === "simulate" ? <SimulationPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
           {activeTab === "surface" ? <SurfacePanel ticker={sharedTicker} t={text} /> : null}
           {activeTab === "smile" ? <SmilePanel ticker={sharedTicker} t={text} /> : null}
@@ -456,8 +463,9 @@ export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
   );
 }
 
-function GreeksPanel({ t, locale }: { t: Copy; locale: Locale }) {
+function GreeksPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
   const [result, setResult] = useState<GreeksResult | null>(null);
+  const [selectedContract, setSelectedContract] = useState<LiveContract | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -465,13 +473,19 @@ function GreeksPanel({ t, locale }: { t: Copy; locale: Locale }) {
     setIsRunning(true);
     setError(null);
     try {
+      const context = await loadLiveContext(ticker);
+      const contract = pickAtmContract(context.contracts, context.spot, "CALL");
+      if (!contract?.strike || !contract.implied_volatility) {
+        throw new Error(`No usable live at-the-money call was found for ${context.ticker}.`);
+      }
       const payload = await apiPost<GreeksResult>("/api/options/tools/greeks", {
-        spot: 100,
-        strike: 100,
-        expiry_days: 30,
-        iv: 0.25,
+        spot: context.spot,
+        strike: contract.strike,
+        expiry_days: context.dte,
+        iv: normalizeIv(contract.implied_volatility),
         option_type: "call",
       });
+      setSelectedContract(contract);
       setResult(payload);
     } catch (err) {
       setError(errorMessage(err, t.requestFailed));
@@ -488,39 +502,46 @@ function GreeksPanel({ t, locale }: { t: Copy; locale: Locale }) {
       isRunning={isRunning}
       onRun={run}
       runningLabel={t.running}
-      sourceDescription={t.sourceNotes.example}
-      sourceLabel={t.sourceNotes.exampleLabel}
+      sourceDescription={t.sourceNotes.live}
+      sourceLabel={t.sourceNotes.liveLabel}
       title={t.tabs.greeks}
     >
       {error ? <ErrorLine message={error} /> : null}
       {result ? (
-        <MetricGrid
-          items={[
-            [t.labels.price, result.price],
-            [
-              <span className="inline-flex items-center gap-1" key="delta">
-                Delta
-                <InfoTip term="delta" locale={locale} />
-              </span>,
-              result.delta,
-            ],
-            ["Gamma", result.gamma],
-            ["Theta", result.theta],
-            ["Vega", result.vega],
-            ["Rho", result.rho],
-            ["Charm", result.charm],
-            ["Vanna", result.vanna],
-            ["Volga", result.volga],
-          ]}
-        />
+        <div className="space-y-4">
+          <MetricGrid
+            items={[
+              [t.labels.symbol, selectedContract?.symbol ?? "--"],
+              [t.labels.price, result.price],
+              [
+                <span className="inline-flex items-center gap-1" key="delta">
+                  Delta
+                  <InfoTip term="delta" locale={locale} />
+                </span>,
+                result.delta,
+              ],
+              ["Gamma", result.gamma],
+              ["Theta", result.theta],
+              ["Vega", result.vega],
+              ["Rho", result.rho],
+              ["Charm", result.charm],
+              ["Vanna", result.vanna],
+              ["Volga", result.volga],
+            ]}
+          />
+          <GreekGuide locale={locale} />
+        </div>
       ) : (
-        <EmptyPrompt label={t.greeks.empty} />
+        <div className="space-y-4">
+          <EmptyPrompt label={t.greeks.empty} />
+          <GreekGuide locale={locale} />
+        </div>
       )}
     </ToolPanel>
   );
 }
 
-function StrategyRankPanel({ t, locale }: { t: Copy; locale: Locale }) {
+function StrategyRankPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
   const [result, setResult] = useState<StrategyRankResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -529,13 +550,15 @@ function StrategyRankPanel({ t, locale }: { t: Copy; locale: Locale }) {
     setIsRunning(true);
     setError(null);
     try {
+      const context = await loadLiveContext(ticker);
+      const strikes = liveStrikes(context);
       const payload = await apiPost<StrategyRankResult>("/api/options/tools/strategy/rank", {
         market_view: "bullish",
-        spot: 100,
-        expiry_days: 45,
-        strikes: [85, 90, 95, 100, 105, 110, 115],
-        iv: 0.25,
-        symbol: "AAPL",
+        spot: context.spot,
+        expiry_days: context.dte,
+        strikes,
+        iv: context.atmIv ?? 0.3,
+        symbol: context.ticker,
       });
       setResult(payload);
     } catch (err) {
@@ -553,8 +576,8 @@ function StrategyRankPanel({ t, locale }: { t: Copy; locale: Locale }) {
       isRunning={isRunning}
       onRun={run}
       runningLabel={t.running}
-      sourceDescription={t.sourceNotes.example}
-      sourceLabel={t.sourceNotes.exampleLabel}
+      sourceDescription={t.sourceNotes.live}
+      sourceLabel={t.sourceNotes.liveLabel}
       title={t.tabs.strategy}
     >
       {error ? <ErrorLine message={error} /> : null}
@@ -587,7 +610,7 @@ function StrategyRankPanel({ t, locale }: { t: Copy; locale: Locale }) {
   );
 }
 
-function ScoreContractsPanel({ t, locale }: { t: Copy; locale: Locale }) {
+function ScoreContractsPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
   const [result, setResult] = useState<ScoreContractsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -596,11 +619,12 @@ function ScoreContractsPanel({ t, locale }: { t: Copy; locale: Locale }) {
     setIsRunning(true);
     setError(null);
     try {
+      const context = await loadLiveContext(ticker);
       const payload = await apiPost<ScoreContractsResult>("/api/options/tools/score-contracts", {
-        spot: 100,
+        spot: context.spot,
         objective: "sell_premium",
-        top_n: 5,
-        contracts: sampleContracts,
+        top_n: 10,
+        contracts: context.contracts,
       });
       setResult(payload);
     } catch (err) {
@@ -618,8 +642,8 @@ function ScoreContractsPanel({ t, locale }: { t: Copy; locale: Locale }) {
       isRunning={isRunning}
       onRun={run}
       runningLabel={t.running}
-      sourceDescription={t.sourceNotes.example}
-      sourceLabel={t.sourceNotes.exampleLabel}
+      sourceDescription={t.sourceNotes.live}
+      sourceLabel={t.sourceNotes.liveLabel}
       title={t.tabs.score}
     >
       {error ? <ErrorLine message={error} /> : null}
@@ -665,25 +689,27 @@ function SimulationPanel({ ticker, t, locale }: { ticker: string; t: Copy; local
     setIsRunning(true);
     setError(null);
     try {
+      const context = await loadLiveContext(ticker);
+      const [longCall, shortCall] = buildLiveCallSpread(context);
       const payload = await apiPost<SimulationResult>("/api/options/tools/simulate", {
-        symbol: ticker,
-        spot: 100,
+        symbol: context.ticker,
+        spot: context.spot,
         legs: [
           {
             action: "buy",
             option_type: "call",
-            strike: 100,
-            expiry_days: 30,
-            iv: 0.25,
-            entry_price: 5,
+            strike: longCall.strike,
+            expiry_days: context.dte,
+            iv: normalizeIv(longCall.implied_volatility),
+            entry_price: midPrice(longCall),
           },
           {
             action: "sell",
             option_type: "call",
-            strike: 110,
-            expiry_days: 30,
-            iv: 0.25,
-            entry_price: 2,
+            strike: shortCall.strike,
+            expiry_days: context.dte,
+            iv: normalizeIv(shortCall.implied_volatility),
+            entry_price: midPrice(shortCall),
           },
         ],
       });
@@ -713,8 +739,8 @@ function SimulationPanel({ ticker, t, locale }: { ticker: string; t: Copy; local
       isRunning={isRunning}
       onRun={run}
       runningLabel={t.running}
-      sourceDescription={t.sourceNotes.example}
-      sourceLabel={t.sourceNotes.exampleLabel}
+      sourceDescription={t.sourceNotes.live}
+      sourceLabel={t.sourceNotes.liveLabel}
       title={t.tabs.simulate}
     >
       {error ? <ErrorLine message={error} /> : null}
@@ -870,19 +896,12 @@ function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
       isRunning={isRunning !== null}
       onRun={() =>
         run(t.signals.fearScore, () =>
-          apiPost("/api/options/tools/fear-score", {
-            vix: 24,
-            iv_rank: 72,
-            rsi_14: 34,
-            options_volume_anomaly: 2.4,
-            put_call_ratio: 1.1,
-            consecutive_down_days: 3,
-          }),
+          liveFearScore(ticker),
         )
       }
       runningLabel={t.running}
-      sourceDescription={t.sourceNotes.research}
-      sourceLabel={t.sourceNotes.researchLabel}
+      sourceDescription={t.sourceNotes.live}
+      sourceLabel={t.sourceNotes.liveLabel}
       title={t.tabs.signals}
     >
       {error ? <ErrorLine message={error} /> : null}
@@ -893,115 +912,42 @@ function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
             label: t.signals.impliedVolatility,
             onClick: () =>
               run(t.signals.impliedVolatility, () =>
-                apiPost("/api/options/tools/implied-volatility", {
-                  market_price: 4.2,
-                  spot: 100,
-                  strike: 100,
-                  expiry_days: 30,
-                  option_type: "call",
-                }),
+                liveImpliedVolatility(ticker),
               ),
           },
           {
             label: t.signals.bullPutSignal,
             onClick: () =>
               run(t.signals.bullPutSignal, () =>
-                apiPost("/api/options/tools/bull-put-signal", {
-                  contracts: sampleContracts,
-                  spot: 100,
-                  fear_score: 68,
-                }),
+                liveBullPutSignal(ticker),
               ),
           },
           {
             label: t.signals.fearScore,
             onClick: () =>
               run(t.signals.fearScore, () =>
-                apiPost("/api/options/tools/fear-score", {
-                  vix: 24,
-                  iv_rank: 72,
-                  rsi_14: 34,
-                  options_volume_anomaly: 2.4,
-                  put_call_ratio: 1.1,
-                  consecutive_down_days: 3,
-                }),
+                liveFearScore(ticker),
               ),
           },
           {
             label: t.signals.ivRank,
             onClick: () =>
               run(t.signals.ivRank, () =>
-                apiPost("/api/options/tools/iv-rank", {
-                  ticker,
-                  current_iv: 0.42,
-                  history: [0.18, 0.22, 0.29, 0.35, 0.48, 0.39, 0.31],
-                }),
-              ),
-          },
-          {
-            label: t.signals.marketSentiment,
-            onClick: () =>
-              run(t.signals.marketSentiment, () =>
-                apiPost("/api/options/tools/market-sentiment", {
-                  vix: 24,
-                  put_call_ratio: 1.05,
-                  advance_decline_ratio: 0.85,
-                  percent_above_200dma: 45,
-                }),
+                apiRequest(`/api/options/snapshot/${encodeURIComponent(ticker)}`),
               ),
           },
           {
             label: t.signals.earningsCrush,
             onClick: () =>
               run(t.signals.earningsCrush, () =>
-                apiPost("/api/options/tools/earnings-crush", {
-                  ticker,
-                  current_iv: 0.58,
-                  implied_move_pct: 0.07,
-                  historical_pre_post_iv: [
-                    { pre_iv: 0.62, post_iv: 0.41 },
-                    { pre_iv: 0.55, post_iv: 0.39 },
-                    { pre_iv: 0.49, post_iv: 0.36 },
-                  ],
-                }),
-              ),
-          },
-          {
-            label: t.signals.hedgeAdvisor,
-            onClick: () =>
-              run(t.signals.hedgeAdvisor, () =>
-                apiPost("/api/options/tools/hedge-advisor", {
-                  ticker,
-                  shares: 100,
-                  cost_basis: 88,
-                  spot: 100,
-                  purpose: "protect",
-                  contracts: sampleContracts,
-                }),
+                liveEarningsCrush(ticker),
               ),
           },
           {
             label: t.signals.unusualActivity,
             onClick: () =>
               run(t.signals.unusualActivity, () =>
-                apiPost("/api/options/tools/unusual-activity", {
-                  contracts: [
-                    ...sampleContracts,
-                    {
-                      symbol: `${ticker}_PUT_SPIKE`,
-                      option_type: "PUT",
-                      strike: 92,
-                      bid: 1.8,
-                      ask: 1.95,
-                      volume: 2500,
-                      open_interest: 400,
-                      implied_volatility: 0.54,
-                      delta: -0.28,
-                    },
-                  ],
-                  min_volume_oi_ratio: 2,
-                  min_volume: 100,
-                }),
+                liveUnusualActivity(ticker),
               ),
           },
         ]}
@@ -1057,15 +1003,7 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
             label: t.researchOps.buildStrategy,
             onClick: () =>
               run(t.researchOps.buildStrategy, () =>
-                apiPost("/api/options/tools/strategy/build", {
-                  mode: "template",
-                  template_id: "bull_call_spread",
-                  spot: 100,
-                  expiry_days: 45,
-                  strikes: [90, 95, 100, 105, 110],
-                  iv: 0.28,
-                  symbol: ticker,
-                }),
+                liveBuildStrategy(ticker),
               ),
           },
           {
@@ -1086,32 +1024,7 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
             label: t.researchOps.evaluateAlerts,
             onClick: () =>
               run(t.researchOps.evaluateAlerts, () =>
-                apiPost("/api/options/tools/alerts/evaluate", {
-                  alerts: [
-                    { id: "price-break", ticker, type: "price_above", threshold: 95 },
-                    { id: "iv-high", ticker, type: "iv_rank_above", threshold: 70 },
-                  ],
-                  context: {
-                    ticker,
-                    price: 101,
-                    iv_rank: 74,
-                    unusual_activity_count: 1,
-                  },
-                }),
-              ),
-          },
-          {
-            label: t.researchOps.healthCheck,
-            onClick: () =>
-              run(t.researchOps.healthCheck, () =>
-                apiPost("/api/options/tools/health-check", {
-                  today: "2026-05-25",
-                  stale_after_days: 14,
-                  profiles: [
-                    { ticker, updated_at: "2026-05-20", thesis: "Options research profile." },
-                    { ticker: "OLD", updated_at: "2026-04-01", thesis: "" },
-                  ],
-                }),
+                liveEvaluateAlerts(ticker),
               ),
           },
         ]}
@@ -1119,6 +1032,256 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
       />
       {result ? <JsonResult title={result.title} payload={result.payload} responseLabel={t.response} /> : <EmptyPrompt label={t.researchOps.empty} />}
     </ToolPanel>
+  );
+}
+
+async function loadLiveContext(ticker: string): Promise<LiveContext> {
+  const normalized = ticker.trim().toUpperCase();
+  if (!normalized) {
+    throw new Error("Ticker is required.");
+  }
+  const snapshot = await apiRequest<OptionsSnapshot>(
+    `/api/options/snapshot/${encodeURIComponent(normalized)}`,
+  );
+  const expiry = snapshot.nearest_expiry;
+  const params = new URLSearchParams({
+    ticker: snapshot.ticker || normalized,
+    expiration: expiry,
+    option_type: "ALL",
+  });
+  const chain = await apiRequest<OptionsChainResponse>(
+    `/api/options/chain?${params.toString()}`,
+  );
+  return {
+    ticker: snapshot.ticker || chain.ticker || normalized,
+    spot: snapshot.price,
+    expiry,
+    dte: daysToExpiry(expiry),
+    atmIv: normalizeOptionalIv(snapshot.atm_iv),
+    hv30d: snapshot.hv_30d ?? null,
+    ivRank: snapshot.iv_rank ?? null,
+    contracts: chain.contracts.map((contract) => ({
+      ...contract,
+      expiry: contract.expiry ?? chain.expiration,
+    })),
+  };
+}
+
+function usableContracts(
+  contracts: LiveContract[],
+  optionType?: "CALL" | "PUT",
+): Array<LiveContract & { strike: number; implied_volatility: number }> {
+  return contracts
+    .filter((contract) => !optionType || contract.option_type.toUpperCase() === optionType)
+    .map((contract) => ({
+      ...contract,
+      strike: typeof contract.strike === "number" ? contract.strike : Number.NaN,
+      implied_volatility: normalizeOptionalIv(contract.implied_volatility) ?? Number.NaN,
+    }))
+    .filter(
+      (contract): contract is LiveContract & { strike: number; implied_volatility: number } =>
+        Number.isFinite(contract.strike) &&
+        contract.strike > 0 &&
+        Number.isFinite(contract.implied_volatility) &&
+        contract.implied_volatility > 0,
+    );
+}
+
+function pickAtmContract(
+  contracts: LiveContract[],
+  spot: number,
+  optionType: "CALL" | "PUT",
+) {
+  const available = usableContracts(contracts, optionType);
+  return available.sort((left, right) => Math.abs(left.strike - spot) - Math.abs(right.strike - spot))[0];
+}
+
+function liveStrikes(context: LiveContext) {
+  const strikes = [...new Set(usableContracts(context.contracts).map((contract) => contract.strike))]
+    .sort((left, right) => Math.abs(left - context.spot) - Math.abs(right - context.spot))
+    .slice(0, 9)
+    .sort((left, right) => left - right);
+  if (strikes.length < 2) {
+    throw new Error(`No usable live strikes were found for ${context.ticker}.`);
+  }
+  return strikes;
+}
+
+function buildLiveCallSpread(context: LiveContext) {
+  const callsByStrike = usableContracts(context.contracts, "CALL")
+    .filter((contract) => midPrice(contract) !== null)
+    .sort((left, right) => left.strike - right.strike);
+  const longCall = [...callsByStrike].sort(
+    (left, right) => Math.abs(left.strike - context.spot) - Math.abs(right.strike - context.spot),
+  )[0];
+  if (!longCall) {
+    throw new Error(`No usable live call was found for ${context.ticker}.`);
+  }
+  const shortCall = callsByStrike.find((contract) => contract.strike > longCall.strike);
+  if (!shortCall) {
+    throw new Error(`No higher-strike live call was found for ${context.ticker}.`);
+  }
+  return [longCall, shortCall] as const;
+}
+
+async function liveImpliedVolatility(ticker: string) {
+  const context = await loadLiveContext(ticker);
+  const contract = pickAtmContract(context.contracts, context.spot, "CALL");
+  const marketPrice = contract ? midPrice(contract) : null;
+  if (!contract || marketPrice === null) {
+    throw new Error(`No usable live call quote was found for ${context.ticker}.`);
+  }
+  return apiPost("/api/options/tools/implied-volatility", {
+    market_price: marketPrice,
+    spot: context.spot,
+    strike: contract.strike,
+    expiry_days: context.dte,
+    option_type: "call",
+  });
+}
+
+async function liveFearScore(ticker: string) {
+  const context = await loadLiveContext(ticker);
+  return apiPost("/api/options/tools/fear-score", {
+    iv_rank: context.ivRank,
+  });
+}
+
+async function liveBullPutSignal(ticker: string) {
+  const context = await loadLiveContext(ticker);
+  const fear = await apiPost<{ fear_score: number }>("/api/options/tools/fear-score", {
+    iv_rank: context.ivRank,
+  });
+  return apiPost("/api/options/tools/bull-put-signal", {
+    contracts: context.contracts,
+    spot: context.spot,
+    fear_score: fear.fear_score,
+  });
+}
+
+async function liveEarningsCrush(ticker: string) {
+  const context = await loadLiveContext(ticker);
+  const contract = pickAtmContract(context.contracts, context.spot, "CALL");
+  const currentIv = context.atmIv ?? contract?.implied_volatility ?? null;
+  if (currentIv === null) {
+    throw new Error(`No live IV was found for ${context.ticker}.`);
+  }
+  return apiPost("/api/options/tools/earnings-crush", {
+    ticker: context.ticker,
+    current_iv: currentIv,
+    historical_pre_post_iv: [],
+  });
+}
+
+async function liveUnusualActivity(ticker: string) {
+  const context = await loadLiveContext(ticker);
+  return apiPost("/api/options/tools/unusual-activity", {
+    contracts: context.contracts,
+    min_volume_oi_ratio: 2,
+    min_volume: 100,
+  });
+}
+
+async function liveBuildStrategy(ticker: string) {
+  const context = await loadLiveContext(ticker);
+  return apiPost("/api/options/tools/strategy/build", {
+    mode: "template",
+    template_id: "bull_call_spread",
+    spot: context.spot,
+    expiry_days: context.dte,
+    strikes: liveStrikes(context),
+    iv: context.atmIv ?? 0.3,
+    symbol: context.ticker,
+  });
+}
+
+async function liveEvaluateAlerts(ticker: string) {
+  const context = await loadLiveContext(ticker);
+  return apiPost("/api/options/tools/alerts/evaluate", {
+    alerts: [
+      {
+        id: "price-plus-5pct",
+        ticker: context.ticker,
+        type: "price_above",
+        threshold: Number((context.spot * 1.05).toFixed(2)),
+      },
+      {
+        id: "iv-rank-high",
+        ticker: context.ticker,
+        type: "iv_rank_above",
+        threshold: 70,
+      },
+    ],
+    context: {
+      ticker: context.ticker,
+      price: context.spot,
+      iv_rank: context.ivRank,
+      unusual_activity_count: 0,
+    },
+  });
+}
+
+function daysToExpiry(expiry: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiryDate = new Date(`${expiry}T00:00:00`);
+  if (Number.isNaN(expiryDate.getTime())) {
+    return 30;
+  }
+  return Math.max(1, Math.round((expiryDate.getTime() - today.getTime()) / 86_400_000));
+}
+
+function normalizeOptionalIv(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return value > 5 ? value / 100 : value;
+}
+
+function normalizeIv(value: number | null | undefined) {
+  return normalizeOptionalIv(value) ?? 0.3;
+}
+
+function midPrice(contract: LiveContract) {
+  if (
+    typeof contract.bid === "number" &&
+    typeof contract.ask === "number" &&
+    contract.bid > 0 &&
+    contract.ask >= contract.bid
+  ) {
+    return (contract.bid + contract.ask) / 2;
+  }
+  return typeof contract.last === "number" && contract.last > 0 ? contract.last : null;
+}
+
+function GreekGuide({ locale }: { locale: Locale }) {
+  const items =
+    locale === "zh"
+      ? [
+          ["Delta", "正股涨 1 美元，期权大约跟着变动多少。"],
+          ["Gamma", "Delta 本身变化的速度，越高越容易突然放大盈亏。"],
+          ["Theta", "每天大约损耗多少时间价值，买方通常怕它太高。"],
+          ["Vega", "IV 上升 1 个百分点时，期权价格大约变动多少。"],
+          ["Rho", "利率变化对价格的影响，短期期权通常不是主因。"],
+          ["Vanna / Volga", "二阶敏感度，用来观察 IV 与方向变化叠加时的风险。"],
+        ]
+      : [
+          ["Delta", "Approximate option price change for a $1 move in the stock."],
+          ["Gamma", "How quickly Delta changes; higher values can amplify P&L faster."],
+          ["Theta", "Approximate daily time-value decay. Long option buyers usually want it controlled."],
+          ["Vega", "Approximate option price change for a 1 percentage point IV move."],
+          ["Rho", "Interest-rate sensitivity. Usually not the main driver for short-dated options."],
+          ["Vanna / Volga", "Second-order checks for combined direction and volatility risk."],
+        ];
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {items.map(([label, description]) => (
+        <div className="rounded border border-border-subtle bg-bg-surface p-3" key={label}>
+          <div className="font-label-caps text-text-primary">{label}</div>
+          <p className="mt-1 font-body-sm text-text-secondary">{description}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 

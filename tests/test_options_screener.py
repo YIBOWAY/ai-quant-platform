@@ -132,6 +132,7 @@ def test_options_screener_avoids_wide_spread() -> None:
 
     assert result.candidates[0].rating == "Avoid"
     assert "spread too wide" in result.candidates[0].notes
+    assert result.rejection_summary["spread too wide"] == 1
 
 
 def test_options_screener_hides_rejected_deep_itm_puts_by_default() -> None:

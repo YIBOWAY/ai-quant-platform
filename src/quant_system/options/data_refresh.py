@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -22,7 +24,12 @@ NASDAQ100_RAW_CSV_URL = (
     "https://raw.githubusercontent.com/Gary-Strauss/NASDAQ100_Constituents/"
     "master/data/nasdaq100_constituents.csv"
 )
+NASDAQ_EARNINGS_URL = "https://api.nasdaq.com/api/calendar/earnings?date={date}"
 USER_AGENT = "ai-quant-platform/manual-universe-refresh"
+NASDAQ_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
 
 
 def refresh_options_universe(path: Path, *, source: str = "github") -> dict:
@@ -53,17 +60,29 @@ def refresh_earnings_calendar(
     top: int = 100,
     today: date | None = None,
 ) -> dict:
-    active_source = _normalize_source(source, public_value="yfinance")
+    active_source = _normalize_source(source, public_value="nasdaq")
     if active_source == "sample" and not universe_path.exists():
         refresh_options_universe(universe_path, source="sample")
 
     entries = OptionsUniverse.load(universe_path, top_n=max(top, 1))
     if active_source == "sample":
         rows = _sample_earnings_rows(entries, today=today)
+    elif active_source == "nasdaq":
+        rows = _fetch_nasdaq_earnings_rows(entries, today=today)
     elif active_source == "yfinance":
         rows = _fetch_yfinance_earnings_rows(entries)
     else:
-        raise ValueError("source must be public, yfinance, or sample")
+        raise ValueError("source must be public, nasdaq, yfinance, or sample")
+
+    if active_source != "sample" and not rows:
+        existing_count = _existing_earnings_row_count(output_path)
+        if existing_count > 0:
+            return {
+                **_result("earnings", active_source, output_path, existing_count),
+                "status": "kept_existing",
+                "warning": "public earnings refresh returned no rows; existing calendar was kept",
+            }
+        raise RuntimeError(f"{active_source} earnings refresh returned no rows")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as handle:
@@ -187,6 +206,63 @@ def _fetch_yfinance_earnings_rows(entries) -> list[dict[str, str]]:
     return rows
 
 
+def _fetch_nasdaq_earnings_rows(
+    entries,
+    *,
+    today: date | None,
+    horizon_days: int = 45,
+) -> list[dict[str, str]]:
+    tickers = {entry.ticker.upper().strip() for entry in entries}
+    if not tickers:
+        return []
+    start = today or datetime.now(UTC).date()
+    dates = [start + timedelta(days=offset) for offset in range(horizon_days + 1)]
+    found: dict[str, str] = {}
+    successful_requests = 0
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {
+            executor.submit(_fetch_nasdaq_earnings_for_date, active_date): active_date
+            for active_date in dates
+        }
+        for future in as_completed(futures):
+            active_date = futures[future]
+            ok, rows = future.result()
+            if not ok:
+                continue
+            successful_requests += 1
+            for row in rows:
+                ticker = str(row.get("symbol", "")).strip().replace(".", "-").upper()
+                if ticker in tickers and ticker not in found:
+                    found[ticker] = active_date.isoformat()
+
+    if successful_requests == 0:
+        raise RuntimeError("Nasdaq earnings calendar did not return any usable responses")
+    return [
+        {"ticker": ticker, "earnings_date": earnings_date}
+        for ticker, earnings_date in sorted(found.items())
+    ]
+
+
+def _fetch_nasdaq_earnings_for_date(active_date: date) -> tuple[bool, list[dict]]:
+    request = Request(
+        NASDAQ_EARNINGS_URL.format(date=active_date.isoformat()),
+        headers={
+            "User-Agent": NASDAQ_USER_AGENT,
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://www.nasdaq.com",
+            "Referer": "https://www.nasdaq.com/market-activity/earnings",
+        },
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return False, []
+    rows = (payload.get("data") or {}).get("rows") or []
+    return True, rows if isinstance(rows, list) else []
+
+
 def _next_earnings_date(yf_module, ticker: str) -> str | None:
     try:
         calendar = yf_module.Ticker(ticker).calendar
@@ -209,6 +285,14 @@ def _next_earnings_date(yf_module, ticker: str) -> str | None:
     except ValueError:
         text = str(raw).split()[0]
         return text if len(text) == 10 else None
+
+
+def _existing_earnings_row_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        return sum(1 for row in reader if row.get("ticker") and row.get("earnings_date"))
 
 
 def _build_universe_from_github_csv() -> list[dict[str, str]]:

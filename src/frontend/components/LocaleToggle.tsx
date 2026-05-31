@@ -1,30 +1,40 @@
 'use client';
 
-import { Languages } from "lucide-react";
-import { LOCALE_COOKIE } from "@/lib/locale";
+import { usePathname } from "next/navigation";
 import { useLocale } from "@/components/LocaleProvider";
+import { LOCALE_COOKIE, localizePath, type Locale } from "@/lib/locale";
 
 export function LocaleToggle() {
   const locale = useLocale();
-  const next = locale === "zh" ? "en" : "zh";
+  const pathname = usePathname();
 
-  function switchTo() {
-    document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
-    // Drop any per-page ?lang override so the cookie choice takes effect everywhere.
-    const url = new URL(window.location.href);
-    url.searchParams.delete("lang");
-    window.location.replace(url.toString());
+  function item(target: Locale, label: string) {
+    const active = locale === target;
+    const href = localizePath(pathname, target);
+    return (
+      <a
+        aria-label={target === "zh" ? "切换到中文" : "切换到英文"}
+        className={`px-2 py-1 transition-colors ${
+          active
+            ? "bg-[#00C896] text-bg-base"
+            : "text-zinc-400 hover:bg-zinc-900 hover:text-[#00C896]"
+        }`}
+        href={href}
+        onClick={(event) => {
+          event.preventDefault();
+          document.cookie = `${LOCALE_COOKIE}=${target}; path=/; max-age=31536000; samesite=lax`;
+          window.location.assign(href);
+        }}
+      >
+        {label}
+      </a>
+    );
   }
 
   return (
-    <button
-      aria-label={locale === "zh" ? "切换到英文" : "Switch to Chinese"}
-      className="flex items-center gap-1.5 rounded border border-zinc-800 px-2.5 py-1.5 font-sans text-xs text-zinc-300 transition-colors hover:border-[#00C896] hover:text-[#00C896]"
-      onClick={switchTo}
-      type="button"
-    >
-      <Languages size={14} />
-      <span>{locale === "zh" ? "EN" : "中文"}</span>
-    </button>
+    <div className="inline-flex overflow-hidden rounded border border-zinc-800 font-sans text-xs">
+      {item("en", "EN")}
+      {item("zh", "中文")}
+    </div>
   );
 }

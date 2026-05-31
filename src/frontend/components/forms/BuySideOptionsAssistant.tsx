@@ -18,6 +18,7 @@ import { z } from "zod";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
+import { localizePath } from "@/lib/locale";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
@@ -477,7 +478,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
         <p className="mt-2 font-body-sm text-text-secondary">{text.intro}</p>
         <a
           className="mt-3 inline-flex font-body-sm text-info"
-          href={locale === "zh" ? "/options-buyside?lang=en" : "/options-buyside?lang=zh"}
+          href={localizePath("/options-buyside", locale === "zh" ? "en" : "zh")}
         >
           {text.zh}
         </a>

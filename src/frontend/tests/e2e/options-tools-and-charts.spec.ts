@@ -46,7 +46,7 @@ test.describe("options tools and real chart surfaces", () => {
       page.waitForResponse((response) => response.url().includes("/api/options/tools/greeks")),
       page.getByRole("button", { name: "Calculate Greeks" }).click(),
     ]);
-    await expect(page.getByText("Delta")).toBeVisible();
+    await expect(page.getByText("Charm", { exact: true })).toBeVisible();
 
     await page.getByRole("tab", { name: "Strategy Rank" }).click();
     await Promise.all([
@@ -74,9 +74,9 @@ test.describe("options tools and real chart surfaces", () => {
     ]);
     await expect(page.getByText('"templates"')).toBeVisible();
     await Promise.all([
-      page.waitForResponse((response) => response.url().includes("/api/options/tools/health-check")),
-      page.getByRole("button", { name: "Health Check" }).click(),
+      page.waitForResponse((response) => response.url().includes("/api/options/tools/strategy/build")),
+      page.getByRole("button", { name: "Build Strategy" }).click(),
     ]);
-    await expect(page.getByText('"health_score"')).toBeVisible();
+    await expect(page.getByText('"template_id"')).toBeVisible();
   });
 });

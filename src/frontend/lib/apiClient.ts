@@ -1,7 +1,7 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 180_000;
 
 export class ApiClientError extends Error {
   constructor(

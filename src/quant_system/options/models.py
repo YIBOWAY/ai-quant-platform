@@ -173,6 +173,7 @@ class OptionsScreenerResult(BaseModel):
     market_regime_term_ratio: float | None = None
     candidates: list[OptionsScreenerCandidate]
     rejected_count: int = 0
+    rejection_summary: dict[str, int] = Field(default_factory=dict)
     assumptions: list[str]
 
 

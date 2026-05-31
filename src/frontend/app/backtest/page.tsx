@@ -16,7 +16,8 @@ import { getServerLocale } from "@/lib/serverLocale";
 const copy = {
   en: {
     configTitle: "Backtest Config",
-    configSubtitle: "Interactive run controls are connected in P0-4.",
+    configSubtitle:
+      "Use this page to replay a strategy on historical backend data before trusting it in paper trading.",
     latestRun: "Latest run",
     noBacktest: "No API backtest yet",
     openAria: (id: string) => `Open ${id}`,
@@ -42,7 +43,7 @@ const copy = {
   },
   zh: {
     configTitle: "回测配置",
-    configSubtitle: "交互式运行控制已在 P0-4 阶段接入。",
+    configSubtitle: "这里用历史后端数据重放策略，用来判断一个想法是否值得进入模拟交易。",
     latestRun: "最新运行",
     noBacktest: "暂无 API 回测",
     openAria: (id: string) => `打开 ${id}`,

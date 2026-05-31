@@ -27,7 +27,7 @@ unlabeled sample/demo output. It was run against the local backend on
 | `/options-radar` | Reads saved radar snapshots and can run a backend scan. | Backend-derived snapshots. The sample scan option remains explicit. |
 | `/options-radar/[symbol]` | Reads saved candidates and optionally loads live chain data. | Backend-derived. |
 | `/options-buyside` | Posts to `/api/options/buy-side/assistant`. Backend fetches Futu spot and option-chain rows, then ranks strategies in `buy_side_decision.py`. | Backend-derived. The scoring process is real backend logic, not a frontend mock. |
-| `/options-tools` | Live tabs fetch Futu vol surface/smile through backend. Example tabs submit fixed inputs to backend calculators. | Mixed by design; tabs are now labeled `Live` or `Example`, and example tabs state that they are not live market data. |
+| `/options-tools` | Market-sensitive tools first fetch the entered ticker's Futu snapshot and option chain, then call local backend calculators with those inputs. Non-market operations such as templates/watchlist remain local backend calls. | Backend-derived for option-chain calculations; local-only calls are labeled as backend research operations, not live market data. |
 | `/order-book` | Defaults to Polymarket read-only public data. Sample remains selectable but is warning-labeled. | Backend-derived by default. |
 | `/agent-studio` | Reads candidate files and agent API data. | Backend-derived local artifacts. |
 | `/settings` | Reads masked `/api/settings` and `/api/health`. | Backend-derived. |
@@ -50,8 +50,9 @@ spot and timestamp fields.
 - Dashboard KPI/details now include latest saved run source labels.
 - `DataSourceBadge` marks any sample source as `sample / not real`.
 - Backtest benchmark source is shown beside the benchmark card.
-- Options Tools separates `Live` tabs from `Example` tabs and explains the
-  input source before results are shown.
+- Options Tools now loads live Futu option-chain context before Greeks,
+  strategy ranking, contract scoring, simulation, and signal calculations.
+  Local-only research operations are labeled separately.
 - Buy-Side Options Assistant now states that recommendations come from backend
   Futu option-chain data.
 - Prediction Market Order Book defaults to `polymarket` instead of `sample`.
@@ -65,17 +66,21 @@ spot and timestamp fields.
 - Saved historical runs may have been produced from sample data. Those are real
   saved backend artifacts, but their source must stay visible so users do not
   mistake them for live-market results.
-- Options Tools example tabs are backend calculations over fixed inputs. For
-  real option-chain scoring, use `/options-buyside`, `/options-screener`, or the
-  live vol surface/smile tabs.
+- Options Tools still includes local research operations that do not need market
+  data, such as templates and watchlist actions. They must stay labeled as local
+  backend calls rather than live market calculations.
 
 ## Verification Notes
 
 - `/api/health` returned `status=ok`, `configured_default=futu`,
   `live_trading_enabled=false`, and `kill_switch=true`.
 - `/api/symbols` returned the Futu default basket.
-- `/api/market-data/history?provider=futu&symbol=SPY&start=2026-05-01&end=2026-05-22`
-  returned real OHLCV rows.
+- `/api/market-data/history?provider=futu&ticker=SPY&start=2026-05-01&end=2026-05-31`
+  returned 20 real OHLCV rows with `source=futu`.
+- `/api/options/snapshot/AAPL` returned `source=futu`, current spot, nearest
+  expiry, IV, HV, and IV-rank fields.
+- `/api/prediction-market/markets?provider=polymarket&limit=2` returned live
+  Polymarket public markets and order books.
 - Browser checks covered Dashboard, Data Explorer, Factor Lab, Backtest,
   Replications, Paper Trading, Position Map, Options Screener, Options Radar,
   Options Tools, Buy-Side Options Assistant, Order Book, Agent Studio, Settings,

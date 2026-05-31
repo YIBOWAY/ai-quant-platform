@@ -22,6 +22,7 @@ import {
   ScrollText
 } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
+import { localizePath, splitLocalePath } from "@/lib/locale";
 
 const copy = {
   en: {
@@ -43,7 +44,7 @@ const copy = {
       experiments: "Experiments",
       paperTrading: "Paper Trading",
       agentStudio: "Agent Studio",
-      orderBook: "Order Book",
+      orderBook: "Polymarket Markets",
       positionMap: "Position Map",
       settings: "Settings",
     },
@@ -67,7 +68,7 @@ const copy = {
       experiments: "实验管理",
       paperTrading: "模拟交易",
       agentStudio: "智能体工作室",
-      orderBook: "预测市场盘口",
+      orderBook: "Polymarket 市场",
       positionMap: "持仓地图",
       settings: "设置",
     },
@@ -78,6 +79,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const locale = useLocale();
   const text = copy[locale];
+  const activePath = splitLocalePath(pathname).pathname;
 
   const navItems = [
     { name: text.nav.dashboard, href: "/", icon: LayoutDashboard },
@@ -111,7 +113,7 @@ export function Sidebar() {
       <div className="p-4 border-b border-zinc-800">
         <Link
           className="w-full py-2 border border-[#00C896] text-[#00C896] rounded font-label-caps hover:bg-[#00C896]/10 transition-colors flex items-center justify-center gap-2"
-          href="/backtest"
+          href={localizePath("/backtest", locale)}
         >
           <Plus size={16} />
           <span>{text.newStrategy}</span>
@@ -121,11 +123,11 @@ export function Sidebar() {
       <div className="flex-1 py-4 overflow-y-auto">
         <ul className="space-y-1 px-3">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = activePath === item.href;
             return (
               <li key={item.href}>
                 <Link
-                  href={item.href}
+                  href={localizePath(item.href, locale)}
                   className={`flex items-center gap-3 px-3 py-2 rounded font-sans text-xs tracking-tight transition-colors ${
                     isActive
                       ? "bg-zinc-900 text-[#00C896] border-l-2 border-[#00C896] font-semibold"
@@ -145,7 +147,7 @@ export function Sidebar() {
         <ul className="space-y-1">
           <li>
             <Link
-              href="/docs/reversal-momentum"
+              href={localizePath("/docs/reversal-momentum", locale)}
               className="flex items-center gap-3 px-3 py-1.5 rounded text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200 transition-colors font-sans text-xs tracking-tight"
             >
               <FileText size={16} />
@@ -154,7 +156,7 @@ export function Sidebar() {
           </li>
           <li>
             <Link
-              href="/settings"
+              href={localizePath("/settings", locale)}
               className="flex items-center gap-3 px-3 py-1.5 rounded text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200 transition-colors font-sans text-xs tracking-tight"
             >
               <HelpCircle size={16} />

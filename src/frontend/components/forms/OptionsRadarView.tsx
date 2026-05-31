@@ -14,6 +14,7 @@ import type {
 import { apiPost, apiRequest } from "@/lib/apiClient";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
+import { localizePath } from "@/lib/locale";
 
 const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
@@ -53,6 +54,9 @@ const copy = {
     freshToday: "Showing today's scan.",
     freshStale: "Showing the scan from {date} ({days} day(s) ago). Click \"Run Today's Scan\" for fresh data.",
     freshNone: "No scan has been run yet. Click \"Run Today's Scan\" to generate today's seller candidates.",
+    staleBlock:
+      "This is an old snapshot. Expired contracts are history only; run today's scan before using the table for current research.",
+    expiredRows: "Expired rows in full snapshot",
     strategy: "Strategy",
     all: "All",
     sellPut: "Sell Put",
@@ -62,7 +66,7 @@ const copy = {
     top: "Top N",
     safety: "Read-only research output. These rows are not trade instructions and cannot place orders.",
     export: "Export CSV",
-    noData: "No daily scan snapshot found. Run `quant-system options daily-scan --provider sample --top 5` for an offline sample.",
+    noData: "No daily scan snapshot found. Run today's scan to create a current Futu-backed snapshot.",
     rows: "Rows",
     scanned: "Scanned",
     failed: "Failed",
@@ -75,6 +79,7 @@ const copy = {
     details: "Details",
     openChain: "Open Chain",
     runSample: "Run Today's Scan",
+    runDone: "Today's scan finished: {count} candidates saved for {date}.",
     running: "Running...",
     refresh: "Refresh List",
     refreshSource: "Refresh source",
@@ -93,6 +98,8 @@ const copy = {
     freshToday: "正在显示今天的扫描结果。",
     freshStale: "正在显示 {date} 的扫描结果（{days} 天前）。点“运行今日扫描”获取最新数据。",
     freshNone: "还没有运行过扫描。点“运行今日扫描”生成今天的卖方候选。",
+    staleBlock: "这是旧快照。过期合约只适合回看历史；做当前研究前请先运行今日扫描。",
+    expiredRows: "完整快照中过期合约数",
     strategy: "策略",
     all: "全部",
     sellPut: "卖出看跌",
@@ -102,7 +109,7 @@ const copy = {
     top: "显示数量",
     safety: "仅用于研究筛选。这些结果不是交易指令，也不能发出真实订单。",
     export: "导出 CSV",
-    noData: "还没有每日扫描快照。可以先运行 `quant-system options daily-scan --provider sample --top 5` 生成离线样例。",
+    noData: "还没有每日扫描快照。请运行今日扫描，生成当前 Futu 数据快照。",
     rows: "候选",
     scanned: "已扫描",
     failed: "失败",
@@ -115,6 +122,7 @@ const copy = {
     details: "详情",
     openChain: "查看期权链",
     runSample: "运行今日扫描",
+    runDone: "今日扫描完成：已为 {date} 保存 {count} 个候选。",
     running: "运行中...",
     refresh: "刷新列表",
     refreshSource: "刷新数据源",
@@ -145,6 +153,7 @@ export function OptionsRadarView({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshSource, setRefreshSource] = useState("public");
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
 
   const datesQuery = useQuery({
     queryKey: ["options-radar-dates"],
@@ -184,9 +193,14 @@ export function OptionsRadarView({
         provider: "futu",
         top,
         strategies: strategy === "all" ? ["sell_put", "covered_call"] : [strategy],
-      }),
+    }),
     onSuccess: async (payload) => {
       setDate(payload.run_date);
+      setScanStatus(
+        text.runDone
+          .replace("{date}", payload.run_date)
+          .replace("{count}", String(payload.candidate_count)),
+      );
       await queryClient.invalidateQueries({ queryKey: ["options-radar-dates"] });
       await queryClient.invalidateQueries({ queryKey: ["options-radar"] });
     },
@@ -222,7 +236,7 @@ export function OptionsRadarView({
         <p className="mt-2 font-body-sm text-text-secondary">{text.intro}</p>
         <a
           className="mt-3 inline-flex font-body-sm text-info"
-          href={locale === "zh" ? "/options-radar?lang=en" : "/options-radar?lang=zh"}
+          href={localizePath("/options-radar", locale === "zh" ? "en" : "zh")}
         >
           {text.zh}
         </a>
@@ -382,6 +396,11 @@ export function OptionsRadarView({
               {scanMutation.error.message}
             </div>
           ) : null}
+          {scanStatus ? (
+            <div className="rounded border border-accent-success/40 bg-accent-success/10 p-3 font-body-sm text-accent-success">
+              {scanStatus}
+            </div>
+          ) : null}
         </form>
       </aside>
       <main className="min-w-0 overflow-y-auto p-5">
@@ -399,6 +418,14 @@ export function OptionsRadarView({
             }`}
           >
             {freshness.message}
+          </div>
+        ) : null}
+        {scanQuery.data?.is_stale ? (
+          <div className="mb-4 rounded border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
+            <p className="font-semibold">{text.staleBlock}</p>
+            <p className="mt-1">
+              {text.expiredRows}: {scanQuery.data.expired_candidate_count ?? 0}
+            </p>
           </div>
         ) : null}
         <section className="mb-4 grid grid-cols-3 gap-3">
@@ -466,7 +493,7 @@ export function OptionsRadarView({
                           </button>
                           <Link
                             className="inline-flex items-center gap-1 text-accent-success"
-                            href={`/options-radar/${candidate.ticker}?date=${scanQuery.data?.run_date ?? activeDate}&expiry=${candidate.expiry}&option_type=${candidate.strategy === "sell_put" ? "PUT" : "CALL"}`}
+                            href={localizePath(`/options-radar/${candidate.ticker}?date=${scanQuery.data?.run_date ?? activeDate}&expiry=${candidate.expiry}&option_type=${candidate.strategy === "sell_put" ? "PUT" : "CALL"}`, locale)}
                           >
                             {text.openChain}
                             <ExternalLink size={12} />
