@@ -34,3 +34,6 @@ src/frontend/playwright-report/
 # Bundled local snapshot (kept locally, not committed)
 quantum-core-algorithmic-trading-platform.zip
 src/quantum-core-algorithmic-trading-platform.zip
+
+# TypeScript incremental build cache
+*.tsbuildinfo

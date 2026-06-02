@@ -43,6 +43,10 @@ def run_backtest(
             factor_ids=request.factor_ids,
             weights=request.weights,
             benchmark_symbol=request.benchmark_symbol,
+            rebalance_frequency=request.rebalance_frequency,
+            max_weight_per_symbol=request.max_weight_per_symbol,
+            sector_cap=request.sector_cap,
+            sector_map=request.sector_map,
             settings=settings,
         )
     except (KeyError, ValueError) as exc:
@@ -71,17 +75,23 @@ def run_backtest(
             "initial_cash": request.initial_cash,
             "commission_bps": request.commission_bps,
             "slippage_bps": request.slippage_bps,
+            "rebalance_frequency": request.rebalance_frequency,
+            "max_weight_per_symbol": request.max_weight_per_symbol,
+            "sector_cap": request.sector_cap,
+            "sector_map": request.sector_map,
         },
         "metrics": {
             "total_return": result.total_return,
             "sharpe": result.sharpe,
             "max_drawdown": result.max_drawdown,
         },
+        "attribution": result.attribution,
         "paths": {
             "equity_curve": str(result.equity_curve_path),
             "trade_blotter": str(result.trade_blotter_path),
             "orders": str(result.orders_path),
             "positions": str(result.positions_path),
+            "attribution": str(result.attribution_path),
             "metrics": str(result.metrics_path),
             "report": str(result.report_path),
         },
@@ -123,4 +133,5 @@ def backtest_detail(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
         "orders": read_parquet_records(run_dir / "backtests" / "orders.parquet"),
         "positions": read_parquet_records(run_dir / "backtests" / "positions.parquet"),
         "trade_blotter": read_parquet_records(run_dir / "backtests" / "trade_blotter.parquet"),
+        "attribution": read_parquet_records(run_dir / "backtests" / "attribution.parquet"),
     }

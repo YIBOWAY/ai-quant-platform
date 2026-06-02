@@ -16,6 +16,8 @@ The project is currently delivered through Phase 14. It includes:
 - Local AlphaGBM-style options toolbox and local Futu option quote cache.
 - Strategy Catalog with the reversal/momentum replication, the registered
   cross-sectional Top-N backtest strategy, and a mean-reversion Top-N strategy.
+- Backtest engine controls: rebalance frequency (every bar / weekly / monthly),
+  per-symbol and sector weight caps, and per-name return attribution.
 - Optional PostgreSQL run index over local backtest/factor/paper runs.
 
 This project does not add live trading, broker order submission, wallet

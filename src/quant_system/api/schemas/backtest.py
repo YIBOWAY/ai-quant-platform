@@ -20,6 +20,10 @@ class BacktestRunRequest(BaseModel):
     initial_cash: float = Field(default=100_000.0, ge=0)
     commission_bps: float = Field(default=1.0, ge=0)
     slippage_bps: float = Field(default=5.0, ge=0)
+    rebalance_frequency: Literal["every_bar", "weekly", "monthly"] = "every_bar"
+    max_weight_per_symbol: float | None = Field(default=None, gt=0, le=1)
+    sector_cap: float | None = Field(default=None, gt=0, le=1)
+    sector_map: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("symbols", "factor_ids", mode="before")
     @classmethod

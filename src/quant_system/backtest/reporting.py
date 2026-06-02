@@ -4,6 +4,22 @@ from quant_system.backtest.metrics import PerformanceMetrics
 from quant_system.backtest.models import BacktestConfig
 
 
+def _cap_text(value: float | None) -> str:
+    return "none" if value is None else f"{value:.4f}"
+
+
+def _attribution_lines(metrics: PerformanceMetrics) -> list[str]:
+    if not metrics.attribution:
+        return ["- No attribution rows were recorded for this run."]
+    lines = []
+    for row in metrics.attribution[:5]:
+        symbol = row.get("symbol", "?")
+        contribution = float(row.get("contribution", 0.0))
+        pct = float(row.get("contribution_pct", 0.0))
+        lines.append(f"- {symbol}: {contribution:.2f} ({pct * 100:.2f}% of initial cash)")
+    return lines
+
+
 def generate_backtest_report(
     *,
     metrics: PerformanceMetrics,
@@ -26,6 +42,9 @@ def generate_backtest_report(
             f"- Initial cash: {config.initial_cash:.2f}",
             f"- Commission: {config.commission_bps:.4f} bps",
             f"- Slippage: {config.slippage_bps:.4f} bps",
+            f"- Rebalance frequency: {config.rebalance_frequency.value}",
+            f"- Max weight per symbol: {_cap_text(config.max_weight_per_symbol)}",
+            f"- Sector cap: {_cap_text(config.sector_cap)}",
             "- Signals are converted to target weights before order generation.",
             "- Orders are generated and simulated outside the strategy layer.",
             "",
@@ -39,6 +58,10 @@ def generate_backtest_report(
             f"- Sharpe: {metrics.sharpe:.6f}",
             f"- Max drawdown: {metrics.max_drawdown:.6f}",
             f"- Turnover: {metrics.turnover:.6f}",
+            "",
+            "## Return Attribution (top contributors)",
+            "",
+            *_attribution_lines(metrics),
             "",
             "## Bias Controls",
             "",

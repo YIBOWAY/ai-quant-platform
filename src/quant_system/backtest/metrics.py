@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PerformanceMetrics(BaseModel):
@@ -13,6 +13,36 @@ class PerformanceMetrics(BaseModel):
     sharpe: float
     max_drawdown: float
     turnover: float
+    # Per-symbol contribution to the run's P&L (mark-to-market on held quantity).
+    # Empty by default so existing callers/artifacts are unchanged.
+    attribution: list[dict[str, float | str]] = Field(default_factory=list)
+
+
+def _aggregate_attribution(
+    attribution_frame: pd.DataFrame | None, *, initial_cash: float
+) -> list[dict[str, float | str]]:
+    if attribution_frame is None or attribution_frame.empty:
+        return []
+    if "symbol" not in attribution_frame or "contribution" not in attribution_frame:
+        return []
+    grouped = (
+        pd.to_numeric(attribution_frame["contribution"], errors="coerce")
+        .groupby(attribution_frame["symbol"])
+        .sum()
+        .sort_values(ascending=False)
+    )
+    denominator = initial_cash if initial_cash else 0.0
+    rows: list[dict[str, float | str]] = []
+    for symbol, contribution in grouped.items():
+        contribution = float(contribution)
+        rows.append(
+            {
+                "symbol": str(symbol),
+                "contribution": contribution,
+                "contribution_pct": contribution / denominator if denominator else 0.0,
+            }
+        )
+    return rows
 
 
 def calculate_performance_metrics(
@@ -21,7 +51,9 @@ def calculate_performance_metrics(
     *,
     initial_cash: float,
     annualization_factor: int = 252,
+    attribution_frame: pd.DataFrame | None = None,
 ) -> PerformanceMetrics:
+    attribution = _aggregate_attribution(attribution_frame, initial_cash=initial_cash)
     if equity_curve.empty:
         return PerformanceMetrics(
             total_return=0.0,
@@ -30,6 +62,7 @@ def calculate_performance_metrics(
             sharpe=0.0,
             max_drawdown=0.0,
             turnover=0.0,
+            attribution=attribution,
         )
 
     curve = equity_curve.sort_values("timestamp").copy()
@@ -75,4 +108,5 @@ def calculate_performance_metrics(
         sharpe=float(sharpe),
         max_drawdown=float(max_drawdown),
         turnover=float(turnover),
+        attribution=attribution,
     )

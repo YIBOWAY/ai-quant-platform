@@ -38,6 +38,13 @@ const copy = {
     running: "Running...",
     runBacktest: "Run Backtest",
     created: (id: string) => `Backtest created: ${id}`,
+    rebalanceFreq: "Rebalance",
+    everyBar: "Every bar",
+    weekly: "Weekly",
+    monthly: "Monthly",
+    maxWeight: "Max weight / name",
+    sectorCap: "Sector cap",
+    capHelp: "Optional. 0–1 weight caps; leave blank for no cap.",
   },
   zh: {
     strategy: "策略",
@@ -62,8 +69,29 @@ const copy = {
     running: "运行中...",
     runBacktest: "运行回测",
     created: (id: string) => `回测已创建：${id}`,
+    rebalanceFreq: "再平衡频率",
+    everyBar: "每根K线",
+    weekly: "每周",
+    monthly: "每月",
+    maxWeight: "单标的上限",
+    sectorCap: "行业上限",
+    capHelp: "可选。0–1 之间的权重上限；留空表示不限制。",
   },
 } as const;
+
+const capString = z
+  .string()
+  .optional()
+  .refine(
+    (value) => {
+      if (value === undefined || value.trim() === "") {
+        return true;
+      }
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 && parsed <= 1;
+    },
+    { message: "Enter a weight between 0 and 1" },
+  );
 
 const backtestSchema = z.object({
   symbols: z.string().optional(),
@@ -80,7 +108,18 @@ const backtestSchema = z.object({
   initial_cash: z.coerce.number().positive(),
   commission_bps: z.coerce.number().nonnegative(),
   slippage_bps: z.coerce.number().nonnegative(),
+  rebalance_frequency: z.enum(["every_bar", "weekly", "monthly"]),
+  max_weight_per_symbol: capString,
+  sector_cap: capString,
 });
+
+function parseCap(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === "") {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 type BacktestFormValues = z.infer<typeof backtestSchema>;
 export type BacktestFormInitialValues = Partial<BacktestFormValues>;
@@ -105,6 +144,7 @@ const DEFAULTS: BacktestFormValues = {
   initial_cash: 100000,
   commission_bps: 1,
   slippage_bps: 5,
+  rebalance_frequency: "every_bar",
 };
 
 type BacktestFormProps = {
@@ -133,12 +173,23 @@ export function BacktestForm({
     defaultValues: defaults,
   });
   const mutation = useMutation({
-    mutationFn: (values: BacktestFormValues) =>
-      apiPost<BacktestRunResponse>("/api/backtests/run", {
-        ...values,
+    mutationFn: (values: BacktestFormValues) => {
+      const { max_weight_per_symbol, sector_cap, ...rest } = values;
+      const body: Record<string, unknown> = {
+        ...rest,
         symbols: splitSymbols(values.symbols ?? ""),
         weights: selectedWeights(values.factor_ids, values.weights),
-      }),
+      };
+      const maxWeight = parseCap(max_weight_per_symbol);
+      if (maxWeight !== undefined) {
+        body.max_weight_per_symbol = maxWeight;
+      }
+      const sector = parseCap(sector_cap);
+      if (sector !== undefined) {
+        body.sector_cap = sector;
+      }
+      return apiPost<BacktestRunResponse>("/api/backtests/run", body);
+    },
     onSuccess: (payload) => {
       toast.success(text.created(payload.run_id));
       router.push(localizePath(`/backtest/${payload.run_id}`, locale));
@@ -295,6 +346,44 @@ export function BacktestForm({
           {text.slippageBps}
           <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("slippage_bps", { valueAsNumber: true })} />
         </label>
+      </div>
+
+      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        {text.rebalanceFreq}
+        <select
+          className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
+          {...form.register("rebalance_frequency")}
+        >
+          <option value="every_bar" style={optionStyle}>{text.everyBar}</option>
+          <option value="weekly" style={optionStyle}>{text.weekly}</option>
+          <option value="monthly" style={optionStyle}>{text.monthly}</option>
+        </select>
+      </label>
+
+      <div className="flex flex-col gap-1">
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            {text.maxWeight}
+            <input
+              className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary"
+              type="number"
+              step="0.05"
+              placeholder="—"
+              {...form.register("max_weight_per_symbol")}
+            />
+          </label>
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            {text.sectorCap}
+            <input
+              className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary"
+              type="number"
+              step="0.05"
+              placeholder="—"
+              {...form.register("sector_cap")}
+            />
+          </label>
+        </div>
+        <span className="font-body-sm text-text-secondary">{text.capHelp}</span>
       </div>
 
       {error ? <p className="font-body-sm text-danger">{error}</p> : null}

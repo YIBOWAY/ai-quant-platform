@@ -104,6 +104,15 @@ export default async function BacktestRunDetailPage({ params }: BacktestRunDetai
             title="Positions"
           />
         </div>
+        <div className="lg:col-span-2">
+          <DataPreviewTable
+            description="Per-name contribution to this run's P&L (mark-to-market on held quantity)."
+            emptyDescription="No attribution rows were saved for this run."
+            emptyTitle="Return Attribution"
+            rows={detail.attribution}
+            title="Return Attribution"
+          />
+        </div>
       </section>
     </main>
   );

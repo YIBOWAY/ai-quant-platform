@@ -53,6 +53,11 @@
 - `factor_ids`
 - `weights`
 - `benchmark_symbol`
+- `rebalance_frequency`：`every_bar`（默认，逐K线再平衡）/ `weekly` / `monthly`，按周/月只在周期边界再平衡，期间持仓不动。
+- `max_weight_per_symbol`：单标的权重上限（0–1，留空不限制）。
+- `sector_cap` + `sector_map`：行业权重上限（仅向下缩放超限行业，不再分配释放出的权重）。
+
+这些新参数全部可选，默认值等同于原行为，不影响已有运行结果。回测结果新增**收益归因**（按持仓数量做盯市的每标的贡献），通过 `metrics.attribution`、`attribution.parquet` 落盘，并在回测详情页以 "Return Attribution" 表展示。
 
 默认基准改为 `SPY`，不再拿输入列表第一个标的当基准。用户也可以在回测器里手动填写基准。
 

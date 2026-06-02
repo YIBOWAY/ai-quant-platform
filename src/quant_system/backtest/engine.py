@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from quant_system.backtest.broker import BrokerSimulator
 from quant_system.backtest.metrics import PerformanceMetrics, calculate_performance_metrics
-from quant_system.backtest.models import BacktestConfig, Fill, Order
+from quant_system.backtest.models import BacktestConfig, Fill, Order, RebalanceFrequency
 from quant_system.backtest.order_generation import OrderGenerator
 from quant_system.backtest.portfolio import Portfolio
 from quant_system.backtest.strategy import ScoreSignalStrategy
@@ -20,6 +20,7 @@ class BacktestResult(BaseModel):
     trade_blotter: pd.DataFrame
     orders: pd.DataFrame
     positions: pd.DataFrame
+    attribution: pd.DataFrame
     metrics: PerformanceMetrics
 
 
@@ -36,14 +37,20 @@ class BacktestEngine:
         fill_records: list[dict[str, object]] = []
         equity_records: list[dict[str, object]] = []
         position_records: list[dict[str, object]] = []
+        attribution_records: list[dict[str, object]] = []
+        prev_close: dict[str, float] = {}
+        last_rebalance_ts: pd.Timestamp | None = None
 
         for timestamp, bars in frame.groupby("timestamp", sort=True):
             open_prices = dict(zip(bars["symbol"], bars["open"], strict=True))
             close_prices = dict(zip(bars["symbol"], bars["close"], strict=True))
+            # Quantities held coming into this bar (before any fills) earn the
+            # close-to-close move; this is what attribution credits per name.
+            quantities_into_bar = dict(portfolio.positions)
             targets = strategy.target_weights(timestamp)
             orders: list[Order] = []
             fills: list[Fill] = []
-            if targets is not None:
+            if targets is not None and self._should_rebalance(timestamp, last_rebalance_ts):
                 orders = self.order_generator.generate_orders(
                     timestamp=timestamp,
                     targets=targets,
@@ -51,6 +58,18 @@ class BacktestEngine:
                     prices=open_prices,
                 )
                 fills = self.broker.execute_orders(orders, open_prices, portfolio)
+                last_rebalance_ts = pd.Timestamp(timestamp)
+
+            for symbol, quantity in quantities_into_bar.items():
+                if symbol in prev_close and symbol in close_prices:
+                    contribution = quantity * (float(close_prices[symbol]) - prev_close[symbol])
+                    attribution_records.append(
+                        {
+                            "timestamp": timestamp,
+                            "symbol": symbol,
+                            "contribution": contribution,
+                        }
+                    )
 
             order_records.extend(self._order_records(orders))
             fill_records.extend(self._fill_records(fills))
@@ -58,6 +77,8 @@ class BacktestEngine:
             position_records.extend(
                 self._position_records(timestamp, portfolio, close_prices)
             )
+            for symbol, price in close_prices.items():
+                prev_close[symbol] = float(price)
 
         equity_curve = pd.DataFrame(
             equity_records,
@@ -88,19 +109,40 @@ class BacktestEngine:
             position_records,
             columns=["timestamp", "symbol", "quantity", "close_price", "market_value"],
         )
+        attribution_frame = pd.DataFrame(
+            attribution_records,
+            columns=["timestamp", "symbol", "contribution"],
+        )
         metrics = calculate_performance_metrics(
             equity_curve,
             trade_blotter,
             initial_cash=self.config.initial_cash,
             annualization_factor=self.config.annualization_factor,
+            attribution_frame=attribution_frame,
         )
         return BacktestResult(
             equity_curve=equity_curve,
             trade_blotter=trade_blotter,
             orders=orders_frame,
             positions=positions_frame,
+            attribution=attribution_frame,
             metrics=metrics,
         )
+
+    def _should_rebalance(
+        self, timestamp: pd.Timestamp, last_rebalance_ts: pd.Timestamp | None
+    ) -> bool:
+        if self.config.rebalance_frequency == RebalanceFrequency.EVERY_BAR:
+            return True
+        if last_rebalance_ts is None:
+            return True
+        current = pd.Timestamp(timestamp)
+        previous = pd.Timestamp(last_rebalance_ts)
+        if self.config.rebalance_frequency == RebalanceFrequency.WEEKLY:
+            return current.isocalendar()[:2] != previous.isocalendar()[:2]
+        if self.config.rebalance_frequency == RebalanceFrequency.MONTHLY:
+            return (current.year, current.month) != (previous.year, previous.month)
+        return True
 
     def _prepare_ohlcv(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
         required = {"symbol", "timestamp", "open", "close"}

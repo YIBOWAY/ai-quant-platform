@@ -22,6 +22,7 @@ class OrderGenerator:
     ) -> list[Order]:
         normalized_prices = {symbol.upper(): float(price) for symbol, price in prices.items()}
         target_map = {target.symbol.upper(): float(target.target_weight) for target in targets}
+        target_map = self._apply_weight_constraints(target_map)
         symbols = sorted(set(portfolio.positions).union(target_map))
         equity = portfolio.equity(normalized_prices)
         orders: list[Order] = []
@@ -51,3 +52,34 @@ class OrderGenerator:
                 )
             )
         return orders
+
+    def _apply_weight_constraints(self, target_map: dict[str, float]) -> dict[str, float]:
+        """Clamp target weights to the configured caps.
+
+        No-op when both ``max_weight_per_symbol`` and ``sector_cap`` are unset, so
+        the default order stream is unchanged. Caps only ever scale weights
+        *down*; freed weight is not redistributed, keeping gross exposure
+        predictable (v1 semantics).
+        """
+        max_weight = self.config.max_weight_per_symbol
+        sector_cap = self.config.sector_cap
+        if max_weight is None and sector_cap is None:
+            return target_map
+
+        capped = dict(target_map)
+        if max_weight is not None:
+            capped = {symbol: min(weight, max_weight) for symbol, weight in capped.items()}
+
+        if sector_cap is not None:
+            sector_map = self.config.sector_map
+            sector_totals: dict[str, float] = {}
+            for symbol, weight in capped.items():
+                sector = sector_map.get(symbol, symbol)
+                sector_totals[sector] = sector_totals.get(sector, 0.0) + weight
+            for sector, total in sector_totals.items():
+                if total > sector_cap and total > 0:
+                    scale = sector_cap / total
+                    for symbol in capped:
+                        if sector_map.get(symbol, symbol) == sector:
+                            capped[symbol] *= scale
+        return capped

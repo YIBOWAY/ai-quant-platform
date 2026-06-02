@@ -121,6 +121,7 @@ export type BacktestDetailResponse = ApiEnvelope & {
   orders: PreviewRecord[];
   positions: PreviewRecord[];
   trade_blotter: PreviewRecord[];
+  attribution: PreviewRecord[];
 };
 
 export type StrategyMetadata = {
@@ -549,6 +550,7 @@ export function getBacktestDetail(runId: string) {
     orders: [],
     positions: [],
     trade_blotter: [],
+    attribution: [],
     safety: FALLBACK_SAFETY,
   });
 }

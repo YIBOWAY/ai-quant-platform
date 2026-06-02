@@ -39,11 +39,13 @@ class BacktestRunResult(BaseModel):
     trade_blotter_path: Path
     orders_path: Path
     positions_path: Path
+    attribution_path: Path
     metrics_path: Path
     report_path: Path
     total_return: float
     sharpe: float
     max_drawdown: float
+    attribution: list[dict[str, float | str]] = Field(default_factory=list)
 
 
 def run_backtest(
@@ -63,6 +65,10 @@ def run_backtest(
     factor_ids: list[str] | None = None,
     weights: dict[str, float] | None = None,
     benchmark_symbol: str = "SPY",
+    rebalance_frequency: str = "every_bar",
+    max_weight_per_symbol: float | None = None,
+    sector_cap: float | None = None,
+    sector_map: dict[str, str] | None = None,
     settings: Settings | None = None,
 ) -> BacktestRunResult:
     active_settings = settings or load_settings()
@@ -88,6 +94,10 @@ def run_backtest(
         initial_cash=initial_cash,
         commission_bps=commission_bps,
         slippage_bps=slippage_bps,
+        rebalance_frequency=rebalance_frequency,
+        max_weight_per_symbol=max_weight_per_symbol,
+        sector_cap=sector_cap,
+        sector_map=sector_map or {},
     )
     strategy = _build_backtest_strategy(
         resolved_strategy_id, signal_frame, top_n=top_n
@@ -113,6 +123,11 @@ def run_backtest(
         result.positions,
         filename="positions.parquet",
         table_name="backtest_positions",
+    )
+    attribution_path = storage.save_frame(
+        result.attribution,
+        filename="attribution.parquet",
+        table_name="backtest_attribution",
     )
     metrics_path = storage.save_metrics(result.metrics)
     report = generate_backtest_report(
@@ -141,11 +156,13 @@ def run_backtest(
         trade_blotter_path=trade_blotter_path,
         orders_path=orders_path,
         positions_path=positions_path,
+        attribution_path=attribution_path,
         metrics_path=metrics_path,
         report_path=report_path,
         total_return=result.metrics.total_return,
         sharpe=result.metrics.sharpe,
         max_drawdown=result.metrics.max_drawdown,
+        attribution=result.metrics.attribution,
     )
 
 
