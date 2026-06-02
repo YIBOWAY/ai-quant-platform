@@ -6,14 +6,17 @@ and options research platform.
 The project is currently delivered through Phase 14. It includes:
 
 - US equity and ETF historical data workflows.
-- Factor research, backtests, experiments, and paper-trading simulation.
+- Factor research, read-only Factor Lab diagnostics, strategy/universe
+  registries, backtests, experiments, and paper-trading simulation.
 - Local FastAPI backend and Next.js frontend.
 - AI research assistant with candidate pool and human review gates.
 - Read-only Polymarket research, snapshots, replay, and reports.
 - Futu read-only US stock and options data.
 - Options Income Screener, Options Radar, and Buy-Side Options Assistant.
 - Local AlphaGBM-style options toolbox and local Futu option quote cache.
-- Paper replication workbench for the reversal/momentum strategy.
+- Strategy Catalog with the reversal/momentum replication, the registered
+  cross-sectional Top-N backtest strategy, and a mean-reversion Top-N strategy.
+- Optional PostgreSQL run index over local backtest/factor/paper runs.
 
 This project does not add live trading, broker order submission, wallet
 connection, signing, Futu account unlock, or real order placement.
@@ -72,9 +75,9 @@ curl http://127.0.0.1:8765/api/health
 | Page | Purpose |
 |---|---|
 | `/data-explorer` | US equity historical data viewer. |
-| `/factor-lab` | Run factors and inspect factor outputs. |
-| `/backtest` | Run research backtests. |
-| `/replications` | Reproduce the short-term reversal and longer-term momentum paper workflow. |
+| `/factor-lab` | Read-only factor health and QQQ timing diagnostics. |
+| `/backtest` | Run strategy, universe, factor-weight, and benchmark backtests. |
+| `/replications` | Strategy Catalog for registered research strategies. |
 | `/docs/reversal-momentum` | Frontend-readable notes for the paper replication. |
 | `/experiments` | Inspect experiment sweeps, folds, comparisons, and send best params to backtest. |
 | `/paper-trading` | Run paper-trading simulation only. |
@@ -88,8 +91,9 @@ curl http://127.0.0.1:8765/api/health
 | `/agent-studio` | AI research assistant candidate workflows. |
 | `/settings` | Masked local settings. |
 
-The UI is bilingual (English / 中文). Use the language toggle in the top bar to
-switch the whole site; the choice is stored in the `qs_lang` cookie. See
+The UI is bilingual (English / 中文). Use the top-bar language toggle or open
+locale-prefixed paths such as `/en/options-radar` and `/zh/options-radar`.
+The choice is also stored in the `qs_lang` cookie for unprefixed paths. See
 [docs/frontend/frontend_chinese_version.md](docs/frontend/frontend_chinese_version.md).
 
 ## Futu Read-Only Data
@@ -121,7 +125,52 @@ DuckDB-backed Futu option quote cache, and a one-time retry for Futu rate-limit
 responses. Broad daily scans should still be scheduled and expected to run
 slowly under Futu pacing.
 
+## Optional PostgreSQL Run Index
+
+Backtest, factor, and paper runs are always written to local files under
+`data/api_runs/<kind>/<run_id>/`. You can optionally index them into PostgreSQL
+for fast history listing. It is **disabled by default**; when the database is
+off or unreachable, every endpoint falls back to the filesystem.
+
+To enable it against a local Docker container:
+
+```powershell
+# container named quantplatform-db, db=quantplatform, user=quant, pass=quantpass
+docker start quantplatform-db
+```
+
+```text
+# .env
+QS_DATABASE_ENABLED=true
+QS_DATABASE_URL="postgresql://quant:quantpass@127.0.0.1:5432/quantplatform"
+QS_DATABASE_CONNECT_TIMEOUT_SECONDS=5
+QS_DATABASE_AUTO_MIGRATE=true
+```
+
+On startup the backend creates the `quant_system.runs` table, backfills existing
+file runs, and prunes index rows whose files were removed. Check it with:
+
+```powershell
+curl http://127.0.0.1:8765/api/health   # database.reachable should be true
+```
+
+The `psycopg` driver ships with the `api` extra. The database stores research
+run metadata only; the connection URL is masked in `/api/settings`. See
+[docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md).
+
 ## Options Workflows
+
+## Factor Lab Refresh
+
+Factor Lab is a read-only dashboard. Refresh its local diagnostics cache from
+the backend or a scheduled task:
+
+```powershell
+conda activate ai-quant
+quant-system factor refresh-lab --provider sample --universe-id etf --symbol QQQ --benchmark-symbol QQQ
+```
+
+The command only writes local research cache files. It does not place orders.
 
 Single-ticker seller screener:
 
@@ -142,8 +191,9 @@ Radar UI:
 http://127.0.0.1:3001/options-radar
 ```
 
-The Radar page can run a sample scan and refresh the local universe, earnings,
-and VIX caches from public or sample sources.
+The Radar page can run the current-date read-only scan and refresh the local
+universe, earnings, and VIX caches. Public sources are the default; the local
+sample source is only for explicit offline testing.
 
 Local options toolbox:
 

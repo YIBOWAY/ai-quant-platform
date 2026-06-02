@@ -81,6 +81,29 @@ def test_backtest_run_list_and_detail(tmp_path) -> None:
     assert detail["orders"]
 
 
+def test_backtest_run_records_single_symbol_no_trade_warning(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/backtests/run",
+        json={
+            "symbols": ["META"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "sample",
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    warnings = [warning.lower() for warning in payload["warnings"]]
+    assert any("single symbol" in warning for warning in warnings)
+    assert any("no simulated trades" in warning for warning in warnings)
+    assert payload["trade_count"] == 0
+
+
 def test_benchmark_returns_equity_curve(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 
@@ -171,4 +194,35 @@ def test_backtest_run_uses_tiingo_when_requested(tmp_path, monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["source"] == "tiingo"
+    assert payload["metrics"]["total_return"] is not None
+
+
+def test_backtest_run_accepts_strategy_universe_factors_and_benchmark(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/backtests/run",
+        json={
+            "universe_id": "etf",
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "sample",
+            "strategy_id": "cross_sectional_top_n",
+            "factor_ids": ["momentum", "volatility"],
+            "weights": {"momentum": 1.0, "volatility": 0.5},
+            "benchmark_symbol": "SPY",
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    request = payload["request"]
+    assert request["benchmark_symbol"] == "SPY"
+    assert request["strategy_id"] == "cross_sectional_top_n"
+    assert request["universe_id"] == "etf"
+    assert request["factor_ids"] == ["momentum", "volatility"]
+    assert request["weights"] == {"momentum": 1.0, "volatility": 0.5}
+    assert "QQQ" in request["symbols"]
     assert payload["metrics"]["total_return"] is not None

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from quant_system.config.settings import Settings, load_settings
 from quant_system.data.provider_factory import build_ohlcv_provider
@@ -12,13 +12,7 @@ from quant_system.factors.evaluation import (
     calculate_information_coefficients,
     calculate_quantile_returns,
 )
-from quant_system.factors.examples import (
-    LiquidityFactor,
-    MACDFactor,
-    MomentumFactor,
-    RSIFactor,
-    VolatilityFactor,
-)
+from quant_system.factors.registry import FactorRegistry, build_default_factor_registry
 from quant_system.factors.reporting import generate_factor_report
 from quant_system.factors.storage import LocalFactorStorage
 
@@ -29,6 +23,7 @@ class FactorResearchResult(BaseModel):
     source: str
     row_count: int
     signal_count: int
+    warnings: list[str] = Field(default_factory=list)
     factor_results_path: Path
     signal_frame_path: Path
     ic_path: Path
@@ -105,13 +100,15 @@ def _cross_sectional_zscore(values: pd.Series) -> pd.Series:
     return (clean - mean) / std
 
 
-def build_default_factors(*, lookback: int) -> list[BaseFactor]:
+def build_default_factors(
+    *,
+    lookback: int,
+    registry: FactorRegistry | None = None,
+) -> list[BaseFactor]:
+    active_registry = registry or build_default_factor_registry()
     return [
-        MomentumFactor(lookback=lookback),
-        VolatilityFactor(lookback=lookback),
-        LiquidityFactor(lookback=lookback),
-        RSIFactor(lookback=lookback),
-        MACDFactor(lookback=lookback),
+        active_registry.create(factor_id, lookback=lookback)
+        for factor_id in active_registry.factor_ids()
     ]
 
 
@@ -155,6 +152,12 @@ def run_factor_research(
         source=source,
         row_count=len(factor_results),
         signal_count=len(signal_frame),
+        warnings=_build_factor_warnings(
+            factor_results=factor_results,
+            signal_frame=signal_frame,
+            ic_frame=ic_frame,
+            quantile_frame=quantile_frame,
+        ),
         factor_results_path=factor_results_path,
         signal_frame_path=signal_frame_path,
         ic_path=ic_path,
@@ -181,6 +184,50 @@ def run_sample_factor_research(
         quantiles=quantiles,
         provider="sample",
     )
+
+
+def _build_factor_warnings(
+    *,
+    factor_results: pd.DataFrame,
+    signal_frame: pd.DataFrame,
+    ic_frame: pd.DataFrame,
+    quantile_frame: pd.DataFrame,
+) -> list[str]:
+    warnings: list[str] = []
+    symbol_count = (
+        int(factor_results["symbol"].nunique())
+        if "symbol" in factor_results.columns and not factor_results.empty
+        else 0
+    )
+    if symbol_count < 2:
+        warnings.append(
+            "Single symbol run: Signal Scores, IC, and quantile reports are designed "
+            "for comparing a universe of tickers. Add peer symbols such as NVDA, "
+            "AAPL, MSFT, AMD, QQQ, and SPY for a useful cross-sectional analysis."
+        )
+    if (
+        not signal_frame.empty
+        and "score" in signal_frame.columns
+        and pd.to_numeric(signal_frame["score"], errors="coerce").fillna(0.0).abs().max() == 0
+    ):
+        warnings.append(
+            "All signal scores are zero because this run has no cross-sectional "
+            "spread to rank at each signal date."
+        )
+    if ic_frame.empty or (
+        "ic" in ic_frame.columns
+        and pd.to_numeric(ic_frame["ic"], errors="coerce").dropna().empty
+    ):
+        warnings.append(
+            "IC is unavailable for this input because each signal date needs at "
+            "least two comparable tickers with different future returns."
+        )
+    if quantile_frame.empty:
+        warnings.append(
+            "Quantile returns are unavailable because the run did not have enough "
+            "tickers to form groups."
+        )
+    return warnings
 
 
 def _build_storage(

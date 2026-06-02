@@ -88,6 +88,31 @@ def test_factor_run_and_detail(tmp_path) -> None:
     assert detail["signals"]
 
 
+def test_factor_run_records_single_symbol_warning(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    run_response = client.post(
+        "/api/factors/run",
+        json={
+            "symbols": ["NVDA"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "sample",
+            "lookback": 3,
+            "quantiles": 3,
+        },
+    )
+
+    assert run_response.status_code == 200
+    payload = run_response.json()
+    assert any("single symbol" in warning.lower() for warning in payload["warnings"])
+
+    detail_response = client.get(f"/api/factors/{payload['run_id']}")
+    assert detail_response.status_code == 200
+    metadata = detail_response.json()["metadata"]
+    assert metadata["warnings"] == payload["warnings"]
+
+
 def test_factor_detail_404_for_unknown_run(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 
@@ -161,3 +186,61 @@ def test_factor_run_uses_tiingo_when_requested(tmp_path, monkeypatch) -> None:
     payload = response.json()
     assert payload["source"] == "tiingo"
     assert payload["signal_count"] > 0
+
+
+def test_factor_lab_dashboard_returns_cross_sectional_and_timing_engines(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get(
+        "/api/factors/lab",
+        params={
+            "provider": "sample",
+            "universe_id": "etf",
+            "symbol": "QQQ",
+            "start": "2024-01-02",
+            "end": "2024-03-29",
+            "lookback": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["benchmark_symbol"] == "QQQ"
+    assert payload["universe"]["id"] == "etf"
+    assert payload["guardrails"]["exploratory_only"] is True
+    assert payload["guardrails"]["walk_forward"]["enabled"] is True
+    assert payload["guardrails"]["leakage_audit"]["status"] == "basic_passed"
+    assert payload["cache"]["path"]
+
+    cross_rows = payload["cross_sectional"]["rows"]
+    timing_rows = payload["timing"]["rows"]
+    factor_ids = {item["factor_id"] for item in payload["factors"]}
+    assert factor_ids
+    assert factor_ids.issubset({row["factor_id"] for row in cross_rows})
+    assert factor_ids.issubset({row["factor_id"] for row in timing_rows})
+    assert all("coverage" in row for row in cross_rows)
+    assert all(
+        "sharpe" in row and "max_drawdown" in row and "win_rate" in row
+        for row in timing_rows
+    )
+
+
+def test_factor_lab_dashboard_reuses_cached_result(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    params = {
+        "provider": "sample",
+        "universe_id": "etf",
+        "symbol": "QQQ",
+        "benchmark_symbol": "QQQ",
+        "start": "2024-01-02",
+        "end": "2024-03-29",
+        "lookback": 3,
+    }
+
+    refreshed = client.get("/api/factors/lab", params={**params, "force_refresh": True})
+    cached = client.get("/api/factors/lab", params=params)
+
+    assert refreshed.status_code == 200
+    assert cached.status_code == 200
+    assert refreshed.json()["cache"]["status"] == "recomputed"
+    assert cached.json()["cache"]["status"] == "cached"

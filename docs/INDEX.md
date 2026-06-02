@@ -42,7 +42,10 @@ quote caching documented below.
 | Equity data provider factory | `src/quant_system/data/provider_factory.py` |
 | Futu equity data provider | `src/quant_system/data/providers/futu.py` |
 | Factor pipeline | `src/quant_system/factors/pipeline.py` |
+| Factor Lab dashboard engine | `src/quant_system/factors/lab.py` |
 | Backtest pipeline | `src/quant_system/backtest/pipeline.py` |
+| Strategy registry | `src/quant_system/strategies/registry.py` |
+| Universe registry | `src/quant_system/universe/registry.py` |
 | Reversal/momentum paper replication | `src/quant_system/replication/reversal_momentum.py` |
 | Paper-trading pipeline | `src/quant_system/execution/pipeline.py` |
 | Options seller screener | `src/quant_system/options/screener.py` |
@@ -51,6 +54,8 @@ quote caching documented below.
 | Local AlphaGBM-style options tools | `src/quant_system/options/local_tools.py` |
 | Local options research helpers | `src/quant_system/options/local_research.py` |
 | Futu options DuckDB cache | `src/quant_system/storage/options_cache.py` |
+| PostgreSQL run index (optional) | `src/quant_system/storage/runs_repository.py` |
+| Database connection + migrations | `src/quant_system/storage/database.py` |
 | Buy-side metrics | `src/quant_system/options/buy_side_metrics.py` |
 | Buy-side strategy generation | `src/quant_system/options/buy_side_strategy.py` |
 | Buy-side scenario lab | `src/quant_system/options/buy_side_scenarios.py` |
@@ -84,6 +89,7 @@ quote caching documented below.
 | Document | Purpose |
 |---|---|
 | [replications/reversal_momentum_replication.md](replications/reversal_momentum_replication.md) | Local replication guide for the short-term reversal and longer-term momentum paper. |
+| [learning/research_registry_pipeline_2026_06_02.md](learning/research_registry_pipeline_2026_06_02.md) | Strategy, universe, backtest, and read-only Factor Lab registry workflow. |
 
 ## 6. Polymarket / Prediction-Market Docs
 
@@ -101,11 +107,11 @@ quote caching documented below.
 | Page | Purpose |
 |---|---|
 | `/data-explorer` | Equity data viewer. |
-| `/factor-lab` | Factor runs. |
+| `/factor-lab` | Read-only factor health and single-symbol timing dashboard. |
 | `/factor-lab/[runId]` | Factor run details. |
-| `/backtest` | Backtest runs. |
+| `/backtest` | Strategy, universe, and factor-weight backtest runs. |
 | `/backtest/[runId]` | Backtest run details. |
-| `/replications` | Paper replication workbench for reversal and momentum. |
+| `/replications` | Strategy Catalog backed by the strategy registry. |
 | `/docs/reversal-momentum` | Frontend-readable replication documentation. |
 | `/experiments` | Experiment sweep, fold, comparison, and best-run review. |
 | `/paper-trading` | Paper-trading simulation. |
@@ -124,7 +130,7 @@ Frontend docs:
 
 | Document | Purpose |
 |---|---|
-| [frontend/frontend_chinese_version.md](frontend/frontend_chinese_version.md) | Site-wide English / 中文 language toggle and how it works. |
+| [frontend/frontend_chinese_version.md](frontend/frontend_chinese_version.md) | Site-wide English / 中文 language paths, toggle, and cookie fallback. |
 | [frontend/design_brief.md](frontend/design_brief.md) | Frontend design brief and component plan. |
 
 ## 8. Common Commands
@@ -180,15 +186,25 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 
 ## 10. Cache Layer Status
 
-The first local database-backed cache layer is implemented for Futu option quote
-windows. Read:
+Two local storage layers are implemented:
+
+- DuckDB caches local Futu option quote windows
+  (`storage/options_cache.py`).
+- An optional PostgreSQL **run index** (`storage/database.py`,
+  `storage/runs_repository.py`, `scripts/sql/001_runs_index.sql`) mirrors
+  file-based backtest/factor/paper runs for fast listing. It is off by default
+  (`QS_DATABASE_ENABLED`), reconciles with the filesystem on startup, and the API
+  falls back to scanning files when the database is off or unreachable.
+
+Read:
 
 - [architecture/database_cache_plan.md](architecture/database_cache_plan.md)
 
 Current and next directions:
 
 - DuckDB is used now for local Futu option quote windows.
-- PostgreSQL remains the recommended next storage target for metadata, radar
-  runs, request logs, and API-visible snapshots.
+- PostgreSQL is used now (optionally) for the backtest/factor/paper run index.
+- Remaining PostgreSQL targets: radar runs, request logs, and richer
+  API-visible snapshots.
 - Parquet / DuckDB for large OHLCV and analytical time-series datasets.
 - Optional TimescaleDB later if PostgreSQL becomes the main time-series store.

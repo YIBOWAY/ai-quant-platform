@@ -11,9 +11,9 @@ from quant_system.api.schemas.common import (
     read_json,
     read_parquet_records,
     resolve_run_dir,
-    sorted_metadata_paths,
 )
 from quant_system.backtest.pipeline import run_backtest as execute_backtest
+from quant_system.storage.runs_repository import index_run, list_run_metadatas
 
 router = APIRouter()
 
@@ -26,27 +26,46 @@ def run_backtest(
 ) -> dict:
     run_id = make_run_id("backtest")
     run_dir = api_runs_dir / "backtests" / run_id
-    result = execute_backtest(
-        symbols=request.symbols,
-        start=request.start,
-        end=request.end,
-        output_dir=run_dir,
-        lookback=request.lookback,
-        top_n=request.top_n,
-        initial_cash=request.initial_cash,
-        commission_bps=request.commission_bps,
-        slippage_bps=request.slippage_bps,
-        provider=request.provider,
-        settings=settings,
-    )
+    try:
+        result = execute_backtest(
+            symbols=request.symbols,
+            start=request.start,
+            end=request.end,
+            output_dir=run_dir,
+            lookback=request.lookback,
+            top_n=request.top_n,
+            initial_cash=request.initial_cash,
+            commission_bps=request.commission_bps,
+            slippage_bps=request.slippage_bps,
+            provider=request.provider,
+            strategy_id=request.strategy_id,
+            universe_id=request.universe_id,
+            factor_ids=request.factor_ids,
+            weights=request.weights,
+            benchmark_symbol=request.benchmark_symbol,
+            settings=settings,
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_backtest_request", "message": str(exc)},
+        ) from exc
     metadata = {
         "run_id": run_id,
         "source": result.source,
+        "trade_count": result.trade_count,
+        "order_count": result.order_count,
+        "warnings": result.warnings,
         "request": {
-            "symbols": request.symbols,
+            "symbols": result.symbols,
             "start": request.start,
             "end": request.end,
             "provider": request.provider,
+            "strategy_id": result.strategy_id,
+            "universe_id": result.universe_id,
+            "factor_ids": result.factor_ids,
+            "weights": result.weights,
+            "benchmark_symbol": result.benchmark_symbol,
             "lookback": request.lookback,
             "top_n": request.top_n,
             "initial_cash": request.initial_cash,
@@ -72,22 +91,21 @@ def run_backtest(
         json.dumps(metadata, indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    index_run("backtest", metadata, run_dir, settings)
     return metadata
 
 
 @router.get("/backtests")
-def list_backtests(api_runs_dir: ApiRunsDirDep) -> dict:
+def list_backtests(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     root = api_runs_dir / "backtests"
-    backtests = []
-    for metadata_path in sorted_metadata_paths(root):
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        backtests.append(
-            {
-                "id": metadata["run_id"],
-                "source": metadata.get("source", "sample"),
-                "metrics": metadata.get("metrics", {}),
-            }
-        )
+    backtests = [
+        {
+            "id": metadata["run_id"],
+            "source": metadata.get("source", "sample"),
+            "metrics": metadata.get("metrics", {}),
+        }
+        for metadata in list_run_metadatas("backtest", root, settings)
+    ]
     return {"backtests": backtests}
 
 

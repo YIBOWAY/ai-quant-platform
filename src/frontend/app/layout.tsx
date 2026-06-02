@@ -27,13 +27,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = await getServerLocale();
   return (
     <html lang={locale === 'zh' ? 'zh' : 'en'} className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
-      <body className="antialiased overflow-hidden selection:bg-accent-success selection:text-bg-base">
+      <body className="min-h-screen bg-bg-base antialiased selection:bg-accent-success selection:text-bg-base">
         <LocaleProvider locale={locale}>
           <Providers>
             <Sidebar />
             <TopBar />
             <SafetyStrip />
-            <main className="fixed top-[100px] left-[240px] right-0 bottom-0 bg-bg-base flex flex-col overflow-hidden">
+            <main className="ml-[240px] min-h-screen bg-bg-base pt-[100px]">
               {children}
             </main>
           </Providers>

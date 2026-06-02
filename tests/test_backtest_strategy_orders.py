@@ -4,7 +4,7 @@ import pytest
 from quant_system.backtest.models import BacktestConfig, OrderSide
 from quant_system.backtest.order_generation import OrderGenerator
 from quant_system.backtest.portfolio import Portfolio
-from quant_system.backtest.strategy import ScoreSignalStrategy
+from quant_system.backtest.strategy import MeanReversionTopN, ScoreSignalStrategy
 
 
 def test_score_strategy_only_emits_targets_at_tradeable_timestamp() -> None:
@@ -64,3 +64,58 @@ def test_order_generator_rebalances_to_targets_and_closes_unselected_positions()
     assert sell.quantity == pytest.approx(5)
     assert buy.side == OrderSide.BUY
     assert buy.quantity == pytest.approx(10)
+
+
+def test_mean_reversion_selects_lowest_scores_unlike_score_strategy() -> None:
+    timestamp = pd.Timestamp("2024-01-03", tz="UTC")
+    signal_frame = pd.DataFrame(
+        {
+            "symbol": ["SPY", "QQQ", "IWM"],
+            "tradeable_ts": [timestamp, timestamp, timestamp],
+            # SPY best momentum, IWM worst (even negative).
+            "score": [0.9, 0.1, -0.4],
+        }
+    )
+
+    momentum = ScoreSignalStrategy(signal_frame, top_n=1, target_gross_exposure=1.0)
+    reversion = MeanReversionTopN(signal_frame, top_n=1, target_gross_exposure=1.0)
+
+    momentum_targets = momentum.target_weights(timestamp)
+    reversion_targets = reversion.target_weights(timestamp)
+
+    assert momentum_targets and momentum_targets[0].symbol == "SPY"
+    # Contrarian: picks the worst performer, including a negative score that the
+    # long-only score gate would have dropped.
+    assert reversion_targets and reversion_targets[0].symbol == "IWM"
+    assert reversion_targets[0].target_weight == pytest.approx(1.0)
+
+
+def test_backtest_strategy_factory_dispatch_and_unknown_id() -> None:
+    from quant_system.backtest.pipeline import (
+        _build_backtest_strategy,
+        _resolve_strategy_id,
+    )
+
+    timestamp = pd.Timestamp("2024-01-03", tz="UTC")
+    signal_frame = pd.DataFrame(
+        {
+            "symbol": ["SPY", "QQQ"],
+            "tradeable_ts": [timestamp, timestamp],
+            "score": [0.9, -0.2],
+        }
+    )
+
+    assert _resolve_strategy_id("cross_sectional_top_n") == "cross_sectional_top_n"
+    assert _resolve_strategy_id("mean_reversion_top_n") == "mean_reversion_top_n"
+    assert isinstance(
+        _build_backtest_strategy("cross_sectional_top_n", signal_frame, top_n=1),
+        ScoreSignalStrategy,
+    )
+    assert isinstance(
+        _build_backtest_strategy("mean_reversion_top_n", signal_frame, top_n=1),
+        MeanReversionTopN,
+    )
+
+    # A registered-but-not-runnable strategy (replication) is rejected clearly.
+    with pytest.raises(ValueError, match="not runnable by the backtest engine"):
+        _resolve_strategy_id("reversal_momentum")

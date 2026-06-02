@@ -13,6 +13,7 @@ export default async function FactorRunDetailPage({ params }: FactorRunDetailPag
   const detail = await getFactorRunDetail(runId);
   const metadata = detail.metadata ?? {};
   const source = typeof metadata.source === "string" ? metadata.source : undefined;
+  const warnings = arrayOfStrings(metadata.warnings);
 
   return (
     <main className="h-full overflow-y-auto bg-bg-base p-5">
@@ -38,6 +39,7 @@ export default async function FactorRunDetailPage({ params }: FactorRunDetailPag
         <Metric label="Signals" value={String(metadata.signal_count ?? detail.signals.length)} />
         <Metric label="IC Rows" value={String(detail.information_coefficients.length)} />
       </section>
+      <WarningsPanel warnings={warnings} />
 
       <section className="grid gap-4 lg:grid-cols-2">
         <DataPreviewTable
@@ -84,6 +86,22 @@ export default async function FactorRunDetailPage({ params }: FactorRunDetailPag
   );
 }
 
+function WarningsPanel({ warnings }: { warnings: string[] }) {
+  if (!warnings.length) {
+    return null;
+  }
+  return (
+    <section className="mb-4 rounded border border-warning/40 bg-warning/10 p-4 text-warning">
+      <h2 className="font-label-caps">Run notes</h2>
+      <ul className="mt-2 space-y-1 font-body-sm">
+        {warnings.map((warning) => (
+          <li key={warning}>{warning}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded border border-border-subtle bg-bg-surface p-3">
@@ -91,6 +109,10 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">{value}</div>
     </div>
   );
+}
+
+function arrayOfStrings(value: unknown) {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 }
 
 function objectRows(value: unknown) {

@@ -2,26 +2,39 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+import pandas as pd
+from pydantic import BaseModel, ConfigDict, Field
 
 from quant_system.backtest.engine import BacktestEngine
 from quant_system.backtest.models import BacktestConfig
 from quant_system.backtest.reporting import generate_backtest_report
 from quant_system.backtest.storage import LocalBacktestStorage
-from quant_system.backtest.strategy import ScoreSignalStrategy
+from quant_system.backtest.strategy import MeanReversionTopN, ScoreSignalStrategy
 from quant_system.config.settings import Settings, load_settings
 from quant_system.data.provider_factory import build_ohlcv_provider
+from quant_system.experiments.models import FactorBlendConfig, FactorDirection, FactorWeight
+from quant_system.experiments.scoring import build_multifactor_score_frame
 from quant_system.factors.pipeline import (
-    build_default_factors,
-    build_factor_signal_frame,
     compute_factor_pipeline,
 )
+from quant_system.factors.registry import build_default_factor_registry
+from quant_system.strategies.registry import build_default_strategy_registry
+from quant_system.universe.registry import build_default_universe_registry
 
 
 class BacktestRunResult(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     source: str
+    strategy_id: str
+    universe_id: str | None
+    symbols: list[str]
+    factor_ids: list[str]
+    weights: dict[str, float]
+    benchmark_symbol: str
+    trade_count: int
+    order_count: int
+    warnings: list[str] = Field(default_factory=list)
     equity_curve_path: Path
     trade_blotter_path: Path
     orders_path: Path
@@ -45,20 +58,40 @@ def run_backtest(
     commission_bps: float = 1.0,
     slippage_bps: float = 5.0,
     provider: str | None = None,
+    strategy_id: str = "cross_sectional_top_n",
+    universe_id: str | None = None,
+    factor_ids: list[str] | None = None,
+    weights: dict[str, float] | None = None,
+    benchmark_symbol: str = "SPY",
     settings: Settings | None = None,
 ) -> BacktestRunResult:
     active_settings = settings or load_settings()
+    resolved_symbols = _resolve_symbols(symbols=symbols, universe_id=universe_id)
+    resolved_strategy_id = _resolve_strategy_id(strategy_id)
+    resolved_factor_ids = _resolve_factor_ids(factor_ids)
+    resolved_weights = {
+        factor_id: float((weights or {}).get(factor_id, 1.0))
+        for factor_id in resolved_factor_ids
+    }
     ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
-    ohlcv = ohlcv_provider.fetch_ohlcv(symbols, start=start, end=end)
-    factors = build_default_factors(lookback=lookback)
+    ohlcv = ohlcv_provider.fetch_ohlcv(resolved_symbols, start=start, end=end)
+    factors = _create_factors(resolved_factor_ids, lookback=lookback)
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
-    signal_frame = build_factor_signal_frame(factor_results)
+    signal_frame = build_multifactor_score_frame(
+        factor_results,
+        _build_factor_blend_config(
+            factor_ids=resolved_factor_ids,
+            weights=resolved_weights,
+        ),
+    )
     config = BacktestConfig(
         initial_cash=initial_cash,
         commission_bps=commission_bps,
         slippage_bps=slippage_bps,
     )
-    strategy = ScoreSignalStrategy(signal_frame, top_n=top_n, target_gross_exposure=1.0)
+    strategy = _build_backtest_strategy(
+        resolved_strategy_id, signal_frame, top_n=top_n
+    )
     result = BacktestEngine(config).run(ohlcv, strategy)
     storage = _build_storage(output_dir, settings=active_settings)
     equity_curve_path = storage.save_frame(
@@ -91,6 +124,19 @@ def run_backtest(
     report_path = storage.save_report(report)
     return BacktestRunResult(
         source=source,
+        strategy_id=resolved_strategy_id,
+        universe_id=universe_id,
+        symbols=resolved_symbols,
+        factor_ids=resolved_factor_ids,
+        weights=resolved_weights,
+        benchmark_symbol=benchmark_symbol.upper().strip() or "SPY",
+        trade_count=len(result.trade_blotter),
+        order_count=len(result.orders),
+        warnings=_build_backtest_warnings(
+            ohlcv=ohlcv,
+            signal_frame=signal_frame,
+            trade_blotter=result.trade_blotter,
+        ),
         equity_curve_path=equity_curve_path,
         trade_blotter_path=trade_blotter_path,
         orders_path=orders_path,
@@ -127,6 +173,128 @@ def run_sample_backtest(
         slippage_bps=slippage_bps,
         provider="sample",
     )
+
+
+def _resolve_symbols(*, symbols: list[str], universe_id: str | None) -> list[str]:
+    normalized = [symbol.upper().strip() for symbol in symbols if symbol.strip()]
+    if normalized:
+        return normalized
+    if universe_id:
+        return build_default_universe_registry().get(universe_id).normalized_symbols()
+    return ["SPY", "QQQ"]
+
+
+# Maps a registered strategy id to a constructor that turns the prepared
+# multifactor ``signal_frame`` into a backtest strategy. Adding a new
+# ``result_type="backtest"`` strategy is a two-step change: register its
+# metadata in ``strategies/registry.py`` and add a builder here. The strategy
+# only needs to expose ``target_weights(ts) -> list[TargetWeight] | None``.
+_BACKTEST_STRATEGY_BUILDERS = {
+    "cross_sectional_top_n": lambda signal_frame, top_n: ScoreSignalStrategy(
+        signal_frame, top_n=top_n, target_gross_exposure=1.0
+    ),
+    "mean_reversion_top_n": lambda signal_frame, top_n: MeanReversionTopN(
+        signal_frame, top_n=top_n, target_gross_exposure=1.0
+    ),
+}
+
+
+def _resolve_strategy_id(strategy_id: str) -> str:
+    normalized = strategy_id.strip() or "cross_sectional_top_n"
+    # Must be a registered strategy...
+    build_default_strategy_registry().get(normalized)
+    # ...and one the backtest engine knows how to construct.
+    if normalized not in _BACKTEST_STRATEGY_BUILDERS:
+        runnable = ", ".join(sorted(_BACKTEST_STRATEGY_BUILDERS))
+        raise ValueError(
+            f"strategy {normalized!r} is registered but is not runnable by the "
+            f"backtest engine (runnable strategies: {runnable})"
+        )
+    return normalized
+
+
+def _build_backtest_strategy(strategy_id: str, signal_frame: pd.DataFrame, *, top_n: int):
+    return _BACKTEST_STRATEGY_BUILDERS[strategy_id](signal_frame, top_n)
+
+
+def _resolve_factor_ids(factor_ids: list[str] | None) -> list[str]:
+    registry = build_default_factor_registry()
+    normalized = [factor_id.strip() for factor_id in factor_ids or [] if factor_id.strip()]
+    if not normalized:
+        return registry.factor_ids()
+    for factor_id in normalized:
+        registry.create(factor_id)
+    return normalized
+
+
+def _create_factors(factor_ids: list[str], *, lookback: int):
+    registry = build_default_factor_registry()
+    return [
+        registry.create(factor_id, lookback=lookback)
+        for factor_id in factor_ids
+    ]
+
+
+def _build_factor_blend_config(
+    *,
+    factor_ids: list[str],
+    weights: dict[str, float],
+) -> FactorBlendConfig:
+    metadata = {
+        item.factor_id: item
+        for item in build_default_factor_registry().list_metadata()
+    }
+    return FactorBlendConfig(
+        factors=[
+            FactorWeight(
+                factor_id=factor_id,
+                weight=weights.get(factor_id, 1.0),
+                direction=(
+                    FactorDirection.LOWER_IS_BETTER
+                    if metadata[factor_id].direction == "lower_is_better"
+                    else FactorDirection.HIGHER_IS_BETTER
+                ),
+            )
+            for factor_id in factor_ids
+        ]
+    )
+
+
+def _build_backtest_warnings(
+    *,
+    ohlcv: pd.DataFrame,
+    signal_frame: pd.DataFrame,
+    trade_blotter: pd.DataFrame,
+) -> list[str]:
+    warnings: list[str] = []
+    symbol_count = (
+        int(ohlcv["symbol"].astype(str).str.upper().str.strip().nunique())
+        if "symbol" in ohlcv.columns and not ohlcv.empty
+        else 0
+    )
+    if symbol_count < 2:
+        warnings.append(
+            "Single symbol run: this backtest strategy ranks a universe and buys "
+            "the top positive scores. Add peer symbols such as META, AAPL, MSFT, "
+            "GOOGL, QQQ, and SPY for a useful strategy replay."
+        )
+    if signal_frame.empty:
+        warnings.append(
+            "No signal rows were produced, so the backtest had nothing to trade."
+        )
+    elif "score" in signal_frame.columns and (
+        pd.to_numeric(signal_frame["score"], errors="coerce").fillna(0.0).abs().max() == 0
+    ):
+        warnings.append(
+            "All strategy scores are zero, so the long-only ranking strategy did "
+            "not find any positive signals to buy."
+        )
+    if trade_blotter.empty:
+        warnings.append(
+            "No simulated trades were generated; metrics can stay at zero until "
+            "the input universe produces positive ranked signals."
+        )
+    return warnings
 
 
 def _build_storage(

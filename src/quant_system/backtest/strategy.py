@@ -69,3 +69,44 @@ class ScoreSignalStrategy:
             ["tradeable_ts", "symbol"],
             ignore_index=True,
         )
+
+
+class MeanReversionTopN(ScoreSignalStrategy):
+    """Contrarian counterpart to :class:`ScoreSignalStrategy`.
+
+    Where :class:`ScoreSignalStrategy` buys the highest blended-score names
+    (momentum-style continuation), this strategy buys the *lowest* scoring
+    names in the universe each period — recent underperformers — betting on
+    short-term mean reversion. The selected names are equal-weighted up to the
+    target gross exposure.
+
+    It reuses the same prepared multifactor ``signal_frame`` so it is fully
+    pluggable into the existing backtest engine; the only difference is the
+    selection direction. Unlike the long-only score gate in the parent class,
+    losers commonly carry a negative blended score, so no ``score > 0`` filter
+    is applied — the bottom-N are always tradeable.
+    """
+
+    def target_weights(self, timestamp: pd.Timestamp) -> list[TargetWeight] | None:
+        ts = pd.Timestamp(timestamp)
+        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
+        rows = self.signal_frame[self.signal_frame["tradeable_ts"] == ts].copy()
+        if rows.empty:
+            return None
+
+        selected = rows.sort_values(["score", "symbol"], ascending=[True, True]).head(
+            self.top_n
+        )
+        if selected.empty:
+            return []
+        weight = self.target_gross_exposure / len(selected)
+        return [
+            TargetWeight(
+                timestamp=ts,
+                symbol=row.symbol,
+                target_weight=weight,
+                reason=f"reversion score={row.score:.6f}",
+            )
+            for row in selected.itertuples(index=False)
+        ]

@@ -9,6 +9,12 @@ The local toolkit does not call AlphaGBM APIs and does not require
 `ALPHAGBM_API_KEY`. Futu OpenD is the market data source for live stock and
 option-chain data. Strategy math is computed locally.
 
+On the `/options-tools` page, market-sensitive tools first ask the backend for
+the entered ticker's Futu snapshot and option chain, then run the local
+calculators with those returned contracts. Manual/local-only tools remain
+available for supplied inputs and are labeled as local backend research
+operations, not live market data.
+
 No endpoint can submit, modify, sign, or place a real order.
 
 ## Phase 1 Scope
@@ -288,7 +294,8 @@ Refreshes the local Options Radar universe CSV. Supported sources:
 Refreshes the local earnings calendar CSV used by Options Radar. Supported
 sources:
 
-- `public` / `yfinance`: read-only yfinance calendar lookup
+- `public` / `nasdaq`: Nasdaq public calendar lookup
+- `yfinance`: explicit read-only yfinance calendar lookup
 - `sample`: deterministic offline sample calendar for local testing
 
 ### POST `/api/options/refresh/vix`

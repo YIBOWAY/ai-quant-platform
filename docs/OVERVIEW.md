@@ -13,8 +13,9 @@ quote caching added after the initial delivery.
 Equity research:
 
 - Read real US equity and ETF historical data.
-- Run factor research.
-- Run backtests.
+- Inspect read-only Factor Lab diagnostics across registered factors.
+- Run strategy, universe, factor-weight, and benchmark backtests.
+- Read registered strategy and stock-universe catalogs from the API.
 - Store experiment results.
 - Run paper-trading simulations.
 
@@ -23,7 +24,9 @@ Options research:
 - Read Futu US options chains and quote snapshots.
 - Run the single-ticker Options Income Screener.
 - Run daily Options Radar scans over a local universe.
-- Refresh the local radar universe, earnings, and VIX caches from the Radar UI.
+- Refresh the local radar universe, earnings, and VIX caches from the Radar UI,
+  with public sources as the default and sample data only as an explicit test
+  source.
 - Inspect single-symbol Radar candidates and optionally load a live chain.
 - Use VIX/VIX3M history to classify market regime.
 - Run the Buy-Side Options Assistant for bullish long-premium structures.

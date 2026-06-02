@@ -9,10 +9,10 @@ from quant_system.api.schemas.common import (
     make_run_id,
     read_parquet_records,
     resolve_run_dir,
-    sorted_metadata_paths,
 )
 from quant_system.api.schemas.paper import PaperRunRequest
 from quant_system.execution.pipeline import run_paper_trading
+from quant_system.storage.runs_repository import index_run, list_run_metadatas
 
 router = APIRouter()
 
@@ -75,22 +75,21 @@ def run_paper(
         json.dumps(metadata, indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    index_run("paper", metadata, run_dir, settings)
     return metadata
 
 
 @router.get("/paper")
-def list_paper(api_runs_dir: ApiRunsDirDep) -> dict:
+def list_paper(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     root = api_runs_dir / "paper"
-    paper_runs = []
-    for metadata_path in sorted_metadata_paths(root):
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        paper_runs.append(
-            {
-                "id": metadata["run_id"],
-                "source": metadata.get("source", "sample"),
-                "summary": metadata,
-            }
-        )
+    paper_runs = [
+        {
+            "id": metadata["run_id"],
+            "source": metadata.get("source", "sample"),
+            "summary": metadata,
+        }
+        for metadata in list_run_metadatas("paper", root, settings)
+    ]
     return {"paper_runs": paper_runs}
 
 

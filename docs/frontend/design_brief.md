@@ -443,12 +443,12 @@ POST   /api/prediction-market/dry-arbitrage→ run dry optimizer
 
 ## 8. 国际化与可访问性
 
-> 实现说明（2026-05-29）：实际落地的方案没有用单独的 `locales/zh-CN.json`，
-> 而是用 `qs_lang` cookie + 顶栏全局语言开关，文案以组件内的
-> `copy = { en, zh }` 字典就近维护。完整说明见
+> 实现说明（2026-06-02）：实际落地的方案没有用单独的 `locales/zh-CN.json`，
+> 而是用 `/en/...`、`/zh/...` 路径 + `qs_lang` cookie + 顶栏全局语言开关。
+> 文案以组件内的 `copy = { en, zh }` 字典就近维护。完整说明见
 > [frontend_chinese_version.md](frontend_chinese_version.md)。
 
-- 所有文案先用英文写一份，中文 i18n 文件用 key-value 存到 `frontend/locales/zh-CN.json`。
+- 所有新页面继续使用组件内 `copy = { en, zh }` 字典，保证英文和中文同时补齐。
 - 颜色对比度全部满足 WCAG AA。
 - 所有交互可键盘完成；图表给 alt 描述。
 - 不依赖鼠标 hover 才能看到的数据：tooltip 内容必须有备用展现方式。

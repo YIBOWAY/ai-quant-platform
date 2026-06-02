@@ -53,7 +53,8 @@ After the initial buy-side assistant delivery, the local options research
 surface was extended with:
 
 - Local AlphaGBM-style tools at `/options-tools`.
-- Options Radar sample scan and cache-refresh controls on `/options-radar`.
+- Options Radar current-date scan and public/sample cache-refresh controls on
+  `/options-radar`.
 - Single-symbol radar drilldown at `/options-radar/[symbol]`.
 - Run detail pages for backtests, factors, and paper-trading simulations.
 - A populated `/position-map` page using latest saved research outputs.

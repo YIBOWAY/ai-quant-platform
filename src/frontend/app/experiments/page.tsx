@@ -1,6 +1,7 @@
 import { Clock, Database, FileJson, SlidersHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { ExperimentRunForm } from "@/components/forms/ExperimentRunForm";
 import { ExperimentTabs } from "@/components/forms/ExperimentTabs";
 import { getBacktests, getExperimentDetail, getExperiments } from "@/lib/api";
 import { getServerLocale } from "@/lib/serverLocale";
@@ -55,6 +56,9 @@ export default async function Experiments() {
           <p className="mt-1 font-body-sm text-text-secondary">{text.sidebarSubtitle}</p>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-4">
+            <ExperimentRunForm locale={locale} />
+          </div>
           {experiments.experiments.length ? (
             <ul className="space-y-3">
               {experiments.experiments.map((experiment) => (

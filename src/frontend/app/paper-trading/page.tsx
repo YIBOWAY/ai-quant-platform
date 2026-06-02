@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Activity, AlertCircle, BriefcaseBusiness, ShieldAlert } from "lucide-react";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
+import { SyntheticMetricsWarning } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { PaperRunForm } from "@/components/forms/PaperRunForm";
@@ -37,6 +38,8 @@ const copy = {
     riskBreachesEmptyDesc: "This run did not emit any risk breach rows.",
     riskCenter: "Risk Center",
     localBatchNote: "Runs are local batch simulations only.",
+    killSwitchExplainer:
+      "✋ All orders were intercepted by the kill switch (the default safety posture), so there are no fills — this is expected, not a failure. To simulate fills, lower the order size or raise the per-order limit (QS_MAX_ORDER_VALUE).",
   },
   zh: {
     finalEquity: "最终权益",
@@ -65,6 +68,8 @@ const copy = {
     riskBreachesEmptyDesc: "本次运行未产生任何风控触发记录。",
     riskCenter: "风控中心",
     localBatchNote: "运行仅为本地批量模拟。",
+    killSwitchExplainer:
+      "✋ 所有订单都被终止开关（默认安全策略）拦截，因此没有任何成交——这是预期行为，不是故障。若要模拟成交，请调小下单金额或提高单笔限额（QS_MAX_ORDER_VALUE）。",
   },
 } as const;
 
@@ -88,6 +93,12 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-base xl:flex-row">
       <div className="flex-1 space-y-6 overflow-y-auto p-4 lg:p-6">
         <ErrorBanner messages={[health.apiError, paperRuns.apiError, detail?.apiError]} />
+        <SyntheticMetricsWarning source={latestRun?.source} locale={locale} />
+        {(latest?.trade_count ?? 0) === 0 && (latest?.risk_breach_count ?? 0) > 0 ? (
+          <div className="rounded border border-info/40 bg-info/10 px-3 py-2 font-body-sm text-info">
+            {text.killSwitchExplainer}
+          </div>
+        ) : null}
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="rounded border border-border-subtle bg-surface p-4">
             <h3 className="mb-2 font-label-caps uppercase text-text-secondary">{text.finalEquity}</h3>
@@ -204,7 +215,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
           </div>
         </div>
         <div className="mt-6">
-          <PaperRunForm locale={locale} />
+          <PaperRunForm locale={locale} futuReachable={health.futu_opend?.reachable !== false} />
           <div className="mt-4 flex items-center gap-2 font-body-sm text-text-secondary">
             <BriefcaseBusiness size={18} /> {text.localBatchNote}
           </div>

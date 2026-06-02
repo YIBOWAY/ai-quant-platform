@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,12 +24,39 @@ from quant_system.api.routes import (
     paper,
     prediction_market,
     replications,
+    strategies,
+    universes,
 )
 from quant_system.api.routes import (
     settings as settings_routes,
 )
 from quant_system.api.safety.middleware import attach_safety_footer, validate_bind_address
 from quant_system.config.settings import Settings
+
+logger = logging.getLogger(__name__)
+
+
+def _init_run_index(active_settings: Settings, api_runs_dir: Path) -> None:
+    """Best-effort PostgreSQL run-index init: migrate + backfill existing files.
+
+    Never raises: a database failure must not block API startup. With the DB
+    disabled or unreachable this is a no-op and every endpoint uses the
+    filesystem as before.
+    """
+    if not active_settings.database.enabled:
+        return
+    try:
+        from quant_system.storage.database import get_database, run_migrations
+        from quant_system.storage.runs_repository import sync_filesystem_to_index
+
+        database = get_database(active_settings)
+        if database is None:
+            return
+        if active_settings.database.auto_migrate:
+            run_migrations(database)
+        sync_filesystem_to_index(api_runs_dir, active_settings)
+    except Exception as exc:  # noqa: BLE001 - startup must survive DB problems
+        logger.warning("run-index init skipped (filesystem fallback active): %s", exc)
 
 
 def create_app(
@@ -59,6 +87,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.services = services
         services["api_runs_dir"].mkdir(parents=True, exist_ok=True)
+        _init_run_index(active_settings, services["api_runs_dir"])
         yield
 
     app = FastAPI(
@@ -89,4 +118,6 @@ def create_app(
     app.include_router(agent.router, prefix="/api", tags=["agent"])
     app.include_router(prediction_market.router, prefix="/api", tags=["prediction-market"])
     app.include_router(replications.router, prefix="/api", tags=["replications"])
+    app.include_router(strategies.router, prefix="/api", tags=["strategies"])
+    app.include_router(universes.router, prefix="/api", tags=["universes"])
     return app

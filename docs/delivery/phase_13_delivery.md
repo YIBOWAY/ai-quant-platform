@@ -17,7 +17,8 @@
   under Elevated; sell_put forced to Avoid under Panic). UI shows a regime
   banner above the metrics grid.
 - Idempotent daily JSONL snapshot storage (writes `market_regime` +
-  `market_regime_penalty` into every candidate).
+  `market_regime_penalty` into every candidate; same-date re-runs replace the
+  stored snapshot rather than merging stale rows).
 - CLI commands:
   - `quant-system options daily-scan`
   - `quant-system options refresh-universe`
@@ -29,7 +30,7 @@
 - Frontend page:
   - `/options-radar`
   - date / strategy / sector / DTE / Top N filters
-  - sample scan and local cache refresh controls
+  - current-date scan and public/sample local cache refresh controls
   - safety banner
   - details expansion
   - CSV export

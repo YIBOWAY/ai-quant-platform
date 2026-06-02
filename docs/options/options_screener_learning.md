@@ -82,15 +82,20 @@ The rating is a screening label, not a recommendation.
 
 By default, the UI and API hide `Avoid` rows from the recommendation table.
 This prevents deep-in-the-money seller contracts, zero-open-interest contracts,
-or failed-trend contracts from appearing as if they were usable candidates.
+or hard-failed filter rows from appearing as if they were usable candidates.
 For audit/debug work, set `include_rejected=true` in the request body to inspect
 why rows were rejected.
 
 The frontend label `Filtered out` / `已过滤` is the count of those hidden
 `Avoid` rows. It usually means the contract was deep in the money for the
 seller strategy, had zero open interest, had too wide a spread, or failed the
-trend / HV-IV filters. It is not a separate trade status and no order is ever
-created.
+HV-IV filter. It is not a separate trade status and no order is ever created.
+
+Covered calls use one extra guardrail: a call strike below the current stock
+price is treated as a hard rejection, but a weak trend signal only downgrades
+an otherwise usable covered call to `Watch`. This keeps out obviously
+in-the-money calls without hiding all covered-call candidates during a rising
+tape.
 
 ### Market Regime Adjustment (Phase 13)
 

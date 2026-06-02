@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
+import { SyntheticMetricsWarning } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { EquityComparisonChart } from "@/components/EquityComparisonChart";
 import { ErrorBanner } from "@/components/ErrorBanner";
@@ -19,10 +20,14 @@ export default async function BacktestRunDetailPage({ params }: BacktestRunDetai
     detail.metrics && Object.keys(detail.metrics).length ? detail.metrics : metadata.metrics,
   );
   const chartRows = normalizeEquity(detail.equity_curve);
+  const warnings = arrayOfStrings(metadata.warnings);
 
   return (
     <main className="h-full overflow-y-auto bg-bg-base p-5">
       <ErrorBanner messages={[detail.apiError]} />
+      <div className="mb-4">
+        <SyntheticMetricsWarning source={source} />
+      </div>
       <header className="mb-5 flex flex-wrap items-start justify-between gap-4 border-b border-border-subtle pb-4">
         <div>
           <p className="font-label-caps uppercase text-text-secondary">Backtest</p>
@@ -44,6 +49,7 @@ export default async function BacktestRunDetailPage({ params }: BacktestRunDetai
         <Metric label="Sharpe" value={num(toNumber(metrics?.sharpe), 2)} />
         <Metric label="Max Drawdown" value={formatPercent(toNumber(metrics?.max_drawdown))} danger />
       </section>
+      <WarningsPanel warnings={warnings} />
 
       <section className="mb-4 rounded border border-border-subtle bg-bg-surface p-4">
         <h2 className="font-label-caps text-text-primary">Equity Curve</h2>
@@ -103,6 +109,22 @@ export default async function BacktestRunDetailPage({ params }: BacktestRunDetai
   );
 }
 
+function WarningsPanel({ warnings }: { warnings: string[] }) {
+  if (!warnings.length) {
+    return null;
+  }
+  return (
+    <section className="mb-4 rounded border border-warning/40 bg-warning/10 p-4 text-warning">
+      <h2 className="font-label-caps">Run notes</h2>
+      <ul className="mt-2 space-y-1 font-body-sm">
+        {warnings.map((warning) => (
+          <li key={warning}>{warning}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Metric({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
   return (
     <div className="rounded border border-border-subtle bg-bg-surface p-3">
@@ -112,6 +134,10 @@ function Metric({ label, value, danger = false }: { label: string; value: string
       </div>
     </div>
   );
+}
+
+function arrayOfStrings(value: unknown) {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 }
 
 function normalizeEquity(rows: Array<Record<string, unknown>>) {

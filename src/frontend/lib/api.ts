@@ -15,6 +15,18 @@ export type HealthResponse = ApiEnvelope & {
   status: string;
   app_name: string;
   environment: string;
+  futu_opend?: {
+    enabled: boolean;
+    reachable?: boolean;
+    host?: string;
+    port?: number;
+    error?: string | null;
+  };
+  database?: {
+    enabled: boolean;
+    reachable?: boolean;
+    error?: string | null;
+  };
 };
 
 export type SymbolsResponse = ApiEnvelope & {
@@ -109,6 +121,56 @@ export type BacktestDetailResponse = ApiEnvelope & {
   orders: PreviewRecord[];
   positions: PreviewRecord[];
   trade_blotter: PreviewRecord[];
+};
+
+export type StrategyMetadata = {
+  id: string;
+  name: string;
+  description: string;
+  paper_source: string | null;
+  run_endpoint: string;
+  result_type: string;
+  parameter_schema: {
+    fields?: Record<string, Record<string, unknown>>;
+  };
+  default_payload: Record<string, unknown>;
+};
+
+export type StrategiesResponse = ApiEnvelope & {
+  strategies: StrategyMetadata[];
+};
+
+export type UniverseDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  symbols: string[];
+  benchmark_symbol: string;
+};
+
+export type UniversesResponse = ApiEnvelope & {
+  universes: UniverseDefinition[];
+};
+
+export type FactorLabRow = Record<string, string | number | boolean | null>;
+
+export type FactorLabResponse = ApiEnvelope & {
+  generated_at?: string;
+  source: string;
+  benchmark_symbol: string;
+  universe: UniverseDefinition;
+  factors: FactorMetadata[];
+  guardrails: Record<string, unknown>;
+  cache: Record<string, unknown>;
+  cross_sectional: {
+    engine: string;
+    rows: FactorLabRow[];
+  };
+  timing: {
+    engine: string;
+    symbol: string;
+    rows: FactorLabRow[];
+  };
 };
 
 export type BenchmarkResponse = ApiEnvelope & {
@@ -489,6 +551,43 @@ export function getBacktestDetail(runId: string) {
     trade_blotter: [],
     safety: FALLBACK_SAFETY,
   });
+}
+
+export function getStrategies() {
+  return apiGet<StrategiesResponse>("/api/strategies", {
+    strategies: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getUniverses() {
+  return apiGet<UniversesResponse>("/api/universes", {
+    universes: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getFactorLabDashboard() {
+  return apiGet<FactorLabResponse>(
+    "/api/factors/lab?provider=sample&universe_id=etf&symbol=QQQ&benchmark_symbol=QQQ",
+    {
+      source: "fallback",
+      benchmark_symbol: "QQQ",
+      universe: {
+        id: "etf",
+        name: "ETF Core",
+        description: "",
+        symbols: ["SPY", "QQQ"],
+        benchmark_symbol: "SPY",
+      },
+      factors: [],
+      guardrails: {},
+      cache: {},
+      cross_sectional: { engine: "cross_sectional_health", rows: [] },
+      timing: { engine: "single_symbol_timing", symbol: "QQQ", rows: [] },
+      safety: FALLBACK_SAFETY,
+    },
+  );
 }
 
 export function getBenchmark(

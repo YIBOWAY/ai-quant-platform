@@ -70,17 +70,11 @@ test("primary local workflow buttons are clickable", async ({ page }) => {
   await expect(page.getByText("Trade Blotter")).toBeVisible();
 
   await page.goto("/factor-lab");
-  await page.waitForTimeout(3_000);
-  await page.getByRole("textbox", { name: "Symbols", exact: true }).fill("SPY,QQQ");
-  await page.getByRole("textbox", { name: "Start", exact: true }).fill("2024-01-02");
-  await page.getByRole("textbox", { name: "End", exact: true }).fill("2024-02-15");
-  await page.getByRole("spinbutton", { name: "Lookback" }).fill("5");
-  await page.getByRole("spinbutton", { name: "Quantiles" }).fill("5");
-  const factorResponse = await clickAndWaitForPost(page, "Run Factor", "/api/factors/run");
-  expect(factorResponse.status()).toBe(200);
-  const factorPayload = (await factorResponse.json()) as { run_id: string };
-  await expectRunIdVisible(page, factorPayload.run_id);
-  await expect(page.getByText("Factor Values")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Factor Lab" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cross-Sectional Health" })).toBeVisible();
+  await page.getByRole("button", { name: "Single-Ticker Timing" }).click();
+  await expect(page.getByText("QQQ Timing Diagnostics")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run Factor" })).toHaveCount(0);
 
   await page.goto("/paper-trading");
   const killSwitchButton = await waitForEnabledButton(page, "kill_switch enabled");
@@ -134,4 +128,16 @@ test("options screener scans the DTE window without manual expiration selection"
   expect(response.status()).toBe(200);
   await expect(page.getByText("扫描到期日")).toBeVisible({ timeout: 45_000 });
   await expect(page.getByText("候选合约", { exact: true })).toBeVisible();
+});
+
+test("factor lab and strategy catalog render Chinese labels", async ({ page }) => {
+  await page.goto("/zh/factor-lab");
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("heading", { name: "因子实验室" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "横截面体检" })).toBeVisible();
+
+  await page.goto("/zh/replications");
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("heading", { name: "策略目录" })).toBeVisible();
+  await expect(page.getByLabel("策略")).toBeVisible();
 });

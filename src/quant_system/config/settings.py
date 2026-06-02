@@ -71,6 +71,31 @@ class DataSettings(BaseSettings):
     reports_dir: Path = Path("reports")
 
 
+class DatabaseSettings(BaseSettings):
+    """Optional PostgreSQL index over file-based run artifacts.
+
+    Disabled by default. When enabled and reachable, list endpoints read the run
+    index from PostgreSQL and run endpoints index new runs into it; otherwise the
+    API transparently falls back to scanning the filesystem. The URL is held as a
+    secret so it is masked in the settings dump (it carries a password).
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_DATABASE_",
+        extra="ignore",
+    )
+
+    enabled: bool = False
+    url: SecretStr | None = None
+    connect_timeout_seconds: int = Field(default=5, gt=0)
+    auto_migrate: bool = True
+
+    @field_serializer("url", when_used="json")
+    def serialize_database_url(self, value: SecretStr | None) -> str | None:
+        return "**********" if value else None
+
+
 class ApiKeySettings(BaseSettings):
     """API credentials loaded from local environment only."""
 
@@ -351,6 +376,7 @@ class Settings(BaseSettings):
     )
     safety: SafetySettings = Field(default_factory=SafetySettings)
     data: DataSettings = Field(default_factory=DataSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)
     futu: FutuSettings = Field(default_factory=FutuSettings)
     options_radar: OptionsRadarSettings = Field(default_factory=OptionsRadarSettings)

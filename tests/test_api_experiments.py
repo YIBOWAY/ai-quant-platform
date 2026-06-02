@@ -110,3 +110,40 @@ def test_experiment_detail_reads_phase4_artifact_names(tmp_path) -> None:
     assert payload["agent_summary"]["best_run_id"] == "run-lb5-top1"
     assert [run["run_id"] for run in payload["runs"]] == ["run-lb3-top1", "run-lb5-top1"]
     assert payload["folds"][0]["fold_id"] == "fold-1"
+
+
+def test_experiment_run_api_creates_reviewable_experiment(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/experiments/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "lookbacks": [3, 5],
+            "top_ns": [1, 2],
+            "initial_cash": 100000,
+            "commission_bps": 1,
+            "slippage_bps": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["experiment_id"]
+    assert payload["run_count"] == 4
+    assert payload["best_run_id"]
+    assert payload["safety"]["live_trading_enabled"] is False
+
+    list_response = client.get("/api/experiments")
+    assert list_response.status_code == 200
+    assert payload["experiment_id"] in {
+        item["id"] for item in list_response.json()["experiments"]
+    }
+
+    detail_response = client.get(f"/api/experiments/{payload['experiment_id']}")
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert len(detail["runs"]) == 4
+    assert detail["agent_summary"]["best_run_id"] == payload["best_run_id"]

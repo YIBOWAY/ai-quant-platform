@@ -109,7 +109,11 @@ export default async function OrderBookPage({ searchParams }: OrderBookPageProps
                 .slice(0, 4)
                 .map((book) => (
                   <div key={book.token_id} className="grid grid-cols-3 gap-2 rounded border border-border-subtle bg-surface-muted p-2 font-data-mono text-xs">
-                    <span className="truncate text-text-secondary">{book.token_id}</span>
+                    <span className="truncate text-text-secondary" title={book.token_id}>
+                      {book.token_id.length > 13
+                        ? `${book.token_id.slice(0, 6)}…${book.token_id.slice(-4)}`
+                        : book.token_id}
+                    </span>
                     <span className="text-accent-success">{text.bid} {bestPrice(book.bids, "bid")}</span>
                     <span className="text-warning">{text.ask} {bestPrice(book.asks, "ask")}</span>
                   </div>

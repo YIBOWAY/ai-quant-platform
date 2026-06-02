@@ -86,3 +86,35 @@ def test_factor_run_sample_cli_generates_report_and_artifacts(tmp_path) -> None:
     assert {"momentum", "volatility", "liquidity", "rsi", "macd"}.issubset(
         set(factor_results["factor_id"])
     )
+
+
+def test_factor_lab_refresh_cli_writes_read_only_cache(tmp_path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "factor",
+            "refresh-lab",
+            "--provider",
+            "sample",
+            "--universe-id",
+            "etf",
+            "--symbol",
+            "QQQ",
+            "--benchmark-symbol",
+            "QQQ",
+            "--start",
+            "2024-01-02",
+            "--end",
+            "2024-03-29",
+            "--lookback",
+            "5",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "cache_status=recomputed" in result.output
+    assert "cross_rows=" in result.output
+    assert "timing_rows=" in result.output
+    assert Path(tmp_path, "factor_lab", "factor_lab_cache.json").exists()

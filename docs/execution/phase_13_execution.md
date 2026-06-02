@@ -82,11 +82,16 @@ The Playwright config locates the repository root by walking upward until it
 finds `pyproject.toml` and `src/frontend/package.json`, so the API and frontend
 servers use the current checkout instead of a stale working directory.
 
-## Refresh Commands And UI
+## Run And Refresh From The UI
 
-The `/options-radar` page can run a sample scan and refresh the local universe,
-earnings, and VIX caches from public or sample sources. The same refreshes are
-also available from the command line:
+The `/options-radar` page can run the current-date scan and save a new local
+snapshot. With the default provider this uses read-only Futu option data. If
+you re-run the scan for the same date, the snapshot for that date is replaced
+by the new report instead of being merged with stale rows.
+
+The page can also refresh the local universe, earnings, and VIX caches. Public
+sources are the default; the local sample source is only for explicit offline
+testing. The same refreshes are also available from the command line:
 
 ```powershell
 python scripts/refresh_options_universe.py --bootstrap-github --output data/options_universe/sp500_nasdaq100.csv
@@ -94,10 +99,12 @@ python scripts/refresh_earnings_calendar.py --top 100
 python scripts/refresh_vix_history.py --output data/options_universe/vix_history.csv --lookback-days 400
 ```
 
-The last command pulls `^VIX` / `^VIX3M` daily closes from
-`query1.finance.yahoo.com` (read-only HTTPS GET, no API key) and writes a
-CSV cache. The next `daily-scan` will print a `market_regime=...` line such
-as:
+The Radar UI/API use public S&P 500 + Nasdaq 100 sources for universe refresh,
+the Nasdaq public calendar for earnings refresh, and Yahoo/Cboe public data for
+VIX refresh by default. The manual earnings script shown above still uses
+`yfinance`. The VIX command pulls `^VIX` / `^VIX3M` daily closes from
+`query1.finance.yahoo.com` (read-only HTTPS GET, no API key) and writes a CSV
+cache. The next `daily-scan` will print a `market_regime=...` line such as:
 
 ```text
 market_regime=Normal w_vix=1.0 vix_density=0.227 term_ratio=0.899

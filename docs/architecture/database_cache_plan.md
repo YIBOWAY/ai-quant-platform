@@ -1,12 +1,45 @@
 # Database Cache Plan
 
-Status: first local DuckDB-backed Futu options cache implemented.
+Status: two local storage layers are implemented — (1) a DuckDB-backed Futu
+options cache, and (2) an optional PostgreSQL **run index** over file-based
+backtest / factor / paper runs.
 
-The initial implementation lives in
-`src/quant_system/storage/options_cache.py`. It persists Futu option quote
-windows to `data/futu/options_cache.duckdb` when `QS_FUTU_USE_CACHE=true`
-(the default). PostgreSQL remains a future option for richer metadata, request
-logs, API task records, and query-heavy frontend views.
+The DuckDB options cache lives in `src/quant_system/storage/options_cache.py`
+and persists Futu option quote windows to `data/futu/options_cache.duckdb` when
+`QS_FUTU_USE_CACHE=true` (the default).
+
+The PostgreSQL run index lives in `src/quant_system/storage/database.py` and
+`src/quant_system/storage/runs_repository.py`, with schema in
+`scripts/sql/001_runs_index.sql`. It is **optional and off by default**; when
+enabled it indexes existing file-based runs for fast listing, and the API falls
+back to scanning the filesystem whenever the database is disabled or unreachable.
+
+## PostgreSQL Run Index (implemented)
+
+Files under `data/api_runs/<kind>/<run_id>/metadata.json` remain the source of
+truth. The run index is a queryable mirror, not a replacement.
+
+- Settings (`config/settings.py` → `DatabaseSettings`, env prefix `QS_DATABASE_`):
+  - `QS_DATABASE_ENABLED` (default `false`)
+  - `QS_DATABASE_URL` (e.g. `postgresql://quant:quantpass@127.0.0.1:5432/quantplatform`;
+    held as a secret and masked in `/api/settings`)
+  - `QS_DATABASE_CONNECT_TIMEOUT_SECONDS` (default `5`)
+  - `QS_DATABASE_AUTO_MIGRATE` (default `true`)
+- Schema: a single table `quant_system.runs` (`kind`, `run_id`, `source`,
+  `created_at`, `indexed_at`, `artifact_path`, `metadata` JSONB), keyed by
+  `(kind, run_id)`. `kind` is `backtest`, `factor`, or `paper`.
+- Startup (`api/server.py` lifespan) runs migrations then **reconciles**:
+  backfills present file runs and prunes index rows whose files are gone
+  (self-healing against listing a run whose detail would 404).
+- List endpoints (`/api/backtests`, `/api/factors/runs`, `/api/paper`) read
+  DB-first and fall back to the filesystem on any DB error. Run endpoints index
+  each new run fire-and-forget (a DB failure never blocks the run).
+- `/api/health` reports a `database` block (`enabled`, `reachable`, `error`).
+- Tests force `QS_DATABASE_ENABLED=false` via `tests/conftest.py` so the suite
+  never writes to a shared container.
+
+Uses `psycopg` directly (no ORM, no connection pool — short-lived per-operation
+connections, matching the DuckDB cache style).
 
 ## Why This Exists
 
@@ -98,14 +131,16 @@ No endpoint should add order placement or broker execution.
 
 ## Suggested Implementation Phases
 
-1. Add database settings for a future PostgreSQL-backed mode:
-   - `QS_DATABASE_URL`
-   - `QS_DATABASE_ENABLED=false`
-   - `QS_DATABASE_SCHEMA=quant_system`
-2. Add a small storage package:
-   - `src/quant_system/storage/database.py`
-   - `src/quant_system/storage/options_cache.py` (implemented for DuckDB)
-3. Add plain SQL migrations under `scripts/sql/`.
+1. Add database settings for an optional PostgreSQL-backed mode. (implemented as
+   `QS_DATABASE_ENABLED`, `QS_DATABASE_URL`, `QS_DATABASE_CONNECT_TIMEOUT_SECONDS`,
+   `QS_DATABASE_AUTO_MIGRATE`; the schema name `quant_system` is fixed in SQL, not
+   a setting)
+2. Add a small storage package: (implemented)
+   - `src/quant_system/storage/database.py` (PostgreSQL connect + migrations)
+   - `src/quant_system/storage/runs_repository.py` (run index, DB-first + fallback)
+   - `src/quant_system/storage/options_cache.py` (DuckDB option cache)
+3. Add plain SQL migrations under `scripts/sql/`. (implemented:
+   `scripts/sql/001_runs_index.sql`)
 4. Cache Futu option-chain and snapshot results first. (implemented for option
    quote windows)
 5. Point Options Screener and Buy-Side Options Assistant at the cache-first path.
@@ -135,8 +170,12 @@ module.
 
 ## Remaining Open Questions
 
-- Whether to require Docker PostgreSQL for richer metadata or keep it optional.
+- PostgreSQL is now optional and off by default; the run index points at the
+  local Docker container `quantplatform-db` only when `QS_DATABASE_ENABLED=true`.
+  Whether to also move the options cache and radar runs into PostgreSQL is still
+  open.
 - Whether TimescaleDB is available in the user's local Docker image.
-- Whether option quote snapshots should be compressed JSONB or fully normalized
-  rows if/when PostgreSQL is added. The first DuckDB implementation stores
+- The run index stores the full run metadata as JSONB. Whether option quote
+  snapshots (if moved to PostgreSQL later) should be compressed JSONB or fully
+  normalized rows is still open. The first DuckDB implementation stores
   normalized option quote rows.

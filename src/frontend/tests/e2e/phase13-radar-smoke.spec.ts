@@ -147,6 +147,41 @@ test.describe("phase13 options radar smoke", () => {
     await expect(page.getByText("VIX refreshed")).toBeVisible();
   });
 
+  test("options radar shows scan progress while a run is pending", async ({ page }) => {
+    await page.route("**/api/options/daily-scan/run", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          run_date: runDate,
+          provider: "sample",
+          universe_size: 1,
+          scanned_tickers: 1,
+          failed_tickers: [],
+          candidate_count: 1,
+          data_path: `data/options_scans/${runDate}.jsonl`,
+          meta_path: `data/options_scans/${runDate}_meta.json`,
+          safety: {
+            dry_run: true,
+            paper_trading: true,
+            live_trading_enabled: false,
+            kill_switch: true,
+            bind_address: "127.0.0.1",
+          },
+        }),
+      });
+    });
+
+    await page.goto(`/options-radar?date=${runDate}`, { waitUntil: "domcontentloaded" });
+    const runButton = page.getByRole("button", { name: /Run Today's Scan/i });
+    await expect(runButton).toBeEnabled();
+    await runButton.click();
+
+    await expect(page.getByRole("heading", { name: "Scan in progress" })).toBeVisible();
+    await expect(page.getByText(/Futu scans can take several minutes/i)).toBeVisible();
+    await expect(page.getByText(/Today's scan finished/i)).toBeVisible();
+  });
+
   test("options radar can drill into a symbol detail page", async ({ page }) => {
     await page.goto(`/options-radar/SPY?date=${runDate}&expiry=2099-01-16&option_type=PUT`, {
       waitUntil: "domcontentloaded",

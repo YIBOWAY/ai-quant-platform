@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
+import { SyntheticMetricsWarning } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { EquityComparisonChart } from "@/components/EquityComparisonChart";
 import { ErrorBanner } from "@/components/ErrorBanner";
@@ -10,6 +11,10 @@ import {
   getBacktestDetail,
   getBacktests,
   getBenchmark,
+  getFactors,
+  getHealth,
+  getStrategies,
+  getUniverses,
 } from "@/lib/api";
 import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
@@ -79,18 +84,25 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
   const locale = await getServerLocale(params);
   const text = copy[locale];
   const initialValues = backtestInitialValuesFromSearch(params);
-  const backtests = await getBacktests();
+  const [backtests, strategies, universes, factors] = await Promise.all([
+    getBacktests(),
+    getStrategies(),
+    getUniverses(),
+    getFactors(),
+  ]);
+  const health = await getHealth();
+  const futuReachable = health.futu_opend?.reachable !== false;
   const latest = selectDisplayRun(backtests.backtests, shouldIncludeSampleRuns(params));
   const detail = latest ? await getBacktestDetail(latest.id) : null;
   const latestRequest =
     detail && typeof detail.metadata === "object" && detail.metadata !== null
       ? (detail.metadata.request as
-          | { symbols?: string[]; start?: string; end?: string }
+          | { benchmark_symbol?: string; provider?: string; symbols?: string[]; start?: string; end?: string }
           | undefined)
       : undefined;
   const benchmarkSymbol =
-    Array.isArray(latestRequest?.symbols) && latestRequest.symbols.length
-      ? latestRequest.symbols[0]
+    typeof latestRequest?.benchmark_symbol === "string"
+      ? latestRequest.benchmark_symbol
       : "SPY";
   const benchmarkStart =
     typeof latestRequest?.start === "string" ? latestRequest.start : "2024-01-02";
@@ -100,6 +112,7 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
     benchmarkSymbol,
     benchmarkStart,
     benchmarkEnd,
+    typeof latestRequest?.provider === "string" ? latestRequest.provider : undefined,
   );
   const comparisonRows = buildComparisonRows(detail?.equity_curve ?? [], benchmark.equity_curve);
 
@@ -140,13 +153,32 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
               <DataSourceBadge source={benchmark.source} />
             </div>
           </div>
-          <BacktestForm initialValues={initialValues} locale={locale} />
+          <BacktestForm
+            factors={factors.factors}
+            initialValues={initialValues}
+            locale={locale}
+            strategies={strategies.strategies}
+            universes={universes.universes}
+            futuReachable={futuReachable}
+          />
         </div>
       </aside>
 
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-        <ErrorBanner messages={[backtests.apiError, benchmark.apiError, detail?.apiError]} />
+        <ErrorBanner
+          messages={[
+            backtests.apiError,
+            strategies.apiError,
+            universes.apiError,
+            factors.apiError,
+            benchmark.apiError,
+            detail?.apiError,
+          ]}
+        />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="md:col-span-3">
+            <SyntheticMetricsWarning source={latest?.source} locale={locale} />
+          </div>
           <div className="rounded border border-border-subtle bg-bg-surface p-3">
             <span className="font-label-caps text-text-secondary">{text.totalReturn}</span>
             <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">
@@ -230,6 +262,25 @@ function backtestInitialValuesFromSearch(
   const symbols = stringParam(params.symbols);
   if (symbols) {
     initialValues.symbols = symbols;
+  }
+  const universeId = stringParam(params.universe_id);
+  if (universeId) {
+    initialValues.universe_id = universeId;
+  }
+  const strategyId = stringParam(params.strategy_id);
+  if (strategyId) {
+    initialValues.strategy_id = strategyId;
+  }
+  const benchmarkSymbol = stringParam(params.benchmark_symbol);
+  if (benchmarkSymbol) {
+    initialValues.benchmark_symbol = benchmarkSymbol;
+  }
+  const factorIds = stringParam(params.factor_ids);
+  if (factorIds) {
+    initialValues.factor_ids = factorIds
+      .split(",")
+      .map((factorId) => factorId.trim())
+      .filter(Boolean);
   }
   for (const key of ["start", "end"] as const) {
     const value = stringParam(params[key]);

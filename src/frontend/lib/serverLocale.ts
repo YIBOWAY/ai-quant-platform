@@ -3,7 +3,7 @@ import { LOCALE_COOKIE, resolveLocale, type Locale } from "./locale";
 
 /**
  * Resolve the active locale for a server component.
- * Priority: explicit `?lang=` query param (per-page override) > saved cookie > "en".
+ * Priority: locale path header > explicit `?lang=` override > saved cookie > "en".
  */
 export async function getServerLocale(
   searchParams?: Record<string, string | string[] | undefined>,

@@ -90,12 +90,19 @@ Response includes:
 - underlying price
 - scanned expiration count and scanned expiration dates
 - candidate count
+- rejected count
 - candidate table
 - DTE / spread / open-interest / APR filter effects
 - assumptions
 - safety footer
 
 If `expiration` is omitted, the backend scans every Futu expiration inside `min_dte` and `max_dte`, then ranks the combined candidate list. Supplying `expiration` is still accepted for API compatibility, but the frontend does not require it.
+
+`Avoid` rows are hidden by default so the main table does not show unusable
+seller candidates as if they were ready for research. Set `include_rejected`
+to `true` to return those rows for audit/debug review. For covered calls, a
+strike below the current stock price is a hard rejection; a failed trend check
+only downgrades an otherwise usable candidate to `Watch`.
 
 ## Error Mapping
 

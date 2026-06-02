@@ -13,9 +13,12 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 | GET | `/api/symbols` | 返回本地或 sample symbol |
 | GET | `/api/ohlcv` | 返回 OHLCV 时间序列 |
 | GET | `/api/factors` | 返回默认因子注册表 |
+| GET | `/api/factors/lab` | 返回只读 Factor Lab 看板 |
 | POST | `/api/factors/run` | 跑 sample 因子研究 |
 | GET | `/api/factors/{run_id}` | 读取因子结果 |
-| POST | `/api/backtests/run` | 跑 sample 回测 |
+| GET | `/api/strategies` | 返回策略目录 |
+| GET | `/api/universes` | 返回股票池目录 |
+| POST | `/api/backtests/run` | 跑策略、股票池、因子权重和基准回测 |
 | GET | `/api/backtests` | 列出 API 回测 |
 | GET | `/api/backtests/{id}` | 读取回测详情 |
 | GET | `/api/benchmark` | 计算买入持有基准曲线 |

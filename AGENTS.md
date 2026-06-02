@@ -18,6 +18,8 @@ src/quant_system/
   options/                Futu read-only options research modules.
   prediction_market/      Read-only Polymarket / prediction market research.
   risk/                   Risk limits and checks.
+  storage/                DuckDB options cache + optional PostgreSQL run index.
+  strategies/             Strategy metadata registry (catalog entries).
 
 src/frontend/
   app/                    Next.js routes.
@@ -36,8 +38,32 @@ docs/
 
 tests/                    Python unit and API tests.
 scripts/                  Local verification and refresh scripts.
+scripts/sql/              Plain SQL migrations for the optional run index.
 data/                     Local cache, fixtures, generated research outputs.
 ```
+
+## Backtest Strategy Registry
+
+Backtest-engine strategies are dispatched by `strategy_id` in
+`src/quant_system/backtest/pipeline.py` (`_BACKTEST_STRATEGY_BUILDERS`). To add a
+runnable backtest strategy: register metadata in
+`src/quant_system/strategies/registry.py` with `result_type="backtest"` and add a
+builder entry in the pipeline. It then appears automatically in the Backtester
+and Strategy Catalog. Currently runnable: `cross_sectional_top_n`,
+`mean_reversion_top_n`. `reversal_momentum` is `result_type="replication"` and
+runs through its own endpoint.
+
+## Optional PostgreSQL Run Index
+
+Backtest/factor/paper runs are file-based under `data/api_runs/`. An optional
+PostgreSQL index (`storage/database.py`, `storage/runs_repository.py`,
+`scripts/sql/001_runs_index.sql`) speeds up listing. Off by default; controlled
+by `QS_DATABASE_ENABLED` / `QS_DATABASE_URL` / `QS_DATABASE_CONNECT_TIMEOUT_SECONDS`
+/ `QS_DATABASE_AUTO_MIGRATE`. The API must keep working with the database off or
+unreachable (filesystem fallback). Tests must not touch a real database
+(`tests/conftest.py` forces it off). Never run `npm run build` while the
+frontend dev server is running — they share `src/frontend/.next` and the build
+corrupts the dev server.
 
 ## Options Module Notes
 

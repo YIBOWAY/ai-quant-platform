@@ -26,8 +26,9 @@ safe fallback state and show `API OFFLINE` in the safety strip.
 
 ## Language
 
-The UI is bilingual (English / 中文). The top-bar toggle switches the whole site
-and stores the choice in the `qs_lang` cookie. Details:
+The UI is bilingual (English / 中文). The top-bar toggle switches between
+locale-prefixed paths such as `/en/options-radar` and `/zh/options-radar`, and
+stores the choice in the `qs_lang` cookie for unprefixed paths. Details:
 [../../docs/frontend/frontend_chinese_version.md](../../docs/frontend/frontend_chinese_version.md).
 
 ## Checks

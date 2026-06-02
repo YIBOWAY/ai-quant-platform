@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
+import { FutuUnavailableHint, futuOptionLabel } from "./FutuProviderHint";
 
 type Locale = "en" | "zh";
 
@@ -82,7 +83,13 @@ const DEFAULTS: PaperFormValues = {
   max_fill_ratio_per_tick: 1,
 };
 
-export function PaperRunForm({ locale = "en" }: { locale?: Locale }) {
+export function PaperRunForm({
+  locale = "en",
+  futuReachable = true,
+}: {
+  locale?: Locale;
+  futuReachable?: boolean;
+}) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const isHydrated = useIsHydrated();
@@ -131,8 +138,8 @@ export function PaperRunForm({ locale = "en" }: { locale?: Locale }) {
             defaultValue={DEFAULTS.provider}
             {...form.register("provider")}
           >
-            <option value="futu" style={optionStyle}>
-              futu
+            <option value="futu" style={optionStyle} disabled={!futuReachable}>
+              {futuOptionLabel(futuReachable, locale)}
             </option>
             <option value="sample" style={optionStyle}>
               sample
@@ -141,6 +148,7 @@ export function PaperRunForm({ locale = "en" }: { locale?: Locale }) {
               tiingo
             </option>
           </select>
+          <FutuUnavailableHint reachable={futuReachable} locale={locale} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           {text.initialCash}

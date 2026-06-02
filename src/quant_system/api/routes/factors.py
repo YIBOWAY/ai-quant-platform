@@ -4,16 +4,17 @@ import json
 
 from fastapi import APIRouter, HTTPException
 
-from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
+from quant_system.api.dependencies import ApiRunsDirDep, OutputDirDep, SettingsDep
 from quant_system.api.schemas.common import (
     make_run_id,
     read_parquet_records,
     resolve_run_dir,
-    sorted_metadata_paths,
 )
 from quant_system.api.schemas.factors import FactorRunRequest
+from quant_system.factors.lab import build_factor_lab_dashboard
 from quant_system.factors.pipeline import run_factor_research
 from quant_system.factors.registry import build_default_factor_registry
+from quant_system.storage.runs_repository import index_run, list_run_metadatas
 
 router = APIRouter()
 
@@ -52,6 +53,7 @@ def run_factor(
         "source": result.source,
         "row_count": result.row_count,
         "signal_count": result.signal_count,
+        "warnings": result.warnings,
         "request": {
             "symbols": request.symbols,
             "start": request.start,
@@ -73,25 +75,57 @@ def run_factor(
         json.dumps(metadata, indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    index_run("factor", metadata, run_dir, settings)
     return metadata
 
 
 @router.get("/factors/runs")
-def list_factor_runs(api_runs_dir: ApiRunsDirDep) -> dict:
+def list_factor_runs(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     root = api_runs_dir / "factors"
-    runs = []
-    for metadata_path in sorted_metadata_paths(root):
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        runs.append(
-            {
-                "id": metadata["run_id"],
-                "source": metadata.get("source", "sample"),
-                "row_count": metadata.get("row_count", 0),
-                "signal_count": metadata.get("signal_count", 0),
-                "paths": metadata.get("paths", {}),
-            }
-        )
+    runs = [
+        {
+            "id": metadata["run_id"],
+            "source": metadata.get("source", "sample"),
+            "row_count": metadata.get("row_count", 0),
+            "signal_count": metadata.get("signal_count", 0),
+            "paths": metadata.get("paths", {}),
+        }
+        for metadata in list_run_metadatas("factor", root, settings)
+    ]
     return {"runs": runs}
+
+
+@router.get("/factors/lab")
+def factor_lab_dashboard(
+    output_dir: OutputDirDep,
+    settings: SettingsDep,
+    provider: str = "sample",
+    universe_id: str = "etf",
+    symbol: str = "QQQ",
+    benchmark_symbol: str = "QQQ",
+    start: str = "2024-01-02",
+    end: str = "2024-12-31",
+    lookback: int = 20,
+    force_refresh: bool = False,
+) -> dict:
+    try:
+        return build_factor_lab_dashboard(
+            settings=settings,
+            output_dir=output_dir,
+            provider=provider,
+            universe_id=universe_id,
+            symbol=symbol,
+            benchmark_symbol=benchmark_symbol,
+            start=start,
+            end=end,
+            lookback=lookback,
+            force_refresh=force_refresh,
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_factor_lab_request", "message": str(exc)},
+        ) from exc
 
 
 @router.get("/factors/{run_id}")

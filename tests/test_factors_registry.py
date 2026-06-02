@@ -1,6 +1,7 @@
 import pytest
 
 from quant_system.factors.examples import MomentumFactor
+from quant_system.factors.pipeline import build_default_factors
 from quant_system.factors.registry import FactorRegistry, build_default_factor_registry
 
 
@@ -38,3 +39,17 @@ def test_registry_lists_metadata_without_exposing_implementation_details() -> No
         "macd",
     ]
     assert all(item.lookback > 0 for item in metadata)
+
+
+def test_default_factor_builder_can_use_registered_factor_set() -> None:
+    class CustomMomentumFactor(MomentumFactor):
+        factor_id = "custom_momentum"
+        factor_name = "Custom Momentum"
+
+    registry = build_default_factor_registry()
+    registry.register(CustomMomentumFactor)
+
+    factors = build_default_factors(lookback=7, registry=registry)
+
+    assert "custom_momentum" in {factor.factor_id for factor in factors}
+    assert all(factor.lookback == 7 for factor in factors)

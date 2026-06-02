@@ -16,6 +16,9 @@ function formatValue(value: unknown) {
     return "--";
   }
   if (typeof value === "number") {
+    if (value === 0) {
+      return "0";
+    }
     return Number.isFinite(value) ? value.toFixed(Math.abs(value) >= 100 ? 2 : 4) : "--";
   }
   if (typeof value === "string") {

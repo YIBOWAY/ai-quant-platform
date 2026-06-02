@@ -15,6 +15,10 @@ src/quant_system/options/
   sample_provider.py   deterministic offline provider
 
 src/quant_system/api/routes/options_radar.py
+  POST /api/options/refresh/universe
+  POST /api/options/refresh/earnings
+  POST /api/options/refresh/vix
+  POST /api/options/daily-scan/run
   GET /api/options/daily-scan/dates
   GET /api/options/daily-scan
 
@@ -67,6 +71,13 @@ src/frontend/components/forms/OptionsRadarView.tsx
 Each ticker is scanned independently. A single OpenD, permission, or no-data
 failure is recorded in `failed_tickers` and does not stop the whole run.
 
+## Snapshot Writes
+
+Radar snapshots are keyed by run date. Running the scan again for the same date
+rewrites that day's JSONL and metadata files from the new report, with duplicate
+symbol/contract/strategy rows collapsed before writing. This prevents stale
+rows from an older same-day run from being merged into the current snapshot.
+
 ## Rate Limit
 
 Futu quote interfaces are paced at 10 calls per 30 seconds by default. The batch
@@ -85,6 +96,18 @@ The regime is computed once per scan and serialised into each candidate as
 `market_regime` (`Normal` / `Elevated` / `Panic` / `Unknown`) and
 `market_regime_penalty` (per-strategy points subtracted from `global_score`).
 The frontend `RegimeBanner` reads these fields from the API payload.
+
+## Refresh Sources
+
+The Radar UI and API default to public read-only refreshes:
+
+- universe: public S&P 500 + Nasdaq 100 snapshots from GitHub-backed sources
+- earnings: Nasdaq public calendar, with explicit `yfinance` support still
+  available
+- VIX: Yahoo Chart, then Cboe public CSV fallback
+
+The `sample` source remains available for deterministic offline testing and is
+shown as a separate local sample choice in the UI.
 
 ## Read-only Boundary
 

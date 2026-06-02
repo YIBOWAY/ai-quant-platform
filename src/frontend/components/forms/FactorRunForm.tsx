@@ -3,12 +3,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
-import type { Locale } from "@/lib/locale";
+import { localizePath, type Locale } from "@/lib/locale";
 
 const factorSchema = z.object({
   symbols: z.string().min(1, "Enter at least one symbol"),
@@ -33,6 +33,10 @@ const copy = {
     dataSource: "Data Source",
     lookback: "Lookback",
     quantiles: "Quantiles",
+    symbolHelp:
+      "Use a comparison universe for scores and IC, for example NVDA,AAPL,MSFT,AMD,QQQ,SPY.",
+    singleSymbolWarning:
+      "One symbol can produce factor values, but scores and IC need peer tickers to avoid flat zero output.",
     running: "Running...",
     runFactor: "Run Factor",
     runCreated: (id: string) => `Factor run created: ${id}`,
@@ -44,6 +48,8 @@ const copy = {
     dataSource: "数据源",
     lookback: "回看",
     quantiles: "分位",
+    symbolHelp: "评分和 IC 需要一组可比较标的，例如 NVDA,AAPL,MSFT,AMD,QQQ,SPY。",
+    singleSymbolWarning: "单个标的可以生成因子值，但评分和 IC 需要同类标的，否则容易显示为 0。",
     running: "运行中...",
     runFactor: "运行因子",
     runCreated: (id: string) => `已创建因子运行：${id}`,
@@ -76,10 +82,14 @@ export function FactorRunForm({ locale = "en" }: { locale?: Locale }) {
       }),
     onSuccess: (payload) => {
       toast.success(text.runCreated(payload.run_id));
+      router.push(localizePath(`/factor-lab/${payload.run_id}`, locale));
       router.refresh();
     },
   });
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
+  const watchedSymbols = useWatch({ control: form.control, name: "symbols" });
+  const symbols = splitSymbols(watchedSymbols ?? "");
+  const showSingleSymbolWarning = symbols.length === 1;
 
   const runFactor = form.handleSubmit((values) => mutation.mutate(values));
 
@@ -88,7 +98,13 @@ export function FactorRunForm({ locale = "en" }: { locale?: Locale }) {
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
         {text.symbols}
         <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.symbols} {...form.register("symbols")} />
+        <span className="text-text-secondary">{text.symbolHelp}</span>
       </label>
+      {showSingleSymbolWarning ? (
+        <div className="rounded border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
+          {text.singleSymbolWarning}
+        </div>
+      ) : null}
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           {text.start}

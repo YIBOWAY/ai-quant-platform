@@ -15,7 +15,7 @@ const copy = {
     runBacktest: "Run Backtest",
     marketData: "Market Data",
     options: "Options",
-    replications: "Replications",
+    replications: "Strategies",
     orderBook: "Polymarket Markets",
     positionMap: "Position Map",
   },
@@ -24,7 +24,7 @@ const copy = {
     runBacktest: "运行回测",
     marketData: "行情数据",
     options: "期权",
-    replications: "策略复现",
+    replications: "策略目录",
     orderBook: "Polymarket 市场",
     positionMap: "持仓地图",
   },
@@ -57,7 +57,7 @@ export function TopBar() {
 
   return (
     <header className="fixed top-0 left-[240px] right-0 z-40 px-6 flex items-center justify-between h-16 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md">
-      <div className="flex items-center gap-8 h-full w-full">
+      <div className="flex min-w-0 items-center gap-8 h-full w-full">
         <form className="relative hidden md:flex items-center" onSubmit={submitSearch}>
           <Search className="absolute left-3 text-zinc-500" size={16} />
           <input
@@ -69,14 +69,14 @@ export function TopBar() {
             value={query}
           />
         </form>
-        <nav className="flex items-center gap-6 h-full flex-1">
+        <nav className="flex min-w-0 items-center gap-6 h-full flex-1">
           {topNavItems.map((item) => {
             const isActive = activePath === item.href;
             return (
               <Link
                 key={item.href}
                 href={localizePath(item.href, locale)}
-                className={`transition-colors font-sans text-sm cursor-pointer h-full flex items-center border-b-2 ${
+                className={`whitespace-nowrap transition-colors font-sans text-sm cursor-pointer h-full flex items-center border-b-2 ${
                   isActive
                     ? "text-[#00C896] border-[#00C896]"
                     : "text-zinc-400 hover:text-zinc-100 border-transparent"
@@ -89,7 +89,7 @@ export function TopBar() {
         </nav>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex shrink-0 items-center gap-4">
         <LocaleToggle />
         <Link
           className="px-4 py-1.5 bg-[#00C896]/10 border border-[#00C896]/30 text-[#00C896] rounded hover:bg-[#00C896]/20 transition-colors font-label-caps uppercase text-xs font-bold whitespace-nowrap"

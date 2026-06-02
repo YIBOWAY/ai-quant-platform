@@ -4,42 +4,43 @@ The frontend ships with a site-wide English / Chinese language switch. A single
 toggle in the top bar flips the entire UI and the choice is remembered across
 visits.
 
-> Updated 2026-05-29. This replaces the earlier query-parameter prototype that
-> only covered `/data-explorer` and `/options-screener`. All main pages are now
-> bilingual through one global toggle.
+> Updated 2026-06-02. This replaces the earlier cookie-only toggle and
+> query-parameter prototype. All main pages are bilingual and can be opened
+> through `/en/...` or `/zh/...` paths.
 
 ## How To Use
 
 1. Open the app at `http://127.0.0.1:3001`.
-2. Click the language button in the top bar (shows **中文** while in English,
-   **EN** while in Chinese).
-3. The whole site switches immediately and stays in that language on later
-   visits.
+2. Click **EN** or **中文** in the top bar.
+3. The browser moves to the matching localized path, for example
+   `/en/options-radar` or `/zh/options-radar`.
+4. The choice is remembered for later unprefixed visits.
 
-There is no separate Chinese URL. The language is global, not per-page.
+The language is site-wide for the current page path. Locale-prefixed URLs are
+the preferred way to share a specific language view.
 
 ## How It Works
 
-Language is stored in a cookie named `qs_lang` (`en` or `zh`, 1-year lifetime,
-`path=/`, `samesite=lax`). Both server and client components read the same
-cookie so the first server render already matches the chosen language.
+Language can come from a locale path prefix (`/en` or `/zh`), the legacy
+`?lang=` query parameter, or a cookie named `qs_lang` (`en` or `zh`, 1-year
+lifetime, `path=/`, `samesite=lax`). Server components prefer the path prefix,
+then `?lang=`, then the cookie, then English.
 
 | File | Role |
 |---|---|
 | `src/frontend/lib/locale.ts` | `Locale` type, cookie name, `resolveLocale()`. |
-| `src/frontend/lib/serverLocale.ts` | `getServerLocale()` for server components. Priority: `?lang` override > cookie > `en`. |
-| `src/frontend/components/LocaleProvider.tsx` | Client context + `useLocale()` hook, seeded from the cookie in the root layout. |
-| `src/frontend/components/LocaleToggle.tsx` | The top-bar toggle. Sets the cookie, strips any `?lang` query, then refreshes. |
+| `src/frontend/lib/serverLocale.ts` | `getServerLocale()` for server components. Priority: locale path header > `?lang` override > cookie > `en`. |
+| `src/frontend/components/LocaleProvider.tsx` | Client context + `useLocale()` hook, seeded from the resolved server locale in the root layout. |
+| `src/frontend/components/LocaleToggle.tsx` | The top-bar toggle. Sets the cookie and navigates to the matching `/en/...` or `/zh/...` path. |
+| `src/frontend/middleware.ts` | Rewrites locale-prefixed paths to the existing app routes and passes the locale through a request header. |
 
 Page text lives in per-component copy dictionaries: a module-level
 `const copy = { en: { ... }, zh: { ... } }`, then `const text = copy[locale]`
 inside the component. Server pages call `getServerLocale()` and pass
 `locale` down to client child components, which keep their own copy dictionary.
 
-Note: the root layout, shared chrome (sidebar, top bar, safety strip), and the
-dashboard read the cookie only, so the `?lang=` query string switches only the
-body of pages that explicitly read it — the global toggle is the supported way
-to change language everywhere.
+Unprefixed paths still work. They use the saved cookie when present and fall
+back to English.
 
 ## Coverage
 
@@ -77,8 +78,10 @@ http://127.0.0.1:3001
 
 Check:
 
-- The top-bar toggle switches the whole site between English and Chinese.
+- The top-bar toggle switches between `/en/...` and `/zh/...`.
 - The choice persists after navigating to other pages and after reload.
+- Direct visits to `/zh/options-radar` and `/en/options-radar` render the
+  expected language.
 - Layout stays intact in both languages.
 - Buttons still trigger the same backend calls.
 - Safety wording is present in both languages.

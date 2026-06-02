@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type {
   OptionsRadarCandidate,
   OptionsRadarDatesResponse,
@@ -81,6 +81,10 @@ const copy = {
     runSample: "Run Today's Scan",
     runDone: "Today's scan finished: {count} candidates saved for {date}.",
     running: "Running...",
+    scanRunningTitle: "Scan in progress",
+    scanRunningBody:
+      "Futu scans can take several minutes. Keep this page open; the table will refresh when the saved snapshot is ready.",
+    scanElapsed: "Elapsed",
     refresh: "Refresh List",
     refreshSource: "Refresh source",
     publicSource: "Public data",
@@ -124,6 +128,9 @@ const copy = {
     runSample: "运行今日扫描",
     runDone: "今日扫描完成：已为 {date} 保存 {count} 个候选。",
     running: "运行中...",
+    scanRunningTitle: "正在扫描",
+    scanRunningBody: "Futu 扫描可能需要几分钟。请保持页面打开；快照保存后右侧表格会自动刷新。",
+    scanElapsed: "已等待",
     refresh: "刷新列表",
     refreshSource: "刷新数据源",
     publicSource: "公开数据",
@@ -154,6 +161,8 @@ export function OptionsRadarView({
   const [refreshSource, setRefreshSource] = useState("public");
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [scanStartedAt, setScanStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const datesQuery = useQuery({
     queryKey: ["options-radar-dates"],
@@ -162,19 +171,17 @@ export function OptionsRadarView({
   });
 
   const activeDate = date || datesQuery.data?.dates[0] || "";
+  const scanPath = buildScanPath({
+    date: activeDate,
+    strategy,
+    sector,
+    dteBucket,
+    top,
+  });
   const scanQuery = useQuery({
     queryKey: ["options-radar", activeDate, strategy, sector, dteBucket, top],
     enabled: hydrated,
-    queryFn: () => {
-      const params = new URLSearchParams({
-        strategy,
-        top: String(top),
-      });
-      if (activeDate) params.set("date", activeDate);
-      if (sector) params.set("sector", sector);
-      if (dteBucket) params.set("dte_bucket", dteBucket);
-      return apiRequest<OptionsRadarResponse>(`/api/options/daily-scan?${params.toString()}`);
-    },
+    queryFn: () => apiRequest<OptionsRadarResponse>(scanPath),
   });
 
   const candidates = useMemo(
@@ -193,7 +200,12 @@ export function OptionsRadarView({
         provider: "futu",
         top,
         strategies: strategy === "all" ? ["sell_put", "covered_call"] : [strategy],
-    }),
+      }),
+    onMutate: () => {
+      setScanStatus(null);
+      setScanStartedAt(Date.now());
+      setElapsedSeconds(0);
+    },
     onSuccess: async (payload) => {
       setDate(payload.run_date);
       setScanStatus(
@@ -202,7 +214,23 @@ export function OptionsRadarView({
           .replace("{count}", String(payload.candidate_count)),
       );
       await queryClient.invalidateQueries({ queryKey: ["options-radar-dates"] });
+      await queryClient.fetchQuery({
+        queryKey: ["options-radar", payload.run_date, strategy, sector, dteBucket, top],
+        queryFn: () =>
+          apiRequest<OptionsRadarResponse>(
+            buildScanPath({
+              date: payload.run_date,
+              strategy,
+              sector,
+              dteBucket,
+              top,
+            }),
+          ),
+      });
       await queryClient.invalidateQueries({ queryKey: ["options-radar"] });
+    },
+    onSettled: () => {
+      setScanStartedAt(null);
     },
   });
   const refreshMutation = useMutation({
@@ -229,13 +257,24 @@ export function OptionsRadarView({
     URL.revokeObjectURL(url);
   }
 
+  useEffect(() => {
+    if (!scanMutation.isPending || scanStartedAt === null) {
+      return;
+    }
+    const updateElapsed = () =>
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - scanStartedAt) / 1000)));
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [scanMutation.isPending, scanStartedAt]);
+
   return (
     <div className="grid h-full min-h-0 grid-cols-[360px_1fr] overflow-hidden bg-base text-text-primary">
       <aside className="overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
         <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
         <p className="mt-2 font-body-sm text-text-secondary">{text.intro}</p>
         <a
-          className="mt-3 inline-flex font-body-sm text-info"
+          className="mt-3 inline-flex whitespace-nowrap font-body-sm text-info"
           href={localizePath("/options-radar", locale === "zh" ? "en" : "zh")}
         >
           {text.zh}
@@ -324,7 +363,7 @@ export function OptionsRadarView({
             <div className="mt-3 grid grid-cols-1 gap-2">
               <button
                 className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
-                disabled={refreshMutation.isPending}
+                disabled={!hydrated || refreshMutation.isPending}
                 onClick={() => refreshMutation.mutate("universe")}
                 type="button"
               >
@@ -333,7 +372,7 @@ export function OptionsRadarView({
               </button>
               <button
                 className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
-                disabled={refreshMutation.isPending}
+                disabled={!hydrated || refreshMutation.isPending}
                 onClick={() => refreshMutation.mutate("earnings")}
                 type="button"
               >
@@ -342,7 +381,7 @@ export function OptionsRadarView({
               </button>
               <button
                 className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
-                disabled={refreshMutation.isPending}
+                disabled={!hydrated || refreshMutation.isPending}
                 onClick={() => refreshMutation.mutate("vix")}
                 type="button"
               >
@@ -363,7 +402,7 @@ export function OptionsRadarView({
           </div>
           <button
             className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:opacity-50"
-            disabled={scanMutation.isPending}
+            disabled={!hydrated || scanMutation.isPending}
             onClick={() => scanMutation.mutate()}
             type="button"
           >
@@ -372,7 +411,7 @@ export function OptionsRadarView({
           </button>
           <button
             className="rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:opacity-50"
-            disabled={datesQuery.isFetching || scanQuery.isFetching}
+            disabled={!hydrated || datesQuery.isFetching || scanQuery.isFetching}
             onClick={() => {
               void datesQuery.refetch();
               void scanQuery.refetch();
@@ -384,7 +423,7 @@ export function OptionsRadarView({
           </button>
           <button
             className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:opacity-50"
-            disabled={!csv || candidates.length === 0}
+            disabled={!hydrated || !csv || candidates.length === 0}
             onClick={exportCsv}
             type="button"
           >
@@ -408,6 +447,19 @@ export function OptionsRadarView({
           <ShieldCheck size={18} />
           {text.safety}
         </div>
+        {scanMutation.isPending ? (
+          <section className="mb-4 rounded border border-info/40 bg-info/10 p-4 text-info">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-headline-lg text-info">{text.scanRunningTitle}</h2>
+                <p className="mt-1 font-body-sm text-text-secondary">{text.scanRunningBody}</p>
+              </div>
+              <div className="rounded border border-info/30 px-3 py-2 font-data-mono text-sm">
+                {text.scanElapsed}: {elapsedSeconds}s
+              </div>
+            </div>
+          </section>
+        ) : null}
         <RegimeBanner regime={regime} text={text} />
         {freshness ? (
           <div
@@ -576,6 +628,29 @@ function deriveFreshness(
     fresh: false,
     message: text.freshStale.replace("{date}", activeDate).replace("{days}", String(days)),
   };
+}
+
+function buildScanPath({
+  date,
+  strategy,
+  sector,
+  dteBucket,
+  top,
+}: {
+  date: string;
+  strategy: string;
+  sector: string;
+  dteBucket: string;
+  top: number;
+}) {
+  const params = new URLSearchParams({
+    strategy,
+    top: String(top),
+  });
+  if (date) params.set("date", date);
+  if (sector) params.set("sector", sector);
+  if (dteBucket) params.set("dte_bucket", dteBucket);
+  return `/api/options/daily-scan?${params.toString()}`;
 }
 
 function RegimeBanner({

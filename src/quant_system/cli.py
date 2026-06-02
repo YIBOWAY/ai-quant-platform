@@ -24,6 +24,7 @@ from quant_system.experiments.runner import (
     run_experiment,
     run_sample_experiment,
 )
+from quant_system.factors.lab import build_factor_lab_dashboard
 from quant_system.factors.pipeline import FactorResearchResult, run_sample_factor_research
 from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
 from quant_system.logging.setup import configure_logging
@@ -425,6 +426,66 @@ def run_sample_factors(
         quantiles=quantiles,
     )
     _emit_factor_summary(result)
+
+
+@factor_app.command("refresh-lab")
+def refresh_factor_lab(
+    provider: Annotated[
+        Literal["sample", "futu", "tiingo"],
+        typer.Option("--provider", help="Read-only OHLCV provider for the refresh."),
+    ] = "sample",
+    universe_id: Annotated[
+        str,
+        typer.Option("--universe-id", help="Registered universe id to diagnose."),
+    ] = "etf",
+    symbol: Annotated[
+        str,
+        typer.Option("--symbol", help="Single-symbol timing ticker."),
+    ] = "QQQ",
+    benchmark_symbol: Annotated[
+        str,
+        typer.Option("--benchmark-symbol", help="Display benchmark ticker."),
+    ] = "QQQ",
+    start: Annotated[str, typer.Option(help="Start date, for example 2024-01-02.")] = "2024-01-02",
+    end: Annotated[str, typer.Option(help="End date, for example 2024-12-31.")] = "2024-12-31",
+    lookback: Annotated[
+        int,
+        typer.Option(help="Trailing window used by registered factors."),
+    ] = 20,
+    output_dir: Annotated[
+        str | None,
+        typer.Option(
+            help="Override output directory. Defaults to QS_DATA_DIR setting.",
+        ),
+    ] = None,
+) -> None:
+    """Refresh the read-only Factor Lab dashboard cache for scheduled jobs."""
+    settings = reload_settings()
+    payload = build_factor_lab_dashboard(
+        settings=settings,
+        output_dir=output_dir or settings.data.data_dir,
+        provider=provider,
+        universe_id=universe_id,
+        symbol=symbol,
+        benchmark_symbol=benchmark_symbol,
+        start=start,
+        end=end,
+        lookback=lookback,
+        force_refresh=True,
+    )
+    typer.echo(
+        " ".join(
+            [
+                f"cache_status={payload.get('cache', {}).get('status', '<unknown>')}",
+                f"cache_path={payload.get('cache', {}).get('path', '<unknown>')}",
+                f"universe={payload.get('universe', {}).get('id', universe_id)}",
+                f"symbol={payload.get('timing', {}).get('symbol', symbol.upper())}",
+                f"benchmark={payload.get('benchmark_symbol', benchmark_symbol.upper())}",
+                f"cross_rows={len(payload.get('cross_sectional', {}).get('rows', []))}",
+                f"timing_rows={len(payload.get('timing', {}).get('rows', []))}",
+            ]
+        )
+    )
 
 
 @backtest_app.command("run-sample")

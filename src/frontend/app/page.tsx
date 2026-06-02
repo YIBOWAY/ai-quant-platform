@@ -24,6 +24,7 @@ import {
 } from "@/lib/api";
 import { selectDisplayRun } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
+import { localizePath } from "@/lib/locale";
 
 const copy = {
   en: {
@@ -289,25 +290,25 @@ export default async function Dashboard() {
           </h3>
           <div className="space-y-3">
             <Link
-              href="/backtest"
+              href={localizePath("/backtest", locale)}
               className="flex w-full items-center gap-3 rounded border border-border-subtle bg-bg-surface-muted px-4 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-primary"
             >
               <Play size={14} className="text-primary" /> {text.startBacktest}
             </Link>
             <Link
-              href="/factor-lab"
+              href={localizePath("/factor-lab", locale)}
               className="flex w-full items-center gap-3 rounded border border-border-subtle bg-bg-surface-muted px-4 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-warning"
             >
               <FlaskConical size={14} className="text-warning" /> {text.runFactor}
             </Link>
             <Link
-              href="/agent-studio"
+              href={localizePath("/agent-studio", locale)}
               className="flex w-full items-center gap-3 rounded border border-border-subtle bg-bg-surface-muted px-4 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-info"
             >
               <Bot size={14} className="text-info" /> {text.newAgent}
             </Link>
             <Link
-              href="/settings"
+              href={localizePath("/settings", locale)}
               className="flex w-full items-center gap-3 rounded border border-border-subtle bg-bg-surface-muted px-4 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-text-primary"
             >
               <Settings size={14} className="text-text-secondary" /> {text.openSettings}
