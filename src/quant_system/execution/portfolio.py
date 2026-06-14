@@ -18,8 +18,11 @@ class PaperPortfolio:
 
     def market_value(self, prices: Mapping[str, float]) -> float:
         normalized = {symbol.upper(): float(price) for symbol, price in prices.items()}
+        missing = sorted(symbol for symbol in self.positions if symbol not in normalized)
+        if missing:
+            raise ValueError(f"missing mark prices: {', '.join(missing)}")
         return sum(
-            quantity * normalized.get(symbol, 0.0)
+            quantity * normalized[symbol]
             for symbol, quantity in self.positions.items()
         )
 

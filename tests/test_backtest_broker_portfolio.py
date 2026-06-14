@@ -71,3 +71,14 @@ def test_portfolio_marks_equity_with_supplied_prices() -> None:
 
     assert portfolio.market_value({"SPY": 105.0}) == pytest.approx(210)
     assert portfolio.equity({"SPY": 105.0}) == pytest.approx(1_210)
+
+
+def test_portfolio_raises_when_mark_price_is_missing() -> None:
+    portfolio = Portfolio(initial_cash=1_000)
+    portfolio.positions["SPY"] = 2
+
+    with pytest.raises(ValueError, match="missing mark prices: SPY"):
+        portfolio.market_value({})
+
+    with pytest.raises(ValueError, match="missing mark prices: SPY"):
+        portfolio.equity({})

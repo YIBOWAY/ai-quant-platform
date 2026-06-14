@@ -150,3 +150,14 @@ def test_paper_broker_does_not_create_naked_short_positions() -> None:
     assert fills == []
     assert broker.portfolio.cash == pytest.approx(10_000)
     assert broker.portfolio.position("SPY") == pytest.approx(0)
+
+
+def test_paper_portfolio_raises_when_mark_price_is_missing() -> None:
+    portfolio = PaperPortfolio(initial_cash=1_000)
+    portfolio.positions["SPY"] = 2
+
+    with pytest.raises(ValueError, match="missing mark prices: SPY"):
+        portfolio.market_value({})
+
+    with pytest.raises(ValueError, match="missing mark prices: SPY"):
+        portfolio.equity({})
