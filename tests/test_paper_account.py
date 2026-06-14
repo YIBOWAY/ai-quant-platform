@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import threading
 import time
 
@@ -404,6 +405,33 @@ def test_storage_mutation_lock_serializes_independent_callers(tmp_path) -> None:
 
     thread.join(timeout=2)
     assert acquired == ["second"]
+
+
+def test_storage_keeps_previous_account_backup_on_save(tmp_path) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage.save(account)
+
+    account.record_event(kind="note", note="second save")
+    storage.save(account)
+
+    backup_payload = json.loads(storage.account_backup_path.read_text(encoding="utf-8"))
+    assert backup_payload["cash"] == 100_000.0
+    assert len(backup_payload["ledger"]) == 1
+
+
+def test_storage_preserves_corrupt_account_file_before_reopening(tmp_path) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    storage.account_dir.mkdir(parents=True)
+    storage.account_path.write_text("{not-json", encoding="utf-8")
+
+    account = storage.load_or_open(initial_cash=50_000.0)
+
+    assert account.cash == 50_000.0
+    assert not storage.account_path.read_text(encoding="utf-8").startswith("{not-json")
+    corrupt_files = list(storage.account_dir.glob("account.corrupt-*.json"))
+    assert len(corrupt_files) == 1
+    assert corrupt_files[0].read_text(encoding="utf-8") == "{not-json"
 
 
 def test_storage_snapshot_without_fresh_quotes_keeps_weight_and_fill_source(tmp_path) -> None:

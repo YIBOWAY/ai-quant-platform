@@ -40,6 +40,10 @@ class PaperAccountStorage:
         return self.account_dir / "account.json"
 
     @property
+    def account_backup_path(self) -> Path:
+        return self.account_dir / "account.json.bak"
+
+    @property
     def positions_snapshot_path(self) -> Path:
         return self.account_dir / "positions_snapshot.parquet"
 
@@ -105,7 +109,11 @@ class PaperAccountStorage:
     def load(self) -> PaperAccount | None:
         if not self.account_path.exists():
             return None
-        data = json.loads(self.account_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self.account_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            self._preserve_corrupt_account_file()
+            return None
         return PaperAccount.model_validate(data)
 
     def load_or_open(
@@ -132,6 +140,11 @@ class PaperAccountStorage:
     ) -> Path:
         self.account_dir.mkdir(parents=True, exist_ok=True)
         payload = account.model_dump(mode="json")
+        if self.account_path.exists():
+            self.account_backup_path.write_text(
+                self.account_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
         # Unique tmp name per write so concurrent writers don't clobber each
         # other's temp file (which on Windows raises PermissionError on rename).
         tmp_path = self.account_path.with_suffix(f".json.{uuid.uuid4().hex}.tmp")
@@ -187,6 +200,12 @@ class PaperAccountStorage:
             json.dumps(account.model_dump(mode="json"), indent=2, sort_keys=True),
             encoding="utf-8",
         )
+        return path
+
+    def _preserve_corrupt_account_file(self) -> Path:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S_%fZ")
+        path = self.account_dir / f"account.corrupt-{stamp}-{uuid.uuid4().hex[:6]}.json"
+        os.replace(self.account_path, path)
         return path
 
     def _write_positions_snapshot(
