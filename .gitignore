@@ -20,6 +20,12 @@ worktrees/
 
 # Local agent / IDE config
 .claude/
+.agents/
+.codegraph/
+.omo/
+.sisyphus/
+.superpowers/
+Microsoft/
 
 # Local Futu / FastAPI / Next.js dev logs
 .futu-ui-backend.err.log
@@ -30,6 +36,12 @@ worktrees/
 # Playwright run artefacts
 src/frontend/test-results/
 src/frontend/playwright-report/
+.playwright-cli/
+.playwright-mcp/
+src/frontend/.tmp/
+
+# Local scratch / benchmark artefacts
+.tmp/
 
 # Bundled local snapshot (kept locally, not committed)
 quantum-core-algorithmic-trading-platform.zip
