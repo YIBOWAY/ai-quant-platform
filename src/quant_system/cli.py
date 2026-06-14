@@ -700,6 +700,109 @@ def run_sample_paper_command(
     _emit_paper_summary(result)
 
 
+@paper_app.command("rebalance")
+def paper_account_rebalance_command(
+    strategy: Annotated[
+        str,
+        typer.Option(
+            "--strategy",
+            help="Strategy id: cross_sectional_top_n or mean_reversion_top_n.",
+        ),
+    ] = "cross_sectional_top_n",
+    account_id: Annotated[
+        str,
+        typer.Option("--account", help="Account id to rebalance."),
+    ] = "default",
+    symbols: Annotated[
+        list[str] | None,
+        typer.Option("--symbol", "-s", help="Candidate symbol. Repeat for multiple."),
+    ] = None,
+    lookback: Annotated[int, typer.Option("--lookback", help="Factor lookback window.")] = 20,
+    top_n: Annotated[int, typer.Option("--top-n", help="Number of names to hold.")] = 3,
+    provider: Annotated[
+        str | None,
+        typer.Option("--provider", help="Real-data provider: futu or tiingo."),
+    ] = None,
+) -> None:
+    """Rebalance a persistent paper ACCOUNT to a strategy's latest target weights.
+
+    Designed to be run on a schedule (e.g. Windows Task Scheduler) so the
+    account auto-trades each trading day. Simulation only: no real orders.
+    """
+    from quant_system.execution.account_service import (
+        AccountFrozenError,
+        PaperAccountService,
+        StrategyDataUnavailableError,
+    )
+    from quant_system.execution.account_storage import PaperAccountStorage
+    from quant_system.execution.price_source import PriceUnavailableError
+
+    settings = load_settings()
+    api_runs_dir = settings.data.data_dir / "api_runs"
+    storage = PaperAccountStorage(api_runs_dir, account_id=account_id)
+    service = PaperAccountService(settings=settings)
+    with storage.mutation_lock():
+        account = storage.load_or_open()
+        try:
+            outcome = service.rebalance_to_strategy(
+                account,
+                strategy_id=strategy,
+                symbols=symbols or ["SPY", "QQQ", "IWM", "DIA"],
+                lookback=lookback,
+                top_n=top_n,
+                provider=provider,
+            )
+        except AccountFrozenError as exc:
+            typer.echo(f"account frozen: {exc}")
+            raise typer.Exit(code=1) from exc
+        except (PriceUnavailableError, StrategyDataUnavailableError, ValueError) as exc:
+            typer.echo(f"rebalance unavailable: {exc}")
+            raise typer.Exit(code=1) from exc
+        storage.save(account)
+    if outcome.aborted:
+        typer.echo(f"rebalance ABORTED, no orders applied: {outcome.note}")
+        raise typer.Exit(code=1)
+    failed = [o for o in outcome.orders if o.status not in ("filled", "skipped")]
+    filled = sum(1 for order in outcome.orders if order.status == "filled")
+    typer.echo(
+        f"rebalanced account {account_id!r} to {outcome.strategy_id} "
+        f"(as_of={outcome.as_of}): {filled}/{len(outcome.orders)} legs filled"
+    )
+    if outcome.note:
+        typer.echo(outcome.note)
+    typer.echo(f"cash={account.cash:.2f} positions={len(account.positions)}")
+    if failed:
+        for order in failed:
+            typer.echo(
+                f"  FAILED {order.symbol} {order.side} {order.status}: {order.rejected_reason}"
+            )
+        raise typer.Exit(code=1)
+
+
+@paper_app.command("account-show")
+def paper_account_show_command(
+    account_id: Annotated[
+        str,
+        typer.Option("--account", help="Account id to display."),
+    ] = "default",
+) -> None:
+    """Print a persistent paper account's cash and positions."""
+    from quant_system.execution.account_storage import PaperAccountStorage
+
+    settings = load_settings()
+    api_runs_dir = settings.data.data_dir / "api_runs"
+    storage = PaperAccountStorage(api_runs_dir, account_id=account_id)
+    with storage.mutation_lock():
+        account = storage.load_or_open()
+    typer.echo(
+        f"account={account.account_id} cash={account.cash:.2f} "
+        f"realized_pnl={account.realized_pnl:.2f} positions={len(account.positions)} "
+        f"kill_switch={account.kill_switch}"
+    )
+    for symbol, position in sorted(account.positions.items()):
+        typer.echo(f"  {symbol}: qty={position.quantity:.4f} avg_cost={position.avg_cost:.2f}")
+
+
 @agent_app.command("propose-factor")
 def agent_propose_factor(
     goal: Annotated[str, typer.Option("--goal", help="Research goal for the candidate factor.")],

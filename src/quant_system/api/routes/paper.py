@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 
 from fastapi import APIRouter, HTTPException
 
@@ -10,11 +11,30 @@ from quant_system.api.schemas.common import (
     read_parquet_records,
     resolve_run_dir,
 )
-from quant_system.api.schemas.paper import PaperRunRequest
+from quant_system.api.schemas.paper import (
+    AccountRebalanceRequest,
+    AccountResetRequest,
+    KillSwitchRequest,
+    ManualOrderRequest,
+    PaperRunRequest,
+)
+from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
+from quant_system.execution.account_service import (
+    AccountFrozenError,
+    PaperAccountService,
+    StrategyDataUnavailableError,
+)
+from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.pipeline import run_paper_trading
+from quant_system.execution.price_source import (
+    PaperPriceSource,
+    PricedQuote,
+    PriceUnavailableError,
+)
 from quant_system.storage.runs_repository import index_run, list_run_metadatas
 
 router = APIRouter()
+
 
 
 @router.post("/paper/run")
@@ -91,6 +111,265 @@ def list_paper(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
         for metadata in list_run_metadatas("paper", root, settings)
     ]
     return {"paper_runs": paper_runs}
+
+
+# --- Persistent paper account (interactive auto + manual trading) ---------
+
+# Serialise all mutations to a given account so concurrent requests (e.g. a
+# scheduled rebalance landing while a manual order is in flight) cannot
+# lost-update each other through the load -> mutate -> save cycle.
+_ACCOUNT_LOCKS: dict[str, threading.Lock] = {}
+_ACCOUNT_LOCKS_GUARD = threading.Lock()
+
+
+def _account_lock(account_id: str) -> threading.Lock:
+    with _ACCOUNT_LOCKS_GUARD:
+        lock = _ACCOUNT_LOCKS.get(account_id)
+        if lock is None:
+            lock = threading.Lock()
+            _ACCOUNT_LOCKS[account_id] = lock
+        return lock
+
+
+def _account_storage(api_runs_dir) -> PaperAccountStorage:
+    return PaperAccountStorage(api_runs_dir)
+
+
+def _account_quotes(account: PaperAccount, *, settings) -> dict[str, PricedQuote]:
+    """Resolve a current read-only quote for every held symbol."""
+    price_source = PaperPriceSource(settings)
+    quotes: dict[str, PricedQuote] = {}
+    for symbol, position in account.positions.items():
+        try:
+            quotes[symbol] = price_source.get_price(symbol)
+        except PriceUnavailableError:
+            quotes[symbol] = PricedQuote(
+                symbol=symbol,
+                price=position.avg_cost,
+                price_kind="avg_cost_fallback",
+                as_of=account.updated_at,
+                source="account",
+            )
+    return quotes
+
+
+def _save_account(
+    storage: PaperAccountStorage,
+    account: PaperAccount,
+    quotes: dict[str, PricedQuote],
+) -> None:
+    storage.save(
+        account,
+        prices={symbol: quote.price for symbol, quote in quotes.items()},
+        price_metadata={
+            symbol: {"kind": quote.price_kind, "as_of": quote.as_of}
+            for symbol, quote in quotes.items()
+        },
+    )
+
+
+def _account_view(
+    account: PaperAccount,
+    *,
+    settings,
+    quotes: dict[str, PricedQuote] | None = None,
+) -> dict:
+    """Materialise a price-aware account view for the Position Map."""
+    quotes = quotes if quotes is not None else _account_quotes(account, settings=settings)
+    prices = {symbol: quote.price for symbol, quote in quotes.items()}
+    price_kinds = {quote.price_kind for quote in quotes.values()}
+    price_kind = (
+        next(iter(price_kinds))
+        if len(price_kinds) == 1
+        else ("mixed" if price_kinds else "none")
+    )
+    as_of = next(iter(quotes.values())).as_of if len(quotes) == 1 else None
+
+    equity = account.equity(prices)
+    positions = []
+    for symbol, position in sorted(account.positions.items()):
+        quote = quotes.get(symbol)
+        last_price = quote.price if quote is not None else position.avg_cost
+        positions.append(
+            {
+                "symbol": symbol,
+                "quantity": position.quantity,
+                "avg_cost": position.avg_cost,
+                "last_price": last_price,
+                "market_value": position.market_value(last_price),
+                "weight": (position.market_value(last_price) / equity) if equity else 0.0,
+                "unrealized_pnl": position.unrealized_pnl(last_price),
+                "source_breakdown": position.source_breakdown(),
+                "price_kind": quote.price_kind if quote is not None else "avg_cost_fallback",
+                "price_as_of": quote.as_of if quote is not None else account.updated_at,
+            }
+        )
+
+    pnl_abs = equity - account.initial_cash
+    return {
+        "account_id": account.account_id,
+        "base_currency": account.base_currency,
+        "initial_cash": account.initial_cash,
+        "cash": account.cash,
+        "equity": equity,
+        "realized_pnl": account.realized_pnl,
+        "unrealized_pnl": account.unrealized_pnl(prices),
+        "pnl_abs": pnl_abs,
+        "pnl_pct": (pnl_abs / account.initial_cash) if account.initial_cash else 0.0,
+        "invested_pct": (account.market_value(prices) / equity) if equity else 0.0,
+        "kill_switch": account.kill_switch,
+        "price_source": {"kind": price_kind, "as_of": as_of},
+        "positions": positions,
+        "created_at": account.created_at,
+        "updated_at": account.updated_at,
+    }
+
+
+@router.get("/paper/account")
+def get_account(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
+    storage = _account_storage(api_runs_dir)
+    account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+    return _account_view(account, settings=settings)
+
+
+@router.post("/paper/account/reset")
+def reset_account(
+    request: AccountResetRequest,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    storage = _account_storage(api_runs_dir)
+    with _account_lock(storage.account_id), storage.mutation_lock():
+        account = storage.reset(initial_cash=request.initial_cash)
+        return _account_view(account, settings=settings)
+
+
+@router.post("/paper/account/kill-switch")
+def set_account_kill_switch(
+    request: KillSwitchRequest,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    storage = _account_storage(api_runs_dir)
+    with _account_lock(storage.account_id), storage.mutation_lock():
+        account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+        account.kill_switch = request.enabled
+        account.record_event(
+            kind="freeze" if request.enabled else "unfreeze",
+            note=f"account kill switch set to {request.enabled}",
+        )
+        quotes = _account_quotes(account, settings=settings)
+        _save_account(storage, account, quotes)
+        return _account_view(account, settings=settings, quotes=quotes)
+
+
+@router.get("/paper/account/ledger")
+def get_account_ledger(
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+    limit: int = 200,
+    offset: int = 0,
+) -> dict:
+    storage = _account_storage(api_runs_dir)
+    account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+    entries = [entry.model_dump(mode="json") for entry in account.ledger]
+    entries.reverse()  # newest first
+    window = entries[offset : offset + max(limit, 0)]
+    return {"total": len(entries), "limit": limit, "offset": offset, "entries": window}
+
+
+@router.post("/paper/account/orders")
+def place_account_order(
+    request: ManualOrderRequest,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    storage = _account_storage(api_runs_dir)
+    service = PaperAccountService(settings=settings)
+    with _account_lock(storage.account_id), storage.mutation_lock():
+        account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+        try:
+            outcome = service.place_manual_order(
+                account,
+                symbol=request.symbol,
+                side=request.side,
+                quantity=request.quantity,
+                notional=request.notional,
+                limit_price=request.limit_price,
+            )
+        except AccountFrozenError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PriceUnavailableError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        quotes = _account_quotes(account, settings=settings)
+        _save_account(storage, account, quotes)
+        return {
+            "order": {
+                "status": outcome.status,
+                "symbol": outcome.symbol,
+                "side": outcome.side,
+                "requested_quantity": outcome.requested_quantity,
+                "filled_quantity": outcome.filled_quantity,
+                "price": outcome.price,
+                "price_kind": outcome.price_kind,
+                "rejected_reason": outcome.rejected_reason,
+            },
+            "account": _account_view(account, settings=settings, quotes=quotes),
+        }
+
+
+@router.post("/paper/account/rebalance")
+def rebalance_account(
+    request: AccountRebalanceRequest,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    storage = _account_storage(api_runs_dir)
+    service = PaperAccountService(settings=settings)
+    with _account_lock(storage.account_id), storage.mutation_lock():
+        account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+        try:
+            outcome = service.rebalance_to_strategy(
+                account,
+                strategy_id=request.strategy_id,
+                symbols=request.symbols,
+                lookback=request.lookback,
+                top_n=request.top_n,
+                provider=request.provider,
+            )
+        except AccountFrozenError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (PriceUnavailableError, StrategyDataUnavailableError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        quotes = _account_quotes(account, settings=settings)
+        _save_account(storage, account, quotes)
+        return {
+            "rebalance": {
+                "strategy_id": outcome.strategy_id,
+                "as_of": outcome.as_of,
+                "aborted": outcome.aborted,
+                "target_weights": outcome.target_weights,
+                "note": outcome.note,
+                "orders": [
+                    {
+                        "status": order.status,
+                        "symbol": order.symbol,
+                        "side": order.side,
+                        "requested_quantity": order.requested_quantity,
+                        "filled_quantity": order.filled_quantity,
+                        "price": order.price,
+                        "price_kind": order.price_kind,
+                        "rejected_reason": order.rejected_reason,
+                    }
+                    for order in outcome.orders
+                ],
+            },
+            "account": _account_view(account, settings=settings, quotes=quotes),
+        }
 
 
 @router.get("/paper/{run_id}")

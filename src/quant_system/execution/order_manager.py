@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping
 
 import pandas as pd
@@ -17,7 +18,13 @@ from quant_system.risk.models import RiskBreach, RiskContext
 
 
 class OrderManager:
-    def __init__(self, *, risk_engine: RiskEngine, broker: BrokerAdapter) -> None:
+    def __init__(
+        self,
+        *,
+        risk_engine: RiskEngine,
+        broker: BrokerAdapter,
+        id_prefix: str | None = None,
+    ) -> None:
         self.risk_engine = risk_engine
         self.broker = broker
         self.orders: dict[str, ManagedOrder] = {}
@@ -25,6 +32,10 @@ class OrderManager:
         self.trade_log: list[ExecutionFill] = []
         self.risk_breach_log: list[RiskBreach] = []
         self._order_counter = 0
+        # A per-manager prefix keeps order ids unique across managers. The paper
+        # account builds a fresh OrderManager per request, so a plain counter
+        # would otherwise restart at 000001 and collide between orders.
+        self._id_prefix = id_prefix or f"paper-order-{uuid.uuid4().hex[:8]}"
 
     def create_and_submit(
         self,
@@ -33,7 +44,7 @@ class OrderManager:
     ) -> ManagedOrder:
         self._order_counter += 1
         order = ManagedOrder(
-            order_id=f"paper-order-{self._order_counter:06d}",
+            order_id=f"{self._id_prefix}-{self._order_counter:06d}",
             created_at=request.timestamp,
             symbol=request.normalized_symbol(),
             side=request.side,

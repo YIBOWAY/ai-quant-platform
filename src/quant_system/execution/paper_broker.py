@@ -55,6 +55,8 @@ class PaperBroker:
             price = normalized_prices.get(order.symbol)
             if price is None or self.max_fill_ratio_per_tick == 0:
                 continue
+            if not self._limit_allows_fill(order, price):
+                continue
             requested_fill_quantity = min(
                 order.remaining_quantity,
                 order.quantity * min(self.max_fill_ratio_per_tick, 1.0),
@@ -92,6 +94,22 @@ class PaperBroker:
             if order.status == OrderStatus.FILLED:
                 self.open_orders.pop(order.order_id, None)
         return fills
+
+    @staticmethod
+    def _limit_allows_fill(order: ManagedOrder, market_price: float) -> bool:
+        """A limit order only fills at or better than its limit price.
+
+        A BUY fills when the market trades at or below the limit; a SELL fills
+        when the market trades at or above the limit. Market orders
+        (``limit_price is None``) always fill. The historical-replay path sets
+        ``limit_price`` equal to the bar open and fills at that same open, so
+        equality must remain fillable.
+        """
+        if order.limit_price is None:
+            return True
+        if order.side == OrderSide.BUY:
+            return market_price <= order.limit_price
+        return market_price >= order.limit_price
 
     def _apply_slippage(self, price: float, side: OrderSide) -> float:
         slippage = self.slippage_bps / 10_000
