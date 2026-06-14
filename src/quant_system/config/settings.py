@@ -248,6 +248,12 @@ class OptionsRadarSettings(BaseSettings):
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_MIN_DTE_FOR_RADAR"),
         ge=0,
     )
+    max_delta_for_radar: float = Field(
+        default=0.8,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_MAX_DELTA_FOR_RADAR"),
+        ge=0,
+        le=1,
+    )
     iv_history_lookback_days: int = Field(
         default=252,
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_IV_HISTORY_LOOKBACK_DAYS"),

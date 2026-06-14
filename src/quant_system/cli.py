@@ -1475,7 +1475,7 @@ def _build_radar_screen_config(settings) -> OptionsScreenerConfig:
         strategy_type="sell_put",
         min_dte=settings.options_radar.min_dte_for_radar,
         max_dte=settings.options_radar.max_dte_for_radar,
-        max_delta=0.45,
+        max_delta=settings.options_radar.max_delta_for_radar,
         min_premium=0.10,
         min_apr=0.0,
         max_spread_pct=0.25,
