@@ -6,8 +6,10 @@ import time
 
 import pandas as pd
 import pytest
+from pydantic import SecretStr
 
 from quant_system.config.settings import ApiKeySettings, DataSettings, FutuSettings, Settings
+from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.execution.account import PaperAccount
 from quant_system.execution.account_service import (
     AccountFrozenError,
@@ -206,6 +208,124 @@ def test_price_source_uses_only_real_rows_from_local_cache(tmp_path) -> None:
     assert quote.price == pytest.approx(201.0)
     assert quote.price_kind == "last_close"
     assert quote.source == "local:tiingo"
+
+
+def test_price_source_prefers_futu_snapshot_over_local_close(tmp_path, monkeypatch) -> None:
+    parquet_dir = tmp_path / "parquet"
+    parquet_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "symbol": "AAPL",
+                "timestamp": pd.Timestamp.now(tz="UTC"),
+                "close": 201.0,
+                "provider": "tiingo",
+            }
+        ]
+    ).to_parquet(parquet_dir / "ohlcv.parquet", index=False)
+
+    def fake_snapshots(self, symbols: list[str]) -> pd.DataFrame:  # noqa: ARG001
+        assert symbols == ["US.AAPL"]
+        return pd.DataFrame(
+            [
+                {
+                    "symbol": "US.AAPL",
+                    "last": 225.5,
+                    "update_time": "2026-06-12T14:30:00Z",
+                }
+            ]
+        )
+
+    monkeypatch.setattr(
+        FutuMarketDataProvider,
+        "fetch_market_snapshots",
+        fake_snapshots,
+    )
+    settings = Settings(
+        data=DataSettings(
+            data_dir=tmp_path,
+            parquet_dir=parquet_dir,
+            duckdb_path=tmp_path / "quant_system.duckdb",
+        ),
+        api_keys=ApiKeySettings(tiingo_api_token=None),
+        futu=FutuSettings(enabled=True),
+    )
+
+    quote = PaperPriceSource(settings).get_price("AAPL")
+
+    assert quote.price == pytest.approx(225.5)
+    assert quote.price_kind == "futu_snapshot"
+    assert quote.source == "futu"
+
+
+def test_price_source_falls_back_to_tiingo_remote_when_local_cache_missing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    class FakeTiingoProvider:
+        def fetch_ohlcv(self, symbols: list[str], *, start: str, end: str) -> pd.DataFrame:
+            assert symbols == ["AAPL"]
+            assert start < end
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": "AAPL",
+                        "timestamp": pd.Timestamp("2026-06-12", tz="UTC"),
+                        "close": 208.25,
+                    }
+                ]
+            )
+
+    def fake_build_ohlcv_provider(settings: Settings, *, requested: str):  # noqa: ARG001
+        assert requested == "tiingo"
+        return FakeTiingoProvider(), "tiingo"
+
+    monkeypatch.setattr(
+        "quant_system.execution.price_source.build_ohlcv_provider",
+        fake_build_ohlcv_provider,
+    )
+    settings = Settings(
+        data=DataSettings(
+            data_dir=tmp_path,
+            parquet_dir=tmp_path / "parquet",
+            duckdb_path=tmp_path / "quant_system.duckdb",
+        ),
+        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("token")),
+        futu=FutuSettings(enabled=False),
+    )
+
+    quote = PaperPriceSource(settings).get_price("AAPL")
+
+    assert quote.price == pytest.approx(208.25)
+    assert quote.price_kind == "last_close"
+    assert quote.source == "tiingo"
+
+
+def test_price_source_rejects_local_close_outside_cutoff_window(tmp_path) -> None:
+    parquet_dir = tmp_path / "parquet"
+    parquet_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "symbol": "AAPL",
+                "timestamp": pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=31),
+                "close": 201.0,
+                "provider": "tiingo",
+            }
+        ]
+    ).to_parquet(parquet_dir / "ohlcv.parquet", index=False)
+    settings = Settings(
+        data=DataSettings(
+            data_dir=tmp_path,
+            parquet_dir=parquet_dir,
+            duckdb_path=tmp_path / "quant_system.duckdb",
+        ),
+        api_keys=ApiKeySettings(tiingo_api_token=None),
+        futu=FutuSettings(enabled=False),
+    )
+
+    with pytest.raises(PriceUnavailableError):
+        PaperPriceSource(settings).get_price("AAPL", lookback_days=10)
 
 
 def test_frozen_account_rejects_manual_order() -> None:
