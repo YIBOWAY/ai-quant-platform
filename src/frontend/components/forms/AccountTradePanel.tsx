@@ -29,6 +29,7 @@ const copy = {
     notional: "Notional ($)",
     sizeRequired: "Enter a positive size",
     limitPrice: "Limit price (optional)",
+    limitPriceHint: "Limit orders are checked once against the current paper price. If the price is not met, the order is not queued.",
     submit: "Submit Order",
     submitting: "Submitting...",
     rebalanceTitle: "Strategy Rebalance",
@@ -83,6 +84,7 @@ const copy = {
     notional: "金额（美元）",
     sizeRequired: "请输入大于 0 的数量/金额",
     limitPrice: "限价（可选）",
+    limitPriceHint: "限价单只按当前模拟价格检查一次；未满足价格条件时不会挂单。",
     submit: "提交订单",
     submitting: "提交中...",
     rebalanceTitle: "策略再平衡",
@@ -348,6 +350,7 @@ export function AccountTradePanel({
               setValueAs: (value) => (value === "" ? undefined : Number(value)),
             })}
           />
+          <span className="font-body-sm text-text-secondary">{text.limitPriceHint}</span>
         </label>
         {manualError ? <p className="font-body-sm text-danger">{manualError}</p> : null}
         <button

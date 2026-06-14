@@ -163,7 +163,8 @@ curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
 
 - 手动下单：`POST /api/paper/account/orders`（买/卖、按数量或金额、可选限价）。
   成交价优先使用 Futu 实时快照，OpenD 离线时只回退到本地缓存或 Tiingo
-  的真实最近收盘价；持续账户绝不会使用 sample / 演示价格成交。
+  的真实最近收盘价；限价单只按该模拟价格检查一次，未满足条件时返回
+  `unfilled`，不会进入挂单队列；持续账户绝不会使用 sample / 演示价格成交。
 - 策略再平衡：`POST /api/paper/account/rebalance`（一键；任一腿无法成交则整体原子中止）。
   它只接受真实市场历史；sample 演示历史不会改变持续账户。
 - 查看 / 冻结 / 重置 / 账本：`GET /api/paper/account`、

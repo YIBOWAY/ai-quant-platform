@@ -216,6 +216,7 @@ def test_limit_price_blocks_unfavorable_fill(tmp_path, stub_prices) -> None:
     ).json()
     assert blocked["order"]["status"] == "unfilled"
     assert blocked["order"]["filled_quantity"] == 0
+    assert "not queued" in blocked["order"]["rejected_reason"]
     # A generous limit fills.
     ok = client.post(
         "/api/paper/account/orders",

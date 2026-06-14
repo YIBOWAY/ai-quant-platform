@@ -319,7 +319,8 @@ class PaperAccountService:
             if limit_price is not None:
                 outcome_reason = (
                     f"current price {price:.4f} does not satisfy limit price "
-                    f"{limit_price:.4f}"
+                    f"{limit_price:.4f}; paper limit orders are checked once "
+                    "and not queued"
                 )
             elif side == OrderSide.BUY:
                 outcome_reason = "insufficient cash"

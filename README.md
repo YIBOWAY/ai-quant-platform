@@ -212,7 +212,9 @@ simulation-only — no real orders, broker, wallet, or account unlock.
 - Manual order: `POST /api/paper/account/orders` (buy/sell, quantity or
   notional, optional limit). Fills at the Futu real-time snapshot price, or the
   most recent real historical close from local cache/Tiingo when OpenD is
-  offline. The persistent account never uses sample/demo prices.
+  offline. A limit order is checked once against that paper price; if the limit
+  is not met, it is returned as `unfilled` and is not queued. The persistent
+  account never uses sample/demo prices.
 - Strategy rebalance: `POST /api/paper/account/rebalance` (one-click; aborts
   atomically if any leg cannot fill). It only uses real market history; sample
   strategy history never mutates the persistent account.

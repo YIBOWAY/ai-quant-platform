@@ -157,6 +157,7 @@ def test_unfilled_manual_order_explains_why() -> None:
 
     assert outcome.status == "unfilled"
     assert "does not satisfy limit price" in outcome.rejected_reason
+    assert "not queued" in outcome.rejected_reason
 
 
 def test_manual_sell_over_position_reports_partial_fill() -> None:

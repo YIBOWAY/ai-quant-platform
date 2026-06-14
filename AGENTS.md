@@ -107,6 +107,9 @@ on the Position Map.
   `POST /api/paper/account/kill-switch`, `GET /api/paper/account/ledger`.
   All mutating routes serialize per account in-process and share a filesystem
   lock with CLI/scheduled rebalance processes.
+- Manual limit orders are IOC-like in the persistent account: they are checked
+  once against the current paper price and return `unfilled` when not met; they
+  are not persisted as pending orders.
 - CLI: `quant-system paper rebalance --account default --strategy <id>` (for
   scheduled auto-rebalance; exits non-zero on abort/failure) and
   `quant-system paper account-show`.
