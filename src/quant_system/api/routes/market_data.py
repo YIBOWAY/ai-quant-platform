@@ -4,7 +4,10 @@ from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.common import dataframe_records
-from quant_system.data.provider_factory import build_ohlcv_provider
+from quant_system.data.provider_factory import (
+    DataProviderUnavailableError,
+    build_ohlcv_provider,
+)
 from quant_system.data.providers.futu import FutuProviderError
 from quant_system.data.providers.sample import SampleOHLCVProvider
 
@@ -22,7 +25,10 @@ def market_data_history(
 ) -> dict:
     symbol = ticker.upper().strip()
     requested_provider = provider or settings.data.default_data_provider
-    active_provider, source = build_ohlcv_provider(settings, requested=provider)
+    try:
+        active_provider, source = build_ohlcv_provider(settings, requested=provider)
+    except DataProviderUnavailableError as exc:
+        raise _provider_unavailable_400(exc) from exc
     try:
         frame = active_provider.fetch_ohlcv([symbol], start=start, end=end, interval=freq)
     except FutuProviderError as exc:
@@ -88,3 +94,14 @@ def _status_for_futu_error(code: str) -> int:
     if code == "no_data":
         return 404
     return 502
+
+
+def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "code": "provider_unavailable",
+            "provider": exc.provider,
+            "message": str(exc),
+        },
+    )

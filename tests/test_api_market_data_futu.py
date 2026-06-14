@@ -4,7 +4,7 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import DataSettings, Settings
+from quant_system.config.settings import ApiKeySettings, DataSettings, Settings
 from quant_system.data.providers.futu import FutuProviderError
 from quant_system.data.schema import normalize_ohlcv_dataframe
 
@@ -86,6 +86,27 @@ def test_market_data_history_maps_futu_error(tmp_path, monkeypatch) -> None:
     assert response.status_code == 503
     payload = response.json()
     assert payload["detail"]["code"] == "opend_unavailable"
+    assert payload["safety"]["live_trading_enabled"] is False
+
+
+def test_market_data_history_rejects_unavailable_requested_provider(tmp_path) -> None:
+    settings = Settings(api_keys=ApiKeySettings(tiingo_api_token=None))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.get(
+        "/api/market-data/history",
+        params={
+            "ticker": "AAPL",
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "tiingo",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["detail"]["code"] == "provider_unavailable"
+    assert payload["detail"]["provider"] == "tiingo"
     assert payload["safety"]["live_trading_enabled"] is False
 
 
