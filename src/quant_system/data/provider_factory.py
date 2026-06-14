@@ -10,6 +10,13 @@ from quant_system.data.providers.tiingo import TiingoEODProvider
 from quant_system.data.storage import LocalDataStorage
 
 
+class DataProviderUnavailableError(RuntimeError):
+    def __init__(self, provider: str, reason: str) -> None:
+        self.provider = provider
+        self.reason = reason
+        super().__init__(f"{provider} provider unavailable: {reason}")
+
+
 class CachedOHLCVProvider:
     def __init__(
         self,
@@ -120,6 +127,8 @@ def build_ohlcv_provider(
                 ),
                 "futu",
             )
+        if requested is not None:
+            raise DataProviderUnavailableError("futu", "disabled")
         return SampleOHLCVProvider(), "sample (futu: disabled)"
     if name == "tiingo" and token_value:
         return _cached_provider(
@@ -127,6 +136,8 @@ def build_ohlcv_provider(
             settings=settings,
         ), "tiingo"
     if name == "tiingo" and not token_value:
+        if requested is not None:
+            raise DataProviderUnavailableError("tiingo", "missing token")
         return SampleOHLCVProvider(), "sample (tiingo: missing token)"
     return SampleOHLCVProvider(), "sample"
 

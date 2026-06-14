@@ -8,7 +8,10 @@ from pydantic import BaseModel, ConfigDict
 from quant_system.backtest.models import TargetWeight
 from quant_system.backtest.strategy import ScoreSignalStrategy
 from quant_system.config.settings import Settings, load_settings
-from quant_system.data.provider_factory import build_ohlcv_provider
+from quant_system.data.provider_factory import (
+    DataProviderUnavailableError,
+    build_ohlcv_provider,
+)
 from quant_system.execution.models import OrderRequest, OrderSide
 from quant_system.execution.order_manager import OrderManager
 from quant_system.execution.paper_broker import PaperBroker
@@ -68,7 +71,12 @@ def run_paper_trading(
 ) -> PaperTradingRunResult:
     active_settings = settings or load_settings()
     ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
-    ohlcv = ohlcv_provider.fetch_ohlcv(symbols, start=start, end=end)
+    try:
+        ohlcv = ohlcv_provider.fetch_ohlcv(symbols, start=start, end=end)
+    except Exception as exc:
+        if provider is not None:
+            raise DataProviderUnavailableError(provider, exc.__class__.__name__) from exc
+        raise
     factor_results = compute_factor_pipeline(
         ohlcv,
         factors=build_default_factors(lookback=lookback),

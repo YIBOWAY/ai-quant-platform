@@ -11,7 +11,10 @@ from quant_system.backtest.reporting import generate_backtest_report
 from quant_system.backtest.storage import LocalBacktestStorage
 from quant_system.backtest.strategy import MeanReversionTopN, ScoreSignalStrategy
 from quant_system.config.settings import Settings, load_settings
-from quant_system.data.provider_factory import build_ohlcv_provider
+from quant_system.data.provider_factory import (
+    DataProviderUnavailableError,
+    build_ohlcv_provider,
+)
 from quant_system.experiments.models import FactorBlendConfig, FactorDirection, FactorWeight
 from quant_system.experiments.scoring import build_multifactor_score_frame
 from quant_system.factors.pipeline import (
@@ -80,7 +83,12 @@ def run_backtest(
         for factor_id in resolved_factor_ids
     }
     ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
-    ohlcv = ohlcv_provider.fetch_ohlcv(resolved_symbols, start=start, end=end)
+    try:
+        ohlcv = ohlcv_provider.fetch_ohlcv(resolved_symbols, start=start, end=end)
+    except Exception as exc:
+        if provider is not None:
+            raise DataProviderUnavailableError(provider, exc.__class__.__name__) from exc
+        raise
     factors = _create_factors(resolved_factor_ids, lookback=lookback)
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
     signal_frame = build_multifactor_score_frame(

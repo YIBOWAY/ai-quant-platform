@@ -128,6 +128,66 @@ def test_paper_run_does_not_create_per_run_duckdb(tmp_path) -> None:
     assert list(tmp_path.rglob("*.duckdb")) == []
 
 
+def test_paper_run_rejects_explicit_unavailable_provider(tmp_path) -> None:
+    settings = Settings(api_keys=ApiKeySettings(tiingo_api_token=None))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "tiingo",
+            "enable_kill_switch": True,
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "provider_unavailable"
+    assert not (tmp_path / "api_runs" / "paper").exists()
+
+
+def test_paper_run_rejects_explicit_provider_fetch_failure(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(
+        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token"))
+    )
+
+    def fail_fetch(self, symbols, *, start, end, interval="1d"):
+        raise RuntimeError("tiingo offline")
+
+    monkeypatch.setattr(
+        "quant_system.data.provider_factory.TiingoEODProvider.fetch_ohlcv",
+        fail_fetch,
+    )
+    client = TestClient(
+        create_app(settings=settings, output_dir=tmp_path),
+        raise_server_exceptions=False,
+    )
+
+    response = client.post(
+        "/api/paper/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "tiingo",
+            "enable_kill_switch": True,
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "provider_unavailable"
+    assert not (tmp_path / "api_runs" / "paper").exists()
+
+
 def test_paper_detail_404_for_unknown_run(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 

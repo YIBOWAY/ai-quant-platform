@@ -100,6 +100,64 @@ def test_backtest_run_does_not_create_per_run_duckdb(tmp_path) -> None:
     assert list(tmp_path.rglob("*.duckdb")) == []
 
 
+def test_backtest_run_rejects_explicit_unavailable_provider(tmp_path) -> None:
+    settings = Settings(api_keys=ApiKeySettings(tiingo_api_token=None))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/backtests/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "tiingo",
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "provider_unavailable"
+    assert not (tmp_path / "api_runs" / "backtests").exists()
+
+
+def test_backtest_run_rejects_explicit_provider_fetch_failure(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(
+        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token"))
+    )
+
+    def fail_fetch(self, symbols, *, start, end, interval="1d"):
+        raise RuntimeError("tiingo offline")
+
+    monkeypatch.setattr(
+        "quant_system.data.provider_factory.TiingoEODProvider.fetch_ohlcv",
+        fail_fetch,
+    )
+    client = TestClient(
+        create_app(settings=settings, output_dir=tmp_path),
+        raise_server_exceptions=False,
+    )
+
+    response = client.post(
+        "/api/backtests/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "tiingo",
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "provider_unavailable"
+    assert not (tmp_path / "api_runs" / "backtests").exists()
+
+
 def test_backtest_run_records_single_symbol_no_trade_warning(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 

@@ -13,6 +13,7 @@ from quant_system.api.schemas.common import (
     resolve_run_dir,
 )
 from quant_system.backtest.pipeline import run_backtest as execute_backtest
+from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.storage.runs_repository import index_run, list_run_metadatas
 
 router = APIRouter()
@@ -54,6 +55,8 @@ def run_backtest(
             status_code=400,
             detail={"code": "invalid_backtest_request", "message": str(exc)},
         ) from exc
+    except DataProviderUnavailableError as exc:
+        raise _provider_unavailable_400(exc) from exc
     metadata = {
         "run_id": run_id,
         "source": result.source,
@@ -103,6 +106,17 @@ def run_backtest(
     )
     index_run("backtest", metadata, run_dir, settings)
     return metadata
+
+
+def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "code": "provider_unavailable",
+            "provider": exc.provider,
+            "message": str(exc),
+        },
+    )
 
 
 @router.get("/backtests")

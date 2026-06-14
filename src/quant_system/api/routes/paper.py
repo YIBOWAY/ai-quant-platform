@@ -18,6 +18,7 @@ from quant_system.api.schemas.paper import (
     ManualOrderRequest,
     PaperRunRequest,
 )
+from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
 from quant_system.execution.account_service import (
     AccountFrozenError,
@@ -50,19 +51,22 @@ def run_paper(
         )
     run_id = make_run_id("paper")
     run_dir = api_runs_dir / "paper" / run_id
-    result = run_paper_trading(
-        symbols=request.symbols,
-        start=request.start,
-        end=request.end,
-        output_dir=run_dir,
-        initial_cash=request.initial_cash,
-        lookback=request.lookback,
-        top_n=request.top_n,
-        kill_switch=request.enable_kill_switch,
-        max_fill_ratio_per_tick=request.max_fill_ratio_per_tick,
-        provider=request.provider,
-        settings=settings,
-    )
+    try:
+        result = run_paper_trading(
+            symbols=request.symbols,
+            start=request.start,
+            end=request.end,
+            output_dir=run_dir,
+            initial_cash=request.initial_cash,
+            lookback=request.lookback,
+            top_n=request.top_n,
+            kill_switch=request.enable_kill_switch,
+            max_fill_ratio_per_tick=request.max_fill_ratio_per_tick,
+            provider=request.provider,
+            settings=settings,
+        )
+    except DataProviderUnavailableError as exc:
+        raise _provider_unavailable_400(exc) from exc
     metadata = {
         "run_id": run_id,
         "source": result.source,
@@ -99,6 +103,17 @@ def run_paper(
     )
     index_run("paper", metadata, run_dir, settings)
     return metadata
+
+
+def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "code": "provider_unavailable",
+            "provider": exc.provider,
+            "message": str(exc),
+        },
+    )
 
 
 @router.get("/paper")

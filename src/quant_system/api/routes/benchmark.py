@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import pandas as pd
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.common import dataframe_records
 from quant_system.backtest.metrics import calculate_performance_metrics
-from quant_system.data.provider_factory import build_ohlcv_provider
+from quant_system.data.provider_factory import (
+    DataProviderUnavailableError,
+    build_ohlcv_provider,
+)
 from quant_system.data.providers.sample import SampleOHLCVProvider
 
 router = APIRouter()
@@ -21,10 +24,17 @@ def benchmark(
     provider: str | None = None,
 ) -> dict:
     normalized_symbol = symbol.upper().strip()
-    active_provider, source = build_ohlcv_provider(settings, requested=provider)
+    try:
+        active_provider, source = build_ohlcv_provider(settings, requested=provider)
+    except DataProviderUnavailableError as exc:
+        raise _provider_unavailable_400(exc) from exc
     try:
         ohlcv = active_provider.fetch_ohlcv([normalized_symbol], start=start, end=end)
     except Exception as exc:
+        if provider is not None:
+            raise _provider_unavailable_400(
+                DataProviderUnavailableError(provider, exc.__class__.__name__)
+            ) from exc
         ohlcv = SampleOHLCVProvider().fetch_ohlcv([normalized_symbol], start=start, end=end)
         source = f"sample ({source} failed: {exc.__class__.__name__})"
     sorted_ohlcv = ohlcv.sort_values("timestamp")
@@ -42,3 +52,14 @@ def benchmark(
         "equity_curve": dataframe_records(curve),
         "metrics": metrics.model_dump(),
     }
+
+
+def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "code": "provider_unavailable",
+            "provider": exc.provider,
+            "message": str(exc),
+        },
+    )

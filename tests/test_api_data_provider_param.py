@@ -115,7 +115,7 @@ def test_ohlcv_provider_param_uses_tiingo_when_requested(
     assert payload["rows"][0]["close"] == 472.65
 
 
-def test_ohlcv_provider_param_reports_missing_tiingo_token(tmp_path) -> None:
+def test_ohlcv_provider_param_rejects_missing_tiingo_token(tmp_path) -> None:
     settings = Settings(api_keys=ApiKeySettings(tiingo_api_token=None))
     client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
@@ -129,5 +129,5 @@ def test_ohlcv_provider_param_reports_missing_tiingo_token(tmp_path) -> None:
         },
     )
 
-    assert response.status_code == 200
-    assert response.json()["source"].startswith("sample (tiingo: missing token)")
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "provider_unavailable"

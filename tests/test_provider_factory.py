@@ -1,7 +1,12 @@
+import pytest
 from pydantic import SecretStr
 
 from quant_system.config.settings import ApiKeySettings, DataSettings, FutuSettings, Settings
-from quant_system.data.provider_factory import CachedOHLCVProvider, build_ohlcv_provider
+from quant_system.data.provider_factory import (
+    CachedOHLCVProvider,
+    DataProviderUnavailableError,
+    build_ohlcv_provider,
+)
 from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.data.providers.sample import SampleOHLCVProvider
 from quant_system.data.providers.tiingo import TiingoEODProvider
@@ -107,6 +112,13 @@ def test_build_provider_falls_back_when_tiingo_token_missing() -> None:
 
     assert isinstance(provider, SampleOHLCVProvider)
     assert source == "sample (tiingo: missing token)"
+
+
+def test_build_provider_rejects_explicit_tiingo_when_token_missing() -> None:
+    with pytest.raises(DataProviderUnavailableError) as exc_info:
+        build_ohlcv_provider(_settings(default_provider="sample"), requested="tiingo")
+
+    assert exc_info.value.provider == "tiingo"
 
 
 def test_build_provider_respects_explicit_sample_request() -> None:

@@ -11,6 +11,7 @@ from quant_system.api.schemas.common import (
     resolve_run_dir,
 )
 from quant_system.api.schemas.factors import FactorRunRequest
+from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.factors.lab import build_factor_lab_dashboard
 from quant_system.factors.pipeline import run_factor_research
 from quant_system.factors.registry import build_default_factor_registry
@@ -38,16 +39,19 @@ def run_factor(
 ) -> dict:
     run_id = make_run_id("factor")
     run_dir = api_runs_dir / "factors" / run_id
-    result = run_factor_research(
-        symbols=request.symbols,
-        start=request.start,
-        end=request.end,
-        output_dir=run_dir,
-        lookback=request.lookback,
-        quantiles=request.quantiles,
-        provider=request.provider,
-        settings=settings,
-    )
+    try:
+        result = run_factor_research(
+            symbols=request.symbols,
+            start=request.start,
+            end=request.end,
+            output_dir=run_dir,
+            lookback=request.lookback,
+            quantiles=request.quantiles,
+            provider=request.provider,
+            settings=settings,
+        )
+    except DataProviderUnavailableError as exc:
+        raise _provider_unavailable_400(exc) from exc
     metadata = {
         "run_id": run_id,
         "source": result.source,
@@ -77,6 +81,17 @@ def run_factor(
     )
     index_run("factor", metadata, run_dir, settings)
     return metadata
+
+
+def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "code": "provider_unavailable",
+            "provider": exc.provider,
+            "message": str(exc),
+        },
+    )
 
 
 @router.get("/factors/runs")

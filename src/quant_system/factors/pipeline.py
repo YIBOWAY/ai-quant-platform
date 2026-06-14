@@ -6,7 +6,10 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from quant_system.config.settings import Settings, load_settings
-from quant_system.data.provider_factory import build_ohlcv_provider
+from quant_system.data.provider_factory import (
+    DataProviderUnavailableError,
+    build_ohlcv_provider,
+)
 from quant_system.factors.base import FACTOR_RESULT_COLUMNS, BaseFactor
 from quant_system.factors.evaluation import (
     calculate_information_coefficients,
@@ -125,7 +128,12 @@ def run_factor_research(
 ) -> FactorResearchResult:
     active_settings = settings or load_settings()
     ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
-    ohlcv = ohlcv_provider.fetch_ohlcv(symbols, start=start, end=end)
+    try:
+        ohlcv = ohlcv_provider.fetch_ohlcv(symbols, start=start, end=end)
+    except Exception as exc:
+        if provider is not None:
+            raise DataProviderUnavailableError(provider, exc.__class__.__name__) from exc
+        raise
     factors = build_default_factors(lookback=lookback)
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
     signal_frame = build_factor_signal_frame(factor_results)
