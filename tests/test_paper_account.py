@@ -67,6 +67,18 @@ class _StubPriceSource:
         return out
 
 
+class _PartialPriceSource(_StubPriceSource):
+    """Price source that can omit symbols from bulk quote resolution."""
+
+    def get_prices(self, symbols: list[str], **_kwargs) -> dict[str, PricedQuote]:
+        return {
+            symbol.upper(): quote
+            for symbol in symbols
+            if symbol.upper() in self._prices
+            for quote in [self.get_price(symbol)]
+        }
+
+
 def test_open_new_account_defaults_to_one_million() -> None:
     account = PaperAccount.open_new()
     assert account.cash == 1_000_000.0
@@ -355,6 +367,24 @@ def test_rebalance_requests_sell_before_buy_and_hit_targets() -> None:
     assert requests[0][0] == "AAPL"
     assert requests[0][1] == OrderSide.SELL
     assert any(sym == "MSFT" and side == OrderSide.BUY for sym, side, _ in requests)
+
+
+def test_rebalance_requires_prices_for_every_target_and_holding(monkeypatch) -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    service = PaperAccountService(price_source=_PartialPriceSource({"AAPL": 100.0}))
+    monkeypatch.setattr(
+        service,
+        "_compute_target_weights",
+        lambda **_kwargs: ({"AAPL": 0.5, "MSFT": 0.5}, "2024-01-02T00:00:00Z"),
+    )
+
+    with pytest.raises(PriceUnavailableError, match="MSFT"):
+        service.rebalance_to_strategy(
+            account,
+            strategy_id="cross_sectional_top_n",
+            symbols=["AAPL", "MSFT"],
+            top_n=2,
+        )
 
 
 def test_storage_mutation_lock_serializes_independent_callers(tmp_path) -> None:

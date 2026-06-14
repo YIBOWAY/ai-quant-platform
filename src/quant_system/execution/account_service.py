@@ -137,6 +137,11 @@ class PaperAccountService:
         # Price every symbol that is either targeted or currently held.
         relevant = sorted(set(target_weights) | set(account.positions))
         quotes = self.price_source.get_prices(relevant)
+        missing_prices = [symbol for symbol in relevant if symbol not in quotes]
+        if missing_prices:
+            raise PriceUnavailableError(
+                "missing rebalance prices for: " + ", ".join(missing_prices)
+            )
         prices = {sym: q.price for sym, q in quotes.items()}
         equity = account.equity(prices)
 
