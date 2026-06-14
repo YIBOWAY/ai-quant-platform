@@ -336,7 +336,7 @@ def _generate_rebalance_requests(
         current_value = portfolio.position(symbol) * price
         target_value = target_map.get(symbol, 0.0) * equity
         value_delta = target_value - current_value
-        if abs(value_delta) <= min_order_value:
+        if abs(value_delta) < min_order_value:
             continue
         side = OrderSide.BUY if value_delta > 0 else OrderSide.SELL
         quantity = abs(value_delta) / price
