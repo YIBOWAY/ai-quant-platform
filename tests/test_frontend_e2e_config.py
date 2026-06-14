@@ -70,6 +70,19 @@ def test_dev_scripts_use_project_ports_and_docker_database_probe() -> None:
     assert 'foreach ($Name in @("frontend", "backend"))' in stop_script
 
 
+def test_options_radar_scheduler_script_uses_env_python_and_runtime_log() -> None:
+    script = Path("scripts/run_options_radar.ps1").read_text(encoding="utf-8")
+
+    assert "D:\\anaconda3" not in script
+    assert "conda info --base" in script
+    assert 'Join-Path $CondaBase "envs\\ai-quant\\python.exe"' in script
+    assert 'Join-Path $env:CONDA_PREFIX "python.exe"' in script
+    assert 'Join-Path $Root "data\\_runtime\\logs"' in script
+    assert '"options-radar.log"' in script
+    assert "Tee-Object" in script
+    assert "options daily-scan --top 100" in script
+
+
 def test_frontend_package_has_no_ai_studio_template_residue() -> None:
     package = json.loads(
         Path("src/frontend/package.json").read_text(encoding="utf-8")

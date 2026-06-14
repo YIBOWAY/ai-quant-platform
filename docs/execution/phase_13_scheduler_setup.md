@@ -33,14 +33,20 @@ powershell.exe
 scripts/run_options_radar.ps1
 ```
 
-该脚本使用：
+该脚本会按顺序寻找可用解释器：
 
-```text
-D:\anaconda3\envs\ai-quant\python.exe
-```
+- `conda info --base` 下的 `envs\ai-quant\python.exe`
+- 当前 `CONDA_PREFIX` 下的 `python.exe`
+- `PATH` 中的 `python`
 
-并调用：
+然后调用：
 
 ```text
 python -m quant_system.cli options daily-scan --top 100
+```
+
+调度输出会追加到：
+
+```text
+data/_runtime/logs/options-radar.log
 ```
