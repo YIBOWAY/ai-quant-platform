@@ -71,3 +71,24 @@ def test_performance_metrics_include_return_risk_drawdown_and_turnover() -> None
     assert metrics.max_drawdown == pytest.approx(0.10)
     assert metrics.turnover == pytest.approx(0.75)
     assert metrics.volatility > 0
+
+
+def test_performance_metrics_match_hand_calculated_return_and_sharpe() -> None:
+    equity_curve = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2024-01-02", periods=5, freq="B", tz="UTC"),
+            "equity": [100.0, 110.0, 132.0, 118.8, 124.74],
+        }
+    )
+
+    metrics = calculate_performance_metrics(
+        equity_curve,
+        pd.DataFrame(),
+        initial_cash=100.0,
+        annualization_factor=4,
+    )
+
+    assert metrics.total_return == pytest.approx(0.2474)
+    assert metrics.annualized_return == pytest.approx(0.2474)
+    assert metrics.volatility == pytest.approx(0.2165063509461097)
+    assert metrics.sharpe == pytest.approx(1.1547005383792515)
