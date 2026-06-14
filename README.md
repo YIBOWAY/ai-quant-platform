@@ -168,6 +168,19 @@ The `psycopg` driver ships with the `api` extra. The database stores research
 run metadata only; the connection URL is masked in `/api/settings`. See
 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md).
 
+## Backup Local Runs
+
+Research runs and the persistent paper account are local files under
+`data/api_runs/`. Create a zip backup before large refactors or disk moves:
+
+```powershell
+conda activate ai-quant
+python scripts/backup_api_runs.py --data-dir data --output-dir data/backups
+```
+
+The archive includes `api_runs/` and a `manifest.json`; it does not include
+`.env`, DuckDB files, lock files, logs, or API keys.
+
 ## Paper Account
 
 A single persistent paper account (funded at $1,000,000) lets you trade by hand
