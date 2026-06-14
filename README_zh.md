@@ -41,12 +41,17 @@ conda activate ai-quant
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
+CLI 后端入口会把结构化 JSONL 运行日志写入
+`data/_runtime/logs/backend.jsonl`，同时保留控制台输出。
+
 等效的直接 FastAPI 命令：
 
 ```powershell
 conda activate ai-quant
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
+
+直接 app factory 启动路径也会写入同一个 `backend.jsonl` 运行日志。
 
 在另一个 PowerShell 窗口中启动前端：
 

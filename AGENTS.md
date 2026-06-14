@@ -180,12 +180,17 @@ conda activate ai-quant
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
+This writes structured backend JSONL logs to
+`data/_runtime/logs/backend.jsonl`.
+
 Equivalent direct FastAPI start:
 
 ```powershell
 conda activate ai-quant
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
+
+The app factory also writes the same backend runtime log file.
 
 Health check:
 

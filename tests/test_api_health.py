@@ -19,6 +19,15 @@ def test_health_returns_safety_snapshot(tmp_path) -> None:
     assert payload["safety"]["bind_address"] == "127.0.0.1"
 
 
+def test_create_app_writes_runtime_log_file(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert (tmp_path / "_runtime" / "logs" / "backend.jsonl").exists()
+
+
 def test_create_app_rejects_public_bind_without_confirmation(tmp_path) -> None:
     with pytest.raises(ValueError, match="0.0.0.0"):
         create_app(output_dir=tmp_path, bind_address="0.0.0.0")

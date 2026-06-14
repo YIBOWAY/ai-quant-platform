@@ -34,6 +34,7 @@ from quant_system.api.routes import (
 )
 from quant_system.api.safety.middleware import attach_safety_footer, validate_bind_address
 from quant_system.config.settings import Settings
+from quant_system.logging.setup import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,11 @@ def create_app(
         bind_address=active_bind_address,
     )
     active_settings: Settings = services["settings"]
+    configure_logging(
+        active_settings.log_level,
+        log_dir=services["output_dir"] / "_runtime" / "logs",
+    )
+    logger.info("api app configured")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

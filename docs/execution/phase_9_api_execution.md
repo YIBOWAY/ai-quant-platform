@@ -28,6 +28,11 @@ quant-system serve --host 127.0.0.1 --port 8765
 ```
 
 这两条命令启动的是同一个 FastAPI app。`quant-system serve` 内部仍然调用 `uvicorn`，只是帮你封装了 app factory 路径和本地安全默认值。
+两条启动路径都会写结构化 JSONL 运行日志：
+
+```text
+data/_runtime/logs/backend.jsonl
+```
 
 打开健康检查：
 

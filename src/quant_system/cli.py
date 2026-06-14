@@ -180,11 +180,16 @@ def show_config() -> None:
     typer.echo(json.dumps(masked, indent=2, sort_keys=True))
 
 
+def _runtime_log_dir(settings) -> Path:
+    return settings.data.data_dir / "_runtime" / "logs"
+
+
 @app.command()
 def doctor() -> None:
     """Run a lightweight Phase 0 health check."""
     settings = load_settings()
-    configure_logging(settings.log_level)
+    logger = configure_logging(settings.log_level, log_dir=_runtime_log_dir(settings))
+    logger.info("doctor health check started")
 
     live_state = (
         "live trading enabled"
@@ -219,6 +224,9 @@ def serve_api(
     ] = False,
 ) -> None:
     """Start the Phase 9 localhost HTTP API."""
+    settings = load_settings()
+    logger = configure_logging(settings.log_level, log_dir=_runtime_log_dir(settings))
+    logger.info("api server starting", extra={"host": host, "port": port})
     if host == "0.0.0.0":
         if not bind_public:
             raise typer.BadParameter("0.0.0.0 requires --bind-public")
