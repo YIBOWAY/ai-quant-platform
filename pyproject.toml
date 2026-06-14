@@ -47,6 +47,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "pg: PostgreSQL integration tests that require QS_TEST_DATABASE_URL",
+]
 
 [tool.ruff]
 line-length = 100
