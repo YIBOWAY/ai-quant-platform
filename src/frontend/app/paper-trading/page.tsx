@@ -72,6 +72,7 @@ const copy = {
     researchOnly: "Research only",
     holdings: "Holdings",
     holdingsEmpty: "No open positions. Place a manual order or rebalance to a strategy.",
+    holdingsUnavailable: "Holdings unavailable while the account API is unreachable.",
     invested: "Invested",
     priceSource: "Prices",
     weight: "weight",
@@ -81,6 +82,7 @@ const copy = {
     ledgerDesc: "Latest ledger entries from orders and rebalances.",
     ledgerEmptyTitle: "No activity yet",
     ledgerEmptyDesc: "Manual orders and rebalances will appear here.",
+    ledgerUnavailable: "Ledger unavailable while the account API is unreachable.",
     viewOnMap: "View on position map",
     manual: "Manual",
     strategy: "Strategy",
@@ -162,6 +164,7 @@ const copy = {
     researchOnly: "仅研究",
     holdings: "持仓",
     holdingsEmpty: "暂无持仓。手动下单或按策略再平衡即可建立持仓。",
+    holdingsUnavailable: "账户接口不可达，暂不展示持仓，避免把离线误判为空仓。",
     invested: "已投资",
     priceSource: "报价",
     weight: "权重",
@@ -171,6 +174,7 @@ const copy = {
     ledgerDesc: "下单与再平衡产生的最新账本记录。",
     ledgerEmptyTitle: "暂无流水",
     ledgerEmptyDesc: "手动下单或再平衡后，这里会出现流水。",
+    ledgerUnavailable: "账户流水接口不可达，暂不展示流水，避免把离线误判为暂无活动。",
     viewOnMap: "在持仓地图查看",
     manual: "手动",
     strategy: "策略",
@@ -224,6 +228,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
   const detail = latestRun ? await getPaperRunDetail(latestRun.id) : null;
   const latest = latestRun?.summary;
   const accountDown = Boolean(account.apiError);
+  const ledgerDown = Boolean(ledger.apiError);
   const accountPnlPositive = account.pnl_abs >= 0;
   const killSwitchExplainerVisible =
     (latest?.trade_count ?? 0) === 0 && (latest?.risk_breach_count ?? 0) > 0;
@@ -244,8 +249,18 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
           positive={accountPnlPositive}
           text={text}
         />
-        <HoldingsPanel account={account} locale={locale} text={text} />
-        <LedgerPanel entries={ledger.entries} locale={locale} text={text} />
+        <HoldingsPanel
+          account={account}
+          accountDown={accountDown}
+          locale={locale}
+          text={text}
+        />
+        <LedgerPanel
+          entries={ledger.entries}
+          ledgerDown={ledgerDown}
+          locale={locale}
+          text={text}
+        />
       </div>
       <Card padded className="h-fit">
         <h2 className="mb-3 flex items-center gap-2 font-label-caps text-text-primary">
@@ -486,10 +501,12 @@ function ReplayStatusPill({
 
 function LedgerPanel({
   entries,
+  ledgerDown,
   locale,
   text,
 }: {
   entries: LedgerEntryView[];
+  ledgerDown: boolean;
   locale: "en" | "zh";
   text: (typeof copy)["en"] | (typeof copy)["zh"];
 }) {
@@ -508,7 +525,9 @@ function LedgerPanel({
           </Link>
         }
       />
-      {entries.length ? (
+      {ledgerDown ? (
+        <p className="py-4 text-center font-body-sm text-text-secondary">{text.ledgerUnavailable}</p>
+      ) : entries.length ? (
         <ol className="space-y-1.5">
           {entries.map((entry) => {
             const isStrategy = entry.source.startsWith("strategy:");
@@ -568,10 +587,12 @@ function formatShortTime(value: string) {
 
 function HoldingsPanel({
   account,
+  accountDown,
   locale,
   text,
 }: {
   account: Awaited<ReturnType<typeof getPaperAccount>>;
+  accountDown: boolean;
   locale: "en" | "zh";
   text: (typeof copy)["en"] | (typeof copy)["zh"];
 }) {
@@ -581,10 +602,12 @@ function HoldingsPanel({
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-label-caps text-text-primary">{text.holdings}</h2>
         <span className="font-data-mono text-[10px] uppercase text-text-secondary">
-          {text.priceSource}: {account.price_source.kind}
+          {text.priceSource}: {accountDown ? text.unknown : account.price_source.kind}
         </span>
       </div>
-      {positions.length === 0 ? (
+      {accountDown ? (
+        <p className="py-6 text-center font-body-sm text-text-secondary">{text.holdingsUnavailable}</p>
+      ) : positions.length === 0 ? (
         <p className="py-6 text-center font-body-sm text-text-secondary">{text.holdingsEmpty}</p>
       ) : (
         <div className="space-y-2">
