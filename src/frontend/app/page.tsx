@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import {
+  type RecentRun,
   formatMoney,
   formatPercent,
   getAgentCandidates,
@@ -21,6 +22,7 @@ import {
   getFactors,
   getHealth,
   getPaperRuns,
+  getRecentRuns,
   getSymbols,
 } from "@/lib/api";
 import { selectDisplayRun } from "@/lib/runSource";
@@ -116,13 +118,104 @@ const copy = {
   },
 };
 
+type DashboardCopy = (typeof copy)["en"] | (typeof copy)["zh"];
+
+function numberField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function metricField(run: RecentRun, key: string) {
+  const metrics = run.summary.metrics;
+  if (!metrics || typeof metrics !== "object" || Array.isArray(metrics)) {
+    return undefined;
+  }
+  return numberField(metrics as Record<string, unknown>, key);
+}
+
+function formatCount(value: number | undefined) {
+  if (value === undefined || Number.isNaN(value)) {
+    return "--";
+  }
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatRunSummary(run: RecentRun) {
+  if (run.kind === "backtest") {
+    const sharpe = metricField(run, "sharpe");
+    return [
+      `Sharpe ${sharpe === undefined ? "--" : sharpe.toFixed(2)}`,
+      `Return ${formatPercent(metricField(run, "total_return"))}`,
+      `Max DD ${formatPercent(metricField(run, "max_drawdown"))}`,
+    ].join(" | ");
+  }
+  if (run.kind === "factor") {
+    return [
+      `Rows ${formatCount(numberField(run.summary, "row_count"))}`,
+      `Signals ${formatCount(numberField(run.summary, "signal_count"))}`,
+    ].join(" | ");
+  }
+  return [
+    `Equity ${formatMoney(numberField(run.summary, "final_equity"))}`,
+    `Orders ${formatCount(numberField(run.summary, "order_count"))}`,
+    `Breaches ${formatCount(numberField(run.summary, "risk_breach_count"))}`,
+  ].join(" | ");
+}
+
+function formatRunTimestamp(value?: string | null) {
+  if (!value) {
+    return "--";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function runHref(run: RecentRun) {
+  if (run.kind === "backtest") {
+    return `/backtest/${run.run_id}`;
+  }
+  if (run.kind === "factor") {
+    return `/factor-lab/${run.run_id}`;
+  }
+  return `/paper-trading/${run.run_id}`;
+}
+
+function runKindLabel(run: RecentRun, text: DashboardCopy) {
+  if (run.kind === "backtest") {
+    return text.backtest;
+  }
+  if (run.kind === "factor") {
+    return text.runFactor;
+  }
+  return text.paperRun;
+}
+
+function RunKindIcon({ run }: { run: RecentRun }) {
+  if (run.kind === "backtest") {
+    return <LineChart size={14} className="text-info" />;
+  }
+  if (run.kind === "factor") {
+    return <FlaskConical size={14} className="text-warning" />;
+  }
+  return <BriefcaseBusiness size={14} className="text-accent-success" />;
+}
+
 export default async function Dashboard() {
-  const [health, symbols, factors, backtests, paperRuns, candidates, locale] = await Promise.all([
+  const [health, symbols, factors, backtests, paperRuns, recentRuns, candidates, locale] = await Promise.all([
     getHealth(),
     getSymbols(),
     getFactors(),
     getBacktests(),
     getPaperRuns(),
+    getRecentRuns(6),
     getAgentCandidates(),
     getServerLocale(),
   ]);
@@ -147,6 +240,7 @@ export default async function Dashboard() {
             factors.apiError,
             backtests.apiError,
             paperRuns.apiError,
+            recentRuns.apiError,
             candidates.apiError,
           ]}
         />
@@ -269,10 +363,51 @@ export default async function Dashboard() {
           </div>
         </section>
 
-        <EmptyState
-          title={text.activityLog}
-          description={text.activityLogDesc}
-        />
+        {recentRuns.runs.length > 0 ? (
+          <section>
+            <SectionTitle
+              title={text.activityLog}
+              right={
+                <span className="font-data-mono text-xs text-text-secondary">
+                  {formatCount(recentRuns.runs.length)} / {formatCount(recentRuns.total)}
+                </span>
+              }
+            />
+            <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
+              {recentRuns.runs.map((run) => (
+                <Link
+                  key={`${run.kind}-${run.run_id}`}
+                  href={localizePath(runHref(run), locale)}
+                  className="grid gap-2 border-b border-border-subtle px-3 py-3 transition-colors last:border-b-0 hover:bg-bg-surface-muted sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] sm:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <RunKindIcon run={run} />
+                      <span className="font-label-caps text-text-secondary">
+                        {runKindLabel(run, text)}
+                      </span>
+                      {run.source ? <DataSourceBadge source={run.source} /> : null}
+                    </div>
+                    <div className="mt-1 truncate font-data-mono text-xs text-text-primary">
+                      {run.run_id}
+                    </div>
+                  </div>
+                  <div className="font-data-mono text-xs text-text-secondary">
+                    {formatRunSummary(run)}
+                  </div>
+                  <div className="font-data-mono text-xs text-text-secondary sm:text-right">
+                    {formatRunTimestamp(run.created_at)}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <EmptyState
+            title={text.activityLog}
+            description={text.activityLogDesc}
+          />
+        )}
       </div>
 
       <aside className="flex w-full flex-shrink-0 flex-col gap-4 overflow-y-auto border-l border-border-subtle bg-bg-surface p-gutter lg:p-container-padding xl:w-[320px]">

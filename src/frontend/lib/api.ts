@@ -215,6 +215,22 @@ export type PaperRunDetailResponse = ApiEnvelope & {
   risk_breaches: PreviewRecord[];
 };
 
+export type RecentRunKind = "backtest" | "factor" | "paper";
+
+export type RecentRun = {
+  kind: RecentRunKind;
+  run_id: string;
+  source?: string | null;
+  created_at?: string | null;
+  summary: Record<string, unknown>;
+};
+
+export type RecentRunsResponse = ApiEnvelope & {
+  total: number;
+  generated_at: string;
+  runs: RecentRun[];
+};
+
 export type AccountPositionView = {
   symbol: string;
   quantity: number;
@@ -711,6 +727,16 @@ export function getBenchmark(
 export function getPaperRuns() {
   return apiGet<PaperRunsResponse>("/api/paper", {
     paper_runs: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getRecentRuns(limit = 6) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return apiGet<RecentRunsResponse>(`/api/runs/recent?${params.toString()}`, {
+    total: 0,
+    generated_at: "",
+    runs: [],
     safety: FALLBACK_SAFETY,
   });
 }
