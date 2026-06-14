@@ -94,3 +94,26 @@ def test_repository_does_not_contain_live_trading_redlines() -> None:
                 hits.append(f"{path}:{marker}")
 
     assert hits == []
+
+
+def test_futu_skill_does_not_ship_mutating_trade_scripts() -> None:
+    redlines = (
+        ".place_order(",
+        ".modify_order(",
+        ".cancel_all_order(",
+        "unlock_trade(",
+    )
+    hits: list[str] = []
+    skill_root = Path(".agents/skills/futuapi")
+    for path in skill_root.rglob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for marker in redlines:
+            if marker in text:
+                hits.append(f"{path}:{marker}")
+
+    assert hits == []
