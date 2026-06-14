@@ -288,7 +288,11 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
         <Card padded className="h-fit">
           <h3 className="font-label-caps text-text-secondary">{text.replayTitle}</h3>
           <p className="mb-3 mt-1 font-body-sm text-text-secondary">{text.replayDesc}</p>
-          <PaperRunForm locale={locale} futuReachable={health.futu_opend?.reachable !== false} />
+          <PaperRunForm
+            locale={locale}
+            futuReachable={health.futu_opend?.reachable !== false}
+            replayKillSwitch={health.safety?.kill_switch !== false}
+          />
           <div className="mt-4 flex items-center gap-2 font-body-sm text-text-secondary">
             <BriefcaseBusiness size={16} /> {text.localBatchNote}
           </div>

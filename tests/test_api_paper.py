@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import ApiKeySettings, Settings
+from quant_system.config.settings import ApiKeySettings, SafetySettings, Settings
 from quant_system.data.schema import normalize_ohlcv_dataframe
 
 
@@ -69,8 +69,30 @@ def test_paper_run_rejects_disabling_global_kill_switch(tmp_path) -> None:
     assert response.json()["safety"]["kill_switch"] is True
 
 
-def test_paper_run_list_and_detail_with_kill_switch_on(tmp_path) -> None:
+def test_paper_run_rejects_kill_switch_enabled_replay(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "sample",
+            "enable_kill_switch": True,
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 409
+    assert "replay kill switch" in response.json()["detail"].lower()
+    assert not (tmp_path / "api_runs" / "paper").exists()
+
+
+def test_paper_run_list_and_detail_with_kill_switch_off(tmp_path) -> None:
+    settings = Settings(safety=SafetySettings(kill_switch=False))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     run_response = client.post(
         "/api/paper/run",
@@ -79,7 +101,7 @@ def test_paper_run_list_and_detail_with_kill_switch_on(tmp_path) -> None:
             "start": "2024-01-02",
             "end": "2024-01-12",
             "provider": "sample",
-            "enable_kill_switch": True,
+            "enable_kill_switch": False,
             "lookback": 3,
             "top_n": 1,
         },
@@ -109,7 +131,8 @@ def test_paper_run_list_and_detail_with_kill_switch_on(tmp_path) -> None:
 
 
 def test_paper_run_does_not_create_per_run_duckdb(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    settings = Settings(safety=SafetySettings(kill_switch=False))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     response = client.post(
         "/api/paper/run",
@@ -118,7 +141,7 @@ def test_paper_run_does_not_create_per_run_duckdb(tmp_path) -> None:
             "start": "2024-01-02",
             "end": "2024-01-12",
             "provider": "sample",
-            "enable_kill_switch": True,
+            "enable_kill_switch": False,
             "lookback": 3,
             "top_n": 1,
         },
@@ -129,7 +152,10 @@ def test_paper_run_does_not_create_per_run_duckdb(tmp_path) -> None:
 
 
 def test_paper_run_rejects_explicit_unavailable_provider(tmp_path) -> None:
-    settings = Settings(api_keys=ApiKeySettings(tiingo_api_token=None))
+    settings = Settings(
+        api_keys=ApiKeySettings(tiingo_api_token=None),
+        safety=SafetySettings(kill_switch=False),
+    )
     client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     response = client.post(
@@ -139,7 +165,7 @@ def test_paper_run_rejects_explicit_unavailable_provider(tmp_path) -> None:
             "start": "2024-01-02",
             "end": "2024-01-12",
             "provider": "tiingo",
-            "enable_kill_switch": True,
+            "enable_kill_switch": False,
             "lookback": 3,
             "top_n": 1,
         },
@@ -155,7 +181,8 @@ def test_paper_run_rejects_explicit_provider_fetch_failure(
     monkeypatch,
 ) -> None:
     settings = Settings(
-        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token"))
+        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token")),
+        safety=SafetySettings(kill_switch=False),
     )
 
     def fail_fetch(self, symbols, *, start, end, interval="1d"):
@@ -177,7 +204,7 @@ def test_paper_run_rejects_explicit_provider_fetch_failure(
             "start": "2024-01-02",
             "end": "2024-01-12",
             "provider": "tiingo",
-            "enable_kill_switch": True,
+            "enable_kill_switch": False,
             "lookback": 3,
             "top_n": 1,
         },
@@ -198,7 +225,8 @@ def test_paper_detail_404_for_unknown_run(tmp_path) -> None:
 
 
 def test_paper_list_returns_latest_run_first(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    settings = Settings(safety=SafetySettings(kill_switch=False))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     first = client.post(
         "/api/paper/run",
@@ -207,7 +235,7 @@ def test_paper_list_returns_latest_run_first(tmp_path) -> None:
             "start": "2024-01-02",
             "end": "2024-01-08",
             "provider": "sample",
-            "enable_kill_switch": True,
+            "enable_kill_switch": False,
         },
     )
     second = client.post(
@@ -217,7 +245,7 @@ def test_paper_list_returns_latest_run_first(tmp_path) -> None:
             "start": "2024-01-02",
             "end": "2024-01-08",
             "provider": "sample",
-            "enable_kill_switch": True,
+            "enable_kill_switch": False,
         },
     )
 
@@ -233,7 +261,8 @@ def test_paper_list_returns_latest_run_first(tmp_path) -> None:
 
 def test_paper_run_uses_tiingo_when_requested(tmp_path, monkeypatch) -> None:
     settings = Settings(
-        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token"))
+        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token")),
+        safety=SafetySettings(kill_switch=False),
     )
 
     def fake_fetch(self, symbols, *, start, end, interval="1d"):
@@ -252,7 +281,7 @@ def test_paper_run_uses_tiingo_when_requested(tmp_path, monkeypatch) -> None:
             "start": "2024-01-02",
             "end": "2024-01-09",
             "provider": "tiingo",
-            "enable_kill_switch": True,
+            "enable_kill_switch": False,
             "lookback": 3,
             "top_n": 1,
         },

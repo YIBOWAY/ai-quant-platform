@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
+from quant_system.config.settings import SafetySettings, Settings
 from quant_system.execution.price_source import PricedQuote
 
 
@@ -177,7 +178,8 @@ def test_rebalance_applies_strategy_targets_to_account(tmp_path, stub_prices, mo
 
 def test_paper_run_still_works_alongside_account(tmp_path, stub_prices) -> None:
     """The legacy historical-replay endpoint must remain functional."""
-    client = TestClient(create_app(output_dir=tmp_path))
+    settings = Settings(safety=SafetySettings(kill_switch=False))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     run = client.post(
         "/api/paper/run",
@@ -186,7 +188,7 @@ def test_paper_run_still_works_alongside_account(tmp_path, stub_prices) -> None:
             "start": "2024-01-02",
             "end": "2024-01-12",
             "provider": "sample",
-            "enable_kill_switch": True,
+            "enable_kill_switch": False,
             "lookback": 3,
             "top_n": 1,
         },

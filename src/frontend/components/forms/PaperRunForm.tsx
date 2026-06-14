@@ -24,13 +24,19 @@ const copy = {
     topN: "Top N",
     maxFillRatio: "Max Fill Ratio",
     killSwitchEnabled: "kill_switch enabled",
+    killSwitchDisabled: "replay kill_switch disabled",
     readOnly: "READ ONLY",
+    replayReady: "READY",
     running: "Running...",
     runPaperTrading: "Run Paper Trading",
+    replayLocked: "Historical replay is locked while backend kill_switch is on.",
     created: (id: string) => `Paper run created: ${id}`,
     dialogTitle: "Kill switch is read-only here",
     dialogBody:
       "kill_switch is enabled on the backend; the API will reject runs that disable it. Edit `QS_KILL_SWITCH` in `.env` to change.",
+    dialogTitleReady: "Replay can submit",
+    dialogBodyReady:
+      "Backend kill_switch is off for this local simulation. Historical replay will submit with replay kill_switch disabled.",
     close: "Close",
   },
   zh: {
@@ -43,13 +49,18 @@ const copy = {
     topN: "Top N",
     maxFillRatio: "最大成交比例",
     killSwitchEnabled: "kill_switch 已启用",
+    killSwitchDisabled: "历史回放 kill_switch 已关闭",
     readOnly: "只读",
+    replayReady: "可提交",
     running: "运行中...",
     runPaperTrading: "运行模拟交易",
+    replayLocked: "后端 kill_switch 开启时，历史回放不会提交。",
     created: (id: string) => `模拟运行已创建：${id}`,
     dialogTitle: "终止开关在此为只读",
     dialogBody:
       "后端已启用 kill_switch；API 会拒绝任何尝试关闭它的运行。请修改 `.env` 中的 `QS_KILL_SWITCH` 进行调整。",
+    dialogTitleReady: "历史回放可提交",
+    dialogBodyReady: "后端 kill_switch 已为本地模拟关闭。历史回放会以 replay kill_switch 关闭状态提交。",
     close: "关闭",
   },
 } as const;
@@ -99,9 +110,11 @@ const inputClassCompact =
 export function PaperRunForm({
   locale = "en",
   futuReachable = true,
+  replayKillSwitch = true,
 }: {
   locale?: Locale;
   futuReachable?: boolean;
+  replayKillSwitch?: boolean;
 }) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -116,7 +129,7 @@ export function PaperRunForm({
       apiPost<PaperRunResponse>("/api/paper/run", {
         ...values,
         symbols: splitSymbols(values.symbols),
-        enable_kill_switch: true,
+        enable_kill_switch: false,
       }),
     onSuccess: (payload) => {
       toast.success(text.created(payload.run_id));
@@ -186,20 +199,31 @@ export function PaperRunForm({
         </label>
         <button
           aria-pressed="true"
-          className="flex items-center justify-between rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 font-body-sm text-warning"
+          className={`flex items-center justify-between rounded-lg border px-3 py-2 font-body-sm ${
+            replayKillSwitch
+              ? "border-warning/40 bg-warning/10 text-warning"
+              : "border-accent-success/40 bg-accent-success/10 text-accent-success"
+          }`}
           disabled={!isHydrated}
           onClick={() => setDialogOpen(true)}
           type="button"
         >
-          {text.killSwitchEnabled}
-          <span className="rounded-full bg-warning px-2 py-0.5 font-data-mono text-[10px] text-on-primary">
-            {text.readOnly}
+          {replayKillSwitch ? text.killSwitchEnabled : text.killSwitchDisabled}
+          <span
+            className={`rounded-full px-2 py-0.5 font-data-mono text-[10px] text-on-primary ${
+              replayKillSwitch ? "bg-warning" : "bg-accent-success"
+            }`}
+          >
+            {replayKillSwitch ? text.readOnly : text.replayReady}
           </span>
         </button>
+        {replayKillSwitch ? (
+          <p className="font-body-sm text-warning">{text.replayLocked}</p>
+        ) : null}
         {error ? <p className="font-body-sm text-danger">{error}</p> : null}
         <button
           className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={!isHydrated || mutation.isPending}
+          disabled={!isHydrated || mutation.isPending || replayKillSwitch}
           type="submit"
         >
           {mutation.isPending ? text.running : text.runPaperTrading}
@@ -209,9 +233,11 @@ export function PaperRunForm({
       {dialogOpen ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-lg border border-warning/40 bg-bg-surface p-5 shadow-xl" role="alertdialog" aria-modal="true">
-            <h3 className="font-headline-lg text-text-primary">{text.dialogTitle}</h3>
+            <h3 className="font-headline-lg text-text-primary">
+              {replayKillSwitch ? text.dialogTitle : text.dialogTitleReady}
+            </h3>
             <p className="mt-3 font-body-sm text-text-secondary">
-              {text.dialogBody}
+              {replayKillSwitch ? text.dialogBody : text.dialogBodyReady}
             </p>
             <button
               className="mt-5 rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary"

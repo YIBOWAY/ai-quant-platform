@@ -44,6 +44,15 @@ def run_paper(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
+    if request.enable_kill_switch:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Replay kill switch is enabled; historical paper replay would "
+                "create orders with no fills. Disable the replay kill switch "
+                "only after turning off QS_KILL_SWITCH for this local simulation."
+            ),
+        )
     if settings.safety.kill_switch and not request.enable_kill_switch:
         raise HTTPException(
             status_code=409,
