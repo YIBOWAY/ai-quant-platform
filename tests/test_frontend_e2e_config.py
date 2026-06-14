@@ -47,6 +47,29 @@ def test_frontend_dev_defaults_to_project_ports() -> None:
     assert 'command: "npm run dev -- --hostname 127.0.0.1 --port 3001"' not in playwright_config
 
 
+def test_dev_scripts_use_project_ports_and_docker_database_probe() -> None:
+    dev_script = Path("scripts/dev.ps1").read_text(encoding="utf-8")
+    stop_script = Path("scripts/dev-stop.ps1").read_text(encoding="utf-8")
+
+    assert '[int]$BackendPort = 8765' in dev_script
+    assert '[int]$FrontendPort = 3001' in dev_script
+    assert '[string]$DatabaseContainer = "quantplatform-db"' in dev_script
+    assert "docker start $DatabaseContainer" in dev_script
+    assert "docker exec $DatabaseContainer pg_isready" in dev_script
+    assert 'Join-Path $CondaBase "envs\\ai-quant\\python.exe"' in dev_script
+    assert dev_script.index('Join-Path $CondaBase "envs\\ai-quant\\python.exe"') < dev_script.index(
+        'Join-Path $env:CONDA_PREFIX "python.exe"'
+    )
+    assert '$env:PYTHONPATH = (Join-Path $Root "src")' in dev_script
+    assert '$env:NEXT_PUBLIC_QUANT_API_BASE_URL = "http://$BackendHost`:$BackendPort"' in dev_script
+    assert "backend_url=http://$BackendHost`:$BackendPort" in dev_script
+    assert "frontend_url=http://$FrontendHost`:$FrontendPort" in dev_script
+    assert 'Join-Path $Root "data\\_runtime\\pids"' in stop_script
+    assert "function Stop-ProcessTree" in stop_script
+    assert "Where-Object { $_.ParentProcessId -eq $RootProcessId }" in stop_script
+    assert 'foreach ($Name in @("frontend", "backend"))' in stop_script
+
+
 def test_frontend_package_has_no_ai_studio_template_residue() -> None:
     package = json.loads(
         Path("src/frontend/package.json").read_text(encoding="utf-8")

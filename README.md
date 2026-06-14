@@ -44,7 +44,24 @@ cd src/frontend
 npm install
 ```
 
-Start the backend:
+Start both local services from the repository root:
+
+```powershell
+conda activate ai-quant
+.\scripts\dev.ps1
+```
+
+This starts the optional `quantplatform-db` Docker container when it exists,
+checks the local OpenD port, starts the backend on `127.0.0.1:8765`, starts the
+frontend on `127.0.0.1:3001`, and writes logs under `data/_runtime/logs/`.
+
+Stop the local services:
+
+```powershell
+.\scripts\dev-stop.ps1
+```
+
+Manual backend start:
 
 ```powershell
 conda activate ai-quant
@@ -58,7 +75,7 @@ conda activate ai-quant
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
-Start the frontend in another PowerShell:
+Manual frontend start in another PowerShell:
 
 ```powershell
 cd src/frontend

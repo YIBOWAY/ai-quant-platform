@@ -72,24 +72,28 @@ quant-system serve --host 0.0.0.0 --port 8765 --bind-public
 
 ```powershell
 conda activate ai-quant
-.\scripts\start_phase9_full_stack.ps1
+.\scripts\dev.ps1
 ```
 
 默认端口：
 
 - 后端 API：`http://127.0.0.1:8765`
-- 前端页面：`http://127.0.0.1:3000`
+- 前端页面：`http://127.0.0.1:3001`
 
-如果 `3000` 已被占用，可以换一个前端端口：
+脚本会尝试启动现有的 `quantplatform-db` Docker 容器，探测本地 OpenD 端口，
+然后启动后端和前端。如果 `3001` 已被占用，可以换一个前端端口：
 
 ```powershell
-.\scripts\start_phase9_full_stack.ps1 -FrontendPort 3001
+.\scripts\dev.ps1 -FrontendPort 3002
 ```
 
 停止服务：
 
 ```powershell
-.\scripts\stop_phase9_full_stack.ps1
+.\scripts\dev-stop.ps1
 ```
 
 脚本会把进程号写到 `data/_runtime/pids/`，日志写到 `data/_runtime/logs/`。
+
+旧的 `start_phase9_full_stack.ps1` / `stop_phase9_full_stack.ps1` 仍保留为
+兼容入口；新开发会话优先使用 `dev.ps1` / `dev-stop.ps1`。
