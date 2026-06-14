@@ -1,6 +1,17 @@
-# API Audit — Phase 9 Backend (read-only)
+# API 审计 — 第 9 阶段后端（只读）
 
-> Probed live backend on `127.0.0.1:8765` with `curl.exe`. Source files cross-checked under [src/quant_system/api/](../src/quant_system/api/). **No code changes in this round.**
+> ⚠️ **历史审计快照（Phase 9 时点）— 结论已过时，请勿当作当前状态阅读。**
+>
+> 本文件是 **第 9 阶段时期的一次性审计快照**，仅作为历史记录保留。其下文得出的若干结论 **已不反映平台当前状态**，尤其是以下几条 **均已过时**：
+>
+> - “回测仍走 sample / `/api/ohlcv` 永远不打真实 provider / 数据源没接真” —— **已过时**：回测/因子/模拟链路现已可使用真实数据源（Futu / Tiingo），且会显式标注 sample 与真实数据来源。
+> - “前端是展示稿 / 只读、不调用任何 POST / 按钮全部 DEAD” —— **已过时**：前端各页面现为真实可交互（含表单、提交处理与真实 API 调用），会触发后端的 backtest / factor / paper / agent 任务。
+>
+> 平台 **当前状态以下列文档为准**：[../../README.md](../../README.md)、[../INDEX.md](../INDEX.md)，以及 [FRONTEND_REAL_DATA_REVIEW_2026-05-31.md](FRONTEND_REAL_DATA_REVIEW_2026-05-31.md)。本文件夹的现行口径另见 [README.md](README.md)。
+>
+> 以下正文为 Phase 9 当时的原始记录，**未作改写**，仅供追溯历史之用。
+
+> 使用 `curl.exe` 对运行在 `127.0.0.1:8765` 的实时后端进行探测。源文件已对照 [src/quant_system/api/](../src/quant_system/api/) 进行交叉核查。**本轮不做任何代码改动。**
 
 ## 1. 实际存在的 endpoint（全部 200 OK）
 

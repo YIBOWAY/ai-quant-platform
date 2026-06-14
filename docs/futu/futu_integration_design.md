@@ -1,52 +1,52 @@
-# Futu Read-Only Integration Design
+# 富途只读集成设计
 
-## 1. Scope
+## 1. 范围
 
-This phase adds Futu OpenAPI / OpenD as the primary **read-only** market data source for:
+本阶段引入富途 OpenAPI / OpenD 作为以下场景的主要**只读**行情数据来源：
 
-- US equity historical market data
-- US options chain and option quote data when permissions and API fields allow
-- frontend market-data exploration
-- factor research, backtest, and paper-trading data inputs
-- a new read-only Options Screener workflow
+- 美股历史行情数据
+- 在权限与 API 字段允许的情况下，提供美股期权链及期权报价数据
+- 前端行情数据探索
+- 因子研究、回测与模拟交易的数据输入
+- 一个全新的只读期权筛选器 (Options Screener) 工作流
 
-This phase does **not** change Polymarket research modules.
+本阶段**不**改动 Polymarket 研究模块。
 
-## 2. Non-goals
+## 2. 非目标
 
-This phase explicitly does **not** do any of the following:
+本阶段明确**不**做以下任何事项：
 
-- real trading
-- order placement
-- account unlock
-- trading context creation
-- order modification / cancellation
-- wallet / signing / private key handling
-- live execution
-- broker account management
-- Polymarket execution changes
+- 真实交易
+- 下单
+- 账户解锁
+- 创建交易上下文
+- 改单 / 撤单
+- 钱包 / 签名 / 私钥处理
+- 实盘执行
+- 券商账户管理
+- Polymarket 执行逻辑改动
 
-Futu is used for **market data only**.
+富途**仅用于行情数据**。
 
-## 3. Existing Data Provider Map
+## 3. 现有数据提供方映射
 
-### 3.1 Backend stock data providers today
+### 3.1 当前后端股票数据提供方
 
 - `SampleOHLCVProvider`
-  - file: `src/quant_system/data/providers/sample.py`
-  - purpose: deterministic offline sample data
+  - 文件：`src/quant_system/data/providers/sample.py`
+  - 用途：确定性的离线样本数据
 - `TiingoEODProvider`
-  - file: `src/quant_system/data/providers/tiingo.py`
-  - purpose: historical EOD stock data
+  - 文件：`src/quant_system/data/providers/tiingo.py`
+  - 用途：历史 EOD 股票数据
 - `build_ohlcv_provider(...)`
-  - file: `src/quant_system/data/provider_factory.py`
-  - currently supports `sample` and `tiingo`
+  - 文件：`src/quant_system/data/provider_factory.py`
+  - 当前支持 `sample` 与 `tiingo`
 
-### 3.2 Existing config fields
+### 3.2 现有配置字段
 
 - `QS_DEFAULT_DATA_PROVIDER`
 - `QS_TIINGO_API_TOKEN`
-- legacy keys still present in `ApiKeySettings`:
+- `ApiKeySettings` 中仍保留的遗留键：
   - Finnhub
   - Alpha Vantage
   - Tiingo
@@ -55,7 +55,7 @@ Futu is used for **market data only**.
   - News API
   - Twitter
 
-### 3.3 Existing backend stock-data call sites
+### 3.3 现有后端股票数据调用点
 
 - `src/quant_system/api/routes/data.py`
 - `src/quant_system/api/routes/benchmark.py`
@@ -63,33 +63,33 @@ Futu is used for **market data only**.
 - `src/quant_system/backtest/pipeline.py`
 - `src/quant_system/execution/pipeline.py`
 
-### 3.4 Existing frontend stock-data flow
+### 3.4 现有前端股票数据流
 
-- page: `src/frontend/app/data-explorer/page.tsx`
-- controls: `src/frontend/components/forms/DataExplorerControls.tsx`
-- API client: `src/frontend/lib/api.ts`
-- provider defaults currently point to `tiingo`
-- factor/backtest/paper forms also currently use `sample | tiingo`
+- 页面：`src/frontend/app/data-explorer/page.tsx`
+- 控件：`src/frontend/components/forms/DataExplorerControls.tsx`
+- API 客户端：`src/frontend/lib/api.ts`
+- 提供方默认值当前指向 `tiingo`
+- 因子 / 回测 / 模拟交易表单当前同样使用 `sample | tiingo`
 
-### 3.5 Existing options support
+### 3.5 现有期权支持
 
-- No real options data provider exists today
-- No backend options route exists today
-- No options screener page exists today
+- 当前不存在真实的期权数据提供方
+- 当前不存在后端期权路由
+- 当前不存在期权筛选器页面
 
-### 3.6 Existing Polymarket boundary
+### 3.6 现有 Polymarket 边界
 
-Prediction-market modules already exist under:
+预测市场模块已存在于：
 
 - `src/quant_system/prediction_market/**`
 - `src/quant_system/api/routes/prediction_market.py`
 - `src/frontend/app/order-book/**`
 
-These must remain functionally unchanged.
+这些模块的功能必须保持不变。
 
-## 4. Existing Backend API Flow
+## 4. 现有后端 API 流程
 
-### 4.1 OHLCV flow today
+### 4.1 当前 OHLCV 流程
 
 ```text
 Frontend / CLI
@@ -101,7 +101,7 @@ Frontend / CLI
     -> safety footer in API middleware
 ```
 
-### 4.2 Factor / backtest / paper flow today
+### 4.2 当前因子 / 回测 / 模拟交易流程
 
 ```text
 Frontend / CLI
@@ -114,11 +114,11 @@ Frontend / CLI
     -> API detail pages
 ```
 
-This is good news: one provider change can propagate through the whole research stack.
+这是好消息：只需改动一处提供方，即可贯通整个研究技术栈。
 
-## 5. Existing Frontend Flow
+## 5. 现有前端流程
 
-### 5.1 Market Data page today
+### 5.1 当前行情数据页面
 
 ```text
 Data Explorer page
@@ -129,70 +129,70 @@ Data Explorer page
     -> render simple price chart
 ```
 
-### 5.2 Research pages affected
+### 5.2 受影响的研究页面
 
 - `Factor Lab`
 - `Backtester`
 - `Paper Trading`
 
-These already accept a provider parameter and can be switched to Futu with limited UI changes.
+这些页面已接受一个提供方参数，只需少量 UI 改动即可切换至富途。
 
-## 6. Futu Integration Architecture
+## 6. 富途集成架构
 
-### 6.1 Provider strategy
+### 6.1 提供方策略
 
-Add a new read-only provider:
+新增一个只读提供方：
 
 - `FutuMarketDataProvider`
 
-Responsibilities:
+职责：
 
-- normalize US tickers: `AAPL -> US.AAPL`
-- connect to local OpenD quote service only
-- fetch historical K-line data
-- fetch options chain / options quotes when available
-- normalize to project schema
-- map Futu / OpenD failures into clear application errors
+- 规范化美股代码：`AAPL -> US.AAPL`
+- 仅连接本地 OpenD 行情服务
+- 拉取历史 K 线数据
+- 在可用时拉取期权链 / 期权报价
+- 规范化为项目 schema
+- 将富途 / OpenD 故障映射为清晰的应用层错误
 
-### 6.2 Safety boundary
+### 6.2 安全边界
 
-The provider must:
+该提供方必须：
 
-- create quote context only
-- never create trading context
-- never unlock trade
-- never submit orders
-- never expose credentials
+- 仅创建行情上下文
+- 绝不创建交易上下文
+- 绝不解锁交易
+- 绝不提交订单
+- 绝不暴露凭据
 
-### 6.3 Provider selection
+### 6.3 提供方选择
 
-Supported stock providers after this phase:
+本阶段后支持的股票提供方：
 
 - `sample`
 - `futu`
-- `tiingo` kept temporarily for compatibility / rollback
+- `tiingo`，暂时保留以兼容 / 回滚
 
-Recommended default after validation:
+验证通过后的推荐默认值：
 
-- `QS_DEFAULT_DATA_PROVIDER="futu"` when OpenD is available locally
+- 当本地存在 OpenD 时，`QS_DEFAULT_DATA_PROVIDER="futu"`
 
-Safe fallback behavior:
+安全回退行为：
 
-- if explicit `provider=futu` but OpenD is unavailable -> return typed error to API caller
-- if default provider is `futu` and OpenD is unavailable -> optionally fallback to sample only where current API conventions require a non-crashing response, but the response must clearly say it is fallback
+- 若显式指定 `provider=futu` 但 OpenD 不可用 -> 向 API 调用方返回带类型的错误
+- 若默认提供方为 `futu` 且 OpenD 不可用 -> 仅在当前 API 约定要求返回不崩溃响应的情况下，可选地回退到 sample，但响应必须明确说明这是回退结果
 
-### 6.4 Options provider shape
+### 6.4 期权提供方形态
 
-Options data should stay read-only and likely live in one of two shapes:
+期权数据应保持只读，并可能采用以下两种形态之一：
 
-- extend `futu.py` with quote + option-chain helpers
-- or add `futu_options.py` if that keeps code clearer without touching unrelated modules
+- 在 `futu.py` 中扩展报价与期权链辅助方法
+- 或在不触及无关模块、能保持代码更清晰的前提下，新增 `futu_options.py`
 
-Final choice should minimize abstraction churn.
+最终选择应尽量减少抽象层的反复改动。
 
-## 7. Config Design
+## 7. 配置设计
 
-Add safe settings for Futu / OpenD:
+为富途 / OpenD 新增安全设置：
 
 - `QS_FUTU_ENABLED=true`
 - `QS_FUTU_HOST=127.0.0.1`
@@ -203,17 +203,17 @@ Add safe settings for Futu / OpenD:
 - `QS_FUTU_CACHE_DIR=data/futu`
 - `QS_FUTU_USE_CACHE=true`
 
-Optional:
+可选：
 
 - `QS_FUTU_OPTIONS_ENABLED=true`
 
-No secret is required for local OpenD connectivity in this project design.
+在本项目设计中，本地 OpenD 连接无需任何密钥。
 
-Legacy vendor keys remain loaded but should be documented as deprecated for US stock / option market data.
+遗留的供应商密钥仍会加载，但应将其在美股 / 期权行情数据场景下标注为已弃用。
 
-## 8. Backend API Design
+## 8. 后端 API 设计
 
-### 8.1 Existing endpoints to extend
+### 8.1 待扩展的现有端点
 
 - `GET /api/ohlcv`
 - `GET /api/benchmark`
@@ -221,272 +221,272 @@ Legacy vendor keys remain loaded but should be documented as deprecated for US s
 - `POST /api/backtests/run`
 - `POST /api/paper/run`
 
-Provider enum changes:
+提供方枚举改动：
 
-- from `sample | tiingo`
-- to `sample | futu | tiingo`
+- 从 `sample | tiingo`
+- 改为 `sample | futu | tiingo`
 
-### 8.2 New stock-market endpoint
+### 8.2 新增股票行情端点
 
-Add a clearer frontend-facing endpoint:
+新增一个更清晰、面向前端的端点：
 
 `GET /api/market-data/history?ticker=AAPL&start=2024-01-01&end=2024-12-31&freq=1d&provider=futu`
 
-Purpose:
+目的：
 
-- keep existing `/api/ohlcv` working
-- give the frontend a ticker/frequency-oriented endpoint that is easy to reason about
+- 保持现有 `/api/ohlcv` 可用
+- 为前端提供一个以代码 / 频率为导向、易于理解的端点
 
-### 8.3 Options endpoints
+### 8.3 期权端点
 
-Add read-only options routes:
+新增只读期权路由：
 
 - `GET /api/options/chain`
 - `GET /api/options/expirations`
 - `POST /api/options/screener`
 
-All responses must still include safety footer.
+所有响应仍必须包含安全页脚。
 
-## 9. Frontend UI Design
+## 9. 前端 UI 设计
 
-### 9.1 Market Data page
+### 9.1 行情数据页面
 
-User inputs:
+用户输入：
 
-- ticker
-- provider (`sample | futu`)
-- start date
-- end date
-- frequency
+- 股票代码
+- 提供方 (`sample | futu`)
+- 起始日期
+- 结束日期
+- 频率
 
-Display:
+展示：
 
-- source badge
-- fetched-at time
-- latest close
-- number of bars
-- K-line / candlestick chart
-- readable error block when OpenD is offline or permission is missing
+- 来源徽章
+- 拉取时间
+- 最新收盘价
+- K 线数量
+- K 线 / 蜡烛图
+- 当 OpenD 离线或缺少权限时显示的可读错误块
 
-### 9.2 Options Screener page
+### 9.2 期权筛选器页面
 
-New page under frontend app structure with:
+在前端应用结构下新增页面，包含：
 
-- ticker input
-- strategy type
+- 股票代码输入
+- 策略类型
   - Sell Put
   - Covered Call / Sell Call
-- DTE window; the backend scans matching expirations automatically
-- min IV
-- target delta / max delta
-- min premium
-- max spread %
-- trend filter
-- HV/IV timing filter
-- run button
-- results table
-- explanation / disclaimer block
+- DTE 时间窗口；后端会自动扫描匹配的到期日
+- 最小 IV
+- 目标 delta / 最大 delta
+- 最小权利金
+- 最大价差百分比
+- 趋势过滤
+- HV/IV 择时过滤
+- 运行按钮
+- 结果表格
+- 说明 / 免责声明块
 
-### 9.3 Chinese frontend version
+### 9.3 中文前端版本
 
-No i18n framework exists today. The lowest-risk approach is:
+当前不存在 i18n 框架。风险最低的方案是：
 
-- add a small locale dictionary layer
-- keep the same logic
-- expose English and Chinese labels from a shared map
+- 新增一个轻量的 locale 字典层
+- 保持逻辑不变
+- 从共享映射中暴露英文与中文标签
 
-If that becomes too invasive, a route-based `/zh` wrapper is acceptable, but only if logic reuse stays high.
+若此方案侵入性过大，则可接受基于路由的 `/zh` 包装层，但前提是逻辑复用度仍然较高。
 
-## 10. Options Screener Design
+## 10. 期权筛选器设计
 
-### 10.1 Strategy outputs
+### 10.1 策略输出
 
-For each candidate:
+对每个候选项：
 
-- underlying price
-- option symbol
-- strategy type
-- strike
-- expiry
+- 标的价格
+- 期权代码
+- 策略类型
+- 行权价
+- 到期日
 - bid / ask / mid
-- premium estimate
-- spread %
-- moneyness / distance
-- annualized yield estimate
-- IV if available from Futu
-- HV computed locally from stock history
-- trend filter result
-- conservative rating
+- 权利金估计
+- 价差百分比
+- 价值状态 / 距离
+- 年化收益率估计
+- 若富途可提供则给出 IV
+- 由股票历史在本地计算的 HV
+- 趋势过滤结果
+- 保守评级
 
-### 10.2 Rating
+### 10.2 评级
 
-Human-readable only:
+仅人类可读：
 
 - `Strong`
 - `Watch`
 - `Avoid`
 
-The scoring must be conservative and documented. Missing data must reduce confidence instead of inventing values.
+评分必须保守且有文档说明。数据缺失时必须降低置信度，而非臆造数值。
 
-### 10.3 Disclaimer
+### 10.3 免责声明
 
-The screener must display:
+筛选器必须展示：
 
-- read-only data mode
-- research only
-- no live trading
-- not investment advice
+- 只读数据模式
+- 仅供研究
+- 无实盘交易
+- 非投资建议
 
-## 11. Files Likely To Be Modified
+## 11. 可能被修改的文件
 
-This plan likely touches **more than 30 files**. Reason:
+本方案可能触及**超过 30 个文件**。原因：
 
-1. provider implementation
-2. config and env templates
-3. API routes and schemas
-4. factor/backtest/paper provider enums
-5. CLI data-ingestion path
-6. frontend market-data page
-7. new options page and API client types
-8. Chinese labels
-9. tests
-10. docs
+1. 提供方实现
+2. 配置与环境变量模板
+3. API 路由与 schema
+4. 因子 / 回测 / 模拟交易的提供方枚举
+5. CLI 数据导入路径
+6. 前端行情数据页面
+7. 新期权页面与 API 客户端类型
+8. 中文标签
+9. 测试
+10. 文档
 
-Likely code changes:
+可能的代码改动：
 
 - `src/quant_system/config/settings.py`
 - `.env.example`
 - `src/quant_system/data/provider_factory.py`
 - `src/quant_system/data/providers/__init__.py`
-- new Futu provider module(s)
+- 新的富途提供方模块
 - `src/quant_system/data/pipeline.py`
 - `src/quant_system/cli.py`
 - `src/quant_system/api/routes/data.py`
 - `src/quant_system/api/routes/benchmark.py`
-- new `src/quant_system/api/routes/options.py`
+- 新的 `src/quant_system/api/routes/options.py`
 - `src/quant_system/api/server.py`
-- relevant API schemas
-- factor/backtest/paper schemas
-- factor/backtest/paper frontend forms
+- 相关 API schema
+- 因子 / 回测 / 模拟交易 schema
+- 因子 / 回测 / 模拟交易前端表单
 - `src/frontend/lib/api.ts`
 - `src/frontend/app/data-explorer/page.tsx`
-- chart component(s)
-- new options screener frontend page/components
-- sidebar/nav files
-- tests
-- docs
+- 图表组件
+- 新的期权筛选器前端页面 / 组件
+- 侧边栏 / 导航文件
+- 测试
+- 文档
 
-## 12. Files That Must Not Be Touched
+## 12. 绝不可触及的文件
 
-Unless a tiny shared-interface fix becomes unavoidable:
+除非某个微小的共享接口修复变得不可避免：
 
 - `src/quant_system/prediction_market/**`
-- Polymarket API behavior
-- Polymarket frontend workflows
-- any live trading path
-- any wallet/signing/private-key logic
+- Polymarket API 行为
+- Polymarket 前端工作流
+- 任何实盘交易路径
+- 任何钱包 / 签名 / 私钥逻辑
 
-## 13. Testing Strategy
+## 13. 测试策略
 
-### 13.1 Unit tests
+### 13.1 单元测试
 
-- ticker normalization
-- OHLCV normalization
-- provider factory selection
-- Futu SDK success path with mocks
-- OpenD unavailable
-- permission denied
-- invalid symbol
-- empty data
-- options chain normalization
-- missing IV / Greeks fields
-- screener scoring behavior
+- 股票代码规范化
+- OHLCV 规范化
+- 提供方工厂选择
+- 使用 mock 的富途 SDK 成功路径
+- OpenD 不可用
+- 权限被拒绝
+- 无效代码
+- 空数据
+- 期权链规范化
+- 缺失 IV / Greeks 字段
+- 筛选器评分行为
 
-### 13.2 API tests
+### 13.2 API 测试
 
-- `/api/ohlcv` or `/api/market-data/history`
+- `/api/ohlcv` 或 `/api/market-data/history`
 - benchmark
-- factor run with `provider=futu`
-- backtest run with `provider=futu`
-- paper run with `provider=futu`
-- options chain / screener endpoints
+- 使用 `provider=futu` 的因子运行
+- 使用 `provider=futu` 的回测运行
+- 使用 `provider=futu` 的模拟交易运行
+- 期权链 / 筛选器端点
 
-### 13.3 Frontend tests
+### 13.3 前端测试
 
-- market data page form
-- provider switch
-- loading / error states
-- chart render on mocked data
-- options screener page happy path
-- Chinese labels render
+- 行情数据页面表单
+- 提供方切换
+- 加载 / 错误状态
+- 基于 mock 数据的图表渲染
+- 期权筛选器页面正常路径
+- 中文标签渲染
 
-### 13.4 Manual verification
+### 13.4 人工验证
 
-Because real OpenD connectivity is local-state dependent, add:
+由于真实 OpenD 连接依赖本地状态，需新增：
 
 - `scripts/verify_futu_connection.py`
-- step-by-step manual verification doc
+- 逐步人工验证文档
 
-## 14. Manual Verification Strategy
+## 14. 人工验证策略
 
-Manual checks must confirm:
+人工检查必须确认：
 
-1. `ai-quant` environment is active
-2. Futu SDK imports in that environment
-3. local OpenD is reachable
-4. quote context can query basic US market data
-5. at least one US stock K-line request succeeds
-6. option chain / quotes work if permission allows
-7. frontend market-data page loads real Futu data
-8. options screener returns readable results
-9. Polymarket page still works
+1. `ai-quant` 环境已激活
+2. 富途 SDK 可在该环境中导入
+3. 本地 OpenD 可达
+4. 行情上下文可查询基础美股行情数据
+5. 至少一个美股 K 线请求成功
+6. 在权限允许时期权链 / 报价可用
+7. 前端行情数据页面加载到真实的富途数据
+8. 期权筛选器返回可读结果
+9. Polymarket 页面仍正常工作
 
-## 15. Error Mapping
+## 15. 错误映射
 
-Map Futu/OpenD failures into frontend-readable errors:
+将富途 / OpenD 故障映射为前端可读错误：
 
-- OpenD not running
-- cannot connect to host/port
-- market permission denied
-- invalid symbol
-- unsupported frequency
-- empty dataset
-- timeout
+- OpenD 未运行
+- 无法连接主机 / 端口
+- 行情权限被拒绝
+- 无效代码
+- 不支持的频率
+- 空数据集
+- 超时
 
-The API should not leak raw tracebacks.
+API 不应泄露原始堆栈跟踪信息。
 
-## 16. Rollback Plan
+## 16. 回滚方案
 
-If Futu validation fails:
+若富途验证失败：
 
-1. keep `sample` and `tiingo` paths intact
-2. switch default provider back to current safe default
-3. keep Futu routes hidden behind explicit provider selection
-4. document the blocker without breaking existing research flows
+1. 保持 `sample` 与 `tiingo` 路径完好
+2. 将默认提供方切回当前的安全默认值
+3. 将富途路由隐藏在显式的提供方选择之后
+4. 记录阻塞点，但不破坏现有研究流程
 
-Rollback granularity:
+回滚粒度：
 
-- provider factory only
-- frontend provider dropdown only
-- options screener can stay hidden until API is verified
+- 仅提供方工厂
+- 仅前端提供方下拉框
+- 期权筛选器可在 API 验证通过前保持隐藏
 
-## 17. Official Skills / SDK Installation Note
+## 17. 官方技能 / SDK 安装说明
 
-The official Futu skills were installed into the global Codex skills directory:
+官方富途技能已安装到全局 Codex 技能目录：
 
 - `futuapi`
 - `install-futu-opend`
 
-The local OpenD GUI was already installed and running, so this project did not reinstall OpenD.
+本地 OpenD GUI 此前已安装并运行，因此本项目未重新安装 OpenD。
 
-Verification path:
+验证路径：
 
-1. verify the existing local OpenD GUI first
-2. verify whether the Futu Python SDK is already installed inside `ai-quant`
-3. install `futu-api` only into `ai-quant` if missing
-4. document the manual equivalent steps in `docs/futu_environment_setup.md`
+1. 先验证现有的本地 OpenD GUI
+2. 验证富途 Python SDK 是否已安装在 `ai-quant` 内
+3. 仅在缺失时将 `futu-api` 安装到 `ai-quant`
+4. 在 `docs/futu_environment_setup.md` 中记录等效的手动步骤
 
-## 18. ASCII Flow Diagram
+## 18. ASCII 流程图
 
 ```text
                 +---------------------------+
@@ -522,18 +522,18 @@ Verification path:
          +---------------------------------------------+
 ```
 
-## 19. Phase Ordering
+## 19. 阶段顺序
 
-1. Design freeze
-2. Verify `ai-quant` + SDK + OpenD
-3. Implement stock provider
-4. Route existing stock flows through Futu
-5. Add options provider
-6. Add options screener
-7. Frontend integration
-8. Chinese frontend labels
-9. Regression + docs
+1. 设计冻结
+2. 验证 `ai-quant` + SDK + OpenD
+3. 实现股票提供方
+4. 将现有股票流程接入富途
+5. 新增期权提供方
+6. 新增期权筛选器
+7. 前端集成
+8. 中文前端标签
+9. 回归 + 文档
 
-## 20. Safety Statement
+## 20. 安全声明
 
-This integration uses Futu only for **read-only market data**. It does **not** add real order placement, account unlock, wallet/private-key handling, or live trading.
+本次集成仅将富途用于**只读行情数据**。它**不**新增真实下单、账户解锁、钱包 / 私钥处理或实盘交易。

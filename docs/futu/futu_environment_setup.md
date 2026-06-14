@@ -1,47 +1,47 @@
-# Futu Environment Setup
+# 富途环境配置
 
-## 1. Purpose
+## 1. 目的
 
-This guide verifies the local read-only Futu market-data environment for this project.
+本指南用于验证本项目所使用的本地只读富途行情数据环境。
 
-It covers:
+涵盖内容：
 
-- activating the correct conda environment
-- checking whether OpenD GUI is already running
-- verifying the Python SDK inside `ai-quant`
-- running a safe quote-only verification script
+- 激活正确的 conda 环境
+- 检查 OpenD GUI 是否已在运行
+- 在 `ai-quant` 中验证 Python SDK
+- 运行安全的仅行情验证脚本
 
-It does **not** enable trading.
+本指南**不会**启用交易功能。
 
-## 2. Safety Boundary
+## 2. 安全边界
 
-This setup is for **read-only market data** only.
+本配置仅用于**只读行情数据**。
 
-Do not:
+请勿：
 
-- unlock trading
-- create trading contexts
-- place orders
-- modify orders
-- expose credentials
+- 解锁交易
+- 创建交易上下文
+- 下单
+- 改单
+- 暴露凭证
 
-## 3. Official Skills Status In This Codex Environment
+## 3. 官方技能在本 Codex 环境中的状态
 
-The official Futu OpenD skills have been installed into the global Codex skills directory:
+官方富途 OpenD 技能已安装到全局 Codex 技能目录：
 
 - `C:\Users\86189\.codex\skills\futuapi`
 - `C:\Users\86189\.codex\skills\install-futu-opend`
 
-The installed `futuapi` skill includes both quote and trade helper scripts. This project only uses the quote/read-only side.
+已安装的 `futuapi` 技能同时包含行情与交易辅助脚本。本项目仅使用行情/只读部分。
 
-Manual equivalent path used for repository verification:
+用于仓库验证的等效手动流程：
 
-1. verify the existing local OpenD GUI first
-2. verify the Python package inside `ai-quant`
-3. install `futu-api` only into `ai-quant` if missing
-4. run a local read-only verification script
+1. 先验证已有的本地 OpenD GUI
+2. 在 `ai-quant` 中验证 Python 包
+3. 仅在缺失时将 `futu-api` 安装到 `ai-quant`
+4. 运行本地只读验证脚本
 
-## 4. Activate The Correct Environment
+## 4. 激活正确的环境
 
 ```powershell
 conda activate ai-quant
@@ -49,87 +49,87 @@ python -V
 python -c "import sys; print(sys.executable)"
 ```
 
-Expected:
+预期结果：
 
-- Python points to `D:\anaconda3\envs\ai-quant\python.exe`
-- version is Python 3.11+
+- Python 指向 `D:\anaconda3\envs\ai-quant\python.exe`
+- 版本为 Python 3.11+
 
-## 5. Confirm OpenD GUI Is Running
+## 5. 确认 OpenD GUI 正在运行
 
-### 5.1 Visual check
+### 5.1 可视化检查
 
-Open the already installed GUI and confirm you are logged in:
+打开已安装的 GUI 并确认已登录：
 
 `E:\Quant_data\Futu_OpenD_10.4.6408_Windows\Futu_OpenD-GUI_10.4.6408_Windows`
 
-### 5.2 Process check
+### 5.2 进程检查
 
 ```powershell
 conda activate ai-quant
 Get-Process | Where-Object { $_.ProcessName -like '*OpenD*' -or $_.ProcessName -like '*Futu*' } | Select-Object ProcessName,Id,Path
 ```
 
-### 5.3 Port check
+### 5.3 端口检查
 
 ```powershell
 conda activate ai-quant
 Test-NetConnection -ComputerName 127.0.0.1 -Port 11111 | Select-Object ComputerName,RemotePort,TcpTestSucceeded
 ```
 
-Expected:
+预期结果：
 
 - `TcpTestSucceeded = True`
 
-## 6. Install / Verify Python SDK In `ai-quant`
+## 6. 在 `ai-quant` 中安装 / 验证 Python SDK
 
-Check first:
+首先检查：
 
 ```powershell
 conda activate ai-quant
 python -m pip show futu-api
 ```
 
-If missing, install with the required mirror:
+若缺失，使用所需镜像源安装：
 
 ```powershell
 conda activate ai-quant
 python -m pip install futu-api -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-Official package reference:
+官方包参考：
 
-- Futu docs show Python installation via `pip install futu-api`
+- 富途文档展示了通过 `pip install futu-api` 进行 Python 安装
 
-## 7. Run The Verification Script
+## 7. 运行验证脚本
 
-Script:
+脚本：
 
 - `scripts/verify_futu_connection.py`
 
-Command:
+命令：
 
 ```powershell
 conda activate ai-quant
 python scripts/verify_futu_connection.py
 ```
 
-Default checks:
+默认检查项：
 
-- SDK import
-- quote context creation
-- OpenD global state
-- historical daily K-line for:
+- SDK 导入
+- 行情上下文创建
+- OpenD 全局状态
+- 以下标的的历史日 K 线：
   - `US.AAPL`
   - `US.NVDA`
   - `US.MSFT`
   - `US.SPY`
-- option expiry list for `US.AAPL`
-- option chain for one expiry
-- option snapshot for one option contract
+- `US.AAPL` 的期权到期日列表
+- 某个到期日的期权链
+- 某个期权合约的期权快照
 
-## 8. Example Successful Output
+## 8. 成功输出示例
 
-Sanitized example:
+脱敏示例：
 
 ```text
 verify_futu_connection
@@ -148,94 +148,94 @@ options_checks
 PASS read_only_quote_connectivity
 ```
 
-## 9. Common Errors
+## 9. 常见错误
 
 ### 9.1 `Package(s) not found: futu-api`
 
-Meaning:
+含义：
 
-- SDK is not installed in `ai-quant`
+- SDK 未安装在 `ai-quant` 中
 
-Fix:
+修复：
 
 ```powershell
 conda activate ai-quant
 python -m pip install futu-api -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-### 9.2 Cannot connect to `127.0.0.1:11111`
+### 9.2 无法连接到 `127.0.0.1:11111`
 
-Meaning:
+含义：
 
-- OpenD GUI is not running
-- or it is listening on a different host/port
+- OpenD GUI 未运行
+- 或其监听在不同的主机/端口
 
-Fix:
+修复：
 
-- start OpenD GUI
-- confirm login completed
-- confirm the API port is `11111`
+- 启动 OpenD GUI
+- 确认登录已完成
+- 确认 API 端口为 `11111`
 
-### 9.3 Quote login false / permission errors
+### 9.3 行情登录为 false / 权限错误
 
-Meaning:
+含义：
 
-- OpenD is open, but quote service is not fully logged in
-- or this account lacks the required market-data entitlement
+- OpenD 已打开，但行情服务未完全登录
+- 或该账户缺少所需的行情数据权限
 
-Check:
+检查：
 
-- US stock LV3 access
-- US options LV1 access
+- 美股 LV3 权限
+- 美股期权 LV1 权限
 
-### 9.4 Empty stock data
+### 9.4 股票数据为空
 
-Possible reasons:
+可能原因：
 
-- invalid symbol format
-- requested date range has no bars
-- permission / market-data delay issue
+- 标的格式无效
+- 请求的日期范围内没有 K 线数据
+- 权限 / 行情数据延迟问题
 
-Use Futu symbol format:
+使用富途标的格式：
 
 - `US.AAPL`
 - `US.NVDA`
 - `US.MSFT`
 - `US.SPY`
 
-### 9.5 Option fields missing or zero
+### 9.5 期权字段缺失或为零
 
-Possible reasons:
+可能原因：
 
-- field not included in the returned quote
-- permission tier does not expose it
-- selected contract is stale / expired / illiquid
+- 返回的行情中未包含该字段
+- 权限层级未开放该字段
+- 所选合约已过时 / 已到期 / 流动性差
 
-The platform must treat missing option fields as missing data, not fabricate them.
+平台必须将缺失的期权字段视为缺失数据，而不是凭空捏造。
 
-## 10. Permission Verification Checklist
+## 10. 权限验证清单
 
-What should be checked manually:
+应手动检查的内容：
 
-- US stock historical K-line is returned
-- US option expiry dates are returned
-- US option chain is returned
-- snapshot fields such as bid/ask/volume return real values when available
+- 返回了美股历史 K 线
+- 返回了美股期权到期日
+- 返回了美股期权链
+- 在可用时，bid/ask/volume 等快照字段返回真实值
 
-If IV / Greeks / open interest are absent or zero for certain contracts, document it as a data limitation instead of guessing.
+如果某些合约的 IV / 希腊值 / 未平仓量缺失或为零，请将其记录为数据限制，而不是猜测。
 
-## 11. Notes For This Repository
+## 11. 本仓库说明
 
-- All verification must run inside `ai-quant`
-- OpenD GUI should be reused if already working
-- this phase remains read-only
-- no trading contexts should be added to the codebase
+- 所有验证必须在 `ai-quant` 中运行
+- 如果 OpenD GUI 已正常工作，应复用
+- 本阶段保持只读
+- 不应向代码库添加任何交易上下文
 
-## 12. Official References
+## 12. 官方参考资料
 
-- OpenD overview: https://openapi.futunn.com/futu-api-doc/en/opend/opend-intro.html
-- Python environment and install: https://openapi.futunn.com/futu-api-doc/en/quick/env.html
-- Python example install notes: https://openapi.futunn.com/futu-api-doc/en/quick/demo.html
-- Historical K-line: https://openapi.futunn.com/futu-api-doc/en/quote/request-history-kline.html
-- Option expiration dates: https://openapi.futunn.com/futu-api-doc/en/quote/get-option-expiration-date.html
-- Option chain: https://openapi.futunn.com/futu-api-doc/en/quote/get-option-chain.html
+- OpenD 概览: https://openapi.futunn.com/futu-api-doc/en/opend/opend-intro.html
+- Python 环境与安装: https://openapi.futunn.com/futu-api-doc/en/quick/env.html
+- Python 示例安装说明: https://openapi.futunn.com/futu-api-doc/en/quick/demo.html
+- 历史 K 线: https://openapi.futunn.com/futu-api-doc/en/quote/request-history-kline.html
+- 期权到期日: https://openapi.futunn.com/futu-api-doc/en/quote/get-option-expiration-date.html
+- 期权链: https://openapi.futunn.com/futu-api-doc/en/quote/get-option-chain.html

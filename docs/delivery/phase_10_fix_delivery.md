@@ -1,25 +1,25 @@
-# Phase 10 Fix Delivery
+# Phase 10 修复交付
 
-## Scope
+## 范围
 
-Phase 10 fixes the Phase 9 frontend/backend integration audit findings while keeping the
-platform local-only, paper-only, and safe by default.
+Phase 10 修复了 Phase 9 前后端集成审计中发现的问题，同时保持平台
+仍为纯本地、纯模拟（paper-only），并默认安全。
 
-## Fix Plan Checklist
+## 修复计划清单
 
-- [x] P0-1 Sidebar routes and `/settings` page aligned with existing frontend routes.
-- [x] P0-2 Fake telemetry, decorative metrics, fake logs, and misleading widgets removed.
-- [x] P0-3 OHLCV provider factory and source labels.
-- [x] P0-4 Interactive client forms for POST workflows.
-- [x] P0-5 LLM settings and masked LLM config endpoint.
-- [x] P0-6 CORS default includes frontend port 3001.
-- [x] P1-1 Dark readable native `<option>` styling.
-- [x] P1-2 Loading, error, and empty state components across pages.
-- [x] P1-3 Documentation/code drift cleanup.
-- [x] P1-4 Playwright smoke.
-- [x] P1-5 Run buttons do not fall back to native page submits before hydration.
+- [x] P0-1 侧边栏路由与 `/settings` 页面与既有前端路由对齐。
+- [x] P0-2 移除虚假遥测、装饰性指标、虚假日志以及具有误导性的小部件。
+- [x] P0-3 OHLCV provider 工厂与数据源标签。
+- [x] P0-4 用于 POST 工作流的交互式客户端表单。
+- [x] P0-5 LLM 设置与脱敏后的 LLM 配置端点。
+- [x] P0-6 CORS 默认包含前端端口 3001。
+- [x] P1-1 深色可读的原生 `<option>` 样式。
+- [x] P1-2 各页面的加载、错误与空状态组件。
+- [x] P1-3 文档/代码漂移清理。
+- [x] P1-4 Playwright 冒烟测试。
+- [x] P1-5 运行按钮在水合（hydration）完成前不会回退到原生页面提交。
 
-## Verification Log
+## 验证日志
 
 ### P0-1
 
@@ -61,11 +61,11 @@ cd src/frontend && npm run build          PASS
 
 ### P0-4
 
-Added frontend-only dependencies:
+新增的仅前端依赖：
 
-- `@tanstack/react-query`: mutation state for synchronous local API calls.
-- `react-hook-form` + `zod`: accessible forms with local validation.
-- `sonner`: success/error toasts after local run requests.
+- `@tanstack/react-query`：用于同步本地 API 调用的 mutation 状态管理。
+- `react-hook-form` + `zod`：具备本地校验的无障碍表单。
+- `sonner`：本地运行请求后的成功/错误 toast 提示。
 
 ```text
 python -m pytest -q                      PASS
@@ -104,15 +104,14 @@ cd src/frontend && npm run build          PASS
 
 ### P1
 
-Added frontend dev dependency:
+新增的前端开发依赖：
 
-- `@playwright/test`: gated local smoke tests. It does not run unless `PW_E2E=1`.
+- `@playwright/test`：受限的本地冒烟测试。除非设置 `PW_E2E=1`，否则不会运行。
 
-The run buttons in backtest, factor, paper, agent, and prediction-market forms
-stay disabled until the client page is ready, then use explicit client-side
-click handlers instead of native form submits. This prevents a browser-level
-page navigation or no-op click if the user clicks before the client bundle has
-fully hydrated.
+backtest、factor、paper、agent 以及 prediction-market 表单中的运行按钮
+在客户端页面就绪前保持禁用，随后使用显式的客户端点击处理器，
+而非原生表单提交。这样可避免在客户端 bundle 尚未完全
+水合（hydration）时，用户点击触发浏览器级别的页面跳转或无效点击。
 
 ```text
 rg "<option(?![^>]*style)" -P src/frontend   no matches
@@ -121,11 +120,11 @@ cd src/frontend && npx playwright test       all tests skipped unless PW_E2E=1
 PW_E2E=1 npx playwright test                 11 passed
 ```
 
-## Manual Smoke Output
+## 手动冒烟测试输出
 
-Backend was started on `127.0.0.1:8765` with a temporary data directory and
-`QS_LLM_PROVIDER=stub` for the agent workflow smoke. Frontend was started on
-`127.0.0.1:3001`.
+后端在 `127.0.0.1:8765` 启动，使用临时数据目录，并为 agent 工作流冒烟测试
+设置 `QS_LLM_PROVIDER=stub`。前端在
+`127.0.0.1:3001` 启动。
 
 ```text
 health status=ok dry_run=True paper=True live=False kill_switch=True bind=127.0.0.1
@@ -153,7 +152,7 @@ page /position-map status=200
 page /settings status=200
 ```
 
-Browser smoke:
+浏览器冒烟测试：
 
 ```text
 Running 11 tests using 1 worker
@@ -173,13 +172,13 @@ Running 11 tests using 1 worker
   11 passed
 ```
 
-## Review Update - 2026-05-01
+## 复审更新 - 2026-05-01
 
-During a fresh frontend/backend review, the browser smoke found that some run
-buttons could be visible before the client page was ready. The affected buttons
-now stay disabled until hydration is complete, then call the API through the
-client mutation path. This avoids both native form navigation and no-op clicks
-under fast automated or impatient manual use.
+在一次全新的前后端复审中，浏览器冒烟测试发现部分运行按钮
+可能在客户端页面就绪前就已可见。受影响的按钮
+现在会保持禁用，直到水合（hydration）完成，然后通过
+客户端 mutation 路径调用 API。这样可在快速的自动化测试或缺乏耐心的
+手动操作下，同时避免原生表单跳转和无效点击。
 
 ```text
 python -m pytest -q                         PASS, 156 collected

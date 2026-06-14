@@ -1,50 +1,39 @@
-# Phase 13 Learning Notes
+# Phase 13 学习笔记
 
-## Why Options Radar Exists
+## 为什么需要 Options Radar
 
-The single-ticker Options Screener answers: "What looks reasonable for this one
-stock?" The Options Radar answers: "Across a broad universe, which contracts
-rank highest today?"
+单标的的 Options Screener 回答的是："对于这一只股票，什么看起来比较合理？"
+而 Options Radar 回答的是："在一个宽泛的标的池中，今天哪些合约的排名最高？"
 
-## Why This Is Not Trading Advice
+## 为什么这不是交易建议
 
-The radar only filters and ranks contracts using quotes, IV, liquidity, DTE, and
-simple risk labels. It does not know your account, tax situation, assignment
-risk tolerance, or portfolio. It cannot place orders.
+雷达仅通过报价、IV、流动性、DTE 以及简单的风险标签来筛选和排序合约。它并不了解你的账户、税务情况、被行权 (assignment) 风险承受能力或投资组合。它也无法下单。
 
-## IV Rank Cold Start
+## IV Rank 冷启动
 
-IV Rank needs a history of daily ATM IV. Until at least 30 samples exist for a
-ticker, IV Rank is `null` and contributes zero points to the global score.
+IV Rank 需要每日 ATM IV 的历史数据。在某个标的累计至少 30 个样本之前，IV Rank 为 `null`，并对全局评分贡献零分。
 
-## Earnings Calendar
+## 财报日历
 
-Futu OpenAPI does not provide a complete earnings calendar in this project.
-Phase 13 reads an offline CSV instead. The refresh script is manual so runtime
-scans stay deterministic.
+在本项目中，Futu OpenAPI 并未提供完整的财报日历。Phase 13 改为读取一份离线 CSV。刷新脚本是手动执行的，从而让运行时扫描保持确定性。
 
 ## VIX Regime
 
-Futu does not expose CBOE indices (`US.VIX` returns `unknown stock`), so the
-radar fetches `^VIX` and `^VIX3M` daily closes from the Yahoo Chart REST
-endpoint (`query1.finance.yahoo.com/v8/finance/chart/{ticker}`) via
-`quant_system.options.vix_data`. The implementation mirrors the reference
-project `quantplatform`'s `_fetch_yahoo_single` and is read-only.
+Futu 并未暴露 CBOE 指数（`US.VIX` 返回 `unknown stock`），因此雷达通过
+`quant_system.options.vix_data` 从 Yahoo Chart REST 端点
+（`query1.finance.yahoo.com/v8/finance/chart/{ticker}`）获取 `^VIX` 和 `^VIX3M` 的每日收盘价。该实现参照了参考项目
+`quantplatform` 的 `_fetch_yahoo_single`，并且是只读的。
 
-The fetched series are cached as `data/options_universe/vix_history.csv`
-(`date,vix,vix3m`) by `scripts/refresh_vix_history.py`. The CLI loads this
-CSV at the start of each daily scan, calls `compute_vix_regime` (V5 dual
-factor: Density + term structure), and passes the resulting snapshot into
-`run_options_radar(market_regime=...)`. Per-strategy penalties
-(`seller_regime_penalty`) flow through to the `global_score` and are
-surfaced as `market_regime` / `market_regime_penalty` on every candidate.
+获取到的序列由 `scripts/refresh_vix_history.py` 缓存为
+`data/options_universe/vix_history.csv`（`date,vix,vix3m`）。CLI 在每次每日扫描开始时加载这份
+CSV，调用 `compute_vix_regime`（V5 双因子：Density + 期限结构），并将得到的快照传入
+`run_options_radar(market_regime=...)`。各策略的惩罚项
+（`seller_regime_penalty`）会流入 `global_score`，并在每个候选合约上以
+`market_regime` / `market_regime_penalty` 的形式呈现。
 
-When the CSV is missing or empty, the radar still runs but emits
-`market_regime=Unknown reason=no_vix_history` and applies no penalty,
-rather than failing the scan.
+当该 CSV 缺失或为空时，雷达仍会运行，但会输出
+`market_regime=Unknown reason=no_vix_history` 且不施加任何惩罚，而不是让扫描失败。
 
-## Rate Limits
+## 速率限制
 
-Full-market scans can be slow by design. The limit is intentional: the scanner
-should respect Futu quote pacing rather than trying to be low-latency.
-
+全市场扫描在设计上可能较慢。这个限制是有意为之：扫描器应当尊重 Futu 的报价节奏，而不是追求低延迟。

@@ -1,29 +1,27 @@
-# Phase 11 Delivery - Polymarket Read-Only Research
+# Phase 11 交付 - Polymarket 只读研究
 
-## Summary
+## 概述
 
-Phase 11 adds read-only Polymarket research support:
+Phase 11 增加了对 Polymarket 只读研究的支持：
 
-- public read-only provider
-- provider factory
-- JSONL snapshot persistence and replay
-- simple scanner/quasi-backtest
-- SVG charts
-- markdown and JSON reports
-- backend API integration
-- frontend provider selection and result display
+- 公开只读数据源 (provider)
+- 数据源工厂 (provider factory)
+- JSONL 快照持久化与回放
+- 简易扫描器/准回测
+- SVG 图表
+- markdown 与 JSON 报告
+- 后端 API 集成
+- 前端数据源选择与结果展示
 
-It does not add live trading, wallet signing, private key handling, token
-transfer, redemption, or real order placement.
+它不包含实盘交易、钱包签名、私钥处理、代币转账、赎回或真实下单。
 
-## Red Flags
+## 风险提示 (Red Flags)
 
-- `src/quantum-core-algorithmic-trading-platform.zip` remains untracked. Do not
-  commit it without manual inspection.
-- `.env` contains local secrets and remains ignored. Do not copy values into
-  docs, tests, or logs.
+- `src/quantum-core-algorithmic-trading-platform.zip` 仍未纳入版本控制。未经
+  人工检查，请勿提交该文件。
+- `.env` 包含本地密钥且仍被忽略。请勿将其中的值复制到文档、测试或日志中。
 
-## API Examples
+## API 示例
 
 ```powershell
 curl "http://127.0.0.1:8765/api/prediction-market/markets?provider=sample"
@@ -32,24 +30,24 @@ curl -X POST "http://127.0.0.1:8765/api/prediction-market/backtest" ^
   -d "{\"provider\":\"sample\",\"min_edge_bps\":200}"
 ```
 
-## Output Directory
+## 输出目录
 
-Backtest artifacts are written under:
+回测产物写入以下目录：
 
 ```text
 data/api_runs/prediction_market/backtests/<run_id>/
 ```
 
-Each run includes:
+每次运行包含：
 
 - `result.json`
 - `chart_index.json`
 - `report.md`
-- SVG chart files
+- SVG 图表文件
 
-## Verification Log
+## 验证日志
 
-Final verification should include:
+最终验证应包含：
 
 ```text
 python -m pytest -q
@@ -59,7 +57,7 @@ cd src/frontend && npm run build
 PW_E2E=1 npx playwright test
 ```
 
-Latest local verification on 2026-05-01:
+2026-05-01 最近一次本地验证：
 
 ```text
 python -m pytest -q                      exit 0
@@ -71,7 +69,7 @@ real Polymarket read-only smoke          success, live market list + order book 
 live/cache smoke                         refresh -> live, prefer_cache -> cache
 ```
 
-API smoke output:
+API 冒烟测试输出：
 
 ```text
 GET /api/health                          200, dry_run=true, paper_trading=true, live_trading_enabled=false, kill_switch=true
@@ -84,7 +82,7 @@ POST /api/prediction-market/scan
 GET /api/orders/submit                   404, no order route exists
 ```
 
-Latest generated real-data artifact:
+最近生成的真实数据产物：
 
 ```text
 data/api_runs/prediction_market/backtests/pm-backtest-20260501T145426Z-9943f775/
@@ -97,7 +95,7 @@ data/api_runs/prediction_market/backtests/pm-backtest-20260501T145426Z-9943f775/
   result.json
 ```
 
-Latest generated cache directories:
+最近生成的缓存目录：
 
 ```text
 data/prediction_market/http_cache/markets/
@@ -106,25 +104,22 @@ data/prediction_market/http_cache/prices_history/
 data/prediction_market/snapshots/2026-05-01/polymarket/
 ```
 
-Root cause of the earlier HTTP 403:
+早前出现 HTTP 403 的根本原因：
 
-- Gamma and CLOB public endpoints rejected the original request style.
-- Adding a normal read-only `User-Agent` header resolved the block in this
-  environment.
-- The provider now uses `/markets/keyset` instead of the deprecated `/markets`
-  endpoint and writes successful responses into the local HTTP cache.
+- Gamma 与 CLOB 公开端点拒绝了原始的请求方式。
+- 在本环境中，添加一个普通的只读 `User-Agent` 请求头即可解除该拦截。
+- 该数据源现已改用 `/markets/keyset`（取代已弃用的 `/markets` 端点），并将成功
+  的响应写入本地 HTTP 缓存。
 
-Observed follow-up behavior after the live fix:
+实盘修复后观察到的后续行为：
 
-- Later network-only checks became intermittent and returned timeout / connect
-  failures from the public Polymarket hosts.
-- Because the earlier live fetch had already populated the HTTP cache, the API
-  still returned the last real market payload through `cache_status=stale_cache`
-  or `cache_status=cache`.
-- This is exactly why Phase 11 now has both live-read logic and cache fallback,
-  instead of assuming the upstream endpoints stay reachable all day.
+- 之后仅走网络的检查变得时好时坏，从 Polymarket 公开主机返回了超时 / 连接
+  失败。
+- 由于此前的实盘抓取已经填充了 HTTP 缓存，API 仍通过 `cache_status=stale_cache`
+  或 `cache_status=cache` 返回最后一次真实的市场数据。
+- 这正是 Phase 11 现在同时具备实盘读取逻辑与缓存回退的原因，而不是假设上游
+  端点会全天保持可达。
 
-## Safety Statement
+## 安全声明
 
-Phase 11 is strictly read-only research/backtest functionality and does not
-include live trading, wallet signing, or real order placement.
+Phase 11 严格限定为只读的研究/回测功能，不包含实盘交易、钱包签名或真实下单。

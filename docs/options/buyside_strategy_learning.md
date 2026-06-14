@@ -1,50 +1,49 @@
-# Buy-Side US Options Strategy Assistant
+# 买方美股期权策略助手
 
-Phase 14 adds the Buy-Side US Options Strategy Assistant for bullish long
-premium structures. It is decision-support only. It does not place orders,
-unlock accounts, or call any trading API.
+Phase 14 新增了面向看涨多头权利金 (long premium) 结构的买方美股期权策略助手。
+它仅用于决策支持，不会下单、解锁账户，也不会调用任何交易 API。
 
-## Scope
+## 范围
 
-Implemented pieces:
+已实现的部分：
 
-- Normalized option records for read-only Futu option data.
-- Buy-side data contracts for thesis, legs, scores, candidates, and scenarios.
-- Single-contract quality metrics.
-- Candidate generation for:
-  - Long Call
-  - Bull Call Spread
-  - LEAPS Call
-- LEAPS Call Spread
-- Scenario Lab using a Greek approximation.
-- Deterministic decision rules that rank and explain recommendations.
-- Local API and CLI wiring for read-only Futu data.
-- Frontend page at `/options-buyside`.
-- Required risk disclosure and anti-advice language checks.
+- 针对只读富途期权数据的标准化期权记录。
+- 用于论点、腿 (leg)、评分、候选方案和情景的买方数据契约。
+- 单合约质量指标。
+- 候选方案生成，支持：
+  - Long Call（买入看涨）
+  - Bull Call Spread（牛市看涨价差）
+  - LEAPS Call（长期看涨）
+- LEAPS Call Spread（长期看涨价差）
+- 使用希腊字母 (Greek) 近似的情景实验室 (Scenario Lab)。
+- 对推荐进行排序并给出解释的确定性决策规则。
+- 面向只读富途数据的本地 API 与 CLI 接线。
+- 位于 `/options-buyside` 的前端页面。
+- 必需的风险披露与反建议语言检查。
 
-Not implemented:
+未实现的部分：
 
-- Exact option pricing model.
-- Probability of profit.
-- Diagonal or calendar spreads.
-- Live trading or order placement.
+- 精确的期权定价模型。
+- 盈利概率 (probability of profit)。
+- 对角价差或日历价差。
+- 实盘交易或下单。
 
-## Main Files
+## 主要文件
 
-| File | Purpose |
+| 文件 | 用途 |
 |---|---|
-| `src/quant_system/options/option_data.py` | Normalizes provider option rows into platform records. |
-| `src/quant_system/options/models.py` | Adds buy-side thesis, leg, score, candidate, and scenario models. |
-| `src/quant_system/options/buy_side_metrics.py` | Scores a single option contract and produces warnings. |
-| `src/quant_system/options/buy_side_strategy.py` | Builds and ranks buy-side strategy candidates from an option chain. |
-| `src/quant_system/options/buy_side_scenarios.py` | Estimates scenario PnL with a Greek approximation. |
-| `src/quant_system/options/buy_side_decision.py` | Applies deterministic decision rules and explanations. |
-| `src/quant_system/api/routes/options.py` | Exposes `POST /api/options/buy-side/assistant`. |
-| `src/quant_system/cli.py` | Exposes `quant-system options buyside-screen`. |
-| `src/frontend/app/options-buyside/page.tsx` | Frontend route. |
-| `src/frontend/components/forms/BuySideOptionsAssistant.tsx` | Thesis form, recommendations, checklist, and Scenario Lab. |
+| `src/quant_system/options/option_data.py` | 将数据提供方的期权行标准化为平台记录。 |
+| `src/quant_system/options/models.py` | 新增买方论点、腿、评分、候选方案和情景模型。 |
+| `src/quant_system/options/buy_side_metrics.py` | 对单个期权合约评分并生成告警。 |
+| `src/quant_system/options/buy_side_strategy.py` | 从期权链构建并排序买方策略候选方案。 |
+| `src/quant_system/options/buy_side_scenarios.py` | 使用希腊字母近似估算情景损益。 |
+| `src/quant_system/options/buy_side_decision.py` | 应用确定性决策规则与解释。 |
+| `src/quant_system/api/routes/options.py` | 暴露 `POST /api/options/buy-side/assistant`。 |
+| `src/quant_system/cli.py` | 暴露 `quant-system options buyside-screen`。 |
+| `src/frontend/app/options-buyside/page.tsx` | 前端路由。 |
+| `src/frontend/components/forms/BuySideOptionsAssistant.tsx` | 论点表单、推荐、检查清单与情景实验室。 |
 
-## Data Flow
+## 数据流
 
 ```text
 Futu read-only option data
@@ -57,41 +56,38 @@ Futu read-only option data
   -> API / CLI / frontend read-only display
 ```
 
-Every step is pure research output. None of these files can submit, modify, or
-cancel orders.
+每一步都是纯粹的研究输出。这些文件均无法提交、修改或取消订单。
 
-## Important Assumptions
+## 重要假设
 
-The current Futu mapping uses these conventions:
+当前的富途映射采用以下约定：
 
-- `theta` is treated as option price change per contract per day.
-- `vega` is treated as option price change per 1 volatility point.
-- Contract size defaults to 100 unless provider data says otherwise.
-- Missing Greeks, IV, open interest, volume, stale quotes, and invalid bid/ask
-  are warnings rather than automatic crashes where possible.
+- `theta` 被视为每张合约每天的期权价格变化。
+- `vega` 被视为每 1 个波动率点的期权价格变化。
+- 合约乘数默认为 100，除非数据提供方另有说明。
+- 缺失的希腊字母、IV、未平仓量、成交量、过期报价以及无效的买卖价，在可能的情况下
+  作为告警处理，而非自动崩溃。
 
-These assumptions are locked by tests. If provider conventions change, update
-the tests and documentation together.
+这些假设由测试锁定。如果数据提供方的约定发生变化，请同步更新测试与文档。
 
-## Strategy Logic
+## 策略逻辑
 
-Long premium structures are compared by:
+多头权利金结构通过以下维度进行比较：
 
-- Direction fit versus the target price.
-- IV and volatility view.
-- Theta burden.
-- Liquidity.
-- Greek efficiency.
-- Reward/risk where definable.
-- Market regime penalty from the existing VIX regime module.
+- 相对于目标价的方向契合度。
+- IV 与波动率观点。
+- Theta 负担。
+- 流动性。
+- 希腊字母效率。
+- 可定义情况下的回报/风险。
+- 来自现有 VIX 体制 (regime) 模块的市场体制惩罚。
 
-High-VIX regimes penalize long premium more than spreads because implied
-volatility crush can hurt naked long calls. Spreads receive a smaller penalty
-because the short leg offsets part of the vega exposure.
+高 VIX 体制对多头权利金的惩罚大于价差，因为隐含波动率挤压 (IV crush) 会损害裸买
+看涨。价差受到的惩罚较小，因为空头腿抵消了部分 vega 暴露。
 
-## Scenario Lab Limits
+## 情景实验室的局限
 
-The Scenario Lab uses a first/second order Greek approximation:
+情景实验室使用一阶/二阶希腊字母近似：
 
 ```text
 new value ~= mid + delta * spot move
@@ -100,88 +96,86 @@ new value ~= mid + delta * spot move
                  + theta * days passed
 ```
 
-It is intentionally approximate:
+它有意保持近似性：
 
-- Accuracy degrades for spot changes above about +/-15%.
-- Accuracy degrades when time passed is above 30 days.
-- Theta acceleration near expiration is not modeled.
-- Vanna, charm, vomma, and other cross-Greeks are ignored.
+- 当标的价格变动超过约 +/-15% 时，精度下降。
+- 当经过时间超过 30 天时，精度下降。
+- 临近到期的 Theta 加速未被建模。
+- Vanna、charm、vomma 及其他交叉希腊字母被忽略。
 
-Each scenario row includes an `approximation_reliability` value:
+每一行情景都包含一个 `approximation_reliability` 值：
 
 - `high`
 - `medium`
 - `low`
 
-## Safety Language
+## 安全用语
 
-Outputs are quantitative research aids, not investment advice. The module does
-not know the user's account, risk tolerance, tax situation, execution quality, or
-real fill prices. It must not be described as a trade recommendation engine.
+输出是定量研究辅助工具，而非投资建议。该模块并不了解用户的账户、风险承受能力、税务
+状况、执行质量或真实成交价格。它不得被描述为交易推荐引擎。
 
-The frontend must show this required disclosure:
+前端必须显示以下必需的披露：
 
 ```text
 This tool provides quantitative decision support only and is not financial advice. Options involve risk and may lose value rapidly due to time decay, volatility changes, liquidity, and adverse underlying price movement. Review official options risk disclosures before trading.
 ```
 
-OCC's `Characteristics and Risks of Standardized Options` should be read before
-trading options. The disclosure is a required risk control, not decorative text.
+在交易期权之前应阅读 OCC 的 `Characteristics and Risks of Standardized Options`。
+该披露是一项必需的风险控制，而非装饰性文字。
 
-## API Contract
+## API 契约
 
-Endpoint:
+端点：
 
 ```text
 POST /api/options/buy-side/assistant
 ```
 
-Request body schema: `BuySideAssistantRequest`.
+请求体 schema：`BuySideAssistantRequest`。
 
-Key fields:
+关键字段：
 
-| Field | Required | Notes |
+| 字段 | 是否必需 | 说明 |
 |---|---:|---|
-| `ticker` | yes | US underlying ticker, for example `AAPL`. |
-| `view_type` | yes | One of the supported bullish thesis views. |
-| `target_price` | yes | User thesis target price. |
-| `target_date` | yes | ISO date, for example `2026-12-31`. |
-| `provider` | no | Defaults to `futu`; other providers return 400. |
-| `spot_price` | no | Optional override; when absent, API reads Futu quote snapshot. |
-| `iv_rank` | no | Optional 0-100 IV rank. |
-| `user_scenarios` | no | Optional subjective scenario EV inputs. |
-| `scenario_spot_changes` | no | Optional Scenario Lab spot-change grid. |
-| `scenario_iv_changes` | no | Optional Scenario Lab IV-change grid. |
-| `scenario_days_passed` | no | Optional Scenario Lab time-passed grid. |
-| `max_recommendations` | no | Defaults to 10, max 50. |
+| `ticker` | 是 | 美股标的代码，例如 `AAPL`。 |
+| `view_type` | 是 | 受支持的看涨论点观点之一。 |
+| `target_price` | 是 | 用户论点的目标价。 |
+| `target_date` | 是 | ISO 日期，例如 `2026-12-31`。 |
+| `provider` | 否 | 默认为 `futu`；其他数据提供方返回 400。 |
+| `spot_price` | 否 | 可选覆盖值；缺省时 API 读取富途报价快照。 |
+| `iv_rank` | 否 | 可选的 0-100 IV 排名。 |
+| `user_scenarios` | 否 | 可选的主观情景 EV 输入。 |
+| `scenario_spot_changes` | 否 | 可选的情景实验室标的变动网格。 |
+| `scenario_iv_changes` | 否 | 可选的情景实验室 IV 变动网格。 |
+| `scenario_days_passed` | 否 | 可选的情景实验室经过时间网格。 |
+| `max_recommendations` | 否 | 默认为 10，最大 50。 |
 
-Response body schema: `BuySideAssistantResponse`.
+响应体 schema：`BuySideAssistantResponse`。
 
-Top-level fields:
+顶层字段：
 
-| Field | Notes |
+| 字段 | 说明 |
 |---|---|
-| `ticker` | Normalized ticker. |
-| `thesis` | Echo of the validated decision input. |
-| `recommendations` | Ranked strategy results with reasons, risks, scores, scenario summary, demotion badge, and warnings. |
-| `recommendations[].legs` | Legs used by the frontend comparison table. |
-| `recommendations[].net_debit` | Net premium outlay where defined. |
-| `assumptions` | Read-only research and approximation assumptions. |
+| `ticker` | 标准化后的标的代码。 |
+| `thesis` | 已验证决策输入的回显。 |
+| `recommendations` | 排序后的策略结果，含理由、风险、评分、情景摘要、降级徽章与告警。 |
+| `recommendations[].legs` | 前端比较表所使用的腿。 |
+| `recommendations[].net_debit` | 已定义情况下的净权利金支出。 |
+| `assumptions` | 只读的研究与近似假设。 |
 
-The API safety middleware also appends the usual `safety` footer to JSON
-responses.
+API 安全中间件还会向 JSON 响应追加惯常的 `safety` 页脚。
 
-Error responses:
+错误响应：
 
-| Status | Meaning |
+| 状态码 | 含义 |
 |---:|---|
-| 400 | Unsupported provider or invalid parameter combination. |
-| 403 | Futu quote permission is insufficient. |
-| 404 | Ticker not found, no usable underlying price, or no option chain is available. |
-| 422 | Invalid thesis input. |
-| 503 | Futu OpenD/provider unavailable or timed out. |
+| 400 | 不受支持的数据提供方或无效的参数组合。 |
+| 403 | 富途报价权限不足。 |
+| 404 | 未找到标的、无可用的标的价格，或无可用的期权链。 |
+| 422 | 无效的论点输入。 |
+| 503 | 富途 OpenD/数据提供方不可用或超时。 |
 
-Example request:
+请求示例：
 
 ```json
 {
@@ -195,7 +189,7 @@ Example request:
 }
 ```
 
-Example response shape:
+响应结构示例：
 
 ```json
 {
@@ -214,50 +208,42 @@ Example response shape:
 }
 ```
 
-## Frontend
+## 前端
 
-Open:
+打开：
 
 ```text
 http://127.0.0.1:3001/options-buyside
 ```
 
-The page includes:
+该页面包含：
 
-- Trade thesis form.
-- Market snapshot panel.
-- Strategy recommendation cards.
-- Strategy comparison table.
-- Anti-pitfall checklist.
-- Scenario Lab summary and user-input subjective EV.
-- Required risk disclosure.
-- Concrete selected option legs are shown directly on each recommendation card.
-- Recommendation detail panels expand independently, so several structures can
-  be reviewed side by side.
+- 交易论点表单。
+- 市场快照面板。
+- 策略推荐卡片。
+- 策略比较表。
+- 反踩坑检查清单。
+- 情景实验室摘要与用户输入的主观 EV。
+- 必需的风险披露。
+- 每张推荐卡片直接展示具体选定的期权腿。
+- 推荐详情面板可独立展开，因此可以并排查看多个结构。
 
-### Post-Phase 14 UI Adjustments
+### Phase 14 后续 UI 调整
 
-The thesis form now applies view-type presets when the user changes the bullish
-view. These presets update the risk preference, capped-upside setting, IV view,
-event-risk setting, target date, Scenario Lab ranges, and IV-change assumption.
-They are only form defaults; users can still edit the fields before running the
-assistant.
+论点表单现在会在用户更改看涨观点时应用观点类型预设。这些预设会更新风险偏好、封顶上行
+设置、IV 观点、事件风险设置、目标日期、情景实验室区间以及 IV 变动假设。它们仅是表单
+默认值；用户在运行助手前仍可编辑这些字段。
 
-The UI removed the max-loss budget field from the thesis panel because the
-buy-side assistant already reports max loss per structure and this phase does
-not manage account sizing. Scenario Lab now asks for a horizon date instead of a
-raw day-count string. The frontend converts that date into 0 / midpoint /
-horizon-day checks before calling the API.
+UI 从论点面板移除了最大亏损预算字段，因为买方助手已经按结构报告最大亏损，且本阶段不
+管理账户规模。情景实验室现在询问的是一个时间范围日期，而非原始的天数字符串。前端会在
+调用 API 之前将该日期转换为 0 / 中点 / 时间范围日的检查。
 
-The subjective EV panel is a user-input expected-value calculation. It is not a
-market-implied probability model and should not be interpreted as a forecast.
+主观 EV 面板是一个用户输入的期望值计算。它不是市场隐含概率模型，也不应被解读为预测。
 
-Futu rate-limit responses are handled as temporary provider failures. The
-backend waits once and retries the read-only request. If OpenD still rejects the
-request, the frontend shows a clear provider error and users should wait before
-rerunning the same ticker.
+富途限流响应被作为临时的数据提供方故障处理。后端会等待一次并重试该只读请求。如果 OpenD
+仍然拒绝该请求，前端会显示明确的数据提供方错误，用户应等待后再重新运行同一标的。
 
-## Quick Validation
+## 快速验证
 
 ```powershell
 conda activate ai-quant

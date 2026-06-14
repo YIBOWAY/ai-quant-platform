@@ -1,13 +1,17 @@
 # AI-Assisted Quant Research Platform
 
+> 中文版：[README_zh.md](README_zh.md)
+
 Local-first quant research, backtesting, paper-trading, read-only market-data,
 and options research platform.
 
 The project is currently delivered through Phase 14. It includes:
 
 - US equity and ETF historical data workflows.
-- Factor research, read-only Factor Lab diagnostics, strategy/universe
-  registries, backtests, experiments, and paper-trading simulation.
+- Factor research, Factor Lab diagnostics (real-data-first since 2026-06-11,
+  with in-UI provider/universe/symbol/benchmark controls and saveable factor
+  research runs), strategy/universe registries, backtests, experiments, and
+  paper-trading simulation.
 - Local FastAPI backend and Next.js frontend.
 - AI research assistant with candidate pool and human review gates.
 - Read-only Polymarket research, snapshots, replay, and reports.
@@ -17,7 +21,8 @@ The project is currently delivered through Phase 14. It includes:
 - Strategy Catalog with the reversal/momentum replication, the registered
   cross-sectional Top-N backtest strategy, and a mean-reversion Top-N strategy.
 - Backtest engine controls: rebalance frequency (every bar / weekly / monthly),
-  per-symbol and sector weight caps, and per-name return attribution.
+  per-symbol weight cap, API-level sector cap when a sector map is supplied,
+  and per-name return attribution.
 - Optional PostgreSQL run index over local backtest/factor/paper runs.
 
 This project does not add live trading, broker order submission, wallet
@@ -77,13 +82,13 @@ curl http://127.0.0.1:8765/api/health
 | Page | Purpose |
 |---|---|
 | `/data-explorer` | US equity historical data viewer. |
-| `/factor-lab` | Read-only factor health and QQQ timing diagnostics. |
+| `/factor-lab` | Factor health and timing diagnostics (cross-section / timing tabs); provider, universe, timing symbol, and benchmark adjustable in the sidebar (default `futu`), plus saveable factor research runs. |
 | `/backtest` | Run strategy, universe, factor-weight, and benchmark backtests. |
 | `/replications` | Strategy Catalog for registered research strategies. |
 | `/docs/reversal-momentum` | Frontend-readable notes for the paper replication. |
 | `/experiments` | Inspect experiment sweeps, folds, comparisons, and send best params to backtest. |
-| `/paper-trading` | Run paper-trading simulation only. |
-| `/position-map` | Inspect latest backtest positions and paper-trading safety state. |
+| `/paper-trading` | Persistent paper account (manual orders + one-click strategy rebalance) plus historical replay. |
+| `/position-map` | Live paper-account position map (equity, cash, exposure, source attribution); backtest exposure shown as a comparison block. |
 | `/options-screener` | Single-ticker seller options screener. |
 | `/options-radar` | Daily seller options radar snapshot. |
 | `/options-radar/[symbol]` | Single-ticker radar drilldown and live chain loader. |
@@ -145,12 +150,15 @@ docker start quantplatform-db
 # .env
 QS_DATABASE_ENABLED=true
 QS_DATABASE_URL="postgresql://quant:quantpass@127.0.0.1:5432/quantplatform"
-QS_DATABASE_CONNECT_TIMEOUT_SECONDS=5
+QS_DATABASE_CONNECT_TIMEOUT_SECONDS=1
 QS_DATABASE_AUTO_MIGRATE=true
 ```
 
-On startup the backend creates the `quant_system.runs` table, backfills existing
-file runs, and prunes index rows whose files were removed. Check it with:
+On startup the backend starts run-index migration/backfill in the background:
+it creates the `quant_system.runs` table, backfills existing file runs, and
+prunes index rows whose files were removed. If PostgreSQL is down, the first
+probe is short and later requests skip repeated connection attempts for a brief
+cooldown window while continuing to read local files. Check it with:
 
 ```powershell
 curl http://127.0.0.1:8765/api/health   # database.reachable should be true
@@ -160,12 +168,41 @@ The `psycopg` driver ships with the `api` extra. The database stores research
 run metadata only; the connection URL is masked in `/api/settings`. See
 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md).
 
-## Options Workflows
+## Paper Account
+
+A single persistent paper account (funded at $1,000,000) lets you trade by hand
+or let a strategy rebalance for you, all reflected on the Position Map. It is
+simulation-only — no real orders, broker, wallet, or account unlock.
+
+- Manual order: `POST /api/paper/account/orders` (buy/sell, quantity or
+  notional, optional limit). Fills at the Futu real-time snapshot price, or the
+  most recent real historical close from local cache/Tiingo when OpenD is
+  offline. The persistent account never uses sample/demo prices.
+- Strategy rebalance: `POST /api/paper/account/rebalance` (one-click; aborts
+  atomically if any leg cannot fill). It only uses real market history; sample
+  strategy history never mutates the persistent account.
+- View / freeze / reset / ledger: `GET /api/paper/account`,
+  `POST /api/paper/account/kill-switch`, `POST /api/paper/account/reset`,
+  `GET /api/paper/account/ledger`.
+
+Scheduled auto-rebalance (e.g. via Windows Task Scheduler):
+
+```powershell
+conda activate ai-quant
+quant-system paper rebalance --account default --strategy cross_sectional_top_n
+```
+
+The legacy `POST /api/paper/run` historical replay is unchanged and lives on
+the "History Replay (research)" tab of the same page (since 2026-06-11). See
+[docs/guides/paper-trading.md](docs/guides/paper-trading.md) and
+[docs/design/paper_trading_position_map_redesign.md](docs/design/paper_trading_position_map_redesign.md).
 
 ## Factor Lab Refresh
 
-Factor Lab is a read-only dashboard. Refresh its local diagnostics cache from
-the backend or a scheduled task:
+Since 2026-06-11 the Factor Lab UI defaults to real data (`provider=futu`),
+with sidebar controls for provider / universe / timing symbol / benchmark, and
+supports saveable factor research runs. The CLI below refreshes the local
+diagnostics cache from the backend or a scheduled task:
 
 ```powershell
 conda activate ai-quant
@@ -173,6 +210,12 @@ quant-system factor refresh-lab --provider sample --universe-id etf --symbol QQQ
 ```
 
 The command only writes local research cache files. It does not place orders.
+
+New factors are added by implementing and testing backend factor code, then
+registering it in the factor registry. The frontend reads registered factors;
+it is not intended to be a free-form factor-expression editor.
+
+## Options Workflows
 
 Single-ticker seller screener:
 

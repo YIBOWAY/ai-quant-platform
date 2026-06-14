@@ -1,29 +1,29 @@
-# Options Screener API
+# 期权筛选器 API
 
-## Summary
+## 概述
 
-The Options Screener API exposes read-only option research endpoints backed by Futu OpenD.
+期权筛选器 API 提供基于 Futu OpenD 的只读期权研究端点。
 
-No endpoint can submit, modify, sign, or place a real order.
+任何端点都无法提交、修改、签名或下达真实订单。
 
-## Endpoints
+## 端点
 
 ### GET `/api/options/expirations`
 
-Query parameters:
+查询参数：
 
-| Name | Required | Example |
+| 名称 | 是否必填 | 示例 |
 |---|---|---|
-| `ticker` | yes | `AAPL` |
-| `provider` | no | `futu` |
+| `ticker` | 是 | `AAPL` |
+| `provider` | 否 | `futu` |
 
-Example:
+示例：
 
 ```powershell
 curl "http://127.0.0.1:8765/api/options/expirations?ticker=AAPL&provider=futu"
 ```
 
-Response shape:
+响应结构：
 
 ```json
 {
@@ -42,15 +42,15 @@ Response shape:
 
 ### GET `/api/options/chain`
 
-Query parameters:
+查询参数：
 
-| Name | Required | Example |
+| 名称 | 是否必填 | 示例 |
 |---|---|---|
-| `ticker` | yes | `AAPL` |
-| `expiration` | yes | `2026-05-04` |
-| `provider` | no | `futu` |
+| `ticker` | 是 | `AAPL` |
+| `expiration` | 是 | `2026-05-04` |
+| `provider` | 否 | `futu` |
 
-Example:
+示例：
 
 ```powershell
 curl "http://127.0.0.1:8765/api/options/chain?ticker=AAPL&expiration=2026-05-04&provider=futu"
@@ -58,7 +58,7 @@ curl "http://127.0.0.1:8765/api/options/chain?ticker=AAPL&expiration=2026-05-04&
 
 ### POST `/api/options/screener`
 
-Example body:
+请求体示例：
 
 ```json
 {
@@ -77,7 +77,7 @@ Example body:
 }
 ```
 
-Example:
+示例：
 
 ```powershell
 curl -X POST "http://127.0.0.1:8765/api/options/screener" `
@@ -85,36 +85,32 @@ curl -X POST "http://127.0.0.1:8765/api/options/screener" `
   -d "{\"ticker\":\"AAPL\",\"strategy_type\":\"sell_put\",\"provider\":\"futu\",\"min_apr\":10,\"min_dte\":10,\"max_dte\":60,\"max_spread_pct\":0.15,\"min_open_interest\":50}"
 ```
 
-Response includes:
+响应包含：
 
-- underlying price
-- scanned expiration count and scanned expiration dates
-- candidate count
-- rejected count
-- candidate table
-- DTE / spread / open-interest / APR filter effects
-- assumptions
-- safety footer
+- 标的价格
+- 已扫描的到期日数量及已扫描的到期日列表
+- 候选数量
+- 被剔除的数量
+- 候选表格
+- DTE / 价差 / 未平仓合约 / APR 筛选效果
+- 假设条件
+- 安全性页脚
 
-If `expiration` is omitted, the backend scans every Futu expiration inside `min_dte` and `max_dte`, then ranks the combined candidate list. Supplying `expiration` is still accepted for API compatibility, but the frontend does not require it.
+如果省略 `expiration`，后端会扫描 `min_dte` 与 `max_dte` 区间内的每个 Futu 到期日，然后对合并后的候选列表进行排序。出于 API 兼容性考虑仍可传入 `expiration`，但前端并不要求提供。
 
-`Avoid` rows are hidden by default so the main table does not show unusable
-seller candidates as if they were ready for research. Set `include_rejected`
-to `true` to return those rows for audit/debug review. For covered calls, a
-strike below the current stock price is a hard rejection; a failed trend check
-only downgrades an otherwise usable candidate to `Watch`.
+默认情况下 `Avoid` 行会被隐藏，以免主表格把不可用的卖方候选当作可供研究的项展示出来。将 `include_rejected` 设为 `true` 可返回这些行，用于审计 / 调试查看。对于备兑看涨 (covered call)，行权价低于当前股价属于硬性剔除；而趋势检查未通过仅会把一个本来可用的候选降级为 `Watch`。
 
-## Error Mapping
+## 错误映射
 
-| Error | Typical Cause |
+| 错误 | 常见原因 |
 |---|---|
-| `400` | invalid ticker, unsupported provider, bad parameter |
-| `403` | permission denied |
-| `404` | no option chain or no market data |
-| `503` | OpenD unavailable or timeout |
+| `400` | ticker 无效、不支持的 provider、参数错误 |
+| `403` | 权限被拒绝 |
+| `404` | 无期权链或无市场数据 |
+| `503` | OpenD 不可用或超时 |
 
-Raw tracebacks are not returned.
+不会返回原始的堆栈跟踪 (traceback)。
 
-## Safety
+## 安全性
 
-The API only reads market data. It does not expose order, broker, wallet, signing, or live execution endpoints.
+该 API 仅读取市场数据。它不暴露下单、券商、钱包、签名或实盘执行端点。

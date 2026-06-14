@@ -1,5 +1,17 @@
 # Frontend / Backend Audit — Phase 9 联调
 
+> **⚠️ 历史审计快照（Phase 9 时期）——结论已过时，请勿据此判断当前状态。**
+>
+> **本文件是某一历史时点(Phase 9 联调期)的审计快照，仅作为历史记录保留。其下文中的多数结论已不反映当前真实状态。** 尤其是以下"展示稿结论"**均已过时**：
+>
+> - ~~"前端零事件处理器 / 整个前端没有任何 onClick handler / 前端只调用 GET、零 POST"~~ —— **已过时**：当前前端为真实可交互页面，含表单、提交处理与真实 POST API 调用（如 backtest / factor / paper / agent 等链路均可由前端表单触发）。
+> - ~~"回测/数据仍为 sample、不调用真实 provider"~~ —— **已过时**：当前回测/因子/模拟链路可使用真实数据源(Futu / Tiingo)，并在响应中明确标注 `source`(sample vs 真实 provider)，不会把样本悄无声息地当作实时数据。
+> - ~~"`/settings` 路由不存在"~~ —— **已过时**：`/settings` 路由现已存在。
+>
+> **当前真实状态以下列文档为准：** [README.md](../../README.md)、[docs/INDEX.md](../INDEX.md)、[FRONTEND_REAL_DATA_REVIEW_2026-05-31.md](FRONTEND_REAL_DATA_REVIEW_2026-05-31.md)（另见本目录 [README.md](README.md) 对"历史审计"口径的统一说明）。
+>
+> 下文正文**原样保留**作为历史记录，**不代表**平台现状。
+
 > 本文是 [UI_FUNCTION_MATRIX.md](UI_FUNCTION_MATRIX.md) / [API_AUDIT.md](API_AUDIT.md) / [MARKET_DATA_SOURCE_AUDIT.md](MARKET_DATA_SOURCE_AUDIT.md) 的合并性结论，提供给非工程读者也能理解。详细矩阵见各分文档。
 
 ## 1. 既有文档总结

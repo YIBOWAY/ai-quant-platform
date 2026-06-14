@@ -1,100 +1,100 @@
-# Futu Troubleshooting
+# Futu 故障排查
 
-## OpenD Not Running
+## OpenD 未运行
 
-Symptom:
+现象：
 
-- API returns a connection error.
-- `scripts/verify_futu_connection.py` cannot create a quote context.
+- API 返回连接错误。
+- `scripts/verify_futu_connection.py` 无法创建行情上下文。
 
-Fix:
+修复：
 
-1. Start Futu OpenD GUI.
-2. Confirm it is logged in.
-3. Confirm the API port is listening:
+1. 启动 Futu OpenD GUI。
+2. 确认已登录。
+3. 确认 API 端口正在监听：
 
 ```powershell
 Test-NetConnection 127.0.0.1 -Port 11111
 ```
 
-Expected:
+预期：
 
 ```text
 TcpTestSucceeded : True
 ```
 
-## Wrong Conda Environment
+## Conda 环境错误
 
-Symptom:
+现象：
 
 - `ModuleNotFoundError: No module named 'futu'`
 
-Fix:
+修复：
 
 ```powershell
 conda activate ai-quant
 python -m pip show futu-api
 ```
 
-If missing:
+如果缺失：
 
 ```powershell
 python -m pip install futu-api -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-## Permission Denied
+## 权限被拒绝
 
-Symptom:
+现象：
 
-- Futu returns permission-related errors.
-- Stock data works but option fields are empty.
+- Futu 返回权限相关的错误。
+- 股票数据正常，但期权字段为空。
 
-Fix:
+修复：
 
-1. Confirm the market entitlement in Futu.
-2. Run:
+1. 在 Futu 中确认市场行情权限。
+2. 运行：
 
 ```powershell
 python scripts/verify_futu_connection.py
 ```
 
-3. Check whether stock K-lines, option expirations, option chains, and option snapshots each return data.
+3. 检查股票 K 线、期权到期日、期权链和期权快照是否各自返回数据。
 
-## Empty Data
+## 数据为空
 
-Possible causes:
+可能原因：
 
-- invalid ticker
-- weekend or market holiday range
-- unsupported frequency
-- symbol has no options
-- data permission does not cover requested history
+- ticker 无效
+- 周末或市场休市日期范围
+- 不支持的频率
+- 标的没有期权
+- 数据权限未覆盖所请求的历史区间
 
-Try:
+尝试：
 
 ```powershell
 curl "http://127.0.0.1:8765/api/market-data/history?ticker=SPY&start=2024-01-02&end=2024-01-12&freq=1d&provider=futu"
 ```
 
-## Frontend Cannot Connect Backend
+## 前端无法连接后端
 
-Check that backend is running:
+检查后端是否在运行：
 
 ```powershell
 curl http://127.0.0.1:8765/api/health
 ```
 
-If the frontend runs on `3001`, CORS is already configured for:
+如果前端运行在 `3001` 端口，CORS 已为以下地址配置：
 
 - `http://127.0.0.1:3001`
 - `http://localhost:3001`
 
-## Dropdown Text Is Hard To Read
+## 下拉框文字难以辨认
 
-The frontend select menus use dark option styling as a temporary compatibility fix.
+前端 select 菜单使用深色选项样式作为临时兼容性修复。
 
-If a browser ignores option styling, use keyboard selection or switch to a custom Select component in a later frontend cleanup.
+如果浏览器忽略选项样式，请使用键盘选择，或在后续前端清理中切换为自定义 Select 组件。
 
-## Safety Boundary
+## 安全边界
 
-Do not troubleshoot by adding trading context, account unlock, order submit, or signing code. This integration is read-only market data only.
+不要通过添加交易上下文、账户解锁、订单提交或签名代码来排查问题。本集成仅为只读市场数据。

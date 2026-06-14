@@ -1,44 +1,44 @@
-# Phase 9 Frontend/API Integration Check
+# Phase 9 前端/API 集成检查
 
-## Scope
+## 范围
 
-This historical check verified that the Next.js frontend in `src/frontend/`
-could run locally and read real responses from the Phase 9 backend API. For
-current run commands, prefer `README.md`.
+本历史检查验证了 `src/frontend/` 中的 Next.js 前端
+能够在本地运行，并读取来自 Phase 9 后端 API 的真实响应。如需
+当前的运行命令，请优先参考 `README.md`。
 
-## Local Ports
+## 本地端口
 
-- Backend API: `http://127.0.0.1:8765`
-- Frontend: `http://127.0.0.1:3001`
+- 后端 API：`http://127.0.0.1:8765`
+- 前端：`http://127.0.0.1:3001`
 
-## Backend Startup Options
+## 后端启动选项
 
-The backend is a FastAPI app. The standard direct startup command is:
+后端是一个 FastAPI 应用。标准的直接启动命令是：
 
 ```powershell
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
-Meaning:
+含义：
 
-- `python -m uvicorn`: start the ASGI server used by FastAPI.
-- `quant_system.api.server:create_app`: load the app factory from the project.
-- `--factory`: tell uvicorn that `create_app` must be called to build the app.
-- `--host 127.0.0.1`: bind only to this machine.
-- `--port 8765`: expose the backend API on port `8765`.
+- `python -m uvicorn`：启动 FastAPI 所使用的 ASGI 服务器。
+- `quant_system.api.server:create_app`：从项目中加载应用工厂。
+- `--factory`：告诉 uvicorn 必须调用 `create_app` 来构建应用。
+- `--host 127.0.0.1`：仅绑定到本机。
+- `--port 8765`：在端口 `8765` 上暴露后端 API。
 
-The project CLI also provides this convenience wrapper:
+项目 CLI 还提供了以下便捷封装：
 
 ```powershell
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
-That wrapper still calls `uvicorn` internally. It exists to keep the same project CLI style as `data`, `factor`, `backtest`, `paper`, and to enforce local-safe defaults such as blocking public bind unless explicitly confirmed.
+该封装在内部仍然调用 `uvicorn`。它的存在是为了与 `data`、`factor`、`backtest`、`paper` 保持相同的项目 CLI 风格，并强制执行本地安全的默认设置，例如在未明确确认前阻止公开绑定。
 
-Full web testing needs two services at the same time: backend on `8765`,
-frontend on `3001`.
+完整的 Web 测试需要同时运行两个服务：后端在 `8765`，
+前端在 `3001`。
 
-## Commands Used
+## 使用的命令
 
 ```powershell
 conda activate ai-quant
@@ -54,28 +54,28 @@ npm run build
 npm run dev -- --hostname 127.0.0.1 --port 3001
 ```
 
-One-command local start from repository root:
+从仓库根目录一键本地启动：
 
 ```powershell
 conda activate ai-quant
 .\scripts\start_phase9_full_stack.ps1
 ```
 
-If port `3001` is already occupied:
+如果端口 `3001` 已被占用：
 
 ```powershell
 .\scripts\start_phase9_full_stack.ps1 -FrontendPort 3002
 ```
 
-Stop:
+停止：
 
 ```powershell
 .\scripts\stop_phase9_full_stack.ps1
 ```
 
-## Backend Smoke Result
+## 后端冒烟测试结果
 
-The integration run created sample backend artifacts through real API calls:
+本次集成运行通过真实 API 调用创建了示例后端产物：
 
 - `POST /api/backtests/run`
 - `POST /api/paper/run`
@@ -85,7 +85,7 @@ The integration run created sample backend artifacts through real API calls:
 - `GET /api/symbols`
 - `GET /api/factors`
 
-Observed result:
+观测到的结果：
 
 ```json
 {
@@ -98,17 +98,17 @@ Observed result:
 }
 ```
 
-## Browser Smoke Result
+## 浏览器冒烟测试结果
 
-Playwright screenshots were captured after waiting for backend-driven text:
+在等待后端驱动的文本出现后，捕获了 Playwright 截图：
 
-- `output/playwright/dashboard.png` waited for `API CONNECTED`
-- `output/playwright/data-explorer.png` waited for `API source`
-- `output/playwright/order-book.png` waited for `Loaded`
+- `output/playwright/dashboard.png` 等待 `API CONNECTED`
+- `output/playwright/data-explorer.png` 等待 `API source`
+- `output/playwright/order-book.png` 等待 `Loaded`
 
-## Notes
+## 备注
 
-- The frontend now uses `NEXT_PUBLIC_QUANT_API_BASE_URL`, defaulting to `http://127.0.0.1:8765`.
-- No live trading endpoint was added.
-- Prediction market views use sample data only.
-- Agent views read candidate metadata only; candidate source is not executed.
+- 前端现在使用 `NEXT_PUBLIC_QUANT_API_BASE_URL`，默认值为 `http://127.0.0.1:8765`。
+- 未添加任何实盘交易端点。
+- 预测市场视图仅使用示例数据。
+- 智能体视图仅读取候选项元数据；候选项来源不会被执行。

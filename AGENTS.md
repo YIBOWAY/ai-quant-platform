@@ -3,6 +3,7 @@
 This file is for AI agents working in this repository. Keep user-facing replies
 plain and concise. Do the technical work rigorously, verify before reporting,
 and avoid claiming completion without running the relevant checks.
+回答问题时需避免过分的夸赞。请记住，你的回答不一定是对的，我的判断也不一定是对的。对待所有问题都要反复推敲，优先保证准确性，必要时你可以主动向我索要补充信息或证据。回答时保持结构化输出，条理清晰。
 
 ## Project Structure
 
@@ -12,7 +13,8 @@ src/quant_system/
   backtest/               Equity backtest engine and reports.
   config/                 Settings, paths, safety flags, provider config.
   data/                   Equity market data providers and schemas.
-  execution/              Paper trading, order manager, paper broker.
+  execution/              Paper account (persistent), paper trading replay,
+                          order manager, paper broker, price source.
   experiments/            Experiment configs, storage, summaries.
   factors/                Factor definitions, registry, pipeline.
   options/                Futu read-only options research modules.
@@ -53,17 +55,71 @@ and Strategy Catalog. Currently runnable: `cross_sectional_top_n`,
 `mean_reversion_top_n`. `reversal_momentum` is `result_type="replication"` and
 runs through its own endpoint.
 
+Factor development is code-first. Do not add a frontend expression builder for
+ad-hoc factor formulas; implement and test new factor logic in
+`src/quant_system/factors/`, register it in the backend factor registry, and let
+Factor Lab, Backtester, and Strategy Catalog consume the registered metadata.
+
+Backtest sector caps are API/code-level controls and must be paired with a
+`sector_map`; requests that set `sector_cap` without `sector_map` are rejected.
+The frontend Backtester exposes the safer per-symbol cap only.
+
 ## Optional PostgreSQL Run Index
 
 Backtest/factor/paper runs are file-based under `data/api_runs/`. An optional
 PostgreSQL index (`storage/database.py`, `storage/runs_repository.py`,
 `scripts/sql/001_runs_index.sql`) speeds up listing. Off by default; controlled
 by `QS_DATABASE_ENABLED` / `QS_DATABASE_URL` / `QS_DATABASE_CONNECT_TIMEOUT_SECONDS`
-/ `QS_DATABASE_AUTO_MIGRATE`. The API must keep working with the database off or
-unreachable (filesystem fallback). Tests must not touch a real database
+/ `QS_DATABASE_AUTO_MIGRATE`; default connect timeout is 1 second. Startup
+migration/backfill runs in a background thread, failed probes enter a short
+cooldown, and list endpoints must keep falling back to the filesystem when the
+database is off, slow, or unreachable. Tests must not touch a real database
 (`tests/conftest.py` forces it off). Never run `npm run build` while the
 frontend dev server is running — they share `src/frontend/.next` and the build
 corrupts the dev server.
+
+## Paper Account (Interactive Auto + Manual Trading)
+
+Separate from the immutable historical-replay runs (`POST /api/paper/run`),
+there is a single **persistent paper account** funded at $1,000,000. Manual
+orders and strategy rebalances both land in the same account and are reflected
+on the Position Map.
+
+- Account model + append-only ledger: `src/quant_system/execution/account.py`
+  (`PaperAccount`, `AccountPosition` with `avg_cost`, `LedgerEntry`). The account
+  snapshot and its complete audit ledger are persisted together.
+- Persistence: `src/quant_system/execution/account_storage.py` writes
+  `data/api_runs/paper_account/<account_id>/account.json` +
+  `positions_snapshot.parquet` (atomic write with retry), archives on reset.
+- Pricing: `src/quant_system/execution/price_source.py` (`PaperPriceSource`) —
+  Futu real-time snapshot first (`fetch_market_snapshots`), falls back to the
+  most recent real historical close from local cache / Tiingo when OpenD is
+  down, and never uses sample/demo prices. `price_kind` (`futu_snapshot` /
+  `last_close`) flows to the ledger and UI.
+- Service: `src/quant_system/execution/account_service.py` — manual orders and
+  strategy rebalance share one `OrderRequest -> RiskEngine -> PaperBroker ->
+  account.apply_fill` primitive. Rebalance is plan-then-commit: it dry-runs the
+  whole plan on a deep copy and aborts with no mutation if any leg is rejected
+  (prevents "sold everything then failed to buy").
+- API (`src/quant_system/api/routes/paper.py`): `GET /api/paper/account`,
+  `POST /api/paper/account/orders` (quantity or notional, optional limit),
+  `POST /api/paper/account/rebalance`, `POST /api/paper/account/reset`,
+  `POST /api/paper/account/kill-switch`, `GET /api/paper/account/ledger`.
+  All mutating routes serialize per account in-process and share a filesystem
+  lock with CLI/scheduled rebalance processes.
+- CLI: `quant-system paper rebalance --account default --strategy <id>` (for
+  scheduled auto-rebalance; exits non-zero on abort/failure) and
+  `quant-system paper account-show`.
+- Frontend: account summary + `AccountTradePanel` (manual ticket, one-click
+  rebalance, real freeze toggle) on `/paper-trading`; account-driven
+  `/position-map` (`src/frontend/components/AccountRefreshControl.tsx` for
+  optional 30s auto-refresh).
+- Account-level kill switch (default OFF, user-toggleable) freezes only this
+  paper account. It is distinct from the global `QS_KILL_SWITCH` that gates the
+  legacy `POST /api/paper/run` replay path — do not conflate them.
+- Persistent-account fills and strategy rebalances must use real market data:
+  Futu snapshots first, then a real local/Tiingo close. Never use synthetic
+  sample prices or sample strategy history to mutate the account.
 
 ## Options Module Notes
 
@@ -143,6 +199,10 @@ curl http://127.0.0.1:8765/api/health
 cd src/frontend
 npm run dev -- --hostname 127.0.0.1 --port 3001
 ```
+
+If the backend must run on a non-default port, set
+`NEXT_PUBLIC_QUANT_API_BASE_URL` before starting the frontend, for example
+`$env:NEXT_PUBLIC_QUANT_API_BASE_URL='http://127.0.0.1:8766'`.
 
 Open:
 

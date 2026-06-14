@@ -1,35 +1,31 @@
-# Polymarket Strategy and Quasi-Backtest Learning
+# Polymarket 策略与准回测学习
 
-## Strategy
+## 策略
 
-The Phase 11 strategy checks whether a complete outcome set has prices that
-deviate from 1.0 by more than a configured threshold.
+Phase 11 策略会检查一个完整的结果集合，其价格是否偏离 1.0 超过配置的阈值。
 
-Example:
+示例：
 
 ```text
 YES ask + NO ask = 0.95
 edge = 1.00 - 0.95 = 0.05 = 500 bps
 ```
 
-## Parameters
+## 参数
 
-- `min_edge_bps`: minimum edge needed to record an opportunity.
-- `capital_limit`: hypothetical capital used for estimated edge.
-- `max_legs`: maximum legs in a dry proposal.
-- `max_markets`: max markets to scan.
-- `fee_bps`: conservative deduction from edge.
+- `min_edge_bps`：记录一个机会所需的最小 edge。
+- `capital_limit`：用于估算 edge 的假设资金量。
+- `max_legs`：一个 dry proposal 中的最大腿数。
+- `max_markets`：扫描的最大市场数量。
+- `fee_bps`：对 edge 的保守扣减。
 
-## Why Quasi-Backtest
+## 为什么是准回测
 
-Polymarket order books are event-based and sparse. Phase 11 does not yet model
-historical fills, latency, partial fills, or settlement. A quasi-backtest is a
-reproducible way to evaluate scanner behavior over snapshots without pretending
-to be real execution.
+Polymarket 的订单簿是基于事件的且较为稀疏。Phase 11 尚未对历史成交、延迟、部分成交或结算进行建模。准回测是一种可复现的方式，用于在快照之上评估扫描器的行为，而不假装其为真实执行。
 
-## Limitations
+## 局限性
 
-- No hit rate unless resolved outcomes are added later.
-- No real fill model.
-- No settlement risk model.
-- No live order management.
+- 除非后续加入已解析的结果，否则没有命中率。
+- 没有真实的成交模型。
+- 没有结算风险模型。
+- 没有实时订单管理。

@@ -1,5 +1,19 @@
 # Market Data Source Audit — 为什么 SPY 还是假数据
 
+> ⚠️ **历史审计快照（Phase 9 时期）——结论已过时，请勿据此判断当前状态**
+>
+> **本文件是某一历史时点(Phase 9)的根因审计快照，仅作历史记录保留。** 其核心结论——尤其是
+> **"前端是展示稿 / 无交互的硬编码 `<div>`"**、**"API 路由从不调用真实 provider"**、
+> **"回测/数据链路仍为 sample、Tiingo 已加载但缺一根线"**——**均已不反映当前平台状态**。
+>
+> 当前真实状态（已于源码核实）：API 路由层已通过 `provider_factory.build_ohlcv_provider(...)`
+> 真实选择并调用数据源(Futu/Tiingo)，前端页面是真实可交互的(含表单、提交处理、真实 API 调用)，
+> 并通过 `DataSourceBadge` 明确标注 sample 与真实数据来源。下文第 5 节"修复方案"中的建议**多已落地**。
+>
+> **当前权威口径请以以下文档为准：** [README.md](../../README.md)、[docs/INDEX.md](../INDEX.md)、
+> [docs/audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md](FRONTEND_REAL_DATA_REVIEW_2026-05-31.md)
+> 以及 Futu provider 相关文档。下方正文一律按"历史结论"阅读。
+
 > 用户问题原文："前端显示 SPY market data 仍然是假数据。.env 里已经配置了专业数据接口。"
 
 ## 1. 一句话结论

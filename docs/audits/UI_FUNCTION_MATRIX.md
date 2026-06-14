@@ -1,3 +1,14 @@
+> # ⚠️ 历史审计快照 — 结论已过时，请勿据此判断当前状态
+>
+> **本文件是 Phase 9 时期（约 2026-05 早期）的只读审计快照，仅作为历史记录保留。** 文中所有结论——尤其是下列两类——**已不反映当前平台状态**：
+>
+> 1. **「整个前端是展示稿 / 全工程零 `onClick`·`onChange`·`onSubmit` / 按钮点了不响应」的结论已过时。** 当前前端是真实可交互的：各页面已拆为 server shell + 客户端表单组件（见 `src/frontend/components/forms/`，使用 `react-hook-form` + `react-query` 真实提交并调用后端 API）。
+> 2. **「回测 / 因子 / 模拟链路仍为 sample、不调用真实 provider」的结论已过时。** 当前链路可使用真实数据源（Futu / Tiingo），并在 UI 上明确区分 sample 与真实数据来源。
+>
+> **当前权威口径以以下文档为准：** [`README.md`](../../README.md)、[`docs/INDEX.md`](../INDEX.md)，以及 [`docs/audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md`](FRONTEND_REAL_DATA_REVIEW_2026-05-31.md)。另见 [`docs/audits/README.md`](README.md) 的现行说明。
+>
+> 以下正文为**历史原文**，未作删改，供追溯当时问题清单与修复计划之用。
+
 # UI Function Matrix — Audit (read-only)
 
 > Audit performed on branch `phase-9-api`, with backend live on `127.0.0.1:8765` and frontend on `127.0.0.1:3001`. Source of truth: code on disk + live curl probes. **No code changes were made in this round.**

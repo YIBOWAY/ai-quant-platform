@@ -1,4 +1,4 @@
-# Phase 13 Codex GPT-5.5 Prompt — 每日全市场期权卖方扫描器（Options Radar）
+# Phase 13 Codex GPT-5.5 提示词 — 每日全市场期权卖方扫描器（Options Radar）
 
 > **使用说明**：把整份 prompt 贴给 Codex GPT-5.5；它会基于现有 Phase 12 代码完成 Phase 13 全部代码 + 文档 + 测试 + commit。
 

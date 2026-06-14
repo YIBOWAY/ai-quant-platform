@@ -1,31 +1,30 @@
-# Polymarket Safety Boundaries
+# Polymarket 安全边界
 
-Phase 11 is strictly read-only research/backtest functionality.
+Phase 11 严格限定为只读的研究/回测功能。
 
-It does not include:
+它不包含：
 
-- live trading
-- wallet signing
-- private key handling
-- real order placement
-- token transfers
-- redemption
-- broker adapter integration
+- 实盘交易
+- 钱包签名
+- 私钥处理
+- 真实下单
+- 代币转账
+- 赎回
+- 券商适配器集成
 
-## API Rules
+## API 规则
 
-- Credential-like fields are rejected.
-- Unknown providers are rejected.
-- Default provider remains `sample`.
-- Safety footer remains attached to JSON responses.
+- 类凭证字段一律拒绝。
+- 未知的 provider 一律拒绝。
+- 默认 provider 保持为 `sample`。
+- 安全声明页脚始终附加在 JSON 响应中。
 
-## UI Rules
+## UI 规则
 
-- UI must say read-only research mode.
-- UI must not show wallet, sign, submit order, redeem, or live controls.
-- Scanner and quasi-backtest results must be described as hypothetical.
+- UI 必须声明处于只读研究模式。
+- UI 不得展示钱包、签名、提交订单、赎回或实盘控件。
+- 扫描器和准回测结果必须被描述为假设性的。
 
-## Operational Rule
+## 运营规则
 
-Do not run this system with real funds or as an execution bot. Any future move
-toward paper simulation or live execution requires a separate safety review.
+不要使用真实资金运行本系统，也不要将其作为执行机器人。任何未来向纸面模拟或实盘执行的演进，都需要单独进行安全审查。

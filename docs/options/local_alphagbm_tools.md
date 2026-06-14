@@ -1,104 +1,93 @@
-# Local AlphaGBM-Style Options Tools
+# 本地 AlphaGBM 风格期权工具
 
-## Summary
+## 概述
 
-This project now includes a local, read-only options toolkit inspired by the
-installed AlphaGBM skills.
+本项目现已包含一套受已安装的 AlphaGBM 技能启发的本地只读期权工具集。
 
-The local toolkit does not call AlphaGBM APIs and does not require
-`ALPHAGBM_API_KEY`. Futu OpenD is the market data source for live stock and
-option-chain data. Strategy math is computed locally.
+该本地工具集不调用 AlphaGBM API，也不需要 `ALPHAGBM_API_KEY`。Futu OpenD 作为实时股票与期权链数据的行情数据源。策略相关的数学计算在本地完成。
 
-On the `/options-tools` page, market-sensitive tools first ask the backend for
-the entered ticker's Futu snapshot and option chain, then run the local
-calculators with those returned contracts. Manual/local-only tools remain
-available for supplied inputs and are labeled as local backend research
-operations, not live market data.
+在 `/options-tools` 页面上，对行情敏感的工具会先向后端请求所输入标的的 Futu 快照与期权链，然后用返回的合约运行本地计算器。手动 / 仅本地的工具仍可对所提供的输入使用，并被标注为本地后端研究操作，而非实时行情数据。
 
-No endpoint can submit, modify, sign, or place a real order.
+任何端点都无法提交、修改、签署或下达真实订单。
 
-## Phase 1 Scope
+## 阶段 1 范围
 
-Phase 1 adds the shared building blocks needed by multiple AlphaGBM-style
-skills:
+阶段 1 增加了多个 AlphaGBM 风格技能所需的共享构件：
 
-- current option snapshot with ATM IV, historical volatility, IV rank proxy,
-  and volatility risk premium proxy
-- volatility surface across listed strikes and expirations
-- volatility smile and 25-delta skew for one expiration
-- Black-Scholes pricing, implied volatility, and Greeks
-- single-leg and multi-leg payoff simulation
-- local templates for common option strategies
+- 当前期权快照，包含 ATM IV、历史波动率、IV rank 近似值以及波动率风险溢价近似值
+- 跨已挂牌行权价与到期日的波动率曲面
+- 单一到期日的波动率微笑与 25-delta 偏斜
+- Black-Scholes 定价、隐含波动率与希腊字母
+- 单腿与多腿损益模拟
+- 常见期权策略的本地模板
 
-These tools are reusable by later stock analysis, earnings, hedge, unusual
-activity, watchlist, and alert features.
+这些工具可被后续的股票分析、财报、对冲、异动、自选股以及预警等功能复用。
 
-## API Endpoints
+## API 端点
 
 ### GET `/api/options/snapshot/{ticker}`
 
-Returns a live Futu-backed option snapshot for a ticker.
+返回某标的基于 Futu 实时数据的期权快照。
 
-Example:
+示例：
 
 ```powershell
 curl "http://127.0.0.1:8765/api/options/snapshot/AAPL?provider=futu"
 ```
 
-Response includes:
+响应包含：
 
-- current stock price
-- nearest expiration
-- ATM implied volatility
-- 30-day historical volatility
-- local IV rank / percentile proxy
-- volatility risk premium proxy
-- read-only assumptions
+- 当前股价
+- 最近到期日
+- ATM 隐含波动率
+- 30 日历史波动率
+- 本地 IV rank / 分位数近似值
+- 波动率风险溢价近似值
+- 只读假设
 
 ### GET `/api/options/tools/vol-surface/{ticker}`
 
-Returns a live Futu-backed volatility surface.
+返回基于 Futu 实时数据的波动率曲面。
 
-Example:
+示例：
 
 ```powershell
 curl "http://127.0.0.1:8765/api/options/tools/vol-surface/AAPL?provider=futu&max_expirations=2"
 ```
 
-Response includes:
+响应包含：
 
-- moneyness buckets
-- expiration axis
-- IV grid
-- raw surface points
-- ATM term structure
-- surface shape label
+- 价值状态（moneyness）分桶
+- 到期日轴
+- IV 网格
+- 原始曲面点
+- ATM 期限结构
+- 曲面形态标签
 
 ### GET `/api/options/tools/vol-smile/{ticker}`
 
-Returns a live Futu-backed volatility smile for one expiration. If `expiry` is
-omitted, the nearest listed expiration is used.
+返回单一到期日基于 Futu 实时数据的波动率微笑。若省略 `expiry`，则使用最近的已挂牌到期日。
 
-Example:
+示例：
 
 ```powershell
 curl "http://127.0.0.1:8765/api/options/tools/vol-smile/AAPL?provider=futu"
 ```
 
-Response includes:
+响应包含：
 
-- strikes
-- IVs
-- deltas
-- moneyness
-- 25-delta skew approximation
-- smile shape label
+- 行权价
+- IV 值
+- delta 值
+- 价值状态（moneyness）
+- 25-delta 偏斜近似值
+- 微笑形态标签
 
 ### POST `/api/options/tools/greeks`
 
-Computes local Greeks for one option.
+计算单一期权的本地希腊字母。
 
-Example body:
+示例请求体：
 
 ```json
 {
@@ -113,9 +102,9 @@ Example body:
 
 ### POST `/api/options/tools/implied-volatility`
 
-Solves local implied volatility from an option market price.
+从期权市场价格反解本地隐含波动率。
 
-Example body:
+示例请求体：
 
 ```json
 {
@@ -130,9 +119,9 @@ Example body:
 
 ### POST `/api/options/tools/simulate`
 
-Simulates payoff for a single-leg or multi-leg option position.
+模拟单腿或多腿期权头寸的损益。
 
-Example body:
+示例请求体：
 
 ```json
 {
@@ -153,9 +142,9 @@ Example body:
 
 ### GET `/api/options/tools/strategy/templates`
 
-Lists local strategy templates.
+列出本地策略模板。
 
-Current templates:
+当前模板：
 
 - long call / long put
 - bull call spread / bull put spread
@@ -170,9 +159,9 @@ Current templates:
 
 ### POST `/api/options/tools/strategy/build`
 
-Builds a local strategy from one of the templates.
+基于其中一个模板构建本地策略。
 
-Example body:
+示例请求体：
 
 ```json
 {
@@ -188,9 +177,9 @@ Example body:
 
 ### POST `/api/options/tools/score-contracts`
 
-Ranks supplied option contracts with a local multi-factor score.
+用本地多因子打分对所提供的期权合约进行排序。
 
-Example body:
+示例请求体：
 
 ```json
 {
@@ -212,14 +201,13 @@ Example body:
 }
 ```
 
-Response includes ranked contracts, total score, rating, subscores, warnings,
-and read-only assumptions.
+响应包含排序后的合约、总分、评级、各项子分、警告以及只读假设。
 
 ### POST `/api/options/tools/strategy/rank`
 
-Ranks local strategy templates for a market view.
+针对某一市场观点对本地策略模板进行排序。
 
-Example body:
+示例请求体：
 
 ```json
 {
@@ -233,157 +221,140 @@ Example body:
 
 ### POST `/api/options/tools/bull-put-signal`
 
-Applies the local FearScore threshold rule and selects a research-only Bull Put
-Spread candidate from supplied put contracts when possible.
+应用本地 FearScore 阈值规则，并在可能时从所提供的看跌合约中选出一个仅供研究的牛市看跌价差（Bull Put Spread）候选。
 
 ### POST `/api/options/tools/fear-score`
 
-Computes a local ticker panic score from supplied VIX, IV rank, RSI,
-options-volume anomaly, Put/Call ratio, and consecutive-down-day inputs.
+从所提供的 VIX、IV rank、RSI、期权成交量异动、Put/Call 比率以及连续下跌天数等输入，计算某标的的本地恐慌评分。
 
 ### POST `/api/options/tools/iv-rank`
 
-Computes IV rank / percentile from supplied local IV history values.
+从所提供的本地 IV 历史值计算 IV rank / 分位数。
 
 ### POST `/api/options/tools/market-sentiment`
 
-Builds a local market sentiment regime from supplied VIX, Put/Call ratio,
-breadth, and trend inputs.
+从所提供的 VIX、Put/Call 比率、市场广度以及趋势等输入，构建本地市场情绪状态（regime）。
 
 ### POST `/api/options/tools/earnings-crush`
 
-Estimates historical earnings IV crush from supplied pre/post IV observations.
+从所提供的财报前 / 财报后 IV 观测值，估计历史财报 IV 坍缩（crush）。
 
 ### POST `/api/options/tools/hedge-advisor`
 
-Builds research-only Long Put / Collar hedge candidates from supplied holdings
-and option contracts.
+从所提供的持仓与期权合约，构建仅供研究的 Long Put / Collar 对冲候选。
 
 ### POST `/api/options/tools/unusual-activity`
 
-Flags unusual options activity from supplied volume and open-interest fields.
+从所提供的成交量与未平仓量字段标记期权异动。
 
 ### GET `/api/options/tools/watchlist`
 
-Reads the local options watchlist.
+读取本地期权自选股列表。
 
 ### POST `/api/options/tools/watchlist`
 
-Adds a ticker to the local options watchlist. The watchlist is a local JSON file
-under the configured output directory.
+向本地期权自选股列表添加一个标的。该自选股列表是位于所配置输出目录下的一个本地 JSON 文件。
 
 ### POST `/api/options/tools/alerts/evaluate`
 
-Evaluates supplied local alert definitions against a supplied ticker context.
-This endpoint does not send notifications.
+针对所提供的标的上下文，评估所提供的本地预警定义。该端点不发送通知。
 
 ### POST `/api/options/tools/health-check`
 
-Checks supplied local research profile metadata for stale updates and missing
-theses.
+检查所提供的本地研究档案元数据，查找过期更新与缺失的论点。
 
 ### POST `/api/options/refresh/universe`
 
-Refreshes the local Options Radar universe CSV. Supported sources:
+刷新本地 Options Radar 标的池 CSV。支持的数据源：
 
-- `public` / `github`: public S&P 500 + Nasdaq 100 CSV snapshots
-- `sample`: deterministic offline sample universe for local testing
+- `public` / `github`：公开的 S&P 500 + Nasdaq 100 CSV 快照
+- `sample`：用于本地测试的确定性离线样本标的池
 
 ### POST `/api/options/refresh/earnings`
 
-Refreshes the local earnings calendar CSV used by Options Radar. Supported
-sources:
+刷新 Options Radar 使用的本地财报日历 CSV。支持的数据源：
 
-- `public` / `nasdaq`: Nasdaq public calendar lookup
-- `yfinance`: explicit read-only yfinance calendar lookup
-- `sample`: deterministic offline sample calendar for local testing
+- `public` / `nasdaq`：Nasdaq 公开日历查询
+- `yfinance`：显式的只读 yfinance 日历查询
+- `sample`：用于本地测试的确定性离线样本日历
 
 ### POST `/api/options/refresh/vix`
 
-Refreshes the local VIX/VIX3M history CSV used by market-regime scoring.
-Supported sources:
+刷新市场状态评分所使用的本地 VIX/VIX3M 历史 CSV。支持的数据源：
 
-- `public`: Yahoo Chart first, Cboe public CSV fallback
-- `sample`: deterministic offline sample VIX history for local testing
+- `public`：优先 Yahoo Chart，回退至 Cboe 公开 CSV
+- `sample`：用于本地测试的确定性离线样本 VIX 历史
 
-These refresh endpoints only write local CSV caches. They do not submit,
-modify, sign, or place orders.
+这些刷新端点仅写入本地 CSV 缓存。它们不会提交、修改、签署或下达订单。
 
-## Replication Plan
+## 复刻计划
 
-The installed AlphaGBM skills describe product workflows and remote API calls;
-they do not include the full remote scoring backend. The local replication plan
-therefore recreates equivalent project features on top of Futu data and local
-models.
+已安装的 AlphaGBM 技能描述的是产品工作流与远程 API 调用；它们并不包含完整的远程评分后端。因此本地复刻计划在 Futu 数据与本地模型之上重建等价的项目功能。
 
-### Phase 1: Local Options Core
+### 阶段 1：本地期权核心
 
-Status: implemented.
+状态：已实现。
 
-- snapshot
-- volatility surface
-- volatility smile
-- Greeks
-- implied volatility
-- payoff simulation
-- strategy templates
+- 快照
+- 波动率曲面
+- 波动率微笑
+- 希腊字母
+- 隐含波动率
+- 损益模拟
+- 策略模板
 
-### Phase 2: Local Ranking And Strategy Selection
+### 阶段 2：本地排序与策略选择
 
-Status: implemented.
+状态：已实现。
 
-- option contract scoring
-- multi-factor strategy ranking
-- Bull Put Spread signal workflow
-- buy-side and sell-side unified ranking
-- local IV rank dashboard helper using supplied or persisted IV histories
+- 期权合约打分
+- 多因子策略排序
+- 牛市看跌价差（Bull Put Spread）信号工作流
+- 买方与卖方统一排序
+- 使用所提供或已持久化的 IV 历史的本地 IV rank 仪表盘辅助工具
 
-### Phase 3: Research Dashboards
+### 阶段 3：研究仪表盘
 
-Status: implemented as local backend research helpers.
+状态：已作为本地后端研究辅助工具实现。
 
-- market sentiment dashboard using VIX and breadth data
-- per-ticker fear score
-- IV rank dashboard
-- earnings IV crush workflow
-- hedge advisor workflow
-- unusual options activity scan from supplied volume/open-interest changes
+- 使用 VIX 与市场广度数据的市场情绪仪表盘
+- 逐标的恐慌评分
+- IV rank 仪表盘
+- 财报 IV 坍缩工作流
+- 对冲顾问工作流
+- 从所提供的成交量 / 未平仓量变化进行的期权异动扫描
 
-### Phase 4: Monitoring
+### 阶段 4：监控
 
-Status: implemented as lightweight local file/stateless helpers.
+状态：已作为轻量级本地文件 / 无状态辅助工具实现。
 
-- local watchlists
-- price / IV / activity alerts
-- health checks for stale research profiles
+- 本地自选股列表
+- 价格 / IV / 异动预警
+- 针对过期研究档案的健康检查
 
-### Phase 5: Durable Local Cache
+### 阶段 5：持久化本地缓存
 
-Status: first implementation complete.
+状态：首版实现完成。
 
-- Futu option quote windows are cached in a local DuckDB file.
-- Fresh cache entries are reused across backend restarts.
-- Options Screener, Options Radar, Buy-Side Options Assistant, and local options
-  tools use the cache through the shared Futu provider.
-- Cache entries stay research-only and do not contain secrets, account state, or
-  order instructions.
+- Futu 期权报价窗口缓存在本地 DuckDB 文件中。
+- 新鲜的缓存条目在后端重启后仍可复用。
+- Options Screener、Options Radar、Buy-Side Options Assistant 以及本地期权工具通过共享的 Futu provider 使用该缓存。
+- 缓存条目仅供研究，不包含密钥、账户状态或订单指令。
 
-Still not implemented:
+仍未实现：
 
-- scheduled refreshes
-- notification delivery
+- 定时刷新
+- 通知投递
 
-## Verification
+## 验证
 
-Phase 1 was verified with:
+阶段 1 通过以下方式验证：
 
-- focused unit tests
-- focused API tests
-- related existing option API tests
-- live Futu OpenD calls for AAPL snapshot, volatility smile, and volatility
-  surface
+- 针对性单元测试
+- 针对性 API 测试
+- 相关的现有期权 API 测试
+- 对 AAPL 快照、波动率微笑与波动率曲面的实时 Futu OpenD 调用
 
-All live checks are read-only.
+所有实时检查均为只读。
 
-Phases 2-4 were verified with focused unit and API tests. These helpers are
-local-only and do not call AlphaGBM APIs.
+阶段 2-4 通过针对性单元与 API 测试验证。这些辅助工具仅在本地运行，不调用 AlphaGBM API。

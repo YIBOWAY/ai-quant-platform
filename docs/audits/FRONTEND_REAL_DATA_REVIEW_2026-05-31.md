@@ -1,87 +1,77 @@
-# Frontend Real-Data Review — 2026-05-31
+# 前端真实数据审查 — 2026-05-31
 
-This review checks whether the frontend is showing backend-derived data or
-unlabeled sample/demo output. It was run against the local backend on
-`127.0.0.1:8765` and the frontend on `127.0.0.1:3001`.
+本次审查用于检查前端展示的是后端衍生数据，还是未加标注的样本/演示输出。审查针对本地后端
+`127.0.0.1:8765` 与前端 `127.0.0.1:3001` 运行。
 
-## Completion Standard
+## 完成标准
 
-- Backend and frontend are reachable.
-- Main pages render without frontend runtime errors.
-- Market-data pages identify their source.
-- Sample or example inputs are not silently presented as live data.
-- Beginner-facing pages explain read-only / research-only boundaries.
+- 后端与前端均可访问。
+- 主要页面渲染时不出现前端运行时错误。
+- 行情数据页面标明其数据来源。
+- 样本或示例输入不会被悄无声息地当作实时数据呈现。
+- 面向初学者的页面解释只读 / 仅研究的边界。
 
-## Current Data Truth Map
+## 当前数据真相图
 
-| Page | Current source behavior | Review result |
+| 页面 | 当前来源行为 | 审查结果 |
 |---|---|---|
-| `/` Dashboard | Calls `/api/health`, `/api/symbols`, `/api/factors`, `/api/backtests`, `/api/paper`, and `/api/agent/candidates`. Latest saved run sources are now shown on the cards. | Backend-derived. Saved sample runs are labeled as sample / not real. |
-| `/data-explorer` | Defaults to Futu unless `provider=sample` is explicitly selected. The chart and table use `/api/market-data/history`. | Backend-derived. Futu run was verified with real OHLCV rows. |
-| `/factor-lab` | Runs `/api/factors` and `/api/factors/run`; default provider is Futu. | Backend-derived. |
-| `/backtest` | Runs `/api/backtests`, `/api/backtests/{id}`, `/api/benchmark`, and `/api/backtests/run`; default provider is Futu. | Backend-derived. Latest saved sample runs and benchmark sources are labeled. |
-| `/replications` | Calls `/api/replications/reversal-momentum/run`; default provider is Futu. | Backend-derived. Sample provider remains only for smoke testing. |
-| `/paper-trading` | Runs `/api/paper`, `/api/paper/{id}`, `/api/health`, and `/api/paper/run`; default provider is Futu. | Backend-derived local simulation only. |
-| `/position-map` | Reads latest saved backtest positions plus paper safety state. | Backend-derived local artifacts. Sources are shown. |
-| `/options-screener` | Calls live read-only Futu option chain through backend. | Backend-derived. Browser run returned real SPY option candidates. |
-| `/options-radar` | Reads saved radar snapshots and can run a backend scan. | Backend-derived snapshots. The sample scan option remains explicit. |
-| `/options-radar/[symbol]` | Reads saved candidates and optionally loads live chain data. | Backend-derived. |
-| `/options-buyside` | Posts to `/api/options/buy-side/assistant`. Backend fetches Futu spot and option-chain rows, then ranks strategies in `buy_side_decision.py`. | Backend-derived. The scoring process is real backend logic, not a frontend mock. |
-| `/options-tools` | Market-sensitive tools first fetch the entered ticker's Futu snapshot and option chain, then call local backend calculators with those inputs. Non-market operations such as templates/watchlist remain local backend calls. | Backend-derived for option-chain calculations; local-only calls are labeled as backend research operations, not live market data. |
-| `/order-book` | Defaults to Polymarket read-only public data. Sample remains selectable but is warning-labeled. | Backend-derived by default. |
-| `/agent-studio` | Reads candidate files and agent API data. | Backend-derived local artifacts. |
-| `/settings` | Reads masked `/api/settings` and `/api/health`. | Backend-derived. |
+| `/` Dashboard | 调用 `/api/health`、`/api/symbols`、`/api/factors`、`/api/backtests`、`/api/paper` 以及 `/api/agent/candidates`。最近一次保存运行的来源现已显示在卡片上。 | 后端衍生。已保存的样本运行被标注为 sample / not real。 |
+| `/data-explorer` | 除非显式选择 `provider=sample`，否则默认使用富途 (Futu)。图表与表格使用 `/api/market-data/history`。 | 后端衍生。富途运行已通过真实 OHLCV 行验证。 |
+| `/factor-lab` | 运行 `/api/factors` 与 `/api/factors/run`；默认 provider 为富途。 | 后端衍生。 |
+| `/backtest` | 运行 `/api/backtests`、`/api/backtests/{id}`、`/api/benchmark` 以及 `/api/backtests/run`；默认 provider 为富途。 | 后端衍生。最近保存的样本运行与基准来源均已标注。 |
+| `/replications` | 调用 `/api/replications/reversal-momentum/run`；默认 provider 为富途。 | 后端衍生。样本 provider 仅保留用于冒烟测试。 |
+| `/paper-trading` | 运行 `/api/paper`、`/api/paper/{id}`、`/api/health` 以及 `/api/paper/run`；默认 provider 为富途。 | 仅后端衍生的本地模拟。 |
+| `/position-map` | 读取最近保存的回测持仓以及纸面交易安全状态。 | 后端衍生的本地产物。来源已显示。 |
+| `/options-screener` | 通过后端调用富途的只读实时期权链。 | 后端衍生。浏览器运行返回了真实的 SPY 期权候选。 |
+| `/options-radar` | 读取已保存的雷达快照，并可运行后端扫描。 | 后端衍生快照。样本扫描选项仍保持显式。 |
+| `/options-radar/[symbol]` | 读取已保存的候选，并可选择加载实时期权链数据。 | 后端衍生。 |
+| `/options-buyside` | 提交至 `/api/options/buy-side/assistant`。后端获取富途现货与期权链行，然后在 `buy_side_decision.py` 中对策略进行排序。 | 后端衍生。评分过程为真实的后端逻辑，而非前端模拟。 |
+| `/options-tools` | 对市场敏感的工具会先获取所输入标的的富途快照与期权链，然后以这些输入调用本地后端计算器。模板/自选列表等非市场操作仍为本地后端调用。 | 期权链计算为后端衍生；仅本地调用被标注为后端研究操作，而非实时行情数据。 |
+| `/order-book` | 默认使用 Polymarket 只读公开数据。样本仍可选，但带有警告标注。 | 默认后端衍生。 |
+| `/agent-studio` | 读取候选文件与 agent API 数据。 | 后端衍生的本地产物。 |
+| `/settings` | 读取经掩码处理的 `/api/settings` 与 `/api/health`。 | 后端衍生。 |
 
-## Buy-Side Options Scoring
+## 买方期权评分
 
-The buy-side score shown in `/options-buyside` is not a decorative frontend
-number. The frontend calls `POST /api/options/buy-side/assistant`; the backend
-builds a Futu market-data provider, fetches the underlying snapshot and option
-chain, then ranks Long Call, Bull Call Spread, LEAPS Call, and LEAPS Call Spread
-candidates in `src/quant_system/options/buy_side_decision.py`.
+`/options-buyside` 中显示的买方评分并非前端的装饰性数字。前端调用
+`POST /api/options/buy-side/assistant`；后端构建一个富途行情数据 provider，获取标的快照与期权链，
+然后在 `src/quant_system/options/buy_side_decision.py` 中对 Long Call、Bull Call Spread、LEAPS Call
+以及 LEAPS Call Spread 候选进行排序。
 
-The page now shows the data source as backend Futu option-chain data beside the
-spot and timestamp fields.
+该页面现在会在现货与时间戳字段旁，将数据来源显示为后端富途期权链数据。
 
-## Changes Made From This Review
+## 本次审查所做的更改
 
-- Language toggle now performs a hard page refresh after saving the cookie, so
-  the visible shell switches immediately.
-- Dashboard KPI/details now include latest saved run source labels.
-- `DataSourceBadge` marks any sample source as `sample / not real`.
-- Backtest benchmark source is shown beside the benchmark card.
-- Options Tools now loads live Futu option-chain context before Greeks,
-  strategy ranking, contract scoring, simulation, and signal calculations.
-  Local-only research operations are labeled separately.
-- Buy-Side Options Assistant now states that recommendations come from backend
-  Futu option-chain data.
-- Prediction Market Order Book defaults to `polymarket` instead of `sample`.
-  Sample mode is still available for smoke tests, but not the default path.
+- 语言切换现在会在保存 cookie 后执行一次硬性页面刷新，使可见的外壳立即切换。
+- Dashboard 的 KPI/详情现在包含最近保存运行的来源标签。
+- `DataSourceBadge` 将任何样本来源标记为 `sample / not real`。
+- 回测基准来源现显示在基准卡片旁。
+- Options Tools 现在会在希腊值、策略排序、合约评分、模拟与信号计算之前加载实时富途期权链上下文。
+  仅本地的研究操作单独标注。
+- Buy-Side Options Assistant 现在声明其推荐来自后端富途期权链数据。
+- 预测市场订单簿 (Prediction Market Order Book) 默认使用 `polymarket` 而非 `sample`。
+  样本模式仍可用于冒烟测试，但不再是默认路径。
 
-## Remaining Guardrails
+## 保留的护栏
 
-- `sample` providers still exist for deterministic smoke tests and offline
-  development. They must remain explicitly labeled and should not be the default
-  for user-facing research pages.
-- Saved historical runs may have been produced from sample data. Those are real
-  saved backend artifacts, but their source must stay visible so users do not
-  mistake them for live-market results.
-- Options Tools still includes local research operations that do not need market
-  data, such as templates and watchlist actions. They must stay labeled as local
-  backend calls rather than live market calculations.
+- `sample` provider 仍然存在，用于确定性冒烟测试与离线开发。它们必须保持显式标注，
+  且不应作为面向用户的研究页面的默认值。
+- 已保存的历史运行可能是由样本数据产生的。这些是真实保存的后端产物，但其来源必须保持可见，
+  以免用户将其误认为实时行情结果。
+- Options Tools 仍包含无需行情数据的本地研究操作，例如模板与自选列表操作。它们必须保持标注为
+  本地后端调用，而非实时行情计算。
 
-## Verification Notes
+## 验证记录
 
-- `/api/health` returned `status=ok`, `configured_default=futu`,
-  `live_trading_enabled=false`, and `kill_switch=true`.
-- `/api/symbols` returned the Futu default basket.
+- `/api/health` 返回 `status=ok`、`configured_default=futu`、
+  `live_trading_enabled=false` 以及 `kill_switch=true`。
+- `/api/symbols` 返回富途默认篮子。
 - `/api/market-data/history?provider=futu&ticker=SPY&start=2026-05-01&end=2026-05-31`
-  returned 20 real OHLCV rows with `source=futu`.
-- `/api/options/snapshot/AAPL` returned `source=futu`, current spot, nearest
-  expiry, IV, HV, and IV-rank fields.
-- `/api/prediction-market/markets?provider=polymarket&limit=2` returned live
-  Polymarket public markets and order books.
-- Browser checks covered Dashboard, Data Explorer, Factor Lab, Backtest,
-  Replications, Paper Trading, Position Map, Options Screener, Options Radar,
-  Options Tools, Buy-Side Options Assistant, Order Book, Agent Studio, Settings,
-  and the reversal/momentum docs page.
+  返回 20 行带 `source=futu` 的真实 OHLCV 数据。
+- `/api/options/snapshot/AAPL` 返回 `source=futu`、当前现货、最近到期日、IV、HV 以及 IV-rank 字段。
+- `/api/prediction-market/markets?provider=polymarket&limit=2` 返回实时
+  Polymarket 公开市场与订单簿。
+- 浏览器检查覆盖了 Dashboard、Data Explorer、Factor Lab、Backtest、
+  Replications、Paper Trading、Position Map、Options Screener、Options Radar、
+  Options Tools、Buy-Side Options Assistant、Order Book、Agent Studio、Settings
+  以及反转/动量文档页面。

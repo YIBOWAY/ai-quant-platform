@@ -1,34 +1,34 @@
-# Phase 14 Execution Notes
+# Phase 14 执行说明
 
-Phase 14 covers the Buy-Side US Options Strategy Assistant. It is wired to the
-backend API, CLI, and frontend page. It remains read-only research functionality.
+Phase 14 涵盖买方美股期权策略助手。它已接入后端 API、CLI 与前端页面，
+仍然是只读的研究功能。
 
-## Environment
+## 环境
 
 ```powershell
 conda activate ai-quant
 ```
 
-## Start Backend
+## 启动后端
 
 ```powershell
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
-Equivalent direct start:
+等效的直接启动方式：
 
 ```powershell
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
-## Start Frontend
+## 启动前端
 
 ```powershell
 cd src/frontend
 npm run dev -- --hostname 127.0.0.1 --port 3001
 ```
 
-Open:
+打开：
 
 ```text
 http://127.0.0.1:3001/options-buyside
@@ -42,16 +42,16 @@ curl -X POST http://127.0.0.1:8765/api/options/buy-side/assistant ^
   -d "{\"ticker\":\"AAPL\",\"view_type\":\"long_term_aggressive_bullish\",\"target_price\":220,\"target_date\":\"2026-12-31\",\"provider\":\"futu\"}"
 ```
 
-Contract summary:
+接口契约摘要：
 
-- Request schema: `BuySideAssistantRequest`
-- Response schema: `BuySideAssistantResponse`
-- Expected API errors:
-  - `422`: invalid thesis input
-  - `404`: ticker or option chain not found
-  - `503`: Futu OpenD/provider unavailable
-  - `403`: Futu permission issue
-  - `400`: unsupported provider or invalid parameter combination
+- 请求 schema：`BuySideAssistantRequest`
+- 响应 schema：`BuySideAssistantResponse`
+- 预期的 API 错误：
+  - `422`：无效的论点输入
+  - `404`：未找到标的或期权链
+  - `503`：Futu OpenD/数据提供方不可用
+  - `403`：Futu 权限问题
+  - `400`：不支持的数据提供方或无效的参数组合
 
 ## CLI
 
@@ -59,25 +59,25 @@ Contract summary:
 quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bullish --target-price 220 --target-date 2026-12-31
 ```
 
-The CLI prints research output only. It cannot place orders.
+该 CLI 仅打印研究输出，无法下单交易。
 
-## Validation
+## 验证
 
-Backend:
+后端：
 
 ```powershell
 python -m pytest -q
 ruff check src/quant_system tests
 ```
 
-Frontend:
+前端：
 
 ```powershell
 npm --prefix src/frontend run lint
 npm --prefix src/frontend run build
 ```
 
-Browser smoke:
+浏览器冒烟测试：
 
 ```powershell
 cd src/frontend
@@ -85,19 +85,19 @@ $env:PW_E2E="1"
 npx playwright test --config playwright.config.ts --workers=1 tests/e2e/phase14-buyside-smoke.spec.ts
 ```
 
-## Safety Checks
+## 安全检查
 
-The Phase 14 modules must remain read-only:
+Phase 14 的各模块必须保持只读：
 
 ```powershell
 git grep -nE "OpenSecTradeContext|unlock_trade|place_order|modify_order|cancel_order|web3|eth_account|wallet|private_key" -- src/quant_system/options tests src/frontend
 ```
 
-Expected result: no executable trading code. Documentation may mention these
-terms only as disallowed capabilities.
+预期结果：不存在可执行的交易代码。文档中可能提及这些术语，但仅作为
+被禁止的能力来说明。
 
-## Risk Disclosure
+## 风险披露
 
-The `/options-buyside` page must display the required options risk disclosure
-and should direct users to OCC's `Characteristics and Risks of Standardized
-Options`. This wording is required risk context, not decorative copy.
+`/options-buyside` 页面必须展示所要求的期权风险披露，并应引导用户查阅
+OCC 的 `Characteristics and Risks of Standardized Options`。这段文字是
+必需的风险提示，而非装饰性文案。

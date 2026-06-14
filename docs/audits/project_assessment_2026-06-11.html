@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目全面评估报告 — AI 量化研究与模拟交易平台（2026-06-11）</title>
+<style>
+  :root {
+    --ink: #1a202c; --ink-2: #4a5568; --ink-3: #718096;
+    --bg: #f7fafc; --card: #ffffff; --line: #e2e8f0;
+    --brand: #0f5132; --brand-soft: #d1fae5;
+    --crit: #b91c1c; --crit-bg: #fee2e2;
+    --high: #c2410c; --high-bg: #ffedd5;
+    --med: #a16207; --med-bg: #fef9c3;
+    --low: #475569; --low-bg: #e2e8f0;
+    --ok: #15803d; --ok-bg: #dcfce7;
+    --dispute: #92400e; --dispute-bg: #fef3c7;
+    --refuted: #6b7280; --refuted-bg: #f3f4f6;
+    --blue: #1d4ed8; --blue-bg: #dbeafe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.75;
+  }
+  header.hero {
+    background: linear-gradient(135deg, #0b1f17 0%, #11352a 60%, #0f5132 100%);
+    color: #e6fff5; padding: 48px 24px 36px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 8px; }
+  header.hero h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: .5px; }
+  header.hero .sub { color: #9fd6c0; font-size: 15px; }
+  .meta-strip { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 22px; }
+  .meta-item { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15); border-radius: 8px; padding: 10px 16px; }
+  .meta-item b { display: block; font-size: 20px; color: #fff; }
+  .meta-item span { font-size: 12px; color: #9fd6c0; }
+  main { max-width: 1080px; margin: 0 auto; padding: 28px 16px 80px; }
+  nav.toc {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 22px; margin-bottom: 28px; font-size: 14px;
+  }
+  nav.toc b { display: block; margin-bottom: 6px; }
+  nav.toc a { color: var(--brand); text-decoration: none; margin-right: 14px; white-space: nowrap; display: inline-block; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 26px 30px; margin-bottom: 26px; }
+  h2 { margin: 0 0 4px; font-size: 21px; color: var(--brand); border-bottom: 2px solid var(--brand-soft); padding-bottom: 8px; }
+  h2 .sec-no { color: var(--ink-3); font-weight: 400; margin-right: 8px; }
+  h3 { font-size: 16.5px; margin: 26px 0 8px; }
+  h4 { font-size: 15px; margin: 18px 0 6px; }
+  p { margin: 8px 0; }
+  ul, ol { margin: 6px 0 10px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  code { background: #edf2f7; border-radius: 4px; padding: 1px 6px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 13px; color: #2d3748; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; font-size: 13.5px; }
+  th { background: #f1f5f4; text-align: left; padding: 8px 10px; border: 1px solid var(--line); font-size: 13px; white-space: nowrap; }
+  td { padding: 8px 10px; border: 1px solid var(--line); vertical-align: top; }
+  tr:nth-child(even) td { background: #fafcfb; }
+  .badge { display: inline-block; border-radius: 99px; padding: 1px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .b-crit { background: var(--crit-bg); color: var(--crit); }
+  .b-high { background: var(--high-bg); color: var(--high); }
+  .b-med  { background: var(--med-bg); color: var(--med); }
+  .b-low  { background: var(--low-bg); color: var(--low); }
+  .b-ok   { background: var(--ok-bg); color: var(--ok); }
+  .b-dispute { background: var(--dispute-bg); color: var(--dispute); }
+  .b-refuted { background: var(--refuted-bg); color: var(--refuted); text-decoration: line-through; }
+  .b-open { background: var(--blue-bg); color: var(--blue); }
+  .b-s { background: #e0f2fe; color: #0369a1; }
+  .b-m { background: #ede9fe; color: #6d28d9; }
+  .b-l { background: #fce7f3; color: #be185d; }
+  .verdict {
+    border-left: 6px solid var(--brand); background: var(--brand-soft);
+    border-radius: 0 10px 10px 0; padding: 18px 24px; margin: 16px 0; font-size: 16px;
+  }
+  .verdict b { color: var(--brand); }
+  .callout { border-left: 5px solid; border-radius: 0 8px 8px 0; padding: 12px 18px; margin: 14px 0; font-size: 14px; }
+  .c-warn { border-color: var(--high); background: var(--high-bg); }
+  .c-info { border-color: var(--blue); background: var(--blue-bg); }
+  .c-danger { border-color: var(--crit); background: var(--crit-bg); }
+  .c-safe { border-color: var(--ok); background: var(--ok-bg); }
+  .grade { font-size: 18px; font-weight: 700; font-family: Consolas, monospace; }
+  .g-a { color: #15803d; } .g-b { color: #0369a1; } .g-c { color: #a16207; } .g-d { color: #b91c1c; }
+  .strength-list li::marker { color: var(--ok); }
+  .dim-sum { color: var(--ink-2); font-style: italic; margin: 2px 0 12px; }
+  footer { text-align: center; color: var(--ink-3); font-size: 12.5px; padding: 10px 0 40px; }
+  .pain-num { display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: var(--brand); color: #fff; text-align: center; line-height: 24px; font-size: 13px; font-weight: 700; margin-right: 8px; }
+  .roadgrid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .phase-card { border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; }
+  .phase-card h4 { margin-top: 0; }
+  .ph-0 { border-top: 4px solid #15803d; } .ph-1 { border-top: 4px solid #0369a1; }
+  .ph-2 { border-top: 4px solid #6d28d9; } .ph-3 { border-top: 4px solid #be185d; }
+  .small { font-size: 12.5px; color: var(--ink-3); }
+  @media print { section { break-inside: avoid-page; } }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>项目全面评估报告</h1>
+    <div class="sub">AI 量化研究与模拟交易平台 · 2026 年 6 月 11 日 · 仅限本地纸面模拟（paper-only），本报告不建议、不引入任何实盘交易能力</div>
+    <div class="meta-strip">
+      <div class="meta-item"><b>8</b><span>评估维度</span></div>
+      <div class="meta-item"><b>58</b><span>独立评审智能体</span></div>
+      <div class="meta-item"><b>2 票</b><span>关键发现对抗复核</span></div>
+      <div class="meta-item"><b>33+</b><span>已确认问题</span></div>
+      <div class="meta-item"><b>1</b><span>发现被复核否决</span></div>
+      <div class="meta-item"><b>16</b><span>快赢项（≤1 天/项）</span></div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<nav class="toc">
+  <b>目录</b>
+  <a href="#s1">1. 总体结论</a>
+  <a href="#s2">2. 评估方法与可信度</a>
+  <a href="#s3">3. “不顺手”的根因</a>
+  <a href="#s4">4. 各维度发现明细</a>
+  <a href="#s5">5. 评估盲区（批评者补充）</a>
+  <a href="#s6">6. 需要你裁决的事项</a>
+  <a href="#s7">7. 快赢清单</a>
+  <a href="#s8">8. 分阶段路线图</a>
+  <a href="#s9">9. 渐进优化还是重构？</a>
+  <a href="#s10">10. 安全边界声明</a>
+</nav>
+
+<!-- ============ 1. 总体结论 ============ -->
+<section id="s1">
+  <h2><span class="sec-no">1</span>总体结论</h2>
+
+  <div class="verdict">
+    <b>不需要整体重写。需要的是一次分阶段的定向治理。</b><br>
+    8 个评估维度彼此独立工作，却得出了同一个结论：这个项目的<b>正确性内核出乎意料地扎实</b>——反前视（PIT）纪律经得起逐行审查、428 个后端测试 43 秒全绿、安全红线在核心代码里是真实存在的；真正让你“越用越不顺手”的，是<b>边缘上的漂移与堆积</b>：四套端口口径、算完即焚的结果、名实错位的页面、97% 是死重的存储目录、以及一个默认配置下永远成交不了的模拟回放。这些问题没有一个需要推倒重来，但它们叠加在每天的使用路径上，摩擦感就是你现在的体感。
+  </div>
+
+  <h3>1.1 维度记分卡</h3>
+  <table>
+    <tr><th>维度</th><th>评级</th><th>一句话判词</th></tr>
+    <tr><td>安全边界（paper-only 红线）</td><td><span class="grade g-a">A−</span></td><td>核心红线真实可靠；但 kill-switch 语义错位让模拟回放产出零成交“伪成功”，且工作区里驻留着红线扫描看不见的 Futu 实盘下单脚本。</td></tr>
+    <tr><td>数据正确性内核</td><td><span class="grade g-a">A−</span></td><td>signal_ts/tradeable_ts 反前视纪律、UTC 约定、原子写账户存储均经逐行验证；唯一待核实的疑点是 Tiingo 可能在用未复权价格（见 §5）。</td></tr>
+    <tr><td>测试质量</td><td><span class="grade g-b">B</span></td><td>后端 428 例全绿、含计划-提交中止等高质量用例；但结构偏科——E2E 污染真实数据、给每笔成交定价的链路 4 步只测了 2 步、前端单元测试为零。</td></tr>
+    <tr><td>后端架构</td><td><span class="grade g-b">B−</span></td><td>分层清晰、注册表模式打通；但回测与模拟执行两套订单逻辑已发生行为漂移，运行持久化三轨并行，存在成片死配置。</td></tr>
+    <tr><td>前端架构</td><td><span class="grade g-b">B−</span></td><td>6-11 重构后布局与可解释性良好；但 50 个手写类型对着 115 个无契约接口裸奔、双语文案占 13.6%、最大组件 1,566 行、零单元测试。</td></tr>
+    <tr><td>文档与知识</td><td><span class="grade g-b">B−</span></td><td>guides/ 六篇是全仓库质量最高的文档；但约 70% 文档是阶段性归档混在现行文档里，且<b>168 项变更（含全部 guides 与 6-11 重构源码）至今未提交进 git</b>。</td></tr>
+    <tr><td>UX 工作流</td><td><span class="grade g-c">C+</span></td><td>单页能用，动线断裂：研报复现结果算完即焚、路由/名称/内容三重错位、实验页与回测页参数语义不通、跨页几乎无参数接力。</td></tr>
+    <tr><td>DevOps / 开发体验</td><td><span class="grade g-c">C−</span></td><td>每天 5 步启动仪式、端口四套口径（曾直接导致 14 个 E2E 失败的事故）、日志只进 stdout、AI Studio 模板残留拖着 671MB node_modules。</td></tr>
+  </table>
+
+  <h3>1.2 规模快照</h3>
+  <table>
+    <tr><th>项目</th><th>数值</th><th>项目</th><th>数值</th></tr>
+    <tr><td>后端 Python</td><td>179 个文件 / 24,794 行（最大 cli.py 1,636 行）</td><td>前端 TS/TSX</td><td>91 个文件 / 约 19,700 行（最大组件 1,566 行）</td></tr>
+    <tr><td>API 路由</td><td>75 条（仅 1 条声明 response_model）</td><td>手写前端类型</td><td>api.ts 903 行 / 50 个 interface</td></tr>
+    <tr><td>后端测试</td><td>428 例 / 43 秒 / 全绿</td><td>E2E / 前端单测</td><td>38 例 / <b>0 例</b></td></tr>
+    <tr><td>文档</td><td>111 篇 Markdown / 19,328 行</td><td>data/ 目录</td><td>317MB（其中约 195MB 为从未被读取的逐 run DuckDB 副本）</td></tr>
+    <tr><td>git 历史</td><td>61 次提交，HEAD 停在 2026-06-03</td><td>未提交变更</td><td><b>168 项</b>（127 修改 + 39 未跟踪），含 8 天工作量</td></tr>
+  </table>
+</section>
+
+<!-- ============ 2. 方法 ============ -->
+<section id="s2">
+  <h2><span class="sec-no">2</span>评估方法与可信度说明</h2>
+  <p>本次评估通过多智能体工作流执行：<b>8 个维度</b>（后端架构、前端架构、UX 工作流、数据与存储、测试质量、DevOps/DX、文档知识、安全边界）各由独立评审智能体基于真实代码与数据逐项核查；每条 critical/high 级发现再交给 <b>2 个互相独立的“质疑者”智能体</b>做对抗复核——它们的任务是设法推翻发现，而不是附和。最后由一个完整性批评智能体专门回答“这次评估漏了什么”（其产出见 §5）。共动用 58 个智能体。</p>
+  <p>对抗复核实质性地修正了结果，本报告如实标注：</p>
+  <ul>
+    <li><span class="badge b-ok">已确认 2-0</span> — 两票均核实证据属实。本报告绝大多数 high 级发现属于此类。</li>
+    <li><span class="badge b-dispute">有争议</span> — 复核确认问题存在但对严重度有异议（如实验页问题，一票认为应降为 medium）。</li>
+    <li><span class="badge b-refuted">已否决</span> — 复核推翻了原发现。前端维度原报“断网时渲染假 $1M 账户”被证伪：兜底常量从未被渲染，断网时显示“--”。已按否决处理，仅保留其残余的可维护性问题。</li>
+    <li><span class="badge b-low">未复核</span> — medium/low 级发现未做对抗复核，证据为单一评审者核查，置信度相对较低。</li>
+  </ul>
+  <p>多处发现的细节在复核中被修正（例如 kill-switch 问题比原报<b>更严重</b>：即使改了环境变量，前端硬编码与未暴露的风险限额仍会拒掉每一笔订单；又如回测详情“并行拉基准”的原建议被判不可行，因为基准参数依赖详情响应本身）。正文均采用修正后的版本。</p>
+</section>
+
+<!-- ============ 3. 根因 ============ -->
+<section id="s3">
+  <h2><span class="sec-no">3</span>“用着不顺手”的根因分析</h2>
+  <p>你的原话是“越来越不顺手”。把日常摩擦逐一对回已确认的发现，它们不是泛泛的“体验不好”，每一条都有具体的代码级根因：</p>
+
+  <table>
+    <tr><th style="width:34%">日常体感</th><th>代码级根因</th><th style="width:10%">详见</th></tr>
+    <tr>
+      <td><span class="pain-num">1</span>每天启动要折腾一圈，端口还经常对不上</td>
+      <td>启动是 5 步手工仪式（OpenD 图形界面 → docker → conda+uvicorn → 前端+参数 → 环境变量）；端口存在<b>四套口径</b>：README/AGENTS 说 8765+3001，日常 shell 用 8700，启动脚本写 8765+3000，<code>.env.local</code> 里还躺着一个早已没有后端监听的 8800——它就是上次 14 个 E2E 全挂事故的元凶。裸跑 <code>npm run dev</code> 会命中 8800+3000 这个全错组合。</td>
+      <td>§4.6</td>
+    </tr>
+    <tr>
+      <td><span class="pain-num">2</span>点开回测详情要干等好几秒</td>
+      <td>详情页在打开时<b>现场重新计算基准曲线</b>（2026-06-07 实测 4.5–6.3 秒），而基准本可以在回测落盘时持久化一次；更糟的是基准数据源若降级为合成样例，页面不读 <code>benchmark.source</code> 字段，<b>无任何警告</b>地把合成基准画在真实策略旁边。</td>
+      <td>§4.3 F4</td>
+    </tr>
+    <tr>
+      <td><span class="pain-num">3</span>模拟回放跑完了，账户却什么都没发生</td>
+      <td><code>QS_KILL_SWITCH</code> 默认开启 → 风险引擎拒绝每一笔订单 → 现存 3 个真实回放 run 全部 trade_count=0、净值原地踏步，却照常落盘并被索引为“成功”运行。对抗复核进一步发现：即使关掉环境变量也没用——前端硬编码 <code>enable_kill_switch:true</code>，且未暴露的默认风险限额（单笔上限 $20k、单仓 50%）也会拒掉每笔约 $100k 的订单。<b>UI 发起的回放在任何配置下都不可能成交。</b></td>
+      <td>§4.8 ①</td>
+    </tr>
+    <tr>
+      <td><span class="pain-num">4</span>研报复现的结果，一切换页面就没了</td>
+      <td>复现结果只存在于组件的 <code>useState</code> 里，切换策略即清空（StrategyCatalogWorkbench.tsx:226），后端也从不持久化复现运行——这是全平台唯一“算完即焚”的研究产物，与回测/因子/回放的逐 run 落盘形成断裂。</td>
+      <td>§4.3 F1</td>
+    </tr>
+    <tr>
+      <td><span class="pain-num">5</span>页面的名字、网址和内容对不上号</td>
+      <td><code>/replications</code> 实为策略目录，<code>/order-book</code> 实为 Polymarket 研究页，导航里“Docs”只指向单篇论文文档，Agent Studio 的 LLM 是 stub 但提示弱（页面 :124 已有 “LLM: stub” 状态徽章，只是不显眼）；顶栏与侧栏双导航并存、同一页面两个名字、铃铛图标点开是期权雷达。每次使用都在交“认知税”。</td>
+      <td>§4.3 F2/F8</td>
+    </tr>
+    <tr>
+      <td><span class="pain-num">6</span>运行历史里混进来路不明的 run</td>
+      <td>Playwright 的后端 webServer <b>没有任何环境变量隔离</b>：读你真实的 <code>.env</code>（含 QS_DATABASE_ENABLED=true），E2E 把测试 run 直接写进真实 <code>data/api_runs</code> 与真实 Postgres 索引；phase10 冒烟用例从不清理。现有 106 个回测目录里用户 run 与测试残渣已不可区分。</td>
+      <td>§4.5 ①</td>
+    </tr>
+    <tr>
+      <td><span class="pain-num">7</span>data/ 目录越来越大、越来越乱</td>
+      <td>153 个逐 run DuckDB 副本约 195MB（= api_runs 体积的 97%）<b>从未被任何代码读取过</b>，纯属每次运行的双写死重；futu 期权缓存 62MB / 403 份快照 100% 过期且永不清扫；50+ 个 phase/smoke 目录与日志、缓存、产物混居，没有任何生命周期管理。</td>
+      <td>§4.4</td>
+    </tr>
+    <tr>
+      <td><span class="pain-num">8</span>跑大一点的回测，浏览器就卡住干等</td>
+      <td><code>POST /backtests/run</code> 是同步处理：Tiingo 全量下载 + 逐 bar 引擎循环 + 双写落盘全部发生在一次 HTTP 请求内——无进度、无法取消、超时即全丢。且 Tiingo 数据<b>每次回测都重新全量下载</b>，没有本地缓存接通。</td>
+      <td>§5 缺口3</td>
+    </tr>
+    <tr>
+      <td><span class="pain-num">9</span>想改点东西，心里没底会不会弄坏别处</td>
+      <td>回测与模拟执行的订单生成是两份复制后已漂移的代码（行为差异见 §4.2 ①）；前端 50 个手写类型没有任何契约校验，后端改个字段前端只会安静地渲染“--”；前端纯函数零单元测试。改动的安全网有结构性空洞。</td>
+      <td>§4.1/§4.2</td>
+    </tr>
+  </table>
+
+  <p>结论：<b>“不顺手”不是审美问题，是九条具体的工程债在使用路径上的叠加。</b>其中 1、3、4、6 四条尤其伤害“研究平台”的核心价值——它们让你不能完全信任自己看到的结果。</p>
+</section>
+
+<!-- ============ 4. 各维度发现 ============ -->
+<section id="s4">
+  <h2><span class="sec-no">4</span>各维度发现明细</h2>
+  <p class="small">严重度：<span class="badge b-crit">严重</span> <span class="badge b-high">高</span> <span class="badge b-med">中</span> <span class="badge b-low">低</span>　工作量：<span class="badge b-s">S ≤1天</span> <span class="badge b-m">M 1-3天</span> <span class="badge b-l">L 3天+</span>　验证：<span class="badge b-ok">已确认 2-0</span> <span class="badge b-dispute">有争议</span> <span class="badge b-low">未复核</span> <span class="badge b-refuted">已否决</span></p>
+
+  <!-- 4.1 前端架构 -->
+  <h3>4.1 前端架构</h3>
+  <p class="dim-sum">重构后的页面层是好的；脆弱的是页面层之下的“合同”——类型靠手抄、文案双轨、巨石组件无测试兜底。</p>
+  <table>
+    <tr><th>发现</th><th>严重度</th><th>验证</th><th>工作量</th><th>建议</th></tr>
+    <tr><td><b>50 个手写类型对 115 个无契约接口</b>：后端 75 条路由仅 1 条声明 response_model（115 处处理函数直接 <code>-&gt; dict</code>），前端 api.ts 903 行手抄 50 个 interface。字段漂移时格式化函数把 undefined 渲染成“--”，<b>静默失败</b>，没有任何环节报错。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>逐路由补 response_model（注意 NaN 序列化需先处理），再用 openapi-typescript 生成前端类型，删除手抄。见路线图阶段 1。</td></tr>
+    <tr><td><b>双语文案税</b>：<code>copy = { en, zh }</code> 模式扩散至 36 个文件、2,677 行，占前端代码 13.6%。每改一处 UI 要维护两份文案。注意：直接砍掉英文会破坏现有 E2E（部分断言依赖英文文案）。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-l">L</span></td><td>先决策语言策略（见 §6.3），再做机械收敛；与 E2E 断言改造同步。</td></tr>
+    <tr><td><b>OptionsToolsWorkbench 1,566 行巨石</b>：8 个结构雷同的面板（表单+提交+结果）以复制粘贴展开，状态 40+ 个 useState。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-l">L</span></td><td>提取“工具面板”模板组件；建议在量化使用频率（§6.4）之后再排期——若期权工具页低频使用，优先级应后移。</td></tr>
+    <tr><td><b>前端单元测试为零</b>：buildPayload（含 :749 的字符串强转）、toPayload、normalizeEquity、selectDisplayRun 等纯函数无任何测试。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-s">S</span></td><td>装 vitest，为上述 4 个纯函数写测试——半天工作量，是性价比最高的安全网。</td></tr>
+    <tr><td><b>AI Studio 模板残留</b>：包名仍叫 ai-studio-applet；@google/genai、firebase-tools 等死依赖拖着 re2/node-gyp 把 node_modules 撑到 671MB；DISABLE_HMR、eslint ignoreDuringBuilds 等模板配置残留。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>删除死依赖、改包名、移除 ignoreDuringBuilds（改为 lint 必须过）。</td></tr>
+    <tr><td><b>断网渲染假 $1M 账户</b> —— 复核证伪：FALLBACK_ACCOUNT 常量从未被渲染，断网时账户卡显示“--”。残余问题：HoldingsPanel/LedgerPanel 无法区分“后端离线”与“真为空”；getOptionsRadarDates 是死代码。</td><td><span class="badge b-low">低</span></td><td><span class="badge b-refuted">已否决</span></td><td><span class="badge b-s">S</span></td><td>给两个 Panel 传入 offline 状态用于区分展示；删除死代码。</td></tr>
+    <tr><td>其他：getHealth 在 layout 与页面各 fetch 一次（无 React cache()）；仅 5 个 UI 原语组件，<code>'rounded-lg border…'</code> 字面量出现 129 次，表格有 3 套实现。</td><td><span class="badge b-low">低</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>cache() 包一层；新增 Card/Table 原语并渐进替换。</td></tr>
+  </table>
+
+  <!-- 4.2 后端架构 -->
+  <h3>4.2 后端架构</h3>
+  <p class="dim-sum">注册表模式与分层是对的；债务集中在“复制后各自演化”——订单逻辑、配置、持久化各有一处分叉。</p>
+  <table>
+    <tr><th>发现</th><th>严重度</th><th>验证</th><th>工作量</th><th>建议</th></tr>
+    <tr><td><b>回测与模拟执行的订单逻辑复制漂移</b>：3 个 Portfolio 类并存；两套订单生成器已发生行为分歧——缺价时一边抛异常一边静默跳过、最小订单金额一边 <code>&lt;</code> 一边 <code>&lt;=</code>、权重上限只在回测侧生效、limit_price 只在执行侧存在。同一策略在回测与回放中走的不是同一套规则，结果不可比。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-l">L</span></td><td>提取共享“交易内核”（订单生成+组合会计），两侧薄适配。是阶段 2 的核心工程。</td></tr>
+    <tr><td><b>QS_FUTU_* 环境变量全部失效</b>：settings.py:134-151 实际绑定的是 QS_HOST 等名字（缺 AliasChoices），而 .env.example、AGENTS.md 和文档教的全是 QS_FUTU_HOST 这套<b>不起作用</b>的名字。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-s">S</span></td><td>加 AliasChoices 兼容两套名字，文档统一为一套。</td></tr>
+    <tr><td><b>期权雷达配置 CLI/API 双轨且互相矛盾</b>：max_delta 在三处分别是 0.45 / 0.8 / 0.35。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>收敛到单一配置源（settings），CLI/API 都从它读。</td></tr>
+    <tr><td><b>实验功能被锁在 sample 数据 + walk-forward 被硬关闭</b>：引擎本身支持，但 API schema <code>Literal["sample"]</code> 拒绝真实数据源（显式 422，并非静默），walk-forward 在 UI 路径不可达（CLI JSON 配置仍可用）。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>放开 provider 白名单至 futu/tiingo；UI 实验路径接通 walk-forward 或明确移除该 Tab。</td></tr>
+    <tr><td><b>运行持久化三轨并行</b>：backtest/factor/paper 各自一套落盘代码；研报复现则完全不持久化（同 F1）。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-l">L</span></td><td>统一 ArtifactStore（见 §4.4 ②），复现一并接入。</td></tr>
+    <tr><td>中低位问题：core/interfaces.py 整文件死代码；结构化日志只在 doctor 命令生效；错误响应格式不一致（裸 detail 字符串 vs 结构体）；cli.py 1,636 行巨石。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>删除死接口文件；JsonFormatter 全局接通（配合日志落盘，§4.6）；错误响应统一结构；cli.py 按子命令拆分（阶段 3）。</td></tr>
+  </table>
+
+  <!-- 4.3 UX 工作流 -->
+  <h3>4.3 UX 工作流</h3>
+  <p class="dim-sum">单页都能用，但页与页之间没有“研究动线”：结果不持久、名实不符、参数不接力——平台还停留在“按阶段长出来”的信息架构上。</p>
+  <table>
+    <tr><th>#</th><th>发现</th><th>严重度</th><th>验证</th><th>工作量</th><th>建议</th></tr>
+    <tr><td>F1</td><td><b>研报复现算完即焚</b>：结果只在 useState，切策略即清空；后端不落盘、无 run_id、无详情页。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>后端把复现保存为独立 run 类型（扩展 KIND_DIRS，主要是移植既有落盘模式），返回 run_id，前端给“打开复现详情”。</td></tr>
+    <tr><td>F2</td><td><b>路由/名称/内容三重错位</b>：/replications 是策略目录、/order-book 是 Polymarket、Docs 链接只达单篇文档、Agent Studio stub 提示弱（已有低显著度徽章）。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>路由改名 /replications→/strategies、/order-book→/polymarket（含 /zh 前缀 301 + 同步 38 个 E2E）；Docs 指向 guides 索引页（guides/README.md 已有素材，需做成前端页）；强化 stub 徽章。</td></tr>
+    <tr><td>F3</td><td><b>实验页“半假流水线”</b>：实验锁定 sample 数据，“送往回测”预填的 provider=futu 与实验跑的数据源不一致，参数迁移语义无提示。复核修正：sample 徽章已在 3 处存在、422 拒绝是显式的、预填只是填表不自动跑——一票质疑者据此主张降为中级。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-dispute">有争议</span></td><td><span class="badge b-l">L</span></td><td>最小修法：UI 实验的死 walk-forward Tab 处理 + “参数不保证迁移”提示 + 因子权重基底可见化；根治依赖 §4.2 ④ 放开数据源。</td></tr>
+    <tr><td>F4</td><td><b>回测详情现场重拉基准（4.5-6.3 秒）+ 静默合成基准</b>：基准在打开页面时现算；若降级为合成数据，页面不读已有的 <code>benchmark.source</code> 字段（api.ts:177 已定义类型、DataSourceBadge 已有 isSampleSource()），无警告直接画图。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>主修：回测落盘时持久化基准曲线（一次计算，永久复用）；立即可做：详情页读 source 字段挂已有的 Badge。复核注：原“并行请求”方案不可行，基准参数依赖详情响应。</td></tr>
+    <tr><td>F5</td><td>仪表盘“活动日志”硬编码为空数组，从不显示任何真实活动。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>新增 GET /api/runs/recent（若保留 Postgres 索引，正好建在其上；见 §6.1）。</td></tr>
+    <tr><td>F6</td><td>策略注册三方分裂：后端 registry、前端 z.enum 白名单、account_service builders 字典各自维护，新增策略要改三处。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>registry 加 supports_account_rebalance 标志，前端从 API 读，删除另两份硬编码。</td></tr>
+    <tr><td>F7</td><td>限价单实为 IOC（一次检查未成交即丢弃），与“挂单”心智不符。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-l">L</span></td><td>短期：表单旁帮助文案+提交后 toast 明示 IOC 语义；中期：持久挂单池（产品决策见 §6.2）。</td></tr>
+    <tr><td>F8</td><td>顶栏/侧栏双导航、同一页面两个名字、铃铛图标实为期权雷达入口。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>顶栏去导航化：只留状态与语言切换，导航以侧栏为唯一权威。</td></tr>
+    <tr><td>F9</td><td><b>跨页无参数接力</b>：18 个页面间唯一的参数传递（实验→回测）语义还是错的；回测页其实已支持 URL 预填但无人调用。建议同时做信息架构重组（详见建议列）。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>先加 3 条接力链（因子→回测、回测→回放、雷达→筛选器）；中期 IA 重组：研究组「行情→因子→策略与回测（合并 /strategies+/backtest）→实验」、模拟组「账户/持仓地图」、期权 4 页合并为 /options 四标签、市场组「Polymarket」、新增统一 /runs 历史页。</td></tr>
+    <tr><td>F10</td><td>端口错配的 UX 面（同 §4.6 ①）。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-s">S</span></td><td>见 §4.6。</td></tr>
+  </table>
+
+  <!-- 4.4 数据与存储 -->
+  <h3>4.4 数据与存储</h3>
+  <p class="dim-sum">评审原话：“正确性内核扎实，存储失控膨胀。”反前视与 UTC 纪律逐行过审；但落盘层是 8 个存储类、4 份复制模板、3 种互相矛盾的写语义。</p>
+  <table>
+    <tr><th>发现</th><th>严重度</th><th>验证</th><th>工作量</th><th>建议</th></tr>
+    <tr><td><b>逐 run DuckDB 副本是纯死重</b>：153 个文件约 195MB（占 api_runs 体积 97%），每次回测/因子/回放都双写一份 DuckDB，<b>没有任何代码读它</b>。注意：不要动 LocalDataStorage 的 ingest DuckDB——那个有真实读者（count_duckdb_rows）且有测试断言。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-s">S</span></td><td>output_dir 为逐 run 目录时跳过 DuckDB 写入 + 一次性清理脚本回收 195MB。</td></tr>
+    <tr><td><b>存储层 8 类 4 模板 3 语义</b>：save_frame 复制粘贴 4 份；DuckDB 写语义三种并存（合并去重 / 替换最新 / 按实验累积）。复核修正：API 路径写的是逐 run 文件，共享 quant_system.duckdb 只有 4 张 experiment_* 表；仓库共 197 个 .duckdb 文件。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>统一为一个 ArtifactStore，确立“逐 run 目录 = 唯一真相”原则；复现与基准曲线（F1/F4）一并接入。</td></tr>
+    <tr><td><b>Postgres 运行索引“复杂度倒挂”</b>：文件系统扫描仍然决定成员与排序（实测 13-15ms），DB 只省掉 json.loads，却引入 psycopg 硬依赖 + 每操作一次未池化连接 + 启动对账逻辑。<b>注意：是否移除与你的既有偏好冲突，已列为待裁决事项（§6.1），本报告不替你决定。</b></td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>方案 A 移除 / 方案 B 保留并冻结 KIND_DIRS、在其上建 /api/runs/recent。两案对比见 §6.1。</td></tr>
+    <tr><td><b>Tiingo 每次回测全量重下载</b>：已有的 ingestion 存储（load_ohlcv）只有 2 个查看端点在用，回测路径完全绕开它；provider 失败直接 500；knowledge_ts 在下载时盖戳导致跨修订不可复现。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>本地优先 read-through 缓存 + 最小重试。与 §5 缺口 1（复权价）一起处理最划算。</td></tr>
+    <tr><td>futu 期权缓存 62MB / 403 份快照 <b>100% 过期</b>且无清扫机制。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>加过期清扫（启动时或 CLI），上限保留 N 天。</td></tr>
+    <tr><td><b>显式请求真实数据源失败时静默降级为 sample 并以 200 落盘</b>——违背你“真实数据为默认”的明确偏好。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>显式指定 provider 时失败应返回 400 而非降级；只有未指定时才允许降级且大字标注。</td></tr>
+    <tr><td>data/ 317MB 无生命周期：50+ phase/smoke 目录与日志、缓存、产物混居。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>确立 seeds/cache/runs/logs/scratch 五区约定 + 清理 CLI。</td></tr>
+    <tr><td>paper 账户 JSON 损坏无恢复路径；_atomic_replace 失败时回退为非原子写。</td><td><span class="badge b-low">低</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>写 .bak 副本 + 损坏文件改名保留而非覆盖。</td></tr>
+  </table>
+  <p class="callout c-safe"><b>该维度的强项（逐行验证）</b>：signal_ts/tradeable_ts 反前视纪律贯穿因子→回测→回放；全链 UTC；PaperAccountStorage 是全仓库质量最高的存储类（文件锁、原子写、并发测试）；缓存与 DB 全部 fail-open；路径遍历白名单；futu TokenBucket 限频。</p>
+
+  <!-- 4.5 测试质量 -->
+  <h3>4.5 测试质量</h3>
+  <p class="dim-sum">428 例 43 秒全绿是真实力；但“绿”的代表性被两个结构性空洞高估——E2E 污染真实数据，且最关键的取价链路只测了一半。</p>
+  <table>
+    <tr><th>发现</th><th>严重度</th><th>验证</th><th>工作量</th><th>建议</th></tr>
+    <tr><td><b>E2E 非密闭，直写真实数据</b>：playwright.config 的后端 webServer 无 env 覆盖 → 继承真实 .env（QS_DATABASE_ENABLED=true），测试 run 写入真实 data/api_runs 与真实 Postgres；phase10-smoke 从不清理；启动对账（_prune_missing）还会把磁盘上的测试残渣重新索引为合法 run。run-detail 与 experiments 两个 spec 有 afterAll（仅崩溃时泄漏），phase10-smoke 是无条件累积者。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>零风险第一步：webServer env 加 <code>QS_DATABASE_ENABLED=false</code>（与 pytest conftest 对齐，一行）；第二步：QS_DATA_DIR 指向沙箱目录（需同步改 spec 的清理逻辑）。</td></tr>
+    <tr><td><b>给每笔模拟成交定价的链路，4 步只测了 2 步</b>：Tiingo 远程分支（price_source.py:120-148）零覆盖、“Futu 快照优先于过期缓存”的次序未测、cutoff 窗口未测——这条链同时守着“合成数据上绝不成交”的安全闸。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-s">S</span></td><td>3 个单元测试，provider 层 monkeypatch，半天工作量。</td></tr>
+    <tr><td>再平衡缺价标的被静默跳过（净值被低估）无测试；sharpe/年化收益无数值锚点测试——而实验评分就按 sharpe 排序。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>固定小数据集手算锚点值，断言到小数位。</td></tr>
+    <tr><td>walk-forward 测试全绿但功能在 UI 死路（绿灯守着死特性）；Postgres 索引只测了禁用路径。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>跟随 §6.1 的裁决：保留则加 @pytest.mark.pg 可选真库测试。</td></tr>
+    <tr><td>前端零单测；phase10 巨型用例靠 waitForTimeout(3000) 与 force-click 维持稳定。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>vitest 起步（§4.1）；phase10 拆分并以 role/label 定位替代 force。</td></tr>
+    <tr><td>无一键验证入口：用错解释器（anaconda base 3.9）= 89 个收集错误，没有任何提示指向正确环境。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>scripts/verify.sh（ruff+pytest+lint+type-check 串联）+ conftest 里断言 Python 版本并给出指路错误。</td></tr>
+  </table>
+  <p class="callout c-safe"><b>强项</b>：计划-提交两段式中止测试、次开盘价成交的精确断言、conftest 强制 QS_DATABASE_ENABLED=false、合成数据永不成交的回归测试、文件锁并发测试。</p>
+
+  <!-- 4.6 DevOps / DX -->
+  <h3>4.6 DevOps / 开发体验</h3>
+  <p class="dim-sum">单人项目最贵的成本是每天的启动摩擦和排障盲飞——这两样恰好都是重灾区。</p>
+  <table>
+    <tr><th>发现</th><th>严重度</th><th>验证</th><th>工作量</th><th>建议</th></tr>
+    <tr><td><b>端口四套口径</b>：README/AGENTS 8765+3001；日常 shell 8700；start ps1 8765+3000；.env.local 死 8800（上次 14 E2E 失败事故元凶）。裸 <code>npm run dev</code> = 8800+3000 全错组合。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-s">S</span></td><td>定准 8765+3001 为唯一口径：<b>建议你本人</b>把 .env.local 的 8800 改为 8765（本报告不代改你的本地配置）；package.json dev 脚本固定端口；删除 next.config 里 8800 的 remotePatterns 死配置；修正 ps1 的 $FrontendPort。</td></tr>
+    <tr><td><b>无一键启动</b>：5 步日常仪式；现存 start_phase9_full_stack.ps1 已废弃 6 周（日志停在 4-29）、端口错配，但其 :95 的环境变量注入写法可复用。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td>写 scripts/dev.ps1：探测 docker/OpenD → 起后端前端 → Wait-HttpOk → 健康摘要；配 dev-stop.ps1。</td></tr>
+    <tr><td><b>日志只进 stdout</b>：全代码库零 FileHandler，关掉终端窗口排障线索归零。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>RotatingFileHandler → data/_runtime/logs/backend.jsonl，复用现成 JsonFormatter。</td></tr>
+    <tr><td>run_options_radar.ps1 硬编码 D:\anaconda3、无日志、未注册计划任务。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>改用 conda run + tee 日志 + 附 schtasks 注册脚本。</td></tr>
+    <tr><td>environment.yml 缺 [api] extra：按它恢复的环境起不了 serve，与 README 的 <code>pip install -e ".[api,dev]"</code> 矛盾。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>一行修复。</td></tr>
+    <tr><td>环境变量膨胀：9 个 API key 中 5 个无任何消费者（polygon/newsapi/twelvedata/twitter×3）；.env.example 声称默认 sample 而代码默认 futu；doctor 只报“Phase 0 foundation”。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>删死键、对齐默认值文档、doctor 升级为离线一站式健康检查。</td></tr>
+    <tr><td>phase 编号脚本残骸 + 陈旧 .pyc + data/_runtime/phase10-* 残留。</td><td><span class="badge b-low">低</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>按功能重命名脚本 + scripts/README.md 索引。</td></tr>
+  </table>
+  <p class="callout c-safe"><b>强项</b>：/api/health 做真实 socket 探测；Postgres 优雅降级；playwright 端口钉死是对的（保持）；仓库卫生好（469 个跟踪文件，data 已忽略）；serve 绑定非回环地址需二次确认。</p>
+
+  <!-- 4.7 文档 -->
+  <h3>4.7 文档与知识</h3>
+  <p class="dim-sum">guides/ 六篇是全仓库质量最高的文档，状态横幅纪律与中文化都执行到位；问题在“动线”——新读者会被引向归档而非指南，且最有价值的一批文档根本不在版本库里。</p>
+  <table>
+    <tr><th>发现</th><th>严重度</th><th>验证</th><th>工作量</th><th>建议</th></tr>
+    <tr><td><b>168 项变更未提交（含 14 篇核心文档与 6-11 重构全部源码）</b>：HEAD 停在 2026-06-03；全部 6 篇 guides、README_zh、2 篇设计文档、交付记录、execution/ 下 4 个核心源文件、约 17 个前端文件等共 127 修改 + 39 未跟踪。<b>本报告写作当日实测确认仍未提交。</b>8 天的工作量没有任何版本保护，叠加 §5 缺口 4（零备份）风险倍增。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认<br>+当日复测</span></td><td><span class="badge b-s">S</span></td><td><b>快赢第 1 位：立即提交工作树</b>（建议拆 2-3 个提交：源码重构 / 文档 / 杂项）。在 AGENTS.md 加“完成定义含 git commit”规则。</td></tr>
+    <tr><td>约 70% 文档为阶段归档与现行文档平铺混居：phase 四件套 60 篇 / 8,027 行。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>docs/archive/ 归档手术；停止新功能按“四件套”立卷，改为单篇交付记录。</td></tr>
+    <tr><td>快速启动命令在 5 篇现行文档中逐字重复，且全说 8765，与日常 8700、.env.local 8800 三方矛盾。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>建 docs/runbook.md 为唯一权威，其余文档只链接不复制。</td></tr>
+    <tr><td>README 英中双轨手工镜像、无成文语言政策；新读者推荐阅读把人引向 1,378 行的四月设计研究而非 guides。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>定“中文为唯一权威 + 英文摘要”政策；README 推荐阅读改为 guides 优先。</td></tr>
+    <tr><td>guides 只覆盖 6 个研究流水线页面；期权 5 页、行情、Agent Studio、设置无指南。AGENTS.md 结构清单缺 guides/。</td><td><span class="badge b-low">低</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-l">L</span></td><td>按 §6.4 的使用频率结果决定补哪几篇；AGENTS.md 补目录。</td></tr>
+    <tr><td>145 个死链接全部位于归档（现行文档零死链）；audits/ 的 ../src 前缀可一次 sed 修复。</td><td><span class="badge b-low">低</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>随归档手术一并处理。</td></tr>
+  </table>
+
+  <!-- 4.8 安全边界 -->
+  <h3>4.8 安全边界（paper-only 红线）</h3>
+  <p class="dim-sum">总评 A−：核心红线（src/ 只读 Futu、/api/orders/submit 404、SecretStr 脱敏、绑定守卫）全部实测成立。两个 high 级问题都不是“红线被突破”，而是“红线的语义与盲区”。</p>
+  <table>
+    <tr><th>发现</th><th>严重度</th><th>验证</th><th>工作量</th><th>建议</th></tr>
+    <tr><td><b>QS_KILL_SWITCH 语义错位 → 零成交“伪成功”运行</b>：默认 true → 风险引擎拒掉每笔单 → 现存 3 个真实回放 run 全部 0 成交（breaches 1542/351/351）却以成功姿态落盘入索引。复核双向修正：①“静默”有夸大——paper-trading 页有 info 级解释卡；②但问题<b>更深</b>——前端硬编码 enable_kill_switch:true，且未暴露的 max_order_value=$20k / max_position_size=0.5 默认值也会拒掉每笔 ~$100k 订单（违规数=订单数×3 正是佐证），<b>UI 回放在任何配置下都无法成交</b>；③ UI 警示语义自相矛盾（仪表盘在开启时告警、模拟页在关闭时告警）。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-m">M</span></td><td><b>保持 kill-switch 默认开启不变</b>（这是安全特性），收紧语义：回放遇 kill-switch 命中 → 409 显式中止而非伪成功；引入独立 simulate_fills 参数表达“回放允许模拟成交”；回放表单暴露风险限额；为存量 0 成交 run 打标。</td></tr>
+    <tr><td><b>工作区内驻留可下实盘单的 Futu 脚本，红线扫描对其双重失明</b>：.agents/skills/futuapi/scripts/trade/place_order.py 支持 --trd-env REAL（实测 :171 调用 ctx.place_order），且该技能在 AI 会话中可直接调用。红线 grep 只扫 src/tests/frontend，且 git grep 默认不扫未跟踪文件——双重盲区。复核补充：modify_order.py/cancel_order.py 连 --confirmed 确认门都没有，比原报<b>更弱</b>；缓解面是 REAL 实际成交还需 OpenD 端手动解锁交易密码。复核同时修正建议：trade/ 目录整体移出会误伤只读账户查询脚本。</td><td><span class="badge b-high">高</span></td><td><span class="badge b-ok">已确认</span></td><td><span class="badge b-s">S</span></td><td>精准删除/禁用三个下单脚本（place/modify/cancel_order.py），保留只读查询脚本；新增 pytest 守护测试做<b>全仓库</b>（含未跟踪文件）红线扫描，把 .agents/ 纳入视野。</td></tr>
+    <tr><td>kill-switch 与账户冻结作用域交叉：三个同名字段（SafetySettings / RiskLimits / PaperAccount）语义各异，账户直接下单路径缺全局闸门。</td><td><span class="badge b-med">中</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-m">M</span></td><td>改名区分（frozen / halt_all_orders）；账户下单路径加全局闸（宁紧勿松）。</td></tr>
+    <tr><td>attach_safety_footer 仅打标签且 setdefault 可被同名字段遮蔽；/settings 脱敏依赖键名启发式双轨。</td><td><span class="badge b-low">低</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>footer 改强制覆盖或挪到 X-QS-Safety 响应头；加结构化 SecretStr 遍历守护测试（注意 OpenAI 客户端以明文 str 存 key）。</td></tr>
+    <tr><td>CLI 可无条件覆盖 kill-switch，而 API 同操作返回 409——同一红线两种力度。</td><td><span class="badge b-low">低</span></td><td><span class="badge b-low">未复核</span></td><td><span class="badge b-s">S</span></td><td>对齐为 API 语义（须显式确认）。</td></tr>
+  </table>
+  <p class="callout c-safe"><b>强项（实测）</b>：src/ 内 Futu 真只读；实盘开关切换需确认短语；agent 推广仅手动且有路径遍历测试；Polymarket 三层只读；SecretStr+脱敏+token 不回传有测试断言；/api/orders/submit 断言 404；安全页脚有测试守护。</p>
+</section>
+
+<!-- ============ 5. 盲区 ============ -->
+<section id="s5">
+  <h2><span class="sec-no">5</span>评估盲区 —— 完整性批评者的补充</h2>
+  <p>评估的最后一步是让一个专门的批评智能体回答“这 8 个维度还漏了什么”。它找出 8 个缺口，其中两个直接关乎结果可信度，建议优先补证：</p>
+
+  <div class="callout c-danger">
+    <b>缺口 1（critical 候选，待核实）：Tiingo 可能在用未复权价格。</b><br>
+    实测 <code>tiingo.py:76-89</code> 取的是裸 <code>close</code> 字段，而 Tiingo 日线 API 同时返回的 <code>adjClose/adjOpen</code> 全部未被使用；整个 data/ 目录 grep <code>adjClose|split|dividend</code> 零命中。若属实，任何跨拆股/分红的多年期回测（如 NVDA 2024 年 1 拆 10）净值曲线会出现假跳水，total_return/sharpe/归因全部失真——这动摇“回测结果可信”这一平台核心价值。<b>验证方法</b>：跑一次跨已知拆股日的真实数据回测看净值是否断崖。已列入路线图阶段 1 首位。
+  </div>
+
+  <div class="callout c-warn">
+    <b>缺口 5（维度矛盾，已裁定）：</b>数据维度说“内核扎实”、测试维度说“428 全绿”，但安全维度实测默认配置下所有模拟回放 0 成交照常出“成功”结果。三者同时成立的唯一解释是：<b>测试矩阵从未覆盖“用户真实默认配置”这一运行形态</b>（conftest 强制关掉了 kill-switch 相关变量）。裁定：kill-switch 问题维持 high 并按 §4.8 方案修复；同时在阶段 1 测试补强中加入一条“以真实默认 env 启动并跑一笔回放”的形态测试。
+  </div>
+
+  <table>
+    <tr><th>#</th><th>缺口</th><th>处置</th></tr>
+    <tr><td>2</td><td><b>期权定价/希腊字母正确性未审计</b>：black_scholes_price 硬编码 rate=0.04，仅 1 个 ATM 一致性测试；叠加 100% 过期的 IV 缓存，期权建议数值可信度未知。</td><td>阶段 3 排期：与参考实现对拍 + 过期 IV 禁止流入定价输入。</td></tr>
+    <tr><td>3</td><td><b>任务执行模型缺位</b>：POST /backtests/run 同步执行下载+回测+落盘，无进度/取消/恢复——“越用越不顺手”的直接来源之一（§3 痛点 8）。</td><td>阶段 3 排期：最小 job-runner（先做“接受即返回 run_id + 轮询状态”，不引入重型队列）。</td></tr>
+    <tr><td>4</td><td><b>零备份</b>：.gitignore 排除 /data/、/logs/、.env；153 个 run、模拟账户、Postgres 卷、全部 API key 无任何备份；scripts/ 无 backup 脚本。叠加 168 项未提交，单盘故障 = 研究历史归零。</td><td>快赢：先提交工作树；阶段 1 给 data/ 关键区（runs/账户）加一个 zip 导出脚本。</td></tr>
+    <tr><td>6</td><td><b>缺整合路线图</b>：8 份“病历”重叠严重（端口被 4 个维度分别提出、run 持久化被 3 处提出），无去重排序。</td><td><b>本报告 §7/§8 即为该缺口的answer</b>——已按修复对象去重、按依赖排序。</td></tr>
+    <tr><td>7</td><td><b>使用频率未量化</b>：“不顺手 = 频率 × 摩擦”，目前只评了摩擦。若期权页群（前端最大的 2,800+ 行组件）实际低频，其整治优先级应大幅后移。</td><td>已列为待你裁决事项 §6.4（自报最常用 3 个页面即可）。</td></tr>
+    <tr><td>8</td><td><b>性能只有单点实测</b>（回测详情 4.5-6.3s）：全量下载占比、逐 bar 引擎扩展性、冷启动总时长均无数据。</td><td>阶段 1 顺手做：给回测加分段计时日志（下载/引擎/落盘各占多少），为阶段 2/3 排序提供依据。</td></tr>
+  </table>
+</section>
+
+<!-- ============ 6. 用户裁决 ============ -->
+<section id="s6">
+  <h2><span class="sec-no">6</span>需要你裁决的事项</h2>
+  <p>以下四件事评估给不出唯一答案——要么与你的既有偏好冲突，要么是纯产品取舍。其余所有建议都不依赖这四个裁决，可以先行。</p>
+
+  <h3>6.1 Postgres 运行索引：移除还是加固？</h3>
+  <p>数据维度的技术结论是“复杂度倒挂”（§4.4 ③）：文件扫描 13-15ms 已经够快，DB 没有承担任何独占职责。但你明确表达过“用现成的 Docker quantplatform-db”的偏好，且 UX 维度建议的 /api/runs/recent（修复仪表盘空活动流）正好适合建在它上面。</p>
+  <table>
+    <tr><th></th><th>方案 A：移除索引层</th><th>方案 B：保留并加固（与你既有偏好一致）</th></tr>
+    <tr><td>做法</td><td>删 runs_repository/database 启动对账，运行列表纯走文件扫描</td><td>冻结 KIND_DIRS 语义、连接池化、加 @pytest.mark.pg 真库测试、在其上建 /api/runs/recent</td></tr>
+    <tr><td>得</td><td>少一个硬依赖（psycopg）、少一套对账逻辑、心智更简单</td><td>仪表盘活动流有了天然数据源；未来雷达/请求日志入库有承载</td></tr>
+    <tr><td>失</td><td>仪表盘活动流要另找实现（直接扫文件也可，稍慢）</td><td>维护一层当前收益很薄的间接性</td></tr>
+  </table>
+  <p class="small">两案工作量相当（均 M）。如果你日常确实开着 Docker 且未来想把更多研究产物入库，B 合理；如果 Docker 只是“为了这个索引才开”，A 更诚实。</p>
+
+  <h3>6.2 限价单语义：保持 IOC 还是做持久挂单？</h3>
+  <p>短期修法（帮助文案 + toast 明示）无论如何都该做。中期是否实现持久挂单池（含资金预留、停机期间触价补判等，工作量 L），取决于你对模拟交易真实感的要求。若做，需要决定停机期间的触价规则（只认系统在线时见到的价格 / 启动后按日内高低价回溯补判）。</p>
+
+  <h3>6.3 前端语言策略：中文单语还是维持双语？</h3>
+  <p>双语 copy 占前端代码 13.6%（2,677 行），是持续税。文档已全面中文化，但<b>直接砍英文会破坏部分依赖英文文案的 E2E 断言</b>。若决定中文单语，应与 E2E 断言改造（改用 role/testid 定位）排进同一个批次（阶段 3）。</p>
+
+  <h3>6.4 你最常用的 3 个页面是哪几个？</h3>
+  <p>这是批评者指出的最关键缺失输入（§5 缺口 7）。你的答案直接决定阶段 3 中“拆期权巨石组件”“补期权 guides”“IA 重组”的相对优先级。一句话回复即可。</p>
+</section>
+
+<!-- ============ 7. 快赢 ============ -->
+<section id="s7">
+  <h2><span class="sec-no">7</span>快赢清单（阶段 0：每项 ≤1 天，合计约 2-3 天）</h2>
+  <p>不依赖任何架构决策、彼此独立、立即可做。按收益/风险比排序：</p>
+  <table>
+    <tr><th>#</th><th>动作</th><th>修复的痛</th></tr>
+    <tr><td>1</td><td><b>提交工作树</b>：168 项变更分 2-3 个提交进 git（源码重构 / 文档 / 杂项）。这是当前单一最大风险项。</td><td>8 天工作量零保护（§4.7 ①、§5 缺口4）</td></tr>
+    <tr><td>2</td><td><b>E2E 防污染第一步</b>：playwright.config 后端 webServer env 加 <code>QS_DATABASE_ENABLED=false</code>（一行，零风险）。</td><td>测试残渣混进真实运行历史（§4.5 ①）</td></tr>
+    <tr><td>3</td><td><b>端口统一为 8765+3001</b>：package.json 固定端口、删 next.config 的 8800 remotePatterns、修 ps1 的 $FrontendPort；<b>.env.local 的 8800 建议你本人顺手改掉</b>（报告不代改）。</td><td>四套端口口径（§4.6 ①）</td></tr>
+    <tr><td>4</td><td><b>删除/禁用 .agents/skills/futuapi/scripts/trade/ 下的三个下单脚本</b>（place/modify/cancel_order.py，保留只读查询脚本）+ 新增全仓库红线 pytest 守护测试。</td><td>红线扫描盲区（§4.8 ②）</td></tr>
+    <tr><td>5</td><td>QS_FUTU_* 加 AliasChoices，统一文档教法。</td><td>成片死配置（§4.2 ②）</td></tr>
+    <tr><td>6</td><td>逐 run DuckDB 跳写 + 一次性清理脚本（回收约 195MB；勿动 ingest DuckDB）。</td><td>data/ 膨胀（§4.4 ①）</td></tr>
+    <tr><td>7</td><td>futu 期权缓存过期清扫（回收 62MB）。</td><td>data/ 膨胀（§4.4）</td></tr>
+    <tr><td>8</td><td>显式 provider 请求失败 → 400，不再静默降级 sample 落盘。</td><td>违背真实数据偏好（§4.4）</td></tr>
+    <tr><td>9</td><td>回测详情页读取 <code>benchmark.source</code> 并挂上已有的 DataSourceBadge（类型与组件都已存在，只是没接）。</td><td>静默合成基准（§4.3 F4 的即时半修）</td></tr>
+    <tr><td>10</td><td>scripts/verify.sh 一键验证 + conftest Python 版本断言。</td><td>错解释器 89 收集错误盲飞（§4.5）</td></tr>
+    <tr><td>11</td><td>RotatingFileHandler 日志落盘（复用 JsonFormatter）。</td><td>排障线索随终端关闭归零（§4.6）</td></tr>
+    <tr><td>12</td><td>environment.yml 补 [api] extra（一行）。</td><td>环境恢复即坏（§4.6）</td></tr>
+    <tr><td>13</td><td>run_options_radar.ps1 修复 + schtasks 注册脚本。</td><td>雷达自动化断链（§4.6）</td></tr>
+    <tr><td>14</td><td>TopBar 去导航化（导航唯一权威 = 侧栏）。</td><td>双导航认知税（§4.3 F8）</td></tr>
+    <tr><td>15</td><td>paper 账户 .bak 副本 + 损坏改名保留。</td><td>账户文件单点（§4.4）</td></tr>
+    <tr><td>16</td><td>前端死依赖移除（@google/genai、firebase-tools）+ 包改名 + data/ 五区目录约定文档。</td><td>模板残留与目录混乱（§4.1/§4.4）</td></tr>
+  </table>
+</section>
+
+<!-- ============ 8. 路线图 ============ -->
+<section id="s8">
+  <h2><span class="sec-no">8</span>分阶段路线图</h2>
+  <p>排序原则：先止血（阶段 0）→ 再建安全网（阶段 1，契约与测试）→ 然后才动结构（阶段 2，内核与存储）→ 最后做体验整形（阶段 3，拆分与 IA）。<b>顺序有依赖性</b>：IA 改名要等路由稳定，存储收敛要先定 run 语义，拆大组件要先有类型契约兜底——倒着做会返工。</p>
+
+  <div class="roadgrid">
+    <div class="phase-card ph-0">
+      <h4>阶段 0 · 快赢止血（约 2-3 天）</h4>
+      <p>§7 全部 16 项。完成后：工作有版本保护、E2E 不再写真实库、端口只有一套口径、data/ 回收约 260MB、红线扫描无盲区。</p>
+    </div>
+    <div class="phase-card ph-1">
+      <h4>阶段 1 · 安全网：契约 + 测试 + 可信度补证（约 1 周）</h4>
+      <ul>
+        <li><b>Tiingo 复权价核查（最优先）</b>：跑跨拆股日回测验证 §5 缺口 1；若属实，改用 adjClose 并给存量 run 打标——这关乎所有历史回测结论是否可信。</li>
+        <li><b>API 契约</b>：逐路由补 response_model（先处理 NaN 序列化），openapi-typescript 生成前端类型，删除 api.ts 手抄类型。</li>
+        <li><b>测试补强 6 项</b>：取价链 3 个单测；sharpe/年化数值锚点；再平衡静默跳过；真实默认 env 形态测试（§5 缺口 5 的裁定产物）。</li>
+        <li><b>E2E 沙箱第二步</b>：QS_DATA_DIR 指向沙箱 + spec 清理逻辑同步。</li>
+        <li><b>scripts/dev.ps1 一键启动</b> + dev-stop.ps1（探测 docker/OpenD、健康摘要）。</li>
+        <li><b>vitest 起步</b>：4 个纯函数测试。</li>
+        <li>回测分段计时日志（为阶段 2/3 排序提供数据，§5 缺口 8）。</li>
+        <li>data/ 关键区 zip 导出备份脚本（§5 缺口 4）。</li>
+      </ul>
+    </div>
+    <div class="phase-card ph-2">
+      <h4>阶段 2 · 结构收敛：交易内核 + 存储统一（约 2-3 周，分批可中断）</h4>
+      <ul>
+        <li><b>共享交易内核</b>：合并回测/执行两套订单生成与组合会计（消除 §4.2 ① 的行为漂移），两侧薄适配，靠阶段 1 的测试网兜底。</li>
+        <li><b>ArtifactStore 统一 run 存储</b>：逐 run 目录 = 唯一真相；研报复现接入持久化（F1）；基准曲线落盘（F4 根治）；实验数据源放开（§4.2 ④）。</li>
+        <li><b>kill-switch 语义拆分</b>：命中 → 409 显式中止；独立 simulate_fills 参数；回放表单暴露风险限额；存量 0 成交 run 打标。<b>默认值保持 true 不变。</b></li>
+        <li><b>Tiingo read-through 本地缓存</b> + 最小重试（每次回测不再全量重下）。</li>
+        <li><b>Postgres 裁决落地</b>（§6.1 的 A 或 B）。</li>
+        <li>雷达配置单源化（§4.2 ③）；策略注册三方收敛（F6）。</li>
+      </ul>
+    </div>
+    <div class="phase-card ph-3">
+      <h4>阶段 3 · 体验整形：拆分 + IA + 任务模型（1 个月起，按 §6.4 频率结果裁剪）</h4>
+      <ul>
+        <li><b>IA 重组与改名</b>：/replications→/strategies、/order-book→/polymarket（301 + E2E 同步）；导航分组（研究/模拟/期权/市场）；期权 4 页合并 /options 四标签；统一 /runs 历史页；3 条跨页参数接力链。</li>
+        <li><b>最小任务模型</b>：回测“接受即返回 run_id + 轮询进度 + 可取消”（§5 缺口 3）。</li>
+        <li><b>拆大文件</b>：cli.py（1,636 行）按子命令、OptionsToolsWorkbench（1,566 行）按面板模板、api.ts 已由代码生成替代。</li>
+        <li><b>限价单持久挂单</b>（若 §6.2 裁决做）。</li>
+        <li><b>语言单轨化</b>（若 §6.3 裁决做，与 E2E 断言改造同批）。</li>
+        <li>期权定价对拍审计（§5 缺口 2）；guides 扩展；docs/archive/ 归档手术 + runbook.md。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 9. 渐进 vs 重构 ============ -->
+<section id="s9">
+  <h2><span class="sec-no">9</span>渐进优化还是重构？—— 明确回答</h2>
+  <p>你问“后续可以怎么更新优化，或者重构一下整个项目”。明确回答：<b>渐进优化，不要重写。</b>理由有三：</p>
+  <ol>
+    <li><b>重写会丢掉最值钱的资产。</b>这个项目最有价值的不是任何一个页面，而是 428 个回归测试（含“合成数据永不成交”“计划-提交中止”这类领域知识结晶）和经逐行验证的反前视纪律。重写它们必然在新代码里失传一段时间——而那段时间里你对结果的信任度反而更低。</li>
+    <li><b>诊断显示病灶不在内核。</b>8 个维度的发现没有一条指向“地基错了”：分层、注册表、PIT、原子写、安全闸都是对的。问题全部是边缘漂移（复制后分叉）、堆积（死重存储）、和断线（动线/契约缺失）——这三类病的标准疗法都是定向手术，不是器官移植。</li>
+    <li><b>单人项目承受不起重写的真空期。</b>重写期间平台不可用或半可用，而你的研究是连续进行的。路线图的每个阶段结束时平台都比之前更好用、且可随时停在任何阶段——这是渐进路线对单人研究者的决定性优势。</li>
+  </ol>
+  <p>如果一定要给“重构”划出值得做的范围，就是阶段 2 的两项定向手术：<b>共享交易内核</b>与<b>存储统一</b>——它们是真正意义上的结构性重构，但被限定在两个明确边界内，且有阶段 1 先建好的测试网兜底。</p>
+</section>
+
+<!-- ============ 10. 安全声明 ============ -->
+<section id="s10">
+  <h2><span class="sec-no">10</span>安全边界声明</h2>
+  <div class="callout c-info">
+    本报告的所有建议均在 <b>paper-only / 仅模拟</b> 边界内：
+    <ul>
+      <li>不建议、不引入任何实盘下单、解锁账户、钱包、签名或券商对接能力；</li>
+      <li>kill-switch 相关建议<b>保持默认开启不变</b>，只收紧其语义（显式 409 中止替代伪成功），属于加固而非放松；</li>
+      <li>对 .agents/ 内 Futu 下单脚本的建议是<b>删除/禁用 + 扩大红线扫描</b>，方向只紧不松；</li>
+      <li>Futu 在平台代码内继续仅用于只读行情；Polymarket 维持三层只读；</li>
+      <li>所有既有安全横幅与守护测试应原样保留。</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  评估执行：多智能体工作流（8 维度 × 独立评审 + 2 票对抗复核 + 完整性批评，共 58 个智能体）· 报告生成：2026-06-11<br>
+  数据基准：HEAD 7528051（2026-06-03）+ 工作树实况（168 项未提交，报告当日复测）· 本文档为静态快照，修复进展请以 git 历史与 docs/INDEX.md 为准
+</footer>
+
+</main>
+</body>
+</html>

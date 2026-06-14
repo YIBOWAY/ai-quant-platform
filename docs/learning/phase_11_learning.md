@@ -1,44 +1,39 @@
-# Phase 11 Learning Notes
+# Phase 11 学习笔记
 
-## Core Idea
+## 核心思想
 
-Prediction markets have outcomes whose prices can be interpreted as market
-prices for conditional payoff tokens. A complete binary market has YES and NO
-outcomes. If both asks sum far below or above 1.0, the scanner records a pricing
-inconsistency for research.
+预测市场的各类结果，其价格可以被理解为条件性收益代币的市场价格。一个完整的二元市场包含 YES 和 NO 两种结果。如果两者的卖价之和远低于或远高于 1.0，扫描器就会记录下一处定价不一致，供研究之用。
 
-## What This Phase Builds
+## 本阶段构建的内容
 
-- Read-only market and order book ingestion.
-- Cached snapshots for replay.
-- Scanner output.
-- Quasi-backtest metrics.
-- SVG charts and markdown reports.
+- 只读的市场与订单簿数据采集。
+- 用于回放的快照缓存。
+- 扫描器输出。
+- 准回测 (quasi-backtest) 指标。
+- SVG 图表与 markdown 报告。
 
-## What It Does Not Build
+## 本阶段不构建的内容
 
-- No real orders.
-- No wallet signing.
-- No private keys.
-- No token transfer.
-- No settlement or redemption.
+- 不下真实订单。
+- 不进行钱包签名。
+- 不涉及私钥。
+- 不进行代币转移。
+- 不进行结算或赎回。
 
-## Quasi-Backtest Assumptions
+## 准回测假设
 
-This is not a fill simulator. It treats each snapshot as one observation and
-estimates hypothetical edge after simple fee assumptions. It does not prove that
-the displayed size could be filled.
+这并不是一个成交模拟器。它把每个快照视为一次观测，并在简单的手续费假设下估算假设性的优势 (edge)。它并不能证明所展示的下单量真的能够成交。
 
-## Common Mistakes
+## 常见错误
 
-- Treating sample opportunities as real market opportunities.
-- Treating scanner output as guaranteed profit.
-- Ignoring fees, latency, and partial fills.
-- Mixing read-only research code with execution code.
+- 把样本机会当作真实的市场机会。
+- 把扫描器输出当作有保证的利润。
+- 忽略手续费、延迟和部分成交。
+- 把只读的研究代码与执行代码混在一起。
 
-## Self Check
+## 自检清单
 
-- Can the workflow run with `provider=sample` and no network?
-- Does the UI say read-only?
-- Does every response include the safety footer?
-- Are credential-like request fields rejected?
+- 该工作流能否在 `provider=sample` 且无网络的情况下运行？
+- UI 是否标明为只读 (read-only)？
+- 每个响应是否都包含安全声明页脚？
+- 类似凭证 (credential) 的请求字段是否会被拒绝？

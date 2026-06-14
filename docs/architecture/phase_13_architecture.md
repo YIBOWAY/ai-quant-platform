@@ -1,6 +1,6 @@
-# Phase 13 Architecture - Options Radar
+# 阶段 13 架构 - 期权雷达 (Options Radar)
 
-## Modules
+## 模块
 
 ```text
 src/quant_system/options/
@@ -23,11 +23,11 @@ src/quant_system/api/routes/options_radar.py
   GET /api/options/daily-scan
 
 src/frontend/app/options-radar/page.tsx
-src/frontend/components/forms/OptionsRadarView.tsx
+  src/frontend/components/forms/OptionsRadarView.tsx
   daily scan viewer with filters, detail expansion, CSV export
 ```
 
-## ASCII Architecture
+## ASCII 架构图
 
 ```text
            +----------------------+
@@ -66,52 +66,34 @@ src/frontend/components/forms/OptionsRadarView.tsx
   Local API                    Frontend table
 ```
 
-## Failure Isolation
+## 故障隔离
 
-Each ticker is scanned independently. A single OpenD, permission, or no-data
-failure is recorded in `failed_tickers` and does not stop the whole run.
+每个标的 (ticker) 都是独立扫描的。单个 OpenD、权限或无数据的失败会被记录在 `failed_tickers` 中，并且不会中断整个运行。
 
-## Snapshot Writes
+## 快照写入
 
-Radar snapshots are keyed by run date. Running the scan again for the same date
-rewrites that day's JSONL and metadata files from the new report, with duplicate
-symbol/contract/strategy rows collapsed before writing. This prevents stale
-rows from an older same-day run from being merged into the current snapshot.
+雷达快照以运行日期为键。对同一日期再次运行扫描时，会用新的报告重写当天的 JSONL 和元数据文件，并在写入前合并掉重复的标的/合约/策略行。这样可以防止来自同一天较早运行的过期行被并入当前快照。
 
-## Rate Limit
+## 限速
 
-Futu quote interfaces are paced at 10 calls per 30 seconds by default. The batch
-size for market snapshots defaults to 200, below Futu's documented 400-code
-limit.
+Futu 行情接口默认按每 30 秒 10 次调用进行节流。市场快照的批量大小默认为 200，低于 Futu 文档中记载的 400 代码上限。
 
-## VIX Data Source
+## VIX 数据源
 
-VIX/VIX3M closes are fetched from `query1.finance.yahoo.com/v8/finance/chart`
-over plain HTTPS GET. The fetcher is read-only and uses no API key. Errors
-are logged and downgraded to an empty Series so transient outages cannot
-abort a scan; the CLI degrades to `market_regime=Unknown` and applies no
-seller penalty.
+VIX/VIX3M 收盘价通过普通的 HTTPS GET 从 `query1.finance.yahoo.com/v8/finance/chart` 获取。该抓取器为只读，且不使用任何 API key。错误会被记录并降级为一个空 Series，因此短暂的中断不会中止扫描；CLI 会降级为 `market_regime=Unknown`，并且不施加任何卖方惩罚。
 
-The regime is computed once per scan and serialised into each candidate as
-`market_regime` (`Normal` / `Elevated` / `Panic` / `Unknown`) and
-`market_regime_penalty` (per-strategy points subtracted from `global_score`).
-The frontend `RegimeBanner` reads these fields from the API payload.
+市场状态 (regime) 在每次扫描时计算一次，并被序列化进每个候选项中，包括 `market_regime`（`Normal` / `Elevated` / `Panic` / `Unknown`）和 `market_regime_penalty`（按策略从 `global_score` 中扣减的分数）。前端 `RegimeBanner` 从 API 载荷中读取这些字段。
 
-## Refresh Sources
+## 刷新数据源
 
-The Radar UI and API default to public read-only refreshes:
+雷达 UI 和 API 默认使用公开只读的刷新方式：
 
-- universe: public S&P 500 + Nasdaq 100 snapshots from GitHub-backed sources
-- earnings: Nasdaq public calendar, with explicit `yfinance` support still
-  available
-- VIX: Yahoo Chart, then Cboe public CSV fallback
+- universe：来自 GitHub 支持的来源的公开 S&P 500 + Nasdaq 100 快照
+- earnings：Nasdaq 公开日历，同时仍明确支持 `yfinance`
+- VIX：Yahoo Chart，然后回退到 Cboe 公开 CSV
 
-The `sample` source remains available for deterministic offline testing and is
-shown as a separate local sample choice in the UI.
+`sample` 数据源仍可用于确定性的离线测试，并在 UI 中作为单独的本地样本选项展示。
 
-## Read-only Boundary
+## 只读边界
 
-Only quote-data methods are wrapped. Yahoo VIX fetches are anonymous public
-GETs. There is no trade context and no route or button that can place an
-order.
-
+仅行情数据方法被封装。Yahoo VIX 抓取为匿名公开 GET。这里没有交易上下文，也没有任何路由或按钮能够下单。

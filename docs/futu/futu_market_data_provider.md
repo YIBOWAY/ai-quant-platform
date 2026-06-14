@@ -1,67 +1,66 @@
-# Futu Market Data Provider
+# Futu 行情数据提供方
 
-## What It Does
+## 功能说明
 
-Futu is now the main real US equity data provider for the stock research flow.
+Futu 现已成为股票研究流程的主要美股实时数据提供方。
 
-It supports:
+它支持：
 
 - `AAPL -> US.AAPL`
 - `NVDA -> US.NVDA`
 - `MSFT -> US.MSFT`
 - `SPY -> US.SPY`
-- daily and supported intraday K-line requests
-- normalized OHLCV rows for the existing factor, backtest, and paper-trading pipelines
+- 日线及受支持的日内 K 线请求
+- 为现有的因子、回测和模拟交易流水线提供归一化的 OHLCV 数据行
 
-It is read-only.
+它是只读的。
 
-## What It Does Not Do
+## 不提供的功能
 
-It does not:
+它不会：
 
-- unlock an account
-- create a trading context
-- place orders
-- modify orders
-- cancel orders
-- handle private keys
-- enable live trading
+- 解锁账户
+- 创建交易上下文
+- 下单
+- 改单
+- 撤单
+- 处理私钥
+- 启用实盘交易
 
-## Provider Selection
+## 提供方选择
 
-Supported stock providers:
+支持的股票数据提供方：
 
 - `futu`
 - `sample`
-- `tiingo` as rollback compatibility
+- `tiingo`（作为回滚兼容方案）
 
-Frontend research pages use these defaults:
+前端研究页面使用以下默认值：
 
-- Market Data initial load follows `QS_DEFAULT_DATA_PROVIDER`.
-- Market Data returns a clearly labeled sample fallback if the configured
-  default provider fails.
-- Factor Lab, Backtester, and Paper Trading default to `futu` in their forms.
+- 行情数据 (Market Data) 的初始加载遵循 `QS_DEFAULT_DATA_PROVIDER`。
+- 若配置的默认提供方失败，行情数据会返回一个明确标注的 sample 回退结果。
+- 因子实验室 (Factor Lab)、回测器 (Backtester) 和模拟交易 (Paper Trading) 的表单中默认使用 `futu`。
 
-## Config
+## 配置
 
-| Name | Default | Purpose |
+| 名称 | 默认值 | 用途 |
 |---|---:|---|
-| `QS_FUTU_ENABLED` | `true` | Enables read-only Futu provider selection |
-| `QS_FUTU_HOST` | `127.0.0.1` | OpenD host |
-| `QS_FUTU_PORT` | `11111` | OpenD API port |
-| `QS_FUTU_MARKET` | `US` | Current market scope |
-| `QS_FUTU_REQUEST_TIMEOUT_SECONDS` | `15` | Request timeout |
-| `QS_FUTU_DEFAULT_KLINE_FREQ` | `1d` | Default K-line frequency |
-| `QS_FUTU_CACHE_DIR` | `data/futu` | Local Futu cache directory |
-| `QS_FUTU_USE_CACHE` | `true` | Enables the local Futu options DuckDB cache |
+| `QS_FUTU_ENABLED` | `true` | 启用只读 Futu 提供方选择 |
+| `QS_FUTU_HOST` | `127.0.0.1` | OpenD 主机 |
+| `QS_FUTU_PORT` | `11111` | OpenD API 端口 |
+| `QS_FUTU_MARKET` | `US` | 当前市场范围 |
+| `QS_FUTU_REQUEST_TIMEOUT_SECONDS` | `15` | 请求超时 |
+| `QS_FUTU_DEFAULT_KLINE_FREQ` | `1d` | 默认 K 线频率 |
+| `QS_FUTU_CACHE_DIR` | `data/futu` | 本地 Futu 缓存目录 |
+| `QS_FUTU_USE_CACHE` | `true` | 启用本地 Futu 期权 DuckDB 缓存 |
 
-## API Examples
+## API 示例
 
 ```powershell
 curl "http://127.0.0.1:8765/api/market-data/history?ticker=SPY&start=2024-01-02&end=2024-01-12&freq=1d&provider=futu"
 ```
 
-Expected shape:
+预期结构：
 
 ```json
 {
@@ -82,21 +81,21 @@ Expected shape:
 }
 ```
 
-## Manual Verification
+## 手动验证
 
 ```powershell
 conda activate ai-quant
 python scripts/verify_futu_connection.py
 ```
 
-Expected:
+预期：
 
 - `PASS read_only_quote_connectivity`
-- stock K-line rows for `US.AAPL`, `US.NVDA`, `US.MSFT`, `US.SPY`
+- `US.AAPL`、`US.NVDA`、`US.MSFT`、`US.SPY` 的股票 K 线数据行
 
-## Known Limits
+## 已知限制
 
-- OpenD must be running and logged in.
-- Data entitlement determines what can be queried.
-- Intraday history depends on Futu permissions and API limits.
-- The fallback sample provider is still available for offline tests.
+- OpenD 必须处于运行状态且已登录。
+- 数据权限决定了可查询的内容。
+- 日内历史数据取决于 Futu 的权限和 API 限制。
+- 回退的 sample 提供方仍可用于离线测试。

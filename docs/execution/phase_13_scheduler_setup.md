@@ -1,47 +1,46 @@
-# Phase 13 Windows Scheduler Setup
+# 阶段 13 Windows 调度器配置
 
-Use Windows Task Scheduler. Do not write registry keys or auto-start entries.
+使用 Windows 任务计划程序 (Windows Task Scheduler)。不要写入注册表项或开机自启动条目。
 
-## Trigger
+## 触发器
 
-- Frequency: every weekday
-- Time: BJT 06:30
-- Rationale: after the US market close
+- 频率：每个工作日
+- 时间：北京时间 (BJT) 06:30
+- 理由：在美股收盘之后
 
-## Action
+## 操作
 
-Program:
+程序：
 
 ```text
 powershell.exe
 ```
 
-Arguments:
+参数：
 
 ```text
 -ExecutionPolicy Bypass -File E:\programs\AI-assisted_quant_research_and_paper-trading_platform\scripts\run_options_radar.ps1
 ```
 
-## Conditions
+## 条件
 
-- Run only when network is available.
-- Keep OpenD running and logged in before the task fires.
+- 仅在网络可用时运行。
+- 在任务触发前，保持 OpenD 处于运行并已登录状态。
 
-## Script
+## 脚本
 
 ```powershell
 scripts/run_options_radar.ps1
 ```
 
-The script uses:
+该脚本使用：
 
 ```text
 D:\anaconda3\envs\ai-quant\python.exe
 ```
 
-and calls:
+并调用：
 
 ```text
 python -m quant_system.cli options daily-scan --top 100
 ```
-
