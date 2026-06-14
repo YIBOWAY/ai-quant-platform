@@ -226,6 +226,7 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
               benchmarkFailed ? text.benchmarkFailed(benchmarkSymbol) : text.normalizedDesc(benchmarkSymbol)
             }
           />
+          {benchmark?.source ? <DataSourceBadge source={benchmark.source} /> : null}
           {comparisonRows.length ? (
             <EquityComparisonChart
               rows={comparisonRows}

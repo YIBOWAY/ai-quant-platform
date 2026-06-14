@@ -185,6 +185,7 @@ export default async function BacktestRunDetailPage({ params }: BacktestRunDetai
               : undefined
           }
         />
+        {benchmark?.source ? <DataSourceBadge source={benchmark.source} /> : null}
         {chartRows.length ? (
           <EquityComparisonChart
             rows={chartRows}
