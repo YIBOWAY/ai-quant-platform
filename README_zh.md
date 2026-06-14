@@ -255,7 +255,18 @@ quant-system prediction-market timeseries-backtest --provider sample
 
 ## 验证
 
-后端：
+本地一键检查：
+
+```powershell
+conda activate ai-quant
+.\scripts\verify.ps1
+```
+
+该脚本会检查 Python 版本、后端 lint / 测试、前端 lint 和前端单元测试。默认不运行
+`npm run build`，因为它会重写 `src/frontend/.next`；只有在前端 dev server 停止时才运行
+`.\scripts\verify.ps1 -Build`。
+
+仅后端：
 
 ```powershell
 conda activate ai-quant
@@ -263,11 +274,12 @@ python -m pytest -q
 ruff check src/quant_system tests
 ```
 
-前端：
+仅前端：
 
 ```powershell
 npm --prefix src/frontend run lint
-npm --prefix src/frontend run build
+npm --prefix src/frontend run test
+npm --prefix src/frontend run build   # 仅在 dev server 停止时运行
 ```
 
 浏览器冒烟测试：

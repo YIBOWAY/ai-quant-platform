@@ -313,7 +313,19 @@ It does not sign, redeem, transfer, or submit real market orders.
 
 ## Validation
 
-Backend:
+One-command local check:
+
+```powershell
+conda activate ai-quant
+.\scripts\verify.ps1
+```
+
+This runs the Python version check, backend lint/tests, frontend lint, and
+frontend unit tests. It skips `npm run build` by default because that command
+rewrites `src/frontend/.next`; run `.\scripts\verify.ps1 -Build` only when the
+frontend dev server is stopped.
+
+Backend-only checks:
 
 ```powershell
 conda activate ai-quant
@@ -321,11 +333,12 @@ python -m pytest -q
 ruff check src/quant_system tests
 ```
 
-Frontend:
+Frontend-only checks:
 
 ```powershell
 npm --prefix src/frontend run lint
-npm --prefix src/frontend run build
+npm --prefix src/frontend run test
+npm --prefix src/frontend run build   # only when the dev server is stopped
 ```
 
 Browser smoke:

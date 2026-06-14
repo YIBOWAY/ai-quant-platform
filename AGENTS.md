@@ -220,6 +220,18 @@ http://127.0.0.1:3001
 
 ## Tests, Lint, Typecheck, Build
 
+One-command local verification:
+
+```powershell
+conda activate ai-quant
+.\scripts\verify.ps1
+```
+
+This runs the Python version check, backend lint/tests, frontend lint, and
+frontend unit tests. It skips `npm run build` by default because the build
+rewrites `src/frontend/.next`; use `.\scripts\verify.ps1 -Build` only when the
+frontend dev server is stopped.
+
 Backend tests:
 
 ```powershell

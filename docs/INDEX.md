@@ -171,10 +171,8 @@ npm run dev -- --hostname 127.0.0.1 --port 3001
 
 ```powershell
 conda activate ai-quant
-python -m pytest -q
-ruff check src/quant_system tests
-npm --prefix src/frontend run lint
-npm --prefix src/frontend run build
+.\scripts\verify.ps1
+# 可选：dev server 停止时再运行 .\scripts\verify.ps1 -Build
 ```
 
 期权雷达 sample 规模的真实运行：
