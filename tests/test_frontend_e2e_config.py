@@ -40,3 +40,20 @@ def test_frontend_dev_defaults_to_project_ports() -> None:
     assert '-ArgumentList @("run", "dev")' in start_script
     assert 'command: "npm run dev"' in playwright_config
     assert 'command: "npm run dev -- --hostname 127.0.0.1 --port 3001"' not in playwright_config
+
+
+def test_frontend_package_has_no_ai_studio_template_residue() -> None:
+    package = json.loads(
+        Path("src/frontend/package.json").read_text(encoding="utf-8")
+    )
+    next_config = Path("src/frontend/next.config.ts").read_text(encoding="utf-8")
+    playwright_config = Path("src/frontend/playwright.config.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert package["name"] == "ai-quant-platform-frontend"
+    assert "@google/genai" not in package["dependencies"]
+    assert "firebase-tools" not in package["devDependencies"]
+    assert "ignoreDuringBuilds" not in next_config
+    assert "DISABLE_HMR" not in next_config
+    assert "DISABLE_HMR" not in playwright_config
