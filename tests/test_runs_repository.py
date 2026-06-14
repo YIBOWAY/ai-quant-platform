@@ -47,3 +47,21 @@ def test_created_at_parsed_from_run_id() -> None:
     iso = rr._created_at_from_run_id("paper-20260603T010203Z-deadbeef")
     assert iso is not None and iso.startswith("2026-06-03T01:02:03")
     assert rr._created_at_from_run_id("no-timestamp-here") is None
+
+
+def test_db_backed_list_keeps_filesystem_as_source_of_truth(tmp_path: Path, monkeypatch) -> None:
+    settings = _disabled_db_settings()
+    root = tmp_path / "backtests"
+    _write_run(root, "backtest-file-only", "sample")
+
+    monkeypatch.setattr(
+        rr,
+        "_db_metadatas",
+        lambda kind, current_settings: [
+            {"run_id": "backtest-stale-db-only", "source": "futu"},
+        ],
+    )
+
+    rows = rr.list_run_metadatas("backtest", root, settings)
+
+    assert [row["run_id"] for row in rows] == ["backtest-file-only"]

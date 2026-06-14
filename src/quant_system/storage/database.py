@@ -11,6 +11,8 @@ is configured, and every caller must treat ``None`` as "use the filesystem".
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -25,33 +27,94 @@ log = logging.getLogger(__name__)
 
 # Schema/table the migrations create. Kept in sync with scripts/sql/001_runs_index.sql.
 SCHEMA = "quant_system"
+DEFAULT_FAILURE_COOLDOWN_SECONDS = 30.0
+MAX_OPTIONAL_CONNECT_TIMEOUT_SECONDS = 1
+
+
+class DatabaseUnavailable(RuntimeError):
+    """Raised when the optional database should be skipped temporarily."""
 
 
 class Database:
     """Thin wrapper around per-operation psycopg connections."""
 
-    def __init__(self, url: str, *, connect_timeout: int) -> None:
+    def __init__(
+        self,
+        url: str,
+        *,
+        connect_timeout: int,
+        failure_cooldown_seconds: float = DEFAULT_FAILURE_COOLDOWN_SECONDS,
+    ) -> None:
         self._url = url
-        self._connect_timeout = connect_timeout
+        self._connect_timeout = min(connect_timeout, MAX_OPTIONAL_CONNECT_TIMEOUT_SECONDS)
+        self._failure_cooldown_seconds = failure_cooldown_seconds
+        self._lock = threading.Lock()
+        self._connecting = False
+        self._failure_until = 0.0
+        self._last_error: str | None = None
+
+    def _begin_connect(self) -> None:
+        now = time.monotonic()
+        with self._lock:
+            if now < self._failure_until:
+                remaining = max(self._failure_until - now, 0.0)
+                raise DatabaseUnavailable(
+                    f"database recently failed; retry in {remaining:.1f}s"
+                )
+            if self._connecting:
+                raise DatabaseUnavailable("database connection probe already in progress")
+            self._connecting = True
+
+    def _finish_connect(self) -> None:
+        with self._lock:
+            self._connecting = False
+            self._failure_until = 0.0
+            self._last_error = None
+
+    def _mark_failure(self, exc: BaseException) -> None:
+        with self._lock:
+            self._connecting = False
+            self._failure_until = time.monotonic() + self._failure_cooldown_seconds
+            self._last_error = f"{exc.__class__.__name__}: {exc}"
+
+    def can_attempt_connect(self) -> bool:
+        with self._lock:
+            return not self._connecting and time.monotonic() >= self._failure_until
+
+    def last_error(self) -> str | None:
+        with self._lock:
+            return self._last_error
 
     @contextmanager
     def connect(self) -> Iterator[psycopg.Connection]:
-        conn = psycopg.connect(
-            self._url,
-            connect_timeout=self._connect_timeout,
-            autocommit=True,
-        )
+        self._begin_connect()
+        try:
+            conn = psycopg.connect(
+                self._url,
+                connect_timeout=self._connect_timeout,
+                autocommit=True,
+            )
+        except Exception as exc:
+            self._mark_failure(exc)
+            raise
+        self._finish_connect()
         try:
             yield conn
         finally:
             conn.close()
 
     def healthy(self) -> bool:
+        if not self.can_attempt_connect():
+            return False
         try:
             with self.connect() as conn:
                 conn.execute("SELECT 1")
             return True
+        except DatabaseUnavailable as exc:
+            log.debug("database health check skipped: %s", exc)
+            return False
         except Exception as exc:  # noqa: BLE001 - health probe must never raise
+            self._mark_failure(exc)
             log.warning("database health check failed: %s", exc)
             return False
 

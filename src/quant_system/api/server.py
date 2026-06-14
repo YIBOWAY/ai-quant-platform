@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -59,6 +60,18 @@ def _init_run_index(active_settings: Settings, api_runs_dir: Path) -> None:
         logger.warning("run-index init skipped (filesystem fallback active): %s", exc)
 
 
+def _start_run_index_init(active_settings: Settings, api_runs_dir: Path) -> None:
+    if not active_settings.database.enabled:
+        return
+    thread = threading.Thread(
+        target=_init_run_index,
+        args=(active_settings, api_runs_dir),
+        name="quant-system-run-index-init",
+        daemon=True,
+    )
+    thread.start()
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -87,7 +100,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.services = services
         services["api_runs_dir"].mkdir(parents=True, exist_ok=True)
-        _init_run_index(active_settings, services["api_runs_dir"])
+        _start_run_index_init(active_settings, services["api_runs_dir"])
         yield
 
     app = FastAPI(

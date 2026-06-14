@@ -88,7 +88,7 @@ class DatabaseSettings(BaseSettings):
 
     enabled: bool = False
     url: SecretStr | None = None
-    connect_timeout_seconds: int = Field(default=5, gt=0)
+    connect_timeout_seconds: int = Field(default=1, gt=0)
     auto_migrate: bool = True
 
     @field_serializer("url", when_used="json")

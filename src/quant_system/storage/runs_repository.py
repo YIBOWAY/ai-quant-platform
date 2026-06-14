@@ -107,11 +107,34 @@ def _fs_metadatas(root: Path) -> list[dict[str, Any]]:
 
 
 def list_run_metadatas(kind: str, root: Path, settings: Settings) -> list[dict[str, Any]]:
-    """Return run metadata dicts newest-first, DB-first then filesystem."""
+    """Return run metadata dicts newest-first, using files for membership/order.
+
+    PostgreSQL remains a fast metadata mirror, but the filesystem is the source
+    of truth. This also makes runs copied or created while the API is already
+    running visible immediately instead of waiting for the next startup sync.
+    """
     db_rows = _db_metadatas(kind, settings)
-    if db_rows is not None:
-        return db_rows
-    return _fs_metadatas(root)
+    paths = sorted_metadata_paths(root)
+    if db_rows is None:
+        return _fs_metadatas(root)
+
+    db_by_id = {
+        str(metadata.get("run_id")): metadata
+        for metadata in db_rows
+        if metadata.get("run_id")
+    }
+    out: list[dict[str, Any]] = []
+    for path in paths:
+        run_id = path.parent.name
+        metadata = db_by_id.get(run_id)
+        if metadata is not None:
+            out.append(metadata)
+            continue
+        try:
+            out.append(json.loads(path.read_text(encoding="utf-8")))
+        except Exception as exc:  # noqa: BLE001 - skip unreadable run
+            log.warning("skipping unreadable metadata %s: %s", path, exc)
+    return out
 
 
 def _prune_missing(kind: str, present_run_ids: set[str], settings: Settings) -> int:

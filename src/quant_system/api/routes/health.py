@@ -57,7 +57,7 @@ def _database_status(settings: SettingsDep) -> dict[str, Any]:
             reachable = database.healthy()
             status.update(
                 reachable=reachable,
-                error=None if reachable else "connection failed",
+                error=None if reachable else database.last_error() or "connection failed",
             )
     except Exception as exc:  # noqa: BLE001 - health must not raise
         status.update(reachable=False, error=f"{exc.__class__.__name__}: {exc}")
