@@ -25,6 +25,7 @@ from quant_system.api.routes import (
     paper,
     prediction_market,
     replications,
+    runs,
     strategies,
     universes,
 )
@@ -131,6 +132,7 @@ def create_app(
     app.include_router(agent.router, prefix="/api", tags=["agent"])
     app.include_router(prediction_market.router, prefix="/api", tags=["prediction-market"])
     app.include_router(replications.router, prefix="/api", tags=["replications"])
+    app.include_router(runs.router, prefix="/api", tags=["runs"])
     app.include_router(strategies.router, prefix="/api", tags=["strategies"])
     app.include_router(universes.router, prefix="/api", tags=["universes"])
     return app
