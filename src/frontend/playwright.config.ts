@@ -62,7 +62,7 @@ export default defineConfig({
           },
         },
         {
-          command: "npm run dev -- --hostname 127.0.0.1 --port 3001",
+          command: "npm run dev",
           cwd: frontendRoot,
           url: "http://127.0.0.1:3001",
           reuseExistingServer,

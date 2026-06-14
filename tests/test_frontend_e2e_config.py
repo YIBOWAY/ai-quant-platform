@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -20,3 +21,22 @@ def test_playwright_backend_uses_isolated_test_environment() -> None:
         in compact_backend_block
     )
     assert "QS_DATABASE_ENABLED" not in compact.split('command: "npm run dev', maxsplit=1)[1]
+
+
+def test_frontend_dev_defaults_to_project_ports() -> None:
+    package = json.loads(
+        Path("src/frontend/package.json").read_text(encoding="utf-8")
+    )
+    start_script = Path("scripts/start_phase9_full_stack.ps1").read_text(
+        encoding="utf-8"
+    )
+    playwright_config = Path("src/frontend/playwright.config.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert package["scripts"]["dev"] == "next dev --hostname 127.0.0.1 --port 3001"
+    assert '[int]$BackendPort = 8765' in start_script
+    assert '[int]$FrontendPort = 3001' in start_script
+    assert '-ArgumentList @("run", "dev")' in start_script
+    assert 'command: "npm run dev"' in playwright_config
+    assert 'command: "npm run dev -- --hostname 127.0.0.1 --port 3001"' not in playwright_config

@@ -2,7 +2,7 @@ param(
     [string]$BackendHost = "127.0.0.1",
     [int]$BackendPort = 8765,
     [string]$FrontendHost = "127.0.0.1",
-    [int]$FrontendPort = 3000
+    [int]$FrontendPort = 3001
 )
 
 $ErrorActionPreference = "Stop"
@@ -95,7 +95,7 @@ Wait-HttpOk -Url "http://$BackendHost`:$BackendPort/api/health"
 $env:NEXT_PUBLIC_QUANT_API_BASE_URL = "http://$BackendHost`:$BackendPort"
 $Frontend = Start-Process `
     -FilePath "npm.cmd" `
-    -ArgumentList @("run", "dev", "--", "-H", $FrontendHost, "-p", "$FrontendPort") `
+    -ArgumentList @("run", "dev") `
     -WorkingDirectory $FrontendDir `
     -WindowStyle Hidden `
     -RedirectStandardOutput $FrontendOutLog `
