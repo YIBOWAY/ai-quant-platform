@@ -1,10 +1,86 @@
 from __future__ import annotations
 
+import pandas as pd
+
 from quant_system.config.settings import Settings
 from quant_system.data.providers.base import HistoricalDataProvider
 from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.data.providers.sample import SampleOHLCVProvider
 from quant_system.data.providers.tiingo import TiingoEODProvider
+from quant_system.data.storage import LocalDataStorage
+
+
+class CachedOHLCVProvider:
+    def __init__(
+        self,
+        *,
+        upstream: HistoricalDataProvider,
+        storage: LocalDataStorage,
+    ) -> None:
+        self.upstream = upstream
+        self.storage = storage
+        self.provider_name = upstream.provider_name
+
+    def fetch_ohlcv(
+        self,
+        symbols: list[str],
+        *,
+        start: str,
+        end: str,
+        interval: str = "1d",
+    ) -> pd.DataFrame:
+        if interval != "1d" or not self.storage.parquet_path.exists():
+            return self._fetch_and_store(symbols, start=start, end=end, interval=interval)
+
+        try:
+            cached = self.storage.load_ohlcv(symbols, start=start, end=end)
+        except FileNotFoundError:
+            return self._fetch_and_store(symbols, start=start, end=end, interval=interval)
+
+        if self._covers_request(cached, symbols=symbols, start=start, end=end, interval=interval):
+            return cached
+        return self._fetch_and_store(symbols, start=start, end=end, interval=interval)
+
+    def _fetch_and_store(
+        self,
+        symbols: list[str],
+        *,
+        start: str,
+        end: str,
+        interval: str,
+    ) -> pd.DataFrame:
+        frame = self.upstream.fetch_ohlcv(symbols, start=start, end=end, interval=interval)
+        self.storage.save_ohlcv(frame)
+        return frame
+
+    def _covers_request(
+        self,
+        cached: pd.DataFrame,
+        *,
+        symbols: list[str],
+        start: str,
+        end: str,
+        interval: str,
+    ) -> bool:
+        if cached.empty:
+            return False
+        normalized_symbols = {symbol.upper() for symbol in symbols}
+        cached_symbols = set(cached["symbol"].astype(str).str.upper())
+        if not normalized_symbols.issubset(cached_symbols):
+            return False
+        if "provider" in cached.columns:
+            providers = set(cached["provider"].astype(str))
+            if providers != {self.provider_name}:
+                return False
+        if "interval" in cached.columns:
+            intervals = set(cached["interval"].astype(str))
+            if intervals != {interval}:
+                return False
+        timestamps = pd.to_datetime(cached["timestamp"], utc=True)
+        return (
+            timestamps.min() <= pd.Timestamp(start, tz="UTC")
+            and timestamps.max() >= pd.Timestamp(end, tz="UTC")
+        )
 
 
 def build_ohlcv_provider(
@@ -24,7 +100,10 @@ def build_ohlcv_provider(
     # locally running OpenD process. An explicit `requested` value is always
     # respected.
     if requested is None and name == "sample" and token_value:
-        return TiingoEODProvider(api_token=token), "tiingo (auto-selected)"
+        return _cached_provider(
+            TiingoEODProvider(api_token=token),
+            settings=settings,
+        ), "tiingo (auto-selected)"
 
     if name == "futu":
         if settings.futu.enabled:
@@ -43,7 +122,26 @@ def build_ohlcv_provider(
             )
         return SampleOHLCVProvider(), "sample (futu: disabled)"
     if name == "tiingo" and token_value:
-        return TiingoEODProvider(api_token=token), "tiingo"
+        return _cached_provider(
+            TiingoEODProvider(api_token=token),
+            settings=settings,
+        ), "tiingo"
     if name == "tiingo" and not token_value:
         return SampleOHLCVProvider(), "sample (tiingo: missing token)"
     return SampleOHLCVProvider(), "sample"
+
+
+def _cached_provider(
+    upstream: HistoricalDataProvider,
+    *,
+    settings: Settings,
+) -> CachedOHLCVProvider:
+    return CachedOHLCVProvider(
+        upstream=upstream,
+        storage=LocalDataStorage(
+            base_dir=settings.data.data_dir,
+            parquet_dir=settings.data.parquet_dir,
+            duckdb_path=settings.data.duckdb_path,
+            reports_dir=settings.data.reports_dir,
+        ),
+    )

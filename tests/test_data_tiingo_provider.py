@@ -33,6 +33,64 @@ def test_tiingo_provider_converts_response_to_canonical_ohlcv() -> None:
     assert frame.loc[0, "knowledge_ts"] >= pd.Timestamp("2024-01-02", tz="UTC")
 
 
+def test_tiingo_provider_prefers_adjusted_ohlcv_when_available() -> None:
+    def fake_get_json(url: str, headers: dict[str, str]) -> list[dict[str, object]]:
+        return [
+            {
+                "date": "2024-01-02T00:00:00.000Z",
+                "open": 100.0,
+                "high": 110.0,
+                "low": 90.0,
+                "close": 105.0,
+                "volume": 1000,
+                "adjOpen": 50.0,
+                "adjHigh": 55.0,
+                "adjLow": 45.0,
+                "adjClose": 52.5,
+                "adjVolume": 2000,
+            }
+        ]
+
+    provider = TiingoEODProvider(api_token="test-token", get_json=fake_get_json)
+
+    frame = provider.fetch_ohlcv(["AAPL"], start="2024-01-02", end="2024-01-02")
+
+    assert frame.loc[0, "open"] == 50.0
+    assert frame.loc[0, "high"] == 55.0
+    assert frame.loc[0, "low"] == 45.0
+    assert frame.loc[0, "close"] == 52.5
+    assert frame.loc[0, "volume"] == 2000
+
+
+def test_tiingo_provider_falls_back_when_adjusted_values_are_missing() -> None:
+    def fake_get_json(url: str, headers: dict[str, str]) -> list[dict[str, object]]:
+        return [
+            {
+                "date": "2024-01-02T00:00:00.000Z",
+                "open": 100.0,
+                "high": 110.0,
+                "low": 90.0,
+                "close": 105.0,
+                "volume": 1000,
+                "adjOpen": None,
+                "adjHigh": None,
+                "adjLow": None,
+                "adjClose": None,
+                "adjVolume": None,
+            }
+        ]
+
+    provider = TiingoEODProvider(api_token="test-token", get_json=fake_get_json)
+
+    frame = provider.fetch_ohlcv(["AAPL"], start="2024-01-02", end="2024-01-02")
+
+    assert frame.loc[0, "open"] == 100.0
+    assert frame.loc[0, "high"] == 110.0
+    assert frame.loc[0, "low"] == 90.0
+    assert frame.loc[0, "close"] == 105.0
+    assert frame.loc[0, "volume"] == 1000
+
+
 def test_tiingo_provider_requires_api_token() -> None:
     provider = TiingoEODProvider(api_token=None)
 

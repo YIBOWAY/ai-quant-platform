@@ -23,6 +23,16 @@ def _default_get_json(url: str, headers: dict[str, str]) -> list[dict[str, objec
     return parsed
 
 
+def _prefer_adjusted(
+    item: dict[str, object],
+    *,
+    adjusted_key: str,
+    raw_key: str,
+) -> object:
+    adjusted = item.get(adjusted_key)
+    return item[raw_key] if adjusted is None else adjusted
+
+
 class TiingoEODProvider:
     provider_name = "tiingo"
 
@@ -78,11 +88,19 @@ class TiingoEODProvider:
                 {
                     "symbol": symbol,
                     "timestamp": item["date"],
-                    "open": item["open"],
-                    "high": item["high"],
-                    "low": item["low"],
-                    "close": item["close"],
-                    "volume": item["volume"],
+                    "open": _prefer_adjusted(item, adjusted_key="adjOpen", raw_key="open"),
+                    "high": _prefer_adjusted(item, adjusted_key="adjHigh", raw_key="high"),
+                    "low": _prefer_adjusted(item, adjusted_key="adjLow", raw_key="low"),
+                    "close": _prefer_adjusted(
+                        item,
+                        adjusted_key="adjClose",
+                        raw_key="close",
+                    ),
+                    "volume": _prefer_adjusted(
+                        item,
+                        adjusted_key="adjVolume",
+                        raw_key="volume",
+                    ),
                     "event_ts": item["date"],
                     "knowledge_ts": download_ts,
                 }
