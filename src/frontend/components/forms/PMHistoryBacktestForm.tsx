@@ -14,7 +14,11 @@ import type {
 import { API_BASE_URL, ApiClientError, apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 
-const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+const fieldLabel = "flex flex-col gap-1 font-body-sm text-text-primary";
+const selectClass =
+  "rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary";
+const inputClass =
+  "rounded-lg border border-border-subtle bg-bg-surface px-2 py-2 font-data-mono text-text-primary";
 
 const copy = {
   en: {
@@ -219,7 +223,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
     backtestMutation.error instanceof ApiClientError ? backtestMutation.error.message : undefined;
 
   return (
-    <section className="rounded border border-border-subtle bg-bg-surface p-4">
+    <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
       <div className="mb-4">
         <h2 className="font-headline-lg text-text-primary">{text.sectionTitle}</h2>
         <p className="mt-1 font-body-sm text-text-secondary">
@@ -229,63 +233,63 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <form
-          className="rounded border border-border-subtle bg-surface-muted p-4"
+          className="rounded-lg border border-border-subtle bg-bg-surface-muted p-4"
           onSubmit={(event) => event.preventDefault()}
         >
           <h3 className="font-label-caps text-text-primary">{text.collectHistory}</h3>
           <div className="mt-3 grid grid-cols-1 gap-3">
-            <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            <label className={fieldLabel}>
               {text.provider}
               <select
-                className="rounded border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary"
+                className={selectClass}
                 {...collectForm.register("provider")}
               >
-                <option style={optionStyle} value="polymarket">
+                <option value="polymarket">
                   {text.polymarketReadOnly}
                 </option>
-                <option style={optionStyle} value="sample">
+                <option value="sample">
                   sample
                 </option>
               </select>
             </label>
-            <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            <label className={fieldLabel}>
               {text.cacheMode}
               <select
-                className="rounded border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary"
+                className={selectClass}
                 {...collectForm.register("cache_mode")}
               >
-                <option style={optionStyle} value="prefer_cache">
+                <option value="prefer_cache">
                   prefer_cache
                 </option>
-                <option style={optionStyle} value="refresh">
+                <option value="refresh">
                   refresh
                 </option>
-                <option style={optionStyle} value="network_only">
+                <option value="network_only">
                   network_only
                 </option>
               </select>
             </label>
             <div className="grid grid-cols-3 gap-2">
-              <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+              <label className={fieldLabel}>
                 {text.durationS}
                 <input
-                  className="rounded border border-border-subtle bg-bg-surface px-2 py-2 font-data-mono text-text-primary"
+                  className={inputClass}
                   type="number"
                   {...collectForm.register("duration_seconds", { valueAsNumber: true })}
                 />
               </label>
-              <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+              <label className={fieldLabel}>
                 {text.intervalS}
                 <input
-                  className="rounded border border-border-subtle bg-bg-surface px-2 py-2 font-data-mono text-text-primary"
+                  className={inputClass}
                   placeholder={text.auto}
                   {...collectForm.register("interval_seconds")}
                 />
               </label>
-              <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+              <label className={fieldLabel}>
                 {text.markets}
                 <input
-                  className="rounded border border-border-subtle bg-bg-surface px-2 py-2 font-data-mono text-text-primary"
+                  className={inputClass}
                   type="number"
                   {...collectForm.register("limit", { valueAsNumber: true })}
                 />
@@ -294,7 +298,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
           </div>
           {collectError ? <p className="mt-3 font-body-sm text-danger">{collectError}</p> : null}
           <button
-            className="mt-4 rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!isHydrated || collectMutation.isPending}
             onClick={() => void collectForm.handleSubmit((values) => collectMutation.mutate(values))()}
             type="button"
@@ -303,7 +307,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
           </button>
 
           {collectResult ? (
-            <div className="mt-4 rounded border border-border-subtle bg-bg-surface p-3">
+            <div className="mt-4 rounded-lg border border-border-subtle bg-bg-surface p-3">
               <div className="font-body-sm text-text-secondary">{text.latestCollection}</div>
               <div className="mt-2 font-data-mono text-xs text-text-primary">
                 records={collectResult.snapshot_record_count} markets={collectResult.market_count}
@@ -316,7 +320,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
         </form>
 
         <form
-          className="rounded border border-border-subtle bg-surface-muted p-4"
+          className="rounded-lg border border-border-subtle bg-bg-surface-muted p-4"
           onSubmit={(event) => event.preventDefault()}
         >
           <h3 className="font-label-caps text-text-primary">{text.timeSeriesTitle}</h3>
@@ -324,33 +328,33 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
             {text.timeSeriesWarning}
           </p>
           <div className="mt-3 grid grid-cols-1 gap-3">
-            <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            <label className={fieldLabel}>
               {text.provider}
               <select
-                className="rounded border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary"
+                className={selectClass}
                 {...backtestForm.register("provider")}
               >
-                <option style={optionStyle} value="polymarket">
+                <option value="polymarket">
                   {text.polymarketHistory}
                 </option>
-                <option style={optionStyle} value="sample">
+                <option value="sample">
                   sample
                 </option>
               </select>
             </label>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+              <label className={fieldLabel}>
                 {text.startTime}
                 <input
-                  className="rounded border border-border-subtle bg-bg-surface px-2 py-2 font-data-mono text-text-primary"
+                  className={inputClass}
                   placeholder={text.optional}
                   {...backtestForm.register("start_time")}
                 />
               </label>
-              <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+              <label className={fieldLabel}>
                 {text.endTime}
                 <input
-                  className="rounded border border-border-subtle bg-bg-surface px-2 py-2 font-data-mono text-text-primary"
+                  className={inputClass}
                   placeholder={text.optional}
                   {...backtestForm.register("end_time")}
                 />
@@ -380,7 +384,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
           </div>
           {backtestError ? <p className="mt-3 font-body-sm text-danger">{backtestError}</p> : null}
           <button
-            className="mt-4 rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!isHydrated || backtestMutation.isPending}
             onClick={() => void backtestForm.handleSubmit((values) => backtestMutation.mutate(values))()}
             type="button"
@@ -391,7 +395,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
       </div>
 
       {backtestResult ? (
-        <div className="mt-4 rounded border border-border-subtle bg-surface-muted p-4">
+        <div className="mt-4 rounded-lg border border-border-subtle bg-bg-surface-muted p-4">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Metric label={text.snapshots} value={String(backtestResult.metrics.snapshot_count)} />
             <Metric
@@ -408,7 +412,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
             />
           </div>
           <a
-            className="mt-4 inline-flex rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary"
+            className="mt-4 inline-flex rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary"
             href={`${API_BASE_URL}${backtestResult.report_url}`}
             rel="noreferrer"
             target="_blank"
@@ -419,14 +423,14 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
             {backtestResult.chart_index.charts.map((chart) => (
               <figure
                 key={chart.name}
-                className="rounded border border-border-subtle bg-bg-surface p-3"
+                className="rounded-lg border border-border-subtle bg-bg-surface p-3"
               >
                 <figcaption className="mb-2 font-body-sm text-text-secondary">
                   {chart.title}
                 </figcaption>
                 <Image
                   alt={chart.title}
-                  className="w-full rounded border border-border-subtle"
+                  className="w-full rounded-lg border border-border-subtle"
                   height={360}
                   src={`${API_BASE_URL}${chart.url}`}
                   unoptimized
@@ -443,7 +447,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-3">
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-3">
       <div className="font-body-sm text-text-secondary">{label}</div>
       <div className="mt-1 font-data-mono text-lg text-text-primary">{value}</div>
     </div>
@@ -458,10 +462,10 @@ function NumberField({
   register: UseFormRegisterReturn;
 }) {
   return (
-    <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+    <label className={fieldLabel}>
       {label}
       <input
-        className="rounded border border-border-subtle bg-bg-surface px-2 py-2 font-data-mono text-text-primary"
+        className={inputClass}
         type="number"
         {...register}
       />

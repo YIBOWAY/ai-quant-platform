@@ -11,6 +11,7 @@ import type { CandidateSummary } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
+import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
 
 const copy = {
   en: {
@@ -39,6 +40,9 @@ const copy = {
     manualReviewNote: "Review writes lock files only. It never registers a factor.",
     noCandidate: "No candidate available.",
     candidateCreatedToast: "Agent candidate created:",
+    runTaskHint: "Generates an inert candidate file. Nothing is registered or executed.",
+    status: "status",
+    pendingReview: "pending review",
   },
   zh: {
     approve: "批准",
@@ -66,6 +70,9 @@ const copy = {
     manualReviewNote: "复核仅写入锁文件，绝不会注册因子。",
     noCandidate: "暂无可用候选。",
     candidateCreatedToast: "已创建智能体候选：",
+    runTaskHint: "生成一个惰性候选文件，不会注册或执行任何内容。",
+    status: "状态",
+    pendingReview: "待复核",
   },
 } as const;
 
@@ -81,11 +88,21 @@ const reviewSchema = z.object({
   note: z.string().min(1, "Review note is required"),
 });
 
-const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
-
+type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 type TaskValues = z.infer<typeof taskSchema>;
 type ReviewValues = z.infer<typeof reviewSchema>;
 type ReviewDecision = "approve" | "reject";
+
+function statusTone(status: string): Tone {
+  const normalized = status.toLowerCase();
+  if (normalized === "approved") return "success";
+  if (normalized === "rejected") return "danger";
+  if (normalized === "pending") return "warning";
+  return "neutral";
+}
+
+const fieldClass =
+  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-text-primary focus:border-accent-success/50 focus:outline-none";
 
 type AgentTaskResponse = {
   candidate_id: string;
@@ -126,10 +143,10 @@ function ReviewDialog({
   return (
     <>
       <button
-        className={`rounded border px-3 py-2 font-body-sm ${
+        className={`flex-1 rounded-lg border px-3 py-2 font-body-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
           decision === "approve"
-            ? "border-accent-success/40 text-accent-success"
-            : "border-danger/40 text-danger"
+            ? "border-accent-success/40 bg-accent-success/5 text-accent-success hover:bg-accent-success/10"
+            : "border-danger/40 bg-danger/5 text-danger hover:bg-danger/10"
         }`}
         disabled={!isHydrated}
         onClick={() => setOpen(true)}
@@ -139,30 +156,33 @@ function ReviewDialog({
       </button>
       {open ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-lg rounded border border-warning/40 bg-bg-surface p-5 shadow-xl" role="alertdialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-lg border border-warning/40 bg-bg-surface p-5" role="alertdialog" aria-modal="true">
             <h3 className="font-headline-lg text-text-primary">
               {decision === "approve" ? text.approveTitle : text.rejectTitle}
             </h3>
+            <p className="mt-2 truncate font-data-mono text-xs text-text-secondary">
+              {candidate.candidate_id}
+            </p>
             {decision === "approve" ? (
-              <p className="mt-3 font-body-sm text-warning">
+              <p className="mt-3 rounded-lg border border-warning/40 bg-warning/5 p-3 font-body-sm text-warning">
                 {text.approveNote}
               </p>
             ) : (
-              <p className="mt-3 font-body-sm text-text-secondary">
+              <p className="mt-3 rounded-lg border border-border-subtle bg-bg-surface-muted p-3 font-body-sm text-text-secondary">
                 {text.rejectNote}
               </p>
             )}
             <form className="mt-4 flex flex-col gap-3" onSubmit={(event) => event.preventDefault()}>
               <label className="flex flex-col gap-1 font-body-sm text-text-primary">
                 {text.reviewNote}
-                <textarea className="min-h-24 rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("note")} />
+                <textarea className={`min-h-24 ${fieldClass}`} {...form.register("note")} />
               </label>
               {error ? <p className="font-body-sm text-danger">{error}</p> : null}
               <div className="flex justify-end gap-2">
-                <button className="rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary" onClick={() => setOpen(false)} type="button">
+                <button className="rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary hover:bg-bg-surface-muted" onClick={() => setOpen(false)} type="button">
                   {text.cancel}
                 </button>
-                <button className="rounded bg-warning px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={!isHydrated || mutation.isPending} onClick={() => void writeReview()} type="button">
+                <button className="rounded-lg bg-warning px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={!isHydrated || mutation.isPending} onClick={() => void writeReview()} type="button">
                   {mutation.isPending ? text.writingLock : text.confirm}
                 </button>
               </div>
@@ -216,60 +236,70 @@ export function AgentTaskForm({ candidates, locale = "en" }: { candidates: Candi
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
-      <form className="flex flex-col gap-4 rounded border border-border-subtle bg-bg-surface p-4" onSubmit={(event) => event.preventDefault()}>
-        <h2 className="font-headline-lg text-text-primary">{text.runAgentTask}</h2>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.taskType}
-          <select className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("task_type")}>
-            <option style={optionStyle}>propose-factor</option>
-            <option style={optionStyle}>propose-experiment</option>
-            <option style={optionStyle}>summarize</option>
-            <option style={optionStyle}>audit-leakage</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.goal}
-          <textarea className="min-h-24 rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("goal")} />
-        </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.universe}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" {...form.register("universe")} />
-        </label>
-        <div className="grid grid-cols-2 gap-2">
+      <Card padded={false}>
+        <form className="flex flex-col gap-4 p-4" onSubmit={(event) => event.preventDefault()}>
+          <SectionTitle title={text.runAgentTask} hint={text.runTaskHint} />
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.experimentId}
-            <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" {...form.register("experiment_id")} />
+            {text.taskType}
+            <select className={fieldClass} {...form.register("task_type")}>
+              <option>propose-factor</option>
+              <option>propose-experiment</option>
+              <option>summarize</option>
+              <option>audit-leakage</option>
+            </select>
           </label>
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.factorId}
-            <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" {...form.register("factor_id")} />
+            {text.goal}
+            <textarea className={`min-h-24 ${fieldClass}`} {...form.register("goal")} />
           </label>
-        </div>
-        {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-        <button className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={!isHydrated || mutation.isPending} onClick={() => void runTask()} type="button">
-          {mutation.isPending ? text.running : text.runTask}
-        </button>
-      </form>
-
-      <div className="rounded border border-border-subtle bg-bg-surface p-4">
-        <h2 className="font-headline-lg text-text-primary">{text.manualReview}</h2>
-        <p className="mt-1 font-body-sm text-text-secondary">
-          {text.manualReviewNote}
-        </p>
-        {firstPending ? (
-          <div className="mt-4 space-y-3">
-            <div className="truncate rounded border border-border-subtle bg-surface-muted p-3 font-data-mono text-xs text-text-primary">
-              {firstPending.candidate_id}
-            </div>
-            <div className="flex gap-2">
-              <ApproveDialog candidate={firstPending} locale={locale} />
-              <RejectDialog candidate={firstPending} locale={locale} />
-            </div>
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            {text.universe}
+            <input className={`font-data-mono ${fieldClass}`} {...form.register("universe")} />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+              {text.experimentId}
+              <input className={`font-data-mono ${fieldClass}`} {...form.register("experiment_id")} />
+            </label>
+            <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+              {text.factorId}
+              <input className={`font-data-mono ${fieldClass}`} {...form.register("factor_id")} />
+            </label>
           </div>
-        ) : (
-          <p className="mt-4 font-body-sm text-text-secondary">{text.noCandidate}</p>
-        )}
-      </div>
+          {error ? <p className="font-body-sm text-danger">{error}</p> : null}
+          <button className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary transition-colors hover:bg-accent-success/90 disabled:cursor-not-allowed disabled:opacity-50" disabled={!isHydrated || mutation.isPending} onClick={() => void runTask()} type="button">
+            {mutation.isPending ? text.running : text.runTask}
+          </button>
+        </form>
+      </Card>
+
+      <Card tone="warning" padded={false} className="flex flex-col">
+        <div className="p-4">
+          <SectionTitle title={text.manualReview} hint={text.manualReviewNote} />
+          {firstPending ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
+                <p className="truncate font-data-mono text-xs text-text-primary">
+                  {firstPending.candidate_id}
+                </p>
+                <div className="mt-2">
+                  <StatusPill
+                    label={text.status}
+                    value={firstPending.status}
+                    tone={statusTone(firstPending.status)}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <ApproveDialog candidate={firstPending} locale={locale} />
+                <RejectDialog candidate={firstPending} locale={locale} />
+              </div>
+            </div>
+          ) : (
+            <p className="font-body-sm text-text-secondary">{text.noCandidate}</p>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

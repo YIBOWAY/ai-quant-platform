@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useState } from "react";
-import { Bell, Terminal, Power, Search } from "lucide-react";
+import { Bell, Menu, Search, Settings, Terminal, X } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { LocaleToggle } from "@/components/LocaleToggle";
 import { localizePath, splitLocalePath } from "@/lib/locale";
@@ -15,9 +15,13 @@ const copy = {
     runBacktest: "Run Backtest",
     marketData: "Market Data",
     options: "Options",
-    replications: "Strategies",
+    replications: "Strategy Catalog",
     orderBook: "Polymarket Markets",
     positionMap: "Position Map",
+    dashboard: "Dashboard",
+    paperTrading: "Paper Trading",
+    settings: "Settings",
+    mobileMenu: "Open navigation",
   },
   zh: {
     search: "搜索标的...",
@@ -27,6 +31,10 @@ const copy = {
     replications: "策略目录",
     orderBook: "Polymarket 市场",
     positionMap: "持仓地图",
+    dashboard: "仪表盘",
+    paperTrading: "模拟交易",
+    settings: "设置",
+    mobileMenu: "打开导航",
   },
 };
 
@@ -36,6 +44,7 @@ export function TopBar() {
   const locale = useLocale();
   const text = copy[locale];
   const [query, setQuery] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const topNavItems = [
     { name: text.marketData, href: "/data-explorer" },
@@ -43,6 +52,13 @@ export function TopBar() {
     { name: text.replications, href: "/replications" },
     { name: text.orderBook, href: "/order-book" },
     { name: text.positionMap, href: "/position-map" },
+  ];
+  const mobileNavItems = [
+    { name: text.dashboard, href: "/" },
+    { name: text.runBacktest, href: "/backtest" },
+    { name: text.paperTrading, href: "/paper-trading" },
+    ...topNavItems,
+    { name: text.settings, href: "/settings" },
   ];
   const activePath = splitLocalePath(pathname).pathname;
 
@@ -56,30 +72,40 @@ export function TopBar() {
   };
 
   return (
-    <header className="fixed top-0 left-[240px] right-0 z-40 px-6 flex items-center justify-between h-16 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md">
-      <div className="flex min-w-0 items-center gap-8 h-full w-full">
+    <>
+    <header className="fixed top-0 left-0 right-0 z-40 flex h-16 items-center justify-between border-b border-border-subtle bg-bg-base/80 px-3 backdrop-blur-md lg:left-[240px] lg:px-6">
+      <div className="flex h-full min-w-0 w-full items-center gap-3 lg:gap-8">
+        <button
+          aria-expanded={menuOpen}
+          aria-label={text.mobileMenu}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle text-text-primary lg:hidden"
+          onClick={() => setMenuOpen((value) => !value)}
+          type="button"
+        >
+          {menuOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
         <form className="relative hidden md:flex items-center" onSubmit={submitSearch}>
-          <Search className="absolute left-3 text-zinc-500" size={16} />
+          <Search className="absolute left-3 text-text-secondary" size={16} />
           <input
             aria-label={text.search}
-            className="bg-zinc-900 border border-zinc-800 text-text-primary rounded pl-9 pr-4 py-1.5 text-sm w-64 focus:outline-none focus:border-info focus:ring-1 focus:ring-info placeholder-zinc-500 font-sans"
+            className="w-64 rounded-lg border border-border-subtle bg-bg-surface py-1.5 pl-9 pr-4 font-sans text-sm text-text-primary placeholder-text-secondary focus:border-info focus:outline-none focus:ring-1 focus:ring-info"
             onChange={(event) => setQuery(event.target.value)}
             placeholder={text.search}
             type="text"
             value={query}
           />
         </form>
-        <nav className="flex min-w-0 items-center gap-6 h-full flex-1">
+        <nav className="hidden min-w-0 flex-1 items-center gap-6 h-full xl:flex">
           {topNavItems.map((item) => {
             const isActive = activePath === item.href;
             return (
               <Link
                 key={item.href}
                 href={localizePath(item.href, locale)}
-                className={`whitespace-nowrap transition-colors font-sans text-sm cursor-pointer h-full flex items-center border-b-2 ${
+                className={`flex h-full cursor-pointer items-center whitespace-nowrap border-b-2 font-sans text-sm transition-colors ${
                   isActive
-                    ? "text-[#00C896] border-[#00C896]"
-                    : "text-zinc-400 hover:text-zinc-100 border-transparent"
+                    ? "border-accent-success text-accent-success"
+                    : "border-transparent text-text-secondary hover:text-text-primary"
                 }`}
               >
                 {item.name}
@@ -89,38 +115,59 @@ export function TopBar() {
         </nav>
       </div>
 
-      <div className="flex shrink-0 items-center gap-4">
+      <div className="flex shrink-0 items-center gap-2 lg:gap-4">
         <LocaleToggle />
         <Link
-          className="px-4 py-1.5 bg-[#00C896]/10 border border-[#00C896]/30 text-[#00C896] rounded hover:bg-[#00C896]/20 transition-colors font-label-caps uppercase text-xs font-bold whitespace-nowrap"
+          className="hidden whitespace-nowrap rounded-lg border border-accent-success/30 bg-accent-success/10 px-4 py-1.5 font-label-caps text-xs font-bold uppercase text-accent-success transition-colors hover:bg-accent-success/20 sm:inline-flex"
           href={localizePath("/backtest", locale)}
         >
           {text.runBacktest}
         </Link>
-        <div className="flex items-center gap-2 border-l border-zinc-800 pl-4 text-zinc-400">
+        <div className="hidden items-center gap-2 border-l border-border-subtle pl-4 text-text-secondary lg:flex">
           <Link
             aria-label="Open radar alerts"
-            className="hover:text-[#00C896] transition-colors cursor-pointer w-8 h-8 flex items-center justify-center rounded hover:bg-zinc-900"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-accent-success"
             href={localizePath("/options-radar", locale)}
           >
             <Bell size={18} />
           </Link>
           <Link
             aria-label="Open agent console"
-            className="hover:text-[#00C896] transition-colors cursor-pointer w-8 h-8 flex items-center justify-center rounded hover:bg-zinc-900"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-accent-success"
             href={localizePath("/agent-studio", locale)}
           >
             <Terminal size={18} />
           </Link>
           <Link
             aria-label="Open settings"
-            className="hover:text-[#00C896] transition-colors cursor-pointer w-8 h-8 flex items-center justify-center rounded hover:bg-zinc-900"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-accent-success"
             href={localizePath("/settings", locale)}
           >
-            <Power size={18} />
+            <Settings size={18} />
           </Link>
         </div>
       </div>
     </header>
+    {menuOpen ? (
+      <div className="fixed left-0 right-0 top-16 z-50 border-b border-border-subtle bg-bg-base p-3 shadow-xl lg:hidden">
+        <nav className="grid grid-cols-2 gap-2">
+          {mobileNavItems.map((item) => (
+            <Link
+              className={`rounded border px-3 py-2 font-body-sm ${
+                activePath === item.href
+                  ? "border-accent-success/50 bg-accent-success/10 text-accent-success"
+                  : "border-border-subtle text-text-primary"
+              }`}
+              href={localizePath(item.href, locale)}
+              key={item.href}
+              onClick={() => setMenuOpen(false)}
+            >
+              {item.name}
+            </Link>
+          ))}
+        </nav>
+      </div>
+    ) : null}
+    </>
   );
 }

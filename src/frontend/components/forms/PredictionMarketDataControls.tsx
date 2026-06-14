@@ -2,8 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-
-const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+import { localizePath } from "@/lib/locale";
 
 const copy = {
   en: {
@@ -39,49 +38,38 @@ export function PredictionMarketDataControls({
     defaultValues: initial,
   });
 
+  const fieldClass =
+    "h-8 rounded-lg border border-border-subtle bg-bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary outline-none focus:border-accent-success/60";
+  const labelClass =
+    "flex flex-col gap-1 font-label-caps text-[10px] uppercase text-text-secondary";
+
   return (
     <form
       className="flex flex-wrap items-end gap-3"
       onSubmit={form.handleSubmit((values) => {
         const params = new URLSearchParams(values);
-        router.push(`/order-book?${params.toString()}`);
+        router.push(localizePath(`/order-book?${params.toString()}`, locale));
       })}
     >
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+      <label className={labelClass}>
         {text.provider}
-        <select
-          className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary"
-          {...form.register("provider")}
-        >
-          <option style={optionStyle} value="polymarket">
-            polymarket
-          </option>
-          <option style={optionStyle} value="sample">
-            sample
-          </option>
+        <select className={fieldClass} {...form.register("provider")}>
+          <option value="polymarket">polymarket</option>
+          <option value="sample">sample</option>
         </select>
       </label>
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+      <label className={labelClass}>
         {text.cache}
-        <select
-          className="h-8 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary"
-          {...form.register("cache_mode")}
-        >
-          <option style={optionStyle} value="prefer_cache">
-            prefer_cache
-          </option>
-          <option style={optionStyle} value="refresh">
-            refresh
-          </option>
-          <option style={optionStyle} value="network_only">
-            network_only
-          </option>
+        <select className={fieldClass} {...form.register("cache_mode")}>
+          <option value="prefer_cache">prefer_cache</option>
+          <option value="refresh">refresh</option>
+          <option value="network_only">network_only</option>
         </select>
       </label>
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+      <label className={labelClass}>
         {text.markets}
         <input
-          className="h-8 w-24 rounded border border-border-subtle bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary"
+          className={`${fieldClass} w-24`}
           type="number"
           min={1}
           max={20}
@@ -89,7 +77,7 @@ export function PredictionMarketDataControls({
         />
       </label>
       <button
-        className="h-8 rounded bg-accent-success px-3 font-body-sm font-semibold text-on-primary"
+        className="h-8 rounded-lg bg-accent-success px-4 font-body-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
         type="submit"
       >
         {text.load}

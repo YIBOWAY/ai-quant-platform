@@ -11,7 +11,8 @@ import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
 
-const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+const selectClass =
+  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-text-primary";
 
 // Maps screener column index to a glossary term so headers can show a hint.
 const headingTips: Record<number, GlossaryKey> = {
@@ -47,7 +48,7 @@ const presets = {
     max_dte: 60,
     max_spread_pct_input: 10,
     min_open_interest: 100,
-    max_hv_iv: 1.0,
+    max_hv_iv: 1.2,
     min_premium: 0.15,
     min_iv_input: 10,
     min_mid_price: 0.15,
@@ -113,8 +114,16 @@ const copy = {
     regime: "Market regime",
     regimeUnknown: "Unknown - run `quant-system options refresh-vix` then re-run the screener.",
     regimeNormal: "Normal - no market-regime score penalty.",
-    regimeElevated: "Elevated - seller ratings discounted (Strong demoted to Watch).",
-    regimePanic: "Panic - seller ratings forced to Avoid for sell_put; covered_call demoted.",
+    regimeElevated:
+      "Elevated - market volatility is higher than usual. Short-premium margin and drawdown pressure can rise; control position size.",
+    regimePanic:
+      "Panic - market volatility is high. Selling options can require more margin and absorb sharper drawdowns; reduce size or wait.",
+    ema21: "EMA21",
+    sma50: "SMA50",
+    hvIvStatus: "HV/IV Status",
+    trendPassed: "Trend passed",
+    trendWeak: "Trend warning",
+    hvIvUnavailable: "No IV data",
     headings: ["Symbol", "Type", "Expiry", "Strike", "Bid", "Ask", "Mid", "APR", "Spread", "IV", "Delta", "OI", "Rating"],
     parameterHelp: [
       ["DTE Window", "The screener scans every available Futu expiration inside this range and ranks the contracts."],
@@ -163,8 +172,14 @@ const copy = {
     regime: "市场状态",
     regimeUnknown: "未知 - 请先运行 `quant-system options refresh-vix` 刷新 VIX 历史后再筛选。",
     regimeNormal: "Normal - 不施加市场状态扣分。",
-    regimeElevated: "Elevated - 卖方候选评分被压低（Strong 自动降级为 Watch）。",
-    regimePanic: "Panic - sell_put 自动强制评级为 Avoid；covered_call 同步降级。",
+    regimeElevated: "Elevated - 市场波动偏大，卖权保证金和回撤压力可能上升，注意控制仓位。",
+    regimePanic: "Panic - 市场波动很大，卖权保证金和回撤压力会更高，建议降低仓位或等待。",
+    ema21: "EMA21",
+    sma50: "SMA50",
+    hvIvStatus: "HV/IV 状态",
+    trendPassed: "趋势通过",
+    trendWeak: "趋势提醒",
+    hvIvUnavailable: "缺少 IV 数据",
     headings: ["代码", "类型", "到期日", "行权价", "买价", "卖价", "中间价", "年化", "价差", "IV", "Delta", "未平仓", "评级"],
     parameterHelp: [
       ["DTE 窗口", "筛选器会扫描这个范围内的全部 Futu 到期日，并把合约统一排序。"],
@@ -228,6 +243,13 @@ type ScreenerResult = {
   underlying_price: number;
   historical_volatility?: number | null;
   trend_reference?: number | null;
+  ema_21?: number | null;
+  sma_50?: number | null;
+  hv_iv_threshold?: number | null;
+  hv_iv_pass_count?: number;
+  hv_iv_contract_count?: number;
+  hv_iv_min?: number | null;
+  hv_iv_max?: number | null;
   market_regime?: "Normal" | "Elevated" | "Panic" | "Unknown" | null;
   market_regime_penalty?: number | null;
   market_regime_w_vix?: number | null;
@@ -247,6 +269,65 @@ function formatPercent(value?: number | null) {
   return typeof value === "number" && Number.isFinite(value)
     ? `${(value * 100).toFixed(2)}%`
     : "--";
+}
+
+function formatRatio(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "--";
+}
+
+function trendHelp(
+  result: ScreenerResult,
+  locale: "en" | "zh",
+  text: (typeof copy)["en"] | (typeof copy)["zh"],
+) {
+  const price = result.underlying_price;
+  const ema21 = result.ema_21;
+  const sma50 = result.sma_50;
+  if (
+    typeof ema21 !== "number"
+    || !Number.isFinite(ema21)
+    || typeof sma50 !== "number"
+    || !Number.isFinite(sma50)
+  ) {
+    return locale === "zh" ? "均线数据不足，趋势只作参考。" : "Moving-average data is incomplete; trend is reference-only.";
+  }
+  const warnings = [];
+  if (price < ema21) {
+    warnings.push(locale === "zh" ? "低于 EMA21" : "below EMA21");
+  }
+  if (price < sma50) {
+    warnings.push(locale === "zh" ? "低于 SMA50" : "below SMA50");
+  }
+  if (!warnings.length) {
+    return text.trendPassed;
+  }
+  return `${text.trendWeak}: ${warnings.join(locale === "zh" ? "、" : " / ")}`;
+}
+
+function hvIvStatus(
+  result: ScreenerResult,
+  locale: "en" | "zh",
+  text: (typeof copy)["en"] | (typeof copy)["zh"],
+) {
+  const total = result.hv_iv_contract_count ?? 0;
+  if (total <= 0) {
+    return text.hvIvUnavailable;
+  }
+  const passed = result.hv_iv_pass_count ?? 0;
+  return locale === "zh" ? `${passed}/${total} 通过` : `${passed}/${total} pass`;
+}
+
+function hvIvHelp(result: ScreenerResult, locale: "en" | "zh") {
+  const total = result.hv_iv_contract_count ?? 0;
+  if (total <= 0) {
+    return locale === "zh" ? "没有可用的 IV，无法判断 HV/IV。" : "No usable IV, so HV/IV cannot be judged.";
+  }
+  const threshold = formatRatio(result.hv_iv_threshold);
+  const low = formatRatio(result.hv_iv_min);
+  const high = formatRatio(result.hv_iv_max);
+  return locale === "zh"
+    ? `上限 ${threshold}；范围 ${low}-${high}`
+    : `Limit ${threshold}; range ${low}-${high}`;
 }
 
 function ratingLabel(rating: string, locale: "en" | "zh") {
@@ -293,6 +374,8 @@ const rejectionReasonZh: Record<string, string> = {
   "sell put strike is above spot": "卖出看跌行权价高于现价",
   "covered call strike is below spot": "covered call 行权价低于现价",
   "trend filter failed": "趋势过滤未通过",
+  "price below EMA21": "价格低于 EMA21",
+  "price below SMA50": "价格低于 SMA50",
   "IV/HV filter failed": "IV/HV 过滤未通过",
   "underlying ADV missing": "缺少正股成交量",
   "underlying ADV below minimum": "正股成交量低于要求",
@@ -324,7 +407,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
       max_dte: 60,
       max_spread_pct_input: 10,
       min_open_interest: 100,
-      max_hv_iv: 1.0,
+      max_hv_iv: 1.2,
       min_mid_price: 0.15,
       min_avg_daily_volume: 500_000,
       min_market_cap: 2_000_000_000,
@@ -381,13 +464,13 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             <label className="flex flex-col gap-1 font-body-sm text-text-primary">
               {text.strategy}
               <select
-                className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary"
+                className={selectClass}
                 {...form.register("strategy_type")}
               >
-                <option value="sell_put" style={optionStyle}>
+                <option value="sell_put">
                   {text.sellPut}
                 </option>
-                <option value="covered_call" style={optionStyle}>
+                <option value="covered_call">
                   {text.coveredCall}
                 </option>
               </select>
@@ -395,7 +478,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             <label className="flex flex-col gap-1 font-body-sm text-text-primary">
               {text.ticker}
               <input
-                className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono uppercase text-text-primary"
+                className="rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono uppercase text-text-primary"
                 {...form.register("ticker")}
               />
             </label>
@@ -403,7 +486,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
             {text.preset}
             <select
-              className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary"
+              className={selectClass}
               value={preset}
               onChange={(event) => {
                 const value = event.target.value as keyof typeof presets | "";
@@ -413,16 +496,16 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
                 }
               }}
             >
-              <option style={optionStyle} value="">
+              <option value="">
                 {text.presetNone}
               </option>
-              <option style={optionStyle} value="conservative">
+              <option value="conservative">
                 {text.conservative}
               </option>
-              <option style={optionStyle} value="balanced">
+              <option value="balanced">
                 {text.balanced}
               </option>
-              <option style={optionStyle} value="aggressive">
+              <option value="aggressive">
                 {text.aggressive}
               </option>
             </select>
@@ -447,7 +530,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
           </label>
           {error ? <p className="font-body-sm text-danger">{error}</p> : null}
           <button
-            className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!isHydrated || mutation.isPending}
             onClick={() => void run()}
             type="button"
@@ -457,46 +540,29 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
         </form>
       </aside>
 
-      <section className="min-w-0 overflow-y-auto bg-base p-4">
-        <div className="mb-4 rounded border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
+      <section className="min-w-0 overflow-y-auto bg-bg-base p-4">
+        <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
           {text.warning}
         </div>
         {!result ? (
           <div className="grid grid-cols-3 gap-3">
             {text.parameterHelp.map(([label, description]) => (
-              <div className="rounded border border-border-subtle bg-bg-surface p-4" key={label}>
+              <div className="rounded-lg border border-border-subtle bg-bg-surface p-4" key={label}>
                 <h3 className="font-label-caps text-text-primary">{label}</h3>
                 <p className="mt-2 font-body-sm text-text-secondary">{description}</p>
               </div>
             ))}
-            <div className="col-span-3 rounded border border-border-subtle bg-bg-surface p-4">
+            <div className="col-span-3 rounded-lg border border-border-subtle bg-bg-surface p-4">
               <h3 className="font-label-caps text-text-primary">{text.emptyTitle}</h3>
               <p className="mt-2 font-body-sm text-text-secondary">{text.emptyBody}</p>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            <RegimeBanner result={result} text={text} />
-            <div className="grid grid-cols-5 gap-3">
-              <Metric label={text.underlying} value={formatNumber(result.underlying_price)} />
-              <Metric
-                label={text.scannedExpirations}
-                value={String(result.expiration_count ?? result.scanned_expirations?.length ?? 0)}
-              />
-              <Metric label="HV" value={formatPercent(result.historical_volatility)} />
-              <Metric label={text.candidates} value={String(result.candidates.length)} />
-              <Metric
-                help={
-                  locale === "zh"
-                    ? "被过滤的 Avoid 合约，例如深度价内、零 OI、价差过宽、趋势或 HV/IV 过滤失败。"
-                    : "Avoid-rated contracts filtered out, such as deep ITM, zero OI, wide spread, or failed trend/HV-IV filters."
-                }
-                label={locale === "zh" ? "已过滤" : "Filtered out"}
-                value={String(result.rejected_count ?? 0)}
-              />
-            </div>
+          <div className="flex flex-col gap-3">
+            <RegimeStatusBar result={result} text={text} locale={locale} />
+            <CompactMetrics result={result} text={text} locale={locale} />
             {result.candidates.length === 0 ? (
-              <div className="rounded border border-warning/40 bg-warning/10 p-4 font-body-sm text-warning">
+              <div className="rounded-lg border border-warning/40 bg-warning/10 p-4 font-body-sm text-warning">
                 {locale === "zh" ? (
                   <>
                     <p className="font-semibold">
@@ -534,7 +600,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto rounded border border-border-subtle bg-bg-surface">
+              <div className="overflow-x-auto rounded-lg border border-border-subtle bg-bg-surface">
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-border-subtle">
@@ -572,7 +638,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
                 </table>
               </div>
             )}
-            <div className="rounded border border-border-subtle bg-bg-surface p-4">
+            <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
               <h3 className="font-label-caps text-text-secondary">{text.assumptions}</h3>
               <ul className="mt-2 list-disc space-y-1 pl-5 font-body-sm text-text-secondary">
                 {result.assumptions.map((assumption) => (
@@ -600,7 +666,7 @@ function NumberField({
     <label className="flex flex-col gap-1 font-body-sm text-text-primary">
       {label}
       <input
-        className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary"
+        className="rounded-lg border border-border-subtle bg-bg-surface-muted px-2 py-2 font-data-mono text-text-primary"
         step={step}
         type="number"
         {...registration}
@@ -609,12 +675,86 @@ function NumberField({
   );
 }
 
-function Metric({ help, label, value }: { help?: string; label: string; value: string }) {
+// Compact single-line metric: label on top, value below, optional tooltip on
+// hover. Keeps the whole summary strip short instead of growing with help text.
+function MetricInline({
+  label,
+  value,
+  help,
+  tone = "primary",
+}: {
+  label: string;
+  value: string;
+  help?: string;
+  tone?: "primary" | "success" | "warning" | "danger";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "text-accent-success"
+      : tone === "warning"
+        ? "text-warning"
+        : tone === "danger"
+          ? "text-danger"
+          : "text-text-primary";
   return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-3">
-      <div className="font-label-caps text-text-secondary">{label}</div>
-      <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">{value}</div>
-      {help ? <div className="mt-2 font-body-sm leading-relaxed text-text-secondary">{help}</div> : null}
+    <div
+      className="flex min-w-0 flex-col gap-0.5 px-3 py-2"
+      title={help}
+    >
+      <span className="truncate font-label-caps text-[10px] uppercase text-text-secondary">
+        {label}
+      </span>
+      <span className={`truncate font-data-mono text-sm font-bold ${toneClass}`}>{value}</span>
+    </div>
+  );
+}
+
+// One compact row of core metrics, divided by hairlines. Replaces the tall
+// 8-card grid so the candidate table is visible above the fold.
+function CompactMetrics({
+  result,
+  text,
+  locale,
+}: {
+  result: ScreenerResult;
+  text: (typeof copy)["en"] | (typeof copy)["zh"];
+  locale: "en" | "zh";
+}) {
+  const expirationCount = result.expiration_count ?? result.scanned_expirations?.length ?? 0;
+  return (
+    <div className="flex flex-wrap items-stretch divide-x divide-border-subtle rounded-lg border border-border-subtle bg-bg-surface">
+      <MetricInline
+        label={text.underlying}
+        value={formatNumber(result.underlying_price)}
+        help={trendHelp(result, locale, text)}
+      />
+      <MetricInline label={text.scannedExpirations} value={String(expirationCount)} />
+      <MetricInline label="HV" value={formatPercent(result.historical_volatility)} />
+      <MetricInline
+        label={text.hvIvStatus}
+        value={hvIvStatus(result, locale, text)}
+        help={hvIvHelp(result, locale)}
+      />
+      <MetricInline
+        label={text.candidates}
+        value={String(result.candidates.length)}
+        tone={result.candidates.length > 0 ? "success" : "warning"}
+      />
+      <MetricInline
+        label={locale === "zh" ? "已过滤" : "Filtered out"}
+        value={String(result.rejected_count ?? 0)}
+        tone={(result.rejected_count ?? 0) > 0 ? "warning" : "primary"}
+        help={
+          locale === "zh"
+            ? "被过滤的 Avoid 合约，例如深度价内、零 OI、价差过宽、趋势或 HV/IV 过滤失败。"
+            : "Avoid-rated contracts filtered out, such as deep ITM, zero OI, wide spread, or failed trend/HV-IV filters."
+        }
+      />
+      <MetricInline
+        label="EMA21 / SMA50"
+        value={`${formatNumber(result.ema_21)} / ${formatNumber(result.sma_50)}`}
+        help={trendHelp(result, locale, text)}
+      />
     </div>
   );
 }
@@ -631,7 +771,7 @@ function RejectionSummary({
     return null;
   }
   return (
-    <div className="mt-3 rounded border border-border-subtle bg-bg-surface/70 p-3">
+    <div className="mt-3 rounded-lg border border-border-subtle bg-bg-surface/70 p-3">
       <div className="font-label-caps text-text-secondary">
         {locale === "zh" ? "主要过滤原因" : "Main filter reasons"}
       </div>
@@ -649,18 +789,20 @@ function RejectionSummary({
 
 type RegimeLabel = "Normal" | "Elevated" | "Panic" | "Unknown";
 
-function RegimeBanner({
+function RegimeStatusBar({
   result,
   text,
+  locale,
 }: {
   result: ScreenerResult;
   text: (typeof copy)["en"] | (typeof copy)["zh"];
+  locale: "en" | "zh";
 }) {
   const label: RegimeLabel = (result.market_regime ?? "Unknown") as RegimeLabel;
   const palette: Record<RegimeLabel, string> = {
     Normal: "border-accent-success/40 bg-accent-success/10 text-accent-success",
     Elevated: "border-warning/40 bg-warning/10 text-warning",
-    Panic: "border-accent-danger/40 bg-accent-danger/10 text-accent-danger",
+    Panic: "border-danger/40 bg-danger/10 text-danger",
     Unknown: "border-border-subtle bg-bg-surface text-text-secondary",
   };
   const detail =
@@ -677,15 +819,18 @@ function RegimeBanner({
       ? ` (${penalty > 0 ? "+" : ""}${penalty.toFixed(0)})`
       : "";
   return (
-    <div className={`rounded border p-3 font-body-sm ${palette[label]}`}>
-      <div className="flex items-center justify-between">
-        <span className="font-label-caps">{text.regime}</span>
-        <span className="font-data-mono text-sm font-bold">
-          {label}
-          {penaltyText}
-        </span>
-      </div>
-      <p className="mt-1 leading-snug">{detail}</p>
+    <div
+      className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-1.5 ${palette[label]}`}
+    >
+      <span className="font-label-caps text-[10px] uppercase">{text.regime}</span>
+      <span className="font-data-mono text-sm font-bold">
+        {label}
+        {penaltyText}
+      </span>
+      {/* Full explanation stays accessible but no longer eats a whole banner. */}
+      <span className="min-w-0 flex-1 truncate font-body-sm opacity-80" title={detail}>
+        {detail}
+      </span>
     </div>
   );
 }

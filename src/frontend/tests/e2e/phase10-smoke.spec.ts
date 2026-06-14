@@ -55,6 +55,16 @@ async function expectRunIdVisible(page: Page, runId: string) {
   await expect(page.getByText(runId)).toBeVisible({ timeout: 45_000 });
 }
 
+// The replay form lives behind the "Historical Replay" tab; retry the click
+// until hydration makes the tab respond (aria-selected flips client-side).
+async function openTab(page: Page, name: string | RegExp) {
+  const tab = page.getByRole("tab", { name });
+  await expect(async () => {
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
 test("primary local workflow buttons are clickable", async ({ page }) => {
   test.setTimeout(120_000);
 
@@ -71,12 +81,14 @@ test("primary local workflow buttons are clickable", async ({ page }) => {
 
   await page.goto("/factor-lab");
   await expect(page.getByRole("heading", { name: "Factor Lab" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Cross-Sectional Health" })).toBeVisible();
-  await page.getByRole("button", { name: "Single-Ticker Timing" }).click();
+  await expect(page.getByRole("tab", { name: "Cross-Sectional Health" })).toBeVisible();
+  await openTab(page, "Single-Ticker Timing");
   await expect(page.getByText("QQQ Timing Diagnostics")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run Factor" })).toHaveCount(0);
+  // The factor research form is mounted in the sidebar (previously dead code).
+  await expect(page.getByRole("button", { name: "Run Factor" })).toBeVisible();
 
   await page.goto("/paper-trading");
+  await openTab(page, "Historical Replay");
   const killSwitchButton = await waitForEnabledButton(page, "kill_switch enabled");
   await killSwitchButton.click();
   await expect(page.getByText(/the API will reject runs that disable it/i)).toBeVisible();
@@ -134,7 +146,7 @@ test("factor lab and strategy catalog render Chinese labels", async ({ page }) =
   await page.goto("/zh/factor-lab");
   await page.waitForLoadState("networkidle");
   await expect(page.getByRole("heading", { name: "因子实验室" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "横截面体检" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "横截面体检" })).toBeVisible();
 
   await page.goto("/zh/replications");
   await page.waitForLoadState("networkidle");

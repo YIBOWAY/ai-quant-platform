@@ -97,15 +97,15 @@ test.describe("experiments workbench", () => {
     await expect(page.getByText("lookback=5 / top_n=1")).toBeVisible();
     await expect(page.locator('[data-experiment-tabs-ready="true"]')).toBeVisible();
 
-    await page.getByRole("button", { name: "Walk-forward folds" }).click();
+    await page.getByRole("tab", { name: "Walk-forward folds" }).click();
     await expect(page.getByRole("heading", { name: "Walk-forward Folds" })).toBeVisible();
     await expect(page.getByText("fold-1")).toBeVisible();
 
-    await page.getByRole("button", { name: "Run comparison" }).click();
+    await page.getByRole("tab", { name: "Run comparison" }).click();
     await expect(page.getByRole("heading", { name: "Run Comparison" })).toBeVisible();
-    await expect(page.getByText("run-lb5-top1", { exact: true })).toBeVisible();
+    await expect(page.getByText("run-lb5-top1", { exact: true }).first()).toBeVisible();
 
-    await page.getByRole("button", { name: "Agent summary" }).click();
+    await page.getByRole("tab", { name: "Agent summary" }).click();
     await expect(page.getByRole("heading", { name: "Agent Summary" })).toBeVisible();
     await expect(
       page.getByRole("listitem").filter({ hasText: "No automatic deployment." }),

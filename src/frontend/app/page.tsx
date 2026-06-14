@@ -1,10 +1,10 @@
 import Link from "next/link";
-import type { LucideIcon } from "lucide-react";
 import {
   Bot,
   BriefcaseBusiness,
   Database,
   FlaskConical,
+  LayoutDashboard,
   LineChart,
   Play,
   Settings,
@@ -12,6 +12,7 @@ import {
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import {
   formatMoney,
   formatPercent,
@@ -28,6 +29,9 @@ import { localizePath } from "@/lib/locale";
 
 const copy = {
   en: {
+    pageEyebrow: "Workbench",
+    pageTitle: "Dashboard",
+    pageSubtitle: "Local API snapshot of factors, paper runs, and agent candidates. Paper-only research — no live trading.",
     kpiFactors: "Registered Factors",
     kpiFactorsDetail: "from /api/factors",
     kpiEquity: "Paper Equity",
@@ -68,6 +72,9 @@ const copy = {
     telemetryDesc: "CPU and memory telemetry are not part of the current local API.",
   },
   zh: {
+    pageEyebrow: "工作台",
+    pageTitle: "仪表盘",
+    pageSubtitle: "因子、模拟运行与智能体候选的本地接口快照。仅用于模拟研究，不涉及实盘交易。",
     kpiFactors: "已注册因子",
     kpiFactorsDetail: "来自 /api/factors",
     kpiEquity: "模拟权益",
@@ -109,31 +116,6 @@ const copy = {
   },
 };
 
-function KpiCard({
-  title,
-  value,
-  detail,
-  icon: Icon,
-}: {
-  title: string;
-  value: string | number;
-  detail: string;
-  icon: LucideIcon;
-}) {
-  return (
-    <div className="flex min-h-28 flex-col justify-between rounded border border-border-subtle bg-bg-surface p-4">
-      <div className="flex items-start justify-between">
-        <h3 className="font-label-caps uppercase text-text-secondary">{title}</h3>
-        <Icon size={14} className="text-primary" />
-      </div>
-      <div>
-        <div className="font-data-mono text-headline-xl text-text-primary">{value}</div>
-        <div className="font-data-mono text-[10px] text-text-secondary">{detail}</div>
-      </div>
-    </div>
-  );
-}
-
 export default async function Dashboard() {
   const [health, symbols, factors, backtests, paperRuns, candidates, locale] = await Promise.all([
     getHealth(),
@@ -150,8 +132,14 @@ export default async function Dashboard() {
   const paperSummary = latestPaper?.summary;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden xl:flex-row">
-      <div className="flex-1 space-y-6 overflow-y-auto p-gutter lg:p-container-padding">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden xl:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-gutter lg:p-container-padding">
+        <PageHeader
+          eyebrow={text.pageEyebrow}
+          title={text.pageTitle}
+          subtitle={text.pageSubtitle}
+          icon={<LayoutDashboard size={18} className="text-accent-success" />}
+        />
         <ErrorBanner
           messages={[
             health.apiError,
@@ -162,45 +150,49 @@ export default async function Dashboard() {
             candidates.apiError,
           ]}
         />
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            title={text.kpiFactors}
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <MetricStat
+            label={text.kpiFactors}
             value={factors.factors.length}
-            detail={text.kpiFactorsDetail}
-            icon={FlaskConical}
+            hint={text.kpiFactorsDetail}
+            delta={text.kpiFactorsDetail}
           />
-          <KpiCard
-            title={text.kpiEquity}
+          <MetricStat
+            label={text.kpiEquity}
             value={formatMoney(paperSummary?.final_equity)}
-            detail={text.kpiEquityDetail(paperRuns.paper_runs.length, latestPaper?.source)}
-            icon={BriefcaseBusiness}
+            tone="success"
+            hint={text.kpiEquityDetail(paperRuns.paper_runs.length, latestPaper?.source)}
+            delta={text.kpiEquityDetail(paperRuns.paper_runs.length, latestPaper?.source)}
           />
-          <KpiCard
-            title={text.kpiCandidates}
+          <MetricStat
+            label={text.kpiCandidates}
             value={candidates.candidates.length}
-            detail={text.kpiCandidatesDetail}
-            icon={Bot}
+            hint={text.kpiCandidatesDetail}
+            delta={text.kpiCandidatesDetail}
           />
-          <KpiCard
-            title={text.kpiSharpe}
+          <MetricStat
+            label={text.kpiSharpe}
             value={latestBacktest?.metrics?.sharpe?.toFixed(2) ?? "--"}
-            detail={text.kpiSharpeDetail(
+            hint={text.kpiSharpeDetail(
               formatPercent(latestBacktest?.metrics?.max_drawdown),
               latestBacktest?.source,
             )}
-            icon={LineChart}
+            delta={text.kpiSharpeDetail(
+              formatPercent(latestBacktest?.metrics?.max_drawdown),
+              latestBacktest?.source,
+            )}
           />
         </section>
 
-        <section className="space-y-4">
-          <div className="flex items-center justify-between border-b border-border-subtle pb-2">
-            <h2 className="font-headline-lg text-text-primary">{text.recentOps}</h2>
-            <span className="font-label-caps text-text-secondary">{text.snapshot}</span>
-          </div>
+        <section>
+          <SectionTitle
+            title={text.recentOps}
+            right={<span className="font-label-caps text-text-secondary">{text.snapshot}</span>}
+          />
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded border border-border-subtle bg-bg-surface p-4">
-              <div className="mb-4 flex items-center gap-2 font-label-caps text-text-secondary">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Card padded>
+              <div className="mb-3 flex items-center gap-2 font-label-caps text-text-secondary">
                 <LineChart size={14} className="text-info" /> {text.backtest}
               </div>
               <h3 className="truncate font-body-md font-medium text-text-primary">
@@ -211,7 +203,7 @@ export default async function Dashboard() {
                   <DataSourceBadge source={latestBacktest.source} />
                 </div>
               ) : null}
-              <div className="mt-4 space-y-2 font-data-mono text-xs">
+              <div className="mt-3 space-y-2 font-data-mono text-xs">
                 <div className="flex justify-between">
                   <span className="text-text-secondary">{text.ret}</span>
                   <span className="text-text-primary">
@@ -225,23 +217,23 @@ export default async function Dashboard() {
                   </span>
                 </div>
               </div>
-            </div>
+            </Card>
 
-            <div className="rounded border border-border-subtle bg-bg-surface p-4">
-              <div className="mb-4 flex items-center gap-2 font-label-caps text-text-secondary">
+            <Card padded>
+              <div className="mb-3 flex items-center gap-2 font-label-caps text-text-secondary">
                 <Database size={14} className="text-warning" /> {text.symbols}
               </div>
               <h3 className="truncate font-body-md font-medium text-text-primary">
                 {symbols.symbols.join(", ")}
               </h3>
-              <p className="mt-4 font-data-mono text-xs text-text-secondary">
+              <p className="mt-3 font-data-mono text-xs text-text-secondary">
                 source={symbols.source}; status={health.status}
               </p>
-            </div>
+            </Card>
 
-            <div className="rounded border border-border-subtle bg-bg-surface p-4">
-              <div className="mb-4 flex items-center gap-2 font-label-caps text-text-secondary">
-                <BriefcaseBusiness size={14} className="text-primary" /> {text.paperRun}
+            <Card padded>
+              <div className="mb-3 flex items-center gap-2 font-label-caps text-text-secondary">
+                <BriefcaseBusiness size={14} className="text-accent-success" /> {text.paperRun}
               </div>
               <h3 className="truncate font-body-md font-medium text-text-primary">
                 {latestPaper?.id ?? text.noPaper}
@@ -251,7 +243,7 @@ export default async function Dashboard() {
                   <DataSourceBadge source={latestPaper.source} />
                 </div>
               ) : null}
-              <div className="mt-4 space-y-2 font-data-mono text-xs">
+              <div className="mt-3 space-y-2 font-data-mono text-xs">
                 <div className="flex justify-between">
                   <span className="text-text-secondary">{text.orders}</span>
                   <span className="text-text-primary">{paperSummary?.order_count ?? 0}</span>
@@ -261,19 +253,19 @@ export default async function Dashboard() {
                   <span className="text-text-primary">{paperSummary?.risk_breach_count ?? 0}</span>
                 </div>
               </div>
-            </div>
+            </Card>
 
-            <div className="rounded border border-border-subtle bg-bg-surface p-4">
-              <div className="mb-4 flex items-center gap-2 font-label-caps text-text-secondary">
+            <Card padded>
+              <div className="mb-3 flex items-center gap-2 font-label-caps text-text-secondary">
                 <Bot size={14} className="text-info" /> {text.agentPool}
               </div>
               <h3 className="truncate font-body-md font-medium text-text-primary">
                 {candidates.candidates[0]?.candidate_id ?? text.noCandidate}
               </h3>
-              <p className="mt-4 font-data-mono text-xs text-text-secondary">
+              <p className="mt-3 font-data-mono text-xs text-text-secondary">
                 {text.candidatesReview(candidates.candidates.length)}
               </p>
-            </div>
+            </Card>
           </div>
         </section>
 
@@ -283,33 +275,31 @@ export default async function Dashboard() {
         />
       </div>
 
-      <aside className="flex w-full flex-shrink-0 flex-col gap-6 overflow-y-auto border-l border-border-subtle bg-bg-surface p-6 xl:w-[320px]">
+      <aside className="flex w-full flex-shrink-0 flex-col gap-4 overflow-y-auto border-l border-border-subtle bg-bg-surface p-gutter lg:p-container-padding xl:w-[320px]">
         <div>
-          <h3 className="mb-4 border-b border-border-subtle pb-2 font-label-caps text-text-secondary">
-            {text.quickActions}
-          </h3>
-          <div className="space-y-3">
+          <SectionTitle title={text.quickActions} />
+          <div className="space-y-2">
             <Link
               href={localizePath("/backtest", locale)}
-              className="flex w-full items-center gap-3 rounded border border-border-subtle bg-bg-surface-muted px-4 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-primary"
+              className="flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-accent-success"
             >
-              <Play size={14} className="text-primary" /> {text.startBacktest}
+              <Play size={14} className="text-accent-success" /> {text.startBacktest}
             </Link>
             <Link
               href={localizePath("/factor-lab", locale)}
-              className="flex w-full items-center gap-3 rounded border border-border-subtle bg-bg-surface-muted px-4 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-warning"
+              className="flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-warning"
             >
               <FlaskConical size={14} className="text-warning" /> {text.runFactor}
             </Link>
             <Link
               href={localizePath("/agent-studio", locale)}
-              className="flex w-full items-center gap-3 rounded border border-border-subtle bg-bg-surface-muted px-4 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-info"
+              className="flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-info"
             >
               <Bot size={14} className="text-info" /> {text.newAgent}
             </Link>
             <Link
               href={localizePath("/settings", locale)}
-              className="flex w-full items-center gap-3 rounded border border-border-subtle bg-bg-surface-muted px-4 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-text-primary"
+              className="flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-text-primary"
             >
               <Settings size={14} className="text-text-secondary" /> {text.openSettings}
             </Link>
@@ -317,33 +307,43 @@ export default async function Dashboard() {
         </div>
 
         <div>
-          <h3 className="mb-4 border-b border-border-subtle pb-2 font-label-caps text-text-secondary">
-            {text.envState}
-          </h3>
-          <div className="space-y-3 font-body-sm">
-            <div className="flex justify-between">
-              <span className="text-text-secondary">{text.api}</span>
-              <span className="font-data-mono text-text-primary">{health.status}</span>
+          <SectionTitle title={text.envState} />
+          <Card padded>
+            <div className="space-y-2 font-body-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-text-secondary">{text.api}</span>
+                <StatusPill
+                  label=""
+                  value={health.status}
+                  tone={health.status === "ok" ? "success" : "warning"}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-text-secondary">{text.paperTrading}</span>
+                <StatusPill
+                  label=""
+                  value={String(health.safety?.paper_trading)}
+                  tone={health.safety?.paper_trading ? "success" : "neutral"}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-text-secondary">{text.liveTrading}</span>
+                <StatusPill
+                  label=""
+                  value={String(health.safety?.live_trading_enabled)}
+                  tone={health.safety?.live_trading_enabled ? "danger" : "neutral"}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-text-secondary">{text.killSwitch}</span>
+                <StatusPill
+                  label=""
+                  value={health.safety?.kill_switch ? text.on : text.off}
+                  tone={health.safety?.kill_switch ? "warning" : "neutral"}
+                />
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-text-secondary">{text.paperTrading}</span>
-              <span className="font-data-mono text-text-primary">
-                {String(health.safety?.paper_trading)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-secondary">{text.liveTrading}</span>
-              <span className="font-data-mono text-text-primary">
-                {String(health.safety?.live_trading_enabled)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-secondary">{text.killSwitch}</span>
-              <span className="font-data-mono text-warning">
-                {health.safety?.kill_switch ? text.on : text.off}
-              </span>
-            </div>
-          </div>
+          </Card>
         </div>
 
         <EmptyState

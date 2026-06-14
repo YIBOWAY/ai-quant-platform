@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  RefreshCw,
+  Radar,
+  ShieldCheck,
+} from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type {
   OptionsRadarCandidate,
@@ -15,8 +23,16 @@ import { apiPost, apiRequest } from "@/lib/apiClient";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
+import {
+  Card,
+  MetricStat,
+  PageHeader,
+  SectionTitle,
+  StatusPill,
+} from "@/components/ui/primitives";
 
-const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+const selectClass =
+  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-text-primary";
 
 // Maps radar column index to a glossary term so headers can show a hint.
 const headingTips: Record<number, GlossaryKey> = {
@@ -75,7 +91,6 @@ const copy = {
     regimeNormal: "Normal - recent three-month VIX/VIX3M cache shows no market-regime score penalty.",
     regimeElevated: "Elevated - recent three-month VIX/VIX3M cache applies a moderate seller score penalty.",
     regimePanic: "Panic - recent three-month VIX/VIX3M cache applies a heavy seller score penalty.",
-    zh: "中文",
     details: "Details",
     openChain: "Open Chain",
     runSample: "Run Today's Scan",
@@ -92,6 +107,17 @@ const copy = {
     refreshUniverse: "Refresh Universe",
     refreshEarnings: "Refresh Earnings",
     refreshVix: "Refresh VIX",
+    eyebrow: "Read-only · Paper research",
+    advanced: "Advanced data sources",
+    advancedHint: "Manual Futu refreshes — these trigger slow scans. Not needed for normal use.",
+    statusState: "Scan",
+    statusScanning: "Running",
+    statusIdle: "Idle",
+    statusScanDate: "Scan date",
+    statusDataAsOf: "Data as of",
+    statusNone: "None",
+    candidatesTitle: "Seller candidates",
+    candidatesHint: "Each row is research output, not a trade instruction.",
     headings: ["Symbol", "Sector", "Strategy", "Expiry", "Strike", "Mid", "APR", "IV", "IVR", "Delta", "OI", "Spread", "Earnings", "Score", "Rating", ""],
   },
   zh: {
@@ -122,7 +148,6 @@ const copy = {
     regimeNormal: "Normal - 不施加市场状态扣分。",
     regimeElevated: "Elevated - 对卖方候选施加中等评分扣分。",
     regimePanic: "Panic - 对卖方候选施加较重评分扣分。",
-    zh: "English",
     details: "详情",
     openChain: "查看期权链",
     runSample: "运行今日扫描",
@@ -138,6 +163,17 @@ const copy = {
     refreshUniverse: "刷新标的池",
     refreshEarnings: "刷新财报日历",
     refreshVix: "刷新 VIX",
+    eyebrow: "只读 · 模拟研究",
+    advanced: "高级数据源",
+    advancedHint: "手动触发 Futu 刷新——会启动较慢的扫描。日常使用无需操作。",
+    statusState: "扫描",
+    statusScanning: "进行中",
+    statusIdle: "空闲",
+    statusScanDate: "扫描日期",
+    statusDataAsOf: "数据截至",
+    statusNone: "无",
+    candidatesTitle: "卖方候选",
+    candidatesHint: "每一行都是研究筛选结果，不是交易指令。",
     headings: ["标的", "行业", "策略", "到期", "行权价", "中间价", "年化", "IV", "IVR", "Delta", "未平仓", "价差", "财报", "分数", "评级", ""],
   },
 };
@@ -160,6 +196,7 @@ export function OptionsRadarView({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshSource, setRefreshSource] = useState("public");
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
   const [scanStartedAt, setScanStartedAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -269,26 +306,24 @@ export function OptionsRadarView({
   }, [scanMutation.isPending, scanStartedAt]);
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[360px_1fr] overflow-hidden bg-base text-text-primary">
-      <aside className="overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
-        <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
+    <div className="grid h-full min-h-0 grid-cols-[360px_1fr] overflow-hidden bg-bg-base text-text-primary">
+      <aside className="flex min-h-0 flex-col overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
+        <div className="flex items-center gap-2">
+          <Radar className="text-accent-success" size={18} />
+          <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
+        </div>
+        <p className="mt-1 font-label-caps uppercase text-text-secondary">{text.eyebrow}</p>
         <p className="mt-2 font-body-sm text-text-secondary">{text.intro}</p>
-        <a
-          className="mt-3 inline-flex whitespace-nowrap font-body-sm text-info"
-          href={localizePath("/options-radar", locale === "zh" ? "en" : "zh")}
-        >
-          {text.zh}
-        </a>
         <form className="mt-5 flex flex-col gap-4" onSubmit={(event) => event.preventDefault()}>
           <label className="flex flex-col gap-1 font-body-sm">
             {text.date}
             <select
-              className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary"
+              className={selectClass}
               onChange={(event) => setDate(event.target.value)}
               value={activeDate}
             >
               {datesQuery.data?.dates.map((item) => (
-                <option key={item} style={optionStyle} value={item}>
+                <option key={item} value={item}>
                   {item}
                 </option>
               ))}
@@ -298,45 +333,45 @@ export function OptionsRadarView({
           <label className="flex flex-col gap-1 font-body-sm">
             {text.strategy}
             <select
-              className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary"
+              className={selectClass}
               onChange={(event) => setStrategy(event.target.value)}
               value={strategy}
             >
-              <option style={optionStyle} value="all">{text.all}</option>
-              <option style={optionStyle} value="sell_put">{text.sellPut}</option>
-              <option style={optionStyle} value="covered_call">{text.coveredCall}</option>
+              <option value="all">{text.all}</option>
+              <option value="sell_put">{text.sellPut}</option>
+              <option value="covered_call">{text.coveredCall}</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 font-body-sm">
             {text.sector}
             <select
-              className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary"
+              className={selectClass}
               onChange={(event) => setSector(event.target.value)}
               value={sector}
             >
-              <option style={optionStyle} value="">{text.all}</option>
+              <option value="">{text.all}</option>
               {sectors.map((item) => (
-                <option key={item} style={optionStyle} value={item}>{item}</option>
+                <option key={item} value={item}>{item}</option>
               ))}
             </select>
           </label>
           <label className="flex flex-col gap-1 font-body-sm">
             {text.dte}
             <select
-              className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary"
+              className={selectClass}
               onChange={(event) => setDteBucket(event.target.value)}
               value={dteBucket}
             >
-              <option style={optionStyle} value="">{text.all}</option>
-              <option style={optionStyle} value="7-21">7-21</option>
-              <option style={optionStyle} value="21-45">21-45</option>
-              <option style={optionStyle} value="45-60">45-60</option>
+              <option value="">{text.all}</option>
+              <option value="7-21">7-21</option>
+              <option value="21-45">21-45</option>
+              <option value="45-60">45-60</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 font-body-sm">
             {text.top}
             <input
-              className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
+              className={`${selectClass} font-data-mono`}
               min={1}
               max={250}
               onChange={(event) => setTop(Number(event.target.value))}
@@ -344,64 +379,8 @@ export function OptionsRadarView({
               value={top}
             />
           </label>
-          <div className="rounded border border-border-subtle bg-surface-muted p-3">
-            <label className="flex flex-col gap-1 font-body-sm">
-              {text.refreshSource}
-              <select
-                className="rounded border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary"
-                onChange={(event) => setRefreshSource(event.target.value)}
-                value={refreshSource}
-              >
-                <option style={optionStyle} value="public">
-                  {text.publicSource}
-                </option>
-                <option style={optionStyle} value="sample">
-                  {text.sampleSource}
-                </option>
-              </select>
-            </label>
-            <div className="mt-3 grid grid-cols-1 gap-2">
-              <button
-                className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
-                disabled={!hydrated || refreshMutation.isPending}
-                onClick={() => refreshMutation.mutate("universe")}
-                type="button"
-              >
-                <RefreshCw className="mr-2 inline" size={16} />
-                {text.refreshUniverse}
-              </button>
-              <button
-                className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
-                disabled={!hydrated || refreshMutation.isPending}
-                onClick={() => refreshMutation.mutate("earnings")}
-                type="button"
-              >
-                <RefreshCw className="mr-2 inline" size={16} />
-                {text.refreshEarnings}
-              </button>
-              <button
-                className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
-                disabled={!hydrated || refreshMutation.isPending}
-                onClick={() => refreshMutation.mutate("vix")}
-                type="button"
-              >
-                <RefreshCw className="mr-2 inline" size={16} />
-                {text.refreshVix}
-              </button>
-            </div>
-            {refreshStatus ? (
-              <div className="mt-3 rounded border border-accent-success/40 bg-accent-success/10 p-2 font-body-sm text-accent-success">
-                {refreshStatus}
-              </div>
-            ) : null}
-            {refreshMutation.error instanceof Error ? (
-              <div className="mt-3 rounded border border-danger/40 bg-danger/10 p-2 font-body-sm text-danger">
-                {refreshMutation.error.message}
-              </div>
-            ) : null}
-          </div>
           <button
-            className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:opacity-50"
+            className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:opacity-50"
             disabled={!hydrated || scanMutation.isPending}
             onClick={() => scanMutation.mutate()}
             type="button"
@@ -409,61 +388,153 @@ export function OptionsRadarView({
             <RefreshCw className="mr-2 inline" size={16} />
             {scanMutation.isPending ? text.running : text.runSample}
           </button>
-          <button
-            className="rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:opacity-50"
-            disabled={!hydrated || datesQuery.isFetching || scanQuery.isFetching}
-            onClick={() => {
-              void datesQuery.refetch();
-              void scanQuery.refetch();
-            }}
-            type="button"
-          >
-            <RefreshCw className="mr-2 inline" size={16} />
-            {text.refresh}
-          </button>
-          <button
-            className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:opacity-50"
-            disabled={!hydrated || !csv || candidates.length === 0}
-            onClick={exportCsv}
-            type="button"
-          >
-            <Download className="mr-2 inline" size={16} />
-            {text.export}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className="rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:opacity-50"
+              disabled={!hydrated || datesQuery.isFetching || scanQuery.isFetching}
+              onClick={() => {
+                void datesQuery.refetch();
+                void scanQuery.refetch();
+              }}
+              type="button"
+            >
+              <RefreshCw className="mr-2 inline" size={16} />
+              {text.refresh}
+            </button>
+            <button
+              className="rounded-lg border border-accent-success/40 px-4 py-2 font-body-sm font-semibold text-accent-success disabled:opacity-50"
+              disabled={!hydrated || !csv || candidates.length === 0}
+              onClick={exportCsv}
+              type="button"
+            >
+              <Download className="mr-2 inline" size={16} />
+              {text.export}
+            </button>
+          </div>
           {scanMutation.error instanceof Error ? (
-            <div className="rounded border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
+            <div className="rounded-lg border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
               {scanMutation.error.message}
             </div>
           ) : null}
           {scanStatus ? (
-            <div className="rounded border border-accent-success/40 bg-accent-success/10 p-3 font-body-sm text-accent-success">
+            <div className="rounded-lg border border-accent-success/40 bg-accent-success/10 p-3 font-body-sm text-accent-success">
               {scanStatus}
             </div>
           ) : null}
+          <div className="mt-1 rounded-lg border border-border-subtle bg-bg-surface-muted">
+            <button
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left font-label-caps text-text-secondary"
+              onClick={() => setAdvancedOpen((open) => !open)}
+              type="button"
+            >
+              <span>{text.advanced}</span>
+              {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {advancedOpen ? (
+              <div className="border-t border-border-subtle p-3">
+                <p className="mb-3 font-body-sm text-text-secondary">{text.advancedHint}</p>
+                <label className="flex flex-col gap-1 font-body-sm">
+                  {text.refreshSource}
+                  <select
+                    className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary"
+                    onChange={(event) => setRefreshSource(event.target.value)}
+                    value={refreshSource}
+                  >
+                    <option value="public">
+                      {text.publicSource}
+                    </option>
+                    <option value="sample">
+                      {text.sampleSource}
+                    </option>
+                  </select>
+                </label>
+                <div className="mt-3 grid grid-cols-1 gap-2">
+                  <button
+                    className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
+                    disabled={!hydrated || refreshMutation.isPending}
+                    onClick={() => refreshMutation.mutate("universe")}
+                    type="button"
+                  >
+                    <RefreshCw className="mr-2 inline" size={16} />
+                    {text.refreshUniverse}
+                  </button>
+                  <button
+                    className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
+                    disabled={!hydrated || refreshMutation.isPending}
+                    onClick={() => refreshMutation.mutate("earnings")}
+                    type="button"
+                  >
+                    <RefreshCw className="mr-2 inline" size={16} />
+                    {text.refreshEarnings}
+                  </button>
+                  <button
+                    className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
+                    disabled={!hydrated || refreshMutation.isPending}
+                    onClick={() => refreshMutation.mutate("vix")}
+                    type="button"
+                  >
+                    <RefreshCw className="mr-2 inline" size={16} />
+                    {text.refreshVix}
+                  </button>
+                </div>
+                {refreshStatus ? (
+                  <div className="mt-3 rounded-lg border border-accent-success/40 bg-accent-success/10 p-2 font-body-sm text-accent-success">
+                    {refreshStatus}
+                  </div>
+                ) : null}
+                {refreshMutation.error instanceof Error ? (
+                  <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 p-2 font-body-sm text-danger">
+                    {refreshMutation.error.message}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </form>
       </aside>
-      <main className="min-w-0 overflow-y-auto p-5">
-        <div className="mb-4 flex items-center gap-2 rounded border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
-          <ShieldCheck size={18} />
-          {text.safety}
-        </div>
+      <main className="flex min-w-0 flex-col gap-4 overflow-y-auto p-5">
+        <PageHeader
+          eyebrow={text.eyebrow}
+          title={text.title}
+          subtitle={text.safety}
+          icon={<ShieldCheck className="text-warning" size={20} />}
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill
+                label={text.statusState}
+                value={scanMutation.isPending ? `${text.statusScanning} ${elapsedSeconds}s` : text.statusIdle}
+                tone={scanMutation.isPending ? "info" : "neutral"}
+              />
+              <StatusPill
+                label={text.statusScanDate}
+                value={activeDate || text.statusNone}
+                tone="neutral"
+              />
+              <StatusPill
+                label={text.statusDataAsOf}
+                value={scanQuery.data?.run_date ?? activeDate ?? text.statusNone}
+                tone={freshness?.fresh ? "success" : scanQuery.data?.is_stale ? "danger" : "neutral"}
+              />
+            </div>
+          }
+        />
         {scanMutation.isPending ? (
-          <section className="mb-4 rounded border border-info/40 bg-info/10 p-4 text-info">
+          <Card tone="info">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="font-headline-lg text-info">{text.scanRunningTitle}</h2>
+                <h2 className="font-label-caps text-info">{text.scanRunningTitle}</h2>
                 <p className="mt-1 font-body-sm text-text-secondary">{text.scanRunningBody}</p>
               </div>
-              <div className="rounded border border-info/30 px-3 py-2 font-data-mono text-sm">
+              <div className="rounded-lg border border-info/30 px-3 py-2 font-data-mono text-sm text-info">
                 {text.scanElapsed}: {elapsedSeconds}s
               </div>
             </div>
-          </section>
+          </Card>
         ) : null}
         <RegimeBanner regime={regime} text={text} />
         {freshness ? (
           <div
-            className={`mb-4 rounded border p-3 font-body-sm ${
+            className={`rounded-lg border p-3 font-body-sm ${
               freshness.fresh
                 ? "border-accent-success/40 bg-accent-success/10 text-accent-success"
                 : "border-warning/40 bg-warning/10 text-warning"
@@ -473,37 +544,43 @@ export function OptionsRadarView({
           </div>
         ) : null}
         {scanQuery.data?.is_stale ? (
-          <div className="mb-4 rounded border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
+          <div className="rounded-lg border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
             <p className="font-semibold">{text.staleBlock}</p>
             <p className="mt-1">
               {text.expiredRows}: {scanQuery.data.expired_candidate_count ?? 0}
             </p>
           </div>
         ) : null}
-        <section className="mb-4 grid grid-cols-3 gap-3">
-          <Metric label={text.rows} value={String(candidates.length)} />
-          <Metric label={text.scanned} value={String(scanQuery.data?.scanned_tickers ?? 0)} />
-          <Metric label={text.failed} value={String(scanQuery.data?.failed_tickers.length ?? 0)} />
+        <section className="grid grid-cols-3 gap-3">
+          <MetricStat label={text.rows} value={String(candidates.length)} tone="success" />
+          <MetricStat label={text.scanned} value={String(scanQuery.data?.scanned_tickers ?? 0)} />
+          <MetricStat
+            label={text.failed}
+            value={String(scanQuery.data?.failed_tickers.length ?? 0)}
+            tone={(scanQuery.data?.failed_tickers.length ?? 0) > 0 ? "warning" : "neutral"}
+          />
         </section>
         {(scanQuery.data?.scanned_tickers ?? 0) <= 1 && candidates.length > 0 ? (
-          <div className="mb-4 rounded border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
+          <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
             {locale === "zh"
               ? "当前快照只包含很少标的，所以表格可能集中在单一股票。运行 quant-system options daily-scan --top 100 可生成更完整的全市场扫描。"
               : "This snapshot only scanned a very small universe, so the table may concentrate in one ticker. Run quant-system options daily-scan --top 100 for a broader market scan."}
           </div>
         ) : null}
-        {scanQuery.isLoading ? (
-          <div className="rounded border border-border-subtle bg-bg-surface p-6 font-body-sm text-text-secondary">
-            Loading daily scan...
+        <Card padded={false}>
+          <div className="border-b border-border-subtle px-4 py-3">
+            <SectionTitle title={text.candidatesTitle} hint={text.candidatesHint} />
           </div>
-        ) : scanQuery.isError || candidates.length === 0 ? (
-          <div className="rounded border border-border-subtle bg-bg-surface p-6 font-body-sm text-text-secondary">
-            {scanQuery.error instanceof Error ? scanQuery.error.message : text.noData}
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded border border-border-subtle bg-bg-surface">
+          {scanQuery.isLoading ? (
+            <div className="p-6 font-body-sm text-text-secondary">Loading daily scan...</div>
+          ) : scanQuery.isError || candidates.length === 0 ? (
+            <div className="p-6 font-body-sm text-text-secondary">
+              {scanQuery.error instanceof Error ? scanQuery.error.message : text.noData}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-bg-surface">
                 <tr className="border-b border-border-subtle">
                   {text.headings.map((heading, index) => (
                     <th className="px-3 py-2 font-label-caps text-text-secondary" key={heading}>
@@ -565,17 +642,9 @@ export function OptionsRadarView({
               </tbody>
             </table>
           </div>
-        )}
+          )}
+        </Card>
       </main>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-3">
-      <div className="font-label-caps text-text-secondary">{label}</div>
-      <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">{value}</div>
     </div>
   );
 }
@@ -663,7 +732,7 @@ function RegimeBanner({
   const palette: Record<RegimeInfo["label"], string> = {
     Normal: "border-accent-success/40 bg-accent-success/10 text-accent-success",
     Elevated: "border-warning/40 bg-warning/10 text-warning",
-    Panic: "border-accent-danger/40 bg-accent-danger/10 text-accent-danger",
+    Panic: "border-danger/40 bg-danger/10 text-danger",
     Unknown: "border-border-subtle bg-bg-surface text-text-secondary",
   };
   const detail =
@@ -675,7 +744,7 @@ function RegimeBanner({
           ? text.regimePanic
           : text.regimeUnknown;
   return (
-    <div className={`mb-4 rounded border p-3 font-body-sm ${palette[regime.label]}`}>
+    <div className={`rounded-lg border p-3 font-body-sm ${palette[regime.label]}`}>
       <div className="flex items-center justify-between">
         <span className="font-label-caps">{text.regime}</span>
         <span className="font-data-mono text-sm font-bold">{regime.label}</span>

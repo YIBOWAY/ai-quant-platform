@@ -9,6 +9,12 @@ type DataPreviewTableProps = {
   emptyDescription: string;
   maxRows?: number;
   columns?: string[];
+  /** Optional display names per raw column key, e.g. { avg_cost: "均价" }. */
+  columnLabels?: Record<string, string>;
+  /** Optional hover explanations per raw column key. */
+  columnTips?: Record<string, string>;
+  /** Localizes table chrome ("showing N/M"). Defaults to en. */
+  locale?: "en" | "zh";
 };
 
 function formatValue(value: unknown) {
@@ -35,6 +41,9 @@ export function DataPreviewTable({
   emptyDescription,
   maxRows = 10,
   columns,
+  columnLabels,
+  columnTips,
+  locale = "en",
 }: DataPreviewTableProps) {
   if (!rows.length) {
     return <EmptyState title={emptyTitle} description={emptyDescription} />;
@@ -43,16 +52,26 @@ export function DataPreviewTable({
   const visibleRows = rows.slice(0, maxRows);
   const resolvedColumns =
     columns ?? Array.from(new Set(visibleRows.flatMap((row) => Object.keys(row))));
+  // Right-align numeric columns (sampled from the first row carrying a value).
+  const numericColumns = new Set(
+    resolvedColumns.filter((column) =>
+      visibleRows.some((row) => typeof row[column] === "number"),
+    ),
+  );
+  const counter =
+    locale === "zh"
+      ? `显示 ${visibleRows.length} / ${rows.length} 行`
+      : `showing ${visibleRows.length}/${rows.length}`;
 
   return (
-    <section className="rounded border border-border-subtle bg-bg-surface p-4">
+    <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h3 className="font-label-caps text-text-primary">{title}</h3>
           <p className="mt-1 font-body-sm text-text-secondary">{description}</p>
         </div>
-        <span className="font-data-mono text-[10px] uppercase text-text-secondary">
-          showing {visibleRows.length}/{rows.length}
+        <span className="shrink-0 font-data-mono text-[10px] uppercase text-text-secondary">
+          {counter}
         </span>
       </div>
       <div className="overflow-auto">
@@ -60,8 +79,14 @@ export function DataPreviewTable({
           <thead>
             <tr className="border-b border-border-subtle">
               {resolvedColumns.map((column) => (
-                <th key={column} className="pb-2 pr-3 font-label-caps text-text-secondary">
-                  {column}
+                <th
+                  key={column}
+                  className={`pb-2 pr-3 font-label-caps text-text-secondary ${
+                    numericColumns.has(column) ? "text-right" : ""
+                  } ${columnTips?.[column] ? "cursor-help underline decoration-dotted decoration-border-subtle underline-offset-4" : ""}`}
+                  title={columnTips?.[column]}
+                >
+                  {columnLabels?.[column] ?? column}
                 </th>
               ))}
             </tr>
@@ -70,8 +95,14 @@ export function DataPreviewTable({
             {visibleRows.map((row, index) => (
               <tr key={`${title}-${index}`} className="border-b border-border-subtle/40">
                 {resolvedColumns.map((column) => (
-                  <td key={`${title}-${index}-${column}`} className="py-2 pr-3 align-top">
-                    <span className="block max-w-56 truncate" title={formatValue(row[column])}>
+                  <td
+                    key={`${title}-${index}-${column}`}
+                    className={`py-2 pr-3 align-top ${numericColumns.has(column) ? "text-right" : ""}`}
+                  >
+                    <span
+                      className={`block max-w-56 truncate ${numericColumns.has(column) ? "tabular-nums" : ""}`}
+                      title={formatValue(row[column])}
+                    >
                       {formatValue(row[column])}
                     </span>
                   </td>

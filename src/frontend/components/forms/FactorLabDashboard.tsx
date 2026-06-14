@@ -1,219 +1,396 @@
 'use client';
 
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { useState } from "react";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
-import type { FactorLabResponse, PreviewRecord } from "@/lib/api";
+import { DataSourceBadge, SyntheticMetricsWarning, isSampleSource } from "@/components/DataSourceBadge";
+import { GLOSSARY } from "@/components/InfoTip";
+import { FactorLabControls } from "@/components/forms/FactorLabControls";
+import { FactorRunForm } from "@/components/forms/FactorRunForm";
+import { Card, MetricStat, StatusPill } from "@/components/ui/primitives";
+import { Tabs } from "@/components/ui/Tabs";
+import type {
+  FactorLabResponse,
+  FactorRunSummary,
+  PreviewRecord,
+  UniverseDefinition,
+} from "@/lib/api";
 import { localizePath, type Locale } from "@/lib/locale";
-
-type FactorRunSummary = {
-  id: string;
-  source?: string;
-  row_count: number;
-  signal_count: number;
-};
 
 type FactorLabDashboardProps = {
   dashboard: FactorLabResponse;
-  latestRun?: FactorRunSummary | null;
+  runs: FactorRunSummary[];
+  hiddenSampleCount: number;
+  universes: UniverseDefinition[];
+  controlsInitial: { provider: string; universeId: string; symbol: string; benchmarkSymbol: string };
   locale: Locale;
 };
 
 const copy = {
   en: {
     title: "Factor Lab",
-    subtitle:
-      "Read-only factor diagnostics. QQQ is the default timing symbol and benchmark, not the whole universe.",
-    scope: "Scope",
+    subtitle: (symbol: string) =>
+      `Read-only health diagnostics for every registered factor, plus a single-symbol timing sanity check on ${symbol}.`,
+    workflow: "How to use: 1) adjust the query below · 2) read the health tables · 3) run a saved factor research for charts.",
+    scope: "Query",
     universe: "Universe",
     benchmark: "Benchmark",
     cache: "Cache",
     guardrails: "Guardrails",
     source: "Source",
-    walkForward: "Walk-forward",
-    leakage: "Leakage",
+    walkForward: "Walk-forward folds",
+    leakage: "Leakage audit",
     status: "Status",
     generated: "Generated",
     exploratory: "Exploratory only",
     overfit: "Easy to overfit. Review walk-forward and leakage notes before using a factor elsewhere.",
-    latestRun: "Latest saved run",
-    noRun: "No saved run",
-    openRun: "Open run",
+    cacheStatus: { cached: "cached", recomputed: "recomputed" } as Record<string, string>,
+    leakageMap: {
+      basic_passed: { label: "passed", tone: "success" },
+      pass: { label: "passed", tone: "success" },
+      failed: { label: "FAILED", tone: "danger" },
+      empty: { label: "no data", tone: "neutral" },
+    } as Record<string, { label: string; tone: "success" | "danger" | "neutral" }>,
+    runNew: "Run Factor Research",
+    runNewDesc: "Computes factor values, scores, IC and quantile returns for your symbols, then opens the saved result with charts.",
+    savedRuns: "Saved runs",
+    noRun: "No saved runs yet — use the form above to create one.",
+    openRun: "Open",
+    hiddenSample: (n: number) => `${n} sample run(s) hidden —`,
+    showSample: "show",
+    factorsCard: "Registered factors",
+    directionUp: "higher is better",
+    directionDown: "lower is better",
     crossTab: "Cross-Sectional Health",
     timingTab: "Single-Ticker Timing",
     crossTitle: "Cross-Sectional Factor Health",
-    crossDesc: "IC, decay, quantile spread, turnover, and coverage across the fixed universe.",
-    timingTitle: "QQQ Timing Diagnostics",
-    timingDesc: "Single-symbol z-score timing test for every registered factor.",
+    crossDesc: "Per-factor predictive quality across the selected universe. Hover headers for definitions; values are 0-1 fractions.",
+    timingTitle: (symbol: string) => `${symbol} Timing Diagnostics`,
+    timingDesc: "Long-when-z-score-positive sanity test per factor on the timing symbol. '--' = never evaluated (no data).",
     emptyTitle: "No diagnostics",
-    emptyDesc: "The backend did not return factor lab rows.",
+    emptyDesc: "The backend did not return factor lab rows. If the provider is futu, make sure OpenD is running, or switch the data source above.",
+    columns: {
+      factor_id: "Factor ID",
+      factor_name: "Name",
+      direction: "Direction",
+      ic_mean: "Rank IC (h1)",
+      ic_decay: "IC Decay (h5−h1)",
+      quantile_spread: "Quantile Spread",
+      turnover: "Turnover",
+      coverage: "Coverage",
+      sample_count: "Samples",
+      sharpe: "Sharpe",
+      max_drawdown: "Max Drawdown",
+      win_rate: "Win Rate",
+      trade_count: "Trades",
+    } as Record<string, string>,
   },
   zh: {
     title: "因子实验室",
-    subtitle: "只读因子体检看板。QQQ 是默认择时标的和基准，不是唯一股票池。",
-    scope: "范围",
+    subtitle: (symbol: string) =>
+      `所有已登记因子的只读体检看板，外加在 ${symbol} 上的单标的择时抽检。`,
+    workflow: "用法：1) 在下方调整查询 · 2) 阅读体检表 · 3) 运行一次因子研究查看图表。",
+    scope: "查询",
     universe: "股票池",
     benchmark: "基准",
     cache: "缓存",
     guardrails: "护栏",
     source: "数据源",
-    walkForward: "滚动验证",
+    walkForward: "滚动验证折数",
     leakage: "泄漏检查",
     status: "状态",
     generated: "生成时间",
     exploratory: "仅用于探索",
     overfit: "容易过拟合。因子进入其他流程前，需要看滚动验证和泄漏检查。",
-    latestRun: "最近保存结果",
-    noRun: "暂无保存结果",
-    openRun: "打开结果",
+    cacheStatus: { cached: "已缓存", recomputed: "新计算" } as Record<string, string>,
+    leakageMap: {
+      basic_passed: { label: "通过", tone: "success" },
+      pass: { label: "通过", tone: "success" },
+      failed: { label: "未通过", tone: "danger" },
+      empty: { label: "无数据", tone: "neutral" },
+    } as Record<string, { label: string; tone: "success" | "danger" | "neutral" }>,
+    runNew: "运行因子研究",
+    runNewDesc: "对你给定的标的计算因子值、评分、IC 与分位收益，完成后打开带图表的保存结果。",
+    savedRuns: "已保存运行",
+    noRun: "暂无保存结果——用上方表单创建一次。",
+    openRun: "打开",
+    hiddenSample: (n: number) => `已隐藏 ${n} 条 sample 演示运行 ——`,
+    showSample: "显示",
+    factorsCard: "已登记因子",
+    directionUp: "越高越好",
+    directionDown: "越低越好",
     crossTab: "横截面体检",
     timingTab: "单标的择时",
     crossTitle: "横截面因子体检",
-    crossDesc: "在固定股票池内查看 IC、衰减、分位收益、换手和覆盖度。",
-    timingTitle: "QQQ 择时诊断",
-    timingDesc: "每个已登记因子在 QQQ 上的 z-score 择时测试。",
+    crossDesc: "各因子在所选股票池内的预测质量。悬停列头看定义；数值为 0-1 小数。",
+    timingTitle: (symbol: string) => `${symbol} 择时诊断`,
+    timingDesc: "每个因子在择时标的上的「z 分数为正则做多」抽检。“--” = 没有可评估数据。",
     emptyTitle: "暂无诊断",
-    emptyDesc: "后端没有返回因子实验室数据。",
+    emptyDesc: "后端没有返回因子实验室数据。若数据源为 futu，请确认 OpenD 已启动，或在上方切换数据源。",
+    columns: {
+      factor_id: "因子 ID",
+      factor_name: "名称",
+      direction: "方向",
+      ic_mean: "Rank IC 均值 (h1)",
+      ic_decay: "IC 衰减 (h5−h1)",
+      quantile_spread: "分位价差",
+      turnover: "换手",
+      coverage: "覆盖率",
+      sample_count: "样本数",
+      sharpe: "夏普",
+      max_drawdown: "最大回撤",
+      win_rate: "胜率",
+      trade_count: "交易数",
+    } as Record<string, string>,
   },
 } as const;
 
+const SECTION_LABEL = "font-label-caps text-text-secondary";
+
 export function FactorLabDashboard({
   dashboard,
-  latestRun,
+  runs,
+  hiddenSampleCount,
+  universes,
+  controlsInitial,
   locale,
 }: FactorLabDashboardProps) {
   const text = copy[locale];
-  const [tab, setTab] = useState<"cross" | "timing">("cross");
-  const rows =
-    tab === "cross"
-      ? dashboard.cross_sectional.rows
-      : dashboard.timing.rows;
+  const timingSymbol = dashboard.timing.symbol || "QQQ";
+
+  const walkForwardFolds = String(
+    (dashboard.guardrails.walk_forward as Record<string, unknown> | undefined)?.fold_count ?? 0,
+  );
+  const leakageRaw = String(
+    (dashboard.guardrails.leakage_audit as Record<string, unknown> | undefined)?.status ?? "--",
+  ).toLowerCase();
+  const leakage = text.leakageMap[leakageRaw] ?? { label: leakageRaw, tone: "neutral" as const };
+  const cacheStatusRaw = String(dashboard.cache.status ?? "--");
+  const cacheStatus = text.cacheStatus[cacheStatusRaw] ?? cacheStatusRaw;
+
+  const columnTips: Record<string, string> = {
+    ic_mean: GLOSSARY.rankIc[locale],
+    ic_decay: GLOSSARY.icDecay[locale],
+    quantile_spread: GLOSSARY.quantileSpread[locale],
+    turnover: GLOSSARY.turnover[locale],
+    coverage: GLOSSARY.coverage[locale],
+    sharpe: GLOSSARY.sharpe[locale],
+    max_drawdown: GLOSSARY.maxDrawdown[locale],
+    win_rate: GLOSSARY.winRate[locale],
+    direction: locale === "zh" ? "因子值越高越好还是越低越好（决定 IC 正负怎么读）。" : "Whether higher or lower factor values are better (how to read the IC sign).",
+  };
+
+  const crossRows = (dashboard.cross_sectional.rows as PreviewRecord[]).map((row) => ({
+    ...row,
+    direction:
+      String(row.direction ?? "") === "lower_is_better" ? text.directionDown :
+      String(row.direction ?? "") === "higher_is_better" ? text.directionUp :
+      String(row.direction ?? "--"),
+  }));
+  const timingRows = (dashboard.timing.rows as PreviewRecord[]).map((row) => {
+    const noData = Number(row.trade_count ?? 0) === 0 && Number(row.coverage ?? 0) === 0;
+    if (!noData) return row;
+    return {
+      ...row,
+      sharpe: "--",
+      max_drawdown: "--",
+      win_rate: "--",
+      trade_count: "--",
+      coverage: "--",
+    };
+  });
+
+  const tabItems = [
+    {
+      id: "cross",
+      label: text.crossTab,
+      content: (
+        <DataPreviewTable
+          columns={[
+            "factor_id",
+            "factor_name",
+            "direction",
+            "ic_mean",
+            "ic_decay",
+            "quantile_spread",
+            "turnover",
+            "coverage",
+            "sample_count",
+          ]}
+          columnLabels={text.columns}
+          columnTips={columnTips}
+          description={text.crossDesc}
+          emptyDescription={text.emptyDesc}
+          emptyTitle={text.emptyTitle}
+          locale={locale}
+          maxRows={50}
+          rows={crossRows}
+          title={text.crossTitle}
+        />
+      ),
+    },
+    {
+      id: "timing",
+      label: text.timingTab,
+      content: (
+        <DataPreviewTable
+          columns={[
+            "factor_id",
+            "factor_name",
+            "sharpe",
+            "max_drawdown",
+            "win_rate",
+            "trade_count",
+            "coverage",
+          ]}
+          columnLabels={text.columns}
+          columnTips={columnTips}
+          description={text.timingDesc}
+          emptyDescription={text.emptyDesc}
+          emptyTitle={text.emptyTitle}
+          locale={locale}
+          maxRows={50}
+          rows={timingRows}
+          title={text.timingTitle(timingSymbol)}
+        />
+      ),
+    },
+  ];
 
   return (
-    <main className="flex h-full min-h-0 bg-base">
-      <aside className="flex h-full w-[320px] shrink-0 flex-col overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
+    <div className="flex h-full min-h-0 flex-col bg-bg-base lg:flex-row">
+      <aside className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto border-b border-border-subtle bg-bg-surface p-4 lg:h-full lg:w-[320px] lg:border-b-0 lg:border-r">
         <div>
           <h2 className="font-headline-lg text-text-primary">{text.title}</h2>
-          <p className="mt-2 font-body-sm text-text-secondary">{text.subtitle}</p>
+          <p className="mt-2 font-body-sm text-text-secondary">{text.subtitle(timingSymbol)}</p>
+          <p className="mt-2 font-body-sm text-text-secondary/80">{text.workflow}</p>
         </div>
 
-        <section className="mt-5 rounded border border-border-subtle bg-surface-muted p-3">
-          <div className="font-label-caps text-text-secondary">{text.scope}</div>
-          <div className="mt-3 space-y-3 font-body-sm">
-            <Metric label={text.universe} value={`${dashboard.universe.name} (${dashboard.universe.symbols.length})`} />
-            <Metric label={text.benchmark} value={dashboard.benchmark_symbol} />
-            <div>
-              <div className="text-text-secondary">{text.source}</div>
-              <div className="mt-1">
-                <DataSourceBadge source={dashboard.source} />
-              </div>
+        <Card padded={false}>
+          <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-2">
+            <span className={SECTION_LABEL}>{text.scope}</span>
+            <DataSourceBadge source={dashboard.source} />
+          </div>
+          <div className="p-3">
+            <FactorLabControls initial={controlsInitial} locale={locale} universes={universes} />
+          </div>
+          <div className="divide-y divide-border-subtle/60 border-t border-border-subtle">
+            <MetricStat
+              size="inline"
+              label={text.universe}
+              value={`${dashboard.universe.name} · ${dashboard.universe.symbols.length || "--"}`}
+              hint={dashboard.universe.symbols.join(", ")}
+            />
+            <MetricStat size="inline" label={text.benchmark} value={dashboard.benchmark_symbol} />
+          </div>
+        </Card>
+
+        <Card padded={false}>
+          <div className="border-b border-border-subtle px-3 py-2">
+            <span className={SECTION_LABEL}>{text.runNew}</span>
+            <p className="mt-1 font-body-sm text-text-secondary">{text.runNewDesc}</p>
+          </div>
+          <div className="p-3">
+            <FactorRunForm locale={locale} />
+          </div>
+        </Card>
+
+        <Card padded={false}>
+          <div className="border-b border-border-subtle px-3 py-2">
+            <span className={SECTION_LABEL}>{text.savedRuns}</span>
+          </div>
+          <div className="p-3">
+            {runs.length ? (
+              <ul className="space-y-2">
+                {runs.slice(0, 5).map((run) => (
+                  <li className="flex items-center justify-between gap-2" key={run.id}>
+                    <span className="min-w-0 truncate font-data-mono text-xs text-text-primary" title={run.id}>
+                      {run.id}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {run.source ? <DataSourceBadge source={run.source} /> : null}
+                      <Link
+                        aria-label={`Open ${run.id}`}
+                        className="font-body-sm text-info underline-offset-2 hover:underline"
+                        href={localizePath(`/factor-lab/${run.id}`, locale)}
+                      >
+                        {text.openRun}
+                      </Link>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="font-body-sm text-text-secondary">{text.noRun}</p>
+            )}
+            {hiddenSampleCount > 0 ? (
+              <p className="mt-2 font-body-sm text-text-secondary">
+                {text.hiddenSample(hiddenSampleCount)}{" "}
+                <Link className="text-info underline underline-offset-2" href="?include_sample=1">
+                  {text.showSample}
+                </Link>
+              </p>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card tone="warning" padded={false}>
+          <div className="border-b border-warning/40 px-3 py-2">
+            <span className="font-label-caps text-warning">{text.guardrails}</span>
+          </div>
+          <div className="space-y-3 p-3">
+            <p className="font-body-sm text-text-secondary">{text.overfit}</p>
+            <div className="flex flex-wrap gap-2">
+              <StatusPill label={text.status} value={text.exploratory} tone="warning" />
+              <StatusPill label={text.walkForward} value={walkForwardFolds} tone="neutral" />
+              <StatusPill label={text.leakage} value={leakage.label} tone={leakage.tone} />
             </div>
           </div>
-        </section>
+        </Card>
 
-        <section className="mt-4 rounded border border-border-subtle bg-surface-muted p-3">
-          <div className="font-label-caps text-text-secondary">{text.guardrails}</div>
-          <div className="mt-3 space-y-2 font-body-sm text-text-secondary">
-            <div className="font-semibold text-warning">{text.exploratory}</div>
-            <p>{text.overfit}</p>
-            <Metric
-              label={text.walkForward}
-              value={String((dashboard.guardrails.walk_forward as Record<string, unknown> | undefined)?.fold_count ?? 0)}
+        {dashboard.factors.length ? (
+          <Card padded={false}>
+            <details>
+              <summary className="cursor-pointer px-3 py-2 font-label-caps text-text-secondary transition-colors hover:text-text-primary">
+                {text.factorsCard} · {dashboard.factors.length}
+              </summary>
+              <ul className="space-y-2 border-t border-border-subtle p-3">
+                {dashboard.factors.map((factor) => (
+                  <li key={factor.factor_id}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-data-mono text-xs text-text-primary">{factor.factor_name}</span>
+                      <span className="font-label-caps text-[10px] text-text-secondary">
+                        {factor.direction === "lower_is_better" ? text.directionDown : text.directionUp}
+                      </span>
+                    </div>
+                    {factor.description ? (
+                      <p className="mt-0.5 font-body-sm text-text-secondary">{factor.description}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </Card>
+        ) : null}
+
+        <Card padded={false}>
+          <div className="border-b border-border-subtle px-3 py-2">
+            <span className={SECTION_LABEL}>{text.cache}</span>
+          </div>
+          <div className="divide-y divide-border-subtle/60">
+            <MetricStat size="inline" label={text.status} value={cacheStatus} />
+            <MetricStat
+              size="inline"
+              label={text.generated}
+              value={dashboard.generated_at?.slice(0, 19).replace("T", " ") ?? "--"}
             />
-            <Metric
-              label={text.leakage}
-              value={String((dashboard.guardrails.leakage_audit as Record<string, unknown> | undefined)?.status ?? "--")}
-            />
           </div>
-        </section>
-
-        <section className="mt-4 rounded border border-border-subtle bg-surface-muted p-3">
-          <div className="font-label-caps text-text-secondary">{text.cache}</div>
-          <div className="mt-3 space-y-2 font-body-sm">
-            <Metric label={text.status} value={String(dashboard.cache.status ?? "--")} />
-            <Metric label={text.generated} value={dashboard.generated_at?.slice(0, 19) ?? "--"} />
-          </div>
-        </section>
-
-        <section className="mt-4 rounded border border-border-subtle bg-surface-muted p-3">
-          <div className="font-label-caps text-text-secondary">{text.latestRun}</div>
-          <div className="mt-2 truncate font-data-mono text-xs text-text-primary">
-            {latestRun?.id ?? text.noRun}
-          </div>
-          {latestRun?.source ? (
-            <div className="mt-2">
-              <DataSourceBadge source={latestRun.source} />
-            </div>
-          ) : null}
-          {latestRun ? (
-            <Link
-              aria-label={`Open ${latestRun.id}`}
-              className="mt-3 inline-flex rounded border border-border-subtle px-3 py-1.5 font-body-sm text-info"
-              href={localizePath(`/factor-lab/${latestRun.id}`, locale)}
-            >
-              {text.openRun}
-            </Link>
-          ) : null}
-        </section>
+        </Card>
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        <div className="inline-flex w-fit rounded border border-border-subtle bg-bg-surface p-1">
-          <TabButton active={tab === "cross"} onClick={() => setTab("cross")}>
-            {text.crossTab}
-          </TabButton>
-          <TabButton active={tab === "timing"} onClick={() => setTab("timing")}>
-            {text.timingTab}
-          </TabButton>
-        </div>
-
-        <DataPreviewTable
-          columns={
-            tab === "cross"
-              ? ["factor_id", "factor_name", "ic_mean", "ic_decay", "quantile_spread", "turnover", "coverage", "sample_count"]
-              : ["factor_id", "factor_name", "sharpe", "max_drawdown", "win_rate", "trade_count", "coverage"]
-          }
-          description={tab === "cross" ? text.crossDesc : text.timingDesc}
-          emptyDescription={text.emptyDesc}
-          emptyTitle={text.emptyTitle}
-          maxRows={50}
-          rows={rows as PreviewRecord[]}
-          title={tab === "cross" ? text.crossTitle : text.timingTitle}
-        />
+        <SyntheticMetricsWarning source={isSampleSource(dashboard.source) ? dashboard.source : null} locale={locale} />
+        <Tabs items={tabItems} defaultId="cross" />
       </section>
-    </main>
-  );
-}
-
-function TabButton({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean;
-  children: ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={`rounded px-3 py-1.5 font-body-sm ${
-        active ? "bg-accent-success text-on-primary" : "text-text-secondary"
-      }`}
-      onClick={onClick}
-      type="button"
-    >
-      {children}
-    </button>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="font-label-caps text-text-secondary">{label}</div>
-      <div className="mt-1 break-all font-data-mono text-text-primary">{value}</div>
     </div>
   );
 }

@@ -22,3 +22,11 @@ test("locale-prefixed settings route renders Chinese shell", async ({ page }) =>
   await expect(page.getByRole("link", { name: "仪表盘" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "设置", exact: true })).toBeVisible();
 });
+
+test("prediction-market controls keep the active Chinese route", async ({ page }) => {
+  await page.goto("/zh/order-book?provider=sample", { waitUntil: "domcontentloaded" });
+
+  await page.getByRole("button", { name: "加载市场" }).click();
+
+  await expect(page).toHaveURL(/\/zh\/order-book\?/);
+});

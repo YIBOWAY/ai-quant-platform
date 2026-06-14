@@ -71,17 +71,30 @@ type PaperRunResponse = {
   run_id: string;
 };
 
-const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
-const DEFAULTS: PaperFormValues = {
-  symbols: "SPY,QQQ",
-  start: "2024-01-02",
-  end: "2024-02-15",
-  provider: "futu",
-  initial_cash: 100000,
-  lookback: 5,
-  top_n: 1,
-  max_fill_ratio_per_tick: 1,
-};
+function isoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function recentDefaults(): PaperFormValues {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - 180);
+  return {
+    symbols: "SPY,QQQ",
+    start: isoDate(start),
+    end: isoDate(end),
+    provider: "futu",
+    initial_cash: 100000,
+    lookback: 5,
+    top_n: 1,
+    max_fill_ratio_per_tick: 1,
+  };
+}
+
+const inputClass =
+  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
+const inputClassCompact =
+  "rounded-lg border border-border-subtle bg-bg-surface-muted px-2 py-2 font-data-mono text-text-primary";
 
 export function PaperRunForm({
   locale = "en",
@@ -96,7 +109,7 @@ export function PaperRunForm({
   const text = copy[locale];
   const form = useForm<PaperFormValues>({
     resolver: zodResolver(paperSchema),
-    defaultValues: DEFAULTS,
+    defaultValues: recentDefaults(),
   });
   const mutation = useMutation({
     mutationFn: (values: PaperFormValues) =>
@@ -111,6 +124,10 @@ export function PaperRunForm({
     },
   });
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
+  const fieldError = (name: keyof PaperFormValues) => {
+    const message = form.formState.errors[name]?.message;
+    return message ? <span className="font-body-sm text-danger">{String(message)}</span> : null;
+  };
 
   const runPaper = form.handleSubmit((values) => mutation.mutate(values));
 
@@ -119,58 +136,57 @@ export function PaperRunForm({
       <form className="flex flex-col gap-4" onSubmit={runPaper}>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           {text.symbols}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.symbols} {...form.register("symbols")} />
+          <input className={inputClass} {...form.register("symbols")} />
+          {fieldError("symbols")}
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
             {text.start}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.start} type="date" {...form.register("start")} />
+            <input className={inputClassCompact} type="date" {...form.register("start")} />
+            {fieldError("start")}
           </label>
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
             {text.end}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.end} type="date" {...form.register("end")} />
+            <input className={inputClassCompact} type="date" {...form.register("end")} />
+            {fieldError("end")}
           </label>
         </div>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           {text.dataSource}
-          <select
-            className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
-            defaultValue={DEFAULTS.provider}
-            {...form.register("provider")}
-          >
-            <option value="futu" style={optionStyle} disabled={!futuReachable}>
+          <select className={inputClass} {...form.register("provider")}>
+            <option value="futu" disabled={!futuReachable}>
               {futuOptionLabel(futuReachable, locale)}
             </option>
-            <option value="sample" style={optionStyle}>
-              sample
-            </option>
-            <option value="tiingo" style={optionStyle}>
-              tiingo
-            </option>
+            <option value="sample">sample</option>
+            <option value="tiingo">tiingo</option>
           </select>
           <FutuUnavailableHint reachable={futuReachable} locale={locale} />
         </label>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           {text.initialCash}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.initial_cash} type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
+          <input className={inputClass} type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
+          {fieldError("initial_cash")}
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
             {text.lookback}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.lookback} type="number" {...form.register("lookback", { valueAsNumber: true })} />
+            <input className={inputClassCompact} type="number" {...form.register("lookback", { valueAsNumber: true })} />
+            {fieldError("lookback")}
           </label>
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
             {text.topN}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.top_n} type="number" {...form.register("top_n", { valueAsNumber: true })} />
+            <input className={inputClassCompact} type="number" {...form.register("top_n", { valueAsNumber: true })} />
+            {fieldError("top_n")}
           </label>
         </div>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           {text.maxFillRatio}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" defaultValue={DEFAULTS.max_fill_ratio_per_tick} max={1} min={0.01} step={0.01} type="number" {...form.register("max_fill_ratio_per_tick", { valueAsNumber: true })} />
+          <input className={inputClass} max={1} min={0.01} step={0.01} type="number" {...form.register("max_fill_ratio_per_tick", { valueAsNumber: true })} />
+          {fieldError("max_fill_ratio_per_tick")}
         </label>
         <button
           aria-pressed="true"
-          className="flex items-center justify-between rounded border border-warning/40 bg-warning/10 px-3 py-2 font-body-sm text-warning"
+          className="flex items-center justify-between rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 font-body-sm text-warning"
           disabled={!isHydrated}
           onClick={() => setDialogOpen(true)}
           type="button"
@@ -182,7 +198,7 @@ export function PaperRunForm({
         </button>
         {error ? <p className="font-body-sm text-danger">{error}</p> : null}
         <button
-          className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!isHydrated || mutation.isPending}
           type="submit"
         >
@@ -192,13 +208,13 @@ export function PaperRunForm({
 
       {dialogOpen ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded border border-warning/40 bg-bg-surface p-5 shadow-xl" role="alertdialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-lg border border-warning/40 bg-bg-surface p-5 shadow-xl" role="alertdialog" aria-modal="true">
             <h3 className="font-headline-lg text-text-primary">{text.dialogTitle}</h3>
             <p className="mt-3 font-body-sm text-text-secondary">
               {text.dialogBody}
             </p>
             <button
-              className="mt-5 rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary"
+              className="mt-5 rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary"
               onClick={() => setDialogOpen(false)}
               type="button"
             >

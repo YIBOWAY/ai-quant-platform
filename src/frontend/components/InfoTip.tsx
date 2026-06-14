@@ -65,6 +65,58 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     en: "Net debit is the upfront cost paid to open the position. For long-premium trades this is also your maximum loss.",
     zh: "净支出 = 开仓时先付出的成本。对买方策略来说，这通常也是你的最大亏损。",
   },
+  rankIc: {
+    en: "Rank IC is the rank correlation between today's factor values and the next period's returns. Positive and stable means the factor ordered stocks usefully; near 0 means no predictive power.",
+    zh: "Rank IC = 今天的因子值排序与下一期收益排序的相关性。持续为正说明因子的排序有预测力；接近 0 说明没有用。",
+  },
+  icDecay: {
+    en: "IC decay compares the factor's rank IC at a 5-bar horizon minus the 1-bar horizon. A strongly negative value means the signal fades quickly after one bar.",
+    zh: "IC 衰减 = 5 期 Rank IC 减去 1 期 Rank IC。负得越多，说明信号在一期之后衰减得越快。",
+  },
+  quantileSpread: {
+    en: "Quantile spread is the average next-period return of the top factor bucket minus the bottom bucket (5 buckets). Wider positive spread = the factor separates winners from losers better.",
+    zh: "分位价差 = 按因子分 5 组后，最高组与最低组的下一期平均收益之差。正向越大，说明因子区分强弱的能力越好。",
+  },
+  turnover: {
+    en: "Turnover measures how much the factor's top-half selection changes between rebalances. Higher turnover means more trading and more cost to harvest the signal.",
+    zh: "换手率 = 相邻两次调仓之间，因子前一半选股集合的变化比例。换手越高，落地该信号的交易成本越高。",
+  },
+  coverage: {
+    en: "Coverage is the share of symbol-days where the factor produced a usable value. Low coverage means the metrics are computed on thin data.",
+    zh: "覆盖率 = 因子能算出有效值的样本占比。覆盖率低说明指标建立在很少的数据上，可信度打折。",
+  },
+  lookback: {
+    en: "Lookback is how many past bars the factor reads to compute today's value.",
+    zh: "回看窗口 = 计算今天的因子值需要读取多少根历史 K 线。",
+  },
+  zScoreTiming: {
+    en: "The timing test trades one symbol long whenever the factor's z-score (vs its own history) is positive, flipped by factor direction. It is a sanity check, not a strategy.",
+    zh: "择时测试 = 当因子相对自身历史的 z 分数为正时做多该标的（按因子方向翻转）。它是体检，不是策略。",
+  },
+  walkForward: {
+    en: "Walk-forward splits history into rolling train/validation folds. More folds passing means the factor held up out-of-sample, not just in one lucky window.",
+    zh: "滚动验证 = 把历史切成多段训练/验证窗口。通过的折数越多，说明因子不是只在某一段行情里碰巧有效。",
+  },
+  leakage: {
+    en: "The leakage audit checks the factor only uses information available at the time (no future data). A failed audit means the backtest numbers cannot be trusted.",
+    zh: "泄漏检查 = 校验因子只用了当时可得的信息（没偷看未来数据）。检查不通过，回测数字就不可信。",
+  },
+  sharpe: {
+    en: "Sharpe ratio is the annualized return divided by annualized volatility. Above 1 is decent for a single signal; sample-data Sharpes can be absurdly high and mean nothing.",
+    zh: "夏普比率 = 年化收益 ÷ 年化波动。单一信号超过 1 已经不错；sample 演示数据跑出的超高夏普没有意义。",
+  },
+  maxDrawdown: {
+    en: "Max drawdown is the worst peak-to-trough equity loss over the period — the pain you would have had to sit through.",
+    zh: "最大回撤 = 区间内净值从最高点到最低点的最大跌幅，代表你需要承受的最痛阶段。",
+  },
+  winRate: {
+    en: "Win rate is the share of trades that closed profitable. High win rate with a poor Sharpe usually means small wins and large losses.",
+    zh: "胜率 = 盈利交易占全部交易的比例。胜率高但夏普差，通常是小赚大亏。",
+  },
+  priceKind: {
+    en: "Price source per fill: futu_snapshot = live Futu quote at order time; last_close = the most recent real daily close (used when OpenD is offline). Demo prices are never used for the account.",
+    zh: "成交价来源：futu_snapshot = 下单时的 Futu 实时快照；last_close = 最近一根真实日收盘价（OpenD 离线时回退）。账户绝不使用演示价格。",
+  },
 };
 
 export type GlossaryKey = keyof typeof GLOSSARY;
@@ -104,7 +156,7 @@ export function InfoTip({
       </button>
       {open ? (
         <span
-          className="absolute bottom-full left-1/2 z-50 mb-1 w-64 -translate-x-1/2 rounded border border-border-subtle bg-bg-surface p-2 font-body-sm normal-case leading-relaxed text-text-primary shadow-lg"
+          className="absolute bottom-full left-1/2 z-50 mb-1 w-64 -translate-x-1/2 rounded-lg border border-border-subtle bg-bg-surface p-2 font-body-sm normal-case leading-relaxed text-text-primary shadow-lg"
           id={id}
           role="tooltip"
         >

@@ -25,24 +25,44 @@ test("Chinese sidebar uses the same grouped information architecture", async ({ 
   await expect(page.getByText("系统", { exact: true })).toBeVisible();
 });
 
-test("app shell allows page-level scrolling instead of locking the viewport", async ({ page }) => {
+test("app shell keeps a fixed viewport with a scrollable page region inside", async ({ page }) => {
   await page.goto("/backtest");
   await page.waitForLoadState("networkidle");
 
   const layout = await page.evaluate(() => {
     const shell = document.body.querySelector(":scope > main");
-    const bodyStyle = window.getComputedStyle(document.body);
     const shellStyle = shell ? window.getComputedStyle(shell) : null;
+    const hasScrollRegion = shell
+      ? Array.from(shell.querySelectorAll("*")).some((node) => {
+          const overflowY = window.getComputedStyle(node).overflowY;
+          return (
+            (overflowY === "auto" || overflowY === "scroll") &&
+            node.scrollHeight > node.clientHeight
+          );
+        })
+      : false;
     return {
-      bodyOverflowY: bodyStyle.overflowY,
       shellPosition: shellStyle?.position ?? null,
-      shellOverflowY: shellStyle?.overflowY ?? null,
+      hasScrollRegion,
     };
   });
 
-  expect(layout.bodyOverflowY).not.toBe("hidden");
   expect(layout.shellPosition).not.toBe("fixed");
-  expect(layout.shellOverflowY).not.toBe("hidden");
+  expect(layout.hasScrollRegion).toBe(true);
+});
+
+test("mobile shell gives the page full width and exposes navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/position-map");
+  await page.waitForLoadState("networkidle");
+
+  await expect(page.getByTestId("desktop-sidebar")).toBeHidden();
+  const shellBox = await page.locator("body > main").boundingBox();
+  expect(shellBox?.x ?? 999).toBeLessThan(2);
+  expect(shellBox?.width ?? 0).toBeGreaterThanOrEqual(389);
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(page.getByRole("link", { name: "Paper Trading", exact: true })).toBeVisible();
 });
 
 test("backtest defaults are a useful first research run", async ({ page }) => {
@@ -51,7 +71,10 @@ test("backtest defaults are a useful first research run", async ({ page }) => {
 
   await expect(page.getByRole("combobox", { name: /Universe/ })).toHaveValue("etf");
   await expect(page.getByRole("textbox", { name: /Custom Symbols/ })).toHaveValue("");
-  await expect(page.getByRole("combobox", { name: /Data Source/ })).toHaveValue("sample");
-  await expect(page.getByRole("textbox", { name: /End/ })).toHaveValue("2024-06-28");
+  await expect(page.getByRole("combobox", { name: /Data Source/ })).toHaveValue("futu");
+  await expect(page.getByRole("textbox", { name: /End/ })).toHaveValue(
+    new Date().toISOString().slice(0, 10),
+  );
   await expect(page.getByRole("spinbutton", { name: /Top N/ })).toHaveValue("3");
+  await expect(page.getByText("Sector cap", { exact: true })).toHaveCount(0);
 });

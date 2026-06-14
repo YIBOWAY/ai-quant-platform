@@ -213,6 +213,61 @@ export type PaperRunDetailResponse = ApiEnvelope & {
   risk_breaches: PreviewRecord[];
 };
 
+export type AccountPositionView = {
+  symbol: string;
+  quantity: number;
+  avg_cost: number;
+  last_price: number;
+  market_value: number;
+  weight: number;
+  unrealized_pnl: number;
+  source_breakdown: Record<string, number>;
+  price_kind: string;
+  price_as_of: string | null;
+};
+
+export type PaperAccountResponse = ApiEnvelope & {
+  account_id: string;
+  base_currency: string;
+  initial_cash: number;
+  cash: number;
+  equity: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  pnl_abs: number;
+  pnl_pct: number;
+  invested_pct: number;
+  kill_switch: boolean;
+  price_source: { kind: string; as_of: string | null };
+  positions: AccountPositionView[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type LedgerEntryView = {
+  entry_id: string;
+  timestamp: string;
+  kind: string;
+  source: string;
+  symbol?: string | null;
+  side?: string | null;
+  quantity?: number | null;
+  price?: number | null;
+  gross_value?: number | null;
+  commission?: number;
+  price_kind?: string | null;
+  realized_pnl_delta?: number;
+  cash_after?: number;
+  note?: string;
+};
+
+export type PaperLedgerResponse = ApiEnvelope & {
+  total: number;
+  limit: number;
+  offset: number;
+  entries: LedgerEntryView[];
+};
+
 export type ExperimentSummary = {
   id: string;
   path: string;
@@ -424,7 +479,26 @@ async function apiGet<T extends ApiEnvelope>(path: string, fallback: T): Promise
       headers: { accept: "application/json" },
     });
     if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`);
+      // Surface the backend's structured detail (e.g. {code, message}) instead
+      // of an opaque "400 Bad Request" so users can tell a typo'd ticker from
+      // OpenD being down.
+      let detailText = "";
+      try {
+        const payload = (await response.json()) as { detail?: unknown };
+        if (typeof payload.detail === "string") {
+          detailText = payload.detail;
+        } else if (payload.detail && typeof payload.detail === "object") {
+          const detail = payload.detail as { message?: unknown; code?: unknown };
+          const message = typeof detail.message === "string" ? detail.message : "";
+          const code = typeof detail.code === "string" ? `[${detail.code}] ` : "";
+          detailText = message ? `${code}${message}` : JSON.stringify(payload.detail);
+        }
+      } catch {
+        // body not JSON — fall through to the status line
+      }
+      throw new Error(
+        detailText ? `${response.status}: ${detailText}` : `${response.status} ${response.statusText}`,
+      );
     }
     return (await response.json()) as T;
   } catch (error) {
@@ -569,27 +643,41 @@ export function getUniverses() {
   });
 }
 
-export function getFactorLabDashboard() {
-  return apiGet<FactorLabResponse>(
-    "/api/factors/lab?provider=sample&universe_id=etf&symbol=QQQ&benchmark_symbol=QQQ",
-    {
-      source: "fallback",
-      benchmark_symbol: "QQQ",
-      universe: {
-        id: "etf",
-        name: "ETF Core",
-        description: "",
-        symbols: ["SPY", "QQQ"],
-        benchmark_symbol: "SPY",
-      },
-      factors: [],
-      guardrails: {},
-      cache: {},
-      cross_sectional: { engine: "cross_sectional_health", rows: [] },
-      timing: { engine: "single_symbol_timing", symbol: "QQQ", rows: [] },
-      safety: FALLBACK_SAFETY,
+export type FactorLabQuery = {
+  provider?: string;
+  universeId?: string;
+  symbol?: string;
+  benchmarkSymbol?: string;
+};
+
+export function getFactorLabDashboard(query: FactorLabQuery = {}) {
+  const provider = query.provider ?? "futu";
+  const universeId = query.universeId ?? "etf";
+  const symbol = (query.symbol ?? "QQQ").toUpperCase();
+  const benchmarkSymbol = (query.benchmarkSymbol ?? symbol).toUpperCase();
+  const params = new URLSearchParams({
+    provider,
+    universe_id: universeId,
+    symbol,
+    benchmark_symbol: benchmarkSymbol,
+  });
+  return apiGet<FactorLabResponse>(`/api/factors/lab?${params.toString()}`, {
+    source: "fallback",
+    benchmark_symbol: benchmarkSymbol,
+    universe: {
+      id: universeId,
+      name: "--",
+      description: "",
+      symbols: [],
+      benchmark_symbol: benchmarkSymbol,
     },
-  );
+    factors: [],
+    guardrails: {},
+    cache: {},
+    cross_sectional: { engine: "cross_sectional_health", rows: [] },
+    timing: { engine: "single_symbol_timing", symbol, rows: [] },
+    safety: FALLBACK_SAFETY,
+  });
 }
 
 export function getBenchmark(
@@ -633,6 +721,40 @@ export function getPaperRunDetail(runId: string) {
     order_events: [],
     trades: [],
     risk_breaches: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+const FALLBACK_ACCOUNT: PaperAccountResponse = {
+  account_id: "default",
+  base_currency: "USD",
+  initial_cash: 1_000_000,
+  cash: 1_000_000,
+  equity: 1_000_000,
+  realized_pnl: 0,
+  unrealized_pnl: 0,
+  pnl_abs: 0,
+  pnl_pct: 0,
+  invested_pct: 0,
+  kill_switch: false,
+  price_source: { kind: "none", as_of: null },
+  positions: [],
+  created_at: "",
+  updated_at: "",
+  safety: FALLBACK_SAFETY,
+};
+
+export function getPaperAccount() {
+  return apiGet<PaperAccountResponse>("/api/paper/account", FALLBACK_ACCOUNT);
+}
+
+export function getPaperAccountLedger(limit = 50, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return apiGet<PaperLedgerResponse>(`/api/paper/account/ledger?${params.toString()}`, {
+    total: 0,
+    limit,
+    offset,
+    entries: [],
     safety: FALLBACK_SAFETY,
   });
 }

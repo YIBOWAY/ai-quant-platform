@@ -6,42 +6,62 @@ import {
   HistogramSeries,
   type IChartApi,
   type ISeriesApi,
+  type Time,
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef } from "react";
 import type { OhlcvRow } from "@/lib/api";
 
 type CandlestickChartProps = {
   rows: OhlcvRow[];
+  /** Optional fixed height in px. When omitted the chart fills its parent. */
   height?: number;
+  locale?: "en" | "zh";
 };
 
-export function CandlestickChart({ rows, height = 360 }: CandlestickChartProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+// Chart colors follow the design tokens in globals.css (accent / danger / info
+// / bg-surface). lightweight-charts needs literal values, so they are mirrored
+// here — keep in sync with @theme.
+const CHART_COLORS = {
+  background: "#111827",
+  text: "#94A3B8",
+  grid: "rgba(148, 163, 184, 0.10)",
+  border: "rgba(148, 163, 184, 0.22)",
+  up: "#00C896",
+  down: "#FF4D4F",
+  volumeUp: "rgba(0, 200, 150, 0.32)",
+  volumeDown: "rgba(255, 77, 79, 0.32)",
+};
+
+export function CandlestickChart({ rows, height: fixedHeight, locale = "en" }: CandlestickChartProps) {
+  const chartHostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const chartData = useMemo(() => normalizeRows(rows), [rows]);
 
   useEffect(() => {
-    if (!containerRef.current || chartRef.current) {
+    const host = chartHostRef.current;
+    if (!host || chartRef.current) {
       return;
     }
 
-    const chart = createChart(containerRef.current, {
-      height,
+    const chart = createChart(host, {
+      autoSize: false,
+      height: fixedHeight ?? Math.max(host.clientHeight, 240),
+      width: host.clientWidth,
       layout: {
-        background: { color: "#101614" },
-        textColor: "#94A3B8",
+        background: { color: CHART_COLORS.background },
+        textColor: CHART_COLORS.text,
       },
       grid: {
-        vertLines: { color: "rgba(148, 163, 184, 0.12)" },
-        horzLines: { color: "rgba(148, 163, 184, 0.12)" },
+        vertLines: { color: CHART_COLORS.grid },
+        horzLines: { color: CHART_COLORS.grid },
       },
       rightPriceScale: {
-        borderColor: "rgba(148, 163, 184, 0.22)",
+        borderColor: CHART_COLORS.border,
       },
       timeScale: {
-        borderColor: "rgba(148, 163, 184, 0.22)",
+        borderColor: CHART_COLORS.border,
         timeVisible: false,
       },
       crosshair: {
@@ -49,15 +69,15 @@ export function CandlestickChart({ rows, height = 360 }: CandlestickChartProps) 
       },
     });
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#10C89B",
-      downColor: "#EF4444",
-      borderUpColor: "#10C89B",
-      borderDownColor: "#EF4444",
-      wickUpColor: "#10C89B",
-      wickDownColor: "#EF4444",
+      upColor: CHART_COLORS.up,
+      downColor: CHART_COLORS.down,
+      borderUpColor: CHART_COLORS.up,
+      borderDownColor: CHART_COLORS.down,
+      wickUpColor: CHART_COLORS.up,
+      wickDownColor: CHART_COLORS.down,
     });
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      color: "rgba(56, 189, 248, 0.42)",
+      color: CHART_COLORS.volumeUp,
       priceFormat: { type: "volume" },
       priceScaleId: "",
     });
@@ -71,59 +91,120 @@ export function CandlestickChart({ rows, height = 360 }: CandlestickChartProps) 
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
 
-    const resize = () => {
-      const width = containerRef.current?.clientWidth ?? 0;
-      if (width > 0) {
+    // Drive both width AND height from the host element's real box, so the
+    // chart fills whatever space its flex parent gives it.
+    const applySize = () => {
+      const width = host.clientWidth;
+      const height = fixedHeight ?? Math.max(host.clientHeight, 240);
+      if (width > 0 && height > 0) {
         chart.applyOptions({ width, height });
       }
     };
-    resize();
-    window.addEventListener("resize", resize);
+    applySize();
+    const observer = new ResizeObserver(applySize);
+    observer.observe(host);
+
     return () => {
-      window.removeEventListener("resize", resize);
+      observer.disconnect();
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [height]);
+  }, [fixedHeight]);
 
   useEffect(() => {
-    candleSeriesRef.current?.setData(chartData.candles);
-    volumeSeriesRef.current?.setData(chartData.volume);
-    chartRef.current?.timeScale().fitContent();
+    // setData asserts on unsorted/duplicate times; normalizeRows guarantees
+    // ordering, but guard anyway so a data edge case can never blank the app.
+    try {
+      chartRef.current?.timeScale().applyOptions({ timeVisible: chartData.intraday });
+      candleSeriesRef.current?.setData(chartData.candles);
+      volumeSeriesRef.current?.setData(chartData.volume);
+      chartRef.current?.timeScale().fitContent();
+    } catch (error) {
+      console.error("CandlestickChart setData failed", error);
+    }
   }, [chartData]);
 
   if (!rows.length) {
     return null;
   }
+  const labels =
+    locale === "zh" ? { candles: "K 线", volume: "成交量" } : { candles: "Candles", volume: "Volume" };
 
   return (
     <div
-      className="rounded border border-border-subtle bg-surface-muted p-3"
+      className="flex h-full min-h-0 flex-col rounded-lg border border-border-subtle bg-bg-surface-muted/40 p-3"
       data-testid="ohlcv-candlestick-chart"
     >
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-label-caps text-text-secondary">Candles</span>
-        <span className="font-label-caps text-info">Volume</span>
+        <span className="font-label-caps text-text-secondary">{labels.candles}</span>
+        <span className="font-label-caps text-info">{labels.volume}</span>
       </div>
-      <div ref={containerRef} style={{ height }} />
+      {/* flex-1 + min-h-0 lets this host absorb all remaining height; the
+          ResizeObserver above feeds that pixel height into lightweight-charts. */}
+      <div
+        ref={chartHostRef}
+        className="min-h-[240px] flex-1"
+        style={fixedHeight ? { height: fixedHeight } : undefined}
+      />
     </div>
   );
 }
 
 function normalizeRows(rows: OhlcvRow[]) {
-  const candles = rows.map((row) => ({
-    time: row.timestamp.slice(0, 10),
+  // Daily bars can use the date string; intraday bars MUST use epoch seconds,
+  // otherwise multiple bars of one day collapse onto the same time key and
+  // lightweight-charts throws ("data must be asc ordered by time").
+  const intraday = isIntraday(rows);
+  const entries = rows
+    .map((row) => {
+      const epoch = Date.parse(row.timestamp);
+      if (!Number.isFinite(epoch)) {
+        return null;
+      }
+      const time: Time = intraday
+        ? (Math.floor(epoch / 1000) as Time)
+        : (row.timestamp.slice(0, 10) as Time);
+      return { row, epoch, time };
+    })
+    .filter((entry): entry is { row: OhlcvRow; epoch: number; time: Time } => entry !== null)
+    .sort((a, b) => a.epoch - b.epoch);
+
+  // Drop duplicate time keys (keep the last occurrence).
+  const deduped: typeof entries = [];
+  for (const entry of entries) {
+    const prev = deduped[deduped.length - 1];
+    if (prev && prev.time === entry.time) {
+      deduped[deduped.length - 1] = entry;
+    } else {
+      deduped.push(entry);
+    }
+  }
+
+  const candles = deduped.map(({ row, time }) => ({
+    time,
     open: row.open,
     high: row.high,
     low: row.low,
     close: row.close,
   }));
-  const volume = rows.map((row) => ({
-    time: row.timestamp.slice(0, 10),
+  const volume = deduped.map(({ row, time }) => ({
+    time,
     value: row.volume,
-    color: row.close >= row.open ? "rgba(16, 200, 155, 0.36)" : "rgba(239, 68, 68, 0.36)",
+    color: row.close >= row.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
   }));
-  return { candles, volume };
+  return { candles, volume, intraday };
+}
+
+function isIntraday(rows: OhlcvRow[]) {
+  const seenDates = new Set<string>();
+  for (const row of rows) {
+    const date = row.timestamp.slice(0, 10);
+    if (seenDates.has(date)) {
+      return true;
+    }
+    seenDates.add(date);
+  }
+  return false;
 }

@@ -15,6 +15,10 @@ This is the local Next.js frontend for the quant research platform.
 4. Run the app:
    `npm run dev -- --hostname 127.0.0.1 --port 3001`
 
+If Windows refuses to bind the backend on `8765`, start the backend on another
+local port and set `NEXT_PUBLIC_QUANT_API_BASE_URL` to that port before starting
+the frontend.
+
 Open:
 
 ```text

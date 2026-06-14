@@ -1,91 +1,172 @@
 import Link from "next/link";
-import { BriefcaseBusiness, Layers, ShieldAlert } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, Layers, ShieldCheck } from "lucide-react";
+import { AccountRefreshControl } from "@/components/AccountRefreshControl";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import {
   formatMoney,
   getBacktestDetail,
   getBacktests,
   getHealth,
-  getPaperRunDetail,
-  getPaperRuns,
-  getSymbols,
+  getPaperAccount,
+  getPaperAccountLedger,
+  type AccountPositionView,
+  type LedgerEntryView,
   type PreviewRecord,
 } from "@/lib/api";
+import { localizePath } from "@/lib/locale";
 import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
   en: {
+    eyebrow: "Paper account",
     title: "Position Map",
     subtitle:
-      "Latest saved positions, exposure weights, and paper-trading safety state from local runs.",
-    openBacktest: "Open backtest",
-    openPaperRun: "Open paper run",
-    portfolioExposure: "Portfolio Exposure",
-    netExposure: "Net Exposure",
-    openSymbols: "Open Symbols",
-    latestEquity: "Latest Equity",
-    exposureBySymbol: "Exposure by Symbol",
-    exposureBySymbolDesc:
-      "Gross exposure weight from the newest saved backtest position timestamp.",
+      "One persistent simulated account: equity vs the funded base, cash, per-symbol exposure with strategy/manual attribution, and the audit ledger.",
+    openPaperTrading: "Trade / Rebalance",
+    accountValue: "Account Value",
+    pnl: "Total P&L",
+    cash: "Cash",
+    invested: "Invested",
+    unrealized: "Unrealized P&L",
+    accountUnavailable: "Account unreachable — values hidden until the backend responds.",
+    exposureBySymbol: "Account Exposure by Symbol",
+    exposureBySymbolDesc: "Share of invested market value per holding; each bar splits strategy vs manual origin.",
     long: "Long",
     short: "Short",
-    noPositionsTitle: "No saved positions",
-    noPositionsDesc: "Run a backtest to generate position rows for this map.",
-    paperSafetyState: "Paper Safety State",
-    latestPaperRunLabel: "latest paper run",
-    riskBreachesLabel: "risk breaches",
-    none: "none",
-    readOnlyNote: "Read-only map from local simulation artifacts.",
-    latestBacktestPositions: "Latest Backtest Positions",
-    latestBacktestPositionsDesc: "Newest position row per symbol from the latest backtest.",
-    noPositionRowsDesc: "No backtest position rows were found.",
-    availableSymbols: "Available Symbols",
-    availableSymbolsDesc: "Symbols currently available from the local market-data API.",
-    noSymbolsDesc: "No local symbols were returned by the API.",
+    manual: "Manual",
+    strategy: "Strategy",
+    noPositionsTitle: "No open positions",
+    noPositionsDesc: "Place a manual order or run a strategy rebalance to build the account.",
+    goTrade: "Open Paper Trading",
+    priceSource: "Prices",
+    priceKinds: {
+      futu_snapshot: "Futu live snapshot",
+      last_close: "last real close",
+    } as Record<string, string>,
+    asOf: "as of",
+    safetyState: "Safety",
+    paperBadge: "Paper-only · no live trading",
+    accountFrozen: "frozen",
+    positionsTitle: "Account Positions",
+    positionsDesc: "Live holdings with average cost, current price, weight and unrealized P&L.",
+    noPositionRowsDesc: "No account positions yet.",
+    ledgerTitle: "Account Activity",
+    ledgerDesc: "Latest ledger entries — every order, rebalance and reset is recorded here.",
+    ledgerEmptyTitle: "No activity yet",
+    ledgerEmptyDesc: "Orders and rebalances will appear here as an audit trail.",
+    ledgerMore: "Showing latest",
+    kind: {
+      fill: "Fill",
+      rebalance_fill: "Rebalance fill",
+      deposit: "Deposit",
+      reset: "Reset",
+      fee: "Fee",
+      freeze: "Freeze",
+      unfreeze: "Unfreeze",
+    } as Record<string, string>,
+    side: { BUY: "Buy", SELL: "Sell" } as Record<string, string>,
+    cashAfter: "cash after",
+    comparisonTitle: "Last Backtest Exposure (research comparison)",
+    comparisonDesc: "The newest backtest's final positions — a research artifact, not your account.",
+    noBacktestDesc: "No backtest positions were found.",
+    openBacktest: "Open run",
+    columns: {
+      symbol: "Symbol",
+      quantity: "Qty",
+      avg_cost: "Avg Cost",
+      last_price: "Last",
+      weight: "Weight",
+      market_value: "Mkt Value",
+      unrealized_pnl: "Unrealized P&L",
+      source: "Source",
+      price_kind: "Price Src",
+    },
+    tips: {
+      price_kind:
+        "futu_snapshot = live Futu quote at fill time; last_close = most recent real daily close (OpenD offline fallback).",
+      source: "Which path created this exposure: manual orders, strategy rebalances, or a mix.",
+      weight: "Position market value as a share of total invested value.",
+    },
+    mixed: "Mixed",
   },
   zh: {
+    eyebrow: "模拟账户",
     title: "持仓地图",
-    subtitle: "来自本地运行的最新保存持仓、敞口权重以及模拟交易安全状态。",
-    openBacktest: "打开回测",
-    openPaperRun: "打开模拟运行",
-    portfolioExposure: "组合敞口",
-    netExposure: "净敞口",
-    openSymbols: "持仓标的数",
-    latestEquity: "最新净值",
-    exposureBySymbol: "按标的的敞口",
-    exposureBySymbolDesc: "取自最新保存的回测持仓时间戳的总敞口权重。",
+    subtitle:
+      "单一持续模拟账户：净值对比初始本金、现金、按标的的暴露（策略/手动归因），以及完整账本流水。",
+    openPaperTrading: "去下单 / 再平衡",
+    accountValue: "账户净值",
+    pnl: "总盈亏",
+    cash: "现金",
+    invested: "已投资比例",
+    unrealized: "未实现盈亏",
+    accountUnavailable: "账户接口不可达——在后端恢复前隐藏数值，避免误读。",
+    exposureBySymbol: "按标的的暴露",
+    exposureBySymbolDesc: "各持仓占已投资市值的比例；每条按「策略 / 手动」来源分段着色。",
     long: "多头",
     short: "空头",
-    noPositionsTitle: "暂无保存的持仓",
-    noPositionsDesc: "运行一次回测以为该地图生成持仓数据行。",
-    paperSafetyState: "模拟交易安全状态",
-    latestPaperRunLabel: "最新模拟运行",
-    riskBreachesLabel: "风险越界次数",
-    none: "无",
-    readOnlyNote: "基于本地模拟产物的只读地图。",
-    latestBacktestPositions: "最新回测持仓",
-    latestBacktestPositionsDesc: "来自最新回测、每个标的的最新持仓数据行。",
-    noPositionRowsDesc: "未找到回测持仓数据行。",
-    availableSymbols: "可用标的",
-    availableSymbolsDesc: "当前可从本地行情数据 API 获取的标的。",
-    noSymbolsDesc: "API 未返回任何本地标的。",
+    manual: "手动",
+    strategy: "策略",
+    noPositionsTitle: "暂无持仓",
+    noPositionsDesc: "手动下单或运行一次策略再平衡，即可建立账户持仓。",
+    goTrade: "打开模拟交易",
+    priceSource: "报价",
+    priceKinds: {
+      futu_snapshot: "Futu 实时快照",
+      last_close: "最近真实收盘",
+    } as Record<string, string>,
+    asOf: "截至",
+    safetyState: "安全状态",
+    paperBadge: "仅模拟 · 不接触实盘",
+    accountFrozen: "已冻结",
+    positionsTitle: "账户持仓",
+    positionsDesc: "实时持仓：均价、现价、权重与未实现盈亏。",
+    noPositionRowsDesc: "账户暂无持仓。",
+    ledgerTitle: "账户流水",
+    ledgerDesc: "最近的账本记录——每一笔下单、再平衡与重置都在这里留痕。",
+    ledgerEmptyTitle: "暂无流水",
+    ledgerEmptyDesc: "下单与再平衡后，这里会出现完整的审计流水。",
+    ledgerMore: "显示最近",
+    kind: {
+      fill: "成交",
+      rebalance_fill: "再平衡成交",
+      deposit: "入金",
+      reset: "重置",
+      fee: "费用",
+      freeze: "冻结",
+      unfreeze: "解冻",
+    } as Record<string, string>,
+    side: { BUY: "买入", SELL: "卖出" } as Record<string, string>,
+    cashAfter: "余额",
+    comparisonTitle: "最近一次回测暴露（研究对比）",
+    comparisonDesc: "最新回测的期末持仓——研究产物，不是你的账户。",
+    noBacktestDesc: "未找到回测持仓数据行。",
+    openBacktest: "打开运行",
+    columns: {
+      symbol: "标的",
+      quantity: "数量",
+      avg_cost: "均价",
+      last_price: "现价",
+      weight: "权重",
+      market_value: "市值",
+      unrealized_pnl: "未实现盈亏",
+      source: "来源",
+      price_kind: "价格来源",
+    },
+    tips: {
+      price_kind:
+        "futu_snapshot = 成交时的 Futu 实时快照；last_close = 最近一根真实日收盘（OpenD 离线时回退）。",
+      source: "该持仓由哪条路径建立：手动下单、策略再平衡，或两者混合。",
+      weight: "持仓市值占全部已投资市值的比例。",
+    },
+    mixed: "混合",
   },
 } as const;
-
-type ExposureRow = {
-  symbol: string;
-  timestamp: string;
-  quantity: number;
-  price: number;
-  marketValue: number;
-  absValue: number;
-  weight: number;
-  side: "Long" | "Short";
-};
 
 type PositionMapPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -95,187 +176,410 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
   const params = (await searchParams) ?? {};
   const locale = await getServerLocale(params);
   const text = copy[locale];
-  const [symbols, backtests, paperRuns, health] = await Promise.all([
-    getSymbols(),
+  const [account, ledger, backtests, health] = await Promise.all([
+    getPaperAccount(),
+    getPaperAccountLedger(12),
     getBacktests(),
-    getPaperRuns(),
     getHealth(),
   ]);
   const includeSample = shouldIncludeSampleRuns(params);
   const latestBacktest = selectDisplayRun(backtests.backtests, includeSample);
-  const latestPaperRun = selectDisplayRun(paperRuns.paper_runs, includeSample);
-  const [backtestDetail, paperDetail] = await Promise.all([
-    latestBacktest ? getBacktestDetail(latestBacktest.id) : null,
-    latestPaperRun ? getPaperRunDetail(latestPaperRun.id) : null,
-  ]);
-  const exposureRows = latestExposure(backtestDetail?.positions ?? []);
-  const totals = exposureTotals(exposureRows);
-  const latestEquity = lastNumber(backtestDetail?.equity_curve ?? [], "equity");
+  const backtestDetail = latestBacktest ? await getBacktestDetail(latestBacktest.id) : null;
+  const backtestExposure = latestExposure(backtestDetail?.positions ?? []);
+
+  const accountDown = Boolean(account.apiError);
+  const positions = [...account.positions].sort(
+    (a, b) => Math.abs(b.market_value) - Math.abs(a.market_value),
+  );
+  const grossInvested = positions.reduce((sum, p) => sum + Math.abs(p.market_value), 0);
+  const pnlPositive = account.pnl_abs >= 0;
+  const priceSourceLabel = text.priceKinds[account.price_source.kind] ?? account.price_source.kind;
 
   return (
-    <main className="flex h-full flex-1 flex-col gap-4 overflow-y-auto p-container-padding">
+    <div className="flex h-full flex-1 flex-col gap-4 overflow-y-auto bg-bg-base p-4 lg:p-6">
       <ErrorBanner
-        messages={[
-          symbols.apiError,
-          backtests.apiError,
-          paperRuns.apiError,
-          health.apiError,
-          backtestDetail?.apiError,
-          paperDetail?.apiError,
-        ]}
+        locale={locale}
+        messages={[account.apiError, ledger.apiError, backtests.apiError, health.apiError, backtestDetail?.apiError]}
       />
 
-      <header className="border-b border-border-subtle pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Layers size={18} className="text-accent-success" />
-              <h1 className="font-headline-xl text-text-primary">{text.title}</h1>
-            </div>
-            <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">
-              {text.subtitle}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {latestBacktest ? (
-              <Link
-                className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary"
-                href={`/backtest/${latestBacktest.id}`}
-              >
-                {text.openBacktest}
-              </Link>
-            ) : null}
-            {latestPaperRun ? (
-              <Link
-                className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary"
-                href={`/paper-trading/${latestPaperRun.id}`}
-              >
-                {text.openPaperRun}
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={text.eyebrow}
+        icon={<Layers size={18} className="text-accent-success" />}
+        title={text.title}
+        subtitle={text.subtitle}
+        actions={
+          <>
+            <AccountRefreshControl locale={locale} />
+            <Link
+              className="flex items-center gap-1.5 rounded-lg border border-accent-success/40 bg-accent-success/10 px-3 py-1.5 font-body-sm text-accent-success transition-colors hover:bg-accent-success/20"
+              href={localizePath("/paper-trading", locale)}
+            >
+              <BriefcaseBusiness size={14} />
+              {text.openPaperTrading}
+            </Link>
+          </>
+        }
+      />
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <Metric label={text.portfolioExposure} value={formatMoney(totals.grossExposure)} />
-        <Metric label={text.netExposure} value={formatMoney(totals.netExposure)} />
-        <Metric label={text.openSymbols} value={String(exposureRows.length)} />
-        <Metric label={text.latestEquity} value={formatMoney(latestEquity)} />
+      {accountDown ? (
+        <Card tone="danger" padded>
+          <p className="font-body-sm text-danger">{text.accountUnavailable}</p>
+        </Card>
+      ) : null}
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <MetricStat label={text.accountValue} value={accountDown ? "--" : formatMoney(account.equity)} />
+        <MetricStat
+          label={text.pnl}
+          value={accountDown ? "--" : `${pnlPositive ? "+" : ""}${formatMoney(account.pnl_abs)}`}
+          delta={accountDown ? undefined : `${(account.pnl_pct * 100).toFixed(2)}%`}
+          tone={accountDown ? "neutral" : pnlPositive ? "success" : "danger"}
+        />
+        <MetricStat label={text.cash} value={accountDown ? "--" : formatMoney(account.cash)} />
+        <MetricStat
+          label={text.invested}
+          value={accountDown ? "--" : `${(account.invested_pct * 100).toFixed(1)}%`}
+        />
+        <MetricStat
+          label={text.unrealized}
+          value={accountDown ? "--" : `${account.unrealized_pnl >= 0 ? "+" : ""}${formatMoney(account.unrealized_pnl)}`}
+          tone={accountDown ? "neutral" : account.unrealized_pnl >= 0 ? "success" : "danger"}
+        />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded border border-border-subtle bg-bg-surface p-4">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-label-caps text-text-primary">{text.exposureBySymbol}</h2>
-              <p className="mt-1 font-body-sm text-text-secondary">
-                {text.exposureBySymbolDesc}
-              </p>
+      <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card padded>
+            <SectionTitle
+              title={text.exposureBySymbol}
+              hint={text.exposureBySymbolDesc}
+              right={
+                <span className="shrink-0 font-data-mono text-[10px] uppercase text-text-secondary">
+                  {text.priceSource}: {priceSourceLabel}
+                  {account.price_source.as_of ? ` · ${text.asOf} ${formatTimestamp(account.price_source.as_of)}` : ""}
+                </span>
+              }
+            />
+            {positions.length ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-4 font-label-caps text-[10px] text-text-secondary">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-sm bg-accent-success" /> {text.strategy}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-sm bg-info" /> {text.manual}
+                  </span>
+                </div>
+                {positions.map((row) => (
+                  <ExposureBar
+                    key={row.symbol}
+                    row={row}
+                    gross={grossInvested}
+                    longLabel={text.long}
+                    shortLabel={text.short}
+                    manualLabel={text.manual}
+                    strategyLabel={text.strategy}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title={text.noPositionsTitle}
+                description={text.noPositionsDesc}
+                action={
+                  <Link
+                    className="flex items-center gap-1.5 rounded-lg border border-accent-success/40 bg-accent-success/10 px-3 py-1.5 font-body-sm text-accent-success transition-colors hover:bg-accent-success/20"
+                    href={localizePath("/paper-trading", locale)}
+                  >
+                    {text.goTrade}
+                    <ArrowRight size={14} />
+                  </Link>
+                }
+              />
+            )}
+          </Card>
+
+          <DataPreviewTable
+            columns={[
+              "symbol",
+              "quantity",
+              "avg_cost",
+              "last_price",
+              "weight",
+              "market_value",
+              "unrealized_pnl",
+              "source",
+              "price_kind",
+            ]}
+            columnLabels={text.columns}
+            columnTips={{
+              price_kind: text.tips.price_kind,
+              source: text.tips.source,
+              weight: text.tips.weight,
+            }}
+            description={text.positionsDesc}
+            emptyDescription={text.noPositionRowsDesc}
+            emptyTitle={text.positionsTitle}
+            locale={locale}
+            maxRows={30}
+            rows={positionTableRows(positions, text)}
+            title={text.positionsTitle}
+          />
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card padded>
+            <SectionTitle
+              title={text.ledgerTitle}
+              hint={text.ledgerDesc}
+              right={
+                ledger.total > ledger.entries.length ? (
+                  <span className="font-data-mono text-[10px] uppercase text-text-secondary">
+                    {text.ledgerMore} {ledger.entries.length}/{ledger.total}
+                  </span>
+                ) : null
+              }
+            />
+            {ledger.entries.length ? (
+              <ol className="space-y-2">
+                {ledger.entries.map((entry) => (
+                  <LedgerRow key={entry.entry_id} entry={entry} text={text} />
+                ))}
+              </ol>
+            ) : (
+              <EmptyState title={text.ledgerEmptyTitle} description={text.ledgerEmptyDesc} />
+            )}
+          </Card>
+
+          <Card padded>
+            <div className="mb-3 flex items-center gap-2 text-text-secondary">
+              <ShieldCheck size={16} className="text-accent-success" />
+              <h2 className="font-label-caps text-text-primary">{text.safetyState}</h2>
             </div>
-            {latestBacktest?.source ? <DataSourceBadge source={latestBacktest.source} /> : null}
-          </div>
-          {exposureRows.length ? (
-            <div className="space-y-3">
-              {exposureRows.map((row) => (
-                <div className="grid gap-2 md:grid-cols-[120px_1fr_110px]" key={row.symbol}>
-                  <div>
-                    <div className="font-data-mono text-text-primary">{row.symbol}</div>
-                    <div className="font-label-caps text-text-secondary">
-                      {row.side === "Long" ? text.long : text.short}
-                    </div>
+            <div className="flex flex-wrap gap-2">
+              <StatusPill
+                label="paper_trading"
+                value={String(health.safety?.paper_trading ?? true)}
+                tone="success"
+              />
+              <StatusPill
+                label="live_trading"
+                value={String(health.safety?.live_trading_enabled ?? false)}
+                tone={health.safety?.live_trading_enabled ? "danger" : "neutral"}
+              />
+              <StatusPill
+                label={text.accountFrozen}
+                value={String(account.kill_switch)}
+                tone={account.kill_switch ? "danger" : "neutral"}
+              />
+            </div>
+            <p className="mt-3 font-body-sm text-text-secondary">{text.paperBadge}</p>
+          </Card>
+        </div>
+      </section>
+
+      <section>
+        <Card padded>
+          <SectionTitle
+            title={text.comparisonTitle}
+            hint={text.comparisonDesc}
+            right={
+              <span className="flex items-center gap-2">
+                {latestBacktest?.source ? <DataSourceBadge source={latestBacktest.source} /> : null}
+                {latestBacktest ? (
+                  <Link
+                    className="rounded-lg border border-border-subtle px-2 py-1 font-body-sm text-info transition-colors hover:bg-bg-surface-muted"
+                    href={localizePath(`/backtest/${latestBacktest.id}`, locale)}
+                  >
+                    {text.openBacktest}
+                  </Link>
+                ) : null}
+              </span>
+            }
+          />
+          {backtestExposure.length ? (
+            <div className="grid gap-x-8 gap-y-2 md:grid-cols-2">
+              {backtestExposure.map((row) => (
+                <div className="grid grid-cols-[110px_1fr_70px] items-center gap-2" key={row.symbol}>
+                  <span className="font-data-mono text-text-primary">{row.symbol}</span>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-bg-surface-muted">
+                    <div
+                      className={row.side === "Long" ? "h-full bg-accent-success/70" : "h-full bg-danger/70"}
+                      style={{ width: `${Math.max(row.weight * 100, 2)}%` }}
+                    />
                   </div>
-                  <div className="flex items-center">
-                    <div className="h-3 w-full overflow-hidden rounded bg-surface-container">
-                      <div
-                        className={row.side === "Long" ? "h-full bg-accent-success" : "h-full bg-danger"}
-                        style={{ width: `${Math.max(row.weight * 100, 2)}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div className="text-right font-data-mono text-text-primary">
+                  <span className="text-right font-data-mono text-text-secondary">
                     {(row.weight * 100).toFixed(1)}%
-                  </div>
+                  </span>
                 </div>
               ))}
             </div>
           ) : (
-            <EmptyState
-              title={text.noPositionsTitle}
-              description={text.noPositionsDesc}
-            />
+            <EmptyState title={text.comparisonTitle} description={text.noBacktestDesc} />
           )}
-        </div>
-
-        <div className="rounded border border-border-subtle bg-bg-surface p-4">
-          <div className="mb-4 flex items-center gap-2">
-            <ShieldAlert size={18} className="text-warning" />
-            <h2 className="font-label-caps text-text-primary">{text.paperSafetyState}</h2>
-          </div>
-          <div className="space-y-3 font-body-sm">
-            <StatusRow label="paper_trading" value={String(health.safety?.paper_trading ?? true)} />
-            <StatusRow
-              label="live_trading_enabled"
-              value={String(health.safety?.live_trading_enabled ?? false)}
-            />
-            <StatusRow label="kill_switch" value={String(health.safety?.kill_switch ?? true)} />
-            <StatusRow label={text.latestPaperRunLabel} value={latestPaperRun?.id ?? text.none} />
-            <StatusRow
-              label={text.riskBreachesLabel}
-              value={String(latestPaperRun?.summary?.risk_breach_count ?? 0)}
-              danger={(latestPaperRun?.summary?.risk_breach_count ?? 0) > 0}
-            />
-          </div>
-          <div className="mt-4 flex items-center gap-2 rounded border border-border-subtle bg-surface-muted p-3 font-body-sm text-text-secondary">
-            <BriefcaseBusiness size={16} />
-            {text.readOnlyNote}
-          </div>
-        </div>
+        </Card>
       </section>
-
-      <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-        <DataPreviewTable
-          columns={["timestamp", "symbol", "quantity", "close_price", "market_value", "weight"]}
-          description={text.latestBacktestPositionsDesc}
-          emptyDescription={text.noPositionRowsDesc}
-          emptyTitle={text.latestBacktestPositions}
-          rows={positionTableRows(exposureRows)}
-          title={text.latestBacktestPositions}
-        />
-        <DataPreviewTable
-          columns={["symbol", "source"]}
-          description={text.availableSymbolsDesc}
-          emptyDescription={text.noSymbolsDesc}
-          emptyTitle={text.availableSymbols}
-          rows={symbols.symbols.map((symbol) => ({ symbol, source: symbols.source }))}
-          title={text.availableSymbols}
-        />
-      </section>
-    </main>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-3">
-      <div className="font-label-caps text-text-secondary">{label}</div>
-      <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">{value}</div>
     </div>
   );
 }
 
-function StatusRow({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
+function ExposureBar({
+  row,
+  gross,
+  longLabel,
+  shortLabel,
+  manualLabel,
+  strategyLabel,
+}: {
+  row: AccountPositionView;
+  gross: number;
+  longLabel: string;
+  shortLabel: string;
+  manualLabel: string;
+  strategyLabel: string;
+}) {
+  const absValue = Math.abs(row.market_value);
+  const weight = gross > 0 ? absValue / gross : 0;
+  const isLong = row.quantity >= 0;
+  let manualShare = 0;
+  for (const [source, share] of Object.entries(row.source_breakdown)) {
+    if (source === "manual") manualShare += share;
+  }
+  manualShare = Math.max(0, Math.min(1, manualShare));
+  const strategyShare = Math.max(0, 1 - manualShare);
+  const widthPct = Math.max(weight * 100, 2);
+
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-border-subtle/50 pb-2">
-      <span className="text-text-secondary">{label}</span>
-      <span className={`text-right font-data-mono ${danger ? "text-danger" : "text-text-primary"}`}>
-        {value}
-      </span>
+    <div className="grid gap-2 md:grid-cols-[130px_1fr_90px]">
+      <div>
+        <div className="font-data-mono text-text-primary">{row.symbol}</div>
+        <div className={`font-label-caps ${isLong ? "text-text-secondary" : "text-danger"}`}>
+          {isLong ? longLabel : shortLabel}
+        </div>
+      </div>
+      <div className="flex flex-col justify-center gap-1">
+        <div className="flex h-3 w-full overflow-hidden rounded-full bg-bg-surface-muted">
+          <div className="flex h-full" style={{ width: `${widthPct}%` }}>
+            {strategyShare > 0 ? (
+              <div
+                className={isLong ? "h-full bg-accent-success" : "h-full bg-danger"}
+                style={{ width: `${strategyShare * 100}%` }}
+              />
+            ) : null}
+            {manualShare > 0 ? (
+              <div
+                className={isLong ? "h-full bg-info" : "h-full bg-danger/60"}
+                style={{ width: `${manualShare * 100}%` }}
+              />
+            ) : null}
+          </div>
+        </div>
+        <div className="font-label-caps text-text-secondary">
+          {strategyLabel} {(strategyShare * 100).toFixed(0)}% · {manualLabel} {(manualShare * 100).toFixed(0)}%
+        </div>
+      </div>
+      <div className="text-right font-data-mono tabular-nums text-text-primary">
+        {(weight * 100).toFixed(1)}%
+      </div>
     </div>
   );
 }
 
-function latestExposure(rows: PreviewRecord[]): ExposureRow[] {
+function LedgerRow({
+  entry,
+  text,
+}: {
+  entry: LedgerEntryView;
+  text: (typeof copy)["en"] | (typeof copy)["zh"];
+}) {
+  const kindLabel = text.kind[entry.kind] ?? entry.kind;
+  const sideLabel = entry.side ? (text.side[entry.side.toUpperCase()] ?? entry.side) : null;
+  const isStrategy = entry.source.startsWith("strategy:");
+  const sourceLabel = isStrategy ? `${text.strategy} ${entry.source.slice("strategy:".length)}` : text.manual;
+  const isSell = entry.side?.toUpperCase() === "SELL";
+
+  return (
+    <li className="rounded-lg border border-border-subtle bg-bg-surface-muted/40 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="font-label-caps text-text-primary">{kindLabel}</span>
+          {entry.source !== "system" ? (
+            <span
+              className={`rounded-lg border px-1.5 py-0.5 font-data-mono text-[10px] uppercase ${
+                isStrategy
+                  ? "border-accent-success/40 bg-accent-success/10 text-accent-success"
+                  : "border-info/40 bg-info/10 text-info"
+              }`}
+            >
+              {sourceLabel}
+            </span>
+          ) : null}
+        </div>
+        <span className="font-data-mono text-[10px] text-text-secondary">
+          {formatTimestamp(entry.timestamp)}
+        </span>
+      </div>
+      {entry.symbol ? (
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 font-data-mono text-xs">
+          <span className={isSell ? "text-danger" : "text-accent-success"}>
+            {sideLabel ?? ""} {entry.symbol}{" "}
+            {entry.quantity != null ? Math.abs(entry.quantity).toLocaleString(undefined, { maximumFractionDigits: 2 }) : ""}
+            {entry.price != null ? ` @ ${entry.price.toFixed(2)}` : ""}
+          </span>
+          {entry.cash_after != null ? (
+            <span className="text-text-secondary">
+              {text.cashAfter} {formatMoney(entry.cash_after)}
+            </span>
+          ) : null}
+        </div>
+      ) : entry.note ? (
+        <div className="mt-1 font-body-sm text-text-secondary">{entry.note}</div>
+      ) : null}
+    </li>
+  );
+}
+
+function positionTableRows(
+  rows: AccountPositionView[],
+  text: (typeof copy)["en"] | (typeof copy)["zh"],
+) {
+  return rows.map((row) => {
+    let manualShare = 0;
+    for (const [source, share] of Object.entries(row.source_breakdown)) {
+      if (source === "manual") manualShare += share;
+    }
+    const source =
+      manualShare >= 0.999 ? text.manual : manualShare <= 0.001 ? text.strategy : text.mixed;
+    return {
+      symbol: row.symbol,
+      quantity: Number(row.quantity.toFixed(4)),
+      avg_cost: Number(row.avg_cost.toFixed(2)),
+      last_price: Number(row.last_price.toFixed(2)),
+      weight: `${(Math.max(0, Math.min(1, row.weight)) * 100).toFixed(1)}%`,
+      market_value: Number(row.market_value.toFixed(2)),
+      unrealized_pnl: Number(row.unrealized_pnl.toFixed(2)),
+      source,
+      price_kind: text.priceKinds[row.price_kind] ?? row.price_kind,
+    };
+  });
+}
+
+function formatTimestamp(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) {
+    return value;
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
+type BacktestExposureRow = {
+  symbol: string;
+  weight: number;
+  side: "Long" | "Short";
+};
+
+function latestExposure(rows: PreviewRecord[]): BacktestExposureRow[] {
   const latestTimestamp = rows
     .map((row) => stringValue(row.timestamp))
     .filter(Boolean)
@@ -291,56 +595,22 @@ function latestExposure(rows: PreviewRecord[]): ExposureRow[] {
       const quantity = numberValue(row.quantity);
       const price = numberValue(row.close_price);
       const marketValue = numberValue(row.market_value) ?? (quantity ?? 0) * (price ?? 0);
-      if (!symbol || quantity === undefined || price === undefined || !Number.isFinite(marketValue)) {
+      if (!symbol || !Number.isFinite(marketValue)) {
         return null;
       }
       return {
         symbol,
-        timestamp: latestTimestamp,
-        quantity,
-        price,
-        marketValue,
         absValue: Math.abs(marketValue),
-        weight: 0,
         side: marketValue >= 0 ? "Long" : "Short",
-      } satisfies ExposureRow;
+      };
     })
-    .filter((row): row is ExposureRow => row !== null && row.absValue > 0);
+    .filter((row): row is { symbol: string; absValue: number; side: "Long" | "Short" } =>
+      row !== null && row.absValue > 0,
+    );
   const gross = mapped.reduce((sum, row) => sum + row.absValue, 0);
   return mapped
-    .map((row) => ({
-      ...row,
-      weight: gross > 0 ? row.absValue / gross : 0,
-    }))
-    .sort((left, right) => right.absValue - left.absValue || left.symbol.localeCompare(right.symbol));
-}
-
-function exposureTotals(rows: ExposureRow[]) {
-  return {
-    grossExposure: rows.reduce((sum, row) => sum + row.absValue, 0),
-    netExposure: rows.reduce((sum, row) => sum + row.marketValue, 0),
-  };
-}
-
-function positionTableRows(rows: ExposureRow[]) {
-  return rows.map((row) => ({
-    timestamp: row.timestamp,
-    symbol: row.symbol,
-    quantity: row.quantity,
-    close_price: row.price,
-    market_value: row.marketValue,
-    weight: `${(row.weight * 100).toFixed(2)}%`,
-  }));
-}
-
-function lastNumber(rows: PreviewRecord[], key: string) {
-  for (const row of [...rows].reverse()) {
-    const parsed = numberValue(row[key]);
-    if (parsed !== undefined) {
-      return parsed;
-    }
-  }
-  return undefined;
+    .map((row) => ({ symbol: row.symbol, side: row.side, weight: gross > 0 ? row.absValue / gross : 0 }))
+    .sort((left, right) => right.weight - left.weight || left.symbol.localeCompare(right.symbol));
 }
 
 function numberValue(value: unknown) {

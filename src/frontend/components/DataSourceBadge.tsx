@@ -30,7 +30,7 @@ function displaySource(source: string) {
 export function DataSourceBadge({ source }: DataSourceBadgeProps) {
   return (
     <span
-      className={`rounded border px-2 py-1 font-data-mono text-[10px] uppercase ${badgeClass(source)}`}
+      className={`rounded-lg border px-2 py-1 font-data-mono text-[10px] uppercase ${badgeClass(source)}`}
       title={source}
     >
       {displaySource(source)}
@@ -59,7 +59,7 @@ export function SyntheticMetricsWarning({
     return null;
   }
   return (
-    <div className="rounded border border-warning/50 bg-warning/10 px-3 py-2 font-body-sm font-semibold text-warning">
+    <div className="rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 font-body-sm font-semibold text-warning">
       ⚠️ {syntheticCopy[locale]}
     </div>
   );

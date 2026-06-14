@@ -33,7 +33,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Sidebar />
             <TopBar />
             <SafetyStrip />
-            <main className="ml-[240px] min-h-screen bg-bg-base pt-[100px]">
+            {/* h-screen + pt makes the content area a *fixed* height box (viewport
+                minus the 100px topbar+safety strip), so child pages using h-full /
+                flex-1 can size correctly instead of collapsing to content height. */}
+            <main className="ml-0 h-screen overflow-hidden bg-bg-base pt-[100px] lg:ml-[240px]">
               {children}
             </main>
           </Providers>

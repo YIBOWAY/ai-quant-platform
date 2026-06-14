@@ -6,7 +6,9 @@ import { EmptyState } from "@/components/EmptyState";
 import { EquityComparisonChart } from "@/components/EquityComparisonChart";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { BacktestForm, type BacktestFormInitialValues } from "@/components/forms/BacktestForm";
+import { Card, MetricStat, PageHeader, SectionTitle } from "@/components/ui/primitives";
 import {
+  type BenchmarkResponse,
   formatPercent,
   getBacktestDetail,
   getBacktests,
@@ -16,28 +18,43 @@ import {
   getStrategies,
   getUniverses,
 } from "@/lib/api";
-import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
+import { normalizeEquity } from "@/lib/equity";
+import { localizePath } from "@/lib/locale";
+import { isSampleSource, selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
   en: {
+    eyebrow: "Research Pipeline",
+    title: "Backtest",
+    subtitle:
+      "Replay a strategy on historical data before trusting it in paper trading. Configure on the left; the newest run's results show on the right.",
     configTitle: "Backtest Config",
-    configSubtitle:
-      "Use this page to replay a strategy on historical backend data before trusting it in paper trading.",
     latestRun: "Latest run",
     noBacktest: "No API backtest yet",
     openAria: (id: string) => `Open ${id}`,
     openRun: "Open run",
     benchmark: "Benchmark",
     totalReturn: "Total Return",
-    bmk: "BMK",
+    bmk: (value: string) => `Benchmark: ${value}`,
     sharpeRatio: "Sharpe Ratio",
     maxDrawdown: "Max Drawdown",
     strategyVsBenchmark: "Strategy vs Benchmark",
-    normalizedDesc: "Normalized equity curves from the newest backtest and benchmark API.",
+    normalizedDesc: (symbol: string) =>
+      `Normalized equity curves (both start at 1.0) from the newest run and benchmark ${symbol}.`,
+    benchmarkFailed: (symbol: string) =>
+      `Benchmark ${symbol} unavailable; showing strategy only.`,
     strategy: "Strategy",
     noEquityTitle: "No equity curve rows",
-    noEquityDesc: "Run a backtest to compare the strategy with the benchmark curve.",
+    noEquityDesc: "Run a backtest with the form on the left to compare it against the benchmark.",
+    historyTitle: "Run History",
+    historyDesc: "Recent backtest runs saved by the backend. Click an ID to open details.",
+    historyEmptyTitle: "No saved runs",
+    historyEmptyDesc: "Runs appear here after the backtest engine writes results.",
+    runId: "Run ID",
+    source: "Source",
+    hiddenSamples: (count: number) =>
+      `${count} sample run${count === 1 ? "" : "s"} hidden. Append ?include_sample=1 to the URL to show them.`,
     tradeBlotterTitle: "Trade Blotter",
     tradeBlotterDesc: "Latest simulated trades from the newest backtest run.",
     tradeBlotterEmptyTitle: "Trade blotter unavailable",
@@ -48,22 +65,34 @@ const copy = {
     ordersEmptyDesc: "Orders appear after the backtest engine writes a run.",
   },
   zh: {
+    eyebrow: "研究流水线",
+    title: "回测",
+    subtitle: "在进入模拟交易之前，用历史数据重放策略验证想法。左侧配置参数，右侧展示最新一次运行的结果。",
     configTitle: "回测配置",
-    configSubtitle: "这里用历史后端数据重放策略，用来判断一个想法是否值得进入模拟交易。",
     latestRun: "最新运行",
     noBacktest: "暂无 API 回测",
     openAria: (id: string) => `打开 ${id}`,
     openRun: "打开运行",
     benchmark: "基准",
     totalReturn: "总收益",
-    bmk: "基准",
+    bmk: (value: string) => `基准：${value}`,
     sharpeRatio: "夏普比率",
     maxDrawdown: "最大回撤",
     strategyVsBenchmark: "策略 vs 基准",
-    normalizedDesc: "来自最新回测与基准 API 的归一化权益曲线。",
+    normalizedDesc: (symbol: string) =>
+      `最新运行与基准 ${symbol} 的归一化权益曲线（均从 1.0 起步）。`,
+    benchmarkFailed: (symbol: string) => `基准 ${symbol} 读取失败，仅显示策略曲线。`,
     strategy: "策略",
     noEquityTitle: "暂无权益曲线数据",
-    noEquityDesc: "运行一次回测以将策略与基准曲线进行对比。",
+    noEquityDesc: "用左侧表单运行一次回测，即可与基准曲线对比。",
+    historyTitle: "运行历史",
+    historyDesc: "后端保存的近期回测运行，点击 ID 查看详情。",
+    historyEmptyTitle: "暂无保存的运行",
+    historyEmptyDesc: "回测引擎写入结果后将在这里列出。",
+    runId: "运行 ID",
+    source: "数据来源",
+    hiddenSamples: (count: number) =>
+      `已隐藏 ${count} 条样例运行。在 URL 加 ?include_sample=1 可显示。`,
     tradeBlotterTitle: "成交记录",
     tradeBlotterDesc: "来自最新回测运行的模拟成交。",
     tradeBlotterEmptyTitle: "暂无成交记录",
@@ -84,49 +113,51 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
   const locale = await getServerLocale(params);
   const text = copy[locale];
   const initialValues = backtestInitialValuesFromSearch(params);
-  const [backtests, strategies, universes, factors] = await Promise.all([
+  const [backtests, strategies, universes, factors, health] = await Promise.all([
     getBacktests(),
     getStrategies(),
     getUniverses(),
     getFactors(),
+    getHealth(),
   ]);
-  const health = await getHealth();
   const futuReachable = health.futu_opend?.reachable !== false;
-  const latest = selectDisplayRun(backtests.backtests, shouldIncludeSampleRuns(params));
+  const includeSample = shouldIncludeSampleRuns(params);
+  const allRuns = backtests.backtests;
+  const visibleRuns = includeSample ? allRuns : allRuns.filter((run) => !isSampleSource(run.source));
+  const hiddenSampleCount = allRuns.length - visibleRuns.length;
+  const latest = selectDisplayRun(allRuns, includeSample);
   const detail = latest ? await getBacktestDetail(latest.id) : null;
+
+  // Only fetch the benchmark when a run exists: its saved request carries the
+  // real window. Without a run there is nothing to compare against.
   const latestRequest =
     detail && typeof detail.metadata === "object" && detail.metadata !== null
       ? (detail.metadata.request as
-          | { benchmark_symbol?: string; provider?: string; symbols?: string[]; start?: string; end?: string }
+          | { benchmark_symbol?: string; provider?: string; start?: string; end?: string }
           | undefined)
       : undefined;
   const benchmarkSymbol =
-    typeof latestRequest?.benchmark_symbol === "string"
-      ? latestRequest.benchmark_symbol
-      : "SPY";
-  const benchmarkStart =
-    typeof latestRequest?.start === "string" ? latestRequest.start : "2024-01-02";
-  const benchmarkEnd =
-    typeof latestRequest?.end === "string" ? latestRequest.end : "2024-01-12";
-  const benchmark = await getBenchmark(
-    benchmarkSymbol,
-    benchmarkStart,
-    benchmarkEnd,
-    typeof latestRequest?.provider === "string" ? latestRequest.provider : undefined,
-  );
-  const comparisonRows = buildComparisonRows(detail?.equity_curve ?? [], benchmark.equity_curve);
+    typeof latestRequest?.benchmark_symbol === "string" ? latestRequest.benchmark_symbol : "SPY";
+  let benchmark: BenchmarkResponse | null = null;
+  if (detail && typeof latestRequest?.start === "string" && typeof latestRequest?.end === "string") {
+    benchmark = await getBenchmark(
+      benchmarkSymbol,
+      latestRequest.start,
+      latestRequest.end,
+      typeof latestRequest?.provider === "string" ? latestRequest.provider : undefined,
+    );
+  }
+  const benchmarkFailed = Boolean(benchmark?.apiError);
+  const comparisonRows = normalizeEquity(detail?.equity_curve ?? [], benchmark?.equity_curve);
 
   return (
-    <div className="flex h-full flex-1 overflow-hidden bg-base">
+    <div className="flex h-full flex-1 overflow-hidden bg-bg-base">
       <aside className="flex h-full w-[320px] flex-col overflow-y-auto border-r border-border-subtle bg-bg-surface">
         <div className="border-b border-border-subtle p-4">
           <h2 className="font-headline-lg text-text-primary">{text.configTitle}</h2>
-          <p className="mt-1 font-body-sm text-text-secondary">
-            {text.configSubtitle}
-          </p>
         </div>
         <div className="flex flex-col gap-4 p-4">
-          <div className="rounded border border-border-subtle bg-surface-muted p-3">
+          <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
             <div className="font-label-caps text-text-secondary">{text.latestRun}</div>
             <div className="mt-2 truncate font-data-mono text-text-primary">
               {latest?.id ?? text.noBacktest}
@@ -139,19 +170,12 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
             {latest ? (
               <Link
                 aria-label={text.openAria(latest.id)}
-                className="mt-3 inline-flex rounded border border-border-subtle px-3 py-1.5 font-body-sm text-info"
-                href={`/backtest/${latest.id}`}
+                className="mt-3 inline-flex rounded-lg border border-border-subtle px-3 py-1.5 font-body-sm text-info"
+                href={localizePath(`/backtest/${latest.id}`, locale)}
               >
                 {text.openRun}
               </Link>
             ) : null}
-          </div>
-          <div className="rounded border border-border-subtle bg-surface-muted p-3">
-            <div className="font-label-caps text-text-secondary">{text.benchmark}</div>
-            <div className="mt-2 font-data-mono text-text-primary">{benchmark.symbol}</div>
-            <div className="mt-2">
-              <DataSourceBadge source={benchmark.source} />
-            </div>
           </div>
           <BacktestForm
             factors={factors.factors}
@@ -164,72 +188,111 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
         </div>
       </aside>
 
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+        <PageHeader eyebrow={text.eyebrow} title={text.title} subtitle={text.subtitle} />
         <ErrorBanner
           messages={[
             backtests.apiError,
             strategies.apiError,
             universes.apiError,
             factors.apiError,
-            benchmark.apiError,
             detail?.apiError,
           ]}
         />
+        <SyntheticMetricsWarning source={latest?.source} locale={locale} />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="md:col-span-3">
-            <SyntheticMetricsWarning source={latest?.source} locale={locale} />
-          </div>
-          <div className="rounded border border-border-subtle bg-bg-surface p-3">
-            <span className="font-label-caps text-text-secondary">{text.totalReturn}</span>
-            <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">
-              {formatPercent(latest?.metrics?.total_return)}
-            </div>
-            <span className="font-data-mono text-[10px] text-text-secondary">
-              {text.bmk}: {formatPercent(benchmark.metrics.total_return)}
-            </span>
-          </div>
-          <div className="rounded border border-border-subtle bg-bg-surface p-3">
-            <span className="font-label-caps text-text-secondary">{text.sharpeRatio}</span>
-            <div className="mt-2 font-data-mono text-lg font-bold text-text-primary">
-              {latest?.metrics?.sharpe?.toFixed(2) ?? "--"}
-            </div>
-            <span className="font-data-mono text-[10px] text-text-secondary">
-              {text.bmk}: {benchmark.metrics.sharpe.toFixed(2)}
-            </span>
-          </div>
-          <div className="rounded border border-border-subtle bg-bg-surface p-3">
-            <span className="font-label-caps text-text-secondary">{text.maxDrawdown}</span>
-            <div className="mt-2 font-data-mono text-lg font-bold text-danger">
-              {formatPercent(latest?.metrics?.max_drawdown)}
-            </div>
-            <span className="font-data-mono text-[10px] text-text-secondary">
-              {text.bmk}: {formatPercent(benchmark.metrics.max_drawdown)}
-            </span>
-          </div>
+          <MetricStat
+            label={text.totalReturn}
+            value={formatPercent(latest?.metrics?.total_return)}
+            delta={benchmark ? text.bmk(formatPercent(benchmark.metrics.total_return)) : undefined}
+          />
+          <MetricStat
+            label={text.sharpeRatio}
+            value={latest?.metrics?.sharpe?.toFixed(2) ?? "--"}
+            delta={benchmark ? text.bmk(benchmark.metrics.sharpe.toFixed(2)) : undefined}
+          />
+          <MetricStat
+            label={text.maxDrawdown}
+            value={formatPercent(latest?.metrics?.max_drawdown)}
+            tone="danger"
+            delta={benchmark ? text.bmk(formatPercent(benchmark.metrics.max_drawdown)) : undefined}
+          />
         </div>
 
-        <section className="rounded border border-border-subtle bg-bg-surface p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="font-label-caps text-text-primary">{text.strategyVsBenchmark}</h3>
-              <p className="mt-1 font-body-sm text-text-secondary">
-                {text.normalizedDesc}
-              </p>
-            </div>
-            <div className="flex gap-4 font-data-mono text-[11px]">
-              <span className="text-accent-success">{text.strategy}</span>
-              <span className="text-info">{text.benchmark}</span>
-            </div>
-          </div>
+        <Card>
+          <SectionTitle
+            title={text.strategyVsBenchmark}
+            hint={
+              benchmarkFailed ? text.benchmarkFailed(benchmarkSymbol) : text.normalizedDesc(benchmarkSymbol)
+            }
+          />
           {comparisonRows.length ? (
-            <EquityComparisonChart rows={comparisonRows} />
-          ) : (
-            <EmptyState
-              title={text.noEquityTitle}
-              description={text.noEquityDesc}
+            <EquityComparisonChart
+              rows={comparisonRows}
+              labels={{ strategy: text.strategy, benchmark: `${text.benchmark} ${benchmarkSymbol}` }}
             />
+          ) : (
+            <EmptyState title={text.noEquityTitle} description={text.noEquityDesc} />
           )}
-        </section>
+        </Card>
+
+        <Card>
+          <SectionTitle title={text.historyTitle} hint={text.historyDesc} />
+          {visibleRuns.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse font-body-sm">
+                <thead>
+                  <tr className="border-b border-border-subtle text-left">
+                    <th className="px-2 py-2 font-label-caps text-text-secondary">{text.runId}</th>
+                    <th className="px-2 py-2 font-label-caps text-text-secondary">{text.source}</th>
+                    <th className="px-2 py-2 text-right font-label-caps text-text-secondary">
+                      {text.totalReturn}
+                    </th>
+                    <th className="px-2 py-2 text-right font-label-caps text-text-secondary">
+                      {text.sharpeRatio}
+                    </th>
+                    <th className="px-2 py-2 text-right font-label-caps text-text-secondary">
+                      {text.maxDrawdown}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRuns.slice(0, 10).map((run) => (
+                    <tr key={run.id} className="border-b border-border-subtle/60">
+                      <td className="px-2 py-2">
+                        <Link
+                          className="font-data-mono text-info"
+                          href={localizePath(`/backtest/${run.id}`, locale)}
+                        >
+                          {run.id}
+                        </Link>
+                      </td>
+                      <td className="px-2 py-2">
+                        {run.source ? <DataSourceBadge source={run.source} /> : "--"}
+                      </td>
+                      <td className="px-2 py-2 text-right font-data-mono text-text-primary">
+                        {formatPercent(run.metrics?.total_return)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-data-mono text-text-primary">
+                        {run.metrics?.sharpe?.toFixed(2) ?? "--"}
+                      </td>
+                      <td className="px-2 py-2 text-right font-data-mono text-danger">
+                        {formatPercent(run.metrics?.max_drawdown)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState title={text.historyEmptyTitle} description={text.historyEmptyDesc} />
+          )}
+          {hiddenSampleCount > 0 ? (
+            <p className="mt-3 font-body-sm text-text-secondary">
+              {text.hiddenSamples(hiddenSampleCount)}
+            </p>
+          ) : null}
+        </Card>
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <DataPreviewTable
@@ -239,15 +302,13 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
             emptyTitle={text.tradeBlotterEmptyTitle}
             emptyDescription={text.tradeBlotterEmptyDesc}
           />
-          <div className="lg:col-span-2">
-            <DataPreviewTable
-              title={text.ordersTitle}
-              description={text.ordersDesc}
-              rows={detail?.orders ?? []}
-              emptyTitle={text.ordersEmptyTitle}
-              emptyDescription={text.ordersEmptyDesc}
-            />
-          </div>
+          <DataPreviewTable
+            title={text.ordersTitle}
+            description={text.ordersDesc}
+            rows={detail?.orders ?? []}
+            emptyTitle={text.ordersEmptyTitle}
+            emptyDescription={text.ordersEmptyDesc}
+          />
         </section>
       </div>
     </div>
@@ -313,44 +374,4 @@ function stringParam(value: string | string[] | undefined) {
 function numberParam(value: string | string[] | undefined) {
   const parsed = Number(stringParam(value));
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function buildComparisonRows(
-  strategyRows: Array<Record<string, unknown>>,
-  benchmarkRows: Array<{ timestamp: string; equity: number }>,
-) {
-  const strategy = normalizeSeries(
-    strategyRows.map((point, index) => ({
-      timestamp: String(point.timestamp ?? `row-${index}`),
-      value: Number(point.equity ?? 0),
-    })),
-  );
-  const benchmark = normalizeSeries(
-    benchmarkRows.map((point) => ({
-      timestamp: point.timestamp,
-      value: point.equity,
-    })),
-  );
-  const count = Math.max(strategy.length, benchmark.length);
-  return Array.from({ length: count }, (_item, index) => ({
-    timestamp:
-      strategy[index]?.timestamp?.slice(0, 10) ??
-      benchmark[index]?.timestamp?.slice(0, 10) ??
-      `row-${index + 1}`,
-    strategy: strategy[index]?.value ?? null,
-    benchmark: benchmark[index]?.value ?? null,
-  }));
-}
-
-function normalizeSeries(rows: Array<{ timestamp: string; value: number }>) {
-  const first = rows.find((row) => Number.isFinite(row.value) && row.value > 0)?.value;
-  if (!first) {
-    return [];
-  }
-  return rows
-    .filter((row) => Number.isFinite(row.value))
-    .map((row) => ({
-      timestamp: row.timestamp,
-      value: row.value / first,
-    }));
 }

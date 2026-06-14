@@ -2,6 +2,7 @@ import { Bot, Cpu, Network, ShieldCheck } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { AgentTaskForm } from "@/components/forms/AgentTaskForm";
+import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import {
   getAgentCandidateDetail,
   getAgentCandidates,
@@ -12,13 +13,19 @@ import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
   en: {
+    eyebrow: "Research Agents",
     title: "Agent Studio",
     inertNote: "Candidates are inert files until manual review.",
+    safetyTitle: "Read-only · never imported or executed",
+    safetyBody:
+      "Agent candidates are written to disk as plain text. The platform never imports or executes candidate code, and approval only writes a lock file — it never registers a factor.",
     candidatePool: "Candidate Pool",
+    candidatePoolHint: "Pending files awaiting manual review.",
     noCandidatesTitle: "No candidates",
     noCandidatesDesc: "Run an agent task to create a pending candidate.",
     registryContext: "Registry Context",
-    registeredFactors: "Registered factors:",
+    registeredFactors: "Registered factors",
+    selected: "Selected",
     noCandidateSelected: "No candidate selected",
     sourcePreviewNote: "Source preview is read as text only. It is never imported or executed.",
     manualReviewRequired: "manual review required",
@@ -33,15 +40,29 @@ const copy = {
     noReviewRecords: "No review records yet.",
     auditPendingTitle: "Audit timeline pending",
     auditPendingDesc: "This candidate has no audit or review rows yet.",
+    llm: "LLM",
+    model: "Model",
+    apiKey: "API key",
+    keySet: "set",
+    keyUnset: "unset",
+    none: "none",
+    status: "status",
+    type: "type",
   },
   zh: {
+    eyebrow: "研究智能体",
     title: "智能体工作室",
     inertNote: "候选在人工复核前仅为惰性文件。",
+    safetyTitle: "只读 · 绝不导入或执行",
+    safetyBody:
+      "智能体候选以纯文本写入磁盘。平台绝不会导入或执行候选代码，批准也仅写入锁文件，绝不会注册因子。",
     candidatePool: "候选池",
+    candidatePoolHint: "等待人工复核的待处理文件。",
     noCandidatesTitle: "暂无候选",
     noCandidatesDesc: "运行一个智能体任务以创建待处理的候选。",
     registryContext: "注册表上下文",
-    registeredFactors: "已注册因子：",
+    registeredFactors: "已注册因子",
+    selected: "已选择",
     noCandidateSelected: "未选择候选",
     sourcePreviewNote: "源码预览仅以文本方式读取，绝不会被导入或执行。",
     manualReviewRequired: "需人工复核",
@@ -55,8 +76,26 @@ const copy = {
     noReviewRecords: "暂无复核记录。",
     auditPendingTitle: "审计时间线待生成",
     auditPendingDesc: "该候选尚无审计或复核记录。",
+    llm: "LLM",
+    model: "模型",
+    apiKey: "API 密钥",
+    keySet: "已设置",
+    keyUnset: "未设置",
+    none: "无",
+    status: "状态",
+    type: "类型",
   },
 } as const;
+
+type Tone = "neutral" | "success" | "warning" | "danger" | "info";
+
+function statusTone(status: string): Tone {
+  const normalized = status.toLowerCase();
+  if (normalized === "approved") return "success";
+  if (normalized === "rejected") return "danger";
+  if (normalized === "pending") return "warning";
+  return "neutral";
+}
 
 export default async function AgentStudio() {
   const locale = await getServerLocale();
@@ -72,75 +111,82 @@ export default async function AgentStudio() {
     : null;
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-base">
-      <aside className="flex h-full w-[300px] shrink-0 flex-col border-r border-border-subtle bg-surface">
+    <div className="flex h-full w-full overflow-hidden bg-bg-base">
+      <aside className="flex h-full w-[300px] shrink-0 flex-col border-r border-border-subtle bg-bg-surface">
         <div className="border-b border-border-subtle bg-surface-dim p-4">
-          <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
-          <p className="mt-1 font-body-sm text-text-secondary">
-            {text.inertNote}
-          </p>
-          <p className="mt-2 font-data-mono text-[10px] uppercase text-text-secondary">
-            llm={llmConfig.provider} model={llmConfig.model ?? "none"} key=
-            {llmConfig.has_api_key ? "set" : "unset"}
-          </p>
+          <p className="font-label-caps uppercase text-text-secondary">{text.eyebrow}</p>
+          <div className="mt-1 flex items-center gap-2">
+            <Bot size={18} className="text-accent-success" />
+            <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
+          </div>
+          <p className="mt-2 font-body-sm text-text-secondary">{text.inertNote}</p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <StatusPill label={text.llm} value={llmConfig.provider} tone="info" />
+            <StatusPill label={text.model} value={llmConfig.model ?? text.none} tone="neutral" />
+            <StatusPill
+              label={text.apiKey}
+              value={llmConfig.has_api_key ? text.keySet : text.keyUnset}
+              tone={llmConfig.has_api_key ? "success" : "neutral"}
+            />
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          <div className="border-b border-border-subtle p-4">
-            <h3 className="mb-3 font-label-caps text-text-secondary">{text.candidatePool}</h3>
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <section>
+            <SectionTitle title={text.candidatePool} hint={text.candidatePoolHint} />
             {candidates.candidates.length ? (
               <ul className="space-y-2">
                 {candidates.candidates.map((candidate) => (
                   <li
                     key={candidate.candidate_id}
-                    className="rounded border border-border-subtle bg-surface-container-high p-3"
+                    className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3"
                   >
                     <div className="flex items-center gap-2">
-                      <Cpu size={14} className="text-primary" />
-                      <span className="truncate font-body-sm text-text-primary">
+                      <Cpu size={14} className="shrink-0 text-text-secondary" />
+                      <span className="truncate font-data-mono text-xs text-text-primary">
                         {candidate.candidate_id}
                       </span>
                     </div>
-                    <div className="mt-2 font-data-mono text-[10px] uppercase text-text-secondary">
-                      {candidate.artifact_type} · {candidate.status}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <StatusPill label={text.type} value={candidate.artifact_type} tone="neutral" />
+                      <StatusPill
+                        label={text.status}
+                        value={candidate.status}
+                        tone={statusTone(candidate.status)}
+                      />
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <EmptyState
-                title={text.noCandidatesTitle}
-                description={text.noCandidatesDesc}
-              />
+              <EmptyState title={text.noCandidatesTitle} description={text.noCandidatesDesc} />
             )}
-          </div>
-          <div className="p-4">
-            <h3 className="mb-3 font-label-caps text-text-secondary">{text.registryContext}</h3>
-            <div className="flex items-center gap-2 rounded border border-border-subtle bg-surface-variant p-3">
-              <Network size={14} className="text-info" />
-              <span className="font-body-sm text-text-secondary">
-                {text.registeredFactors} {factors.factors.length}
+          </section>
+          <section>
+            <SectionTitle title={text.registryContext} />
+            <Card tone="info" padded={false} className="flex items-center gap-2 p-3">
+              <Network size={14} className="shrink-0 text-info" />
+              <span className="flex-1 font-body-sm text-text-secondary">
+                {text.registeredFactors}
               </span>
-            </div>
-          </div>
+              <span className="font-data-mono text-sm font-bold text-info">
+                {factors.factors.length}
+              </span>
+            </Card>
+          </section>
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="border-b border-border-subtle bg-surface px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 font-data-mono text-sm text-text-primary">
-                <Bot size={16} className="text-primary" />
-                {latestCandidate?.candidate_id ?? text.noCandidateSelected}
-              </div>
-              <p className="mt-1 font-body-sm text-text-secondary">
-                {text.sourcePreviewNote}
-              </p>
-            </div>
-            <span className="flex items-center gap-1 rounded border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning">
-              <ShieldCheck size={12} /> {text.manualReviewRequired}
+        <div className="flex items-center justify-between gap-3 border-b border-border-subtle bg-bg-surface px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2 font-data-mono text-sm text-text-primary">
+            <span className="font-label-caps text-text-secondary">{text.selected}</span>
+            <span className="truncate">
+              {latestCandidate?.candidate_id ?? text.noCandidateSelected}
             </span>
           </div>
+          <span className="flex shrink-0 items-center gap-1 rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning">
+            <ShieldCheck size={12} /> {text.manualReviewRequired}
+          </span>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -152,39 +198,51 @@ export default async function AgentStudio() {
               latestDetail?.apiError,
             ]}
           />
+
+          <Card tone="warning" className="flex items-start gap-3">
+            <ShieldCheck size={18} className="mt-0.5 shrink-0 text-warning" />
+            <div>
+              <h2 className="font-label-caps text-warning">{text.safetyTitle}</h2>
+              <p className="mt-1 font-body-sm text-text-secondary">{text.safetyBody}</p>
+            </div>
+          </Card>
+
           <AgentTaskForm candidates={candidates.candidates} locale={locale} />
+
           {latestDetail?.source_preview ? (
-            <section className="rounded border border-border-subtle bg-bg-surface p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="font-headline-lg text-text-primary">{text.sourcePreview}</h2>
-                  <p className="mt-1 font-body-sm text-text-secondary">
-                    {text.sourcePreviewSub}
-                  </p>
-                </div>
-                <span className="font-data-mono text-[10px] uppercase text-text-secondary">
-                  {latestDetail.candidate_id}
-                </span>
-              </div>
-              <pre className="max-h-80 overflow-auto rounded border border-border-subtle bg-surface-muted p-3 font-code-sm text-text-primary">
+            <Card>
+              <SectionTitle
+                title={text.sourcePreview}
+                hint={text.sourcePreviewSub}
+                right={
+                  <span className="font-data-mono text-[10px] uppercase text-text-secondary">
+                    {latestDetail.candidate_id}
+                  </span>
+                }
+              />
+              <pre className="max-h-80 overflow-auto rounded-lg border border-border-subtle bg-bg-surface-muted p-3 font-code-sm text-text-primary">
                 {latestDetail.source_preview}
               </pre>
-            </section>
+            </Card>
           ) : (
             <EmptyState
               title={text.sourceNotLoadedTitle}
               description={text.sourceNotLoadedDesc}
             />
           )}
+
           {latestDetail?.audit.length || latestDetail?.reviews.length ? (
-            <section className="rounded border border-border-subtle bg-bg-surface p-4">
-              <h2 className="font-headline-lg text-text-primary">{text.auditTimeline}</h2>
-              <div className="mt-3 grid gap-4 lg:grid-cols-2">
+            <Card>
+              <SectionTitle title={text.auditTimeline} />
+              <div className="grid gap-4 lg:grid-cols-2">
                 <div>
                   <h3 className="font-label-caps text-text-secondary">{text.auditEvents}</h3>
                   <ul className="mt-2 space-y-2 font-data-mono text-xs text-text-primary">
                     {(latestDetail?.audit ?? []).slice(0, 12).map((entry, index) => (
-                      <li key={`audit-${index}`} className="rounded border border-border-subtle bg-surface-muted p-2">
+                      <li
+                        key={`audit-${index}`}
+                        className="rounded-lg border border-border-subtle bg-bg-surface-muted p-2"
+                      >
                         {entry}
                       </li>
                     ))}
@@ -195,7 +253,10 @@ export default async function AgentStudio() {
                   {(latestDetail?.reviews ?? []).length ? (
                     <ul className="mt-2 space-y-2 font-data-mono text-xs text-text-primary">
                       {latestDetail.reviews.slice(0, 12).map((entry, index) => (
-                        <li key={`review-${index}`} className="rounded border border-border-subtle bg-surface-muted p-2">
+                        <li
+                          key={`review-${index}`}
+                          className="rounded-lg border border-border-subtle bg-bg-surface-muted p-2"
+                        >
                           {entry}
                         </li>
                       ))}
@@ -205,7 +266,7 @@ export default async function AgentStudio() {
                   )}
                 </div>
               </div>
-            </section>
+            </Card>
           ) : (
             <EmptyState
               title={text.auditPendingTitle}

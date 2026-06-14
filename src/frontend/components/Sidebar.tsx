@@ -15,24 +15,28 @@ import {
   Map,
   FileText,
   HelpCircle,
-  User,
   Plus,
   ListFilter,
+  Radar,
+  ShieldCheck,
   Wrench,
-  ScrollText
+  ScrollText,
+  Beaker
 } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { localizePath, splitLocalePath } from "@/lib/locale";
 
 const copy = {
   en: {
-    tagline: "Local Instance v2.4",
-    newStrategy: "New Strategy",
+    tagline: "Local research workspace",
+    runBacktest: "Run Backtest",
     docs: "Docs",
-    support: "Support",
-    role: "Quant Researcher",
+    support: "Help",
+    paperOnly: "Paper-only",
+    paperOnlyHint: "Research & simulation. No live trading paths exist.",
     groups: {
       research: "Research Pipeline",
+      paper: "Paper Trading",
       options: "Options Research",
       markets: "Markets & AI",
       system: "System",
@@ -56,13 +60,15 @@ const copy = {
     },
   },
   zh: {
-    tagline: "本地实例 v2.4",
-    newStrategy: "新建策略",
+    tagline: "本地研究环境",
+    runBacktest: "运行回测",
     docs: "文档",
     support: "帮助",
-    role: "量化研究员",
+    paperOnly: "仅模拟",
+    paperOnlyHint: "研究与模拟用途，不存在任何实盘交易路径。",
     groups: {
       research: "研究流水线",
+      paper: "模拟交易",
       options: "期权研究",
       markets: "市场与 AI",
       system: "系统",
@@ -102,7 +108,12 @@ export function Sidebar() {
         { name: text.nav.factorLab, href: "/factor-lab", icon: FlaskConical },
         { name: text.nav.backtester, href: "/backtest", icon: LineChart },
         { name: text.nav.replications, href: "/replications", icon: ScrollText },
-        { name: text.nav.experiments, href: "/experiments", icon: FlaskConical },
+        { name: text.nav.experiments, href: "/experiments", icon: Beaker },
+      ],
+    },
+    {
+      name: text.groups.paper,
+      items: [
         { name: text.nav.paperTrading, href: "/paper-trading", icon: BriefcaseBusiness },
         { name: text.nav.positionMap, href: "/position-map", icon: Map },
       ],
@@ -111,7 +122,7 @@ export function Sidebar() {
       name: text.groups.options,
       items: [
         { name: text.nav.optionsScreener, href: "/options-screener", icon: ListFilter },
-        { name: text.nav.optionsRadar, href: "/options-radar", icon: ListFilter },
+        { name: text.nav.optionsRadar, href: "/options-radar", icon: Radar },
         { name: text.nav.optionsTools, href: "/options-tools", icon: Wrench },
         { name: text.nav.buySide, href: "/options-buyside", icon: BadgeDollarSign },
       ],
@@ -132,9 +143,12 @@ export function Sidebar() {
   ];
 
   return (
-    <nav className="fixed left-0 top-0 flex flex-col h-full w-[240px] border-r border-zinc-800 bg-zinc-950 z-50">
-      <div className="p-6 border-b border-zinc-800">
-        <div className="font-mono font-black text-lg tracking-tighter text-[#00C896] uppercase mb-1">
+    <nav
+      className="fixed left-0 top-0 z-50 hidden h-full w-[240px] flex-col border-r border-border-subtle bg-bg-base lg:flex"
+      data-testid="desktop-sidebar"
+    >
+      <div className="border-b border-border-subtle p-6">
+        <div className="mb-1 font-mono text-lg font-black uppercase tracking-tighter text-accent-success">
           QUANTUM_CORE
         </div>
         <div className="font-sans text-xs tracking-tight text-text-secondary">
@@ -142,13 +156,13 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="p-4 border-b border-zinc-800">
+      <div className="border-b border-border-subtle p-4">
         <Link
-          className="w-full py-2 border border-[#00C896] text-[#00C896] rounded font-label-caps hover:bg-[#00C896]/10 transition-colors flex items-center justify-center gap-2"
+          className="font-label-caps flex w-full items-center justify-center gap-2 rounded-lg border border-accent-success py-2 text-accent-success transition-colors hover:bg-accent-success/10"
           href={localizePath("/backtest", locale)}
         >
           <Plus size={16} />
-          <span>{text.newStrategy}</span>
+          <span>{text.runBacktest}</span>
         </Link>
       </div>
 
@@ -156,7 +170,7 @@ export function Sidebar() {
         <div className="space-y-5">
           {navSections.map((section) => (
             <section key={section.name}>
-              <h2 className="px-3 pb-2 font-label-caps text-[10px] text-zinc-600">
+              <h2 className="px-3 pb-2 font-label-caps text-[10px] text-text-secondary/70">
                 {section.name}
               </h2>
               <ul className="space-y-1">
@@ -166,10 +180,10 @@ export function Sidebar() {
                     <li key={item.href}>
                       <Link
                         href={localizePath(item.href, locale)}
-                        className={`flex items-center gap-3 rounded px-3 py-2 font-sans text-xs tracking-tight transition-colors ${
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 font-sans text-xs tracking-tight transition-colors ${
                           isActive
-                            ? "bg-zinc-900 text-[#00C896] border-l-2 border-[#00C896] font-semibold"
-                            : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200 border-l-2 border-transparent"
+                            ? "border-l-2 border-accent-success bg-bg-surface font-semibold text-accent-success"
+                            : "border-l-2 border-transparent text-text-secondary hover:bg-bg-surface hover:text-text-primary"
                         }`}
                       >
                         <item.icon size={18} />
@@ -184,12 +198,12 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="px-3 py-4 border-t border-zinc-800">
+      <div className="border-t border-border-subtle px-3 py-4">
         <ul className="space-y-1">
           <li>
             <Link
               href={localizePath("/docs/reversal-momentum", locale)}
-              className="flex items-center gap-3 px-3 py-1.5 rounded text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200 transition-colors font-sans text-xs tracking-tight"
+              className="flex items-center gap-3 rounded-lg px-3 py-1.5 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-surface hover:text-text-primary"
             >
               <FileText size={16} />
               <span>{text.docs}</span>
@@ -198,7 +212,7 @@ export function Sidebar() {
           <li>
             <Link
               href={localizePath("/settings", locale)}
-              className="flex items-center gap-3 px-3 py-1.5 rounded text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200 transition-colors font-sans text-xs tracking-tight"
+              className="flex items-center gap-3 rounded-lg px-3 py-1.5 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-surface hover:text-text-primary"
             >
               <HelpCircle size={16} />
               <span>{text.support}</span>
@@ -207,16 +221,16 @@ export function Sidebar() {
         </ul>
       </div>
 
-      <div className="p-4 border-t border-zinc-800 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-surface-muted border border-border-subtle overflow-hidden flex items-center justify-center">
-          <User size={18} className="text-text-secondary" />
+      <div className="flex items-center gap-3 border-t border-border-subtle p-4" title={text.paperOnlyHint}>
+        <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-accent-success/30 bg-accent-success/10">
+          <ShieldCheck size={16} className="text-accent-success" />
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-sans text-xs font-medium text-text-primary truncate">
-            {text.role}
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-sans text-xs font-medium text-text-primary">
+            {text.paperOnly}
           </div>
-          <div className="font-sans text-[10px] text-text-secondary truncate">
-            ID: QR-9921
+          <div className="truncate font-sans text-[10px] text-text-secondary">
+            {text.paperOnlyHint}
           </div>
         </div>
       </div>

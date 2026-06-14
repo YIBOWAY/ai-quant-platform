@@ -10,7 +10,11 @@ import type { PredictionMarketBacktestResponse } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 
-const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
+const fieldLabel = "flex flex-col gap-1 font-body-sm text-text-primary";
+const selectClass =
+  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-text-primary";
+const inputClass =
+  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
 
 const copy = {
   en: {
@@ -124,56 +128,56 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
   }
 
   return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-4">
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
       <h2 className="font-headline-lg text-text-primary">{text.title}</h2>
       <p className="mt-1 font-body-sm text-text-secondary">
         {text.intro}
       </p>
       <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3" onSubmit={(event) => event.preventDefault()}>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        <label className={fieldLabel}>
           {text.provider}
-          <select className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("provider")}>
-            <option style={optionStyle} value="polymarket">{text.polymarketReadOnly}</option>
-            <option style={optionStyle} value="sample">sample</option>
+          <select className={selectClass} {...form.register("provider")}>
+            <option value="polymarket">{text.polymarketReadOnly}</option>
+            <option value="sample">sample</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        <label className={fieldLabel}>
           {text.cacheMode}
-          <select className="rounded border border-border-subtle bg-surface-muted px-3 py-2 text-text-primary" {...form.register("cache_mode")}>
-            <option style={optionStyle} value="prefer_cache">prefer_cache</option>
-            <option style={optionStyle} value="refresh">refresh</option>
-            <option style={optionStyle} value="network_only">network_only</option>
+          <select className={selectClass} {...form.register("cache_mode")}>
+            <option value="prefer_cache">prefer_cache</option>
+            <option value="refresh">refresh</option>
+            <option value="network_only">network_only</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        <label className={fieldLabel}>
           {text.minEdge}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("min_edge_bps", { valueAsNumber: true })} />
+          <input className={inputClass} type="number" {...form.register("min_edge_bps", { valueAsNumber: true })} />
         </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        <label className={fieldLabel}>
           {text.maxCapitalPerLeg}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("max_capital_per_leg", { valueAsNumber: true })} />
+          <input className={inputClass} type="number" {...form.register("max_capital_per_leg", { valueAsNumber: true })} />
         </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        <label className={fieldLabel}>
           {text.capitalLimit}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("capital_limit", { valueAsNumber: true })} />
+          <input className={inputClass} type="number" {...form.register("capital_limit", { valueAsNumber: true })} />
         </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        <label className={fieldLabel}>
           {text.maxLegs}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("max_legs", { valueAsNumber: true })} />
+          <input className={inputClass} type="number" {...form.register("max_legs", { valueAsNumber: true })} />
         </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        <label className={fieldLabel}>
           {text.maxMarkets}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("max_markets", { valueAsNumber: true })} />
+          <input className={inputClass} type="number" {...form.register("max_markets", { valueAsNumber: true })} />
         </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+        <label className={fieldLabel}>
           {text.feeBps}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("fee_bps", { valueAsNumber: true })} />
+          <input className={inputClass} type="number" {...form.register("fee_bps", { valueAsNumber: true })} />
         </label>
       </form>
       {error ? <p className="mt-3 font-body-sm text-danger">{error}</p> : null}
       <div className="mt-4 flex flex-wrap gap-2">
         <button
-          className="rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!isHydrated || mutation.isPending}
           onClick={() => submit("scan")}
           type="button"
@@ -181,7 +185,7 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
           {mutation.isPending ? text.running : text.runScanner}
         </button>
         <button
-          className="rounded border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!isHydrated || mutation.isPending}
           onClick={() => submit("dry-arbitrage")}
           type="button"
@@ -189,7 +193,7 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
           {mutation.isPending ? text.running : text.generateDryArb}
         </button>
         <button
-          className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!isHydrated || mutation.isPending}
           onClick={() => submit("backtest")}
           type="button"
@@ -203,12 +207,12 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
           <Metric label={text.triggerRate} value={`${(backtestResult.metrics.trigger_rate * 100).toFixed(2)}%`} />
           <Metric label={text.totalEdge} value={backtestResult.metrics.total_estimated_edge.toFixed(2)} />
           <Metric label={text.cacheStatus} value={backtestResult.cache_status ?? "live"} />
-          <div className="rounded border border-border-subtle bg-surface-muted p-3 md:col-span-3">
+          <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3 md:col-span-3">
             <div className="font-body-sm text-text-secondary">{text.report}</div>
             <div className="mt-1 break-all font-data-mono text-xs text-text-primary">{backtestResult.report_path}</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {backtestResult.chart_index.charts.map((chart) => (
-                <span key={chart.name} className="rounded border border-border-subtle px-2 py-1 font-data-mono text-[10px] text-text-secondary">
+                <span key={chart.name} className="rounded-lg border border-border-subtle px-2 py-1 font-data-mono text-[10px] text-text-secondary">
                   {chart.title}: {chart.path}
                 </span>
               ))}
@@ -217,7 +221,7 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
         </div>
       ) : null}
       {result ? (
-        <pre className="mt-4 max-h-64 overflow-auto rounded border border-border-subtle bg-surface-muted p-3 font-code-sm text-text-primary">
+        <pre className="mt-4 max-h-64 overflow-auto rounded-lg border border-border-subtle bg-bg-surface-muted p-3 font-code-sm text-text-primary">
           {result}
         </pre>
       ) : null}
@@ -227,7 +231,7 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-border-subtle bg-surface-muted p-3">
+    <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
       <div className="font-body-sm text-text-secondary">{label}</div>
       <div className="mt-1 font-data-mono text-lg text-text-primary">{value}</div>
     </div>

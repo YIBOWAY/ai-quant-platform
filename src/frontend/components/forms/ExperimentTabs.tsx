@@ -1,7 +1,7 @@
 'use client';
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -12,18 +12,13 @@ import {
   YAxis,
 } from "recharts";
 import { EmptyState } from "@/components/EmptyState";
+import { Tabs } from "@/components/ui/Tabs";
+import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import type { ExperimentDetailResponse, ExperimentSummary, PreviewRecord } from "@/lib/api";
+import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
 
-const TABS = [
-  { id: "sweep" },
-  { id: "folds" },
-  { id: "runs" },
-  { id: "summary" },
-] as const;
 const EMPTY_ROWS: PreviewRecord[] = [];
-
-type TabId = (typeof TABS)[number]["id"];
 
 const copy = {
   en: {
@@ -108,8 +103,9 @@ type ExperimentTabsProps = {
 
 export function ExperimentTabs({ detail, experiment, locale = "en" }: ExperimentTabsProps) {
   const text = copy[locale];
-  const [active, setActive] = useState<TabId>("sweep");
-  const [isReady, setIsReady] = useState(false);
+  // e2e (experiments-workbench.spec.ts) waits for data-experiment-tabs-ready="true"
+  // before clicking tabs — only flip it once the client is interactive.
+  const isHydrated = useIsHydrated();
   const runs = detail?.runs ?? EMPTY_ROWS;
   const folds = detail?.folds ?? EMPTY_ROWS;
   const config = detail?.experiment_config ?? {};
@@ -120,11 +116,6 @@ export function ExperimentTabs({ detail, experiment, locale = "en" }: Experiment
   );
   const backtestHref = buildBacktestHref(config, bestRun);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setIsReady(true), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-
   if (!detail) {
     return (
       <EmptyState
@@ -134,61 +125,45 @@ export function ExperimentTabs({ detail, experiment, locale = "en" }: Experiment
     );
   }
 
+  const tabItems = [
+    { id: "sweep", label: text.tabLabels.sweep, content: <SweepHeatmap runs={runs} text={text} /> },
+    { id: "folds", label: text.tabLabels.folds, content: <WalkForwardFolds folds={folds} text={text} /> },
+    {
+      id: "runs",
+      label: text.tabLabels.runs,
+      content: <RunComparison runs={runs} bestRunId={stringValue(bestRun?.run_id)} text={text} />,
+    },
+    { id: "summary", label: text.tabLabels.summary, content: <AgentSummary summary={agentSummary} text={text} /> },
+  ];
+
   return (
-    <section
-      className="flex min-h-[520px] flex-col rounded border border-border-subtle bg-bg-surface"
-      data-experiment-tabs-ready={isReady ? "true" : "false"}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle p-4">
-        <div>
-          <div className="font-label-caps text-text-secondary">{text.selectedExperiment}</div>
-          <h3 className="mt-1 break-all font-data-mono text-sm text-text-primary">{detail.id}</h3>
-          <div className="mt-2 flex flex-wrap gap-2 font-data-mono text-[10px] uppercase">
-            <span className="rounded border border-border-subtle px-2 py-1 text-text-secondary">
-              {text.runs} {runs.length}
-            </span>
-            <span className="rounded border border-border-subtle px-2 py-1 text-text-secondary">
-              {text.folds} {folds.length}
-            </span>
-            <span className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-warning">
-              {text.sampleData}
-            </span>
+    <div className="flex flex-col gap-4" data-experiment-tabs-ready={isHydrated ? "true" : "false"}>
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-label-caps text-text-secondary">{text.selectedExperiment}</div>
+            <h3 className="mt-1 break-all font-data-mono text-sm text-text-primary">{detail.id}</h3>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusPill label={text.runs} value={runs.length} />
+              <StatusPill label={text.folds} value={folds.length} />
+              <span className="inline-flex items-center rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning">
+                {text.sampleData}
+              </span>
+            </div>
           </div>
+          {bestRun ? (
+            <Link
+              className="shrink-0 rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
+              href={backtestHref}
+            >
+              {text.sendToBacktest}
+            </Link>
+          ) : null}
         </div>
-        {bestRun ? (
-          <Link
-            className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary"
-            href={backtestHref}
-          >
-            {text.sendToBacktest}
-          </Link>
-        ) : null}
-      </div>
+      </Card>
 
-      <div className="flex flex-wrap gap-2 border-b border-border-subtle p-4">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            className={`rounded border px-3 py-2 font-body-sm ${
-              active === tab.id
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border-subtle text-text-secondary"
-            }`}
-            onClick={() => setActive(tab.id)}
-            type="button"
-          >
-            {text.tabLabels[tab.id]}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 p-4">
-        {active === "sweep" ? <SweepHeatmap runs={runs} text={text} /> : null}
-        {active === "folds" ? <WalkForwardFolds folds={folds} text={text} /> : null}
-        {active === "runs" ? <RunComparison runs={runs} bestRunId={stringValue(bestRun?.run_id)} text={text} /> : null}
-        {active === "summary" ? <AgentSummary summary={agentSummary} text={text} /> : null}
-      </div>
-    </section>
+      <Tabs defaultId="sweep" items={tabItems} />
+    </div>
   );
 }
 
@@ -205,36 +180,38 @@ function SweepHeatmap({ runs, text }: { runs: PreviewRecord[]; text: Copy }) {
   const sharpeValues = runs.map((run) => numberValue(run.sharpe)).filter(isNumber);
   const minSharpe = Math.min(...sharpeValues);
   const maxSharpe = Math.max(...sharpeValues);
+  const orderedRuns = [...runs].sort(
+    (left, right) =>
+      numberValue(left.lookback) - numberValue(right.lookback) ||
+      numberValue(left.top_n) - numberValue(right.top_n),
+  );
 
   return (
-    <div>
-      <PanelHeading
-        title={text.sweepHeatmapTitle}
-        description={text.sweepHeatmapDescription}
-      />
-      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {runs.map((run) => {
+    <Card>
+      <SectionTitle title={text.sweepHeatmapTitle} hint={text.sweepHeatmapDescription} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {orderedRuns.map((run) => {
           const sharpe = numberValue(run.sharpe);
           const lookback = stringValue(run.lookback ?? "--");
           const topN = stringValue(run.top_n ?? "--");
           return (
             <div
               key={stringValue(run.run_id) || `${lookback}-${topN}`}
-              className="rounded border border-border-subtle p-3"
+              className="rounded-lg border border-border-subtle p-3"
               style={{ backgroundColor: heatColor(sharpe, minSharpe, maxSharpe) }}
             >
-              <div className="font-data-mono text-xs text-text-primary">
+              <div className="font-data-mono text-[11px] uppercase text-text-secondary">
                 lookback={lookback} / top_n={topN}
               </div>
               <div className="mt-3 font-data-mono text-2xl font-semibold text-text-primary">
                 {formatNumber(sharpe, 2)}
               </div>
-              <div className="mt-1 font-body-sm text-text-secondary">{text.sharpe}</div>
+              <div className="mt-1 font-label-caps text-text-secondary">{text.sharpe}</div>
             </div>
           );
         })}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -249,11 +226,8 @@ function WalkForwardFolds({ folds, text }: { folds: PreviewRecord[]; text: Copy 
   }
 
   return (
-    <div>
-      <PanelHeading
-        title={text.foldsTitle}
-        description={text.foldsDescription}
-      />
+    <Card>
+      <SectionTitle title={text.foldsTitle} hint={text.foldsDescription} />
       <RecordTable
         columns={[
           "run_id",
@@ -267,7 +241,7 @@ function WalkForwardFolds({ folds, text }: { folds: PreviewRecord[]; text: Copy 
         ]}
         rows={folds}
       />
-    </div>
+    </Card>
   );
 }
 
@@ -291,12 +265,9 @@ function RunComparison({ runs, bestRunId, text }: { runs: PreviewRecord[]; bestR
     }));
 
   return (
-    <div>
-      <PanelHeading
-        title={text.runsTitle}
-        description={text.runsDescription}
-      />
-      <div className="mt-4 h-72 rounded border border-border-subtle bg-surface-muted p-3">
+    <Card>
+      <SectionTitle title={text.runsTitle} hint={text.runsDescription} />
+      <div className="h-72 rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
         <ResponsiveContainer height="100%" width="100%">
           <BarChart data={chartRows} margin={{ bottom: 36, left: 0, right: 8, top: 8 }}>
             <CartesianGrid stroke="#1F2937" strokeDasharray="3 3" />
@@ -323,7 +294,7 @@ function RunComparison({ runs, bestRunId, text }: { runs: PreviewRecord[]; bestR
         highlightId={bestRunId}
         rows={runs}
       />
-    </div>
+    </Card>
   );
 }
 
@@ -341,14 +312,11 @@ function AgentSummary({ summary, text }: { summary: Record<string, unknown>; tex
   const json = JSON.stringify(summary, null, 2);
 
   return (
-    <div>
+    <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <PanelHeading
-          title={text.summaryTitle}
-          description={text.summaryDescription}
-        />
+        <SectionTitle title={text.summaryTitle} hint={text.summaryDescription} />
         <button
-          className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-secondary"
+          className="shrink-0 rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-secondary transition-colors hover:bg-bg-surface-muted hover:text-text-primary"
           onClick={() => void navigator.clipboard?.writeText(json)}
           type="button"
         >
@@ -356,30 +324,21 @@ function AgentSummary({ summary, text }: { summary: Record<string, unknown>; tex
         </button>
       </div>
       {notes.length ? (
-        <ul className="mt-4 space-y-2">
+        <ul className="space-y-2">
           {notes.map((note) => (
             <li
               key={note}
-              className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-body-sm text-text-primary"
+              className="rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-body-sm text-text-primary"
             >
               {note}
             </li>
           ))}
         </ul>
       ) : null}
-      <pre className="mt-4 max-h-96 overflow-auto rounded border border-border-subtle bg-surface-muted p-3 font-data-mono text-xs text-text-primary">
+      <pre className="mt-4 max-h-96 overflow-auto rounded-lg border border-border-subtle bg-bg-surface-muted p-3 font-data-mono text-xs text-text-primary">
         {json}
       </pre>
-    </div>
-  );
-}
-
-function PanelHeading({ title, description }: { title: string; description: string }) {
-  return (
-    <div>
-      <h3 className="font-headline-lg text-text-primary">{title}</h3>
-      <p className="mt-1 font-body-sm text-text-secondary">{description}</p>
-    </div>
+    </Card>
   );
 }
 
@@ -393,10 +352,10 @@ function RecordTable({
   rows: PreviewRecord[];
 }) {
   return (
-    <div className="mt-4 overflow-auto rounded border border-border-subtle">
+    <div className="mt-4 overflow-auto rounded-lg border border-border-subtle">
       <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="border-b border-border-subtle bg-surface-muted">
+          <tr className="border-b border-border-subtle bg-bg-surface-muted">
             {columns.map((column) => (
               <th key={column} className="px-3 py-2 font-label-caps text-text-secondary">
                 {column}

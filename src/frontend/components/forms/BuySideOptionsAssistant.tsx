@@ -17,16 +17,13 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
+import { Card, MetricStat, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import { useIsHydrated } from "@/lib/hydration";
-import { localizePath } from "@/lib/locale";
-
-const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
 
 const copy = {
   en: {
     title: "Buy-Side Options Assistant",
     intro: "Read-only Futu option-chain analysis for bullish long-premium structures. No orders, no account unlock, no live trading.",
-    zh: "中文",
     thesis: "Trade Thesis",
     market: "Market Snapshot",
     recommendations: "Strategy Recommendations",
@@ -118,11 +115,22 @@ const copy = {
     yes: "Yes",
     no: "No",
     unknown: "Unknown",
+    noWarning: "No core warning",
+    scenarioGreekNote:
+      "Greek approximation only. Reliability falls for large spot moves, long time passed, and near-expiration theta acceleration.",
+    scenarioLabels: {
+      best: "Best case",
+      worst: "Worst case",
+      flatCrush: "Flat + IV crush",
+      spotUpIvDown: "Spot up + IV down",
+      thetaOnly: "Theta only",
+    },
+    contracts: "Selected contracts",
+    runHint: "Read-only. No orders are placed.",
   },
   zh: {
     title: "买方期权策略助手",
     intro: "基于 Futu 只读期权链，分析看涨买方结构。不下单、不解锁账户、不接入实盘。",
-    zh: "English",
     thesis: "交易假设",
     market: "市场快照",
     recommendations: "策略推荐",
@@ -215,6 +223,18 @@ const copy = {
     yes: "是",
     no: "否",
     unknown: "未知",
+    noWarning: "暂无核心警告",
+    scenarioGreekNote:
+      "仅为希腊字母近似估算。在价格大幅波动、时间推移较久、临近到期 theta 加速时可靠性下降。",
+    scenarioLabels: {
+      best: "最好情形",
+      worst: "最坏情形",
+      flatCrush: "横盘 + IV 回落",
+      spotUpIvDown: "上涨 + IV 下降",
+      thetaOnly: "仅 theta",
+    },
+    contracts: "所选合约",
+    runHint: "只读，不会下单。",
   },
 };
 
@@ -472,18 +492,20 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
   );
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[380px_1fr] overflow-hidden bg-base text-text-primary">
-      <aside className="overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
-        <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
-        <p className="mt-2 font-body-sm text-text-secondary">{text.intro}</p>
-        <a
-          className="mt-3 inline-flex font-body-sm text-info"
-          href={localizePath("/options-buyside", locale === "zh" ? "en" : "zh")}
-        >
-          {text.zh}
-        </a>
+    <div className="grid h-full min-h-0 grid-cols-1 overflow-hidden bg-bg-base text-text-primary lg:grid-cols-[380px_1fr]">
+      <aside className="flex min-h-0 flex-col overflow-y-auto border-b border-border-subtle bg-bg-surface lg:border-b-0 lg:border-r">
+        <div className="border-b border-border-subtle p-4">
+          <p className="font-label-caps uppercase text-text-secondary">
+            {locale === "zh" ? "买方期权" : "Buy-Side Options"}
+          </p>
+          <h1 className="mt-1 font-headline-lg text-text-primary">{text.title}</h1>
+          <p className="mt-2 font-body-sm leading-relaxed text-text-secondary">{text.intro}</p>
+          <div className="mt-3">
+            <StatusPill label="" value={text.runHint} tone="info" />
+          </div>
+        </div>
 
-        <form className="mt-5 space-y-4" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+        <form className="space-y-5 p-4" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
           <PanelTitle icon={<SlidersHorizontal size={16} />} title={text.thesis} />
           <div className="grid grid-cols-2 gap-3">
             <Field label={text.ticker}>
@@ -491,11 +513,11 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
             </Field>
             <Field label={text.viewType}>
               <select className={inputClass} {...form.register("view_type")}>
-                <option style={optionStyle} value="long_term_aggressive_bullish">{viewTypeLabel("long_term_aggressive_bullish", locale)}</option>
-                <option style={optionStyle} value="long_term_conservative_bullish">{viewTypeLabel("long_term_conservative_bullish", locale)}</option>
-                <option style={optionStyle} value="short_term_speculative_bullish">{viewTypeLabel("short_term_speculative_bullish", locale)}</option>
-                <option style={optionStyle} value="short_term_conservative_bullish">{viewTypeLabel("short_term_conservative_bullish", locale)}</option>
-                <option style={optionStyle} value="event_driven_bullish">{viewTypeLabel("event_driven_bullish", locale)}</option>
+                <option value="long_term_aggressive_bullish">{viewTypeLabel("long_term_aggressive_bullish", locale)}</option>
+                <option value="long_term_conservative_bullish">{viewTypeLabel("long_term_conservative_bullish", locale)}</option>
+                <option value="short_term_speculative_bullish">{viewTypeLabel("short_term_speculative_bullish", locale)}</option>
+                <option value="short_term_conservative_bullish">{viewTypeLabel("short_term_conservative_bullish", locale)}</option>
+                <option value="event_driven_bullish">{viewTypeLabel("event_driven_bullish", locale)}</option>
               </select>
             </Field>
             <Field label={text.targetPrice}>
@@ -506,27 +528,27 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
             </Field>
             <Field label={text.riskPreference}>
               <select className={inputClass} {...form.register("risk_preference")}>
-                <option style={optionStyle} value="aggressive">{riskPreferenceLabel("aggressive", locale)}</option>
-                <option style={optionStyle} value="balanced">{riskPreferenceLabel("balanced", locale)}</option>
-                <option style={optionStyle} value="conservative">{riskPreferenceLabel("conservative", locale)}</option>
+                <option value="aggressive">{riskPreferenceLabel("aggressive", locale)}</option>
+                <option value="balanced">{riskPreferenceLabel("balanced", locale)}</option>
+                <option value="conservative">{riskPreferenceLabel("conservative", locale)}</option>
               </select>
             </Field>
             <Field label={text.volatilityView}>
               <select className={inputClass} {...form.register("volatility_view")}>
-                <option style={optionStyle} value="auto">{volatilityViewLabel("auto", locale)}</option>
-                <option style={optionStyle} value="prefer_low_iv">{volatilityViewLabel("prefer_low_iv", locale)}</option>
-                <option style={optionStyle} value="expect_iv_crush">{volatilityViewLabel("expect_iv_crush", locale)}</option>
-                <option style={optionStyle} value="expect_iv_expansion">{volatilityViewLabel("expect_iv_expansion", locale)}</option>
+                <option value="auto">{volatilityViewLabel("auto", locale)}</option>
+                <option value="prefer_low_iv">{volatilityViewLabel("prefer_low_iv", locale)}</option>
+                <option value="expect_iv_crush">{volatilityViewLabel("expect_iv_crush", locale)}</option>
+                <option value="expect_iv_expansion">{volatilityViewLabel("expect_iv_expansion", locale)}</option>
               </select>
             </Field>
             <Field label={text.eventRisk}>
               <select className={inputClass} {...form.register("event_risk")}>
-                <option style={optionStyle} value="none">{eventRiskLabel("none", locale)}</option>
-                <option style={optionStyle} value="earnings">{eventRiskLabel("earnings", locale)}</option>
-                <option style={optionStyle} value="fomc">{eventRiskLabel("fomc", locale)}</option>
-                <option style={optionStyle} value="cpi">{eventRiskLabel("cpi", locale)}</option>
-                <option style={optionStyle} value="product_event">{eventRiskLabel("product_event", locale)}</option>
-                <option style={optionStyle} value="user_defined">{eventRiskLabel("user_defined", locale)}</option>
+                <option value="none">{eventRiskLabel("none", locale)}</option>
+                <option value="earnings">{eventRiskLabel("earnings", locale)}</option>
+                <option value="fomc">{eventRiskLabel("fomc", locale)}</option>
+                <option value="cpi">{eventRiskLabel("cpi", locale)}</option>
+                <option value="product_event">{eventRiskLabel("product_event", locale)}</option>
+                <option value="user_defined">{eventRiskLabel("user_defined", locale)}</option>
               </select>
             </Field>
             <Field label={text.expectedIvChange}>
@@ -555,7 +577,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
               <span className="font-body-sm text-text-secondary">{text.scenarioHorizonHelp}</span>
             </Field>
           </div>
-          <div className="rounded border border-border-subtle bg-surface-muted/30 p-3">
+          <div className="rounded-lg border border-border-subtle bg-bg-surface-muted/30 p-3">
             <div className="mb-2 font-label-caps text-text-secondary">{text.subjectiveEv}</div>
             <p className="mb-3 font-body-sm leading-relaxed text-text-secondary">{text.subjectiveEvHelp}</p>
             <div className="mb-1 grid grid-cols-[70px_1fr_1fr_1fr] gap-2 font-label-caps text-text-secondary">
@@ -575,17 +597,17 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
           </div>
 
           {Object.keys(form.formState.errors).length ? (
-            <div className="rounded border border-accent-danger/40 bg-accent-danger/10 p-3 font-body-sm text-accent-danger">
+            <div className="rounded-lg border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
               {locale === "zh" ? "请检查输入参数。" : "Check the input fields."}
             </div>
           ) : null}
           {mutation.error ? (
-            <div className="rounded border border-accent-danger/40 bg-accent-danger/10 p-3 font-body-sm text-accent-danger">
+            <div className="rounded-lg border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
               {text.error}: {mutation.error.message}
             </div>
           ) : null}
           <button
-            className="w-full rounded bg-accent-success px-4 py-3 font-body-sm font-semibold text-on-primary disabled:opacity-50"
+            className="w-full rounded-lg bg-accent-success px-4 py-3 font-body-sm font-semibold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
             disabled={!hydrated || mutation.isPending}
             type="submit"
           >
@@ -595,35 +617,35 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
       </aside>
 
       <main className="min-w-0 overflow-y-auto p-5">
-        <div className="mb-4 flex items-center gap-2 rounded border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
-          <ShieldCheck size={18} />
+        <Card tone="warning" padded className="mb-4 flex items-center gap-2 font-body-sm text-warning">
+          <ShieldCheck className="shrink-0" size={18} />
           {text.safety}
-        </div>
+        </Card>
 
-        <section className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-5">
-          <SnapshotMetric label={text.spot} value={money(result?.thesis.spot_price)} />
-          <SnapshotMetric label={text.dataSource} value={result ? text.dataSourceValue : text.noMarketData} />
-          <SnapshotMetric label={text.timestamp} value={result?.generated_at ?? result?.thesis.as_of_date ?? text.noMarketData} />
-          <SnapshotMetric label={text.earnings} value={text.noMarketData} />
+        <section className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          <MetricStat label={text.spot} value={money(result?.thesis.spot_price)} tone="success" />
+          <MetricStat label={text.dataSource} value={result ? text.dataSourceValue : text.noMarketData} />
+          <MetricStat label={text.timestamp} value={result?.generated_at ?? result?.thesis.as_of_date ?? text.noMarketData} />
+          <MetricStat label={text.earnings} value={text.noMarketData} />
           <SnapshotMetric label={text.ivRank} value={score(result?.thesis.iv_rank)} tip="ivRank" locale={locale} />
         </section>
 
-        <section className="mb-4 grid grid-cols-[1fr_320px] gap-4">
-          <div className="rounded border border-border-subtle bg-bg-surface p-4">
+        <section className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_320px]">
+          <Card padded>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <h2 className="font-headline-sm text-text-primary">{text.market}</h2>
-              <span className={regimeClass(top?.market_regime)}>{top?.market_regime ?? "Unknown"}</span>
+              <h2 className="font-label-caps text-text-primary">{text.market}</h2>
+              <StatusPill label="" value={top?.market_regime ?? text.unknown} tone={regimeTone(top?.market_regime)} />
             </div>
             <div className="font-body-sm text-text-secondary">
-              {marketWarnings.length ? marketWarnings.join(" | ") : text.noMarketData}
+              {marketWarnings.length ? marketWarnings.join(" · ") : text.noMarketData}
             </div>
-          </div>
-          <div className="rounded border border-border-subtle bg-bg-surface p-4">
+          </Card>
+          <Card padded>
             <div className="font-label-caps text-text-secondary">{text.qualityWarnings}</div>
             <div className="mt-2 font-body-sm text-text-secondary">
               {recommendations.length ? text.rankedStructures(recommendations.length) : text.empty}
             </div>
-          </div>
+          </Card>
         </section>
 
         {mutation.isPending ? (
@@ -631,49 +653,57 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
         ) : recommendations.length === 0 ? (
           <EmptyState text={text.empty} />
         ) : (
-          <>
-            <SectionHeader title={text.recommendations} />
-            <div className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
-              {recommendations.slice(0, 4).map((item, index) => (
-                <RecommendationCard
-                  expanded={expanded.includes(index)}
-                  item={item}
-                  key={`${item.strategy_type}-${index}`}
-                  locale={locale}
-                  onToggle={() =>
-                    setExpanded((current) =>
-                      current.includes(index)
-                        ? current.filter((item) => item !== index)
-                        : [...current, index],
-                    )
-                  }
-                  text={text}
-                />
-              ))}
+          <div className="space-y-6">
+            <div>
+              <SectionTitle title={text.recommendations} />
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {recommendations.slice(0, 4).map((item, index) => (
+                  <RecommendationCard
+                    expanded={expanded.includes(index)}
+                    item={item}
+                    key={`${item.strategy_type}-${index}`}
+                    locale={locale}
+                    onToggle={() =>
+                      setExpanded((current) =>
+                        current.includes(index)
+                          ? current.filter((item) => item !== index)
+                          : [...current, index],
+                      )
+                    }
+                    text={text}
+                  />
+                ))}
+              </div>
             </div>
 
-            <SectionHeader title={text.comparison} />
-            <ComparisonTable recommendations={recommendations} text={text} />
+            <div>
+              <SectionTitle title={text.comparison} />
+              <ComparisonTable recommendations={recommendations} text={text} />
+            </div>
 
-            <SectionHeader title={text.checklist} />
-            <Checklist item={top} text={text} />
+            <div>
+              <SectionTitle title={text.checklist} />
+              <Checklist item={top} text={text} />
+            </div>
 
-            <SectionHeader title={text.scenario} />
-            <ScenarioLab item={top} text={text} />
-          </>
+            <div>
+              <SectionTitle title={text.scenario} />
+              <ScenarioLab item={top} text={text} />
+            </div>
+          </div>
         )}
 
-        <div className="mt-5 rounded border border-warning/40 bg-warning/10 p-4 font-body-sm leading-relaxed text-warning">
+        <Card tone="warning" padded className="mt-6 font-body-sm leading-relaxed text-warning">
           <AlertTriangle className="mr-2 inline" size={18} />
           {text.disclaimer}
-        </div>
+        </Card>
       </main>
     </div>
   );
 }
 
 const inputClass =
-  "w-full rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-sm text-text-primary outline-none focus:border-accent-success";
+  "w-full rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-sm text-text-primary outline-none focus:border-accent-success";
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
@@ -695,23 +725,19 @@ function PanelTitle({ icon, title }: { icon: ReactNode; title: string }) {
 
 function SnapshotMetric({ label, value, tip, locale = "en" }: { label: string; value: string; tip?: GlossaryKey; locale?: "en" | "zh" }) {
   return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-3">
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-3">
       <div className="flex items-center gap-1 font-label-caps text-text-secondary">
         {label}
         {tip ? <InfoTip term={tip} locale={locale} /> : null}
       </div>
-      <div className="mt-2 break-words font-data-mono text-base font-bold text-text-primary">{value}</div>
+      <div className="mt-2 break-words font-data-mono text-lg font-bold text-text-primary">{value}</div>
     </div>
   );
 }
 
-function SectionHeader({ title }: { title: string }) {
-  return <h2 className="mb-3 mt-6 font-headline-sm text-text-primary">{title}</h2>;
-}
-
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-8 text-center font-body-sm text-text-secondary">
+    <div className="rounded-lg border border-dashed border-border-subtle bg-bg-surface/70 p-8 text-center font-body-sm text-text-secondary">
       {text}
     </div>
   );
@@ -721,7 +747,7 @@ function LoadingState() {
   return (
     <div className="space-y-3">
       {[0, 1, 2].map((item) => (
-        <div className="h-28 animate-pulse rounded border border-border-subtle bg-bg-surface" key={item} />
+        <div className="h-28 animate-pulse rounded-lg border border-border-subtle bg-bg-surface" key={item} />
       ))}
     </div>
   );
@@ -742,14 +768,14 @@ function RecommendationCard({
 }) {
   const primary = item.primary_risk_source;
   return (
-    <article className="rounded border border-border-subtle bg-bg-surface p-4">
+    <Card padded className="flex flex-col">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="font-label-caps text-text-secondary">#{item.rank}</div>
-          <h3 className="mt-1 font-headline-sm text-text-primary">{strategyLabel(item.strategy_type)}</h3>
+        <div className="min-w-0">
+          <StatusPill label="#" value={item.rank} tone="neutral" />
+          <h3 className="mt-2 font-headline-lg text-text-primary">{strategyLabel(item.strategy_type)}</h3>
           <p className="mt-1 font-body-sm text-text-secondary">{item.one_line_summary}</p>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <div className="font-label-caps text-text-secondary">{text.score}</div>
           <div className="font-data-mono text-2xl font-bold text-accent-success">{num(item.score, 0)}</div>
         </div>
@@ -781,14 +807,14 @@ function RecommendationCard({
         {item.warnings.length ? (
           item.warnings.map((warning) => <WarningChip key={warning} warning={warning} />)
         ) : (
-          <span className="rounded border border-accent-success/40 bg-accent-success/10 px-2 py-1 font-body-sm text-accent-success">
-            {locale === "zh" ? "暂无核心警告" : "No core warning"}
+          <span className="rounded-lg border border-accent-success/40 bg-accent-success/10 px-2 py-1 font-body-sm text-accent-success">
+            {text.noWarning}
           </span>
         )}
         {item.demotion_badge ? <WarningChip warning={item.demotion_badge} /> : null}
       </div>
       <button
-        className="mt-4 flex items-center gap-2 font-body-sm text-info"
+        className="mt-4 flex items-center gap-2 font-body-sm text-info hover:text-text-primary"
         onClick={onToggle}
         type="button"
       >
@@ -801,13 +827,13 @@ function RecommendationCard({
           <ListBlock items={item.key_risks} title={text.risks} />
         </div>
       ) : null}
-    </article>
+    </Card>
   );
 }
 
 function MiniMetric({ accent = false, label, value, tip, locale = "en" }: { accent?: boolean; label: string; value: string; tip?: GlossaryKey; locale?: "en" | "zh" }) {
   return (
-    <div className="rounded border border-border-subtle bg-surface-muted/30 p-2">
+    <div className="rounded-lg border border-border-subtle bg-bg-surface-muted/30 p-2">
       <div className="flex items-center gap-1 font-label-caps text-text-secondary">
         {label}
         {tip ? <InfoTip term={tip} locale={locale} /> : null}
@@ -831,7 +857,7 @@ function RiskBars({
       {(Object.keys(attribution) as Array<keyof Recommendation["risk_attribution"]>).map((key) => (
         <div className="grid grid-cols-[90px_1fr_42px] items-center gap-2" key={key}>
           <span className={key === primary ? "font-label-caps text-warning" : "font-label-caps text-text-secondary"}>{key}</span>
-          <div className="h-2 overflow-hidden rounded bg-surface-muted">
+          <div className="h-2 overflow-hidden rounded-full bg-bg-surface-muted">
             <div
               className={key === primary ? "h-full bg-warning" : "h-full bg-accent-success"}
               style={{ width: `${Math.min(Math.max(attribution[key], 0), 100)}%` }}
@@ -852,19 +878,19 @@ function ComparisonTable({
   text: (typeof copy)["en"];
 }) {
   return (
-    <div className="overflow-x-auto rounded border border-border-subtle bg-bg-surface">
+    <div className="overflow-x-auto rounded-lg border border-border-subtle bg-bg-surface">
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="border-b border-border-subtle">
             {text.tableHeadings.map((heading) => (
-              <th className="px-3 py-2 font-label-caps text-text-secondary" key={heading}>{heading}</th>
+              <th className="whitespace-nowrap px-3 py-2 font-label-caps text-text-secondary" key={heading}>{heading}</th>
             ))}
           </tr>
         </thead>
         <tbody className="font-data-mono text-data-mono text-text-primary">
           {recommendations.map((item, index) => (
-            <tr className="border-b border-border-subtle/50" key={`${item.strategy_type}-${index}`}>
-              <td className="px-3 py-2">{strategyLabel(item.strategy_type)}</td>
+            <tr className="border-b border-border-subtle/50 last:border-b-0 hover:bg-bg-surface-muted/30" key={`${item.strategy_type}-${index}`}>
+              <td className="whitespace-nowrap px-3 py-2">{strategyLabel(item.strategy_type)}</td>
               <td className="px-3 py-2">{expirationLabel(item.legs)}</td>
               <td className="px-3 py-2">{strikeLabel(item.legs)}</td>
               <td className="px-3 py-2">{money(item.net_debit)}</td>
@@ -905,13 +931,11 @@ function Checklist({
     ["spotUpIvDown", item?.scenario_summary?.spot_up_iv_down_pnl !== undefined && (item.scenario_summary.spot_up_iv_down_pnl ?? 0) <= 0],
   ] as const;
   return (
-    <div className="grid grid-cols-1 gap-2 rounded border border-border-subtle bg-bg-surface p-4 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-2 rounded-lg border border-border-subtle bg-bg-surface p-4 md:grid-cols-2 xl:grid-cols-3">
       {checks.map(([key, value]) => (
-        <div className="flex items-center justify-between gap-3 rounded border border-border-subtle bg-surface-muted/30 p-3" key={key}>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted/30 p-3" key={key}>
           <span className="font-body-sm text-text-secondary">{text.checklistItems[key]}</span>
-          <span className={value ? "font-data-mono text-warning" : "font-data-mono text-accent-success"}>
-            {value ? text.yes : text.no}
-          </span>
+          <StatusPill label="" value={value ? text.yes : text.no} tone={value ? "warning" : "success"} />
         </div>
       ))}
     </div>
@@ -923,19 +947,19 @@ function ScenarioLab({ item, text }: { item?: Recommendation; text: (typeof copy
   const ev = item?.scenario_ev;
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-      <div className="rounded border border-border-subtle bg-bg-surface p-4">
+      <Card padded>
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          <MiniMetric label="Best" value={money(summary?.best_case_pnl)} />
-          <MiniMetric label="Worst" value={money(summary?.worst_case_pnl)} />
-          <MiniMetric label="Flat + IV crush" value={money(summary?.flat_spot_iv_crush_pnl)} />
-          <MiniMetric label="Spot up + IV down" value={money(summary?.spot_up_iv_down_pnl)} />
-          <MiniMetric label="Theta only" value={money(summary?.theta_only_pnl)} />
+          <MiniMetric label={text.scenarioLabels.best} value={money(summary?.best_case_pnl)} accent />
+          <MiniMetric label={text.scenarioLabels.worst} value={money(summary?.worst_case_pnl)} />
+          <MiniMetric label={text.scenarioLabels.flatCrush} value={money(summary?.flat_spot_iv_crush_pnl)} />
+          <MiniMetric label={text.scenarioLabels.spotUpIvDown} value={money(summary?.spot_up_iv_down_pnl)} />
+          <MiniMetric label={text.scenarioLabels.thetaOnly} value={money(summary?.theta_only_pnl)} />
         </div>
-        <p className="mt-3 font-body-sm text-text-secondary">
-          Greek approximation only. Reliability falls for large spot moves, long time passed, and near-expiration theta acceleration.
+        <p className="mt-3 font-body-sm leading-relaxed text-text-secondary">
+          {text.scenarioGreekNote}
         </p>
-      </div>
-      <div className="rounded border border-border-subtle bg-bg-surface p-4">
+      </Card>
+      <Card padded>
         <div className="mb-1 font-label-caps text-text-secondary">{text.subjectiveEv}</div>
         <div className="mb-3 font-body-sm text-text-secondary">{text.subjectiveEvHelp}</div>
         <div className="font-data-mono text-xl font-bold text-accent-success">{money(ev?.expected_value)}</div>
@@ -943,7 +967,7 @@ function ScenarioLab({ item, text }: { item?: Recommendation; text: (typeof copy
           {ev?.contributions?.length ? (
             ev.contributions.map((item) => (
               <div className="grid grid-cols-[1fr_70px_70px] gap-2 font-data-mono text-sm" key={item.label}>
-                <span>{item.label}</span>
+                <span className="text-text-secondary">{item.label}</span>
                 <span>{pct(item.probability)}</span>
                 <span>{money(item.expected_value_contribution ?? item.weighted_pnl)}</span>
               </div>
@@ -952,7 +976,7 @@ function ScenarioLab({ item, text }: { item?: Recommendation; text: (typeof copy
             <div className="font-body-sm text-text-secondary">--</div>
           )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -979,7 +1003,7 @@ function ListBlock({ items, title }: { items: string[]; title: string }) {
 
 function WarningChip({ warning }: { warning: string }) {
   return (
-    <span className="rounded border border-warning/40 bg-warning/10 px-2 py-1 font-body-sm text-warning">
+    <span className="rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning">
       {warning}
     </span>
   );
@@ -996,14 +1020,14 @@ function SelectedContracts({
     return null;
   }
   return (
-    <div className="mt-4 rounded border border-border-subtle bg-surface-muted/30 p-3">
+    <div className="mt-4 rounded-lg border border-border-subtle bg-bg-surface-muted/30 p-3">
       <div className="mb-2 font-label-caps text-text-secondary">
         {locale === "zh" ? "所选合约" : "Selected contracts"}
       </div>
       <div className="grid gap-2">
         {legs.map((leg, index) => (
           <div
-            className="grid grid-cols-[64px_1fr_88px] items-center gap-3 rounded border border-border-subtle/70 bg-bg-surface px-3 py-2"
+            className="grid grid-cols-[64px_1fr_88px] items-center gap-3 rounded-lg border border-border-subtle/70 bg-bg-surface px-3 py-2"
             key={`${leg.symbol ?? index}-${leg.side ?? leg.action ?? index}`}
           >
             <span className={legActionClass(leg)}>{legActionLabel(leg, locale)}</span>
@@ -1198,8 +1222,8 @@ function legActionClass(leg: StrategyLeg) {
   const side = (leg.action ?? leg.side ?? "").toLowerCase();
   const isShort = side === "sell" || side === "short";
   return isShort
-    ? "rounded border border-warning/40 bg-warning/10 px-2 py-1 text-center font-label-caps text-warning"
-    : "rounded border border-accent-success/40 bg-accent-success/10 px-2 py-1 text-center font-label-caps text-accent-success";
+    ? "rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 text-center font-label-caps text-warning"
+    : "rounded-lg border border-accent-success/40 bg-accent-success/10 px-2 py-1 text-center font-label-caps text-accent-success";
 }
 
 function legTypeLabel(leg: StrategyLeg, locale: "en" | "zh") {
@@ -1262,15 +1286,9 @@ function hasWarning(item: Recommendation | undefined, warning: string) {
   return item?.warnings?.includes(warning) ?? false;
 }
 
-function regimeClass(regime?: string | null) {
-  if (regime === "Panic") {
-    return "rounded border border-accent-danger/40 bg-accent-danger/10 px-2 py-1 font-data-mono text-sm text-accent-danger";
-  }
-  if (regime === "Elevated") {
-    return "rounded border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-sm text-warning";
-  }
-  if (regime === "Normal") {
-    return "rounded border border-accent-success/40 bg-accent-success/10 px-2 py-1 font-data-mono text-sm text-accent-success";
-  }
-  return "rounded border border-border-subtle bg-surface-muted px-2 py-1 font-data-mono text-sm text-text-secondary";
+function regimeTone(regime?: string | null): "neutral" | "success" | "warning" | "danger" {
+  if (regime === "Panic") return "danger";
+  if (regime === "Elevated") return "warning";
+  if (regime === "Normal") return "success";
+  return "neutral";
 }

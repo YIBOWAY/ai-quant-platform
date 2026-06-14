@@ -16,8 +16,8 @@ export function LocaleToggle() {
         aria-label={target === "zh" ? "切换到中文" : "切换到英文"}
         className={`inline-flex min-w-8 items-center justify-center whitespace-nowrap px-2.5 py-1 leading-none transition-colors ${
           active
-            ? "bg-[#00C896] text-bg-base"
-            : "text-zinc-400 hover:bg-zinc-900 hover:text-[#00C896]"
+            ? "bg-accent-success text-bg-base"
+            : "text-text-secondary hover:bg-bg-surface hover:text-accent-success"
         }`}
         href={href}
         onClick={(event) => {
@@ -32,7 +32,7 @@ export function LocaleToggle() {
   }
 
   return (
-    <div className="inline-flex min-w-max shrink-0 overflow-hidden rounded border border-zinc-800 font-sans text-xs">
+    <div className="inline-flex min-w-max shrink-0 overflow-hidden rounded-lg border border-border-subtle font-sans text-xs">
       {item("en", "EN")}
       {item("zh", "中文")}
     </div>

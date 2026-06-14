@@ -56,6 +56,9 @@ export default defineConfig({
           timeout: 120_000,
           env: {
             DISABLE_HMR: "true",
+            // Pin the API base for hermetic E2E runs: shell env beats .env.local
+            // in Next.js, so this overrides any local override (e.g. 8800/8700).
+            NEXT_PUBLIC_QUANT_API_BASE_URL: "http://127.0.0.1:8765",
           },
         },
       ]

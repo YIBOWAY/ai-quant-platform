@@ -34,8 +34,8 @@ export async function SafetyStrip() {
   const killSwitchOn = safety?.kill_switch === true;
 
   return (
-    <div className="fixed top-16 left-[240px] right-0 z-30 flex items-center justify-center px-4 h-[36px] border-b border-amber-900/50 bg-amber-950/20">
-      <div className="flex items-center gap-2 text-amber-500 font-mono text-[10px] uppercase tracking-widest font-bold">
+    <div className="fixed top-16 left-0 right-0 z-30 flex h-[36px] items-center justify-center overflow-hidden border-b border-amber-900/50 bg-amber-950/20 px-3 lg:left-[240px]">
+      <div className="flex items-center gap-2 whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-widest text-amber-500">
         <ShieldAlert size={14} className="text-amber-500" />
         <span>
           {paperOnly ? text.paperOnly : text.paperUnavailable} ·{" "}

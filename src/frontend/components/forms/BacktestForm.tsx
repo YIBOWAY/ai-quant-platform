@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, type FieldError } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { FactorMetadata, StrategyMetadata, UniverseDefinition } from "@/lib/api";
@@ -16,6 +16,10 @@ type Locale = "en" | "zh";
 
 const copy = {
   en: {
+    scopeGroup: "Strategy & Universe",
+    windowGroup: "Window & Data",
+    factorGroup: "Factor Mix",
+    costGroup: "Capital & Costs",
     strategy: "Strategy",
     universe: "Universe",
     benchmark: "Benchmark",
@@ -25,7 +29,6 @@ const copy = {
     dataSource: "Data Source",
     lookback: "Lookback",
     topN: "Top N",
-    factorMix: "Factor Mix",
     factorHelp: "Select registered backend factors and set blend weights.",
     weight: "Weight",
     initialCash: "Initial Cash",
@@ -43,10 +46,13 @@ const copy = {
     weekly: "Weekly",
     monthly: "Monthly",
     maxWeight: "Max weight / name",
-    sectorCap: "Sector cap",
-    capHelp: "Optional. 0–1 weight caps; leave blank for no cap.",
+    capHelp: "Optional. 0–1 per-name weight cap; leave blank for no cap.",
   },
   zh: {
+    scopeGroup: "策略与股票池",
+    windowGroup: "区间与数据",
+    factorGroup: "因子组合",
+    costGroup: "资金与成本",
     strategy: "策略",
     universe: "股票池",
     benchmark: "基准",
@@ -56,7 +62,6 @@ const copy = {
     dataSource: "数据源",
     lookback: "回看窗口",
     topN: "Top N",
-    factorMix: "因子组合",
     factorHelp: "选择后端已登记的因子，并设置组合权重。",
     weight: "权重",
     initialCash: "初始资金",
@@ -74,8 +79,7 @@ const copy = {
     weekly: "每周",
     monthly: "每月",
     maxWeight: "单标的上限",
-    sectorCap: "行业上限",
-    capHelp: "可选。0–1 之间的权重上限；留空表示不限制。",
+    capHelp: "可选。0–1 之间的单标的权重上限；留空表示不限制。",
   },
 } as const;
 
@@ -110,7 +114,6 @@ const backtestSchema = z.object({
   slippage_bps: z.coerce.number().nonnegative(),
   rebalance_frequency: z.enum(["every_bar", "weekly", "monthly"]),
   max_weight_per_symbol: capString,
-  sector_cap: capString,
 });
 
 function parseCap(value: string | undefined): number | undefined {
@@ -128,24 +131,39 @@ type BacktestRunResponse = {
   run_id: string;
 };
 
-const optionStyle = { background: "#0E1511", color: "#F1F5F9" };
-const DEFAULTS: BacktestFormValues = {
-  symbols: "",
-  universe_id: "etf",
-  strategy_id: "cross_sectional_top_n",
-  benchmark_symbol: "SPY",
-  factor_ids: ["momentum", "volatility", "liquidity"],
-  weights: { momentum: 1, volatility: 0.5, liquidity: 0.5 },
-  start: "2024-01-02",
-  end: "2024-06-28",
-  provider: "sample",
-  lookback: 20,
-  top_n: 3,
-  initial_cash: 100000,
-  commission_bps: 1,
-  slippage_bps: 5,
-  rebalance_frequency: "every_bar",
-};
+function isoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function recentDefaults(): BacktestFormValues {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - 180);
+  return {
+    symbols: "",
+    universe_id: "etf",
+    strategy_id: "cross_sectional_top_n",
+    benchmark_symbol: "SPY",
+    factor_ids: ["momentum", "volatility", "liquidity"],
+    weights: { momentum: 1, volatility: 0.5, liquidity: 0.5 },
+    start: isoDate(start),
+    end: isoDate(end),
+    provider: "futu",
+    lookback: 20,
+    top_n: 3,
+    initial_cash: 100000,
+    commission_bps: 1,
+    slippage_bps: 5,
+    rebalance_frequency: "every_bar",
+  };
+}
+
+const inputClass =
+  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
+const inputClassCompact =
+  "rounded-lg border border-border-subtle bg-bg-surface-muted px-2 py-2 font-data-mono text-text-primary";
+const fieldsetClass = "flex flex-col gap-3 rounded-lg border border-border-subtle p-3";
+const legendClass = "px-1 font-label-caps text-text-secondary";
 
 type BacktestFormProps = {
   initialValues?: BacktestFormInitialValues;
@@ -174,7 +192,7 @@ export function BacktestForm({
   });
   const mutation = useMutation({
     mutationFn: (values: BacktestFormValues) => {
-      const { max_weight_per_symbol, sector_cap, ...rest } = values;
+      const { max_weight_per_symbol, ...rest } = values;
       const body: Record<string, unknown> = {
         ...rest,
         symbols: splitSymbols(values.symbols ?? ""),
@@ -183,10 +201,6 @@ export function BacktestForm({
       const maxWeight = parseCap(max_weight_per_symbol);
       if (maxWeight !== undefined) {
         body.max_weight_per_symbol = maxWeight;
-      }
-      const sector = parseCap(sector_cap);
-      if (sector !== undefined) {
-        body.sector_cap = sector;
       }
       return apiPost<BacktestRunResponse>("/api/backtests/run", body);
     },
@@ -198,6 +212,7 @@ export function BacktestForm({
   });
 
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
+  const errors = form.formState.errors;
   const watchedSymbols = useWatch({ control: form.control, name: "symbols" });
   const watchedFactorIds = useWatch({ control: form.control, name: "factor_ids" }) ?? [];
   const symbols = splitSymbols(watchedSymbols ?? "");
@@ -211,89 +226,104 @@ export function BacktestForm({
 
   return (
     <form className="flex flex-col gap-4" onSubmit={runBacktest}>
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        {text.strategy}
-        <select
-          className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
-          {...form.register("strategy_id")}
-        >
-          {activeStrategies.map((strategy) => (
-            <option key={strategy.id} value={strategy.id} style={optionStyle}>
-              {strategy.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        {text.universe}
-        <select
-          className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
-          {...form.register("universe_id")}
-        >
-          {activeUniverses.map((universe) => (
-            <option key={universe.id} value={universe.id} style={optionStyle}>
-              {universe.name}
-            </option>
-          ))}
-        </select>
-        <span className="text-text-secondary">{text.universeHelp}</span>
-      </label>
-
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        {text.benchmark}
-        <input
-          className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
-          {...form.register("benchmark_symbol")}
-        />
-      </label>
-
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        {text.customSymbols}
-        <input
-          className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
-          {...form.register("symbols")}
-        />
-        <span className="text-text-secondary">{text.customSymbolsHelp}</span>
-      </label>
-
-      {showSingleSymbolWarning ? (
-        <div className="rounded border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
-          {text.singleSymbolWarning}
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-2">
+      <fieldset className={fieldsetClass}>
+        <legend className={legendClass}>{text.scopeGroup}</legend>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.start}
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="date" {...form.register("start")} />
+          {text.strategy}
+          <select className={inputClass} {...form.register("strategy_id")}>
+            {activeStrategies.map((strategy) => (
+              <option key={strategy.id} value={strategy.id}>
+                {strategy.name}
+              </option>
+            ))}
+          </select>
+          <FieldErrorText error={errors.strategy_id} />
         </label>
+
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.end}
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="date" {...form.register("end")} />
+          {text.universe}
+          <select className={inputClass} {...form.register("universe_id")}>
+            {activeUniverses.map((universe) => (
+              <option key={universe.id} value={universe.id}>
+                {universe.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-text-secondary">{text.universeHelp}</span>
+          <FieldErrorText error={errors.universe_id} />
         </label>
-      </div>
 
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        {text.dataSource}
-        <select
-          className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
-          {...form.register("provider")}
-        >
-          <option value="futu" style={optionStyle} disabled={!futuReachable}>
-            {futuOptionLabel(futuReachable, locale)}
-          </option>
-          <option value="sample" style={optionStyle}>sample</option>
-          <option value="tiingo" style={optionStyle}>tiingo</option>
-        </select>
-        <FutuUnavailableHint reachable={futuReachable} locale={locale} />
-      </label>
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          {text.benchmark}
+          <input className={inputClass} {...form.register("benchmark_symbol")} />
+          <FieldErrorText error={errors.benchmark_symbol} />
+        </label>
 
-      <div className="flex flex-col gap-2 rounded border border-border-subtle bg-surface-muted p-3">
-        <div>
-          <div className="font-label-caps text-text-primary">{text.factorMix}</div>
-          <div className="mt-1 font-body-sm text-text-secondary">{text.factorHelp}</div>
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          {text.customSymbols}
+          <input className={inputClass} {...form.register("symbols")} />
+          <span className="text-text-secondary">{text.customSymbolsHelp}</span>
+        </label>
+
+        {showSingleSymbolWarning ? (
+          <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
+            {text.singleSymbolWarning}
+          </div>
+        ) : null}
+      </fieldset>
+
+      <fieldset className={fieldsetClass}>
+        <legend className={legendClass}>{text.windowGroup}</legend>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            {text.start}
+            <input className={inputClassCompact} type="date" {...form.register("start")} />
+            <FieldErrorText error={errors.start} />
+          </label>
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            {text.end}
+            <input className={inputClassCompact} type="date" {...form.register("end")} />
+            <FieldErrorText error={errors.end} />
+          </label>
         </div>
+
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          {text.dataSource}
+          <select className={inputClass} {...form.register("provider")}>
+            <option value="futu" disabled={!futuReachable}>
+              {futuOptionLabel(futuReachable, locale)}
+            </option>
+            <option value="sample">sample</option>
+            <option value="tiingo">tiingo</option>
+          </select>
+          <FutuUnavailableHint reachable={futuReachable} locale={locale} />
+        </label>
+
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            {text.lookback}
+            <input
+              className={inputClassCompact}
+              type="number"
+              {...form.register("lookback", { valueAsNumber: true })}
+            />
+            <FieldErrorText error={errors.lookback} />
+          </label>
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            {text.topN}
+            <input
+              className={inputClassCompact}
+              type="number"
+              {...form.register("top_n", { valueAsNumber: true })}
+            />
+            <FieldErrorText error={errors.top_n} />
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset className={fieldsetClass}>
+        <legend className={legendClass}>{text.factorGroup}</legend>
+        <div className="font-body-sm text-text-secondary">{text.factorHelp}</div>
         <div className="flex flex-col gap-2">
           {activeFactors.map((factor) => (
             <label
@@ -301,16 +331,12 @@ export function BacktestForm({
               key={factor.factor_id}
             >
               <span className="inline-flex min-w-0 items-center gap-2">
-                <input
-                  type="checkbox"
-                  value={factor.factor_id}
-                  {...form.register("factor_ids")}
-                />
+                <input type="checkbox" value={factor.factor_id} {...form.register("factor_ids")} />
                 <span className="truncate">{factor.factor_name}</span>
               </span>
               <input
                 aria-label={`${factor.factor_id} ${text.weight}`}
-                className="rounded border border-border-subtle bg-base px-2 py-1 font-data-mono text-text-primary disabled:opacity-40"
+                className="rounded-lg border border-border-subtle bg-bg-base px-2 py-1 font-data-mono text-text-primary disabled:opacity-40"
                 step="0.1"
                 type="number"
                 {...form.register(`weights.${factor.factor_id}`)}
@@ -319,76 +345,68 @@ export function BacktestForm({
             </label>
           ))}
         </div>
-      </div>
+        <FieldErrorText error={errors.factor_ids as FieldError | undefined} />
+      </fieldset>
 
-      <div className="grid grid-cols-2 gap-2">
+      <fieldset className={fieldsetClass}>
+        <legend className={legendClass}>{text.costGroup}</legend>
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.lookback}
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("lookback", { valueAsNumber: true })} />
+          {text.initialCash}
+          <input
+            className={inputClass}
+            type="number"
+            {...form.register("initial_cash", { valueAsNumber: true })}
+          />
+          <FieldErrorText error={errors.initial_cash} />
         </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.topN}
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("top_n", { valueAsNumber: true })} />
-        </label>
-      </div>
 
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        {text.initialCash}
-        <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
-      </label>
-
-      <div className="grid grid-cols-2 gap-2">
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.commissionBps}
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("commission_bps", { valueAsNumber: true })} />
-        </label>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.slippageBps}
-          <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("slippage_bps", { valueAsNumber: true })} />
-        </label>
-      </div>
-
-      <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-        {text.rebalanceFreq}
-        <select
-          className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary"
-          {...form.register("rebalance_frequency")}
-        >
-          <option value="every_bar" style={optionStyle}>{text.everyBar}</option>
-          <option value="weekly" style={optionStyle}>{text.weekly}</option>
-          <option value="monthly" style={optionStyle}>{text.monthly}</option>
-        </select>
-      </label>
-
-      <div className="flex flex-col gap-1">
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.maxWeight}
+            {text.commissionBps}
             <input
-              className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary"
+              className={inputClassCompact}
               type="number"
-              step="0.05"
-              placeholder="—"
-              {...form.register("max_weight_per_symbol")}
+              {...form.register("commission_bps", { valueAsNumber: true })}
             />
+            <FieldErrorText error={errors.commission_bps} />
           </label>
           <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.sectorCap}
+            {text.slippageBps}
             <input
-              className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary"
+              className={inputClassCompact}
               type="number"
-              step="0.05"
-              placeholder="—"
-              {...form.register("sector_cap")}
+              {...form.register("slippage_bps", { valueAsNumber: true })}
             />
+            <FieldErrorText error={errors.slippage_bps} />
           </label>
         </div>
-        <span className="font-body-sm text-text-secondary">{text.capHelp}</span>
-      </div>
+
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          {text.rebalanceFreq}
+          <select className={inputClass} {...form.register("rebalance_frequency")}>
+            <option value="every_bar">{text.everyBar}</option>
+            <option value="weekly">{text.weekly}</option>
+            <option value="monthly">{text.monthly}</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          {text.maxWeight}
+          <input
+            className={inputClassCompact}
+            type="number"
+            step="0.05"
+            placeholder="—"
+            {...form.register("max_weight_per_symbol")}
+          />
+          <span className="text-text-secondary">{text.capHelp}</span>
+          <FieldErrorText error={errors.max_weight_per_symbol} />
+        </label>
+      </fieldset>
 
       {error ? <p className="font-body-sm text-danger">{error}</p> : null}
       <button
-        className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
         disabled={!isHydrated || mutation.isPending}
         type="submit"
       >
@@ -398,15 +416,23 @@ export function BacktestForm({
   );
 }
 
+function FieldErrorText({ error }: { error?: FieldError }) {
+  if (!error?.message) {
+    return null;
+  }
+  return <span className="font-body-sm text-danger">{error.message}</span>;
+}
+
 function mergeDefaults(initialValues?: BacktestFormInitialValues): BacktestFormValues {
+  const defaults = recentDefaults();
   return {
-    ...DEFAULTS,
+    ...defaults,
     ...initialValues,
     weights: {
-      ...DEFAULTS.weights,
+      ...defaults.weights,
       ...(initialValues?.weights ?? {}),
     },
-    factor_ids: initialValues?.factor_ids ?? DEFAULTS.factor_ids,
+    factor_ids: initialValues?.factor_ids ?? defaults.factor_ids,
   };
 }
 

@@ -136,6 +136,14 @@ test.describe("phase13 options radar smoke", () => {
     await page.goto("/options-radar");
     await page.waitForLoadState("networkidle");
 
+    // Manual refresh controls live behind the collapsed "Advanced data sources"
+    // disclosure; retry the toggle until hydration makes it respond.
+    const advancedToggle = page.getByRole("button", { name: "Advanced data sources" });
+    await expect(async () => {
+      await advancedToggle.click();
+      await expect(page.getByLabel("Refresh source")).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
+
     await page.getByLabel("Refresh source").selectOption("sample");
     await page.getByRole("button", { name: "Refresh Universe" }).click();
     await expect(page.getByText("Universe refreshed")).toBeVisible();

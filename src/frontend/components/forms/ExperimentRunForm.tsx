@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
+import { Card } from "@/components/ui/primitives";
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
 
@@ -44,6 +45,7 @@ const copy = {
     slippageBps: "Slippage bps",
     running: "Running...",
     run: "Run Experiment",
+    sampleBadge: "Sample data",
     created: (id: string, count: number) => `Experiment created: ${id} (${count} runs)`,
   },
   zh: {
@@ -60,6 +62,7 @@ const copy = {
     slippageBps: "滑点（基点）",
     running: "运行中...",
     run: "运行实验",
+    sampleBadge: "样本数据",
     created: (id: string, count: number) => `实验已创建：${id}（${count} 次运行）`,
   },
 } as const;
@@ -104,62 +107,82 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
   const submit = form.handleSubmit((values) => mutation.mutate(values));
 
+  const fieldLabel = "flex flex-col gap-1 font-body-sm text-text-primary";
+  const fieldInput =
+    "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary focus:border-accent-success/60 focus:outline-none";
+  const fieldError = (name: keyof ExperimentFormValues) => {
+    const message = form.formState.errors[name]?.message;
+    return message ? <span className="font-body-sm text-danger">{String(message)}</span> : null;
+  };
+
   return (
-    <form className="rounded border border-border-subtle bg-surface-container p-3" onSubmit={submit}>
-      <div>
-        <h3 className="font-headline-lg text-text-primary">{text.title}</h3>
-        <p className="mt-1 font-body-sm text-text-secondary">{text.subtitle}</p>
-      </div>
-      <div className="mt-4 flex flex-col gap-3">
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.symbols}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" {...form.register("symbols")} />
-          <span className="text-text-secondary">{text.symbolsHelp}</span>
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.start}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="date" {...form.register("start")} />
-          </label>
-          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.end}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="date" {...form.register("end")} />
-          </label>
+    <Card padded={false} className="p-4">
+      <form onSubmit={submit}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="font-headline-lg text-text-primary">{text.title}</h3>
+            <p className="mt-1 font-body-sm text-text-secondary">{text.subtitle}</p>
+          </div>
+          <span className="shrink-0 rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning">
+            {text.sampleBadge}
+          </span>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.lookbacks}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" {...form.register("lookbacks")} />
+        <div className="mt-4 flex flex-col gap-3">
+          <label className={fieldLabel}>
+            {text.symbols}
+            <input className={fieldInput} {...form.register("symbols")} />
+            <span className="text-text-secondary">{text.symbolsHelp}</span>
+            {fieldError("symbols")}
           </label>
-          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.topNs}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" {...form.register("top_ns")} />
+          <div className="grid grid-cols-2 gap-2">
+            <label className={fieldLabel}>
+              {text.start}
+              <input className={fieldInput} type="date" {...form.register("start")} />
+              {fieldError("start")}
+            </label>
+            <label className={fieldLabel}>
+              {text.end}
+              <input className={fieldInput} type="date" {...form.register("end")} />
+              {fieldError("end")}
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className={fieldLabel}>
+              {text.lookbacks}
+              <input className={fieldInput} {...form.register("lookbacks")} />
+              {fieldError("lookbacks")}
+            </label>
+            <label className={fieldLabel}>
+              {text.topNs}
+              <input className={fieldInput} {...form.register("top_ns")} />
+              {fieldError("top_ns")}
+            </label>
+          </div>
+          <label className={fieldLabel}>
+            {text.initialCash}
+            <input className={fieldInput} type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
           </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className={fieldLabel}>
+              {text.commissionBps}
+              <input className={fieldInput} type="number" {...form.register("commission_bps", { valueAsNumber: true })} />
+            </label>
+            <label className={fieldLabel}>
+              {text.slippageBps}
+              <input className={fieldInput} type="number" {...form.register("slippage_bps", { valueAsNumber: true })} />
+            </label>
+          </div>
+          {error ? <p className="font-body-sm text-danger">{error}</p> : null}
+          <button
+            className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!isHydrated || mutation.isPending}
+            type="submit"
+          >
+            {mutation.isPending ? text.running : text.run}
+          </button>
         </div>
-        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-          {text.initialCash}
-          <input className="rounded border border-border-subtle bg-surface-muted px-3 py-2 font-data-mono text-text-primary" type="number" {...form.register("initial_cash", { valueAsNumber: true })} />
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.commissionBps}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("commission_bps", { valueAsNumber: true })} />
-          </label>
-          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
-            {text.slippageBps}
-            <input className="rounded border border-border-subtle bg-surface-muted px-2 py-2 font-data-mono text-text-primary" type="number" {...form.register("slippage_bps", { valueAsNumber: true })} />
-          </label>
-        </div>
-        {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-        <button
-          className="rounded bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={!isHydrated || mutation.isPending}
-          type="submit"
-        >
-          {mutation.isPending ? text.running : text.run}
-        </button>
-      </div>
-    </form>
+      </form>
+    </Card>
   );
 }
 

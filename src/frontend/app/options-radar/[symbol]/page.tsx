@@ -3,6 +3,34 @@ import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { OptionsRadarSymbolLive } from "@/components/forms/OptionsRadarSymbolLive";
 import { getOptionsRadarSymbol } from "@/lib/api";
+import { localizePath } from "@/lib/locale";
+import { getServerLocale } from "@/lib/serverLocale";
+
+const copy = {
+  en: {
+    eyebrow: "Options Radar",
+    titleSuffix: "Options Detail",
+    intro: "Snapshot candidates plus read-only live option chain checks.",
+    back: "Back to Radar",
+    tableTitle: "Radar Candidates",
+    tableDescription: (symbol: string, runDate?: string | null) =>
+      `Latest saved Radar rows for ${symbol}${runDate ? ` on ${runDate}` : ""}.`,
+    emptyTitle: "No Radar candidates",
+    emptyDescription:
+      "No saved Radar rows were found for this symbol. Run a scan from the Radar page first.",
+  },
+  zh: {
+    eyebrow: "期权雷达",
+    titleSuffix: "期权明细",
+    intro: "已保存的雷达候选行,以及只读的实时期权链核对。",
+    back: "返回雷达",
+    tableTitle: "雷达候选",
+    tableDescription: (symbol: string, runDate?: string | null) =>
+      `${symbol} 最近一次保存的雷达行${runDate ? `(${runDate})` : ""}。`,
+    emptyTitle: "暂无雷达候选",
+    emptyDescription: "该标的没有已保存的雷达行,请先在雷达页运行一次扫描。",
+  },
+} as const;
 
 type OptionsRadarSymbolPageProps = {
   params?: Promise<{ symbol?: string }>;
@@ -17,6 +45,8 @@ export default async function OptionsRadarSymbolPage({
   params,
   searchParams,
 }: OptionsRadarSymbolPageProps) {
+  const locale = await getServerLocale();
+  const text = copy[locale];
   const resolvedParams = (await params) ?? {};
   const resolvedSearch = (await searchParams) ?? {};
   const symbol = single(resolvedParams.symbol, "SPY").toUpperCase();
@@ -42,26 +72,29 @@ export default async function OptionsRadarSymbolPage({
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-bg-base p-5">
       <header className="mb-5 flex flex-wrap items-start justify-between gap-4 border-b border-border-subtle pb-4">
         <div>
-          <p className="font-label-caps uppercase text-text-secondary">Options Radar</p>
-          <h1 className="mt-1 font-headline-xl text-text-primary">{symbol} Options Detail</h1>
-          <p className="mt-1 font-body-sm text-text-secondary">
-            Snapshot candidates plus read-only live option chain checks.
-          </p>
+          <p className="font-label-caps uppercase text-text-secondary">{text.eyebrow}</p>
+          <h1 className="mt-1 font-headline-xl text-text-primary">
+            {symbol} {text.titleSuffix}
+          </h1>
+          <p className="mt-1 font-body-sm text-text-secondary">{text.intro}</p>
         </div>
-        <Link className="rounded border border-border-subtle px-3 py-2 font-body-sm text-text-primary" href="/options-radar">
-          Back to Radar
+        <Link
+          className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary transition-colors hover:bg-bg-surface-muted"
+          href={localizePath("/options-radar", locale)}
+        >
+          {text.back}
         </Link>
       </header>
       <ErrorBanner messages={[radar.apiError]} />
       <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
         <DataPreviewTable
           columns={["ticker", "symbol", "strategy", "expiry", "strike", "mid", "iv", "delta", "open_interest", "score", "rating"]}
-          description={`Latest saved Radar rows for ${symbol}${radar.run_date ? ` on ${radar.run_date}` : ""}.`}
-          emptyDescription="No saved Radar rows were found for this symbol. Run a scan from the Radar page first."
-          emptyTitle="No Radar candidates"
+          description={text.tableDescription(symbol, radar.run_date)}
+          emptyDescription={text.emptyDescription}
+          emptyTitle={text.emptyTitle}
           maxRows={20}
           rows={rows}
-          title="Radar Candidates"
+          title={text.tableTitle}
         />
         <OptionsRadarSymbolLive expiry={expiry} optionType={optionType} symbol={symbol} />
       </div>

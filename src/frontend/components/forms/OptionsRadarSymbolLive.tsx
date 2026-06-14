@@ -87,7 +87,7 @@ export function OptionsRadarSymbolLive({
   });
 
   return (
-    <section className="rounded border border-border-subtle bg-bg-surface p-4">
+    <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="font-label-caps text-text-primary">Live Option Chain</h2>
@@ -99,7 +99,7 @@ export function OptionsRadarSymbolLive({
       </div>
       {!loadLive ? (
         <button
-          className="mb-4 inline-flex items-center gap-2 rounded border border-accent-success bg-accent-success px-3 py-2 font-label-caps uppercase text-bg-base"
+          className="mb-4 inline-flex items-center gap-2 rounded-lg border border-accent-success bg-accent-success px-3 py-2 font-label-caps uppercase text-bg-base"
           onClick={() => setLoadLive(true)}
           type="button"
         >
@@ -148,7 +148,7 @@ export function OptionsRadarSymbolLive({
           </table>
         </div>
       ) : (
-        <div className="rounded border border-dashed border-border-subtle p-4 font-body-sm text-text-secondary">
+        <div className="rounded-lg border border-dashed border-border-subtle p-4 font-body-sm text-text-secondary">
           {loadLive
             ? "Loading live chain..."
             : "Saved Radar rows are shown on the left. Load the live chain when Futu OpenD is ready."}
@@ -160,7 +160,7 @@ export function OptionsRadarSymbolLive({
 
 function WarningLine({ message }: { message: string }) {
   return (
-    <div className="mb-4 flex items-center gap-2 rounded border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
+    <div className="mb-4 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
       <AlertTriangle size={16} />
       {message}
     </div>
@@ -184,7 +184,7 @@ function firstExpiration(rows: Array<Record<string, unknown>>) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-border-subtle bg-surface-muted p-3">
+    <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
       <div className="font-label-caps text-text-secondary">{label}</div>
       <div className="mt-2 font-data-mono text-text-primary">{value}</div>
     </div>

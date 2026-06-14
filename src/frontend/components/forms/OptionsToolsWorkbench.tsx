@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { ApiClientError, apiPost, apiRequest } from "@/lib/apiClient";
 import { InfoTip } from "@/components/InfoTip";
+import { Card, PageHeader, StatusPill } from "@/components/ui/primitives";
 import type { Locale } from "@/lib/locale";
 
 type TabId =
@@ -393,41 +394,37 @@ export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <header className="border-b border-border-subtle bg-bg-surface px-6 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="font-label-caps uppercase text-text-secondary">{text.brand}</p>
-            <h1 className="mt-1 font-headline-xl text-text-primary">{text.title}</h1>
-            <p className="mt-1 max-w-3xl font-body-sm text-text-secondary">
-              {text.intro}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 font-body-sm text-text-secondary">
-              {text.ticker}
-              <input
-                className="h-9 w-28 rounded border border-border-subtle bg-surface-container px-3 font-data-mono uppercase text-text-primary"
-                onChange={(event) => setSharedTicker(event.target.value.toUpperCase())}
-                value={sharedTicker}
-              />
-            </label>
-            <div className="rounded border border-border-subtle bg-surface-container px-3 py-2 font-label-caps uppercase text-accent-success">
-              {text.researchOnly}
+      <div className="border-b border-border-subtle bg-bg-surface px-6 py-4">
+        <PageHeader
+          eyebrow={text.brand}
+          title={text.title}
+          subtitle={text.intro}
+          actions={
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 font-body-sm text-text-secondary">
+                {text.ticker}
+                <input
+                  className="h-9 w-28 rounded-lg border border-border-subtle bg-surface-container px-3 font-data-mono uppercase text-text-primary focus:border-accent-success/60 focus:outline-none"
+                  onChange={(event) => setSharedTicker(event.target.value.toUpperCase())}
+                  value={sharedTicker}
+                />
+              </label>
+              <StatusPill label="●" value={text.researchOnly} tone="success" />
             </div>
-          </div>
-        </div>
-      </header>
+          }
+        />
+      </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="w-[260px] shrink-0 overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
-          <div className="space-y-1" role="tablist" aria-label={text.title}>
+        <aside className="w-[240px] shrink-0 overflow-y-auto border-r border-border-subtle bg-bg-surface p-3">
+          <div className="space-y-0.5" role="tablist" aria-label={text.title}>
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const selected = activeTab === tab.id;
               return (
                 <button
                   aria-selected={selected}
-                  className={`flex w-full items-center gap-2 rounded px-3 py-2 text-left font-body-sm transition-colors ${
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left font-body-sm transition-colors ${
                     selected
                       ? "bg-surface-container text-accent-success"
                       : "text-text-secondary hover:bg-surface-container/70 hover:text-text-primary"
@@ -437,9 +434,9 @@ export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
                   role="tab"
                   type="button"
                 >
-                  <Icon size={16} />
+                  <Icon size={16} className={selected ? "text-accent-success" : "text-text-secondary"} />
                   <span className="flex-1">{text.tabs[tab.id]}</span>
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-label-caps ${tab.live ? "bg-info/10 text-info" : "bg-surface-muted text-text-secondary"}`}>
+                  <span className={`rounded-lg px-1.5 py-0.5 text-[10px] font-label-caps uppercase ${tab.live ? "bg-info/10 text-info" : "bg-bg-surface-muted text-text-secondary"}`}>
                     {tab.live ? text.live : text.example}
                   </span>
                 </button>
@@ -1276,8 +1273,8 @@ function GreekGuide({ locale }: { locale: Locale }) {
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
       {items.map(([label, description]) => (
-        <div className="rounded border border-border-subtle bg-bg-surface p-3" key={label}>
-          <div className="font-label-caps text-text-primary">{label}</div>
+        <div className="rounded-lg border border-border-subtle bg-bg-surface p-3" key={label}>
+          <div className="font-label-caps uppercase text-text-primary">{label}</div>
           <p className="mt-1 font-body-sm text-text-secondary">{description}</p>
         </div>
       ))}
@@ -1314,15 +1311,15 @@ function ToolPanel({
     <div className="mx-auto flex max-w-6xl flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border-subtle pb-4">
         <div className="flex items-start gap-3">
-          <div className="mt-1 rounded bg-surface-container p-2 text-accent-success">
+          <div className="mt-0.5 rounded-lg border border-border-subtle bg-surface-container p-2 text-accent-success">
             <Icon size={18} />
           </div>
           <div>
             <h2 className="font-headline-lg text-text-primary">{title}</h2>
             <p className="mt-1 max-w-2xl font-body-sm text-text-secondary">{description}</p>
             {sourceLabel && sourceDescription ? (
-              <div className="mt-2 flex max-w-2xl flex-wrap items-center gap-2 rounded border border-border-subtle bg-surface-muted px-3 py-2 font-body-sm text-text-secondary">
-                <span className="rounded border border-warning/40 bg-warning/10 px-2 py-0.5 font-label-caps uppercase text-warning">
+              <div className="mt-2 flex max-w-2xl flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info/5 px-3 py-2 font-body-sm text-text-secondary">
+                <span className="rounded-lg border border-info/40 bg-info/10 px-2 py-0.5 font-label-caps uppercase text-info">
                   {sourceLabel}
                 </span>
                 <span>{sourceDescription}</span>
@@ -1333,7 +1330,7 @@ function ToolPanel({
         <div className="flex flex-wrap items-end gap-2">
           {controls}
           <button
-            className="inline-flex min-h-9 items-center gap-2 rounded border border-accent-success bg-accent-success px-3 py-2 font-label-caps uppercase text-bg-base transition-opacity disabled:opacity-60"
+            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-accent-success bg-accent-success px-3 py-2 font-label-caps uppercase text-bg-base transition-opacity hover:opacity-90 disabled:opacity-60"
             disabled={isRunning}
             onClick={onRun}
             type="button"
@@ -1353,7 +1350,7 @@ function TickerInput({ onChange, value, label }: { onChange: (value: string) => 
     <label className="flex flex-col gap-1 font-body-sm text-text-primary">
       {label}
       <input
-        className="h-9 w-28 rounded border border-border-subtle bg-surface-container px-3 font-data-mono uppercase text-text-primary"
+        className="h-9 w-28 rounded-lg border border-border-subtle bg-surface-container px-3 font-data-mono uppercase text-text-primary focus:border-accent-success/60 focus:outline-none"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       />
@@ -1365,9 +1362,9 @@ function MetricGrid({ items }: { items: Array<[ReactNode, ReactNode]> }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {items.map(([label, value], index) => (
-        <div className="rounded border border-border-subtle bg-bg-surface p-4" key={index}>
+        <div className="rounded-lg border border-border-subtle bg-bg-surface p-3" key={index}>
           <div className="font-label-caps uppercase text-text-secondary">{label}</div>
-          <div className="mt-2 break-words font-data-mono text-lg text-text-primary">{formatDisplay(value)}</div>
+          <div className="mt-2 break-words font-data-mono text-lg font-bold text-text-primary">{formatDisplay(value)}</div>
         </div>
       ))}
     </div>
@@ -1376,7 +1373,7 @@ function MetricGrid({ items }: { items: Array<[ReactNode, ReactNode]> }) {
 
 function DataTable({ columns, rows }: { columns: ReactNode[]; rows: ReactNode[][] }) {
   return (
-    <div className="overflow-x-auto rounded border border-border-subtle bg-bg-surface">
+    <Card padded={false} className="overflow-x-auto">
       <table className="min-w-full border-collapse font-body-sm">
         <thead className="bg-surface-container text-left font-label-caps uppercase text-text-secondary">
           <tr>
@@ -1389,9 +1386,9 @@ function DataTable({ columns, rows }: { columns: ReactNode[]; rows: ReactNode[][
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => (
-            <tr className="border-t border-border-subtle/70" key={rowIndex}>
+            <tr className="border-t border-border-subtle/70 hover:bg-surface-muted/50" key={rowIndex}>
               {row.map((cell, cellIndex) => (
-                <td className="whitespace-nowrap px-3 py-2 text-text-primary" key={`${rowIndex}-${cellIndex}`}>
+                <td className="whitespace-nowrap px-3 py-2 font-data-mono text-text-primary" key={`${rowIndex}-${cellIndex}`}>
                   {formatDisplay(cell)}
                 </td>
               ))}
@@ -1399,7 +1396,7 @@ function DataTable({ columns, rows }: { columns: ReactNode[]; rows: ReactNode[][
           ))}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }
 
@@ -1412,7 +1409,7 @@ function MiniPnlChart({ rows, label }: { rows: Array<{ price: number; pnl: numbe
   const range = Math.max(maxPnl - minPnl, 1);
 
   return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-4">
+    <Card>
       <div className="mb-3 flex items-center gap-2 font-label-caps uppercase text-text-secondary">
         <SlidersHorizontal size={14} />
         {label}
@@ -1424,7 +1421,7 @@ function MiniPnlChart({ rows, label }: { rows: Array<{ price: number; pnl: numbe
           return (
             <div className="flex flex-1 items-end" key={row.price}>
               <div
-                className={positive ? "w-full bg-accent-success" : "w-full bg-danger"}
+                className={positive ? "w-full rounded-sm bg-accent-success" : "w-full rounded-sm bg-danger"}
                 style={{ height: `${height}%` }}
                 title={`${num(row.price, 2)} / ${money(row.pnl)}`}
               />
@@ -1432,7 +1429,7 @@ function MiniPnlChart({ rows, label }: { rows: Array<{ price: number; pnl: numbe
           );
         })}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -1446,13 +1443,13 @@ function SurfaceGrid({ result, t }: { result: SurfaceResult; t: Copy }) {
           [t.labels.shape, result.shape],
         ]}
       />
-      <div className="overflow-x-auto rounded border border-border-subtle bg-bg-surface">
+      <Card padded={false} className="overflow-x-auto">
         <table className="min-w-full border-collapse font-body-sm">
           <thead className="bg-surface-container text-left font-label-caps uppercase text-text-secondary">
             <tr>
               <th className="px-3 py-2">{t.labels.expiry}</th>
               {result.surface.moneyness_axis.map((point) => (
-                <th className="px-3 py-2" key={point}>
+                <th className="px-3 py-2 font-data-mono" key={point}>
                   {num(point, 2)}x
                 </th>
               ))}
@@ -1460,8 +1457,8 @@ function SurfaceGrid({ result, t }: { result: SurfaceResult; t: Copy }) {
           </thead>
           <tbody>
             {result.surface.expiry_axis.map((expiry, rowIndex) => (
-              <tr className="border-t border-border-subtle/70" key={expiry}>
-                <td className="whitespace-nowrap px-3 py-2 text-text-primary">{expiry}</td>
+              <tr className="border-t border-border-subtle/70 hover:bg-surface-muted/50" key={expiry}>
+                <td className="whitespace-nowrap px-3 py-2 font-data-mono text-text-primary">{expiry}</td>
                 {result.surface.iv_grid[rowIndex]?.map((iv, cellIndex) => (
                   <td className="whitespace-nowrap px-3 py-2 font-data-mono text-text-primary" key={`${expiry}-${cellIndex}`}>
                     {pct(iv)}
@@ -1471,7 +1468,7 @@ function SurfaceGrid({ result, t }: { result: SurfaceResult; t: Copy }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -1489,7 +1486,7 @@ function ActionGrid({
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
       {actions.map((action) => (
         <button
-          className="rounded border border-border-subtle bg-bg-surface px-3 py-2 text-left font-body-sm text-text-primary hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-accent-success/40 hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isRunning !== null}
           key={action.label}
           onClick={action.onClick}
@@ -1504,21 +1501,21 @@ function ActionGrid({
 
 function JsonResult({ payload, title, responseLabel }: { payload: unknown; title: string; responseLabel: string }) {
   return (
-    <section className="rounded border border-border-subtle bg-bg-surface p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="font-label-caps text-text-primary">{title}</h3>
-        <span className="font-label-caps text-text-secondary">{responseLabel}</span>
+    <Card padded={false}>
+      <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+        <h3 className="font-label-caps uppercase text-text-primary">{title}</h3>
+        <span className="font-label-caps uppercase text-text-secondary">{responseLabel}</span>
       </div>
-      <pre className="max-h-[360px] overflow-auto rounded bg-surface-muted p-3 font-code-sm text-text-primary">
+      <pre className="max-h-[360px] overflow-auto p-4 font-code-sm text-text-primary">
         {JSON.stringify(payload, null, 2)}
       </pre>
-    </section>
+    </Card>
   );
 }
 
 function EmptyPrompt({ label }: { label: string }) {
   return (
-    <div className="flex min-h-48 items-center justify-center rounded border border-dashed border-border-subtle bg-bg-surface/60 p-6 text-center font-body-sm text-text-secondary">
+    <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border-subtle bg-bg-surface/60 p-6 text-center font-body-sm text-text-secondary">
       {label}
     </div>
   );
@@ -1526,7 +1523,7 @@ function EmptyPrompt({ label }: { label: string }) {
 
 function ErrorLine({ message }: { message: string }) {
   return (
-    <div className="rounded border border-danger/40 bg-danger/10 px-3 py-2 font-body-sm text-error">
+    <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 font-body-sm text-danger">
       {message}
     </div>
   );

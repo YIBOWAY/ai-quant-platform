@@ -107,6 +107,12 @@ test.describe("single run detail routes", () => {
     await expect(page.getByRole("link", { name: `Open ${factorRunId}` })).toBeVisible();
 
     await page.goto("/paper-trading?include_sample=1", { waitUntil: "domcontentloaded" });
+    // Replay run links live behind the "Historical Replay" tab; retry until hydrated.
+    const replayTab = page.getByRole("tab", { name: "Historical Replay" });
+    await expect(async () => {
+      await replayTab.click();
+      await expect(replayTab).toHaveAttribute("aria-selected", "true", { timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
     await expect(page.getByRole("link", { name: `Open ${paperRunId}` })).toBeVisible();
   });
 

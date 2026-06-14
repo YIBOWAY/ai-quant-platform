@@ -26,7 +26,8 @@ test.describe("strategy catalog", () => {
 
     const response = await responsePromise;
     expect(response.status()).toBe(200);
-    await expect(page.getByText("monthly_returns")).toBeVisible();
-    await expect(page.getByText("positions")).toBeVisible();
+    await expect(page.getByTestId("replication-equity-chart")).toBeVisible();
+    await expect(page.getByText("Monthly Strategy Returns")).toBeVisible();
+    await expect(page.getByText("Composite Positions")).toBeVisible();
   });
 });

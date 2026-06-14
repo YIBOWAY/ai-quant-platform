@@ -14,7 +14,7 @@ export default async function ReplicationsPage() {
   const futuReachable = health.futu_opend?.reachable !== false;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-base">
+    <div className="flex h-full min-h-0 flex-col bg-bg-base">
       <ErrorBanner messages={[strategies.apiError, universes.apiError, factors.apiError]} />
       <StrategyCatalogWorkbench
         factors={factors.factors}
