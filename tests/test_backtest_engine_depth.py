@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from quant_system.backtest.engine import BacktestEngine
 from quant_system.backtest.models import BacktestConfig, RebalanceFrequency, TargetWeight
@@ -121,6 +122,11 @@ def test_sector_cap_scales_down_over_cap_sector() -> None:
     assert capped["SPY"] + capped["QQQ"] == pytest.approx(0.5)
     assert capped["SPY"] == pytest.approx(0.25)
     assert capped["TLT"] == pytest.approx(0.2)  # other sector untouched
+
+
+def test_sector_cap_requires_sector_map() -> None:
+    with pytest.raises(ValidationError, match="sector_map"):
+        BacktestConfig(sector_cap=0.5)
 
 
 def test_constraints_are_noop_by_default() -> None:

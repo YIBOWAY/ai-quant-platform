@@ -209,7 +209,7 @@ def test_options_screener_can_include_rejected_rows_for_audit() -> None:
     assert "sell put strike is above spot" in result.candidates[0].notes
 
 
-def test_options_screener_keeps_otm_covered_call_when_only_trend_filter_warns() -> None:
+def test_options_screener_uses_ema21_and_sma50_trend_check_for_covered_call() -> None:
     class CoveredCallProvider(_FakeProvider):
         def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):
             assert option_type == "CALL"
@@ -247,8 +247,52 @@ def test_options_screener_keeps_otm_covered_call_when_only_trend_filter_warns() 
     )
 
     assert len(result.candidates) == 1
-    assert result.candidates[0].rating == "Watch"
-    assert "trend filter failed" in result.candidates[0].notes
+    assert result.underlying_price >= result.ema_21
+    assert result.underlying_price >= result.sma_50
+    assert result.candidates[0].rating == "Strong"
+    assert result.candidates[0].trend_pass is True
+
+
+def test_options_screener_softens_sell_put_trend_filter_with_ema21_and_sma50_notes() -> None:
+    class WeakTrendProvider(_FakeProvider):
+        def fetch_underlying_snapshot(self, symbol: str):
+            return {"symbol": "US.AAPL", "last": 210.0}
+
+        def fetch_option_quotes(self, underlying: str, *, expiration: str, option_type: str):
+            frame = super().fetch_option_quotes(
+                underlying,
+                expiration=expiration,
+                option_type=option_type,
+            )
+            frame.loc[0, "strike"] = 190.0
+            return frame
+
+    result = run_options_screener(
+        provider=WeakTrendProvider(),
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            min_iv=0.2,
+            max_delta=0.35,
+            min_premium=1.0,
+            max_spread_pct=0.2,
+            trend_filter=True,
+            hv_iv_filter=False,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert result.ema_21 is not None
+    assert result.sma_50 is not None
+    assert result.underlying_price < result.ema_21
+    assert result.underlying_price < result.sma_50
+    assert len(result.candidates) == 1
+    candidate = result.candidates[0]
+    assert candidate.trend_pass is False
+    assert candidate.rating == "Watch"
+    assert "price below EMA21" in candidate.notes
+    assert "price below SMA50" in candidate.notes
 
 
 def test_options_screener_avoids_itm_covered_call_when_delta_is_missing() -> None:
@@ -527,3 +571,30 @@ def test_options_screener_no_regime_means_no_penalty() -> None:
     assert result.market_regime_penalty == 0.0
     assert result.candidates[0].market_regime is None
     assert result.candidates[0].market_regime_penalty == 0.0
+
+
+def test_options_screener_reports_hv_iv_summary_for_top_status() -> None:
+    result = run_options_screener(
+        provider=_FakeProvider(),
+        config=OptionsScreenerConfig(
+            ticker="AAPL",
+            strategy_type="sell_put",
+            min_iv=0.2,
+            max_delta=0.35,
+            min_premium=1.0,
+            max_spread_pct=0.2,
+            trend_filter=True,
+            hv_iv_filter=True,
+            max_hv_iv=1.2,
+            history_start="2026-01-02",
+            history_end="2026-05-01",
+        ),
+    )
+
+    assert result.ema_21 is not None
+    assert result.sma_50 is not None
+    assert result.hv_iv_threshold == 1.2
+    assert result.hv_iv_contract_count == 1
+    assert result.hv_iv_pass_count == 1
+    assert result.hv_iv_min is not None
+    assert result.hv_iv_max == result.hv_iv_min

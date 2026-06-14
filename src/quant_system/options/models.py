@@ -95,7 +95,7 @@ class OptionsScreenerConfig(BaseModel):
     max_dte: int = Field(default=365, ge=0)
     max_spread_pct: float = Field(default=0.35, ge=0)
     min_open_interest: float = Field(default=0.0, ge=0)
-    max_hv_iv: float = Field(default=10.0, ge=0)
+    max_hv_iv: float = Field(default=1.2, ge=0)
     trend_filter: bool = True
     hv_iv_filter: bool = False
     provider: Literal["futu"] = "futu"
@@ -166,6 +166,13 @@ class OptionsScreenerResult(BaseModel):
     underlying_price: float
     historical_volatility: float | None = None
     trend_reference: float | None = None
+    ema_21: float | None = None
+    sma_50: float | None = None
+    hv_iv_threshold: float | None = None
+    hv_iv_pass_count: int = 0
+    hv_iv_contract_count: int = 0
+    hv_iv_min: float | None = None
+    hv_iv_max: float | None = None
     market_regime: Literal["Normal", "Elevated", "Panic", "Unknown"] | None = None
     market_regime_penalty: float = 0.0
     market_regime_w_vix: float | None = None

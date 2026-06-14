@@ -47,11 +47,12 @@ def run_options_screener(
         interval="1d",
     )
     historical_volatility = _historical_volatility(history)
-    trend_reference = _moving_average(history, window=20)
+    ema_21 = _exponential_moving_average(history, span=21)
+    sma_50 = _moving_average(history, window=50)
     trend_pass = _trend_pass(
-        strategy_type=config.strategy_type,
         underlying_price=underlying_price,
-        trend_reference=trend_reference,
+        ema_21=ema_21,
+        sma_50=sma_50,
     )
     avg_daily_volume = _average_volume(history, window=20)
     market_cap = _safe_float(
@@ -73,6 +74,8 @@ def run_options_screener(
             underlying_price=underlying_price,
             historical_volatility=historical_volatility,
             trend_pass=trend_pass,
+            ema_21=ema_21,
+            sma_50=sma_50,
             avg_daily_volume=avg_daily_volume,
             market_cap=market_cap,
             market_regime=market_regime,
@@ -80,6 +83,11 @@ def run_options_screener(
         )
         rows.append(candidate)
     rejected_count = sum(1 for item in rows if item.rating == "Avoid")
+    hv_iv_values = [
+        item.hv_iv_ratio
+        for item in rows
+        if item.hv_iv_ratio is not None and math.isfinite(item.hv_iv_ratio)
+    ]
     visible_rows = rows if config.include_rejected else [
         item for item in rows if item.rating != "Avoid"
     ]
@@ -100,7 +108,14 @@ def run_options_screener(
         expiration_count=len(scanned_expirations),
         underlying_price=underlying_price,
         historical_volatility=historical_volatility,
-        trend_reference=trend_reference,
+        trend_reference=ema_21,
+        ema_21=ema_21,
+        sma_50=sma_50,
+        hv_iv_threshold=config.max_hv_iv,
+        hv_iv_pass_count=sum(1 for value in hv_iv_values if value <= config.max_hv_iv),
+        hv_iv_contract_count=len(hv_iv_values),
+        hv_iv_min=min(hv_iv_values) if hv_iv_values else None,
+        hv_iv_max=max(hv_iv_values) if hv_iv_values else None,
         market_regime=market_regime.volatility_regime if market_regime else None,
         market_regime_penalty=(
             seller_regime_penalty(config.strategy_type, market_regime.volatility_regime)
@@ -246,6 +261,8 @@ def _build_candidate(
     underlying_price: float,
     historical_volatility: float | None,
     trend_pass: bool | None,
+    ema_21: float | None,
+    sma_50: float | None,
     avg_daily_volume: float | None,
     market_cap: float | None,
     market_regime: VixRegimeSnapshot | None = None,
@@ -297,6 +314,9 @@ def _build_candidate(
         days_to_expiry=dte,
         open_interest=open_interest,
         trend_pass=trend_pass,
+        underlying_price=underlying_price,
+        ema_21=ema_21,
+        sma_50=sma_50,
         hv_iv_pass=hv_iv_pass,
         avg_daily_volume=avg_daily_volume,
         market_cap=market_cap,
@@ -381,6 +401,9 @@ def _candidate_notes(
     days_to_expiry: int | None = None,
     open_interest: float | None = None,
     trend_pass: bool | None,
+    underlying_price: float,
+    ema_21: float | None,
+    sma_50: float | None,
     hv_iv_pass: bool | None,
     avg_daily_volume: float | None = None,
     market_cap: float | None = None,
@@ -418,6 +441,10 @@ def _candidate_notes(
     if config.strategy_type == "covered_call" and distance_pct is not None and distance_pct < 0:
         notes.append("covered call strike is below spot")
     if config.trend_filter and trend_pass is False:
+        if ema_21 is not None and underlying_price < ema_21:
+            notes.append("price below EMA21")
+        if sma_50 is not None and underlying_price < sma_50:
+            notes.append("price below SMA50")
         notes.append("trend filter failed")
     if config.hv_iv_filter and hv_iv_pass is False:
         notes.append("IV/HV filter failed")
@@ -456,8 +483,6 @@ HARD_FAILURES = frozenset(
 
 def _rating(notes: list[str], strategy_type: str) -> str:
     hard_failures = set(HARD_FAILURES)
-    if strategy_type == "sell_put":
-        hard_failures.add("trend filter failed")
     if any(note in hard_failures for note in notes):
         return "Avoid"
     if notes:
@@ -565,31 +590,39 @@ def _moving_average(ohlcv: pd.DataFrame, *, window: int = 20) -> float | None:
     if ohlcv.empty:
         return None
     closes = pd.to_numeric(ohlcv.sort_values("timestamp")["close"], errors="coerce")
+    closes = closes.dropna()
+    if len(closes) < window:
+        return None
     average = closes.tail(window).mean()
+    return float(average) if not pd.isna(average) else None
+
+
+def _exponential_moving_average(ohlcv: pd.DataFrame, *, span: int) -> float | None:
+    if ohlcv.empty:
+        return None
+    closes = pd.to_numeric(ohlcv.sort_values("timestamp")["close"], errors="coerce")
+    closes = closes.dropna()
+    if len(closes) < span:
+        return None
+    average = closes.ewm(span=span, adjust=False).mean().iloc[-1]
     return float(average) if not pd.isna(average) else None
 
 
 def _trend_pass(
     *,
-    strategy_type: str,
     underlying_price: float,
-    trend_reference: float | None,
+    ema_21: float | None,
+    sma_50: float | None,
 ) -> bool | None:
-    """Trend gate using the 20-day moving average as a proxy.
-
-    - **sell_put** (collect premium below price): pass when price >= MA20,
-      i.e. trend is up or flat. Selling puts into a strong downtrend
-      maximizes assignment risk.
-    - **covered_call** (cap upside on owned shares): pass when price <= MA20,
-      i.e. trend is flat or weak. Selling calls into a strong uptrend caps
-      gains exactly when the market is paying up.
-    """
-    if trend_reference is None or trend_reference <= 0:
+    """Trend gate using EMA21 and SMA50 as the short/intermediate trend check."""
+    if (
+        ema_21 is None
+        or ema_21 <= 0
+        or sma_50 is None
+        or sma_50 <= 0
+    ):
         return None
-    if strategy_type == "sell_put":
-        return underlying_price >= trend_reference
-    # covered_call: prefer non-overbought tape
-    return underlying_price <= trend_reference
+    return underlying_price >= ema_21 and underlying_price >= sma_50
 
 
 def _hv_iv_pass(iv: float | None, hv: float | None) -> bool | None:

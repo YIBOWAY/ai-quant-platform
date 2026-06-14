@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class BacktestRunRequest(BaseModel):
@@ -31,3 +31,9 @@ class BacktestRunRequest(BaseModel):
         if value is None:
             return []
         return value
+
+    @model_validator(mode="after")
+    def require_sector_map_for_sector_cap(self) -> BacktestRunRequest:
+        if self.sector_cap is not None and not self.sector_map:
+            raise ValueError("sector_cap requires sector_map")
+        return self

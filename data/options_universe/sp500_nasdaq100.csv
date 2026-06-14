@@ -147,10 +147,10 @@ BEN,Franklin Resources,Financials,US,sp500
 BF-B,Brown–Forman,Consumer Staples,US,sp500
 BG,Bunge Global,Consumer Staples,US,sp500
 BIIB,Biogen,Health Care,US,sp500
-BK,BNY Mellon,Financials,US,sp500
 BLDR,Builders FirstSource,Industrials,US,sp500
 BLK,BlackRock,Financials,US,sp500
 BMY,Bristol Myers Squibb,Health Care,US,sp500
+BNY,BNY Mellon,Financials,US,sp500
 BR,Broadridge Financial Solutions,Industrials,US,sp500
 BRK-B,Berkshire Hathaway,Financials,US,sp500
 BRO,Brown & Brown,Financials,US,sp500
@@ -167,7 +167,7 @@ CB,Chubb Limited,Financials,US,sp500
 CBOE,Cboe Global Markets,Financials,US,sp500
 CBRE,CBRE Group,Real Estate,US,sp500
 CCI,Crown Castle,Real Estate,US,sp500
-CCL,Carnival,Consumer Discretionary,US,sp500
+CCL,Carnival Corporation,Consumer Discretionary,US,sp500
 CDW,CDW Corporation,Information Technology,US,sp500
 CF,CF Industries,Materials,US,sp500
 CFG,Citizens Financial Group,Financials,US,sp500
@@ -196,7 +196,6 @@ CPT,Camden Property Trust,Real Estate,US,sp500
 CRH,CRH plc,Materials,US,sp500
 CRL,Charles River Laboratories,Health Care,US,sp500
 CRM,Salesforce,Information Technology,US,sp500
-CTRA,Coterra,Energy,US,sp500
 CTVA,Corteva,Materials,US,sp500
 CVNA,Carvana,Consumer Discretionary,US,sp500
 CVS,CVS Health,Health Care,US,sp500
@@ -234,7 +233,6 @@ ELV,Elevance Health,Health Care,US,sp500
 EME,Emcor,Industrials,US,sp500
 EMR,Emerson Electric,Industrials,US,sp500
 EOG,EOG Resources,Energy,US,sp500
-EPAM,EPAM Systems,Information Technology,US,sp500
 EQIX,Equinix,Real Estate,US,sp500
 EQR,Equity Residential,Real Estate,US,sp500
 EQT,EQT Corporation,Energy,US,sp500
@@ -253,6 +251,7 @@ F,Ford Motor Company,Consumer Discretionary,US,sp500
 FCX,Freeport-McMoRan,Materials,US,sp500
 FDS,FactSet,Financials,US,sp500
 FDX,FedEx,Industrials,US,sp500
+FDXF,FedEx Freight,Industrials,US,sp500
 FE,FirstEnergy,Utilities,US,sp500
 FFIV,"F5, Inc.",Information Technology,US,sp500
 FICO,Fair Isaac,Information Technology,US,sp500
@@ -486,6 +485,7 @@ UPS,United Parcel Service,Industrials,US,sp500
 URI,United Rentals,Industrials,US,sp500
 USB,U.S. Bancorp,Financials,US,sp500
 V,Visa Inc.,Financials,US,sp500
+VEEV,Veeva Systems,Health Care,US,sp500
 VICI,Vici Properties,Real Estate,US,sp500
 VLO,Valero Energy,Energy,US,sp500
 VLTO,Veralto,Industrials,US,sp500

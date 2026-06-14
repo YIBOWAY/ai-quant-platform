@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Literal
 
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class OrderSide(StrEnum):
@@ -53,6 +53,12 @@ class BacktestConfig(BaseModel):
         if value is not None and not (0.0 < value <= 1.0):
             raise ValueError("weight caps must be in the interval (0, 1]")
         return value
+
+    @model_validator(mode="after")
+    def _require_sector_map_for_sector_cap(self) -> BacktestConfig:
+        if self.sector_cap is not None and not self.sector_map:
+            raise ValueError("sector_cap requires sector_map")
+        return self
 
 
 class TargetWeight(BaseModel):

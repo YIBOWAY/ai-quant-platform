@@ -104,6 +104,26 @@ def test_backtest_run_records_single_symbol_no_trade_warning(tmp_path) -> None:
     assert payload["trade_count"] == 0
 
 
+def test_backtest_run_rejects_sector_cap_without_sector_map(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/backtests/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "sample",
+            "lookback": 3,
+            "top_n": 1,
+            "sector_cap": 0.5,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "sector_map" in response.text
+
+
 def test_benchmark_returns_equity_curve(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 
