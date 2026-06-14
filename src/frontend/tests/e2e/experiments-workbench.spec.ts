@@ -4,8 +4,9 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const repoRoot = findRepoRoot(process.cwd());
+const e2eDataRoot = path.join(repoRoot, "src", "frontend", ".tmp", "e2e-data");
 const experimentId = "experiment-e2e-page";
-const experimentDir = path.join(repoRoot, "data", "experiments", experimentId);
+const experimentDir = path.join(e2eDataRoot, "experiments", experimentId);
 
 function findRepoRoot(start: string) {
   let current = path.resolve(start);

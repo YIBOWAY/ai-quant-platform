@@ -3,7 +3,8 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const repoRoot = findRepoRoot(process.cwd());
-const outputDir = path.join(repoRoot, "data", "options_scans");
+const e2eDataRoot = path.join(repoRoot, "src", "frontend", ".tmp", "e2e-data");
+const outputDir = path.join(e2eDataRoot, "options_scans");
 const runDate = "2099-01-02";
 
 function findRepoRoot(start: string) {

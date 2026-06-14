@@ -5,6 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
 const runE2E = process.env.PW_E2E === "1";
 const repoRoot = findRepoRoot(process.cwd());
 const frontendRoot = path.join(repoRoot, "src", "frontend");
+const e2eDataRoot = path.join(frontendRoot, ".tmp", "e2e-data");
 const reuseExistingServer = process.env.PW_REUSE_SERVER === "1";
 
 function findRepoRoot(start: string) {
@@ -51,13 +52,24 @@ export default defineConfig({
             QS_ENVIRONMENT: "test",
             QS_DATABASE_ENABLED: "false",
             QS_DATABASE_AUTO_MIGRATE: "false",
-            QS_DATA_DIR: path.join(frontendRoot, ".tmp", "e2e-data"),
-            QS_PARQUET_DIR: path.join(frontendRoot, ".tmp", "e2e-data", "parquet"),
-            QS_DUCKDB_PATH: path.join(
-              frontendRoot,
-              ".tmp",
-              "e2e-data",
-              "quant_system.duckdb",
+            QS_DATA_DIR: e2eDataRoot,
+            QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet"),
+            QS_DUCKDB_PATH: path.join(e2eDataRoot, "quant_system.duckdb"),
+            QS_OPTIONS_RADAR_OUTPUT_DIR: path.join(e2eDataRoot, "options_scans"),
+            QS_OPTIONS_RADAR_UNIVERSE_PATH: path.join(
+              e2eDataRoot,
+              "options_universe",
+              "universe.csv",
+            ),
+            QS_OPTIONS_RADAR_EARNINGS_CALENDAR_PATH: path.join(
+              e2eDataRoot,
+              "options_universe",
+              "earnings_calendar.csv",
+            ),
+            QS_OPTIONS_RADAR_VIX_HISTORY_PATH: path.join(
+              e2eDataRoot,
+              "options_universe",
+              "vix_history.csv",
             ),
           },
         },

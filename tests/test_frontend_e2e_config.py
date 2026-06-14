@@ -14,12 +14,17 @@ def test_playwright_backend_uses_isolated_test_environment() -> None:
     assert 'QS_ENVIRONMENT: "test"' in backend_block
     assert 'QS_DATABASE_ENABLED: "false"' in backend_block
     assert 'QS_DATABASE_AUTO_MIGRATE: "false"' in backend_block
-    assert 'QS_DATA_DIR: path.join(frontendRoot, ".tmp", "e2e-data")' in backend_block
-    assert 'QS_PARQUET_DIR: path.join(frontendRoot, ".tmp", "e2e-data", "parquet")' in backend_block
+    assert 'const e2eDataRoot = path.join(frontendRoot, ".tmp", "e2e-data")' in config
+    assert "QS_DATA_DIR: e2eDataRoot" in backend_block
+    assert 'QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet")' in backend_block
+    assert 'QS_DUCKDB_PATH: path.join(e2eDataRoot, "quant_system.duckdb")' in backend_block
     assert (
-        'QS_DUCKDB_PATH: path.join( frontendRoot, ".tmp", "e2e-data", "quant_system.duckdb", )'
-        in compact_backend_block
+        'QS_OPTIONS_RADAR_OUTPUT_DIR: path.join(e2eDataRoot, "options_scans")'
+        in backend_block
     )
+    assert "QS_OPTIONS_RADAR_UNIVERSE_PATH" in compact_backend_block
+    assert "QS_OPTIONS_RADAR_EARNINGS_CALENDAR_PATH" in compact_backend_block
+    assert "QS_OPTIONS_RADAR_VIX_HISTORY_PATH" in compact_backend_block
     assert "QS_DATABASE_ENABLED" not in compact.split('command: "npm run dev', maxsplit=1)[1]
 
 

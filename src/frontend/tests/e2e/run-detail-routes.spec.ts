@@ -3,7 +3,8 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const repoRoot = findRepoRoot(process.cwd());
-const apiRunsDir = path.join(repoRoot, "data", "api_runs");
+const e2eDataRoot = path.join(repoRoot, "src", "frontend", ".tmp", "e2e-data");
+const apiRunsDir = path.join(e2eDataRoot, "api_runs");
 
 const backtestRunId = "backtest-e2e-detail";
 const factorRunId = "factor-e2e-detail";
