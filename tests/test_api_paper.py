@@ -86,15 +86,23 @@ def test_paper_run_list_and_detail_with_kill_switch_on(tmp_path) -> None:
     )
 
     assert run_response.status_code == 200
-    run_id = run_response.json()["run_id"]
+    run_payload = run_response.json()
+    run_id = run_payload["run_id"]
+    assert run_payload["execution_status"] == "blocked"
+    assert "risk" in run_payload["execution_note"].lower()
 
     list_response = client.get("/api/paper")
     assert list_response.status_code == 200
-    assert run_id in {item["id"] for item in list_response.json()["paper_runs"]}
+    list_item = next(
+        item for item in list_response.json()["paper_runs"] if item["id"] == run_id
+    )
+    assert list_item["summary"]["execution_status"] == "blocked"
 
     detail_response = client.get(f"/api/paper/{run_id}")
     assert detail_response.status_code == 200
     detail = detail_response.json()
+    assert detail["metadata"]["execution_status"] == "blocked"
+    assert "risk" in detail["metadata"]["execution_note"].lower()
     assert detail["orders"]
     assert detail["risk_breaches"]
     assert isinstance(detail["trades"], list)

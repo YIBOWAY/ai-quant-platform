@@ -197,6 +197,8 @@ export type PaperRunSummary = {
     risk_breach_count?: number;
     final_equity?: number;
     signal_count?: number;
+    execution_status?: string;
+    execution_note?: string;
   };
 };
 

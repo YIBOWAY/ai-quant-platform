@@ -64,8 +64,14 @@ def test_paper_trading_cli_respects_kill_switch(tmp_path) -> None:
     )
 
     assert result.exit_code == 0
+    assert "execution_status=blocked" in result.output
     breaches = pd.read_parquet(Path(tmp_path, "paper", "risk_breaches.parquet"))
     trades = pd.read_parquet(Path(tmp_path, "paper", "trades.parquet"))
+    report = Path(tmp_path, "reports", "paper_trading_report.md").read_text(
+        encoding="utf-8"
+    )
+    assert "- Execution status: blocked" in report
+    assert "risk controls blocked all fills" in report
     assert not breaches.empty
     assert trades.empty
 

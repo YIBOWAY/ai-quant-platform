@@ -71,6 +71,8 @@ def run_paper(
         "trade_count": result.trade_count,
         "risk_breach_count": result.risk_breach_count,
         "final_equity": result.final_equity,
+        "execution_status": result.execution_status,
+        "execution_note": result.execution_note,
         "request": {
             "symbols": request.symbols,
             "start": request.start,

@@ -38,6 +38,8 @@ class PaperTradingRunResult(BaseModel):
     trade_count: int
     risk_breach_count: int
     final_equity: float
+    execution_status: str = "unknown"
+    execution_note: str = ""
 
 
 def run_paper_trading(
@@ -434,6 +436,11 @@ def _persist_paper_run(
         filename="risk_breaches.parquet",
         table_name="paper_risk_breaches",
     )
+    execution_status, execution_note = _paper_execution_status(
+        order_count=len(orders_frame),
+        trade_count=len(trades_frame),
+        risk_breach_count=len(breaches_frame),
+    )
     report = generate_paper_trading_report(
         order_count=len(orders_frame),
         submitted_count=(
@@ -447,6 +454,8 @@ def _persist_paper_run(
         final_cash=portfolio.cash,
         final_equity=final_equity,
         kill_switch=kill_switch,
+        execution_status=execution_status,
+        execution_note=execution_note,
     )
     report_path = storage.save_report(report, filename=report_filename)
     return PaperTradingRunResult(
@@ -460,6 +469,8 @@ def _persist_paper_run(
         trade_count=len(trades_frame),
         risk_breach_count=len(breaches_frame),
         final_equity=final_equity,
+        execution_status=execution_status,
+        execution_note=execution_note,
     )
 
 
@@ -472,3 +483,21 @@ def _build_storage(output_dir: str | Path | None) -> LocalPaperTradingStorage:
         reports_dir=data_settings.reports_dir,
         duckdb_path=data_settings.duckdb_path,
     )
+
+
+def _paper_execution_status(
+    *,
+    order_count: int,
+    trade_count: int,
+    risk_breach_count: int,
+) -> tuple[str, str]:
+    if trade_count > 0:
+        return "filled", "Replay produced simulated fills."
+    if order_count > 0 and risk_breach_count > 0:
+        return (
+            "blocked",
+            "Replay generated orders, but risk controls blocked all fills.",
+        )
+    if order_count == 0:
+        return "no_orders", "Replay did not generate any orders."
+    return "unfilled", "Replay generated orders but no fills were recorded."

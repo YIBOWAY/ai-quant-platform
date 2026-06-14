@@ -104,6 +104,7 @@ const copy = {
     runColumns: {
       id: "Run ID",
       source: "Source",
+      status: "Status",
       final_equity: "Final Equity",
       trade_count: "Trades",
       risk_breach_count: "Breaches",
@@ -388,10 +389,22 @@ function RunHistory({
   locale,
   text,
 }: {
-  runs: Array<{ id: string; source?: string; summary?: { final_equity?: number; trade_count?: number; risk_breach_count?: number } }>;
+  runs: Array<{
+    id: string;
+    source?: string;
+    summary?: {
+      final_equity?: number;
+      trade_count?: number;
+      risk_breach_count?: number;
+      execution_status?: string;
+      execution_note?: string;
+    };
+  }>;
   locale: "en" | "zh";
   text: (typeof copy)["en"] | (typeof copy)["zh"];
 }) {
+  const statusColumn = "status" in text.runColumns ? text.runColumns.status : "Status";
+
   return (
     <Card padded>
       <SectionTitle title={text.runHistoryTitle} hint={text.runHistoryDesc} />
@@ -402,6 +415,7 @@ function RunHistory({
               <tr className="border-b border-border-subtle">
                 <th className="pb-2 pr-3 font-label-caps text-text-secondary">{text.runColumns.id}</th>
                 <th className="pb-2 pr-3 font-label-caps text-text-secondary">{text.runColumns.source}</th>
+                <th className="pb-2 pr-3 font-label-caps text-text-secondary">{statusColumn}</th>
                 <th className="pb-2 pr-3 text-right font-label-caps text-text-secondary">{text.runColumns.final_equity}</th>
                 <th className="pb-2 pr-3 text-right font-label-caps text-text-secondary">{text.runColumns.trade_count}</th>
                 <th className="pb-2 pr-3 text-right font-label-caps text-text-secondary">{text.runColumns.risk_breach_count}</th>
@@ -415,6 +429,12 @@ function RunHistory({
                     {run.id}
                   </td>
                   <td className="py-2 pr-3">{run.source ? <DataSourceBadge source={run.source} /> : "--"}</td>
+                  <td className="py-2 pr-3">
+                    <ReplayStatusPill
+                      status={run.summary?.execution_status}
+                      note={run.summary?.execution_note}
+                    />
+                  </td>
                   <td className="py-2 pr-3 text-right tabular-nums">{formatMoney(run.summary?.final_equity)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{run.summary?.trade_count ?? "--"}</td>
                   <td className={`py-2 pr-3 text-right tabular-nums ${(run.summary?.risk_breach_count ?? 0) > 0 ? "text-danger" : ""}`}>
@@ -437,6 +457,30 @@ function RunHistory({
         <p className="py-4 text-center font-body-sm text-text-secondary">{text.runHistoryEmptyDesc}</p>
       )}
     </Card>
+  );
+}
+
+function ReplayStatusPill({
+  status,
+  note,
+}: {
+  status?: string;
+  note?: string;
+}) {
+  const normalized = status ?? "unknown";
+  const tone =
+    normalized === "filled"
+      ? "success"
+      : normalized === "blocked"
+        ? "danger"
+        : normalized === "no_orders" || normalized === "unfilled"
+          ? "warning"
+          : "neutral";
+
+  return (
+    <span title={note}>
+      <StatusPill label="" value={normalized} tone={tone} />
+    </span>
   );
 }
 

@@ -1609,6 +1609,7 @@ def _emit_paper_summary(result: PaperTradingRunResult) -> None:
                 f"trades={result.trade_count}",
                 f"risk_breaches={result.risk_breach_count}",
                 f"final_equity={result.final_equity:.2f}",
+                f"execution_status={result.execution_status}",
                 f"orders_path={result.orders_path}",
                 f"order_events={result.order_events_path}",
                 f"trades_path={result.trades_path}",

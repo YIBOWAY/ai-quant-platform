@@ -11,6 +11,8 @@ def generate_paper_trading_report(
     final_cash: float,
     final_equity: float,
     kill_switch: bool,
+    execution_status: str = "unknown",
+    execution_note: str = "",
 ) -> str:
     return "\n".join(
         [
@@ -34,6 +36,8 @@ def generate_paper_trading_report(
             f"- Filled orders: {filled_count}",
             f"- Trades: {trade_count}",
             f"- Risk breaches: {risk_breach_count}",
+            f"- Execution status: {execution_status}",
+            f"- Execution note: {execution_note}",
             f"- Final cash: {final_cash:.2f}",
             f"- Final equity: {final_equity:.2f}",
             "",
