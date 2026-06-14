@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import pandas as pd
 import typer
 
 from quant_system import __version__
@@ -74,6 +75,7 @@ from quant_system.prediction_market.timeseries_backtest import (
     PredictionMarketTimeseriesBacktestConfig,
     run_prediction_market_timeseries_backtest,
 )
+from quant_system.storage.options_cache import OptionQuotesCache
 
 _API_SECRET_FIELDS: frozenset[str] = frozenset(
     {
@@ -1435,6 +1437,42 @@ def options_refresh_vix() -> None:
     typer.echo(
         "python scripts/refresh_vix_history.py "
         "--output data/options_universe/vix_history.csv --lookback-days 400"
+    )
+
+
+@options_app.command("prune-cache")
+def options_prune_cache(
+    cache_path: Annotated[
+        Path | None,
+        typer.Option("--cache-path", help="Override the Futu options DuckDB cache path."),
+    ] = None,
+    as_of: Annotated[
+        str | None,
+        typer.Option("--as-of", help="UTC timestamp used to decide expiration."),
+    ] = None,
+    apply: Annotated[
+        bool,
+        typer.Option("--apply", help="Delete expired snapshots. Default is dry-run."),
+    ] = False,
+) -> None:
+    """Report or delete expired Futu option quote cache snapshots."""
+    settings = reload_settings()
+    resolved_cache_path = cache_path or settings.futu.cache_dir / "options_cache.duckdb"
+    cache = OptionQuotesCache(resolved_cache_path)
+    as_of_timestamp = pd.Timestamp(as_of) if as_of else None
+    expired_snapshot_ids = cache.expired_snapshot_ids(as_of=as_of_timestamp)
+    removed = cache.prune_expired(as_of=as_of_timestamp) if apply else 0
+    typer.echo(
+        json.dumps(
+            {
+                "cache_path": str(resolved_cache_path),
+                "mode": "apply" if apply else "dry_run",
+                "expired_snapshots": len(expired_snapshot_ids),
+                "removed_snapshots": removed,
+            },
+            indent=2,
+            sort_keys=True,
+        )
     )
 
 

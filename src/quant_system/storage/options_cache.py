@@ -184,22 +184,11 @@ class OptionQuotesCache:
                 )
 
     def prune_expired(self, *, as_of: pd.Timestamp | None = None) -> int:
-        now = _utc_timestamp(as_of or pd.Timestamp.now(tz="UTC"))
+        snapshot_ids = self.expired_snapshot_ids(as_of=as_of)
+        if not snapshot_ids:
+            return 0
         with duckdb.connect(str(self.duckdb_path)) as connection:
             self._ensure_schema(connection)
-            snapshot_ids = [
-                str(row[0])
-                for row in connection.execute(
-                    """
-                    SELECT snapshot_id
-                    FROM option_chain_snapshots
-                    WHERE expires_at <= ?
-                    """,
-                    [now.isoformat()],
-                ).fetchall()
-            ]
-            if not snapshot_ids:
-                return 0
             connection.executemany(
                 "DELETE FROM option_contract_quotes WHERE snapshot_id = ?",
                 [(snapshot_id,) for snapshot_id in snapshot_ids],
@@ -209,6 +198,23 @@ class OptionQuotesCache:
                 [(snapshot_id,) for snapshot_id in snapshot_ids],
             )
             return len(snapshot_ids)
+
+    def expired_snapshot_ids(self, *, as_of: pd.Timestamp | None = None) -> list[str]:
+        now = _utc_timestamp(as_of or pd.Timestamp.now(tz="UTC"))
+        with duckdb.connect(str(self.duckdb_path)) as connection:
+            self._ensure_schema(connection)
+            return [
+                str(row[0])
+                for row in connection.execute(
+                    """
+                    SELECT snapshot_id
+                    FROM option_chain_snapshots
+                    WHERE expires_at <= ?
+                    ORDER BY expires_at, snapshot_id
+                    """,
+                    [now.isoformat()],
+                ).fetchall()
+            ]
 
     def _ensure_schema(self, connection: duckdb.DuckDBPyConnection | None = None) -> None:
         owns_connection = connection is None

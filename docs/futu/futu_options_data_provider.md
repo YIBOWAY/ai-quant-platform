@@ -87,6 +87,16 @@ Frontend Options Screener
 - 当 `QS_FUTU_USE_CACHE=true`（默认值）时，成功的期权报价窗口也会持久化到位于
   `data/futu/options_cache.duckdb` 的本地 DuckDB 缓存中。
   该缓存会被筛选器、雷达、买方助手和本地期权工具在后端重启后复用。
+- 可用 `quant-system options prune-cache` 清理已过期的持久化快照。该命令默认
+  dry-run，只报告候选数量；加 `--apply` 才会删除过期快照：
+
+```powershell
+quant-system options prune-cache
+quant-system options prune-cache --apply
+```
+
+  如需针对非默认缓存文件验证，可传 `--cache-path <path>`。该命令只操作本地
+  DuckDB 期权报价缓存，不连接券商、不下单、不触发 Futu 交易接口。
 
 2026-05-04 在 OpenD 已登录状态下进行的本地只读检查：
 
