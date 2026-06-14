@@ -47,6 +47,19 @@ export default defineConfig({
           url: "http://127.0.0.1:8765/api/health",
           reuseExistingServer,
           timeout: 60_000,
+          env: {
+            QS_ENVIRONMENT: "test",
+            QS_DATABASE_ENABLED: "false",
+            QS_DATABASE_AUTO_MIGRATE: "false",
+            QS_DATA_DIR: path.join(frontendRoot, ".tmp", "e2e-data"),
+            QS_PARQUET_DIR: path.join(frontendRoot, ".tmp", "e2e-data", "parquet"),
+            QS_DUCKDB_PATH: path.join(
+              frontendRoot,
+              ".tmp",
+              "e2e-data",
+              "quant_system.duckdb",
+            ),
+          },
         },
         {
           command: "npm run dev -- --hostname 127.0.0.1 --port 3001",
