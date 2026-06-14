@@ -60,6 +60,7 @@ def test_tiingo_provider_prefers_adjusted_ohlcv_when_available() -> None:
     assert frame.loc[0, "low"] == 45.0
     assert frame.loc[0, "close"] == 52.5
     assert frame.loc[0, "volume"] == 2000
+    assert frame.loc[0, "price_adjustment"] == "adjusted"
 
 
 def test_tiingo_provider_falls_back_when_adjusted_values_are_missing() -> None:
@@ -89,6 +90,37 @@ def test_tiingo_provider_falls_back_when_adjusted_values_are_missing() -> None:
     assert frame.loc[0, "low"] == 90.0
     assert frame.loc[0, "close"] == 105.0
     assert frame.loc[0, "volume"] == 1000
+    assert frame.loc[0, "price_adjustment"] == "raw"
+
+
+def test_tiingo_provider_marks_mixed_adjusted_and_raw_values() -> None:
+    def fake_get_json(url: str, headers: dict[str, str]) -> list[dict[str, object]]:
+        return [
+            {
+                "date": "2024-01-02T00:00:00.000Z",
+                "open": 100.0,
+                "high": 110.0,
+                "low": 90.0,
+                "close": 105.0,
+                "volume": 1000,
+                "adjOpen": 50.0,
+                "adjHigh": None,
+                "adjLow": 45.0,
+                "adjClose": None,
+                "adjVolume": 2000,
+            }
+        ]
+
+    provider = TiingoEODProvider(api_token="test-token", get_json=fake_get_json)
+
+    frame = provider.fetch_ohlcv(["AAPL"], start="2024-01-02", end="2024-01-02")
+
+    assert frame.loc[0, "open"] == 50.0
+    assert frame.loc[0, "high"] == 110.0
+    assert frame.loc[0, "low"] == 45.0
+    assert frame.loc[0, "close"] == 105.0
+    assert frame.loc[0, "volume"] == 2000
+    assert frame.loc[0, "price_adjustment"] == "mixed"
 
 
 def test_tiingo_provider_requires_api_token() -> None:

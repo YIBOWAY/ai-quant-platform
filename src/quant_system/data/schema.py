@@ -22,6 +22,10 @@ REQUIRED_OHLCV_COLUMNS: tuple[str, ...] = (
     "knowledge_ts",
 )
 
+OPTIONAL_OHLCV_METADATA_COLUMNS: tuple[str, ...] = (
+    "price_adjustment",
+)
+
 
 def _missing_columns(columns: Iterable[str], required: Iterable[str]) -> list[str]:
     present = set(columns)
@@ -59,8 +63,15 @@ def normalize_ohlcv_dataframe(
     for column in numeric_columns:
         normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
 
-    return normalized.loc[:, list(REQUIRED_OHLCV_COLUMNS)].sort_values(
+    output_columns = [
+        *REQUIRED_OHLCV_COLUMNS,
+        *[
+            column
+            for column in OPTIONAL_OHLCV_METADATA_COLUMNS
+            if column in normalized.columns
+        ],
+    ]
+    return normalized.loc[:, output_columns].sort_values(
         ["symbol", "timestamp"],
         ignore_index=True,
     )
-

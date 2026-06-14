@@ -33,6 +33,16 @@ def _prefer_adjusted(
     return item[raw_key] if adjusted is None else adjusted
 
 
+def _price_adjustment_status(item: dict[str, object]) -> str:
+    adjusted_keys = ("adjOpen", "adjHigh", "adjLow", "adjClose", "adjVolume")
+    adjusted_count = sum(item.get(key) is not None for key in adjusted_keys)
+    if adjusted_count == len(adjusted_keys):
+        return "adjusted"
+    if adjusted_count == 0:
+        return "raw"
+    return "mixed"
+
+
 class TiingoEODProvider:
     provider_name = "tiingo"
 
@@ -84,6 +94,7 @@ class TiingoEODProvider:
         download_ts = pd.Timestamp.now(tz="UTC").isoformat()
         rows: list[dict[str, object]] = []
         for item in payload:
+            price_adjustment = _price_adjustment_status(item)
             rows.append(
                 {
                     "symbol": symbol,
@@ -101,6 +112,7 @@ class TiingoEODProvider:
                         adjusted_key="adjVolume",
                         raw_key="volume",
                     ),
+                    "price_adjustment": price_adjustment,
                     "event_ts": item["date"],
                     "knowledge_ts": download_ts,
                 }
