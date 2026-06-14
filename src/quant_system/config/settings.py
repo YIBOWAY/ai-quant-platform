@@ -136,19 +136,59 @@ class FutuSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_prefix="QS_",
+        env_prefix="",
         extra="ignore",
+        populate_by_name=True,
     )
 
-    enabled: bool = True
-    host: str = "127.0.0.1"
-    port: int = Field(default=11111, ge=1, le=65535)
-    market: Literal["US"] = "US"
-    request_timeout_seconds: int = Field(default=15, gt=0)
-    default_kline_freq: str = "1d"
-    cache_dir: Path = Path("data/futu")
-    use_cache: bool = True
-    options_enabled: bool = True
+    enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_FUTU_ENABLED", "QS_ENABLED"),
+    )
+    host: str = Field(
+        default="127.0.0.1",
+        validation_alias=AliasChoices("QS_FUTU_HOST", "QS_HOST"),
+    )
+    port: int = Field(
+        default=11111,
+        validation_alias=AliasChoices("QS_FUTU_PORT", "QS_PORT"),
+        ge=1,
+        le=65535,
+    )
+    market: Literal["US"] = Field(
+        default="US",
+        validation_alias=AliasChoices("QS_FUTU_MARKET", "QS_MARKET"),
+    )
+    request_timeout_seconds: int = Field(
+        default=15,
+        validation_alias=AliasChoices(
+            "QS_FUTU_REQUEST_TIMEOUT_SECONDS",
+            "QS_REQUEST_TIMEOUT_SECONDS",
+        ),
+        gt=0,
+    )
+    default_kline_freq: str = Field(
+        default="1d",
+        validation_alias=AliasChoices(
+            "QS_FUTU_DEFAULT_KLINE_FREQ",
+            "QS_DEFAULT_KLINE_FREQ",
+        ),
+    )
+    cache_dir: Path = Field(
+        default=Path("data/futu"),
+        validation_alias=AliasChoices("QS_FUTU_CACHE_DIR", "QS_CACHE_DIR"),
+    )
+    use_cache: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_FUTU_USE_CACHE", "QS_USE_CACHE"),
+    )
+    options_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "QS_FUTU_OPTIONS_ENABLED",
+            "QS_OPTIONS_ENABLED",
+        ),
+    )
 
 
 class OptionsRadarSettings(BaseSettings):
