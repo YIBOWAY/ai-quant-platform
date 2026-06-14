@@ -14,6 +14,7 @@ class LocalPaperTradingStorage:
         paper_dir: str | Path | None = None,
         reports_dir: str | Path | None = None,
         duckdb_path: str | Path | None = None,
+        write_duckdb: bool = True,
     ) -> None:
         self.base_dir = Path(base_dir)
         self.paper_dir = Path(paper_dir) if paper_dir else self.base_dir / "paper"
@@ -21,18 +22,20 @@ class LocalPaperTradingStorage:
         self.duckdb_path = (
             Path(duckdb_path) if duckdb_path else self.base_dir / "quant_system.duckdb"
         )
+        self.write_duckdb = write_duckdb
 
     def save_frame(self, frame: pd.DataFrame, *, filename: str, table_name: str) -> Path:
         self.paper_dir.mkdir(parents=True, exist_ok=True)
-        self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
         path = self.paper_dir / filename
         persisted = frame.reset_index(drop=True)
         persisted.to_parquet(path, index=False)
-        with duckdb.connect(str(self.duckdb_path)) as connection:
-            connection.register("persisted_frame", persisted)
-            connection.execute(
-                f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM persisted_frame"
-            )
+        if self.write_duckdb:
+            self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
+            with duckdb.connect(str(self.duckdb_path)) as connection:
+                connection.register("persisted_frame", persisted)
+                connection.execute(
+                    f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM persisted_frame"
+                )
         return path
 
     def save_report(self, markdown: str, filename: str = "paper_trading_report.md") -> Path:

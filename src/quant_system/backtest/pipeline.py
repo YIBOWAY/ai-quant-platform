@@ -320,7 +320,7 @@ def _build_storage(
     settings: Settings | None = None,
 ) -> LocalBacktestStorage:
     if output_dir is not None:
-        return LocalBacktestStorage(base_dir=output_dir)
+        return LocalBacktestStorage(base_dir=output_dir, write_duckdb=False)
     data_settings = (settings or load_settings()).data
     return LocalBacktestStorage(
         base_dir=data_settings.data_dir,

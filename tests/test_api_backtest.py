@@ -81,6 +81,25 @@ def test_backtest_run_list_and_detail(tmp_path) -> None:
     assert detail["orders"]
 
 
+def test_backtest_run_does_not_create_per_run_duckdb(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/backtests/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "sample",
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    assert list(tmp_path.rglob("*.duckdb")) == []
+
+
 def test_backtest_run_records_single_symbol_no_trade_warning(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 

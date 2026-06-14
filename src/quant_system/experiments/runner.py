@@ -376,7 +376,11 @@ def _build_storage(
     experiment_id: str,
 ) -> LocalExperimentStorage:
     if output_dir is not None:
-        return LocalExperimentStorage(base_dir=output_dir, experiment_id=experiment_id)
+        return LocalExperimentStorage(
+            base_dir=output_dir,
+            experiment_id=experiment_id,
+            write_duckdb=False,
+        )
     data_settings = load_settings().data
     return LocalExperimentStorage(
         base_dir=data_settings.data_dir,

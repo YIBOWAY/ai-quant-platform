@@ -88,6 +88,24 @@ def test_factor_run_and_detail(tmp_path) -> None:
     assert detail["signals"]
 
 
+def test_factor_run_does_not_create_per_run_duckdb(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/factors/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "sample",
+            "lookback": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    assert list(tmp_path.rglob("*.duckdb")) == []
+
+
 def test_factor_run_records_single_symbol_warning(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 

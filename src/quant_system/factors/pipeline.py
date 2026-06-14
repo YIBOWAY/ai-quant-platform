@@ -236,7 +236,7 @@ def _build_storage(
     settings: Settings | None = None,
 ) -> LocalFactorStorage:
     if output_dir is not None:
-        return LocalFactorStorage(base_dir=output_dir)
+        return LocalFactorStorage(base_dir=output_dir, write_duckdb=False)
     data_settings = (settings or load_settings()).data
     return LocalFactorStorage(
         base_dir=data_settings.data_dir,

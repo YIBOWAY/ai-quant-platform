@@ -108,6 +108,26 @@ def test_paper_run_list_and_detail_with_kill_switch_on(tmp_path) -> None:
     assert isinstance(detail["trades"], list)
 
 
+def test_paper_run_does_not_create_per_run_duckdb(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "sample",
+            "enable_kill_switch": True,
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    assert list(tmp_path.rglob("*.duckdb")) == []
+
+
 def test_paper_detail_404_for_unknown_run(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 

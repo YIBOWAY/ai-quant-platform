@@ -147,3 +147,21 @@ def test_experiment_run_api_creates_reviewable_experiment(tmp_path) -> None:
     detail = detail_response.json()
     assert len(detail["runs"]) == 4
     assert detail["agent_summary"]["best_run_id"] == payload["best_run_id"]
+
+
+def test_experiment_run_does_not_create_per_run_duckdb(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/experiments/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "lookbacks": [3],
+            "top_ns": [1],
+        },
+    )
+
+    assert response.status_code == 200
+    assert list(tmp_path.rglob("*.duckdb")) == []

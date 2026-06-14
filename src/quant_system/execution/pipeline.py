@@ -476,7 +476,7 @@ def _persist_paper_run(
 
 def _build_storage(output_dir: str | Path | None) -> LocalPaperTradingStorage:
     if output_dir is not None:
-        return LocalPaperTradingStorage(base_dir=output_dir)
+        return LocalPaperTradingStorage(base_dir=output_dir, write_duckdb=False)
     data_settings = load_settings().data
     return LocalPaperTradingStorage(
         base_dir=data_settings.data_dir,

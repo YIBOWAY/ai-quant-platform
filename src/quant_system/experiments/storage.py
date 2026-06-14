@@ -34,6 +34,7 @@ class LocalExperimentStorage:
         reports_dir: str | Path | None = None,
         duckdb_path: str | Path | None = None,
         experiment_id: str | None = None,
+        write_duckdb: bool = True,
     ) -> None:
         self.base_dir = Path(base_dir)
         self.experiment_id = experiment_id
@@ -51,6 +52,7 @@ class LocalExperimentStorage:
             Path(duckdb_path) if duckdb_path else self.base_dir / "quant_system.duckdb"
         )
         self._table_suffix = f"_{sanitized}" if sanitized else ""
+        self.write_duckdb = write_duckdb
 
     def save_config(self, config: ExperimentConfig) -> Path:
         return self.save_json(
@@ -66,16 +68,17 @@ class LocalExperimentStorage:
 
     def save_frame(self, frame: pd.DataFrame, *, filename: str, table_name: str) -> Path:
         self.experiments_dir.mkdir(parents=True, exist_ok=True)
-        self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
         path = self.experiments_dir / filename
         persisted = frame.reset_index(drop=True)
         persisted.to_parquet(path, index=False)
-        suffixed_table = f"{table_name}{self._table_suffix}"
-        with duckdb.connect(str(self.duckdb_path)) as connection:
-            connection.register("persisted_frame", persisted)
-            connection.execute(
-                f'CREATE OR REPLACE TABLE "{suffixed_table}" AS SELECT * FROM persisted_frame'
-            )
+        if self.write_duckdb:
+            self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
+            suffixed_table = f"{table_name}{self._table_suffix}"
+            with duckdb.connect(str(self.duckdb_path)) as connection:
+                connection.register("persisted_frame", persisted)
+                connection.execute(
+                    f'CREATE OR REPLACE TABLE "{suffixed_table}" AS SELECT * FROM persisted_frame'
+                )
         return path
 
     def save_report(self, markdown: str, filename: str = "experiment_comparison_report.md") -> Path:
