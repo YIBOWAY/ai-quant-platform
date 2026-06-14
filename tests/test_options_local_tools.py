@@ -16,6 +16,7 @@ from quant_system.options.local_research import (
     research_health_check,
 )
 from quant_system.options.local_tools import (
+    black_scholes_price,
     build_strategy_from_template,
     calculate_greeks,
     implied_volatility,
@@ -36,6 +37,62 @@ def test_black_scholes_greeks_are_consistent_for_atm_call() -> None:
     assert result["gamma"] > 0
     assert result["vega"] > 0
     assert result["theta"] < 0
+
+
+def test_black_scholes_price_matches_reference_call_and_put_values() -> None:
+    call = black_scholes_price(
+        spot=100.0,
+        strike=100.0,
+        expiry_days=365,
+        iv=0.20,
+        option_type="call",
+        rate=0.05,
+    )
+    put = black_scholes_price(
+        spot=100.0,
+        strike=100.0,
+        expiry_days=365,
+        iv=0.20,
+        option_type="put",
+        rate=0.05,
+    )
+
+    assert call == pytest.approx(10.45058357, abs=1e-8)
+    assert put == pytest.approx(5.57352602, abs=1e-8)
+    assert call - put == pytest.approx(
+        100.0 - 100.0 * 2.718281828459045 ** -0.05,
+        abs=1e-8,
+    )
+
+
+def test_black_scholes_greeks_match_reference_values() -> None:
+    call = calculate_greeks(
+        spot=100.0,
+        strike=100.0,
+        expiry_days=365,
+        iv=0.20,
+        option_type="call",
+        rate=0.05,
+    )
+    put = calculate_greeks(
+        spot=100.0,
+        strike=100.0,
+        expiry_days=365,
+        iv=0.20,
+        option_type="put",
+        rate=0.05,
+    )
+
+    assert call["delta"] == pytest.approx(0.636830651, abs=1e-9)
+    assert put["delta"] == pytest.approx(-0.363169349, abs=1e-9)
+    assert call["gamma"] == pytest.approx(0.018762018, abs=1e-9)
+    assert put["gamma"] == pytest.approx(0.018762018, abs=1e-9)
+    assert call["vega"] == pytest.approx(0.375240347, abs=1e-9)
+    assert put["vega"] == pytest.approx(0.375240347, abs=1e-9)
+    assert call["theta"] == pytest.approx(-0.017572678, abs=1e-9)
+    assert put["theta"] == pytest.approx(-0.004542138, abs=1e-9)
+    assert call["rho"] == pytest.approx(0.532324816, abs=2e-9)
+    assert put["rho"] == pytest.approx(-0.418904609, abs=2e-9)
 
 
 def test_implied_volatility_solver_recovers_market_iv() -> None:
