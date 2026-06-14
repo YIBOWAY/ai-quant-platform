@@ -14,6 +14,7 @@
 ## 二、布局骨架（全局）
 
 - `app/layout.tsx`：应用外壳改为**固定视口高度**（`h-screen overflow-hidden pt-[100px] lg:ml-[240px]`），顶栏与侧栏固定，**页面在内部滚动**（每页根元素 `h-full overflow-y-auto`）。长表格、期权链等区域有独立滚动区，避免整页跳动。
+- 2026-06-15 更新：桌面端主导航以侧栏为唯一权威；TopBar 不再重复展示主导航链接、Run Backtest CTA 或“铃铛=期权雷达”入口，只保留搜索、语言切换和少量全局工具。
 - 移动端：侧栏收起为汉堡菜单（TopBar「Open navigation」），页面占满全宽。
 
 ## 三、分页面改动摘要

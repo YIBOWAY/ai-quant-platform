@@ -31,6 +31,7 @@
 | `src/frontend/lib/serverLocale.ts` | 供服务端组件使用的 `getServerLocale()`。优先级：语言路径头 > `?lang` 覆盖 > cookie > `en`。 |
 | `src/frontend/components/LocaleProvider.tsx` | 客户端上下文 + `useLocale()` hook，以根布局中解析出的服务端语言作为初始值。 |
 | `src/frontend/components/LocaleToggle.tsx` | 顶部栏开关。设置 cookie 并导航至对应的 `/en/...` 或 `/zh/...` 路径。 |
+| `src/frontend/components/TopBar.tsx` | 顶栏只承载搜索、语言切换、移动端菜单和少量全局工具；桌面主导航以 `Sidebar.tsx` 为唯一权威。 |
 | `src/frontend/middleware.ts` | 将带语言前缀的路径重写为既有的应用路由，并通过请求头传递语言信息。 |
 
 页面文案存放在各组件自有的文案字典中：在模块级定义

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useState } from "react";
-import { Bell, Menu, Search, Settings, Terminal, X } from "lucide-react";
+import { Menu, Search, Settings, Terminal, X } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { LocaleToggle } from "@/components/LocaleToggle";
 import { localizePath, splitLocalePath } from "@/lib/locale";
@@ -46,18 +46,15 @@ export function TopBar() {
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const topNavItems = [
+  const mobileNavItems = [
+    { name: text.dashboard, href: "/" },
+    { name: text.runBacktest, href: "/backtest" },
+    { name: text.paperTrading, href: "/paper-trading" },
     { name: text.marketData, href: "/data-explorer" },
     { name: text.options, href: "/options-screener" },
     { name: text.replications, href: "/replications" },
     { name: text.orderBook, href: "/order-book" },
     { name: text.positionMap, href: "/position-map" },
-  ];
-  const mobileNavItems = [
-    { name: text.dashboard, href: "/" },
-    { name: text.runBacktest, href: "/backtest" },
-    { name: text.paperTrading, href: "/paper-trading" },
-    ...topNavItems,
     { name: text.settings, href: "/settings" },
   ];
   const activePath = splitLocalePath(pathname).pathname;
@@ -95,42 +92,11 @@ export function TopBar() {
             value={query}
           />
         </form>
-        <nav className="hidden min-w-0 flex-1 items-center gap-6 h-full xl:flex">
-          {topNavItems.map((item) => {
-            const isActive = activePath === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={localizePath(item.href, locale)}
-                className={`flex h-full cursor-pointer items-center whitespace-nowrap border-b-2 font-sans text-sm transition-colors ${
-                  isActive
-                    ? "border-accent-success text-accent-success"
-                    : "border-transparent text-text-secondary hover:text-text-primary"
-                }`}
-              >
-                {item.name}
-              </Link>
-            );
-          })}
-        </nav>
       </div>
 
       <div className="flex shrink-0 items-center gap-2 lg:gap-4">
         <LocaleToggle />
-        <Link
-          className="hidden whitespace-nowrap rounded-lg border border-accent-success/30 bg-accent-success/10 px-4 py-1.5 font-label-caps text-xs font-bold uppercase text-accent-success transition-colors hover:bg-accent-success/20 sm:inline-flex"
-          href={localizePath("/backtest", locale)}
-        >
-          {text.runBacktest}
-        </Link>
         <div className="hidden items-center gap-2 border-l border-border-subtle pl-4 text-text-secondary lg:flex">
-          <Link
-            aria-label="Open radar alerts"
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-accent-success"
-            href={localizePath("/options-radar", locale)}
-          >
-            <Bell size={18} />
-          </Link>
           <Link
             aria-label="Open agent console"
             className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-accent-success"
