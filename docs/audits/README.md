@@ -224,3 +224,31 @@ kill switch 时会返回 409；前端回放表单也会在 `health.safety.kill_s
 `QS_KILL_SWITCH=true` 默认环境下 `run-sample` 不得成交、显式 `--kill-switch`
 必须 blocked、试图 `--no-kill-switch` 但未先关闭全局环境变量时必须失败，
 以及只有 `QS_KILL_SWITCH=false` 的本地模拟进程才允许生成演示成交。
+
+2026-06-15 状态补充：快赢 #9“回测详情页读取 `benchmark.source` 并挂
+`DataSourceBadge`”已处理。`/backtest` 列表页和 `/backtest/[runId]` 详情页
+都从详情响应里的 `benchmark` 对象读取持久化曲线与 `source`，不再现场调用
+`getBenchmark()`；`tests/test_frontend_backtest_benchmark_source.py` 覆盖徽章渲染
+和“只使用 detail response 中的 persisted benchmark”这两条前端契约。
+
+2026-06-15 状态补充：快赢 #10“`scripts/verify.sh` 一键验证 + conftest Python
+版本断言”已处理。仓库现在同时保留 PowerShell 与 POSIX shell 验证入口，默认跑
+pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
+`tests/conftest.py` 会给出 Python 3.11+ / `conda activate ai-quant` 的清晰提示，
+`tests/test_verify_scripts.py` 锁定这些入口。
+
+2026-06-15 状态补充：评估报告中“断网渲染假 `$1M` 账户”的残余问题
+“HoldingsPanel/LedgerPanel 无法区分后端离线与真为空”已处理。`/paper-trading`
+会把 `account.apiError` / `ledger.apiError` 分别映射为 `accountDown` /
+`ledgerDown`，离线时展示不可达文案而不是空持仓/空流水；
+`tests/test_frontend_paper_trading_offline_state.py` 覆盖该展示契约。
+
+2026-06-15 状态补充：快赢 #14“TopBar 去导航化”已处理。桌面导航权威已收敛到
+`Sidebar`，`TopBar` 不再维护 `topNavItems` 或重复的 backtest/options radar
+导航入口；`tests/test_frontend_topbar_navigation_contract.py` 会防止顶部栏重新变成
+第二套桌面导航。
+
+2026-06-15 状态补充：快赢 #15“paper 账户 `.bak` 副本 + 损坏改名保留”已处理。
+`PaperAccountStorage.save()` 在覆盖 `account.json` 前写 `account.json.bak`，
+`load()` 读到损坏 JSON 时会把原文件移动成 `account.corrupt-<timestamp>.json`
+后再重新开户；`tests/test_paper_account.py` 覆盖前一版账户备份和损坏文件保留。
