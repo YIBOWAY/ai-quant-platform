@@ -80,7 +80,11 @@ backtest、factor、experiment、paper、ohlcv、benchmark、market-data 等路�
 2026-06-15 状态补充：评估报告中“前端纯函数缺测试”的一部分已补强。
 Strategy Catalog 的 schema-driven payload 构建逻辑已抽到
 `src/frontend/lib/strategyPayload.ts`，并由 `strategyPayload.test.ts` 覆盖
-symbol list、number、integer_or_null 和 factor weight map 转换。
+symbol list、number、integer_or_null 和 factor weight map 转换。Buy-Side
+Options Assistant 的请求 payload 构建逻辑已抽到
+`src/frontend/lib/buySideOptionsPayload.ts`，并由
+`buySideOptionsPayload.test.ts` 覆盖 ticker 规范化、scenario 数字列表解析、
+无效输入回退、horizon day 与 EV scenario days 转换。
 
 2026-06-15 状态补充：评估报告中“Futu 实盘交易脚本需作为红线处理”的小项
 已补强回归测试。`tests/test_api_safety.py` 现在会扫描本地已安装的

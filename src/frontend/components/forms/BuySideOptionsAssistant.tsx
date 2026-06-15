@@ -16,6 +16,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
+import { buildBuySideOptionsPayload } from "@/lib/buySideOptionsPayload";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { Card, MetricStat, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import { useIsHydrated } from "@/lib/hydration";
@@ -475,7 +476,11 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
   }, [form, viewType]);
 
   const mutation = useMutation<AssistantResponse, ApiClientError, FormValues>({
-    mutationFn: (values) => apiPost<AssistantResponse>("/api/options/buy-side/assistant", toPayload(values)),
+    mutationFn: (values) =>
+      apiPost<AssistantResponse>(
+        "/api/options/buy-side/assistant",
+        buildBuySideOptionsPayload(values),
+      ),
     onSuccess: () => toast.success(locale === "zh" ? "买方期权分析完成" : "Buy-side analysis complete"),
     onError: (error) => toast.error(error.message),
   });
@@ -1050,70 +1055,11 @@ function SelectedContracts({
   );
 }
 
-function toPayload(values: FormValues) {
-  const scenarioDays = scenarioDaysFromHorizon(values.scenario_horizon_date);
-  const evDays = scenarioDays.at(-1) ?? 30;
-  return {
-    ticker: values.ticker.trim().toUpperCase(),
-    view_type: values.view_type,
-    target_price: values.target_price,
-    target_date: values.target_date,
-    risk_preference: values.risk_preference,
-    allow_capped_upside: values.allow_capped_upside,
-    avoid_high_iv: values.avoid_high_iv,
-    volatility_view: values.volatility_view,
-    event_risk: values.event_risk,
-    expected_iv_change_vol_points: values.expected_iv_change_vol_points,
-    scenario_spot_changes: numberList(values.scenario_spot_changes),
-    scenario_iv_changes: numberList(values.scenario_iv_changes),
-    scenario_days_passed: scenarioDays,
-    user_scenarios: [
-      {
-        label: "bull",
-        probability: values.bull_probability,
-        spot_change_pct: values.bull_spot_change_pct,
-        iv_change_vol_points: values.bull_iv_change_vol_points,
-        days_passed: evDays,
-      },
-      {
-        label: "base",
-        probability: values.base_probability,
-        spot_change_pct: values.base_spot_change_pct,
-        iv_change_vol_points: values.base_iv_change_vol_points,
-        days_passed: evDays,
-      },
-      {
-        label: "bear",
-        probability: values.bear_probability,
-        spot_change_pct: values.bear_spot_change_pct,
-        iv_change_vol_points: values.bear_iv_change_vol_points,
-        days_passed: evDays,
-      },
-    ],
-  };
-}
-
 function addDaysIso(days: number) {
   const value = new Date();
   value.setHours(0, 0, 0, 0);
   value.setDate(value.getDate() + days);
   return value.toISOString().slice(0, 10);
-}
-
-function daysUntil(dateString: string) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(`${dateString}T00:00:00`);
-  if (Number.isNaN(target.getTime())) {
-    return 30;
-  }
-  return Math.max(0, Math.round((target.getTime() - today.getTime()) / 86_400_000));
-}
-
-function scenarioDaysFromHorizon(dateString: string) {
-  const horizon = daysUntil(dateString);
-  const midpoint = Math.max(1, Math.round(horizon / 2));
-  return [...new Set([0, midpoint, horizon])].sort((left, right) => left - right);
 }
 
 function viewTypeLabel(value: FormValues["view_type"], locale: "en" | "zh") {
@@ -1190,14 +1136,6 @@ function scenarioRowLabel(value: "bull" | "base" | "bear", locale: "en" | "zh") 
     zh: { bull: "看涨", base: "基准", bear: "看跌" },
   };
   return labels[locale][value];
-}
-
-function numberList(value: string) {
-  const parsed = value
-    .split(",")
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isFinite(item));
-  return parsed.length ? parsed : [0];
 }
 
 function strategyLabel(strategy: string) {
