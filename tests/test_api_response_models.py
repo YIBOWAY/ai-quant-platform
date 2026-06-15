@@ -14,6 +14,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/ohlcv": "OHLCVResponse",
         "/api/market-data/history": "MarketDataHistoryResponse",
         "/api/benchmark": "BenchmarkResponse",
+        "/api/options/daily-scan/dates": "OptionsDailyScanDatesResponse",
+        "/api/options/daily-scan/status": "OptionsDailyScanStatusResponse",
         "/api/factors": "FactorCatalogResponse",
         "/api/factors/runs": "FactorRunsResponse",
         "/api/runs/recent": "RecentRunsResponse",
@@ -31,6 +33,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "futu_opend" in components["HealthResponse"]["properties"]
     assert "database" in components["HealthResponse"]["properties"]
     assert "metadata" in components["MarketDataHistoryResponse"]["properties"]
+    assert "dates" in components["OptionsDailyScanDatesResponse"]["properties"]
+    assert "status" in components["OptionsDailyScanStatusResponse"]["properties"]
     assert "source" in components["OHLCVResponse"]["properties"]
     assert "source" in components["BenchmarkResponse"]["properties"]
     assert "factors" in components["FactorCatalogResponse"]["properties"]

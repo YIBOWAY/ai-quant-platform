@@ -6,6 +6,10 @@ from datetime import UTC, date, datetime
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import SettingsDep
+from quant_system.api.schemas.options_radar import (
+    OptionsDailyScanDatesResponse,
+    OptionsDailyScanStatusResponse,
+)
 from quant_system.data.providers.futu import FutuMarketDataProvider, FutuProviderError
 from quant_system.options.data_refresh import (
     refresh_earnings_calendar,
@@ -29,12 +33,12 @@ from quant_system.options.universe import OptionsUniverse
 router = APIRouter()
 
 
-@router.get("/options/daily-scan/dates")
+@router.get("/options/daily-scan/dates", response_model=OptionsDailyScanDatesResponse)
 def options_daily_scan_dates(settings: SettingsDep) -> dict:
     return {"dates": RadarSnapshotStore(settings.options_radar.output_dir).list_dates()}
 
 
-@router.get("/options/daily-scan/status")
+@router.get("/options/daily-scan/status", response_model=OptionsDailyScanStatusResponse)
 def options_daily_scan_status(settings: SettingsDep) -> dict:
     status_path = settings.options_radar.output_dir / "daily_task_status.json"
     if not status_path.exists():

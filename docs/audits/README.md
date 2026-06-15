@@ -258,12 +258,14 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 接口已挂上 FastAPI `response_model`：`GET /api/health`、`GET /api/symbols`、
 `GET /api/ohlcv`、`GET /api/benchmark`、`GET /api/strategies`、
 `GET /api/universes`、`GET /api/factors`、`GET /api/factors/runs`、
-`GET /api/runs/recent`、`GET /api/market-data/history`；同时补齐 `HealthResponse`、
-`OHLCVResponse`、`BenchmarkResponse`、`MarketDataHistoryResponse` 中已由真实响应
-返回但 schema 缺失的字段，并为策略/股票池/因子 catalog、因子 run 列表与最近运行活动流增加薄 wrapper response schema。
+`GET /api/runs/recent`、`GET /api/market-data/history`、
+`GET /api/options/daily-scan/dates`、`GET /api/options/daily-scan/status`；同时补齐
+`HealthResponse`、`OHLCVResponse`、`BenchmarkResponse`、`MarketDataHistoryResponse`
+中已由真实响应返回但 schema 缺失的字段，并为策略/股票池/因子 catalog、因子 run
+列表、最近运行活动流与期权雷达日常扫描状态增加薄 wrapper response schema。
 `tests/test_api_response_models.py` 会检查 OpenAPI schema 引用和
 关键字段，现有 `tests/test_api_health.py`、`tests/test_api_data.py`、
 `tests/test_api_backtest.py`、`tests/test_api_strategy_universe_catalog.py` 与
 `tests/test_api_factors.py`、`tests/test_api_runs_recent.py`、
-`tests/test_api_market_data_futu.py` 继续覆盖 runtime 响应与 safety footer。下一步仍应
-按路由域逐批补齐，而不是一次性生成/替换全部前端类型。
+`tests/test_api_market_data_futu.py`、`tests/test_api_options_radar.py` 继续覆盖 runtime
+响应与 safety footer。下一步仍应按路由域逐批补齐，而不是一次性生成/替换全部前端类型。
