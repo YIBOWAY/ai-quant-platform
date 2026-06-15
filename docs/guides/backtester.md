@@ -29,7 +29,7 @@
 9. **撮合**（`broker.py` 的 `BrokerSimulator`）：以同一根 K 线的 **OPEN 价**为基准撮合（卖单先于买单执行）；买单加滑点、卖单减滑点；收取佣金 `commission_bps`；受**现金约束**（买单买不起就部分成交，状态标 `partial`），卖单不超过现有持仓。若启用整股模式，现金不足导致的部分成交也会向下取整到整股。
 10. **盯市与归因**：每根 K 线对持仓按 close 价盯市，记录权益曲线；归因 = 进入该 bar 时的持仓数量 ×（本 bar close − 上一 bar close）逐 bar 累加。
 11. **绩效**（`metrics.py` 的 `calculate_performance_metrics`）：算 `total_return` / `annualized_return` / `volatility` / `sharpe` / `max_drawdown` / `turnover`，并把归因按标的汇总。
-12. **落盘**：六个 parquet（equity_curve / benchmark_curve / trade_blotter / orders / positions / attribution）+ `metrics.json` / `benchmark_metrics.json` + 文本报告。同时 DuckDB 表以 `CREATE OR REPLACE` 写入（**只保留最近一次**），而 API 每次运行另存一个独立 `run_id` 目录 + `metadata.json`。
+12. **落盘**：六个 parquet（equity_curve / benchmark_curve / trade_blotter / orders / positions / attribution）+ `metrics.json` / `benchmark_metrics.json` + 文本报告，全部保存在独立 `run_id` 目录并写入 `metadata.json`。API 回测路径不再为每个 run 额外写 `quant_system.duckdb` 副本；历史遗留的逐 run DuckDB 可用 `scripts/cleanup_api_run_duckdb.py` 清理。
 
 > 关于"次 bar 撮合"的准确说法：撮合本身发生在**与 `tradeable_ts` 相等的那根 K 线的 OPEN 价**上。"在 T 日数据上打分、在 T+1 开盘成交"这个滞后，是由因子流水线的 `tradeable_ts`（= 下一根 K 线）实现的，**不是引擎在撮合时又往后顺延了一根**。引擎只是忠实地在 `tradeable_ts` 这根 bar 的 open 撮合。这条很重要：它保证了回测没有"用未来数据下单"的前视偏差。
 
@@ -89,7 +89,7 @@
 
 6. **单标的 = 通常什么都不买**。`cross_sectional_top_n` 依赖横截面 z-score 排序：只有一个标的时 z-score 恒为 0、过不了 `score > 0` 这道闸，于是不买、曲线水平。表单已就此给了黄色警告，但仍是新手第一大困惑点。
 
-7. **DuckDB 只留最近一次，API 目录留全部**。落盘时 DuckDB 用 `CREATE OR REPLACE`，所以直接查 DuckDB 表永远只有最后一次运行；而 HTTP API 把每次运行存进独立 `run_id` 目录，历史可回看。两套存储语义不同，容易混淆。
+7. ~~**DuckDB 只留最近一次，API 目录留全部**~~ **已于 2026-06-15 后续修复**。HTTP API 的 backtest / factor / paper / experiment run 现在都不再生成逐 run DuckDB 副本，测试会断言 `api_runs` 下没有 `.duckdb` 文件。DuckDB 仍保留在本地 ingest / 期权缓存等有真实读者的路径上；历史遗留的 `data/api_runs/**/quant_system.duckdb*` 可用 `scripts/cleanup_api_run_duckdb.py` 先 dry-run 再 `--apply` 删除。
 
 8. ~~**前端 / 后端默认数据源不一致**~~ **已于 2026-06-11 修复**：前端表单默认值改为 `futu` + 滚动 180 天窗口，与后端 schema 一致；走 UI 与直接打 API 的默认行为不再分叉。
 

@@ -74,3 +74,9 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 `src/frontend/.env.example` 中的 Gemini / AI Studio / Cloud Run / `APP_URL`
 模板变量，只保留本地前端需要的 `NEXT_PUBLIC_QUANT_API_BASE_URL`。相关守护断言在
 `tests/test_frontend_e2e_config.py`。
+
+2026-06-15 状态补充：评估报告中“逐 run DuckDB 副本是纯死重”的高风险项
+已处理到当前防回归状态。API 路径的 backtest / factor / paper / experiment run
+已有测试断言不会在 `api_runs` 下生成 `.duckdb` 文件；历史遗留副本可用
+`scripts/cleanup_api_run_duckdb.py` 先 dry-run 再 `--apply` 清理，且测试会确保
+该脚本只处理 `api_runs` 下的 run 副本，不触碰 ingest DuckDB 或 Futu 期权缓存。
