@@ -10,6 +10,12 @@ from quant_system.experiments.models import WalkForwardConfig
 class ExperimentSummary(BaseModel):
     id: str
     path: str
+    best_run_id: str | None = None
+    created_at: str | None = None
+
+
+class ExperimentsResponse(BaseModel):
+    experiments: list[ExperimentSummary]
 
 
 PositiveInt = Annotated[int, Field(gt=0)]

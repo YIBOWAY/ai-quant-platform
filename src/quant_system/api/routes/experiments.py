@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.common import read_json, read_parquet_records, resolve_run_dir
-from quant_system.api.schemas.experiments import ExperimentRunRequest
+from quant_system.api.schemas.experiments import ExperimentRunRequest, ExperimentsResponse
 from quant_system.data.provider_factory import (
     DataProviderUnavailableError,
     build_ohlcv_provider,
@@ -18,7 +18,7 @@ from quant_system.experiments.runner import run_sample_experiment
 router = APIRouter()
 
 
-@router.get("/experiments")
+@router.get("/experiments", response_model=ExperimentsResponse)
 def list_experiments(output_dir: OutputDirDep) -> dict:
     root = output_dir / "experiments"
     experiments = []
