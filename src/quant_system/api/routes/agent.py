@@ -8,6 +8,7 @@ from quant_system.agent.llm import build_llm_client
 from quant_system.agent.runner import AgentRunner
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.agent import (
+    AgentCandidateDetailResponse,
     AgentCandidatesResponse,
     AgentLLMConfigResponse,
     AgentReviewRequest,
@@ -29,7 +30,7 @@ def list_candidates(
     return {"candidates": candidates}
 
 
-@router.get("/agent/candidates/{candidate_id}")
+@router.get("/agent/candidates/{candidate_id}", response_model=AgentCandidateDetailResponse)
 def candidate_detail(candidate_id: str, output_dir: OutputDirDep) -> dict:
     candidate_dir = resolve_run_dir(output_dir / "agent" / "candidates", candidate_id)
     metadata_path = candidate_dir / "metadata.json"

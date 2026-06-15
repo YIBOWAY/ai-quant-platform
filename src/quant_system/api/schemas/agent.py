@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,6 +16,14 @@ class CandidateSummary(BaseModel):
 
 class AgentCandidatesResponse(BaseModel):
     candidates: list[CandidateSummary]
+
+
+class AgentCandidateDetailResponse(BaseModel):
+    candidate_id: str
+    metadata: dict[str, Any]
+    source_preview: str
+    audit: list[str]
+    reviews: list[str]
 
 
 class AgentTaskRequest(BaseModel):
