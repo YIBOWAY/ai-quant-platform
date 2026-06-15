@@ -114,6 +114,13 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 `scripts/cleanup_api_run_duckdb.py` 先 dry-run 再 `--apply` 清理，且测试会确保
 该脚本只处理 `api_runs` 下的 run 副本，不触碰 ingest DuckDB 或 Futu 期权缓存。
 
+2026-06-15 状态补充：评估报告中“Futu 期权缓存过期清扫”的快赢项已处理。
+`OptionQuotesCache.prune_expired()` 与 `expired_snapshot_ids()` 会按 `expires_at`
+删除过期 snapshot 及其 quote rows；`quant-system options prune-cache` 默认
+dry-run，只在传 `--apply` 时删除，且支持 `--cache-path` 与 `--as-of` 验证。
+`tests/test_options_cache.py` 和 `tests/test_options_cache_cli.py` 覆盖只删过期项、
+保留新鲜项和 dry-run 不删除；`docs/futu/futu_options_data_provider.md` 已记录用法。
+
 2026-06-15 状态补充：评估报告中“`data/api_runs` 缺少可交付备份路径”的小项
 已处理。`scripts/backup_api_runs.py` 会把 `data/api_runs/` 打成 zip 并写入
 `manifest.json`，默认排除 `.env`、DuckDB 文件、lock 文件等不应进入备份包的
