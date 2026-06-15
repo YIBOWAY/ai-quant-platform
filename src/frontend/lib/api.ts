@@ -260,6 +260,20 @@ export type AccountPositionView = {
   price_as_of: string | null;
 };
 
+export type PendingAccountOrderView = {
+  order_id: string;
+  created_at: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  limit_price: number;
+  source: string;
+  reason: string;
+  last_checked_price?: number | null;
+  last_checked_price_kind?: string | null;
+  last_checked_at?: string | null;
+};
+
 export type PaperAccountResponse = ApiEnvelope & {
   account_id: string;
   base_currency: string;
@@ -274,6 +288,7 @@ export type PaperAccountResponse = ApiEnvelope & {
   kill_switch: boolean;
   price_source: { kind: string; as_of: string | null };
   positions: AccountPositionView[];
+  pending_orders: PendingAccountOrderView[];
   created_at: string;
   updated_at: string;
 };
@@ -796,6 +811,7 @@ const FALLBACK_ACCOUNT: PaperAccountResponse = {
   kill_switch: false,
   price_source: { kind: "none", as_of: null },
   positions: [],
+  pending_orders: [],
   created_at: "",
   updated_at: "",
   safety: FALLBACK_SAFETY,

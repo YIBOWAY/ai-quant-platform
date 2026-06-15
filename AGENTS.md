@@ -116,13 +116,16 @@ on the Position Map.
   (prevents "sold everything then failed to buy").
 - API (`src/quant_system/api/routes/paper.py`): `GET /api/paper/account`,
   `POST /api/paper/account/orders` (quantity or notional, optional limit),
+  `POST /api/paper/account/orders/process` (check queued paper limit orders),
   `POST /api/paper/account/rebalance`, `POST /api/paper/account/reset`,
   `POST /api/paper/account/kill-switch`, `GET /api/paper/account/ledger`.
   All mutating routes serialize per account in-process and share a filesystem
   lock with CLI/scheduled rebalance processes.
-- Manual limit orders are IOC-like in the persistent account: they are checked
-  once against the current paper price and return `unfilled` when not met; they
-  are not persisted as pending orders.
+- Manual limit orders that do not meet the current paper price are persisted in
+  `PaperAccount.pending_orders`, surfaced on `/paper-trading`, and can be
+  rechecked through `POST /api/paper/account/orders/process`. Current scope is
+  explicit/manual recheck; cancel, reserved buying power/share reservation, and
+  offline intraday high/low backfill are not implemented yet.
 - CLI: `quant-system paper rebalance --account default --strategy <id>` (for
   scheduled auto-rebalance; exits non-zero on abort/failure) and
   `quant-system paper account-show`.

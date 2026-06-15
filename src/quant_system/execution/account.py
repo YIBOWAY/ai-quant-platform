@@ -66,6 +66,22 @@ class LedgerEntry(BaseModel):
     note: str = ""
 
 
+class PendingAccountOrder(BaseModel):
+    """A manual paper limit order waiting for a future price check."""
+
+    order_id: str
+    created_at: str
+    symbol: str
+    side: str
+    quantity: float
+    limit_price: float
+    source: str = "manual"
+    reason: str = "manual_order"
+    last_checked_price: float | None = None
+    last_checked_price_kind: str | None = None
+    last_checked_at: str | None = None
+
+
 class PaperAccount(BaseModel):
     """A single persistent, mutable paper account.
 
@@ -82,6 +98,7 @@ class PaperAccount(BaseModel):
     realized_pnl: float = 0.0
     kill_switch: bool = False
     positions: dict[str, AccountPosition] = Field(default_factory=dict)
+    pending_orders: list[PendingAccountOrder] = Field(default_factory=list)
     ledger: list[LedgerEntry] = Field(default_factory=list)
     created_at: str = Field(default_factory=_utc_now_iso)
     updated_at: str = Field(default_factory=_utc_now_iso)

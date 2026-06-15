@@ -207,16 +207,30 @@ def test_order_ids_are_unique_across_requests(tmp_path, stub_prices) -> None:
     assert len(set(fill_ids)) == 2  # no reuse
 
 
-def test_limit_price_blocks_unfavorable_fill(tmp_path, stub_prices) -> None:
+def test_limit_price_queues_unfavorable_fill_and_later_fills(tmp_path, stub_prices) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
-    # AAPL stub price is 200; a $1 limit buy must NOT fill.
+    # AAPL stub price is 200; a $150 limit buy should wait for a later check.
     blocked = client.post(
         "/api/paper/account/orders",
-        json={"symbol": "AAPL", "side": "buy", "quantity": 5, "limit_price": 1.0},
+        json={"symbol": "AAPL", "side": "buy", "quantity": 5, "limit_price": 150.0},
     ).json()
-    assert blocked["order"]["status"] == "unfilled"
+    assert blocked["order"]["status"] == "pending"
     assert blocked["order"]["filled_quantity"] == 0
-    assert "not queued" in blocked["order"]["rejected_reason"]
+    assert "queued" in blocked["order"]["rejected_reason"]
+    assert blocked["account"]["positions"] == []
+    assert len(blocked["account"]["pending_orders"]) == 1
+    assert blocked["account"]["pending_orders"][0]["symbol"] == "AAPL"
+
+    persisted = client.get("/api/paper/account").json()
+    assert len(persisted["pending_orders"]) == 1
+
+    stub_prices["AAPL"] = 140.0
+    processed = client.post("/api/paper/account/orders/process").json()
+    assert processed["orders"][0]["status"] == "filled"
+    assert processed["account"]["pending_orders"] == []
+    assert processed["account"]["positions"][0]["symbol"] == "AAPL"
+    assert processed["account"]["positions"][0]["quantity"] == pytest.approx(5)
+
     # A generous limit fills.
     ok = client.post(
         "/api/paper/account/orders",

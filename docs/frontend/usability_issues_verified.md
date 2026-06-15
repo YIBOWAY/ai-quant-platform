@@ -2,7 +2,7 @@
 > Web Design Engineer 审查报告 — 2026-06-07  
 > 基于 `docs/design/frontend_workflow_usability_review_2026-06-07.md` 的代码验证
 >
-> **状态（2026-06-15）**：本文为历史审查记录。其中多项问题已修复——因子实验室硬编码 sample（2026-06-11 起默认 `futu`，侧栏可切换数据源）、回测详情基准曲线（2026-06-15 起随每个 backtest run 保存 `benchmark_curve.parquet` / `benchmark_metrics.json`，详情页读取 run 内快照）、回测碎股噪声（2026-06-15 起可选 `whole_share_orders` + `min_order_value`）、慢页 loading 状态（2026-06-07 批次 #2）、模拟交易页双标签页重排（2026-06-07 起，2026-06-11 定稿）。逐项现状以 [../guides/](../guides/) 各篇「当前的局限」与 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md) 为准。
+> **状态（2026-06-15）**：本文为历史审查记录。其中多项问题已修复——因子实验室硬编码 sample（2026-06-11 起默认 `futu`，侧栏可切换数据源）、回测详情基准曲线（2026-06-15 起随每个 backtest run 保存 `benchmark_curve.parquet` / `benchmark_metrics.json`，详情页读取 run 内快照）、回测碎股噪声（2026-06-15 起可选 `whole_share_orders` + `min_order_value`）、慢页 loading 状态（2026-06-07 批次 #2）、模拟交易页双标签页重排（2026-06-07 起，2026-06-11 定稿）、限价单基础挂单队列（`pending_orders` + 页面挂单列表 + 手动检查入口）。逐项现状以 [../guides/](../guides/) 各篇「当前的局限」与 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md) 为准。
 
 ---
 
@@ -18,7 +18,7 @@
 
 **风险评估**：
 - 🔴 **高风险**（立即修复）：因子实验室硬编码 sample data、回测详情缺基准曲线
-- 🟡 **中风险**（两周内修复）：限价单不挂单、所有页面缺 loading states
+- 🟡 **中风险**（两周内修复）：限价单取消/预留/后台自动检查、所有页面缺 loading states
 - 🟢 **低风险**（可延后）：布局优化、入口可发现性
 
 ---
@@ -100,6 +100,12 @@ const chartRows = detail.equity_curve.map((point, i) => ({
 
 #### ⚠️ 问题 3：限价单不挂单（行为与预期不符）
 
+> **2026-06-15 后续状态**：基础问题已部分修复。未触价的手动限价单现在返回
+> `pending`，持久保存在 `PaperAccount.pending_orders`，`/paper-trading`
+> 显示「待处理限价单」，并可通过「检查挂单」调用
+> `POST /api/paper/account/orders/process` 重新按当前真实纸面价格撮合。
+> 仍未完成：取消挂单、购买力/可卖数量预留、后台自动检查、停机期间日内高低价补判。
+
 **文档描述**：用户提交限价单后，订单立即消失，没有"挂单中"状态  
 **代码验证**：`src/frontend/components/forms/AccountTradePanel.tsx:L1-L80`
 ```typescript
@@ -116,8 +122,8 @@ const chartRows = detail.equity_curve.map((point, i) => ({
 - 破坏了"模拟交易"的真实感
 
 **修复方案**：
-1. **后端**（需确认）：限价单未成交时持久化到 `pending_orders` 表，定时检查价格并自动成交
-2. **前端**：在 `AccountTradePanel` 下方增加 "Open Orders" 折叠区域：
+1. **后端**：未触价限价单已持久化到 `PaperAccount.pending_orders`；剩余是后台定时检查、取消端点、购买力/可卖数量预留。
+2. **前端**：`/paper-trading` 已展示「待处理限价单」并提供「检查挂单」；剩余是取消按钮与更完整的生命周期状态。
    ```
    Open Orders (2)
    ├─ AAPL | Buy 10 @ $150 | Status: Pending | [Cancel]
@@ -125,10 +131,11 @@ const chartRows = detail.equity_curve.map((point, i) => ({
    ```
 
 **验收标准**：
-- [ ] 限价单提交后显示在"挂单列表"
-- [ ] 价格满足时自动成交并更新状态
+- [x] 限价单提交后显示在"挂单列表"
+- [x] 价格满足时可通过手动检查成交并更新状态
+- [ ] 后台自动检查价格并成交
 - [ ] 用户可以取消挂单
-- [ ] 挂单列表按时间倒序排列
+- [x] 挂单列表按时间倒序排列
 
 **工作量估算**：L（8-12 小时，需要后端 + 前端 + 数据持久化）
 
@@ -407,7 +414,7 @@ export function CandlestickChart({ data }: Props) {
 
 ### 两周内完成（P1）
 
-4. ⚠️ **限价单不挂单** — 8-12 小时，需要后端 + 前端 + 持久化
+4. ⚠️ **限价单取消/预留/后台自动检查** — 剩余工作，需要后端 + 前端
 5. ✅ **行情浏览 K 线空白** — 1-2 小时
 6. ✅ **期权筛选器结果区** — 3-4 小时
 
@@ -510,6 +517,7 @@ export function CandlestickChart({ data }: Props) {
 在实施以下功能前，需要确认：
 
 1. **限价单挂单机制**：
+   - 2026-06-15 已落地：基础 `pending_orders` 队列、页面挂单列表、手动检查触价成交。
    - 方案 A：启动后读取停机期间日内高低价，回溯判断是否曾触价（更真实）
    - 方案 B：只在系统观察到价格时成交（更简单）
    - **推荐**：方案 A

@@ -11,7 +11,7 @@ import { z } from "zod";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, RefreshCw } from "lucide-react";
 
 type Locale = "en" | "zh";
 
@@ -29,9 +29,11 @@ const copy = {
     notional: "Notional ($)",
     sizeRequired: "Enter a positive size",
     limitPrice: "Limit price (optional)",
-    limitPriceHint: "Limit orders are checked once against the current paper price. If the price is not met, the order is not queued.",
+    limitPriceHint: "If the current paper price does not meet the limit, the order stays pending until a later check.",
     submit: "Submit Order",
     submitting: "Submitting...",
+    checkPending: "Check Pending Limits",
+    checkingPending: "Checking...",
     rebalanceTitle: "Strategy Rebalance",
     rebalanceDesc: "Apply a strategy's latest target weights to the account in one click.",
     strategy: "Strategy",
@@ -48,8 +50,12 @@ const copy = {
     unfreeze: "Unfreeze account",
     freezeFailed: (reason: string) => `Freeze toggle failed${reason ? `: ${reason}` : ""}`,
     orderOk: (s: string) => `Order ${s}`,
+    orderPending: (reason: string) => `Limit order queued${reason ? `: ${reason}` : ""}`,
     orderPartial: (reason: string) => `Order partially filled${reason ? `: ${reason}` : ""}`,
     orderNotFilled: (reason: string) => `Order not filled${reason ? `: ${reason}` : ""}`,
+    pendingChecked: (filled: number, pending: number) =>
+      `Pending limits checked: ${filled} filled, ${pending} still pending`,
+    pendingFailed: (reason: string) => `Pending check failed${reason ? `: ${reason}` : ""}`,
     rebalanceOk: (n: number) => `Rebalanced: ${n} legs filled`,
     rebalanceAborted: (reason: string) => `Rebalance stopped before trading${reason ? `: ${reason}` : ""}`,
     frozenToggle: (v: boolean) => (v ? "Account frozen" : "Account unfrozen"),
@@ -84,9 +90,11 @@ const copy = {
     notional: "金额（美元）",
     sizeRequired: "请输入大于 0 的数量/金额",
     limitPrice: "限价（可选）",
-    limitPriceHint: "限价单只按当前模拟价格检查一次；未满足价格条件时不会挂单。",
+    limitPriceHint: "如果当前模拟价格未触及限价，订单会保留为待处理，后续可再次检查。",
     submit: "提交订单",
     submitting: "提交中...",
+    checkPending: "检查挂单",
+    checkingPending: "检查中...",
     rebalanceTitle: "策略再平衡",
     rebalanceDesc: "一键把某个策略的最新目标权重应用到账户。",
     strategy: "策略",
@@ -103,8 +111,12 @@ const copy = {
     unfreeze: "解冻账户",
     freezeFailed: (reason: string) => `冻结开关切换失败${reason ? `：${reason}` : ""}`,
     orderOk: (s: string) => `订单${s === "filled" ? "已成交" : s}`,
+    orderPending: (reason: string) => `限价单已挂起${reason ? `：${reason}` : ""}`,
     orderPartial: (reason: string) => `订单部分成交${reason ? `：${reason}` : ""}`,
     orderNotFilled: (reason: string) => `订单未成交${reason ? `：${reason}` : ""}`,
+    pendingChecked: (filled: number, pending: number) =>
+      `挂单检查完成：${filled} 笔成交，${pending} 笔仍待处理`,
+    pendingFailed: (reason: string) => `挂单检查失败${reason ? `：${reason}` : ""}`,
     rebalanceOk: (n: number) => `再平衡完成：${n} 笔成交`,
     rebalanceAborted: (reason: string) => `再平衡已在成交前停止${reason ? `：${reason}` : ""}`,
     frozenToggle: (v: boolean) => (v ? "账户已冻结" : "账户已解冻"),
@@ -154,6 +166,9 @@ const rebalanceSchema = z.object({
 type RebalanceValues = z.infer<typeof rebalanceSchema>;
 
 type OrderResult = { order: { status: string; rejected_reason?: string } };
+type ProcessPendingResult = {
+  orders: Array<{ status: string }>;
+};
 type RebalanceLeg = {
   status: string;
   symbol: string;
@@ -183,9 +198,11 @@ const labelClass = "flex flex-col gap-1 font-body-sm text-text-primary";
 export function AccountTradePanel({
   locale = "en",
   killSwitch = false,
+  pendingOrderCount = 0,
 }: {
   locale?: Locale;
   killSwitch?: boolean;
+  pendingOrderCount?: number;
 }) {
   const router = useRouter();
   const isHydrated = useIsHydrated();
@@ -225,6 +242,8 @@ export function AccountTradePanel({
         });
       } else if (payload.order.status === "partially_filled") {
         toast.warning(text.orderPartial(payload.order.rejected_reason ?? ""));
+      } else if (payload.order.status === "pending") {
+        toast.warning(text.orderPending(payload.order.rejected_reason ?? ""));
       } else {
         toast.warning(text.orderNotFilled(payload.order.rejected_reason ?? ""));
       }
@@ -271,6 +290,21 @@ export function AccountTradePanel({
     onError: (error) => {
       toast.error(
         text.freezeFailed(error instanceof ApiClientError ? error.message : ""),
+      );
+    },
+  });
+
+  const processPendingMutation = useMutation({
+    mutationFn: () => apiPost<ProcessPendingResult>("/api/paper/account/orders/process", {}),
+    onSuccess: (payload) => {
+      const filled = payload.orders.filter((order) => order.status === "filled").length;
+      const pending = payload.orders.filter((order) => order.status === "pending").length;
+      toast.info(text.pendingChecked(filled, pending));
+      router.refresh();
+    },
+    onError: (error) => {
+      toast.error(
+        text.pendingFailed(error instanceof ApiClientError ? error.message : ""),
       );
     },
   });
@@ -362,6 +396,24 @@ export function AccountTradePanel({
         </button>
         </fieldset>
       </form>
+
+      <button
+        className="flex items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/10 px-4 py-2 font-body-sm font-semibold text-info disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={
+          !isHydrated ||
+          killSwitch ||
+          pendingOrderCount === 0 ||
+          processPendingMutation.isPending
+        }
+        onClick={() => processPendingMutation.mutate()}
+        type="button"
+      >
+        <RefreshCw size={15} />
+        {processPendingMutation.isPending ? text.checkingPending : text.checkPending}
+        {pendingOrderCount > 0 ? (
+          <span className="font-data-mono text-xs">({pendingOrderCount})</span>
+        ) : null}
+      </button>
 
       <form
         className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4"

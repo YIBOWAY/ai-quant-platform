@@ -11,6 +11,7 @@ import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/compon
 import {
   type AccountPositionView,
   type LedgerEntryView,
+  type PendingAccountOrderView,
   formatMoney,
   getHealth,
   getPaperAccount,
@@ -73,6 +74,13 @@ const copy = {
     holdings: "Holdings",
     holdingsEmpty: "No open positions. Place a manual order or rebalance to a strategy.",
     holdingsUnavailable: "Holdings unavailable while the account API is unreachable.",
+    pendingOrders: "Pending Limit Orders",
+    pendingOrdersDesc: "Manual limit orders waiting for a later price check.",
+    pendingOrdersEmpty: "No pending limit orders.",
+    pendingOrdersUnavailable: "Pending limit orders unavailable while the account API is unreachable.",
+    limit: "limit",
+    lastCheck: "last check",
+    sharesUnit: "sh",
     invested: "Invested",
     priceSource: "Prices",
     weight: "weight",
@@ -94,6 +102,7 @@ const copy = {
       fee: "Fee",
       freeze: "Freeze",
       unfreeze: "Unfreeze",
+      order_pending: "Pending order",
     } as Record<string, string>,
     side: { BUY: "Buy", SELL: "Sell" } as Record<string, string>,
     runHistoryTitle: "Replay Run History",
@@ -165,6 +174,13 @@ const copy = {
     holdings: "持仓",
     holdingsEmpty: "暂无持仓。手动下单或按策略再平衡即可建立持仓。",
     holdingsUnavailable: "账户接口不可达，暂不展示持仓，避免把离线误判为空仓。",
+    pendingOrders: "待处理限价单",
+    pendingOrdersDesc: "等待后续价格检查的手动限价单。",
+    pendingOrdersEmpty: "暂无待处理限价单。",
+    pendingOrdersUnavailable: "账户接口不可达，暂不展示待处理限价单。",
+    limit: "限价",
+    lastCheck: "上次检查",
+    sharesUnit: "股",
     invested: "已投资",
     priceSource: "报价",
     weight: "权重",
@@ -186,6 +202,7 @@ const copy = {
       fee: "费用",
       freeze: "冻结",
       unfreeze: "解冻",
+      order_pending: "挂单",
     } as Record<string, string>,
     side: { BUY: "买入", SELL: "卖出" } as Record<string, string>,
     runHistoryTitle: "回放运行历史",
@@ -255,6 +272,11 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
           locale={locale}
           text={text}
         />
+        <PendingOrdersPanel
+          account={account}
+          accountDown={accountDown}
+          text={text}
+        />
         <LedgerPanel
           entries={ledger.entries}
           ledgerDown={ledgerDown}
@@ -266,7 +288,11 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
         <h2 className="mb-3 flex items-center gap-2 font-label-caps text-text-primary">
           <Activity className="text-accent-success" size={16} /> {text.tradeActions}
         </h2>
-        <AccountTradePanel locale={locale} killSwitch={account.kill_switch} />
+        <AccountTradePanel
+          locale={locale}
+          killSwitch={account.kill_switch}
+          pendingOrderCount={(account.pending_orders ?? []).length}
+        />
         <SafetyFlags account={account} health={health} text={text} />
       </Card>
     </div>
@@ -621,6 +647,83 @@ function HoldingsPanel({
         </div>
       )}
     </Card>
+  );
+}
+
+function PendingOrdersPanel({
+  account,
+  accountDown,
+  text,
+}: {
+  account: Awaited<ReturnType<typeof getPaperAccount>>;
+  accountDown: boolean;
+  text: (typeof copy)["en"] | (typeof copy)["zh"];
+}) {
+  const pending = [...(account.pending_orders ?? [])].sort((a, b) =>
+    b.created_at.localeCompare(a.created_at),
+  );
+  return (
+    <Card padded>
+      <SectionTitle title={text.pendingOrders} hint={text.pendingOrdersDesc} />
+      {accountDown ? (
+        <p className="py-4 text-center font-body-sm text-text-secondary">
+          {text.pendingOrdersUnavailable}
+        </p>
+      ) : pending.length === 0 ? (
+        <p className="py-4 text-center font-body-sm text-text-secondary">
+          {text.pendingOrdersEmpty}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {pending.map((order) => (
+            <PendingOrderRow key={order.order_id} order={order} text={text} />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function PendingOrderRow({
+  order,
+  text,
+}: {
+  order: PendingAccountOrderView;
+  text: (typeof copy)["en"] | (typeof copy)["zh"];
+}) {
+  const sideLabel = text.side[order.side.toUpperCase()] ?? order.side;
+  const isBuy = order.side.toUpperCase() === "BUY";
+  const lastChecked =
+    order.last_checked_at && order.last_checked_price != null
+      ? `${formatShortTime(order.last_checked_at)} @ ${order.last_checked_price.toFixed(2)}`
+      : "--";
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted/40 p-3">
+      <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <span
+            className={`font-data-mono text-sm font-bold ${
+              isBuy ? "text-accent-success" : "text-danger"
+            }`}
+          >
+            {sideLabel} {order.symbol}
+          </span>
+          <span className="rounded-lg border border-info/40 bg-info/10 px-1.5 py-0.5 font-data-mono text-[10px] uppercase text-info">
+            {text.kind.order_pending}
+          </span>
+        </div>
+        <span className="font-data-mono text-xs text-text-secondary">
+          {order.quantity.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
+          {text.sharesUnit} ·{" "}
+          {text.limit} {order.limit_price.toFixed(2)}
+        </span>
+      </div>
+      <div className="text-right font-data-mono text-[10px] text-text-secondary">
+        <div>{text.lastCheck}</div>
+        <div>{lastChecked}</div>
+      </div>
+    </div>
   );
 }
 

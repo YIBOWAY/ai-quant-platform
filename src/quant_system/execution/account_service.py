@@ -8,7 +8,7 @@ import pandas as pd
 
 from quant_system.config.settings import Settings, load_settings
 from quant_system.data.provider_factory import build_ohlcv_provider
-from quant_system.execution.account import PaperAccount
+from quant_system.execution.account import PaperAccount, PendingAccountOrder
 from quant_system.execution.models import ManagedOrder, OrderSide
 from quant_system.execution.paper_broker import PaperBroker
 from quant_system.execution.portfolio import PaperPortfolio
@@ -30,6 +30,7 @@ class OrderOutcome:
     price: float
     price_kind: str
     rejected_reason: str = ""
+    order_id: str | None = None
 
 
 @dataclass
@@ -101,6 +102,57 @@ class PaperAccountService:
             reason="manual_order",
         )
         return outcome
+
+    def process_pending_orders(self, account: PaperAccount) -> list[OrderOutcome]:
+        if account.kill_switch:
+            raise AccountFrozenError(
+                "account is frozen (kill switch on); no pending orders processed"
+            )
+
+        outcomes: list[OrderOutcome] = []
+        remaining: list[PendingAccountOrder] = []
+        checked_at = datetime.now(UTC).isoformat()
+        for pending in account.pending_orders:
+            quote = self.price_source.get_price(pending.symbol)
+            pending.last_checked_price = quote.price
+            pending.last_checked_price_kind = quote.price_kind
+            pending.last_checked_at = checked_at
+            side = OrderSide(pending.side)
+            if self._limit_blocks_fill(side, quote.price, pending.limit_price):
+                remaining.append(pending)
+                outcomes.append(
+                    OrderOutcome(
+                        status="pending",
+                        symbol=pending.symbol,
+                        side=pending.side,
+                        requested_quantity=pending.quantity,
+                        filled_quantity=0.0,
+                        price=quote.price,
+                        price_kind=quote.price_kind,
+                        rejected_reason=(
+                            f"current price {quote.price:.4f} still does not satisfy "
+                            f"limit price {pending.limit_price:.4f}"
+                        ),
+                        order_id=pending.order_id,
+                    )
+                )
+                continue
+            outcomes.append(
+                self._execute_single(
+                    account=account,
+                    symbol=quote.symbol,
+                    side=side,
+                    quantity=pending.quantity,
+                    price=quote.price,
+                    price_kind=quote.price_kind,
+                    limit_price=pending.limit_price,
+                    source=pending.source,
+                    reason=pending.reason,
+                    order_id=pending.order_id,
+                )
+            )
+        account.pending_orders = remaining
+        return outcomes
 
     # --- strategy rebalance ----------------------------------------------
     def rebalance_to_strategy(
@@ -252,6 +304,7 @@ class PaperAccountService:
         source: str,
         reason: str,
         kind: str = "fill",
+        order_id: str | None = None,
     ) -> OrderOutcome:
         timestamp = pd.Timestamp(datetime.now(UTC))
         if quantity <= 0:
@@ -297,7 +350,7 @@ class PaperAccountService:
         portfolio = self._portfolio_view(account)
         broker = PaperBroker(portfolio=portfolio)
         order = ManagedOrder(
-            order_id=f"paper-order-{uuid.uuid4().hex[:12]}",
+            order_id=order_id or f"paper-order-{uuid.uuid4().hex[:12]}",
             created_at=timestamp,
             symbol=symbol.upper(),
             side=side,
@@ -307,6 +360,10 @@ class PaperAccountService:
         )
         broker.submit_order(order)
 
+        limit_blocked = (
+            limit_price is not None
+            and self._limit_blocks_fill(side, price, limit_price)
+        )
         fills = broker.process_market_data(timestamp=timestamp, prices={symbol: price})
         filled = sum(fill.quantity for fill in fills)
         for fill in fills:
@@ -315,27 +372,52 @@ class PaperAccountService:
         outcome_status = "filled"
         outcome_reason = ""
         if filled <= 0:
-            outcome_status = "unfilled"
-            if limit_price is not None:
+            if limit_blocked and source == "manual":
+                pending_order = PendingAccountOrder(
+                    order_id=order.order_id,
+                    created_at=timestamp.isoformat(),
+                    symbol=symbol.upper(),
+                    side=str(side),
+                    quantity=quantity,
+                    limit_price=limit_price,
+                    source=source,
+                    reason=reason,
+                    last_checked_price=price,
+                    last_checked_price_kind=price_kind,
+                    last_checked_at=timestamp.isoformat(),
+                )
+                account.pending_orders.append(pending_order)
+                outcome_status = "pending"
                 outcome_reason = (
                     f"current price {price:.4f} does not satisfy limit price "
-                    f"{limit_price:.4f}; paper limit orders are checked once "
-                    "and not queued"
+                    f"{limit_price:.4f}; paper limit order queued"
                 )
-            elif side == OrderSide.BUY:
-                outcome_reason = "insufficient cash"
+                account.record_event(
+                    kind="order_pending",
+                    source=source,
+                    symbol=symbol,
+                    side=str(side),
+                    quantity=quantity,
+                    price=price,
+                    price_kind=price_kind,
+                    note=outcome_reason,
+                )
             else:
-                outcome_reason = "no position available to sell"
-            account.record_event(
-                kind="order_unfilled",
-                source=source,
-                symbol=symbol,
-                side=str(side),
-                quantity=quantity,
-                price=price,
-                price_kind=price_kind,
-                note=outcome_reason,
-            )
+                outcome_status = "unfilled"
+                if side == OrderSide.BUY:
+                    outcome_reason = "insufficient cash"
+                else:
+                    outcome_reason = "no position available to sell"
+                account.record_event(
+                    kind="order_unfilled",
+                    source=source,
+                    symbol=symbol,
+                    side=str(side),
+                    quantity=quantity,
+                    price=price,
+                    price_kind=price_kind,
+                    note=outcome_reason,
+                )
         elif filled + 1e-9 < quantity:
             outcome_status = "partially_filled"
             constraint = "available cash" if side == OrderSide.BUY else "available position"
@@ -362,6 +444,7 @@ class PaperAccountService:
             price=price,
             price_kind=price_kind,
             rejected_reason=outcome_reason,
+            order_id=order.order_id,
         )
 
     # --- helpers ----------------------------------------------------------
@@ -392,6 +475,12 @@ class PaperAccountService:
             symbol: position.quantity for symbol, position in account.positions.items()
         }
         return portfolio
+
+    @staticmethod
+    def _limit_blocks_fill(side: OrderSide, price: float, limit_price: float) -> bool:
+        if side == OrderSide.BUY:
+            return price > limit_price
+        return price < limit_price
 
     @staticmethod
     def _rebalance_requests(

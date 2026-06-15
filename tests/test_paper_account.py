@@ -143,7 +143,7 @@ def test_manual_order_notional_is_converted_to_quantity() -> None:
     assert account.position_quantity("NVDA") == pytest.approx(20)
 
 
-def test_unfilled_manual_order_explains_why() -> None:
+def test_unfavorable_limit_order_is_queued() -> None:
     account = PaperAccount.open_new(initial_cash=1_000.0)
     service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 200.0}))
 
@@ -155,9 +155,11 @@ def test_unfilled_manual_order_explains_why() -> None:
         limit_price=1.0,
     )
 
-    assert outcome.status == "unfilled"
+    assert outcome.status == "pending"
     assert "does not satisfy limit price" in outcome.rejected_reason
-    assert "not queued" in outcome.rejected_reason
+    assert "queued" in outcome.rejected_reason
+    assert len(account.pending_orders) == 1
+    assert account.pending_orders[0].symbol == "AAPL"
 
 
 def test_manual_sell_over_position_reports_partial_fill() -> None:

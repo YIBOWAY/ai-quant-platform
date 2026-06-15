@@ -246,6 +246,9 @@ def _account_view(
         "kill_switch": account.kill_switch,
         "price_source": {"kind": price_kind, "as_of": as_of},
         "positions": positions,
+        "pending_orders": [
+            order.model_dump(mode="json") for order in account.pending_orders
+        ],
         "created_at": account.created_at,
         "updated_at": account.updated_at,
     }
@@ -332,16 +335,30 @@ def place_account_order(
         quotes = _account_quotes(account, settings=settings)
         _save_account(storage, account, quotes)
         return {
-            "order": {
-                "status": outcome.status,
-                "symbol": outcome.symbol,
-                "side": outcome.side,
-                "requested_quantity": outcome.requested_quantity,
-                "filled_quantity": outcome.filled_quantity,
-                "price": outcome.price,
-                "price_kind": outcome.price_kind,
-                "rejected_reason": outcome.rejected_reason,
-            },
+            "order": _order_outcome_view(outcome),
+            "account": _account_view(account, settings=settings, quotes=quotes),
+        }
+
+
+@router.post("/paper/account/orders/process")
+def process_pending_account_orders(
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    storage = _account_storage(api_runs_dir)
+    service = PaperAccountService(settings=settings)
+    with _account_lock(storage.account_id), storage.mutation_lock():
+        account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+        try:
+            outcomes = service.process_pending_orders(account)
+        except AccountFrozenError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PriceUnavailableError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        quotes = _account_quotes(account, settings=settings)
+        _save_account(storage, account, quotes)
+        return {
+            "orders": [_order_outcome_view(outcome) for outcome in outcomes],
             "account": _account_view(account, settings=settings, quotes=quotes),
         }
 
@@ -381,16 +398,7 @@ def rebalance_account(
                 "target_weights": outcome.target_weights,
                 "note": outcome.note,
                 "orders": [
-                    {
-                        "status": order.status,
-                        "symbol": order.symbol,
-                        "side": order.side,
-                        "requested_quantity": order.requested_quantity,
-                        "filled_quantity": order.filled_quantity,
-                        "price": order.price,
-                        "price_kind": order.price_kind,
-                        "rejected_reason": order.rejected_reason,
-                    }
+                    _order_outcome_view(order)
                     for order in outcome.orders
                 ],
             },
@@ -411,4 +419,18 @@ def paper_detail(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
         "order_events": read_parquet_records(run_dir / "paper" / "order_events.parquet"),
         "trades": read_parquet_records(run_dir / "paper" / "trades.parquet"),
         "risk_breaches": read_parquet_records(run_dir / "paper" / "risk_breaches.parquet"),
+    }
+
+
+def _order_outcome_view(outcome) -> dict:
+    return {
+        "order_id": outcome.order_id,
+        "status": outcome.status,
+        "symbol": outcome.symbol,
+        "side": outcome.side,
+        "requested_quantity": outcome.requested_quantity,
+        "filled_quantity": outcome.filled_quantity,
+        "price": outcome.price,
+        "price_kind": outcome.price_kind,
+        "rejected_reason": outcome.rejected_reason,
     }
