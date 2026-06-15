@@ -139,6 +139,15 @@ dry-run，只在传 `--apply` 时删除，且支持 `--cache-path` 与 `--as-of`
 只有先显式设置 `QS_KILL_SWITCH=false` 的本地模拟进程才允许该 replay 覆盖。
 `tests/test_paper_trading_pipeline_cli.py` 覆盖默认拒绝和显式关闭后的本地成交演示。
 
+2026-06-15 状态补充：评估报告中“kill-switch 与账户冻结作用域交叉、账户直接
+下单路径缺全局闸门”的建议不应按字面执行。当前现行设计已把两者分离：
+`QS_KILL_SWITCH` / `SafetySettings.kill_switch` 是历史回放 (`POST /api/paper/run`
+和 `quant-system paper run-sample`) 的全局安全锁；持续模拟账户使用
+`PaperAccount.kill_switch` / `POST /api/paper/account/kill-switch` 作为账户级冻结，
+默认关闭但可由用户冻结。AGENTS.md 与 paper-account 文档已明确二者不同；后续可
+考虑改名为 `account_frozen` 做语义澄清，但不应把全局历史回放锁直接强接到
+持续账户手动单/再平衡路径，否则会违背已采用的账户级模拟交易设计。
+
 2026-06-15 状态补充：同一条中的 `/settings` 脱敏守护也已补强。
 `mask_secret_fields()` 现在除了按字段名遮蔽 `key` / `secret` / `token` /
 `password` / `private`，还会直接识别并遮蔽 `pydantic.SecretStr` /
