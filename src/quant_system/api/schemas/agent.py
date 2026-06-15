@@ -21,3 +21,11 @@ class AgentTaskRequest(BaseModel):
 class AgentReviewRequest(BaseModel):
     decision: Literal["approve", "reject"]
     note: str
+
+
+class AgentLLMConfigResponse(BaseModel):
+    provider: str
+    model: str
+    base_url: str
+    timeout: int
+    has_api_key: bool

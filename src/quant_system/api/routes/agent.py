@@ -7,7 +7,11 @@ from fastapi import APIRouter, HTTPException
 from quant_system.agent.llm import build_llm_client
 from quant_system.agent.runner import AgentRunner
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
-from quant_system.api.schemas.agent import AgentReviewRequest, AgentTaskRequest
+from quant_system.api.schemas.agent import (
+    AgentLLMConfigResponse,
+    AgentReviewRequest,
+    AgentTaskRequest,
+)
 from quant_system.api.schemas.common import resolve_run_dir
 
 router = APIRouter()
@@ -113,7 +117,7 @@ def review_candidate(
     }
 
 
-@router.get("/agent/llm-config")
+@router.get("/agent/llm-config", response_model=AgentLLMConfigResponse)
 def llm_config(settings: SettingsDep) -> dict:
     return {
         "provider": settings.llm.provider,
