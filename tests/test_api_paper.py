@@ -74,7 +74,9 @@ def test_paper_run_rejects_disabling_global_kill_switch(tmp_path) -> None:
     )
 
     assert response.status_code == 409
-    assert "kill switch" in response.json()["detail"].lower()
+    detail = response.json()["detail"]
+    assert detail["code"] == "global_kill_switch_enabled"
+    assert "kill switch" in detail["message"].lower()
     assert response.json()["safety"]["kill_switch"] is True
 
 
@@ -95,7 +97,9 @@ def test_paper_run_rejects_kill_switch_enabled_replay(tmp_path) -> None:
     )
 
     assert response.status_code == 409
-    assert "replay kill switch" in response.json()["detail"].lower()
+    detail = response.json()["detail"]
+    assert detail["code"] == "replay_kill_switch_enabled"
+    assert "replay kill switch" in detail["message"].lower()
     assert not (tmp_path / "api_runs" / "paper").exists()
 
 

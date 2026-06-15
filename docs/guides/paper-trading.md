@@ -58,6 +58,7 @@
 - `strategy_data_unavailable`：再平衡策略无法取得真实历史数据。
 - `unsupported_account_rebalance_strategy`：策略存在，但不允许进入持续账户再平衡。
 - `unknown_account_rebalance_strategy`：请求了不存在的账户再平衡策略。
+- `replay_kill_switch_enabled` / `global_kill_switch_enabled`：历史回放被回放安全锁或全局安全锁拒绝。
 
 ### B. 历史回放（`POST /api/paper/run`，在「历史回放（研究）」标签页）
 

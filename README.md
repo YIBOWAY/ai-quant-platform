@@ -263,6 +263,8 @@ simulation-only — no real orders, broker, wallet, or account unlock.
   Paper-account domain failures return structured API details with
   `detail.code` and `detail.message` (for example `price_unavailable`,
   `account_frozen`, or `unsupported_account_rebalance_strategy`).
+  Historical replay kill-switch rejections use the same structured shape
+  (`replay_kill_switch_enabled` / `global_kill_switch_enabled`).
 
 Scheduled auto-rebalance (e.g. via Windows Task Scheduler):
 
@@ -271,8 +273,8 @@ conda activate ai-quant
 quant-system paper rebalance --account default --strategy cross_sectional_top_n
 ```
 
-The legacy `POST /api/paper/run` historical replay is unchanged and lives on
-the "History Replay (research)" tab of the same page (since 2026-06-11). See
+The legacy `POST /api/paper/run` historical replay lives on the
+"History Replay (research)" tab of the same page (since 2026-06-11). See
 [docs/guides/paper-trading.md](docs/guides/paper-trading.md) and
 [docs/design/paper_trading_position_map_redesign.md](docs/design/paper_trading_position_map_redesign.md).
 

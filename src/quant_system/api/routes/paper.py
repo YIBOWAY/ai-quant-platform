@@ -61,16 +61,22 @@ def run_paper(
     if request.enable_kill_switch:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Replay kill switch is enabled; historical paper replay would "
-                "create orders with no fills. Disable the replay kill switch "
-                "only after turning off QS_KILL_SWITCH for this local simulation."
+            detail=_error_detail(
+                "replay_kill_switch_enabled",
+                (
+                    "Replay kill switch is enabled; historical paper replay would "
+                    "create orders with no fills. Disable the replay kill switch "
+                    "only after turning off QS_KILL_SWITCH for this local simulation."
+                ),
             ),
         )
     if settings.safety.kill_switch and not request.enable_kill_switch:
         raise HTTPException(
             status_code=409,
-            detail="Global kill switch is enabled; API requests cannot disable the kill switch",
+            detail=_error_detail(
+                "global_kill_switch_enabled",
+                "Global kill switch is enabled; API requests cannot disable the kill switch",
+            ),
         )
     run_id = make_run_id("paper")
     run_dir = api_runs_dir / "paper" / run_id

@@ -23,6 +23,14 @@ async function parseError(response: Response) {
     if (typeof payload.detail === "string") {
       return payload.detail;
     }
+    if (payload.detail && typeof payload.detail === "object") {
+      const detail = payload.detail as Record<string, unknown>;
+      const message = typeof detail.message === "string" ? detail.message : "";
+      const code = typeof detail.code === "string" ? `[${detail.code}] ` : "";
+      if (message) {
+        return `${code}${message}`;
+      }
+    }
     return JSON.stringify(payload.detail ?? payload);
   } catch {
     return response.statusText || "API request failed";

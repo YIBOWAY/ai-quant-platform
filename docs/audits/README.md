@@ -65,7 +65,9 @@ futu”的小项已对齐。`.env.example` 现在使用
 2026-06-15 状态补充：评估报告中“错误响应格式不一致”的一部分已收敛。
 持续模拟账户 API 的领域错误现在返回结构化 `detail.code` / `detail.message`，
 覆盖账户冻结、缺价、策略数据不可用、未知或不支持的账户再平衡策略等常见失败态。
-其他历史回放和跨模块 404 仍未做全局统一。
+历史回放 `POST /api/paper/run` 的两类 kill-switch 409 现在也返回同一结构化
+detail，并且前端 `apiClient` 会把 `{code,message}` 格式化为可读错误文案。
+跨模块 404 仍未做全局统一。
 
 2026-06-15 状态补充：评估报告中“`core/interfaces.py` 整文件死代码”的表述
 需要下调。该文件没有进入当前 backtest / paper / option 运行路径，确实是早期
@@ -206,8 +208,11 @@ dry-run，只在传 `--apply` 时删除，且支持 `--cache-path` 与 `--as-of`
 
 2026-06-15 状态补充：评估报告里“默认历史回放在安全锁开启时仍会产生
 0 成交成功 run”的表述已过时。`POST /api/paper/run` 在回放请求试图开启
-kill switch 时会返回 409；前端回放表单也会在 `health.safety.kill_switch`
-开启时禁用提交，并把结果状态显示为 `execution_status=blocked|filled|no_orders|unfilled`。
+kill switch 时会返回 `409 detail.code=replay_kill_switch_enabled`；若请求试图
+绕过仍开启的全局 `QS_KILL_SWITCH`，会返回
+`409 detail.code=global_kill_switch_enabled`。前端回放表单也会在
+`health.safety.kill_switch` 开启时禁用提交，并把结果状态显示为
+`execution_status=blocked|filled|no_orders|unfilled`。
 
 2026-06-15 状态补充：评估报告中“期权雷达 CLI/API 阈值双轨，`max_delta`
 漂移”的小项已处理到当前防回归状态。CLI 与 API 都通过各自的
