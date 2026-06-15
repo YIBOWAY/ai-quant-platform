@@ -295,7 +295,9 @@ quant-system options daily-task --top 100 --universe-source public --earnings-so
 
 该命令会串联标的池、财报、VIX 刷新和一次只读雷达扫描，并在雷达输出目录
 写入 `daily_task_status.json`。`GET /api/options/daily-scan/status` 和
-`/options-radar` 页面会读取这个状态文件，显示最近一次调度任务状态。单个刷新端点和脚本仍用于维护或离线调试。
+`/options-radar` 页面会读取这个状态文件，显示最近一次调度任务状态。可选的
+`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 只在 API 启动时补当天缺失快照，
+不刷新输入缓存；单个刷新端点和脚本仍用于维护或离线调试。
 
 ## 复刻计划
 

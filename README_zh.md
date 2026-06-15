@@ -228,6 +228,8 @@ http://127.0.0.1:3001/options-radar
 `quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public`；
 该命令会刷新输入、写入每日快照和 `daily_task_status.json`。雷达页面会通过
 `GET /api/options/daily-scan/status` 读取同一状态文件并展示最近一次计划任务状态。
+启动补跑默认关闭；只有在明确设置
+`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 后，API 启动才会在当天雷达快照缺失时后台运行一次 `daily-scan` 补跑。
 
 本地期权工具箱：
 

@@ -27,6 +27,9 @@ src/quant_system/cli.py
   quant-system options daily-scan   manual scan over existing local inputs
   quant-system options daily-task   scheduled refresh + scan task
 
+src/quant_system/api/server.py
+  optional startup catch-up when QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true
+
 src/frontend/app/options-radar/page.tsx
   src/frontend/components/forms/OptionsRadarView.tsx
   daily scan viewer with filters, scheduled-task status, detail expansion, CSV export
@@ -84,6 +87,13 @@ src/frontend/app/options-radar/page.tsx
 `daily-scan` 保留为人工调试和只扫描已有输入缓存的命令。
 `GET /api/options/daily-scan/status` 只读返回最近一次
 `daily_task_status.json`；`/options-radar` 用它显示调度任务最近状态。
+
+API 启动补跑默认关闭，避免服务启动时意外触发慢速 OpenD 扫描。设置
+`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 后，FastAPI lifespan 会检查
+`RadarSnapshotStore.latest_date()`；如果当天快照缺失，会在后台运行一次
+`daily-scan` 等价扫描，并把 `source="startup_catchup"` 的 running /
+completed / failed 状态写入 `daily_task_status.json`。该补跑复用已有本地输入
+缓存，不替代 `daily-task` 的标的池、财报和 VIX 刷新流程。
 
 ## 故障隔离
 

@@ -267,6 +267,10 @@ class OptionsRadarSettings(BaseSettings):
         default=Path("data/options_universe/vix_history.csv"),
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_VIX_HISTORY_PATH"),
     )
+    startup_catchup_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED"),
+    )
 
     @model_validator(mode="after")
     def validate_dte_window(self) -> OptionsRadarSettings:

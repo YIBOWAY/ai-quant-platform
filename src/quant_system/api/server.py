@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -35,6 +37,7 @@ from quant_system.api.routes import (
 from quant_system.api.safety.middleware import attach_safety_footer, validate_bind_address
 from quant_system.config.settings import Settings
 from quant_system.logging.setup import configure_logging
+from quant_system.options.radar_storage import RadarSnapshotStore
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,106 @@ def _start_run_index_init(active_settings: Settings, api_runs_dir: Path) -> None
     thread.start()
 
 
+def _options_radar_startup_catchup_run_date() -> str:
+    return datetime.now(UTC).date().isoformat()
+
+
+def _start_options_radar_startup_catchup(active_settings: Settings) -> None:
+    radar_settings = active_settings.options_radar
+    if not radar_settings.enabled or not radar_settings.startup_catchup_enabled:
+        return
+    run_date = _options_radar_startup_catchup_run_date()
+    latest = RadarSnapshotStore(radar_settings.output_dir).latest_date()
+    if latest == run_date:
+        return
+    thread = threading.Thread(
+        target=_run_options_radar_startup_catchup,
+        args=(active_settings, run_date),
+        daemon=True,
+    )
+    thread.start()
+
+
+def _run_options_radar_startup_catchup(active_settings: Settings, run_date: str) -> None:
+    radar_settings = active_settings.options_radar
+    provider = radar_settings.provider
+    strategies = ["sell_put", "covered_call"]
+    started_at = datetime.now(UTC).isoformat()
+    _write_options_radar_startup_status(
+        radar_settings.output_dir,
+        {
+            "status": "running",
+            "source": "startup_catchup",
+            "run_date": run_date,
+            "provider": provider,
+            "strategies": strategies,
+            "started_at": started_at,
+            "steps": {},
+        },
+    )
+    try:
+        result = options_radar.options_daily_scan_run(
+            active_settings,
+            {
+                "provider": provider,
+                "top": radar_settings.universe_top_n,
+                "strategies": strategies,
+                "run_date": run_date,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - startup catch-up must not kill API
+        _write_options_radar_startup_status(
+            radar_settings.output_dir,
+            {
+                "status": "failed",
+                "source": "startup_catchup",
+                "run_date": run_date,
+                "provider": provider,
+                "strategies": strategies,
+                "started_at": started_at,
+                "finished_at": datetime.now(UTC).isoformat(),
+                "failed_step": "scan",
+                "error": f"{type(exc).__name__}: {exc}",
+                "steps": {},
+            },
+        )
+        logger.warning("options radar startup catch-up failed: %s", exc)
+        return
+
+    _write_options_radar_startup_status(
+        radar_settings.output_dir,
+        {
+            "status": "completed",
+            "source": "startup_catchup",
+            "run_date": result["run_date"],
+            "provider": provider,
+            "strategies": strategies,
+            "started_at": started_at,
+            "finished_at": datetime.now(UTC).isoformat(),
+            "steps": {
+                "scan": {
+                    "status": "completed",
+                    "run_date": result["run_date"],
+                    "universe_size": result["universe_size"],
+                    "scanned_tickers": result["scanned_tickers"],
+                    "failed_tickers": len(result["failed_tickers"]),
+                    "candidate_count": result["candidate_count"],
+                    "data_path": result["data_path"],
+                    "meta_path": result["meta_path"],
+                }
+            },
+        },
+    )
+
+
+def _write_options_radar_startup_status(output_dir: Path, payload: dict) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "daily_task_status.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -108,6 +211,7 @@ def create_app(
         app.state.services = services
         services["api_runs_dir"].mkdir(parents=True, exist_ok=True)
         _start_run_index_init(active_settings, services["api_runs_dir"])
+        _start_options_radar_startup_catchup(active_settings)
         yield
 
     app = FastAPI(

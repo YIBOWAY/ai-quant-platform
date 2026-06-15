@@ -295,7 +295,10 @@ sample source is only for explicit offline testing. Scheduled runs should use
 `daily-task`, which refreshes those local inputs before writing the daily
 snapshot and `daily_task_status.json`; the Radar page reads the same file
 through `GET /api/options/daily-scan/status` and shows the latest scheduled-task
-state.
+state. Startup catch-up is opt-in: set
+`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` only when OpenD/cache readiness
+is expected and you want API startup to run a background daily-scan catch-up if
+today's snapshot is missing.
 
 Local options toolbox:
 

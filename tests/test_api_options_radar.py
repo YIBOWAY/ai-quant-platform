@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -106,6 +107,132 @@ def test_api_options_daily_scan_status_reports_daily_task_file(tmp_path: Path) -
     assert payload["exists"] is True
     assert payload["status_path"].endswith("daily_task_status.json")
     assert payload["status"] == status
+
+
+def test_api_startup_schedules_options_radar_catchup_when_enabled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from quant_system.api import server as api_server
+
+    run_date = "2026-06-15"
+    settings = Settings(
+        options_radar=OptionsRadarSettings(
+            output_dir=tmp_path,
+            provider="sample",
+            startup_catchup_enabled=True,
+        )
+    )
+    scheduled: list[tuple[Settings, str]] = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon) -> None:
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self) -> None:
+            scheduled.append(self.args)
+
+    monkeypatch.setattr(api_server, "_options_radar_startup_catchup_run_date", lambda: run_date)
+    monkeypatch.setattr(api_server, "_run_options_radar_startup_catchup", lambda *_args: None)
+    monkeypatch.setattr(api_server.threading, "Thread", FakeThread)
+
+    with TestClient(create_app(settings=settings, output_dir=tmp_path)):
+        pass
+
+    assert scheduled == [(settings, run_date)]
+
+
+def test_api_startup_skips_options_radar_catchup_when_snapshot_is_current(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from quant_system.api import server as api_server
+
+    run_date = datetime.now(UTC).date().isoformat()
+    _write_sample_snapshot(tmp_path, run_date)
+    settings = Settings(
+        options_radar=OptionsRadarSettings(
+            output_dir=tmp_path,
+            provider="sample",
+            startup_catchup_enabled=True,
+        )
+    )
+
+    class FakeThread:
+        def __init__(self, **_kwargs) -> None:
+            raise AssertionError("startup catch-up should not be scheduled")
+
+    monkeypatch.setattr(api_server.threading, "Thread", FakeThread)
+
+    with TestClient(create_app(settings=settings, output_dir=tmp_path)):
+        pass
+
+
+def test_options_radar_startup_catchup_writes_completed_status(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from quant_system.api import server as api_server
+
+    settings = Settings(
+        options_radar=OptionsRadarSettings(
+            output_dir=tmp_path,
+            provider="sample",
+            startup_catchup_enabled=True,
+        )
+    )
+
+    def fake_scan(_settings: Settings, payload: dict) -> dict:
+        assert payload["provider"] == "sample"
+        assert payload["run_date"] == "2026-06-15"
+        return {
+            "run_date": "2026-06-15",
+            "universe_size": 2,
+            "scanned_tickers": 2,
+            "failed_tickers": [],
+            "candidate_count": 4,
+            "data_path": str(tmp_path / "daily" / "2026-06-15.jsonl"),
+            "meta_path": str(tmp_path / "daily" / "2026-06-15.meta.json"),
+        }
+
+    monkeypatch.setattr(api_server.options_radar, "options_daily_scan_run", fake_scan)
+
+    api_server._run_options_radar_startup_catchup(settings, "2026-06-15")
+
+    status = json.loads((tmp_path / "daily_task_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "completed"
+    assert status["source"] == "startup_catchup"
+    assert status["steps"]["scan"]["candidate_count"] == 4
+
+
+def test_options_radar_startup_catchup_writes_failed_status(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from quant_system.api import server as api_server
+
+    settings = Settings(
+        options_radar=OptionsRadarSettings(
+            output_dir=tmp_path,
+            provider="sample",
+            startup_catchup_enabled=True,
+        )
+    )
+
+    def fake_scan(_settings: Settings, _payload: dict) -> dict:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(api_server.options_radar, "options_daily_scan_run", fake_scan)
+
+    api_server._run_options_radar_startup_catchup(settings, "2026-06-15")
+
+    status = json.loads((tmp_path / "daily_task_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "failed"
+    assert status["source"] == "startup_catchup"
+    assert status["failed_step"] == "scan"
+    assert "RuntimeError: boom" in status["error"]
 
 
 def test_api_options_daily_scan_run_writes_sample_snapshot(tmp_path: Path) -> None:

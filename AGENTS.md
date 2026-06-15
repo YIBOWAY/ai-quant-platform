@@ -164,7 +164,10 @@ Current options work is split into sell-side and buy-side research modules:
   `run_options_radar`; `scripts/run_options_radar.ps1` is the Windows Task
   Scheduler entrypoint and writes `daily_task_status.json` next to radar
   snapshots. `GET /api/options/daily-scan/status` exposes that file and
-  `/options-radar` shows the latest scheduled-task status.
+  `/options-radar` shows the latest scheduled-task status. Optional startup
+  catch-up is controlled by `QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=false` by
+  default; when enabled, API startup runs a background daily-scan catch-up only
+  if today's radar snapshot is missing.
 - Buy-side decision API: `POST /api/options/buy-side/assistant`.
 - Buy-side debug CLI: `quant-system options buyside-screen`.
 - Buy-side frontend page: `src/frontend/app/options-buyside/page.tsx` (main
