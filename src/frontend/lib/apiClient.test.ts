@@ -26,11 +26,11 @@ describe("apiClient errors", () => {
       ),
     );
 
-    await expect(apiPost("/api/paper/run", {})).rejects.toMatchObject<
-      Partial<ApiClientError>
-    >({
+    const expected: Partial<ApiClientError> = {
       status: 409,
       message: "[replay_kill_switch_enabled] Replay kill switch is enabled.",
-    });
+    };
+
+    await expect(apiPost("/api/paper/run", {})).rejects.toMatchObject(expected);
   });
 });
