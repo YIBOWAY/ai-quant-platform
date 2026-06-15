@@ -31,6 +31,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/factors": "FactorCatalogResponse",
         "/api/factors/runs": "FactorRunsResponse",
         "/api/factors/{run_id}": "FactorRunDetailResponse",
+        "/api/replications/reversal-momentum/{run_id}": "ReversalMomentumReplicationDetailResponse",
         "/api/runs/recent": "RecentRunsResponse",
         "/api/settings": "SettingsResponse",
         "/api/strategies": "StrategyCatalogResponse",
@@ -69,6 +70,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "runs" in components["FactorRunsResponse"]["properties"]
     assert "information_coefficients" in components["FactorRunDetailResponse"]["properties"]
     assert "quantile_returns" in components["FactorRunDetailResponse"]["properties"]
+    assert "result" in components["ReversalMomentumReplicationDetailResponse"]["properties"]
     assert "risk_breaches" in components["PaperRunDetailResponse"]["properties"]
     assert "runs" in components["RecentRunsResponse"]["properties"]
     assert components["SettingsResponse"]["type"] == "object"

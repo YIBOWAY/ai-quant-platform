@@ -8,6 +8,9 @@ from pydantic import BaseModel, Field
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.schemas.common import make_run_id, read_json, resolve_run_dir
+from quant_system.api.schemas.replications import (
+    ReversalMomentumReplicationDetailResponse,
+)
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.data.providers.futu import FutuProviderError
 from quant_system.replication.reversal_momentum import build_reversal_momentum_replication
@@ -100,7 +103,10 @@ def run_reversal_momentum_replication(
     return result
 
 
-@router.get("/replications/reversal-momentum/{run_id}")
+@router.get(
+    "/replications/reversal-momentum/{run_id}",
+    response_model=ReversalMomentumReplicationDetailResponse,
+)
 def reversal_momentum_replication_detail(
     run_id: str,
     api_runs_dir: ApiRunsDirDep,

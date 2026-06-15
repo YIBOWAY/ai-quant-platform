@@ -40,7 +40,8 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 `GET /api/benchmark`、`GET /api/backtests`、`GET /api/backtests/{run_id}`、
 `GET /api/experiments`、`GET /api/experiments/{experiment_id}`、
 `GET /api/paper`、`GET /api/paper/{run_id}`、`GET /api/paper/account`、
-`GET /api/paper/account/ledger`、`GET /api/settings`、`GET /api/strategies`、`GET /api/universes`，
+`GET /api/paper/account/ledger`、`GET /api/replications/reversal-momentum/{run_id}`、
+`GET /api/settings`、`GET /api/strategies`、`GET /api/universes`，
 `GET /api/factors`、`GET /api/factors/runs`、`GET /api/factors/{run_id}`、`GET /api/runs/recent`、
 `GET /api/market-data/history`、`GET /api/options/daily-scan/dates`、
 `GET /api/options/daily-scan/status`、`GET /api/agent/candidates`、
