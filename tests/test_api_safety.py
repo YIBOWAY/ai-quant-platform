@@ -20,6 +20,36 @@ def test_every_json_response_has_safety_footer(tmp_path) -> None:
         assert payload["safety"]["live_trading_enabled"] is False
 
 
+def test_safety_footer_overrides_route_payload_safety(tmp_path) -> None:
+    app = create_app(output_dir=tmp_path)
+
+    @app.get("/api/test-shadow-safety")
+    def shadow_safety() -> dict:
+        return {
+            "status": "ok",
+            "safety": {
+                "dry_run": False,
+                "paper_trading": False,
+                "live_trading_enabled": True,
+                "kill_switch": False,
+                "bind_address": "0.0.0.0",
+            },
+        }
+
+    client = TestClient(app)
+
+    response = client.get("/api/test-shadow-safety")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["safety"]["dry_run"] is True
+    assert payload["safety"]["paper_trading"] is True
+    assert payload["safety"]["live_trading_enabled"] is False
+    assert payload["safety"]["kill_switch"] is True
+    assert payload["safety"]["bind_address"] == "127.0.0.1"
+
+
 def test_settings_masks_secret_fields(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("QS_TIINGO_API_TOKEN", "super-secret-token")
     reload_settings()

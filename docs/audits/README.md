@@ -80,3 +80,9 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 已有测试断言不会在 `api_runs` 下生成 `.duckdb` 文件；历史遗留副本可用
 `scripts/cleanup_api_run_duckdb.py` 先 dry-run 再 `--apply` 清理，且测试会确保
 该脚本只处理 `api_runs` 下的 run 副本，不触碰 ingest DuckDB 或 Futu 期权缓存。
+
+2026-06-15 状态补充：评估报告中“`attach_safety_footer` 可被同名字段遮蔽”的
+小项已加固。JSON 响应中间件现在会强制覆盖 `payload["safety"]` 为当前
+`SafetySettings` 与绑定地址生成的 footer，而不是仅在缺失时 `setdefault`；
+`tests/test_api_safety.py` 覆盖了路由伪造 `safety.live_trading_enabled=true` 时
+仍会被中间件改回真实安全状态。

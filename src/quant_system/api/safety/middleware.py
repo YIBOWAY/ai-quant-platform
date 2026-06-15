@@ -55,7 +55,7 @@ async def attach_safety_footer(
         bind_address=services["bind_address"],
     )
     if isinstance(payload, dict):
-        payload.setdefault("safety", safety)
+        payload["safety"] = safety
     else:
         payload = {"data": payload, "safety": safety}
 
