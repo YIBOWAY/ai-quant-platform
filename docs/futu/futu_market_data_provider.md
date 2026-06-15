@@ -63,6 +63,10 @@ Futu 现已成为股票研究流程的主要美股实时数据提供方。
 curl "http://127.0.0.1:8765/api/market-data/history?ticker=SPY&start=2024-01-02&end=2024-01-12&freq=1d&provider=futu"
 ```
 
+`freq=1d` 可走 `sample`、`tiingo` 或 `futu`。日内频率（例如 `1h`、`30m`、
+`15m`、`5m`、`1m`）仅允许 `provider=futu`，并且 OpenD 不可用时不会回退到
+sample 数据。
+
 预期结构：
 
 ```json
@@ -102,4 +106,4 @@ python scripts/verify_futu_connection.py
 - 数据权限决定了可查询的内容。
 - 日内历史数据取决于 Futu 的权限和 API 限制。
 - 回退的 sample 提供方仍可用于离线测试，但只适用于未显式指定 provider
-  的默认读取路径，或用户明确选择 `provider=sample` 的场景。
+  的默认日线读取路径，或用户明确选择 `provider=sample` 的日线场景。

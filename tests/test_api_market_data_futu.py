@@ -130,6 +130,58 @@ def test_market_data_history_rejects_unknown_explicit_provider(tmp_path) -> None
     assert payload["safety"]["live_trading_enabled"] is False
 
 
+def test_market_data_history_rejects_intraday_for_non_futu_provider(tmp_path) -> None:
+    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+
+    response = client.get(
+        "/api/market-data/history",
+        params={
+            "ticker": "AAPL",
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "freq": "1h",
+            "provider": "sample",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["detail"]["code"] == "unsupported_interval"
+    assert payload["detail"]["provider"] == "sample"
+    assert payload["detail"]["interval"] == "1h"
+    assert payload["safety"]["live_trading_enabled"] is False
+
+
+def test_market_data_history_does_not_fallback_to_sample_for_intraday_default(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    def fake_fetch(self, symbols, *, start, end, interval="1d"):
+        raise FutuProviderError("opend_unavailable", "unable to connect to OpenD")
+
+    monkeypatch.setattr(
+        "quant_system.data.provider_factory.FutuMarketDataProvider.fetch_ohlcv",
+        fake_fetch,
+    )
+    settings = Settings(data=DataSettings(default_data_provider="futu"))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.get(
+        "/api/market-data/history",
+        params={
+            "ticker": "AAPL",
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "freq": "1h",
+        },
+    )
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["detail"]["code"] == "opend_unavailable"
+    assert payload["safety"]["live_trading_enabled"] is False
+
+
 def test_market_data_history_falls_back_when_default_futu_provider_fails(
     tmp_path,
     monkeypatch,

@@ -27,6 +27,16 @@ def market_data_history(
 ) -> dict:
     symbol = ticker.upper().strip()
     requested_provider = provider or settings.data.default_data_provider
+    if _is_intraday(freq) and requested_provider != "futu":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "unsupported_interval",
+                "provider": requested_provider,
+                "interval": freq,
+                "message": f"{requested_provider} provider only supports daily OHLCV",
+            },
+        )
     try:
         active_provider, source = build_ohlcv_provider(settings, requested=provider)
     except DataProviderUnavailableError as exc:
@@ -34,7 +44,7 @@ def market_data_history(
     try:
         frame = active_provider.fetch_ohlcv([symbol], start=start, end=end, interval=freq)
     except FutuProviderError as exc:
-        if provider is None:
+        if provider is None and not _is_intraday(freq):
             frame = SampleOHLCVProvider().fetch_ohlcv(
                 [symbol],
                 start=start,
@@ -48,7 +58,7 @@ def market_data_history(
                 detail={"code": exc.code, "message": exc.message},
             ) from exc
     except Exception as exc:
-        if provider is None:
+        if provider is None and not _is_intraday(freq):
             frame = SampleOHLCVProvider().fetch_ohlcv(
                 [symbol],
                 start=start,
@@ -96,3 +106,7 @@ def _status_for_futu_error(code: str) -> int:
     if code == "no_data":
         return 404
     return 502
+
+
+def _is_intraday(freq: str) -> bool:
+    return freq.lower().strip() != "1d"

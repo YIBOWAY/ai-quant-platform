@@ -138,6 +138,9 @@ Unknown overrides, or explicitly requested real providers that are unavailable,
 return `400 provider_unavailable` instead of silently substituting sample data.
 When no provider override is supplied, read-only market-data views may still
 fall back to a clearly labelled sample response for offline use.
+Intraday market-data requests (`freq` other than `1d`) are Futu-only; they do
+not fall back to sample data because that would mislabel daily synthetic bars
+as intraday history.
 The code default and `.env.example` both use `QS_DEFAULT_DATA_PROVIDER="futu"`;
 set it to `sample` only for explicit offline workflow tests.
 

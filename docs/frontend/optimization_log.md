@@ -17,7 +17,7 @@
 - 策略注册表新增 `supports_account_rebalance` 能力位；`/paper-trading` 的策略再平衡下拉和 `POST /api/paper/account/rebalance` 都按该字段过滤/校验，因此 `reversal_momentum` 这类研报复现仍保留在 Strategy Catalog，不会进入持续模拟账户执行路径。
 - 模拟账户再平衡计划构建器现在也强制校验价格完整性：当前持仓和目标标的缺价、非正价或 NaN/inf 会抛出 `PriceUnavailableError`，不会静默跳过某条卖出/买入腿后生成部分计划。
 - 模拟账户 API 的领域错误现在返回结构化 `detail.code` / `detail.message`，覆盖账户冻结、缺价、策略数据不可用、未知/不支持的账户再平衡策略等前端常见失败态。
-- 股票数据 provider override 收紧：`build_ohlcv_provider` 只接受显式 `sample` / `futu` / `tiingo`；`/api/ohlcv`、`/api/market-data/history`、`/api/benchmark` 对未知显式 provider 返回 `400 provider_unavailable`，不再把 `provider=polygon` 这类请求静默当作 sample。
+- 股票数据 provider override 收紧：`build_ohlcv_provider` 只接受显式 `sample` / `futu` / `tiingo`；`/api/ohlcv`、`/api/market-data/history`、`/api/benchmark` 对未知显式 provider 返回 `400 provider_unavailable`，不再把 `provider=polygon` 这类请求静默当作 sample。`/api/market-data/history` 的日内频率现在只允许 Futu；OpenD 不可用时不会 fallback 到 sample 伪装日内数据。
 - 实验管理不再强制 sample：`POST /api/experiments/run` 支持 `sample` / `futu` / `tiingo`，真实 provider 不可用时返回 `400 provider_unavailable`；前端运行表单默认 `futu`，结果区展示 `agent_summary.data.source`，“Send to Backtest” 会保留同一 provider。旧实验缺少 source 时按 `sample` 处理。运行表单还新增显式 Walk-forward folds 开关，开启后透传 `train_bars` / `validation_bars` / `step_bars` 并生成 `walk_forward_folds.parquet`。结果详情卡片现在还会只读展示 `experiment_config.factor_blend`，包括因子、权重、方向和再平衡间隔。
 - 因子实验室范围卡新增 “Send to Backtest / 发送至回测” 链接，会把当前 `provider`、`universe_id`、`benchmark_symbol` 和已登记 `factor_ids` 预填到 `/backtest`；链接只填表，不自动运行回测，也不携带 Factor Lab 未暴露的时间窗和 lookback。
 - Strategy Catalog 的参数 payload 构建逻辑从 `StrategyCatalogWorkbench` 抽到 `src/frontend/lib/strategyPayload.ts`，并新增 Vitest 覆盖 symbol list、number、integer_or_null 和 factor weight map 的转换，降低后端 schema 驱动表单的静默漂移风险。
