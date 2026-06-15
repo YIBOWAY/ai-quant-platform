@@ -266,7 +266,7 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 后再重新开户；`tests/test_paper_account.py` 覆盖前一版账户备份和损坏文件保留。
 
 2026-06-15 状态补充：评估报告中“API 路由缺少 `response_model`、前后端契约
-漂移”的高风险项已开始按低风险切片治理，但尚未全量完成。已治理接口
+漂移”的高风险项已按低风险切片治理到当前全量防回归状态。已治理接口
 已挂上 FastAPI `response_model`：`GET /api/health`、`GET /api/symbols`、
 `GET /api/ohlcv`、`GET /api/benchmark`、`GET /api/strategies`、
 `GET /api/backtests`、`GET /api/backtests/{run_id}`、`GET /api/experiments`、`GET /api/experiments/{experiment_id}`、`GET /api/universes`、`GET /api/factors`、`GET /api/factors/lab`、`GET /api/factors/runs`、`GET /api/factors/{run_id}`、
@@ -301,11 +301,12 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 与 `AgentLLMConfigResponse` 中已由真实响应返回但 schema 缺失的字段，并为策略/股票池/因子 catalog、因子 run
 lab 看板、列表/详情、回测列表/详情、实验列表/详情、replay paper-run 列表/详情/提交响应、persistent paper account/ledger/mutation 响应、研报复现详情、脱敏 settings、最近运行活动流、期权雷达日常扫描状态/快照/单标的快照/刷新/手动扫描、期权筛选器、Futu options 到期日/链/快照/波动率曲面/微笑响应、options local tools 基础计算/模拟/模板构建/本地研究评分/监控响应、research run 提交响应、Agent task/review 响应、Agent candidate 列表/详情、Agent LLM 配置探针、prediction-market markets/backtest/timeseries/collector POST 结果增加薄 wrapper response schema；`GET /api/prediction-market/timeseries-backtest/{run_id}/artifacts/{artifact_name}` 显式声明为 `FileResponse`，不再暴露匿名 JSON schema。
 本轮 OpenAPI 统计为 40 个 POST `$ref` 响应、0 个裸 POST JSON 响应。
-`tests/test_api_response_models.py` 会检查 OpenAPI schema 引用和
+`tests/test_api_response_models.py` 现在还会全局检查所有 `200 application/json`
+响应都必须引用 `components/schemas/*`，并继续检查 OpenAPI schema 引用和
 关键字段，现有 `tests/test_api_health.py`、`tests/test_api_data.py`、
 `tests/test_api_backtest.py`、`tests/test_api_strategy_universe_catalog.py` 与
 `tests/test_api_factors.py`、`tests/test_api_runs_recent.py`、
 `tests/test_api_market_data_futu.py`、`tests/test_api_options_radar.py`、
 `tests/test_api_agent_llm_config.py`、`tests/test_api_options_local_tools.py`、
-`tests/test_api_prediction_market.py` 继续覆盖 runtime 响应与 safety footer。下一步仍应
-按路由域逐批补齐，而不是一次性生成/替换全部前端类型。
+`tests/test_api_prediction_market.py` 继续覆盖 runtime 响应与 safety footer。下一步若要
+生成/替换前端类型，仍应按路由域逐批推进，而不是一次性替换全部前端类型。

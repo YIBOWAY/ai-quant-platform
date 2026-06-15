@@ -3,6 +3,24 @@ from fastapi.testclient import TestClient
 from quant_system.api.server import create_app
 
 
+def test_all_json_200_responses_publish_component_refs(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    non_ref_responses: list[tuple[str, str, dict]] = []
+    for path, methods in openapi["paths"].items():
+        for method, operation in methods.items():
+            response = operation.get("responses", {}).get("200")
+            if response is None:
+                continue
+            schema = response.get("content", {}).get("application/json", {}).get("schema")
+            if schema is not None and "$ref" not in schema:
+                non_ref_responses.append((method.upper(), path, schema))
+
+    assert non_ref_responses == []
+
+
 def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 
