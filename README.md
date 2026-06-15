@@ -9,9 +9,9 @@ The project is currently delivered through Phase 14. It includes:
 
 - US equity and ETF historical data workflows.
 - Factor research, Factor Lab diagnostics (real-data-first since 2026-06-11,
-  with in-UI provider/universe/symbol/benchmark controls and saveable factor
-  research runs), strategy/universe registries, backtests, experiments, and
-  paper-trading simulation.
+  with in-UI provider/universe/symbol/benchmark controls, saveable factor
+  research runs, and a Backtester prefill handoff), strategy/universe
+  registries, backtests, experiments, and paper-trading simulation.
 - Local FastAPI backend and Next.js frontend.
 - AI research assistant with candidate pool and human review gates.
 - Read-only Polymarket research, snapshots, replay, and reports.
@@ -106,7 +106,7 @@ curl http://127.0.0.1:8765/api/health
 | Page | Purpose |
 |---|---|
 | `/data-explorer` | US equity historical data viewer. |
-| `/factor-lab` | Factor health and timing diagnostics (cross-section / timing tabs); provider, universe, timing symbol, and benchmark adjustable in the sidebar (default `futu`), plus saveable factor research runs. |
+| `/factor-lab` | Factor health and timing diagnostics (cross-section / timing tabs); provider, universe, timing symbol, and benchmark adjustable in the sidebar (default `futu`), plus saveable factor research runs and a Backtester prefill link. |
 | `/backtest` | Run strategy, universe, factor-weight, and benchmark backtests. |
 | `/replications` | Strategy Catalog for registered research strategies. |
 | `/replications/[runId]` | Persisted reversal/momentum replication run detail. |
@@ -248,8 +248,10 @@ the "History Replay (research)" tab of the same page (since 2026-06-11). See
 
 Since 2026-06-11 the Factor Lab UI defaults to real data (`provider=futu`),
 with sidebar controls for provider / universe / timing symbol / benchmark, and
-supports saveable factor research runs. The CLI below refreshes the local
-diagnostics cache from the backend or a scheduled task:
+supports saveable factor research runs. Since 2026-06-15 its query card also
+links to Backtester with provider / universe / benchmark / factor IDs prefilled;
+the link does not run a backtest. The CLI below refreshes the local diagnostics
+cache from the backend or a scheduled task:
 
 ```powershell
 conda activate ai-quant

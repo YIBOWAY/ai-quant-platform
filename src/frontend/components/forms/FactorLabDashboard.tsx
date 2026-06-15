@@ -14,6 +14,7 @@ import type {
   PreviewRecord,
   UniverseDefinition,
 } from "@/lib/api";
+import { buildFactorLabBacktestHref } from "@/lib/factorLabHandoff";
 import { localizePath, type Locale } from "@/lib/locale";
 
 type FactorLabDashboardProps = {
@@ -32,6 +33,9 @@ const copy = {
       `Read-only health diagnostics for every registered factor, plus a single-symbol timing sanity check on ${symbol}.`,
     workflow: "How to use: 1) adjust the query below · 2) read the health tables · 3) run a saved factor research for charts.",
     scope: "Query",
+    sendToBacktest: "Send to Backtest",
+    sendToBacktestDesc:
+      "Prefills provider, universe, benchmark, and the registered factors. It does not run anything.",
     universe: "Universe",
     benchmark: "Benchmark",
     cache: "Cache",
@@ -90,6 +94,8 @@ const copy = {
       `所有已登记因子的只读体检看板，外加在 ${symbol} 上的单标的择时抽检。`,
     workflow: "用法：1) 在下方调整查询 · 2) 阅读体检表 · 3) 运行一次因子研究查看图表。",
     scope: "查询",
+    sendToBacktest: "发送至回测",
+    sendToBacktestDesc: "预填数据源、股票池、基准和已登记因子；不会自动运行回测。",
     universe: "股票池",
     benchmark: "基准",
     cache: "缓存",
@@ -156,6 +162,13 @@ export function FactorLabDashboard({
 }: FactorLabDashboardProps) {
   const text = copy[locale];
   const timingSymbol = dashboard.timing.symbol || "QQQ";
+  const backtestHref = buildFactorLabBacktestHref({
+    benchmarkSymbol: controlsInitial.benchmarkSymbol,
+    factorIds: dashboard.factors.map((factor) => factor.factor_id),
+    locale,
+    provider: controlsInitial.provider,
+    universeId: controlsInitial.universeId,
+  });
 
   const walkForwardFolds = String(
     (dashboard.guardrails.walk_forward as Record<string, unknown> | undefined)?.fold_count ?? 0,
@@ -272,6 +285,15 @@ export function FactorLabDashboard({
           </div>
           <div className="p-3">
             <FactorLabControls initial={controlsInitial} locale={locale} universes={universes} />
+          </div>
+          <div className="border-t border-border-subtle px-3 py-3">
+            <Link
+              className="inline-flex w-full items-center justify-center rounded-lg bg-accent-success px-3 py-2 font-body-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
+              href={backtestHref}
+            >
+              {text.sendToBacktest}
+            </Link>
+            <p className="mt-2 font-body-sm text-text-secondary">{text.sendToBacktestDesc}</p>
           </div>
           <div className="divide-y divide-border-subtle/60 border-t border-border-subtle">
             <MetricStat

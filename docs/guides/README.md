@@ -6,7 +6,7 @@
 
 | 指南 | 界面路由 | 一句话 |
 |---|---|---|
-| [因子实验室 Factor Lab](factor-lab.md) | `/factor-lab` | 因子诊断面板（IC、IC 衰减、分位收益、择时）+ 可保存的因子研究运行；数据源/股票池/择时标的/基准可在侧栏调整（2026-06-11 起）。 |
+| [因子实验室 Factor Lab](factor-lab.md) | `/factor-lab` | 因子诊断面板（IC、IC 衰减、分位收益、择时）+ 可保存的因子研究运行；数据源/股票池/择时标的/基准可在侧栏调整，并可把当前上下文发送至回测器预填表单。 |
 | [回测器 Backtester](backtester.md) | `/backtest` | 真正能跑的回测引擎：因子打分→选股→下单→撮合→绩效；六个界面里最名副其实。 |
 | [策略目录 Strategy Catalog](strategy-catalog.md) | `/replications` | 注册表驱动的策略启动器，按 schema 自动生成参数表单。 |
 | [实验管理 Experiments](experiments.md) | `/experiments` | 在 sample/futu/tiingo 数据源上做参数网格扫描，可显式开启滚动验证折，按 Sharpe 选最佳，并保持发送至回测的数据源一致。 |

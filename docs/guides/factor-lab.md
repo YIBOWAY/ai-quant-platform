@@ -6,7 +6,7 @@
 
 ## 一句话定位
 
-`/factor-lab` 是一个**因子体检面板**：对所选股票池（默认 ETF 池）的 5 个内置技术因子算出横截面有效性指标（IC、衰减、分位收益差、换手、覆盖度），并对所选择时标的（默认 QQQ）做一个 z-score 择时回测（Sharpe / 最大回撤 / 胜率 / 交易数）。2026-06-11 重构后，侧栏提供**数据源 / 股票池 / 择时标的 / 基准**四个查询控件（默认 `futu` 真实数据），以及一个**「运行新研究」表单**（FactorRunForm）用来生成可持久保存、可在详情页复看的因子研究运行。
+`/factor-lab` 是一个**因子体检面板**：对所选股票池（默认 ETF 池）的 5 个内置技术因子算出横截面有效性指标（IC、衰减、分位收益差、换手、覆盖度），并对所选择时标的（默认 QQQ）做一个 z-score 择时回测（Sharpe / 最大回撤 / 胜率 / 交易数）。2026-06-11 重构后，侧栏提供**数据源 / 股票池 / 择时标的 / 基准**四个查询控件（默认 `futu` 真实数据），以及一个**「运行新研究」表单**（FactorRunForm）用来生成可持久保存、可在详情页复看的因子研究运行。2026-06-15 起，范围卡还提供**「发送至回测」**链接，把当前数据源、股票池、基准和已登记因子预填到 Backtester；链接只填表，不自动运行回测。
 
 ## 它解决什么问题 / 为什么存在
 
@@ -31,11 +31,11 @@
 6. 计算两条「护栏」展示信息：walk-forward 切分折数（`fold_count`）、leakage 泄漏检查状态（`leakage_audit.status`）。
 7. 把整个结果**缓存到** `factor_lab/factor_lab_cache.json`。下次同参数请求直接读缓存（`cache.status` 显示 `cached`），否则重算（`recomputed`）。
 
-前端（`app/factor-lab/page.tsx`）从 **URL 查询参数**读取 `provider / universe_id / symbol / benchmark_symbol`（缺省回退 `futu / etf / QQQ / QQQ`），传给 `getFactorLabDashboard()`。侧栏的 `FactorLabControls` 改这四项后点「应用」，会以新参数重新跳转本页、触发服务端重取。**`start / end / lookback` 仍不暴露**，沿用后端默认值。
+前端（`app/factor-lab/page.tsx`）从 **URL 查询参数**读取 `provider / universe_id / symbol / benchmark_symbol`（缺省回退 `futu / etf / QQQ / QQQ`），传给 `getFactorLabDashboard()`。侧栏的 `FactorLabControls` 改这四项后点「应用」，会以新参数重新跳转本页、触发服务端重取。范围卡里的「发送至回测」使用当前 dashboard 因子清单生成 `/backtest?provider=...&universe_id=...&benchmark_symbol=...&factor_ids=...`，让 Backtester 预填同一研究上下文。**`start / end / lookback` 仍不暴露**，沿用后端默认值。
 
 页面布局（`FactorLabDashboard.tsx`，左侧栏 320px + 右侧主区）：
 
-- 左侧栏从上到下：**范围卡**（FactorLabControls 四个控件 + 当前股票池/基准只读行 + 数据源徽标）、**「运行新研究」卡**（FactorRunForm，见下）、**最近保存结果卡**（最多 5 条 run，带「打开结果」链接；有被隐藏的 sample 运行时给出 `?include_sample=1` 链接）、**护栏卡**（仅探索 / 滚动验证折数 / 泄漏检查状态）、**因子清单卡**（默认折叠，列出 5 个因子的方向与说明）、**缓存卡**（状态 + 生成时间）。
+- 左侧栏从上到下：**范围卡**（FactorLabControls 四个控件 + 「发送至回测」链接 + 当前股票池/基准只读行 + 数据源徽标）、**「运行新研究」卡**（FactorRunForm，见下）、**最近保存结果卡**（最多 5 条 run，带「打开结果」链接；有被隐藏的 sample 运行时给出 `?include_sample=1` 链接）、**护栏卡**（仅探索 / 滚动验证折数 / 泄漏检查状态）、**因子清单卡**（默认折叠，列出 5 个因子的方向与说明）、**缓存卡**（状态 + 生成时间）。
 - 右侧主区：sample 数据警告条（仅 source 为 sample 时显示）+ 共享 `Tabs` 组件（`role="tab"`）的两个视图——「横截面体检」和「单标的择时」，各是一张带**列头悬停释义**的只读表格。
 
 **「运行新研究」链路**（2026-06-11 起在页面上可用）：`FactorRunForm` → `POST /api/factors/run` → `run_factor_research()`，会落盘 parquet + 报告、生成 run id，结果出现在「最近保存结果」列表，并可在 `/factor-lab/[runId]` 详情页复看。
@@ -45,12 +45,13 @@
 1. 启动后端（默认 `127.0.0.1:8765`）和前端 dev（默认 `:3001`）。
 2. 打开 `http://localhost:3001/factor-lab`。默认按 `futu / etf / QQQ / QQQ` 查询（futu 需 OpenD 在线）。
 3. 要换查询范围：在侧栏「范围」卡里改**数据源 / 股票池 / 择时标的 / 基准**，点「应用」。参数会写进 URL（可收藏 / 分享），页面整体重取。
-4. 左侧「缓存」卡显示本次结果是 `recomputed`（重算）还是 `cached`（命中 `factor_lab_cache.json`）。
-5. 看右侧 Tab：
+4. 要把当前因子体检上下文带到回测器：点范围卡里的**「发送至回测」**。它会打开 `/backtest` 并预填 `provider / universe_id / benchmark_symbol / factor_ids`；不会自动提交或运行回测。
+5. 左侧「缓存」卡显示本次结果是 `recomputed`（重算）还是 `cached`（命中 `factor_lab_cache.json`）。
+6. 看右侧 Tab：
    - 默认是**「横截面体检」**：每行一个因子，列为 `factor_id / factor_name / direction / ic_mean / ic_decay / quantile_spread / turnover / coverage / sample_count`，列头悬停有定义。
    - 点**「单标的择时」**：每行一个因子，列为 `factor_id / factor_name / sharpe / max_drawdown / win_rate / trade_count / coverage`，只用择时标的一只；无数据的行显示 `--` 而不是误导性的 0。
-6. 要生成**可保存**的因子研究运行：在侧栏「运行新研究」卡填表（FactorRunForm）提交，成功后「最近保存结果」出现新 run，点「打开结果」进 `/factor-lab/[runId]` 详情页。
-7. 仍想调 `start / end / lookback / force_refresh`：UI 不暴露，需直接向 `/api/factors/lab` 传参。
+7. 要生成**可保存**的因子研究运行：在侧栏「运行新研究」卡填表（FactorRunForm）提交，成功后「最近保存结果」出现新 run，点「打开结果」进 `/factor-lab/[runId]` 详情页。
+8. 仍想调 `start / end / lookback / force_refresh`：UI 不暴露，需直接向 `/api/factors/lab` 传参。
 
 ## 字段与指标含义（逐项解释 UI 上出现的术语 / 指标）
 
@@ -91,20 +92,22 @@
 
 1. **时间窗与 lookback 仍然写死。** 控件只暴露数据源 / 股票池 / 择时标的 / 基准；`start / end / lookback / force_refresh` 仍是后端默认（2024 全年、20），想改只能直接打 `/api/factors/lab`。
 
-2. **存在两套互不相同的「signal」定义。**
+2. **发送至回测只带研究上下文，不带时间窗。** 当前链接会传 `provider / universe_id / benchmark_symbol / factor_ids`；不会传 Factor Lab 的择时标的 `symbol`，也不会传 `start / end / lookback`，因为这些不是当前 Factor Lab UI 的显式查询控件。Backtester 会继续使用自己的日期与订单默认值。
+
+3. **存在两套互不相同的「signal」定义。**
    - 面板择时表里的 signal = 单标的的**滚动 z-score 择时**（时间序列上偏离自身均值就开仓）。
    - 「运行新研究」（`run_factor_research`）链路里的 signal = `build_factor_signal_frame` 算的**横截面 z-score 均值**（同一天对一篮子标的标准化后取多因子平均分）。
    两者完全不是一回事，但都叫「signal / 信号」。同时看面板和详情页时注意区分。
 
-3. **`ic_mean` 这个列名仍有误导性（已用悬停提示缓解）。** 它实际上是 `rank_ic`（Spearman 秩相关）的均值，而 evaluation 里其实同时算了 Pearson `ic` 和 `rank_ic` 两列。2026-06-11 起列头悬停提示已写明真实口径，但列名本身未改，严格说应叫 `rank_ic_mean`。
+4. **`ic_mean` 这个列名仍有误导性（已用悬停提示缓解）。** 它实际上是 `rank_ic`（Spearman 秩相关）的均值，而 evaluation 里其实同时算了 Pearson `ic` 和 `rank_ic` 两列。2026-06-11 起列头悬停提示已写明真实口径，但列名本身未改，严格说应叫 `rank_ic_mean`。
 
-4. **护栏（walk-forward / leakage）只展示、不拦截。** 「滚动验证折数」和「泄漏检查状态」是算出来摆在那里给你看的，**不会**阻止任何因子被「使用」，也不参与 IC / 择时计算。它们是提醒，不是闸门。
+5. **护栏（walk-forward / leakage）只展示、不拦截。** 「滚动验证折数」和「泄漏检查状态」是算出来摆在那里给你看的，**不会**阻止任何因子被「使用」，也不参与 IC / 择时计算。它们是提醒，不是闸门。
 
-5. **基准与股票池官方基准可能不一致。** 默认 benchmark=QQQ 来自 URL 参数 / 控件，而 `etf` 股票池定义里的 `benchmark_symbol` 是 SPY。这是参数覆盖的结果，不是 bug；现在控件里能自己改，混淆程度已大幅降低。
+6. **基准与股票池官方基准可能不一致。** 默认 benchmark=QQQ 来自 URL 参数 / 控件，而 `etf` 股票池定义里的 `benchmark_symbol` 是 SPY。这是参数覆盖的结果，不是 bug；现在控件里能自己改，混淆程度已大幅降低。
 
-6. **MACD 不是经典 (12,26,9)。** `MACDFactor` 用 `(fast=L, slow=2L, signal=L)` 的简化参数化（代码注释已写明），在 `lookback=20` 时是 (20,40,20)，无法精确复现经典 MACD。
+7. **MACD 不是经典 (12,26,9)。** `MACDFactor` 用 `(fast=L, slow=2L, signal=L)` 的简化参数化（代码注释已写明），在 `lookback=20` 时是 (20,40,20)，无法精确复现经典 MACD。
 
-7. **指标只在所取数据窗内成立（默认 2024 全年）。** 数据源默认已是 futu 真实数据，但时间窗仍固定，结论**不能**外推到其他时间段。覆盖度普遍 < 1 也是正常的（滚动窗口预热）。选 sample 数据源时页面会显示合成数据警告条。
+8. **指标只在所取数据窗内成立（默认 2024 全年）。** 数据源默认已是 futu 真实数据，但时间窗仍固定，结论**不能**外推到其他时间段。覆盖度普遍 < 1 也是正常的（滚动窗口预热）。选 sample 数据源时页面会显示合成数据警告条。
 
 ## 合理性评估与改进建议
 
@@ -123,6 +126,7 @@
 
 - 前端页面（读 URL 参数并装配）：`src/frontend/app/factor-lab/page.tsx`
 - 前端看板组件：`src/frontend/components/forms/FactorLabDashboard.tsx`
+- 前端回测跳转参数构造：`src/frontend/lib/factorLabHandoff.ts`
 - 前端查询控件（数据源/股票池/择时标的/基准）：`src/frontend/components/forms/FactorLabControls.tsx`
 - 前端运行表单（挂载于看板侧栏「运行新研究」卡）：`src/frontend/components/forms/FactorRunForm.tsx`
 - 前端详情页：`src/frontend/app/factor-lab/[runId]/page.tsx`

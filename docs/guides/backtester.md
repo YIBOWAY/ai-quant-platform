@@ -37,6 +37,8 @@
 
 界面左侧是 `BacktestForm`（`src/frontend/components/forms/BacktestForm.tsx`），表单默认值（`DEFAULTS`）如下：
 
+表单也会读取 URL 查询参数来预填常用字段。Factor Lab 的「发送至回测」会带入 `provider / universe_id / benchmark_symbol / factor_ids`；Experiments 的「Send to Backtest」会带入最佳参数与相同数据源。这些入口只预填表单，仍需在 Backtester 手动点击运行。
+
 1. **策略 Strategy**：下拉，默认 `cross_sectional_top_n`（Cross-Sectional Top-N）。下拉只列出后端 `result_type === "backtest"` 的可运行策略；目前另有 `mean_reversion_top_n`。
 2. **股票池 Universe**：默认 `etf`。它决定默认比较范围；留空"自定义标的"时就用这个池子的成分股。
 3. **基准 Benchmark**：默认 `SPY`，纯文本输入。基准曲线会在本次回测运行时一起计算并保存，详情页和最新运行面板复用保存产物，不再打开页面时现场重拉。
