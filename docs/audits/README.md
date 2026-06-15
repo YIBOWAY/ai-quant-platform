@@ -101,6 +101,13 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 用 React `cache()` 在同一次服务端渲染内复用 `/api/health` 请求；客户端
 `getHealth()` 仍保留为普通 API helper。
 
+2026-06-15 状态补充：评估报告中“仪表盘活动日志硬编码为空数组”的小项
+已处理。后端已有 `GET /api/runs/recent`，会从 backtest / factor / paper 三类
+run metadata 聚合最近运行；首页 `src/frontend/app/page.tsx` 通过
+`getRecentRuns(6)` 渲染真实 Activity log，并把该接口错误纳入页面错误横幅。
+`tests/test_api_runs_recent.py` 覆盖跨类型倒序聚合，`tests/test_frontend_dashboard_recent_runs.py`
+锁定前端接入点。
+
 2026-06-15 状态补充：评估报告中“E2E 继承真实 PostgreSQL / 真实数据目录”的
 高风险项当前已处理。`src/frontend/playwright.config.ts` 的后端 webServer 明确设置
 `QS_ENVIRONMENT=test`、`QS_DATABASE_ENABLED=false`、`QS_DATABASE_AUTO_MIGRATE=false`
