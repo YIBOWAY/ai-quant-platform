@@ -23,6 +23,18 @@ class FactorRunsResponse(BaseModel):
     runs: list[FactorRunSummary]
 
 
+FactorRunRecord = dict[str, Any]
+
+
+class FactorRunDetailResponse(BaseModel):
+    run_id: str
+    metadata: dict[str, Any]
+    factor_results: list[FactorRunRecord]
+    signals: list[FactorRunRecord]
+    information_coefficients: list[FactorRunRecord]
+    quantile_returns: list[FactorRunRecord]
+
+
 class FactorRunRequest(BaseModel):
     symbols: list[str] = Field(default_factory=lambda: ["SPY", "QQQ"])
     start: str

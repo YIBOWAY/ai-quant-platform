@@ -13,6 +13,7 @@ from quant_system.api.schemas.common import (
 )
 from quant_system.api.schemas.factors import (
     FactorCatalogResponse,
+    FactorRunDetailResponse,
     FactorRunRequest,
     FactorRunsResponse,
 )
@@ -138,7 +139,7 @@ def factor_lab_dashboard(
         ) from exc
 
 
-@router.get("/factors/{run_id}")
+@router.get("/factors/{run_id}", response_model=FactorRunDetailResponse)
 def factor_detail(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     run_dir = resolve_run_dir(api_runs_dir / "factors", run_id)
     metadata_path = run_dir / "metadata.json"
