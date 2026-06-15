@@ -39,9 +39,22 @@ class AgentTaskRequest(BaseModel):
     factor_id: str | None = None
 
 
+class AgentTaskResponse(BaseModel):
+    candidate_id: str
+    status: str
+    path: str
+    metadata: dict[str, Any]
+
+
 class AgentReviewRequest(BaseModel):
     decision: Literal["approve", "reject"]
     note: str
+
+
+class AgentReviewResponse(BaseModel):
+    candidate_id: str
+    decision: Literal["approve", "reject"]
+    registration: Literal["manual_required"]
 
 
 class AgentLLMConfigResponse(BaseModel):

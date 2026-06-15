@@ -12,7 +12,9 @@ from quant_system.api.schemas.agent import (
     AgentCandidatesResponse,
     AgentLLMConfigResponse,
     AgentReviewRequest,
+    AgentReviewResponse,
     AgentTaskRequest,
+    AgentTaskResponse,
 )
 from quant_system.api.schemas.common import resolve_run_dir
 
@@ -63,7 +65,7 @@ def candidate_detail(candidate_id: str, output_dir: OutputDirDep) -> dict:
     }
 
 
-@router.post("/agent/tasks")
+@router.post("/agent/tasks", response_model=AgentTaskResponse)
 def run_agent_task(
     request: AgentTaskRequest,
     output_dir: OutputDirDep,
@@ -98,7 +100,10 @@ def run_agent_task(
     }
 
 
-@router.post("/agent/candidates/{candidate_id}/review")
+@router.post(
+    "/agent/candidates/{candidate_id}/review",
+    response_model=AgentReviewResponse,
+)
 def review_candidate(
     candidate_id: str,
     request: AgentReviewRequest,
