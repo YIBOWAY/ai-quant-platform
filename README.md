@@ -101,6 +101,16 @@ Health check:
 curl http://127.0.0.1:8765/api/health
 ```
 
+Offline local health summary:
+
+```powershell
+quant-system doctor
+```
+
+`doctor` does not contact providers or PostgreSQL. It prints the effective
+environment, safety flags, default data provider, Futu/OpenD endpoint, optional
+database-index settings, and the runtime log path.
+
 ## Main Pages
 
 | Page | Purpose |
@@ -372,6 +382,7 @@ Backend-only checks:
 
 ```powershell
 conda activate ai-quant
+quant-system doctor
 python -m pytest -q
 ruff check src/quant_system tests
 ```

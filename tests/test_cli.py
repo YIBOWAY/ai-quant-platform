@@ -33,12 +33,16 @@ def test_config_show_masks_live_trading_confirmation() -> None:
     assert '"manual_live_trading_confirmation": "<unset>"' in result.output
 
 
-def test_doctor_reports_phase_0_status() -> None:
+def test_doctor_reports_platform_health_summary() -> None:
     result = runner.invoke(app, ["doctor"])
 
     assert result.exit_code == 0
-    assert "Phase 0 foundation is available" in result.output
-    assert "live trading disabled" in result.output
+    assert "Quant System local health" in result.output
+    assert "safety.live_trading_enabled=false" in result.output
+    assert "data.default_provider=" in result.output
+    assert "database.enabled=" in result.output
+    assert "runtime.log=" in result.output
+    assert "Phase 0 foundation is available" not in result.output
 
 
 def test_doctor_writes_runtime_log_file(tmp_path, monkeypatch) -> None:

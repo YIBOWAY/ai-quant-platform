@@ -192,19 +192,39 @@ def _runtime_log_dir(settings) -> Path:
 
 @app.command()
 def doctor() -> None:
-    """Run a lightweight Phase 0 health check."""
+    """Print an offline local platform health summary."""
     settings = load_settings()
     logger = configure_logging(settings.log_level, log_dir=_runtime_log_dir(settings))
     logger.info("doctor health check started")
 
-    live_state = (
-        "live trading enabled"
-        if settings.safety.live_trading_enabled
-        else "live trading disabled"
+    log_path = _runtime_log_dir(settings) / "backend.jsonl"
+    database_url_state = "configured" if settings.database.url else "unset"
+    tiingo_state = "configured" if settings.api_keys.tiingo_api_token else "unset"
+
+    typer.echo("Quant System local health")
+    typer.echo(f"environment={settings.environment}")
+    typer.echo(f"safety.dry_run={str(settings.safety.dry_run).lower()}")
+    typer.echo(f"safety.paper_trading={str(settings.safety.paper_trading).lower()}")
+    typer.echo(
+        "safety.live_trading_enabled="
+        f"{str(settings.safety.live_trading_enabled).lower()}"
     )
-    typer.echo("Phase 0 foundation is available")
-    typer.echo(f"Safety mode: dry_run={settings.safety.dry_run}, {live_state}")
-    typer.echo(f"Environment: {settings.environment}")
+    typer.echo(f"safety.kill_switch={str(settings.safety.kill_switch).lower()}")
+    typer.echo(f"data.default_provider={settings.data.default_data_provider}")
+    typer.echo(f"data.data_dir={settings.data.data_dir}")
+    typer.echo(
+        f"futu.enabled={str(settings.futu.enabled).lower()} "
+        f"host={settings.futu.host} port={settings.futu.port} "
+        f"market={settings.futu.market}"
+    )
+    typer.echo(f"tiingo.token={tiingo_state}")
+    typer.echo(
+        f"database.enabled={str(settings.database.enabled).lower()} "
+        f"url={database_url_state} "
+        f"connect_timeout_seconds={settings.database.connect_timeout_seconds} "
+        f"auto_migrate={str(settings.database.auto_migrate).lower()}"
+    )
+    typer.echo(f"runtime.log={log_path}")
 
 
 @app.command("serve")

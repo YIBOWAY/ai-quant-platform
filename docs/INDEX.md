@@ -174,9 +174,14 @@ npm run dev -- --hostname 127.0.0.1 --port 3001
 
 ```powershell
 conda activate ai-quant
+quant-system doctor
 .\scripts\verify.ps1
 # 可选：dev server 停止时再运行 .\scripts\verify.ps1 -Build
 ```
+
+`quant-system doctor` 是离线本地健康摘要：不连接行情源或数据库，只读取 settings
+并输出安全开关、默认数据源、Futu/OpenD 端点、数据库索引配置和
+`data/_runtime/logs/backend.jsonl` 路径。
 
 期权雷达 sample 规模的真实运行：
 

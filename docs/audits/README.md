@@ -15,3 +15,8 @@
 小项已加固。股票数据 provider override 现在只接受 `sample` / `futu` /
 `tiingo`；未知显式 provider 会返回 `400 provider_unavailable`，不会当作 sample
 继续返回 200。未传 provider 的只读行情默认路径仍可使用带标注的 sample fallback。
+
+2026-06-15 状态补充：评估报告中“CLI doctor 仍停留在 Phase 0 foundation
+口径”的小项已更新。`quant-system doctor` 现在输出离线本地平台健康摘要，覆盖
+环境、安全开关、默认数据源、Futu/OpenD 端点、可选数据库索引设置和
+`data/_runtime/logs/backend.jsonl` 路径；该命令不连接行情源或 PostgreSQL。

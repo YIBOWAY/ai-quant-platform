@@ -73,6 +73,15 @@ http://127.0.0.1:3001
 curl http://127.0.0.1:8765/api/health
 ```
 
+离线本地健康摘要：
+
+```powershell
+quant-system doctor
+```
+
+`doctor` 不会连接行情源或 PostgreSQL；它只打印当前环境、安全开关、默认数据源、
+Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
+
 ## 主要页面
 
 | 页面 | 用途 |
@@ -289,6 +298,7 @@ conda activate ai-quant
 
 ```powershell
 conda activate ai-quant
+quant-system doctor
 python -m pytest -q
 ruff check src/quant_system tests
 ```
