@@ -166,3 +166,19 @@ def test_options_radar_post_routes_publish_response_models(tmp_path) -> None:
     assert "output_path" in components["OptionsRefreshResponse"]["properties"]
     assert "candidate_count" in components["OptionsDailyScanRunResponse"]["properties"]
     assert "data_path" in components["OptionsDailyScanRunResponse"]["properties"]
+
+
+def test_options_screener_post_route_publishes_response_model(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    response_schema = openapi["paths"]["/api/options/screener"]["post"]["responses"][
+        "200"
+    ]["content"]["application/json"]["schema"]
+    assert response_schema == {"$ref": "#/components/schemas/OptionsScreenerResult"}
+
+    components = openapi["components"]["schemas"]
+    assert "candidates" in components["OptionsScreenerResult"]["properties"]
+    assert "assumptions" in components["OptionsScreenerResult"]["properties"]
+    assert "rating" in components["OptionsScreenerCandidate"]["properties"]

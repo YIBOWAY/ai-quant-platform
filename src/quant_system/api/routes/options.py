@@ -49,6 +49,7 @@ from quant_system.options.local_tools import (
 from quant_system.options.market_regime import load_market_regime
 from quant_system.options.models import (
     OptionsScreenerConfig,
+    OptionsScreenerResult,
 )
 from quant_system.options.screener import run_options_screener
 
@@ -433,7 +434,7 @@ def options_health_check(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/screener")
+@router.post("/options/screener", response_model=OptionsScreenerResult)
 def options_screener(
     request: OptionsScreenerConfig,
     settings: SettingsDep,
