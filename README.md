@@ -299,7 +299,9 @@ through `GET /api/options/daily-scan/status` and shows the latest scheduled-task
 state. Startup catch-up is opt-in: set
 `QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` only when OpenD/cache readiness
 is expected and you want API startup to run a background daily-scan catch-up if
-today's snapshot is missing.
+the latest weekday snapshot is missing. Weekend startups target the prior
+Friday; full exchange-holiday handling is still left to the scheduled
+`daily-task` workflow.
 
 Local options toolbox:
 

@@ -144,6 +144,29 @@ def test_api_startup_schedules_options_radar_catchup_when_enabled(
     assert scheduled == [(settings, run_date)]
 
 
+def test_options_radar_startup_catchup_run_date_uses_last_weekday() -> None:
+    from quant_system.api import server as api_server
+
+    assert (
+        api_server._options_radar_startup_catchup_run_date(
+            datetime(2026, 6, 15, 12, tzinfo=UTC)
+        )
+        == "2026-06-15"
+    )
+    assert (
+        api_server._options_radar_startup_catchup_run_date(
+            datetime(2026, 6, 14, 12, tzinfo=UTC)
+        )
+        == "2026-06-12"
+    )
+    assert (
+        api_server._options_radar_startup_catchup_run_date(
+            datetime(2026, 6, 13, 12, tzinfo=UTC)
+        )
+        == "2026-06-12"
+    )
+
+
 def test_api_startup_skips_options_radar_catchup_when_snapshot_is_current(
     tmp_path: Path,
     monkeypatch,

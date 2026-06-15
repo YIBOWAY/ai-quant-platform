@@ -6,7 +6,7 @@ import os
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -77,8 +77,11 @@ def _start_run_index_init(active_settings: Settings, api_runs_dir: Path) -> None
     thread.start()
 
 
-def _options_radar_startup_catchup_run_date() -> str:
-    return datetime.now(UTC).date().isoformat()
+def _options_radar_startup_catchup_run_date(now: datetime | None = None) -> str:
+    active_date = (now or datetime.now(UTC)).date()
+    while active_date.weekday() >= 5:
+        active_date -= timedelta(days=1)
+    return active_date.isoformat()
 
 
 def _start_options_radar_startup_catchup(active_settings: Settings) -> None:
