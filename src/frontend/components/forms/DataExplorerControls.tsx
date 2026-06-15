@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { localizePath } from "@/lib/locale";
 
@@ -72,8 +72,8 @@ export function DataExplorerControls({
     defaultValues: initial,
   });
   const errors = form.formState.errors;
-  const freq = form.watch("freq");
-  const provider = form.watch("provider");
+  const freq = useWatch({ control: form.control, name: "freq" });
+  const provider = useWatch({ control: form.control, name: "provider" });
   // sample/tiingo only deliver daily bars; intraday over them would be
   // silently mislabeled, so constrain the combination in the UI.
   const intradayBlocked = freq !== "1d" && provider !== "futu";
