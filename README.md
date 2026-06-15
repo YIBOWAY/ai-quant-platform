@@ -123,6 +123,12 @@ curl http://127.0.0.1:8765/api/health
 | `/agent-studio` | AI research assistant candidate workflows. |
 | `/settings` | Masked local settings. |
 
+Equity data endpoints only accept explicit `provider=sample|futu|tiingo`.
+Unknown overrides, or explicitly requested real providers that are unavailable,
+return `400 provider_unavailable` instead of silently substituting sample data.
+When no provider override is supplied, read-only market-data views may still
+fall back to a clearly labelled sample response for offline use.
+
 The UI is bilingual (English / 中文). Use the top-bar language toggle or open
 locale-prefixed paths such as `/en/options-radar` and `/zh/options-radar`.
 The choice is also stored in the `qs_lang` cookie for unprefixed paths. See

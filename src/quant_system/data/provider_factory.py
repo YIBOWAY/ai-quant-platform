@@ -98,6 +98,8 @@ def build_ohlcv_provider(
     """Pick a working OHLCV provider without exposing credentials."""
 
     name = (requested or settings.data.default_data_provider).lower().strip()
+    if requested is not None and name not in {"sample", "futu", "tiingo"}:
+        raise DataProviderUnavailableError(name, "unsupported provider")
     token = settings.api_keys.tiingo_api_token
     token_value = token.get_secret_value().strip() if token else ""
 

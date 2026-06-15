@@ -100,6 +100,13 @@ Walk-forward folds. Experiment detail cards also render
 this makes the fixed factor blend visible but does not add UI-side strategy
 editing.
 
+Equity data provider overrides are intentionally strict. `build_ohlcv_provider`
+only accepts explicit `sample`, `futu`, or `tiingo` requests. Unknown explicit
+providers, and unavailable explicit real providers, must return
+`400 provider_unavailable`; they must not silently fall back to `sample`. Default
+provider fallback may still use a clearly labelled sample response for read-only
+market-data viewing when no provider override was supplied.
+
 ## Optional PostgreSQL Run Index
 
 Backtest/factor/paper runs are file-based under `data/api_runs/`. An optional

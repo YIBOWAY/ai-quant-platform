@@ -39,6 +39,9 @@ Futu 现已成为股票研究流程的主要美股实时数据提供方。
 
 - 行情数据 (Market Data) 的初始加载遵循 `QS_DEFAULT_DATA_PROVIDER`。
 - 若配置的默认提供方失败，行情数据会返回一个明确标注的 sample 回退结果。
+- 若请求显式传入 `provider=sample|futu|tiingo`，后端会严格按该 provider
+  处理：未知 provider，或显式请求但不可用的真实 provider，会返回
+  `400 provider_unavailable`，不会静默替换为 sample。
 - 因子实验室 (Factor Lab)、回测器 (Backtester) 和模拟交易 (Paper Trading) 的表单中默认使用 `futu`。
 
 ## 配置
@@ -98,4 +101,5 @@ python scripts/verify_futu_connection.py
 - OpenD 必须处于运行状态且已登录。
 - 数据权限决定了可查询的内容。
 - 日内历史数据取决于 Futu 的权限和 API 限制。
-- 回退的 sample 提供方仍可用于离线测试。
+- 回退的 sample 提供方仍可用于离线测试，但只适用于未显式指定 provider
+  的默认读取路径，或用户明确选择 `provider=sample` 的场景。

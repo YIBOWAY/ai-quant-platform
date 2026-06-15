@@ -243,6 +243,25 @@ def test_benchmark_returns_equity_curve(tmp_path) -> None:
     assert payload["metrics"]["total_return"] > 0
 
 
+def test_benchmark_rejects_unknown_explicit_provider(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get(
+        "/api/benchmark",
+        params={
+            "symbol": "SPY",
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "polygon",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["detail"]["code"] == "provider_unavailable"
+    assert payload["detail"]["provider"] == "polygon"
+
+
 def test_backtest_detail_404_for_unknown_run(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 

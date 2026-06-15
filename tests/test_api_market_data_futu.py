@@ -110,6 +110,26 @@ def test_market_data_history_rejects_unavailable_requested_provider(tmp_path) ->
     assert payload["safety"]["live_trading_enabled"] is False
 
 
+def test_market_data_history_rejects_unknown_explicit_provider(tmp_path) -> None:
+    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+
+    response = client.get(
+        "/api/market-data/history",
+        params={
+            "ticker": "AAPL",
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "polygon",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["detail"]["code"] == "provider_unavailable"
+    assert payload["detail"]["provider"] == "polygon"
+    assert payload["safety"]["live_trading_enabled"] is False
+
+
 def test_market_data_history_falls_back_when_default_futu_provider_fails(
     tmp_path,
     monkeypatch,

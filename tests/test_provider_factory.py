@@ -131,6 +131,14 @@ def test_build_provider_respects_explicit_sample_request() -> None:
     assert source == "sample"
 
 
+def test_build_provider_rejects_unknown_explicit_provider() -> None:
+    with pytest.raises(DataProviderUnavailableError) as exc_info:
+        build_ohlcv_provider(_settings(default_provider="sample"), requested="polygon")
+
+    assert exc_info.value.provider == "polygon"
+    assert exc_info.value.reason == "unsupported provider"
+
+
 def test_build_provider_uses_default_sample() -> None:
     provider, source = build_ohlcv_provider(_settings(default_provider="sample"))
 

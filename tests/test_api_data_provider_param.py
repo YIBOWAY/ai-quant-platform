@@ -141,3 +141,22 @@ def test_ohlcv_provider_param_rejects_missing_tiingo_token(tmp_path) -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "provider_unavailable"
+
+
+def test_ohlcv_rejects_unknown_explicit_provider(tmp_path) -> None:
+    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+
+    response = client.get(
+        "/api/ohlcv",
+        params={
+            "symbol": "SPY",
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "polygon",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["detail"]["code"] == "provider_unavailable"
+    assert payload["detail"]["provider"] == "polygon"
