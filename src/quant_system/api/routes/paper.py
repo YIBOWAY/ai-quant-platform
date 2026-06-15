@@ -17,10 +17,14 @@ from quant_system.api.schemas.paper import (
     AccountResetRequest,
     KillSwitchRequest,
     ManualOrderRequest,
+    PaperAccountOrderResponse,
+    PaperAccountOrdersProcessResponse,
+    PaperAccountRebalanceResponse,
     PaperAccountResponse,
     PaperLedgerResponse,
     PaperRunDetailResponse,
     PaperRunRequest,
+    PaperRunResponse,
     PaperRunsResponse,
 )
 from quant_system.data.provider_factory import DataProviderUnavailableError
@@ -48,7 +52,7 @@ def _error_detail(code: str, message: str) -> dict[str, str]:
     return {"code": code, "message": message}
 
 
-@router.post("/paper/run")
+@router.post("/paper/run", response_model=PaperRunResponse)
 def run_paper(
     request: PaperRunRequest,
     api_runs_dir: ApiRunsDirDep,
@@ -259,7 +263,7 @@ def get_account(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     return _account_view(account, settings=settings)
 
 
-@router.post("/paper/account/reset")
+@router.post("/paper/account/reset", response_model=PaperAccountResponse)
 def reset_account(
     request: AccountResetRequest,
     api_runs_dir: ApiRunsDirDep,
@@ -271,7 +275,7 @@ def reset_account(
         return _account_view(account, settings=settings)
 
 
-@router.post("/paper/account/kill-switch")
+@router.post("/paper/account/kill-switch", response_model=PaperAccountResponse)
 def set_account_kill_switch(
     request: KillSwitchRequest,
     api_runs_dir: ApiRunsDirDep,
@@ -305,7 +309,7 @@ def get_account_ledger(
     return {"total": len(entries), "limit": limit, "offset": offset, "entries": window}
 
 
-@router.post("/paper/account/orders")
+@router.post("/paper/account/orders", response_model=PaperAccountOrderResponse)
 def place_account_order(
     request: ManualOrderRequest,
     api_runs_dir: ApiRunsDirDep,
@@ -347,7 +351,10 @@ def place_account_order(
         }
 
 
-@router.post("/paper/account/orders/process")
+@router.post(
+    "/paper/account/orders/process",
+    response_model=PaperAccountOrdersProcessResponse,
+)
 def process_pending_account_orders(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
@@ -376,7 +383,10 @@ def process_pending_account_orders(
         }
 
 
-@router.post("/paper/account/orders/{order_id}/cancel")
+@router.post(
+    "/paper/account/orders/{order_id}/cancel",
+    response_model=PaperAccountOrderResponse,
+)
 def cancel_pending_account_order(
     order_id: str,
     api_runs_dir: ApiRunsDirDep,
@@ -401,7 +411,10 @@ def cancel_pending_account_order(
         }
 
 
-@router.post("/paper/account/rebalance")
+@router.post(
+    "/paper/account/rebalance",
+    response_model=PaperAccountRebalanceResponse,
+)
 def rebalance_account(
     request: AccountRebalanceRequest,
     api_runs_dir: ApiRunsDirDep,

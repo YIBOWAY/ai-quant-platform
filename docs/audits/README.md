@@ -259,6 +259,9 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 `GET /api/ohlcv`、`GET /api/benchmark`、`GET /api/strategies`、
 `GET /api/backtests`、`GET /api/backtests/{run_id}`、`GET /api/experiments`、`GET /api/experiments/{experiment_id}`、`GET /api/universes`、`GET /api/factors`、`GET /api/factors/lab`、`GET /api/factors/runs`、`GET /api/factors/{run_id}`、
 `GET /api/paper`、`GET /api/paper/{run_id}`、`GET /api/paper/account`、`GET /api/paper/account/ledger`、`GET /api/replications/reversal-momentum/{run_id}`、`GET /api/settings`、`GET /api/runs/recent`、`GET /api/market-data/history`、
+`POST /api/paper/run`、`POST /api/paper/account/reset`、`POST /api/paper/account/kill-switch`、
+`POST /api/paper/account/orders`、`POST /api/paper/account/orders/process`、
+`POST /api/paper/account/orders/{order_id}/cancel`、`POST /api/paper/account/rebalance`、
 `GET /api/options/daily-scan/dates`、`GET /api/options/daily-scan/status`、
 `GET /api/options/daily-scan`、`GET /api/options/daily-scan/symbol/{ticker}`、
 `GET /api/options/expirations`、`GET /api/options/chain`、`GET /api/options/snapshot/{ticker}`、
@@ -284,8 +287,8 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 `POST /api/replications/reversal-momentum/run`；同时补齐
 `HealthResponse`、`OHLCVResponse`、`BenchmarkResponse`、`MarketDataHistoryResponse`
 与 `AgentLLMConfigResponse` 中已由真实响应返回但 schema 缺失的字段，并为策略/股票池/因子 catalog、因子 run
-lab 看板、列表/详情、回测列表/详情、实验列表/详情、replay paper-run 列表/详情、persistent paper account/ledger、研报复现详情、脱敏 settings、最近运行活动流、期权雷达日常扫描状态/快照/单标的快照/刷新/手动扫描、期权筛选器、Futu options 到期日/链/快照/波动率曲面/微笑响应、options local tools 基础计算/模拟/模板构建/本地研究评分/监控响应、research run 提交响应、Agent task/review 响应、Agent candidate 列表/详情、Agent LLM 配置探针、prediction-market markets/backtest/timeseries/collector POST 结果增加薄 wrapper response schema；`GET /api/prediction-market/timeseries-backtest/{run_id}/artifacts/{artifact_name}` 显式声明为 `FileResponse`，不再暴露匿名 JSON schema。
-本轮 OpenAPI 统计为 33 个 POST `$ref` 响应、7 个裸 POST JSON 响应。
+lab 看板、列表/详情、回测列表/详情、实验列表/详情、replay paper-run 列表/详情/提交响应、persistent paper account/ledger/mutation 响应、研报复现详情、脱敏 settings、最近运行活动流、期权雷达日常扫描状态/快照/单标的快照/刷新/手动扫描、期权筛选器、Futu options 到期日/链/快照/波动率曲面/微笑响应、options local tools 基础计算/模拟/模板构建/本地研究评分/监控响应、research run 提交响应、Agent task/review 响应、Agent candidate 列表/详情、Agent LLM 配置探针、prediction-market markets/backtest/timeseries/collector POST 结果增加薄 wrapper response schema；`GET /api/prediction-market/timeseries-backtest/{run_id}/artifacts/{artifact_name}` 显式声明为 `FileResponse`，不再暴露匿名 JSON schema。
+本轮 OpenAPI 统计为 40 个 POST `$ref` 响应、0 个裸 POST JSON 响应。
 `tests/test_api_response_models.py` 会检查 OpenAPI schema 引用和
 关键字段，现有 `tests/test_api_health.py`、`tests/test_api_data.py`、
 `tests/test_api_backtest.py`、`tests/test_api_strategy_universe_catalog.py` 与

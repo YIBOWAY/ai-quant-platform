@@ -324,3 +324,30 @@ def test_research_run_post_routes_publish_response_models(tmp_path) -> None:
     assert "artifact_path" in components[
         "ReversalMomentumReplicationRunResponse"
     ]["properties"]
+
+
+def test_paper_post_routes_publish_response_models(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    expected = {
+        "/api/paper/run": "PaperRunResponse",
+        "/api/paper/account/reset": "PaperAccountResponse",
+        "/api/paper/account/kill-switch": "PaperAccountResponse",
+        "/api/paper/account/orders": "PaperAccountOrderResponse",
+        "/api/paper/account/orders/process": "PaperAccountOrdersProcessResponse",
+        "/api/paper/account/orders/{order_id}/cancel": "PaperAccountOrderResponse",
+        "/api/paper/account/rebalance": "PaperAccountRebalanceResponse",
+    }
+    for path, model_name in expected.items():
+        response_schema = openapi["paths"][path]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert response_schema == {"$ref": f"#/components/schemas/{model_name}"}
+
+    components = openapi["components"]["schemas"]
+    assert "execution_status" in components["PaperRunResponse"]["properties"]
+    assert "order" in components["PaperAccountOrderResponse"]["properties"]
+    assert "orders" in components["PaperAccountOrdersProcessResponse"]["properties"]
+    assert "rebalance" in components["PaperAccountRebalanceResponse"]["properties"]

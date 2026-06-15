@@ -41,6 +41,11 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 `GET /api/experiments`、`GET /api/experiments/{experiment_id}`、
 `GET /api/paper`、`GET /api/paper/{run_id}`、`GET /api/paper/account`、
 `GET /api/paper/account/ledger`、`GET /api/replications/reversal-momentum/{run_id}`、
+`POST /api/paper/run`、`POST /api/paper/account/reset`、
+`POST /api/paper/account/kill-switch`、`POST /api/paper/account/orders`、
+`POST /api/paper/account/orders/process`、
+`POST /api/paper/account/orders/{order_id}/cancel`、
+`POST /api/paper/account/rebalance`、
 `GET /api/settings`、`GET /api/strategies`、`GET /api/universes`，
 `GET /api/factors`、`GET /api/factors/lab`、`GET /api/factors/runs`、`GET /api/factors/{run_id}`、`GET /api/runs/recent`、
 `GET /api/market-data/history`、`GET /api/options/daily-scan/dates`、
@@ -72,8 +77,8 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 `POST /api/replications/reversal-momentum/run`，并由
 `tests/test_api_response_models.py` 锁定 OpenAPI schema 引用。
 `GET /api/prediction-market/timeseries-backtest/{run_id}/artifacts/{artifact_name}`
-是非 JSON `FileResponse`。OpenAPI 当前仍有 7 个裸 POST JSON 响应；
-其余 POST/复杂写入路由仍按 Phase 1 路线图逐步补齐，
+是非 JSON `FileResponse`。OpenAPI 当前 40 个 POST JSON 响应均已挂 `$ref` response schema；
+后续如新增 POST/复杂写入路由，仍按 Phase 1 路线图逐步补齐，
 不应一次性替换全部前端手写类型。
 
 ## 验收标准

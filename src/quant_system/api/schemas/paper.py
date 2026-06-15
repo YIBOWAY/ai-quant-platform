@@ -15,6 +15,20 @@ class PaperRunsResponse(BaseModel):
     paper_runs: list[PaperRunSummary]
 
 
+class PaperRunResponse(BaseModel):
+    run_id: str
+    source: str
+    signal_count: int
+    order_count: int
+    trade_count: int
+    risk_breach_count: int
+    final_equity: float
+    execution_status: str
+    execution_note: str | None = None
+    request: dict[str, Any]
+    paths: dict[str, Any]
+
+
 class AccountPositionResponse(BaseModel):
     symbol: str
     quantity: float
@@ -64,6 +78,42 @@ class PaperAccountResponse(BaseModel):
     pending_orders: list[PendingAccountOrderResponse]
     created_at: str
     updated_at: str
+
+
+class PaperAccountOrderOutcomeResponse(BaseModel):
+    order_id: str | None = None
+    status: str
+    symbol: str
+    side: str
+    requested_quantity: float
+    filled_quantity: float
+    price: float | None = None
+    price_kind: str | None = None
+    rejected_reason: str | None = None
+
+
+class PaperAccountOrderResponse(BaseModel):
+    order: PaperAccountOrderOutcomeResponse
+    account: PaperAccountResponse
+
+
+class PaperAccountOrdersProcessResponse(BaseModel):
+    orders: list[PaperAccountOrderOutcomeResponse]
+    account: PaperAccountResponse
+
+
+class PaperAccountRebalanceSummaryResponse(BaseModel):
+    strategy_id: str
+    as_of: str | None = None
+    aborted: bool
+    target_weights: dict[str, float]
+    note: str | None = None
+    orders: list[PaperAccountOrderOutcomeResponse]
+
+
+class PaperAccountRebalanceResponse(BaseModel):
+    rebalance: PaperAccountRebalanceSummaryResponse
+    account: PaperAccountResponse
 
 
 class LedgerEntryResponse(BaseModel):
