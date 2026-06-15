@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pandas as pd
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -78,6 +80,20 @@ def test_backtest_run_list_and_detail(tmp_path) -> None:
     detail = detail_response.json()
     assert detail["metrics"]["total_return"] is not None
     assert detail["equity_curve"]
+    assert detail["benchmark"]["symbol"] == "SPY"
+    assert detail["benchmark"]["source"] == "sample"
+    assert detail["benchmark"]["equity_curve"]
+    assert detail["benchmark"]["equity_curve"][0]["equity"] == 1.0
+    assert detail["benchmark"]["metrics"]["total_return"] is not None
+    assert Path(
+        tmp_path,
+        "api_runs",
+        "backtests",
+        run_id,
+        "backtests",
+        "benchmark_curve.parquet",
+    ).exists()
+    assert "benchmark_curve" in detail["metadata"]["paths"]
     assert detail["orders"]
 
 
@@ -323,3 +339,55 @@ def test_backtest_run_accepts_strategy_universe_factors_and_benchmark(tmp_path) 
     assert request["weights"] == {"momentum": 1.0, "volatility": 0.5}
     assert "QQQ" in request["symbols"]
     assert payload["metrics"]["total_return"] is not None
+
+
+def test_backtest_run_metadata_records_persisted_benchmark(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/backtests/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "sample",
+            "benchmark_symbol": "QQQ",
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["benchmark"]["symbol"] == "QQQ"
+    assert payload["benchmark"]["source"] == "sample"
+    assert payload["benchmark"]["metrics"]["total_return"] is not None
+    assert payload["paths"]["benchmark_curve"].endswith("benchmark_curve.parquet")
+
+
+def test_backtest_benchmark_symbol_is_not_added_to_trading_universe(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/backtests/run",
+        json={
+            "symbols": ["QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "sample",
+            "benchmark_symbol": "SPY",
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["request"]["symbols"] == ["QQQ"]
+    detail = client.get(f"/api/backtests/{payload['run_id']}").json()
+    position_symbols = {
+        str(row["symbol"]).upper()
+        for row in detail["positions"]
+        if "symbol" in row
+    }
+    assert "SPY" not in position_symbols

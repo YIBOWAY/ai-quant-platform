@@ -5,7 +5,12 @@ from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
+from quant_system.backtest.benchmark import (
+    build_benchmark_curve,
+    calculate_benchmark_metrics,
+)
 from quant_system.backtest.engine import BacktestEngine
+from quant_system.backtest.metrics import PerformanceMetrics
 from quant_system.backtest.models import BacktestConfig
 from quant_system.backtest.reporting import generate_backtest_report
 from quant_system.backtest.storage import LocalBacktestStorage
@@ -44,11 +49,15 @@ class BacktestRunResult(BaseModel):
     positions_path: Path
     attribution_path: Path
     metrics_path: Path
+    benchmark_curve_path: Path
+    benchmark_metrics_path: Path
     report_path: Path
     total_return: float
     sharpe: float
     max_drawdown: float
     attribution: list[dict[str, float | str]] = Field(default_factory=list)
+    benchmark_source: str
+    benchmark_metrics: PerformanceMetrics
 
 
 def run_backtest(
@@ -83,8 +92,14 @@ def run_backtest(
         for factor_id in resolved_factor_ids
     }
     ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
+    resolved_benchmark_symbol = benchmark_symbol.upper().strip() or "SPY"
     try:
         ohlcv = ohlcv_provider.fetch_ohlcv(resolved_symbols, start=start, end=end)
+        benchmark_ohlcv = ohlcv_provider.fetch_ohlcv(
+            [resolved_benchmark_symbol],
+            start=start,
+            end=end,
+        )
     except Exception as exc:
         if provider is not None:
             raise DataProviderUnavailableError(provider, exc.__class__.__name__) from exc
@@ -138,6 +153,17 @@ def run_backtest(
         table_name="backtest_attribution",
     )
     metrics_path = storage.save_metrics(result.metrics)
+    benchmark_curve = build_benchmark_curve(benchmark_ohlcv, symbol=resolved_benchmark_symbol)
+    benchmark_metrics = calculate_benchmark_metrics(benchmark_curve)
+    benchmark_curve_path = storage.save_frame(
+        benchmark_curve,
+        filename="benchmark_curve.parquet",
+        table_name="backtest_benchmark_curve",
+    )
+    benchmark_metrics_path = storage.save_metrics(
+        benchmark_metrics,
+        filename="benchmark_metrics.json",
+    )
     report = generate_backtest_report(
         metrics=result.metrics,
         config=config,
@@ -152,7 +178,7 @@ def run_backtest(
         symbols=resolved_symbols,
         factor_ids=resolved_factor_ids,
         weights=resolved_weights,
-        benchmark_symbol=benchmark_symbol.upper().strip() or "SPY",
+        benchmark_symbol=resolved_benchmark_symbol,
         trade_count=len(result.trade_blotter),
         order_count=len(result.orders),
         warnings=_build_backtest_warnings(
@@ -166,11 +192,15 @@ def run_backtest(
         positions_path=positions_path,
         attribution_path=attribution_path,
         metrics_path=metrics_path,
+        benchmark_curve_path=benchmark_curve_path,
+        benchmark_metrics_path=benchmark_metrics_path,
         report_path=report_path,
         total_return=result.metrics.total_return,
         sharpe=result.metrics.sharpe,
         max_drawdown=result.metrics.max_drawdown,
         attribution=result.metrics.attribution,
+        benchmark_source=source,
+        benchmark_metrics=benchmark_metrics,
     )
 
 

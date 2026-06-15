@@ -89,6 +89,11 @@ def run_backtest(
             "max_drawdown": result.max_drawdown,
         },
         "attribution": result.attribution,
+        "benchmark": {
+            "symbol": result.benchmark_symbol,
+            "source": result.benchmark_source,
+            "metrics": result.benchmark_metrics.model_dump(),
+        },
         "paths": {
             "equity_curve": str(result.equity_curve_path),
             "trade_blotter": str(result.trade_blotter_path),
@@ -96,6 +101,8 @@ def run_backtest(
             "positions": str(result.positions_path),
             "attribution": str(result.attribution_path),
             "metrics": str(result.metrics_path),
+            "benchmark_curve": str(result.benchmark_curve_path),
+            "benchmark_metrics": str(result.benchmark_metrics_path),
             "report": str(result.report_path),
         },
     }
@@ -139,13 +146,33 @@ def backtest_detail(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     metadata_path = run_dir / "metadata.json"
     if not metadata_path.exists():
         raise HTTPException(status_code=404, detail=f"backtest {run_id!r} not found")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    benchmark_metadata = metadata.get("benchmark", {})
+    request = metadata.get("request", {})
+    benchmark_metrics = read_json_if_exists(run_dir / "backtests" / "benchmark_metrics.json")
     return {
         "id": run_id,
-        "metadata": json.loads(metadata_path.read_text(encoding="utf-8")),
+        "metadata": metadata,
         "metrics": read_json(run_dir / "backtests" / "metrics.json"),
         "equity_curve": read_parquet_records(run_dir / "backtests" / "equity_curve.parquet"),
+        "benchmark": {
+            "symbol": benchmark_metadata.get("symbol")
+            or request.get("benchmark_symbol")
+            or "SPY",
+            "source": benchmark_metadata.get("source")
+            or metadata.get("source")
+            or "",
+            "metrics": benchmark_metrics or benchmark_metadata.get("metrics", {}),
+            "equity_curve": read_parquet_records(
+                run_dir / "backtests" / "benchmark_curve.parquet"
+            ),
+        },
         "orders": read_parquet_records(run_dir / "backtests" / "orders.parquet"),
         "positions": read_parquet_records(run_dir / "backtests" / "positions.parquet"),
         "trade_blotter": read_parquet_records(run_dir / "backtests" / "trade_blotter.parquet"),
         "attribution": read_parquet_records(run_dir / "backtests" / "attribution.parquet"),
     }
+
+
+def read_json_if_exists(path) -> dict:
+    return read_json(path) if path.exists() else {}

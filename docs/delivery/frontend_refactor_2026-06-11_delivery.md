@@ -22,7 +22,7 @@
 ### 研究流水线群
 - **Dashboard**：信息密度与入口指引优化。
 - **Data Explorer（K 线页）**：布局重排，蜡烛图 + 成交量为主体，参数表单收敛到侧栏。
-- **Backtester**：默认值改为「真实数据优先」——provider 默认 `futu`，时间窗为**截至今天的滚动 180 天**；权益对比图、Trade Blotter 保留。
+- **Backtester**：默认值改为「真实数据优先」——provider 默认 `futu`，时间窗为**截至今天的滚动 180 天**；权益对比图、Trade Blotter 保留。2026-06-15 更新：每个 backtest run 会持久化 `benchmark_curve.parquet` / `benchmark_metrics.json`，详情页和最新运行面板读取 run 内 `benchmark` 快照，不再打开页面时重拉 `/api/benchmark`。
 - **Factor Lab**：页面重构为可理解的两个视图，使用共享 `Tabs` 组件（`role="tab"`）切换「横截面体检 / 单标的择时」，列头悬停有指标定义；因子研究表单挂在侧栏。
 - **Experiments**：Sweep 热图 / Walk-forward 折 / 运行对比 / Agent 摘要四个 tab（共享 `Tabs` 组件），「Send to Backtest」可把最优参数带入回测表单。
 - **Strategy Catalog（Replications）**：与持仓地图的关系在页面上说明清楚；运行后展示权益图、月度收益与组合持仓。

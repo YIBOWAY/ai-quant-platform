@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { EquityComparisonChart } from "@/components/EquityComparisonChart";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
-import { formatPercent, getBacktestDetail, getBenchmark } from "@/lib/api";
+import { formatPercent, getBacktestDetail } from "@/lib/api";
 import { normalizeEquity } from "@/lib/equity";
 import { localizePath } from "@/lib/locale";
 import { getServerLocale } from "@/lib/serverLocale";
@@ -118,18 +118,12 @@ export default async function BacktestRunDetailPage({ params }: BacktestRunDetai
     detail.metrics && Object.keys(detail.metrics).length ? detail.metrics : metadata.metrics,
   );
 
-  // The detail endpoint does not persist a benchmark curve, so recompute it
-  // on demand from the run's saved benchmark symbol, window, and provider.
   const benchmarkSymbol =
     typeof request.benchmark_symbol === "string" ? request.benchmark_symbol : "SPY";
   const benchmarkStart = typeof request.start === "string" ? request.start : undefined;
   const benchmarkEnd = typeof request.end === "string" ? request.end : undefined;
   const benchmarkProvider = typeof request.provider === "string" ? request.provider : undefined;
-
-  const benchmark =
-    benchmarkStart && benchmarkEnd
-      ? await getBenchmark(benchmarkSymbol, benchmarkStart, benchmarkEnd, benchmarkProvider)
-      : null;
+  const benchmark = detail.benchmark;
 
   const chartRows = normalizeEquity(detail.equity_curve, benchmark?.equity_curve);
   const benchmarkFailed = Boolean(benchmark?.apiError);

@@ -8,11 +8,9 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { BacktestForm, type BacktestFormInitialValues } from "@/components/forms/BacktestForm";
 import { Card, MetricStat, PageHeader, SectionTitle } from "@/components/ui/primitives";
 import {
-  type BenchmarkResponse,
   formatPercent,
   getBacktestDetail,
   getBacktests,
-  getBenchmark,
   getFactors,
   getHealth,
   getStrategies,
@@ -127,9 +125,6 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
   const hiddenSampleCount = allRuns.length - visibleRuns.length;
   const latest = selectDisplayRun(allRuns, includeSample);
   const detail = latest ? await getBacktestDetail(latest.id) : null;
-
-  // Only fetch the benchmark when a run exists: its saved request carries the
-  // real window. Without a run there is nothing to compare against.
   const latestRequest =
     detail && typeof detail.metadata === "object" && detail.metadata !== null
       ? (detail.metadata.request as
@@ -138,16 +133,11 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
       : undefined;
   const benchmarkSymbol =
     typeof latestRequest?.benchmark_symbol === "string" ? latestRequest.benchmark_symbol : "SPY";
-  let benchmark: BenchmarkResponse | null = null;
-  if (detail && typeof latestRequest?.start === "string" && typeof latestRequest?.end === "string") {
-    benchmark = await getBenchmark(
-      benchmarkSymbol,
-      latestRequest.start,
-      latestRequest.end,
-      typeof latestRequest?.provider === "string" ? latestRequest.provider : undefined,
-    );
-  }
-  const benchmarkFailed = Boolean(benchmark?.apiError);
+  const benchmark = detail?.benchmark ?? null;
+  const benchmarkFailed = Boolean(benchmark?.apiError) || Boolean(detail && !benchmark?.equity_curve?.length);
+  const benchmarkTotalReturn = metricNumber(benchmark?.metrics?.total_return);
+  const benchmarkSharpe = metricNumber(benchmark?.metrics?.sharpe);
+  const benchmarkMaxDrawdown = metricNumber(benchmark?.metrics?.max_drawdown);
   const comparisonRows = normalizeEquity(detail?.equity_curve ?? [], benchmark?.equity_curve);
 
   return (
@@ -204,18 +194,26 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
           <MetricStat
             label={text.totalReturn}
             value={formatPercent(latest?.metrics?.total_return)}
-            delta={benchmark ? text.bmk(formatPercent(benchmark.metrics.total_return)) : undefined}
+            delta={
+              benchmarkTotalReturn !== undefined
+                ? text.bmk(formatPercent(benchmarkTotalReturn))
+                : undefined
+            }
           />
           <MetricStat
             label={text.sharpeRatio}
             value={latest?.metrics?.sharpe?.toFixed(2) ?? "--"}
-            delta={benchmark ? text.bmk(benchmark.metrics.sharpe.toFixed(2)) : undefined}
+            delta={benchmarkSharpe !== undefined ? text.bmk(benchmarkSharpe.toFixed(2)) : undefined}
           />
           <MetricStat
             label={text.maxDrawdown}
             value={formatPercent(latest?.metrics?.max_drawdown)}
             tone="danger"
-            delta={benchmark ? text.bmk(formatPercent(benchmark.metrics.max_drawdown)) : undefined}
+            delta={
+              benchmarkMaxDrawdown !== undefined
+                ? text.bmk(formatPercent(benchmarkMaxDrawdown))
+                : undefined
+            }
           />
         </div>
 
@@ -375,4 +373,8 @@ function stringParam(value: string | string[] | undefined) {
 function numberParam(value: string | string[] | undefined) {
   const parsed = Number(stringParam(value));
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function metricNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

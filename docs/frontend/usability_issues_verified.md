@@ -2,7 +2,7 @@
 > Web Design Engineer 审查报告 — 2026-06-07  
 > 基于 `docs/design/frontend_workflow_usability_review_2026-06-07.md` 的代码验证
 >
-> **状态（2026-06-11）**：本文为历史审查记录。其中多项问题已修复——因子实验室硬编码 sample（2026-06-11 起默认 `futu`，侧栏可切换数据源）、回测详情基准曲线（2026-06-07 批次 #2）、慢页 loading 状态（2026-06-07 批次 #2）、模拟交易页双标签页重排（2026-06-07 起，2026-06-11 定稿）。仍未处理：限价单持久挂单。逐项现状以 [../guides/](../guides/) 各篇「当前的局限」与 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md) 为准。
+> **状态（2026-06-15）**：本文为历史审查记录。其中多项问题已修复——因子实验室硬编码 sample（2026-06-11 起默认 `futu`，侧栏可切换数据源）、回测详情基准曲线（2026-06-15 起随每个 backtest run 保存 `benchmark_curve.parquet` / `benchmark_metrics.json`，详情页读取 run 内快照）、慢页 loading 状态（2026-06-07 批次 #2）、模拟交易页双标签页重排（2026-06-07 起，2026-06-11 定稿）。逐项现状以 [../guides/](../guides/) 各篇「当前的局限」与 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md) 为准。
 
 ---
 
@@ -59,6 +59,8 @@ export function getFactorLabDashboard() {
 ---
 
 #### ✅ 问题 2：回测详情缺基准曲线
+
+> **2026-06-15 后续状态**：本小节为 2026-06-07 的历史验证记录。当前实现不再使用 `detail.benchmark_equity` 这类临时字段；`GET /api/backtests/{run_id}` 直接返回 `benchmark` 快照，前端读取 run 内持久化的 `benchmark_curve.parquet` / `benchmark_metrics.json`。
 
 **文档描述**：用户报告"回测详情只显示策略曲线，看不到基准对比"  
 **代码验证**：`src/frontend/app/backtest/[runId]/page.tsx:L6`

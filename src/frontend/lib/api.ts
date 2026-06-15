@@ -113,11 +113,28 @@ export type BacktestsResponse = ApiEnvelope & {
   backtests: BacktestSummary[];
 };
 
+export type BenchmarkMetrics = {
+  total_return: number;
+  annualized_return: number;
+  volatility: number;
+  sharpe: number;
+  max_drawdown: number;
+  turnover: number;
+};
+
+export type BenchmarkSnapshot = ApiEnvelope & {
+  symbol: string;
+  source: string;
+  equity_curve: Array<{ timestamp: string; equity: number }>;
+  metrics: BenchmarkMetrics;
+};
+
 export type BacktestDetailResponse = ApiEnvelope & {
   id: string;
   metadata: Record<string, unknown>;
   metrics: Record<string, unknown>;
   equity_curve: PreviewRecord[];
+  benchmark: BenchmarkSnapshot | null;
   orders: PreviewRecord[];
   positions: PreviewRecord[];
   trade_blotter: PreviewRecord[];
@@ -178,14 +195,7 @@ export type BenchmarkResponse = ApiEnvelope & {
   symbol: string;
   source: string;
   equity_curve: Array<{ timestamp: string; equity: number }>;
-  metrics: {
-    total_return: number;
-    annualized_return: number;
-    volatility: number;
-    sharpe: number;
-    max_drawdown: number;
-    turnover: number;
-  };
+  metrics: BenchmarkMetrics;
 };
 
 export type PaperRunSummary = {
@@ -639,6 +649,7 @@ export function getBacktestDetail(runId: string) {
     metadata: {},
     metrics: {},
     equity_curve: [],
+    benchmark: null,
     orders: [],
     positions: [],
     trade_blotter: [],

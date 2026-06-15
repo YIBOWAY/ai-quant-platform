@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import pandas as pd
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.common import dataframe_records
-from quant_system.backtest.metrics import calculate_performance_metrics
+from quant_system.backtest.benchmark import (
+    build_benchmark_curve,
+    calculate_benchmark_metrics,
+)
 from quant_system.data.provider_factory import (
     DataProviderUnavailableError,
     build_ohlcv_provider,
@@ -37,15 +39,8 @@ def benchmark(
             ) from exc
         ohlcv = SampleOHLCVProvider().fetch_ohlcv([normalized_symbol], start=start, end=end)
         source = f"sample ({source} failed: {exc.__class__.__name__})"
-    sorted_ohlcv = ohlcv.sort_values("timestamp")
-    prices = pd.to_numeric(sorted_ohlcv["close"], errors="coerce")
-    equity = prices / float(prices.iloc[0])
-    curve = pd.DataFrame({"timestamp": sorted_ohlcv["timestamp"], "equity": equity})
-    metrics = calculate_performance_metrics(
-        curve,
-        pd.DataFrame(),
-        initial_cash=1.0,
-    )
+    curve = build_benchmark_curve(ohlcv, symbol=normalized_symbol)
+    metrics = calculate_benchmark_metrics(curve)
     return {
         "symbol": normalized_symbol,
         "source": source,

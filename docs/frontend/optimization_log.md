@@ -4,6 +4,15 @@
 
 ---
 
+## 后续更新 — 回测基准持久化（2026-06-15）
+
+- `POST /api/backtests/run` 现在会随本次 run 计算并保存 `benchmark_curve.parquet` 与 `benchmark_metrics.json`，并把基准 symbol/source/metrics/paths 写入 `metadata.json`。
+- `GET /api/backtests/{run_id}` 现在直接返回 `benchmark` 快照（symbol/source/metrics/equity_curve）。`/backtest` 最新运行面板和 `/backtest/[runId]` 详情页都复用这个持久化快照，不再在页面打开时额外调用 `/api/benchmark`。
+- `/api/benchmark` 仍保留为独立的即时基准曲线接口，但不再是回测详情页的事实来源。
+- 基准标的只用于对照曲线，不会被加入策略交易 universe。
+
+---
+
 ## 优化批次 #3 — 全页面重构（2026-06-11）
 
 详见交付记录 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)：19 条路由全量审查与重构（设计令牌归一、固定视口外壳、Factor Lab / Paper Trading / Position Map 重做、E2E 38/38 通过）。批次 #2 遗留的「后端协同任务」清单中已完成一项：**因子实验室真实数据源**（默认 `futu`，数据源/股票池/择时标的/基准可在侧栏调整，因子研究运行可保存）。其余仍待后续：限价单持久挂单+日内触价成交、回测整股/最小订单约束、期权雷达日终自动任务、研报复现 run_id 持久化。
@@ -22,7 +31,7 @@
 ### 已手工重设计（keystone 页，验证 primitives）
 - **行情浏览空白根因修复**：`<main>` 从 `min-h-screen` 改 `h-screen overflow-hidden`，修复断裂的 `h-full` 高度链；CandlestickChart 改为 ResizeObserver 自适应填充父容器；原始行情表固定 280px。实测图表 1080p→471px、1440p→831px，与表间隙仅 16px padding，无空白。
 - **期权筛选器结果区压缩**：8 个大卡片网格 → 紧凑状态条 + 单行指标条（说明移到 tooltip），摘要区从 ~300px 降到 191px，候选表上移首屏。
-- **回测详情基准曲线**：用 `/api/benchmark` 组合策略+基准双曲线，失败优雅降级。
+- **回测详情基准曲线**：当时用 `/api/benchmark` 组合策略+基准双曲线，失败优雅降级；2026-06-15 已升级为 run 内持久化基准快照（见本文顶部“后续更新”）。
 - **5 个慢页 loading.tsx**：品牌色 spinner。
 - **Strategy Catalog**：研报复现的 Top-N 实时引导（股票池大小、预计多空只数、留空=自动十分位、小池警告）；结果链接区分"打开回测/查看复现详情"。
 - **Paper Trading 重排**：拆成 Tab（实时账户 / 历史回放），实时账户含账户摘要 + 持仓明细（含权重条/盈亏/均价）+ 交易再平衡面板 + 紧凑安全状态条；再平衡后显示"本次变化回执"（卖出/买入了什么、数量、价格）。
@@ -44,6 +53,8 @@ dashboard / factor-lab / experiments / agent-studio / order-book / settings / op
 
 ### 修复 1：回测详情缺失基准曲线 ⭐⭐⭐⭐⭐
 
+> **2026-06-15 后续状态**：下文记录的是 2026-06-07 当时的临时前端组合方案。当前实现已改为后端随 run 保存 `benchmark_curve.parquet` / `benchmark_metrics.json`，`GET /api/backtests/{run_id}` 直接返回 `benchmark`，前端不再为回测详情额外调用 `getBenchmark()`。
+
 **问题描述**：
 - 回测详情页只显示策略曲线（绿色），无法与基准（如 SPY）对比
 - 用户无法判断策略是否跑赢大盘
@@ -54,16 +65,16 @@ dashboard / factor-lab / experiments / agent-studio / order-book / settings / op
 - 后端只在独立的 `/api/benchmark` 接口实时计算基准曲线
 - metadata 里保存了 `benchmark_symbol`、`start`、`end`、`provider`
 
-**采用方案：A（前端组合，不改后端）**
+**采用方案：A（2026-06-07 临时前端组合；2026-06-15 已被 run 内持久化方案替换）**
 
 | 方案 | 做法 | 决策 |
 |---|---|---|
-| A：前端组合 | 详情页用 metadata 的 benchmark_symbol + 日期，额外调用 `/api/benchmark` | ✅ 采用 |
-| B：后端合并 | 后端详情接口直接返回 benchmark_equity | ❌ 会破坏 428 个测试 + 需重存历史 run |
+| A：前端组合 | 详情页用 metadata 的 benchmark_symbol + 日期，额外调用 `/api/benchmark` | ✅ 当时采用；现已替换 |
+| B：后端合并 | 后端详情接口直接返回 benchmark_equity | ❌ 当时未采用；2026-06-15 已以 `benchmark` 快照字段落地 |
 
-**选择方案 A 的理由**：
-1. 基准数据是实时计算的，不需要持久化到每个 run
-2. 不改后端 = 不破坏现有测试
+**当时选择方案 A 的理由（已过时）**：
+1. 当时假设基准数据实时计算即可，不需要持久化到每个 run；2026-06-15 已改为随 run 持久化。
+2. 当时为降低改动面选择不改后端；2026-06-15 已补充后端 detail 响应并保持旧 run 兼容。
 3. 服务端并行请求，对体验影响极小
 4. 符合问题文档 4.3.1 的建议
 

@@ -8,7 +8,7 @@
 
 ## 它解决什么问题 / 为什么存在
 
-平台的六个界面里，回测器是**最名副其实、落差最小的一个**：它真的把一条完整的研究流水线从头到尾算了一遍，产物（权益曲线、成交、订单、持仓、归因、绩效 JSON、文本报告）都是真算出来并落盘的，不是占位数据。
+平台的六个界面里，回测器是**最名副其实、落差最小的一个**：它真的把一条完整的研究流水线从头到尾算了一遍，产物（权益曲线、基准曲线、成交、订单、持仓、归因、绩效 JSON、文本报告）都是真算出来并落盘的，不是占位数据。
 
 它的定位是"先证明、再去模拟"。你在这里得到一条策略的历史权益曲线和夏普 / 回撤，判断它是否值得进入 Paper Trading 环节。如果一个策略在回测里都跑不出像样的曲线，就没必要去模拟交易里浪费时间。
 
@@ -29,7 +29,7 @@
 9. **撮合**（`broker.py` 的 `BrokerSimulator`）：以同一根 K 线的 **OPEN 价**为基准撮合（卖单先于买单执行）；买单加滑点、卖单减滑点；收取佣金 `commission_bps`；受**现金约束**（买单买不起就部分成交，状态标 `partial`），卖单不超过现有持仓。
 10. **盯市与归因**：每根 K 线对持仓按 close 价盯市，记录权益曲线；归因 = 进入该 bar 时的持仓数量 ×（本 bar close − 上一 bar close）逐 bar 累加。
 11. **绩效**（`metrics.py` 的 `calculate_performance_metrics`）：算 `total_return` / `annualized_return` / `volatility` / `sharpe` / `max_drawdown` / `turnover`，并把归因按标的汇总。
-12. **落盘**：六个 parquet（equity_curve / trade_blotter / orders / positions / attribution）+ `metrics.json` + 文本报告。同时 DuckDB 表以 `CREATE OR REPLACE` 写入（**只保留最近一次**），而 API 每次运行另存一个独立 `run_id` 目录 + `metadata.json`。
+12. **落盘**：六个 parquet（equity_curve / benchmark_curve / trade_blotter / orders / positions / attribution）+ `metrics.json` / `benchmark_metrics.json` + 文本报告。同时 DuckDB 表以 `CREATE OR REPLACE` 写入（**只保留最近一次**），而 API 每次运行另存一个独立 `run_id` 目录 + `metadata.json`。
 
 > 关于"次 bar 撮合"的准确说法：撮合本身发生在**与 `tradeable_ts` 相等的那根 K 线的 OPEN 价**上。"在 T 日数据上打分、在 T+1 开盘成交"这个滞后，是由因子流水线的 `tradeable_ts`（= 下一根 K 线）实现的，**不是引擎在撮合时又往后顺延了一根**。引擎只是忠实地在 `tradeable_ts` 这根 bar 的 open 撮合。这条很重要：它保证了回测没有"用未来数据下单"的前视偏差。
 
@@ -39,7 +39,7 @@
 
 1. **策略 Strategy**：下拉，默认 `cross_sectional_top_n`（Cross-Sectional Top-N）。下拉只列出后端 `result_type === "backtest"` 的可运行策略；目前另有 `mean_reversion_top_n`。
 2. **股票池 Universe**：默认 `etf`。它决定默认比较范围；留空"自定义标的"时就用这个池子的成分股。
-3. **基准 Benchmark**：默认 `SPY`，纯文本输入。基准曲线单独取，用于右侧"策略 vs 基准"对比。
+3. **基准 Benchmark**：默认 `SPY`，纯文本输入。基准曲线会在本次回测运行时一起计算并保存，详情页和最新运行面板复用保存产物，不再打开页面时现场重拉。
 4. **自定义标的 Custom Symbols**：可选，逗号分隔。填了就**覆盖**股票池。⚠️ 只填一个标的会弹黄色警告——因为排序选股策略需要"同类标的"才能横截面排序并买入正信号，单标的常常什么都不买、曲线保持水平。
 5. **开始 / 结束日期**：默认是**截至 UTC 今天的滚动 180 天窗口**（结束 = 今天，开始 = 今天 − 180 天；2026-06-11 起，原固定 2024 上半年的写死区间已移除）。
 6. **数据源 Data Source**：`futu` / `sample` / `tiingo`。futu 不可达时该选项被禁用并给提示。默认 `futu`（2026-06-11 起「真实数据优先」，与后端 schema 默认一致）。
@@ -61,9 +61,9 @@
 - **总收益 Total Return**：`last_equity / initial_cash − 1`。注意分母是初始资金，不是首行权益。
 - **夏普比率 Sharpe**：逐 bar 收益率的均值 / 标准差 × √252（年化因子 252，硬编码）。无波动或样本不足时为 0。
 - **最大回撤 Max Drawdown**：权益相对历史峰值的最大跌幅（取绝对值，正数显示）。
-- **BMK / 基准**：右侧每个指标下方小字给出的基准对应值，来自单独的基准 API。
+- **BMK / 基准**：右侧每个指标下方小字给出的基准对应值，来自本次 run 保存的 `benchmark_metrics.json`。
 - **Turnover 换手率**：累计成交额（`gross_value` 之和）/ 初始资金。在主指标卡里不直接展示，但写进 `metrics.json`。
-- **权益曲线 Equity Curve / 策略 vs 基准**：把策略与基准曲线各自**归一化到首个正值 = 1** 后叠加对比，所以看的是相对走势而非绝对金额。
+- **权益曲线 Equity Curve / 策略 vs 基准**：把策略与本次 run 保存的基准曲线各自**归一化到首个正值 = 1** 后叠加对比，所以看的是相对走势而非绝对金额。
 - **成交记录 Trade Blotter**：模拟成交。列含 `side`（buy/sell）、`quantity`、`requested_price`（撮合基准价 = bar open）、`fill_price`（含滑点后的成交价）、`gross_value`、`commission`、`slippage_bps`、`status`（`filled` / `partial`，部分成交多因现金不足）。
 - **订单 Orders**：撮合前生成的目标订单，列含 `reason`（固定 `rebalance_to_target_weight`）。订单数 ≥ 成交数（被现金或持仓约束掉的不成交）。
 - **持仓 Positions**：每根 bar 的逐标的持仓快照（数量、close 价、市值）。
@@ -117,5 +117,6 @@
 - 订单生成与权重约束：`src/quant_system/backtest/order_generation.py`
 - 撮合（佣金 / 滑点 / 现金约束）：`src/quant_system/backtest/broker.py`
 - 绩效与归因汇总：`src/quant_system/backtest/metrics.py`
+- 基准曲线：`src/quant_system/backtest/benchmark.py`
 - 配置与数据模型：`src/quant_system/backtest/models.py`（`BacktestConfig` / `Order` / `Fill` / `TargetWeight` / `RebalanceFrequency`）
 - API 路由与请求 schema：`src/quant_system/api/routes/backtest.py`、`src/quant_system/api/schemas/backtest.py`
