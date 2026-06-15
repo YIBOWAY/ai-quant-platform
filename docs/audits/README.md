@@ -16,7 +16,8 @@
 `tiingo`；未知显式 provider 会返回 `400 provider_unavailable`，不会当作 sample
 继续返回 200。未传 provider 的只读日线行情默认路径仍可使用带标注的 sample
 fallback；`/api/market-data/history` 的日内频率仅允许 Futu，OpenD 不可用时不再
-回退到 sample 伪装日内数据。
+回退到 sample 伪装日内数据。底层 `SampleOHLCVProvider` 与 `TiingoEODProvider`
+也已加 provider 级防线，非 `1d` interval 会在返回数据前被拒绝。
 
 2026-06-15 状态补充：评估报告中“CLI doctor 仍停留在 Phase 0 foundation
 口径”的小项已更新。`quant-system doctor` 现在输出离线本地平台健康摘要，覆盖

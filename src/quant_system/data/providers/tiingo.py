@@ -67,6 +67,8 @@ class TiingoEODProvider:
         end: str,
         interval: str = "1d",
     ) -> pd.DataFrame:
+        if interval.lower().strip() != "1d":
+            raise ValueError(f"Tiingo provider only supports daily OHLCV: {interval}")
         if not self.api_token:
             raise ValueError("Tiingo API token is required")
 

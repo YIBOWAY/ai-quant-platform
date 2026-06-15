@@ -141,6 +141,8 @@ fall back to a clearly labelled sample response for offline use.
 Intraday market-data requests (`freq` other than `1d`) are Futu-only; they do
 not fall back to sample data because that would mislabel daily synthetic bars
 as intraday history.
+At the provider layer, `SampleOHLCVProvider` and `TiingoEODProvider` reject
+non-`1d` intervals before returning data.
 The code default and `.env.example` both use `QS_DEFAULT_DATA_PROVIDER="futu"`;
 set it to `sample` only for explicit offline workflow tests.
 

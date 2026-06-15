@@ -65,7 +65,8 @@ curl "http://127.0.0.1:8765/api/market-data/history?ticker=SPY&start=2024-01-02&
 
 `freq=1d` 可走 `sample`、`tiingo` 或 `futu`。日内频率（例如 `1h`、`30m`、
 `15m`、`5m`、`1m`）仅允许 `provider=futu`，并且 OpenD 不可用时不会回退到
-sample 数据。
+sample 数据；底层 `SampleOHLCVProvider` 与 `TiingoEODProvider` 也会在收到非
+`1d` interval 时直接拒绝。
 
 预期结构：
 
@@ -107,3 +108,5 @@ python scripts/verify_futu_connection.py
 - 日内历史数据取决于 Futu 的权限和 API 限制。
 - 回退的 sample 提供方仍可用于离线测试，但只适用于未显式指定 provider
   的默认日线读取路径，或用户明确选择 `provider=sample` 的日线场景。
+- `sample` 与 `tiingo` 股票 OHLCV provider 是日线 provider；非 `1d` interval
+  必须走 Futu。

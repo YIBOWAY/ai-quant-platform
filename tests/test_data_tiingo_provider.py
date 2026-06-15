@@ -128,3 +128,15 @@ def test_tiingo_provider_requires_api_token() -> None:
 
     with pytest.raises(ValueError, match="Tiingo API token is required"):
         provider.fetch_ohlcv(["AAPL"], start="2024-01-02", end="2024-01-02")
+
+
+def test_tiingo_provider_rejects_intraday_interval() -> None:
+    provider = TiingoEODProvider(api_token="test-token", get_json=lambda _url, _headers: [])
+
+    with pytest.raises(ValueError, match="Tiingo provider only supports daily"):
+        provider.fetch_ohlcv(
+            ["AAPL"],
+            start="2024-01-02",
+            end="2024-01-02",
+            interval="1h",
+        )

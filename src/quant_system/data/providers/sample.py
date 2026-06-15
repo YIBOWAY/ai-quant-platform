@@ -16,6 +16,8 @@ class SampleOHLCVProvider:
         end: str,
         interval: str = "1d",
     ) -> pd.DataFrame:
+        if interval.lower().strip() != "1d":
+            raise ValueError(f"sample provider only supports daily OHLCV: {interval}")
         dates = pd.date_range(start=start, end=end, freq="B", tz="UTC")
         rows: list[dict[str, object]] = []
         for symbol_index, symbol in enumerate(symbols):
@@ -42,4 +44,3 @@ class SampleOHLCVProvider:
             provider=self.provider_name,
             interval=interval,
         )
-
