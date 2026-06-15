@@ -9,8 +9,10 @@ from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.options_radar import (
     OptionsDailyScanDatesResponse,
     OptionsDailyScanResponse,
+    OptionsDailyScanRunResponse,
     OptionsDailyScanStatusResponse,
     OptionsDailyScanSymbolResponse,
+    OptionsRefreshResponse,
 )
 from quant_system.data.providers.futu import FutuMarketDataProvider, FutuProviderError
 from quant_system.options.data_refresh import (
@@ -60,7 +62,7 @@ def options_daily_scan_status(settings: SettingsDep) -> dict:
     return {"exists": True, "status_path": str(status_path), "status": status}
 
 
-@router.post("/options/refresh/universe")
+@router.post("/options/refresh/universe", response_model=OptionsRefreshResponse)
 def options_refresh_universe(settings: SettingsDep, payload: dict) -> dict:
     source = str(payload.get("source", "public"))
     try:
@@ -71,7 +73,7 @@ def options_refresh_universe(settings: SettingsDep, payload: dict) -> dict:
         raise _refresh_runtime_error("universe", exc) from exc
 
 
-@router.post("/options/refresh/earnings")
+@router.post("/options/refresh/earnings", response_model=OptionsRefreshResponse)
 def options_refresh_earnings(settings: SettingsDep, payload: dict) -> dict:
     source = str(payload.get("source", "public"))
     top = int(payload.get("top", settings.options_radar.universe_top_n))
@@ -90,7 +92,7 @@ def options_refresh_earnings(settings: SettingsDep, payload: dict) -> dict:
         raise _refresh_runtime_error("earnings", exc) from exc
 
 
-@router.post("/options/refresh/vix")
+@router.post("/options/refresh/vix", response_model=OptionsRefreshResponse)
 def options_refresh_vix(settings: SettingsDep, payload: dict) -> dict:
     source = str(payload.get("source", "public"))
     lookback_days = int(payload.get("lookback_days", 400))
@@ -108,7 +110,7 @@ def options_refresh_vix(settings: SettingsDep, payload: dict) -> dict:
         raise _refresh_runtime_error("vix", exc) from exc
 
 
-@router.post("/options/daily-scan/run")
+@router.post("/options/daily-scan/run", response_model=OptionsDailyScanRunResponse)
 def options_daily_scan_run(settings: SettingsDep, payload: dict) -> dict:
     try:
         with options_radar_scan_lock(settings.options_radar.output_dir):

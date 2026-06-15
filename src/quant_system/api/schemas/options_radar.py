@@ -23,6 +23,27 @@ class OptionsDailyScanStatusResponse(BaseModel):
     status: dict[str, Any] | None = None
 
 
+class OptionsRefreshResponse(BaseModel):
+    kind: str
+    source: str
+    status: str
+    row_count: int
+    output_path: str
+    fetched_at: str
+    warning: str | None = None
+
+
+class OptionsDailyScanRunResponse(BaseModel):
+    run_date: str
+    provider: Literal["sample", "futu"]
+    universe_size: int
+    scanned_tickers: int
+    failed_tickers: list[tuple[str, str]]
+    candidate_count: int
+    data_path: str
+    meta_path: str
+
+
 class OptionsRadarCandidateResponse(BaseModel):
     ticker: str
     sector: str | None = None

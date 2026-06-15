@@ -142,3 +142,27 @@ def test_prediction_market_post_routes_publish_response_models(tmp_path) -> None
     assert "history_dir" in components[
         "PredictionMarketTimeseriesBacktestRunResponse"
     ]["properties"]
+
+
+def test_options_radar_post_routes_publish_response_models(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    expected = {
+        "/api/options/refresh/universe": "OptionsRefreshResponse",
+        "/api/options/refresh/earnings": "OptionsRefreshResponse",
+        "/api/options/refresh/vix": "OptionsRefreshResponse",
+        "/api/options/daily-scan/run": "OptionsDailyScanRunResponse",
+    }
+    for path, model_name in expected.items():
+        response_schema = openapi["paths"][path]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert response_schema == {"$ref": f"#/components/schemas/{model_name}"}
+
+    components = openapi["components"]["schemas"]
+    assert "row_count" in components["OptionsRefreshResponse"]["properties"]
+    assert "output_path" in components["OptionsRefreshResponse"]["properties"]
+    assert "candidate_count" in components["OptionsDailyScanRunResponse"]["properties"]
+    assert "data_path" in components["OptionsDailyScanRunResponse"]["properties"]
