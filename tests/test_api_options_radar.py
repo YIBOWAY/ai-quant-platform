@@ -257,34 +257,47 @@ def test_options_radar_startup_catchup_writes_completed_status(
 ) -> None:
     from quant_system.api import server as api_server
 
+    universe_path = tmp_path / "inputs" / "universe.csv"
+    earnings_path = tmp_path / "inputs" / "earnings.csv"
+    vix_path = tmp_path / "inputs" / "vix.csv"
+    output_dir = tmp_path / "scans"
     settings = Settings(
         options_radar=OptionsRadarSettings(
-            output_dir=tmp_path,
+            output_dir=output_dir,
             provider="sample",
             startup_catchup_enabled=True,
+            universe_path=universe_path,
+            earnings_calendar_path=earnings_path,
+            vix_history_path=vix_path,
         )
     )
 
     def fake_scan(_settings: Settings, payload: dict) -> dict:
         assert payload["provider"] == "sample"
         assert payload["run_date"] == "2026-06-15"
+        assert universe_path.exists()
+        assert earnings_path.exists()
+        assert vix_path.exists()
         return {
             "run_date": "2026-06-15",
             "universe_size": 2,
             "scanned_tickers": 2,
             "failed_tickers": [],
             "candidate_count": 4,
-            "data_path": str(tmp_path / "daily" / "2026-06-15.jsonl"),
-            "meta_path": str(tmp_path / "daily" / "2026-06-15.meta.json"),
+            "data_path": str(output_dir / "daily" / "2026-06-15.jsonl"),
+            "meta_path": str(output_dir / "daily" / "2026-06-15.meta.json"),
         }
 
     monkeypatch.setattr(api_server.options_radar, "_options_daily_scan_run_unlocked", fake_scan)
 
     api_server._run_options_radar_startup_catchup(settings, "2026-06-15")
 
-    status = json.loads((tmp_path / "daily_task_status.json").read_text(encoding="utf-8"))
+    status = json.loads((output_dir / "daily_task_status.json").read_text(encoding="utf-8"))
     assert status["status"] == "completed"
     assert status["source"] == "startup_catchup"
+    assert status["steps"]["universe"]["status"] == "refreshed"
+    assert status["steps"]["earnings"]["status"] == "refreshed"
+    assert status["steps"]["vix"]["status"] == "refreshed"
     assert status["steps"]["scan"]["candidate_count"] == 4
 
 
@@ -294,11 +307,18 @@ def test_options_radar_startup_catchup_writes_failed_status(
 ) -> None:
     from quant_system.api import server as api_server
 
+    universe_path = tmp_path / "inputs" / "universe.csv"
+    earnings_path = tmp_path / "inputs" / "earnings.csv"
+    vix_path = tmp_path / "inputs" / "vix.csv"
+    output_dir = tmp_path / "scans"
     settings = Settings(
         options_radar=OptionsRadarSettings(
-            output_dir=tmp_path,
+            output_dir=output_dir,
             provider="sample",
             startup_catchup_enabled=True,
+            universe_path=universe_path,
+            earnings_calendar_path=earnings_path,
+            vix_history_path=vix_path,
         )
     )
 
@@ -309,11 +329,14 @@ def test_options_radar_startup_catchup_writes_failed_status(
 
     api_server._run_options_radar_startup_catchup(settings, "2026-06-15")
 
-    status = json.loads((tmp_path / "daily_task_status.json").read_text(encoding="utf-8"))
+    status = json.loads((output_dir / "daily_task_status.json").read_text(encoding="utf-8"))
     assert status["status"] == "failed"
     assert status["source"] == "startup_catchup"
     assert status["failed_step"] == "scan"
     assert "RuntimeError: boom" in status["error"]
+    assert status["steps"]["universe"]["status"] == "refreshed"
+    assert status["steps"]["earnings"]["status"] == "refreshed"
+    assert status["steps"]["vix"]["status"] == "refreshed"
 
 
 def test_options_radar_startup_catchup_skips_when_scan_lock_is_held(

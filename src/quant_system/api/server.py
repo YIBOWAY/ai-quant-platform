@@ -37,6 +37,11 @@ from quant_system.api.routes import (
 from quant_system.api.safety.middleware import attach_safety_footer, validate_bind_address
 from quant_system.config.settings import Settings
 from quant_system.logging.setup import configure_logging
+from quant_system.options.data_refresh import (
+    refresh_earnings_calendar,
+    refresh_options_universe,
+    refresh_vix_history,
+)
 from quant_system.options.radar_storage import RadarSnapshotStore
 from quant_system.options.scan_lock import OptionsRadarScanLocked, options_radar_scan_lock
 
@@ -180,6 +185,10 @@ def _run_options_radar_startup_catchup(active_settings: Settings, run_date: str)
     try:
         with options_radar_scan_lock(radar_settings.output_dir):
             started_at = datetime.now(UTC).isoformat()
+            task_date = date.fromisoformat(run_date)
+            refresh_source = "sample" if provider == "sample" else "public"
+            steps: dict[str, dict] = {}
+            current_step = "universe"
             _write_options_radar_startup_status(
                 radar_settings.output_dir,
                 {
@@ -193,6 +202,26 @@ def _run_options_radar_startup_catchup(active_settings: Settings, run_date: str)
                 },
             )
             try:
+                steps["universe"] = refresh_options_universe(
+                    radar_settings.universe_path,
+                    source=refresh_source,
+                )
+                current_step = "earnings"
+                steps["earnings"] = refresh_earnings_calendar(
+                    universe_path=radar_settings.universe_path,
+                    output_path=radar_settings.earnings_calendar_path,
+                    source=refresh_source,
+                    top=radar_settings.universe_top_n,
+                    today=task_date,
+                )
+                current_step = "vix"
+                steps["vix"] = refresh_vix_history(
+                    radar_settings.vix_history_path,
+                    source=refresh_source,
+                    lookback_days=400,
+                    end=task_date,
+                )
+                current_step = "scan"
                 result = options_radar._options_daily_scan_run_unlocked(
                     active_settings,
                     {
@@ -213,9 +242,9 @@ def _run_options_radar_startup_catchup(active_settings: Settings, run_date: str)
                         "strategies": strategies,
                         "started_at": started_at,
                         "finished_at": datetime.now(UTC).isoformat(),
-                        "failed_step": "scan",
+                        "failed_step": current_step,
                         "error": f"{type(exc).__name__}: {exc}",
-                        "steps": {},
+                        "steps": steps,
                     },
                 )
                 logger.warning("options radar startup catch-up failed: %s", exc)
@@ -232,6 +261,7 @@ def _run_options_radar_startup_catchup(active_settings: Settings, run_date: str)
                     "started_at": started_at,
                     "finished_at": datetime.now(UTC).isoformat(),
                     "steps": {
+                        **steps,
                         "scan": {
                             "status": "completed",
                             "run_date": result["run_date"],

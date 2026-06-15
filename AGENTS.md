@@ -206,10 +206,11 @@ Current options work is split into sell-side and buy-side research modules:
   snapshots. `GET /api/options/daily-scan/status` exposes that file and
   `/options-radar` shows the latest scheduled-task status. Optional startup
   catch-up is controlled by `QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=false` by
-  default; when enabled, API startup runs a background daily-scan catch-up only
-  if the latest regular US market session radar snapshot is missing. Weekend
-  and regular full-day US market holidays target the prior session; ad-hoc
-  exchange closures and half-days remain a scheduler/operator concern.
+  default; when enabled, API startup first refreshes the local universe,
+  earnings calendar, and VIX inputs, then runs a background daily-scan catch-up
+  only if the latest regular US market session radar snapshot is missing.
+  Weekend and regular full-day US market holidays target the prior session;
+  ad-hoc exchange closures and half-days remain a scheduler/operator concern.
   CLI scans, API-triggered scans, scheduled `daily-task`, and startup catch-up
   share `options_radar_scan.lock` in the radar output directory; lock conflicts
   fail API/CLI scans fast and make startup catch-up skip without overwriting

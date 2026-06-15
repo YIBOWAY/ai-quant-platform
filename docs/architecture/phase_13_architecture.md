@@ -96,8 +96,8 @@ API 启动补跑默认关闭，避免服务启动时意外触发慢速 OpenD 扫
 `RadarSnapshotStore.latest_date()`；如果最近一个常规美股交易日快照缺失，会在后台运行一次
 `daily-scan` 等价扫描，并把 `source="startup_catchup"` 的 running /
 completed / failed 状态写入 `daily_task_status.json`。周末和常规美股整天休市日会
-回退到上一个交易日；临时闭市和半日交易仍由调度/人工流程处理。该补跑复用已有本地输入缓存，不替代 `daily-task`
-的标的池、财报和 VIX 刷新流程。若扫描锁已被调度或手动扫描持有，启动补跑直接跳过，
+回退到上一个交易日；临时闭市和半日交易仍由调度/人工流程处理。该补跑会在同一锁内
+先刷新本地标的池、财报日历和 VIX 输入，再运行扫描；若扫描锁已被调度或手动扫描持有，启动补跑直接跳过，
 不写入 running/failed 状态，也不覆盖现有 `daily_task_status.json`。
 
 ## 故障隔离

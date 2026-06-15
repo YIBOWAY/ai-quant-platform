@@ -256,7 +256,7 @@ http://127.0.0.1:3001/options-radar
 该命令会刷新输入、写入每日快照和 `daily_task_status.json`。雷达页面会通过
 `GET /api/options/daily-scan/status` 读取同一状态文件并展示最近一次计划任务状态。
 启动补跑默认关闭；只有在明确设置
-`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 后，API 启动才会在最近一个 UTC 工作日快照缺失时后台运行一次 `daily-scan` 补跑；周末启动会回退到上一个周五。完整交易所节假日判断仍由正式 `daily-task` 调度流程覆盖。CLI 扫描、API 触发扫描、计划任务和启动补跑会共享雷达输出目录下的 `options_radar_scan.lock`；启动补跑遇到锁冲突时会跳过，且不会覆盖已有 `daily_task_status.json`。
+`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 后，API 启动才会在最近一个常规美股交易日快照缺失时，先刷新本地标的池、财报日历和 VIX 输入，再后台运行一次 `daily-scan` 补跑。临时闭市和半日交易仍由正式 `daily-task` 调度或人工流程覆盖。CLI 扫描、API 触发扫描、计划任务和启动补跑会共享雷达输出目录下的 `options_radar_scan.lock`；启动补跑遇到锁冲突时会跳过，且不会覆盖已有 `daily_task_status.json`。
 
 本地期权工具箱：
 

@@ -347,12 +347,13 @@ snapshot and `daily_task_status.json`; the Radar page reads the same file
 through `GET /api/options/daily-scan/status` and shows the latest scheduled-task
 state. Startup catch-up is opt-in: set
 `QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` only when OpenD/cache readiness
-is expected and you want API startup to run a background daily-scan catch-up if
-the latest regular US market session snapshot is missing. Weekend and regular
-full-day US market holidays target the prior session; ad-hoc exchange closures
-and half-days are still a scheduler/operator concern. CLI scans, API-triggered
-scans, scheduled `daily-task`, and startup catch-up share `options_radar_scan.lock`
-in the radar output directory; a locked startup catch-up skips without overwriting
+is expected and you want API startup to refresh the local universe, earnings,
+and VIX inputs before running a background daily-scan catch-up if the latest
+regular US market session snapshot is missing. Weekend and regular full-day US
+market holidays target the prior session; ad-hoc exchange closures and half-days
+are still a scheduler/operator concern. CLI scans, API-triggered scans,
+scheduled `daily-task`, and startup catch-up share `options_radar_scan.lock` in
+the radar output directory; a locked startup catch-up skips without overwriting
 `daily_task_status.json`.
 
 Local options toolbox:
