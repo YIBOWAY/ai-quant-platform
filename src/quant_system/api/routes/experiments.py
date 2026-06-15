@@ -8,7 +8,11 @@ from fastapi import APIRouter, HTTPException
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.common import read_json, read_parquet_records, resolve_run_dir
-from quant_system.api.schemas.experiments import ExperimentRunRequest, ExperimentsResponse
+from quant_system.api.schemas.experiments import (
+    ExperimentDetailResponse,
+    ExperimentRunRequest,
+    ExperimentsResponse,
+)
 from quant_system.data.provider_factory import (
     DataProviderUnavailableError,
     build_ohlcv_provider,
@@ -88,7 +92,7 @@ def run_experiment(
     }
 
 
-@router.get("/experiments/{experiment_id}")
+@router.get("/experiments/{experiment_id}", response_model=ExperimentDetailResponse)
 def experiment_detail(experiment_id: str, output_dir: OutputDirDep) -> dict:
     experiment_dir = resolve_run_dir(output_dir / "experiments", experiment_id)
     if not experiment_dir.exists():

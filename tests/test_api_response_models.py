@@ -25,6 +25,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/agent/candidates": "AgentCandidatesResponse",
         "/api/agent/candidates/{candidate_id}": "AgentCandidateDetailResponse",
         "/api/experiments": "ExperimentsResponse",
+        "/api/experiments/{experiment_id}": "ExperimentDetailResponse",
         "/api/factors": "FactorCatalogResponse",
         "/api/factors/runs": "FactorRunsResponse",
         "/api/runs/recent": "RecentRunsResponse",
@@ -53,6 +54,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "candidates" in components["AgentCandidatesResponse"]["properties"]
     assert "source_preview" in components["AgentCandidateDetailResponse"]["properties"]
     assert "experiments" in components["ExperimentsResponse"]["properties"]
+    assert "runs" in components["ExperimentDetailResponse"]["properties"]
+    assert "folds" in components["ExperimentDetailResponse"]["properties"]
     assert "source" in components["OHLCVResponse"]["properties"]
     assert "source" in components["BenchmarkResponse"]["properties"]
     assert "factors" in components["FactorCatalogResponse"]["properties"]

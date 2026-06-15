@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,19 @@ class ExperimentSummary(BaseModel):
 
 class ExperimentsResponse(BaseModel):
     experiments: list[ExperimentSummary]
+
+
+ExperimentRecord = dict[str, Any]
+
+
+class ExperimentDetailResponse(BaseModel):
+    id: str
+    path: str
+    experiment_config: dict[str, Any] | None = None
+    agent_summary: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+    runs: list[ExperimentRecord] = Field(default_factory=list)
+    folds: list[ExperimentRecord] = Field(default_factory=list)
 
 
 PositiveInt = Annotated[int, Field(gt=0)]
