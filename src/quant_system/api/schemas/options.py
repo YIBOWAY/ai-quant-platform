@@ -78,11 +78,59 @@ class OptionsVolSmileResponse(BaseModel):
     assumptions: list[str]
 
 
+class OptionsGreeksResponse(BaseModel):
+    price: float
+    delta: float
+    gamma: float
+    theta: float
+    vega: float
+    rho: float
+    charm: float
+    vanna: float
+    volga: float
+
+
+class OptionsImpliedVolatilityResponse(BaseModel):
+    implied_volatility: float
+
+
+class OptionsSimulationResponse(BaseModel):
+    ticker: str
+    price: float
+    position: dict[str, Any]
+    pnl_at_expiry: dict[str, Any]
+    breakevens: list[float]
+    max_profit: float | None = None
+    max_loss: float | None = None
+    risk_reward_ratio: float | None = None
+    scenarios: dict[str, Any]
+    assumptions: list[str]
+
+
+class OptionsStrategyBuildResponse(BaseModel):
+    mode: str
+    template_id: str
+    strategy: str
+    spot: float
+    expiry_days: int
+    legs: list[OptionRecord]
+    net_debit: float
+    max_profit: float | None = None
+    max_loss: float | None = None
+    breakevens: list[float]
+    risk_reward_ratio: float | None = None
+    assumptions: list[str]
+
+
 __all__ = [
     "OptionsChainResponse",
     "OptionsExpirationsResponse",
+    "OptionsGreeksResponse",
+    "OptionsImpliedVolatilityResponse",
     "OptionsScreenerConfig",
+    "OptionsSimulationResponse",
     "OptionsSnapshotResponse",
+    "OptionsStrategyBuildResponse",
     "OptionsVolSmileResponse",
     "OptionsVolSurfaceResponse",
 ]

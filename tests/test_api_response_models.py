@@ -182,3 +182,33 @@ def test_options_screener_post_route_publishes_response_model(tmp_path) -> None:
     assert "candidates" in components["OptionsScreenerResult"]["properties"]
     assert "assumptions" in components["OptionsScreenerResult"]["properties"]
     assert "rating" in components["OptionsScreenerCandidate"]["properties"]
+
+
+def test_options_local_tools_post_routes_publish_response_models(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    expected = {
+        "/api/options/tools/greeks": "OptionsGreeksResponse",
+        "/api/options/tools/implied-volatility": "OptionsImpliedVolatilityResponse",
+        "/api/options/tools/simulate": "OptionsSimulationResponse",
+        "/api/options/tools/strategy/build": "OptionsStrategyBuildResponse",
+    }
+    for path, model_name in expected.items():
+        response_schema = openapi["paths"][path]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert response_schema == {"$ref": f"#/components/schemas/{model_name}"}
+
+    components = openapi["components"]["schemas"]
+    assert "delta" in components["OptionsGreeksResponse"]["properties"]
+    assert "charm" in components["OptionsGreeksResponse"]["properties"]
+    assert (
+        "implied_volatility"
+        in components["OptionsImpliedVolatilityResponse"]["properties"]
+    )
+    assert "pnl_at_expiry" in components["OptionsSimulationResponse"]["properties"]
+    assert "scenarios" in components["OptionsSimulationResponse"]["properties"]
+    assert "template_id" in components["OptionsStrategyBuildResponse"]["properties"]
+    assert "legs" in components["OptionsStrategyBuildResponse"]["properties"]

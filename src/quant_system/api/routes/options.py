@@ -8,7 +8,11 @@ from quant_system.api.schemas.common import dataframe_records
 from quant_system.api.schemas.options import (
     OptionsChainResponse,
     OptionsExpirationsResponse,
+    OptionsGreeksResponse,
+    OptionsImpliedVolatilityResponse,
+    OptionsSimulationResponse,
     OptionsSnapshotResponse,
+    OptionsStrategyBuildResponse,
     OptionsVolSmileResponse,
     OptionsVolSurfaceResponse,
 )
@@ -160,7 +164,7 @@ def options_vol_smile(
         ) from exc
 
 
-@router.post("/options/tools/greeks")
+@router.post("/options/tools/greeks", response_model=OptionsGreeksResponse)
 def options_greeks(payload: dict) -> dict:
     try:
         return calculate_greeks(
@@ -178,7 +182,10 @@ def options_greeks(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/implied-volatility")
+@router.post(
+    "/options/tools/implied-volatility",
+    response_model=OptionsImpliedVolatilityResponse,
+)
 def options_implied_volatility(payload: dict) -> dict:
     try:
         iv = implied_volatility(
@@ -197,7 +204,7 @@ def options_implied_volatility(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/simulate")
+@router.post("/options/tools/simulate", response_model=OptionsSimulationResponse)
 def options_simulate(payload: dict) -> dict:
     try:
         return simulate_option_position(
@@ -217,7 +224,10 @@ def options_strategy_templates() -> dict:
     return {"templates": strategy_templates()}
 
 
-@router.post("/options/tools/strategy/build")
+@router.post(
+    "/options/tools/strategy/build",
+    response_model=OptionsStrategyBuildResponse,
+)
 def options_strategy_build(payload: dict) -> dict:
     try:
         mode = str(payload.get("mode", "template"))
