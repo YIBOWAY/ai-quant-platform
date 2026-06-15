@@ -54,3 +54,11 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 `src/frontend/lib/serverApi.ts` 的 `getCachedHealth()` 读取健康状态，该 helper
 用 React `cache()` 在同一次服务端渲染内复用 `/api/health` 请求；客户端
 `getHealth()` 仍保留为普通 API helper。
+
+2026-06-15 状态补充：评估报告中“E2E 继承真实 PostgreSQL / 真实数据目录”的
+高风险项当前已处理。`src/frontend/playwright.config.ts` 的后端 webServer 明确设置
+`QS_ENVIRONMENT=test`、`QS_DATABASE_ENABLED=false`、`QS_DATABASE_AUTO_MIGRATE=false`
+并把 `QS_DATA_DIR` / parquet / DuckDB / options radar 路径指向
+`src/frontend/.tmp/e2e-data`；`tests/test_frontend_e2e_config.py` 会锁定这些隔离项。
+在本地 `quantplatform-db` 容器运行时，`QS_TEST_DATABASE_URL=postgresql://quant:quantpass@127.0.0.1:5432/quantplatform`
+下的 `tests/test_runs_repository_postgres.py` 通过，说明可选 run index 仍可用。
