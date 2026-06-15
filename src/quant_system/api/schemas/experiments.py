@@ -4,6 +4,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+from quant_system.experiments.models import WalkForwardConfig
+
 
 class ExperimentSummary(BaseModel):
     id: str
@@ -25,3 +27,4 @@ class ExperimentRunRequest(BaseModel):
     commission_bps: NonNegativeFloat = 1.0
     slippage_bps: NonNegativeFloat = 5.0
     rebalance_every_n_bars: PositiveInt = 1
+    walk_forward: WalkForwardConfig = Field(default_factory=WalkForwardConfig)

@@ -4,7 +4,7 @@
 
 ## 一句话定位
 
-这是一个**参数网格扫描研究台**：对一个**写死的三因子打分策略**，在你选择的 OHLCV 数据源上遍历 `lookback`（回看窗口）× `top_n`（持仓只数）两个维度的所有组合，每个组合各跑一次回测，最后按夏普比率（Sharpe）挑出"最佳"组合供人工查看。
+这是一个**参数网格扫描研究台**：对一个**写死的三因子打分策略**，在你选择的 OHLCV 数据源上遍历 `lookback`（回看窗口）× `top_n`（持仓只数）两个维度的所有组合，每个组合各跑一次回测，最后按夏普比率（Sharpe）挑出"最佳"组合供人工查看。需要时也可以显式开启 walk-forward 折验证。
 
 ## 它解决什么问题 / 为什么存在
 
@@ -27,16 +27,18 @@
 
 3. **遍历参数网格。** `expand_parameter_grid`（`sweep.py`）对 `{"lookback": [...], "top_n": [...]}` 做笛卡尔积，每个组合得到一个 `run-001`、`run-002`… 的 run，逐一调用 `_run_single_backtest`。运行次数 = `len(lookbacks) × len(top_ns)`。
 
-4. **按 Sharpe 选最佳。** `best_run = max(runs, key=sharpe)`（`runner.py`），写进 `agent_summary.json` 的 `best_run_id`。
+4. **可选 walk-forward 折验证。** 表单里的 "Walk-forward folds" 默认关闭；开启后会把 `enabled/train_bars/validation_bars/step_bars` 写入 `ExperimentRunRequest.walk_forward`，后端透传到 `WalkForwardConfig`，每个参数组合按折运行 `_run_walk_forward_combination`，并把折级指标写入 `walk_forward_folds.parquet`。关闭时仍只做普通参数扫描，`fold_count=0`。
 
-5. **落地产物（写到本地 `experiments/<实验ID>/` 目录）：**
+5. **按 Sharpe 选最佳。** `best_run = max(runs, key=sharpe)`（`runner.py`），写进 `agent_summary.json` 的 `best_run_id`。
+
+6. **落地产物（写到本地 `experiments/<实验ID>/` 目录）：**
    - `experiment_config.json`：本次实验的完整配置（因子、权重、sweep、walk_forward 等）；
    - `experiment_runs.parquet`：每个 run 一行的指标表（驱动"参数扫描热力图"和"运行对比"）；
-   - `walk_forward_folds.parquet`：滚动验证折表——**当前永远是空表**（见下文局限）；
+   - `walk_forward_folds.parquet`：滚动验证折表；只有开启 Walk-forward folds 时才会有折记录；
    - `agent_summary.json`：只读 JSON 摘要（驱动"代理摘要"标签页）；
    - 一份对比报告。
 
-6. **"发送至回测"按钮（Send to Backtest）。** 在结果区找到最佳 run 后会出现该按钮，点它跳到 `/backtest`，把 `lookback`、`top_n`、成本参数和数据源一起带过去。数据源来自 `agent_summary.data.source`；旧实验如果缺少该字段，会按 `sample` 处理，避免把 sample 实验静默切到真实数据。
+7. **"发送至回测"按钮（Send to Backtest）。** 在结果区找到最佳 run 后会出现该按钮，点它跳到 `/backtest`，把 `lookback`、`top_n`、成本参数和数据源一起带过去。数据源来自 `agent_summary.data.source`；旧实验如果缺少该字段，会按 `sample` 处理，避免把 sample 实验静默切到真实数据。
 
 ## 操作步骤（一步一步，结合真实输入项与默认值）
 
@@ -48,6 +50,7 @@
    - **数据源 Data Source**：默认 `futu`。可选 `sample` / `futu` / `tiingo`；`sample` 适合离线流程验证，真实 provider 不可用时会明确失败。
    - **回看窗口 Lookbacks**：默认 `3,5,10`。逗号分隔的正整数，每个值是一个候选回看窗口。
    - **Top N 数值**：默认 `1,2`。逗号分隔的正整数，每个值是一个候选持仓只数。
+   - **滚动验证折 Walk-forward folds**：默认关闭。开启后会出现 `Train bars`、`Validation bars`、`Step bars` 三个正整数输入，默认 `12 / 5 / 5`；这些参数控制训练窗、验证窗和滚动步长。
    - **初始资金 Initial Cash**：默认 `100000`。
    - **佣金（基点）Commission bps**：默认 `1`。
    - **滑点（基点）Slippage bps**：默认 `5`。
@@ -60,7 +63,7 @@
 
 4. **在右侧四个标签页查看结果**（`ExperimentTabs`）：
    - **参数扫描热力图（Sweep heatmap）**：每个 run 一个卡片，显示 `lookback=… / top_n=…` 和该组合的 Sharpe，背景绿色深浅按 Sharpe 在 [min, max] 区间归一化着色。
-   - **滚动验证折（Walk-forward folds）**：**当前总是空**，显示"滚动验证折不可用"。
+   - **滚动验证折（Walk-forward folds）**：开启 walk-forward 时显示每个折的 train/validation 窗口与指标；未开启时显示"滚动验证折不可用"。
    - **运行对比（Run comparison）**：按 Sharpe 降序的柱状图 + 明细表（列：`run_id, lookback, top_n, sharpe, total_return, max_drawdown, turnover`），最佳 run 行高亮。
    - **代理摘要（Agent summary）**：渲染 `agent_summary.json`，含 `notes` 列表，可"复制 JSON"。
 
@@ -71,7 +74,7 @@
 - **experiment（实验）**：一次完整的参数扫描批次。对应本地一个目录 `experiments/<实验ID>/`。实验 ID 形如 `phase4-sample-experiment-20240115T...Z`。
 - **sweep（扫描）**：参数网格本身，即 `{lookback: [...], top_n: [...]}` 的笛卡尔积。
 - **run（运行）**：网格中的一个格子 = 一次回测，编号 `run-001`…。
-- **fold（折）**：滚动验证（walk-forward）里的一个"训练窗+验证窗"切片。**本页当前不产生 fold**（见局限）。
+- **fold（折）**：滚动验证（walk-forward）里的一个"训练窗+验证窗"切片。只有在运行表单里开启 Walk-forward folds 时才产生。
 - **best（最佳）**：所有 run 里 Sharpe 最高的那个 run 的 `run_id`。
 - **lookback（回看窗口）**：计算因子时往回看多少根 K 线。同一个 lookback 同时作用于动量/波动/流动性三个因子（`_create_factors` 用同一个 lookback 实例化全部因子）。
 - **top_n**：每次调仓时按综合分选前几名等权做多。
@@ -89,32 +92,29 @@
 
 这些正是让人"看了界面却理解不了它在干什么"的根源，逐条对应到代码：
 
-1. **"滚动验证折"是头部大标签页，却永远是空的。**
-   `create_sample_experiment_config` 把 `walk_forward=WalkForwardConfig(enabled=False)` 写死。`runner.py` 里 `_run_combination` 只在 `config.walk_forward.enabled` 为真时才走 `_run_walk_forward_combination`——从 UI 进来永远是 `False`，所以 `walk_forward.py`（train/validation/step 折叠逻辑）、`_run_walk_forward_combination`、`_aggregate_fold_metrics` 全是**对 UI 而言的死代码**，`walk_forward_folds.parquet` 永远写空表，标签页永远显示"不可用"。这是"承诺（UI 摆了个折验证标签）vs 实现（功能被关掉）"的典型落差。
+1. **被比较的策略写死且不可见。** UI 上你只有 `lookback` 和 `top_n` 两个旋钮，但真正决定收益的三因子组合（动量 1.0 / 波动 0.5 / 流动性 0.5）藏在后端 `config.py` 里，界面完全不展示。用户看到一堆 Sharpe 差异，却不知道"被比的到底是什么策略"。
 
-2. **被比较的策略写死且不可见。** UI 上你只有 `lookback` 和 `top_n` 两个旋钮，但真正决定收益的三因子组合（动量 1.0 / 波动 0.5 / 流动性 0.5）藏在后端 `config.py` 里，界面完全不展示。用户看到一堆 Sharpe 差异，却不知道"被比的到底是什么策略"。
-
-3. **sample 实验仍然只是流程验证，不代表真实行情结论。**
+2. **sample 实验仍然只是流程验证，不代表真实行情结论。**
    现在 sample 实验不会再被"发送至回测"静默切到 `futu`，但 sample 数据上最优的 lookback/top_n 对真实行情仍没有统计意义上的迁移保证。需要真实研究时，应直接选择 `futu` 或 `tiingo` 运行实验。
 
-4. **"Agent summary"听起来像 AI，其实是静态 JSON。** 名字带"代理（Agent）"，容易让人以为有模型在分析；实际只是把配置和指标序列化成文件再渲染出来，`notes` 也是三条硬编码文案。
+3. **"Agent summary"听起来像 AI，其实是静态 JSON。** 名字带"代理（Agent）"，容易让人以为有模型在分析；实际只是把配置和指标序列化成文件再渲染出来，`notes` 也是三条硬编码文案。
 
-5. **专业术语全程零解释。** experiment / sweep / run / fold / best 在界面里直接出现，没有任何 tooltip 或说明，非量化背景的使用者无从下手（本文档即为补这个缺口）。
+4. **专业术语全程零解释。** experiment / sweep / run / fold / best 在界面里直接出现，没有任何 tooltip 或说明，非量化背景的使用者无从下手（本文档即为补这个缺口）。
 
-6. ~~默认只看最新实验、列表项不可点击~~ **已于 2026-06-11 修复**：列表项是 `?experiment=<id>` 链接，点击即切换详情；不带参数时回退到最新实验。
+5. ~~默认只看最新实验、列表项不可点击~~ **已于 2026-06-11 修复**：列表项是 `?experiment=<id>` 链接，点击即切换详情；不带参数时回退到最新实验。
 
-7. **择优维度单一。** 只按 Sharpe 选最佳，不看最大回撤、换手率等。对成本敏感或风险厌恶的研究者，"最佳"未必是他想要的那个。
+6. **择优维度单一。** 只按 Sharpe 选最佳，不看最大回撤、换手率等。对成本敏感或风险厌恶的研究者，"最佳"未必是他想要的那个。
 
 ## 合理性评估与改进建议
 
 **合理的部分**：作为一个离线、纯研究的参数敏感性工具，整体架构是干净的——配置/扫描/打分/回测/落地各司其职，产物全部是可复查的本地文件，安全标志明确，没有任何实盘通路。用合成数据做"管道自检"也合理。
 
-**主要问题**：UI 暴露的能力与后端实际开启的能力仍有不一致（folds 死标签、策略不可见），导致使用者困惑。2026-06-15 起，数据源选择与"发送至回测"的数据源语义已对齐。
+**主要问题**：策略定义仍不可见，最佳判定仍只看 Sharpe。2026-06-15 起，数据源选择、"发送至回测"的数据源语义、以及 walk-forward 折验证入口已对齐。
 
 **改进建议（按性价比排序）**：
 
-1. **要么打开 walk-forward，要么从 UI 移除该标签页。** 既然 `walk_forward.py` 的逻辑已经写好，最干净的做法是给表单加一个"启用滚动验证 + train/validation/step"开关并透传到 `WalkForwardConfig`；若短期不做，则隐藏该标签页，避免摆一个永远空的功能。
-2. **在结果区显式展示被扫描的策略与因子权重。** 把 `experiment_config.json` 里的三因子组合渲染成一个只读卡片，让用户知道"在比什么"。
+1. **在结果区显式展示被扫描的策略与因子权重。** 把 `experiment_config.json` 里的三因子组合渲染成一个只读卡片，让用户知道"在比什么"。
+2. ~~打开 walk-forward 或移除该标签页~~ **已于 2026-06-15 修复**：表单提供 Walk-forward folds 开关并透传到 `WalkForwardConfig`，开启后会生成 `walk_forward_folds.parquet`。
 3. ~~修正"发送至回测"的数据源语义~~ **已于 2026-06-15 修复**：跳转会沿用实验记录的 `agent_summary.data.source`；旧实验缺少 source 时按 `sample` 处理。
 4. **给关键术语加 tooltip**（experiment/sweep/run/fold/best/lookback/top_n）。
 5. **让最佳判定可配置或多指标呈现**（如同时标注回撤最小、换手最低的 run）。
@@ -123,15 +123,15 @@
 ## 相关代码入口
 
 - 前端页面：`src/frontend/app/experiments/page.tsx`
-- 运行表单（provider 选择、默认值、请求 payload）：`src/frontend/components/forms/ExperimentRunForm.tsx`
+- 运行表单（provider 选择、walk-forward 开关、默认值、请求 payload）：`src/frontend/components/forms/ExperimentRunForm.tsx`
 - 结果四标签页（热力图/折/对比/摘要、source 标注、`buildBacktestHref` 跳转逻辑）：`src/frontend/components/forms/ExperimentTabs.tsx`
 - 前端 payload/helper 测试：`src/frontend/lib/experimentRunPayload.ts`
 - 后端路由（list / run / detail）：`src/quant_system/api/routes/experiments.py`
-- 请求 schema（provider 支持 sample/futu/tiingo、字段约束）：`src/quant_system/api/schemas/experiments.py`
+- 请求 schema（provider 支持 sample/futu/tiingo、walk_forward 配置、字段约束）：`src/quant_system/api/schemas/experiments.py`
 - 实验编排（可注入 provider、按 Sharpe 选最佳、写产物）：`src/quant_system/experiments/runner.py`
-- 写死的三因子配置 + `walk_forward.enabled=False`：`src/quant_system/experiments/config.py`
+- 写死的三因子配置 + 可选 `WalkForwardConfig`：`src/quant_system/experiments/config.py`
 - 参数网格笛卡尔积：`src/quant_system/experiments/sweep.py`
-- 滚动验证切分（当前为死代码）：`src/quant_system/experiments/walk_forward.py`
+- 滚动验证切分：`src/quant_system/experiments/walk_forward.py`
 - 横截面 z-score 多因子打分：`src/quant_system/experiments/scoring.py`
 - 数据模型（ExperimentConfig / WalkForwardConfig / ExperimentRunSummary 等）：`src/quant_system/experiments/models.py`
 - 选股策略（top_n 等权做多、score>0）：`src/quant_system/backtest/strategy.py`

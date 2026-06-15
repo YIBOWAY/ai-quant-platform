@@ -28,6 +28,7 @@ def create_sample_experiment_config(
     commission_bps: float = 1.0,
     slippage_bps: float = 5.0,
     rebalance_every_n_bars: int = 1,
+    walk_forward: WalkForwardConfig | None = None,
 ) -> ExperimentConfig:
     return ExperimentConfig(
         experiment_name="phase4-sample-experiment",
@@ -58,5 +59,5 @@ def create_sample_experiment_config(
             rebalance_every_n_bars=rebalance_every_n_bars,
         ),
         sweep={"lookback": lookbacks, "top_n": top_ns},
-        walk_forward=WalkForwardConfig(enabled=False),
+        walk_forward=walk_forward or WalkForwardConfig(enabled=False),
     )

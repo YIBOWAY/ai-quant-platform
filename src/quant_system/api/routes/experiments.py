@@ -60,6 +60,7 @@ def run_experiment(
             rebalance_every_n_bars=request.rebalance_every_n_bars,
             provider=provider,
             data_source=source,
+            walk_forward=request.walk_forward,
         )
     except DataProviderUnavailableError as exc:
         raise _provider_unavailable_400(exc) from exc

@@ -85,7 +85,11 @@ frontend defaults to `futu`, and the backend builds the provider through
 `400 provider_unavailable` instead of silently falling back to sample data. The
 actual source is persisted to `agent_summary.data.source`, and `/experiments`
 "Send to Backtest" preserves that source when constructing the `/backtest`
-link. Old experiments without `data.source` are treated as `sample`.
+link. Old experiments without `data.source` are treated as `sample`. The run
+request also accepts a `walk_forward` object (`enabled`, `train_bars`,
+`validation_bars`, `step_bars`); the frontend keeps it off by default and only
+generates `walk_forward_folds.parquet` when the user explicitly enables
+Walk-forward folds.
 
 ## Optional PostgreSQL Run Index
 

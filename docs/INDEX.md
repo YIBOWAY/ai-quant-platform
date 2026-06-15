@@ -131,7 +131,7 @@
 | `/replications` | 由策略注册表支撑的策略目录。 |
 | `/replications/[runId]` | 已落盘的反转/动量研报复现运行详情。 |
 | `/docs/reversal-momentum` | 前端可读的复现文档。 |
-| `/experiments` | 实验扫描、折叠、对比、数据源标注与最佳运行回顾。 |
+| `/experiments` | 实验扫描、可选滚动验证折、对比、数据源标注与最佳运行回顾。 |
 | `/paper-trading` | 持久模拟账户（手动下单 + 策略一键再平衡）＋历史回放（研究）。 |
 | `/paper-trading/[runId]` | 历史回放运行详情。 |
 | `/position-map` | 模拟账户实时持仓地图（净值/现金/暴露/来源归因），另含回测暴露对比块。 |

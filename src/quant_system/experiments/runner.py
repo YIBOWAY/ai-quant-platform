@@ -19,6 +19,7 @@ from quant_system.experiments.models import (
     ExperimentConfig,
     ExperimentRunSummary,
     ParameterCombination,
+    WalkForwardConfig,
     WalkForwardSplit,
 )
 from quant_system.experiments.reporting import generate_experiment_comparison_report
@@ -58,6 +59,7 @@ def run_sample_experiment(
     rebalance_every_n_bars: int = 1,
     provider: HistoricalDataProvider | None = None,
     data_source: str = "sample",
+    walk_forward: WalkForwardConfig | None = None,
 ) -> ExperimentResult:
     config = create_sample_experiment_config(
         symbols=symbols,
@@ -69,6 +71,7 @@ def run_sample_experiment(
         commission_bps=commission_bps,
         slippage_bps=slippage_bps,
         rebalance_every_n_bars=rebalance_every_n_bars,
+        walk_forward=walk_forward,
     )
     return run_experiment(
         config,

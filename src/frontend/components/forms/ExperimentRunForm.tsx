@@ -19,6 +19,10 @@ const experimentSchema = z.object({
   provider: z.enum(["sample", "futu", "tiingo"]),
   lookbacks: z.string().min(1, "Enter at least one lookback"),
   top_ns: z.string().min(1, "Enter at least one Top N"),
+  walk_forward_enabled: z.boolean(),
+  walk_forward_train_bars: z.coerce.number().int().positive(),
+  walk_forward_validation_bars: z.coerce.number().int().positive(),
+  walk_forward_step_bars: z.coerce.number().int().positive(),
   initial_cash: z.coerce.number().nonnegative(),
   commission_bps: z.coerce.number().nonnegative(),
   slippage_bps: z.coerce.number().nonnegative(),
@@ -44,6 +48,11 @@ const copy = {
     sourceHelp: "Futu requires OpenD; sample is for explicit offline testing only.",
     lookbacks: "Lookbacks",
     topNs: "Top N values",
+    walkForward: "Walk-forward folds",
+    walkForwardHelp: "Optional validation folds; keep off for the faster parameter sweep.",
+    trainBars: "Train bars",
+    validationBars: "Validation bars",
+    stepBars: "Step bars",
     initialCash: "Initial Cash",
     commissionBps: "Commission bps",
     slippageBps: "Slippage bps",
@@ -62,6 +71,11 @@ const copy = {
     sourceHelp: "Futu 需要 OpenD 在线；sample 仅用于明确的离线测试。",
     lookbacks: "回看窗口",
     topNs: "Top N 数值",
+    walkForward: "滚动验证折",
+    walkForwardHelp: "可选验证折；关闭时参数扫描更快。",
+    trainBars: "训练 bars",
+    validationBars: "验证 bars",
+    stepBars: "步长 bars",
     initialCash: "初始资金",
     commissionBps: "佣金（基点）",
     slippageBps: "滑点（基点）",
@@ -78,6 +92,10 @@ const DEFAULTS: ExperimentFormValues = {
   provider: "futu",
   lookbacks: "3,5,10",
   top_ns: "1,2",
+  walk_forward_enabled: false,
+  walk_forward_train_bars: 12,
+  walk_forward_validation_bars: 5,
+  walk_forward_step_bars: 5,
   initial_cash: 100000,
   commission_bps: 1,
   slippage_bps: 5,
@@ -102,6 +120,8 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
   const submit = form.handleSubmit((values) => mutation.mutate(values));
   const selectedProvider = useWatch({ control: form.control, name: "provider" }) ?? "futu";
+  const walkForwardEnabled =
+    useWatch({ control: form.control, name: "walk_forward_enabled" }) ?? false;
 
   const fieldLabel = "flex flex-col gap-1 font-body-sm text-text-primary";
   const fieldInput =
@@ -164,6 +184,50 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
               <input className={fieldInput} {...form.register("top_ns")} />
               {fieldError("top_ns")}
             </label>
+          </div>
+          <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
+            <label className="flex items-start gap-2 font-body-sm text-text-primary">
+              <input
+                className="mt-1"
+                type="checkbox"
+                {...form.register("walk_forward_enabled")}
+              />
+              <span>
+                <span className="block font-semibold">{text.walkForward}</span>
+                <span className="block text-text-secondary">{text.walkForwardHelp}</span>
+              </span>
+            </label>
+            {walkForwardEnabled ? (
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <label className={fieldLabel}>
+                  {text.trainBars}
+                  <input
+                    className={fieldInput}
+                    min={1}
+                    type="number"
+                    {...form.register("walk_forward_train_bars", { valueAsNumber: true })}
+                  />
+                </label>
+                <label className={fieldLabel}>
+                  {text.validationBars}
+                  <input
+                    className={fieldInput}
+                    min={1}
+                    type="number"
+                    {...form.register("walk_forward_validation_bars", { valueAsNumber: true })}
+                  />
+                </label>
+                <label className={fieldLabel}>
+                  {text.stepBars}
+                  <input
+                    className={fieldInput}
+                    min={1}
+                    type="number"
+                    {...form.register("walk_forward_step_bars", { valueAsNumber: true })}
+                  />
+                </label>
+              </div>
+            ) : null}
           </div>
           <label className={fieldLabel}>
             {text.initialCash}

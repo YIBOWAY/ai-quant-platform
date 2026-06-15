@@ -12,6 +12,10 @@ describe("buildExperimentRunPayload", () => {
         provider: "tiingo",
         lookbacks: "3,5",
         top_ns: "1,2",
+        walk_forward_enabled: true,
+        walk_forward_train_bars: 8,
+        walk_forward_validation_bars: 4,
+        walk_forward_step_bars: 4,
         initial_cash: 100000,
         commission_bps: 1,
         slippage_bps: 5,
@@ -21,6 +25,12 @@ describe("buildExperimentRunPayload", () => {
       provider: "tiingo",
       lookbacks: [3, 5],
       top_ns: [1, 2],
+      walk_forward: {
+        enabled: true,
+        train_bars: 8,
+        validation_bars: 4,
+        step_bars: 4,
+      },
     });
   });
 

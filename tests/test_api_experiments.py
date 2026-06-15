@@ -238,3 +238,34 @@ def test_experiment_run_uses_selected_provider_and_persists_source(
     assert payload["source"] == "tiingo"
     detail = client.get(f"/api/experiments/{payload['experiment_id']}").json()
     assert detail["agent_summary"]["data"]["source"] == "tiingo"
+
+
+def test_experiment_run_can_generate_walk_forward_folds(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/experiments/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "sample",
+            "lookbacks": [3],
+            "top_ns": [1],
+            "walk_forward": {
+                "enabled": True,
+                "train_bars": 8,
+                "validation_bars": 4,
+                "step_bars": 4,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    detail = client.get(f"/api/experiments/{payload['experiment_id']}").json()
+    assert detail["folds"]
+    assert detail["folds"][0]["run_id"] == "run-001"
+    assert detail["runs"][0]["fold_count"] == len(detail["folds"])
+    assert detail["experiment_config"]["walk_forward"]["enabled"] is True
