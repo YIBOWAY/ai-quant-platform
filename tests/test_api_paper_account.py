@@ -313,7 +313,9 @@ def test_account_rebalance_rejects_strategy_without_account_support(
     )
 
     assert response.status_code == 400
-    assert "does not support account rebalance" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "unsupported_account_rebalance_strategy"
+    assert "does not support account rebalance" in detail["message"]
 
 
 def test_concurrent_orders_do_not_lose_updates(tmp_path, stub_prices) -> None:
@@ -478,4 +480,6 @@ def test_rebalance_reports_unavailable_prices_without_server_error(
     )
 
     assert response.status_code == 422
-    assert "no real quote available" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "price_unavailable"
+    assert "no real quote available" in detail["message"]

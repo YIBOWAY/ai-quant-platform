@@ -51,6 +51,14 @@
 
 并发安全：网页请求会在进程内串行，网页与 CLI / 定时任务之间还会使用账户锁文件串行；定时再平衡与手动下单同时发生也不会丢记录。
 
+模拟账户 API 的领域错误会返回结构化 `detail.code` / `detail.message`，便于前端精确展示：
+
+- `account_frozen`：账户冻结，拒绝新单或再平衡。
+- `price_unavailable`：无法取得真实纸面价格。
+- `strategy_data_unavailable`：再平衡策略无法取得真实历史数据。
+- `unsupported_account_rebalance_strategy`：策略存在，但不允许进入持续账户再平衡。
+- `unknown_account_rebalance_strategy`：请求了不存在的账户再平衡策略。
+
 ### B. 历史回放（`POST /api/paper/run`，在「历史回放（研究）」标签页）
 
 逐 bar 回放：因子信号 → `ScoreSignalStrategy` 目标权重 → 先卖后买生成订单 → 风控 → 模拟撮合（次 bar 开盘价）。产出订单 / 成交 / 风控触发 parquet + 报告，列在运行索引里。标签页内：左侧 360px 卡是回放表单（`PaperRunForm`，默认 `SPY,QQQ` + `futu` + 截至今天的滚动 180 天窗口；安全锁开关常开，点它弹出说明对话框），右侧是最新运行指标、运行历史表（可切换显示被隐藏的 sample 运行）、成交 / 订单生命周期 / 风控触发明细表。当一次运行 0 成交且风控触发 > 0 时，页面会显示「全局安全锁拦截了订单」的解释卡。注意它受**全局** `QS_KILL_SWITCH` 约束（默认开 → 该路径会拦截订单），这条与上面的账户级冻结是两回事。

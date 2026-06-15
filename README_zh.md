@@ -195,6 +195,9 @@ curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
 - 查看 / 冻结 / 重置 / 账本：`GET /api/paper/account`、
   `POST /api/paper/account/kill-switch`、`POST /api/paper/account/reset`、
   `GET /api/paper/account/ledger`。
+  模拟账户的领域错误会返回结构化 `detail.code` / `detail.message`，例如
+  `price_unavailable`、`account_frozen` 或
+  `unsupported_account_rebalance_strategy`。
 
 定时自动再平衡（例如通过 Windows 任务计划程序）：
 

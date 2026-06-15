@@ -255,6 +255,9 @@ simulation-only — no real orders, broker, wallet, or account unlock.
 - View / freeze / reset / ledger: `GET /api/paper/account`,
   `POST /api/paper/account/kill-switch`, `POST /api/paper/account/reset`,
   `GET /api/paper/account/ledger`.
+  Paper-account domain failures return structured API details with
+  `detail.code` and `detail.message` (for example `price_unavailable`,
+  `account_frozen`, or `unsupported_account_rebalance_strategy`).
 
 Scheduled auto-rebalance (e.g. via Windows Task Scheduler):
 

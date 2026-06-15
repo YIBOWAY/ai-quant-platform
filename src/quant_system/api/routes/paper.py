@@ -39,6 +39,9 @@ from quant_system.strategies.registry import build_default_strategy_registry
 router = APIRouter()
 
 
+def _error_detail(code: str, message: str) -> dict[str, str]:
+    return {"code": code, "message": message}
+
 
 @router.post("/paper/run")
 def run_paper(
@@ -329,11 +332,20 @@ def place_account_order(
                 limit_price=request.limit_price,
             )
         except AccountFrozenError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail("account_frozen", str(exc)),
+            ) from exc
         except PriceUnavailableError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=422,
+                detail=_error_detail("price_unavailable", str(exc)),
+            ) from exc
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=400,
+                detail=_error_detail("invalid_account_order", str(exc)),
+            ) from exc
         quotes = _account_quotes(account, settings=settings)
         _save_account(storage, account, quotes)
         return {
@@ -354,9 +366,15 @@ def process_pending_account_orders(
         try:
             outcomes = service.process_pending_orders(account)
         except AccountFrozenError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail("account_frozen", str(exc)),
+            ) from exc
         except PriceUnavailableError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=422,
+                detail=_error_detail("price_unavailable", str(exc)),
+            ) from exc
         quotes = _account_quotes(account, settings=settings)
         _save_account(storage, account, quotes)
         return {
@@ -378,7 +396,10 @@ def cancel_pending_account_order(
         try:
             outcome = service.cancel_pending_order(account, order_id=order_id)
         except PendingOrderNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=404,
+                detail=_error_detail("pending_order_not_found", str(exc)),
+            ) from exc
         quotes = _account_quotes(account, settings=settings)
         _save_account(storage, account, quotes)
         return {
@@ -408,11 +429,25 @@ def rebalance_account(
                 provider=request.provider,
             )
         except AccountFrozenError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail("account_frozen", str(exc)),
+            ) from exc
         except (PriceUnavailableError, StrategyDataUnavailableError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            code = (
+                "price_unavailable"
+                if isinstance(exc, PriceUnavailableError)
+                else "strategy_data_unavailable"
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=_error_detail(code, str(exc)),
+            ) from exc
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=400,
+                detail=_error_detail("invalid_account_rebalance", str(exc)),
+            ) from exc
         quotes = _account_quotes(account, settings=settings)
         _save_account(storage, account, quotes)
         return {
@@ -444,15 +479,19 @@ def _account_rebalance_strategy_id(strategy_id: str) -> str:
         ]
         raise HTTPException(
             status_code=400,
-            detail=(
+            detail=_error_detail(
+                "unknown_account_rebalance_strategy",
                 f"unknown account rebalance strategy {normalized!r}; "
-                f"supported: {', '.join(supported)}"
+                f"supported: {', '.join(supported)}",
             ),
         ) from exc
     if not metadata.supports_account_rebalance:
         raise HTTPException(
             status_code=400,
-            detail=f"strategy {normalized!r} does not support account rebalance",
+            detail=_error_detail(
+                "unsupported_account_rebalance_strategy",
+                f"strategy {normalized!r} does not support account rebalance",
+            ),
         )
     return normalized
 

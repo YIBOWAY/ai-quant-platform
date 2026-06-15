@@ -25,3 +25,8 @@
 futu”的小项已对齐。`.env.example` 现在使用
 `QS_DEFAULT_DATA_PROVIDER="futu"`，并说明 `sample` 只用于显式离线流程测试；
 `tests/test_environment_file.py` 会锁定示例文件与 `DataSettings` 默认值一致。
+
+2026-06-15 状态补充：评估报告中“错误响应格式不一致”的一部分已收敛。
+持续模拟账户 API 的领域错误现在返回结构化 `detail.code` / `detail.message`，
+覆盖账户冻结、缺价、策略数据不可用、未知或不支持的账户再平衡策略等常见失败态。
+其他历史回放和跨模块 404 仍未做全局统一。
