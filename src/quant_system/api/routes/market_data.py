@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.common import dataframe_records
+from quant_system.api.schemas.market_data import MarketDataHistoryResponse
 from quant_system.data.provider_factory import (
     DataProviderUnavailableError,
     build_ohlcv_provider,
@@ -15,7 +16,7 @@ from quant_system.data.providers.sample import SampleOHLCVProvider
 router = APIRouter()
 
 
-@router.get("/market-data/history")
+@router.get("/market-data/history", response_model=MarketDataHistoryResponse)
 def market_data_history(
     settings: SettingsDep,
     ticker: str,
