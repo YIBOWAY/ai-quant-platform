@@ -3,8 +3,17 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import ApiKeySettings, Settings
+from quant_system.config.settings import ApiKeySettings, DataSettings, Settings
 from quant_system.data.schema import normalize_ohlcv_dataframe
+
+
+def _isolated_data_settings(tmp_path) -> DataSettings:
+    return DataSettings(
+        data_dir=tmp_path / "data",
+        parquet_dir=tmp_path / "parquet",
+        duckdb_path=tmp_path / "quant_system.duckdb",
+        reports_dir=tmp_path / "reports",
+    )
 
 
 def _fake_tiingo_frame() -> pd.DataFrame:
@@ -131,6 +140,7 @@ def test_factor_run_rejects_explicit_provider_fetch_failure(
     monkeypatch,
 ) -> None:
     settings = Settings(
+        data=_isolated_data_settings(tmp_path),
         api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token"))
     )
 

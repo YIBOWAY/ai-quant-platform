@@ -19,7 +19,7 @@ const copy = {
     eyebrow: "Parameter sweeps",
     resultsTitle: "Experiment Results",
     resultsSubtitle:
-      "Sample-data parameter sweeps for comparing lookback and Top N settings. Read-only research, no live trading.",
+      "Parameter sweeps over the selected OHLCV source for comparing lookback and Top N settings. Read-only research, no live trading.",
     localBadge: "local",
     mLocal: "Local runs",
     mLatest: "Selected",
@@ -36,7 +36,7 @@ const copy = {
     noExperimentsDescription: "运行一个实验以填充此列表。",
     eyebrow: "参数扫描",
     resultsTitle: "实验结果",
-    resultsSubtitle: "用样本数据做参数扫描，对比 lookback 与 Top N 设置。仅供研究查阅，不涉及实盘交易。",
+    resultsSubtitle: "使用所选 OHLCV 数据源做参数扫描，对比 lookback 与 Top N 设置。仅供研究查阅，不涉及实盘交易。",
     localBadge: "本地",
     mLocal: "本地运行",
     mLatest: "当前选中",

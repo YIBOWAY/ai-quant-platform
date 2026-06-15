@@ -5,9 +5,13 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from quant_system.api.dependencies import OutputDirDep
+from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.common import read_json, read_parquet_records, resolve_run_dir
 from quant_system.api.schemas.experiments import ExperimentRunRequest
+from quant_system.data.provider_factory import (
+    DataProviderUnavailableError,
+    build_ohlcv_provider,
+)
 from quant_system.experiments.runner import run_sample_experiment
 
 router = APIRouter()
@@ -36,8 +40,13 @@ def list_experiments(output_dir: OutputDirDep) -> dict:
 
 
 @router.post("/experiments/run")
-def run_experiment(request: ExperimentRunRequest, output_dir: OutputDirDep) -> dict:
+def run_experiment(
+    request: ExperimentRunRequest,
+    output_dir: OutputDirDep,
+    settings: SettingsDep,
+) -> dict:
     try:
+        provider, source = build_ohlcv_provider(settings, requested=request.provider)
         result = run_sample_experiment(
             symbols=request.symbols,
             start=request.start,
@@ -49,7 +58,11 @@ def run_experiment(request: ExperimentRunRequest, output_dir: OutputDirDep) -> d
             commission_bps=request.commission_bps,
             slippage_bps=request.slippage_bps,
             rebalance_every_n_bars=request.rebalance_every_n_bars,
+            provider=provider,
+            data_source=source,
         )
+    except DataProviderUnavailableError as exc:
+        raise _provider_unavailable_400(exc) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=400,
@@ -60,6 +73,7 @@ def run_experiment(request: ExperimentRunRequest, output_dir: OutputDirDep) -> d
         "experiment_id": experiment_id,
         "raw_experiment_id": result.experiment_id,
         "provider": request.provider,
+        "source": result.data_source,
         "run_count": result.run_count,
         "best_run_id": result.best_run_id,
         "paths": {
@@ -107,3 +121,14 @@ def _first_existing(root: Path, names: list[str]) -> Path | None:
         if path.exists():
             return path
     return None
+
+
+def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "code": "provider_unavailable",
+            "provider": exc.provider,
+            "message": str(exc),
+        },
+    )

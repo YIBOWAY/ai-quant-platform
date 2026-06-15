@@ -4,7 +4,7 @@
 
 ## 一句话定位
 
-这是一个**参数网格扫描研究台**：对一个**写死的三因子打分策略**，遍历你给的 `lookback`（回看窗口）× `top_n`（持仓只数）两个维度的所有组合，每个组合各跑一次合成数据回测，最后按夏普比率（Sharpe）挑出"最佳"组合供人工查看。
+这是一个**参数网格扫描研究台**：对一个**写死的三因子打分策略**，在你选择的 OHLCV 数据源上遍历 `lookback`（回看窗口）× `top_n`（持仓只数）两个维度的所有组合，每个组合各跑一次回测，最后按夏普比率（Sharpe）挑出"最佳"组合供人工查看。
 
 ## 它解决什么问题 / 为什么存在
 
@@ -23,7 +23,7 @@
 
    打分逻辑（`scoring.py`）：每个因子在**每个信号时点做横截面 z-score 标准化**，按方向乘 `±1`，再按"权重 / 权重绝对值之和"加权求和，得到每只标的的综合 `score`。选股逻辑（`ScoreSignalStrategy`）：每个可交易时点取 `score > 0` 的标的按分数降序选前 `top_n` 只，**等权做多（long-only）**。
 
-2. **只用合成数据。** 后端入口 `run_sample_experiment`（`runner.py`）强制使用 `SampleOHLCVProvider`（合成 OHLCV）。前端表单 `ExperimentRunForm` 也把 `provider` 硬编码为 `"sample"`，请求 schema `ExperimentRunRequest` 更是把 provider 限定为 `Literal["sample"]`——**你不可能让这个页面跑真实行情**。
+2. **数据源可显式选择。** `/api/experiments/run` 的 `ExperimentRunRequest.provider` 支持 `sample` / `futu` / `tiingo`。前端表单默认 `futu`，也可切到 `sample` 或 `tiingo`；后端通过 `build_ohlcv_provider` 构造 OHLCV provider。若显式请求的真实 provider 不可用，API 返回 `400 provider_unavailable`，不会静默改跑 sample。
 
 3. **遍历参数网格。** `expand_parameter_grid`（`sweep.py`）对 `{"lookback": [...], "top_n": [...]}` 做笛卡尔积，每个组合得到一个 `run-001`、`run-002`… 的 run，逐一调用 `_run_single_backtest`。运行次数 = `len(lookbacks) × len(top_ns)`。
 
@@ -36,7 +36,7 @@
    - `agent_summary.json`：只读 JSON 摘要（驱动"代理摘要"标签页）；
    - 一份对比报告。
 
-6. **"发送至回测"按钮（Send to Backtest）。** 在结果区找到最佳 run 后会出现该按钮，点它跳到 `/backtest`，把 `lookback`、`top_n` 等参数带过去——但 `buildBacktestHref`（`ExperimentTabs.tsx`）把 `provider` 写成了 `"futu"`。也就是：**你在合成数据上调出来的参数，被一键带去用真实数据回测。**
+6. **"发送至回测"按钮（Send to Backtest）。** 在结果区找到最佳 run 后会出现该按钮，点它跳到 `/backtest`，把 `lookback`、`top_n`、成本参数和数据源一起带过去。数据源来自 `agent_summary.data.source`；旧实验如果缺少该字段，会按 `sample` 处理，避免把 sample 实验静默切到真实数据。
 
 ## 操作步骤（一步一步，结合真实输入项与默认值）
 
@@ -45,6 +45,7 @@
 1. **填表单**（默认值来自 `ExperimentRunForm.tsx` 的 `DEFAULTS`）：
    - **标的 Symbols**：默认 `SPY,QQQ,IWM,DIA`。逗号分隔，**至少两个**（后端 `min_length=2`；因子排序需要一个可比较的标的池，只有一只标的横截面 z-score 无意义）。
    - **开始 Start / 结束 End**：默认 `2024-01-02` / `2024-02-15`。日期选择器。
+   - **数据源 Data Source**：默认 `futu`。可选 `sample` / `futu` / `tiingo`；`sample` 适合离线流程验证，真实 provider 不可用时会明确失败。
    - **回看窗口 Lookbacks**：默认 `3,5,10`。逗号分隔的正整数，每个值是一个候选回看窗口。
    - **Top N 数值**：默认 `1,2`。逗号分隔的正整数，每个值是一个候选持仓只数。
    - **初始资金 Initial Cash**：默认 `100000`。
@@ -63,7 +64,7 @@
    - **运行对比（Run comparison）**：按 Sharpe 降序的柱状图 + 明细表（列：`run_id, lookback, top_n, sharpe, total_return, max_drawdown, turnover`），最佳 run 行高亮。
    - **代理摘要（Agent summary）**：渲染 `agent_summary.json`，含 `notes` 列表，可"复制 JSON"。
 
-5. **（可选）点"发送至回测"。** 跳到 `/backtest` 并预填最佳参数——但注意 provider 会变成 `futu`（真实数据），详见局限说明。
+5. **（可选）点"发送至回测"。** 跳到 `/backtest` 并预填最佳参数和同一数据源；旧实验缺少 source 时按 `sample` 预填。
 
 ## 字段与指标含义（逐项解释 UI 术语）
 
@@ -81,8 +82,8 @@
 - **turnover（换手率）**：调仓造成的成交规模代理量。
 - **commission_bps / slippage_bps（佣金 / 滑点，基点）**：1 基点 = 0.01%。回测撮合时扣的交易成本。
 - **score（综合分）**：三因子横截面 z-score 加权和，决定选股顺序（UI 不直接展示，但它是选股的依据）。
-- **Agent summary（代理摘要）**：一个**静态 JSON 文件**，不是 AI 实时推理。里面有 `purpose`、`safety` 三个 false 标志、`data` 来源、`best_run_id`、全部 run 的指标、以及三条固定 `notes`。摘要描述写得很明确："仅供人工查阅的只读摘要，不会推广或部署任何内容。"
-- **local / sample data（本地 / 样本数据）**：徽章提示——结果来自合成数据，"仅供演示"。
+- **Agent summary（代理摘要）**：一个**静态 JSON 文件**，不是 AI 实时推理。里面有 `purpose`、`safety` 三个 false 标志、`data.source`、`best_run_id`、全部 run 的指标、以及三条固定 `notes`。摘要描述写得很明确："仅供人工查阅的只读摘要，不会推广或部署任何内容。"
+- **Data source（数据源）**：当前实验实际使用的 OHLCV 来源。新实验会写入 `agent_summary.data.source`；旧实验缺少该字段时，前端按 `sample` 标注。
 
 ## 当前的局限与"为什么看起来奇怪"（诚实列出）
 
@@ -93,8 +94,8 @@
 
 2. **被比较的策略写死且不可见。** UI 上你只有 `lookback` 和 `top_n` 两个旋钮，但真正决定收益的三因子组合（动量 1.0 / 波动 0.5 / 流动性 0.5）藏在后端 `config.py` 里，界面完全不展示。用户看到一堆 Sharpe 差异，却不知道"被比的到底是什么策略"。
 
-3. **全程合成数据，但"发送至回测"切到真实数据。**
-   实验本身强制 `sample`（无法改），可"发送至回测"按钮把 `provider` 设成 `futu`（`buildBacktestHref`）。结果是：**在假数据上调出来的参数，被带去用真数据回测。** 合成数据上最优的 lookback/top_n 对真实行情没有任何统计意义上的迁移保证——这一步很容易误导使用者。
+3. **sample 实验仍然只是流程验证，不代表真实行情结论。**
+   现在 sample 实验不会再被"发送至回测"静默切到 `futu`，但 sample 数据上最优的 lookback/top_n 对真实行情仍没有统计意义上的迁移保证。需要真实研究时，应直接选择 `futu` 或 `tiingo` 运行实验。
 
 4. **"Agent summary"听起来像 AI，其实是静态 JSON。** 名字带"代理（Agent）"，容易让人以为有模型在分析；实际只是把配置和指标序列化成文件再渲染出来，`notes` 也是三条硬编码文案。
 
@@ -108,13 +109,13 @@
 
 **合理的部分**：作为一个离线、纯研究的参数敏感性工具，整体架构是干净的——配置/扫描/打分/回测/落地各司其职，产物全部是可复查的本地文件，安全标志明确，没有任何实盘通路。用合成数据做"管道自检"也合理。
 
-**主要问题**：UI 暴露的能力与后端实际开启的能力不一致（folds 死标签、策略不可见、sample→futu 跨数据源跳转），导致使用者困惑。
+**主要问题**：UI 暴露的能力与后端实际开启的能力仍有不一致（folds 死标签、策略不可见），导致使用者困惑。2026-06-15 起，数据源选择与"发送至回测"的数据源语义已对齐。
 
 **改进建议（按性价比排序）**：
 
 1. **要么打开 walk-forward，要么从 UI 移除该标签页。** 既然 `walk_forward.py` 的逻辑已经写好，最干净的做法是给表单加一个"启用滚动验证 + train/validation/step"开关并透传到 `WalkForwardConfig`；若短期不做，则隐藏该标签页，避免摆一个永远空的功能。
 2. **在结果区显式展示被扫描的策略与因子权重。** 把 `experiment_config.json` 里的三因子组合渲染成一个只读卡片，让用户知道"在比什么"。
-3. **修正"发送至回测"的数据源语义。** 默认沿用实验的 `sample`，或在跳转前明确提示"即将切换到真实数据，参数仅供参考"，避免把合成数据的最优解误当作真实可用结论。
+3. ~~修正"发送至回测"的数据源语义~~ **已于 2026-06-15 修复**：跳转会沿用实验记录的 `agent_summary.data.source`；旧实验缺少 source 时按 `sample` 处理。
 4. **给关键术语加 tooltip**（experiment/sweep/run/fold/best/lookback/top_n）。
 5. **让最佳判定可配置或多指标呈现**（如同时标注回撤最小、换手最低的 run）。
 6. ~~支持点击左侧历史实验切换详情~~ 已于 2026-06-11 完成（`?experiment=` 链接切换）。
@@ -122,11 +123,12 @@
 ## 相关代码入口
 
 - 前端页面：`src/frontend/app/experiments/page.tsx`
-- 运行表单（硬编码 provider=sample、默认值）：`src/frontend/components/forms/ExperimentRunForm.tsx`
-- 结果四标签页（热力图/折/对比/摘要、`buildBacktestHref` 跳转逻辑）：`src/frontend/components/forms/ExperimentTabs.tsx`
+- 运行表单（provider 选择、默认值、请求 payload）：`src/frontend/components/forms/ExperimentRunForm.tsx`
+- 结果四标签页（热力图/折/对比/摘要、source 标注、`buildBacktestHref` 跳转逻辑）：`src/frontend/components/forms/ExperimentTabs.tsx`
+- 前端 payload/helper 测试：`src/frontend/lib/experimentRunPayload.ts`
 - 后端路由（list / run / detail）：`src/quant_system/api/routes/experiments.py`
-- 请求 schema（provider 限定为 sample、字段约束）：`src/quant_system/api/schemas/experiments.py`
-- 实验编排（强制 sample、按 Sharpe 选最佳、写产物）：`src/quant_system/experiments/runner.py`
+- 请求 schema（provider 支持 sample/futu/tiingo、字段约束）：`src/quant_system/api/schemas/experiments.py`
+- 实验编排（可注入 provider、按 Sharpe 选最佳、写产物）：`src/quant_system/experiments/runner.py`
 - 写死的三因子配置 + `walk_forward.enabled=False`：`src/quant_system/experiments/config.py`
 - 参数网格笛卡尔积：`src/quant_system/experiments/sweep.py`
 - 滚动验证切分（当前为死代码）：`src/quant_system/experiments/walk_forward.py`

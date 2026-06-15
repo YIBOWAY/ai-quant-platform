@@ -111,7 +111,7 @@ curl http://127.0.0.1:8765/api/health
 | `/replications` | Strategy Catalog for registered research strategies. |
 | `/replications/[runId]` | Persisted reversal/momentum replication run detail. |
 | `/docs/reversal-momentum` | Frontend-readable notes for the paper replication. |
-| `/experiments` | Inspect experiment sweeps, folds, comparisons, and send best params to backtest. |
+| `/experiments` | Run provider-selectable experiment sweeps, inspect folds/comparisons, and send best params with the same source to backtest. |
 | `/paper-trading` | Persistent paper account (manual orders + one-click strategy rebalance) plus historical replay. |
 | `/position-map` | Live paper-account position map (equity, cash, exposure, source attribution); backtest exposure shown as a comparison block. |
 | `/options-screener` | Single-ticker seller options screener. |

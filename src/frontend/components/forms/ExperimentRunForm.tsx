@@ -3,11 +3,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
+import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { Card } from "@/components/ui/primitives";
+import { buildExperimentRunPayload, type ExperimentProvider } from "@/lib/experimentRunPayload";
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
 
@@ -15,6 +16,7 @@ const experimentSchema = z.object({
   symbols: z.string().min(1, "Enter at least two symbols"),
   start: z.string().min(1, "Start date is required"),
   end: z.string().min(1, "End date is required"),
+  provider: z.enum(["sample", "futu", "tiingo"]),
   lookbacks: z.string().min(1, "Enter at least one lookback"),
   top_ns: z.string().min(1, "Enter at least one Top N"),
   initial_cash: z.coerce.number().nonnegative(),
@@ -33,11 +35,13 @@ type ExperimentRunResponse = {
 const copy = {
   en: {
     title: "Run Experiment",
-    subtitle: "Sample-data parameter sweep for comparing lookback and Top N settings.",
+    subtitle: "Parameter sweep using the selected data source for lookback and Top N comparison.",
     symbols: "Symbols",
     symbolsHelp: "Use at least two symbols so the factor ranks can compare a universe.",
     start: "Start",
     end: "End",
+    dataSource: "Data Source",
+    sourceHelp: "Futu requires OpenD; sample is for explicit offline testing only.",
     lookbacks: "Lookbacks",
     topNs: "Top N values",
     initialCash: "Initial Cash",
@@ -45,16 +49,17 @@ const copy = {
     slippageBps: "Slippage bps",
     running: "Running...",
     run: "Run Experiment",
-    sampleBadge: "Sample data",
     created: (id: string, count: number) => `Experiment created: ${id} (${count} runs)`,
   },
   zh: {
     title: "运行实验",
-    subtitle: "用样本数据做参数扫描，对比 lookback 和 Top N 设置。",
+    subtitle: "使用所选数据源做参数扫描，对比 lookback 和 Top N 设置。",
     symbols: "标的",
     symbolsHelp: "至少输入两个标的，这样因子排序才有可比较对象。",
     start: "开始",
     end: "结束",
+    dataSource: "数据源",
+    sourceHelp: "Futu 需要 OpenD 在线；sample 仅用于明确的离线测试。",
     lookbacks: "回看窗口",
     topNs: "Top N 数值",
     initialCash: "初始资金",
@@ -62,7 +67,6 @@ const copy = {
     slippageBps: "滑点（基点）",
     running: "运行中...",
     run: "运行实验",
-    sampleBadge: "样本数据",
     created: (id: string, count: number) => `实验已创建：${id}（${count} 次运行）`,
   },
 } as const;
@@ -71,6 +75,7 @@ const DEFAULTS: ExperimentFormValues = {
   symbols: "SPY,QQQ,IWM,DIA",
   start: "2024-01-02",
   end: "2024-02-15",
+  provider: "futu",
   lookbacks: "3,5,10",
   top_ns: "1,2",
   initial_cash: 100000,
@@ -88,17 +93,7 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
   });
   const mutation = useMutation({
     mutationFn: (values: ExperimentFormValues) =>
-      apiPost<ExperimentRunResponse>("/api/experiments/run", {
-        symbols: splitSymbols(values.symbols),
-        start: values.start,
-        end: values.end,
-        provider: "sample",
-        lookbacks: splitPositiveInts(values.lookbacks),
-        top_ns: splitPositiveInts(values.top_ns),
-        initial_cash: values.initial_cash,
-        commission_bps: values.commission_bps,
-        slippage_bps: values.slippage_bps,
-      }),
+      apiPost<ExperimentRunResponse>("/api/experiments/run", buildExperimentRunPayload(values)),
     onSuccess: (payload) => {
       toast.success(text.created(payload.experiment_id, payload.run_count));
       router.refresh();
@@ -106,6 +101,7 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
   });
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
   const submit = form.handleSubmit((values) => mutation.mutate(values));
+  const selectedProvider = useWatch({ control: form.control, name: "provider" }) ?? "futu";
 
   const fieldLabel = "flex flex-col gap-1 font-body-sm text-text-primary";
   const fieldInput =
@@ -124,7 +120,7 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
             <p className="mt-1 font-body-sm text-text-secondary">{text.subtitle}</p>
           </div>
           <span className="shrink-0 rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning">
-            {text.sampleBadge}
+            {selectedProvider}
           </span>
         </div>
         <div className="mt-4 flex flex-col gap-3">
@@ -146,6 +142,17 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
               {fieldError("end")}
             </label>
           </div>
+          <label className={fieldLabel}>
+            {text.dataSource}
+            <select className={fieldInput} {...form.register("provider")}>
+              {(["futu", "sample", "tiingo"] satisfies ExperimentProvider[]).map((provider) => (
+                <option key={provider} value={provider}>
+                  {provider}
+                </option>
+              ))}
+            </select>
+            <span className="text-text-secondary">{text.sourceHelp}</span>
+          </label>
           <div className="grid grid-cols-2 gap-2">
             <label className={fieldLabel}>
               {text.lookbacks}
@@ -184,11 +191,4 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
       </form>
     </Card>
   );
-}
-
-function splitPositiveInts(value: string) {
-  return value
-    .split(",")
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isInteger(item) && item > 0);
 }

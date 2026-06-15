@@ -80,6 +80,12 @@ test.describe("experiments workbench", () => {
       best_run_id: "run-lb5-top1",
       notes: ["No automatic deployment.", "Research-only comparison."],
       safety: { live_trading: false, paper_trading: false, auto_promotion: false },
+      data: {
+        source: "tiingo",
+        symbols: ["SPY", "QQQ"],
+        start: "2024-01-02",
+        end: "2024-02-15",
+      },
     });
     writeParquetFrames();
   });
@@ -95,6 +101,7 @@ test.describe("experiments workbench", () => {
     await expect(page.getByText(experimentId).first()).toBeVisible();
     await expect(page.getByRole("complementary").getByText("best: run-lb5-top1")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sweep Heatmap" })).toBeVisible();
+    await expect(page.getByText("Data source: tiingo")).toBeVisible();
     await expect(page.getByText("lookback=5 / top_n=1")).toBeVisible();
     await expect(page.locator('[data-experiment-tabs-ready="true"]')).toBeVisible();
 
@@ -115,6 +122,7 @@ test.describe("experiments workbench", () => {
     await page.getByRole("link", { name: "Send to Backtest" }).click();
     await expect(page).toHaveURL(/\/backtest/);
     await expect(page.getByLabel("Symbols")).toHaveValue("SPY,QQQ");
+    await expect(page.getByRole("combobox", { name: /Data Source/ })).toHaveValue("tiingo");
     await expect(page.getByLabel("Lookback")).toHaveValue("5");
     await expect(page.getByLabel("Top N")).toHaveValue("1");
   });

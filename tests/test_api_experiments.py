@@ -4,6 +4,8 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
+from quant_system.config.settings import ApiKeySettings, Settings
+from quant_system.data.providers.sample import SampleOHLCVProvider
 
 
 def _write_experiment_fixture(output_dir, experiment_id: str) -> None:
@@ -165,3 +167,74 @@ def test_experiment_run_does_not_create_per_run_duckdb(tmp_path) -> None:
 
     assert response.status_code == 200
     assert list(tmp_path.rglob("*.duckdb")) == []
+
+
+def test_experiment_run_explicit_unavailable_provider_returns_400(tmp_path) -> None:
+    settings = Settings(api_keys=ApiKeySettings(tiingo_api_token=None))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/experiments/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "tiingo",
+            "lookbacks": [3],
+            "top_ns": [1],
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "provider_unavailable"
+    assert detail["provider"] == "tiingo"
+    assert "missing token" in detail["message"]
+    assert not list((tmp_path / "experiments").glob("*"))
+
+
+def test_experiment_run_uses_selected_provider_and_persists_source(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    class FakeTiingoProvider:
+        provider_name = "tiingo"
+
+        def fetch_ohlcv(self, symbols, *, start, end, interval="1d"):
+            frame = SampleOHLCVProvider().fetch_ohlcv(
+                symbols,
+                start=start,
+                end=end,
+                interval=interval,
+            )
+            frame["provider"] = self.provider_name
+            return frame
+
+    def fake_build_provider(_settings, *, requested=None):
+        assert requested == "tiingo"
+        return FakeTiingoProvider(), "tiingo"
+
+    monkeypatch.setattr(
+        "quant_system.api.routes.experiments.build_ohlcv_provider",
+        fake_build_provider,
+    )
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/experiments/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-02-15",
+            "provider": "tiingo",
+            "lookbacks": [3],
+            "top_ns": [1],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "tiingo"
+    assert payload["source"] == "tiingo"
+    detail = client.get(f"/api/experiments/{payload['experiment_id']}").json()
+    assert detail["agent_summary"]["data"]["source"] == "tiingo"

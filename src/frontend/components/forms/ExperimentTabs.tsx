@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import type { ExperimentDetailResponse, ExperimentSummary, PreviewRecord } from "@/lib/api";
+import { providerFromExperimentSource } from "@/lib/experimentRunPayload";
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
 
@@ -34,7 +35,7 @@ const copy = {
     selectedExperiment: "Selected experiment",
     runs: "runs",
     folds: "folds",
-    sampleData: "Sample data - illustrative only",
+    dataSource: "Data source",
     sendToBacktest: "Send to Backtest",
     sweepUnavailableTitle: "Sweep heatmap unavailable",
     sweepUnavailableDescription: "This experiment does not include experiment_runs.parquet data.",
@@ -70,7 +71,7 @@ const copy = {
     selectedExperiment: "已选实验",
     runs: "运行",
     folds: "验证折",
-    sampleData: "样本数据 — 仅供演示",
+    dataSource: "数据源",
     sendToBacktest: "发送至回测",
     sweepUnavailableTitle: "参数扫描热力图不可用",
     sweepUnavailableDescription: "此实验不包含 experiment_runs.parquet 数据。",
@@ -114,7 +115,13 @@ export function ExperimentTabs({ detail, experiment, locale = "en" }: Experiment
     () => findBestRun(runs, experiment?.best_run_id ?? stringValue(agentSummary.best_run_id)),
     [agentSummary.best_run_id, experiment?.best_run_id, runs],
   );
-  const backtestHref = buildBacktestHref(config, bestRun);
+  const dataSource = experimentDataSource(agentSummary);
+  const dataProvider = providerFromExperimentSource(dataSource);
+  const backtestHref = buildBacktestHref(config, bestRun, dataSource);
+  const dataSourceBadgeClass =
+    dataProvider === "sample"
+      ? "inline-flex items-center rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning"
+      : "inline-flex items-center rounded-lg border border-info/40 bg-info/10 px-2 py-1 font-data-mono text-[10px] uppercase text-info";
 
   if (!detail) {
     return (
@@ -146,8 +153,8 @@ export function ExperimentTabs({ detail, experiment, locale = "en" }: Experiment
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <StatusPill label={text.runs} value={runs.length} />
               <StatusPill label={text.folds} value={folds.length} />
-              <span className="inline-flex items-center rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning">
-                {text.sampleData}
+              <span className={dataSourceBadgeClass}>
+                {text.dataSource}: {dataSource}
               </span>
             </div>
           </div>
@@ -398,19 +405,31 @@ function findBestRun(runs: PreviewRecord[], bestRunId?: string) {
   return [...runs].sort((left, right) => numberValue(right.sharpe) - numberValue(left.sharpe))[0];
 }
 
-function buildBacktestHref(config: Record<string, unknown>, bestRun: PreviewRecord | undefined) {
+function buildBacktestHref(
+  config: Record<string, unknown>,
+  bestRun: PreviewRecord | undefined,
+  dataSource: string,
+) {
   const params = new URLSearchParams();
   const symbols = Array.isArray(config.symbols) ? config.symbols.map(String).join(",") : "SPY,QQQ";
   params.set("symbols", symbols);
   params.set("start", stringValue(config.start) || "2024-01-02");
   params.set("end", stringValue(config.end) || "2024-02-15");
-  params.set("provider", "futu");
+  params.set("provider", providerFromExperimentSource(dataSource));
   params.set("lookback", stringValue(bestRun?.lookback ?? "5"));
   params.set("top_n", stringValue(bestRun?.top_n ?? "1"));
   params.set("initial_cash", stringValue(config.initial_cash ?? "100000"));
   params.set("commission_bps", stringValue(config.commission_bps ?? "1"));
   params.set("slippage_bps", stringValue(config.slippage_bps ?? "5"));
   return `/backtest?${params.toString()}`;
+}
+
+function experimentDataSource(summary: Record<string, unknown>) {
+  const data = summary.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return "sample";
+  }
+  return stringValue((data as Record<string, unknown>).source) || "sample";
 }
 
 function heatColor(value: number, min: number, max: number) {

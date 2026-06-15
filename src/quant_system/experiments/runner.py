@@ -12,6 +12,7 @@ from quant_system.backtest.metrics import PerformanceMetrics
 from quant_system.backtest.models import BacktestConfig
 from quant_system.backtest.strategy import ScoreSignalStrategy
 from quant_system.config.settings import load_settings
+from quant_system.data.providers.base import HistoricalDataProvider
 from quant_system.data.providers.sample import SampleOHLCVProvider
 from quant_system.experiments.config import create_sample_experiment_config
 from quant_system.experiments.models import (
@@ -40,6 +41,7 @@ class ExperimentResult(BaseModel):
     report_path: Path
     run_count: int
     best_run_id: str | None
+    data_source: str
 
 
 def run_sample_experiment(
@@ -54,6 +56,8 @@ def run_sample_experiment(
     commission_bps: float = 1.0,
     slippage_bps: float = 5.0,
     rebalance_every_n_bars: int = 1,
+    provider: HistoricalDataProvider | None = None,
+    data_source: str = "sample",
 ) -> ExperimentResult:
     config = create_sample_experiment_config(
         symbols=symbols,
@@ -66,19 +70,26 @@ def run_sample_experiment(
         slippage_bps=slippage_bps,
         rebalance_every_n_bars=rebalance_every_n_bars,
     )
-    return run_experiment(config, output_dir=output_dir)
+    return run_experiment(
+        config,
+        output_dir=output_dir,
+        provider=provider,
+        data_source=data_source,
+    )
 
 
 def run_experiment(
     config: ExperimentConfig,
     *,
     output_dir: str | Path | None = None,
+    provider: HistoricalDataProvider | None = None,
+    data_source: str = "sample",
 ) -> ExperimentResult:
     now_utc = datetime.now(UTC)
     created_at = now_utc.isoformat()
     experiment_id = f"{config.experiment_name}-{now_utc.strftime('%Y%m%dT%H%M%SZ')}"
-    provider = SampleOHLCVProvider()
-    ohlcv = provider.fetch_ohlcv(config.symbols, start=config.start, end=config.end)
+    active_provider = provider or SampleOHLCVProvider()
+    ohlcv = active_provider.fetch_ohlcv(config.symbols, start=config.start, end=config.end)
     combinations = expand_parameter_grid(config.sweep)
     runs: list[ExperimentRunSummary] = []
     fold_records: list[dict[str, Any]] = []
@@ -135,6 +146,7 @@ def run_experiment(
             created_at=created_at,
             config=config,
             runs=runs,
+            data_source=data_source,
         ),
         filename="agent_summary.json",
     )
@@ -148,6 +160,7 @@ def run_experiment(
         report_path=report_path,
         run_count=len(runs),
         best_run_id=best_run.run_id if best_run else None,
+        data_source=data_source,
     )
 
 
@@ -341,6 +354,7 @@ def _build_agent_summary(
     created_at: str,
     config: ExperimentConfig,
     runs: list[ExperimentRunSummary],
+    data_source: str,
 ) -> dict[str, Any]:
     best_run = max(runs, key=lambda run: run.sharpe, default=None)
     return {
@@ -354,7 +368,7 @@ def _build_agent_summary(
             "auto_promotion": False,
         },
         "data": {
-            "source": "sample",
+            "source": data_source,
             "symbols": config.symbols,
             "start": config.start,
             "end": config.end,

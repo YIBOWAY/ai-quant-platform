@@ -77,6 +77,16 @@ route `/replications/[runId]` read it back. These runs are file-persisted but
 are not part of the optional PostgreSQL run index, whose schema currently
 covers only backtest/factor/paper kinds.
 
+## Experiments Provider Semantics
+
+`POST /api/experiments/run` accepts `provider=sample|futu|tiingo`. The
+frontend defaults to `futu`, and the backend builds the provider through
+`build_ohlcv_provider`; an explicitly unavailable real provider returns
+`400 provider_unavailable` instead of silently falling back to sample data. The
+actual source is persisted to `agent_summary.data.source`, and `/experiments`
+"Send to Backtest" preserves that source when constructing the `/backtest`
+link. Old experiments without `data.source` are treated as `sample`.
+
 ## Optional PostgreSQL Run Index
 
 Backtest/factor/paper runs are file-based under `data/api_runs/`. An optional

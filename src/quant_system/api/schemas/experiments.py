@@ -18,7 +18,7 @@ class ExperimentRunRequest(BaseModel):
     symbols: list[str] = Field(default_factory=lambda: ["SPY", "QQQ"], min_length=2)
     start: str
     end: str
-    provider: Literal["sample"] = "sample"
+    provider: Literal["sample", "futu", "tiingo"] = "sample"
     lookbacks: list[PositiveInt] = Field(default_factory=lambda: [3, 5], min_length=1)
     top_ns: list[PositiveInt] = Field(default_factory=lambda: [1, 2], min_length=1)
     initial_cash: NonNegativeFloat = 100_000.0
