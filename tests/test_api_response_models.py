@@ -17,6 +17,11 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/agent/llm-config": "AgentLLMConfigResponse",
         "/api/options/daily-scan/dates": "OptionsDailyScanDatesResponse",
         "/api/options/daily-scan/status": "OptionsDailyScanStatusResponse",
+        "/api/options/expirations": "OptionsExpirationsResponse",
+        "/api/options/chain": "OptionsChainResponse",
+        "/api/options/snapshot/{ticker}": "OptionsSnapshotResponse",
+        "/api/options/tools/vol-surface/{ticker}": "OptionsVolSurfaceResponse",
+        "/api/options/tools/vol-smile/{ticker}": "OptionsVolSmileResponse",
         "/api/options/tools/strategy/templates": "OptionsStrategyTemplatesResponse",
         "/api/options/tools/watchlist": "OptionsWatchlistResponse",
         "/api/backtests": "BacktestsResponse",
@@ -53,6 +58,11 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "has_api_key" in components["AgentLLMConfigResponse"]["properties"]
     assert "dates" in components["OptionsDailyScanDatesResponse"]["properties"]
     assert "status" in components["OptionsDailyScanStatusResponse"]["properties"]
+    assert "expirations" in components["OptionsExpirationsResponse"]["properties"]
+    assert "contracts" in components["OptionsChainResponse"]["properties"]
+    assert "atm_iv" in components["OptionsSnapshotResponse"]["properties"]
+    assert "surface" in components["OptionsVolSurfaceResponse"]["properties"]
+    assert "smile" in components["OptionsVolSmileResponse"]["properties"]
     assert "templates" in components["OptionsStrategyTemplatesResponse"]["properties"]
     assert "watchlist" in components["OptionsWatchlistResponse"]["properties"]
     assert "backtests" in components["BacktestsResponse"]["properties"]

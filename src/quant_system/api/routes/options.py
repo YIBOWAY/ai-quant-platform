@@ -5,6 +5,13 @@ from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.common import dataframe_records
+from quant_system.api.schemas.options import (
+    OptionsChainResponse,
+    OptionsExpirationsResponse,
+    OptionsSnapshotResponse,
+    OptionsVolSmileResponse,
+    OptionsVolSurfaceResponse,
+)
 from quant_system.api.schemas.options_radar import (
     OptionsStrategyTemplatesResponse,
     OptionsWatchlistResponse,
@@ -48,7 +55,7 @@ from quant_system.options.screener import run_options_screener
 router = APIRouter()
 
 
-@router.get("/options/expirations")
+@router.get("/options/expirations", response_model=OptionsExpirationsResponse)
 def option_expirations(
     settings: SettingsDep,
     ticker: str,
@@ -66,7 +73,7 @@ def option_expirations(
     }
 
 
-@router.get("/options/chain")
+@router.get("/options/chain", response_model=OptionsChainResponse)
 def option_chain(
     settings: SettingsDep,
     ticker: str,
@@ -92,7 +99,7 @@ def option_chain(
     }
 
 
-@router.get("/options/snapshot/{ticker}")
+@router.get("/options/snapshot/{ticker}", response_model=OptionsSnapshotResponse)
 def options_snapshot(
     ticker: str,
     settings: SettingsDep,
@@ -110,7 +117,7 @@ def options_snapshot(
         ) from exc
 
 
-@router.get("/options/tools/vol-surface/{ticker}")
+@router.get("/options/tools/vol-surface/{ticker}", response_model=OptionsVolSurfaceResponse)
 def options_vol_surface(
     ticker: str,
     settings: SettingsDep,
@@ -133,7 +140,7 @@ def options_vol_surface(
         ) from exc
 
 
-@router.get("/options/tools/vol-smile/{ticker}")
+@router.get("/options/tools/vol-smile/{ticker}", response_model=OptionsVolSmileResponse)
 def options_vol_smile(
     ticker: str,
     settings: SettingsDep,
