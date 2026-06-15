@@ -43,3 +43,8 @@ symbol list、number、integer_or_null 和 factor weight map 转换。
 若本地存在 `place_order.py`、`modify_order.py`、`cancel_order.py`，测试还会执行
 它们的 `--json` 模式并要求返回 disabled 错误。`.agents/` 是本地忽略目录，
 因此该测试在未安装本地 skill 的干净 checkout 上会跳过入口执行检查。
+
+2026-06-15 状态补充：评估报告中“`getOptionsRadarDates` 是死代码”的小项
+已复核并收敛。该 helper 对应的后端端点仍在 `OptionsRadarView` 中使用，只是
+组件曾直接调用 `apiRequest("/api/options/daily-scan/dates")`，导致 API client
+helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`。

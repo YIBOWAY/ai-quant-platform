@@ -21,6 +21,7 @@
 - 实验管理不再强制 sample：`POST /api/experiments/run` 支持 `sample` / `futu` / `tiingo`，真实 provider 不可用时返回 `400 provider_unavailable`；前端运行表单默认 `futu`，结果区展示 `agent_summary.data.source`，“Send to Backtest” 会保留同一 provider。旧实验缺少 source 时按 `sample` 处理。运行表单还新增显式 Walk-forward folds 开关，开启后透传 `train_bars` / `validation_bars` / `step_bars` 并生成 `walk_forward_folds.parquet`。结果详情卡片现在还会只读展示 `experiment_config.factor_blend`，包括因子、权重、方向和再平衡间隔。
 - 因子实验室范围卡新增 “Send to Backtest / 发送至回测” 链接，会把当前 `provider`、`universe_id`、`benchmark_symbol` 和已登记 `factor_ids` 预填到 `/backtest`；链接只填表，不自动运行回测，也不携带 Factor Lab 未暴露的时间窗和 lookback。
 - Strategy Catalog 的参数 payload 构建逻辑从 `StrategyCatalogWorkbench` 抽到 `src/frontend/lib/strategyPayload.ts`，并新增 Vitest 覆盖 symbol list、number、integer_or_null 和 factor weight map 的转换，降低后端 schema 驱动表单的静默漂移风险。
+- 期权雷达日期查询现在复用 `src/frontend/lib/api.ts` 的 `getOptionsRadarDates()` helper；评估报告里提到的“死代码”被复核为组件绕过 helper 直写 endpoint string，已收敛为单一 API client 入口。
 
 ---
 

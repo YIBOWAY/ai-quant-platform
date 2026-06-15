@@ -16,11 +16,11 @@ import type {
   OptionsDailyTaskStatus,
   OptionsDailyTaskStatusResponse,
   OptionsRadarCandidate,
-  OptionsRadarDatesResponse,
   OptionsRefreshResponse,
   OptionsRadarRunResponse,
   OptionsRadarResponse,
 } from "@/lib/api";
+import { getOptionsRadarDates } from "@/lib/api";
 import { apiPost, apiRequest } from "@/lib/apiClient";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
@@ -224,7 +224,7 @@ export function OptionsRadarView({
   const datesQuery = useQuery({
     queryKey: ["options-radar-dates"],
     enabled: hydrated,
-    queryFn: () => apiRequest<OptionsRadarDatesResponse>("/api/options/daily-scan/dates"),
+    queryFn: getOptionsRadarDates,
   });
   const taskStatusQuery = useQuery({
     queryKey: ["options-daily-task-status"],
