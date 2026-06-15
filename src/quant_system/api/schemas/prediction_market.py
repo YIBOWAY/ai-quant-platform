@@ -4,7 +4,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from quant_system.prediction_market.models import Market, OrderBookSnapshot
+from quant_system.prediction_market.backtest import PredictionMarketBacktestMetrics
+from quant_system.prediction_market.models import Market, OrderBookSnapshot, ProposedTrade
+from quant_system.prediction_market.timeseries_backtest import (
+    PredictionMarketTimeseriesMetrics,
+)
 
 
 class PredictionMarketMarketsResponse(BaseModel):
@@ -27,6 +31,62 @@ class PredictionMarketTimeseriesBacktestResultResponse(BaseModel):
     chart_index: dict[str, Any]
     report_path: str
     report_url: str
+
+
+class PredictionMarketCandidateResponse(BaseModel):
+    market_id: str
+    condition_id: str
+    scanner_id: str
+    description: str
+    edge_bps: float
+    prices: dict[str, float]
+    direction: Literal["underpriced_complete_set", "overpriced_complete_set"]
+    created_at: str
+    candidate_id: str
+
+
+class PredictionMarketScanResponse(BaseModel):
+    candidates: list[PredictionMarketCandidateResponse]
+    report_path: str
+    provider: str
+    cache_status: str
+
+
+class PredictionMarketCollectResponse(BaseModel):
+    provider: str
+    iteration_count: int
+    market_count: int
+    snapshot_record_count: int
+    history_dir: str
+    first_timestamp: str | None = None
+    last_timestamp: str | None = None
+    cache_status: str
+
+
+class PredictionMarketDryArbitrageResponse(BaseModel):
+    proposed_trades: list[ProposedTrade]
+    report_path: str
+    provider: str
+    cache_status: str
+
+
+class PredictionMarketBacktestRunResponse(BaseModel):
+    run_id: str
+    provider: str
+    metrics: PredictionMarketBacktestMetrics
+    chart_index: dict[str, Any]
+    report_path: str
+    cache_status: str
+
+
+class PredictionMarketTimeseriesBacktestRunResponse(BaseModel):
+    run_id: str
+    provider: str
+    metrics: PredictionMarketTimeseriesMetrics
+    chart_index: dict[str, Any]
+    report_path: str
+    report_url: str
+    history_dir: str
 
 
 class PredictionMarketScanRequest(BaseModel):

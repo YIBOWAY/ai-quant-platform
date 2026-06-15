@@ -52,10 +52,14 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 `GET /api/agent/candidates/{candidate_id}`、`GET /api/agent/llm-config`、
 `GET /api/options/tools/strategy/templates`、`GET /api/options/tools/watchlist`，
 `GET /api/prediction-market/markets`、`GET /api/prediction-market/results/{run_id}`、
-`GET /api/prediction-market/timeseries-backtest/{run_id}`，并由
+`GET /api/prediction-market/timeseries-backtest/{run_id}`、
+`POST /api/prediction-market/scan`、`POST /api/prediction-market/collect`、
+`POST /api/prediction-market/dry-arbitrage`、`POST /api/prediction-market/backtest`、
+`POST /api/prediction-market/timeseries-backtest`，并由
 `tests/test_api_response_models.py` 锁定 OpenAPI schema 引用。
 `GET /api/prediction-market/timeseries-backtest/{run_id}/artifacts/{artifact_name}`
-是非 JSON `FileResponse`。其余 POST/复杂写入路由仍按 Phase 1 路线图逐步补齐，
+是非 JSON `FileResponse`。OpenAPI 当前仍有 34 个裸 POST JSON 响应；
+其余 POST/复杂写入路由仍按 Phase 1 路线图逐步补齐，
 不应一次性替换全部前端手写类型。
 
 ## 验收标准

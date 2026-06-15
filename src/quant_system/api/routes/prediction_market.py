@@ -7,12 +7,17 @@ from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.schemas.common import make_run_id, read_json, resolve_run_dir
 from quant_system.api.schemas.prediction_market import (
     PredictionMarketBacktestResultResponse,
+    PredictionMarketBacktestRunResponse,
     PredictionMarketCollectRequest,
+    PredictionMarketCollectResponse,
     PredictionMarketDryArbitrageRequest,
+    PredictionMarketDryArbitrageResponse,
     PredictionMarketMarketsResponse,
     PredictionMarketScanRequest,
+    PredictionMarketScanResponse,
     PredictionMarketTimeseriesBacktestRequest,
     PredictionMarketTimeseriesBacktestResultResponse,
+    PredictionMarketTimeseriesBacktestRunResponse,
 )
 from quant_system.prediction_market.backtest import (
     PredictionMarketBacktestConfig,
@@ -92,7 +97,7 @@ def prediction_market_markets(
     }
 
 
-@router.post("/prediction-market/scan")
+@router.post("/prediction-market/scan", response_model=PredictionMarketScanResponse)
 def prediction_market_scan(
     request: PredictionMarketScanRequest,
     api_runs_dir: ApiRunsDirDep,
@@ -121,7 +126,10 @@ def prediction_market_scan(
     }
 
 
-@router.post("/prediction-market/collect")
+@router.post(
+    "/prediction-market/collect",
+    response_model=PredictionMarketCollectResponse,
+)
 def prediction_market_collect(
     request: PredictionMarketCollectRequest,
     settings: SettingsDep,
@@ -165,7 +173,10 @@ def prediction_market_collect(
     }
 
 
-@router.post("/prediction-market/dry-arbitrage")
+@router.post(
+    "/prediction-market/dry-arbitrage",
+    response_model=PredictionMarketDryArbitrageResponse,
+)
 def prediction_market_dry_arbitrage(
     request: PredictionMarketDryArbitrageRequest,
     api_runs_dir: ApiRunsDirDep,
@@ -209,7 +220,10 @@ def prediction_market_dry_arbitrage(
     }
 
 
-@router.post("/prediction-market/backtest")
+@router.post(
+    "/prediction-market/backtest",
+    response_model=PredictionMarketBacktestRunResponse,
+)
 def prediction_market_backtest(
     request: PredictionMarketScanRequest,
     api_runs_dir: ApiRunsDirDep,
@@ -276,7 +290,10 @@ def prediction_market_result(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     }
 
 
-@router.post("/prediction-market/timeseries-backtest")
+@router.post(
+    "/prediction-market/timeseries-backtest",
+    response_model=PredictionMarketTimeseriesBacktestRunResponse,
+)
 def prediction_market_timeseries_backtest(
     request: PredictionMarketTimeseriesBacktestRequest,
     api_runs_dir: ApiRunsDirDep,
