@@ -16,6 +16,8 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import type { ExperimentDetailResponse, ExperimentSummary, PreviewRecord } from "@/lib/api";
 import { providerFromExperimentSource } from "@/lib/experimentRunPayload";
+import type { ExperimentStrategySummary } from "@/lib/experimentSummary";
+import { summarizeExperimentStrategy } from "@/lib/experimentSummary";
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
 
@@ -37,6 +39,17 @@ const copy = {
     folds: "folds",
     dataSource: "Data source",
     sendToBacktest: "Send to Backtest",
+    strategyTitle: "Strategy under test",
+    strategyDescription: "Fixed factor blend used for every sweep run.",
+    strategyUnavailable: "No factor blend was found in this experiment config.",
+    rebalanceEvery: "Rebalance",
+    bars: "bars",
+    factor: "Factor",
+    weight: "Weight",
+    direction: "Direction",
+    totalAbsWeight: "Total abs. weight",
+    higherIsBetter: "higher is better",
+    lowerIsBetter: "lower is better",
     sweepUnavailableTitle: "Sweep heatmap unavailable",
     sweepUnavailableDescription: "This experiment does not include experiment_runs.parquet data.",
     sweepHeatmapTitle: "Sweep Heatmap",
@@ -73,6 +86,17 @@ const copy = {
     folds: "验证折",
     dataSource: "数据源",
     sendToBacktest: "发送至回测",
+    strategyTitle: "测试中的策略",
+    strategyDescription: "每次参数扫描运行使用的固定因子组合。",
+    strategyUnavailable: "此实验配置中未找到 factor_blend。",
+    rebalanceEvery: "再平衡",
+    bars: "根 bar",
+    factor: "因子",
+    weight: "权重",
+    direction: "方向",
+    totalAbsWeight: "绝对权重合计",
+    higherIsBetter: "越高越好",
+    lowerIsBetter: "越低越好",
     sweepUnavailableTitle: "参数扫描热力图不可用",
     sweepUnavailableDescription: "此实验不包含 experiment_runs.parquet 数据。",
     sweepHeatmapTitle: "参数扫描热力图",
@@ -118,6 +142,7 @@ export function ExperimentTabs({ detail, experiment, locale = "en" }: Experiment
   const dataSource = experimentDataSource(agentSummary);
   const dataProvider = providerFromExperimentSource(dataSource);
   const backtestHref = buildBacktestHref(config, bestRun, dataSource);
+  const strategySummary = summarizeExperimentStrategy(config);
   const dataSourceBadgeClass =
     dataProvider === "sample"
       ? "inline-flex items-center rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning"
@@ -167,11 +192,84 @@ export function ExperimentTabs({ detail, experiment, locale = "en" }: Experiment
             </Link>
           ) : null}
         </div>
+        <StrategySummaryTable locale={locale} summary={strategySummary} text={text} />
       </Card>
 
       <Tabs defaultId="sweep" items={tabItems} />
     </div>
   );
+}
+
+function StrategySummaryTable({
+  locale,
+  summary,
+  text,
+}: {
+  locale: Locale;
+  summary: ExperimentStrategySummary;
+  text: Copy;
+}) {
+  const rebalanceValue = formatRebalanceInterval(summary.rebalanceEveryNBars, locale, text);
+
+  return (
+    <div className="mt-4 border-t border-border-subtle pt-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-label-caps text-text-secondary">{text.strategyTitle}</div>
+          <p className="mt-1 font-body-sm text-text-secondary">{text.strategyDescription}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusPill label={text.rebalanceEvery} value={rebalanceValue} />
+          <StatusPill label={text.totalAbsWeight} value={summary.totalAbsoluteWeight.toFixed(2)} />
+        </div>
+      </div>
+
+      {summary.factors.length ? (
+        <div className="mt-3 overflow-auto rounded-lg border border-border-subtle">
+          <table className="w-full min-w-[28rem] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-border-subtle bg-bg-surface-muted">
+                <th className="px-3 py-2 font-label-caps text-text-secondary">{text.factor}</th>
+                <th className="px-3 py-2 text-right font-label-caps text-text-secondary">{text.weight}</th>
+                <th className="px-3 py-2 font-label-caps text-text-secondary">{text.direction}</th>
+              </tr>
+            </thead>
+            <tbody className="font-data-mono text-xs text-text-primary">
+              {summary.factors.map((factor) => (
+                <tr className="border-b border-border-subtle/50 last:border-b-0" key={factor.factorId}>
+                  <td className="px-3 py-2">{factor.factorId}</td>
+                  <td className="px-3 py-2 text-right">{factor.weightLabel}</td>
+                  <td className="px-3 py-2">{directionLabel(factor.direction, text)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="mt-3 font-body-sm text-text-secondary">{text.strategyUnavailable}</p>
+      )}
+    </div>
+  );
+}
+
+function directionLabel(direction: string, text: Copy) {
+  if (direction === "higher_is_better") {
+    return text.higherIsBetter;
+  }
+  if (direction === "lower_is_better") {
+    return text.lowerIsBetter;
+  }
+  return direction.replaceAll("_", " ");
+}
+
+function formatRebalanceInterval(value: number | null, locale: Locale, text: Copy) {
+  if (!value) {
+    return "--";
+  }
+  if (locale === "zh") {
+    return `每 ${value} ${text.bars}`;
+  }
+  return `every ${value} ${value === 1 ? "bar" : text.bars}`;
 }
 
 function SweepHeatmap({ runs, text }: { runs: PreviewRecord[]; text: Copy }) {

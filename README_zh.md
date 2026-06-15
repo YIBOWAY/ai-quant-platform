@@ -83,7 +83,7 @@ curl http://127.0.0.1:8765/api/health
 | `/replications` | 已注册研究策略的策略目录。 |
 | `/replications/[runId]` | 已落盘的 reversal/momentum 复现运行详情。 |
 | `/docs/reversal-momentum` | 论文复现的前端可读笔记。 |
-| `/experiments` | 运行可选数据源的实验扫描，可显式开启滚动验证折，查看对比并将最佳参数和同一数据源发送至回测。 |
+| `/experiments` | 运行可选数据源的实验扫描，可显式开启滚动验证折，查看被测试的固定因子组合，并将最佳参数和同一数据源发送至回测。 |
 | `/paper-trading` | 持久模拟账户（手动下单 + 策略一键再平衡）＋历史回放（研究）。 |
 | `/position-map` | 模拟账户实时持仓地图（净值/现金/暴露/来源归因），另含回测暴露对比块。 |
 | `/options-screener` | 单标的卖方期权筛选器。 |

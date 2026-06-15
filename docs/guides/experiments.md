@@ -4,7 +4,7 @@
 
 ## 一句话定位
 
-这是一个**参数网格扫描研究台**：对一个**写死的三因子打分策略**，在你选择的 OHLCV 数据源上遍历 `lookback`（回看窗口）× `top_n`（持仓只数）两个维度的所有组合，每个组合各跑一次回测，最后按夏普比率（Sharpe）挑出"最佳"组合供人工查看。需要时也可以显式开启 walk-forward 折验证。
+这是一个**参数网格扫描研究台**：对一个**固定的三因子打分策略**，在你选择的 OHLCV 数据源上遍历 `lookback`（回看窗口）× `top_n`（持仓只数）两个维度的所有组合，每个组合各跑一次回测，最后按夏普比率（Sharpe）挑出"最佳"组合供人工查看。结果区会只读展示本次实验的因子、权重、方向和再平衡间隔；需要时也可以显式开启 walk-forward 折验证。
 
 ## 它解决什么问题 / 为什么存在
 
@@ -16,7 +16,7 @@
 
 以下行为全部来自代码，不是宣传：
 
-1. **被扫描的策略是写死的，你无法在 UI 改。** `create_sample_experiment_config`（`config.py`）固定构造三因子打分：
+1. **被扫描的策略是固定的，但结果区会只读展示。** `create_sample_experiment_config`（`config.py`）固定构造三因子打分，`ExperimentTabs` 会从 `experiment_config.json.factor_blend` 渲染 "Strategy under test"：
    - `momentum`（动量），权重 `1.0`，方向 `higher_is_better`（越高越好）；
    - `volatility`（波动率），权重 `0.5`，方向 `lower_is_better`（越低越好）；
    - `liquidity`（流动性），权重 `0.5`，方向 `higher_is_better`。
@@ -32,7 +32,7 @@
 5. **按 Sharpe 选最佳。** `best_run = max(runs, key=sharpe)`（`runner.py`），写进 `agent_summary.json` 的 `best_run_id`。
 
 6. **落地产物（写到本地 `experiments/<实验ID>/` 目录）：**
-   - `experiment_config.json`：本次实验的完整配置（因子、权重、sweep、walk_forward 等）；
+   - `experiment_config.json`：本次实验的完整配置（因子、权重、方向、再平衡间隔、sweep、walk_forward 等），并驱动结果区的 "Strategy under test" 只读表；
    - `experiment_runs.parquet`：每个 run 一行的指标表（驱动"参数扫描热力图"和"运行对比"）；
    - `walk_forward_folds.parquet`：滚动验证折表；只有开启 Walk-forward folds 时才会有折记录；
    - `agent_summary.json`：只读 JSON 摘要（驱动"代理摘要"标签页）；
@@ -61,7 +61,8 @@
 
 3. **在左侧列表选实验。** 列表按目录修改时间倒序，每条显示实验 `id`、`最佳: <best_run_id>`、本地路径；最新一条带「latest」徽章。2026-06-11 起**每条都是可点击链接**（`?experiment=<id>` 查询参数），点击即切换右侧详情，选中项高亮（绿色边框 + `aria-current`）；不带参数进入页面时默认选最新一个实验。页头还有一行汇总指标（本地实验数 / 当前选中 / 最佳 run / 回测次数）。
 
-4. **在右侧四个标签页查看结果**（`ExperimentTabs`）：
+4. **在右侧查看策略摘要和四个标签页结果**（`ExperimentTabs`）：
+   - 顶部 "Strategy under test" 区域展示 `factor_blend` 的因子 ID、权重、方向和 `rebalance_every_n_bars`。它是只读摘要，不提供策略编辑或上线入口。
    - **参数扫描热力图（Sweep heatmap）**：每个 run 一个卡片，显示 `lookback=… / top_n=…` 和该组合的 Sharpe，背景绿色深浅按 Sharpe 在 [min, max] 区间归一化着色。
    - **滚动验证折（Walk-forward folds）**：开启 walk-forward 时显示每个折的 train/validation 窗口与指标；未开启时显示"滚动验证折不可用"。
    - **运行对比（Run comparison）**：按 Sharpe 降序的柱状图 + 明细表（列：`run_id, lookback, top_n, sharpe, total_return, max_drawdown, turnover`），最佳 run 行高亮。
@@ -92,7 +93,7 @@
 
 这些正是让人"看了界面却理解不了它在干什么"的根源，逐条对应到代码：
 
-1. **被比较的策略写死且不可见。** UI 上你只有 `lookback` 和 `top_n` 两个旋钮，但真正决定收益的三因子组合（动量 1.0 / 波动 0.5 / 流动性 0.5）藏在后端 `config.py` 里，界面完全不展示。用户看到一堆 Sharpe 差异，却不知道"被比的到底是什么策略"。
+1. **被比较的策略仍固定且不可编辑。** 2026-06-15 起，结果区会展示三因子组合（动量 1.0 / 波动 0.5 / 流动性 0.5）、方向和再平衡间隔；但 UI 仍只开放 `lookback` 和 `top_n` 两个扫描维度，不能在页面里改因子组合本身。
 
 2. **sample 实验仍然只是流程验证，不代表真实行情结论。**
    现在 sample 实验不会再被"发送至回测"静默切到 `futu`，但 sample 数据上最优的 lookback/top_n 对真实行情仍没有统计意义上的迁移保证。需要真实研究时，应直接选择 `futu` 或 `tiingo` 运行实验。
@@ -109,11 +110,11 @@
 
 **合理的部分**：作为一个离线、纯研究的参数敏感性工具，整体架构是干净的——配置/扫描/打分/回测/落地各司其职，产物全部是可复查的本地文件，安全标志明确，没有任何实盘通路。用合成数据做"管道自检"也合理。
 
-**主要问题**：策略定义仍不可见，最佳判定仍只看 Sharpe。2026-06-15 起，数据源选择、"发送至回测"的数据源语义、以及 walk-forward 折验证入口已对齐。
+**主要问题**：策略定义仍不可编辑，最佳判定仍只看 Sharpe。2026-06-15 起，数据源选择、"发送至回测"的数据源语义、walk-forward 折验证入口，以及被扫描策略的只读展示已对齐。
 
 **改进建议（按性价比排序）**：
 
-1. **在结果区显式展示被扫描的策略与因子权重。** 把 `experiment_config.json` 里的三因子组合渲染成一个只读卡片，让用户知道"在比什么"。
+1. ~~在结果区显式展示被扫描的策略与因子权重~~ **已于 2026-06-15 修复**：`ExperimentTabs` 会把 `experiment_config.json.factor_blend` 渲染成只读 "Strategy under test" 摘要，让用户知道"在比什么"。
 2. ~~打开 walk-forward 或移除该标签页~~ **已于 2026-06-15 修复**：表单提供 Walk-forward folds 开关并透传到 `WalkForwardConfig`，开启后会生成 `walk_forward_folds.parquet`。
 3. ~~修正"发送至回测"的数据源语义~~ **已于 2026-06-15 修复**：跳转会沿用实验记录的 `agent_summary.data.source`；旧实验缺少 source 时按 `sample` 处理。
 4. **给关键术语加 tooltip**（experiment/sweep/run/fold/best/lookback/top_n）。
@@ -126,6 +127,7 @@
 - 运行表单（provider 选择、walk-forward 开关、默认值、请求 payload）：`src/frontend/components/forms/ExperimentRunForm.tsx`
 - 结果四标签页（热力图/折/对比/摘要、source 标注、`buildBacktestHref` 跳转逻辑）：`src/frontend/components/forms/ExperimentTabs.tsx`
 - 前端 payload/helper 测试：`src/frontend/lib/experimentRunPayload.ts`
+- 前端策略摘要 helper 与测试：`src/frontend/lib/experimentSummary.ts`
 - 后端路由（list / run / detail）：`src/quant_system/api/routes/experiments.py`
 - 请求 schema（provider 支持 sample/futu/tiingo、walk_forward 配置、字段约束）：`src/quant_system/api/schemas/experiments.py`
 - 实验编排（可注入 provider、按 Sharpe 选最佳、写产物）：`src/quant_system/experiments/runner.py`

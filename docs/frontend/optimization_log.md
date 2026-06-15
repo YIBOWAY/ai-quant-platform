@@ -14,7 +14,7 @@
 - `POST /api/replications/reversal-momentum/run` 现在返回 `replication-*` `run_id`，写入 `data/api_runs/replications/<run_id>/metadata.json` 与 `result.json`；新增 `GET /api/replications/reversal-momentum/{run_id}` 和 `/replications/[runId]` 详情页。Strategy Catalog 对研报复现显示“打开复现”，刷新后仍可复看结果。复现 run 暂不进入可选 PostgreSQL run index。
 - 期权雷达新增 `quant-system options daily-task`，Windows 调度脚本改为先刷新标的池、财报日历和 VIX，再运行扫描并写入 `daily_task_status.json`；新增 `GET /api/options/daily-scan/status`，`/options-radar` 会显示最近一次调度任务状态；`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 时，API 启动会在最近一个 UTC 工作日快照缺失时后台补跑一次只读 `daily-scan`，周末会回退到上一个周五；API/CLI/调度/启动补跑共享 `options_radar_scan.lock` 防止并发写快照和状态。仍未做：完整交易所节假日判断和启动时刷新输入缓存。
 - 模拟账户限价单新增持久 `pending_orders` 队列：未触价的手动限价单返回 `pending`，保存在账户 JSON 中，`POST /api/paper/account/orders/process` 可按当前真实纸面价格重新检查并成交，`POST /api/paper/account/orders/{order_id}/cancel` 可取消单个挂单并写入 `order_cancelled` 账本事件；`/paper-trading` 现在显示待处理限价单，并提供“检查挂单”和逐单“取消”。仍未做：资金/持仓预留、后台定时检查和停机期间日内高低价补判。
-- 实验管理不再强制 sample：`POST /api/experiments/run` 支持 `sample` / `futu` / `tiingo`，真实 provider 不可用时返回 `400 provider_unavailable`；前端运行表单默认 `futu`，结果区展示 `agent_summary.data.source`，“Send to Backtest” 会保留同一 provider。旧实验缺少 source 时按 `sample` 处理。运行表单还新增显式 Walk-forward folds 开关，开启后透传 `train_bars` / `validation_bars` / `step_bars` 并生成 `walk_forward_folds.parquet`。
+- 实验管理不再强制 sample：`POST /api/experiments/run` 支持 `sample` / `futu` / `tiingo`，真实 provider 不可用时返回 `400 provider_unavailable`；前端运行表单默认 `futu`，结果区展示 `agent_summary.data.source`，“Send to Backtest” 会保留同一 provider。旧实验缺少 source 时按 `sample` 处理。运行表单还新增显式 Walk-forward folds 开关，开启后透传 `train_bars` / `validation_bars` / `step_bars` 并生成 `walk_forward_folds.parquet`。结果详情卡片现在还会只读展示 `experiment_config.factor_blend`，包括因子、权重、方向和再平衡间隔。
 
 ---
 
@@ -42,7 +42,7 @@
 - **Paper Trading 重排**：拆成 Tab（实时账户 / 历史回放），实时账户含账户摘要 + 持仓明细（含权重条/盈亏/均价）+ 交易再平衡面板 + 紧凑安全状态条；再平衡后显示"本次变化回执"（卖出/买入了什么、数量、价格）。
 
 ### 并行重设计（workflow wneo9z6zm，11 个页面）
-dashboard / factor-lab / experiments / agent-studio / order-book / settings / options-radar / options-tools / options-buyside / position-map / replications-shell —— 各 agent 用共享 primitives + 锚定风格重设计，隔离文件无冲突，保留全部功能/API/安全语言/双语。
+dashboard / factor-lab / experiments / agent-studio / order-book / settings / options-radar / options-tools / options-buyside / position-map / replications-shell —— 各 agent 用共享 primitives + 锚定风格重设计，隔离文件无冲突，保留全部功能/API/安全语言/双语。2026-06-15 后续补充：Experiments 结果卡新增 "Strategy under test" 只读摘要，避免用户只看到参数扫描结果却看不见固定因子组合。
 
 **后端协同任务（本批未做，待后续）**：原清单为因子实验室真实数据源、限价单持久挂单+日内触价成交、回测整股/最小订单约束、期权雷达日终自动任务、研报复现 run_id 持久化。2026-06-15 时，因子实验室真实数据源、回测整股/最小订单约束、研报复现 run_id 持久化、期权雷达调度入口 + 页面任务状态 + 可选启动补跑 + 扫描锁、限价单基础挂单队列 + 手动取消已后续落地；限价单资金/持仓预留、后台自动检查、期权雷达完整交易所节假日判断仍待处理。
 

@@ -89,7 +89,10 @@ link. Old experiments without `data.source` are treated as `sample`. The run
 request also accepts a `walk_forward` object (`enabled`, `train_bars`,
 `validation_bars`, `step_bars`); the frontend keeps it off by default and only
 generates `walk_forward_folds.parquet` when the user explicitly enables
-Walk-forward folds.
+Walk-forward folds. Experiment detail cards also render
+`experiment_config.factor_blend` as a read-only "Strategy under test" summary;
+this makes the fixed factor blend visible but does not add UI-side strategy
+editing.
 
 ## Optional PostgreSQL Run Index
 

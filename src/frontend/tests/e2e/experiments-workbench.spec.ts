@@ -71,6 +71,14 @@ test.describe("experiments workbench", () => {
       initial_cash: 100000,
       commission_bps: 1,
       slippage_bps: 5,
+      factor_blend: {
+        rebalance_every_n_bars: 1,
+        factors: [
+          { factor_id: "momentum", weight: 1, direction: "higher_is_better" },
+          { factor_id: "volatility", weight: 0.5, direction: "lower_is_better" },
+          { factor_id: "liquidity", weight: 0.5, direction: "higher_is_better" },
+        ],
+      },
       sweep: { lookback: [3, 5], top_n: [1, 2] },
       walk_forward: { enabled: true, train_bars: 12, validation_bars: 5, step_bars: 5 },
     });
@@ -102,6 +110,10 @@ test.describe("experiments workbench", () => {
     await expect(page.getByRole("complementary").getByText("best: run-lb5-top1")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sweep Heatmap" })).toBeVisible();
     await expect(page.getByText("Data source: tiingo")).toBeVisible();
+    await expect(page.getByText("Strategy under test")).toBeVisible();
+    await expect(page.getByText("momentum")).toBeVisible();
+    await expect(page.getByText("0.50x").first()).toBeVisible();
+    await expect(page.getByText("lower is better")).toBeVisible();
     await expect(page.getByText("lookback=5 / top_n=1")).toBeVisible();
     await expect(page.locator('[data-experiment-tabs-ready="true"]')).toBeVisible();
 
