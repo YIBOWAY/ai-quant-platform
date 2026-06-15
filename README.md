@@ -252,9 +252,12 @@ simulation-only — no real orders, broker, wallet, or account unlock.
   `available_cash`. The API background worker also checks existing pending orders
   every 30 seconds by default
   (`QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED` /
-  `QS_PAPER_ACCOUNT_AUTO_PROCESS_INTERVAL_SECONDS`). It does not replay intraday
-  highs/lows while the API was offline. The persistent account never uses
-  sample/demo prices.
+  `QS_PAPER_ACCOUNT_AUTO_PROCESS_INTERVAL_SECONDS`). When the current paper
+  price still misses the limit, pending-order processing also checks real daily
+  OHLCV high/low ranges for complete days after the order's last check/creation
+  and before the current check date, then fills touched orders at the original
+  limit price. It never uses sample data and does not infer same-day intraday
+  ordering. The persistent account never uses sample/demo prices.
 - Strategy rebalance: `POST /api/paper/account/rebalance` (one-click; aborts
   atomically if any leg cannot fill). The strategy picker is driven by
   `supports_account_rebalance` in the backend strategy registry; currently the

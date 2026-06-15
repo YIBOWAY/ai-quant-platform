@@ -122,6 +122,97 @@ def test_price_source_uses_recent_real_local_close_and_ignores_sample_and_stale(
     assert quote.source == "local:tiingo"
 
 
+def test_price_source_uses_real_local_historical_range_and_ignores_sample(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path, futu_enabled=False)
+    _write_local_ohlcv(
+        settings,
+        [
+            {
+                "symbol": "AAPL",
+                "timestamp": "2024-01-03T00:00:00Z",
+                "low": 1.0,
+                "high": 999.0,
+                "close": 500.0,
+                "provider": "sample",
+            },
+            {
+                "symbol": "AAPL",
+                "timestamp": "2024-01-03T00:00:00Z",
+                "low": 145.0,
+                "high": 160.0,
+                "close": 155.0,
+                "provider": "tiingo",
+            },
+            {
+                "symbol": "AAPL",
+                "timestamp": "2024-01-04T00:00:00Z",
+                "low": 150.0,
+                "high": 170.0,
+                "close": 165.0,
+                "provider": "tiingo",
+            },
+            {
+                "symbol": "AAPL",
+                "timestamp": "2024-01-05T00:00:00Z",
+                "low": 120.0,
+                "high": 180.0,
+                "close": 175.0,
+                "provider": "tiingo",
+            },
+            {
+                "symbol": "MSFT",
+                "timestamp": "2024-01-04T00:00:00Z",
+                "low": 10.0,
+                "high": 20.0,
+                "close": 15.0,
+                "provider": "tiingo",
+            },
+        ],
+    )
+
+    price_range = PaperPriceSource(settings).get_price_range(
+        "aapl",
+        start="2024-01-03",
+        end="2024-01-04",
+    )
+
+    assert price_range.symbol == "AAPL"
+    assert price_range.low == pytest.approx(145.0)
+    assert price_range.high == pytest.approx(170.0)
+    assert price_range.close == pytest.approx(165.0)
+    assert price_range.price_kind == "historical_range"
+    assert price_range.source == "local:tiingo"
+
+
+def test_price_source_rejects_sample_only_historical_range(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, futu_enabled=False)
+    _write_local_ohlcv(
+        settings,
+        [
+            {
+                "symbol": "AAPL",
+                "timestamp": "2024-01-03T00:00:00Z",
+                "low": 1.0,
+                "high": 999.0,
+                "close": 500.0,
+                "provider": "sample",
+            }
+        ],
+    )
+
+    with pytest.raises(
+        PriceUnavailableError,
+        match="no historical price range available for AAPL",
+    ):
+        PaperPriceSource(settings).get_price_range(
+            "AAPL",
+            start="2024-01-03",
+            end="2024-01-04",
+        )
+
+
 def test_price_source_rejects_sample_only_and_stale_local_prices(
     tmp_path: Path,
 ) -> None:
@@ -194,6 +285,74 @@ def test_price_source_uses_tiingo_fallback_when_local_cache_is_missing(
     assert quote.price == 321.0
     assert quote.price_kind == "last_close"
     assert quote.source == "tiingo"
+
+
+def test_price_source_uses_tiingo_historical_range_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path, futu_enabled=False, tiingo_token="token")
+    calls: list[dict[str, object]] = []
+
+    class FakeTiingoProvider:
+        def fetch_ohlcv(
+            self,
+            symbols: list[str],
+            *,
+            start: str,
+            end: str,
+            interval: str = "1d",
+        ) -> pd.DataFrame:
+            calls.append(
+                {
+                    "symbols": symbols,
+                    "start": start,
+                    "end": end,
+                    "interval": interval,
+                }
+            )
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": "AAPL",
+                        "timestamp": "2024-01-03T00:00:00Z",
+                        "low": 141.0,
+                        "high": 160.0,
+                        "close": 155.0,
+                    },
+                    {
+                        "symbol": "AAPL",
+                        "timestamp": "2024-01-04T00:00:00Z",
+                        "low": 150.0,
+                        "high": 171.0,
+                        "close": 166.0,
+                    },
+                ]
+            )
+
+    monkeypatch.setattr(
+        "quant_system.execution.price_source.build_ohlcv_provider",
+        lambda settings, requested: (FakeTiingoProvider(), requested),
+    )
+
+    price_range = PaperPriceSource(settings).get_price_range(
+        "AAPL",
+        start="2024-01-03",
+        end="2024-01-04",
+    )
+
+    assert calls == [
+        {
+            "symbols": ["AAPL"],
+            "start": "2024-01-03",
+            "end": "2024-01-04",
+            "interval": "1d",
+        }
+    ]
+    assert price_range.low == pytest.approx(141.0)
+    assert price_range.high == pytest.approx(171.0)
+    assert price_range.close == pytest.approx(166.0)
+    assert price_range.source == "tiingo"
 
 
 def test_price_source_never_uses_sample_provider_for_tiingo_fallback(

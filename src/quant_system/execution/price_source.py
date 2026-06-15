@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from math import isfinite
 
 import pandas as pd
 from pydantic import BaseModel
@@ -15,6 +16,16 @@ class PricedQuote(BaseModel):
     price_kind: str  # futu_snapshot | last_close
     as_of: str
     source: str  # provider that supplied the price
+
+
+class HistoricalPriceRange(BaseModel):
+    symbol: str
+    low: float
+    high: float
+    close: float
+    price_kind: str = "historical_range"
+    as_of: str
+    source: str
 
 
 class PriceUnavailableError(RuntimeError):
@@ -65,6 +76,24 @@ class PaperPriceSource:
             for symbol in symbols
             if symbol.strip()
         }
+
+    def get_price_range(self, symbol: str, *, start: str, end: str) -> HistoricalPriceRange:
+        normalized = symbol.upper().strip()
+        if not normalized:
+            raise PriceUnavailableError("symbol must not be empty")
+
+        local = self._try_local_range(normalized, start=start, end=end)
+        if local is not None:
+            return local
+
+        tiingo = self._try_tiingo_range(normalized, start=start, end=end)
+        if tiingo is not None:
+            return tiingo
+
+        raise PriceUnavailableError(
+            f"no historical price range available for {normalized}: "
+            "no real local or Tiingo OHLCV data found"
+        )
 
     # --- resolution steps -------------------------------------------------
     def _try_futu_snapshot(self, symbol: str) -> PricedQuote | None:
@@ -181,3 +210,121 @@ class PaperPriceSource:
             )
         except Exception:  # noqa: BLE001 - malformed or unreadable local cache
             return None
+
+    def _try_local_range(
+        self,
+        symbol: str,
+        *,
+        start: str,
+        end: str,
+    ) -> HistoricalPriceRange | None:
+        path = self.settings.data.parquet_dir / "ohlcv.parquet"
+        if not path.exists():
+            return None
+        try:
+            frame = pd.read_parquet(path)
+            required = {"symbol", "timestamp", "low", "high", "close", "provider"}
+            if not required.issubset(frame.columns):
+                return None
+            return self._range_from_ohlcv(
+                frame,
+                symbol,
+                start=start,
+                end=end,
+                source_prefix="local",
+            )
+        except Exception:  # noqa: BLE001 - malformed or unreadable local cache
+            return None
+
+    def _try_tiingo_range(
+        self,
+        symbol: str,
+        *,
+        start: str,
+        end: str,
+    ) -> HistoricalPriceRange | None:
+        try:
+            token = self.settings.api_keys.tiingo_api_token
+            token_value = token.get_secret_value().strip() if token else ""
+            if not token_value:
+                return None
+            provider, source = build_ohlcv_provider(self.settings, requested="tiingo")
+            if source.lower().startswith("sample"):
+                return None
+            frame = provider.fetch_ohlcv([symbol], start=start, end=end)
+            return self._range_from_ohlcv(
+                frame,
+                symbol,
+                start=start,
+                end=end,
+                source=source,
+            )
+        except Exception:  # noqa: BLE001 - no historical range available
+            return None
+
+    def _range_from_ohlcv(
+        self,
+        frame: pd.DataFrame,
+        symbol: str,
+        *,
+        start: str,
+        end: str,
+        source: str | None = None,
+        source_prefix: str | None = None,
+    ) -> HistoricalPriceRange | None:
+        required = {"symbol", "timestamp", "low", "high", "close"}
+        if frame is None or frame.empty or not required.issubset(frame.columns):
+            return None
+        rows = frame.copy()
+        rows["timestamp"] = pd.to_datetime(rows["timestamp"], utc=True, errors="coerce")
+        for column in ("low", "high", "close"):
+            rows[column] = pd.to_numeric(rows[column], errors="coerce")
+        start_ts = self._utc_timestamp(start)
+        end_exclusive = self._utc_timestamp(end) + pd.Timedelta(days=1)
+        rows = rows[
+            (rows["symbol"].astype(str).str.upper() == symbol)
+            & (rows["timestamp"] >= start_ts)
+            & (rows["timestamp"] < end_exclusive)
+        ].copy()
+        if "provider" in rows.columns:
+            rows = rows[
+                ~rows["provider"].astype(str).str.contains("sample", case=False, na=True)
+            ]
+        rows = rows.dropna(subset=["timestamp", "low", "high", "close"])
+        rows = rows[(rows["low"] > 0) & (rows["high"] > 0) & (rows["close"] > 0)]
+        rows = rows[rows["high"] >= rows["low"]].sort_values("timestamp")
+        if rows.empty:
+            return None
+        low = float(rows["low"].min())
+        high = float(rows["high"].max())
+        close = float(rows.iloc[-1]["close"])
+        if not (isfinite(low) and isfinite(high) and isfinite(close)):
+            return None
+        range_source = source or self._local_range_source(rows, source_prefix=source_prefix)
+        return HistoricalPriceRange(
+            symbol=symbol,
+            low=low,
+            high=high,
+            close=close,
+            as_of=str(rows.iloc[-1]["timestamp"]),
+            source=range_source,
+        )
+
+    @staticmethod
+    def _utc_timestamp(value: str) -> pd.Timestamp:
+        timestamp = pd.Timestamp(value)
+        if timestamp.tzinfo is None:
+            return timestamp.tz_localize("UTC")
+        return timestamp.tz_convert("UTC")
+
+    @staticmethod
+    def _local_range_source(
+        rows: pd.DataFrame,
+        *,
+        source_prefix: str | None,
+    ) -> str:
+        if "provider" not in rows.columns:
+            return source_prefix or "local"
+        providers = sorted({str(provider) for provider in rows["provider"].dropna()})
+        provider = providers[0] if len(providers) == 1 else "mixed"
+        return f"{source_prefix}:{provider}" if source_prefix else provider

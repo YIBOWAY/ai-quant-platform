@@ -2,7 +2,7 @@
 > Web Design Engineer 审查报告 — 2026-06-07  
 > 基于 `docs/design/frontend_workflow_usability_review_2026-06-07.md` 的代码验证
 >
-> **状态（2026-06-15，2026-06-16 更新）**：本文为历史审查记录。其中多项问题已修复——因子实验室硬编码 sample（2026-06-11 起默认 `futu`，侧栏可切换数据源）、回测详情基准曲线（2026-06-15 起随每个 backtest run 保存 `benchmark_curve.parquet` / `benchmark_metrics.json`，详情页读取 run 内快照）、回测碎股噪声（2026-06-15 起可选 `whole_share_orders` + `min_order_value`）、慢页 loading 状态（2026-06-07 批次 #2）、模拟交易页双标签页重排（2026-06-07 起，2026-06-11 定稿）、限价单基础挂单队列（`pending_orders` + 资金/持仓预留 + 页面挂单列表 + 手动检查入口 + API 运行期间后台自动检查 + 逐单取消）。逐项现状以 [../guides/](../guides/) 各篇「当前的局限」与 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md) 为准。
+> **状态（2026-06-15，2026-06-16 更新）**：本文为历史审查记录。其中多项问题已修复——因子实验室硬编码 sample（2026-06-11 起默认 `futu`，侧栏可切换数据源）、回测详情基准曲线（2026-06-15 起随每个 backtest run 保存 `benchmark_curve.parquet` / `benchmark_metrics.json`，详情页读取 run 内快照）、回测碎股噪声（2026-06-15 起可选 `whole_share_orders` + `min_order_value`）、慢页 loading 状态（2026-06-07 批次 #2）、模拟交易页双标签页重排（2026-06-07 起，2026-06-11 定稿）、限价单挂单生命周期（`pending_orders` + 资金/持仓预留 + 页面挂单列表 + 手动检查入口 + API 运行期间后台自动检查 + 完整自然日 high/low 回看 + 逐单取消）。逐项现状以 [../guides/](../guides/) 各篇「当前的局限」与 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md) 为准。
 
 ---
 
@@ -18,7 +18,7 @@
 
 **风险评估**：
 - 🔴 **高风险**（立即修复）：因子实验室硬编码 sample data、回测详情缺基准曲线
-- 🟡 **中风险**（两周内修复）：限价单停机期间高低价补判、所有页面缺 loading states
+- 🟡 **中风险**（两周内修复）：所有页面缺 loading states（限价单停机期间完整自然日 high/low 回看已于 2026-06-16 补上）
 - 🟢 **低风险**（可延后）：布局优化、入口可发现性
 
 ---
@@ -106,7 +106,7 @@ const chartRows = detail.equity_curve.map((point, i) => ({
 > `POST /api/paper/account/orders/process` 重新按当前真实纸面价格撮合；也可通过
 > 行内「取消」调用 `POST /api/paper/account/orders/{order_id}/cancel`
 > 移除挂单并写入 `order_cancelled` 账本事件。
-> 仍未完成：停机期间日内高低价补判；购买力/可卖数量预留和 API 运行期间的后台自动检查已于 2026-06-16 补上。
+> 2026-06-16 已补上购买力/可卖数量预留、API 运行期间后台自动检查，以及完整自然日真实 high/low 回看；回看不使用 sample 数据，也不推断下单当天的日内先后顺序。
 
 **文档描述**：用户提交限价单后，订单立即消失，没有"挂单中"状态  
 **代码验证**：`src/frontend/components/forms/AccountTradePanel.tsx:L1-L80`
@@ -124,7 +124,7 @@ const chartRows = detail.equity_curve.map((point, i) => ({
 - 破坏了"模拟交易"的真实感
 
 **修复方案**：
-1. **后端**：未触价限价单已持久化到 `PaperAccount.pending_orders`，支持取消端点、购买力/可卖数量预留，以及 API 运行期间的后台定时检查；剩余是停机期间日内高低价补判。
+1. **后端**：未触价限价单已持久化到 `PaperAccount.pending_orders`，支持取消端点、购买力/可卖数量预留、API 运行期间的后台定时检查，以及完整自然日真实 high/low 回看。
 2. **前端**：`/paper-trading` 已展示「待处理限价单」，并提供「检查挂单」与逐单「取消」；剩余是更完整的生命周期状态。
    ```
    Open Orders (2)
@@ -416,7 +416,7 @@ export function CandlestickChart({ data }: Props) {
 
 ### 两周内完成（P1）
 
-4. ⚠️ **限价单停机期间高低价补判** — 剩余工作，需要后端数据回放策略
+4. ✅ **限价单停机期间完整自然日 high/low 回看** — 已完成；不推断下单当天的日内先后顺序
 5. ✅ **行情浏览 K 线空白** — 1-2 小时
 6. ✅ **期权筛选器结果区** — 3-4 小时
 
@@ -521,9 +521,8 @@ export function CandlestickChart({ data }: Props) {
 1. **限价单挂单机制**：
    - 2026-06-15 已落地：基础 `pending_orders` 队列、页面挂单列表、手动检查触价成交和逐单取消。
    - 2026-06-16 已落地：买入挂单预留现金、卖出挂单预留可卖数量，账户摘要显示可用现金。
-   - 方案 A：启动后读取停机期间日内高低价，回溯判断是否曾触价（更真实）
-   - 方案 B：只在系统观察到价格时成交（更简单）
-   - **推荐**：方案 A
+   - 2026-06-16 已落地：重新检查时会回看上次检查/创建之后、当前检查日之前完整自然日的真实 high/low 区间，触价则按原限价成交。
+   - 仍保留限制：不使用 sample 数据，也不推断下单当天的日内先后顺序。
 
 2. **碎股订单**：
    - 2026-06-15 已落地：Backtester 暴露 `whole_share_orders` 与 `min_order_value`，默认保留兼容，用户可显式启用整股与最小订单金额。

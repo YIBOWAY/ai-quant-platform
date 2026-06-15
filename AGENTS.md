@@ -167,8 +167,11 @@ on the Position Map.
   (`QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED=true`,
   `QS_PAPER_ACCOUNT_AUTO_PROCESS_INTERVAL_SECONDS=30`) that processes existing
   pending orders through the same locked `process_pending_orders` path; tests
-  force it off. Current scope still excludes offline intraday high/low backfill
-  for periods when the API was stopped.
+  force it off. If the current paper price still misses the limit, processing
+  also checks real daily OHLCV high/low ranges for complete days after the
+  order's last check/creation and before the current check date, then fills
+  touched orders at the original limit price. This backfill never uses sample
+  data and does not infer same-day intraday ordering.
 - CLI: `quant-system paper rebalance --account default --strategy <id>` (for
   scheduled auto-rebalance; exits non-zero on abort/failure) and
   `quant-system paper account-show`.

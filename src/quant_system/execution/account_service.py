@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from math import isfinite
 
 import pandas as pd
@@ -148,14 +148,43 @@ class PaperAccountService:
 
         outcomes: list[OrderOutcome] = []
         remaining: list[PendingAccountOrder] = []
-        checked_at = datetime.now(UTC).isoformat()
+        checked_at_dt = datetime.now(UTC)
+        checked_at = checked_at_dt.isoformat()
         for pending in account.pending_orders:
             quote = self.price_source.get_price(pending.symbol)
+            previous_checked_at = pending.last_checked_at
             pending.last_checked_price = quote.price
             pending.last_checked_price_kind = quote.price_kind
             pending.last_checked_at = checked_at
             side = OrderSide(pending.side)
             if self._limit_blocks_fill(side, quote.price, pending.limit_price):
+                historical_range = self._historical_range_touch(
+                    pending,
+                    side=side,
+                    previous_checked_at=previous_checked_at,
+                    checked_at=checked_at_dt,
+                )
+                if historical_range is not None:
+                    outcomes.append(
+                        self._execute_single(
+                            account=account,
+                            symbol=quote.symbol,
+                            side=side,
+                            quantity=pending.quantity,
+                            price=pending.limit_price,
+                            price_kind=getattr(
+                                historical_range,
+                                "price_kind",
+                                "historical_range",
+                            ),
+                            limit_price=pending.limit_price,
+                            source=pending.source,
+                            reason=pending.reason,
+                            order_id=pending.order_id,
+                            exclude_pending_order_id=pending.order_id,
+                        )
+                    )
+                    continue
                 remaining.append(pending)
                 outcomes.append(
                     OrderOutcome(
@@ -191,6 +220,68 @@ class PaperAccountService:
             )
         account.pending_orders = remaining
         return outcomes
+
+    def _historical_range_touch(
+        self,
+        pending: PendingAccountOrder,
+        *,
+        side: OrderSide,
+        previous_checked_at: str | None,
+        checked_at: datetime,
+    ):
+        window = self._historical_range_window(
+            pending,
+            previous_checked_at=previous_checked_at,
+            checked_at=checked_at,
+        )
+        if window is None:
+            return None
+        get_range = getattr(self.price_source, "get_price_range", None)
+        if get_range is None:
+            return None
+        start, end = window
+        try:
+            historical_range = get_range(pending.symbol, start=start, end=end)
+        except PriceUnavailableError:
+            return None
+        except Exception:  # noqa: BLE001 - range backfill is best-effort
+            return None
+        if historical_range is None:
+            return None
+        try:
+            low = float(historical_range.low)
+            high = float(historical_range.high)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if not (isfinite(low) and isfinite(high)):
+            return None
+        if side == OrderSide.BUY and low <= pending.limit_price:
+            return historical_range
+        if side == OrderSide.SELL and high >= pending.limit_price:
+            return historical_range
+        return None
+
+    @staticmethod
+    def _historical_range_window(
+        pending: PendingAccountOrder,
+        *,
+        previous_checked_at: str | None,
+        checked_at: datetime,
+    ) -> tuple[str, str] | None:
+        anchor = previous_checked_at or pending.created_at
+        try:
+            anchor_ts = pd.Timestamp(anchor)
+        except Exception:  # noqa: BLE001 - malformed legacy pending timestamp
+            return None
+        if anchor_ts.tzinfo is None:
+            anchor_ts = anchor_ts.tz_localize("UTC")
+        else:
+            anchor_ts = anchor_ts.tz_convert("UTC")
+        start_date = anchor_ts.date() + timedelta(days=1)
+        end_date = checked_at.date() - timedelta(days=1)
+        if start_date > end_date:
+            return None
+        return start_date.isoformat(), end_date.isoformat()
 
     # --- strategy rebalance ----------------------------------------------
     def rebalance_to_strategy(

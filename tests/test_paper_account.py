@@ -4,6 +4,7 @@ import contextlib
 import json
 import threading
 import time
+from datetime import UTC, datetime
 
 import pandas as pd
 import pytest
@@ -66,6 +67,33 @@ class _StubPriceSource:
             with contextlib.suppress(Exception):
                 out[s.upper()] = self.get_price(s)
         return out
+
+    def get_price_range(self, symbol: str, **_kwargs):
+        return None
+
+
+class _HistoricalRangePriceSource(_StubPriceSource):
+    def __init__(self, prices: dict[str, float], *, low: float, high: float) -> None:
+        super().__init__(prices)
+        self.low = low
+        self.high = high
+        self.requests: list[tuple[str, str, str]] = []
+
+    def get_price_range(self, symbol: str, *, start: str, end: str):
+        symbol = symbol.upper()
+        self.requests.append((symbol, start, end))
+        return type(
+            "HistoricalRange",
+            (),
+            {
+                "symbol": symbol,
+                "low": self.low,
+                "high": self.high,
+                "close": self._prices[symbol],
+                "price_kind": "historical_range",
+                "source": "stub",
+            },
+        )()
 
 
 class _PartialPriceSource(_StubPriceSource):
@@ -192,6 +220,56 @@ def test_pending_buy_limit_order_reserves_cash() -> None:
     assert outcomes[0].filled_quantity == pytest.approx(8)
     assert account.pending_orders == []
     assert account.cash == pytest.approx(80.0)
+
+
+def test_pending_buy_limit_order_uses_historical_range_backfill() -> None:
+    account = PaperAccount.open_new(initial_cash=1_000.0)
+    price_source = _HistoricalRangePriceSource({"AAPL": 200.0}, low=140.0, high=210.0)
+    service = PaperAccountService(price_source=price_source)
+
+    pending = service.place_manual_order(
+        account,
+        symbol="AAPL",
+        side="buy",
+        quantity=2,
+        limit_price=150.0,
+    )
+    assert pending.status == "pending"
+    account.pending_orders[0].created_at = "2024-01-02T20:00:00+00:00"
+    account.pending_orders[0].last_checked_at = "2024-01-02T20:00:00+00:00"
+
+    outcomes = service.process_pending_orders(account)
+
+    assert outcomes[0].status == "filled"
+    assert outcomes[0].price == pytest.approx(150.0)
+    assert outcomes[0].price_kind == "historical_range"
+    assert account.pending_orders == []
+    assert account.position_quantity("AAPL") == pytest.approx(2.0)
+    assert account.cash == pytest.approx(700.0)
+    assert price_source.requests[0][0] == "AAPL"
+    assert price_source.requests[0][1] == "2024-01-03"
+
+
+def test_historical_range_window_uses_complete_days_only() -> None:
+    account = PaperAccount.open_new(initial_cash=1_000.0)
+    service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 100.0}))
+    service.place_manual_order(
+        account,
+        symbol="AAPL",
+        side="buy",
+        quantity=1,
+        limit_price=90.0,
+    )
+    account.pending_orders[0].created_at = "2024-01-02T20:00:00+00:00"
+    account.pending_orders[0].last_checked_at = "2024-01-02T20:00:00+00:00"
+
+    window = PaperAccountService._historical_range_window(
+        account.pending_orders[0],
+        previous_checked_at=account.pending_orders[0].last_checked_at,
+        checked_at=datetime(2024, 1, 5, 10, tzinfo=UTC),
+    )
+
+    assert window == ("2024-01-03", "2024-01-04")
 
 
 def test_pending_sell_limit_order_reserves_position_quantity() -> None:

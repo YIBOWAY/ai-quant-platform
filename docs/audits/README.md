@@ -284,7 +284,10 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 `reserved_cash`、`available_cash`，前端账户摘要和持仓地图显示可用现金。
 2026-06-16 进一步补上 API 后台自动检查：默认每 30 秒处理已存在账户的
 `pending_orders`，复用与手动 `POST /api/paper/account/orders/process` 相同的账户锁、
-文件锁和真实纸面价格路径；测试环境强制关闭该 worker。停机期间日内高低价补判仍未实现。
+文件锁和真实纸面价格路径；测试环境强制关闭该 worker。随后又补上完整自然日
+真实 daily OHLCV 高低价区间回看：当前纸面价格仍未触价时，处理流程会检查
+上次检查/创建之后、当前检查日之前的完整自然日区间，命中则按原限价成交；
+该路径不使用 sample 数据，也不推断下单当天的日内先后顺序。
 
 2026-06-15 状态补充：评估报告中“API 路由缺少 `response_model`、前后端契约
 漂移”的高风险项已按低风险切片治理到当前全量防回归状态。已治理接口
