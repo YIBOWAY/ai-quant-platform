@@ -256,9 +256,11 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 2026-06-15 状态补充：评估报告中“API 路由缺少 `response_model`、前后端契约
 漂移”的高风险项已开始按低风险切片治理，但尚未全量完成。第一批只读市场/健康
 接口已挂上 FastAPI `response_model`：`GET /api/health`、`GET /api/symbols`、
-`GET /api/ohlcv`、`GET /api/benchmark`；同时补齐 `HealthResponse`、
-`OHLCVResponse`、`BenchmarkResponse` 中已由真实响应返回但 schema 缺失的字段。
-`tests/test_api_response_models.py` 会检查 OpenAPI schema 引用和关键字段，现有
-`tests/test_api_health.py`、`tests/test_api_data.py`、`tests/test_api_backtest.py`
-继续覆盖 runtime 响应与 safety footer。下一步仍应按路由域逐批补齐，而不是一次性
-生成/替换全部前端类型。
+`GET /api/ohlcv`、`GET /api/benchmark`、`GET /api/strategies`、
+`GET /api/universes`；同时补齐 `HealthResponse`、`OHLCVResponse`、
+`BenchmarkResponse` 中已由真实响应返回但 schema 缺失的字段，并为策略/股票池
+catalog 增加薄 wrapper response schema。`tests/test_api_response_models.py` 会检查
+OpenAPI schema 引用和关键字段，现有 `tests/test_api_health.py`、
+`tests/test_api_data.py`、`tests/test_api_backtest.py` 与
+`tests/test_api_strategy_universe_catalog.py` 继续覆盖 runtime 响应与 safety footer。
+下一步仍应按路由域逐批补齐，而不是一次性生成/替换全部前端类型。

@@ -13,6 +13,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/symbols": "SymbolsResponse",
         "/api/ohlcv": "OHLCVResponse",
         "/api/benchmark": "BenchmarkResponse",
+        "/api/strategies": "StrategyCatalogResponse",
+        "/api/universes": "UniverseCatalogResponse",
     }
     for path, model_name in expected.items():
         response_schema = openapi["paths"][path]["get"]["responses"]["200"]["content"][
@@ -26,3 +28,5 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "database" in components["HealthResponse"]["properties"]
     assert "source" in components["OHLCVResponse"]["properties"]
     assert "source" in components["BenchmarkResponse"]["properties"]
+    assert "strategies" in components["StrategyCatalogResponse"]["properties"]
+    assert "universes" in components["UniverseCatalogResponse"]["properties"]
