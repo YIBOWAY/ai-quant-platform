@@ -154,6 +154,7 @@ export type StrategyMetadata = {
   paper_source: string | null;
   run_endpoint: string;
   result_type: string;
+  supports_account_rebalance?: boolean;
   parameter_schema: {
     fields?: Record<string, Record<string, unknown>>;
   };

@@ -2,7 +2,7 @@
 
 这是整个仓库的主地图。用它来查找架构文档、执行手册、学习笔记、交付记录与安全边界。
 
-当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接，以及语言连续性修复，均记录在下文。最近一次大型变更为 2026-06-11 的前端全面重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38），见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
+当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接、策略账户再平衡能力位，以及语言连续性修复，均记录在下文。最近一次大型变更为 2026-06-11 的前端全面重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38），见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
 
 ## 0. 界面操作指南（新，建议先读）
 
@@ -57,7 +57,7 @@
 | 因子流水线 | `src/quant_system/factors/pipeline.py` |
 | 因子实验室仪表盘引擎 | `src/quant_system/factors/lab.py` |
 | 回测流水线 | `src/quant_system/backtest/pipeline.py` |
-| 策略注册表 | `src/quant_system/strategies/registry.py` |
+| 策略注册表（含账户再平衡能力位） | `src/quant_system/strategies/registry.py` |
 | Universe 注册表 | `src/quant_system/universe/registry.py` |
 | 反转/动量论文复现 | `src/quant_system/replication/reversal_momentum.py` |
 | 模拟交易历史回放流水线 | `src/quant_system/execution/pipeline.py` |

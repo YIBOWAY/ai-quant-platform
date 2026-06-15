@@ -226,8 +226,11 @@ simulation-only — no real orders, broker, wallet, or account unlock.
   shows the pending list, a check button, and per-order cancel controls. The
   persistent account never uses sample/demo prices.
 - Strategy rebalance: `POST /api/paper/account/rebalance` (one-click; aborts
-  atomically if any leg cannot fill). It only uses real market history; sample
-  strategy history never mutates the persistent account.
+  atomically if any leg cannot fill). The strategy picker is driven by
+  `supports_account_rebalance` in the backend strategy registry; currently the
+  account path supports `cross_sectional_top_n` and `mean_reversion_top_n`.
+  It only uses real market history; sample strategy history never mutates the
+  persistent account.
 - View / freeze / reset / ledger: `GET /api/paper/account`,
   `POST /api/paper/account/kill-switch`, `POST /api/paper/account/reset`,
   `GET /api/paper/account/ledger`.

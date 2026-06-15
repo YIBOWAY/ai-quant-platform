@@ -25,10 +25,10 @@
 - **Backtester**：默认值改为「真实数据优先」——provider 默认 `futu`，时间窗为**截至今天的滚动 180 天**；权益对比图、Trade Blotter 保留。2026-06-15 更新：每个 backtest run 会持久化 `benchmark_curve.parquet` / `benchmark_metrics.json`，详情页和最新运行面板读取 run 内 `benchmark` 快照，不再打开页面时重拉 `/api/benchmark`；回测表单/API 也新增可选 `min_order_value` 与 `whole_share_orders`，用于减少小额碎股噪声订单。
 - **Factor Lab**：页面重构为可理解的两个视图，使用共享 `Tabs` 组件（`role="tab"`）切换「横截面体检 / 单标的择时」，列头悬停有指标定义；因子研究表单挂在侧栏。2026-06-15 更新：范围卡新增“发送至回测”，会把当前数据源、股票池、基准和已登记因子预填到 Backtester；该链接只填表，不自动运行。
 - **Experiments**：Sweep 热图 / Walk-forward 折 / 运行对比 / Agent 摘要四个 tab（共享 `Tabs` 组件），「Send to Backtest」可把最优参数带入回测表单。2026-06-15 更新：运行表单可选 `sample` / `futu` / `tiingo`，实验 source 会写入 `agent_summary.data.source`，发送至回测时保留同一数据源；Walk-forward folds 可显式开启，并透传 `train_bars` / `validation_bars` / `step_bars` 生成折级产物；结果详情卡片会只读展示 `experiment_config.factor_blend`，让用户直接看到被扫描的固定因子组合、权重、方向与再平衡间隔。
-- **Strategy Catalog（Replications）**：与持仓地图的关系在页面上说明清楚；运行后展示权益图、月度收益与组合持仓。
+- **Strategy Catalog（Replications）**：与持仓地图的关系在页面上说明清楚；运行后展示权益图、月度收益与组合持仓。2026-06-15 更新：策略注册表新增 `supports_account_rebalance`，研报复现策略可留在目录中，但不会被 `/paper-trading` 的持续账户再平衡入口接受。
 
 ### 模拟交易与持仓
-- **Paper Trading**：「实时账户 / 历史回放（研究）」两 tab 分离;手动下单、策略再平衡在实时账户侧;回放研究不再与账户混淆。
+- **Paper Trading**：「实时账户 / 历史回放（研究）」两 tab 分离;手动下单、策略再平衡在实时账户侧;回放研究不再与账户混淆。2026-06-15 更新：策略再平衡下拉读取后端注册表能力位，只显示 `supports_account_rebalance=true` 的策略。
 - **Position Map**：以**模拟账户为唯一事实来源**重做——账户指标行（总值/现金/持仓市值/未实现盈亏）、按标的的敞口条、账户活动流、空仓时给出「Open Paper Trading」引导;最近回测敞口仅作为研究对比保留在页尾并明确标注。
 
 ### 期权研究群

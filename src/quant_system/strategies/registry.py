@@ -10,6 +10,7 @@ class StrategyMetadata(BaseModel):
     paper_source: str | None = None
     run_endpoint: str
     result_type: str
+    supports_account_rebalance: bool = False
     parameter_schema: dict = Field(default_factory=dict)
     default_payload: dict = Field(default_factory=dict)
 
@@ -49,6 +50,7 @@ def build_default_strategy_registry() -> StrategyRegistry:
             paper_source=None,
             run_endpoint="/api/backtests/run",
             result_type="backtest",
+            supports_account_rebalance=True,
             parameter_schema={
                 "fields": {
                     "universe_id": {"type": "universe", "required": True},
@@ -119,6 +121,7 @@ def build_default_strategy_registry() -> StrategyRegistry:
             paper_source=None,
             run_endpoint="/api/backtests/run",
             result_type="backtest",
+            supports_account_rebalance=True,
             parameter_schema={
                 "fields": {
                     "universe_id": {"type": "universe", "required": True},

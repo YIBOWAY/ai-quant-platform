@@ -2,7 +2,7 @@
 
 > 状态：**阶段 1-5 已全部实现并验证（2026-06-04）**。本文件原为设计与分阶段实现计划，现作为该设计的记录保留；落地后的操作说明见 [../guides/paper-trading.md](../guides/paper-trading.md) 与 [../guides/position-map.md](../guides/position-map.md)。
 > 安全红线不变：纯本地、仅模拟、只读真实行情。**绝不**新增真实下单 / 解锁账户 / 钱包 / 签名 / 券商交易上下文。
-> 已交付要点：单一持久账户（默认 100 万）、手动下单（数量/金额、限价单可进入 `pending_orders` 并通过账户页手动检查触价或逐单取消）、策略一键再平衡（plan-then-commit 原子性）、账户级冻结开关、Futu 实时快照取价（离线只回退真实最近收盘）、逐持仓报价来源、账户驱动的持仓地图、CLI 定时再平衡、网页与定时任务跨进程串行保护、移动端导航。代码入口见本文第 10 节与 [../../AGENTS.md](../../AGENTS.md) 的「Paper Account」一节。未完成：购买力/可卖数量预留、后台定时撮合、停机期间日内高低价回溯补判。
+> 已交付要点：单一持久账户（默认 100 万）、手动下单（数量/金额、限价单可进入 `pending_orders` 并通过账户页手动检查触价或逐单取消）、策略一键再平衡（由策略注册表 `supports_account_rebalance` 能力位准入，plan-then-commit 原子性）、账户级冻结开关、Futu 实时快照取价（离线只回退真实最近收盘）、逐持仓报价来源、账户驱动的持仓地图、CLI 定时再平衡、网页与定时任务跨进程串行保护、移动端导航。代码入口见本文第 10 节与 [../../AGENTS.md](../../AGENTS.md) 的「Paper Account」一节。未完成：购买力/可卖数量预留、后台定时撮合、停机期间日内高低价回溯补判。
 
 ## 1. 目标与动机
 
@@ -116,7 +116,7 @@ LedgerEntry
 ```
 
 **路径 A — 自动（一键再平衡 + 可选定时）**
-- 用户选一个已注册策略（复用 `StrategyRegistry`，先支持 `cross_sectional_top_n` / `mean_reversion_top_n`）。
+- 用户选一个已注册且 `supports_account_rebalance=true` 的策略（复用 `StrategyRegistry`，当前支持 `cross_sectional_top_n` / `mean_reversion_top_n`）。
 - 后端用账户当前净值算目标权重 → 目标市值 → 与当前持仓求差（复用现有 `_generate_rebalance_requests` 逻辑，先卖后买）→ 逐单过 `RiskEngine` → `PaperBroker` 以**当前价**撮合 → 更新账户 + 写账本，`source="strategy:<id>"`。
 - **触发方式**：默认「按需」——用户点「按此策略再平衡」按钮触发一次。**可选定时**：一个轻量调度（见 4.3 阶段，复用 Phase 13 已有的 Windows Task Scheduler 模式 `quant-system` CLI 子命令），如每个交易日收盘后触发一次再平衡。调度是**增强项**，不阻塞主流程。
 
@@ -176,7 +176,7 @@ class PaperPriceSource:
 | `POST` | `/api/paper/account/orders` | 手动下单：`{symbol, side, quantity\|notional, limit_price?}` → 取价 → 风控 → 撮合 → 更新账户 |
 | `POST` | `/api/paper/account/orders/process` | 手动检查待处理限价单：按当前真实纸面价格重新撮合，触价则更新账户 |
 | `POST` | `/api/paper/account/orders/{order_id}/cancel` | 取消单个待处理限价单：移出 `pending_orders` 并写入 `order_cancelled` 账本事件 |
-| `POST` | `/api/paper/account/rebalance` | 自动：`{strategy_id, params?}` → 按账户净值算目标 → 批量再平衡到目标持仓 |
+| `POST` | `/api/paper/account/rebalance` | 自动：`{strategy_id, params?}` → 先校验策略注册表 `supports_account_rebalance` → 按账户净值算目标 → 批量再平衡到目标持仓 |
 | `GET` | `/api/paper/account/ledger` | 账本事件流（分页），用于流水/审计/盈亏归因 |
 | `POST` | `/api/paper/account/kill-switch` | 切换账户冻结开关（真正可切换，取代假按钮） |
 | `POST` | `/api/paper/account/reset` | 重置账户回初始资金（写一条 `kind="reset"` 账本，便于复盘） |
@@ -283,5 +283,5 @@ class PaperPriceSource:
 | 组合/成交模型（复用） | `execution/portfolio.py`、`execution/models.py` |
 | API | `api/routes/paper.py`（`/api/paper/account*`）、`api/schemas/paper.py` |
 | 历史回放（保留） | `execution/pipeline.py`（`run_paper_trading`/`run_signal_paper_trading`） |
-| 前端 | `src/frontend/app/paper-trading/page.tsx`、`components/forms/AccountTradePanel.tsx`、`app/position-map/page.tsx`、`components/AccountRefreshControl.tsx`、`lib/api.ts` |
+| 前端 | `src/frontend/app/paper-trading/page.tsx`、`components/forms/AccountTradePanel.tsx`、`lib/accountRebalanceStrategies.ts`、`app/position-map/page.tsx`、`components/AccountRefreshControl.tsx`、`lib/api.ts` |
 | CLI 定时再平衡 | `src/quant_system/cli.py`（`paper rebalance` / `paper account-show`） |

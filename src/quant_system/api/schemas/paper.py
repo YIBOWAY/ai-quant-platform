@@ -36,13 +36,12 @@ class ManualOrderRequest(BaseModel):
 
 
 class AccountRebalanceRequest(BaseModel):
-    strategy_id: Literal["cross_sectional_top_n", "mean_reversion_top_n"] = (
-        "cross_sectional_top_n"
-    )
+    strategy_id: str = "cross_sectional_top_n"
     symbols: list[str] = Field(default_factory=lambda: ["SPY", "QQQ", "IWM", "DIA"])
     lookback: int = Field(default=20, gt=0)
     top_n: int = Field(default=3, gt=0)
     provider: Literal["futu", "tiingo"] | None = None
+
 
 class KillSwitchRequest(BaseModel):
     enabled: bool

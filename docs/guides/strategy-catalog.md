@@ -18,11 +18,11 @@
 
 后端 `GET /api/strategies`（`api/routes/strategies.py`）直接返回 `build_default_strategy_registry()`（`strategies/registry.py`）里登记的全部策略元数据。**目前注册表里有 3 个策略**：
 
-| 策略 id | 名称 | `result_type` | 运行接口 `run_endpoint` |
-| --- | --- | --- | --- |
-| `cross_sectional_top_n` | Cross-Sectional Top-N | `backtest` | `/api/backtests/run` |
-| `reversal_momentum` | Short-Term Reversal / Longer-Term Momentum | `replication` | `/api/replications/reversal-momentum/run` |
-| `mean_reversion_top_n` | Mean-Reversion Top-N | `backtest` | `/api/backtests/run` |
+| 策略 id | 名称 | `result_type` | `supports_account_rebalance` | 运行接口 `run_endpoint` |
+| --- | --- | --- | --- | --- |
+| `cross_sectional_top_n` | Cross-Sectional Top-N | `backtest` | `true` | `/api/backtests/run` |
+| `reversal_momentum` | Short-Term Reversal / Longer-Term Momentum | `replication` | `false` | `/api/replications/reversal-momentum/run` |
+| `mean_reversion_top_n` | Mean-Reversion Top-N | `backtest` | `true` | `/api/backtests/run` |
 
 关键点：**目录里同时混着两类性质完全不同的策略**，区别就在 `result_type`：
 
@@ -84,6 +84,7 @@
 **通用 / 表单层**
 
 - **`result_type` 徽章**：策略的性质标签。`backtest` = 结果走回测器、持久化、有 `run_id`；`replication` = 研报复现、持久化为复现运行记录、有 `run_id`，但不进入 backtest 运行列表。
+- **`supports_account_rebalance`**：是否能被 `/paper-trading` 的持续模拟账户“一键再平衡”使用。当前只有两个 backtest-engine 策略为 `true`；`reversal_momentum` 是研报复现，保持 `false`，不会出现在账户再平衡下拉里。
 - **论文出处 Paper source**：`paper_source` 字段。只有 `reversal_momentum` 有真实出处；两个 backtest 策略为 `null`，此时退回显示 `description`。
 - **Top N**：选股 / 分组的数量。在 backtest 策略里是"取分数排名前 N 的标的等权持有"；在复现里是"多空两端各取 N 个"（留空则用十分位）。
 
@@ -130,6 +131,7 @@
 
 - 2026-06-11：结果区已按 `result_type` 分流渲染——backtest 给 `run_id` + "打开回测"入口，replication 给指标卡 / 权益曲线 / 方法学与诊断卡 / 月度收益与持仓表；孤儿组件 `ReversalMomentumReplicationForm` 已删除，重复入口消除。
 - 2026-06-15：`/api/replications/reversal-momentum/run` 生成 `replication-*` run_id，写入 `data/api_runs/replications/<run_id>/metadata.json` 与 `result.json`；新增 `GET /api/replications/reversal-momentum/{run_id}` 与前端 `/replications/{run_id}` 详情页，复现结果刷新后可复看。
+- 2026-06-15：策略注册表新增 `supports_account_rebalance` 能力位；`/paper-trading` 的账户再平衡下拉和 `POST /api/paper/account/rebalance` 都以该字段为准，避免研报复现策略误入持续账户执行路径。
 
 仍可操作的改进建议（按性价比排序）：
 
@@ -142,7 +144,7 @@
 - 前端页面（拉取 strategies / universes / factors / health 并装配）：`src/frontend/app/replications/page.tsx`
 - 前端复现详情页（读取已落盘结果并预加载到目录组件）：`src/frontend/app/replications/[runId]/page.tsx`
 - 前端主组件（schema 自动建表单、`strategy_id` 注入、复现结果富渲染 + `flattenResult` 兜底）：`src/frontend/components/forms/StrategyCatalogWorkbench.tsx`（`ReversalMomentumReplicationForm.tsx` 已于 2026-06-11 删除并并入此组件）
-- 策略注册表（唯一事实源，3 个策略的元数据 / schema / 默认值）：`src/quant_system/strategies/registry.py`
+- 策略注册表（唯一事实源，3 个策略的元数据 / schema / 默认值 / 账户再平衡能力位）：`src/quant_system/strategies/registry.py`
 - 列表接口 `GET /api/strategies`：`src/quant_system/api/routes/strategies.py`
 - 复现接口 `POST /api/replications/reversal-momentum/run` 与 `GET /api/replications/reversal-momentum/{run_id}`：`src/quant_system/api/routes/replications.py`
 - 复现核心算法（月末重采样 / 反转 + 动量打分 / z-score 合成 / 多空分组 / 月度复利 / 诊断）：`src/quant_system/replication/reversal_momentum.py`

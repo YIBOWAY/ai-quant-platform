@@ -39,7 +39,7 @@
 - 资金或持仓不足时，订单会明确显示为“部分成交”，并写明实际成交数量，不会再误报为全部成交。
 
 **一键策略再平衡**（`POST /api/paper/account/rebalance`）：
-- 选一个策略（`cross_sectional_top_n` / `mean_reversion_top_n`）、候选标的、`top_n`、`lookback`。
+- 选一个策略（当前由策略注册表 `supports_account_rebalance=true` 的条目驱动：`cross_sectional_top_n` / `mean_reversion_top_n`）、候选标的、`top_n`、`lookback`。`reversal_momentum` 这类研报复现策略不会出现在账户再平衡下拉里。
 - 后端用账户**当前净值**算目标权重，与现有持仓求差（先卖后买），逐单过风控 → 撮合 → 更新账户，成交来源标记为 `strategy:<id>`。
 - 再平衡只接受 Futu / Tiingo 等真实历史数据；sample 演示策略历史不能改变持续账户。
 - **原子性保证**：再平衡先在账户副本上**全量试算**，只有"所有腿都能成交"才提交到真实账户；只要有一腿被拒，**整体中止、不动账户**（不会出现"卖光了却买不进、变成全现金"），并如实返回 `aborted=true`。
@@ -117,6 +117,7 @@
 - 下单 / 再平衡服务：`src/quant_system/execution/account_service.py`
 - 撮合 / 风控（复用）：`src/quant_system/execution/paper_broker.py`、`order_manager.py`、`src/quant_system/risk/engine.py`
 - API：`src/quant_system/api/routes/paper.py`、`src/quant_system/api/schemas/paper.py`
+- 策略再平衡能力声明：`src/quant_system/strategies/registry.py`（`supports_account_rebalance`）
 - CLI 定时再平衡：`src/quant_system/cli.py`（`paper rebalance` / `paper account-show`）
-- 前端：`src/frontend/app/paper-trading/page.tsx`、`src/frontend/components/forms/AccountTradePanel.tsx`
+- 前端：`src/frontend/app/paper-trading/page.tsx`、`src/frontend/components/forms/AccountTradePanel.tsx`、`src/frontend/lib/accountRebalanceStrategies.ts`
 - 历史回放（旧路径）：`src/quant_system/execution/pipeline.py`

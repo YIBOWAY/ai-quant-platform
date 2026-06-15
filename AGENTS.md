@@ -55,6 +55,12 @@ and Strategy Catalog. Currently runnable: `cross_sectional_top_n`,
 `mean_reversion_top_n`. `reversal_momentum` is `result_type="replication"` and
 runs through its own endpoint.
 
+Persistent paper-account rebalancing is a narrower capability. A strategy must
+set `supports_account_rebalance=true` in `strategies/registry.py` before
+`POST /api/paper/account/rebalance` and `AccountTradePanel` will offer it. Keep
+that flag false for research replications or strategies whose account execution
+path has not been implemented and tested.
+
 Factor development is code-first. Do not add a frontend expression builder for
 ad-hoc factor formulas; implement and test new factor logic in
 `src/quant_system/factors/`, register it in the backend factor registry, and let

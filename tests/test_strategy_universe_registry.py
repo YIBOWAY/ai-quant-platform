@@ -20,9 +20,12 @@ def test_strategy_registry_lists_runnable_catalog_entries() -> None:
     assert top_n_field["type"] == "integer"
     assert metadata["reversal_momentum"].paper_source
     assert metadata["reversal_momentum"].run_endpoint == "/api/replications/reversal-momentum/run"
+    assert metadata["reversal_momentum"].supports_account_rebalance is False
     # Mean-Reversion is a runnable backtest-engine strategy (same run endpoint).
+    assert metadata["cross_sectional_top_n"].supports_account_rebalance is True
     assert metadata["mean_reversion_top_n"].result_type == "backtest"
     assert metadata["mean_reversion_top_n"].run_endpoint == "/api/backtests/run"
+    assert metadata["mean_reversion_top_n"].supports_account_rebalance is True
 
 
 def test_universe_registry_lists_research_presets() -> None:

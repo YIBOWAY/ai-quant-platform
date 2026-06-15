@@ -34,6 +34,7 @@ from quant_system.execution.price_source import (
     PriceUnavailableError,
 )
 from quant_system.storage.runs_repository import index_run, list_run_metadatas
+from quant_system.strategies.registry import build_default_strategy_registry
 
 router = APIRouter()
 
@@ -392,6 +393,7 @@ def rebalance_account(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
+    strategy_id = _account_rebalance_strategy_id(request.strategy_id)
     storage = _account_storage(api_runs_dir)
     service = PaperAccountService(settings=settings)
     with _account_lock(storage.account_id), storage.mutation_lock():
@@ -399,7 +401,7 @@ def rebalance_account(
         try:
             outcome = service.rebalance_to_strategy(
                 account,
-                strategy_id=request.strategy_id,
+                strategy_id=strategy_id,
                 symbols=request.symbols,
                 lookback=request.lookback,
                 top_n=request.top_n,
@@ -427,6 +429,32 @@ def rebalance_account(
             },
             "account": _account_view(account, settings=settings, quotes=quotes),
         }
+
+
+def _account_rebalance_strategy_id(strategy_id: str) -> str:
+    normalized = strategy_id.strip() or "cross_sectional_top_n"
+    registry = build_default_strategy_registry()
+    try:
+        metadata = registry.get(normalized)
+    except KeyError as exc:
+        supported = [
+            item.id
+            for item in registry.list_metadata()
+            if item.supports_account_rebalance
+        ]
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"unknown account rebalance strategy {normalized!r}; "
+                f"supported: {', '.join(supported)}"
+            ),
+        ) from exc
+    if not metadata.supports_account_rebalance:
+        raise HTTPException(
+            status_code=400,
+            detail=f"strategy {normalized!r} does not support account rebalance",
+        )
+    return normalized
 
 
 @router.get("/paper/{run_id}")

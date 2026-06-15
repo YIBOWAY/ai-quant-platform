@@ -298,6 +298,24 @@ def test_persistent_account_rebalance_rejects_sample_history(tmp_path, stub_pric
     assert response.status_code == 422
 
 
+def test_account_rebalance_rejects_strategy_without_account_support(
+    tmp_path, stub_prices
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/account/rebalance",
+        json={
+            "strategy_id": "reversal_momentum",
+            "symbols": ["AAPL"],
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "does not support account rebalance" in response.json()["detail"]
+
+
 def test_concurrent_orders_do_not_lose_updates(tmp_path, stub_prices) -> None:
     import threading
 

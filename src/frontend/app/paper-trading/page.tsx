@@ -19,6 +19,7 @@ import {
   getPaperAccountLedger,
   getPaperRunDetail,
   getPaperRuns,
+  getStrategies,
 } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
 import { isSampleSource } from "@/components/DataSourceBadge";
@@ -233,11 +234,12 @@ type PaperTradingProps = {
 
 export default async function PaperTrading({ searchParams }: PaperTradingProps) {
   const params = (await searchParams) ?? {};
-  const [account, ledger, health, paperRuns, locale] = await Promise.all([
+  const [account, ledger, health, paperRuns, strategies, locale] = await Promise.all([
     getPaperAccount(),
     getPaperAccountLedger(8),
     getHealth(),
     getPaperRuns(),
+    getStrategies(),
     getServerLocale(params),
   ]);
   const text = copy[locale];
@@ -294,6 +296,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
           locale={locale}
           killSwitch={account.kill_switch}
           pendingOrderCount={(account.pending_orders ?? []).length}
+          strategies={strategies.strategies}
         />
         <SafetyFlags account={account} health={health} text={text} />
       </Card>

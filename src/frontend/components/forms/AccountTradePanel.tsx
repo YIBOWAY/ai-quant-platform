@@ -8,6 +8,8 @@ import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { accountRebalanceStrategies } from "@/lib/accountRebalanceStrategies";
+import type { StrategyMetadata } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
@@ -157,7 +159,7 @@ const manualSchema = z
 type ManualValues = z.infer<typeof manualSchema>;
 
 const rebalanceSchema = z.object({
-  strategy_id: z.enum(["cross_sectional_top_n", "mean_reversion_top_n"]),
+  strategy_id: z.string().min(1),
   symbols: z.string().min(1),
   top_n: z.coerce.number().int().positive(),
   lookback: z.coerce.number().int().positive(),
@@ -199,15 +201,20 @@ export function AccountTradePanel({
   locale = "en",
   killSwitch = false,
   pendingOrderCount = 0,
+  strategies = [],
 }: {
   locale?: Locale;
   killSwitch?: boolean;
   pendingOrderCount?: number;
+  strategies?: StrategyMetadata[];
 }) {
   const router = useRouter();
   const isHydrated = useIsHydrated();
   const text = copy[locale];
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const rebalanceStrategies = accountRebalanceStrategies(strategies);
+  const defaultRebalanceStrategyId =
+    rebalanceStrategies[0]?.id ?? "cross_sectional_top_n";
 
   const manualForm = useForm<ManualValues>({
     resolver: zodResolver(manualSchema),
@@ -216,7 +223,7 @@ export function AccountTradePanel({
   const rebalanceForm = useForm<RebalanceValues>({
     resolver: zodResolver(rebalanceSchema),
     defaultValues: {
-      strategy_id: "cross_sectional_top_n",
+      strategy_id: defaultRebalanceStrategyId,
       symbols: "SPY,QQQ,IWM,DIA",
       top_n: 3,
       lookback: 20,
@@ -430,15 +437,16 @@ export function AccountTradePanel({
         <label className={labelClass}>
           {text.strategy}
           <select className={inputClass} {...rebalanceForm.register("strategy_id")}>
-            <option value="cross_sectional_top_n">
-              {text.strategies.cross_sectional_top_n.name}
-            </option>
-            <option value="mean_reversion_top_n">
-              {text.strategies.mean_reversion_top_n.name}
-            </option>
+            {rebalanceStrategies.map((strategy) => (
+              <option key={strategy.id} value={strategy.id}>
+                {text.strategies[strategy.id]?.name ?? strategy.name}
+              </option>
+            ))}
           </select>
           <span className="font-body-sm text-text-secondary">
-            {text.strategies[selectedStrategy]?.hint}
+            {text.strategies[selectedStrategy]?.hint ??
+              rebalanceStrategies.find((strategy) => strategy.id === selectedStrategy)
+                ?.description}
             <span className="ml-1 font-data-mono text-[10px] text-text-secondary/70">
               ({selectedStrategy})
             </span>

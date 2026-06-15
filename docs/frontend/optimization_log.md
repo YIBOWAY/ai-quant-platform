@@ -14,6 +14,7 @@
 - `POST /api/replications/reversal-momentum/run` 现在返回 `replication-*` `run_id`，写入 `data/api_runs/replications/<run_id>/metadata.json` 与 `result.json`；新增 `GET /api/replications/reversal-momentum/{run_id}` 和 `/replications/[runId]` 详情页。Strategy Catalog 对研报复现显示“打开复现”，刷新后仍可复看结果。复现 run 暂不进入可选 PostgreSQL run index。
 - 期权雷达新增 `quant-system options daily-task`，Windows 调度脚本改为先刷新标的池、财报日历和 VIX，再运行扫描并写入 `daily_task_status.json`；新增 `GET /api/options/daily-scan/status`，`/options-radar` 会显示最近一次调度任务状态；`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 时，API 启动会在最近一个 UTC 工作日快照缺失时后台补跑一次只读 `daily-scan`，周末会回退到上一个周五；API/CLI/调度/启动补跑共享 `options_radar_scan.lock` 防止并发写快照和状态。仍未做：完整交易所节假日判断和启动时刷新输入缓存。
 - 模拟账户限价单新增持久 `pending_orders` 队列：未触价的手动限价单返回 `pending`，保存在账户 JSON 中，`POST /api/paper/account/orders/process` 可按当前真实纸面价格重新检查并成交，`POST /api/paper/account/orders/{order_id}/cancel` 可取消单个挂单并写入 `order_cancelled` 账本事件；`/paper-trading` 现在显示待处理限价单，并提供“检查挂单”和逐单“取消”。仍未做：资金/持仓预留、后台定时检查和停机期间日内高低价补判。
+- 策略注册表新增 `supports_account_rebalance` 能力位；`/paper-trading` 的策略再平衡下拉和 `POST /api/paper/account/rebalance` 都按该字段过滤/校验，因此 `reversal_momentum` 这类研报复现仍保留在 Strategy Catalog，不会进入持续模拟账户执行路径。
 - 实验管理不再强制 sample：`POST /api/experiments/run` 支持 `sample` / `futu` / `tiingo`，真实 provider 不可用时返回 `400 provider_unavailable`；前端运行表单默认 `futu`，结果区展示 `agent_summary.data.source`，“Send to Backtest” 会保留同一 provider。旧实验缺少 source 时按 `sample` 处理。运行表单还新增显式 Walk-forward folds 开关，开启后透传 `train_bars` / `validation_bars` / `step_bars` 并生成 `walk_forward_folds.parquet`。结果详情卡片现在还会只读展示 `experiment_config.factor_blend`，包括因子、权重、方向和再平衡间隔。
 - 因子实验室范围卡新增 “Send to Backtest / 发送至回测” 链接，会把当前 `provider`、`universe_id`、`benchmark_symbol` 和已登记 `factor_ids` 预填到 `/backtest`；链接只填表，不自动运行回测，也不携带 Factor Lab 未暴露的时间窗和 lookback。
 
@@ -21,7 +22,7 @@
 
 ## 优化批次 #3 — 全页面重构（2026-06-11）
 
-详见交付记录 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)：19 条路由全量审查与重构（设计令牌归一、固定视口外壳、Factor Lab / Paper Trading / Position Map 重做、E2E 38/38 通过）。批次 #2 遗留的「后端协同任务」清单中已完成六项：**因子实验室真实数据源**（默认 `futu`，数据源/股票池/择时标的/基准可在侧栏调整，因子研究运行可保存，2026-06-15 起可预填发送至回测器）、**回测整股/最小订单约束**（2026-06-15 起可选）、**研报复现 run_id 持久化**（文件落盘 + 复现详情页）、**期权雷达调度入口 + 页面任务状态 + 可选启动补跑 + 扫描锁**（`daily-task` 刷新输入后扫描，页面读取 `daily_task_status.json`，启动补跑需显式开关，周末回退到上一个周五，API/CLI/调度/启动补跑共享 `options_radar_scan.lock`）、**限价单基础挂单队列 + 手动取消**和 **实验管理 provider 选择 + source 保持一致 + 可选 walk-forward folds**。其余仍待后续：限价单预留/后台自动检查、期权雷达完整交易所节假日判断。
+详见交付记录 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)：19 条路由全量审查与重构（设计令牌归一、固定视口外壳、Factor Lab / Paper Trading / Position Map 重做、E2E 38/38 通过）。批次 #2 遗留的「后端协同任务」清单中已完成七项：**因子实验室真实数据源**（默认 `futu`，数据源/股票池/择时标的/基准可在侧栏调整，因子研究运行可保存，2026-06-15 起可预填发送至回测器）、**回测整股/最小订单约束**（2026-06-15 起可选）、**研报复现 run_id 持久化**（文件落盘 + 复现详情页）、**期权雷达调度入口 + 页面任务状态 + 可选启动补跑 + 扫描锁**（`daily-task` 刷新输入后扫描，页面读取 `daily_task_status.json`，启动补跑需显式开关，周末回退到上一个周五，API/CLI/调度/启动补跑共享 `options_radar_scan.lock`）、**限价单基础挂单队列 + 手动取消**、**策略再平衡能力位准入**和 **实验管理 provider 选择 + source 保持一致 + 可选 walk-forward folds**。其余仍待后续：限价单预留/后台自动检查、期权雷达完整交易所节假日判断。
 
 ---
 
