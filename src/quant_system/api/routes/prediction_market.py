@@ -400,12 +400,13 @@ def prediction_market_timeseries_artifact(
         run_id,
     )
     candidate = (run_dir / artifact_name).resolve()
+    artifact_id = f"{run_id}/{artifact_name}"
     try:
         candidate.relative_to(run_dir.resolve())
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail="artifact not found") from exc
+        raise not_found_404("prediction_market_timeseries_artifact", artifact_id) from exc
     if not candidate.exists() or not candidate.is_file():
-        raise HTTPException(status_code=404, detail="artifact not found")
+        raise not_found_404("prediction_market_timeseries_artifact", artifact_id)
     return FileResponse(candidate)
 
 
