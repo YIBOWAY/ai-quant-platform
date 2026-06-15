@@ -325,8 +325,9 @@ def prediction_market_timeseries_backtest(
             ),
         )
     except ValueError as exc:
-        status_code = 404 if "no historical" in str(exc).lower() else 400
-        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+        if "no historical" in str(exc).lower():
+            raise not_found_404("prediction_market_history", request.provider) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     chart_index = write_prediction_market_timeseries_charts(
         result=result,
         output_dir=run_dir,

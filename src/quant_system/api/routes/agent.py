@@ -117,7 +117,7 @@ def review_candidate(
             note=request.note,
         )
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise not_found_404("agent_candidate", candidate_id) from exc
     return {
         "candidate_id": record.candidate_id,
         "decision": record.decision,

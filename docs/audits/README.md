@@ -71,7 +71,10 @@ backtest、factor、experiment、paper replay、agent candidate、reversal-momen
 replication、prediction-market backtest / timeseries 详情类 404 已统一为
 `detail.code=not_found`、`detail.resource`、`detail.id` 与 `detail.message`。
 prediction-market timeseries artifact 下载的缺失/越界 404 也已统一为同一结构。
-其他非详情类 404 仍未全局统一。
+2026-06-16 又补齐了两个仍返回裸字符串的非详情分支：agent candidate review
+缺失候选和 prediction-market timeseries 无历史快照现在也返回同一 `not_found`
+结构。其余业务 404 保留各自的结构化领域码，例如 options radar snapshot 缺失和
+Futu option chain `no_data`。
 
 2026-06-15 状态补充：评估报告中“`core/interfaces.py` 整文件死代码”的表述
 需要下调。该文件没有进入当前 backtest / paper / option 运行路径，确实是早期

@@ -76,6 +76,21 @@ def test_agent_candidate_detail_rejects_path_traversal(tmp_path) -> None:
     assert response.json()["safety"]["dry_run"] is True
 
 
+def test_agent_candidate_review_404_uses_standard_detail(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/agent/candidates/missing-candidate/review",
+        json={"decision": "reject", "note": "not found"},
+    )
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert detail["code"] == "not_found"
+    assert detail["resource"] == "agent_candidate"
+    assert detail["id"] == "missing-candidate"
+
+
 def test_agent_candidates_list_returns_latest_first(tmp_path) -> None:
     pool = CandidatePool(tmp_path)
     first = pool.write_candidate(

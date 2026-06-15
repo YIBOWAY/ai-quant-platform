@@ -231,6 +231,25 @@ def test_prediction_market_timeseries_backtest_returns_charts_and_result(
     assert chart_response.headers["content-type"] == "image/png"
 
 
+def test_prediction_market_timeseries_backtest_no_history_404_uses_standard_detail(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QS_PREDICTION_MARKET_HISTORY_DIR", str(tmp_path / "pm_history"))
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/prediction-market/timeseries-backtest",
+        json={"provider": "polymarket"},
+    )
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert detail["code"] == "not_found"
+    assert detail["resource"] == "prediction_market_history"
+    assert detail["id"] == "polymarket"
+
+
 def test_prediction_market_timeseries_artifact_404_uses_standard_detail(
     tmp_path,
     monkeypatch,
