@@ -52,6 +52,13 @@ futu”的小项已对齐。`.env.example` 现在使用
 `QS_DEFAULT_DATA_PROVIDER="futu"`，并说明 `sample` 只用于显式离线流程测试；
 `tests/test_environment_file.py` 会锁定示例文件与 `DataSettings` 默认值一致。
 
+2026-06-15 状态补充：评估报告中“QS_FUTU_* 与旧 QS_* 教法混杂”的快赢项
+已处理并补强测试。`FutuSettings` 当前使用 `AliasChoices` 优先接受
+`QS_FUTU_ENABLED` / `QS_FUTU_HOST` / `QS_FUTU_PORT` /
+`QS_FUTU_REQUEST_TIMEOUT_SECONDS` / `QS_FUTU_USE_CACHE` 等规范变量，同时保留
+`QS_ENABLED` / `QS_HOST` / `QS_PORT` / `QS_REQUEST_TIMEOUT_SECONDS` /
+`QS_USE_CACHE` 旧别名兼容；`tests/test_settings.py` 已覆盖两套入口。
+
 2026-06-15 状态补充：评估报告中“错误响应格式不一致”的一部分已收敛。
 持续模拟账户 API 的领域错误现在返回结构化 `detail.code` / `detail.message`，
 覆盖账户冻结、缺价、策略数据不可用、未知或不支持的账户再平衡策略等常见失败态。

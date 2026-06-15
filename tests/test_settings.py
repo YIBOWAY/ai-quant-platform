@@ -66,6 +66,44 @@ def test_reload_settings_clears_the_cache() -> None:
     assert first is not second
 
 
+def test_futu_settings_accept_canonical_qs_futu_env_aliases(monkeypatch) -> None:
+    monkeypatch.setenv("QS_FUTU_ENABLED", "false")
+    monkeypatch.setenv("QS_FUTU_HOST", "192.0.2.10")
+    monkeypatch.setenv("QS_FUTU_PORT", "22222")
+    monkeypatch.setenv("QS_FUTU_REQUEST_TIMEOUT_SECONDS", "7")
+    monkeypatch.setenv("QS_FUTU_USE_CACHE", "false")
+
+    try:
+        settings = reload_settings()
+    finally:
+        load_settings.cache_clear()
+
+    assert settings.futu.enabled is False
+    assert settings.futu.host == "192.0.2.10"
+    assert settings.futu.port == 22222
+    assert settings.futu.request_timeout_seconds == 7
+    assert settings.futu.use_cache is False
+
+
+def test_futu_settings_keep_legacy_qs_env_aliases(monkeypatch) -> None:
+    monkeypatch.setenv("QS_ENABLED", "false")
+    monkeypatch.setenv("QS_HOST", "192.0.2.20")
+    monkeypatch.setenv("QS_PORT", "33333")
+    monkeypatch.setenv("QS_REQUEST_TIMEOUT_SECONDS", "9")
+    monkeypatch.setenv("QS_USE_CACHE", "false")
+
+    try:
+        settings = reload_settings()
+    finally:
+        load_settings.cache_clear()
+
+    assert settings.futu.enabled is False
+    assert settings.futu.host == "192.0.2.20"
+    assert settings.futu.port == 33333
+    assert settings.futu.request_timeout_seconds == 9
+    assert settings.futu.use_cache is False
+
+
 def test_api_key_settings_redact_secrets_in_json_dump() -> None:
     settings = ApiKeySettings(alpha_vantage_api_key="example-secret")
 
