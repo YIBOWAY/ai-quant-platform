@@ -160,9 +160,11 @@ on the Position Map.
 - Manual limit orders that do not meet the current paper price are persisted in
   `PaperAccount.pending_orders`, surfaced on `/paper-trading`, and can be
   rechecked through `POST /api/paper/account/orders/process` or cancelled via
-  `POST /api/paper/account/orders/{order_id}/cancel`. Current scope is
-  explicit/manual recheck and cancellation; reserved buying power/share
-  reservation, background matching, and offline intraday high/low backfill are
+  `POST /api/paper/account/orders/{order_id}/cancel`. Pending buy limits reserve
+  cash at `quantity * limit_price`; pending sell limits reserve share quantity,
+  so later manual or strategy orders cannot double-spend the same buying power
+  or position. Current matching scope is explicit/manual recheck and
+  cancellation; background matching and offline intraday high/low backfill are
   not implemented yet.
 - CLI: `quant-system paper rebalance --account default --strategy <id>` (for
   scheduled auto-rebalance; exits non-zero on abort/failure) and

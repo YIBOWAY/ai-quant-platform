@@ -30,7 +30,7 @@ const copy = {
     openPaperTrading: "Trade / Rebalance",
     accountValue: "Account Value",
     pnl: "Total P&L",
-    cash: "Cash",
+    cash: "Available Cash",
     invested: "Invested",
     unrealized: "Unrealized P&L",
     accountUnavailable: "Account unreachable — values hidden until the backend responds.",
@@ -102,7 +102,7 @@ const copy = {
     openPaperTrading: "去下单 / 再平衡",
     accountValue: "账户净值",
     pnl: "总盈亏",
-    cash: "现金",
+    cash: "可用现金",
     invested: "已投资比例",
     unrealized: "未实现盈亏",
     accountUnavailable: "账户接口不可达——在后端恢复前隐藏数值，避免误读。",
@@ -235,7 +235,7 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
           delta={accountDown ? undefined : `${(account.pnl_pct * 100).toFixed(2)}%`}
           tone={accountDown ? "neutral" : pnlPositive ? "success" : "danger"}
         />
-        <MetricStat label={text.cash} value={accountDown ? "--" : formatMoney(account.cash)} />
+        <MetricStat label={text.cash} value={accountDown ? "--" : formatMoney(account.available_cash)} />
         <MetricStat
           label={text.invested}
           value={accountDown ? "--" : `${(account.invested_pct * 100).toFixed(1)}%`}

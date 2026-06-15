@@ -162,6 +162,70 @@ def test_unfavorable_limit_order_is_queued() -> None:
     assert account.pending_orders[0].symbol == "AAPL"
 
 
+def test_pending_buy_limit_order_reserves_cash() -> None:
+    account = PaperAccount.open_new(initial_cash=1_000.0)
+    service = PaperAccountService(
+        price_source=_StubPriceSource({"AAPL": 200.0, "MSFT": 500.0})
+    )
+
+    pending = service.place_manual_order(
+        account,
+        symbol="AAPL",
+        side="buy",
+        quantity=8,
+        limit_price=100.0,
+    )
+    market = service.place_manual_order(account, symbol="MSFT", side="buy", quantity=1)
+
+    assert pending.status == "pending"
+    assert account.pending_orders[0].reserved_cash == pytest.approx(800.0)
+    assert account.reserved_cash() == pytest.approx(800.0)
+    assert account.available_cash() == pytest.approx(0.0)
+    assert market.status == "partially_filled"
+    assert market.filled_quantity == pytest.approx(0.4)
+    assert account.cash == pytest.approx(800.0)
+
+    service.price_source = _StubPriceSource({"AAPL": 90.0})
+    outcomes = service.process_pending_orders(account)
+
+    assert outcomes[0].status == "filled"
+    assert outcomes[0].filled_quantity == pytest.approx(8)
+    assert account.pending_orders == []
+    assert account.cash == pytest.approx(80.0)
+
+
+def test_pending_sell_limit_order_reserves_position_quantity() -> None:
+    account = PaperAccount.open_new(initial_cash=1_000.0)
+    service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 100.0}))
+    service.place_manual_order(account, symbol="AAPL", side="buy", quantity=1)
+
+    service.price_source = _StubPriceSource({"AAPL": 50.0})
+    pending = service.place_manual_order(
+        account,
+        symbol="AAPL",
+        side="sell",
+        quantity=1,
+        limit_price=200.0,
+    )
+    duplicate = service.place_manual_order(account, symbol="AAPL", side="sell", quantity=1)
+
+    assert pending.status == "pending"
+    assert account.pending_orders[0].reserved_quantity == pytest.approx(1.0)
+    assert account.reserved_quantity("AAPL") == pytest.approx(1.0)
+    assert account.available_quantity("AAPL") == pytest.approx(0.0)
+    assert duplicate.status == "unfilled"
+    assert "no position available to sell" in duplicate.rejected_reason
+    assert account.position_quantity("AAPL") == pytest.approx(1.0)
+
+    service.price_source = _StubPriceSource({"AAPL": 250.0})
+    outcomes = service.process_pending_orders(account)
+
+    assert outcomes[0].status == "filled"
+    assert account.pending_orders == []
+    assert account.position_quantity("AAPL") == pytest.approx(0.0)
+    assert account.cash == pytest.approx(1_150.0)
+
+
 def test_manual_sell_over_position_reports_partial_fill() -> None:
     account = PaperAccount.open_new(initial_cash=1_000.0)
     service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 100.0}))

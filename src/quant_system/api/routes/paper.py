@@ -245,6 +245,8 @@ def _account_view(
         "base_currency": account.base_currency,
         "initial_cash": account.initial_cash,
         "cash": account.cash,
+        "reserved_cash": account.reserved_cash(),
+        "available_cash": account.available_cash(),
         "equity": equity,
         "realized_pnl": account.realized_pnl,
         "unrealized_pnl": account.unrealized_pnl(prices),

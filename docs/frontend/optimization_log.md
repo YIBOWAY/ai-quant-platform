@@ -13,7 +13,7 @@
 - 基准标的只用于对照曲线，不会被加入策略交易 universe。
 - `POST /api/replications/reversal-momentum/run` 现在返回 `replication-*` `run_id`，写入 `data/api_runs/replications/<run_id>/metadata.json` 与 `result.json`；新增 `GET /api/replications/reversal-momentum/{run_id}` 和 `/replications/[runId]` 详情页。Strategy Catalog 对研报复现显示“打开复现”，刷新后仍可复看结果。复现 run 暂不进入可选 PostgreSQL run index。
 - 期权雷达新增 `quant-system options daily-task`，Windows 调度脚本改为先刷新标的池、财报日历和 VIX，再运行扫描并写入 `daily_task_status.json`；新增 `GET /api/options/daily-scan/status`，`/options-radar` 会显示最近一次调度任务状态；`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 时，API 启动会在最近一个常规美股交易日快照缺失时后台补跑一次只读 `daily-scan`，周末和常规美股整天休市日会回退到上一个交易日；API/CLI/调度/启动补跑共享 `options_radar_scan.lock` 防止并发写快照和状态。仍未做：启动时刷新输入缓存；临时闭市和半日交易仍由调度/人工流程处理。
-- 模拟账户限价单新增持久 `pending_orders` 队列：未触价的手动限价单返回 `pending`，保存在账户 JSON 中，`POST /api/paper/account/orders/process` 可按当前真实纸面价格重新检查并成交，`POST /api/paper/account/orders/{order_id}/cancel` 可取消单个挂单并写入 `order_cancelled` 账本事件；`/paper-trading` 现在显示待处理限价单，并提供“检查挂单”和逐单“取消”。仍未做：资金/持仓预留、后台定时检查和停机期间日内高低价补判。
+- 模拟账户限价单新增持久 `pending_orders` 队列：未触价的手动限价单返回 `pending`，保存在账户 JSON 中，`POST /api/paper/account/orders/process` 可按当前真实纸面价格重新检查并成交，`POST /api/paper/account/orders/{order_id}/cancel` 可取消单个挂单并写入 `order_cancelled` 账本事件；`/paper-trading` 现在显示待处理限价单，并提供“检查挂单”和逐单“取消”。待处理买入限价单会预留 `quantity * limit_price` 现金，待处理卖出限价单会预留可卖数量，账户摘要显示 `available_cash`。仍未做：后台定时检查和停机期间日内高低价补判。
 - 策略注册表新增 `supports_account_rebalance` 能力位；`/paper-trading` 的策略再平衡下拉和 `POST /api/paper/account/rebalance` 都按该字段过滤/校验，因此 `reversal_momentum` 这类研报复现仍保留在 Strategy Catalog，不会进入持续模拟账户执行路径。
 - 模拟账户再平衡计划构建器现在也强制校验价格完整性：当前持仓和目标标的缺价、非正价或 NaN/inf 会抛出 `PriceUnavailableError`，不会静默跳过某条卖出/买入腿后生成部分计划。
 - 模拟账户 API 的领域错误现在返回结构化 `detail.code` / `detail.message`，覆盖账户冻结、缺价、策略数据不可用、未知/不支持的账户再平衡策略等前端常见失败态；历史回放的两类 kill-switch 409 也使用同一结构，`apiClient` 会显示为 `[code] message`。详情类 404（backtest / factor / experiment / paper / agent / replication / prediction-market）已统一为 `detail.code=not_found`，prediction-market timeseries artifact 缺失/越界 404 也使用同一结构。
@@ -29,7 +29,7 @@
 
 ## 优化批次 #3 — 全页面重构（2026-06-11）
 
-详见交付记录 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)：19 条路由全量审查与重构（设计令牌归一、固定视口外壳、Factor Lab / Paper Trading / Position Map 重做、E2E 38/38 通过）。批次 #2 遗留的「后端协同任务」清单中已完成九项：**因子实验室真实数据源**（默认 `futu`，数据源/股票池/择时标的/基准可在侧栏调整，因子研究运行可保存，2026-06-15 起可预填发送至回测器）、**回测整股/最小订单约束**（2026-06-15 起可选）、**研报复现 run_id 持久化**（文件落盘 + 复现详情页）、**期权雷达调度入口 + 页面任务状态 + 可选启动补跑 + 扫描锁 + 常规美股休市日回退**（`daily-task` 刷新输入后扫描，页面读取 `daily_task_status.json`，启动补跑需显式开关，周末和常规美股整天休市日回退到上一个交易日，API/CLI/调度/启动补跑共享 `options_radar_scan.lock`）、**限价单基础挂单队列 + 手动取消**、**策略再平衡能力位准入**、**再平衡缺价/无效价整体中止**、**显式 provider override 严格失败**和 **实验管理 provider 选择 + source 保持一致 + 可选 walk-forward folds**。其余仍待后续：限价单预留/后台自动检查。
+详见交付记录 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)：19 条路由全量审查与重构（设计令牌归一、固定视口外壳、Factor Lab / Paper Trading / Position Map 重做、E2E 38/38 通过）。批次 #2 遗留的「后端协同任务」清单中已完成十项：**因子实验室真实数据源**（默认 `futu`，数据源/股票池/择时标的/基准可在侧栏调整，因子研究运行可保存，2026-06-15 起可预填发送至回测器）、**回测整股/最小订单约束**（2026-06-15 起可选）、**研报复现 run_id 持久化**（文件落盘 + 复现详情页）、**期权雷达调度入口 + 页面任务状态 + 可选启动补跑 + 扫描锁 + 常规美股休市日回退**（`daily-task` 刷新输入后扫描，页面读取 `daily_task_status.json`，启动补跑需显式开关，周末和常规美股整天休市日回退到上一个交易日，API/CLI/调度/启动补跑共享 `options_radar_scan.lock`）、**限价单基础挂单队列 + 手动取消 + 资金/持仓预留**、**策略再平衡能力位准入**、**再平衡缺价/无效价整体中止**、**显式 provider override 严格失败**和 **实验管理 provider 选择 + source 保持一致 + 可选 walk-forward folds**。其余仍待后续：限价单后台自动检查。
 
 ---
 
@@ -53,7 +53,7 @@
 ### 并行重设计（workflow wneo9z6zm，11 个页面）
 dashboard / factor-lab / experiments / agent-studio / order-book / settings / options-radar / options-tools / options-buyside / position-map / replications-shell —— 各 agent 用共享 primitives + 锚定风格重设计，隔离文件无冲突，保留全部功能/API/安全语言/双语。2026-06-15 后续补充：Experiments 结果卡新增 "Strategy under test" 只读摘要，避免用户只看到参数扫描结果却看不见固定因子组合。
 
-**后端协同任务（本批未做，待后续）**：原清单为因子实验室真实数据源、限价单持久挂单+日内触价成交、回测整股/最小订单约束、期权雷达日终自动任务、研报复现 run_id 持久化。2026-06-15 时，因子实验室真实数据源、回测整股/最小订单约束、研报复现 run_id 持久化、期权雷达调度入口 + 页面任务状态 + 可选启动补跑 + 扫描锁、限价单基础挂单队列 + 手动取消已后续落地；2026-06-16 又补上启动补跑的常规美股整天休市日回退。限价单资金/持仓预留、后台自动检查仍待处理。
+**后端协同任务（本批未做，待后续）**：原清单为因子实验室真实数据源、限价单持久挂单+日内触价成交、回测整股/最小订单约束、期权雷达日终自动任务、研报复现 run_id 持久化。2026-06-15 时，因子实验室真实数据源、回测整股/最小订单约束、研报复现 run_id 持久化、期权雷达调度入口 + 页面任务状态 + 可选启动补跑 + 扫描锁、限价单基础挂单队列 + 手动取消已后续落地；2026-06-16 又补上启动补跑的常规美股整天休市日回退，以及限价单资金/持仓预留。限价单后台自动检查仍待处理。
 
 ---
 
@@ -297,7 +297,7 @@ useEffect(() => {
 | 待办项 | 优先级 | 工作量估算 | 阻塞因素 |
 |---|---|---|---|
 | 因子实验室移除硬编码 sample | P0 | 4-6 小时 | 已后续完成 |
-| 限价单挂单生命周期 | P1 | 8-12 小时 | 基础 `pending_orders` 队列、页面列表、手动检查和逐单取消已完成；预留/后台自动检查待做 |
+| 限价单挂单生命周期 | P1 | 8-12 小时 | 基础 `pending_orders` 队列、页面列表、手动检查、逐单取消和资金/持仓预留已完成；后台自动检查待做 |
 | 期权筛选器结果区重构 | P1 | 3-4 小时 | 已完成 |
 | 设计系统整合（色彩 token） | P2 | 4-6 小时 | 无 |
 
@@ -342,7 +342,7 @@ npm run lint
 - [x] Paper Trading 页面用 Tab 切换（Live Account / Historical Replay）
 - [x] 限价单挂单列表组件
 - [x] 期权筛选器结果区重构为紧凑布局
-- [ ] 限价单预留/后台自动检查
+- [ ] 限价单后台自动检查
 - [x] 期权雷达常规美股整天休市日判断（周末、Good Friday、Juneteenth、独立日补休、感恩节等会回退到上一交易日；临时闭市和半日交易仍由调度/人工流程处理）
 
 ### P2（一个月内）

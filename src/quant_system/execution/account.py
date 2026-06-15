@@ -75,6 +75,8 @@ class PendingAccountOrder(BaseModel):
     side: str
     quantity: float
     limit_price: float
+    reserved_cash: float = 0.0
+    reserved_quantity: float = 0.0
     source: str = "manual"
     reason: str = "manual_order"
     last_checked_price: float | None = None
@@ -147,6 +149,35 @@ class PaperAccount(BaseModel):
         return sum(
             position.unrealized_pnl(normalized.get(symbol, position.avg_cost))
             for symbol, position in self.positions.items()
+        )
+
+    def reserved_cash(self, *, exclude_order_id: str | None = None) -> float:
+        return sum(
+            max(order.reserved_cash, 0.0)
+            for order in self.pending_orders
+            if order.order_id != exclude_order_id
+        )
+
+    def available_cash(self, *, exclude_order_id: str | None = None) -> float:
+        return max(self.cash - self.reserved_cash(exclude_order_id=exclude_order_id), 0.0)
+
+    def reserved_quantity(
+        self, symbol: str, *, exclude_order_id: str | None = None
+    ) -> float:
+        normalized = symbol.upper()
+        return sum(
+            max(order.reserved_quantity, 0.0)
+            for order in self.pending_orders
+            if order.order_id != exclude_order_id and order.symbol.upper() == normalized
+        )
+
+    def available_quantity(
+        self, symbol: str, *, exclude_order_id: str | None = None
+    ) -> float:
+        return max(
+            self.position_quantity(symbol)
+            - self.reserved_quantity(symbol, exclude_order_id=exclude_order_id),
+            0.0,
         )
 
     # --- mutations --------------------------------------------------------

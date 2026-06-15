@@ -272,6 +272,14 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 `load()` 读到损坏 JSON 时会把原文件移动成 `account.corrupt-<timestamp>.json`
 后再重新开户；`tests/test_paper_account.py` 覆盖前一版账户备份和损坏文件保留。
 
+2026-06-16 状态补充：评估报告和前端审查中“限价单缺购买力/可卖数量预留”的
+剩余项已处理。`PendingAccountOrder` 持久化 `reserved_cash` / `reserved_quantity`；
+买入挂单按 `quantity * limit_price` 预留现金，卖出挂单预留对应持仓数量。
+后续手动单和策略再平衡的撮合视图只使用 `available_cash` 与未预留持仓，处理某个
+挂单时会释放该挂单自己的预留。`GET /api/paper/account` 暴露 `cash`、
+`reserved_cash`、`available_cash`，前端账户摘要和持仓地图显示可用现金。
+后台自动撮合与停机期间日内高低价补判仍未实现。
+
 2026-06-15 状态补充：评估报告中“API 路由缺少 `response_model`、前后端契约
 漂移”的高风险项已按低风险切片治理到当前全量防回归状态。已治理接口
 已挂上 FastAPI `response_model`：`GET /api/health`、`GET /api/symbols`、

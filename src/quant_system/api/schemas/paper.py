@@ -49,6 +49,8 @@ class PendingAccountOrderResponse(BaseModel):
     side: str
     quantity: float
     limit_price: float
+    reserved_cash: float = 0.0
+    reserved_quantity: float = 0.0
     source: str
     reason: str
     last_checked_price: float | None = None
@@ -66,6 +68,8 @@ class PaperAccountResponse(BaseModel):
     base_currency: str
     initial_cash: float
     cash: float
+    reserved_cash: float = 0.0
+    available_cash: float
     equity: float
     realized_pnl: float
     unrealized_pnl: float

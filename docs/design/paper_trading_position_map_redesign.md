@@ -2,7 +2,7 @@
 
 > 状态：**阶段 1-5 已全部实现并验证（2026-06-04）**。本文件原为设计与分阶段实现计划，现作为该设计的记录保留；落地后的操作说明见 [../guides/paper-trading.md](../guides/paper-trading.md) 与 [../guides/position-map.md](../guides/position-map.md)。
 > 安全红线不变：纯本地、仅模拟、只读真实行情。**绝不**新增真实下单 / 解锁账户 / 钱包 / 签名 / 券商交易上下文。
-> 已交付要点：单一持久账户（默认 100 万）、手动下单（数量/金额、限价单可进入 `pending_orders` 并通过账户页手动检查触价或逐单取消）、策略一键再平衡（由策略注册表 `supports_account_rebalance` 能力位准入，plan-then-commit 原子性）、账户级冻结开关、Futu 实时快照取价（离线只回退真实最近收盘）、逐持仓报价来源、账户驱动的持仓地图、CLI 定时再平衡、网页与定时任务跨进程串行保护、移动端导航。代码入口见本文第 10 节与 [../../AGENTS.md](../../AGENTS.md) 的「Paper Account」一节。未完成：购买力/可卖数量预留、后台定时撮合、停机期间日内高低价回溯补判。
+> 已交付要点：单一持久账户（默认 100 万）、手动下单（数量/金额、限价单可进入 `pending_orders`，会预留购买力/可卖数量，并通过账户页手动检查触价或逐单取消）、策略一键再平衡（由策略注册表 `supports_account_rebalance` 能力位准入，plan-then-commit 原子性）、账户级冻结开关、Futu 实时快照取价（离线只回退真实最近收盘）、逐持仓报价来源、账户驱动的持仓地图、CLI 定时再平衡、网页与定时任务跨进程串行保护、移动端导航。代码入口见本文第 10 节与 [../../AGENTS.md](../../AGENTS.md) 的「Paper Account」一节。未完成：后台定时撮合、停机期间日内高低价回溯补判。
 
 ## 1. 目标与动机
 
@@ -75,7 +75,9 @@ PaperAccount
 ├─ account_id            固定单账户，如 "default"（为将来多账户预留）
 ├─ base_currency         "USD"
 ├─ initial_cash          1_000_000.00（开户时一次性写入，可配置）
-├─ cash                  当前现金
+├─ cash                  当前总现金
+├─ available_cash        扣除待处理买入限价单预留后的可用现金
+├─ reserved_cash         待处理买入限价单预留现金
 ├─ positions            { symbol -> { quantity, avg_cost } }   # avg_cost 用于盈亏
 ├─ created_at / updated_at
 └─ ledger               追加式事件流（见 3.2）
@@ -160,7 +162,7 @@ class PaperPriceSource:
 
 持仓地图改为**账户驱动**（而非「最近一次回测驱动」）：
 
-- 顶部：账户净值、相对 100 万基准的总盈亏（金额 + %）、现金、已投资比例 / 杠杆%、未实现盈亏。
+- 顶部：账户净值、相对 100 万基准的总盈亏（金额 + %）、可用现金、已投资比例 / 杠杆%、未实现盈亏。
 - 暴露条形图：每个 symbol 一条，宽度 = 该仓位市值 / 总市值；颜色区分多/空；**每条标注「策略 / 手动」来源占比**。
 - 持仓表：symbol、数量、均价（avg_cost）、现价、市值、权重、未实现盈亏、来源。
 - 价格来源标注：整页显示「报价来源：Futu 实时 / 最近收盘（as_of 时间）」。
@@ -172,7 +174,7 @@ class PaperPriceSource:
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| `GET` | `/api/paper/account` | 返回账户：现金、净值、持仓（含均价/现价/盈亏/来源）、相对基准盈亏、价格来源标注 |
+| `GET` | `/api/paper/account` | 返回账户：总现金、可用现金、预留现金、净值、持仓（含均价/现价/盈亏/来源）、相对基准盈亏、价格来源标注 |
 | `POST` | `/api/paper/account/orders` | 手动下单：`{symbol, side, quantity\|notional, limit_price?}` → 取价 → 风控 → 撮合 → 更新账户 |
 | `POST` | `/api/paper/account/orders/process` | 手动检查待处理限价单：按当前真实纸面价格重新撮合，触价则更新账户 |
 | `POST` | `/api/paper/account/orders/{order_id}/cancel` | 取消单个待处理限价单：移出 `pending_orders` 并写入 `order_cancelled` 账本事件 |
@@ -237,7 +239,7 @@ class PaperPriceSource:
 - 验收：在已有手动持仓的账户上跑一次策略再平衡，持仓/现金/来源归因正确。
 
 ### 阶段 4 — 统一持仓地图（前端）
-- `position-map` 改为读 `GET /api/paper/account`：净值/基准盈亏/现金/暴露/持仓表/来源归因/价格来源标注。
+- `position-map` 改为读 `GET /api/paper/account`：净值/基准盈亏/可用现金/暴露/持仓表/来源归因/价格来源标注。
 - 把「最近一次回测暴露」降级为独立对比区块。
 - 模拟交易页：加「手动下单票」+「选策略一键再平衡」+ 真正的账户冻结开关；保留「历史回放」入口但更名澄清。
 - 持仓快照持久化接入（§5），供地图与详情页读取。

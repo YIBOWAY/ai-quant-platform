@@ -186,6 +186,7 @@ class PaperAccountService:
                     source=pending.source,
                     reason=pending.reason,
                     order_id=pending.order_id,
+                    exclude_pending_order_id=pending.order_id,
                 )
             )
         account.pending_orders = remaining
@@ -342,6 +343,7 @@ class PaperAccountService:
         reason: str,
         kind: str = "fill",
         order_id: str | None = None,
+        exclude_pending_order_id: str | None = None,
     ) -> OrderOutcome:
         timestamp = pd.Timestamp(datetime.now(UTC))
         if quantity <= 0:
@@ -384,7 +386,10 @@ class PaperAccountService:
                 rejected_reason=rejected_reason,
             )
 
-        portfolio = self._portfolio_view(account)
+        portfolio = self._portfolio_view(
+            account,
+            exclude_pending_order_id=exclude_pending_order_id,
+        )
         broker = PaperBroker(portfolio=portfolio)
         order = ManagedOrder(
             order_id=order_id or f"paper-order-{uuid.uuid4().hex[:12]}",
@@ -410,35 +415,73 @@ class PaperAccountService:
         outcome_reason = ""
         if filled <= 0:
             if limit_blocked and source == "manual":
-                pending_order = PendingAccountOrder(
-                    order_id=order.order_id,
-                    created_at=timestamp.isoformat(),
-                    symbol=symbol.upper(),
-                    side=str(side),
+                reserved_cash = self._reserved_cash(
+                    side=side,
                     quantity=quantity,
                     limit_price=limit_price,
-                    source=source,
-                    reason=reason,
-                    last_checked_price=price,
-                    last_checked_price_kind=price_kind,
-                    last_checked_at=timestamp.isoformat(),
                 )
-                account.pending_orders.append(pending_order)
-                outcome_status = "pending"
-                outcome_reason = (
-                    f"current price {price:.4f} does not satisfy limit price "
-                    f"{limit_price:.4f}; paper limit order queued"
-                )
-                account.record_event(
-                    kind="order_pending",
-                    source=source,
-                    symbol=symbol,
-                    side=str(side),
+                reserved_quantity = self._reserved_quantity(
+                    side=side,
                     quantity=quantity,
-                    price=price,
-                    price_kind=price_kind,
-                    note=outcome_reason,
                 )
+                if reserved_cash > account.available_cash() + 1e-9:
+                    outcome_status = "unfilled"
+                    outcome_reason = "insufficient cash"
+                    account.record_event(
+                        kind="order_unfilled",
+                        source=source,
+                        symbol=symbol,
+                        side=str(side),
+                        quantity=quantity,
+                        price=price,
+                        price_kind=price_kind,
+                        note=outcome_reason,
+                    )
+                elif reserved_quantity > account.available_quantity(symbol) + 1e-9:
+                    outcome_status = "unfilled"
+                    outcome_reason = "no position available to sell"
+                    account.record_event(
+                        kind="order_unfilled",
+                        source=source,
+                        symbol=symbol,
+                        side=str(side),
+                        quantity=quantity,
+                        price=price,
+                        price_kind=price_kind,
+                        note=outcome_reason,
+                    )
+                else:
+                    pending_order = PendingAccountOrder(
+                        order_id=order.order_id,
+                        created_at=timestamp.isoformat(),
+                        symbol=symbol.upper(),
+                        side=str(side),
+                        quantity=quantity,
+                        limit_price=limit_price,
+                        reserved_cash=reserved_cash,
+                        reserved_quantity=reserved_quantity,
+                        source=source,
+                        reason=reason,
+                        last_checked_price=price,
+                        last_checked_price_kind=price_kind,
+                        last_checked_at=timestamp.isoformat(),
+                    )
+                    account.pending_orders.append(pending_order)
+                    outcome_status = "pending"
+                    outcome_reason = (
+                        f"current price {price:.4f} does not satisfy limit price "
+                        f"{limit_price:.4f}; paper limit order queued"
+                    )
+                    account.record_event(
+                        kind="order_pending",
+                        source=source,
+                        symbol=symbol,
+                        side=str(side),
+                        quantity=quantity,
+                        price=price,
+                        price_kind=price_kind,
+                        note=outcome_reason,
+                    )
             else:
                 outcome_status = "unfilled"
                 if side == OrderSide.BUY:
@@ -506,10 +549,24 @@ class PaperAccountService:
             return float(notional) / float(price)
         raise ValueError("either quantity or notional is required")
 
-    def _portfolio_view(self, account: PaperAccount) -> PaperPortfolio:
-        portfolio = PaperPortfolio(initial_cash=account.cash)
+    def _portfolio_view(
+        self,
+        account: PaperAccount,
+        *,
+        exclude_pending_order_id: str | None = None,
+    ) -> PaperPortfolio:
+        portfolio = PaperPortfolio(
+            initial_cash=account.available_cash(
+                exclude_order_id=exclude_pending_order_id,
+            )
+        )
         portfolio.positions = {
-            symbol: position.quantity for symbol, position in account.positions.items()
+            symbol: account.available_quantity(
+                symbol,
+                exclude_order_id=exclude_pending_order_id,
+            )
+            for symbol, position in account.positions.items()
+            if position.quantity > 0
         }
         return portfolio
 
@@ -518,6 +575,21 @@ class PaperAccountService:
         if side == OrderSide.BUY:
             return price > limit_price
         return price < limit_price
+
+    @staticmethod
+    def _reserved_cash(
+        *,
+        side: OrderSide,
+        quantity: float,
+        limit_price: float | None,
+    ) -> float:
+        if side != OrderSide.BUY or limit_price is None:
+            return 0.0
+        return quantity * limit_price
+
+    @staticmethod
+    def _reserved_quantity(*, side: OrderSide, quantity: float) -> float:
+        return quantity if side == OrderSide.SELL else 0.0
 
     @staticmethod
     def _rebalance_requests(

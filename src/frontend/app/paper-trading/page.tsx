@@ -64,7 +64,7 @@ const copy = {
     accountDesc: "One persistent account. Manual orders and strategy rebalances both land here.",
     accountUnavailable: "Account unreachable — values hidden until the backend responds.",
     accountValue: "Account Value",
-    accountCash: "Cash",
+    accountCash: "Available Cash",
     accountPnl: "Total P&L",
     openMap: "Open position map",
     replayTitle: "Historical Replay (research)",
@@ -164,7 +164,7 @@ const copy = {
     accountDesc: "单一持续账户。手动下单与策略再平衡都汇入这里。",
     accountUnavailable: "账户接口不可达——在后端恢复前隐藏数值，避免误读。",
     accountValue: "账户净值",
-    accountCash: "现金",
+    accountCash: "可用现金",
     accountPnl: "总盈亏",
     openMap: "打开持仓地图",
     replayTitle: "历史回放（研究）",
@@ -883,7 +883,7 @@ function AccountSummary({
           delta={accountDown ? undefined : `${(account.pnl_pct * 100).toFixed(2)}%`}
           tone={accountDown ? "neutral" : positive ? "success" : "danger"}
         />
-        <MetricStat label={text.accountCash} value={accountDown ? "--" : formatMoney(account.cash)} />
+        <MetricStat label={text.accountCash} value={accountDown ? "--" : formatMoney(account.available_cash)} />
         <MetricStat
           label={text.invested}
           value={accountDown ? "--" : `${(account.invested_pct * 100).toFixed(1)}%`}

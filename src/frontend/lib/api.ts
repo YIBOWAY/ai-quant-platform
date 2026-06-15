@@ -268,6 +268,8 @@ export type PendingAccountOrderView = {
   side: string;
   quantity: number;
   limit_price: number;
+  reserved_cash: number;
+  reserved_quantity: number;
   source: string;
   reason: string;
   last_checked_price?: number | null;
@@ -280,6 +282,8 @@ export type PaperAccountResponse = ApiEnvelope & {
   base_currency: string;
   initial_cash: number;
   cash: number;
+  reserved_cash: number;
+  available_cash: number;
   equity: number;
   realized_pnl: number;
   unrealized_pnl: number;
@@ -822,6 +826,8 @@ const FALLBACK_ACCOUNT: PaperAccountResponse = {
   base_currency: "USD",
   initial_cash: 1_000_000,
   cash: 1_000_000,
+  reserved_cash: 0,
+  available_cash: 1_000_000,
   equity: 1_000_000,
   realized_pnl: 0,
   unrealized_pnl: 0,

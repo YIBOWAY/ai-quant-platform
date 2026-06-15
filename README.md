@@ -246,8 +246,10 @@ simulation-only — no real orders, broker, wallet, or account unlock.
   account `pending_orders` queue and can be rechecked with
   `POST /api/paper/account/orders/process` or cancelled with
   `POST /api/paper/account/orders/{order_id}/cancel`; the `/paper-trading` page
-  shows the pending list, a check button, and per-order cancel controls. The
-  persistent account never uses sample/demo prices.
+  shows the pending list, a check button, and per-order cancel controls. Pending
+  buy limits reserve cash at `quantity * limit_price`, pending sell limits
+  reserve share quantity, and account responses expose both `cash` and
+  `available_cash`. The persistent account never uses sample/demo prices.
 - Strategy rebalance: `POST /api/paper/account/rebalance` (one-click; aborts
   atomically if any leg cannot fill). The strategy picker is driven by
   `supports_account_rebalance` in the backend strategy registry; currently the

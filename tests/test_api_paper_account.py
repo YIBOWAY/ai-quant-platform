@@ -219,15 +219,22 @@ def test_limit_price_queues_unfavorable_fill_and_later_fills(tmp_path, stub_pric
     assert "queued" in blocked["order"]["rejected_reason"]
     assert blocked["account"]["positions"] == []
     assert len(blocked["account"]["pending_orders"]) == 1
-    assert blocked["account"]["pending_orders"][0]["symbol"] == "AAPL"
+    pending_order = blocked["account"]["pending_orders"][0]
+    assert pending_order["symbol"] == "AAPL"
+    assert pending_order["reserved_cash"] == pytest.approx(750.0)
+    assert pending_order["reserved_quantity"] == pytest.approx(0.0)
+    assert blocked["account"]["reserved_cash"] == pytest.approx(750.0)
+    assert blocked["account"]["available_cash"] == pytest.approx(999_250.0)
 
     persisted = client.get("/api/paper/account").json()
     assert len(persisted["pending_orders"]) == 1
+    assert persisted["available_cash"] == pytest.approx(999_250.0)
 
     stub_prices["AAPL"] = 140.0
     processed = client.post("/api/paper/account/orders/process").json()
     assert processed["orders"][0]["status"] == "filled"
     assert processed["account"]["pending_orders"] == []
+    assert processed["account"]["reserved_cash"] == pytest.approx(0.0)
     assert processed["account"]["positions"][0]["symbol"] == "AAPL"
     assert processed["account"]["positions"][0]["quantity"] == pytest.approx(5)
 
