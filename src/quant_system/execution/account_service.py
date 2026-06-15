@@ -47,6 +47,10 @@ class AccountFrozenError(RuntimeError):
     """Raised when an order is attempted against a frozen (kill-switched) account."""
 
 
+class PendingOrderNotFoundError(RuntimeError):
+    """Raised when a pending paper order id is not present on the account."""
+
+
 class StrategyDataUnavailableError(RuntimeError):
     """Raised when a rebalance cannot obtain real strategy history."""
 
@@ -102,6 +106,38 @@ class PaperAccountService:
             reason="manual_order",
         )
         return outcome
+
+    def cancel_pending_order(
+        self, account: PaperAccount, *, order_id: str
+    ) -> OrderOutcome:
+        for index, pending in enumerate(account.pending_orders):
+            if pending.order_id != order_id:
+                continue
+            account.pending_orders.pop(index)
+            price = pending.last_checked_price or pending.limit_price
+            price_kind = pending.last_checked_price_kind or "limit_order"
+            account.record_event(
+                kind="order_cancelled",
+                source=pending.source,
+                symbol=pending.symbol,
+                side=pending.side,
+                quantity=pending.quantity,
+                price=price,
+                price_kind=price_kind,
+                note=f"{pending.order_id}: pending paper limit order cancelled",
+            )
+            return OrderOutcome(
+                status="cancelled",
+                symbol=pending.symbol,
+                side=pending.side,
+                requested_quantity=pending.quantity,
+                filled_quantity=0.0,
+                price=price,
+                price_kind=price_kind,
+                rejected_reason="cancelled by user",
+                order_id=pending.order_id,
+            )
+        raise PendingOrderNotFoundError(f"pending paper order not found: {order_id}")
 
     def process_pending_orders(self, account: PaperAccount) -> list[OrderOutcome]:
         if account.kill_switch:

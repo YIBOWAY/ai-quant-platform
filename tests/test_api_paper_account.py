@@ -239,6 +239,32 @@ def test_limit_price_queues_unfavorable_fill_and_later_fills(tmp_path, stub_pric
     assert ok["order"]["status"] == "filled"
 
 
+def test_pending_limit_order_can_be_cancelled(tmp_path, stub_prices) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    queued = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 5, "limit_price": 150.0},
+    ).json()
+    order_id = queued["order"]["order_id"]
+
+    cancelled = client.post(f"/api/paper/account/orders/{order_id}/cancel")
+
+    assert cancelled.status_code == 200
+    payload = cancelled.json()
+    assert payload["order"]["status"] == "cancelled"
+    assert payload["order"]["order_id"] == order_id
+    assert payload["account"]["positions"] == []
+    assert payload["account"]["pending_orders"] == []
+
+    ledger = client.get("/api/paper/account/ledger").json()
+    assert ledger["entries"][0]["kind"] == "order_cancelled"
+    assert ledger["entries"][0]["symbol"] == "AAPL"
+    assert order_id in ledger["entries"][0]["note"]
+
+    missing = client.post(f"/api/paper/account/orders/{order_id}/cancel")
+    assert missing.status_code == 404
+
+
 def test_manual_order_reports_partial_fill(tmp_path, stub_prices) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
     client.post(

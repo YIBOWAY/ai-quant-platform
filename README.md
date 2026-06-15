@@ -220,9 +220,10 @@ simulation-only — no real orders, broker, wallet, or account unlock.
   most recent real historical close from local cache/Tiingo when OpenD is
   offline. A limit order that does not meet that paper price is stored in the
   account `pending_orders` queue and can be rechecked with
-  `POST /api/paper/account/orders/process`; the `/paper-trading` page shows the
-  pending list and a check button. The persistent account never uses
-  sample/demo prices.
+  `POST /api/paper/account/orders/process` or cancelled with
+  `POST /api/paper/account/orders/{order_id}/cancel`; the `/paper-trading` page
+  shows the pending list, a check button, and per-order cancel controls. The
+  persistent account never uses sample/demo prices.
 - Strategy rebalance: `POST /api/paper/account/rebalance` (one-click; aborts
   atomically if any leg cannot fill). It only uses real market history; sample
   strategy history never mutates the persistent account.

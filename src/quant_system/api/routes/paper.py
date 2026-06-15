@@ -23,6 +23,7 @@ from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
 from quant_system.execution.account_service import (
     AccountFrozenError,
     PaperAccountService,
+    PendingOrderNotFoundError,
     StrategyDataUnavailableError,
 )
 from quant_system.execution.account_storage import PaperAccountStorage
@@ -359,6 +360,28 @@ def process_pending_account_orders(
         _save_account(storage, account, quotes)
         return {
             "orders": [_order_outcome_view(outcome) for outcome in outcomes],
+            "account": _account_view(account, settings=settings, quotes=quotes),
+        }
+
+
+@router.post("/paper/account/orders/{order_id}/cancel")
+def cancel_pending_account_order(
+    order_id: str,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    storage = _account_storage(api_runs_dir)
+    service = PaperAccountService(settings=settings)
+    with _account_lock(storage.account_id), storage.mutation_lock():
+        account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+        try:
+            outcome = service.cancel_pending_order(account, order_id=order_id)
+        except PendingOrderNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        quotes = _account_quotes(account, settings=settings)
+        _save_account(storage, account, quotes)
+        return {
+            "order": _order_outcome_view(outcome),
             "account": _account_view(account, settings=settings, quotes=quotes),
         }
 

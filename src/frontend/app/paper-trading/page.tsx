@@ -6,6 +6,7 @@ import { SyntheticMetricsWarning } from "@/components/DataSourceBadge";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { AccountTradePanel } from "@/components/forms/AccountTradePanel";
 import { PaperRunForm } from "@/components/forms/PaperRunForm";
+import { PendingOrderCancelButton } from "@/components/forms/PendingOrderCancelButton";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import {
@@ -275,6 +276,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
         <PendingOrdersPanel
           account={account}
           accountDown={accountDown}
+          locale={locale}
           text={text}
         />
         <LedgerPanel
@@ -653,10 +655,12 @@ function HoldingsPanel({
 function PendingOrdersPanel({
   account,
   accountDown,
+  locale,
   text,
 }: {
   account: Awaited<ReturnType<typeof getPaperAccount>>;
   accountDown: boolean;
+  locale: "en" | "zh";
   text: (typeof copy)["en"] | (typeof copy)["zh"];
 }) {
   const pending = [...(account.pending_orders ?? [])].sort((a, b) =>
@@ -676,7 +680,12 @@ function PendingOrdersPanel({
       ) : (
         <div className="space-y-2">
           {pending.map((order) => (
-            <PendingOrderRow key={order.order_id} order={order} text={text} />
+            <PendingOrderRow
+              key={order.order_id}
+              locale={locale}
+              order={order}
+              text={text}
+            />
           ))}
         </div>
       )}
@@ -685,9 +694,11 @@ function PendingOrdersPanel({
 }
 
 function PendingOrderRow({
+  locale,
   order,
   text,
 }: {
+  locale: "en" | "zh";
   order: PendingAccountOrderView;
   text: (typeof copy)["en"] | (typeof copy)["zh"];
 }) {
@@ -719,9 +730,12 @@ function PendingOrderRow({
           {text.limit} {order.limit_price.toFixed(2)}
         </span>
       </div>
-      <div className="text-right font-data-mono text-[10px] text-text-secondary">
-        <div>{text.lastCheck}</div>
-        <div>{lastChecked}</div>
+      <div className="flex items-center gap-3">
+        <div className="text-right font-data-mono text-[10px] text-text-secondary">
+          <div>{text.lastCheck}</div>
+          <div>{lastChecked}</div>
+        </div>
+        <PendingOrderCancelButton locale={locale} orderId={order.order_id} />
       </div>
     </div>
   );

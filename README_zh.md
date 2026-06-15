@@ -168,8 +168,9 @@ curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
   成交价优先使用 Futu 实时快照，OpenD 离线时只回退到本地缓存或 Tiingo
   的真实最近收盘价；未触及价格的限价单会保存在账户 `pending_orders`
   队列中，并可通过 `POST /api/paper/account/orders/process` 重新检查；
-  `/paper-trading` 页面会显示挂单列表和检查按钮。持续账户绝不会使用
-  sample / 演示价格成交。
+  也可通过 `POST /api/paper/account/orders/{order_id}/cancel` 取消；
+  `/paper-trading` 页面会显示挂单列表、检查按钮和逐单取消按钮。持续账户
+  绝不会使用 sample / 演示价格成交。
 - 策略再平衡：`POST /api/paper/account/rebalance`（一键；任一腿无法成交则整体原子中止）。
   它只接受真实市场历史；sample 演示历史不会改变持续账户。
 - 查看 / 冻结 / 重置 / 账本：`GET /api/paper/account`、

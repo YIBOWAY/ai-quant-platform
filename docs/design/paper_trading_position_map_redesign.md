@@ -2,7 +2,7 @@
 
 > 状态：**阶段 1-5 已全部实现并验证（2026-06-04）**。本文件原为设计与分阶段实现计划，现作为该设计的记录保留；落地后的操作说明见 [../guides/paper-trading.md](../guides/paper-trading.md) 与 [../guides/position-map.md](../guides/position-map.md)。
 > 安全红线不变：纯本地、仅模拟、只读真实行情。**绝不**新增真实下单 / 解锁账户 / 钱包 / 签名 / 券商交易上下文。
-> 已交付要点：单一持久账户（默认 100 万）、手动下单（数量/金额、限价单可进入 `pending_orders` 并通过账户页手动检查触价）、策略一键再平衡（plan-then-commit 原子性）、账户级冻结开关、Futu 实时快照取价（离线只回退真实最近收盘）、逐持仓报价来源、账户驱动的持仓地图、CLI 定时再平衡、网页与定时任务跨进程串行保护、移动端导航。代码入口见本文第 10 节与 [../../AGENTS.md](../../AGENTS.md) 的「Paper Account」一节。未完成：取消挂单、购买力/可卖数量预留、后台定时撮合、停机期间日内高低价回溯补判。
+> 已交付要点：单一持久账户（默认 100 万）、手动下单（数量/金额、限价单可进入 `pending_orders` 并通过账户页手动检查触价或逐单取消）、策略一键再平衡（plan-then-commit 原子性）、账户级冻结开关、Futu 实时快照取价（离线只回退真实最近收盘）、逐持仓报价来源、账户驱动的持仓地图、CLI 定时再平衡、网页与定时任务跨进程串行保护、移动端导航。代码入口见本文第 10 节与 [../../AGENTS.md](../../AGENTS.md) 的「Paper Account」一节。未完成：购买力/可卖数量预留、后台定时撮合、停机期间日内高低价回溯补判。
 
 ## 1. 目标与动机
 
@@ -174,6 +174,8 @@ class PaperPriceSource:
 |---|---|---|
 | `GET` | `/api/paper/account` | 返回账户：现金、净值、持仓（含均价/现价/盈亏/来源）、相对基准盈亏、价格来源标注 |
 | `POST` | `/api/paper/account/orders` | 手动下单：`{symbol, side, quantity\|notional, limit_price?}` → 取价 → 风控 → 撮合 → 更新账户 |
+| `POST` | `/api/paper/account/orders/process` | 手动检查待处理限价单：按当前真实纸面价格重新撮合，触价则更新账户 |
+| `POST` | `/api/paper/account/orders/{order_id}/cancel` | 取消单个待处理限价单：移出 `pending_orders` 并写入 `order_cancelled` 账本事件 |
 | `POST` | `/api/paper/account/rebalance` | 自动：`{strategy_id, params?}` → 按账户净值算目标 → 批量再平衡到目标持仓 |
 | `GET` | `/api/paper/account/ledger` | 账本事件流（分页），用于流水/审计/盈亏归因 |
 | `POST` | `/api/paper/account/kill-switch` | 切换账户冻结开关（真正可切换，取代假按钮） |
