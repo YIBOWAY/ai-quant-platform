@@ -51,6 +51,13 @@ futu”的小项已对齐。`.env.example` 现在使用
 覆盖账户冻结、缺价、策略数据不可用、未知或不支持的账户再平衡策略等常见失败态。
 其他历史回放和跨模块 404 仍未做全局统一。
 
+2026-06-15 状态补充：评估报告中“`core/interfaces.py` 整文件死代码”的表述
+需要下调。该文件没有进入当前 backtest / paper / option 运行路径，确实是早期
+Phase 0 插件契约残留；但它仍由 `src/quant_system/core/__init__.py` 导出，并由
+`tests/test_interfaces.py` 与 Phase 0 架构/交付文档覆盖。因此不按“可直接删除”
+处理，后续若要收敛应作为 Phase 0 历史契约清理单独做迁移/删除测试，而不是在
+安全或数据可信度批次里顺手移除。
+
 2026-06-15 状态补充：同一条中的 provider 错误也已收敛为共享 helper。
 `quant_system.api.errors.provider_unavailable_400()` 统一生成
 `detail.code=provider_unavailable`、`detail.provider` 与 `detail.message`；
