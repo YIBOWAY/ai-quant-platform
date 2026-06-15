@@ -313,6 +313,12 @@ conda activate ai-quant
 quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
 ```
 
+Register the Windows Task Scheduler entrypoint:
+
+```powershell
+.\scripts\register_options_radar_task.ps1
+```
+
 Radar UI:
 
 ```text

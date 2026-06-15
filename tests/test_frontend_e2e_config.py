@@ -86,6 +86,31 @@ def test_options_radar_scheduler_script_uses_env_python_and_runtime_log() -> Non
     assert "--vix-source public" in script
 
 
+def test_options_radar_task_registration_script_targets_scheduler_entrypoint() -> None:
+    script = Path("scripts/register_options_radar_task.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert '[string]$TaskName = "AIQuant Options Radar Daily Task"' in script
+    assert '[string]$StartTime = "06:30"' in script
+    assert 'Join-Path $Root "scripts\\run_options_radar.ps1"' in script
+    assert "schtasks.exe /Create" in script
+    assert "/SC" in script
+    assert "WEEKLY" in script
+    assert "/D" in script
+    assert "MON,TUE,WED,THU,FRI" in script
+    assert "/ST" in script
+    assert "$StartTime" in script
+    assert "/TN" in script
+    assert "$TaskName" in script
+    assert "/TR" in script
+    assert "powershell.exe" in script
+    assert "run_options_radar.ps1" in script
+    assert "/F" in script
+    assert "Start-ScheduledTask" not in script
+    assert "run_options_radar.ps1 2>&1" not in script
+
+
 def test_frontend_package_has_no_ai_studio_template_residue() -> None:
     package = json.loads(
         Path("src/frontend/package.json").read_text(encoding="utf-8")

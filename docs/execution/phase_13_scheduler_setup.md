@@ -8,7 +8,25 @@
 - 时间：北京时间 (BJT) 06:30
 - 理由：在美股收盘之后
 
-## 操作
+## 注册任务
+
+推荐使用仓库脚本注册 Windows 计划任务：
+
+```powershell
+.\scripts\register_options_radar_task.ps1
+```
+
+默认任务名为 `AIQuant Options Radar Daily Task`，触发时间为北京时间 06:30，
+每周一到周五运行一次。可按需覆盖：
+
+```powershell
+.\scripts\register_options_radar_task.ps1 -TaskName "AIQuant Options Radar Daily Task" -StartTime "06:30"
+```
+
+该注册脚本只调用 `schtasks.exe /Create`，不会立即启动扫描；扫描仍由
+`scripts/run_options_radar.ps1` 在计划任务触发时执行。
+
+## 手工配置等价操作
 
 程序：
 

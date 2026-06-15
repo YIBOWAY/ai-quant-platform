@@ -28,6 +28,14 @@ OpenD 端口、启动 FastAPI 与 Next.js，并写入 `data/_runtime/pids/` 与
 并可选停止数据库容器。README 和 `tests/test_frontend_e2e_config.py` 已锁定
 这些本地运维约定。
 
+2026-06-15 状态补充：评估报告中“`run_options_radar.ps1` 硬编码解释器、无日志、
+缺少计划任务注册脚本”的小项已处理。`scripts/run_options_radar.ps1` 会按
+conda base、`CONDA_PREFIX`、PATH 顺序寻找 Python，并把输出追加到
+`data/_runtime/logs/options-radar.log`；`scripts/register_options_radar_task.ps1`
+会用 `schtasks.exe /Create` 注册周一到周五 06:30 的 Windows 计划任务，
+但不会立即启动扫描。README、`docs/execution/phase_13_scheduler_setup.md` 与
+`tests/test_frontend_e2e_config.py` 已覆盖该入口。
+
 2026-06-15 状态补充：评估报告中“缺少后端落盘日志”的小项已处理。后端
 CLI 启动和 app-factory 路径都会把结构化 JSONL 运行日志写入
 `data/_runtime/logs/backend.jsonl`，并由 `RotatingFileHandler` 控制文件大小；
