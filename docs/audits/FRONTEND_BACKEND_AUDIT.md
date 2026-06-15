@@ -28,7 +28,7 @@
 | 文档断言 | 代码实情 | 处置 |
 | --- | --- | --- |
 | design_brief §4.4 写明 backtest 页有 "Run / Save snapshot" 等可交互按钮 | 整个前端没有任何 onClick handler | 文档先行，代码未追上 → 标记 P0 |
-| design_brief §6 列了 11 个 API 路由 | 后端确实存在这 11 个；但前端 [api.ts](../src/frontend/lib/api.ts) 只用了其中的 GET 子集 | 缺 POST 调用 → 标记 P0 |
+| design_brief §6 列了 11 个 API 路由 | 后端确实存在这 11 个；但前端 [api.ts](../../src/frontend/lib/api.ts) 只用了其中的 GET 子集 | 缺 POST 调用 → 标记 P0 |
 | design_brief §7 "Approve 按钮必须二次确认 + 不会注册因子" | 前端 Agent Studio 页没有 review 按钮，更没有二次确认 | 完全未实现 → P0 |
 | Phase 9 delivery 写明 `/api/symbols` "本地优先 + sample fallback" | 实情确是这样，但**没有第三档 Tiingo** | 文档没说应该有，但用户期望有 → 见 [MARKET_DATA_SOURCE_AUDIT](MARKET_DATA_SOURCE_AUDIT.md) |
 | `phase_9_frontend_api_integration.md` 强调 "real responses from Phase 9 backend" | 真：但 backend 自己用的是 sample provider，所以 "real response from a fake source" | 措辞需更精确 |
@@ -67,21 +67,21 @@
 
 | 文件 | 行号 | 问题 |
 | --- | --- | --- |
-| [api/routes/data.py](../src/quant_system/api/routes/data.py) | L13 | `_DEFAULT_SAMPLE_SYMBOLS` 硬编码 5 个 ETF |
-| [api/routes/data.py](../src/quant_system/api/routes/data.py) | L46 | fallback 只到 sample，缺 Tiingo |
-| [api/routes/benchmark.py](../src/quant_system/api/routes/benchmark.py) | L15 | benchmark 直连 sample |
-| [data/providers/sample.py](../src/quant_system/data/providers/sample.py) | L23-33 | 合成 OHLCV 序列（设计如此，但应在 source 标注） |
-| [agent/llm.py](../src/quant_system/agent/llm.py) | StubLLMClient 默认 | 用户 .env 中 `LLM_*` 全部丢失 |
+| [api/routes/data.py](../../src/quant_system/api/routes/data.py) | L13 | `_DEFAULT_SAMPLE_SYMBOLS` 硬编码 5 个 ETF |
+| [api/routes/data.py](../../src/quant_system/api/routes/data.py) | L46 | fallback 只到 sample，缺 Tiingo |
+| [api/routes/benchmark.py](../../src/quant_system/api/routes/benchmark.py) | L15 | benchmark 直连 sample |
+| [data/providers/sample.py](../../src/quant_system/data/providers/sample.py) | L23-33 | 合成 OHLCV 序列（设计如此，但应在 source 标注） |
+| [agent/llm.py](../../src/quant_system/agent/llm/stub.py) | StubLLMClient 默认 | 用户 .env 中 `LLM_*` 全部丢失 |
 
 ### 6.2 前端
 
 | 文件 | 问题 |
 | --- | --- |
-| [app/page.tsx](../src/frontend/app/page.tsx) | System Log 三条时间戳硬编码、Experiment 卡 progress 45% 硬编码、CPU 42% / RAM 65% 硬编码 |
-| [app/data-explorer/page.tsx](../src/frontend/app/data-explorer/page.tsx) | 主 chart 5 根硬编码 `<div>` bar、Y 轴刻度硬编码、Data Quality 三卡硬编码、"Live Sync" 假动画 |
-| [app/agent-studio/page.tsx](../src/frontend/app/agent-studio/page.tsx) | 代码 preview 是固定 momentum 模板（不是 candidate 真实源码）、"PASS" 标签恒亮、左侧 RL_Agent_v1 / Sentiment_LLM 是假文件 |
-| [app/paper-trading/page.tsx](../src/frontend/app/paper-trading/page.tsx) | 多处比例条硬编码 |
-| [app/backtest/page.tsx](../src/frontend/app/backtest/page.tsx) / [factor-lab](../src/frontend/app/factor-lab/page.tsx) / [experiments](../src/frontend/app/experiments/page.tsx) / [order-book](../src/frontend/app/order-book/page.tsx) / [position-map](../src/frontend/app/position-map/page.tsx) | 待逐文件清查（结构同上：server component + 装饰元素混杂真实 API 字段）|
+| [app/page.tsx](../../src/frontend/app/page.tsx) | System Log 三条时间戳硬编码、Experiment 卡 progress 45% 硬编码、CPU 42% / RAM 65% 硬编码 |
+| [app/data-explorer/page.tsx](../../src/frontend/app/data-explorer/page.tsx) | 主 chart 5 根硬编码 `<div>` bar、Y 轴刻度硬编码、Data Quality 三卡硬编码、"Live Sync" 假动画 |
+| [app/agent-studio/page.tsx](../../src/frontend/app/agent-studio/page.tsx) | 代码 preview 是固定 momentum 模板（不是 candidate 真实源码）、"PASS" 标签恒亮、左侧 RL_Agent_v1 / Sentiment_LLM 是假文件 |
+| [app/paper-trading/page.tsx](../../src/frontend/app/paper-trading/page.tsx) | 多处比例条硬编码 |
+| [app/backtest/page.tsx](../../src/frontend/app/backtest/page.tsx) / [factor-lab](../../src/frontend/app/factor-lab/page.tsx) / [experiments](../../src/frontend/app/experiments/page.tsx) / [order-book](../../src/frontend/app/order-book/page.tsx) / [position-map](../../src/frontend/app/position-map/page.tsx) | 待逐文件清查（结构同上：server component + 装饰元素混杂真实 API 字段）|
 
 ## 7. 重启项目（验证修复时用）
 

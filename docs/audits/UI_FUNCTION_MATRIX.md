@@ -15,7 +15,7 @@
 
 ## 0. 总体结论（一行）
 
-> 整个前端目前是「**展示稿**」级别：除 [Sidebar.tsx](../src/frontend/components/Sidebar.tsx) 一个 client component 外，**所有页面都是 Next.js server component，全工程零 `onClick` / `onChange` / `onSubmit` handler**。所有按钮、select、input、tab、modal 都是装饰，点了不会调用任何东西。
+> 整个前端目前是「**展示稿**」级别：除 [Sidebar.tsx](../../src/frontend/components/Sidebar.tsx) 一个 client component 外，**所有页面都是 Next.js server component，全工程零 `onClick` / `onChange` / `onSubmit` handler**。所有按钮、select、input、tab、modal 都是装饰，点了不会调用任何东西。
 
 证据：
 
@@ -26,7 +26,7 @@ grep onClick|onChange  → 0 命中（前端工程范围内）
 
 ## 1. 路由 vs 导航不一致
 
-| 路径 | 文件存在 | 在 [Sidebar.tsx](../src/frontend/components/Sidebar.tsx) 里？ | 备注 |
+| 路径 | 文件存在 | 在 [Sidebar.tsx](../../src/frontend/components/Sidebar.tsx) 里？ | 备注 |
 | --- | --- | --- | --- |
 | `/` | ✅ | ✅ Dashboard | OK |
 | `/agent-studio` | ✅ | ✅ Agent Studio | OK |
@@ -43,7 +43,7 @@ grep onClick|onChange  → 0 命中（前端工程范围内）
 
 > Status 缩写：DEAD=控件无 handler 一定不响应；NAV=链接型有效；READ=只展示 API 真实数据；FAKE=展示硬编码内容；BROKEN=点了会 404 / 报错。
 
-### 2.1 Global / Layout（[layout.tsx](../src/frontend/app/layout.tsx) / [Sidebar.tsx](../src/frontend/components/Sidebar.tsx) / [TopBar.tsx](../src/frontend/components/TopBar.tsx) / [SafetyStrip.tsx](../src/frontend/components/SafetyStrip.tsx)）
+### 2.1 Global / Layout（[layout.tsx](../../src/frontend/app/layout.tsx) / [Sidebar.tsx](../../src/frontend/components/Sidebar.tsx) / [TopBar.tsx](../../src/frontend/components/TopBar.tsx) / [SafetyStrip.tsx](../../src/frontend/components/SafetyStrip.tsx)）
 
 | Page | UI Element | Current Status | Expected | Actual | Frontend Code | Backend API | Data Source | Issue | Priority | Fix Plan |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -53,7 +53,7 @@ grep onClick|onChange  → 0 命中（前端工程范围内）
 | Global | TopBar (theme / search / notifications) | DEAD | 主题切换、搜索、通知 | 装饰 | TopBar.tsx | — | — | 无 handler | P1 (theme), P2 (其余) |
 | Global | SafetyStrip 文案 | READ | 显示 dry_run/paper/kill_switch 真实状态 | 硬编码字符串（未读 /api/health.safety） | SafetyStrip.tsx | /api/health | 应取 health.safety | 没有打 API | P0 | 改为 server component 调 getHealth() 渲染真实安全态 |
 
-### 2.2 Dashboard（[/](../src/frontend/app/page.tsx)）
+### 2.2 Dashboard（[/](../../src/frontend/app/page.tsx)）
 
 | UI Element | Status | Expected | Actual | Backend | Source | Issue | Pri | Fix |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -66,7 +66,7 @@ grep onClick|onChange  → 0 命中（前端工程范围内）
 | Right Sidebar — Kill Switch toggle | DEAD/READ | 切换 paper trading kill switch | UI 是 disabled toggle，文案显示 health.safety.kill_switch 真值 | /api/health 只读 | OK（设计就是 read-only）| 无问题，但文案 cursor-not-allowed 应加 tooltip | P2 | 加 tooltip "Read-only by design" |
 | Right Sidebar — CPU / RAM 占用条 | FAKE | 真实利用率 | 42% / 65% 硬编码 | 无后端 | mock | 误导 | P1 | 删除或接 `/api/health/system` (新 endpoint) |
 
-### 2.3 Data Explorer（[/data-explorer](../src/frontend/app/data-explorer/page.tsx)）
+### 2.3 Data Explorer（[/data-explorer](../../src/frontend/app/data-explorer/page.tsx)）
 
 | UI Element | Status | Expected | Actual | Backend | Source | Issue | Pri | Fix |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -85,14 +85,14 @@ grep onClick|onChange  → 0 命中（前端工程范围内）
 | Spike Detection 0 Anomalies | FAKE | 真实检测 | 硬编码 | — | mock | 误导 | P0 | 同上 |
 | "View Detailed Audit Log" 按钮 | DEAD | 跳转 | 无 handler | — | — | — | P2 | Link to existing audit jsonl viewer (TBD) |
 
-### 2.4 Backtest（[/backtest](../src/frontend/app/backtest/page.tsx)）
+### 2.4 Backtest（[/backtest](../../src/frontend/app/backtest/page.tsx)）
 
 | UI Element | Status | Issue | Pri | Fix |
 | --- | --- | --- | --- | --- |
 | 所有 ConfigPanel 输入 | DEAD | 无 handler；无 form 提交 | P0 | 改 client component + react-hook-form + 调 POST /api/backtests/run |
 | "Run Backtest" 按钮 | DEAD | 不调 API | P0 | 同上 |
 | 资金曲线图 | 待 grep 验证 | 多半同 Data Explorer：装饰柱状 | P0 | 用 recharts 渲染 backtest.equity_curve |
-| KPI 数字 | 半 READ | 已经在用 latestBacktest？需逐字段确认 | P1 | 见 [page.tsx](../src/frontend/app/backtest/page.tsx) 逐字段核对 |
+| KPI 数字 | 半 READ | 已经在用 latestBacktest？需逐字段确认 | P1 | 见 [page.tsx](../../src/frontend/app/backtest/page.tsx) 逐字段核对 |
 | Compare With Benchmark | 缺 | 应调 /api/benchmark | P0 | 接 getBenchmark() |
 
 > 注：本表 Backtest / Factor Lab / Paper / Experiments / Agent Studio / Order Book / Position Map 的细化逐控件清单未在本轮全部展开，因为**它们都共享同一根因——所有页面都是 server component，没有任何 onClick / onChange**。修复 P0 时需要把这 7 个页面整体改成 client component（或拆为 server shell + client form）。
@@ -113,7 +113,7 @@ grep onClick|onChange  → 0 命中（前端工程范围内）
 
 | 现象 | 文件 / 行 | 根因 | 修复 |
 | --- | --- | --- | --- |
-| Universe `<select>` 展开后选项几乎看不清（白底浅灰） | [data-explorer/page.tsx](../src/frontend/app/data-explorer/page.tsx) L19 | 浏览器原生 `<option>` 不继承 Tailwind 暗色 token；只有第一个 option 是高亮蓝色（OS 默认 selected），其余是白底+灰字 | 给 `<option>` 显式 `style={{background:'#0E1511',color:'#F1F5F9'}}` 或换 shadcn `<Select>` |
+| Universe `<select>` 展开后选项几乎看不清（白底浅灰） | [data-explorer/page.tsx](../../src/frontend/app/data-explorer/page.tsx) L19 | 浏览器原生 `<option>` 不继承 Tailwind 暗色 token；只有第一个 option 是高亮蓝色（OS 默认 selected），其余是白底+灰字 | 给 `<option>` 显式 `style={{background:'#0E1511',color:'#F1F5F9'}}` 或换 shadcn `<Select>` |
 | 同问题影响 Resolution / Date Range 触发的原生 picker 在 Windows 下浅色 | 多处 | 同上 | 同上 |
 | 输入框 focus 时 `focus:ring-0` 反而失去可见性 | 多处 | 主动取消 ring | 改 `focus:ring-1 focus:ring-info` |
 | disabled 状态没有特殊样式 | 多处 | 没有 `disabled:` 变体 | 加 `disabled:opacity-50 disabled:cursor-not-allowed` |

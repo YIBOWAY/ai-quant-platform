@@ -25,15 +25,15 @@
 
 ### P0-1 路由与导航不一致（dead links）
 
-**问题**：[Sidebar.tsx](../src/frontend/components/Sidebar.tsx) 列了 `/settings`（不存在）；缺 `/data-explorer` `/order-book` `/position-map` 链接；`paper-trading` 在导航里曾使用旧命名。
+**问题**：[Sidebar.tsx](../../src/frontend/components/Sidebar.tsx) 列了 `/settings`（不存在）；缺 `/data-explorer` `/order-book` `/position-map` 链接；`paper-trading` 在导航里曾使用旧命名。
 
 **影响**：用户点 Settings 直接 404；用户根本进不去 data-explorer。
 
-**涉及文件**：[Sidebar.tsx](../src/frontend/components/Sidebar.tsx) + 新建 [app/settings/page.tsx](../src/frontend/app/settings/page.tsx)。
+**涉及文件**：[Sidebar.tsx](../../src/frontend/components/Sidebar.tsx) + 新建 [app/settings/page.tsx](../../src/frontend/app/settings/page.tsx)。
 
 **修复**：
 
-- 创建 [app/settings/page.tsx](../src/frontend/app/settings/page.tsx)：server component，调 `getSettings()`（**新加** [lib/api.ts](../src/frontend/lib/api.ts) 函数），渲染 masked settings + theme/lang switcher（client component 子组件）。
+- 创建 [app/settings/page.tsx](../../src/frontend/app/settings/page.tsx)：server component，调 `getSettings()`（**新加** [lib/api.ts](../../src/frontend/lib/api.ts) 函数），渲染 masked settings + theme/lang switcher（client component 子组件）。
 - Sidebar 加上 Data Explorer / Order Book / Position Map 三个条目。
 - 把旧命名改回 "Paper Trading"（按 design_brief）。
 
@@ -51,9 +51,9 @@
 
 **涉及文件**：
 
-- [components/SafetyStrip.tsx](../src/frontend/components/SafetyStrip.tsx) — 改成 server component 调 `getHealth()` 显示真值
-- [app/page.tsx](../src/frontend/app/page.tsx) — 删除 System Log 假行 / Experiment progress / CPU·RAM 假占用条
-- [app/data-explorer/page.tsx](../src/frontend/app/data-explorer/page.tsx) — 删除 5 个硬编码 bar、删除 Y 轴硬编码刻度、删除 Coverage / Missing Days / Spike 三块假卡（先删再后续接真）
+- [components/SafetyStrip.tsx](../../src/frontend/components/SafetyStrip.tsx) — 改成 server component 调 `getHealth()` 显示真值
+- [app/page.tsx](../../src/frontend/app/page.tsx) — 删除 System Log 假行 / Experiment progress / CPU·RAM 假占用条
+- [app/data-explorer/page.tsx](../../src/frontend/app/data-explorer/page.tsx) — 删除 5 个硬编码 bar、删除 Y 轴硬编码刻度、删除 Coverage / Missing Days / Spike 三块假卡（先删再后续接真）
 
 **修复**：删除装饰节，留 `<EmptyState>` 占位 + "TODO: connect to /api/data/quality" 注释。
 
@@ -71,11 +71,11 @@
 
 **涉及文件**：
 
-- 新建 [src/quant_system/data/provider_factory.py](../src/quant_system/data/provider_factory.py)
-- 修改 [api/routes/data.py](../src/quant_system/api/routes/data.py) / [api/routes/benchmark.py](../src/quant_system/api/routes/benchmark.py)
-- 修改 [src/quant_system/api/dependencies.py](../src/quant_system/api/dependencies.py) 暴露一个 `OhlcvProviderDep`
-- [.env.example](../.env.example) 注释 `QS_DEFAULT_DATA_PROVIDER` 推荐改 `"tiingo"`
-- [lib/api.ts](../src/frontend/lib/api.ts) `getOhlcv` / `getBenchmark` 增加 `provider?` 可选参数
+- 新建 [src/quant_system/data/provider_factory.py](../../src/quant_system/data/provider_factory.py)
+- 修改 [api/routes/data.py](../../src/quant_system/api/routes/data.py) / [api/routes/benchmark.py](../../src/quant_system/api/routes/benchmark.py)
+- 修改 [src/quant_system/api/dependencies.py](../../src/quant_system/api/dependencies.py) 暴露一个 `OhlcvProviderDep`
+- [.env.example](../../.env.example) 注释 `QS_DEFAULT_DATA_PROVIDER` 推荐改 `"tiingo"`
+- [lib/api.ts](../../src/frontend/lib/api.ts) `getOhlcv` / `getBenchmark` 增加 `provider?` 可选参数
 - 前端任何展示数据的页面顶部加 `<DataSourceBadge source={ohlcv.source}/>`
 
 **修复**：见 [MARKET_DATA_SOURCE_AUDIT §5](MARKET_DATA_SOURCE_AUDIT.md#5-修复方案推荐-p0-实施)。
@@ -87,7 +87,7 @@ curl "http://127.0.0.1:8765/api/ohlcv?symbol=SPY&start=2024-01-02&end=2024-01-12
 # 期望 source=tiingo, close ~ 472
 ```
 
-测试：新增 [tests/test_provider_factory.py](../tests/test_provider_factory.py)（覆盖：有 token 走 tiingo / 缺 token 显式 fallback / 显式指定 sample 仍走 sample）。**不要在 CI 里真的打 Tiingo**，用 `get_json` mock。
+测试：新增 [tests/test_provider_factory.py](../../tests/test_provider_factory.py)（覆盖：有 token 走 tiingo / 缺 token 显式 fallback / 显式指定 sample 仍走 sample）。**不要在 CI 里真的打 Tiingo**，用 `get_json` mock。
 
 **估计**：M。
 
@@ -103,7 +103,7 @@ curl "http://127.0.0.1:8765/api/ohlcv?symbol=SPY&start=2024-01-02&end=2024-01-12
 
 - 保留每个页面的 server component 顶层（用于初始 SSR + 安全态读取）
 - 把"配置面板 + 主交互区"抽成 client component（`use client` + react-hook-form）
-- 客户端用 `fetch(...)` 调 backend POST，复用 [lib/api.ts](../src/frontend/lib/api.ts) 同样的 BASE_URL + envelope 处理
+- 客户端用 `fetch(...)` 调 backend POST，复用 [lib/api.ts](../../src/frontend/lib/api.ts) 同样的 BASE_URL + envelope 处理
 - 引入 [@tanstack/react-query](https://tanstack.com/query/latest) 处理 mutation / loading / error / 重试
 
 **最小可用集（按页）**：
@@ -135,13 +135,13 @@ curl "http://127.0.0.1:8765/api/ohlcv?symbol=SPY&start=2024-01-02&end=2024-01-12
 
 ### P0-5 LLM 配置进 Settings + 安全暴露
 
-**问题**：[.env](../.env) 里 `LLM_*` 全部被 `extra="ignore"` 丢弃。
+**问题**：[.env](../../.env) 里 `LLM_*` 全部被 `extra="ignore"` 丢弃。
 
 **影响**：用户以为 Agent 会用 xai 路由，实际仍是 stub。是诚实性问题。
 
 **涉及文件**：
 
-- [src/quant_system/config/settings.py](../src/quant_system/config/settings.py) 新增 `LLMSettings` 子模型（fields: `api_key: SecretStr | None`、`base_url: str | None`、`model: str | None`、`timeout: int = 60`、`provider: str = "stub"`）。注意 env 前缀仍是 `QS_`，所以用户需在 `.env` 里改：
+- [src/quant_system/config/settings.py](../../src/quant_system/config/settings.py) 新增 `LLMSettings` 子模型（fields: `api_key: SecretStr | None`、`base_url: str | None`、`model: str | None`、`timeout: int = 60`、`provider: str = "stub"`）。注意 env 前缀仍是 `QS_`，所以用户需在 `.env` 里改：
 
   ```
   QS_LLM_API_KEY=<redacted>
@@ -152,10 +152,10 @@ curl "http://127.0.0.1:8765/api/ohlcv?symbol=SPY&start=2024-01-02&end=2024-01-12
 
   **建议加 alias 兼容当前的 `LLM_*` 写法**（pydantic `Field(alias="LLM_API_KEY", validation_alias=AliasChoices(...))`)。
 
-- [api/routes/agent.py](../src/quant_system/api/routes/agent.py) 新增 `GET /api/agent/llm-config`，返回 `{provider, model, base_url, has_api_key: bool}`（**永不返回明文 key**）。
-- [api/safety/masking.py](../src/quant_system/api/safety/masking.py) 把 `llm_*` / `api_key` 字段也加入掩码白名单。
-- [agent/llm.py](../src/quant_system/agent/llm.py) 根据 `settings.llm.provider` 选择 stub vs OpenAI-compatible（xai router 用 OpenAI client + base_url override）。
-- [agent/runner.py](../src/quant_system/agent/runner.py) 接受 settings 注入。
+- [api/routes/agent.py](../../src/quant_system/api/routes/agent.py) 新增 `GET /api/agent/llm-config`，返回 `{provider, model, base_url, has_api_key: bool}`（**永不返回明文 key**）。
+- [api/safety/masking.py](../../src/quant_system/api/safety/masking.py) 把 `llm_*` / `api_key` 字段也加入掩码白名单。
+- [agent/llm.py](../../src/quant_system/agent/llm/stub.py) 根据 `settings.llm.provider` 选择 stub vs OpenAI-compatible（xai router 用 OpenAI client + base_url override）。
+- [agent/runner.py](../../src/quant_system/agent/runner.py) 接受 settings 注入。
 
 **验收**：
 
@@ -176,7 +176,7 @@ curl http://127.0.0.1:8765/api/settings | grep -i api_key
 
 **问题**：默认 CORS allow list 不含 `3001`，client component 一接通就撞墙。
 
-**修复**：[settings.py](../src/quant_system/config/settings.py) 默认追加 `127.0.0.1:3001` / `localhost:3001`，文档注明可用 `QS_API_CORS_ORIGINS='[...]'` 覆盖。
+**修复**：[settings.py](../../src/quant_system/config/settings.py) 默认追加 `127.0.0.1:3001` / `localhost:3001`，文档注明可用 `QS_API_CORS_ORIGINS='[...]'` 覆盖。
 
 **验收**：`curl -H "Origin: http://127.0.0.1:3001" -X OPTIONS http://127.0.0.1:8765/api/health -i` 返回 `Access-Control-Allow-Origin: http://127.0.0.1:3001`。
 

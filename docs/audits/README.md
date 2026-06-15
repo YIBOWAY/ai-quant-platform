@@ -108,6 +108,12 @@ run metadata 聚合最近运行；首页 `src/frontend/app/page.tsx` 通过
 `tests/test_api_runs_recent.py` 覆盖跨类型倒序聚合，`tests/test_frontend_dashboard_recent_runs.py`
 锁定前端接入点。
 
+2026-06-15 状态补充：评估报告中“audits/ 的 `../src` 前缀可一次修复”的
+文档卫生小项已处理。历史审计 Markdown 中指向仓库源码、测试、脚本和 `.env`
+的相对链接已从 `../...` 修正为 `../../...`；同时把旧的
+`src/quant_system/agent/llm.py` 链接改到当前存在的
+`src/quant_system/agent/llm/stub.py`。本次只修链接，不改写历史审计结论。
+
 2026-06-15 状态补充：评估报告中“E2E 继承真实 PostgreSQL / 真实数据目录”的
 高风险项当前已处理。`src/frontend/playwright.config.ts` 的后端 webServer 明确设置
 `QS_ENVIRONMENT=test`、`QS_DATABASE_ENABLED=false`、`QS_DATABASE_AUTO_MIGRATE=false`

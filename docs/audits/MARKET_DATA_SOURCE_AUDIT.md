@@ -18,7 +18,7 @@
 
 ## 1. 一句话结论
 
-[.env](../.env) 中的 `QS_TIINGO_API_TOKEN`（以及 polygon/twelvedata/alpha_vantage/finnhub）**确实被 [Settings](../src/quant_system/config/settings.py) 加载到内存**，但 **Phase 9 API 路由层从来没有调用过任何一个真实 provider**。`/api/symbols` 和 `/api/ohlcv` 在源码层面只挂了两条路径：本地 parquet → fallback 到 [SampleOHLCVProvider](../src/quant_system/data/providers/sample.py)。**Tiingo provider 类已存在但未被任何路由实例化**。
+[.env](../../.env) 中的 `QS_TIINGO_API_TOKEN`（以及 polygon/twelvedata/alpha_vantage/finnhub）**确实被 [Settings](../../src/quant_system/config/settings.py) 加载到内存**，但 **Phase 9 API 路由层从来没有调用过任何一个真实 provider**。`/api/symbols` 和 `/api/ohlcv` 在源码层面只挂了两条路径：本地 parquet → fallback 到 [SampleOHLCVProvider](../../src/quant_system/data/providers/sample.py)。**Tiingo provider 类已存在但未被任何路由实例化**。
 
 ## 2. 数据流转链路（实测）
 
@@ -62,30 +62,30 @@
 }
 ```
 
-`open=100,101,102,...` 完美等差，是 [sample.py L23-L33](../src/quant_system/data/providers/sample.py#L23) 生成的。**真实 SPY 在 2024-01-02 收盘 ≈ 472.65 USD，绝不会是 100.5。**
+`open=100,101,102,...` 完美等差，是 [sample.py L23-L33](../../src/quant_system/data/providers/sample.py#L23) 生成的。**真实 SPY 在 2024-01-02 收盘 ≈ 472.65 USD，绝不会是 100.5。**
 
 ## 3. 假数据的 6 个具体来源（按严重度）
 
 | # | 位置 | 类型 | 说明 |
 | --- | --- | --- | --- |
-| 1 | [api/routes/data.py L13](../src/quant_system/api/routes/data.py) `_DEFAULT_SAMPLE_SYMBOLS` | 后端硬编码 | 本地 parquet 不存在时返回 `["SPY","QQQ","IWM","TLT","GLD"]`，与 Tiingo 是否可用无关 |
-| 2 | [api/routes/data.py L46](../src/quant_system/api/routes/data.py) `SampleOHLCVProvider().fetch_ohlcv(...)` | 后端 fallback | 实际 fallback 链路只有 sample，**没有走 Tiingo 这一步** |
-| 3 | [api/routes/benchmark.py L15](../src/quant_system/api/routes/benchmark.py) | 后端硬接 sample | benchmark 路由直接 `SampleOHLCVProvider().fetch_ohlcv(...)`，连 parquet 都不查 |
-| 4 | [data-explorer/page.tsx L88-L107](../src/frontend/app/data-explorer/page.tsx) | 前端硬编码 | 主 candle/volume chart 是 5 个固定高度的 `<div>`，从不读 `ohlcv.rows` |
-| 5 | [data-explorer/page.tsx L113-L117](../src/frontend/app/data-explorer/page.tsx) | 前端硬编码 | Y 轴刻度 195/190/185 写死 |
-| 6 | [data-explorer/page.tsx L168-L196](../src/frontend/app/data-explorer/page.tsx) | 前端硬编码 | Coverage 99.98% / Missing Days (MLK Day) / Spike 0 都是死字 |
+| 1 | [api/routes/data.py L13](../../src/quant_system/api/routes/data.py) `_DEFAULT_SAMPLE_SYMBOLS` | 后端硬编码 | 本地 parquet 不存在时返回 `["SPY","QQQ","IWM","TLT","GLD"]`，与 Tiingo 是否可用无关 |
+| 2 | [api/routes/data.py L46](../../src/quant_system/api/routes/data.py) `SampleOHLCVProvider().fetch_ohlcv(...)` | 后端 fallback | 实际 fallback 链路只有 sample，**没有走 Tiingo 这一步** |
+| 3 | [api/routes/benchmark.py L15](../../src/quant_system/api/routes/benchmark.py) | 后端硬接 sample | benchmark 路由直接 `SampleOHLCVProvider().fetch_ohlcv(...)`，连 parquet 都不查 |
+| 4 | [data-explorer/page.tsx L88-L107](../../src/frontend/app/data-explorer/page.tsx) | 前端硬编码 | 主 candle/volume chart 是 5 个固定高度的 `<div>`，从不读 `ohlcv.rows` |
+| 5 | [data-explorer/page.tsx L113-L117](../../src/frontend/app/data-explorer/page.tsx) | 前端硬编码 | Y 轴刻度 195/190/185 写死 |
+| 6 | [data-explorer/page.tsx L168-L196](../../src/frontend/app/data-explorer/page.tsx) | 前端硬编码 | Coverage 99.98% / Missing Days (MLK Day) / Spike 0 都是死字 |
 
 ## 4. 为什么 .env 的 token 不起作用
 
-1. [Settings](../src/quant_system/config/settings.py) **能**加载 `QS_TIINGO_API_TOKEN`（验证：`curl /api/settings` 看到 `"tiingo_api_token":"**********"`，所以是被加载的）。
-2. 但 **API 层没有任何代码 import [TiingoEODProvider](../src/quant_system/data/providers/tiingo.py)**：
+1. [Settings](../../src/quant_system/config/settings.py) **能**加载 `QS_TIINGO_API_TOKEN`（验证：`curl /api/settings` 看到 `"tiingo_api_token":"**********"`，所以是被加载的）。
+2. 但 **API 层没有任何代码 import [TiingoEODProvider](../../src/quant_system/data/providers/tiingo.py)**：
 
    ```
    grep -r "TiingoEODProvider" src/quant_system/api/
    → 0 命中
    ```
 
-3. `QS_DEFAULT_DATA_PROVIDER="sample"`（[.env L18](../.env)）也没有任何路由读取它。
+3. `QS_DEFAULT_DATA_PROVIDER="sample"`（[.env L18](../../.env)）也没有任何路由读取它。
 
 简单说：**provider 选择逻辑根本没写**。Phase 1 把 Tiingo provider 实现了，Phase 9 把 API 写了，但**两者之间缺一根线**。
 
@@ -93,7 +93,7 @@
 
 ### 5.1 后端最小改动
 
-新增 [src/quant_system/data/provider_factory.py](../src/quant_system/data/provider_factory.py)（**唯一的新文件**）：
+新增 [src/quant_system/data/provider_factory.py](../../src/quant_system/data/provider_factory.py)（**唯一的新文件**）：
 
 ```python
 def build_ohlcv_provider(settings: Settings, *, requested: str | None = None):
@@ -108,11 +108,11 @@ def build_ohlcv_provider(settings: Settings, *, requested: str | None = None):
     return SampleOHLCVProvider(), "sample"
 ```
 
-修改 [data.py / benchmark.py](../src/quant_system/api/routes/) 把 `SampleOHLCVProvider()` 替换为 `build_ohlcv_provider(settings)`。
+修改 [data.py / benchmark.py](../../src/quant_system/api/routes/) 把 `SampleOHLCVProvider()` 替换为 `build_ohlcv_provider(settings)`。
 
 新增 query 参数：`/api/ohlcv?symbol=SPY&...&provider=tiingo` 强制指定。
 
-[Settings.data](../src/quant_system/config/settings.py) 中 `default_data_provider="sample"` 改为读 env，默认仍 sample 但 [.env](../.env) 里建议改 `QS_DEFAULT_DATA_PROVIDER="tiingo"`（用户已有 token）。
+[Settings.data](../../src/quant_system/config/settings.py) 中 `default_data_provider="sample"` 改为读 env，默认仍 sample 但 [.env](../../.env) 里建议改 `QS_DEFAULT_DATA_PROVIDER="tiingo"`（用户已有 token）。
 
 ### 5.2 前端最小改动
 
@@ -122,7 +122,7 @@ def build_ohlcv_provider(settings: Settings, *, requested: str | None = None):
    - `local`  → 蓝色 "Local Parquet"
    - `sample` → 黄色 "Sample (illustrative only)"
    - 含 `(failed: ...)` → 红色 + tooltip
-2. 删除 [data-explorer/page.tsx](../src/frontend/app/data-explorer/page.tsx) 主图 5 个硬编码 bar，改用 `lightweight-charts` 渲染 `ohlcv.rows`。
+2. 删除 [data-explorer/page.tsx](../../src/frontend/app/data-explorer/page.tsx) 主图 5 个硬编码 bar，改用 `lightweight-charts` 渲染 `ohlcv.rows`。
 3. 删除 Y 轴硬编码刻度。
 4. 删除假 Coverage / Missing Days / Spike 三块（或接 `/api/data/quality`，先删除即可）。
 
