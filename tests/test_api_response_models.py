@@ -13,6 +13,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/symbols": "SymbolsResponse",
         "/api/ohlcv": "OHLCVResponse",
         "/api/benchmark": "BenchmarkResponse",
+        "/api/factors": "FactorCatalogResponse",
+        "/api/factors/runs": "FactorRunsResponse",
         "/api/strategies": "StrategyCatalogResponse",
         "/api/universes": "UniverseCatalogResponse",
     }
@@ -28,5 +30,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "database" in components["HealthResponse"]["properties"]
     assert "source" in components["OHLCVResponse"]["properties"]
     assert "source" in components["BenchmarkResponse"]["properties"]
+    assert "factors" in components["FactorCatalogResponse"]["properties"]
+    assert "runs" in components["FactorRunsResponse"]["properties"]
     assert "strategies" in components["StrategyCatalogResponse"]["properties"]
     assert "universes" in components["UniverseCatalogResponse"]["properties"]

@@ -11,7 +11,11 @@ from quant_system.api.schemas.common import (
     read_parquet_records,
     resolve_run_dir,
 )
-from quant_system.api.schemas.factors import FactorRunRequest
+from quant_system.api.schemas.factors import (
+    FactorCatalogResponse,
+    FactorRunRequest,
+    FactorRunsResponse,
+)
 from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.factors.lab import build_factor_lab_dashboard
 from quant_system.factors.pipeline import run_factor_research
@@ -21,7 +25,7 @@ from quant_system.storage.runs_repository import index_run, list_run_metadatas
 router = APIRouter()
 
 
-@router.get("/factors")
+@router.get("/factors", response_model=FactorCatalogResponse)
 def list_factors() -> dict:
     registry = build_default_factor_registry()
     return {
@@ -85,7 +89,7 @@ def run_factor(
 
 
 
-@router.get("/factors/runs")
+@router.get("/factors/runs", response_model=FactorRunsResponse)
 def list_factor_runs(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     root = api_runs_dir / "factors"
     runs = [
