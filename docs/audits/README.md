@@ -119,6 +119,12 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 `tests/test_api_safety.py` 覆盖了路由伪造 `safety.live_trading_enabled=true` 时
 仍会被中间件改回真实安全状态。
 
+2026-06-15 状态补充：评估报告中“CLI 可无条件覆盖 kill-switch，而 API 同操作
+返回 409”的小项已处理。`quant-system paper run-sample --no-kill-switch` 现在在
+`QS_KILL_SWITCH=true` 时直接退出，不进入历史回放 pipeline、不落盘 paper 产物；
+只有先显式设置 `QS_KILL_SWITCH=false` 的本地模拟进程才允许该 replay 覆盖。
+`tests/test_paper_trading_pipeline_cli.py` 覆盖默认拒绝和显式关闭后的本地成交演示。
+
 2026-06-15 状态补充：同一条中的 `/settings` 脱敏守护也已补强。
 `mask_secret_fields()` 现在除了按字段名遮蔽 `key` / `secret` / `token` /
 `password` / `private`，还会直接识别并遮蔽 `pydantic.SecretStr` /

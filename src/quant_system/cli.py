@@ -703,7 +703,10 @@ def run_sample_paper_command(
         bool | None,
         typer.Option(
             "--kill-switch/--no-kill-switch",
-            help="Override the global kill switch for this paper run.",
+            help=(
+                "Set replay kill switch for this paper run. "
+                "--no-kill-switch is rejected while QS_KILL_SWITCH is true."
+            ),
         ),
     ] = None,
     max_fill_ratio_per_tick: Annotated[
@@ -718,6 +721,13 @@ def run_sample_paper_command(
     ] = None,
 ) -> None:
     """Run the Phase 5 sample paper-trading loop."""
+    settings = load_settings()
+    if settings.safety.kill_switch and kill_switch is False:
+        typer.echo(
+            "Global kill switch is enabled; CLI paper replay cannot disable the kill switch"
+        )
+        raise typer.Exit(code=1)
+
     result = run_sample_paper_trading(
         symbols=symbols or ["SPY", "AAPL"],
         start=start,

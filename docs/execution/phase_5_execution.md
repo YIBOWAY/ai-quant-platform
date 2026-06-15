@@ -30,7 +30,9 @@ Phase 5 的样例 CLI 会显式传入 paper trading 风控参数，不需要修�
 运行样例模拟交易：
 
 ```powershell
+$env:QS_KILL_SWITCH='false'
 python -m quant_system.cli paper run-sample --symbol SPY --symbol AAPL --start 2024-01-02 --end 2024-01-12 --initial-cash 100000 --max-order-value 20000 --max-position-size 0.60 --no-kill-switch --output-dir data/phase5_sample
+Remove-Item Env:\QS_KILL_SWITCH
 ```
 
 测试 kill switch：
@@ -83,6 +85,7 @@ python -m pytest tests/test_risk_engine_phase5.py tests/test_order_manager_paper
 检查：
 
 - 是否开启了 `--kill-switch`
+- 若要演示历史回放成交，当前进程是否已显式设置 `QS_KILL_SWITCH=false`
 - `--max-order-value` 是否太小
 - `--max-position-size` 是否太小
 - symbol 是否在 blocked list 中

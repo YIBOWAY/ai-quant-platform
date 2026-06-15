@@ -6,7 +6,8 @@
 
 - Phase 5 的关键安全问题有自动化测试覆盖。
 - 模拟券商不能买到负现金，不能无持仓卖空。
-- 默认 kill switch 开启；只有显式 `--no-kill-switch` 才能跑出模拟成交。
+- 默认 kill switch 开启；历史回放 CLI 只有在本地进程先显式设置
+  `QS_KILL_SWITCH=false` 后，才允许 `--no-kill-switch` 跑出模拟成交。
 - 订单成交后也要做风控检查并记录风险突破。
 - 新增常见技术因子 RSI 和 MACD，并纳入默认因子注册表。
 - 单因子信号和多因子信号都能进入回测和 paper trading。
@@ -19,7 +20,8 @@
 - `PaperBroker` 增加现金约束：买入成交量不能超过账户可支付数量。
 - `PaperBroker` 增加持仓约束：卖出成交量不能超过已有持仓。
 - `RiskLimits` 默认 `kill_switch=True`，与全局安全配置一致。
-- `paper run-sample` 支持 `--kill-switch/--no-kill-switch`，不传参数时使用全局安全配置。
+- `paper run-sample` 支持 `--kill-switch/--no-kill-switch`，不传参数时使用全局安全配置；
+  `QS_KILL_SWITCH=true` 时会拒绝 `--no-kill-switch`。
 - paper trading loop 每次下单前重新构建风控上下文，不复用旧上下文。
 - `RiskEngine` 增加交易后组合检查，覆盖单票仓位、日亏损、回撤。
 - `OrderManager` 增加交易后风险检查入口，并记录风险突破。

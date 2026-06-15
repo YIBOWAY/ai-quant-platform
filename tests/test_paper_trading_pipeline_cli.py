@@ -1,14 +1,58 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from typer.testing import CliRunner
 
 from quant_system.cli import app
+from quant_system.config.settings import load_settings
 
 runner = CliRunner()
 
 
-def test_paper_trading_run_sample_cli_generates_logs_and_report(tmp_path) -> None:
+@pytest.fixture(autouse=True)
+def clear_settings_cache() -> None:
+    load_settings.cache_clear()
+    yield
+    load_settings.cache_clear()
+
+
+def test_paper_trading_cli_rejects_disabling_global_kill_switch(tmp_path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "paper",
+            "run-sample",
+            "--symbol",
+            "SPY",
+            "--symbol",
+            "AAPL",
+            "--start",
+            "2024-01-02",
+            "--end",
+            "2024-01-12",
+            "--initial-cash",
+            "100000",
+            "--max-order-value",
+            "20000",
+            "--max-position-size",
+            "0.60",
+            "--no-kill-switch",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Global kill switch is enabled" in result.output
+    assert not Path(tmp_path, "paper").exists()
+
+
+def test_paper_trading_run_sample_cli_generates_logs_and_report_when_global_kill_switch_off(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QS_KILL_SWITCH", "false")
     result = runner.invoke(
         app,
         [

@@ -123,7 +123,9 @@ Phase 6 会基于 `BrokerAdapter` 接口增加实盘适配层 stub，但默认�
 ```powershell
 python -m pytest
 ruff check .
+$env:QS_KILL_SWITCH='false'
 python -m quant_system.cli paper run-sample --symbol SPY --symbol AAPL --start 2024-01-02 --end 2024-01-12 --initial-cash 100000 --max-order-value 20000 --max-position-size 0.60 --no-kill-switch --output-dir data/phase5_sample
+Remove-Item Env:\QS_KILL_SWITCH
 python -m quant_system.cli paper run-sample --symbol SPY --start 2024-01-02 --end 2024-01-08 --kill-switch --output-dir data/phase5_kill_switch
 ```
 
