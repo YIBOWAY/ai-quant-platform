@@ -15,6 +15,81 @@ class PaperRunsResponse(BaseModel):
     paper_runs: list[PaperRunSummary]
 
 
+class AccountPositionResponse(BaseModel):
+    symbol: str
+    quantity: float
+    avg_cost: float
+    last_price: float
+    market_value: float
+    weight: float
+    unrealized_pnl: float
+    source_breakdown: dict[str, float] = Field(default_factory=dict)
+    price_kind: str
+    price_as_of: str | None = None
+
+
+class PendingAccountOrderResponse(BaseModel):
+    order_id: str
+    created_at: str
+    symbol: str
+    side: str
+    quantity: float
+    limit_price: float
+    source: str
+    reason: str
+    last_checked_price: float | None = None
+    last_checked_price_kind: str | None = None
+    last_checked_at: str | None = None
+
+
+class PaperAccountPriceSourceResponse(BaseModel):
+    kind: str
+    as_of: str | None = None
+
+
+class PaperAccountResponse(BaseModel):
+    account_id: str
+    base_currency: str
+    initial_cash: float
+    cash: float
+    equity: float
+    realized_pnl: float
+    unrealized_pnl: float
+    pnl_abs: float
+    pnl_pct: float
+    invested_pct: float
+    kill_switch: bool
+    price_source: PaperAccountPriceSourceResponse
+    positions: list[AccountPositionResponse]
+    pending_orders: list[PendingAccountOrderResponse]
+    created_at: str
+    updated_at: str
+
+
+class LedgerEntryResponse(BaseModel):
+    entry_id: str
+    timestamp: str
+    kind: str
+    source: str
+    symbol: str | None = None
+    side: str | None = None
+    quantity: float | None = None
+    price: float | None = None
+    gross_value: float | None = None
+    commission: float = 0.0
+    price_kind: str | None = None
+    realized_pnl_delta: float = 0.0
+    cash_after: float | None = None
+    note: str | None = None
+
+
+class PaperLedgerResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    entries: list[LedgerEntryResponse]
+
+
 PaperRunRecord = dict[str, Any]
 
 

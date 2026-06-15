@@ -17,6 +17,8 @@ from quant_system.api.schemas.paper import (
     AccountResetRequest,
     KillSwitchRequest,
     ManualOrderRequest,
+    PaperAccountResponse,
+    PaperLedgerResponse,
     PaperRunDetailResponse,
     PaperRunRequest,
     PaperRunsResponse,
@@ -250,7 +252,7 @@ def _account_view(
     }
 
 
-@router.get("/paper/account")
+@router.get("/paper/account", response_model=PaperAccountResponse)
 def get_account(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     storage = _account_storage(api_runs_dir)
     account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
@@ -288,7 +290,7 @@ def set_account_kill_switch(
         return _account_view(account, settings=settings, quotes=quotes)
 
 
-@router.get("/paper/account/ledger")
+@router.get("/paper/account/ledger", response_model=PaperLedgerResponse)
 def get_account_ledger(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,

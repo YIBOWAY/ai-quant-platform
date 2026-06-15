@@ -22,6 +22,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/backtests": "BacktestsResponse",
         "/api/backtests/{run_id}": "BacktestDetailResponse",
         "/api/paper": "PaperRunsResponse",
+        "/api/paper/account": "PaperAccountResponse",
+        "/api/paper/account/ledger": "PaperLedgerResponse",
         "/api/agent/candidates": "AgentCandidatesResponse",
         "/api/agent/candidates/{candidate_id}": "AgentCandidateDetailResponse",
         "/api/experiments": "ExperimentsResponse",
@@ -54,6 +56,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "backtests" in components["BacktestsResponse"]["properties"]
     assert "benchmark" in components["BacktestDetailResponse"]["properties"]
     assert "paper_runs" in components["PaperRunsResponse"]["properties"]
+    assert "positions" in components["PaperAccountResponse"]["properties"]
+    assert "entries" in components["PaperLedgerResponse"]["properties"]
     assert "candidates" in components["AgentCandidatesResponse"]["properties"]
     assert "source_preview" in components["AgentCandidateDetailResponse"]["properties"]
     assert "experiments" in components["ExperimentsResponse"]["properties"]
