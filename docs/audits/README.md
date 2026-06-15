@@ -48,3 +48,9 @@ symbol list、number、integer_or_null 和 factor weight map 转换。
 已复核并收敛。该 helper 对应的后端端点仍在 `OptionsRadarView` 中使用，只是
 组件曾直接调用 `apiRequest("/api/options/daily-scan/dates")`，导致 API client
 helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`。
+
+2026-06-15 状态补充：评估报告中“`getHealth` 在 layout 与页面重复 fetch”的
+小项已处理。服务端页面和 `SafetyStrip` 现在通过
+`src/frontend/lib/serverApi.ts` 的 `getCachedHealth()` 读取健康状态，该 helper
+用 React `cache()` 在同一次服务端渲染内复用 `/api/health` 请求；客户端
+`getHealth()` 仍保留为普通 API helper。

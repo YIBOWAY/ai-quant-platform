@@ -1,5 +1,5 @@
 import { ShieldAlert } from "lucide-react";
-import { getHealth } from "@/lib/api";
+import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -26,7 +26,7 @@ const copy = {
 };
 
 export async function SafetyStrip() {
-  const [health, locale] = await Promise.all([getHealth(), getServerLocale()]);
+  const [health, locale] = await Promise.all([getCachedHealth(), getServerLocale()]);
   const text = copy[locale];
   const safety = health.safety;
   const paperOnly = Boolean(safety?.dry_run && safety?.paper_trading);

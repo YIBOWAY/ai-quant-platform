@@ -12,13 +12,13 @@ import {
   getBacktestDetail,
   getBacktests,
   getFactors,
-  getHealth,
   getStrategies,
   getUniverses,
 } from "@/lib/api";
 import { normalizeEquity } from "@/lib/equity";
 import { localizePath } from "@/lib/locale";
 import { isSampleSource, selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
+import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -116,7 +116,7 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
     getStrategies(),
     getUniverses(),
     getFactors(),
-    getHealth(),
+    getCachedHealth(),
   ]);
   const futuReachable = health.futu_opend?.reachable !== false;
   const includeSample = shouldIncludeSampleRuns(params);

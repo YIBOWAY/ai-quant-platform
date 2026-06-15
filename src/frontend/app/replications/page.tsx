@@ -1,6 +1,7 @@
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { StrategyCatalogWorkbench } from "@/components/forms/StrategyCatalogWorkbench";
-import { getFactors, getHealth, getStrategies, getUniverses } from "@/lib/api";
+import { getFactors, getStrategies, getUniverses } from "@/lib/api";
+import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 export default async function ReplicationsPage() {
@@ -9,7 +10,7 @@ export default async function ReplicationsPage() {
     getStrategies(),
     getUniverses(),
     getFactors(),
-    getHealth(),
+    getCachedHealth(),
   ]);
   const futuReachable = health.futu_opend?.reachable !== false;
 

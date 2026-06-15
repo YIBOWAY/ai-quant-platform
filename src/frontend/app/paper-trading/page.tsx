@@ -14,7 +14,6 @@ import {
   type LedgerEntryView,
   type PendingAccountOrderView,
   formatMoney,
-  getHealth,
   getPaperAccount,
   getPaperAccountLedger,
   getPaperRunDetail,
@@ -24,6 +23,7 @@ import {
 import { localizePath } from "@/lib/locale";
 import { isSampleSource } from "@/components/DataSourceBadge";
 import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
+import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -237,7 +237,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
   const [account, ledger, health, paperRuns, strategies, locale] = await Promise.all([
     getPaperAccount(),
     getPaperAccountLedger(8),
-    getHealth(),
+    getCachedHealth(),
     getPaperRuns(),
     getStrategies(),
     getServerLocale(params),
@@ -811,7 +811,7 @@ function SafetyFlags({
   text,
 }: {
   account: Awaited<ReturnType<typeof getPaperAccount>>;
-  health: Awaited<ReturnType<typeof getHealth>>;
+  health: Awaited<ReturnType<typeof getCachedHealth>>;
   text: (typeof copy)["en"] | (typeof copy)["zh"];
 }) {
   const fmt = (value: boolean | undefined) =>

@@ -20,13 +20,13 @@ import {
   getAgentCandidates,
   getBacktests,
   getFactors,
-  getHealth,
   getPaperRuns,
   getRecentRuns,
   getSymbols,
 } from "@/lib/api";
 import { selectDisplayRun } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
+import { getCachedHealth } from "@/lib/serverApi";
 import { localizePath } from "@/lib/locale";
 
 const copy = {
@@ -210,7 +210,7 @@ function RunKindIcon({ run }: { run: RecentRun }) {
 
 export default async function Dashboard() {
   const [health, symbols, factors, backtests, paperRuns, recentRuns, candidates, locale] = await Promise.all([
-    getHealth(),
+    getCachedHealth(),
     getSymbols(),
     getFactors(),
     getBacktests(),

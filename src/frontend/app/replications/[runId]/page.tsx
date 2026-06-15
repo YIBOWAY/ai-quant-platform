@@ -2,11 +2,11 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { StrategyCatalogWorkbench } from "@/components/forms/StrategyCatalogWorkbench";
 import {
   getFactors,
-  getHealth,
   getReversalMomentumReplicationDetail,
   getStrategies,
   getUniverses,
 } from "@/lib/api";
+import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 type ReplicationRunDetailPageProps = {
@@ -23,7 +23,7 @@ export default async function ReplicationRunDetailPage({
     getStrategies(),
     getUniverses(),
     getFactors(),
-    getHealth(),
+    getCachedHealth(),
   ]);
   const futuReachable = health.futu_opend?.reachable !== false;
   const initialResult = Object.keys(detail.result ?? {}).length ? detail.result : null;

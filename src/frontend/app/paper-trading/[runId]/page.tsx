@@ -3,8 +3,9 @@ import { ShieldAlert } from "lucide-react";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { ErrorBanner } from "@/components/ErrorBanner";
-import { formatMoney, getHealth, getPaperRunDetail } from "@/lib/api";
+import { formatMoney, getPaperRunDetail } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
+import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -64,7 +65,7 @@ export default async function PaperRunDetailPage({ params }: PaperRunDetailPageP
   const locale = await getServerLocale();
   const text = copy[locale];
   const runId = (await params)?.runId ?? "";
-  const [health, detail] = await Promise.all([getHealth(), getPaperRunDetail(runId)]);
+  const [health, detail] = await Promise.all([getCachedHealth(), getPaperRunDetail(runId)]);
   const metadata = detail.metadata ?? {};
   const source = typeof metadata.source === "string" ? metadata.source : undefined;
 

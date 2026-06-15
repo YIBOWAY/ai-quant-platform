@@ -10,7 +10,6 @@ import {
   formatMoney,
   getBacktestDetail,
   getBacktests,
-  getHealth,
   getPaperAccount,
   getPaperAccountLedger,
   type AccountPositionView,
@@ -19,6 +18,7 @@ import {
 } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
 import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
+import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -180,7 +180,7 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
     getPaperAccount(),
     getPaperAccountLedger(12),
     getBacktests(),
-    getHealth(),
+    getCachedHealth(),
   ]);
   const includeSample = shouldIncludeSampleRuns(params);
   const latestBacktest = selectDisplayRun(backtests.backtests, includeSample);
