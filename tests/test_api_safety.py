@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
+from quant_system.api.safety.masking import mask_secret_fields
 from quant_system.api.server import create_app
 from quant_system.config.settings import reload_settings
 
@@ -61,6 +63,22 @@ def test_settings_masks_secret_fields(tmp_path, monkeypatch) -> None:
     payload_text = response.text
     assert "super-secret-token" not in payload_text
     assert payload_text.count("***") >= 1
+
+
+def test_secret_values_are_masked_even_without_secret_like_keys() -> None:
+    payload = {
+        "credential": SecretStr("not-in-key-name"),
+        "nested": [{"value": SecretStr("nested-secret-value")}],
+    }
+
+    masked = mask_secret_fields(payload)
+
+    assert masked == {
+        "credential": "***",
+        "nested": [{"value": "***"}],
+    }
+    assert "not-in-key-name" not in str(masked)
+    assert "nested-secret-value" not in str(masked)
 
 
 def test_forbidden_order_submit_route_does_not_exist(tmp_path) -> None:

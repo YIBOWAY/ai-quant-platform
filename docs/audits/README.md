@@ -86,3 +86,8 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 `SafetySettings` 与绑定地址生成的 footer，而不是仅在缺失时 `setdefault`；
 `tests/test_api_safety.py` 覆盖了路由伪造 `safety.live_trading_enabled=true` 时
 仍会被中间件改回真实安全状态。
+
+2026-06-15 状态补充：同一条中的 `/settings` 脱敏守护也已补强。
+`mask_secret_fields()` 现在除了按字段名遮蔽 `key` / `secret` / `token` /
+`password` / `private`，还会直接识别并遮蔽 `pydantic.SecretStr` /
+`SecretBytes` 值；测试覆盖字段名本身不含敏感关键词但值类型为 secret 的情况。

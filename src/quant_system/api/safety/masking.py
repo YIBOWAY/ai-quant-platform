@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import SecretBytes, SecretStr
+
 _SECRET_MARKERS = ("key", "secret", "token", "password", "private")
 
 
 def mask_secret_fields(payload: Any) -> Any:
     """Recursively mask values whose field names look credential-like."""
 
+    if isinstance(payload, SecretStr | SecretBytes):
+        return "***"
     if isinstance(payload, dict):
         masked: dict[str, Any] = {}
         for key, value in payload.items():
