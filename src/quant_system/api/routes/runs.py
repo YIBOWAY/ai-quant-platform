@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
+from quant_system.api.schemas.runs import RecentRunsResponse
 from quant_system.storage.runs_repository import (
     KIND_DIRS,
     _created_at_from_run_id,
@@ -23,7 +24,7 @@ def _sort_key(item: dict[str, Any]) -> tuple[str, str, str]:
     return (str(created_at or ""), str(item.get("kind", "")), run_id)
 
 
-@router.get("/runs/recent")
+@router.get("/runs/recent", response_model=RecentRunsResponse)
 def recent_runs(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
