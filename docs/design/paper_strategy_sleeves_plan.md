@@ -398,7 +398,60 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
 
 不要在第一版做跨 sleeve 自动再分配。那会污染 sleeve 绩效归因。
 
-## 16. 测试与验收
+## 16. MVP-1 实现拆分
+
+实现顺序应先固化共享领域模型，再进入 API、CLI、前端和文档。不要从前端页面或调度器开始，否则容易把旧的全账户 rebalance 语义误带进新功能。
+
+### 16.1 串行基础层
+
+这些任务相互依赖，建议按顺序实现。
+
+1. **领域模型与 schema**
+   - 新增 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal` 的后端模型。
+   - 明确枚举：`signal_only` / `allocated`、`running` / `paused` / `stopped`、`generated` / `data_unavailable` / `invalid`。
+   - 明确哪些字段属于交易逻辑字段，哪些字段可原地编辑。
+
+2. **本地文件存储**
+   - 新增 strategy config、sleeve、signal 的读写模块。
+   - 文件仍是 source of truth。
+   - 写入需要保持原子性；失败时不能留下半写状态。
+
+3. **账户分账能力**
+   - 为 `manual` 和 strategy sleeve 建立现金/lot 分账语义。
+   - allocated 创建时从账户可用现金划拨到 sleeve cash。
+   - 不改动旧 `/api/paper/account/rebalance` 的行为。
+   - 策略路径不能按比例卖出 `source_quantity`，必须能定位到自己的 sleeve lot。
+
+4. **策略信号生成服务**
+   - 从保存的 `StrategyConfig` 生成 daily signal。
+   - MVP-1 只写入 `StrategySignal`，不产生实际 fill。
+   - 数据不可用时写 `data_unavailable`，不使用 sample/fallback 合成数据。
+
+5. **API contract**
+   - 新增 strategy config 和 strategy sleeve API。
+   - 保持旧全账户 rebalance 为 legacy/advanced。
+   - mutation 路径沿用账户锁或同等互斥机制，避免现金划拨并发写冲突。
+
+### 16.2 可并行工作
+
+基础层稳定后，这些工作可以相对独立推进。
+
+- **CLI**：实现 config-create、sleeve-create、generate-signal、sleeve-show。
+- **前端最小入口**：在 `/paper-trading` 加 Strategy Sleeves 区域，调用已稳定 API。
+- **用户指南更新**：补 `docs/guides/paper-trading.md` 的用户心智说明。
+- **执行文档更新**：等 CLI/API 可运行后，再写 `docs/execution/paper_strategy_sleeves.md`。
+
+### 16.3 验证闭环
+
+每个阶段的验收应优先证明边界没有被破坏：
+
+- signal-only 不改现金和持仓。
+- allocated 创建只划拨现金，不自动成交。
+- strategy sleeve 不卖 manual lot。
+- sample/fallback 数据不能进入 allocated 信号或后续执行路径。
+- legacy full-account rebalance 仍保持原行为，且不会被 UI 当作新 sleeve 主入口。
+
+## 17. 测试与验收
 
 MVP-1 需要测试：
 
@@ -421,7 +474,7 @@ MVP-1 需要测试：
 - `docs/guides/paper-trading.md` 说明 Strategy Sleeves 的用户心智。
 - `docs/INDEX.md` 有入口。
 
-## 17. 决策日志
+## 18. 决策日志
 
 | 日期 | 决策 |
 |---|---|
@@ -436,7 +489,7 @@ MVP-1 需要测试：
 | 2026-06-15 | MVP-1 不做完整自动成交，不做前端大改。 |
 | 2026-06-15 | 后续前端大改单独命名为 Paper Strategy Sleeves UX Redesign，使用前端 skills 做多方案设计。 |
 
-## 18. 相关代码入口
+## 19. 相关代码入口
 
 | 关注点 | 当前入口 |
 |---|---|
