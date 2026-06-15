@@ -35,3 +35,11 @@ futu”的小项已对齐。`.env.example` 现在使用
 Strategy Catalog 的 schema-driven payload 构建逻辑已抽到
 `src/frontend/lib/strategyPayload.ts`，并由 `strategyPayload.test.ts` 覆盖
 symbol list、number、integer_or_null 和 factor weight map 转换。
+
+2026-06-15 状态补充：评估报告中“Futu 实盘交易脚本需作为红线处理”的小项
+已补强回归测试。`tests/test_api_safety.py` 现在会扫描本地已安装的
+`.agents/skills/futuapi` Python 脚本，禁止重新引入 `.place_order(` /
+`.modify_order(` / `.cancel_order(` / `unlock_trade(` 等 mutating broker 调用；
+若本地存在 `place_order.py`、`modify_order.py`、`cancel_order.py`，测试还会执行
+它们的 `--json` 模式并要求返回 disabled 错误。`.agents/` 是本地忽略目录，
+因此该测试在未安装本地 skill 的干净 checkout 上会跳过入口执行检查。

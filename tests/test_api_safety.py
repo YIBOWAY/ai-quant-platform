@@ -1,6 +1,9 @@
+import json
 import subprocess
+import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
@@ -100,6 +103,7 @@ def test_futu_skill_does_not_ship_mutating_trade_scripts() -> None:
     redlines = (
         ".place_order(",
         ".modify_order(",
+        ".cancel_order(",
         ".cancel_all_order(",
         "unlock_trade(",
     )
@@ -117,3 +121,44 @@ def test_futu_skill_does_not_ship_mutating_trade_scripts() -> None:
                 hits.append(f"{path}:{marker}")
 
     assert hits == []
+
+
+def test_futu_skill_mutating_trade_entrypoints_are_disabled() -> None:
+    trade_root = Path(".agents/skills/futuapi/scripts/trade")
+    if not trade_root.is_dir():
+        pytest.skip("local futuapi skill is not installed under .agents")
+
+    scripts = (
+        trade_root / "place_order.py",
+        trade_root / "modify_order.py",
+        trade_root / "cancel_order.py",
+    )
+    redlines = (
+        "from futu",
+        "OpenSecTradeContext",
+        "create_trade_context",
+        "TrdEnv.REAL",
+        ".place_order(",
+        ".modify_order(",
+        ".cancel_order(",
+        "unlock_trade(",
+    )
+
+    for script in scripts:
+        assert script.is_file()
+        text = script.read_text(encoding="utf-8")
+        assert "disabled" in text.lower()
+        assert "paper account APIs" in text
+        for marker in redlines:
+            assert marker not in text
+
+        completed = subprocess.run(
+            [sys.executable, str(script), "--json"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        assert completed.returncode == 2
+        payload = json.loads(completed.stdout)
+        assert "disabled" in payload["error"].lower()
