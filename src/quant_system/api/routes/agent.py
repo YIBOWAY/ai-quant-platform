@@ -8,6 +8,7 @@ from quant_system.agent.llm import build_llm_client
 from quant_system.agent.runner import AgentRunner
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.agent import (
+    AgentCandidatesResponse,
     AgentLLMConfigResponse,
     AgentReviewRequest,
     AgentTaskRequest,
@@ -17,7 +18,7 @@ from quant_system.api.schemas.common import resolve_run_dir
 router = APIRouter()
 
 
-@router.get("/agent/candidates")
+@router.get("/agent/candidates", response_model=AgentCandidatesResponse)
 def list_candidates(
     output_dir: OutputDirDep,
     status: str | None = None,

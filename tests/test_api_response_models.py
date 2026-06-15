@@ -21,6 +21,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/options/tools/watchlist": "OptionsWatchlistResponse",
         "/api/backtests": "BacktestsResponse",
         "/api/paper": "PaperRunsResponse",
+        "/api/agent/candidates": "AgentCandidatesResponse",
         "/api/factors": "FactorCatalogResponse",
         "/api/factors/runs": "FactorRunsResponse",
         "/api/runs/recent": "RecentRunsResponse",
@@ -45,6 +46,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "watchlist" in components["OptionsWatchlistResponse"]["properties"]
     assert "backtests" in components["BacktestsResponse"]["properties"]
     assert "paper_runs" in components["PaperRunsResponse"]["properties"]
+    assert "candidates" in components["AgentCandidatesResponse"]["properties"]
     assert "source" in components["OHLCVResponse"]["properties"]
     assert "source" in components["BenchmarkResponse"]["properties"]
     assert "factors" in components["FactorCatalogResponse"]["properties"]

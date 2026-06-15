@@ -2,7 +2,20 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class CandidateSummary(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    candidate_id: str
+    artifact_type: str
+    status: str
+    goal: str | None = None
+
+
+class AgentCandidatesResponse(BaseModel):
+    candidates: list[CandidateSummary]
 
 
 class AgentTaskRequest(BaseModel):
