@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type {
+  OptionsDailyTaskStatus,
+  OptionsDailyTaskStatusResponse,
   OptionsRadarCandidate,
   OptionsRadarDatesResponse,
   OptionsRefreshResponse,
@@ -100,6 +102,15 @@ const copy = {
     scanRunningBody:
       "Futu scans can take several minutes. Keep this page open; the table will refresh when the saved snapshot is ready.",
     scanElapsed: "Elapsed",
+    scheduledTask: "Scheduled task",
+    taskLoading: "Loading task status...",
+    taskMissing: "No scheduled task status has been written yet.",
+    taskCompleted: "Completed",
+    taskFailed: "Failed",
+    taskCandidateCount: "Candidates",
+    taskFailedStep: "Failed step",
+    taskFinishedAt: "Finished",
+    taskProvider: "Provider",
     refresh: "Refresh List",
     refreshSource: "Refresh source",
     publicSource: "Public data",
@@ -156,6 +167,15 @@ const copy = {
     scanRunningTitle: "正在扫描",
     scanRunningBody: "Futu 扫描可能需要几分钟。请保持页面打开；快照保存后右侧表格会自动刷新。",
     scanElapsed: "已等待",
+    scheduledTask: "定时任务",
+    taskLoading: "正在读取任务状态...",
+    taskMissing: "尚未写入定时任务状态。",
+    taskCompleted: "已完成",
+    taskFailed: "失败",
+    taskCandidateCount: "候选",
+    taskFailedStep: "失败步骤",
+    taskFinishedAt: "完成时间",
+    taskProvider: "数据源",
     refresh: "刷新列表",
     refreshSource: "刷新数据源",
     publicSource: "公开数据",
@@ -205,6 +225,12 @@ export function OptionsRadarView({
     queryKey: ["options-radar-dates"],
     enabled: hydrated,
     queryFn: () => apiRequest<OptionsRadarDatesResponse>("/api/options/daily-scan/dates"),
+  });
+  const taskStatusQuery = useQuery({
+    queryKey: ["options-daily-task-status"],
+    enabled: hydrated,
+    queryFn: () =>
+      apiRequest<OptionsDailyTaskStatusResponse>("/api/options/daily-scan/status"),
   });
 
   const activeDate = date || datesQuery.data?.dates[0] || "";
@@ -518,6 +544,12 @@ export function OptionsRadarView({
             </div>
           }
         />
+        <ScheduledTaskStatusCard
+          error={taskStatusQuery.error}
+          isLoading={taskStatusQuery.isLoading}
+          response={taskStatusQuery.data}
+          text={text}
+        />
         {scanMutation.isPending ? (
           <Card tone="info">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -720,6 +752,82 @@ function buildScanPath({
   if (sector) params.set("sector", sector);
   if (dteBucket) params.set("dte_bucket", dteBucket);
   return `/api/options/daily-scan?${params.toString()}`;
+}
+
+function ScheduledTaskStatusCard({
+  error,
+  isLoading,
+  response,
+  text,
+}: {
+  error: unknown;
+  isLoading: boolean;
+  response?: OptionsDailyTaskStatusResponse;
+  text: (typeof copy)["en"] | (typeof copy)["zh"];
+}) {
+  const status = response?.status ?? null;
+  const state = status?.status ?? null;
+  const tone: "danger" | "success" | "neutral" =
+    state === "failed" ? "danger" : state === "completed" ? "success" : "neutral";
+  const statusLabel =
+    state === "failed"
+      ? text.taskFailed
+      : state === "completed"
+        ? text.taskCompleted
+        : state ?? "--";
+  const candidateCount = taskCandidateCount(status);
+
+  return (
+    <Card tone={tone}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-label-caps text-text-primary">{text.scheduledTask}</h2>
+          <p className="mt-1 font-body-sm text-text-secondary">
+            {isLoading
+              ? text.taskLoading
+              : error instanceof Error
+                ? error.message
+                : response?.exists
+                  ? `${statusLabel}${status?.run_date ? ` · ${status.run_date}` : ""}`
+                  : text.taskMissing}
+          </p>
+        </div>
+        {response?.exists && status ? (
+          <div className="flex flex-wrap items-center gap-2 font-data-mono text-xs text-text-secondary">
+            {status.provider ? <span>{text.taskProvider}: {status.provider}</span> : null}
+            {candidateCount !== null ? (
+              <span>{text.taskCandidateCount}: {candidateCount}</span>
+            ) : null}
+            {status.failed_step ? (
+              <span className="text-danger">{text.taskFailedStep}: {status.failed_step}</span>
+            ) : null}
+            {status.finished_at ? (
+              <span>{text.taskFinishedAt}: {formatTaskTime(status.finished_at)}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function taskCandidateCount(status: OptionsDailyTaskStatus | null): number | null {
+  const scan = status?.steps?.scan;
+  const value = scan?.candidate_count;
+  return typeof value === "number" ? value : null;
+}
+
+function formatTaskTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
 }
 
 function RegimeBanner({

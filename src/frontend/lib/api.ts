@@ -468,6 +468,25 @@ export type OptionsRadarDatesResponse = ApiEnvelope & {
   dates: string[];
 };
 
+export type OptionsDailyTaskStatus = {
+  status?: string | null;
+  run_date?: string | null;
+  provider?: string | null;
+  strategies?: string[] | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  failed_step?: string | null;
+  error?: string | null;
+  steps?: Record<string, Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
+export type OptionsDailyTaskStatusResponse = ApiEnvelope & {
+  exists: boolean;
+  status_path: string;
+  status: OptionsDailyTaskStatus | null;
+};
+
 export type OptionsRadarResponse = ApiEnvelope & {
   run_date: string;
   universe_size: number;

@@ -293,7 +293,9 @@ The Radar page can run the current-date read-only scan and refresh the local
 universe, earnings, and VIX caches. Public sources are the default; the local
 sample source is only for explicit offline testing. Scheduled runs should use
 `daily-task`, which refreshes those local inputs before writing the daily
-snapshot and `daily_task_status.json`.
+snapshot and `daily_task_status.json`; the Radar page reads the same file
+through `GET /api/options/daily-scan/status` and shows the latest scheduled-task
+state.
 
 Local options toolbox:
 

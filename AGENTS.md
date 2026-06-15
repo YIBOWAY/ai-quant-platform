@@ -163,7 +163,8 @@ Current options work is split into sell-side and buy-side research modules:
   the universe, earnings calendar, and VIX history before running
   `run_options_radar`; `scripts/run_options_radar.ps1` is the Windows Task
   Scheduler entrypoint and writes `daily_task_status.json` next to radar
-  snapshots.
+  snapshots. `GET /api/options/daily-scan/status` exposes that file and
+  `/options-radar` shows the latest scheduled-task status.
 - Buy-side decision API: `POST /api/options/buy-side/assistant`.
 - Buy-side debug CLI: `quant-system options buyside-screen`.
 - Buy-side frontend page: `src/frontend/app/options-buyside/page.tsx` (main

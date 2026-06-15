@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, HTTPException
@@ -30,6 +31,26 @@ router = APIRouter()
 @router.get("/options/daily-scan/dates")
 def options_daily_scan_dates(settings: SettingsDep) -> dict:
     return {"dates": RadarSnapshotStore(settings.options_radar.output_dir).list_dates()}
+
+
+@router.get("/options/daily-scan/status")
+def options_daily_scan_status(settings: SettingsDep) -> dict:
+    status_path = settings.options_radar.output_dir / "daily_task_status.json"
+    if not status_path.exists():
+        return {"exists": False, "status_path": str(status_path), "status": None}
+    try:
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"daily task status file is invalid JSON: {status_path}",
+        ) from exc
+    if not isinstance(status, dict):
+        raise HTTPException(
+            status_code=500,
+            detail=f"daily task status file must contain an object: {status_path}",
+        )
+    return {"exists": True, "status_path": str(status_path), "status": status}
 
 
 @router.post("/options/refresh/universe")

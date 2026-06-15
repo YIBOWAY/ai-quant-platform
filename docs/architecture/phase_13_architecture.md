@@ -20,6 +20,7 @@ src/quant_system/api/routes/options_radar.py
   POST /api/options/refresh/vix
   POST /api/options/daily-scan/run
   GET /api/options/daily-scan/dates
+  GET /api/options/daily-scan/status
   GET /api/options/daily-scan
 
 src/quant_system/cli.py
@@ -28,7 +29,7 @@ src/quant_system/cli.py
 
 src/frontend/app/options-radar/page.tsx
   src/frontend/components/forms/OptionsRadarView.tsx
-  daily scan viewer with filters, detail expansion, CSV export
+  daily scan viewer with filters, scheduled-task status, detail expansion, CSV export
 ```
 
 ## ASCII 架构图
@@ -81,6 +82,8 @@ src/frontend/app/options-radar/page.tsx
 5. 写入每日 JSONL 快照、元数据和 `daily_task_status.json`。
 
 `daily-scan` 保留为人工调试和只扫描已有输入缓存的命令。
+`GET /api/options/daily-scan/status` 只读返回最近一次
+`daily_task_status.json`；`/options-radar` 用它显示调度任务最近状态。
 
 ## 故障隔离
 

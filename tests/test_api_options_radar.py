@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -73,6 +74,38 @@ def test_api_options_daily_scan_defaults_to_latest_date(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json()["run_date"] == "2026-05-03"
+
+
+def test_api_options_daily_scan_status_reports_daily_task_file(tmp_path: Path) -> None:
+    settings = Settings(options_radar=OptionsRadarSettings(output_dir=tmp_path))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    missing = client.get("/api/options/daily-scan/status")
+    assert missing.status_code == 200
+    assert missing.json()["exists"] is False
+    assert missing.json()["status"] is None
+
+    status = {
+        "status": "completed",
+        "run_date": "2026-06-15",
+        "provider": "futu",
+        "strategies": ["sell_put", "covered_call"],
+        "started_at": "2026-06-15T09:00:00+00:00",
+        "finished_at": "2026-06-15T09:02:00+00:00",
+        "steps": {"scan": {"candidate_count": 12}},
+    }
+    (tmp_path / "daily_task_status.json").write_text(
+        json.dumps(status),
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/options/daily-scan/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["exists"] is True
+    assert payload["status_path"].endswith("daily_task_status.json")
+    assert payload["status"] == status
 
 
 def test_api_options_daily_scan_run_writes_sample_snapshot(tmp_path: Path) -> None:

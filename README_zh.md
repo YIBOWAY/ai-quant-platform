@@ -224,7 +224,10 @@ http://127.0.0.1:3001/options-radar
 ```
 
 雷达页面可运行当日的只读扫描，并刷新本地股票池、财报和 VIX 缓存。公开数据源为默认；
-本地样本数据源仅用于明确的离线测试。
+本地样本数据源仅用于明确的离线测试。计划任务建议使用
+`quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public`；
+该命令会刷新输入、写入每日快照和 `daily_task_status.json`。雷达页面会通过
+`GET /api/options/daily-scan/status` 读取同一状态文件并展示最近一次计划任务状态。
 
 本地期权工具箱：
 

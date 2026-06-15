@@ -59,3 +59,7 @@ data/_runtime/logs/options-radar.log
 ```text
 data/options_scans/daily_task_status.json
 ```
+
+本地 API 会通过 `GET /api/options/daily-scan/status` 只读暴露同一文件；
+`/options-radar` 页面顶部的「定时任务」状态块会显示最近一次完成/失败状态、
+扫描日期、候选数、失败步骤和完成时间。
