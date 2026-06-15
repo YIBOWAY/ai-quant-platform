@@ -29,7 +29,7 @@
 9. **撮合**（`broker.py` 的 `BrokerSimulator`）：以同一根 K 线的 **OPEN 价**为基准撮合（卖单先于买单执行）；买单加滑点、卖单减滑点；收取佣金 `commission_bps`；受**现金约束**（买单买不起就部分成交，状态标 `partial`），卖单不超过现有持仓。若启用整股模式，现金不足导致的部分成交也会向下取整到整股。
 10. **盯市与归因**：每根 K 线对持仓按 close 价盯市，记录权益曲线；归因 = 进入该 bar 时的持仓数量 ×（本 bar close − 上一 bar close）逐 bar 累加。
 11. **绩效**（`metrics.py` 的 `calculate_performance_metrics`）：算 `total_return` / `annualized_return` / `volatility` / `sharpe` / `max_drawdown` / `turnover`，并把归因按标的汇总。
-12. **落盘**：六个 parquet（equity_curve / benchmark_curve / trade_blotter / orders / positions / attribution）+ `metrics.json` / `benchmark_metrics.json` + 文本报告，全部保存在独立 `run_id` 目录并写入 `metadata.json`。API 回测路径不再为每个 run 额外写 `quant_system.duckdb` 副本；历史遗留的逐 run DuckDB 可用 `scripts/cleanup_api_run_duckdb.py` 清理。
+12. **落盘**：六个 parquet（equity_curve / benchmark_curve / trade_blotter / orders / positions / attribution）+ `metrics.json` / `benchmark_metrics.json` + 文本报告，全部保存在独立 `run_id` 目录并写入 `metadata.json`。`metadata.json` 还包含 `timings_ms`，按毫秒记录 `data_fetch` / `engine` / `persist` / `total` 四段耗时，方便区分慢在取数、计算还是落盘。API 回测路径不再为每个 run 额外写 `quant_system.duckdb` 副本；历史遗留的逐 run DuckDB 可用 `scripts/cleanup_api_run_duckdb.py` 清理。
 
 > 关于"次 bar 撮合"的准确说法：撮合本身发生在**与 `tradeable_ts` 相等的那根 K 线的 OPEN 价**上。"在 T 日数据上打分、在 T+1 开盘成交"这个滞后，是由因子流水线的 `tradeable_ts`（= 下一根 K 线）实现的，**不是引擎在撮合时又往后顺延了一根**。引擎只是忠实地在 `tradeable_ts` 这根 bar 的 open 撮合。这条很重要：它保证了回测没有"用未来数据下单"的前视偏差。
 
@@ -74,6 +74,7 @@
 - **收益归因 Return Attribution**：逐标的对组合盈亏的贡献，按 `持仓数量 ×（close − 上一日 close）` 盯市累加。列含 `contribution`（金额）和 `contribution_pct`（÷ 初始资金）。
 - **数据源徽章 / 合成数据警告**：`source` 为 sample 等合成数据源时，页面会显示"指标基于合成数据"的提醒，提示别把这种结果当真。
 - **Run notes / Warnings**：后端 `_build_backtest_warnings` 生成的提示，例如"单标的运行""所有分数为 0""未产生任何成交"。
+- **timings_ms**：写在 `metadata.json` 和详情接口的 `metadata` 中，记录本次 run 的取数（`data_fetch`）、因子/策略/引擎/基准计算（`engine`）、artifact/report 落盘（`persist`）和总耗时（`total`），单位毫秒。它只用于诊断性能，不参与指标计算。
 
 ## 当前的局限与"为什么看起来奇怪"（诚实列出令人困惑之处及代码层面的原因）
 

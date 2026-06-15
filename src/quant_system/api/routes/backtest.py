@@ -66,6 +66,7 @@ def run_backtest(
         "trade_count": result.trade_count,
         "order_count": result.order_count,
         "warnings": result.warnings,
+        "timings_ms": result.timings_ms,
         "request": {
             "symbols": result.symbols,
             "start": request.start,

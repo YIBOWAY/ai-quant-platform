@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import perf_counter
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
@@ -58,6 +59,7 @@ class BacktestRunResult(BaseModel):
     attribution: list[dict[str, float | str]] = Field(default_factory=list)
     benchmark_source: str
     benchmark_metrics: PerformanceMetrics
+    timings_ms: dict[str, float] = Field(default_factory=dict)
 
 
 def run_backtest(
@@ -85,6 +87,7 @@ def run_backtest(
     sector_map: dict[str, str] | None = None,
     settings: Settings | None = None,
 ) -> BacktestRunResult:
+    total_start = perf_counter()
     active_settings = settings or load_settings()
     resolved_symbols = _resolve_symbols(symbols=symbols, universe_id=universe_id)
     resolved_strategy_id = _resolve_strategy_id(strategy_id)
@@ -95,6 +98,7 @@ def run_backtest(
     }
     ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
     resolved_benchmark_symbol = benchmark_symbol.upper().strip() or "SPY"
+    fetch_start = perf_counter()
     try:
         ohlcv = ohlcv_provider.fetch_ohlcv(resolved_symbols, start=start, end=end)
         benchmark_ohlcv = ohlcv_provider.fetch_ohlcv(
@@ -106,6 +110,9 @@ def run_backtest(
         if provider is not None:
             raise DataProviderUnavailableError(provider, exc.__class__.__name__) from exc
         raise
+    data_fetch_ms = _elapsed_ms(fetch_start)
+
+    engine_start = perf_counter()
     factors = _create_factors(resolved_factor_ids, lookback=lookback)
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
     signal_frame = build_multifactor_score_frame(
@@ -130,6 +137,11 @@ def run_backtest(
         resolved_strategy_id, signal_frame, top_n=top_n
     )
     result = BacktestEngine(config).run(ohlcv, strategy)
+    benchmark_curve = build_benchmark_curve(benchmark_ohlcv, symbol=resolved_benchmark_symbol)
+    benchmark_metrics = calculate_benchmark_metrics(benchmark_curve)
+    engine_ms = _elapsed_ms(engine_start)
+
+    persist_start = perf_counter()
     storage = _build_storage(output_dir, settings=active_settings)
     equity_curve_path = storage.save_frame(
         result.equity_curve,
@@ -157,8 +169,6 @@ def run_backtest(
         table_name="backtest_attribution",
     )
     metrics_path = storage.save_metrics(result.metrics)
-    benchmark_curve = build_benchmark_curve(benchmark_ohlcv, symbol=resolved_benchmark_symbol)
-    benchmark_metrics = calculate_benchmark_metrics(benchmark_curve)
     benchmark_curve_path = storage.save_frame(
         benchmark_curve,
         filename="benchmark_curve.parquet",
@@ -175,6 +185,13 @@ def run_backtest(
         equity_rows=len(result.equity_curve),
     )
     report_path = storage.save_report(report)
+    persist_ms = _elapsed_ms(persist_start)
+    timings_ms = {
+        "data_fetch": data_fetch_ms,
+        "engine": engine_ms,
+        "persist": persist_ms,
+        "total": _elapsed_ms(total_start),
+    }
     return BacktestRunResult(
         source=source,
         strategy_id=resolved_strategy_id,
@@ -205,6 +222,7 @@ def run_backtest(
         attribution=result.metrics.attribution,
         benchmark_source=source,
         benchmark_metrics=benchmark_metrics,
+        timings_ms=timings_ms,
     )
 
 
@@ -241,6 +259,10 @@ def _resolve_symbols(*, symbols: list[str], universe_id: str | None) -> list[str
     if universe_id:
         return build_default_universe_registry().get(universe_id).normalized_symbols()
     return ["SPY", "QQQ"]
+
+
+def _elapsed_ms(start: float) -> float:
+    return round((perf_counter() - start) * 1000, 3)
 
 
 # Maps a registered strategy id to a constructor that turns the prepared

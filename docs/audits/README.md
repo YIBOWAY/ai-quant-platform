@@ -41,6 +41,12 @@ CLI 启动和 app-factory 路径都会把结构化 JSONL 运行日志写入
 `data/_runtime/logs/backend.jsonl`，并由 `RotatingFileHandler` 控制文件大小；
 `tests/test_logging_setup.py` 覆盖了 stdout JSON 与文件 JSONL 两条路径。
 
+2026-06-15 状态补充：评估报告中“回测缺少下载 / 引擎 / 落盘分段耗时”的
+可观测性小项已处理。`run_backtest` 现在会生成 `timings_ms`，包含
+`data_fetch`、`engine`、`persist`、`total` 四段毫秒耗时；`POST /api/backtests/run`
+会把该字段写入 run 的 `metadata.json`，`GET /api/backtests/{run_id}` 详情也会
+随 `metadata` 返回。该字段只用于诊断慢点，不参与回测指标计算。
+
 2026-06-15 状态补充：评估报告中“.env.example 声称默认 sample 而代码默认
 futu”的小项已对齐。`.env.example` 现在使用
 `QS_DEFAULT_DATA_PROVIDER="futu"`，并说明 `sample` 只用于显式离线流程测试；

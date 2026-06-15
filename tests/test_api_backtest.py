@@ -94,6 +94,10 @@ def test_backtest_run_list_and_detail(tmp_path) -> None:
     assert detail["benchmark"]["equity_curve"]
     assert detail["benchmark"]["equity_curve"][0]["equity"] == 1.0
     assert detail["benchmark"]["metrics"]["total_return"] is not None
+    timings = detail["metadata"]["timings_ms"]
+    assert set(timings) == {"data_fetch", "engine", "persist", "total"}
+    assert all(isinstance(value, int | float) for value in timings.values())
+    assert all(value >= 0 for value in timings.values())
     assert Path(
         tmp_path,
         "api_runs",
