@@ -17,6 +17,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/agent/llm-config": "AgentLLMConfigResponse",
         "/api/options/daily-scan/dates": "OptionsDailyScanDatesResponse",
         "/api/options/daily-scan/status": "OptionsDailyScanStatusResponse",
+        "/api/options/tools/strategy/templates": "OptionsStrategyTemplatesResponse",
+        "/api/options/tools/watchlist": "OptionsWatchlistResponse",
         "/api/factors": "FactorCatalogResponse",
         "/api/factors/runs": "FactorRunsResponse",
         "/api/runs/recent": "RecentRunsResponse",
@@ -37,6 +39,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "has_api_key" in components["AgentLLMConfigResponse"]["properties"]
     assert "dates" in components["OptionsDailyScanDatesResponse"]["properties"]
     assert "status" in components["OptionsDailyScanStatusResponse"]["properties"]
+    assert "templates" in components["OptionsStrategyTemplatesResponse"]["properties"]
+    assert "watchlist" in components["OptionsWatchlistResponse"]["properties"]
     assert "source" in components["OHLCVResponse"]["properties"]
     assert "source" in components["BenchmarkResponse"]["properties"]
     assert "factors" in components["FactorCatalogResponse"]["properties"]

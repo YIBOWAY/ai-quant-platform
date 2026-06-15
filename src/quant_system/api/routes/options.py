@@ -5,6 +5,10 @@ from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.common import dataframe_records
+from quant_system.api.schemas.options_radar import (
+    OptionsStrategyTemplatesResponse,
+    OptionsWatchlistResponse,
+)
 from quant_system.data.providers.futu import FutuMarketDataProvider, FutuProviderError
 from quant_system.options.buy_side_decision import (
     BuySideAssistantRequest,
@@ -200,7 +204,7 @@ def options_simulate(payload: dict) -> dict:
         ) from exc
 
 
-@router.get("/options/tools/strategy/templates")
+@router.get("/options/tools/strategy/templates", response_model=OptionsStrategyTemplatesResponse)
 def options_strategy_templates() -> dict:
     return {"templates": strategy_templates()}
 
@@ -373,7 +377,7 @@ def options_unusual_activity(payload: dict) -> dict:
         ) from exc
 
 
-@router.get("/options/tools/watchlist")
+@router.get("/options/tools/watchlist", response_model=OptionsWatchlistResponse)
 def options_watchlist(output_dir: OutputDirDep) -> dict:
     return {"watchlist": _watchlist_store(output_dir).list()}
 
