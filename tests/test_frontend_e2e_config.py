@@ -90,6 +90,7 @@ def test_frontend_package_has_no_ai_studio_template_residue() -> None:
     package = json.loads(
         Path("src/frontend/package.json").read_text(encoding="utf-8")
     )
+    env_example = Path("src/frontend/.env.example").read_text(encoding="utf-8")
     next_config = Path("src/frontend/next.config.ts").read_text(encoding="utf-8")
     playwright_config = Path("src/frontend/playwright.config.ts").read_text(
         encoding="utf-8"
@@ -98,6 +99,10 @@ def test_frontend_package_has_no_ai_studio_template_residue() -> None:
     assert package["name"] == "ai-quant-platform-frontend"
     assert "@google/genai" not in package["dependencies"]
     assert "firebase-tools" not in package["devDependencies"]
+    assert "AI Studio" not in env_example
+    assert "GEMINI_API_KEY" not in env_example
+    assert "Cloud Run" not in env_example
+    assert "APP_URL" not in env_example
     assert "ignoreDuringBuilds" not in next_config
     assert "DISABLE_HMR" not in next_config
     assert "DISABLE_HMR" not in playwright_config

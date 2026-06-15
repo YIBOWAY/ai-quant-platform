@@ -62,3 +62,15 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 `src/frontend/.tmp/e2e-data`；`tests/test_frontend_e2e_config.py` 会锁定这些隔离项。
 在本地 `quantplatform-db` 容器运行时，`QS_TEST_DATABASE_URL=postgresql://quant:quantpass@127.0.0.1:5432/quantplatform`
 下的 `tests/test_runs_repository_postgres.py` 通过，说明可选 run index 仍可用。
+
+2026-06-15 状态补充：评估报告中“`environment.yml` 缺 `[api]` extra”的小项
+已处理。`environment.yml` 当前通过 pip 安装 `-e .[api,dev]`，与 README 的
+本地安装口径一致；`tests/test_environment_file.py` 会锁定该依赖声明，避免
+恢复环境后缺 FastAPI / uvicorn / psycopg 等 API 运行依赖。
+
+2026-06-15 状态补充：评估报告中“AI Studio 模板残留”的小项已继续收敛。
+`src/frontend/package.json` 已使用项目包名且不包含 `@google/genai` /
+`firebase-tools`，`next.config.ts` 不再跳过 lint/build 错误；本次进一步清理了
+`src/frontend/.env.example` 中的 Gemini / AI Studio / Cloud Run / `APP_URL`
+模板变量，只保留本地前端需要的 `NEXT_PUBLIC_QUANT_API_BASE_URL`。相关守护断言在
+`tests/test_frontend_e2e_config.py`。
