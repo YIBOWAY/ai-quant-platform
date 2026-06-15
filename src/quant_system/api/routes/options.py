@@ -6,13 +6,22 @@ from fastapi import APIRouter, HTTPException
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.common import dataframe_records
 from quant_system.api.schemas.options import (
+    OptionsBullPutSignalResponse,
     OptionsChainResponse,
+    OptionsContractScoreResponse,
+    OptionsEarningsCrushResponse,
     OptionsExpirationsResponse,
+    OptionsFearScoreResponse,
     OptionsGreeksResponse,
+    OptionsHedgeAdvisorResponse,
     OptionsImpliedVolatilityResponse,
+    OptionsIvRankResponse,
+    OptionsMarketSentimentResponse,
     OptionsSimulationResponse,
     OptionsSnapshotResponse,
     OptionsStrategyBuildResponse,
+    OptionsStrategyRankResponse,
+    OptionsUnusualActivityResponse,
     OptionsVolSmileResponse,
     OptionsVolSurfaceResponse,
 )
@@ -248,7 +257,10 @@ def options_strategy_build(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/score-contracts")
+@router.post(
+    "/options/tools/score-contracts",
+    response_model=OptionsContractScoreResponse,
+)
 def options_score_contracts(payload: dict) -> dict:
     try:
         return rank_option_contracts(
@@ -264,7 +276,10 @@ def options_score_contracts(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/strategy/rank")
+@router.post(
+    "/options/tools/strategy/rank",
+    response_model=OptionsStrategyRankResponse,
+)
 def options_strategy_rank(payload: dict) -> dict:
     try:
         return rank_strategy_templates(
@@ -282,7 +297,10 @@ def options_strategy_rank(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/bull-put-signal")
+@router.post(
+    "/options/tools/bull-put-signal",
+    response_model=OptionsBullPutSignalResponse,
+)
 def options_bull_put_signal(payload: dict) -> dict:
     try:
         return build_bull_put_spread_signal(
@@ -297,7 +315,7 @@ def options_bull_put_signal(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/fear-score")
+@router.post("/options/tools/fear-score", response_model=OptionsFearScoreResponse)
 def options_fear_score(payload: dict) -> dict:
     try:
         return compute_fear_score(
@@ -315,7 +333,7 @@ def options_fear_score(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/iv-rank")
+@router.post("/options/tools/iv-rank", response_model=OptionsIvRankResponse)
 def options_iv_rank(payload: dict) -> dict:
     try:
         return compute_iv_rank_dashboard(
@@ -330,7 +348,10 @@ def options_iv_rank(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/market-sentiment")
+@router.post(
+    "/options/tools/market-sentiment",
+    response_model=OptionsMarketSentimentResponse,
+)
 def options_market_sentiment(payload: dict) -> dict:
     try:
         return compute_market_sentiment(
@@ -346,7 +367,10 @@ def options_market_sentiment(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/earnings-crush")
+@router.post(
+    "/options/tools/earnings-crush",
+    response_model=OptionsEarningsCrushResponse,
+)
 def options_earnings_crush(payload: dict) -> dict:
     try:
         return estimate_earnings_iv_crush(
@@ -362,7 +386,10 @@ def options_earnings_crush(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/hedge-advisor")
+@router.post(
+    "/options/tools/hedge-advisor",
+    response_model=OptionsHedgeAdvisorResponse,
+)
 def options_hedge_advisor(payload: dict) -> dict:
     try:
         return build_hedge_advisor(
@@ -380,7 +407,10 @@ def options_hedge_advisor(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/unusual-activity")
+@router.post(
+    "/options/tools/unusual-activity",
+    response_model=OptionsUnusualActivityResponse,
+)
 def options_unusual_activity(payload: dict) -> dict:
     try:
         return detect_unusual_options_activity(

@@ -212,3 +212,37 @@ def test_options_local_tools_post_routes_publish_response_models(tmp_path) -> No
     assert "scenarios" in components["OptionsSimulationResponse"]["properties"]
     assert "template_id" in components["OptionsStrategyBuildResponse"]["properties"]
     assert "legs" in components["OptionsStrategyBuildResponse"]["properties"]
+
+
+def test_options_local_research_post_routes_publish_response_models(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    expected = {
+        "/api/options/tools/score-contracts": "OptionsContractScoreResponse",
+        "/api/options/tools/strategy/rank": "OptionsStrategyRankResponse",
+        "/api/options/tools/bull-put-signal": "OptionsBullPutSignalResponse",
+        "/api/options/tools/fear-score": "OptionsFearScoreResponse",
+        "/api/options/tools/iv-rank": "OptionsIvRankResponse",
+        "/api/options/tools/market-sentiment": "OptionsMarketSentimentResponse",
+        "/api/options/tools/earnings-crush": "OptionsEarningsCrushResponse",
+        "/api/options/tools/hedge-advisor": "OptionsHedgeAdvisorResponse",
+        "/api/options/tools/unusual-activity": "OptionsUnusualActivityResponse",
+    }
+    for path, model_name in expected.items():
+        response_schema = openapi["paths"][path]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert response_schema == {"$ref": f"#/components/schemas/{model_name}"}
+
+    components = openapi["components"]["schemas"]
+    assert "ranked_contracts" in components["OptionsContractScoreResponse"]["properties"]
+    assert "rankings" in components["OptionsStrategyRankResponse"]["properties"]
+    assert "selected_spread" in components["OptionsBullPutSignalResponse"]["properties"]
+    assert "fear_score" in components["OptionsFearScoreResponse"]["properties"]
+    assert "iv_percentile" in components["OptionsIvRankResponse"]["properties"]
+    assert "sentiment_score" in components["OptionsMarketSentimentResponse"]["properties"]
+    assert "average_crush_pct" in components["OptionsEarningsCrushResponse"]["properties"]
+    assert "structures" in components["OptionsHedgeAdvisorResponse"]["properties"]
+    assert "events" in components["OptionsUnusualActivityResponse"]["properties"]

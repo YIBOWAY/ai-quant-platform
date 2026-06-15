@@ -122,15 +122,101 @@ class OptionsStrategyBuildResponse(BaseModel):
     assumptions: list[str]
 
 
+class OptionsContractScoreResponse(BaseModel):
+    success: bool
+    objective: str
+    spot: float
+    ranked_contracts: list[OptionRecord]
+    assumptions: list[str]
+
+
+class OptionsStrategyRankResponse(BaseModel):
+    success: bool
+    market_view: str
+    rankings: list[OptionRecord]
+    assumptions: list[str]
+
+
+class OptionsBullPutSignalResponse(BaseModel):
+    success: bool
+    fear_score: float
+    enter_signal: bool
+    selected_spread: dict[str, Any] | None = None
+    reasons: list[str]
+    assumptions: list[str]
+
+
+class OptionsFearScoreResponse(BaseModel):
+    success: bool
+    fear_score: float
+    tier: str
+    components: dict[str, Any]
+    bull_put_spread_signal: bool
+    assumptions: list[str]
+
+
+class OptionsIvRankResponse(BaseModel):
+    success: bool
+    ticker: str
+    current_iv: float | None = None
+    sample_count: int
+    iv_rank: float | None = None
+    iv_percentile: float | None = None
+    zone: str
+    assumptions: list[str]
+
+
+class OptionsMarketSentimentResponse(BaseModel):
+    success: bool
+    sentiment_score: float
+    regime: str
+    components: dict[str, Any]
+    assumptions: list[str]
+
+
+class OptionsEarningsCrushResponse(BaseModel):
+    success: bool
+    ticker: str
+    sample_count: int
+    average_crush_pct: float | None = None
+    expected_post_event_iv: float | None = None
+    implied_move_pct: float | None = None
+    strategy_tag: str
+    assumptions: list[str]
+
+
+class OptionsHedgeAdvisorResponse(BaseModel):
+    success: bool
+    ticker: str
+    situation: dict[str, Any]
+    structures: list[OptionRecord]
+    assumptions: list[str]
+
+
+class OptionsUnusualActivityResponse(BaseModel):
+    success: bool
+    events: list[OptionRecord]
+    assumptions: list[str]
+
+
 __all__ = [
+    "OptionsBullPutSignalResponse",
     "OptionsChainResponse",
+    "OptionsContractScoreResponse",
+    "OptionsEarningsCrushResponse",
     "OptionsExpirationsResponse",
+    "OptionsFearScoreResponse",
     "OptionsGreeksResponse",
+    "OptionsHedgeAdvisorResponse",
     "OptionsImpliedVolatilityResponse",
+    "OptionsIvRankResponse",
+    "OptionsMarketSentimentResponse",
     "OptionsScreenerConfig",
     "OptionsSimulationResponse",
     "OptionsSnapshotResponse",
     "OptionsStrategyBuildResponse",
+    "OptionsStrategyRankResponse",
+    "OptionsUnusualActivityResponse",
     "OptionsVolSmileResponse",
     "OptionsVolSurfaceResponse",
 ]
