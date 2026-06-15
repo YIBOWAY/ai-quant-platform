@@ -9,6 +9,7 @@ from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.backtest import (
     BacktestDetailResponse,
     BacktestRunRequest,
+    BacktestRunResponse,
     BacktestsResponse,
 )
 from quant_system.api.schemas.common import (
@@ -24,7 +25,7 @@ from quant_system.storage.runs_repository import index_run, list_run_metadatas
 router = APIRouter()
 
 
-@router.post("/backtests/run")
+@router.post("/backtests/run", response_model=BacktestRunResponse)
 def run_backtest(
     request: BacktestRunRequest,
     api_runs_dir: ApiRunsDirDep,

@@ -16,6 +16,7 @@ from quant_system.api.schemas.factors import (
     FactorLabResponse,
     FactorRunDetailResponse,
     FactorRunRequest,
+    FactorRunResponse,
     FactorRunsResponse,
 )
 from quant_system.data.provider_factory import DataProviderUnavailableError
@@ -38,7 +39,7 @@ def list_factors() -> dict:
     }
 
 
-@router.post("/factors/run")
+@router.post("/factors/run", response_model=FactorRunResponse)
 def run_factor(
     request: FactorRunRequest,
     api_runs_dir: ApiRunsDirDep,

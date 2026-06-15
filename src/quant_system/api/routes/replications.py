@@ -10,6 +10,7 @@ from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.schemas.common import make_run_id, read_json, resolve_run_dir
 from quant_system.api.schemas.replications import (
     ReversalMomentumReplicationDetailResponse,
+    ReversalMomentumReplicationRunResponse,
 )
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.data.providers.futu import FutuProviderError
@@ -27,7 +28,10 @@ class ReversalMomentumRunRequest(BaseModel):
     initial_cash: float = Field(default=1.0, gt=0)
 
 
-@router.post("/replications/reversal-momentum/run")
+@router.post(
+    "/replications/reversal-momentum/run",
+    response_model=ReversalMomentumReplicationRunResponse,
+)
 def run_reversal_momentum_replication(
     request: ReversalMomentumRunRequest,
     api_runs_dir: ApiRunsDirDep,

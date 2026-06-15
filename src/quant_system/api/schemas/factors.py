@@ -24,6 +24,16 @@ class FactorRunsResponse(BaseModel):
     runs: list[FactorRunSummary]
 
 
+class FactorRunResponse(BaseModel):
+    run_id: str
+    source: str
+    row_count: int
+    signal_count: int
+    warnings: list[str]
+    request: dict[str, Any]
+    paths: dict[str, Any]
+
+
 FactorLabRecord = dict[str, Any]
 
 

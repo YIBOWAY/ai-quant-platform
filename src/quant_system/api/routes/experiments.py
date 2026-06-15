@@ -11,6 +11,7 @@ from quant_system.api.schemas.common import read_json, read_parquet_records, res
 from quant_system.api.schemas.experiments import (
     ExperimentDetailResponse,
     ExperimentRunRequest,
+    ExperimentRunResponse,
     ExperimentsResponse,
 )
 from quant_system.data.provider_factory import (
@@ -44,7 +45,7 @@ def list_experiments(output_dir: OutputDirDep) -> dict:
     return {"experiments": experiments}
 
 
-@router.post("/experiments/run")
+@router.post("/experiments/run", response_model=ExperimentRunResponse)
 def run_experiment(
     request: ExperimentRunRequest,
     output_dir: OutputDirDep,

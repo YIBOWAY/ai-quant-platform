@@ -272,3 +272,35 @@ def test_options_monitoring_post_routes_publish_response_models(tmp_path) -> Non
     )
     assert "health_score" in components["OptionsResearchHealthCheckResponse"]["properties"]
     assert "missing_thesis" in components["OptionsResearchHealthCheckResponse"]["properties"]
+
+
+def test_research_run_post_routes_publish_response_models(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    expected = {
+        "/api/factors/run": "FactorRunResponse",
+        "/api/backtests/run": "BacktestRunResponse",
+        "/api/experiments/run": "ExperimentRunResponse",
+        "/api/replications/reversal-momentum/run": (
+            "ReversalMomentumReplicationRunResponse"
+        ),
+    }
+    for path, model_name in expected.items():
+        response_schema = openapi["paths"][path]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert response_schema == {"$ref": f"#/components/schemas/{model_name}"}
+
+    components = openapi["components"]["schemas"]
+    assert "signal_count" in components["FactorRunResponse"]["properties"]
+    assert "trade_count" in components["BacktestRunResponse"]["properties"]
+    assert "best_run_id" in components["ExperimentRunResponse"]["properties"]
+    assert (
+        "monthly_returns"
+        in components["ReversalMomentumReplicationRunResponse"]["properties"]
+    )
+    assert "artifact_path" in components[
+        "ReversalMomentumReplicationRunResponse"
+    ]["properties"]

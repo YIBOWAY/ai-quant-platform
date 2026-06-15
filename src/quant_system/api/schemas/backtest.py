@@ -15,6 +15,20 @@ class BacktestsResponse(BaseModel):
     backtests: list[BacktestSummary]
 
 
+class BacktestRunResponse(BaseModel):
+    run_id: str
+    source: str
+    trade_count: int
+    order_count: int
+    warnings: list[str]
+    timings_ms: dict[str, Any]
+    request: dict[str, Any]
+    metrics: dict[str, Any]
+    attribution: list[dict[str, Any]]
+    benchmark: dict[str, Any]
+    paths: dict[str, Any]
+
+
 BacktestRecord = dict[str, Any]
 
 

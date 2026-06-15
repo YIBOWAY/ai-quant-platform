@@ -18,6 +18,16 @@ class ExperimentsResponse(BaseModel):
     experiments: list[ExperimentSummary]
 
 
+class ExperimentRunResponse(BaseModel):
+    experiment_id: str
+    raw_experiment_id: str
+    provider: str
+    source: str
+    run_count: int
+    best_run_id: str | None = None
+    paths: dict[str, Any]
+
+
 ExperimentRecord = dict[str, Any]
 
 
