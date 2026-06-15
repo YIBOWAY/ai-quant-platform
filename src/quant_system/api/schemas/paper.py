@@ -1,8 +1,18 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+
+class PaperRunSummary(BaseModel):
+    id: str
+    source: str | None = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class PaperRunsResponse(BaseModel):
+    paper_runs: list[PaperRunSummary]
 
 
 class PaperRunRequest(BaseModel):

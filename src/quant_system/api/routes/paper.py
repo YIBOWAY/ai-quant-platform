@@ -18,6 +18,7 @@ from quant_system.api.schemas.paper import (
     KillSwitchRequest,
     ManualOrderRequest,
     PaperRunRequest,
+    PaperRunsResponse,
 )
 from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
@@ -119,7 +120,7 @@ def run_paper(
     index_run("paper", metadata, run_dir, settings)
     return metadata
 
-@router.get("/paper")
+@router.get("/paper", response_model=PaperRunsResponse)
 def list_paper(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     root = api_runs_dir / "paper"
     paper_runs = [
