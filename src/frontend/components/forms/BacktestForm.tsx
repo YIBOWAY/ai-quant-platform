@@ -34,6 +34,9 @@ const copy = {
     initialCash: "Initial Cash",
     commissionBps: "Commission bps",
     slippageBps: "Slippage bps",
+    minOrderValue: "Min order value",
+    wholeShareOrders: "Whole-share orders",
+    wholeShareHelp: "Floor generated and cash-constrained fills to whole shares.",
     customSymbolsHelp: "Optional override. Leave blank to use the selected universe.",
     universeHelp: "The selected universe defines the default comparison basket.",
     singleSymbolWarning:
@@ -67,6 +70,9 @@ const copy = {
     initialCash: "初始资金",
     commissionBps: "佣金 bps",
     slippageBps: "滑点 bps",
+    minOrderValue: "最小订单金额",
+    wholeShareOrders: "整股下单",
+    wholeShareHelp: "生成订单和现金不足的部分成交都会向下取整到整股。",
     customSymbolsHelp: "可选。留空时使用上面选择的股票池。",
     universeHelp: "股票池决定默认比较范围。",
     singleSymbolWarning:
@@ -112,6 +118,8 @@ const backtestSchema = z.object({
   initial_cash: z.coerce.number().positive(),
   commission_bps: z.coerce.number().nonnegative(),
   slippage_bps: z.coerce.number().nonnegative(),
+  min_order_value: z.coerce.number().nonnegative(),
+  whole_share_orders: z.boolean(),
   rebalance_frequency: z.enum(["every_bar", "weekly", "monthly"]),
   max_weight_per_symbol: capString,
 });
@@ -154,6 +162,8 @@ function recentDefaults(): BacktestFormValues {
     initial_cash: 100000,
     commission_bps: 1,
     slippage_bps: 5,
+    min_order_value: 0,
+    whole_share_orders: false,
     rebalance_frequency: "every_bar",
   };
 }
@@ -380,6 +390,24 @@ export function BacktestForm({
             <FieldErrorText error={errors.slippage_bps} />
           </label>
         </div>
+
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          {text.minOrderValue}
+          <input
+            className={inputClassCompact}
+            type="number"
+            {...form.register("min_order_value", { valueAsNumber: true })}
+          />
+          <FieldErrorText error={errors.min_order_value} />
+        </label>
+
+        <label className="flex items-start gap-2 font-body-sm text-text-primary">
+          <input className="mt-1" type="checkbox" {...form.register("whole_share_orders")} />
+          <span className="flex flex-col gap-1">
+            <span>{text.wholeShareOrders}</span>
+            <span className="text-text-secondary">{text.wholeShareHelp}</span>
+          </span>
+        </label>
 
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           {text.rebalanceFreq}

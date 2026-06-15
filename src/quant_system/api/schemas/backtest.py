@@ -20,6 +20,8 @@ class BacktestRunRequest(BaseModel):
     initial_cash: float = Field(default=100_000.0, ge=0)
     commission_bps: float = Field(default=1.0, ge=0)
     slippage_bps: float = Field(default=5.0, ge=0)
+    min_order_value: float = Field(default=0.0, ge=0)
+    whole_share_orders: bool = False
     rebalance_frequency: Literal["every_bar", "weekly", "monthly"] = "every_bar"
     max_weight_per_symbol: float | None = Field(default=None, gt=0, le=1)
     sector_cap: float | None = Field(default=None, gt=0, le=1)

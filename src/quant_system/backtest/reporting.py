@@ -42,6 +42,8 @@ def generate_backtest_report(
             f"- Initial cash: {config.initial_cash:.2f}",
             f"- Commission: {config.commission_bps:.4f} bps",
             f"- Slippage: {config.slippage_bps:.4f} bps",
+            f"- Minimum order value: {config.min_order_value:.2f}",
+            f"- Whole-share orders: {str(config.whole_share_orders).lower()}",
             f"- Rebalance frequency: {config.rebalance_frequency.value}",
             f"- Max weight per symbol: {_cap_text(config.max_weight_per_symbol)}",
             f"- Sector cap: {_cap_text(config.sector_cap)}",

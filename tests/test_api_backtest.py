@@ -391,3 +391,33 @@ def test_backtest_benchmark_symbol_is_not_added_to_trading_universe(tmp_path) ->
         if "symbol" in row
     }
     assert "SPY" not in position_symbols
+
+
+def test_backtest_run_accepts_order_execution_constraints(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/backtests/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "sample",
+            "benchmark_symbol": "SPY",
+            "lookback": 3,
+            "top_n": 1,
+            "initial_cash": 1050,
+            "min_order_value": 250,
+            "whole_share_orders": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["request"]["min_order_value"] == 250
+    assert payload["request"]["whole_share_orders"] is True
+
+    detail = client.get(f"/api/backtests/{payload['run_id']}").json()
+    assert detail["orders"]
+    for row in detail["orders"]:
+        assert float(row["quantity"]).is_integer()

@@ -39,6 +39,7 @@ class BacktestConfig(BaseModel):
     slippage_bps: float = Field(default=5.0, ge=0)
     execution_price: Literal["next_open"] = "next_open"
     min_order_value: float = Field(default=0.0, ge=0)
+    whole_share_orders: bool = False
     annualization_factor: int = Field(default=252, gt=0)
     # Engine-depth controls. All default to the original behavior so existing
     # runs and stored artifacts are byte-stable.

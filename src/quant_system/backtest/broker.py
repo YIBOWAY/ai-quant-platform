@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 
 from quant_system.backtest.models import BacktestConfig, Fill, FillStatus, Order, OrderSide
@@ -26,6 +27,8 @@ class BrokerSimulator:
                 raise ValueError(f"missing execution price for {symbol}")
             requested_price = float(prices[symbol])
             quantity = self._executable_quantity(order, requested_price, portfolio)
+            if self.config.whole_share_orders:
+                quantity = math.floor(quantity)
             if quantity <= 0:
                 continue
 

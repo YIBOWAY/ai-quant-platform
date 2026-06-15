@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from quant_system.backtest.broker import BrokerSimulator
-from quant_system.backtest.models import BacktestConfig, Order, OrderSide
+from quant_system.backtest.models import BacktestConfig, FillStatus, Order, OrderSide
 from quant_system.backtest.portfolio import Portfolio
 
 
@@ -63,6 +63,34 @@ def test_broker_executes_sells_before_buys_to_free_cash() -> None:
     assert portfolio.position("SPY") == pytest.approx(0)
     assert portfolio.position("AAPL") == pytest.approx(5)
     assert portfolio.cash == pytest.approx(500)
+
+
+def test_broker_whole_share_mode_floors_cash_constrained_partial_fill() -> None:
+    portfolio = Portfolio(initial_cash=999)
+    broker = BrokerSimulator(
+        BacktestConfig(
+            initial_cash=999,
+            commission_bps=0,
+            slippage_bps=0,
+            whole_share_orders=True,
+        )
+    )
+    order = Order(
+        order_id="buy",
+        timestamp=pd.Timestamp("2024-01-03", tz="UTC"),
+        symbol="SPY",
+        side=OrderSide.BUY,
+        quantity=10,
+        reason="test",
+    )
+
+    fills = broker.execute_orders([order], {"SPY": 100.0}, portfolio)
+
+    assert len(fills) == 1
+    assert fills[0].status == FillStatus.PARTIAL
+    assert fills[0].quantity == pytest.approx(9)
+    assert portfolio.position("SPY") == pytest.approx(9)
+    assert portfolio.cash == pytest.approx(99)
 
 
 def test_portfolio_marks_equity_with_supplied_prices() -> None:

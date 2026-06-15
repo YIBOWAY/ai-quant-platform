@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from quant_system.backtest.models import BacktestConfig, OrderSide
+from quant_system.backtest.models import BacktestConfig, OrderSide, TargetWeight
 from quant_system.backtest.order_generation import OrderGenerator
 from quant_system.backtest.portfolio import Portfolio
 from quant_system.backtest.strategy import MeanReversionTopN, ScoreSignalStrategy
@@ -64,6 +64,28 @@ def test_order_generator_rebalances_to_targets_and_closes_unselected_positions()
     assert sell.quantity == pytest.approx(5)
     assert buy.side == OrderSide.BUY
     assert buy.quantity == pytest.approx(10)
+
+
+def test_order_generator_can_floor_orders_to_whole_shares() -> None:
+    timestamp = pd.Timestamp("2024-01-03", tz="UTC")
+    generator = OrderGenerator(
+        BacktestConfig(
+            initial_cash=1_050,
+            min_order_value=1,
+            whole_share_orders=True,
+        )
+    )
+
+    orders = generator.generate_orders(
+        timestamp=timestamp,
+        targets=[TargetWeight(timestamp=timestamp, symbol="SPY", target_weight=1.0)],
+        portfolio=Portfolio(initial_cash=1_050),
+        prices={"SPY": 100.0},
+    )
+
+    assert len(orders) == 1
+    assert orders[0].side == OrderSide.BUY
+    assert orders[0].quantity == pytest.approx(10)
 
 
 def test_mean_reversion_selects_lowest_scores_unlike_score_strategy() -> None:

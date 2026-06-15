@@ -64,6 +64,11 @@ Backtest sector caps are API/code-level controls and must be paired with a
 `sector_map`; requests that set `sector_cap` without `sector_map` are rejected.
 The frontend Backtester exposes the safer per-symbol cap only.
 
+Backtest order realism controls are explicit and default-compatible:
+`min_order_value` defaults to `0`, and `whole_share_orders` defaults to `false`.
+When whole-share mode is enabled, both generated order quantities and
+cash-constrained partial fills are floored to whole shares.
+
 ## Optional PostgreSQL Run Index
 
 Backtest/factor/paper runs are file-based under `data/api_runs/`. An optional

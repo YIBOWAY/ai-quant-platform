@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 
 import pandas as pd
@@ -39,6 +40,10 @@ class OrderGenerator:
                 continue
             side = OrderSide.BUY if value_delta > 0 else OrderSide.SELL
             quantity = abs(value_delta) / price
+            if self.config.whole_share_orders:
+                quantity = math.floor(quantity)
+            if quantity * price < self.config.min_order_value:
+                continue
             if quantity <= 0:
                 continue
             orders.append(

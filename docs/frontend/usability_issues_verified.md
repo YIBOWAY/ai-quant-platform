@@ -2,7 +2,7 @@
 > Web Design Engineer 审查报告 — 2026-06-07  
 > 基于 `docs/design/frontend_workflow_usability_review_2026-06-07.md` 的代码验证
 >
-> **状态（2026-06-15）**：本文为历史审查记录。其中多项问题已修复——因子实验室硬编码 sample（2026-06-11 起默认 `futu`，侧栏可切换数据源）、回测详情基准曲线（2026-06-15 起随每个 backtest run 保存 `benchmark_curve.parquet` / `benchmark_metrics.json`，详情页读取 run 内快照）、慢页 loading 状态（2026-06-07 批次 #2）、模拟交易页双标签页重排（2026-06-07 起，2026-06-11 定稿）。逐项现状以 [../guides/](../guides/) 各篇「当前的局限」与 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md) 为准。
+> **状态（2026-06-15）**：本文为历史审查记录。其中多项问题已修复——因子实验室硬编码 sample（2026-06-11 起默认 `futu`，侧栏可切换数据源）、回测详情基准曲线（2026-06-15 起随每个 backtest run 保存 `benchmark_curve.parquet` / `benchmark_metrics.json`，详情页读取 run 内快照）、回测碎股噪声（2026-06-15 起可选 `whole_share_orders` + `min_order_value`）、慢页 loading 状态（2026-06-07 批次 #2）、模拟交易页双标签页重排（2026-06-07 起，2026-06-11 定稿）。逐项现状以 [../guides/](../guides/) 各篇「当前的局限」与 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md) 为准。
 
 ---
 
@@ -515,6 +515,7 @@ export function CandlestickChart({ data }: Props) {
    - **推荐**：方案 A
 
 2. **碎股订单**：
+   - 2026-06-15 已落地：Backtester 暴露 `whole_share_orders` 与 `min_order_value`，默认保留兼容，用户可显式启用整股与最小订单金额。
    - 方案 A：完全禁用碎股，默认整股 + 最小 $500
    - 方案 B：增加 Trading Mode 选择器（Realistic / Academic）
    - **推荐**：方案 B

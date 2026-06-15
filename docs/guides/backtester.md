@@ -25,8 +25,8 @@
    - `mean_reversion_top_n`（`MeanReversionTopN`）：取分数**最低**的 `top_n`（近期最弱者），不做 `score > 0` 过滤，同样等权。
 6. **按再平衡频率触发**（`backtest/engine.py` 的 `_should_rebalance`）：`every_bar` 每根有信号的 K 线都调仓；`weekly` / `monthly` 只在新 ISO 周 / 新自然月的第一根有信号 K 线调仓，中间只盯市持有不动。
 7. **权重约束**（`order_generation.py` 的 `_apply_weight_constraints`）：把超过 `max_weight_per_symbol` 的单标的权重**向下压**到上限；`sector_cap`（行业上限）按 `sector_map` 分组缩放。**只向下缩放、不再分配**——见局限一节。
-8. **生成订单**（`OrderGenerator`）：用当前 bar 的 **open 价**估算组合权益，计算每个标的"目标市值 − 当前市值"的差额，差额超过 `min_order_value`（默认 0）就生成买 / 卖单，数量 = 金额差 / 价格。
-9. **撮合**（`broker.py` 的 `BrokerSimulator`）：以同一根 K 线的 **OPEN 价**为基准撮合（卖单先于买单执行）；买单加滑点、卖单减滑点；收取佣金 `commission_bps`；受**现金约束**（买单买不起就部分成交，状态标 `partial`），卖单不超过现有持仓。
+8. **生成订单**（`OrderGenerator`）：用当前 bar 的 **open 价**估算组合权益，计算每个标的"目标市值 − 当前市值"的差额，差额超过 `min_order_value`（默认 0）就生成买 / 卖单，数量 = 金额差 / 价格。若 `whole_share_orders=true`，订单数量会向下取整到整股；取整后低于最小订单金额的订单会被跳过。
+9. **撮合**（`broker.py` 的 `BrokerSimulator`）：以同一根 K 线的 **OPEN 价**为基准撮合（卖单先于买单执行）；买单加滑点、卖单减滑点；收取佣金 `commission_bps`；受**现金约束**（买单买不起就部分成交，状态标 `partial`），卖单不超过现有持仓。若启用整股模式，现金不足导致的部分成交也会向下取整到整股。
 10. **盯市与归因**：每根 K 线对持仓按 close 价盯市，记录权益曲线；归因 = 进入该 bar 时的持仓数量 ×（本 bar close − 上一 bar close）逐 bar 累加。
 11. **绩效**（`metrics.py` 的 `calculate_performance_metrics`）：算 `total_return` / `annualized_return` / `volatility` / `sharpe` / `max_drawdown` / `turnover`，并把归因按标的汇总。
 12. **落盘**：六个 parquet（equity_curve / benchmark_curve / trade_blotter / orders / positions / attribution）+ `metrics.json` / `benchmark_metrics.json` + 文本报告。同时 DuckDB 表以 `CREATE OR REPLACE` 写入（**只保留最近一次**），而 API 每次运行另存一个独立 `run_id` 目录 + `metadata.json`。
@@ -48,9 +48,11 @@
 9. **Top N**：默认 `3`，正整数。选股数量。
 10. **初始资金 Initial Cash**：默认 `100000`。
 11. **佣金 Commission bps / 滑点 Slippage bps**：默认 `1` / `5`（bps，万分之一）。
-12. **再平衡频率 Rebalance**：`every_bar`（默认）/ `weekly` / `monthly`。
-13. **单标的上限 Max weight / name**：可选，留空表示不限制；填则须在 0–1 之间。
-14. 点 **运行回测 Run Backtest**：前端 POST 到 `/api/backtests/run`，成功后 toast 提示 `回测已创建：<run_id>` 并跳转到 `/backtest/<run_id>` 详情页。
+12. **最小订单金额 Min order value**：默认 `0`，表示保留原始精确目标权重行为。调高后，小于该金额的目标差额不会生成订单；整股模式下，取整后的订单金额也必须达到该门槛。
+13. **整股下单 Whole-share orders**：默认关闭以兼容历史研究结果。勾选后，订单生成和现金不足的部分成交都会向下取整到整股，可减少 `0.0071` 股这类噪声订单。
+14. **再平衡频率 Rebalance**：`every_bar`（默认）/ `weekly` / `monthly`。
+15. **单标的上限 Max weight / name**：可选，留空表示不限制；填则须在 0–1 之间。
+16. 点 **运行回测 Run Backtest**：前端 POST 到 `/api/backtests/run`，成功后 toast 提示 `回测已创建：<run_id>` 并跳转到 `/backtest/<run_id>` 详情页。
 
 > 表单里**没有** `sector_cap` / `sector_map` 入口（行业上限），但后端 schema 和引擎都支持。要用只能直接调 API。
 
