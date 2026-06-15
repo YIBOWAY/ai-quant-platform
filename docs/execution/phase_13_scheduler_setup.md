@@ -47,6 +47,8 @@ python -m quant_system.cli options daily-task --top 100 --universe-source public
 
 该命令会先刷新本地标的池、财报日历和 VIX/VIX3M 历史，再运行只读
 期权雷达扫描。`daily-scan` 仍可用于人工调试或只扫描已有输入缓存。
+调度任务、CLI 手动扫描、API 手动扫描和 API 启动补跑会共享雷达输出目录下的
+`options_radar_scan.lock`，避免多个进程同时写每日快照、IV history 或任务状态。
 
 调度输出会追加到：
 
@@ -74,3 +76,5 @@ $env:QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED='true'
 只读 `daily-scan` 等价扫描；周末启动会回退到上一个周五，并把
 `source=startup_catchup` 的状态写入同一个 `daily_task_status.json`。它只使用已有本地输入缓存；
 正式日终刷新和完整交易所节假日处理仍应使用 Windows 任务计划程序调用 `daily-task`。
+如果扫描锁已被调度任务或手动扫描持有，启动补跑会跳过且不覆盖已有
+`daily_task_status.json`；CLI/API 手动扫描遇锁会快速失败，稍后重试即可。

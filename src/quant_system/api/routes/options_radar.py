@@ -23,6 +23,7 @@ from quant_system.options.radar import (
 from quant_system.options.radar_storage import RadarSnapshotStore
 from quant_system.options.rate_limiter import RateLimitedFutuProvider, TokenBucket
 from quant_system.options.sample_provider import SampleOptionsProvider
+from quant_system.options.scan_lock import OptionsRadarScanLocked, options_radar_scan_lock
 from quant_system.options.universe import OptionsUniverse
 
 router = APIRouter()
@@ -103,6 +104,20 @@ def options_refresh_vix(settings: SettingsDep, payload: dict) -> dict:
 
 @router.post("/options/daily-scan/run")
 def options_daily_scan_run(settings: SettingsDep, payload: dict) -> dict:
+    try:
+        with options_radar_scan_lock(settings.options_radar.output_dir):
+            return _options_daily_scan_run_unlocked(settings, payload)
+    except OptionsRadarScanLocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "options_radar_scan_locked",
+                "message": str(exc),
+            },
+        ) from exc
+
+
+def _options_daily_scan_run_unlocked(settings: SettingsDep, payload: dict) -> dict:
     provider_name = str(payload.get("provider", settings.options_radar.provider)).lower().strip()
     if provider_name not in {"sample", "futu"}:
         raise HTTPException(

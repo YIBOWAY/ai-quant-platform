@@ -54,6 +54,7 @@ from quant_system.options.radar import OptionsRadarConfig, run_options_radar
 from quant_system.options.radar_storage import RadarSnapshotStore
 from quant_system.options.rate_limiter import RateLimitedFutuProvider, TokenBucket
 from quant_system.options.sample_provider import SampleOptionsProvider
+from quant_system.options.scan_lock import OptionsRadarScanLocked, options_radar_scan_lock
 from quant_system.options.universe import OptionsUniverse
 from quant_system.prediction_market.charts import (
     write_prediction_market_timeseries_charts,
@@ -1271,35 +1272,40 @@ def options_daily_scan(
         typer.echo(provider_check)
         return
 
-    market_regime = _load_market_regime(settings, run_date)
-    if market_regime is not None:
-        typer.echo(
-            " ".join(
-                [
-                    f"market_regime={market_regime.volatility_regime}",
-                    f"w_vix={market_regime.w_vix}",
-                    f"vix_density={market_regime.vix_density}",
-                    f"term_ratio={market_regime.term_ratio}",
-                ]
+    try:
+        with options_radar_scan_lock(active_output_dir):
+            market_regime = _load_market_regime(settings, run_date)
+            if market_regime is not None:
+                typer.echo(
+                    " ".join(
+                        [
+                            f"market_regime={market_regime.volatility_regime}",
+                            f"w_vix={market_regime.w_vix}",
+                            f"vix_density={market_regime.vix_density}",
+                            f"term_ratio={market_regime.term_ratio}",
+                        ]
+                    )
+                )
+            else:
+                typer.echo("market_regime=Unknown reason=no_vix_history")
+            report = run_options_radar(
+                provider=active_provider,
+                universe=universe,
+                config=OptionsRadarConfig(
+                    base_screen_config=_build_radar_screen_config(settings),
+                    strategies=selected_strategies,
+                    universe_top_n=top,
+                    top_per_ticker=5,
+                ),
+                iv_history_dir=active_output_dir / "iv_history",
+                earnings_calendar=EarningsCalendar.load(settings.options_radar.earnings_calendar_path),
+                run_date=run_date,
+                market_regime=market_regime,
             )
-        )
-    else:
-        typer.echo("market_regime=Unknown reason=no_vix_history")
-    report = run_options_radar(
-        provider=active_provider,
-        universe=universe,
-        config=OptionsRadarConfig(
-            base_screen_config=_build_radar_screen_config(settings),
-            strategies=selected_strategies,
-            universe_top_n=top,
-            top_per_ticker=5,
-        ),
-        iv_history_dir=active_output_dir / "iv_history",
-        earnings_calendar=EarningsCalendar.load(settings.options_radar.earnings_calendar_path),
-        run_date=run_date,
-        market_regime=market_regime,
-    )
-    data_path, meta_path = RadarSnapshotStore(active_output_dir).write(report)
+            data_path, meta_path = RadarSnapshotStore(active_output_dir).write(report)
+    except OptionsRadarScanLocked as exc:
+        typer.echo(f"scan status=failed reason={type(exc).__name__}: {exc}")
+        raise typer.Exit(code=1) from exc
     typer.echo(
         " ".join(
             [
@@ -1381,9 +1387,14 @@ def options_daily_task(
     task_date = date.fromisoformat(run_date) if run_date else None
     started_at = datetime.now(UTC).isoformat()
     steps: dict[str, dict[str, Any]] = {}
-    current_step = "universe"
+    current_step = "lock"
+    scan_lock = options_radar_scan_lock(active_output_dir)
+    lock_acquired = False
 
     try:
+        scan_lock.__enter__()
+        lock_acquired = True
+        current_step = "universe"
         steps["universe"] = refresh_options_universe(
             active_universe_path,
             source=universe_source,
@@ -1438,7 +1449,26 @@ def options_daily_task(
             "meta_path": str(meta_path),
         }
         _echo_options_daily_task_step("scan", steps["scan"])
+
+        current_step = "status"
+        status_path = _write_options_daily_task_status(
+            active_output_dir,
+            {
+                "status": "completed",
+                "run_date": steps["scan"]["run_date"],
+                "provider": active_provider_name,
+                "strategies": list(selected_strategies),
+                "started_at": started_at,
+                "finished_at": datetime.now(UTC).isoformat(),
+                "steps": steps,
+            },
+        )
     except Exception as exc:
+        if not lock_acquired:
+            typer.echo(
+                f"step={current_step} status=failed reason={type(exc).__name__}: {exc}"
+            )
+            raise typer.Exit(code=1) from exc
         status_path = _write_options_daily_task_status(
             active_output_dir,
             {
@@ -1456,19 +1486,10 @@ def options_daily_task(
         typer.echo(f"step={current_step} status=failed reason={type(exc).__name__}: {exc}")
         typer.echo(f"task_status={status_path}")
         raise typer.Exit(code=1) from exc
+    finally:
+        if lock_acquired:
+            scan_lock.__exit__(None, None, None)
 
-    status_path = _write_options_daily_task_status(
-        active_output_dir,
-        {
-            "status": "completed",
-            "run_date": steps["scan"]["run_date"],
-            "provider": active_provider_name,
-            "strategies": list(selected_strategies),
-            "started_at": started_at,
-            "finished_at": datetime.now(UTC).isoformat(),
-            "steps": steps,
-        },
-    )
     typer.echo(f"task_status={status_path}")
     if report.scanned_tickers == 0:
         raise typer.Exit(code=3)

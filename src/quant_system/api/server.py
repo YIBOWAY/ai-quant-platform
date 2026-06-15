@@ -38,6 +38,7 @@ from quant_system.api.safety.middleware import attach_safety_footer, validate_bi
 from quant_system.config.settings import Settings
 from quant_system.logging.setup import configure_logging
 from quant_system.options.radar_storage import RadarSnapshotStore
+from quant_system.options.scan_lock import OptionsRadarScanLocked, options_radar_scan_lock
 
 logger = logging.getLogger(__name__)
 
@@ -104,72 +105,77 @@ def _run_options_radar_startup_catchup(active_settings: Settings, run_date: str)
     radar_settings = active_settings.options_radar
     provider = radar_settings.provider
     strategies = ["sell_put", "covered_call"]
-    started_at = datetime.now(UTC).isoformat()
-    _write_options_radar_startup_status(
-        radar_settings.output_dir,
-        {
-            "status": "running",
-            "source": "startup_catchup",
-            "run_date": run_date,
-            "provider": provider,
-            "strategies": strategies,
-            "started_at": started_at,
-            "steps": {},
-        },
-    )
     try:
-        result = options_radar.options_daily_scan_run(
-            active_settings,
-            {
-                "provider": provider,
-                "top": radar_settings.universe_top_n,
-                "strategies": strategies,
-                "run_date": run_date,
-            },
-        )
-    except Exception as exc:  # noqa: BLE001 - startup catch-up must not kill API
-        _write_options_radar_startup_status(
-            radar_settings.output_dir,
-            {
-                "status": "failed",
-                "source": "startup_catchup",
-                "run_date": run_date,
-                "provider": provider,
-                "strategies": strategies,
-                "started_at": started_at,
-                "finished_at": datetime.now(UTC).isoformat(),
-                "failed_step": "scan",
-                "error": f"{type(exc).__name__}: {exc}",
-                "steps": {},
-            },
-        )
-        logger.warning("options radar startup catch-up failed: %s", exc)
-        return
+        with options_radar_scan_lock(radar_settings.output_dir):
+            started_at = datetime.now(UTC).isoformat()
+            _write_options_radar_startup_status(
+                radar_settings.output_dir,
+                {
+                    "status": "running",
+                    "source": "startup_catchup",
+                    "run_date": run_date,
+                    "provider": provider,
+                    "strategies": strategies,
+                    "started_at": started_at,
+                    "steps": {},
+                },
+            )
+            try:
+                result = options_radar._options_daily_scan_run_unlocked(
+                    active_settings,
+                    {
+                        "provider": provider,
+                        "top": radar_settings.universe_top_n,
+                        "strategies": strategies,
+                        "run_date": run_date,
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001 - startup catch-up must not kill API
+                _write_options_radar_startup_status(
+                    radar_settings.output_dir,
+                    {
+                        "status": "failed",
+                        "source": "startup_catchup",
+                        "run_date": run_date,
+                        "provider": provider,
+                        "strategies": strategies,
+                        "started_at": started_at,
+                        "finished_at": datetime.now(UTC).isoformat(),
+                        "failed_step": "scan",
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "steps": {},
+                    },
+                )
+                logger.warning("options radar startup catch-up failed: %s", exc)
+                return
 
-    _write_options_radar_startup_status(
-        radar_settings.output_dir,
-        {
-            "status": "completed",
-            "source": "startup_catchup",
-            "run_date": result["run_date"],
-            "provider": provider,
-            "strategies": strategies,
-            "started_at": started_at,
-            "finished_at": datetime.now(UTC).isoformat(),
-            "steps": {
-                "scan": {
+            _write_options_radar_startup_status(
+                radar_settings.output_dir,
+                {
                     "status": "completed",
+                    "source": "startup_catchup",
                     "run_date": result["run_date"],
-                    "universe_size": result["universe_size"],
-                    "scanned_tickers": result["scanned_tickers"],
-                    "failed_tickers": len(result["failed_tickers"]),
-                    "candidate_count": result["candidate_count"],
-                    "data_path": result["data_path"],
-                    "meta_path": result["meta_path"],
-                }
-            },
-        },
-    )
+                    "provider": provider,
+                    "strategies": strategies,
+                    "started_at": started_at,
+                    "finished_at": datetime.now(UTC).isoformat(),
+                    "steps": {
+                        "scan": {
+                            "status": "completed",
+                            "run_date": result["run_date"],
+                            "universe_size": result["universe_size"],
+                            "scanned_tickers": result["scanned_tickers"],
+                            "failed_tickers": len(result["failed_tickers"]),
+                            "candidate_count": result["candidate_count"],
+                            "data_path": result["data_path"],
+                            "meta_path": result["meta_path"],
+                        }
+                    },
+                },
+            )
+    except OptionsRadarScanLocked as exc:
+        logger.info("options radar startup catch-up skipped: %s", exc)
+        return
 
 
 def _write_options_radar_startup_status(output_dir: Path, payload: dict) -> None:

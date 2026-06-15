@@ -170,6 +170,10 @@ Current options work is split into sell-side and buy-side research modules:
   default; when enabled, API startup runs a background daily-scan catch-up only
   if the latest UTC weekday radar snapshot is missing. Weekend startups target
   the prior Friday; exchange-holiday handling remains a scheduler concern.
+  CLI scans, API-triggered scans, scheduled `daily-task`, and startup catch-up
+  share `options_radar_scan.lock` in the radar output directory; lock conflicts
+  fail API/CLI scans fast and make startup catch-up skip without overwriting
+  `daily_task_status.json`.
 - Buy-side decision API: `POST /api/options/buy-side/assistant`.
 - Buy-side debug CLI: `quant-system options buyside-screen`.
 - Buy-side frontend page: `src/frontend/app/options-buyside/page.tsx` (main

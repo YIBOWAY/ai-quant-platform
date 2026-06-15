@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,6 +18,37 @@ from quant_system.options.radar_storage import RadarSnapshotStore
 from quant_system.options.sample_provider import SampleOptionsProvider
 from quant_system.options.universe import UniverseEntry
 from quant_system.options.vix_data import load_vix_history
+
+
+@contextmanager
+def _held_byte_lock(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _write_sample_snapshot(root: Path, run_date: str = "2026-05-03") -> None:
@@ -220,7 +254,7 @@ def test_options_radar_startup_catchup_writes_completed_status(
             "meta_path": str(tmp_path / "daily" / "2026-06-15.meta.json"),
         }
 
-    monkeypatch.setattr(api_server.options_radar, "options_daily_scan_run", fake_scan)
+    monkeypatch.setattr(api_server.options_radar, "_options_daily_scan_run_unlocked", fake_scan)
 
     api_server._run_options_radar_startup_catchup(settings, "2026-06-15")
 
@@ -247,7 +281,7 @@ def test_options_radar_startup_catchup_writes_failed_status(
     def fake_scan(_settings: Settings, _payload: dict) -> dict:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(api_server.options_radar, "options_daily_scan_run", fake_scan)
+    monkeypatch.setattr(api_server.options_radar, "_options_daily_scan_run_unlocked", fake_scan)
 
     api_server._run_options_radar_startup_catchup(settings, "2026-06-15")
 
@@ -256,6 +290,39 @@ def test_options_radar_startup_catchup_writes_failed_status(
     assert status["source"] == "startup_catchup"
     assert status["failed_step"] == "scan"
     assert "RuntimeError: boom" in status["error"]
+
+
+def test_options_radar_startup_catchup_skips_when_scan_lock_is_held(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from quant_system.api import server as api_server
+
+    settings = Settings(
+        options_radar=OptionsRadarSettings(
+            output_dir=tmp_path,
+            provider="sample",
+            startup_catchup_enabled=True,
+        )
+    )
+    existing_status = {"status": "running", "source": "daily_task", "run_date": "2026-06-15"}
+    (tmp_path / "daily_task_status.json").write_text(
+        json.dumps(existing_status),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        api_server.options_radar,
+        "options_daily_scan_run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("startup catch-up should not start while locked")
+        ),
+    )
+
+    with _held_byte_lock(tmp_path / "options_radar_scan.lock"):
+        api_server._run_options_radar_startup_catchup(settings, "2026-06-15")
+
+    status = json.loads((tmp_path / "daily_task_status.json").read_text(encoding="utf-8"))
+    assert status == existing_status
 
 
 def test_api_options_daily_scan_run_writes_sample_snapshot(tmp_path: Path) -> None:
@@ -281,6 +348,33 @@ def test_api_options_daily_scan_run_writes_sample_snapshot(tmp_path: Path) -> No
 
     dates_response = client.get("/api/options/daily-scan/dates")
     assert "2099-01-03" in dates_response.json()["dates"]
+
+
+def test_api_options_daily_scan_run_returns_409_when_scan_lock_is_held(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    settings = Settings(options_radar=OptionsRadarSettings(output_dir=tmp_path))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    monkeypatch.setattr(
+        "quant_system.api.routes.options_radar.run_options_radar",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("scan should not start")),
+    )
+
+    with _held_byte_lock(tmp_path / "options_radar_scan.lock"):
+        response = client.post(
+            "/api/options/daily-scan/run",
+            json={
+                "provider": "sample",
+                "top": 1,
+                "strategies": ["sell_put"],
+                "run_date": "2099-01-03",
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "options_radar_scan_locked"
 
 
 def test_api_options_daily_scan_symbol_returns_snapshot_candidates(tmp_path: Path) -> None:

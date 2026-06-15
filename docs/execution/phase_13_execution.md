@@ -124,7 +124,9 @@ python scripts/refresh_vix_history.py --output data/options_universe/vix_history
 ```
 
 `daily-task` 是调度入口：它会串联三项刷新和一次 `daily-scan` 等价扫描，
-并在输出目录写入 `daily_task_status.json`。三个脚本仍保留为单项缓存刷新工具。
+并在输出目录写入 `daily_task_status.json`。它与 CLI 手动扫描、API 手动扫描和
+API 启动补跑共享 `options_radar_scan.lock`，避免多个进程同时写快照或状态。
+三个脚本仍保留为单项缓存刷新工具。
 
 Radar 的 UI/API 在刷新标的池时默认使用公开的 S&P 500 + Nasdaq 100 数据源，
 刷新财报时使用 Nasdaq 公开日历，刷新 VIX 时默认使用 Yahoo/Cboe 公开数据。

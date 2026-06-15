@@ -301,7 +301,10 @@ state. Startup catch-up is opt-in: set
 is expected and you want API startup to run a background daily-scan catch-up if
 the latest weekday snapshot is missing. Weekend startups target the prior
 Friday; full exchange-holiday handling is still left to the scheduled
-`daily-task` workflow.
+`daily-task` workflow. CLI scans, API-triggered scans, scheduled `daily-task`,
+and startup catch-up share `options_radar_scan.lock` in the radar output
+directory; a locked startup catch-up skips without overwriting
+`daily_task_status.json`.
 
 Local options toolbox:
 
