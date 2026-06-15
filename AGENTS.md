@@ -33,6 +33,7 @@ docs/
   architecture/           Phase architecture docs.
   delivery/               Phase delivery and validation notes.
   execution/              Runbooks and operational steps.
+  guides/                 Current user-facing workflow guides.
   learning/               Beginner-friendly learning docs.
   futu/                   Futu read-only market data docs.
   options/                Options screener / radar docs.
