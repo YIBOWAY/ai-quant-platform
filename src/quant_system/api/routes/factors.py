@@ -13,6 +13,7 @@ from quant_system.api.schemas.common import (
 )
 from quant_system.api.schemas.factors import (
     FactorCatalogResponse,
+    FactorLabResponse,
     FactorRunDetailResponse,
     FactorRunRequest,
     FactorRunsResponse,
@@ -106,7 +107,7 @@ def list_factor_runs(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict
     return {"runs": runs}
 
 
-@router.get("/factors/lab")
+@router.get("/factors/lab", response_model=FactorLabResponse)
 def factor_lab_dashboard(
     output_dir: OutputDirDep,
     settings: SettingsDep,

@@ -29,6 +29,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/experiments": "ExperimentsResponse",
         "/api/experiments/{experiment_id}": "ExperimentDetailResponse",
         "/api/factors": "FactorCatalogResponse",
+        "/api/factors/lab": "FactorLabResponse",
         "/api/factors/runs": "FactorRunsResponse",
         "/api/factors/{run_id}": "FactorRunDetailResponse",
         "/api/replications/reversal-momentum/{run_id}": "ReversalMomentumReplicationDetailResponse",
@@ -67,6 +68,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "source" in components["OHLCVResponse"]["properties"]
     assert "source" in components["BenchmarkResponse"]["properties"]
     assert "factors" in components["FactorCatalogResponse"]["properties"]
+    assert "cross_sectional" in components["FactorLabResponse"]["properties"]
+    assert "timing" in components["FactorLabResponse"]["properties"]
     assert "runs" in components["FactorRunsResponse"]["properties"]
     assert "information_coefficients" in components["FactorRunDetailResponse"]["properties"]
     assert "quantile_returns" in components["FactorRunDetailResponse"]["properties"]

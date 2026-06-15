@@ -257,14 +257,14 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 漂移”的高风险项已开始按低风险切片治理，但尚未全量完成。第一批只读市场/健康
 接口已挂上 FastAPI `response_model`：`GET /api/health`、`GET /api/symbols`、
 `GET /api/ohlcv`、`GET /api/benchmark`、`GET /api/strategies`、
-`GET /api/backtests`、`GET /api/backtests/{run_id}`、`GET /api/experiments`、`GET /api/experiments/{experiment_id}`、`GET /api/universes`、`GET /api/factors`、`GET /api/factors/runs`、`GET /api/factors/{run_id}`、
+`GET /api/backtests`、`GET /api/backtests/{run_id}`、`GET /api/experiments`、`GET /api/experiments/{experiment_id}`、`GET /api/universes`、`GET /api/factors`、`GET /api/factors/lab`、`GET /api/factors/runs`、`GET /api/factors/{run_id}`、
 `GET /api/paper`、`GET /api/paper/{run_id}`、`GET /api/paper/account`、`GET /api/paper/account/ledger`、`GET /api/replications/reversal-momentum/{run_id}`、`GET /api/settings`、`GET /api/runs/recent`、`GET /api/market-data/history`、
 `GET /api/options/daily-scan/dates`、`GET /api/options/daily-scan/status`、
 `GET /api/agent/candidates`、`GET /api/agent/candidates/{candidate_id}`、`GET /api/agent/llm-config`、`GET /api/options/tools/strategy/templates`、
 `GET /api/options/tools/watchlist`；同时补齐
 `HealthResponse`、`OHLCVResponse`、`BenchmarkResponse`、`MarketDataHistoryResponse`
 与 `AgentLLMConfigResponse` 中已由真实响应返回但 schema 缺失的字段，并为策略/股票池/因子 catalog、因子 run
-列表/详情、回测列表/详情、实验列表/详情、replay paper-run 列表/详情、persistent paper account/ledger、研报复现详情、脱敏 settings、最近运行活动流、期权雷达日常扫描状态、Agent candidate 列表/详情、Agent LLM 配置探针与 options local tools 增加薄 wrapper response schema。
+lab 看板、列表/详情、回测列表/详情、实验列表/详情、replay paper-run 列表/详情、persistent paper account/ledger、研报复现详情、脱敏 settings、最近运行活动流、期权雷达日常扫描状态、Agent candidate 列表/详情、Agent LLM 配置探针与 options local tools 增加薄 wrapper response schema。
 `tests/test_api_response_models.py` 会检查 OpenAPI schema 引用和
 关键字段，现有 `tests/test_api_health.py`、`tests/test_api_data.py`、
 `tests/test_api_backtest.py`、`tests/test_api_strategy_universe_catalog.py` 与

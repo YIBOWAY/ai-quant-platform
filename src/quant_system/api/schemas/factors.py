@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from quant_system.factors.base import FactorMetadata
+from quant_system.universe.registry import UniverseDefinition
 
 
 class FactorCatalogResponse(BaseModel):
@@ -21,6 +22,32 @@ class FactorRunSummary(BaseModel):
 
 class FactorRunsResponse(BaseModel):
     runs: list[FactorRunSummary]
+
+
+FactorLabRecord = dict[str, Any]
+
+
+class FactorLabCrossSectional(BaseModel):
+    engine: str
+    rows: list[FactorLabRecord]
+
+
+class FactorLabTiming(BaseModel):
+    engine: str
+    symbol: str
+    rows: list[FactorLabRecord]
+
+
+class FactorLabResponse(BaseModel):
+    generated_at: str | None = None
+    source: str
+    benchmark_symbol: str
+    universe: UniverseDefinition
+    factors: list[FactorMetadata]
+    guardrails: dict[str, Any]
+    cache: dict[str, Any]
+    cross_sectional: FactorLabCrossSectional
+    timing: FactorLabTiming
 
 
 FactorRunRecord = dict[str, Any]
