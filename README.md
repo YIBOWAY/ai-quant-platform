@@ -249,7 +249,12 @@ simulation-only — no real orders, broker, wallet, or account unlock.
   shows the pending list, a check button, and per-order cancel controls. Pending
   buy limits reserve cash at `quantity * limit_price`, pending sell limits
   reserve share quantity, and account responses expose both `cash` and
-  `available_cash`. The persistent account never uses sample/demo prices.
+  `available_cash`. The API background worker also checks existing pending orders
+  every 30 seconds by default
+  (`QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED` /
+  `QS_PAPER_ACCOUNT_AUTO_PROCESS_INTERVAL_SECONDS`). It does not replay intraday
+  highs/lows while the API was offline. The persistent account never uses
+  sample/demo prices.
 - Strategy rebalance: `POST /api/paper/account/rebalance` (one-click; aborts
   atomically if any leg cannot fill). The strategy picker is driven by
   `supports_account_rebalance` in the backend strategy registry; currently the
@@ -454,6 +459,7 @@ Default platform posture:
 
 - `QS_DRY_RUN=true`
 - `QS_PAPER_TRADING=true`
+- `QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED=true`
 - `QS_LIVE_TRADING_ENABLED=false`
 - `QS_NO_LIVE_TRADE_WITHOUT_MANUAL_APPROVAL=true`
 - `QS_KILL_SWITCH=true`

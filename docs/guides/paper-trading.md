@@ -35,7 +35,7 @@
 - 选标的、买/卖、按**数量（股）**或**金额（美元）**下单（二选一），可选**限价**。
 - 成交价：**优先 Futu 实时快照**（`fetch_market_snapshots`，需 OpenD 在线）；OpenD 不在线时只回退到**本地缓存或 Tiingo 的真实历史收盘价**；都拿不到就拒单。持续账户绝不会用 sample 演示价格成交。UI 与账本都标注 `price_kind`（`futu_snapshot` / `last_close`）。
 - 限价单会进入**持久挂单队列**：买单仅在市价 ≤ 限价时成交，卖单仅在市价 ≥ 限价时成交；价格条件不满足时返回 `pending`，写入账户 `pending_orders`，并在实时账户页的「待处理限价单」面板展示。
-- 挂单检查与取消：点击交易面板里的「检查挂单」会调用 `POST /api/paper/account/orders/process`，按当前真实纸面价格重新检查待处理限价单，触价则成交并更新账户；待处理限价单行内的「取消」会调用 `POST /api/paper/account/orders/{order_id}/cancel`，移除该挂单并写入 `order_cancelled` 账本事件。待处理买入限价单会按 `数量 × 限价` 预留现金，待处理卖出限价单会预留可卖数量，后续手动单或策略再平衡不能重复占用同一资金或持仓。当前版本还没有后台定时检查，也不会在停机后用日内高低价回溯补判。
+- 挂单检查与取消：点击交易面板里的「检查挂单」会调用 `POST /api/paper/account/orders/process`，按当前真实纸面价格重新检查待处理限价单，触价则成交并更新账户；API 运行时还会由后台 worker 默认每 30 秒自动检查一次已存在账户的待处理限价单（`QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED` / `QS_PAPER_ACCOUNT_AUTO_PROCESS_INTERVAL_SECONDS`）。待处理限价单行内的「取消」会调用 `POST /api/paper/account/orders/{order_id}/cancel`，移除该挂单并写入 `order_cancelled` 账本事件。待处理买入限价单会按 `数量 × 限价` 预留现金，待处理卖出限价单会预留可卖数量，后续手动单或策略再平衡不能重复占用同一资金或持仓。当前版本不会在 API 停机后用日内高低价回溯补判。
 - 资金或持仓不足时，订单会明确显示为“部分成交”，并写明实际成交数量，不会再误报为全部成交。
 
 **一键策略再平衡**（`POST /api/paper/account/rebalance`）：

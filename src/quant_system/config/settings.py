@@ -96,6 +96,19 @@ class DatabaseSettings(BaseSettings):
         return "**********" if value else None
 
 
+class PaperAccountSettings(BaseSettings):
+    """Persistent paper-account background processing settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_PAPER_ACCOUNT_",
+        extra="ignore",
+    )
+
+    auto_process_pending_orders_enabled: bool = True
+    auto_process_interval_seconds: float = Field(default=30.0, gt=0)
+
+
 class ApiKeySettings(BaseSettings):
     """API credentials loaded from local environment only."""
 
@@ -427,6 +440,7 @@ class Settings(BaseSettings):
     safety: SafetySettings = Field(default_factory=SafetySettings)
     data: DataSettings = Field(default_factory=DataSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    paper_account: PaperAccountSettings = Field(default_factory=PaperAccountSettings)
     api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)
     futu: FutuSettings = Field(default_factory=FutuSettings)
     options_radar: OptionsRadarSettings = Field(default_factory=OptionsRadarSettings)

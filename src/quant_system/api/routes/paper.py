@@ -31,6 +31,7 @@ from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
 from quant_system.execution.account_service import (
     AccountFrozenError,
+    OrderOutcome,
     PaperAccountService,
     PendingOrderNotFoundError,
     StrategyDataUnavailableError,
@@ -264,6 +265,44 @@ def _account_view(
     }
 
 
+def _process_pending_account_orders(
+    api_runs_dir,
+    settings,
+    *,
+    open_if_missing: bool,
+    quote_when_idle: bool,
+) -> tuple[list[OrderOutcome], PaperAccount | None, dict[str, PricedQuote]]:
+    storage = _account_storage(api_runs_dir)
+    service = PaperAccountService(settings=settings)
+    with _account_lock(storage.account_id), storage.mutation_lock():
+        account = (
+            storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+            if open_if_missing
+            else storage.load()
+        )
+        if account is None:
+            return [], None, {}
+        if not account.pending_orders:
+            quotes = (
+                _account_quotes(account, settings=settings) if quote_when_idle else {}
+            )
+            return [], account, quotes
+        outcomes = service.process_pending_orders(account)
+        quotes = _account_quotes(account, settings=settings)
+        _save_account(storage, account, quotes)
+        return outcomes, account, quotes
+
+
+def process_pending_account_orders_once(api_runs_dir, settings) -> list[OrderOutcome]:
+    outcomes, _, _ = _process_pending_account_orders(
+        api_runs_dir,
+        settings,
+        open_if_missing=False,
+        quote_when_idle=False,
+    )
+    return outcomes
+
+
 @router.get("/paper/account", response_model=PaperAccountResponse)
 def get_account(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     storage = _account_storage(api_runs_dir)
@@ -367,28 +406,29 @@ def process_pending_account_orders(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
-    storage = _account_storage(api_runs_dir)
-    service = PaperAccountService(settings=settings)
-    with _account_lock(storage.account_id), storage.mutation_lock():
-        account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
-        try:
-            outcomes = service.process_pending_orders(account)
-        except AccountFrozenError as exc:
-            raise HTTPException(
-                status_code=409,
-                detail=_error_detail("account_frozen", str(exc)),
-            ) from exc
-        except PriceUnavailableError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=_error_detail("price_unavailable", str(exc)),
-            ) from exc
-        quotes = _account_quotes(account, settings=settings)
-        _save_account(storage, account, quotes)
-        return {
-            "orders": [_order_outcome_view(outcome) for outcome in outcomes],
-            "account": _account_view(account, settings=settings, quotes=quotes),
-        }
+    try:
+        outcomes, account, quotes = _process_pending_account_orders(
+            api_runs_dir,
+            settings,
+            open_if_missing=True,
+            quote_when_idle=True,
+        )
+    except AccountFrozenError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=_error_detail("account_frozen", str(exc)),
+        ) from exc
+    except PriceUnavailableError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=_error_detail("price_unavailable", str(exc)),
+        ) from exc
+    if account is None:
+        raise RuntimeError("paper account should be opened for manual processing")
+    return {
+        "orders": [_order_outcome_view(outcome) for outcome in outcomes],
+        "account": _account_view(account, settings=settings, quotes=quotes),
+    }
 
 
 @router.post(

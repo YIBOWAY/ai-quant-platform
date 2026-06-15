@@ -258,6 +258,51 @@ def _write_options_radar_startup_status(output_dir: Path, payload: dict) -> None
     )
 
 
+def _start_paper_account_pending_order_processor(
+    active_settings: Settings,
+    api_runs_dir: Path,
+) -> tuple[threading.Event, threading.Thread] | None:
+    paper_settings = active_settings.paper_account
+    if not paper_settings.auto_process_pending_orders_enabled:
+        return None
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=_run_paper_account_pending_order_processor,
+        args=(active_settings, api_runs_dir, stop_event),
+        name="quant-system-paper-pending-orders",
+        daemon=True,
+    )
+    thread.start()
+    return stop_event, thread
+
+
+def _run_paper_account_pending_order_processor(
+    active_settings: Settings,
+    api_runs_dir: Path,
+    stop_event: threading.Event,
+) -> None:
+    interval = active_settings.paper_account.auto_process_interval_seconds
+    while not stop_event.is_set():
+        try:
+            outcomes = paper.process_pending_account_orders_once(
+                api_runs_dir,
+                active_settings,
+            )
+            if outcomes:
+                filled = sum(1 for outcome in outcomes if outcome.status == "filled")
+                pending = sum(1 for outcome in outcomes if outcome.status == "pending")
+                logger.info(
+                    "paper pending-order auto-check processed %s order(s): %s filled, %s pending",
+                    len(outcomes),
+                    filled,
+                    pending,
+                )
+        except Exception as exc:  # noqa: BLE001 - background worker must not kill API
+            logger.warning("paper pending-order auto-check skipped: %s", exc)
+        if stop_event.wait(interval):
+            break
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -293,7 +338,17 @@ def create_app(
         services["api_runs_dir"].mkdir(parents=True, exist_ok=True)
         _start_run_index_init(active_settings, services["api_runs_dir"])
         _start_options_radar_startup_catchup(active_settings)
-        yield
+        pending_order_processor = _start_paper_account_pending_order_processor(
+            active_settings,
+            services["api_runs_dir"],
+        )
+        try:
+            yield
+        finally:
+            if pending_order_processor is not None:
+                stop_event, thread = pending_order_processor
+                stop_event.set()
+                thread.join(timeout=1.0)
 
     app = FastAPI(
         title="AI Quant Platform API",

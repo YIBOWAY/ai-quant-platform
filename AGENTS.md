@@ -163,9 +163,12 @@ on the Position Map.
   `POST /api/paper/account/orders/{order_id}/cancel`. Pending buy limits reserve
   cash at `quantity * limit_price`; pending sell limits reserve share quantity,
   so later manual or strategy orders cannot double-spend the same buying power
-  or position. Current matching scope is explicit/manual recheck and
-  cancellation; background matching and offline intraday high/low backfill are
-  not implemented yet.
+  or position. The API starts a lightweight background worker by default
+  (`QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED=true`,
+  `QS_PAPER_ACCOUNT_AUTO_PROCESS_INTERVAL_SECONDS=30`) that processes existing
+  pending orders through the same locked `process_pending_orders` path; tests
+  force it off. Current scope still excludes offline intraday high/low backfill
+  for periods when the API was stopped.
 - CLI: `quant-system paper rebalance --account default --strategy <id>` (for
   scheduled auto-rebalance; exits non-zero on abort/failure) and
   `quant-system paper account-show`.

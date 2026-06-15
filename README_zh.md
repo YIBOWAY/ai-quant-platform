@@ -187,8 +187,11 @@ curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
   也可通过 `POST /api/paper/account/orders/{order_id}/cancel` 取消；
   `/paper-trading` 页面会显示挂单列表、检查按钮和逐单取消按钮。待处理买入
   限价单会按 `数量 × 限价` 预留现金，待处理卖出限价单会预留可卖数量；
-  账户响应同时暴露 `cash` 与 `available_cash`。持续账户绝不会使用 sample /
-  演示价格成交。
+  账户响应同时暴露 `cash` 与 `available_cash`。API 后台 worker 默认每 30 秒
+  检查已存在账户的待处理限价单，可通过
+  `QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED` /
+  `QS_PAPER_ACCOUNT_AUTO_PROCESS_INTERVAL_SECONDS` 控制；API 离线期间不会用日内
+  高低价回溯补判。持续账户绝不会使用 sample / 演示价格成交。
 - 策略再平衡：`POST /api/paper/account/rebalance`（一键；任一腿无法成交则整体原子中止）。
   策略下拉由后端策略注册表的 `supports_account_rebalance` 字段驱动；当前账户路径支持
   `cross_sectional_top_n` 与 `mean_reversion_top_n`。它只接受真实市场历史；
@@ -357,6 +360,7 @@ npx playwright test --config playwright.config.ts --workers=1
 
 - `QS_DRY_RUN=true`
 - `QS_PAPER_TRADING=true`
+- `QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED=true`
 - `QS_LIVE_TRADING_ENABLED=false`
 - `QS_NO_LIVE_TRADE_WITHOUT_MANUAL_APPROVAL=true`
 - `QS_KILL_SWITCH=true`

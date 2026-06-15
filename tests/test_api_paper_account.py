@@ -6,7 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import SafetySettings, Settings
+from quant_system.config.settings import PaperAccountSettings, SafetySettings, Settings
+from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.price_source import PricedQuote
 
 
@@ -244,6 +245,88 @@ def test_limit_price_queues_unfavorable_fill_and_later_fills(tmp_path, stub_pric
         json={"symbol": "AAPL", "side": "buy", "quantity": 5, "limit_price": 500.0},
     ).json()
     assert ok["order"]["status"] == "filled"
+
+
+def test_pending_order_processor_does_not_open_missing_account(tmp_path, stub_prices) -> None:
+    from quant_system.api.routes.paper import process_pending_account_orders_once
+
+    outcomes = process_pending_account_orders_once(
+        tmp_path / "api_runs",
+        Settings(),
+    )
+
+    assert outcomes == []
+    assert PaperAccountStorage(tmp_path / "api_runs").load() is None
+
+
+def test_pending_order_processor_fills_existing_pending_order(tmp_path, stub_prices) -> None:
+    from quant_system.api.routes.paper import process_pending_account_orders_once
+
+    client = TestClient(create_app(output_dir=tmp_path))
+    queued = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 5, "limit_price": 150.0},
+    ).json()
+    assert queued["order"]["status"] == "pending"
+
+    stub_prices["AAPL"] = 140.0
+    outcomes = process_pending_account_orders_once(
+        tmp_path / "api_runs",
+        Settings(),
+    )
+
+    assert [outcome.status for outcome in outcomes] == ["filled"]
+    account = client.get("/api/paper/account").json()
+    assert account["pending_orders"] == []
+    assert account["positions"][0]["symbol"] == "AAPL"
+    assert account["positions"][0]["quantity"] == pytest.approx(5)
+
+
+def test_api_startup_schedules_pending_order_processor_when_enabled(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from quant_system.api import server as api_server
+
+    settings = Settings(
+        paper_account=PaperAccountSettings(
+            auto_process_pending_orders_enabled=True,
+            auto_process_interval_seconds=5.0,
+        )
+    )
+    scheduled: list[tuple[Settings, object]] = []
+    joined: list[float] = []
+
+    class FakeStopEvent:
+        def __init__(self) -> None:
+            self.set_called = False
+
+        def set(self) -> None:
+            self.set_called = True
+
+    class FakeThread:
+        def join(self, timeout=None) -> None:
+            joined.append(timeout)
+
+    stop_event = FakeStopEvent()
+
+    def fake_start(active_settings, api_runs_dir):
+        scheduled.append((active_settings, api_runs_dir))
+        return stop_event, FakeThread()
+
+    monkeypatch.setattr(
+        api_server,
+        "_start_paper_account_pending_order_processor",
+        fake_start,
+    )
+
+    with TestClient(create_app(settings=settings, output_dir=tmp_path)):
+        pass
+
+    assert len(scheduled) == 1
+    assert scheduled[0][0] is settings
+    assert stop_event.set_called is True
+    assert joined == [1.0]
 
 
 def test_pending_limit_order_can_be_cancelled(tmp_path, stub_prices) -> None:

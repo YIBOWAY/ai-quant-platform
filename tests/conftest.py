@@ -16,3 +16,4 @@ if sys.version_info < (3, 11):  # noqa: UP036
 # container, leaving stale rows whose artifacts vanish when the tmp dir is
 # cleaned. Forcing the optional database layer off keeps the suite hermetic.
 os.environ["QS_DATABASE_ENABLED"] = "false"
+os.environ["QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED"] = "false"

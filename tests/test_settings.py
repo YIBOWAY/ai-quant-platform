@@ -2,6 +2,7 @@ from pydantic import ValidationError
 
 from quant_system.config.settings import (
     ApiKeySettings,
+    PaperAccountSettings,
     SafetySettings,
     Settings,
     load_settings,
@@ -29,6 +30,14 @@ def test_safety_settings_have_conservative_risk_limits() -> None:
     assert settings.max_turnover == 1.0
     assert settings.allowed_symbols == []
     assert settings.blocked_symbols == []
+
+
+def test_paper_account_auto_processor_defaults_to_enabled(monkeypatch) -> None:
+    monkeypatch.delenv("QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED")
+    settings = PaperAccountSettings()
+
+    assert settings.auto_process_pending_orders_enabled is True
+    assert settings.auto_process_interval_seconds == 30.0
 
 
 def test_live_trading_requires_manual_confirmation_phrase() -> None:

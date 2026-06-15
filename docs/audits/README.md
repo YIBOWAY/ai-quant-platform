@@ -281,7 +281,9 @@ pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
 后续手动单和策略再平衡的撮合视图只使用 `available_cash` 与未预留持仓，处理某个
 挂单时会释放该挂单自己的预留。`GET /api/paper/account` 暴露 `cash`、
 `reserved_cash`、`available_cash`，前端账户摘要和持仓地图显示可用现金。
-后台自动撮合与停机期间日内高低价补判仍未实现。
+2026-06-16 进一步补上 API 后台自动检查：默认每 30 秒处理已存在账户的
+`pending_orders`，复用与手动 `POST /api/paper/account/orders/process` 相同的账户锁、
+文件锁和真实纸面价格路径；测试环境强制关闭该 worker。停机期间日内高低价补判仍未实现。
 
 2026-06-15 状态补充：评估报告中“API 路由缺少 `response_model`、前后端契约
 漂移”的高风险项已按低风险切片治理到当前全量防回归状态。已治理接口
