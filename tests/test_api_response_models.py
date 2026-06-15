@@ -30,6 +30,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/factors/runs": "FactorRunsResponse",
         "/api/factors/{run_id}": "FactorRunDetailResponse",
         "/api/runs/recent": "RecentRunsResponse",
+        "/api/settings": "SettingsResponse",
         "/api/strategies": "StrategyCatalogResponse",
         "/api/universes": "UniverseCatalogResponse",
         "/api/paper/{run_id}": "PaperRunDetailResponse",
@@ -66,5 +67,6 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "quantile_returns" in components["FactorRunDetailResponse"]["properties"]
     assert "risk_breaches" in components["PaperRunDetailResponse"]["properties"]
     assert "runs" in components["RecentRunsResponse"]["properties"]
+    assert components["SettingsResponse"]["type"] == "object"
     assert "strategies" in components["StrategyCatalogResponse"]["properties"]
     assert "universes" in components["UniverseCatalogResponse"]["properties"]
