@@ -1,8 +1,18 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class BacktestSummary(BaseModel):
+    id: str
+    source: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class BacktestsResponse(BaseModel):
+    backtests: list[BacktestSummary]
 
 
 class BacktestRunRequest(BaseModel):

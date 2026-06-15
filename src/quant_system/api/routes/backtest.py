@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.errors import provider_unavailable_400
-from quant_system.api.schemas.backtest import BacktestRunRequest
+from quant_system.api.schemas.backtest import BacktestRunRequest, BacktestsResponse
 from quant_system.api.schemas.common import (
     make_run_id,
     read_json,
@@ -122,7 +122,7 @@ def run_backtest(
 
 
 
-@router.get("/backtests")
+@router.get("/backtests", response_model=BacktestsResponse)
 def list_backtests(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     root = api_runs_dir / "backtests"
     backtests = [
