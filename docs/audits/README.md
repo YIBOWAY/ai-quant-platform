@@ -20,3 +20,8 @@
 口径”的小项已更新。`quant-system doctor` 现在输出离线本地平台健康摘要，覆盖
 环境、安全开关、默认数据源、Futu/OpenD 端点、可选数据库索引设置和
 `data/_runtime/logs/backend.jsonl` 路径；该命令不连接行情源或 PostgreSQL。
+
+2026-06-15 状态补充：评估报告中“.env.example 声称默认 sample 而代码默认
+futu”的小项已对齐。`.env.example` 现在使用
+`QS_DEFAULT_DATA_PROVIDER="futu"`，并说明 `sample` 只用于显式离线流程测试；
+`tests/test_environment_file.py` 会锁定示例文件与 `DataSettings` 默认值一致。

@@ -30,11 +30,14 @@ QS_ALPHA_VANTAGE_API_KEY=""
 QS_POLYGON_API_KEY=""
 ```
 
-Phase 1 默认不自动联网。默认 provider 是：
+Phase 1 早期默认不自动联网；当前平台默认真实数据优先，`.env.example` 与代码
+默认 provider 均为：
 
 ```text
-QS_DEFAULT_DATA_PROVIDER="sample"
+QS_DEFAULT_DATA_PROVIDER="futu"
 ```
+
+需要离线流程测试时，再在本地 `.env` 中显式改为 `sample`。
 
 ## 启动步骤
 
@@ -148,4 +151,3 @@ Phase 1 推荐主用 Tiingo EOD，原因是它更适合股票/ETF 日线历史�
 - Twelve Data time series: https://twelvedata.com/docs#time-series
 - Polygon aggregates: https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to
 - NewsAPI docs: https://newsapi.org/docs
-

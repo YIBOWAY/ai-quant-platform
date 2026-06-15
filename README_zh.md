@@ -108,6 +108,8 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 或显式请求但不可用的真实 provider，会返回 `400 provider_unavailable`，
 不会静默替换为 sample 数据。未传 provider 时，只读行情页面仍可在离线场景下
 回退到明确标注的 sample 响应。
+代码默认值和 `.env.example` 均使用 `QS_DEFAULT_DATA_PROVIDER="futu"`；只有在
+明确做离线流程测试时才改为 `sample`。
 
 界面支持中英双语。使用顶栏语言切换按钮，或直接访问带语言前缀的路径，如
 `/en/options-radar` 和 `/zh/options-radar`。语言选择也会存储在 `qs_lang` cookie
