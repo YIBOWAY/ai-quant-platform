@@ -1,6 +1,6 @@
 # 前端使用问题定位与整改建议（2026-06-07）
 
-> **状态（2026-06-15）**：本文为历史定位记录。其中大部分问题已在 2026-06-07 优化批次 #1/#2（见 [../frontend/optimization_log.md](../frontend/optimization_log.md)）与 2026-06-11 前端全面重构（见 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)）中处理：因子实验室已默认 `futu` 真实数据且可切换；回测详情已有持久化基准曲线；回测已提供可选整股下单与最小订单金额约束；模拟交易已拆分「实时账户 / 历史回放」双标签页；慢页已有 loading 状态。仍未处理：限价单持久挂单、期权雷达日终自动任务、研报复现 run_id 持久化。
+> **状态（2026-06-15）**：本文为历史定位记录。其中大部分问题已在 2026-06-07 优化批次 #1/#2（见 [../frontend/optimization_log.md](../frontend/optimization_log.md)）与 2026-06-11 前端全面重构（见 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)）中处理：因子实验室已默认 `futu` 真实数据且可切换；回测详情已有持久化基准曲线；回测已提供可选整股下单与最小订单金额约束；研报复现已有 `replication-*` run_id、文件落盘和详情页；模拟交易已拆分「实时账户 / 历史回放」双标签页；慢页已有 loading 状态。仍未处理：限价单持久挂单、期权雷达日终自动任务。
 
 ## 1. 目标与范围
 
@@ -236,7 +236,9 @@
 
 ### 4.3.4 研报复现完成后没有“打开测试”
 
-当前研报复现接口直接返回结果，但不会保存为一个可打开的运行记录，也不会返回 `run_id`。通用策略目录只有收到 `run_id` 才显示“打开回测”，因此按钮不会出现。
+> **2026-06-15 后续状态**：已处理。`POST /api/replications/reversal-momentum/run` 会返回 `replication-*` `run_id`，写入 `data/api_runs/replications/<run_id>/metadata.json` 与 `result.json`；`GET /api/replications/reversal-momentum/{run_id}` 可重新读取，前端显示“打开复现”并跳转到 `/replications/{run_id}`。复现 run 暂不写入可选 PostgreSQL run index。
+
+当时研报复现接口直接返回结果，但不会保存为一个可打开的运行记录，也不会返回 `run_id`。通用策略目录只有收到 `run_id` 才显示“打开回测”，因此按钮不会出现。
 
 ### 建议
 

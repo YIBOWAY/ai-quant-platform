@@ -141,6 +141,12 @@ export type BacktestDetailResponse = ApiEnvelope & {
   attribution: PreviewRecord[];
 };
 
+export type ReversalMomentumReplicationDetailResponse = ApiEnvelope & {
+  run_id: string;
+  metadata: Record<string, unknown>;
+  result: Record<string, unknown>;
+};
+
 export type StrategyMetadata = {
   id: string;
   name: string;
@@ -656,6 +662,18 @@ export function getBacktestDetail(runId: string) {
     attribution: [],
     safety: FALLBACK_SAFETY,
   });
+}
+
+export function getReversalMomentumReplicationDetail(runId: string) {
+  return apiGet<ReversalMomentumReplicationDetailResponse>(
+    `/api/replications/reversal-momentum/${runId}`,
+    {
+      run_id: runId,
+      metadata: {},
+      result: {},
+      safety: FALLBACK_SAFETY,
+    },
+  );
 }
 
 export function getStrategies() {

@@ -28,6 +28,8 @@ truth)。运行索引是一个可查询的镜像，而非替代品。
 - Schema：单张表 `quant_system.runs`（`kind`、`run_id`、`source`、
   `created_at`、`indexed_at`、`artifact_path`、`metadata` JSONB），以
   `(kind, run_id)` 为键。`kind` 取值为 `backtest`、`factor` 或 `paper`。
+  反转/动量研报复现运行也会落盘到 `data/api_runs/replications/<run_id>/`，
+  但当前不进入该 PostgreSQL 索引。
 - 启动时（`api/server.py` lifespan）在后台线程中执行迁移 / 对账：它会回填已存在的
   文件运行记录，并清除那些对应文件已不存在的索引行（自愈机制，避免列举出一个
   其详情会返回 404 的运行），同时不会阻塞 API 启动。

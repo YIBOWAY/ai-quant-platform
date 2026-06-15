@@ -69,6 +69,14 @@ Backtest order realism controls are explicit and default-compatible:
 When whole-share mode is enabled, both generated order quantities and
 cash-constrained partial fills are floored to whole shares.
 
+Reversal/momentum replication runs (`result_type="replication"`) persist under
+`data/api_runs/replications/<run_id>/` as `metadata.json` + `result.json`.
+`POST /api/replications/reversal-momentum/run` returns a `replication-*`
+`run_id`; `GET /api/replications/reversal-momentum/{run_id}` and the frontend
+route `/replications/[runId]` read it back. These runs are file-persisted but
+are not part of the optional PostgreSQL run index, whose schema currently
+covers only backtest/factor/paper kinds.
+
 ## Optional PostgreSQL Run Index
 
 Backtest/factor/paper runs are file-based under `data/api_runs/`. An optional

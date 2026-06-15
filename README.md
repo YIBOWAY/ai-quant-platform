@@ -20,6 +20,8 @@ The project is currently delivered through Phase 14. It includes:
 - Local AlphaGBM-style options toolbox and local Futu option quote cache.
 - Strategy Catalog with the reversal/momentum replication, the registered
   cross-sectional Top-N backtest strategy, and a mean-reversion Top-N strategy.
+- Reversal/momentum replication runs persist as local `replication-*` artifacts
+  with a dedicated detail page.
 - Backtest engine controls: rebalance frequency (every bar / weekly / monthly),
   per-symbol weight cap, API-level sector cap when a sector map is supplied,
   and per-name return attribution.
@@ -107,6 +109,7 @@ curl http://127.0.0.1:8765/api/health
 | `/factor-lab` | Factor health and timing diagnostics (cross-section / timing tabs); provider, universe, timing symbol, and benchmark adjustable in the sidebar (default `futu`), plus saveable factor research runs. |
 | `/backtest` | Run strategy, universe, factor-weight, and benchmark backtests. |
 | `/replications` | Strategy Catalog for registered research strategies. |
+| `/replications/[runId]` | Persisted reversal/momentum replication run detail. |
 | `/docs/reversal-momentum` | Frontend-readable notes for the paper replication. |
 | `/experiments` | Inspect experiment sweeps, folds, comparisons, and send best params to backtest. |
 | `/paper-trading` | Persistent paper account (manual orders + one-click strategy rebalance) plus historical replay. |
@@ -157,9 +160,12 @@ slowly under Futu pacing.
 ## Optional PostgreSQL Run Index
 
 Backtest, factor, and paper runs are always written to local files under
-`data/api_runs/<kind>/<run_id>/`. You can optionally index them into PostgreSQL
-for fast history listing. It is **disabled by default**; when the database is
-off or unreachable, every endpoint falls back to the filesystem.
+`data/api_runs/<kind>/<run_id>/`. You can optionally index those three kinds
+into PostgreSQL for fast history listing. Reversal/momentum replication runs are
+also file-persisted under `data/api_runs/replications/<run_id>/`, but they are
+not part of the optional PostgreSQL run index. It is **disabled by default**;
+when the database is off or unreachable, every indexed endpoint falls back to
+the filesystem.
 
 To enable it against a local Docker container:
 

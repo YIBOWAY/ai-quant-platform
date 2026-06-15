@@ -13,6 +13,7 @@
 - 期权收入筛选器（Options Income Screener）、期权雷达（Options Radar）、买方期权助手（Buy-Side Options Assistant）。
 - 本地 AlphaGBM 风格期权工具箱及本地富途期权报价缓存。
 - 策略目录：包含 reversal/momentum 论文复现、已注册的横截面 Top-N 回测策略、均值回归 Top-N 策略。
+- reversal/momentum 复现运行会以 `replication-*` 形式本地持久化，并提供专门详情页。
 - 回测引擎控制项：再平衡频率（每根 K 线 / 每周 / 每月）、单标的权重上限、提供行业映射时的 API 层面行业上限、以及按标的的收益归因。
 - 可选 PostgreSQL 运行索引（覆盖本地回测/因子/模拟交易运行记录）。
 
@@ -80,6 +81,7 @@ curl http://127.0.0.1:8765/api/health
 | `/factor-lab` | 因子健康与择时诊断（横截面 / 择时两个标签页）；数据源/股票池/择时标的/基准可在侧栏调整（默认 `futu`），并可保存因子研究运行。 |
 | `/backtest` | 运行策略、股票池、因子加权及基准回测。 |
 | `/replications` | 已注册研究策略的策略目录。 |
+| `/replications/[runId]` | 已落盘的 reversal/momentum 复现运行详情。 |
 | `/docs/reversal-momentum` | 论文复现的前端可读笔记。 |
 | `/experiments` | 查看实验扫描、分折、对比，并将最佳参数发送至回测。 |
 | `/paper-trading` | 持久模拟账户（手动下单 + 策略一键再平衡）＋历史回放（研究）。 |
@@ -127,8 +129,9 @@ python scripts/verify_futu_connection.py
 ## 可选 PostgreSQL 运行索引
 
 回测、因子和模拟交易运行记录始终写入本地文件
-`data/api_runs/<kind>/<run_id>/`。你可以选择将其索引到 PostgreSQL 中以加速历史列表查询。
-该功能**默认关闭**；当数据库关闭或无法访问时，所有端点自动回退到文件系统读取。
+`data/api_runs/<kind>/<run_id>/`。你可以选择将这三类运行索引到 PostgreSQL 中以加速历史列表查询。
+reversal/momentum 复现运行也会写入 `data/api_runs/replications/<run_id>/`，但暂不进入可选 PostgreSQL run index。
+该功能**默认关闭**；当数据库关闭或无法访问时，所有已索引端点自动回退到文件系统读取。
 
 通过本地 Docker 容器启用：
 

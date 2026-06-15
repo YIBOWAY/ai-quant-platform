@@ -33,6 +33,8 @@ type StrategyCatalogWorkbenchProps = {
   factors: FactorMetadata[];
   locale: Locale;
   futuReachable?: boolean;
+  initialStrategyId?: string;
+  initialResult?: Record<string, unknown> | null;
 };
 
 // Note: the "Strategy Catalog" heading, the "Strategy" select label, and the
@@ -49,6 +51,7 @@ const copy = {
     running: "Running...",
     result: "Result",
     openBacktest: "Open backtest",
+    openReplication: "Open replication",
     openDocs: "Open docs",
     noResultTitle: "No result yet",
     noResult: "Run a strategy to see the response.",
@@ -99,6 +102,7 @@ const copy = {
     running: "运行中...",
     result: "结果",
     openBacktest: "打开回测",
+    openReplication: "打开复现",
     openDocs: "打开文档",
     noResultTitle: "暂无结果",
     noResult: "运行策略后会显示结果。",
@@ -176,14 +180,18 @@ export function StrategyCatalogWorkbench({
   factors,
   locale,
   futuReachable = true,
+  initialStrategyId,
+  initialResult = null,
 }: StrategyCatalogWorkbenchProps) {
   const text = copy[locale];
   const isHydrated = useIsHydrated();
   const activeStrategies = strategies.length ? strategies : fallbackStrategies();
-  const [strategyId, setStrategyId] = useState(activeStrategies[0]?.id ?? "");
+  const [strategyId, setStrategyId] = useState(
+    initialStrategyId ?? activeStrategies[0]?.id ?? "",
+  );
   const strategy = activeStrategies.find((item) => item.id === strategyId) ?? activeStrategies[0];
   const [values, setValues] = useState<Record<string, unknown>>(strategy?.default_payload ?? {});
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<Record<string, unknown> | null>(initialResult);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const fields = useMemo(
@@ -358,6 +366,11 @@ export function StrategyCatalogWorkbench({
           subtitle={strategy?.description}
           actions={
             <>
+              {result?.run_id ? (
+                <span className="max-w-full break-all rounded-lg border border-border-subtle px-3 py-2 font-data-mono text-xs text-text-secondary">
+                  {String(result.run_id)}
+                </span>
+              ) : null}
               {replicationView ? <DataSourceBadge source={replicationView.source} /> : null}
               {result?.run_id && strategy?.result_type === "backtest" ? (
                 <Link
@@ -365,6 +378,14 @@ export function StrategyCatalogWorkbench({
                   href={localizePath(`/backtest/${String(result.run_id)}`, locale)}
                 >
                   {text.openBacktest}
+                </Link>
+              ) : null}
+              {result?.run_id && strategy?.result_type === "replication" ? (
+                <Link
+                  className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-info"
+                  href={localizePath(`/replications/${String(result.run_id)}`, locale)}
+                >
+                  {text.openReplication}
                 </Link>
               ) : null}
             </>

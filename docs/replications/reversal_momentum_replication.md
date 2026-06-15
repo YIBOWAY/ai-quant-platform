@@ -41,6 +41,7 @@ http://127.0.0.1:3001/replications
 
 ```http
 POST /api/replications/reversal-momentum/run
+GET  /api/replications/reversal-momentum/{run_id}
 ```
 
 请求体示例：
@@ -54,6 +55,24 @@ POST /api/replications/reversal-momentum/run
   "initial_cash": 1.0
 }
 ```
+
+运行响应会包含 `run_id`（形如 `replication-YYYYMMDDTHHMMSSZ-xxxxxxxx`）、
+`paths` 和 `artifact_path`。后端会把结果保存到：
+
+```text
+data/api_runs/replications/<run_id>/metadata.json
+data/api_runs/replications/<run_id>/result.json
+```
+
+前端运行完成后会显示 **Open replication / 打开复现**，进入：
+
+```text
+http://127.0.0.1:3001/replications/<run_id>
+```
+
+该详情页读取 `GET /api/replications/reversal-momentum/{run_id}`，并复用策略目录的
+指标卡、权益曲线、方法学、诊断、月度收益和持仓表渲染。复现 run 目前不写入可选
+PostgreSQL run index；文件目录和详情接口是事实来源。
 
 ## 数据说明
 

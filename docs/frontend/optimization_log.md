@@ -4,19 +4,20 @@
 
 ---
 
-## 后续更新 — 回测基准与订单约束（2026-06-15）
+## 后续更新 — 回测基准、订单约束与复现持久化（2026-06-15）
 
 - 回测表单和 `/api/backtests/run` 现在暴露 `min_order_value` 与 `whole_share_orders`。默认仍是 `0 / false`，保持历史研究结果兼容；启用后，订单生成和现金不足部分成交都会向下取整到整股，并跳过低于最小金额的订单。
 - `POST /api/backtests/run` 现在会随本次 run 计算并保存 `benchmark_curve.parquet` 与 `benchmark_metrics.json`，并把基准 symbol/source/metrics/paths 写入 `metadata.json`。
 - `GET /api/backtests/{run_id}` 现在直接返回 `benchmark` 快照（symbol/source/metrics/equity_curve）。`/backtest` 最新运行面板和 `/backtest/[runId]` 详情页都复用这个持久化快照，不再在页面打开时额外调用 `/api/benchmark`。
 - `/api/benchmark` 仍保留为独立的即时基准曲线接口，但不再是回测详情页的事实来源。
 - 基准标的只用于对照曲线，不会被加入策略交易 universe。
+- `POST /api/replications/reversal-momentum/run` 现在返回 `replication-*` `run_id`，写入 `data/api_runs/replications/<run_id>/metadata.json` 与 `result.json`；新增 `GET /api/replications/reversal-momentum/{run_id}` 和 `/replications/[runId]` 详情页。Strategy Catalog 对研报复现显示“打开复现”，刷新后仍可复看结果。复现 run 暂不进入可选 PostgreSQL run index。
 
 ---
 
 ## 优化批次 #3 — 全页面重构（2026-06-11）
 
-详见交付记录 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)：19 条路由全量审查与重构（设计令牌归一、固定视口外壳、Factor Lab / Paper Trading / Position Map 重做、E2E 38/38 通过）。批次 #2 遗留的「后端协同任务」清单中已完成两项：**因子实验室真实数据源**（默认 `futu`，数据源/股票池/择时标的/基准可在侧栏调整，因子研究运行可保存）和 **回测整股/最小订单约束**（2026-06-15 起可选）。其余仍待后续：限价单持久挂单+日内触价成交、期权雷达日终自动任务、研报复现 run_id 持久化。
+详见交付记录 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)：19 条路由全量审查与重构（设计令牌归一、固定视口外壳、Factor Lab / Paper Trading / Position Map 重做、E2E 38/38 通过）。批次 #2 遗留的「后端协同任务」清单中已完成三项：**因子实验室真实数据源**（默认 `futu`，数据源/股票池/择时标的/基准可在侧栏调整，因子研究运行可保存）、**回测整股/最小订单约束**（2026-06-15 起可选）和 **研报复现 run_id 持久化**（文件落盘 + 复现详情页）。其余仍待后续：限价单持久挂单+日内触价成交、期权雷达日终自动任务。
 
 ---
 
@@ -40,7 +41,7 @@
 ### 并行重设计（workflow wneo9z6zm，11 个页面）
 dashboard / factor-lab / experiments / agent-studio / order-book / settings / options-radar / options-tools / options-buyside / position-map / replications-shell —— 各 agent 用共享 primitives + 锚定风格重设计，隔离文件无冲突，保留全部功能/API/安全语言/双语。
 
-**后端协同任务（本批未做，待后续）**：原清单为因子实验室真实数据源、限价单持久挂单+日内触价成交、回测整股/最小订单约束、期权雷达日终自动任务、研报复现 run_id 持久化。2026-06-15 时，因子实验室真实数据源与回测整股/最小订单约束已后续落地，其余仍待处理。
+**后端协同任务（本批未做，待后续）**：原清单为因子实验室真实数据源、限价单持久挂单+日内触价成交、回测整股/最小订单约束、期权雷达日终自动任务、研报复现 run_id 持久化。2026-06-15 时，因子实验室真实数据源、回测整股/最小订单约束、研报复现 run_id 持久化已后续落地；限价单持久挂单与期权雷达日终自动任务仍待处理。
 
 ---
 
@@ -338,7 +339,7 @@ npm run lint
 ---
 
 **创建时间**：2026-06-07  
-**最后更新**：2026-06-07  
+**最后更新**：2026-06-15
 **维护人**：Frontend Team  
 **相关文档**：
 - [问题文档](../design/frontend_workflow_usability_review_2026-06-07.md)

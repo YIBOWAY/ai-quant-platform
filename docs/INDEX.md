@@ -2,7 +2,7 @@
 
 这是整个仓库的主地图。用它来查找架构文档、执行手册、学习笔记、交付记录与安全边界。
 
-当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固，以及语言连续性修复，均记录在下文。最近一次大型变更为 2026-06-11 的前端全面重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38），见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
+当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化，以及语言连续性修复，均记录在下文。最近一次大型变更为 2026-06-11 的前端全面重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38），见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
 
 ## 0. 界面操作指南（新，建议先读）
 
@@ -129,6 +129,7 @@
 | `/backtest` | 策略、universe 与因子权重回测运行。 |
 | `/backtest/[runId]` | 回测运行详情。 |
 | `/replications` | 由策略注册表支撑的策略目录。 |
+| `/replications/[runId]` | 已落盘的反转/动量研报复现运行详情。 |
 | `/docs/reversal-momentum` | 前端可读的复现文档。 |
 | `/experiments` | 实验扫描、折叠、对比与最佳运行回顾。 |
 | `/paper-trading` | 持久模拟账户（手动下单 + 策略一键再平衡）＋历史回放（研究）。 |
