@@ -49,7 +49,6 @@ class Database:
         self._connect_timeout = min(connect_timeout, MAX_OPTIONAL_CONNECT_TIMEOUT_SECONDS)
         self._failure_cooldown_seconds = failure_cooldown_seconds
         self._lock = threading.Lock()
-        self._connecting = False
         self._failure_until = 0.0
         self._last_error: str | None = None
 
@@ -61,25 +60,20 @@ class Database:
                 raise DatabaseUnavailable(
                     f"database recently failed; retry in {remaining:.1f}s"
                 )
-            if self._connecting:
-                raise DatabaseUnavailable("database connection probe already in progress")
-            self._connecting = True
 
     def _finish_connect(self) -> None:
         with self._lock:
-            self._connecting = False
             self._failure_until = 0.0
             self._last_error = None
 
     def _mark_failure(self, exc: BaseException) -> None:
         with self._lock:
-            self._connecting = False
             self._failure_until = time.monotonic() + self._failure_cooldown_seconds
             self._last_error = f"{exc.__class__.__name__}: {exc}"
 
     def can_attempt_connect(self) -> bool:
         with self._lock:
-            return not self._connecting and time.monotonic() >= self._failure_until
+            return time.monotonic() >= self._failure_until
 
     def last_error(self) -> str | None:
         with self._lock:

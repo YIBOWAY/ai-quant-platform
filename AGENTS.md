@@ -84,9 +84,10 @@ PostgreSQL index (`storage/database.py`, `storage/runs_repository.py`,
 `scripts/sql/001_runs_index.sql`) speeds up listing. Off by default; controlled
 by `QS_DATABASE_ENABLED` / `QS_DATABASE_URL` / `QS_DATABASE_CONNECT_TIMEOUT_SECONDS`
 / `QS_DATABASE_AUTO_MIGRATE`; default connect timeout is 1 second. Startup
-migration/backfill runs in a background thread, failed probes enter a short
-cooldown, and list endpoints must keep falling back to the filesystem when the
-database is off, slow, or unreachable. Tests must not touch a real database
+migration/backfill runs in a background thread, healthy short-lived connections
+may proceed concurrently, failed probes enter a short cooldown, and list endpoints
+must keep falling back to the filesystem when the database is off, slow, or
+unreachable. Tests must not touch a real database
 (`tests/conftest.py` forces it off). Never run `npm run build` while the
 frontend dev server is running — they share `src/frontend/.next` and the build
 corrupts the dev server.

@@ -185,8 +185,9 @@ QS_DATABASE_AUTO_MIGRATE=true
 On startup the backend starts run-index migration/backfill in the background:
 it creates the `quant_system.runs` table, backfills existing file runs, and
 prunes index rows whose files were removed. If PostgreSQL is down, the first
-probe is short and later requests skip repeated connection attempts for a brief
-cooldown window while continuing to read local files. Check it with:
+probe is short and later failed requests use a brief cooldown window while
+continuing to read local files. Healthy PostgreSQL connections may proceed
+concurrently. Check it with:
 
 ```powershell
 curl http://127.0.0.1:8765/api/health   # database.reachable should be true

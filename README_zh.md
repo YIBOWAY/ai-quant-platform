@@ -149,8 +149,8 @@ QS_DATABASE_AUTO_MIGRATE=true
 ```
 
 后端启动时会在后台线程中运行索引迁移/回填：创建 `quant_system.runs` 表，回填已有的文件运行记录，
-并清理文件已被删除的索引行。如果 PostgreSQL 不可用，首次探测很短，后续请求在短暂的冷却窗口内
-跳过重复连接尝试，同时继续从本地文件读取。可通过以下命令检查：
+并清理文件已被删除的索引行。如果 PostgreSQL 不可用，首次探测很短，后续失败请求在短暂的冷却窗口内
+继续从本地文件读取；健康的 PostgreSQL 短连接可以并发执行。可通过以下命令检查：
 
 ```powershell
 curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
