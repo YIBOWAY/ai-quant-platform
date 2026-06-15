@@ -20,6 +20,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/options/tools/strategy/templates": "OptionsStrategyTemplatesResponse",
         "/api/options/tools/watchlist": "OptionsWatchlistResponse",
         "/api/backtests": "BacktestsResponse",
+        "/api/backtests/{run_id}": "BacktestDetailResponse",
         "/api/paper": "PaperRunsResponse",
         "/api/agent/candidates": "AgentCandidatesResponse",
         "/api/agent/candidates/{candidate_id}": "AgentCandidateDetailResponse",
@@ -47,6 +48,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "templates" in components["OptionsStrategyTemplatesResponse"]["properties"]
     assert "watchlist" in components["OptionsWatchlistResponse"]["properties"]
     assert "backtests" in components["BacktestsResponse"]["properties"]
+    assert "benchmark" in components["BacktestDetailResponse"]["properties"]
     assert "paper_runs" in components["PaperRunsResponse"]["properties"]
     assert "candidates" in components["AgentCandidatesResponse"]["properties"]
     assert "source_preview" in components["AgentCandidateDetailResponse"]["properties"]

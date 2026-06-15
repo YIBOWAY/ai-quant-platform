@@ -15,6 +15,28 @@ class BacktestsResponse(BaseModel):
     backtests: list[BacktestSummary]
 
 
+BacktestRecord = dict[str, Any]
+
+
+class BacktestBenchmarkSnapshot(BaseModel):
+    symbol: str
+    source: str
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    equity_curve: list[BacktestRecord]
+
+
+class BacktestDetailResponse(BaseModel):
+    id: str
+    metadata: dict[str, Any]
+    metrics: dict[str, Any]
+    equity_curve: list[BacktestRecord]
+    benchmark: BacktestBenchmarkSnapshot
+    orders: list[BacktestRecord]
+    positions: list[BacktestRecord]
+    trade_blotter: list[BacktestRecord]
+    attribution: list[BacktestRecord]
+
+
 class BacktestRunRequest(BaseModel):
     symbols: list[str] = Field(default_factory=list)
     universe_id: str | None = None

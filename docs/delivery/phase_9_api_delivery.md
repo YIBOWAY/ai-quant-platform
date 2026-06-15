@@ -37,7 +37,8 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 
 2026-06-15 后续状态：API 契约治理已开始按低风险切片补 `response_model`。
 当前已覆盖 `GET /api/health`、`GET /api/symbols`、`GET /api/ohlcv`、
-`GET /api/benchmark`、`GET /api/backtests`、`GET /api/experiments`、`GET /api/paper`、`GET /api/strategies`、`GET /api/universes`，
+`GET /api/benchmark`、`GET /api/backtests`、`GET /api/backtests/{run_id}`、
+`GET /api/experiments`、`GET /api/paper`、`GET /api/strategies`、`GET /api/universes`，
 `GET /api/factors`、`GET /api/factors/runs`、`GET /api/runs/recent`、
 `GET /api/market-data/history`、`GET /api/options/daily-scan/dates`、
 `GET /api/options/daily-scan/status`、`GET /api/agent/candidates`、
