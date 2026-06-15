@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.schemas.common import dataframe_records
 from quant_system.api.schemas.options import (
+    OptionsAlertsEvaluationResponse,
     OptionsBullPutSignalResponse,
     OptionsChainResponse,
     OptionsContractScoreResponse,
@@ -17,6 +18,7 @@ from quant_system.api.schemas.options import (
     OptionsImpliedVolatilityResponse,
     OptionsIvRankResponse,
     OptionsMarketSentimentResponse,
+    OptionsResearchHealthCheckResponse,
     OptionsSimulationResponse,
     OptionsSnapshotResponse,
     OptionsStrategyBuildResponse,
@@ -430,7 +432,7 @@ def options_watchlist(output_dir: OutputDirDep) -> dict:
     return {"watchlist": _watchlist_store(output_dir).list()}
 
 
-@router.post("/options/tools/watchlist")
+@router.post("/options/tools/watchlist", response_model=OptionsWatchlistResponse)
 def options_watchlist_add(payload: dict, output_dir: OutputDirDep) -> dict:
     try:
         watchlist = _watchlist_store(output_dir).add(
@@ -445,7 +447,10 @@ def options_watchlist_add(payload: dict, output_dir: OutputDirDep) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/alerts/evaluate")
+@router.post(
+    "/options/tools/alerts/evaluate",
+    response_model=OptionsAlertsEvaluationResponse,
+)
 def options_alerts_evaluate(payload: dict) -> dict:
     try:
         return evaluate_local_alerts(
@@ -459,7 +464,10 @@ def options_alerts_evaluate(payload: dict) -> dict:
         ) from exc
 
 
-@router.post("/options/tools/health-check")
+@router.post(
+    "/options/tools/health-check",
+    response_model=OptionsResearchHealthCheckResponse,
+)
 def options_health_check(payload: dict) -> dict:
     try:
         return research_health_check(

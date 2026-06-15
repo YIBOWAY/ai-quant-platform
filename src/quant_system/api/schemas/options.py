@@ -199,7 +199,23 @@ class OptionsUnusualActivityResponse(BaseModel):
     assumptions: list[str]
 
 
+class OptionsAlertsEvaluationResponse(BaseModel):
+    success: bool
+    ticker: str
+    triggered_alerts: list[OptionRecord]
+    assumptions: list[str]
+
+
+class OptionsResearchHealthCheckResponse(BaseModel):
+    success: bool
+    health_score: float
+    stale_profiles: list[str]
+    missing_thesis: list[str]
+    assumptions: list[str]
+
+
 __all__ = [
+    "OptionsAlertsEvaluationResponse",
     "OptionsBullPutSignalResponse",
     "OptionsChainResponse",
     "OptionsContractScoreResponse",
@@ -211,6 +227,7 @@ __all__ = [
     "OptionsImpliedVolatilityResponse",
     "OptionsIvRankResponse",
     "OptionsMarketSentimentResponse",
+    "OptionsResearchHealthCheckResponse",
     "OptionsScreenerConfig",
     "OptionsSimulationResponse",
     "OptionsSnapshotResponse",

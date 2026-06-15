@@ -246,3 +246,29 @@ def test_options_local_research_post_routes_publish_response_models(tmp_path) ->
     assert "average_crush_pct" in components["OptionsEarningsCrushResponse"]["properties"]
     assert "structures" in components["OptionsHedgeAdvisorResponse"]["properties"]
     assert "events" in components["OptionsUnusualActivityResponse"]["properties"]
+
+
+def test_options_monitoring_post_routes_publish_response_models(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    expected = {
+        "/api/options/tools/watchlist": "OptionsWatchlistResponse",
+        "/api/options/tools/alerts/evaluate": "OptionsAlertsEvaluationResponse",
+        "/api/options/tools/health-check": "OptionsResearchHealthCheckResponse",
+    }
+    for path, model_name in expected.items():
+        response_schema = openapi["paths"][path]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert response_schema == {"$ref": f"#/components/schemas/{model_name}"}
+
+    components = openapi["components"]["schemas"]
+    assert "watchlist" in components["OptionsWatchlistResponse"]["properties"]
+    assert (
+        "triggered_alerts"
+        in components["OptionsAlertsEvaluationResponse"]["properties"]
+    )
+    assert "health_score" in components["OptionsResearchHealthCheckResponse"]["properties"]
+    assert "missing_thesis" in components["OptionsResearchHealthCheckResponse"]["properties"]
