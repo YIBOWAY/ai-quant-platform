@@ -17,6 +17,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/agent/llm-config": "AgentLLMConfigResponse",
         "/api/options/daily-scan/dates": "OptionsDailyScanDatesResponse",
         "/api/options/daily-scan/status": "OptionsDailyScanStatusResponse",
+        "/api/options/daily-scan": "OptionsDailyScanResponse",
+        "/api/options/daily-scan/symbol/{ticker}": "OptionsDailyScanSymbolResponse",
         "/api/options/expirations": "OptionsExpirationsResponse",
         "/api/options/chain": "OptionsChainResponse",
         "/api/options/snapshot/{ticker}": "OptionsSnapshotResponse",
@@ -58,6 +60,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "has_api_key" in components["AgentLLMConfigResponse"]["properties"]
     assert "dates" in components["OptionsDailyScanDatesResponse"]["properties"]
     assert "status" in components["OptionsDailyScanStatusResponse"]["properties"]
+    assert "candidates" in components["OptionsDailyScanResponse"]["properties"]
+    assert "candidate_count" in components["OptionsDailyScanSymbolResponse"]["properties"]
     assert "expirations" in components["OptionsExpirationsResponse"]["properties"]
     assert "contracts" in components["OptionsChainResponse"]["properties"]
     assert "atm_iv" in components["OptionsSnapshotResponse"]["properties"]

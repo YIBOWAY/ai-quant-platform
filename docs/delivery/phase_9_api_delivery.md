@@ -44,7 +44,8 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 `GET /api/settings`、`GET /api/strategies`、`GET /api/universes`，
 `GET /api/factors`、`GET /api/factors/lab`、`GET /api/factors/runs`、`GET /api/factors/{run_id}`、`GET /api/runs/recent`、
 `GET /api/market-data/history`、`GET /api/options/daily-scan/dates`、
-`GET /api/options/daily-scan/status`、`GET /api/options/expirations`、
+`GET /api/options/daily-scan/status`、`GET /api/options/daily-scan`、
+`GET /api/options/daily-scan/symbol/{ticker}`、`GET /api/options/expirations`、
 `GET /api/options/chain`、`GET /api/options/snapshot/{ticker}`、
 `GET /api/options/tools/vol-surface/{ticker}`、`GET /api/options/tools/vol-smile/{ticker}`、
 `GET /api/agent/candidates`、

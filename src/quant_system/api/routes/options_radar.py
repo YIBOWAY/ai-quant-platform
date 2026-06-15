@@ -8,7 +8,9 @@ from fastapi import APIRouter, HTTPException
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.options_radar import (
     OptionsDailyScanDatesResponse,
+    OptionsDailyScanResponse,
     OptionsDailyScanStatusResponse,
+    OptionsDailyScanSymbolResponse,
 )
 from quant_system.data.providers.futu import FutuMarketDataProvider, FutuProviderError
 from quant_system.options.data_refresh import (
@@ -177,7 +179,10 @@ def _options_daily_scan_run_unlocked(settings: SettingsDep, payload: dict) -> di
     }
 
 
-@router.get("/options/daily-scan/symbol/{ticker}")
+@router.get(
+    "/options/daily-scan/symbol/{ticker}",
+    response_model=OptionsDailyScanSymbolResponse,
+)
 def options_daily_scan_symbol(
     settings: SettingsDep,
     ticker: str,
@@ -206,7 +211,7 @@ def options_daily_scan_symbol(
     }
 
 
-@router.get("/options/daily-scan")
+@router.get("/options/daily-scan", response_model=OptionsDailyScanResponse)
 def options_daily_scan(
     settings: SettingsDep,
     date: str | None = None,
