@@ -6,10 +6,13 @@ from fastapi.responses import FileResponse
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.schemas.common import make_run_id, read_json, resolve_run_dir
 from quant_system.api.schemas.prediction_market import (
+    PredictionMarketBacktestResultResponse,
     PredictionMarketCollectRequest,
     PredictionMarketDryArbitrageRequest,
+    PredictionMarketMarketsResponse,
     PredictionMarketScanRequest,
     PredictionMarketTimeseriesBacktestRequest,
+    PredictionMarketTimeseriesBacktestResultResponse,
 )
 from quant_system.prediction_market.backtest import (
     PredictionMarketBacktestConfig,
@@ -46,7 +49,10 @@ from quant_system.prediction_market.timeseries_backtest import (
 router = APIRouter()
 
 
-@router.get("/prediction-market/markets")
+@router.get(
+    "/prediction-market/markets",
+    response_model=PredictionMarketMarketsResponse,
+)
 def prediction_market_markets(
     settings: SettingsDep,
     api_runs_dir: ApiRunsDirDep,
@@ -250,7 +256,10 @@ def prediction_market_backtest(
     }
 
 
-@router.get("/prediction-market/results/{run_id}")
+@router.get(
+    "/prediction-market/results/{run_id}",
+    response_model=PredictionMarketBacktestResultResponse,
+)
 def prediction_market_result(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     run_dir = resolve_run_dir(api_runs_dir / "prediction_market" / "backtests", run_id)
     result_path = run_dir / "result.json"
@@ -331,7 +340,10 @@ def prediction_market_timeseries_backtest(
     }
 
 
-@router.get("/prediction-market/timeseries-backtest/{run_id}")
+@router.get(
+    "/prediction-market/timeseries-backtest/{run_id}",
+    response_model=PredictionMarketTimeseriesBacktestResultResponse,
+)
 def prediction_market_timeseries_backtest_result(
     run_id: str,
     api_runs_dir: ApiRunsDirDep,
@@ -362,7 +374,10 @@ def prediction_market_timeseries_backtest_result(
     }
 
 
-@router.get("/prediction-market/timeseries-backtest/{run_id}/artifacts/{artifact_name}")
+@router.get(
+    "/prediction-market/timeseries-backtest/{run_id}/artifacts/{artifact_name}",
+    response_class=FileResponse,
+)
 def prediction_market_timeseries_artifact(
     run_id: str,
     artifact_name: str,

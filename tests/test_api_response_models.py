@@ -26,6 +26,11 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/options/tools/vol-smile/{ticker}": "OptionsVolSmileResponse",
         "/api/options/tools/strategy/templates": "OptionsStrategyTemplatesResponse",
         "/api/options/tools/watchlist": "OptionsWatchlistResponse",
+        "/api/prediction-market/markets": "PredictionMarketMarketsResponse",
+        "/api/prediction-market/results/{run_id}": "PredictionMarketBacktestResultResponse",
+        "/api/prediction-market/timeseries-backtest/{run_id}": (
+            "PredictionMarketTimeseriesBacktestResultResponse"
+        ),
         "/api/backtests": "BacktestsResponse",
         "/api/backtests/{run_id}": "BacktestDetailResponse",
         "/api/paper": "PaperRunsResponse",
@@ -69,6 +74,12 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "smile" in components["OptionsVolSmileResponse"]["properties"]
     assert "templates" in components["OptionsStrategyTemplatesResponse"]["properties"]
     assert "watchlist" in components["OptionsWatchlistResponse"]["properties"]
+    assert "markets" in components["PredictionMarketMarketsResponse"]["properties"]
+    assert "result" in components["PredictionMarketBacktestResultResponse"]["properties"]
+    assert (
+        "report_url"
+        in components["PredictionMarketTimeseriesBacktestResultResponse"]["properties"]
+    )
     assert "backtests" in components["BacktestsResponse"]["properties"]
     assert "benchmark" in components["BacktestDetailResponse"]["properties"]
     assert "paper_runs" in components["PaperRunsResponse"]["properties"]
@@ -93,3 +104,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert components["SettingsResponse"]["type"] == "object"
     assert "strategies" in components["StrategyCatalogResponse"]["properties"]
     assert "universes" in components["UniverseCatalogResponse"]["properties"]
+
+    artifact_response = openapi["paths"][
+        "/api/prediction-market/timeseries-backtest/{run_id}/artifacts/{artifact_name}"
+    ]["get"]["responses"]["200"]
+    assert "application/json" not in artifact_response.get("content", {})

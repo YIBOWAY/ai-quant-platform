@@ -4,6 +4,30 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from quant_system.prediction_market.models import Market, OrderBookSnapshot
+
+
+class PredictionMarketMarketsResponse(BaseModel):
+    markets: list[Market]
+    order_books: list[OrderBookSnapshot]
+    provider: str
+    cache_status: str
+
+
+class PredictionMarketBacktestResultResponse(BaseModel):
+    run_id: str
+    result: dict[str, Any]
+    chart_index: dict[str, Any]
+    report_path: str
+
+
+class PredictionMarketTimeseriesBacktestResultResponse(BaseModel):
+    run_id: str
+    result: dict[str, Any]
+    chart_index: dict[str, Any]
+    report_path: str
+    report_url: str
+
 
 class PredictionMarketScanRequest(BaseModel):
     provider: Literal["sample", "polymarket"] = "sample"
