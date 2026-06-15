@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.errors import provider_unavailable_400
+from quant_system.api.schemas.benchmark import BenchmarkResponse
 from quant_system.api.schemas.common import dataframe_records
 from quant_system.backtest.benchmark import (
     build_benchmark_curve,
@@ -18,7 +19,7 @@ from quant_system.data.providers.sample import SampleOHLCVProvider
 router = APIRouter()
 
 
-@router.get("/benchmark")
+@router.get("/benchmark", response_model=BenchmarkResponse)
 def benchmark(
     settings: SettingsDep,
     symbol: str = "SPY",

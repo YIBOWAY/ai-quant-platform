@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from quant_system.api.dependencies import SettingsDep
+from quant_system.api.schemas.health import HealthResponse
 
 router = APIRouter()
 
@@ -23,7 +24,7 @@ def _probe_opend(host: str, port: int) -> dict[str, Any]:
         }
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthResponse)
 def health(settings: SettingsDep) -> dict[str, Any]:
     token = settings.api_keys.tiingo_api_token
     token_present = bool(token and token.get_secret_value().strip())

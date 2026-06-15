@@ -10,4 +10,5 @@ class SymbolsResponse(BaseModel):
 
 class OHLCVResponse(BaseModel):
     symbol: str
+    source: str
     rows: list[dict]

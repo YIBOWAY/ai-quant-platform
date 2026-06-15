@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
 from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.common import dataframe_records
+from quant_system.api.schemas.data import OHLCVResponse, SymbolsResponse
 from quant_system.data.provider_factory import (
     DataProviderUnavailableError,
     build_ohlcv_provider,
@@ -32,7 +33,7 @@ _DEFAULT_LIVE_SYMBOLS = [
 ]
 
 
-@router.get("/symbols")
+@router.get("/symbols", response_model=SymbolsResponse)
 def symbols(output_dir: OutputDirDep, settings: SettingsDep) -> dict:
     storage = LocalDataStorage(base_dir=output_dir)
     if storage.parquet_path.exists():
@@ -52,7 +53,7 @@ def symbols(output_dir: OutputDirDep, settings: SettingsDep) -> dict:
     return {"symbols": _DEFAULT_SAMPLE_SYMBOLS, "source": "sample"}
 
 
-@router.get("/ohlcv")
+@router.get("/ohlcv", response_model=OHLCVResponse)
 def ohlcv(
     symbol: str,
     start: str,
