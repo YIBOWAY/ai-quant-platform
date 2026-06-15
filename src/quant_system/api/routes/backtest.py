@@ -5,7 +5,7 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
-from quant_system.api.errors import provider_unavailable_400
+from quant_system.api.errors import not_found_404, provider_unavailable_400
 from quant_system.api.schemas.backtest import (
     BacktestDetailResponse,
     BacktestRunRequest,
@@ -146,7 +146,7 @@ def backtest_detail(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     run_dir = resolve_run_dir(api_runs_dir / "backtests", run_id)
     metadata_path = run_dir / "metadata.json"
     if not metadata_path.exists():
-        raise HTTPException(status_code=404, detail=f"backtest {run_id!r} not found")
+        raise not_found_404("backtest", run_id)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     benchmark_metadata = metadata.get("benchmark", {})
     request = metadata.get("request", {})

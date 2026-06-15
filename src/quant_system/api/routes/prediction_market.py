@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
+from quant_system.api.errors import not_found_404
 from quant_system.api.schemas.common import make_run_id, read_json, resolve_run_dir
 from quant_system.api.schemas.prediction_market import (
     PredictionMarketBacktestResultResponse,
@@ -278,10 +279,7 @@ def prediction_market_result(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     run_dir = resolve_run_dir(api_runs_dir / "prediction_market" / "backtests", run_id)
     result_path = run_dir / "result.json"
     if not result_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"prediction market result {run_id!r} not found",
-        )
+        raise not_found_404("prediction_market_result", run_id)
     return {
         "run_id": run_id,
         "result": read_json(result_path),
@@ -371,10 +369,7 @@ def prediction_market_timeseries_backtest_result(
     )
     result_path = run_dir / "result.json"
     if not result_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"prediction market timeseries result {run_id!r} not found",
-        )
+        raise not_found_404("prediction_market_timeseries_result", run_id)
     chart_index = _attach_artifact_urls(
         read_json(run_dir / "chart_index.json"),
         run_id=run_id,

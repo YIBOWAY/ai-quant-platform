@@ -6,7 +6,7 @@ import threading
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
-from quant_system.api.errors import provider_unavailable_400
+from quant_system.api.errors import not_found_404, provider_unavailable_400
 from quant_system.api.schemas.common import (
     make_run_id,
     read_parquet_records,
@@ -513,7 +513,7 @@ def paper_detail(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     run_dir = resolve_run_dir(api_runs_dir / "paper", run_id)
     metadata_path = run_dir / "metadata.json"
     if not metadata_path.exists():
-        raise HTTPException(status_code=404, detail=f"paper run {run_id!r} not found")
+        raise not_found_404("paper_run", run_id)
     return {
         "id": run_id,
         "metadata": json.loads(metadata_path.read_text(encoding="utf-8")),

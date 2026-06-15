@@ -67,7 +67,10 @@ futu”的小项已对齐。`.env.example` 现在使用
 覆盖账户冻结、缺价、策略数据不可用、未知或不支持的账户再平衡策略等常见失败态。
 历史回放 `POST /api/paper/run` 的两类 kill-switch 409 现在也返回同一结构化
 detail，并且前端 `apiClient` 会把 `{code,message}` 格式化为可读错误文案。
-跨模块 404 仍未做全局统一。
+backtest、factor、experiment、paper replay、agent candidate、reversal-momentum
+replication、prediction-market backtest / timeseries 详情类 404 已统一为
+`detail.code=not_found`、`detail.resource`、`detail.id` 与 `detail.message`。
+artifact 下载等非详情类 404 仍未全局统一。
 
 2026-06-15 状态补充：评估报告中“`core/interfaces.py` 整文件死代码”的表述
 需要下调。该文件没有进入当前 backtest / paper / option 运行路径，确实是早期

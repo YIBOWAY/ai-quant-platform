@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
+from quant_system.api.errors import not_found_404
 from quant_system.api.schemas.common import make_run_id, read_json, resolve_run_dir
 from quant_system.api.schemas.replications import (
     ReversalMomentumReplicationDetailResponse,
@@ -119,10 +120,7 @@ def reversal_momentum_replication_detail(
     metadata_path = run_dir / "metadata.json"
     result_path = run_dir / "result.json"
     if not metadata_path.exists() or not result_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"reversal momentum replication {run_id!r} not found",
-        )
+        raise not_found_404("reversal_momentum_replication", run_id)
     return {
         "run_id": run_id,
         "metadata": read_json(metadata_path),

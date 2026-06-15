@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from quant_system.agent.llm import build_llm_client
 from quant_system.agent.runner import AgentRunner
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
+from quant_system.api.errors import not_found_404
 from quant_system.api.schemas.agent import (
     AgentCandidateDetailResponse,
     AgentCandidatesResponse,
@@ -37,7 +38,7 @@ def candidate_detail(candidate_id: str, output_dir: OutputDirDep) -> dict:
     candidate_dir = resolve_run_dir(output_dir / "agent" / "candidates", candidate_id)
     metadata_path = candidate_dir / "metadata.json"
     if not metadata_path.exists():
-        raise HTTPException(status_code=404, detail=f"candidate {candidate_id!r} not found")
+        raise not_found_404("agent_candidate", candidate_id)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     files = metadata.get("files", [])
     source_preview = ""

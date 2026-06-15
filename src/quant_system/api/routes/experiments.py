@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
-from quant_system.api.errors import provider_unavailable_400
+from quant_system.api.errors import not_found_404, provider_unavailable_400
 from quant_system.api.schemas.common import read_json, read_parquet_records, resolve_run_dir
 from quant_system.api.schemas.experiments import (
     ExperimentDetailResponse,
@@ -97,7 +97,7 @@ def run_experiment(
 def experiment_detail(experiment_id: str, output_dir: OutputDirDep) -> dict:
     experiment_dir = resolve_run_dir(output_dir / "experiments", experiment_id)
     if not experiment_dir.exists():
-        raise HTTPException(status_code=404, detail=f"experiment {experiment_id!r} not found")
+        raise not_found_404("experiment", experiment_id)
     payload: dict = {"id": experiment_id, "path": str(experiment_dir)}
     for name in ["experiment_config.json", "agent_summary.json"]:
         path = experiment_dir / name
