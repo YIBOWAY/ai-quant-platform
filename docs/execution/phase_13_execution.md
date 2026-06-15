@@ -14,6 +14,29 @@ dry_run=false provider=sample top=5 strategies=sell_put,covered_call output_dir=
 run_date=2026-05-03 universe_size=5 scanned_tickers=5 failed_tickers=0 candidates=50 data=data\_phase13_sample_scan\2026-05-03.jsonl meta=data\_phase13_sample_scan\2026-05-03_meta.json
 ```
 
+## 离线样本日终任务
+
+```powershell
+conda activate ai-quant
+quant-system options daily-task --provider sample --top 5 --date 2026-05-03 --universe-source sample --earnings-source sample --vix-source sample --output-dir data\_phase13_sample_task
+```
+
+预期输出包含：
+
+```text
+step=universe status=refreshed
+step=earnings status=refreshed
+step=vix status=refreshed
+step=scan status=completed
+task_status=data\_phase13_sample_task\daily_task_status.json
+```
+
+该命令会刷新本地输入缓存，然后写入
+`data\_phase13_sample_task\2026-05-03.jsonl`、
+`data\_phase13_sample_task\2026-05-03_meta.json` 和
+`daily_task_status.json`。Windows 计划任务入口
+`scripts/run_options_radar.ps1` 使用同一个 `daily-task` 命令。
+
 ## 试运行（Dry Run）
 
 ```powershell
@@ -94,10 +117,14 @@ Playwright 配置会通过向上逐级查找，直到找到 `pyproject.toml` 和
 测试。同样的刷新操作也可以通过命令行使用：
 
 ```powershell
+quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
 python scripts/refresh_options_universe.py --bootstrap-github --output data/options_universe/sp500_nasdaq100.csv
 python scripts/refresh_earnings_calendar.py --top 100
 python scripts/refresh_vix_history.py --output data/options_universe/vix_history.csv --lookback-days 400
 ```
+
+`daily-task` 是调度入口：它会串联三项刷新和一次 `daily-scan` 等价扫描，
+并在输出目录写入 `daily_task_status.json`。三个脚本仍保留为单项缓存刷新工具。
 
 Radar 的 UI/API 在刷新标的池时默认使用公开的 S&P 500 + Nasdaq 100 数据源，
 刷新财报时使用 Nasdaq 公开日历，刷新 VIX 时默认使用 Yahoo/Cboe 公开数据。

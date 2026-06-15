@@ -18,6 +18,7 @@
   写入每个候选；同日重新运行会替换已存储的快照，而不是合并过期行）。
 - CLI 命令：
   - `quant-system options daily-scan`
+  - `quant-system options daily-task`
   - `quant-system options refresh-universe`
   - `quant-system options refresh-earnings`
   - `quant-system options refresh-vix`
@@ -64,6 +65,16 @@ Yahoo VIX 刷新（只读，无需 API key）：
 python scripts/refresh_vix_history.py --output data/options_universe/vix_history.csv --lookback-days 400
 source=yahoo_chart fetched_at=2026-05-03T10:12:27+00:00 vix_rows=274 vix3m_rows=274 end=2026-05-03 output=data\options_universe\vix_history.csv
 ```
+
+Windows 调度入口（刷新标的池、财报、VIX 后再扫描）：
+
+```text
+python -m quant_system.cli options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
+```
+
+该任务会写入 `data/options_scans/daily_task_status.json`，调度脚本
+`scripts/run_options_radar.ps1` 会把输出追加到
+`data/_runtime/logs/options-radar.log`。
 
 ## 最终命令执行记录
 

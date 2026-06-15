@@ -287,6 +287,15 @@ curl "http://127.0.0.1:8765/api/options/tools/vol-smile/AAPL?provider=futu"
 
 这些刷新端点仅写入本地 CSV 缓存。它们不会提交、修改、签署或下达订单。
 
+计划任务入口使用 CLI 命令：
+
+```powershell
+quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
+```
+
+该命令会串联标的池、财报、VIX 刷新和一次只读雷达扫描，并在雷达输出目录
+写入 `daily_task_status.json`。单个刷新端点和脚本仍用于维护或离线调试。
+
 ## 复刻计划
 
 已安装的 AlphaGBM 技能描述的是产品工作流与远程 API 调用；它们并不包含完整的远程评分后端。因此本地复刻计划在 Futu 数据与本地模型之上重建等价的项目功能。

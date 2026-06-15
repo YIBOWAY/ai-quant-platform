@@ -273,6 +273,13 @@ conda activate ai-quant
 quant-system options daily-scan --top 10
 ```
 
+Scheduled refresh + radar task:
+
+```powershell
+conda activate ai-quant
+quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
+```
+
 Radar UI:
 
 ```text
@@ -281,7 +288,9 @@ http://127.0.0.1:3001/options-radar
 
 The Radar page can run the current-date read-only scan and refresh the local
 universe, earnings, and VIX caches. Public sources are the default; the local
-sample source is only for explicit offline testing.
+sample source is only for explicit offline testing. Scheduled runs should use
+`daily-task`, which refreshes those local inputs before writing the daily
+snapshot and `daily_task_status.json`.
 
 Local options toolbox:
 

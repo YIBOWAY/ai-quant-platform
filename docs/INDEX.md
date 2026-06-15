@@ -183,6 +183,13 @@ conda activate ai-quant
 quant-system options daily-scan --top 10
 ```
 
+期权雷达调度任务（刷新标的池、财报、VIX 后再扫描）：
+
+```powershell
+conda activate ai-quant
+quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
+```
+
 买方助手调试运行：
 
 ```powershell

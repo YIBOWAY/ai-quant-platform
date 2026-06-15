@@ -185,6 +185,12 @@ $env:PYTHONPATH = "."
 
 文档化：[phase_13_scheduler_setup.md](phase_13_scheduler_setup.md) — 写明如何在 Windows 任务计划程序里：触发器（每个工作日 06:30）、操作（运行上述 ps1）、条件（仅在网络可用时运行）。**严禁** 写入注册表或自启动。
 
+> 2026-06-15 交付后修正：实际调度脚本不再硬编码
+> `D:\anaconda3`，而是按环境查找 `ai-quant` 解释器，并调用
+> `quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public`。
+> `daily-task` 会先刷新标的池、财报日历和 VIX，再运行扫描并写入
+> `daily_task_status.json`。本节原始命令仅保留为历史提示词上下文。
+
 ---
 
 ## 子阶段 13-6：API 端点

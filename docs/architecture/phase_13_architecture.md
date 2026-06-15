@@ -22,6 +22,10 @@ src/quant_system/api/routes/options_radar.py
   GET /api/options/daily-scan/dates
   GET /api/options/daily-scan
 
+src/quant_system/cli.py
+  quant-system options daily-scan   manual scan over existing local inputs
+  quant-system options daily-task   scheduled refresh + scan task
+
 src/frontend/app/options-radar/page.tsx
   src/frontend/components/forms/OptionsRadarView.tsx
   daily scan viewer with filters, detail expansion, CSV export
@@ -65,6 +69,18 @@ src/frontend/app/options-radar/page.tsx
         v                           v
   Local API                    Frontend table
 ```
+
+## 调度任务
+
+`quant-system options daily-task` 是 Windows 任务计划程序的推荐入口。它按顺序：
+
+1. 通过 `options/data_refresh.py` 刷新本地标的池 CSV。
+2. 通过同一刷新模块刷新本地财报日历 CSV。
+3. 刷新本地 VIX/VIX3M 历史 CSV。
+4. 使用刷新后的路径调用 `run_options_radar`。
+5. 写入每日 JSONL 快照、元数据和 `daily_task_status.json`。
+
+`daily-scan` 保留为人工调试和只扫描已有输入缓存的命令。
 
 ## 故障隔离
 

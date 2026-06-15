@@ -42,11 +42,20 @@ scripts/run_options_radar.ps1
 然后调用：
 
 ```text
-python -m quant_system.cli options daily-scan --top 100
+python -m quant_system.cli options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
 ```
+
+该命令会先刷新本地标的池、财报日历和 VIX/VIX3M 历史，再运行只读
+期权雷达扫描。`daily-scan` 仍可用于人工调试或只扫描已有输入缓存。
 
 调度输出会追加到：
 
 ```text
 data/_runtime/logs/options-radar.log
+```
+
+最近一次任务状态会写入雷达输出目录：
+
+```text
+data/options_scans/daily_task_status.json
 ```

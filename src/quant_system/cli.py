@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -32,6 +32,11 @@ from quant_system.logging.setup import configure_logging
 from quant_system.options.buy_side_decision import (
     BuySideDecisionRequest,
     run_buy_side_decision,
+)
+from quant_system.options.data_refresh import (
+    refresh_earnings_calendar,
+    refresh_options_universe,
+    refresh_vix_history,
 )
 from quant_system.options.earnings_calendar import EarningsCalendar
 from quant_system.options.market_regime import (
@@ -1314,6 +1319,163 @@ def options_daily_scan(
         raise typer.Exit(code=2)
 
 
+@options_app.command("daily-task")
+def options_daily_task(
+    top: Annotated[
+        int,
+        typer.Option("--top", help="Number of universe symbols to scan."),
+    ] = 100,
+    strategies: Annotated[
+        str,
+        typer.Option("--strategies", help="Comma-separated sell_put,covered_call list."),
+    ] = "sell_put,covered_call",
+    run_date: Annotated[
+        str | None,
+        typer.Option("--date", help="Run date label, YYYY-MM-DD. Defaults to US date."),
+    ] = None,
+    provider: Annotated[
+        Literal["futu", "sample"] | None,
+        typer.Option("--provider", help="Read-only options data provider."),
+    ] = None,
+    universe_source: Annotated[
+        Literal["public", "github", "sample"],
+        typer.Option("--universe-source", help="Universe refresh source."),
+    ] = "public",
+    earnings_source: Annotated[
+        Literal["public", "nasdaq", "yfinance", "sample"],
+        typer.Option("--earnings-source", help="Earnings calendar refresh source."),
+    ] = "public",
+    vix_source: Annotated[
+        Literal["public", "sample"],
+        typer.Option("--vix-source", help="VIX history refresh source."),
+    ] = "public",
+    universe_path: Annotated[
+        Path | None,
+        typer.Option("--universe-path", help="Override universe CSV path."),
+    ] = None,
+    earnings_path: Annotated[
+        Path | None,
+        typer.Option("--earnings-path", help="Override earnings calendar CSV path."),
+    ] = None,
+    vix_path: Annotated[
+        Path | None,
+        typer.Option("--vix-path", help="Override VIX history CSV path."),
+    ] = None,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option("--output-dir", help="Override radar snapshot output directory."),
+    ] = None,
+    vix_lookback_days: Annotated[
+        int,
+        typer.Option("--vix-lookback-days", help="VIX history lookback window."),
+    ] = 400,
+) -> None:
+    """Refresh Phase 13 radar inputs, then run the read-only daily scan."""
+    settings = reload_settings()
+    active_provider_name = provider or settings.options_radar.provider
+    selected_strategies = _parse_strategies(strategies)
+    active_universe_path = universe_path or settings.options_radar.universe_path
+    active_earnings_path = earnings_path or settings.options_radar.earnings_calendar_path
+    active_vix_path = vix_path or settings.options_radar.vix_history_path
+    active_output_dir = output_dir or settings.options_radar.output_dir
+    task_date = date.fromisoformat(run_date) if run_date else None
+    started_at = datetime.now(UTC).isoformat()
+    steps: dict[str, dict[str, Any]] = {}
+    current_step = "universe"
+
+    try:
+        steps["universe"] = refresh_options_universe(
+            active_universe_path,
+            source=universe_source,
+        )
+        _echo_options_daily_task_step("universe", steps["universe"])
+
+        current_step = "earnings"
+        steps["earnings"] = refresh_earnings_calendar(
+            universe_path=active_universe_path,
+            output_path=active_earnings_path,
+            source=earnings_source,
+            top=top,
+            today=task_date,
+        )
+        _echo_options_daily_task_step("earnings", steps["earnings"])
+
+        current_step = "vix"
+        steps["vix"] = refresh_vix_history(
+            active_vix_path,
+            source=vix_source,
+            lookback_days=vix_lookback_days,
+            end=task_date,
+        )
+        _echo_options_daily_task_step("vix", steps["vix"])
+
+        current_step = "scan"
+        market_regime = load_market_regime(active_vix_path, run_date=run_date)
+        universe = OptionsUniverse.load(active_universe_path, top_n=top)
+        report = run_options_radar(
+            provider=_build_options_radar_provider(settings, active_provider_name),
+            universe=universe,
+            config=OptionsRadarConfig(
+                base_screen_config=_build_radar_screen_config(settings),
+                strategies=selected_strategies,
+                universe_top_n=top,
+                top_per_ticker=5,
+            ),
+            iv_history_dir=active_output_dir / "iv_history",
+            earnings_calendar=EarningsCalendar.load(active_earnings_path),
+            run_date=run_date,
+            market_regime=market_regime,
+        )
+        data_path, meta_path = RadarSnapshotStore(active_output_dir).write(report)
+        steps["scan"] = {
+            "status": "completed",
+            "run_date": report.run_date,
+            "universe_size": report.universe_size,
+            "scanned_tickers": report.scanned_tickers,
+            "failed_tickers": len(report.failed_tickers),
+            "candidate_count": len(report.candidates),
+            "data_path": str(data_path),
+            "meta_path": str(meta_path),
+        }
+        _echo_options_daily_task_step("scan", steps["scan"])
+    except Exception as exc:
+        status_path = _write_options_daily_task_status(
+            active_output_dir,
+            {
+                "status": "failed",
+                "run_date": run_date,
+                "provider": active_provider_name,
+                "strategies": list(selected_strategies),
+                "started_at": started_at,
+                "finished_at": datetime.now(UTC).isoformat(),
+                "failed_step": current_step,
+                "error": f"{type(exc).__name__}: {exc}",
+                "steps": steps,
+            },
+        )
+        typer.echo(f"step={current_step} status=failed reason={type(exc).__name__}: {exc}")
+        typer.echo(f"task_status={status_path}")
+        raise typer.Exit(code=1) from exc
+
+    status_path = _write_options_daily_task_status(
+        active_output_dir,
+        {
+            "status": "completed",
+            "run_date": steps["scan"]["run_date"],
+            "provider": active_provider_name,
+            "strategies": list(selected_strategies),
+            "started_at": started_at,
+            "finished_at": datetime.now(UTC).isoformat(),
+            "steps": steps,
+        },
+    )
+    typer.echo(f"task_status={status_path}")
+    if report.scanned_tickers == 0:
+        raise typer.Exit(code=3)
+    if report.failed_tickers:
+        raise typer.Exit(code=2)
+
+
 @options_app.command("buyside-screen")
 def options_buyside_screen(
     ticker: Annotated[str, typer.Option("--ticker", help="Underlying ticker.")],
@@ -1513,6 +1675,34 @@ def _load_market_regime(settings, run_date: str | None) -> VixRegimeSnapshot | N
         settings.options_radar.vix_history_path,
         run_date=run_date,
     )
+
+
+def _echo_options_daily_task_step(name: str, payload: dict[str, Any]) -> None:
+    fields = [f"step={name}", f"status={payload.get('status', 'completed')}"]
+    if "source" in payload:
+        fields.append(f"source={payload['source']}")
+    if "row_count" in payload:
+        fields.append(f"rows={payload['row_count']}")
+    if "candidate_count" in payload:
+        fields.append(f"candidates={payload['candidate_count']}")
+    if "output_path" in payload:
+        fields.append(f"path={payload['output_path']}")
+    if "data_path" in payload:
+        fields.append(f"data={payload['data_path']}")
+    typer.echo(" ".join(fields))
+
+
+def _write_options_daily_task_status(
+    output_dir: Path,
+    payload: dict[str, Any],
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    status_path = output_dir / "daily_task_status.json"
+    status_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return status_path
 
 
 def _build_radar_screen_config(settings) -> OptionsScreenerConfig:

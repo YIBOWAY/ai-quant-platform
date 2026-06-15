@@ -211,7 +211,8 @@ OpenD 对每个报价接口大致强制执行每 30 秒 10 次调用。单次期
 
 对于交互式页面，`FutuMarketDataProvider` 现在会检测常见的中英文限速消息，按已配置的重试间隔等待一次，然后重试同一只读请求。如果第二次尝试仍失败，API 会返回带类型的 `rate_limited` 响应，以便前端显示清晰的临时错误，而非原始的提供方消息。
 
-对于诸如 `quant-system options daily-scan --top 100` 之类的大范围扫描，预期在富途节奏限制下运行会耗时较长。进行人工验证时，请先从较小的 `--top 10` 或 `--top 20` 开始。
+对于诸如 `quant-system options daily-scan --top 100` 或调度入口
+`quant-system options daily-task --top 100` 之类的大范围扫描，预期在富途节奏限制下运行会耗时较长。进行人工验证时，请先从较小的 `--top 10` 或 `--top 20` 开始。
 
 ## 安全边界
 

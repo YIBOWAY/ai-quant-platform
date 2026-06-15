@@ -153,6 +153,11 @@ Current options work is split into sell-side and buy-side research modules:
   `src/quant_system/options/local_research.py`.
 - Durable local option quote cache:
   `src/quant_system/storage/options_cache.py`.
+- Scheduled sell-side radar CLI: `quant-system options daily-task` refreshes
+  the universe, earnings calendar, and VIX history before running
+  `run_options_radar`; `scripts/run_options_radar.ps1` is the Windows Task
+  Scheduler entrypoint and writes `daily_task_status.json` next to radar
+  snapshots.
 - Buy-side decision API: `POST /api/options/buy-side/assistant`.
 - Buy-side debug CLI: `quant-system options buyside-screen`.
 - Buy-side frontend page: `src/frontend/app/options-buyside/page.tsx` (main

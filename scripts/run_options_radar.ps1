@@ -28,5 +28,5 @@ if (-not $PythonExe) {
 Set-Location $Root
 $env:PYTHONPATH = (Join-Path $Root "src")
 
-& $PythonExe -m quant_system.cli options daily-scan --top 100 2>&1 |
+& $PythonExe -m quant_system.cli options daily-task --top 100 --universe-source public --earnings-source public --vix-source public 2>&1 |
     Tee-Object -FilePath $LogPath -Append

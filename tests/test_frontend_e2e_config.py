@@ -80,7 +80,10 @@ def test_options_radar_scheduler_script_uses_env_python_and_runtime_log() -> Non
     assert 'Join-Path $Root "data\\_runtime\\logs"' in script
     assert '"options-radar.log"' in script
     assert "Tee-Object" in script
-    assert "options daily-scan --top 100" in script
+    assert "options daily-task --top 100" in script
+    assert "--universe-source public" in script
+    assert "--earnings-source public" in script
+    assert "--vix-source public" in script
 
 
 def test_frontend_package_has_no_ai_studio_template_residue() -> None:
