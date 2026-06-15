@@ -97,3 +97,8 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 `adjLow` / `adjClose` / `adjVolume`，缺失时才回退 raw 字段，并写入
 `price_adjustment=adjusted|raw|mixed`；`tests/test_data_tiingo_provider.py`
 已覆盖全复权、全缺失和部分缺失三种情形。
+
+2026-06-15 状态补充：评估报告里“默认历史回放在安全锁开启时仍会产生
+0 成交成功 run”的表述已过时。`POST /api/paper/run` 在回放请求试图开启
+kill switch 时会返回 409；前端回放表单也会在 `health.safety.kill_switch`
+开启时禁用提交，并把结果状态显示为 `execution_status=blocked|filled|no_orders|unfilled`。
