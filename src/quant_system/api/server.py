@@ -6,7 +6,7 @@ import os
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -78,9 +78,81 @@ def _start_run_index_init(active_settings: Settings, api_runs_dir: Path) -> None
     thread.start()
 
 
+def _nth_weekday(year: int, month: int, weekday: int, occurrence: int) -> date:
+    active = date(year, month, 1)
+    while active.weekday() != weekday:
+        active += timedelta(days=1)
+    return active + timedelta(days=7 * (occurrence - 1))
+
+
+def _last_weekday(year: int, month: int, weekday: int) -> date:
+    active = (
+        date(year, 12, 31)
+        if month == 12
+        else date(year, month + 1, 1) - timedelta(days=1)
+    )
+    while active.weekday() != weekday:
+        active -= timedelta(days=1)
+    return active
+
+
+def _observed_fixed_holiday(year: int, month: int, day: int) -> date:
+    holiday = date(year, month, day)
+    if holiday.weekday() == 5:
+        return holiday - timedelta(days=1)
+    if holiday.weekday() == 6:
+        return holiday + timedelta(days=1)
+    return holiday
+
+
+def _easter_date(year: int) -> date:
+    # Anonymous Gregorian computus, valid for modern NYSE holiday calculations.
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    correction = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * correction) // 451
+    month = (h + correction - 7 * m + 114) // 31
+    day = ((h + correction - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
+
+
+def _regular_us_market_holidays(year: int) -> set[date]:
+    holidays = {
+        _observed_fixed_holiday(year, 1, 1),
+        _nth_weekday(year, 1, 0, 3),
+        _nth_weekday(year, 2, 0, 3),
+        _easter_date(year) - timedelta(days=2),
+        _last_weekday(year, 5, 0),
+        _observed_fixed_holiday(year, 7, 4),
+        _nth_weekday(year, 9, 0, 1),
+        _nth_weekday(year, 11, 3, 4),
+        _observed_fixed_holiday(year, 12, 25),
+    }
+    if year >= 2022:
+        holidays.add(_observed_fixed_holiday(year, 6, 19))
+    return holidays
+
+
+def _is_regular_us_market_holiday(active_date: date) -> bool:
+    years = (active_date.year - 1, active_date.year, active_date.year + 1)
+    return any(active_date in _regular_us_market_holidays(year) for year in years)
+
+
+def _is_us_market_session(active_date: date) -> bool:
+    return active_date.weekday() < 5 and not _is_regular_us_market_holiday(active_date)
+
+
 def _options_radar_startup_catchup_run_date(now: datetime | None = None) -> str:
     active_date = (now or datetime.now(UTC)).date()
-    while active_date.weekday() >= 5:
+    while not _is_us_market_session(active_date):
         active_date -= timedelta(days=1)
     return active_date.isoformat()
 

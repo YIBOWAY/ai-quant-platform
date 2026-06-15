@@ -225,6 +225,13 @@ kill switch 时会返回 `409 detail.code=replay_kill_switch_enabled`；若请�
 `tests/test_settings_options_radar.py` 覆盖默认值、环境变量覆盖，以及 CLI/API
 构建出的 `OptionsScreenerConfig.max_delta` 一致性。
 
+2026-06-16 状态补充：评估报告中“期权雷达完整交易所节假日判断”的剩余项已
+处理到常规美股整天休市日级别。`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true`
+时，API 启动补跑会按最近一个常规美股交易日找缺失快照；周末、Good Friday、
+Juneteenth、独立日补休、感恩节等会回退到上一个交易日。临时闭市和半日交易
+仍由 Windows 计划任务或人工流程处理；`tests/test_api_options_radar.py` 覆盖
+这些启动补跑目标日期。
+
 2026-06-15 状态补充：评估报告中“回测 Sharpe / 年化指标缺少数值锚点”的
 测试缺口已补上。`tests/test_backtest_engine_metrics.py` 中的
 `test_performance_metrics_match_hand_calculated_return_and_sharpe` 使用手算样例锁定

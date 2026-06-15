@@ -195,6 +195,30 @@ def test_options_radar_startup_catchup_run_date_uses_last_weekday() -> None:
     )
     assert (
         api_server._options_radar_startup_catchup_run_date(
+            datetime(2026, 4, 3, 12, tzinfo=UTC)
+        )
+        == "2026-04-02"
+    )
+    assert (
+        api_server._options_radar_startup_catchup_run_date(
+            datetime(2026, 6, 19, 12, tzinfo=UTC)
+        )
+        == "2026-06-18"
+    )
+    assert (
+        api_server._options_radar_startup_catchup_run_date(
+            datetime(2026, 7, 3, 12, tzinfo=UTC)
+        )
+        == "2026-07-02"
+    )
+    assert (
+        api_server._options_radar_startup_catchup_run_date(
+            datetime(2026, 11, 26, 12, tzinfo=UTC)
+        )
+        == "2026-11-25"
+    )
+    assert (
+        api_server._options_radar_startup_catchup_run_date(
             datetime(2026, 6, 13, 12, tzinfo=UTC)
         )
         == "2026-06-12"

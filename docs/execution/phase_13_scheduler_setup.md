@@ -90,9 +90,9 @@ data/options_scans/daily_task_status.json
 $env:QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED='true'
 ```
 
-该开关默认关闭。开启后，API 启动时如果最近一个 UTC 工作日雷达快照缺失，会在后台运行一次
-只读 `daily-scan` 等价扫描；周末启动会回退到上一个周五，并把
+该开关默认关闭。开启后，API 启动时如果最近一个常规美股交易日雷达快照缺失，会在后台运行一次
+只读 `daily-scan` 等价扫描；周末和常规美股整天休市日会回退到上一个交易日，并把
 `source=startup_catchup` 的状态写入同一个 `daily_task_status.json`。它只使用已有本地输入缓存；
-正式日终刷新和完整交易所节假日处理仍应使用 Windows 任务计划程序调用 `daily-task`。
+正式日终刷新仍应使用 Windows 任务计划程序调用 `daily-task`；临时闭市和半日交易仍由调度/人工流程处理。
 如果扫描锁已被调度任务或手动扫描持有，启动补跑会跳过且不覆盖已有
 `daily_task_status.json`；CLI/API 手动扫描遇锁会快速失败，稍后重试即可。
