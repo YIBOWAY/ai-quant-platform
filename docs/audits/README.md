@@ -21,6 +21,18 @@
 环境、安全开关、默认数据源、Futu/OpenD 端点、可选数据库索引设置和
 `data/_runtime/logs/backend.jsonl` 路径；该命令不连接行情源或 PostgreSQL。
 
+2026-06-15 状态补充：评估报告中“缺少本地一键启动/停止脚本”的小项已处理。
+`scripts/dev.ps1` 会检查默认端口、按需启动本地 `quantplatform-db` 容器、探测
+OpenD 端口、启动 FastAPI 与 Next.js，并写入 `data/_runtime/pids/` 与
+`data/_runtime/logs/`；`scripts/dev-stop.ps1` 会按 pid 文件停止前后端进程树，
+并可选停止数据库容器。README 和 `tests/test_frontend_e2e_config.py` 已锁定
+这些本地运维约定。
+
+2026-06-15 状态补充：评估报告中“缺少后端落盘日志”的小项已处理。后端
+CLI 启动和 app-factory 路径都会把结构化 JSONL 运行日志写入
+`data/_runtime/logs/backend.jsonl`，并由 `RotatingFileHandler` 控制文件大小；
+`tests/test_logging_setup.py` 覆盖了 stdout JSON 与文件 JSONL 两条路径。
+
 2026-06-15 状态补充：评估报告中“.env.example 声称默认 sample 而代码默认
 futu”的小项已对齐。`.env.example` 现在使用
 `QS_DEFAULT_DATA_PROVIDER="futu"`，并说明 `sample` 只用于显式离线流程测试；
@@ -86,6 +98,12 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 已有测试断言不会在 `api_runs` 下生成 `.duckdb` 文件；历史遗留副本可用
 `scripts/cleanup_api_run_duckdb.py` 先 dry-run 再 `--apply` 清理，且测试会确保
 该脚本只处理 `api_runs` 下的 run 副本，不触碰 ingest DuckDB 或 Futu 期权缓存。
+
+2026-06-15 状态补充：评估报告中“`data/api_runs` 缺少可交付备份路径”的小项
+已处理。`scripts/backup_api_runs.py` 会把 `data/api_runs/` 打成 zip 并写入
+`manifest.json`，默认排除 `.env`、DuckDB 文件、lock 文件等不应进入备份包的
+本地状态；README 的 “Local Run Artifacts and Backups” 已给出命令，
+`tests/test_backup_api_runs_script.py` 会锁定归档内容与排除规则。
 
 2026-06-15 状态补充：评估报告中“`attach_safety_footer` 可被同名字段遮蔽”的
 小项已加固。JSON 响应中间件现在会强制覆盖 `payload["safety"]` 为当前
