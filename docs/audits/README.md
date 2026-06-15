@@ -91,3 +91,9 @@ helper 未被复用；现在日期查询已改为调用 `getOptionsRadarDates()`
 `mask_secret_fields()` 现在除了按字段名遮蔽 `key` / `secret` / `token` /
 `password` / `private`，还会直接识别并遮蔽 `pydantic.SecretStr` /
 `SecretBytes` 值；测试覆盖字段名本身不含敏感关键词但值类型为 secret 的情况。
+
+2026-06-15 状态补充：评估报告中“Tiingo 可能使用未复权价格”的 critical 候选项
+在当前代码上已证伪。`TiingoEODProvider` 会优先使用 `adjOpen` / `adjHigh` /
+`adjLow` / `adjClose` / `adjVolume`，缺失时才回退 raw 字段，并写入
+`price_adjustment=adjusted|raw|mixed`；`tests/test_data_tiingo_provider.py`
+已覆盖全复权、全缺失和部分缺失三种情形。
