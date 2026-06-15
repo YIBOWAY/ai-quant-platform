@@ -205,3 +205,22 @@ dry-run，只在传 `--apply` 时删除，且支持 `--cache-path` 与 `--as-of`
 0 成交成功 run”的表述已过时。`POST /api/paper/run` 在回放请求试图开启
 kill switch 时会返回 409；前端回放表单也会在 `health.safety.kill_switch`
 开启时禁用提交，并把结果状态显示为 `execution_status=blocked|filled|no_orders|unfilled`。
+
+2026-06-15 状态补充：评估报告中“期权雷达 CLI/API 阈值双轨，`max_delta`
+漂移”的小项已处理到当前防回归状态。CLI 与 API 都通过各自的
+`_build_radar_screen_config()` 从同一个 `OptionsRadarSettings.max_delta_for_radar`
+读取阈值，环境变量别名为 `QS_OPTIONS_RADAR_MAX_DELTA_FOR_RADAR`；
+`tests/test_settings_options_radar.py` 覆盖默认值、环境变量覆盖，以及 CLI/API
+构建出的 `OptionsScreenerConfig.max_delta` 一致性。
+
+2026-06-15 状态补充：评估报告中“回测 Sharpe / 年化指标缺少数值锚点”的
+测试缺口已补上。`tests/test_backtest_engine_metrics.py` 中的
+`test_performance_metrics_match_hand_calculated_return_and_sharpe` 使用手算样例锁定
+`total_return`、`annualized_return`、`volatility` 和 `sharpe`，避免后续在
+`calculate_performance_metrics()` 中重排收益率、年化因子或标准差逻辑时无声漂移。
+
+2026-06-15 状态补充：评估报告中“缺少真实默认 env 形态下的 paper replay
+守护测试”已覆盖。`tests/test_paper_trading_pipeline_cli.py` 已覆盖
+`QS_KILL_SWITCH=true` 默认环境下 `run-sample` 不得成交、显式 `--kill-switch`
+必须 blocked、试图 `--no-kill-switch` 但未先关闭全局环境变量时必须失败，
+以及只有 `QS_KILL_SWITCH=false` 的本地模拟进程才允许生成演示成交。
