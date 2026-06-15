@@ -17,6 +17,7 @@ from quant_system.api.schemas.paper import (
     AccountResetRequest,
     KillSwitchRequest,
     ManualOrderRequest,
+    PaperRunDetailResponse,
     PaperRunRequest,
     PaperRunsResponse,
 )
@@ -486,7 +487,7 @@ def _account_rebalance_strategy_id(strategy_id: str) -> str:
     return normalized
 
 
-@router.get("/paper/{run_id}")
+@router.get("/paper/{run_id}", response_model=PaperRunDetailResponse)
 def paper_detail(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     run_dir = resolve_run_dir(api_runs_dir / "paper", run_id)
     metadata_path = run_dir / "metadata.json"

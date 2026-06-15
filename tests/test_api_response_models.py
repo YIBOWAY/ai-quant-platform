@@ -31,6 +31,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/runs/recent": "RecentRunsResponse",
         "/api/strategies": "StrategyCatalogResponse",
         "/api/universes": "UniverseCatalogResponse",
+        "/api/paper/{run_id}": "PaperRunDetailResponse",
     }
     for path, model_name in expected.items():
         response_schema = openapi["paths"][path]["get"]["responses"]["200"]["content"][
@@ -60,6 +61,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "source" in components["BenchmarkResponse"]["properties"]
     assert "factors" in components["FactorCatalogResponse"]["properties"]
     assert "runs" in components["FactorRunsResponse"]["properties"]
+    assert "risk_breaches" in components["PaperRunDetailResponse"]["properties"]
     assert "runs" in components["RecentRunsResponse"]["properties"]
     assert "strategies" in components["StrategyCatalogResponse"]["properties"]
     assert "universes" in components["UniverseCatalogResponse"]["properties"]

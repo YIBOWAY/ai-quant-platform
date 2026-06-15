@@ -15,6 +15,18 @@ class PaperRunsResponse(BaseModel):
     paper_runs: list[PaperRunSummary]
 
 
+PaperRunRecord = dict[str, Any]
+
+
+class PaperRunDetailResponse(BaseModel):
+    id: str
+    metadata: dict[str, Any]
+    orders: list[PaperRunRecord]
+    order_events: list[PaperRunRecord]
+    trades: list[PaperRunRecord]
+    risk_breaches: list[PaperRunRecord]
+
+
 class PaperRunRequest(BaseModel):
     symbols: list[str] = Field(default_factory=lambda: ["SPY", "QQQ"])
     start: str
