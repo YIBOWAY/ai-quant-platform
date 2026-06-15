@@ -236,7 +236,10 @@ simulation-only — no real orders, broker, wallet, or account unlock.
   `supports_account_rebalance` in the backend strategy registry; currently the
   account path supports `cross_sectional_top_n` and `mean_reversion_top_n`.
   It only uses real market history; sample strategy history never mutates the
-  persistent account.
+  persistent account. Every current holding and target symbol must have a
+  finite positive paper price before the rebalance plan is built; missing or
+  invalid prices abort the whole rebalance rather than producing a partial
+  order plan.
 - View / freeze / reset / ledger: `GET /api/paper/account`,
   `POST /api/paper/account/kill-switch`, `POST /api/paper/account/reset`,
   `GET /api/paper/account/ledger`.

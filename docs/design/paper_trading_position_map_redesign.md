@@ -117,7 +117,7 @@ LedgerEntry
 
 **路径 A — 自动（一键再平衡 + 可选定时）**
 - 用户选一个已注册且 `supports_account_rebalance=true` 的策略（复用 `StrategyRegistry`，当前支持 `cross_sectional_top_n` / `mean_reversion_top_n`）。
-- 后端用账户当前净值算目标权重 → 目标市值 → 与当前持仓求差（复用现有 `_generate_rebalance_requests` 逻辑，先卖后买）→ 逐单过 `RiskEngine` → `PaperBroker` 以**当前价**撮合 → 更新账户 + 写账本，`source="strategy:<id>"`。
+- 后端用账户当前净值算目标权重 → 目标市值 → 与当前持仓求差（先卖后买；所有当前持仓和目标标的都必须有有限正价格，否则整体中止）→ 逐单过 `RiskEngine` → `PaperBroker` 以**当前价**撮合 → 更新账户 + 写账本，`source="strategy:<id>"`。
 - **触发方式**：默认「按需」——用户点「按此策略再平衡」按钮触发一次。**可选定时**：一个轻量调度（见 4.3 阶段，复用 Phase 13 已有的 Windows Task Scheduler 模式 `quant-system` CLI 子命令），如每个交易日收盘后触发一次再平衡。调度是**增强项**，不阻塞主流程。
 
 **路径 B — 手动（自选美股）**

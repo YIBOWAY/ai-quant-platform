@@ -373,6 +373,31 @@ def test_rebalance_requests_sell_before_buy_and_hit_targets() -> None:
     assert any(sym == "MSFT" and side == OrderSide.BUY for sym, side, _ in requests)
 
 
+def test_rebalance_request_builder_rejects_missing_prices() -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    account.apply_fill(_fill("AAPL", OrderSide.BUY, 500, 100.0), source="manual")
+
+    with pytest.raises(PriceUnavailableError, match="AAPL"):
+        PaperAccountService._rebalance_requests(
+            account=account,
+            target_weights={"MSFT": 1.0},
+            prices={"MSFT": 100.0},
+            equity=100_000.0,
+        )
+
+
+def test_rebalance_request_builder_rejects_non_finite_prices() -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+
+    with pytest.raises(PriceUnavailableError, match="MSFT"):
+        PaperAccountService._rebalance_requests(
+            account=account,
+            target_weights={"MSFT": 1.0},
+            prices={"MSFT": float("nan")},
+            equity=100_000.0,
+        )
+
+
 def test_rebalance_requires_prices_for_every_target_and_holding(monkeypatch) -> None:
     account = PaperAccount.open_new(initial_cash=100_000.0)
     service = PaperAccountService(price_source=_PartialPriceSource({"AAPL": 100.0}))

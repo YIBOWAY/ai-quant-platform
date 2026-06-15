@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from math import isfinite
 
 import pandas as pd
 
@@ -527,11 +528,20 @@ class PaperAccountService:
         equity: float,
     ) -> list[tuple[str, OrderSide, float]]:
         symbols = sorted(set(account.positions) | set(target_weights))
+        missing_prices = [
+            symbol
+            for symbol in symbols
+            if prices.get(symbol) is None
+            or prices[symbol] <= 0
+            or not isfinite(prices[symbol])
+        ]
+        if missing_prices:
+            raise PriceUnavailableError(
+                "missing rebalance prices for: " + ", ".join(missing_prices)
+            )
         requests: list[tuple[str, OrderSide, float]] = []
         for symbol in symbols:
-            price = prices.get(symbol)
-            if price is None or price <= 0:
-                continue
+            price = prices[symbol]
             current_value = account.position_quantity(symbol) * price
             target_value = target_weights.get(symbol, 0.0) * equity
             value_delta = target_value - current_value

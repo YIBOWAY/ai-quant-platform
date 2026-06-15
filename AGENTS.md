@@ -144,7 +144,10 @@ on the Position Map.
   strategy rebalance share one `OrderRequest -> RiskEngine -> PaperBroker ->
   account.apply_fill` primitive. Rebalance is plan-then-commit: it dry-runs the
   whole plan on a deep copy and aborts with no mutation if any leg is rejected
-  (prevents "sold everything then failed to buy").
+  (prevents "sold everything then failed to buy"). Every current holding and
+  target symbol must have a finite positive paper price before a rebalance plan
+  can be built; missing or invalid prices abort instead of silently skipping a
+  leg.
 - API (`src/quant_system/api/routes/paper.py`): `GET /api/paper/account`,
   `POST /api/paper/account/orders` (quantity or notional, optional limit),
   `POST /api/paper/account/orders/process` (check queued paper limit orders),

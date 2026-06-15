@@ -179,7 +179,8 @@ curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
 - 策略再平衡：`POST /api/paper/account/rebalance`（一键；任一腿无法成交则整体原子中止）。
   策略下拉由后端策略注册表的 `supports_account_rebalance` 字段驱动；当前账户路径支持
   `cross_sectional_top_n` 与 `mean_reversion_top_n`。它只接受真实市场历史；
-  sample 演示历史不会改变持续账户。
+  sample 演示历史不会改变持续账户。构建再平衡计划前，当前持仓和目标标的都必须有
+  有限且大于 0 的纸面价格；缺价或无效价格会整体中止，不会生成部分订单计划。
 - 查看 / 冻结 / 重置 / 账本：`GET /api/paper/account`、
   `POST /api/paper/account/kill-switch`、`POST /api/paper/account/reset`、
   `GET /api/paper/account/ledger`。
