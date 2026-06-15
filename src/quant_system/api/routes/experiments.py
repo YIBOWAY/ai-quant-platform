@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
+from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.common import read_json, read_parquet_records, resolve_run_dir
 from quant_system.api.schemas.experiments import ExperimentRunRequest
 from quant_system.data.provider_factory import (
@@ -63,7 +64,7 @@ def run_experiment(
             walk_forward=request.walk_forward,
         )
     except DataProviderUnavailableError as exc:
-        raise _provider_unavailable_400(exc) from exc
+        raise provider_unavailable_400(exc) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=400,
@@ -122,14 +123,3 @@ def _first_existing(root: Path, names: list[str]) -> Path | None:
         if path.exists():
             return path
     return None
-
-
-def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
-    return HTTPException(
-        status_code=400,
-        detail={
-            "code": "provider_unavailable",
-            "provider": exc.provider,
-            "message": str(exc),
-        },
-    )

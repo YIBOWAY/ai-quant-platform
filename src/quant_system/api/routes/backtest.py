@@ -5,6 +5,7 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
+from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.backtest import BacktestRunRequest
 from quant_system.api.schemas.common import (
     make_run_id,
@@ -58,7 +59,7 @@ def run_backtest(
             detail={"code": "invalid_backtest_request", "message": str(exc)},
         ) from exc
     except DataProviderUnavailableError as exc:
-        raise _provider_unavailable_400(exc) from exc
+        raise provider_unavailable_400(exc) from exc
     metadata = {
         "run_id": run_id,
         "source": result.source,
@@ -118,16 +119,6 @@ def run_backtest(
     index_run("backtest", metadata, run_dir, settings)
     return metadata
 
-
-def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
-    return HTTPException(
-        status_code=400,
-        detail={
-            "code": "provider_unavailable",
-            "provider": exc.provider,
-            "message": str(exc),
-        },
-    )
 
 
 @router.get("/backtests")

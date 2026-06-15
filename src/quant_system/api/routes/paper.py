@@ -6,6 +6,7 @@ import threading
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
+from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.common import (
     make_run_id,
     read_parquet_records,
@@ -80,7 +81,7 @@ def run_paper(
             settings=settings,
         )
     except DataProviderUnavailableError as exc:
-        raise _provider_unavailable_400(exc) from exc
+        raise provider_unavailable_400(exc) from exc
     metadata = {
         "run_id": run_id,
         "source": result.source,
@@ -117,18 +118,6 @@ def run_paper(
     )
     index_run("paper", metadata, run_dir, settings)
     return metadata
-
-
-def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
-    return HTTPException(
-        status_code=400,
-        detail={
-            "code": "provider_unavailable",
-            "provider": exc.provider,
-            "message": str(exc),
-        },
-    )
-
 
 @router.get("/paper")
 def list_paper(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:

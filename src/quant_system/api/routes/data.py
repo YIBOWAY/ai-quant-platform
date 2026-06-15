@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from quant_system.api.dependencies import OutputDirDep, SettingsDep
+from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.common import dataframe_records
 from quant_system.data.provider_factory import (
     DataProviderUnavailableError,
@@ -73,12 +74,12 @@ def ohlcv(
         try:
             active_provider, source = build_ohlcv_provider(settings, requested=provider)
         except DataProviderUnavailableError as exc:
-            raise _provider_unavailable_400(exc) from exc
+            raise provider_unavailable_400(exc) from exc
         try:
             frame = active_provider.fetch_ohlcv([normalized_symbol], start=start, end=end)
         except Exception as exc:
             if provider is not None:
-                raise _provider_unavailable_400(
+                raise provider_unavailable_400(
                     DataProviderUnavailableError(provider, exc.__class__.__name__)
                 ) from exc
             frame = SampleOHLCVProvider().fetch_ohlcv(
@@ -94,14 +95,3 @@ def ohlcv(
             frame[["timestamp", "open", "high", "low", "close", "volume"]]
         ),
     }
-
-
-def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
-    return HTTPException(
-        status_code=400,
-        detail={
-            "code": "provider_unavailable",
-            "provider": exc.provider,
-            "message": str(exc),
-        },
-    )

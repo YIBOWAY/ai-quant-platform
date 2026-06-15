@@ -5,6 +5,7 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from quant_system.api.dependencies import ApiRunsDirDep, OutputDirDep, SettingsDep
+from quant_system.api.errors import provider_unavailable_400
 from quant_system.api.schemas.common import (
     make_run_id,
     read_parquet_records,
@@ -51,7 +52,7 @@ def run_factor(
             settings=settings,
         )
     except DataProviderUnavailableError as exc:
-        raise _provider_unavailable_400(exc) from exc
+        raise provider_unavailable_400(exc) from exc
     metadata = {
         "run_id": run_id,
         "source": result.source,
@@ -82,16 +83,6 @@ def run_factor(
     index_run("factor", metadata, run_dir, settings)
     return metadata
 
-
-def _provider_unavailable_400(exc: DataProviderUnavailableError) -> HTTPException:
-    return HTTPException(
-        status_code=400,
-        detail={
-            "code": "provider_unavailable",
-            "provider": exc.provider,
-            "message": str(exc),
-        },
-    )
 
 
 @router.get("/factors/runs")
