@@ -30,3 +30,8 @@ futu”的小项已对齐。`.env.example` 现在使用
 持续模拟账户 API 的领域错误现在返回结构化 `detail.code` / `detail.message`，
 覆盖账户冻结、缺价、策略数据不可用、未知或不支持的账户再平衡策略等常见失败态。
 其他历史回放和跨模块 404 仍未做全局统一。
+
+2026-06-15 状态补充：评估报告中“前端纯函数缺测试”的一部分已补强。
+Strategy Catalog 的 schema-driven payload 构建逻辑已抽到
+`src/frontend/lib/strategyPayload.ts`，并由 `strategyPayload.test.ts` 覆盖
+symbol list、number、integer_or_null 和 factor weight map 转换。

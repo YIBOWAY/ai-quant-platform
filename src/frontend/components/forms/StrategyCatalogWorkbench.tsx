@@ -25,6 +25,7 @@ import { formatPercent } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath, type Locale } from "@/lib/locale";
+import { asStringArray, buildStrategyPayload } from "@/lib/strategyPayload";
 import { FutuUnavailableHint, futuOptionLabel } from "./FutuProviderHint";
 
 type StrategyCatalogWorkbenchProps = {
@@ -242,7 +243,7 @@ export function StrategyCatalogWorkbench({
     setPending(true);
     setError(null);
     try {
-      const payload = buildPayload(fields, values);
+      const payload = buildStrategyPayload(fields, values);
       // Backtest-engine strategies dispatch on strategy_id; the schema fields
       // do not include it, so inject it for backtest result types. Replication
       // endpoints have their own contract and ignore it.
@@ -765,36 +766,6 @@ function update(
   setValues: (updater: (current: Record<string, unknown>) => Record<string, unknown>) => void,
 ) {
   setValues((current) => ({ ...current, [fieldName]: value }));
-}
-
-function buildPayload(fields: Record<string, Record<string, unknown>>, values: Record<string, unknown>) {
-  const payload: Record<string, unknown> = {};
-  for (const [fieldName, schema] of Object.entries(fields)) {
-    const type = String(schema.type ?? "text");
-    const raw = values[fieldName] ?? schema.default;
-    if (type === "symbol_list") {
-      payload[fieldName] = asStringArray(raw);
-    } else if (type === "integer" || type === "number") {
-      payload[fieldName] = Number(raw);
-    } else if (type === "integer_or_null") {
-      payload[fieldName] = raw === "" || raw === null || raw === undefined ? null : Number(raw);
-    } else if (type === "factor_weight_map") {
-      payload[fieldName] = raw ?? {};
-    } else {
-      payload[fieldName] = raw;
-    }
-  }
-  return payload;
-}
-
-function asStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map(String).filter(Boolean);
-  }
-  if (typeof value === "string") {
-    return value.split(",").map((item) => item.trim()).filter(Boolean);
-  }
-  return [];
 }
 
 function flattenResult(result: Record<string, unknown>): PreviewRecord[] {

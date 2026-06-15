@@ -44,6 +44,9 @@
 ## 操作步骤（一步一步，结合真实的输入项与默认值）
 
 界面左侧是 `StrategyCatalogWorkbench`（`src/frontend/components/forms/StrategyCatalogWorkbench.tsx`）的参数侧栏，右侧是结果区。
+参数控件仍由该组件渲染；提交前的 schema-driven payload 转换集中在
+`src/frontend/lib/strategyPayload.ts`，对应单测是
+`src/frontend/lib/strategyPayload.test.ts`。
 
 1. **选策略 Strategy**：顶部下拉，默认选中列表第一项（即 `cross_sectional_top_n`）。下拉列出注册表全部 3 个策略。换策略时，表单会**自动重置为该策略的 `default_payload`**，并清空上一次的结果与报错。
 2. **看出处与徽章**：选中后，侧栏会显示该策略的"论文出处"（`paper_source`，没有就退回显示 `description`），下面一个徽章标明它的性质：
