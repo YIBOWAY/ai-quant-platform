@@ -127,6 +127,14 @@ dry-run，只在传 `--apply` 时删除，且支持 `--cache-path` 与 `--as-of`
 `tests/test_options_cache.py` 和 `tests/test_options_cache_cli.py` 覆盖只删过期项、
 保留新鲜项和 dry-run 不删除；`docs/futu/futu_options_data_provider.md` 已记录用法。
 
+2026-06-15 状态补充：评估报告中“持续模拟账户成交定价链路覆盖不足”的
+测试缺口已补强。`tests/test_paper_price_source.py` 现在直接覆盖
+`PaperPriceSource` 的 Futu snapshot 优先级、本地缓存只接受近期真实 provider
+收盘价、sample-only / stale-only 本地缓存拒单、Tiingo 远程 fallback 成功路径，
+以及 Tiingo fallback 不得使用 sample provider。实现本身已符合
+`docs/guides/paper-trading.md` 和 AGENTS.md 中的“持续账户绝不使用 sample 价格成交”
+边界，本次变更主要是防回归测试。
+
 2026-06-15 状态补充：评估报告中“`data/api_runs` 缺少可交付备份路径”的小项
 已处理。`scripts/backup_api_runs.py` 会把 `data/api_runs/` 打成 zip 并写入
 `manifest.json`，默认排除 `.env`、DuckDB 文件、lock 文件等不应进入备份包的
