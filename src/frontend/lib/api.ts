@@ -103,14 +103,31 @@ export type FactorRunsResponse = ApiEnvelope & {
   runs: FactorRunSummary[];
 };
 
+export type FactorRunRequestEchoResponse = {
+  symbols: string[];
+  start: string;
+  end: string;
+  provider: "sample" | "futu" | "tiingo";
+  lookback: number;
+  quantiles: number;
+};
+
+export type FactorRunPathsResponse = {
+  factor_results: string;
+  signals: string;
+  ic: string;
+  quantiles: string;
+  report: string;
+};
+
 export type FactorRunResponse = ApiEnvelope & {
   run_id: string;
   source: string;
   row_count: number;
   signal_count: number;
   warnings: string[];
-  request: Record<string, unknown>;
-  paths: Record<string, unknown>;
+  request: FactorRunRequestEchoResponse;
+  paths: FactorRunPathsResponse;
 };
 
 export type FactorRunDetailResponse = ApiEnvelope & {
@@ -378,6 +395,26 @@ export type PaperRunsResponse = ApiEnvelope & {
   paper_runs: PaperRunSummary[];
 };
 
+export type PaperRunRequestEchoResponse = {
+  symbols: string[];
+  start: string;
+  end: string;
+  provider: "sample" | "futu" | "tiingo";
+  initial_cash: number;
+  lookback: number;
+  top_n: number;
+  max_fill_ratio_per_tick: number;
+  enable_kill_switch: boolean;
+};
+
+export type PaperRunPathsResponse = {
+  orders: string;
+  order_events: string;
+  trades: string;
+  risk_breaches: string;
+  report: string;
+};
+
 export type PaperRunResponse = ApiEnvelope & {
   run_id: string;
   source: string;
@@ -388,8 +425,8 @@ export type PaperRunResponse = ApiEnvelope & {
   final_equity: number;
   execution_status: string;
   execution_note?: string | null;
-  request: Record<string, unknown>;
-  paths: Record<string, unknown>;
+  request: PaperRunRequestEchoResponse;
+  paths: PaperRunPathsResponse;
 };
 
 export type PaperRunDetailResponse = ApiEnvelope & {
@@ -553,6 +590,14 @@ export type ExperimentsResponse = ApiEnvelope & {
   experiments: ExperimentSummary[];
 };
 
+export type ExperimentRunPathsResponse = {
+  config: string;
+  runs: string;
+  folds: string;
+  agent_summary: string;
+  report: string;
+};
+
 export type ExperimentRunResponse = ApiEnvelope & {
   experiment_id: string;
   raw_experiment_id: string;
@@ -560,7 +605,7 @@ export type ExperimentRunResponse = ApiEnvelope & {
   source: string;
   run_count: number;
   best_run_id?: string | null;
-  paths: Record<string, unknown>;
+  paths: ExperimentRunPathsResponse;
 };
 
 export type ExperimentDetailResponse = ApiEnvelope & {

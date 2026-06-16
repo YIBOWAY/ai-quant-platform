@@ -48,6 +48,16 @@ def test_shared_run_response_types_include_backend_response_model_fields() -> No
     assert "metrics: BacktestRunMetricsResponse;" in api_types
     assert "benchmark: BacktestRunBenchmarkResponse;" in api_types
     assert "paths: BacktestRunPathsResponse;" in api_types
+    assert "export type FactorRunRequestEchoResponse = {" in api_types
+    assert "export type FactorRunPathsResponse = {" in api_types
+    assert "request: FactorRunRequestEchoResponse;" in api_types
+    assert "paths: FactorRunPathsResponse;" in api_types
+    assert "export type ExperimentRunPathsResponse = {" in api_types
+    assert "paths: ExperimentRunPathsResponse;" in api_types
+    assert "export type PaperRunRequestEchoResponse = {" in api_types
+    assert "export type PaperRunPathsResponse = {" in api_types
+    assert "request: PaperRunRequestEchoResponse;" in api_types
+    assert "paths: PaperRunPathsResponse;" in api_types
 
     for field in [
         "attribution: PreviewRecord[];",
@@ -57,7 +67,6 @@ def test_shared_run_response_types_include_backend_response_model_fields() -> No
         "execution_status: string;",
         "risk_breach_count: number;",
         "warnings: string[];",
-        "paths: Record<string, unknown>;",
     ]:
         assert field in api_types
 

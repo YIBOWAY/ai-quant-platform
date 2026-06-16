@@ -15,6 +15,26 @@ class PaperRunsResponse(BaseModel):
     paper_runs: list[PaperRunSummary]
 
 
+class PaperRunRequestEchoResponse(BaseModel):
+    symbols: list[str]
+    start: str
+    end: str
+    provider: Literal["sample", "futu", "tiingo"]
+    initial_cash: float
+    lookback: int
+    top_n: int
+    max_fill_ratio_per_tick: float
+    enable_kill_switch: bool
+
+
+class PaperRunPathsResponse(BaseModel):
+    orders: str
+    order_events: str
+    trades: str
+    risk_breaches: str
+    report: str
+
+
 class PaperRunResponse(BaseModel):
     run_id: str
     source: str
@@ -25,8 +45,8 @@ class PaperRunResponse(BaseModel):
     final_equity: float
     execution_status: str
     execution_note: str | None = None
-    request: dict[str, Any]
-    paths: dict[str, Any]
+    request: PaperRunRequestEchoResponse
+    paths: PaperRunPathsResponse
 
 
 class AccountPositionResponse(BaseModel):

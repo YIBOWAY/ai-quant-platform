@@ -110,6 +110,10 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "timings_ms" in components["BacktestRunResponse"]["properties"]
     assert "benchmark" in components["BacktestDetailResponse"]["properties"]
     assert "paper_runs" in components["PaperRunsResponse"]["properties"]
+    assert "PaperRunRequestEchoResponse" in components
+    assert "enable_kill_switch" in components["PaperRunRequestEchoResponse"]["properties"]
+    assert "PaperRunPathsResponse" in components
+    assert "risk_breaches" in components["PaperRunPathsResponse"]["properties"]
     assert "positions" in components["PaperAccountResponse"]["properties"]
     assert "reserved_cash" in components["PaperAccountResponse"]["properties"]
     assert "available_cash" in components["PaperAccountResponse"]["properties"]
@@ -120,9 +124,15 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "experiments" in components["ExperimentsResponse"]["properties"]
     assert "runs" in components["ExperimentDetailResponse"]["properties"]
     assert "folds" in components["ExperimentDetailResponse"]["properties"]
+    assert "ExperimentRunPathsResponse" in components
+    assert "agent_summary" in components["ExperimentRunPathsResponse"]["properties"]
     assert "source" in components["OHLCVResponse"]["properties"]
     assert "source" in components["BenchmarkResponse"]["properties"]
     assert "factors" in components["FactorCatalogResponse"]["properties"]
+    assert "FactorRunRequestEchoResponse" in components
+    assert "quantiles" in components["FactorRunRequestEchoResponse"]["properties"]
+    assert "FactorRunPathsResponse" in components
+    assert "factor_results" in components["FactorRunPathsResponse"]["properties"]
     assert "cross_sectional" in components["FactorLabResponse"]["properties"]
     assert "timing" in components["FactorLabResponse"]["properties"]
     assert "FactorLabGuardrailsResponse" in components

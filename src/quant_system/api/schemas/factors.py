@@ -24,14 +24,31 @@ class FactorRunsResponse(BaseModel):
     runs: list[FactorRunSummary]
 
 
+class FactorRunRequestEchoResponse(BaseModel):
+    symbols: list[str]
+    start: str
+    end: str
+    provider: Literal["sample", "futu", "tiingo"]
+    lookback: int
+    quantiles: int
+
+
+class FactorRunPathsResponse(BaseModel):
+    factor_results: str
+    signals: str
+    ic: str
+    quantiles: str
+    report: str
+
+
 class FactorRunResponse(BaseModel):
     run_id: str
     source: str
     row_count: int
     signal_count: int
     warnings: list[str]
-    request: dict[str, Any]
-    paths: dict[str, Any]
+    request: FactorRunRequestEchoResponse
+    paths: FactorRunPathsResponse
 
 
 FactorLabRecord = dict[str, Any]

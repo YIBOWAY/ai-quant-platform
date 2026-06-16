@@ -18,6 +18,14 @@ class ExperimentsResponse(BaseModel):
     experiments: list[ExperimentSummary]
 
 
+class ExperimentRunPathsResponse(BaseModel):
+    config: str
+    runs: str
+    folds: str
+    agent_summary: str
+    report: str
+
+
 class ExperimentRunResponse(BaseModel):
     experiment_id: str
     raw_experiment_id: str
@@ -25,7 +33,7 @@ class ExperimentRunResponse(BaseModel):
     source: str
     run_count: int
     best_run_id: str | None = None
-    paths: dict[str, Any]
+    paths: ExperimentRunPathsResponse
 
 
 ExperimentRecord = dict[str, Any]

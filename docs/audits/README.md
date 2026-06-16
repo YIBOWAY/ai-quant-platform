@@ -456,6 +456,11 @@ walk-forward、leakage audit 和 cache key 的结构化 schema；前端 `FactorL
 `BacktestRunTimingsResponse`，`tests/test_frontend_run_response_type_contract.py`
 会防止它回退成 `Record<string, unknown>`。随后同一响应中的 request echo、
 summary metrics、benchmark snapshot 和 artifact paths 也改用结构化共享类型。
+同日继续把 Factor、Experiment、Paper 的核心 run-submit 固定 payload 收敛为
+结构化共享类型：Factor/Paper 的 request echo 与 artifact paths 分别改用
+`FactorRunRequestEchoResponse` / `FactorRunPathsResponse` 和
+`PaperRunRequestEchoResponse` / `PaperRunPathsResponse`，Experiment 的 artifact
+paths 改用 `ExperimentRunPathsResponse`，减少前端继续依赖宽泛 Record 的面积。
 同日补齐 `AgentLLMConfigResponse` 前端类型命名，与后端 OpenAPI schema 名称保持一致；
 旧的 `AgentLlmConfigResponse` 仅保留为兼容 alias。
 同日补齐 prediction-market run response 前端类型命名：`PredictionMarketBacktestRunResponse`
