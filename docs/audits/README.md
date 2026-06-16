@@ -372,6 +372,9 @@ manual registration status 等运行元数据。`tests/test_frontend_run_respons
 后续逐批收敛。
 同日补齐 `AgentLLMConfigResponse` 前端类型命名，与后端 OpenAPI schema 名称保持一致；
 旧的 `AgentLlmConfigResponse` 仅保留为兼容 alias。
+同日补齐 prediction-market run response 前端类型命名：`PredictionMarketBacktestRunResponse`
+与 `PredictionMarketTimeseriesBacktestRunResponse` 现在与后端 schema 名称一致，旧简名仅保留
+为兼容 alias。
 
 2026-06-16 进一步推进 options live 域类型收敛：`OptionsRadarSymbolLive` 与
 `OptionsToolsWorkbench` 不再分别手写 snapshot / expirations / chain 响应类型；

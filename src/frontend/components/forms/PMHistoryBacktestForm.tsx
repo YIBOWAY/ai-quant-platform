@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import type {
   PredictionMarketCollectResponse,
-  PredictionMarketTimeseriesResponse,
+  PredictionMarketTimeseriesBacktestRunResponse,
 } from "@/lib/api";
 import { API_BASE_URL, ApiClientError, apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
@@ -137,7 +137,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
     null,
   );
   const [backtestResult, setBacktestResult] =
-    useState<PredictionMarketTimeseriesResponse | null>(null);
+    useState<PredictionMarketTimeseriesBacktestRunResponse | null>(null);
 
   const collectForm = useForm<CollectValues>({
     resolver: zodResolver(collectSchema),
@@ -192,7 +192,7 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
 
   const backtestMutation = useMutation({
     mutationFn: (values: BacktestValues) =>
-      apiPost<PredictionMarketTimeseriesResponse>(
+      apiPost<PredictionMarketTimeseriesBacktestRunResponse>(
         "/api/prediction-market/timeseries-backtest",
         {
           provider: values.provider,

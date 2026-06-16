@@ -547,7 +547,7 @@ export type PredictionMarketDryArbitrageResponse = ApiEnvelope & {
   cache_status?: string;
 };
 
-export type PredictionMarketBacktestResponse = ApiEnvelope & {
+export type PredictionMarketBacktestRunResponse = ApiEnvelope & {
   run_id: string;
   provider: string;
   cache_status?: string;
@@ -564,10 +564,12 @@ export type PredictionMarketBacktestResponse = ApiEnvelope & {
   report_path: string;
 };
 
+export type PredictionMarketBacktestResponse = PredictionMarketBacktestRunResponse;
+
 export type PredictionMarketRunResponse =
   | PredictionMarketScanResponse
   | PredictionMarketDryArbitrageResponse
-  | PredictionMarketBacktestResponse;
+  | PredictionMarketBacktestRunResponse;
 
 export type PredictionMarketCollectResponse = ApiEnvelope & {
   provider: string;
@@ -580,7 +582,7 @@ export type PredictionMarketCollectResponse = ApiEnvelope & {
   cache_status?: string;
 };
 
-export type PredictionMarketTimeseriesResponse = ApiEnvelope & {
+export type PredictionMarketTimeseriesBacktestRunResponse = ApiEnvelope & {
   run_id: string;
   provider: string;
   metrics: {
@@ -605,6 +607,8 @@ export type PredictionMarketTimeseriesResponse = ApiEnvelope & {
   report_url: string;
   history_dir: string;
 };
+
+export type PredictionMarketTimeseriesResponse = PredictionMarketTimeseriesBacktestRunResponse;
 
 export type PredictionMarketTimeseriesDetailResponse = ApiEnvelope & {
   run_id: string;

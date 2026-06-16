@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import type {
-  PredictionMarketBacktestResponse,
+  PredictionMarketBacktestRunResponse,
   PredictionMarketRunResponse,
 } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
@@ -87,7 +87,7 @@ type PMAction = "scan" | "dry-arbitrage" | "backtest";
 export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
   const text = copy[locale];
   const [result, setResult] = useState<string>("");
-  const [backtestResult, setBacktestResult] = useState<PredictionMarketBacktestResponse | null>(null);
+  const [backtestResult, setBacktestResult] = useState<PredictionMarketBacktestRunResponse | null>(null);
   const isHydrated = useIsHydrated();
   const form = useForm<PMFormValues>({
     resolver: zodResolver(pmSchema),

@@ -14,15 +14,19 @@ def test_prediction_market_form_uses_shared_post_response_types() -> None:
         "PredictionMarketProposedLeg",
         "PredictionMarketProposedTrade",
         "PredictionMarketDryArbitrageResponse",
-        "PredictionMarketBacktestResponse",
+        "PredictionMarketBacktestRunResponse",
         "PredictionMarketRunResponse",
     ]:
         assert f"export type {type_name}" in api_types
 
+    assert (
+        "export type PredictionMarketBacktestResponse = "
+        "PredictionMarketBacktestRunResponse;"
+    ) in api_types
     assert "PredictionMarketRunResponse" in form
     assert "| PredictionMarketScanResponse" in api_types
     assert "| PredictionMarketDryArbitrageResponse" in api_types
-    assert "| PredictionMarketBacktestResponse" in api_types
+    assert "| PredictionMarketBacktestRunResponse" in api_types
     assert "type PMRunResponse =" not in form
     assert "PredictionMarketScanResponse" not in form
     assert "PredictionMarketDryArbitrageResponse" not in form
@@ -53,3 +57,18 @@ def test_shared_prediction_market_post_types_include_backend_response_fields() -
         "cache_status?: string;",
     ]:
         assert field in api_types
+
+
+def test_prediction_market_history_form_uses_backend_run_type_name() -> None:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+    history_form = Path("src/frontend/components/forms/PMHistoryBacktestForm.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert "export type PredictionMarketTimeseriesBacktestRunResponse" in api_types
+    assert (
+        "export type PredictionMarketTimeseriesResponse = "
+        "PredictionMarketTimeseriesBacktestRunResponse;"
+    ) in api_types
+    assert "PredictionMarketTimeseriesBacktestRunResponse" in history_form
+    assert "apiPost<PredictionMarketTimeseriesBacktestRunResponse>" in history_form
