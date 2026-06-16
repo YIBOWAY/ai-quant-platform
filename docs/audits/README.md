@@ -158,8 +158,11 @@ run metadata 聚合最近运行；首页 `src/frontend/app/page.tsx` 通过
 `QS_ENVIRONMENT=test`、`QS_DATABASE_ENABLED=false`、`QS_DATABASE_AUTO_MIGRATE=false`
 并把 `QS_DATA_DIR` / parquet / DuckDB / options radar 路径指向
 `src/frontend/.tmp/e2e-data`；`tests/test_frontend_e2e_config.py` 会锁定这些隔离项。
-在本地 `quantplatform-db` 容器运行时，`QS_TEST_DATABASE_URL=postgresql://quant:quantpass@127.0.0.1:5432/quantplatform`
-下的 `tests/test_runs_repository_postgres.py` 通过，说明可选 run index 仍可用。
+在本地 `quantplatform-db` 容器运行时，使用隔离临时库
+`QS_TEST_DATABASE_URL=postgresql://quant:quantpass@127.0.0.1:5432/quantplatform_codex_tmp`
+运行 `tests/test_runs_repository_postgres.py` 通过，说明可选 run index 仍可用。
+不要把该集成测试指向常用 `quantplatform` 库：测试会按临时文件系统视图对同 kind
+索引行做 prune，隔离库能避免误删本地已有 run index。
 
 2026-06-15 状态补充：评估报告中“`environment.yml` 缺 `[api]` extra”的小项
 已处理。`environment.yml` 当前通过 pip 安装 `-e .[api,dev]`，与 README 的
