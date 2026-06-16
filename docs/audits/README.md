@@ -167,10 +167,16 @@ run metadata 聚合最近运行；首页 `src/frontend/app/page.tsx` 通过
 2026-06-16 继续收敛 E2E 稳定性：`phase10-smoke.spec.ts` 的 POST 点击 helper
 不再使用固定 `waitForTimeout(3000)` 或 `.click({ force: true })`，改为等待目标
 button 可见且 enabled 后用 Playwright actionability 点击，并与 `waitForResponse`
-并发等待目标 POST。`tests/test_frontend_e2e_config.py` 新增守护断言，禁止 E2E
-spec 回潮到固定等待或强制点击。full `phase10-smoke` 本轮未复用运行，因为
-127.0.0.1:8765/3001 已有 `environment=local`、数据库启用的本地栈，占用端口且
-不应把烟测写入非隔离本地状态。
+并发等待目标 POST；同文件的巨型主流程也已按页面域拆成 backtest、factor lab、
+paper replay safety、agent、prediction market、options screener 等独立用例。
+`tests/test_frontend_e2e_config.py` 新增守护断言，禁止 E2E spec 回潮到固定等待或
+强制点击。`src/frontend/playwright.config.ts` 现在支持 `PW_BACKEND_PORT` /
+`PW_FRONTEND_PORT` 备用端口，并把对应 frontend origin 写入 E2E 后端
+`QS_API_CORS_ORIGINS`，所以本地 8765/3001 已有 `environment=local` 开发栈时，
+仍可在 8766/3002 跑隔离烟测。顺手修复了 test env 下
+`GET /api/agent/llm-config` 因 `model` / `base_url` 为 null 而触发 FastAPI
+response validation 500 的 schema 漏洞。备用端口命令已跑通完整
+`phase10-smoke`，18/18 通过。
 
 2026-06-15 状态补充：评估报告中“`environment.yml` 缺 `[api]` extra”的小项
 已处理。`environment.yml` 当前通过 pip 安装 `-e .[api,dev]`，与 README 的

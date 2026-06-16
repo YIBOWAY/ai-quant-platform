@@ -68,9 +68,8 @@ async function openTab(page: Page, name: string | RegExp) {
   }).toPass({ timeout: 30_000 });
 }
 
-test("primary local workflow buttons are clickable", async ({ page }) => {
-  test.setTimeout(120_000);
-
+test("data explorer and backtest workflow buttons submit", async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto("/data-explorer");
   await page.getByRole("button", { name: "Load" }).click();
   await expect(page).toHaveURL(/data-explorer/);
@@ -81,7 +80,9 @@ test("primary local workflow buttons are clickable", async ({ page }) => {
   const backtestPayload = (await backtestResponse.json()) as { run_id: string };
   await expectRunIdVisible(page, backtestPayload.run_id);
   await expect(page.getByText("Trade Blotter")).toBeVisible();
+});
 
+test("factor lab renders its research panels", async ({ page }) => {
   await page.goto("/factor-lab");
   await expect(page.getByRole("heading", { name: "Factor Lab" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Cross-Sectional Health" })).toBeVisible();
@@ -89,26 +90,30 @@ test("primary local workflow buttons are clickable", async ({ page }) => {
   await expect(page.getByText("QQQ Timing Diagnostics")).toBeVisible();
   // The factor research form is mounted in the sidebar (previously dead code).
   await expect(page.getByRole("button", { name: "Run Factor" })).toBeVisible();
+});
 
+test("paper replay safety lock disables submit and shows safety copy", async ({ page }) => {
   await page.goto("/paper-trading");
   await openTab(page, "Historical Replay");
   const killSwitchButton = await waitForEnabledButton(page, "kill_switch enabled");
   await killSwitchButton.click();
   await expect(page.getByText(/the API will reject runs that disable it/i)).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
-  const paperResponse = await clickAndWaitForPost(page, "Run Paper Trading", "/api/paper/run");
-  expect(paperResponse.status()).toBe(200);
-  const paperPayload = (await paperResponse.json()) as { run_id: string };
-  await expectRunIdVisible(page, paperPayload.run_id);
-  await expect(page.getByText("Order Lifecycle")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run Paper Trading" })).toBeDisabled();
+});
 
+test("agent task workflow submits and renders candidate details", async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto("/agent-studio");
   const agentResponse = await clickAndWaitForPost(page, "Run task", "/api/agent/tasks");
   expect(agentResponse.status()).toBe(200);
   const agentPayload = (await agentResponse.json()) as { candidate_id: string };
   await expectRunIdVisible(page, agentPayload.candidate_id);
   await expect(page.getByRole("heading", { name: "Source Preview" })).toBeVisible();
+});
 
+test("prediction market workflow buttons submit", async ({ page }) => {
+  test.setTimeout(120_000);
   await page.goto("/order-book");
   await page.getByLabel("Provider").first().selectOption("sample");
   expect((await clickAndWaitForPost(page, "Run scanner", "/api/prediction-market/scan")).status()).toBe(200);

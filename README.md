@@ -433,6 +433,18 @@ $env:PW_E2E="1"
 npx playwright test --config playwright.config.ts --workers=1
 ```
 
+If your normal local stack is already using ports 8765/3001, run the smoke test
+on isolated alternate ports:
+
+```powershell
+cd src/frontend
+$env:PW_E2E="1"
+$env:PW_BACKEND_PORT="8766"
+$env:PW_FRONTEND_PORT="3002"
+$env:QUANT_API_COMMAND="D:\anaconda3\envs\ai-quant\python.exe -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8766"
+npx playwright test --config playwright.config.ts --workers=1
+```
+
 ## Recommended Reading
 
 Start here:

@@ -28,3 +28,16 @@ def test_agent_llm_config_masks_api_key(tmp_path) -> None:
     assert payload["has_api_key"] is True
     assert "api_key" not in payload
     assert "test-llm-key" not in response.text
+
+
+def test_agent_llm_config_allows_missing_optional_model_settings(tmp_path) -> None:
+    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+
+    response = client.get("/api/agent/llm-config")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "stub"
+    assert payload["model"] is None
+    assert payload["base_url"] is None
+    assert payload["has_api_key"] is False

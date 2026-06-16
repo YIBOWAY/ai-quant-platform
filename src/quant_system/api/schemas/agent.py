@@ -59,7 +59,7 @@ class AgentReviewResponse(BaseModel):
 
 class AgentLLMConfigResponse(BaseModel):
     provider: str
-    model: str
-    base_url: str
+    model: str | None
+    base_url: str | None
     timeout: int
     has_api_key: bool
