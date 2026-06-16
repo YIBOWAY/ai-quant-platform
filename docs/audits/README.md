@@ -98,6 +98,14 @@ Options Assistant 的请求 payload 构建逻辑已抽到
 `buySideOptionsPayload.test.ts` 覆盖 ticker 规范化、scenario 数字列表解析、
 无效输入回退、horizon day 与 EV scenario days 转换。
 
+2026-06-16 状态补充：Options Tools 前端手写响应类型已继续收敛到共享 API
+类型。`OptionsToolsWorkbench` 当前复用 `OptionsGreeksResponse`、
+`OptionsSimulationResponse`、`OptionsVolSurfaceResponse`、`OptionsVolSmileResponse`、
+`OptionsStrategyRankResponse` 和 `OptionsContractScoreResponse`；策略排名和合约
+评分的后端返回字段（如 `breakevens`、`bid`、`ask`、`subscores`、`warnings`）
+已在 `src/frontend/lib/api.ts` 中显式建模，并由
+`tests/test_frontend_options_tools_response_type_contract.py` 防回归。
+
 2026-06-15 状态补充：评估报告中“Futu 实盘交易脚本需作为红线处理”的小项
 已补强回归测试。`tests/test_api_safety.py` 现在会扫描本地已安装的
 `.agents/skills/futuapi` Python 脚本，禁止重新引入 `.place_order(` /

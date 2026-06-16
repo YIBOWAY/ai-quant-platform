@@ -15,9 +15,11 @@ import {
 import type {
   OptionContract,
   OptionsChainResponse,
+  OptionsContractScoreResponse,
   OptionsGreeksResponse,
   OptionsSimulationResponse,
   OptionsSnapshotResponse,
+  OptionsStrategyRankResponse,
   OptionsVolSmileResponse,
   OptionsVolSurfaceResponse,
 } from "@/lib/api";
@@ -35,41 +37,6 @@ type TabId =
   | "smile"
   | "signals"
   | "researchOps";
-
-type StrategyRank = {
-  template_id: string;
-  strategy: string;
-  score: number;
-  net_debit?: number | null;
-  max_profit?: number | null;
-  max_loss?: number | null;
-  rating: string;
-};
-
-type StrategyRankResult = {
-  market_view: string;
-  rankings: StrategyRank[];
-  assumptions?: string[];
-};
-
-type ContractRank = {
-  symbol: string;
-  option_type: string;
-  strike?: number | null;
-  mid?: number | null;
-  spread_pct?: number | null;
-  implied_volatility?: number | null;
-  delta?: number | null;
-  score: number;
-  rating: string;
-  warnings?: string[];
-};
-
-type ScoreContractsResult = {
-  objective: string;
-  ranked_contracts: ContractRank[];
-  assumptions?: string[];
-};
 
 const tabs: Array<{ id: TabId; icon: typeof Calculator; live: boolean }> = [
   { id: "greeks", icon: Calculator, live: true },
@@ -466,7 +433,7 @@ function GreeksPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: L
 }
 
 function StrategyRankPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
-  const [result, setResult] = useState<StrategyRankResult | null>(null);
+  const [result, setResult] = useState<OptionsStrategyRankResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -476,7 +443,7 @@ function StrategyRankPanel({ ticker, t, locale }: { ticker: string; t: Copy; loc
     try {
       const context = await loadLiveContext(ticker);
       const strikes = liveStrikes(context);
-      const payload = await apiPost<StrategyRankResult>("/api/options/tools/strategy/rank", {
+      const payload = await apiPost<OptionsStrategyRankResponse>("/api/options/tools/strategy/rank", {
         market_view: "bullish",
         spot: context.spot,
         expiry_days: context.dte,
@@ -535,7 +502,7 @@ function StrategyRankPanel({ ticker, t, locale }: { ticker: string; t: Copy; loc
 }
 
 function ScoreContractsPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
-  const [result, setResult] = useState<ScoreContractsResult | null>(null);
+  const [result, setResult] = useState<OptionsContractScoreResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -544,7 +511,7 @@ function ScoreContractsPanel({ ticker, t, locale }: { ticker: string; t: Copy; l
     setError(null);
     try {
       const context = await loadLiveContext(ticker);
-      const payload = await apiPost<ScoreContractsResult>("/api/options/tools/score-contracts", {
+      const payload = await apiPost<OptionsContractScoreResponse>("/api/options/tools/score-contracts", {
         spot: context.spot,
         objective: "sell_premium",
         top_n: 10,

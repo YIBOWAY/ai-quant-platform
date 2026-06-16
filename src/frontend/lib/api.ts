@@ -912,6 +912,52 @@ export type OptionsSimulationResponse = ApiEnvelope & {
   assumptions: string[];
 };
 
+export type OptionsStrategyRank = {
+  template_id: string;
+  strategy: string;
+  score: number;
+  net_debit?: number | null;
+  max_profit?: number | null;
+  max_loss?: number | null;
+  breakevens: number[];
+  rating: string;
+  [key: string]: unknown;
+};
+
+export type OptionsStrategyRankResponse = ApiEnvelope & {
+  success: boolean;
+  market_view: string;
+  rankings: OptionsStrategyRank[];
+  assumptions: string[];
+};
+
+export type OptionsContractRank = {
+  symbol: string;
+  option_type: string;
+  strike?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  mid?: number | null;
+  spread_pct?: number | null;
+  volume?: number | null;
+  open_interest?: number | null;
+  implied_volatility?: number | null;
+  delta?: number | null;
+  score: number;
+  rating: string;
+  subscores: Record<string, number>;
+  warnings: string[];
+  [key: string]: unknown;
+};
+
+export type OptionsContractScoreResponse = ApiEnvelope & {
+  success: boolean;
+  objective: string;
+  spot: number;
+  ranked_contracts: OptionsContractRank[];
+  assumptions: string[];
+};
+
 export type OptionsRadarDatesResponse = ApiEnvelope & {
   dates: string[];
 };
