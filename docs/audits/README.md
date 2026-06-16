@@ -170,7 +170,8 @@ run metadata 聚合最近运行；首页 `src/frontend/app/page.tsx` 通过
 模板变量，只保留本地前端需要的 `NEXT_PUBLIC_QUANT_API_BASE_URL`。
 2026-06-16 又删除了未被 Next.js 或项目代码引用的 `src/frontend/metadata.json`
 模板文件，避免 `requestFramePermissions` / `majorCapabilities` 这类 AI Studio
-app metadata 回流。相关守护断言在
+app metadata 回流；同日移除了已被 `eslint.config.mjs` 取代且无引用的
+`src/frontend/.eslintrc.json`，前端 lint 入口继续显式走 flat config。相关守护断言在
 `tests/test_frontend_e2e_config.py`。
 
 2026-06-15 状态补充：评估报告中“逐 run DuckDB 副本是纯死重”的高风险项

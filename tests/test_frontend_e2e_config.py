@@ -133,3 +133,16 @@ def test_frontend_package_has_no_ai_studio_template_residue() -> None:
     assert "ignoreDuringBuilds" not in next_config
     assert "DISABLE_HMR" not in next_config
     assert "DISABLE_HMR" not in playwright_config
+
+
+def test_frontend_uses_single_flat_eslint_config() -> None:
+    package = json.loads(
+        Path("src/frontend/package.json").read_text(encoding="utf-8")
+    )
+    flat_config = Path("src/frontend/eslint.config.mjs")
+    legacy_config = Path("src/frontend/.eslintrc.json")
+
+    assert flat_config.exists()
+    assert not legacy_config.exists()
+    assert "eslint.config.mjs" in package["scripts"]["lint"]
+    assert "eslint-config-next" in flat_config.read_text(encoding="utf-8")
