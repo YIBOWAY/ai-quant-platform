@@ -99,6 +99,9 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         in components["PredictionMarketTimeseriesBacktestResultResponse"]["properties"]
     )
     assert "backtests" in components["BacktestsResponse"]["properties"]
+    assert "BacktestRunTimingsResponse" in components
+    assert "data_fetch" in components["BacktestRunTimingsResponse"]["properties"]
+    assert "timings_ms" in components["BacktestRunResponse"]["properties"]
     assert "benchmark" in components["BacktestDetailResponse"]["properties"]
     assert "paper_runs" in components["PaperRunsResponse"]["properties"]
     assert "positions" in components["PaperAccountResponse"]["properties"]

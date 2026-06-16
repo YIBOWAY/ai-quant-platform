@@ -63,6 +63,8 @@ CLI 启动和 app-factory 路径都会把结构化 JSONL 运行日志写入
 `data_fetch`、`engine`、`persist`、`total` 四段毫秒耗时；`POST /api/backtests/run`
 会把该字段写入 run 的 `metadata.json`，`GET /api/backtests/{run_id}` 详情也会
 随 `metadata` 返回。该字段只用于诊断慢点，不参与回测指标计算。
+2026-06-16 继续把 `POST /api/backtests/run` 的 `timings_ms` 从匿名对象收敛为
+`BacktestRunTimingsResponse`，OpenAPI 和前端共享类型都会锁定上述四段字段。
 
 2026-06-15 状态补充：评估报告中“.env.example 声称默认 sample 而代码默认
 futu”的小项已对齐。`.env.example` 现在使用
@@ -448,6 +450,9 @@ Factor Lab dashboard 的 `guardrails` / `cache` 也从匿名对象收敛为
 walk-forward、leakage audit 和 cache key 的结构化 schema；前端 `FactorLabDashboard`
 可直接读取 `walk_forward.fold_count` 与 `leakage_audit.status`，不再对这些字段做
 `Record<string, unknown>` 强转。
+同日 Backtest run-submit 响应里的 `timings_ms` 也改用
+`BacktestRunTimingsResponse`，`tests/test_frontend_run_response_type_contract.py`
+会防止它回退成 `Record<string, unknown>`。
 同日补齐 `AgentLLMConfigResponse` 前端类型命名，与后端 OpenAPI schema 名称保持一致；
 旧的 `AgentLlmConfigResponse` 仅保留为兼容 alias。
 同日补齐 prediction-market run response 前端类型命名：`PredictionMarketBacktestRunResponse`

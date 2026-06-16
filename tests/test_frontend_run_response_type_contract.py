@@ -39,8 +39,12 @@ def test_agent_task_form_uses_shared_api_response_types() -> None:
 def test_shared_run_response_types_include_backend_response_model_fields() -> None:
     api_types = Path("src/frontend/lib/api.ts").read_text(encoding="utf-8")
 
+    assert "export type BacktestRunTimingsResponse = {" in api_types
+    assert "data_fetch: number;" in api_types
+    assert "timings_ms: BacktestRunTimingsResponse;" in api_types
+    assert "timings_ms: Record<string, unknown>;" not in api_types
+
     for field in [
-        "timings_ms: Record<string, unknown>;",
         "attribution: PreviewRecord[];",
         "raw_experiment_id: string;",
         "provider: string;",

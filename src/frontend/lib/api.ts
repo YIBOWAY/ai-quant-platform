@@ -136,13 +136,20 @@ export type BacktestsResponse = ApiEnvelope & {
   backtests: BacktestSummary[];
 };
 
+export type BacktestRunTimingsResponse = {
+  data_fetch: number;
+  engine: number;
+  persist: number;
+  total: number;
+};
+
 export type BacktestRunResponse = ApiEnvelope & {
   run_id: string;
   source: string;
   trade_count: number;
   order_count: number;
   warnings: string[];
-  timings_ms: Record<string, unknown>;
+  timings_ms: BacktestRunTimingsResponse;
   request: Record<string, unknown>;
   metrics: Record<string, unknown>;
   attribution: PreviewRecord[];
