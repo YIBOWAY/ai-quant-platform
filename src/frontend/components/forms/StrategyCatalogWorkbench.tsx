@@ -19,6 +19,7 @@ import type {
   FactorMetadata,
   PreviewRecord,
   StrategyMetadata,
+  StrategyRunResponse,
   UniverseDefinition,
 } from "@/lib/api";
 import { formatPercent } from "@/lib/api";
@@ -35,7 +36,7 @@ type StrategyCatalogWorkbenchProps = {
   locale: Locale;
   futuReachable?: boolean;
   initialStrategyId?: string;
-  initialResult?: Record<string, unknown> | null;
+  initialResult?: StrategyRunResponse | null;
 };
 
 // Note: the "Strategy Catalog" heading, the "Strategy" select label, and the
@@ -192,7 +193,7 @@ export function StrategyCatalogWorkbench({
   );
   const strategy = activeStrategies.find((item) => item.id === strategyId) ?? activeStrategies[0];
   const [values, setValues] = useState<Record<string, unknown>>(strategy?.default_payload ?? {});
-  const [result, setResult] = useState<Record<string, unknown> | null>(initialResult);
+  const [result, setResult] = useState<StrategyRunResponse | null>(initialResult);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const fields = useMemo(
@@ -226,7 +227,9 @@ export function StrategyCatalogWorkbench({
   }, [strategy, fields, values]);
 
   const replicationView =
-    result && strategy?.result_type === "replication" ? asReplicationView(result) : null;
+    result && strategy?.result_type === "replication"
+      ? asReplicationView(result as Record<string, unknown>)
+      : null;
 
   function chooseStrategy(nextId: string) {
     const nextStrategy = activeStrategies.find((item) => item.id === nextId);
@@ -250,7 +253,7 @@ export function StrategyCatalogWorkbench({
       if (strategy.result_type === "backtest") {
         payload.strategy_id = strategy.id;
       }
-      const response = await apiPost<Record<string, unknown>>(strategy.run_endpoint, payload);
+      const response = await apiPost<StrategyRunResponse>(strategy.run_endpoint, payload);
       setResult(response);
       toast.success(text.finished(strategy.name));
     } catch (requestError) {

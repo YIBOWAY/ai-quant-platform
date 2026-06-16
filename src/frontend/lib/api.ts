@@ -171,6 +171,24 @@ export type ReversalMomentumReplicationDetailResponse = ApiEnvelope & {
   result: Record<string, unknown>;
 };
 
+export type ReversalMomentumReplicationRunResponse = ApiEnvelope & {
+  paper: Record<string, unknown>;
+  methodology: Record<string, unknown>;
+  metrics: Record<string, unknown>;
+  diagnostics: Record<string, unknown>;
+  equity_curve: PreviewRecord[];
+  monthly_returns: PreviewRecord[];
+  positions: PreviewRecord[];
+  legs: PreviewRecord[];
+  warnings: string[];
+  run_id: string;
+  result_type: string;
+  source: string;
+  request: Record<string, unknown>;
+  paths: Record<string, unknown>;
+  artifact_path: string;
+};
+
 export type StrategyMetadata = {
   id: string;
   name: string;
@@ -188,6 +206,10 @@ export type StrategyMetadata = {
 export type StrategiesResponse = ApiEnvelope & {
   strategies: StrategyMetadata[];
 };
+
+export type StrategyRunResponse =
+  | BacktestRunResponse
+  | ReversalMomentumReplicationRunResponse;
 
 export type UniverseDefinition = {
   id: string;

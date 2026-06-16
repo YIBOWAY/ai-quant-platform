@@ -6,6 +6,7 @@ import {
   getStrategies,
   getUniverses,
 } from "@/lib/api";
+import type { ReversalMomentumReplicationRunResponse } from "@/lib/api";
 import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
@@ -26,7 +27,9 @@ export default async function ReplicationRunDetailPage({
     getCachedHealth(),
   ]);
   const futuReachable = health.futu_opend?.reachable !== false;
-  const initialResult = Object.keys(detail.result ?? {}).length ? detail.result : null;
+  const initialResult = Object.keys(detail.result ?? {}).length
+    ? (detail.result as ReversalMomentumReplicationRunResponse)
+    : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-base">

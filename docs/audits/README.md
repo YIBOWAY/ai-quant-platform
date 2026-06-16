@@ -423,3 +423,9 @@ fear score、IV rank/snapshot、earnings crush、unusual activity 均使用
 watchlist add/load、alerts evaluation 均使用共享 `OptionsResearchOpsResponse`
 union 与具体响应类型，`OptionsToolsWorkbench` 不再用 `payload: unknown` /
 `Promise<unknown>` 管理工具结果。
+
+同日继续收敛 Strategy Catalog 动态运行响应：`src/frontend/lib/api.ts` 新增
+`ReversalMomentumReplicationRunResponse` 与 `StrategyRunResponse` union，覆盖
+catalog-dispatched backtest run 与 reversal-momentum replication run；
+`StrategyCatalogWorkbench` 和复现详情页不再用裸 `Record<string, unknown>` 管理
+运行结果。
