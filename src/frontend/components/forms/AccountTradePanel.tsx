@@ -9,7 +9,14 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { accountRebalanceStrategies } from "@/lib/accountRebalanceStrategies";
-import type { StrategyMetadata } from "@/lib/api";
+import type {
+  PaperAccountOrderOutcome,
+  PaperAccountOrderResponse,
+  PaperAccountOrdersProcessResponse,
+  PaperAccountRebalanceResponse,
+  PaperAccountResponse,
+  StrategyMetadata,
+} from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
@@ -167,35 +174,20 @@ const rebalanceSchema = z.object({
 
 type RebalanceValues = z.infer<typeof rebalanceSchema>;
 
-type OrderResult = { order: { status: string; rejected_reason?: string } };
-type ProcessPendingResult = {
-  orders: Array<{ status: string }>;
-};
-type RebalanceLeg = {
-  status: string;
-  symbol: string;
-  side: string;
-  filled_quantity: number;
-  price: number;
-};
-type RebalanceResult = {
-  rebalance: {
-    aborted: boolean;
-    note?: string;
-    orders: RebalanceLeg[];
-    target_weights?: Record<string, number>;
-    as_of?: string;
-  };
-};
-
 type Receipt = {
-  legs: RebalanceLeg[];
+  legs: PaperAccountOrderOutcome[];
   targetWeights: Record<string, number> | null;
 };
 
 const inputClass =
   "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
 const labelClass = "flex flex-col gap-1 font-body-sm text-text-primary";
+
+function formatPrice(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value.toFixed(2)
+    : "--";
+}
 
 export function AccountTradePanel({
   locale = "en",
@@ -232,7 +224,7 @@ export function AccountTradePanel({
 
   const manualMutation = useMutation({
     mutationFn: (values: ManualValues) =>
-      apiPost<OrderResult>("/api/paper/account/orders", {
+      apiPost<PaperAccountOrderResponse>("/api/paper/account/orders", {
         symbol: values.symbol.toUpperCase().trim(),
         side: values.side,
         quantity: values.sizeMode === "quantity" ? values.quantity : undefined,
@@ -260,7 +252,7 @@ export function AccountTradePanel({
 
   const rebalanceMutation = useMutation({
     mutationFn: (values: RebalanceValues) =>
-      apiPost<RebalanceResult>("/api/paper/account/rebalance", {
+      apiPost<PaperAccountRebalanceResponse>("/api/paper/account/rebalance", {
         strategy_id: values.strategy_id,
         symbols: splitSymbols(values.symbols),
         top_n: values.top_n,
@@ -289,7 +281,7 @@ export function AccountTradePanel({
 
   const freezeMutation = useMutation({
     mutationFn: (enabled: boolean) =>
-      apiPost<unknown>("/api/paper/account/kill-switch", { enabled }),
+      apiPost<PaperAccountResponse>("/api/paper/account/kill-switch", { enabled }),
     onSuccess: (_payload, enabled) => {
       toast.success(text.frozenToggle(enabled));
       router.refresh();
@@ -302,7 +294,8 @@ export function AccountTradePanel({
   });
 
   const processPendingMutation = useMutation({
-    mutationFn: () => apiPost<ProcessPendingResult>("/api/paper/account/orders/process", {}),
+    mutationFn: () =>
+      apiPost<PaperAccountOrdersProcessResponse>("/api/paper/account/orders/process", {}),
     onSuccess: (payload) => {
       const filled = payload.orders.filter((order) => order.status === "filled").length;
       const pending = payload.orders.filter((order) => order.status === "pending").length;
@@ -515,7 +508,7 @@ export function AccountTradePanel({
                       {isBuy ? text.receiptBought : text.receiptSold} {leg.symbol}
                     </span>
                     <span className="text-text-secondary">
-                      {text.receiptShares(leg.filled_quantity)} @ {leg.price.toFixed(2)}
+                      {text.receiptShares(leg.filled_quantity)} @ {formatPrice(leg.price)}
                     </span>
                   </li>
                 );

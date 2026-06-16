@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import type { PaperAccountOrderResponse } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 
@@ -28,14 +29,6 @@ const copy = {
   },
 } as const;
 
-type CancelPendingOrderResult = {
-  order: {
-    status: string;
-    order_id?: string | null;
-    rejected_reason?: string | null;
-  };
-};
-
 export function PendingOrderCancelButton({
   orderId,
   locale = "en",
@@ -49,7 +42,7 @@ export function PendingOrderCancelButton({
 
   const mutation = useMutation({
     mutationFn: () =>
-      apiPost<CancelPendingOrderResult>(
+      apiPost<PaperAccountOrderResponse>(
         `/api/paper/account/orders/${encodeURIComponent(orderId)}/cancel`,
         {},
       ),

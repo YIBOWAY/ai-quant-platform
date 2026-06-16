@@ -362,3 +362,12 @@ options API 类型。
 risk attribution、scenario summary / subjective EV、leg quote/greeks/computed 字段。
 `tests/test_frontend_buy_side_response_type_contract.py` 锁定该组件必须复用共享类型，
 防止本地窄响应类型回潮。
+
+同日继续收敛 persistent paper account mutation 响应：`AccountTradePanel` 与
+`PendingOrderCancelButton` 不再局部手写 order/process/rebalance/cancel 结果类型；
+`src/frontend/lib/api.ts` 统一导出 `PaperAccountOrderOutcome`、
+`PaperAccountOrderResponse`、`PaperAccountOrdersProcessResponse`、
+`PaperAccountRebalanceResponse`，复用已有 `PaperAccountResponse` 并覆盖后端
+`PaperAccountOrderOutcomeResponse` 中的 `requested_quantity`、`filled_quantity`、
+nullable `price` / `price_kind`、`rejected_reason` 以及再平衡 target weights。
+前端 receipt 渲染同步处理 nullable price，避免类型收敛后仍隐含成交价必定存在的假设。

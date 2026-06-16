@@ -336,6 +336,42 @@ export type PaperAccountResponse = ApiEnvelope & {
   updated_at: string;
 };
 
+export type PaperAccountOrderOutcome = {
+  order_id?: string | null;
+  status: string;
+  symbol: string;
+  side: string;
+  requested_quantity: number;
+  filled_quantity: number;
+  price?: number | null;
+  price_kind?: string | null;
+  rejected_reason?: string | null;
+};
+
+export type PaperAccountOrderResponse = ApiEnvelope & {
+  order: PaperAccountOrderOutcome;
+  account: PaperAccountResponse;
+};
+
+export type PaperAccountOrdersProcessResponse = ApiEnvelope & {
+  orders: PaperAccountOrderOutcome[];
+  account: PaperAccountResponse;
+};
+
+export type PaperAccountRebalanceSummary = {
+  strategy_id: string;
+  as_of?: string | null;
+  aborted: boolean;
+  target_weights: Record<string, number>;
+  note?: string | null;
+  orders: PaperAccountOrderOutcome[];
+};
+
+export type PaperAccountRebalanceResponse = ApiEnvelope & {
+  rebalance: PaperAccountRebalanceSummary;
+  account: PaperAccountResponse;
+};
+
 export type LedgerEntryView = {
   entry_id: string;
   timestamp: string;
