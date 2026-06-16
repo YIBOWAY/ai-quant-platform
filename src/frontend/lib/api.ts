@@ -43,11 +43,13 @@ export type OhlcvRow = {
   volume: number;
 };
 
-export type OhlcvResponse = ApiEnvelope & {
+export type OHLCVResponse = ApiEnvelope & {
   symbol: string;
   source: string;
   rows: OhlcvRow[];
 };
+
+export type OhlcvResponse = OHLCVResponse;
 
 export type MarketDataHistoryResponse = ApiEnvelope & {
   symbol: string;
@@ -1344,7 +1346,7 @@ export function getOhlcv(symbol = "SPY", start = "2024-01-02", end = "2024-01-12
   if (provider) {
     params.set("provider", provider);
   }
-  return apiGet<OhlcvResponse>(`/api/ohlcv?${params.toString()}`, {
+  return apiGet<OHLCVResponse>(`/api/ohlcv?${params.toString()}`, {
     symbol,
     source: "fallback",
     rows: [],
