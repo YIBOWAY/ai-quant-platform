@@ -410,6 +410,19 @@ export type AgentCandidateDetailResponse = ApiEnvelope & {
   reviews: string[];
 };
 
+export type AgentTaskResponse = ApiEnvelope & {
+  candidate_id: string;
+  status: string;
+  path: string;
+  metadata: Record<string, unknown>;
+};
+
+export type AgentReviewResponse = ApiEnvelope & {
+  candidate_id: string;
+  decision: "approve" | "reject";
+  registration: "manual_required";
+};
+
 export type AgentLlmConfigResponse = ApiEnvelope & {
   provider: string;
   model: string | null;

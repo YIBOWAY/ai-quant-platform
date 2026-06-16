@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import type { CandidateSummary } from "@/lib/api";
+import type { AgentReviewResponse, AgentTaskResponse, CandidateSummary } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
@@ -104,10 +104,6 @@ function statusTone(status: string): Tone {
 const fieldClass =
   "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-text-primary focus:border-accent-success/50 focus:outline-none";
 
-type AgentTaskResponse = {
-  candidate_id: string;
-};
-
 function ReviewDialog({
   candidate,
   decision,
@@ -127,7 +123,7 @@ function ReviewDialog({
   });
   const mutation = useMutation({
     mutationFn: (values: ReviewValues) =>
-      apiPost(`/api/agent/candidates/${candidate.candidate_id}/review`, {
+      apiPost<AgentReviewResponse>(`/api/agent/candidates/${candidate.candidate_id}/review`, {
         decision,
         note: values.note,
       }),

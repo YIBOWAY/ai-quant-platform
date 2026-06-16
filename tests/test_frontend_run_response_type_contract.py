@@ -9,6 +9,8 @@ RUN_FORMS = {
     "PaperRunResponse": Path("src/frontend/components/forms/PaperRunForm.tsx"),
 }
 
+AGENT_FORM = Path("src/frontend/components/forms/AgentTaskForm.tsx")
+
 
 def test_core_run_forms_use_shared_api_response_types() -> None:
     api_types = Path("src/frontend/lib/api.ts").read_text(encoding="utf-8")
@@ -20,6 +22,18 @@ def test_core_run_forms_use_shared_api_response_types() -> None:
         assert f"type {type_name} = {{" not in component
         assert type_name in component
         assert '"@/lib/api"' in component
+
+
+def test_agent_task_form_uses_shared_api_response_types() -> None:
+    api_types = Path("src/frontend/lib/api.ts").read_text(encoding="utf-8")
+    component = AGENT_FORM.read_text(encoding="utf-8")
+
+    for type_name in ("AgentTaskResponse", "AgentReviewResponse"):
+        assert f"export type {type_name} = ApiEnvelope &" in api_types
+        assert f"type {type_name} = {{" not in component
+        assert type_name in component
+    assert '"@/lib/api"' in component
+    assert "apiPost<AgentReviewResponse>" in component
 
 
 def test_shared_run_response_types_include_backend_response_model_fields() -> None:
@@ -35,5 +49,19 @@ def test_shared_run_response_types_include_backend_response_model_fields() -> No
         "risk_breach_count: number;",
         "warnings: string[];",
         "paths: Record<string, unknown>;",
+    ]:
+        assert field in api_types
+
+
+def test_shared_agent_response_types_include_backend_response_model_fields() -> None:
+    api_types = Path("src/frontend/lib/api.ts").read_text(encoding="utf-8")
+
+    for field in [
+        "candidate_id: string;",
+        "status: string;",
+        "path: string;",
+        "metadata: Record<string, unknown>;",
+        'decision: "approve" | "reject";',
+        'registration: "manual_required";',
     ]:
         assert field in api_types
