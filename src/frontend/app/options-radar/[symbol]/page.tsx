@@ -2,7 +2,7 @@ import Link from "next/link";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { OptionsRadarSymbolLive } from "@/components/forms/OptionsRadarSymbolLive";
-import { getOptionsRadarSymbol } from "@/lib/api";
+import { getOptionsDailyScanSymbol } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
 import { getServerLocale } from "@/lib/serverLocale";
 
@@ -53,7 +53,7 @@ export default async function OptionsRadarSymbolPage({
   const date = single(resolvedSearch.date);
   const expiry = single(resolvedSearch.expiry);
   const optionType = single(resolvedSearch.option_type, "ALL").toUpperCase();
-  const radar = await getOptionsRadarSymbol(symbol, date || undefined);
+  const radar = await getOptionsDailyScanSymbol(symbol, date || undefined);
   const rows = radar.candidates.map((candidate) => ({
     ticker: candidate.ticker,
     symbol: candidate.symbol,

@@ -450,3 +450,7 @@ Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入�
 `OptionsRadar*` 与 `OptionsDailyTaskStatusResponse` 仅保留为兼容 alias。
 `OptionsRadarView` 的 status、snapshot 与 manual scan 调用已改用后端一致命名，
 并由 `tests/test_frontend_options_radar_response_type_contract.py` 防回归。
+随后同域补齐单标的详情与候选行命名：`OptionsDailyScanSymbolResponse` 与
+`OptionsRadarCandidateResponse` 现在在前端共享类型中显式导出，`/options-radar/[symbol]`
+页面改用 `getOptionsDailyScanSymbol()`，旧 `getOptionsRadarSymbol()` 与
+`OptionsRadarSymbolResponse` 仅保留为兼容入口。

@@ -13,6 +13,8 @@ def test_options_radar_uses_backend_daily_scan_response_type_names() -> None:
         "OptionsDailyScanStatusResponse",
         "OptionsDailyScanResponse",
         "OptionsDailyScanRunResponse",
+        "OptionsDailyScanSymbolResponse",
+        "OptionsRadarCandidateResponse",
     ]:
         assert f"export type {type_name}" in api_types
 
@@ -23,6 +25,8 @@ def test_options_radar_uses_backend_daily_scan_response_type_names() -> None:
     ) in api_types
     assert "export type OptionsRadarResponse = OptionsDailyScanResponse;" in api_types
     assert "export type OptionsRadarRunResponse = OptionsDailyScanRunResponse;" in api_types
+    assert "export type OptionsRadarSymbolResponse = OptionsDailyScanSymbolResponse;" in api_types
+    assert "export type OptionsRadarCandidate = OptionsRadarCandidateResponse;" in api_types
     assert "OptionsDailyScanStatusResponse" in view
     assert "OptionsDailyScanResponse" in view
     assert "OptionsDailyScanRunResponse" in view
@@ -40,3 +44,15 @@ def test_shared_options_daily_scan_types_match_backend_required_fields() -> None
         'provider: "sample" | "futu";',
     ]:
         assert field in api_types
+
+
+def test_options_radar_symbol_detail_uses_backend_daily_scan_type_name() -> None:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+    symbol_page = Path("src/frontend/app/options-radar/[symbol]/page.tsx").read_text(
+        encoding="utf-8",
+    )
+
+    assert "export function getOptionsDailyScanSymbol" in api_types
+    assert "apiGet<OptionsDailyScanSymbolResponse>" in api_types
+    assert "getOptionsDailyScanSymbol" in symbol_page
+    assert "getOptionsRadarSymbol" not in symbol_page

@@ -620,7 +620,7 @@ export type PredictionMarketTimeseriesDetailResponse = ApiEnvelope & {
   report_url: string;
 };
 
-export type OptionsRadarCandidate = {
+export type OptionsRadarCandidateResponse = {
   ticker: string;
   sector: string | null;
   strategy: "sell_put" | "covered_call";
@@ -642,6 +642,8 @@ export type OptionsRadarCandidate = {
   market_regime?: string | null;
   market_regime_penalty?: number | null;
 };
+
+export type OptionsRadarCandidate = OptionsRadarCandidateResponse;
 
 export type OptionsScreenerCandidate = {
   symbol: string;
@@ -1219,12 +1221,14 @@ export type OptionsRefreshResponse = ApiEnvelope & {
   fetched_at: string;
 };
 
-export type OptionsRadarSymbolResponse = ApiEnvelope & {
+export type OptionsDailyScanSymbolResponse = ApiEnvelope & {
   ticker: string;
   run_date: string;
   candidate_count: number;
   candidates: OptionsRadarCandidate[];
 };
+
+export type OptionsRadarSymbolResponse = OptionsDailyScanSymbolResponse;
 
 export type SettingsResponse = ApiEnvelope & Record<string, unknown>;
 
@@ -1662,12 +1666,12 @@ export function getOptionsDailyScan(params: {
   });
 }
 
-export function getOptionsRadarSymbol(ticker: string, date?: string) {
+export function getOptionsDailyScanSymbol(ticker: string, date?: string) {
   const query = new URLSearchParams();
   if (date) {
     query.set("date", date);
   }
-  return apiGet<OptionsRadarSymbolResponse>(
+  return apiGet<OptionsDailyScanSymbolResponse>(
     `/api/options/daily-scan/symbol/${encodeURIComponent(ticker)}?${query.toString()}`,
     {
       ticker: ticker.toUpperCase(),
@@ -1678,6 +1682,8 @@ export function getOptionsRadarSymbol(ticker: string, date?: string) {
     },
   );
 }
+
+export const getOptionsRadarSymbol = getOptionsDailyScanSymbol;
 
 export function formatPercent(value: number | undefined, digits = 2) {
   if (value === undefined || Number.isNaN(value)) {
