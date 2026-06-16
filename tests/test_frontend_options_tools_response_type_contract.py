@@ -1,0 +1,41 @@
+from pathlib import Path
+
+API_TYPES = Path("src/frontend/lib/api.ts")
+WORKBENCH = Path("src/frontend/components/forms/OptionsToolsWorkbench.tsx")
+
+
+def test_options_tools_surface_smile_use_shared_response_types() -> None:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+    component = WORKBENCH.read_text(encoding="utf-8")
+
+    for type_name in [
+        "OptionsVolSurface",
+        "OptionsVolSurfaceResponse",
+        "OptionsVolSmile",
+        "OptionsVolSmileResponse",
+    ]:
+        assert f"export type {type_name}" in api_types
+
+    assert "OptionsVolSurfaceResponse" in component
+    assert "OptionsVolSmileResponse" in component
+    assert "type SurfaceResult =" not in component
+    assert "type SmileResult =" not in component
+    assert "apiRequest<OptionsVolSurfaceResponse>" in component
+    assert "apiRequest<OptionsVolSmileResponse>" in component
+
+
+def test_shared_options_surface_smile_types_include_backend_response_fields() -> None:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+
+    for field in [
+        "success: boolean;",
+        "source: string;",
+        "atm_term_structure: Record<string, number>;",
+        "points: Array<Record<string, unknown>>;",
+        "dte: number;",
+        "deltas: Array<number | null>;",
+        "moneyness: Array<number | null>;",
+        "skew_metrics: Record<string, number | null>;",
+        "assumptions: string[];",
+    ]:
+        assert field in api_types

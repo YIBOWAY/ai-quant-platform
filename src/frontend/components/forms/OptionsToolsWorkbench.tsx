@@ -16,6 +16,8 @@ import type {
   OptionContract,
   OptionsChainResponse,
   OptionsSnapshotResponse,
+  OptionsVolSmileResponse,
+  OptionsVolSurfaceResponse,
 } from "@/lib/api";
 import { ApiClientError, apiPost, apiRequest } from "@/lib/apiClient";
 import { InfoTip } from "@/components/InfoTip";
@@ -90,33 +92,6 @@ type SimulationResult = {
     pnl_axis: number[];
   };
   assumptions?: string[];
-};
-
-type SurfaceResult = {
-  ticker: string;
-  price: number;
-  shape: string;
-  surface: {
-    moneyness_axis: number[];
-    expiry_axis: string[];
-    iv_grid: Array<Array<number | null>>;
-  };
-};
-
-type SmileResult = {
-  ticker: string;
-  price: number;
-  expiry: string;
-  shape: string;
-  skew_metrics: {
-    skew_25d?: number | null;
-    atm_iv?: number | null;
-  };
-  smile: {
-    strikes: Array<number | null>;
-    ivs: Array<number | null>;
-    option_types: string[];
-  };
 };
 
 const tabs: Array<{ id: TabId; icon: typeof Calculator; live: boolean }> = [
@@ -742,7 +717,7 @@ function SimulationPanel({ ticker, t, locale }: { ticker: string; t: Copy; local
 
 function SurfacePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy }) {
   const [ticker, setTicker] = useState(initialTicker);
-  const [result, setResult] = useState<SurfaceResult | null>(null);
+  const [result, setResult] = useState<OptionsVolSurfaceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -750,7 +725,7 @@ function SurfacePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy })
     setIsRunning(true);
     setError(null);
     try {
-      const payload = await apiRequest<SurfaceResult>(
+      const payload = await apiRequest<OptionsVolSurfaceResponse>(
         `/api/options/tools/vol-surface/${encodeURIComponent(ticker.trim().toUpperCase())}?max_expirations=3`,
       );
       setResult(payload);
@@ -782,7 +757,7 @@ function SurfacePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy })
 
 function SmilePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy }) {
   const [ticker, setTicker] = useState(initialTicker);
-  const [result, setResult] = useState<SmileResult | null>(null);
+  const [result, setResult] = useState<OptionsVolSmileResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -790,7 +765,7 @@ function SmilePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy }) {
     setIsRunning(true);
     setError(null);
     try {
-      const payload = await apiRequest<SmileResult>(
+      const payload = await apiRequest<OptionsVolSmileResponse>(
         `/api/options/tools/vol-smile/${encodeURIComponent(ticker.trim().toUpperCase())}`,
       );
       setResult(payload);
@@ -1408,7 +1383,7 @@ function MiniPnlChart({ rows, label }: { rows: Array<{ price: number; pnl: numbe
   );
 }
 
-function SurfaceGrid({ result, t }: { result: SurfaceResult; t: Copy }) {
+function SurfaceGrid({ result, t }: { result: OptionsVolSurfaceResponse; t: Copy }) {
   return (
     <div className="space-y-4">
       <MetricGrid

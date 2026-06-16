@@ -842,6 +842,45 @@ export type OptionsChainResponse = ApiEnvelope & {
   contracts: OptionContract[];
 };
 
+export type OptionsVolSurface = {
+  moneyness_axis: number[];
+  expiry_axis: string[];
+  iv_grid: Array<Array<number | null>>;
+  points: Array<Record<string, unknown>>;
+};
+
+export type OptionsVolSurfaceResponse = ApiEnvelope & {
+  success: boolean;
+  ticker: string;
+  source: string;
+  price: number;
+  surface: OptionsVolSurface;
+  atm_term_structure: Record<string, number>;
+  shape: string;
+  assumptions: string[];
+};
+
+export type OptionsVolSmile = {
+  strikes: Array<number | null>;
+  ivs: Array<number | null>;
+  deltas: Array<number | null>;
+  option_types: string[];
+  moneyness: Array<number | null>;
+};
+
+export type OptionsVolSmileResponse = ApiEnvelope & {
+  success: boolean;
+  ticker: string;
+  source: string;
+  price: number;
+  expiry: string;
+  dte: number;
+  smile: OptionsVolSmile;
+  skew_metrics: Record<string, number | null>;
+  shape: string;
+  assumptions: string[];
+};
+
 export type OptionsRadarDatesResponse = ApiEnvelope & {
   dates: string[];
 };

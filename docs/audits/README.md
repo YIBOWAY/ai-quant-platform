@@ -379,3 +379,10 @@ nullable `price` / `price_kind`、`rejected_reason` 以及再平衡 target weigh
 underlying、bid/ask/mid、HV/IV、trend、market regime、rating、rejection summary、
 assumptions 等字段。`tests/test_frontend_options_screener_response_type_contract.py`
 锁定该表单必须复用共享类型。
+
+同日拆分推进 options tools live GET 响应：`OptionsToolsWorkbench` 的 vol surface /
+vol smile 面板不再局部手写 `SurfaceResult` / `SmileResult`；`src/frontend/lib/api.ts`
+统一导出 `OptionsVolSurfaceResponse`、`OptionsVolSmileResponse` 及其嵌套 surface /
+smile 类型，覆盖后端 response model 中的 source、atm term structure、surface points、
+dte、smile deltas / moneyness、skew metrics、assumptions 等字段。POST 工具结果类型
+仍留待后续分批收敛。
