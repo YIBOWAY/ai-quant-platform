@@ -23,7 +23,7 @@
 - Strategy Catalog 的参数 payload 构建逻辑从 `StrategyCatalogWorkbench` 抽到 `src/frontend/lib/strategyPayload.ts`，并新增 Vitest 覆盖 symbol list、number、integer_or_null 和 factor weight map 的转换，降低后端 schema 驱动表单的静默漂移风险。
 - 期权雷达日期查询现在复用 `src/frontend/lib/api.ts` 的 `getOptionsRadarDates()` helper；评估报告里提到的“死代码”被复核为组件绕过 helper 直写 endpoint string，已收敛为单一 API client 入口。
 - 服务端页面和 `SafetyStrip` 的 `/api/health` 读取现在改走 `src/frontend/lib/serverApi.ts` 的 `getCachedHealth()`，用 React `cache()` 在同一次服务端渲染内去重健康检查请求；客户端 API helper `getHealth()` 保持不变。
-- `src/frontend/.env.example` 去掉 Gemini / AI Studio / Cloud Run / `APP_URL` 模板变量，只保留本地后端 API URL；未引用的 `src/frontend/metadata.json` AI Studio app metadata 文件和已被 flat config 取代的 `src/frontend/.eslintrc.json` 也已删除；`tests/test_frontend_e2e_config.py` 会锁定前端包名、死依赖、单一 ESLint 配置和模板残留不回流。
+- `src/frontend/.env.example` 去掉 Gemini / AI Studio / Cloud Run / `APP_URL` 模板变量，只保留本地后端 API URL；未引用的 `src/frontend/metadata.json` AI Studio app metadata 文件和已被 flat config 取代的 `src/frontend/.eslintrc.json` 也已删除；`tests/test_frontend_e2e_config.py` 会锁定前端包名、死依赖、单一 ESLint 配置和模板残留不回流。Prediction Market 只读 scanner 的三类 POST 响应 union 也已收敛为 `src/frontend/lib/api.ts` 导出的 `PredictionMarketRunResponse`，避免表单继续维护本地 union 类型。
 
 ---
 

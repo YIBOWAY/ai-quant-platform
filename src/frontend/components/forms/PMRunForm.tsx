@@ -8,8 +8,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import type {
   PredictionMarketBacktestResponse,
-  PredictionMarketDryArbitrageResponse,
-  PredictionMarketScanResponse,
+  PredictionMarketRunResponse,
 } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
@@ -84,10 +83,6 @@ const pmSchema = z.object({
 
 type PMFormValues = z.infer<typeof pmSchema>;
 type PMAction = "scan" | "dry-arbitrage" | "backtest";
-type PMRunResponse =
-  | PredictionMarketScanResponse
-  | PredictionMarketDryArbitrageResponse
-  | PredictionMarketBacktestResponse;
 
 export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
   const text = copy[locale];
@@ -109,7 +104,7 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
   });
   const mutation = useMutation({
     mutationFn: ({ action, values }: { action: PMAction; values: PMFormValues }) =>
-      apiPost<PMRunResponse>(
+      apiPost<PredictionMarketRunResponse>(
         action === "scan"
           ? "/api/prediction-market/scan"
           : action === "backtest"

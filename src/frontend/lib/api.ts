@@ -540,6 +540,11 @@ export type PredictionMarketBacktestResponse = ApiEnvelope & {
   report_path: string;
 };
 
+export type PredictionMarketRunResponse =
+  | PredictionMarketScanResponse
+  | PredictionMarketDryArbitrageResponse
+  | PredictionMarketBacktestResponse;
+
 export type PredictionMarketCollectResponse = ApiEnvelope & {
   provider: string;
   iteration_count: number;

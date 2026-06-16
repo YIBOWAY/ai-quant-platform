@@ -15,18 +15,18 @@ def test_prediction_market_form_uses_shared_post_response_types() -> None:
         "PredictionMarketProposedTrade",
         "PredictionMarketDryArbitrageResponse",
         "PredictionMarketBacktestResponse",
+        "PredictionMarketRunResponse",
     ]:
         assert f"export type {type_name}" in api_types
 
-    for type_name in [
-        "PredictionMarketScanResponse",
-        "PredictionMarketDryArbitrageResponse",
-        "PredictionMarketBacktestResponse",
-    ]:
-        assert type_name in form
-
-    assert "type PMRunResponse =" in form
-    assert "apiPost<PMRunResponse>" in form
+    assert "PredictionMarketRunResponse" in form
+    assert "| PredictionMarketScanResponse" in api_types
+    assert "| PredictionMarketDryArbitrageResponse" in api_types
+    assert "| PredictionMarketBacktestResponse" in api_types
+    assert "type PMRunResponse =" not in form
+    assert "PredictionMarketScanResponse" not in form
+    assert "PredictionMarketDryArbitrageResponse" not in form
+    assert "apiPost<PredictionMarketRunResponse>" in form
     assert "apiPost<Record<string, unknown>>" not in form
     assert "as PredictionMarketBacktestResponse" not in form
 
