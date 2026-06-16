@@ -20,6 +20,10 @@ export type HealthResponse = ApiEnvelope & {
   status: string;
   app_name: string;
   environment: string;
+  data_provider: {
+    configured_default: string;
+    tiingo_token_present: boolean;
+  };
   futu_opend?: {
     enabled: boolean;
     reachable?: boolean;
@@ -1265,6 +1269,7 @@ export type OptionsRefreshResponse = ApiEnvelope & {
   row_count: number;
   output_path: string;
   fetched_at: string;
+  warning?: string | null;
 };
 
 export type OptionsDailyScanSymbolResponse = ApiEnvelope & {
@@ -1345,6 +1350,10 @@ export function getHealth() {
     status: "offline",
     app_name: "AI Quant Research Platform",
     environment: "local",
+    data_provider: {
+      configured_default: "unknown",
+      tiingo_token_present: false,
+    },
     safety: FALLBACK_SAFETY,
   });
 }

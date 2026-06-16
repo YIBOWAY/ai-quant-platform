@@ -515,6 +515,10 @@ IV 百分比归一、价差腿构造、strategy rank strikes 和空 ticker 拒�
 `OptionsRadar*` 与 `OptionsDailyTaskStatusResponse` 仅保留为兼容 alias。
 `OptionsRadarView` 的 status、snapshot 与 manual scan 调用已改用后端一致命名，
 并由 `tests/test_frontend_options_radar_response_type_contract.py` 防回归。
+2026-06-16 后续补强：同一测试现在会用后端 `options_radar` response model
+字段集合校验前端同名 type 至少覆盖所有后端字段；本轮补齐了
+`OptionsRefreshResponse.warning`，避免刷新 universe / earnings / VIX 时后端 warning
+字段被前端类型遗漏。
 随后同域补齐单标的详情与候选行命名：`OptionsDailyScanSymbolResponse` 与
 `OptionsRadarCandidateResponse` 现在在前端共享类型中显式导出，`/options-radar/[symbol]`
 页面改用 `getOptionsDailyScanSymbol()`，旧 `getOptionsRadarSymbol()` 与
@@ -535,6 +539,9 @@ IV 百分比归一、价差腿构造、strategy rank strikes 和空 ticker 拒�
 同日补齐基础行情响应命名：`src/frontend/lib/api.ts` 现在导出后端一致的
 `OHLCVResponse`，`getOhlcv()` 已改用该类型；旧 `OhlcvResponse` 仅保留为
 兼容 alias，并由 `tests/test_frontend_data_response_type_contract.py` 防回归。
+2026-06-16 后续补强：同一测试现在会校验 `HealthResponse` 前端 type 覆盖
+后端字段集合；本轮补齐 `data_provider.configured_default` 与
+`data_provider.tiingo_token_present`，并同步离线 fallback。
 
 同日补齐 persistent paper account 嵌套响应命名：`AccountPositionResponse`、
 `PendingAccountOrderResponse`、`PaperAccountPriceSourceResponse`、

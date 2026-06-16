@@ -1,7 +1,39 @@
+import re
 from pathlib import Path
+
+from pydantic import BaseModel
+
+from quant_system.api.schemas import options_radar
 
 API_TYPES = Path("src/frontend/lib/api.ts")
 RADAR_VIEW = Path("src/frontend/components/forms/OptionsRadarView.tsx")
+
+
+def _frontend_type_fields(type_name: str) -> set[str]:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+    match = re.search(
+        rf"export type {re.escape(type_name)} = (?:ApiEnvelope & )?\{{(?P<body>.*?)\n\}};",
+        api_types,
+        flags=re.DOTALL,
+    )
+    assert match is not None, f"{type_name} is not exported from {API_TYPES}"
+    return set(
+        re.findall(
+            r"^\s*([A-Za-z_][A-Za-z0-9_]*)\??:",
+            match.group("body"),
+            re.MULTILINE,
+        )
+    )
+
+
+def _response_models(module: object) -> list[type[BaseModel]]:
+    return [
+        item
+        for item in vars(module).values()
+        if isinstance(item, type)
+        and issubclass(item, BaseModel)
+        and item.__name__.endswith("Response")
+    ]
 
 
 def test_options_radar_uses_backend_daily_scan_response_type_names() -> None:
@@ -56,3 +88,11 @@ def test_options_radar_symbol_detail_uses_backend_daily_scan_type_name() -> None
     assert "apiGet<OptionsDailyScanSymbolResponse>" in api_types
     assert "getOptionsDailyScanSymbol" in symbol_page
     assert "getOptionsRadarSymbol" not in symbol_page
+
+
+def test_options_radar_frontend_response_types_include_backend_fields() -> None:
+    for response_model in _response_models(options_radar):
+        backend_fields = set(response_model.model_fields)
+        frontend_fields = _frontend_type_fields(response_model.__name__)
+
+        assert backend_fields <= frontend_fields, response_model.__name__
