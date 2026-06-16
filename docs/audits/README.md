@@ -106,6 +106,14 @@ Options Assistant 的请求 payload 构建逻辑已抽到
 已在 `src/frontend/lib/api.ts` 中显式建模，并由
 `tests/test_frontend_options_tools_response_type_contract.py` 防回归。
 
+2026-06-16 状态补充：Prediction Market 前端 POST 响应类型也已收敛。
+`PMRunForm` 当前使用 `PredictionMarketScanResponse`、
+`PredictionMarketDryArbitrageResponse` 和 `PredictionMarketBacktestResponse` 的
+union，不再用 `Record<string, unknown>` 接收后再强转 backtest 结果；scan
+候选、dry-arbitrage proposal 与 backtest run 的共享字段已在
+`src/frontend/lib/api.ts` 中显式建模，并由
+`tests/test_frontend_prediction_market_response_type_contract.py` 防回归。
+
 2026-06-15 状态补充：评估报告中“Futu 实盘交易脚本需作为红线处理”的小项
 已补强回归测试。`tests/test_api_safety.py` 现在会扫描本地已安装的
 `.agents/skills/futuapi` Python 脚本，禁止重新引入 `.place_order(` /

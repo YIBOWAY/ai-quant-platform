@@ -6,7 +6,11 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import type { PredictionMarketBacktestResponse } from "@/lib/api";
+import type {
+  PredictionMarketBacktestResponse,
+  PredictionMarketDryArbitrageResponse,
+  PredictionMarketScanResponse,
+} from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 
@@ -80,6 +84,10 @@ const pmSchema = z.object({
 
 type PMFormValues = z.infer<typeof pmSchema>;
 type PMAction = "scan" | "dry-arbitrage" | "backtest";
+type PMRunResponse =
+  | PredictionMarketScanResponse
+  | PredictionMarketDryArbitrageResponse
+  | PredictionMarketBacktestResponse;
 
 export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
   const text = copy[locale];
@@ -101,7 +109,7 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
   });
   const mutation = useMutation({
     mutationFn: ({ action, values }: { action: PMAction; values: PMFormValues }) =>
-      apiPost<Record<string, unknown>>(
+      apiPost<PMRunResponse>(
         action === "scan"
           ? "/api/prediction-market/scan"
           : action === "backtest"
@@ -116,7 +124,7 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
     onSuccess: (payload) => {
       setResult(JSON.stringify(payload, null, 2));
       if ("metrics" in payload && "run_id" in payload) {
-        setBacktestResult(payload as PredictionMarketBacktestResponse);
+        setBacktestResult(payload);
       }
       toast.success(text.completedToast);
     },

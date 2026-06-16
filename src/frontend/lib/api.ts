@@ -479,6 +479,50 @@ export type PredictionMarketResponse = ApiEnvelope & {
   cache_status?: string;
 };
 
+export type PredictionMarketCandidate = {
+  market_id: string;
+  condition_id: string;
+  scanner_id: string;
+  description: string;
+  edge_bps: number;
+  prices: Record<string, number>;
+  direction: "underpriced_complete_set" | "overpriced_complete_set";
+  created_at: string;
+  candidate_id: string;
+};
+
+export type PredictionMarketScanResponse = ApiEnvelope & {
+  candidates: PredictionMarketCandidate[];
+  report_path: string;
+  provider: string;
+  cache_status?: string;
+};
+
+export type PredictionMarketProposedLeg = {
+  token_id: string;
+  side: "buy" | "sell";
+  price: number;
+  size: number;
+};
+
+export type PredictionMarketProposedTrade = {
+  proposal_id: string;
+  opportunity: PredictionMarketCandidate;
+  legs: PredictionMarketProposedLeg[];
+  capital: number;
+  expected_profit: number;
+  dry_run: boolean;
+  threshold_passed: boolean;
+  created_at: string;
+};
+
+export type PredictionMarketDryArbitrageResponse = ApiEnvelope & {
+  proposed_trades: PredictionMarketProposedTrade[];
+  report_path: string;
+  provider: string;
+  cache_status?: string;
+};
+
 export type PredictionMarketBacktestResponse = ApiEnvelope & {
   run_id: string;
   provider: string;
