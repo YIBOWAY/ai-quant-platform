@@ -881,6 +881,37 @@ export type OptionsVolSmileResponse = ApiEnvelope & {
   assumptions: string[];
 };
 
+export type OptionsGreeksResponse = ApiEnvelope & {
+  price: number;
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  rho: number;
+  charm: number;
+  vanna: number;
+  volga: number;
+};
+
+export type OptionsSimulationPnlAtExpiry = {
+  price_axis: number[];
+  pnl_axis: number[];
+  [key: string]: unknown;
+};
+
+export type OptionsSimulationResponse = ApiEnvelope & {
+  ticker: string;
+  price: number;
+  position: Record<string, unknown>;
+  pnl_at_expiry: OptionsSimulationPnlAtExpiry;
+  breakevens: number[];
+  max_profit?: number | null;
+  max_loss?: number | null;
+  risk_reward_ratio?: number | null;
+  scenarios: Record<string, unknown>;
+  assumptions: string[];
+};
+
 export type OptionsRadarDatesResponse = ApiEnvelope & {
   dates: string[];
 };

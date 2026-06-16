@@ -386,3 +386,9 @@ vol smile 面板不再局部手写 `SurfaceResult` / `SmileResult`；`src/fronte
 smile 类型，覆盖后端 response model 中的 source、atm term structure、surface points、
 dte、smile deltas / moneyness、skew metrics、assumptions 等字段。POST 工具结果类型
 仍留待后续分批收敛。
+
+同日继续推进 options tools POST 结果类型收敛：`OptionsToolsWorkbench` 的 Greeks 与
+Simulator 面板不再局部手写 `GreeksResult` / `SimulationResult`；`src/frontend/lib/api.ts`
+统一导出 `OptionsGreeksResponse`、`OptionsSimulationResponse` 与
+`OptionsSimulationPnlAtExpiry`，覆盖后端 response model 中的二阶 Greeks、position、
+P&L 曲线、breakevens、risk/reward、scenarios、assumptions 等字段。

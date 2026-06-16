@@ -15,6 +15,8 @@ import {
 import type {
   OptionContract,
   OptionsChainResponse,
+  OptionsGreeksResponse,
+  OptionsSimulationResponse,
   OptionsSnapshotResponse,
   OptionsVolSmileResponse,
   OptionsVolSurfaceResponse,
@@ -33,18 +35,6 @@ type TabId =
   | "smile"
   | "signals"
   | "researchOps";
-
-type GreeksResult = {
-  price: number;
-  delta: number;
-  gamma: number;
-  theta: number;
-  vega: number;
-  rho: number;
-  charm: number;
-  vanna: number;
-  volga: number;
-};
 
 type StrategyRank = {
   template_id: string;
@@ -78,19 +68,6 @@ type ContractRank = {
 type ScoreContractsResult = {
   objective: string;
   ranked_contracts: ContractRank[];
-  assumptions?: string[];
-};
-
-type SimulationResult = {
-  ticker: string;
-  price: number;
-  max_profit?: number | null;
-  max_loss?: number | null;
-  breakevens: number[];
-  pnl_at_expiry: {
-    price_axis: number[];
-    pnl_axis: number[];
-  };
   assumptions?: string[];
 };
 
@@ -411,7 +388,7 @@ export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
 }
 
 function GreeksPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
-  const [result, setResult] = useState<GreeksResult | null>(null);
+  const [result, setResult] = useState<OptionsGreeksResponse | null>(null);
   const [selectedContract, setSelectedContract] = useState<LiveContract | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -425,7 +402,7 @@ function GreeksPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: L
       if (!contract?.strike || !contract.implied_volatility) {
         throw new Error(`No usable live at-the-money call was found for ${context.ticker}.`);
       }
-      const payload = await apiPost<GreeksResult>("/api/options/tools/greeks", {
+      const payload = await apiPost<OptionsGreeksResponse>("/api/options/tools/greeks", {
         spot: context.spot,
         strike: contract.strike,
         expiry_days: context.dte,
@@ -628,7 +605,7 @@ function ScoreContractsPanel({ ticker, t, locale }: { ticker: string; t: Copy; l
 }
 
 function SimulationPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
-  const [result, setResult] = useState<SimulationResult | null>(null);
+  const [result, setResult] = useState<OptionsSimulationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -638,7 +615,7 @@ function SimulationPanel({ ticker, t, locale }: { ticker: string; t: Copy; local
     try {
       const context = await loadLiveContext(ticker);
       const [longCall, shortCall] = buildLiveCallSpread(context);
-      const payload = await apiPost<SimulationResult>("/api/options/tools/simulate", {
+      const payload = await apiPost<OptionsSimulationResponse>("/api/options/tools/simulate", {
         symbol: context.ticker,
         spot: context.spot,
         legs: [

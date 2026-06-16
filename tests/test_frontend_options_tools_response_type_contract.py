@@ -24,6 +24,25 @@ def test_options_tools_surface_smile_use_shared_response_types() -> None:
     assert "apiRequest<OptionsVolSmileResponse>" in component
 
 
+def test_options_tools_greeks_simulation_use_shared_response_types() -> None:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+    component = WORKBENCH.read_text(encoding="utf-8")
+
+    for type_name in [
+        "OptionsGreeksResponse",
+        "OptionsSimulationPnlAtExpiry",
+        "OptionsSimulationResponse",
+    ]:
+        assert f"export type {type_name}" in api_types
+
+    assert "OptionsGreeksResponse" in component
+    assert "OptionsSimulationResponse" in component
+    assert "type GreeksResult =" not in component
+    assert "type SimulationResult =" not in component
+    assert "apiPost<OptionsGreeksResponse>" in component
+    assert "apiPost<OptionsSimulationResponse>" in component
+
+
 def test_shared_options_surface_smile_types_include_backend_response_fields() -> None:
     api_types = API_TYPES.read_text(encoding="utf-8")
 
@@ -37,5 +56,22 @@ def test_shared_options_surface_smile_types_include_backend_response_fields() ->
         "moneyness: Array<number | null>;",
         "skew_metrics: Record<string, number | null>;",
         "assumptions: string[];",
+    ]:
+        assert field in api_types
+
+
+def test_shared_options_greeks_simulation_types_include_backend_response_fields() -> None:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+
+    for field in [
+        "charm: number;",
+        "vanna: number;",
+        "volga: number;",
+        "position: Record<string, unknown>;",
+        "pnl_at_expiry: OptionsSimulationPnlAtExpiry;",
+        "price_axis: number[];",
+        "pnl_axis: number[];",
+        "risk_reward_ratio?: number | null;",
+        "scenarios: Record<string, unknown>;",
     ]:
         assert field in api_types
