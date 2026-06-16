@@ -443,3 +443,10 @@ research health check 现在都有共享 frontend response type，并纳入
 `OptionsSignalsResponse` / `OptionsResearchOpsResponse` union；页面接通了已有文案中的
 Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入设计后再接 UI，
 避免用任意 shares/cost_basis 构造伪请求。
+
+同日补齐 Options Radar daily-scan 前端响应类型命名：`OptionsDailyScanDatesResponse`、
+`OptionsDailyScanStatusResponse`、`OptionsDailyScanResponse` 与
+`OptionsDailyScanRunResponse` 现在与后端 OpenAPI schema 名称一致；旧的
+`OptionsRadar*` 与 `OptionsDailyTaskStatusResponse` 仅保留为兼容 alias。
+`OptionsRadarView` 的 status、snapshot 与 manual scan 调用已改用后端一致命名，
+并由 `tests/test_frontend_options_radar_response_type_contract.py` 防回归。

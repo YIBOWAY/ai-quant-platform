@@ -1157,9 +1157,11 @@ export type OptionsResearchOpsResponse =
   | OptionsAlertsEvaluationResponse
   | OptionsResearchHealthCheckResponse;
 
-export type OptionsRadarDatesResponse = ApiEnvelope & {
+export type OptionsDailyScanDatesResponse = ApiEnvelope & {
   dates: string[];
 };
+
+export type OptionsRadarDatesResponse = OptionsDailyScanDatesResponse;
 
 export type OptionsDailyTaskStatus = {
   status?: string | null;
@@ -1174,26 +1176,30 @@ export type OptionsDailyTaskStatus = {
   [key: string]: unknown;
 };
 
-export type OptionsDailyTaskStatusResponse = ApiEnvelope & {
+export type OptionsDailyScanStatusResponse = ApiEnvelope & {
   exists: boolean;
   status_path: string;
   status: OptionsDailyTaskStatus | null;
 };
 
-export type OptionsRadarResponse = ApiEnvelope & {
+export type OptionsDailyTaskStatusResponse = OptionsDailyScanStatusResponse;
+
+export type OptionsDailyScanResponse = ApiEnvelope & {
   run_date: string;
   universe_size: number;
   scanned_tickers: number;
   failed_tickers: Array<[string, string]>;
-  is_stale?: boolean;
-  snapshot_age_days?: number;
-  expired_candidate_count?: number;
+  is_stale: boolean;
+  snapshot_age_days: number;
+  expired_candidate_count: number;
   candidates: OptionsRadarCandidate[];
 };
 
-export type OptionsRadarRunResponse = ApiEnvelope & {
+export type OptionsRadarResponse = OptionsDailyScanResponse;
+
+export type OptionsDailyScanRunResponse = ApiEnvelope & {
   run_date: string;
-  provider: string;
+  provider: "sample" | "futu";
   universe_size: number;
   scanned_tickers: number;
   failed_tickers: Array<[string, string]>;
@@ -1201,6 +1207,8 @@ export type OptionsRadarRunResponse = ApiEnvelope & {
   data_path: string;
   meta_path: string;
 };
+
+export type OptionsRadarRunResponse = OptionsDailyScanRunResponse;
 
 export type OptionsRefreshResponse = ApiEnvelope & {
   kind: "universe" | "earnings" | "vix";

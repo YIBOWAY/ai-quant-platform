@@ -13,12 +13,12 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type {
+  OptionsDailyScanResponse,
+  OptionsDailyScanRunResponse,
+  OptionsDailyScanStatusResponse,
   OptionsDailyTaskStatus,
-  OptionsDailyTaskStatusResponse,
   OptionsRadarCandidate,
   OptionsRefreshResponse,
-  OptionsRadarRunResponse,
-  OptionsRadarResponse,
 } from "@/lib/api";
 import { getOptionsRadarDates } from "@/lib/api";
 import { apiPost, apiRequest } from "@/lib/apiClient";
@@ -230,7 +230,7 @@ export function OptionsRadarView({
     queryKey: ["options-daily-task-status"],
     enabled: hydrated,
     queryFn: () =>
-      apiRequest<OptionsDailyTaskStatusResponse>("/api/options/daily-scan/status"),
+      apiRequest<OptionsDailyScanStatusResponse>("/api/options/daily-scan/status"),
   });
 
   const activeDate = date || datesQuery.data?.dates[0] || "";
@@ -244,7 +244,7 @@ export function OptionsRadarView({
   const scanQuery = useQuery({
     queryKey: ["options-radar", activeDate, strategy, sector, dteBucket, top],
     enabled: hydrated,
-    queryFn: () => apiRequest<OptionsRadarResponse>(scanPath),
+    queryFn: () => apiRequest<OptionsDailyScanResponse>(scanPath),
   });
 
   const candidates = useMemo(
@@ -259,7 +259,7 @@ export function OptionsRadarView({
   );
   const scanMutation = useMutation({
     mutationFn: () =>
-      apiPost<OptionsRadarRunResponse>("/api/options/daily-scan/run", {
+      apiPost<OptionsDailyScanRunResponse>("/api/options/daily-scan/run", {
         provider: "futu",
         top,
         strategies: strategy === "all" ? ["sell_put", "covered_call"] : [strategy],
@@ -280,7 +280,7 @@ export function OptionsRadarView({
       await queryClient.fetchQuery({
         queryKey: ["options-radar", payload.run_date, strategy, sector, dteBucket, top],
         queryFn: () =>
-          apiRequest<OptionsRadarResponse>(
+          apiRequest<OptionsDailyScanResponse>(
             buildScanPath({
               date: payload.run_date,
               strategy,
@@ -762,7 +762,7 @@ function ScheduledTaskStatusCard({
 }: {
   error: unknown;
   isLoading: boolean;
-  response?: OptionsDailyTaskStatusResponse;
+  response?: OptionsDailyScanStatusResponse;
   text: (typeof copy)["en"] | (typeof copy)["zh"];
 }) {
   const status = response?.status ?? null;
