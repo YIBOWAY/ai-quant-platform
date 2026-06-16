@@ -284,7 +284,9 @@ simulation-only — no real orders, broker, wallet, or account unlock.
   `GET /api/paper/account/ledger`.
   The account store keeps `account.json.bak` before overwrites; if the main
   account JSON is corrupt, it preserves the bad file as `account.corrupt-*.json`
-  and restores a valid backup before opening a fresh account.
+  and restores a valid backup before opening a fresh account. Atomic save
+  retries never fall back to plain text overwrite; if replace keeps failing,
+  the old account file stays intact and the save fails visibly.
   Paper-account domain failures return structured API details with
   `detail.code` and `detail.message` (for example `price_unavailable`,
   `account_frozen`, or `unsupported_account_rebalance_strategy`).

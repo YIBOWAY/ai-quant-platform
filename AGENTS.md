@@ -135,10 +135,10 @@ on the Position Map.
   snapshot and its complete audit ledger are persisted together.
 - Persistence: `src/quant_system/execution/account_storage.py` writes
   `data/api_runs/paper_account/<account_id>/account.json` +
-  `positions_snapshot.parquet` (atomic write with retry), keeps
-  `account.json.bak` before overwrites, restores a valid backup if the main
-  JSON is corrupt, preserves corrupt files as `account.corrupt-*.json`, and
-  archives on reset.
+  `positions_snapshot.parquet` (atomic write with retry; no non-atomic
+  overwrite fallback), keeps `account.json.bak` before overwrites, restores a
+  valid backup if the main JSON is corrupt, preserves corrupt files as
+  `account.corrupt-*.json`, and archives on reset.
 - Pricing: `src/quant_system/execution/price_source.py` (`PaperPriceSource`) —
   Futu real-time snapshot first (`fetch_market_snapshots`), falls back to the
   most recent real historical close from local cache / Tiingo when OpenD is

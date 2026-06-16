@@ -349,6 +349,9 @@ pytest、ruff、frontend lint、frontend type-check、frontend unit tests，buil
 2026-06-16 进一步补上恢复路径：如果 `account.json.bak` 是有效账户快照，
 `load()` 会先恢复备份到 `account.json` 并返回该账户；只有无有效备份时才重新开户。
 新增测试覆盖主文件损坏、备份有效时不会丢失原账户现金和账本。
+2026-06-16 继续处理 `_atomic_replace` 的非原子 fallback：10 次 `os.replace` 重试耗尽后
+现在会清理临时文件并重新抛出 `PermissionError`，旧 `account.json` 保持不变；
+测试覆盖持续替换失败时不会静默普通写覆盖。
 
 2026-06-16 状态补充：评估报告和前端审查中“限价单缺购买力/可卖数量预留”的
 剩余项已处理。`PendingAccountOrder` 持久化 `reserved_cash` / `reserved_quantity`；

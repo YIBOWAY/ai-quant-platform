@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 from pydantic import SecretStr
 
+import quant_system.execution.account_storage as account_storage_module
 from quant_system.config.settings import ApiKeySettings, DataSettings, FutuSettings, Settings
 from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.execution.account import PaperAccount
@@ -623,6 +624,32 @@ def test_storage_recovers_valid_backup_when_account_file_is_corrupt(tmp_path) ->
     corrupt_files = list(storage.account_dir.glob("account.corrupt-*.json"))
     assert len(corrupt_files) == 1
     assert corrupt_files[0].read_text(encoding="utf-8") == "{not-json"
+
+
+def test_storage_save_keeps_existing_account_when_atomic_replace_fails(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage.save(account)
+    original_payload = storage.account_path.read_text(encoding="utf-8")
+    attempts = 0
+
+    def fail_replace(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise PermissionError("account file is locked")
+
+    monkeypatch.setattr(account_storage_module.os, "replace", fail_replace)
+    monkeypatch.setattr(account_storage_module.time, "sleep", lambda _seconds: None)
+    account.record_event(kind="note", note="should not be partially written")
+
+    with pytest.raises(PermissionError, match="account file is locked"):
+        storage.save(account)
+
+    assert attempts == 10
+    assert storage.account_path.read_text(encoding="utf-8") == original_payload
 
 
 def test_storage_snapshot_without_fresh_quotes_keeps_weight_and_fill_source(tmp_path) -> None:

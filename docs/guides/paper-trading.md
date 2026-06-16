@@ -47,7 +47,7 @@
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。
 
-**账本、恢复与重置**：每一笔成交、拒单、未成交、冻结、再平衡中止都写入账本（`GET /api/paper/account/ledger`，最新在前）。`account.json` 覆盖前会保留 `account.json.bak`；如果主账户 JSON 损坏，读取时会把损坏文件保留为 `account.corrupt-*.json`，并优先从有效备份恢复。没有可用备份时才会重新开账户。重置（`POST /api/paper/account/reset`）会先把旧账户**归档**到 `archive/` 再开新账户。
+**账本、恢复与重置**：每一笔成交、拒单、未成交、冻结、再平衡中止都写入账本（`GET /api/paper/account/ledger`，最新在前）。`account.json` 覆盖前会保留 `account.json.bak`；如果主账户 JSON 损坏，读取时会把损坏文件保留为 `account.corrupt-*.json`，并优先从有效备份恢复。没有可用备份时才会重新开账户。账户保存只使用带重试的原子替换；替换持续失败时旧文件保持不变，保存显式失败，不会退化成普通文本覆盖。重置（`POST /api/paper/account/reset`）会先把旧账户**归档**到 `archive/` 再开新账户。
 
 并发安全：网页请求会在进程内串行，网页与 CLI / 定时任务之间还会使用账户锁文件串行；定时再平衡与手动下单同时发生也不会丢记录。
 

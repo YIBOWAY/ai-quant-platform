@@ -5,7 +5,7 @@ import os
 import time
 import uuid
 from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -167,10 +167,10 @@ class PaperAccountStorage:
             except PermissionError as exc:  # noqa: PERF203 - rare retry path
                 last_error = exc
                 time.sleep(0.02 * (attempt + 1))
-        # Fall back to a non-atomic copy so we never lose the write entirely.
         if last_error is not None:
-            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-            src.unlink(missing_ok=True)
+            with suppress(OSError):
+                src.unlink(missing_ok=True)
+            raise last_error
 
     def reset(
         self,
