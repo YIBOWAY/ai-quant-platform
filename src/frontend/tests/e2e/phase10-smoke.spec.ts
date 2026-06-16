@@ -30,10 +30,12 @@ async function waitForEnabledButton(page: Page, name: string | RegExp) {
   await page.waitForLoadState("networkidle");
   const button = page.getByRole("button", { name });
   try {
+    await expect(button).toBeVisible({ timeout: 5_000 });
     await expect(button).toBeEnabled({ timeout: 5_000 });
   } catch {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForLoadState("networkidle");
+    await expect(button).toBeVisible({ timeout: 5_000 });
     await expect(button).toBeEnabled({ timeout: 5_000 });
   }
   return button;
@@ -41,13 +43,14 @@ async function waitForEnabledButton(page: Page, name: string | RegExp) {
 
 async function clickAndWaitForPost(page: Page, buttonName: string, urlPart: string) {
   const button = await waitForEnabledButton(page, buttonName);
-  await page.waitForTimeout(3_000);
-  const responsePromise = page.waitForResponse(
-    (response) => response.url().includes(urlPart) && response.request().method() === "POST",
-    { timeout: 45_000 },
-  );
-  await button.click({ force: true });
-  return responsePromise;
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (candidate) => candidate.url().includes(urlPart) && candidate.request().method() === "POST",
+      { timeout: 45_000 },
+    ),
+    button.click(),
+  ]);
+  return response;
 }
 
 async function expectRunIdVisible(page: Page, runId: string) {

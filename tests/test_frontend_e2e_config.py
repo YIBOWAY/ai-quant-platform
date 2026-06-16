@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 
@@ -146,3 +147,16 @@ def test_frontend_uses_single_flat_eslint_config() -> None:
     assert not legacy_config.exists()
     assert "eslint.config.mjs" in package["scripts"]["lint"]
     assert "eslint-config-next" in flat_config.read_text(encoding="utf-8")
+
+
+def test_playwright_specs_avoid_fixed_waits_and_forced_clicks() -> None:
+    offenders: list[str] = []
+
+    for spec_path in sorted(Path("src/frontend/tests/e2e").glob("*.spec.ts")):
+        spec = spec_path.read_text(encoding="utf-8")
+        if "waitForTimeout(" in spec:
+            offenders.append(f"{spec_path}: waitForTimeout")
+        if re.search(r"\.click\(\s*\{[^}]*force\s*:\s*true", spec, re.S):
+            offenders.append(f"{spec_path}: click force=true")
+
+    assert not offenders

@@ -164,6 +164,14 @@ run metadata 聚合最近运行；首页 `src/frontend/app/page.tsx` 通过
 不要把该集成测试指向常用 `quantplatform` 库：测试会按临时文件系统视图对同 kind
 索引行做 prune，隔离库能避免误删本地已有 run index。
 
+2026-06-16 继续收敛 E2E 稳定性：`phase10-smoke.spec.ts` 的 POST 点击 helper
+不再使用固定 `waitForTimeout(3000)` 或 `.click({ force: true })`，改为等待目标
+button 可见且 enabled 后用 Playwright actionability 点击，并与 `waitForResponse`
+并发等待目标 POST。`tests/test_frontend_e2e_config.py` 新增守护断言，禁止 E2E
+spec 回潮到固定等待或强制点击。full `phase10-smoke` 本轮未复用运行，因为
+127.0.0.1:8765/3001 已有 `environment=local`、数据库启用的本地栈，占用端口且
+不应把烟测写入非隔离本地状态。
+
 2026-06-15 状态补充：评估报告中“`environment.yml` 缺 `[api]` extra”的小项
 已处理。`environment.yml` 当前通过 pip 安装 `-e .[api,dev]`，与 README 的
 本地安装口径一致；`tests/test_environment_file.py` 会锁定该依赖声明，避免
