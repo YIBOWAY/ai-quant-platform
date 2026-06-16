@@ -481,13 +481,15 @@ export type AgentReviewResponse = ApiEnvelope & {
   registration: "manual_required";
 };
 
-export type AgentLlmConfigResponse = ApiEnvelope & {
+export type AgentLLMConfigResponse = ApiEnvelope & {
   provider: string;
   model: string | null;
   base_url: string | null;
   timeout: number;
   has_api_key: boolean;
 };
+
+export type AgentLlmConfigResponse = AgentLLMConfigResponse;
 
 export type PredictionMarketResponse = ApiEnvelope & {
   markets: Array<{ market_id: string; question: string; outcomes: Array<{ name: string; token_id?: string }> }>;
@@ -1576,7 +1578,7 @@ export function getAgentCandidateDetail(candidateId: string) {
 }
 
 export function getAgentLlmConfig() {
-  return apiGet<AgentLlmConfigResponse>("/api/agent/llm-config", {
+  return apiGet<AgentLLMConfigResponse>("/api/agent/llm-config", {
     provider: "stub",
     model: null,
     base_url: null,
