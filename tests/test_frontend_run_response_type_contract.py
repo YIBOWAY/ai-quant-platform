@@ -43,6 +43,11 @@ def test_shared_run_response_types_include_backend_response_model_fields() -> No
     assert "data_fetch: number;" in api_types
     assert "timings_ms: BacktestRunTimingsResponse;" in api_types
     assert "timings_ms: Record<string, unknown>;" not in api_types
+    assert "export type BacktestRunRequestEchoResponse = {" in api_types
+    assert "request: BacktestRunRequestEchoResponse;" in api_types
+    assert "metrics: BacktestRunMetricsResponse;" in api_types
+    assert "benchmark: BacktestRunBenchmarkResponse;" in api_types
+    assert "paths: BacktestRunPathsResponse;" in api_types
 
     for field in [
         "attribution: PreviewRecord[];",

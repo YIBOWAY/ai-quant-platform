@@ -65,6 +65,8 @@ CLI 启动和 app-factory 路径都会把结构化 JSONL 运行日志写入
 随 `metadata` 返回。该字段只用于诊断慢点，不参与回测指标计算。
 2026-06-16 继续把 `POST /api/backtests/run` 的 `timings_ms` 从匿名对象收敛为
 `BacktestRunTimingsResponse`，OpenAPI 和前端共享类型都会锁定上述四段字段。
+随后同一路径的 `request`、`metrics`、`benchmark` 与 `paths` 也收敛为结构化
+response schema / 前端共享类型，避免 run-submit 结果继续依赖宽泛 `dict`。
 
 2026-06-15 状态补充：评估报告中“.env.example 声称默认 sample 而代码默认
 futu”的小项已对齐。`.env.example` 现在使用
@@ -452,7 +454,8 @@ walk-forward、leakage audit 和 cache key 的结构化 schema；前端 `FactorL
 `Record<string, unknown>` 强转。
 同日 Backtest run-submit 响应里的 `timings_ms` 也改用
 `BacktestRunTimingsResponse`，`tests/test_frontend_run_response_type_contract.py`
-会防止它回退成 `Record<string, unknown>`。
+会防止它回退成 `Record<string, unknown>`。随后同一响应中的 request echo、
+summary metrics、benchmark snapshot 和 artifact paths 也改用结构化共享类型。
 同日补齐 `AgentLLMConfigResponse` 前端类型命名，与后端 OpenAPI schema 名称保持一致；
 旧的 `AgentLlmConfigResponse` 仅保留为兼容 alias。
 同日补齐 prediction-market run response 前端类型命名：`PredictionMarketBacktestRunResponse`

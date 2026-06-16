@@ -22,6 +22,63 @@ class BacktestRunTimingsResponse(BaseModel):
     total: float
 
 
+class BacktestRunRequestEchoResponse(BaseModel):
+    symbols: list[str]
+    start: str
+    end: str
+    provider: Literal["sample", "futu", "tiingo"]
+    strategy_id: str
+    universe_id: str | None = None
+    factor_ids: list[str]
+    weights: dict[str, float]
+    benchmark_symbol: str
+    lookback: int
+    top_n: int
+    initial_cash: float
+    commission_bps: float
+    slippage_bps: float
+    min_order_value: float
+    whole_share_orders: bool
+    rebalance_frequency: Literal["every_bar", "weekly", "monthly"]
+    max_weight_per_symbol: float | None = None
+    sector_cap: float | None = None
+    sector_map: dict[str, str]
+
+
+class BacktestRunMetricsResponse(BaseModel):
+    total_return: float
+    sharpe: float
+    max_drawdown: float
+
+
+class BacktestPerformanceMetricsResponse(BaseModel):
+    total_return: float
+    annualized_return: float
+    volatility: float
+    sharpe: float
+    max_drawdown: float
+    turnover: float
+    attribution: list[dict[str, float | str]] = Field(default_factory=list)
+
+
+class BacktestRunBenchmarkResponse(BaseModel):
+    symbol: str
+    source: str
+    metrics: BacktestPerformanceMetricsResponse
+
+
+class BacktestRunPathsResponse(BaseModel):
+    equity_curve: str
+    trade_blotter: str
+    orders: str
+    positions: str
+    attribution: str
+    metrics: str
+    benchmark_curve: str
+    benchmark_metrics: str
+    report: str
+
+
 class BacktestRunResponse(BaseModel):
     run_id: str
     source: str
@@ -29,11 +86,11 @@ class BacktestRunResponse(BaseModel):
     order_count: int
     warnings: list[str]
     timings_ms: BacktestRunTimingsResponse
-    request: dict[str, Any]
-    metrics: dict[str, Any]
+    request: BacktestRunRequestEchoResponse
+    metrics: BacktestRunMetricsResponse
     attribution: list[dict[str, Any]]
-    benchmark: dict[str, Any]
-    paths: dict[str, Any]
+    benchmark: BacktestRunBenchmarkResponse
+    paths: BacktestRunPathsResponse
 
 
 BacktestRecord = dict[str, Any]

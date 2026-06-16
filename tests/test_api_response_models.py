@@ -101,6 +101,12 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "backtests" in components["BacktestsResponse"]["properties"]
     assert "BacktestRunTimingsResponse" in components
     assert "data_fetch" in components["BacktestRunTimingsResponse"]["properties"]
+    assert "BacktestRunRequestEchoResponse" in components
+    assert "sector_map" in components["BacktestRunRequestEchoResponse"]["properties"]
+    assert "BacktestRunMetricsResponse" in components
+    assert "max_drawdown" in components["BacktestRunMetricsResponse"]["properties"]
+    assert "BacktestRunPathsResponse" in components
+    assert "benchmark_metrics" in components["BacktestRunPathsResponse"]["properties"]
     assert "timings_ms" in components["BacktestRunResponse"]["properties"]
     assert "benchmark" in components["BacktestDetailResponse"]["properties"]
     assert "paper_runs" in components["PaperRunsResponse"]["properties"]

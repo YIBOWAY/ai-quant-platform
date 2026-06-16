@@ -143,6 +143,53 @@ export type BacktestRunTimingsResponse = {
   total: number;
 };
 
+export type BacktestRunRequestEchoResponse = {
+  symbols: string[];
+  start: string;
+  end: string;
+  provider: "sample" | "futu" | "tiingo";
+  strategy_id: string;
+  universe_id?: string | null;
+  factor_ids: string[];
+  weights: Record<string, number>;
+  benchmark_symbol: string;
+  lookback: number;
+  top_n: number;
+  initial_cash: number;
+  commission_bps: number;
+  slippage_bps: number;
+  min_order_value: number;
+  whole_share_orders: boolean;
+  rebalance_frequency: "every_bar" | "weekly" | "monthly";
+  max_weight_per_symbol?: number | null;
+  sector_cap?: number | null;
+  sector_map: Record<string, string>;
+};
+
+export type BacktestRunMetricsResponse = {
+  total_return: number;
+  sharpe: number;
+  max_drawdown: number;
+};
+
+export type BacktestRunBenchmarkResponse = {
+  symbol: string;
+  source: string;
+  metrics: BenchmarkMetrics;
+};
+
+export type BacktestRunPathsResponse = {
+  equity_curve: string;
+  trade_blotter: string;
+  orders: string;
+  positions: string;
+  attribution: string;
+  metrics: string;
+  benchmark_curve: string;
+  benchmark_metrics: string;
+  report: string;
+};
+
 export type BacktestRunResponse = ApiEnvelope & {
   run_id: string;
   source: string;
@@ -150,11 +197,11 @@ export type BacktestRunResponse = ApiEnvelope & {
   order_count: number;
   warnings: string[];
   timings_ms: BacktestRunTimingsResponse;
-  request: Record<string, unknown>;
-  metrics: Record<string, unknown>;
+  request: BacktestRunRequestEchoResponse;
+  metrics: BacktestRunMetricsResponse;
   attribution: PreviewRecord[];
-  benchmark: Record<string, unknown>;
-  paths: Record<string, unknown>;
+  benchmark: BacktestRunBenchmarkResponse;
+  paths: BacktestRunPathsResponse;
 };
 
 export type BenchmarkMetrics = {
@@ -164,6 +211,7 @@ export type BenchmarkMetrics = {
   sharpe: number;
   max_drawdown: number;
   turnover: number;
+  attribution?: Array<Record<string, number | string>>;
 };
 
 export type BenchmarkSnapshot = ApiEnvelope & {
