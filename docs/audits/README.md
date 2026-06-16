@@ -371,3 +371,11 @@ risk attribution、scenario summary / subjective EV、leg quote/greeks/computed 
 `PaperAccountOrderOutcomeResponse` 中的 `requested_quantity`、`filled_quantity`、
 nullable `price` / `price_kind`、`rejected_reason` 以及再平衡 target weights。
 前端 receipt 渲染同步处理 nullable price，避免类型收敛后仍隐含成交价必定存在的假设。
+
+同日继续收敛 options screener 响应：`OptionsScreenerForm` 不再局部手写
+`ScreenerResult` / `ScreenerCandidate`；`src/frontend/lib/api.ts` 统一导出
+`OptionsScreenerResult` 与 `OptionsScreenerCandidate`，覆盖后端
+`OptionsScreenerResult` / `OptionsScreenerCandidate` response model 中的
+underlying、bid/ask/mid、HV/IV、trend、market regime、rating、rejection summary、
+assumptions 等字段。`tests/test_frontend_options_screener_response_type_contract.py`
+锁定该表单必须复用共享类型。

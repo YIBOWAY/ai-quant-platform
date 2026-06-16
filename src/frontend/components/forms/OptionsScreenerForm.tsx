@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import type { OptionsScreenerResult } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
@@ -214,53 +215,6 @@ const screenerSchema = z.object({
 
 type ScreenerValues = z.infer<typeof screenerSchema>;
 
-type ScreenerCandidate = {
-  symbol: string;
-  option_type: string;
-  expiry: string;
-  strike: number;
-  bid?: number | null;
-  ask?: number | null;
-  mid?: number | null;
-  annualized_yield?: number | null;
-  spread_pct?: number | null;
-  implied_volatility?: number | null;
-  delta?: number | null;
-  open_interest?: number | null;
-  rating: string;
-  notes: string[];
-  market_regime?: "Normal" | "Elevated" | "Panic" | "Unknown" | null;
-  market_regime_penalty?: number | null;
-};
-
-type ScreenerResult = {
-  ticker: string;
-  provider: "futu";
-  strategy_type: string;
-  expiration?: string | null;
-  scanned_expirations: string[];
-  expiration_count: number;
-  underlying_price: number;
-  historical_volatility?: number | null;
-  trend_reference?: number | null;
-  ema_21?: number | null;
-  sma_50?: number | null;
-  hv_iv_threshold?: number | null;
-  hv_iv_pass_count?: number;
-  hv_iv_contract_count?: number;
-  hv_iv_min?: number | null;
-  hv_iv_max?: number | null;
-  market_regime?: "Normal" | "Elevated" | "Panic" | "Unknown" | null;
-  market_regime_penalty?: number | null;
-  market_regime_w_vix?: number | null;
-  market_regime_vix_density?: number | null;
-  market_regime_term_ratio?: number | null;
-  candidates: ScreenerCandidate[];
-  rejected_count?: number;
-  rejection_summary?: Record<string, number>;
-  assumptions: string[];
-};
-
 function formatNumber(value?: number | null, digits = 2) {
   return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "--";
 }
@@ -276,7 +230,7 @@ function formatRatio(value?: number | null) {
 }
 
 function trendHelp(
-  result: ScreenerResult,
+  result: OptionsScreenerResult,
   locale: "en" | "zh",
   text: (typeof copy)["en"] | (typeof copy)["zh"],
 ) {
@@ -305,7 +259,7 @@ function trendHelp(
 }
 
 function hvIvStatus(
-  result: ScreenerResult,
+  result: OptionsScreenerResult,
   locale: "en" | "zh",
   text: (typeof copy)["en"] | (typeof copy)["zh"],
 ) {
@@ -317,7 +271,7 @@ function hvIvStatus(
   return locale === "zh" ? `${passed}/${total} 通过` : `${passed}/${total} pass`;
 }
 
-function hvIvHelp(result: ScreenerResult, locale: "en" | "zh") {
+function hvIvHelp(result: OptionsScreenerResult, locale: "en" | "zh") {
   const total = result.hv_iv_contract_count ?? 0;
   if (total <= 0) {
     return locale === "zh" ? "没有可用的 IV，无法判断 HV/IV。" : "No usable IV, so HV/IV cannot be judged.";
@@ -419,7 +373,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
 
   const mutation = useMutation({
     mutationFn: (values: ScreenerValues) =>
-      apiPost<ScreenerResult>("/api/options/screener", {
+      apiPost<OptionsScreenerResult>("/api/options/screener", {
         ...values,
         ticker: values.ticker.trim().toUpperCase(),
         min_iv: values.min_iv_input / 100,
@@ -716,7 +670,7 @@ function CompactMetrics({
   text,
   locale,
 }: {
-  result: ScreenerResult;
+  result: OptionsScreenerResult;
   text: (typeof copy)["en"] | (typeof copy)["zh"];
   locale: "en" | "zh";
 }) {
@@ -794,7 +748,7 @@ function RegimeStatusBar({
   text,
   locale,
 }: {
-  result: ScreenerResult;
+  result: OptionsScreenerResult;
   text: (typeof copy)["en"] | (typeof copy)["zh"];
   locale: "en" | "zh";
 }) {

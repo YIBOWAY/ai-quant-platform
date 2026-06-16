@@ -566,6 +566,72 @@ export type OptionsRadarCandidate = {
   market_regime_penalty?: number | null;
 };
 
+export type OptionsScreenerCandidate = {
+  symbol: string;
+  underlying: string;
+  strategy_type: "sell_put" | "covered_call";
+  option_type: "PUT" | "CALL";
+  expiry: string;
+  strike: number;
+  underlying_price: number;
+  bid?: number | null;
+  ask?: number | null;
+  mid?: number | null;
+  volume?: number | null;
+  open_interest?: number | null;
+  implied_volatility?: number | null;
+  historical_volatility?: number | null;
+  hv_iv_ratio?: number | null;
+  delta?: number | null;
+  gamma?: number | null;
+  theta?: number | null;
+  vega?: number | null;
+  premium_per_contract?: number | null;
+  moneyness?: number | null;
+  distance_pct?: number | null;
+  days_to_expiry?: number | null;
+  annualized_yield?: number | null;
+  spread_pct?: number | null;
+  trend_pass?: boolean | null;
+  hv_iv_pass?: boolean | null;
+  avg_daily_volume?: number | null;
+  market_cap?: number | null;
+  iv_rank?: number | null;
+  earnings_date?: string | null;
+  market_regime?: "Normal" | "Elevated" | "Panic" | "Unknown" | null;
+  market_regime_penalty: number;
+  rating: "Strong" | "Watch" | "Avoid";
+  notes: string[];
+};
+
+export type OptionsScreenerResult = ApiEnvelope & {
+  ticker: string;
+  provider: "futu";
+  strategy_type: "sell_put" | "covered_call";
+  expiration?: string | null;
+  scanned_expirations: string[];
+  expiration_count: number;
+  underlying_price: number;
+  historical_volatility?: number | null;
+  trend_reference?: number | null;
+  ema_21?: number | null;
+  sma_50?: number | null;
+  hv_iv_threshold?: number | null;
+  hv_iv_pass_count: number;
+  hv_iv_contract_count: number;
+  hv_iv_min?: number | null;
+  hv_iv_max?: number | null;
+  market_regime?: "Normal" | "Elevated" | "Panic" | "Unknown" | null;
+  market_regime_penalty: number;
+  market_regime_w_vix?: number | null;
+  market_regime_vix_density?: number | null;
+  market_regime_term_ratio?: number | null;
+  candidates: OptionsScreenerCandidate[];
+  rejected_count: number;
+  rejection_summary: Record<string, number>;
+  assumptions: string[];
+};
+
 export type BuySideStrategyType =
   | "long_call"
   | "bull_call_spread"
