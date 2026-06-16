@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 from pydantic import SecretStr
 
@@ -105,6 +106,50 @@ def test_cached_provider_reuses_complete_local_ohlcv_window(tmp_path) -> None:
 
     assert upstream.calls == 1
     assert len(second) == len(first)
+
+
+def test_cached_provider_fetches_when_any_symbol_window_is_incomplete(tmp_path) -> None:
+    class CountingProvider:
+        provider_name = "tiingo"
+
+        def __init__(self) -> None:
+            self.calls = 0
+            self.delegate = SampleOHLCVProvider()
+
+        def fetch_ohlcv(self, symbols, *, start, end, interval="1d"):
+            self.calls += 1
+            frame = self.delegate.fetch_ohlcv(
+                symbols,
+                start=start,
+                end=end,
+                interval=interval,
+            )
+            frame["provider"] = self.provider_name
+            return frame
+
+    storage = LocalDataStorage(base_dir=tmp_path)
+    cached_spy = SampleOHLCVProvider().fetch_ohlcv(
+        ["SPY"], start="2024-01-02", end="2024-01-05"
+    )
+    cached_qqq = SampleOHLCVProvider().fetch_ohlcv(
+        ["QQQ"], start="2024-01-03", end="2024-01-04"
+    )
+    cached = pd.concat([cached_spy, cached_qqq], ignore_index=True)
+    cached["provider"] = "tiingo"
+    storage.save_ohlcv(cached)
+
+    upstream = CountingProvider()
+    provider = CachedOHLCVProvider(upstream=upstream, storage=storage)
+
+    frame = provider.fetch_ohlcv(["SPY", "QQQ"], start="2024-01-02", end="2024-01-05")
+
+    assert upstream.calls == 1
+    assert frame[frame["symbol"] == "QQQ"]["timestamp"].min() == pd.Timestamp(
+        "2024-01-02", tz="UTC"
+    )
+    assert frame[frame["symbol"] == "QQQ"]["timestamp"].max() == pd.Timestamp(
+        "2024-01-05", tz="UTC"
+    )
 
 
 def test_build_provider_falls_back_when_tiingo_token_missing() -> None:

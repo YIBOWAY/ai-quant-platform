@@ -72,6 +72,11 @@ flowchart TD
 - DuckDB：便于本地 SQL 查询和质量检查
 - Markdown quality report：便于人工阅读
 
+API / 回测路径中的 Tiingo 日线数据也复用这套本地存储作为 read-through 缓存：
+`build_ohlcv_provider` 会把 `TiingoEODProvider` 包装为 `CachedOHLCVProvider`。
+只有当缓存中每个请求标的都覆盖请求的 `start` / `end` 窗口时才直接返回本地数据；
+否则会从 Tiingo 回源并通过 `LocalDataStorage.save_ohlcv` 合并写回。
+
 ### CLI
 
 当前命令：
@@ -206,4 +211,3 @@ Phase 1 使用：
 - 数据版本和数据快照 ID
 - corporate actions
 - universe 快照
-

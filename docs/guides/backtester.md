@@ -17,7 +17,7 @@
 后端入口是 `run_backtest`（`src/quant_system/backtest/pipeline.py`），完整流程：
 
 1. **解析输入**：把 `symbols` / `universe_id` 解析成最终股票池（自定义标的优先；留空则用所选股票池；都没有则回退到 `["SPY", "QQQ"]`）；解析 `strategy_id`、`factor_ids`、`weights`。
-2. **取行情**：`build_ohlcv_provider` 按 `provider`（sample / futu / tiingo）取 OHLCV。
+2. **取行情**：`build_ohlcv_provider` 按 `provider`（sample / futu / tiingo）取 OHLCV。Tiingo 日线会走 `CachedOHLCVProvider` + `LocalDataStorage` read-through 缓存；本地缓存必须逐个标的覆盖请求窗口才会命中，否则回源并写回缓存。
 3. **算因子**：`compute_factor_pipeline` 对每个选中的因子按 `lookback` 计算，每行带 `signal_ts`（数据所属日）和 `tradeable_ts`（可交易日，即下一根 K 线）。
 4. **合成单一打分**：`build_multifactor_score_frame`（`experiments/scoring.py`）对每个因子做**横截面 z-score**，按方向（`higher_is_better` / `lower_is_better`）取符号，按权重归一化（除以权重绝对值之和）后相加，得到每个标的每个 `tradeable_ts` 的单一 `score`。
 5. **选股 → 目标权重**（`backtest/strategy.py`）：

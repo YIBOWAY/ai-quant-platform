@@ -83,11 +83,20 @@ class CachedOHLCVProvider:
             intervals = set(cached["interval"].astype(str))
             if intervals != {interval}:
                 return False
-        timestamps = pd.to_datetime(cached["timestamp"], utc=True)
-        return (
-            timestamps.min() <= pd.Timestamp(start, tz="UTC")
-            and timestamps.max() >= pd.Timestamp(end, tz="UTC")
+        request_start = pd.Timestamp(start, tz="UTC")
+        request_end = pd.Timestamp(end, tz="UTC")
+        normalized = cached.assign(
+            _symbol=cached["symbol"].astype(str).str.upper(),
+            _timestamp=pd.to_datetime(cached["timestamp"], utc=True),
         )
+        coverage = normalized.groupby("_symbol")["_timestamp"].agg(["min", "max"])
+        for symbol in normalized_symbols:
+            if symbol not in coverage.index:
+                return False
+            row = coverage.loc[symbol]
+            if row["min"] > request_start or row["max"] < request_end:
+                return False
+        return True
 
 
 def build_ohlcv_provider(

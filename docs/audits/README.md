@@ -269,6 +269,14 @@ Black-Scholes 参考值、Greeks 参考值、IV solver 正常恢复和 no-arbitr
 `price_adjustment=adjusted|raw|mixed`；`tests/test_data_tiingo_provider.py`
 已覆盖全复权、全缺失和部分缺失三种情形。
 
+2026-06-16 状态补充：评估报告中“Tiingo 每次回测全量重下载、没有本地缓存接通”
+在当前代码上已不准确。`build_ohlcv_provider` 会把 Tiingo 包装为
+`CachedOHLCVProvider`，通过 `LocalDataStorage` 做 read-through 缓存：完整本地
+窗口直接复用，缺失窗口才回源并写回缓存。本次补强了多标的覆盖判定，缓存命中
+必须逐个请求标的都覆盖 `start` / `end`，避免一个标的完整、另一个标的缺边界时
+误判为缓存完整；`tests/test_provider_factory.py` 覆盖完整缓存复用和部分标的窗口
+缺失时回源。
+
 2026-06-15 状态补充：评估报告里“默认历史回放在安全锁开启时仍会产生
 0 成交成功 run”的表述已过时。`POST /api/paper/run` 在回放请求试图开启
 kill switch 时会返回 `409 detail.code=replay_kill_switch_enabled`；若请求试图
