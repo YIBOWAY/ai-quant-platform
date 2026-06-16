@@ -462,7 +462,10 @@ Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入�
 `src/frontend/lib/optionsToolsLive.ts`；组件侧只保留 tab、状态和渲染逻辑。该批次不做
 视觉改版，`tests/test_frontend_options_tools_response_type_contract.py` 会锁定组件不得
 重新直接调用 `apiPost` / `apiRequest`，共享 response type 仍由 helper 使用。备用端口
-下 `options-tools-and-charts.spec.ts` 4/4 通过。
+下 `options-tools-and-charts.spec.ts` 4/4 通过。随后补上
+`src/frontend/lib/optionsToolsLive.test.ts`，直接覆盖 ticker 规范化、ATM call 选择、
+IV 百分比归一、价差腿构造、strategy rank strikes 和空 ticker 拒绝；前端 Vitest
+当前为 10 个文件 / 22 个用例通过。
 
 同日补齐 Options Radar daily-scan 前端响应类型命名：`OptionsDailyScanDatesResponse`、
 `OptionsDailyScanStatusResponse`、`OptionsDailyScanResponse` 与
