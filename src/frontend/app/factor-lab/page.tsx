@@ -13,6 +13,18 @@ function single(value: string | string[] | undefined, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function positiveInteger(value: string | string[] | undefined, fallback: number) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function booleanParam(value: string | string[] | undefined) {
+  return value === "true" || value === "1";
+}
+
 export default async function FactorLab({ searchParams }: FactorLabProps) {
   const params = (await searchParams) ?? {};
   const locale = await getServerLocale(params);
@@ -20,9 +32,22 @@ export default async function FactorLab({ searchParams }: FactorLabProps) {
   const universeId = single(params.universe_id, "etf");
   const symbol = single(params.symbol, "QQQ").toUpperCase();
   const benchmarkSymbol = single(params.benchmark_symbol, symbol).toUpperCase();
+  const start = single(params.start, "2024-01-02");
+  const end = single(params.end, "2024-12-31");
+  const lookback = positiveInteger(params.lookback, 20);
+  const forceRefresh = booleanParam(params.force_refresh);
 
   const [dashboard, factorRuns, universes] = await Promise.all([
-    getFactorLabDashboard({ provider, universeId, symbol, benchmarkSymbol }),
+    getFactorLabDashboard({
+      provider,
+      universeId,
+      symbol,
+      benchmarkSymbol,
+      start,
+      end,
+      lookback,
+      forceRefresh,
+    }),
     getFactorRuns(),
     getUniverses(),
   ]);
@@ -36,7 +61,7 @@ export default async function FactorLab({ searchParams }: FactorLabProps) {
     <div className="flex h-full min-h-0 flex-col bg-bg-base">
       <ErrorBanner locale={locale} messages={[dashboard.apiError, factorRuns.apiError, universes.apiError]} />
       <FactorLabDashboard
-        controlsInitial={{ provider, universeId, symbol, benchmarkSymbol }}
+        controlsInitial={{ provider, universeId, symbol, benchmarkSymbol, start, end, lookback, forceRefresh }}
         dashboard={dashboard}
         hiddenSampleCount={hiddenSampleCount}
         locale={locale}

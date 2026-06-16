@@ -47,6 +47,12 @@ Legacy Or Historical Helpers 和 SQL 分组索引所有顶层 `.py` / `.ps1` / `
 `run_spy_qqq_phase5_full_check.py` 是兼容或历史验证用途；`tests/test_scripts_readme.py`
 会要求新增顶层脚本必须进入索引。
 
+2026-06-16 状态补充：评估报告中“Factor Lab 时间窗/lookback 只能直打 API”
+和“发送至回测不带时间窗”的前端可复现性小项已处理。`/factor-lab` 范围卡
+现在暴露 `start` / `end` / `lookback` / `force_refresh`，`getFactorLabDashboard()`
+会把完整查询传给 `/api/factors/lab`；“发送至回测”会继续携带 `start` /
+`end` / `lookback` 预填 Backtester 表单，但仍只填表、不自动运行回测。
+
 2026-06-15 状态补充：评估报告中“缺少后端落盘日志”的小项已处理。后端
 CLI 启动和 app-factory 路径都会把结构化 JSONL 运行日志写入
 `data/_runtime/logs/backend.jsonl`，并由 `RotatingFileHandler` 控制文件大小；

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge, SyntheticMetricsWarning, isSampleSource } from "@/components/DataSourceBadge";
 import { GLOSSARY } from "@/components/InfoTip";
-import { FactorLabControls } from "@/components/forms/FactorLabControls";
+import { FactorLabControls, type FactorLabControlsInitial } from "@/components/forms/FactorLabControls";
 import { FactorRunForm } from "@/components/forms/FactorRunForm";
 import { Card, MetricStat, StatusPill } from "@/components/ui/primitives";
 import { Tabs } from "@/components/ui/Tabs";
@@ -22,7 +22,7 @@ type FactorLabDashboardProps = {
   runs: FactorRunSummary[];
   hiddenSampleCount: number;
   universes: UniverseDefinition[];
-  controlsInitial: { provider: string; universeId: string; symbol: string; benchmarkSymbol: string };
+  controlsInitial: FactorLabControlsInitial;
   locale: Locale;
 };
 
@@ -164,9 +164,12 @@ export function FactorLabDashboard({
   const timingSymbol = dashboard.timing.symbol || "QQQ";
   const backtestHref = buildFactorLabBacktestHref({
     benchmarkSymbol: controlsInitial.benchmarkSymbol,
+    end: controlsInitial.end,
     factorIds: dashboard.factors.map((factor) => factor.factor_id),
     locale,
+    lookback: controlsInitial.lookback,
     provider: controlsInitial.provider,
+    start: controlsInitial.start,
     universeId: controlsInitial.universeId,
   });
 

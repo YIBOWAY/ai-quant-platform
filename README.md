@@ -9,8 +9,9 @@ The project is currently delivered through Phase 14. It includes:
 
 - US equity and ETF historical data workflows.
 - Factor research, Factor Lab diagnostics (real-data-first since 2026-06-11,
-  with in-UI provider/universe/symbol/benchmark controls, saveable factor
-  research runs, and a Backtester prefill handoff), strategy/universe
+  with in-UI provider/universe/symbol/benchmark/time-window/lookback controls,
+  saveable factor research runs, and a Backtester prefill handoff),
+  strategy/universe
   registries, backtests, experiments, and paper-trading simulation.
 - Local FastAPI backend and Next.js frontend.
 - AI research assistant with candidate pool and human review gates.
@@ -116,7 +117,7 @@ database-index settings, and the runtime log path.
 | Page | Purpose |
 |---|---|
 | `/data-explorer` | US equity historical data viewer. |
-| `/factor-lab` | Factor health and timing diagnostics (cross-section / timing tabs); provider, universe, timing symbol, and benchmark adjustable in the sidebar (default `futu`), plus saveable factor research runs and a Backtester prefill link. |
+| `/factor-lab` | Factor health and timing diagnostics (cross-section / timing tabs); provider, universe, timing symbol, benchmark, time window, lookback, and cache refresh adjustable in the sidebar (default `futu`), plus saveable factor research runs and a Backtester prefill link. |
 | `/backtest` | Run strategy, universe, factor-weight, and benchmark backtests. |
 | `/replications` | Strategy Catalog for registered research strategies. |
 | `/replications/[runId]` | Persisted reversal/momentum replication run detail. |
@@ -308,11 +309,12 @@ The legacy `POST /api/paper/run` historical replay lives on the
 ## Factor Lab Refresh
 
 Since 2026-06-11 the Factor Lab UI defaults to real data (`provider=futu`),
-with sidebar controls for provider / universe / timing symbol / benchmark, and
-supports saveable factor research runs. Since 2026-06-15 its query card also
-links to Backtester with provider / universe / benchmark / factor IDs prefilled;
-the link does not run a backtest. The CLI below refreshes the local diagnostics
-cache from the backend or a scheduled task:
+with sidebar controls for provider / universe / timing symbol / benchmark /
+start / end / lookback / cache refresh, and supports saveable factor research
+runs. Since 2026-06-16 its query card links to Backtester with provider /
+universe / benchmark / start / end / lookback / factor IDs prefilled; the link
+does not run a backtest. The CLI below refreshes the local diagnostics cache
+from the backend or a scheduled task:
 
 ```powershell
 conda activate ai-quant

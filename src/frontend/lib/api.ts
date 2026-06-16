@@ -1491,6 +1491,10 @@ export type FactorLabQuery = {
   universeId?: string;
   symbol?: string;
   benchmarkSymbol?: string;
+  start?: string;
+  end?: string;
+  lookback?: number;
+  forceRefresh?: boolean;
 };
 
 export function getFactorLabDashboard(query: FactorLabQuery = {}) {
@@ -1498,12 +1502,21 @@ export function getFactorLabDashboard(query: FactorLabQuery = {}) {
   const universeId = query.universeId ?? "etf";
   const symbol = (query.symbol ?? "QQQ").toUpperCase();
   const benchmarkSymbol = (query.benchmarkSymbol ?? symbol).toUpperCase();
+  const start = query.start ?? "2024-01-02";
+  const end = query.end ?? "2024-12-31";
+  const lookback = query.lookback ?? 20;
   const params = new URLSearchParams({
     provider,
     universe_id: universeId,
     symbol,
     benchmark_symbol: benchmarkSymbol,
+    start,
+    end,
+    lookback: String(lookback),
   });
+  if (query.forceRefresh !== undefined) {
+    params.set("force_refresh", String(query.forceRefresh));
+  }
   return apiGet<FactorLabResponse>(`/api/factors/lab?${params.toString()}`, {
     source: "fallback",
     benchmark_symbol: benchmarkSymbol,
