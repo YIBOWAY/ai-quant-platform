@@ -3,45 +3,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Play } from "lucide-react";
+import type {
+  OptionsChainResponse,
+  OptionsExpirationsResponse,
+  OptionsSnapshotResponse,
+} from "@/lib/api";
 import { apiRequest } from "@/lib/apiClient";
-
-type OptionsSnapshotResponse = {
-  ticker: string;
-  price?: number | null;
-  nearest_expiry?: string | null;
-  atm_iv?: number | null;
-  hv_30d?: number | null;
-  iv_rank?: number | null;
-  iv_percentile?: number | null;
-  vrp?: number | null;
-};
-
-type OptionContract = {
-  symbol?: string;
-  option_type?: string;
-  expiry?: string;
-  strike?: number;
-  bid?: number | null;
-  ask?: number | null;
-  implied_volatility?: number | null;
-  delta?: number | null;
-  open_interest?: number | null;
-  volume?: number | null;
-};
-
-type OptionChainResponse = {
-  ticker: string;
-  source: string;
-  expiration: string;
-  option_type: string;
-  contracts: OptionContract[];
-};
-
-type OptionsExpirationsResponse = {
-  ticker: string;
-  source: string;
-  expirations: Array<Record<string, unknown>>;
-};
 
 type OptionsRadarSymbolLiveProps = {
   symbol: string;
@@ -81,7 +48,7 @@ export function OptionsRadarSymbolLive({
         expiration: selectedExpiry ?? "",
         option_type: optionType,
       });
-      return apiRequest<OptionChainResponse>(`/api/options/chain?${params.toString()}`);
+      return apiRequest<OptionsChainResponse>(`/api/options/chain?${params.toString()}`);
     },
     retry: 0,
   });

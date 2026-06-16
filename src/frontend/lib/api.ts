@@ -530,6 +530,51 @@ export type OptionsRadarCandidate = {
   market_regime_penalty?: number | null;
 };
 
+export type OptionContract = {
+  symbol?: string;
+  option_type: string;
+  expiry?: string;
+  strike?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  last?: number | null;
+  volume?: number | null;
+  open_interest?: number | null;
+  implied_volatility?: number | null;
+  delta?: number | null;
+  [key: string]: unknown;
+};
+
+export type OptionsSnapshotResponse = ApiEnvelope & {
+  success: boolean;
+  ticker: string;
+  source: string;
+  price: number;
+  nearest_expiry: string;
+  atm_iv?: number | null;
+  hv_30d?: number | null;
+  iv_rank?: number | null;
+  iv_percentile?: number | null;
+  iv_rank_source: string;
+  vrp?: number | null;
+  vrp_level?: string | null;
+  assumptions: string[];
+};
+
+export type OptionsExpirationsResponse = ApiEnvelope & {
+  ticker: string;
+  source: string;
+  expirations: Array<Record<string, unknown>>;
+};
+
+export type OptionsChainResponse = ApiEnvelope & {
+  ticker: string;
+  source: string;
+  expiration: string;
+  option_type: string;
+  contracts: OptionContract[];
+};
+
 export type OptionsRadarDatesResponse = ApiEnvelope & {
   dates: string[];
 };

@@ -12,6 +12,11 @@ import {
   Play,
   SlidersHorizontal,
 } from "lucide-react";
+import type {
+  OptionContract,
+  OptionsChainResponse,
+  OptionsSnapshotResponse,
+} from "@/lib/api";
 import { ApiClientError, apiPost, apiRequest } from "@/lib/apiClient";
 import { InfoTip } from "@/components/InfoTip";
 import { Card, PageHeader, StatusPill } from "@/components/ui/primitives";
@@ -344,37 +349,7 @@ const copy = {
 
 type Copy = (typeof copy)[Locale];
 
-type OptionsSnapshot = {
-  ticker: string;
-  source: string;
-  price: number;
-  nearest_expiry: string;
-  atm_iv?: number | null;
-  hv_30d?: number | null;
-  iv_rank?: number | null;
-  iv_percentile?: number | null;
-};
-
-type LiveContract = {
-  symbol: string;
-  option_type: string;
-  expiry?: string;
-  strike?: number | null;
-  bid?: number | null;
-  ask?: number | null;
-  last?: number | null;
-  volume?: number | null;
-  open_interest?: number | null;
-  implied_volatility?: number | null;
-  delta?: number | null;
-};
-
-type OptionsChainResponse = {
-  ticker: string;
-  source: string;
-  expiration: string;
-  contracts: LiveContract[];
-};
+type LiveContract = OptionContract;
 
 type LiveContext = {
   ticker: string;
@@ -1037,7 +1012,7 @@ async function loadLiveContext(ticker: string): Promise<LiveContext> {
   if (!normalized) {
     throw new Error("Ticker is required.");
   }
-  const snapshot = await apiRequest<OptionsSnapshot>(
+  const snapshot = await apiRequest<OptionsSnapshotResponse>(
     `/api/options/snapshot/${encodeURIComponent(normalized)}`,
   );
   const expiry = snapshot.nearest_expiry;
