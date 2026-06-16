@@ -173,12 +173,8 @@ export function FactorLabDashboard({
     universeId: controlsInitial.universeId,
   });
 
-  const walkForwardFolds = String(
-    (dashboard.guardrails.walk_forward as Record<string, unknown> | undefined)?.fold_count ?? 0,
-  );
-  const leakageRaw = String(
-    (dashboard.guardrails.leakage_audit as Record<string, unknown> | undefined)?.status ?? "--",
-  ).toLowerCase();
+  const walkForwardFolds = String(dashboard.guardrails.walk_forward.fold_count);
+  const leakageRaw = dashboard.guardrails.leakage_audit.status.toLowerCase();
   const leakage = text.leakageMap[leakageRaw] ?? { label: leakageRaw, tone: "neutral" as const };
   const cacheStatusRaw = String(dashboard.cache.status ?? "--");
   const cacheStatus = text.cacheStatus[cacheStatusRaw] ?? cacheStatusRaw;

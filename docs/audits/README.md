@@ -175,6 +175,9 @@ run metadata 聚合最近运行；首页 `src/frontend/app/page.tsx` 通过
 在本地 `quantplatform-db` 容器运行时，使用隔离临时库
 `QS_TEST_DATABASE_URL=postgresql://quant:quantpass@127.0.0.1:5432/quantplatform_codex_tmp`
 运行 `tests/test_runs_repository_postgres.py` 通过，说明可选 run index 仍可用。
+2026-06-16 复测本机 Docker 状态时，`quantplatform-db` 为 healthy，临时库集成测试
+仍 1/1 通过，当前本地后端 `/api/health` 返回
+`database.enabled=true` / `database.reachable=true`。
 不要把该集成测试指向常用 `quantplatform` 库：测试会按临时文件系统视图对同 kind
 索引行做 prune，隔离库能避免误删本地已有 run index。2026-06-16 继续补强该
 测试入口：当 `QS_TEST_DATABASE_URL` 指向明显的临时/测试库（库名以 `_tmp` 结尾或
@@ -440,6 +443,11 @@ Experiment、Paper 四个核心 run-submit 表单以及 Agent task/review 表单
 manual registration status 等运行元数据。`tests/test_frontend_run_response_type_contract.py`
 锁定这些表单必须使用共享 API 类型，防止局部 response type 回潮。其余路由域仍可
 后续逐批收敛。
+Factor Lab dashboard 的 `guardrails` / `cache` 也从匿名对象收敛为
+`FactorLabGuardrailsResponse` / `FactorLabCacheResponse`，OpenAPI 现在暴露
+walk-forward、leakage audit 和 cache key 的结构化 schema；前端 `FactorLabDashboard`
+可直接读取 `walk_forward.fold_count` 与 `leakage_audit.status`，不再对这些字段做
+`Record<string, unknown>` 强转。
 同日补齐 `AgentLLMConfigResponse` 前端类型命名，与后端 OpenAPI schema 名称保持一致；
 旧的 `AgentLlmConfigResponse` 仅保留为兼容 alias。
 同日补齐 prediction-market run response 前端类型命名：`PredictionMarketBacktestRunResponse`

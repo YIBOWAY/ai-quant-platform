@@ -242,14 +242,51 @@ export type UniversesResponse = UniverseCatalogResponse;
 
 export type FactorLabRow = Record<string, string | number | boolean | null>;
 
+export type FactorLabWalkForwardResponse = {
+  enabled: boolean;
+  train_bars: number;
+  validation_bars: number;
+  step_bars: number;
+  fold_count: number;
+};
+
+export type FactorLabLeakageAuditResponse = {
+  status: "basic_passed" | "failed" | "empty";
+  checked: boolean;
+  rule?: string | null;
+};
+
+export type FactorLabGuardrailsResponse = {
+  exploratory_only: boolean;
+  warning: string;
+  walk_forward: FactorLabWalkForwardResponse;
+  leakage_audit: FactorLabLeakageAuditResponse;
+};
+
+export type FactorLabCacheKeyResponse = {
+  provider: string;
+  universe_id: string;
+  symbol: string;
+  benchmark_symbol: string;
+  start: string;
+  end: string;
+  lookback: number;
+};
+
+export type FactorLabCacheResponse = {
+  status: "cached" | "recomputed";
+  path: string;
+  key: FactorLabCacheKeyResponse;
+};
+
 export type FactorLabResponse = ApiEnvelope & {
   generated_at?: string;
   source: string;
   benchmark_symbol: string;
   universe: UniverseDefinition;
   factors: FactorMetadata[];
-  guardrails: Record<string, unknown>;
-  cache: Record<string, unknown>;
+  guardrails: FactorLabGuardrailsResponse;
+  cache: FactorLabCacheResponse;
   cross_sectional: {
     engine: string;
     rows: FactorLabRow[];
@@ -1529,8 +1566,34 @@ export function getFactorLabDashboard(query: FactorLabQuery = {}) {
       benchmark_symbol: benchmarkSymbol,
     },
     factors: [],
-    guardrails: {},
-    cache: {},
+    guardrails: {
+      exploratory_only: true,
+      warning: "Factor Lab fallback response; backend data is unavailable.",
+      walk_forward: {
+        enabled: false,
+        train_bars: 0,
+        validation_bars: 0,
+        step_bars: 0,
+        fold_count: 0,
+      },
+      leakage_audit: {
+        status: "empty",
+        checked: false,
+      },
+    },
+    cache: {
+      status: "recomputed",
+      path: "",
+      key: {
+        provider,
+        universe_id: universeId,
+        symbol,
+        benchmark_symbol: benchmarkSymbol,
+        start,
+        end,
+        lookback,
+      },
+    },
     cross_sectional: { engine: "cross_sectional_health", rows: [] },
     timing: { engine: "single_symbol_timing", symbol, rows: [] },
     safety: FALLBACK_SAFETY,

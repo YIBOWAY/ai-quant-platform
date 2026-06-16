@@ -116,6 +116,10 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "factors" in components["FactorCatalogResponse"]["properties"]
     assert "cross_sectional" in components["FactorLabResponse"]["properties"]
     assert "timing" in components["FactorLabResponse"]["properties"]
+    assert "FactorLabGuardrailsResponse" in components
+    assert "walk_forward" in components["FactorLabGuardrailsResponse"]["properties"]
+    assert "FactorLabCacheResponse" in components
+    assert "key" in components["FactorLabCacheResponse"]["properties"]
     assert "runs" in components["FactorRunsResponse"]["properties"]
     assert "information_coefficients" in components["FactorRunDetailResponse"]["properties"]
     assert "quantile_returns" in components["FactorRunDetailResponse"]["properties"]

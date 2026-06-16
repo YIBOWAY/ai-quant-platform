@@ -48,14 +48,51 @@ class FactorLabTiming(BaseModel):
     rows: list[FactorLabRecord]
 
 
+class FactorLabWalkForwardResponse(BaseModel):
+    enabled: bool
+    train_bars: int
+    validation_bars: int
+    step_bars: int
+    fold_count: int
+
+
+class FactorLabLeakageAuditResponse(BaseModel):
+    status: Literal["basic_passed", "failed", "empty"]
+    checked: bool
+    rule: str | None = None
+
+
+class FactorLabGuardrailsResponse(BaseModel):
+    exploratory_only: bool
+    warning: str
+    walk_forward: FactorLabWalkForwardResponse
+    leakage_audit: FactorLabLeakageAuditResponse
+
+
+class FactorLabCacheKeyResponse(BaseModel):
+    provider: str
+    universe_id: str
+    symbol: str
+    benchmark_symbol: str
+    start: str
+    end: str
+    lookback: int
+
+
+class FactorLabCacheResponse(BaseModel):
+    status: Literal["cached", "recomputed"]
+    path: str
+    key: FactorLabCacheKeyResponse
+
+
 class FactorLabResponse(BaseModel):
     generated_at: str | None = None
     source: str
     benchmark_symbol: str
     universe: UniverseDefinition
     factors: list[FactorMetadata]
-    guardrails: dict[str, Any]
-    cache: dict[str, Any]
+    guardrails: FactorLabGuardrailsResponse
+    cache: FactorLabCacheResponse
     cross_sectional: FactorLabCrossSectional
     timing: FactorLabTiming
 

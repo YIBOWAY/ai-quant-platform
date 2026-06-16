@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getFactorLabDashboard } from "./api";
+import { getFactorLabDashboard, type FactorLabResponse } from "./api";
 
 const factorLabPayload = {
   source: "sample",
@@ -18,6 +18,10 @@ const factorLabPayload = {
   cross_sectional: { engine: "cross_sectional_health", rows: [] },
   timing: { engine: "single_symbol_timing", symbol: "NVDA", rows: [] },
 };
+
+function factorLabGuardrailSummary(payload: FactorLabResponse) {
+  return `${payload.guardrails.walk_forward.fold_count}:${payload.guardrails.leakage_audit.status}`;
+}
 
 describe("getFactorLabDashboard", () => {
   afterEach(() => {
@@ -57,5 +61,42 @@ describe("getFactorLabDashboard", () => {
       lookback: "63",
       force_refresh: "true",
     });
+  });
+
+  it("exposes typed guardrail fields to frontend callers", () => {
+    expect(
+      factorLabGuardrailSummary({
+        ...factorLabPayload,
+        guardrails: {
+          exploratory_only: true,
+          warning: "review before promotion",
+          walk_forward: {
+            enabled: true,
+            train_bars: 60,
+            validation_bars: 20,
+            step_bars: 20,
+            fold_count: 3,
+          },
+          leakage_audit: {
+            status: "basic_passed",
+            checked: true,
+            rule: "tradeable_ts must be later than signal_ts",
+          },
+        },
+        cache: {
+          status: "recomputed",
+          path: "data/factor_lab/factor_lab_cache.json",
+          key: {
+            provider: "sample",
+            universe_id: "technology",
+            symbol: "NVDA",
+            benchmark_symbol: "SPY",
+            start: "2023-01-03",
+            end: "2023-12-29",
+            lookback: 63,
+          },
+        },
+      }),
+    ).toBe("3:basic_passed");
   });
 });
