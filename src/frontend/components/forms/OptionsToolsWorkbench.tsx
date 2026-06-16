@@ -22,7 +22,9 @@ import type {
   OptionsFearScoreResponse,
   OptionsGreeksResponse,
   OptionsImpliedVolatilityResponse,
+  OptionsMarketSentimentResponse,
   OptionsResearchOpsResponse,
+  OptionsResearchHealthCheckResponse,
   OptionsSimulationResponse,
   OptionsSignalsResponse,
   OptionsSnapshotResponse,
@@ -164,6 +166,9 @@ const copy = {
       example: "This call uses user or local context and does not fetch market data.",
       liveLabel: "Live Futu",
       live: "Fetched through backend read-only Futu option-chain endpoints before calculation.",
+      signalsLabel: "Local signals",
+      signals:
+        "Runs local signal endpoints; market-data-dependent signals first load read-only Futu option-chain inputs.",
       researchLabel: "Backend local",
       research: "Calls backend research endpoints with live ticker context when market data is needed and never creates orders.",
     },
@@ -271,6 +276,8 @@ const copy = {
       example: "这个调用使用用户输入或本地上下文，不读取行情。",
       liveLabel: "实时 Futu",
       live: "计算前通过后端只读 Futu 期权链接口获取。",
+      signalsLabel: "本地信号",
+      signals: "调用本地信号接口；依赖行情的信号会先读取只读 Futu 期权链输入。",
       researchLabel: "本地后端",
       research: "调用后端研究接口；需要市场数据时使用当前标的上下文，不会创建订单。",
     },
@@ -802,8 +809,8 @@ function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
         )
       }
       runningLabel={t.running}
-      sourceDescription={t.sourceNotes.live}
-      sourceLabel={t.sourceNotes.liveLabel}
+      sourceDescription={t.sourceNotes.signals}
+      sourceLabel={t.sourceNotes.signalsLabel}
       title={t.tabs.signals}
     >
       {error ? <ErrorLine message={error} /> : null}
@@ -836,6 +843,13 @@ function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
             onClick: () =>
               run(t.signals.ivRank, () =>
                 apiRequest<OptionsSnapshotResponse>(`/api/options/snapshot/${encodeURIComponent(ticker)}`),
+              ),
+          },
+          {
+            label: t.signals.marketSentiment,
+            onClick: () =>
+              run(t.signals.marketSentiment, () =>
+                runMarketSentiment(),
               ),
           },
           {
@@ -934,6 +948,13 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
             onClick: () =>
               run(t.researchOps.evaluateAlerts, () =>
                 liveEvaluateAlerts(ticker),
+              ),
+          },
+          {
+            label: t.researchOps.healthCheck,
+            onClick: () =>
+              run(t.researchOps.healthCheck, () =>
+                liveResearchHealthCheck(ticker),
               ),
           },
         ]}
@@ -1056,6 +1077,10 @@ async function liveFearScore(ticker: string): Promise<OptionsFearScoreResponse> 
   });
 }
 
+async function runMarketSentiment(): Promise<OptionsMarketSentimentResponse> {
+  return apiPost<OptionsMarketSentimentResponse>("/api/options/tools/market-sentiment", {});
+}
+
 async function liveBullPutSignal(ticker: string): Promise<OptionsBullPutSignalResponse> {
   const context = await loadLiveContext(ticker);
   const fear = await apiPost<OptionsFearScoreResponse>("/api/options/tools/fear-score", {
@@ -1127,6 +1152,22 @@ async function liveEvaluateAlerts(ticker: string): Promise<OptionsAlertsEvaluati
       iv_rank: context.ivRank,
       unusual_activity_count: 0,
     },
+  });
+}
+
+async function liveResearchHealthCheck(ticker: string): Promise<OptionsResearchHealthCheckResponse> {
+  const normalized = ticker.trim().toUpperCase();
+  if (!normalized) {
+    throw new Error("Ticker is required.");
+  }
+  return apiPost<OptionsResearchHealthCheckResponse>("/api/options/tools/health-check", {
+    profiles: [
+      {
+        ticker: normalized,
+        updated_at: new Date().toISOString().slice(0, 10),
+        thesis: "local research watch",
+      },
+    ],
   });
 }
 

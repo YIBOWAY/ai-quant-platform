@@ -1070,6 +1070,14 @@ export type OptionsFearScoreResponse = ApiEnvelope & {
   assumptions: string[];
 };
 
+export type OptionsMarketSentimentResponse = ApiEnvelope & {
+  success: boolean;
+  sentiment_score: number;
+  regime: string;
+  components: Record<string, unknown>;
+  assumptions: string[];
+};
+
 export type OptionsIvRankResponse = ApiEnvelope & {
   success: boolean;
   ticker: string;
@@ -1092,6 +1100,14 @@ export type OptionsEarningsCrushResponse = ApiEnvelope & {
   assumptions: string[];
 };
 
+export type OptionsHedgeAdvisorResponse = ApiEnvelope & {
+  success: boolean;
+  ticker: string;
+  situation: Record<string, unknown>;
+  structures: Array<Record<string, unknown>>;
+  assumptions: string[];
+};
+
 export type OptionsUnusualActivityResponse = ApiEnvelope & {
   success: boolean;
   events: Array<Record<string, unknown>>;
@@ -1109,20 +1125,31 @@ export type OptionsAlertsEvaluationResponse = ApiEnvelope & {
   assumptions: string[];
 };
 
+export type OptionsResearchHealthCheckResponse = ApiEnvelope & {
+  success: boolean;
+  health_score: number;
+  stale_profiles: string[];
+  missing_thesis: string[];
+  assumptions: string[];
+};
+
 export type OptionsSignalsResponse =
   | OptionsImpliedVolatilityResponse
   | OptionsBullPutSignalResponse
   | OptionsFearScoreResponse
   | OptionsIvRankResponse
+  | OptionsMarketSentimentResponse
   | OptionsSnapshotResponse
   | OptionsEarningsCrushResponse
+  | OptionsHedgeAdvisorResponse
   | OptionsUnusualActivityResponse;
 
 export type OptionsResearchOpsResponse =
   | OptionsStrategyTemplatesResponse
   | OptionsStrategyBuildResponse
   | OptionsWatchlistResponse
-  | OptionsAlertsEvaluationResponse;
+  | OptionsAlertsEvaluationResponse
+  | OptionsResearchHealthCheckResponse;
 
 export type OptionsRadarDatesResponse = ApiEnvelope & {
   dates: string[];

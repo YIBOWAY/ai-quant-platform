@@ -429,3 +429,9 @@ union 与具体响应类型，`OptionsToolsWorkbench` 不再用 `payload: unknow
 catalog-dispatched backtest run 与 reversal-momentum replication run；
 `StrategyCatalogWorkbench` 和复现详情页不再用裸 `Record<string, unknown>` 管理
 运行结果。
+
+同日补齐 Options Tools 剩余本地研究响应合同：market sentiment、hedge advisor、
+research health check 现在都有共享 frontend response type，并纳入
+`OptionsSignalsResponse` / `OptionsResearchOpsResponse` union；页面接通了已有文案中的
+Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入设计后再接 UI，
+避免用任意 shares/cost_basis 构造伪请求。

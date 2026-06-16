@@ -74,7 +74,9 @@ def test_options_tools_signals_use_shared_response_types() -> None:
         "OptionsBullPutSignalResponse",
         "OptionsFearScoreResponse",
         "OptionsIvRankResponse",
+        "OptionsMarketSentimentResponse",
         "OptionsEarningsCrushResponse",
+        "OptionsHedgeAdvisorResponse",
         "OptionsUnusualActivityResponse",
         "OptionsSignalsResponse",
     ]:
@@ -85,6 +87,7 @@ def test_options_tools_signals_use_shared_response_types() -> None:
         "OptionsBullPutSignalResponse",
         "OptionsFearScoreResponse",
         "OptionsSnapshotResponse",
+        "OptionsMarketSentimentResponse",
         "OptionsEarningsCrushResponse",
         "OptionsUnusualActivityResponse",
     ]:
@@ -95,6 +98,7 @@ def test_options_tools_signals_use_shared_response_types() -> None:
     assert "apiPost<OptionsImpliedVolatilityResponse>" in component
     assert "apiPost<OptionsFearScoreResponse>" in component
     assert "apiPost<OptionsBullPutSignalResponse>" in component
+    assert "apiPost<OptionsMarketSentimentResponse>" in component
     assert "apiPost<OptionsEarningsCrushResponse>" in component
     assert "apiPost<OptionsUnusualActivityResponse>" in component
     assert "apiRequest<OptionsSnapshotResponse>" in component
@@ -110,6 +114,7 @@ def test_options_tools_research_ops_use_shared_response_types() -> None:
         "OptionsStrategyBuildResponse",
         "OptionsWatchlistResponse",
         "OptionsAlertsEvaluationResponse",
+        "OptionsResearchHealthCheckResponse",
         "OptionsResearchOpsResponse",
     ]:
         assert f"export type {type_name}" in api_types
@@ -119,6 +124,7 @@ def test_options_tools_research_ops_use_shared_response_types() -> None:
         "OptionsStrategyBuildResponse",
         "OptionsWatchlistResponse",
         "OptionsAlertsEvaluationResponse",
+        "OptionsResearchHealthCheckResponse",
     ]:
         assert type_name in component
 
@@ -129,6 +135,7 @@ def test_options_tools_research_ops_use_shared_response_types() -> None:
     assert "apiPost<OptionsWatchlistResponse>" in component
     assert "apiRequest<OptionsWatchlistResponse>" in component
     assert "apiPost<OptionsAlertsEvaluationResponse>" in component
+    assert "apiPost<OptionsResearchHealthCheckResponse>" in component
     assert "Promise<unknown>" not in component
 
 
@@ -202,15 +209,21 @@ def test_shared_options_signal_types_include_backend_response_fields() -> None:
         "tier: string;",
         "components: Record<string, unknown>;",
         "bull_put_spread_signal: boolean;",
+        "sentiment_score: number;",
+        "regime: string;",
         "sample_count: number;",
         "iv_percentile?: number | null;",
         "strategy_tag: string;",
+        "situation: Record<string, unknown>;",
+        "structures: Array<Record<string, unknown>>;",
         "events: Array<Record<string, unknown>>;",
         "| OptionsImpliedVolatilityResponse",
         "| OptionsBullPutSignalResponse",
         "| OptionsFearScoreResponse",
+        "| OptionsMarketSentimentResponse",
         "| OptionsSnapshotResponse",
         "| OptionsEarningsCrushResponse",
+        "| OptionsHedgeAdvisorResponse",
         "| OptionsUnusualActivityResponse",
     ]:
         assert field in api_types
@@ -227,9 +240,13 @@ def test_shared_options_research_ops_types_include_backend_response_fields() -> 
         "net_debit: number;",
         "watchlist: Array<Record<string, unknown>>;",
         "triggered_alerts: Array<Record<string, unknown>>;",
+        "health_score: number;",
+        "stale_profiles: string[];",
+        "missing_thesis: string[];",
         "| OptionsStrategyTemplatesResponse",
         "| OptionsStrategyBuildResponse",
         "| OptionsWatchlistResponse",
         "| OptionsAlertsEvaluationResponse",
+        "| OptionsResearchHealthCheckResponse",
     ]:
         assert field in api_types
