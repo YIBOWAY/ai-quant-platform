@@ -167,7 +167,10 @@ run metadata 聚合最近运行；首页 `src/frontend/app/page.tsx` 通过
 `src/frontend/package.json` 已使用项目包名且不包含 `@google/genai` /
 `firebase-tools`，`next.config.ts` 不再跳过 lint/build 错误；本次进一步清理了
 `src/frontend/.env.example` 中的 Gemini / AI Studio / Cloud Run / `APP_URL`
-模板变量，只保留本地前端需要的 `NEXT_PUBLIC_QUANT_API_BASE_URL`。相关守护断言在
+模板变量，只保留本地前端需要的 `NEXT_PUBLIC_QUANT_API_BASE_URL`。
+2026-06-16 又删除了未被 Next.js 或项目代码引用的 `src/frontend/metadata.json`
+模板文件，避免 `requestFramePermissions` / `majorCapabilities` 这类 AI Studio
+app metadata 回流。相关守护断言在
 `tests/test_frontend_e2e_config.py`。
 
 2026-06-15 状态补充：评估报告中“逐 run DuckDB 副本是纯死重”的高风险项

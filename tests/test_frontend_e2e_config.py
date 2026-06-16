@@ -120,10 +120,12 @@ def test_frontend_package_has_no_ai_studio_template_residue() -> None:
     playwright_config = Path("src/frontend/playwright.config.ts").read_text(
         encoding="utf-8"
     )
+    app_metadata = Path("src/frontend/metadata.json")
 
     assert package["name"] == "ai-quant-platform-frontend"
     assert "@google/genai" not in package["dependencies"]
     assert "firebase-tools" not in package["devDependencies"]
+    assert not app_metadata.exists()
     assert "AI Studio" not in env_example
     assert "GEMINI_API_KEY" not in env_example
     assert "Cloud Run" not in env_example
