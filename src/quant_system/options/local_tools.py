@@ -124,8 +124,33 @@ def implied_volatility(
     option_type: OptionType,
     rate: float = 0.04,
 ) -> float:
+    option_type = _normalize_option_type(option_type)
+    if not all(math.isfinite(value) for value in (market_price, spot, strike, rate)):
+        raise ValueError("market_price, spot, strike, and rate must be finite")
     if market_price <= 0:
         raise ValueError("market_price must be positive")
+    if spot <= 0 or strike <= 0:
+        raise ValueError("spot and strike must be positive")
+    if expiry_days <= 0:
+        raise ValueError("expiry_days must be positive")
+
+    lower_bound, upper_bound = _option_price_bounds(
+        spot=spot,
+        strike=strike,
+        expiry_days=expiry_days,
+        option_type=option_type,
+        rate=rate,
+    )
+    tolerance = 1e-9
+    if market_price < lower_bound - tolerance:
+        raise ValueError(
+            f"market_price is below no-arbitrage lower bound ({lower_bound:.6f})"
+        )
+    if market_price > upper_bound + tolerance:
+        raise ValueError(
+            f"market_price is above no-arbitrage upper bound ({upper_bound:.6f})"
+        )
+
     low = 0.0001
     high = 5.0
     for _ in range(100):
@@ -143,6 +168,21 @@ def implied_volatility(
         else:
             low = mid
     return round((low + high) / 2, 6)
+
+
+def _option_price_bounds(
+    *,
+    spot: float,
+    strike: float,
+    expiry_days: int,
+    option_type: OptionType,
+    rate: float,
+) -> tuple[float, float]:
+    t = expiry_days / 365.0
+    discounted_strike = strike * math.exp(-rate * t)
+    if option_type == "call":
+        return max(spot - discounted_strike, 0.0), spot
+    return max(discounted_strike - spot, 0.0), discounted_strike
 
 
 def simulate_option_position(

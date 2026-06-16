@@ -217,6 +217,12 @@ dry-run，只在传 `--apply` 时删除，且支持 `--cache-path` 与 `--as-of`
 `tests/test_options_cache.py` 和 `tests/test_options_cache_cli.py` 覆盖只删过期项、
 保留新鲜项和 dry-run 不删除；`docs/futu/futu_options_data_provider.md` 已记录用法。
 
+2026-06-16 状态补充：评估报告中“期权定价 / 希腊字母正确性未审计”的一处
+输入边界已加固。`implied_volatility()` 现在会先按无股息 European option
+上下界校验市场价，低于折现内在价值或高于理论上界时显式抛错，避免把不可能价格
+解成 0.0001 / 5.0 这类看似有效的 IV。`tests/test_options_local_tools.py` 已覆盖
+Black-Scholes 参考值、Greeks 参考值、IV solver 正常恢复和 no-arbitrage violation。
+
 2026-06-15 状态补充：评估报告中“持续模拟账户成交定价链路覆盖不足”的
 测试缺口已补强。`tests/test_paper_price_source.py` 现在直接覆盖
 `PaperPriceSource` 的 Futu snapshot 优先级、本地缓存只接受近期真实 provider

@@ -115,6 +115,28 @@ def test_implied_volatility_solver_recovers_market_iv() -> None:
     assert solved == pytest.approx(0.32, abs=0.001)
 
 
+def test_implied_volatility_solver_rejects_no_arbitrage_violations() -> None:
+    with pytest.raises(ValueError, match="below no-arbitrage lower bound"):
+        implied_volatility(
+            market_price=0.25,
+            spot=100.0,
+            strike=90.0,
+            expiry_days=365,
+            option_type="call",
+            rate=0.05,
+        )
+
+    with pytest.raises(ValueError, match="above no-arbitrage upper bound"):
+        implied_volatility(
+            market_price=100.0,
+            spot=100.0,
+            strike=90.0,
+            expiry_days=365,
+            option_type="put",
+            rate=0.05,
+        )
+
+
 def test_simulate_option_position_returns_vertical_spread_bounds() -> None:
     result = simulate_option_position(
         symbol="AAPL",
