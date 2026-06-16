@@ -497,7 +497,7 @@ export type AgentLLMConfigResponse = ApiEnvelope & {
 
 export type AgentLlmConfigResponse = AgentLLMConfigResponse;
 
-export type PredictionMarketResponse = ApiEnvelope & {
+export type PredictionMarketMarketsResponse = ApiEnvelope & {
   markets: Array<{ market_id: string; question: string; outcomes: Array<{ name: string; token_id?: string }> }>;
   order_books: Array<{
     market_id?: string;
@@ -509,7 +509,9 @@ export type PredictionMarketResponse = ApiEnvelope & {
   cache_status?: string;
 };
 
-export type PredictionMarketCandidate = {
+export type PredictionMarketResponse = PredictionMarketMarketsResponse;
+
+export type PredictionMarketCandidateResponse = {
   market_id: string;
   condition_id: string;
   scanner_id: string;
@@ -520,6 +522,8 @@ export type PredictionMarketCandidate = {
   created_at: string;
   candidate_id: string;
 };
+
+export type PredictionMarketCandidate = PredictionMarketCandidateResponse;
 
 export type PredictionMarketScanResponse = ApiEnvelope & {
   candidates: PredictionMarketCandidate[];
@@ -616,7 +620,18 @@ export type PredictionMarketTimeseriesBacktestRunResponse = ApiEnvelope & {
 
 export type PredictionMarketTimeseriesResponse = PredictionMarketTimeseriesBacktestRunResponse;
 
-export type PredictionMarketTimeseriesDetailResponse = ApiEnvelope & {
+export type PredictionMarketBacktestResultResponse = ApiEnvelope & {
+  run_id: string;
+  result: Record<string, unknown>;
+  chart_index: {
+    charts: Array<{ name: string; path: string; title: string; url?: string }>;
+  };
+  report_path: string;
+};
+
+export type PredictionMarketBacktestDetailResponse = PredictionMarketBacktestResultResponse;
+
+export type PredictionMarketTimeseriesBacktestResultResponse = ApiEnvelope & {
   run_id: string;
   result: Record<string, unknown>;
   chart_index: {
@@ -625,6 +640,9 @@ export type PredictionMarketTimeseriesDetailResponse = ApiEnvelope & {
   report_path: string;
   report_url: string;
 };
+
+export type PredictionMarketTimeseriesDetailResponse =
+  PredictionMarketTimeseriesBacktestResultResponse;
 
 export type OptionsRadarCandidateResponse = {
   ticker: string;
@@ -1620,13 +1638,16 @@ export function getPredictionMarkets(
     cache_mode: cacheMode,
     limit: String(limit),
   });
-  return apiGet<PredictionMarketResponse>(`/api/prediction-market/markets?${params.toString()}`, {
+  return apiGet<PredictionMarketMarketsResponse>(
+    `/api/prediction-market/markets?${params.toString()}`,
+    {
     markets: [],
     order_books: [],
     provider: "fallback",
     cache_status: "unavailable",
     safety: FALLBACK_SAFETY,
-  });
+    },
+  );
 }
 
 export function getOptionsRadarDates() {

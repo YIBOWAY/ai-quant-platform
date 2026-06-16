@@ -9,7 +9,7 @@ def test_prediction_market_form_uses_shared_post_response_types() -> None:
     form = FORM.read_text(encoding="utf-8")
 
     for type_name in [
-        "PredictionMarketCandidate",
+        "PredictionMarketCandidateResponse",
         "PredictionMarketScanResponse",
         "PredictionMarketProposedLeg",
         "PredictionMarketProposedTrade",
@@ -22,6 +22,10 @@ def test_prediction_market_form_uses_shared_post_response_types() -> None:
     assert (
         "export type PredictionMarketBacktestResponse = "
         "PredictionMarketBacktestRunResponse;"
+    ) in api_types
+    assert (
+        "export type PredictionMarketCandidate = "
+        "PredictionMarketCandidateResponse;"
     ) in api_types
     assert "PredictionMarketRunResponse" in form
     assert "| PredictionMarketScanResponse" in api_types
@@ -72,3 +76,22 @@ def test_prediction_market_history_form_uses_backend_run_type_name() -> None:
     ) in api_types
     assert "PredictionMarketTimeseriesBacktestRunResponse" in history_form
     assert "apiPost<PredictionMarketTimeseriesBacktestRunResponse>" in history_form
+
+
+def test_prediction_market_get_response_types_match_backend_schema_names() -> None:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+    compact_api_types = " ".join(api_types.split())
+
+    for type_name in [
+        "PredictionMarketMarketsResponse",
+        "PredictionMarketBacktestResultResponse",
+        "PredictionMarketTimeseriesBacktestResultResponse",
+    ]:
+        assert f"export type {type_name}" in api_types
+
+    assert "export type PredictionMarketResponse = PredictionMarketMarketsResponse;" in api_types
+    assert (
+        "export type PredictionMarketTimeseriesDetailResponse = "
+        "PredictionMarketTimeseriesBacktestResultResponse;"
+    ) in compact_api_types
+    assert "apiGet<PredictionMarketMarketsResponse>" in api_types

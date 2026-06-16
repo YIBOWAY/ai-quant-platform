@@ -460,3 +460,9 @@ Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入�
 旧 `StrategiesResponse`、`UniversesResponse`、`FactorsResponse` 保留为兼容 alias。
 `getStrategies()`、`getUniverses()`、`getFactors()` 已改用后端一致响应类型，并由
 `tests/test_frontend_catalog_response_type_contract.py` 防回归。
+
+同日继续补齐 Prediction Market GET/detail 响应命名：`PredictionMarketMarketsResponse`、
+`PredictionMarketCandidateResponse`、`PredictionMarketBacktestResultResponse` 与
+`PredictionMarketTimeseriesBacktestResultResponse` 现在在前端共享类型中显式导出；
+旧 `PredictionMarketResponse`、`PredictionMarketCandidate` 与 detail 简名保留为
+兼容 alias。`getPredictionMarkets()` 已改用后端一致响应类型。
