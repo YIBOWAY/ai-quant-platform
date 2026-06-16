@@ -481,4 +481,6 @@ mutation、ledger 与 account snapshot 类型关系。
 同日补齐通用错误响应命名：前端共享类型现在导出 `ErrorResponse`，与后端
 `detail` + 可选 `safety` envelope 一致。至此 `src/quant_system/api/schemas/`
 中的 80 个 `*Response` Pydantic schema 均已有 `src/frontend/lib/api.ts` 同名导出；
-剩余工作不再是“是否有同名类型”，而是后续是否用 OpenAPI 生成替代手写定义。
+`tests/test_frontend_backend_response_type_exports.py` 会全局扫描后端 schema 并锁定该
+前端导出覆盖率。剩余工作不再是“是否有同名类型”，而是后续是否用 OpenAPI 生成
+替代手写定义。
