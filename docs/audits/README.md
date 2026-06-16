@@ -457,6 +457,12 @@ research health check 现在都有共享 frontend response type，并纳入
 `OptionsSignalsResponse` / `OptionsResearchOpsResponse` union；页面接通了已有文案中的
 Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入设计后再接 UI，
 避免用任意 shares/cost_basis 构造伪请求。
+随后开始收敛 `OptionsToolsWorkbench` 巨型组件的职责边界：live option-chain
+上下文加载、ATM/strike 选择、工具 payload 组装、signals/research ops 请求已抽到
+`src/frontend/lib/optionsToolsLive.ts`；组件侧只保留 tab、状态和渲染逻辑。该批次不做
+视觉改版，`tests/test_frontend_options_tools_response_type_contract.py` 会锁定组件不得
+重新直接调用 `apiPost` / `apiRequest`，共享 response type 仍由 helper 使用。备用端口
+下 `options-tools-and-charts.spec.ts` 4/4 通过。
 
 同日补齐 Options Radar daily-scan 前端响应类型命名：`OptionsDailyScanDatesResponse`、
 `OptionsDailyScanStatusResponse`、`OptionsDailyScanResponse` 与

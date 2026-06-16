@@ -24,6 +24,7 @@
 - 期权雷达日期查询现在复用 `src/frontend/lib/api.ts` 的 `getOptionsRadarDates()` helper；评估报告里提到的“死代码”被复核为组件绕过 helper 直写 endpoint string，已收敛为单一 API client 入口。
 - 服务端页面和 `SafetyStrip` 的 `/api/health` 读取现在改走 `src/frontend/lib/serverApi.ts` 的 `getCachedHealth()`，用 React `cache()` 在同一次服务端渲染内去重健康检查请求；客户端 API helper `getHealth()` 保持不变。
 - `src/frontend/.env.example` 去掉 Gemini / AI Studio / Cloud Run / `APP_URL` 模板变量，只保留本地后端 API URL；未引用的 `src/frontend/metadata.json` AI Studio app metadata 文件和已被 flat config 取代的 `src/frontend/.eslintrc.json` 也已删除；`tests/test_frontend_e2e_config.py` 会锁定前端包名、死依赖、单一 ESLint 配置和模板残留不回流。Prediction Market 只读 scanner 的三类 POST 响应 union 也已收敛为 `src/frontend/lib/api.ts` 导出的 `PredictionMarketRunResponse`，避免表单继续维护本地 union 类型。Options Tools 的 Signals 面板也改用共享 `OptionsSignalsResponse` union，覆盖 implied volatility、bull-put signal、fear score、IV rank/snapshot、market sentiment、earnings crush、hedge advisor 和 unusual activity 响应；Research Ops 面板改用共享 `OptionsResearchOpsResponse` union，覆盖 strategy templates/build、watchlist add/load、alerts evaluation 和 research health check 响应；Strategy Catalog 动态运行结果改用共享 `StrategyRunResponse` union，覆盖 backtest run 与 reversal-momentum replication run。
+- `OptionsToolsWorkbench` 的实时期权链上下文读取、ATM/strike 选择、live request payload 构造以及 Signals/Research Ops 请求已抽到 `src/frontend/lib/optionsToolsLive.ts`。组件保留 tab、面板状态和渲染职责；`tests/test_frontend_options_tools_response_type_contract.py` 锁定组件不再直接调用 `apiPost` / `apiRequest`，并要求 helper 继续使用共享响应类型；`options-tools-and-charts.spec.ts` 已通过 4/4 浏览器冒烟。
 
 ---
 

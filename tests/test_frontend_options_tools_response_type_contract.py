@@ -2,11 +2,24 @@ from pathlib import Path
 
 API_TYPES = Path("src/frontend/lib/api.ts")
 WORKBENCH = Path("src/frontend/components/forms/OptionsToolsWorkbench.tsx")
+LIVE_HELPERS = Path("src/frontend/lib/optionsToolsLive.ts")
+
+
+def test_options_tools_workbench_delegates_live_requests_to_helper_module() -> None:
+    component = WORKBENCH.read_text(encoding="utf-8")
+    helpers = LIVE_HELPERS.read_text(encoding="utf-8")
+
+    assert 'from "@/lib/optionsToolsLive"' in component
+    assert "apiPost<" not in component
+    assert "apiRequest<" not in component
+    assert "apiPost<" in helpers
+    assert "apiRequest<" in helpers
 
 
 def test_options_tools_surface_smile_use_shared_response_types() -> None:
     api_types = API_TYPES.read_text(encoding="utf-8")
     component = WORKBENCH.read_text(encoding="utf-8")
+    helpers = LIVE_HELPERS.read_text(encoding="utf-8")
 
     for type_name in [
         "OptionsVolSurface",
@@ -20,13 +33,16 @@ def test_options_tools_surface_smile_use_shared_response_types() -> None:
     assert "OptionsVolSmileResponse" in component
     assert "type SurfaceResult =" not in component
     assert "type SmileResult =" not in component
-    assert "apiRequest<OptionsVolSurfaceResponse>" in component
-    assert "apiRequest<OptionsVolSmileResponse>" in component
+    assert "loadVolSurface" in component
+    assert "loadVolSmile" in component
+    assert "apiRequest<OptionsVolSurfaceResponse>" in helpers
+    assert "apiRequest<OptionsVolSmileResponse>" in helpers
 
 
 def test_options_tools_greeks_simulation_use_shared_response_types() -> None:
     api_types = API_TYPES.read_text(encoding="utf-8")
     component = WORKBENCH.read_text(encoding="utf-8")
+    helpers = LIVE_HELPERS.read_text(encoding="utf-8")
 
     for type_name in [
         "OptionsGreeksResponse",
@@ -39,13 +55,16 @@ def test_options_tools_greeks_simulation_use_shared_response_types() -> None:
     assert "OptionsSimulationResponse" in component
     assert "type GreeksResult =" not in component
     assert "type SimulationResult =" not in component
-    assert "apiPost<OptionsGreeksResponse>" in component
-    assert "apiPost<OptionsSimulationResponse>" in component
+    assert "calculateLiveGreeks" in component
+    assert "simulateLiveCallSpread" in component
+    assert "apiPost<OptionsGreeksResponse>" in helpers
+    assert "apiPost<OptionsSimulationResponse>" in helpers
 
 
 def test_options_tools_strategy_score_use_shared_response_types() -> None:
     api_types = API_TYPES.read_text(encoding="utf-8")
     component = WORKBENCH.read_text(encoding="utf-8")
+    helpers = LIVE_HELPERS.read_text(encoding="utf-8")
 
     for type_name in [
         "OptionsStrategyRank",
@@ -61,13 +80,16 @@ def test_options_tools_strategy_score_use_shared_response_types() -> None:
     assert "type StrategyRankResult =" not in component
     assert "type ContractRank =" not in component
     assert "type ScoreContractsResult =" not in component
-    assert "apiPost<OptionsStrategyRankResponse>" in component
-    assert "apiPost<OptionsContractScoreResponse>" in component
+    assert "rankLiveStrategies" in component
+    assert "scoreLiveContracts" in component
+    assert "apiPost<OptionsStrategyRankResponse>" in helpers
+    assert "apiPost<OptionsContractScoreResponse>" in helpers
 
 
 def test_options_tools_signals_use_shared_response_types() -> None:
     api_types = API_TYPES.read_text(encoding="utf-8")
     component = WORKBENCH.read_text(encoding="utf-8")
+    helpers = LIVE_HELPERS.read_text(encoding="utf-8")
 
     for type_name in [
         "OptionsImpliedVolatilityResponse",
@@ -91,23 +113,32 @@ def test_options_tools_signals_use_shared_response_types() -> None:
         "OptionsEarningsCrushResponse",
         "OptionsUnusualActivityResponse",
     ]:
-        assert type_name in component
+        assert type_name in helpers
 
     assert "payload: OptionsSignalsResponse" in component
     assert "request: () => Promise<OptionsSignalsResponse>" in component
-    assert "apiPost<OptionsImpliedVolatilityResponse>" in component
-    assert "apiPost<OptionsFearScoreResponse>" in component
-    assert "apiPost<OptionsBullPutSignalResponse>" in component
-    assert "apiPost<OptionsMarketSentimentResponse>" in component
-    assert "apiPost<OptionsEarningsCrushResponse>" in component
-    assert "apiPost<OptionsUnusualActivityResponse>" in component
-    assert "apiRequest<OptionsSnapshotResponse>" in component
+    assert "liveImpliedVolatility" in component
+    assert "liveBullPutSignal" in component
+    assert "liveFearScore" in component
+    assert "liveIvRankSnapshot" in component
+    assert "runMarketSentiment" in component
+    assert "liveEarningsCrush" in component
+    assert "liveUnusualActivity" in component
+    assert "apiPost<OptionsImpliedVolatilityResponse>" in helpers
+    assert "apiPost<OptionsFearScoreResponse>" in helpers
+    assert "apiPost<OptionsBullPutSignalResponse>" in helpers
+    assert "apiPost<OptionsMarketSentimentResponse>" in helpers
+    assert "apiPost<OptionsEarningsCrushResponse>" in helpers
+    assert "apiPost<OptionsUnusualActivityResponse>" in helpers
+    assert "apiRequest<OptionsSnapshotResponse>" in helpers
     assert "apiPost<{ fear_score: number }>" not in component
+    assert "apiPost<{ fear_score: number }>" not in helpers
 
 
 def test_options_tools_research_ops_use_shared_response_types() -> None:
     api_types = API_TYPES.read_text(encoding="utf-8")
     component = WORKBENCH.read_text(encoding="utf-8")
+    helpers = LIVE_HELPERS.read_text(encoding="utf-8")
 
     for type_name in [
         "OptionsStrategyTemplatesResponse",
@@ -126,17 +157,24 @@ def test_options_tools_research_ops_use_shared_response_types() -> None:
         "OptionsAlertsEvaluationResponse",
         "OptionsResearchHealthCheckResponse",
     ]:
-        assert type_name in component
+        assert type_name in helpers
 
     assert "payload: OptionsResearchOpsResponse" in component
     assert "request: () => Promise<OptionsResearchOpsResponse>" in component
-    assert "apiRequest<OptionsStrategyTemplatesResponse>" in component
-    assert "apiPost<OptionsStrategyBuildResponse>" in component
-    assert "apiPost<OptionsWatchlistResponse>" in component
-    assert "apiRequest<OptionsWatchlistResponse>" in component
-    assert "apiPost<OptionsAlertsEvaluationResponse>" in component
-    assert "apiPost<OptionsResearchHealthCheckResponse>" in component
+    assert "loadStrategyTemplates" in component
+    assert "liveBuildStrategy" in component
+    assert "addWatchlistTicker" in component
+    assert "loadWatchlist" in component
+    assert "liveEvaluateAlerts" in component
+    assert "liveResearchHealthCheck" in component
+    assert "apiRequest<OptionsStrategyTemplatesResponse>" in helpers
+    assert "apiPost<OptionsStrategyBuildResponse>" in helpers
+    assert "apiPost<OptionsWatchlistResponse>" in helpers
+    assert "apiRequest<OptionsWatchlistResponse>" in helpers
+    assert "apiPost<OptionsAlertsEvaluationResponse>" in helpers
+    assert "apiPost<OptionsResearchHealthCheckResponse>" in helpers
     assert "Promise<unknown>" not in component
+    assert "Promise<unknown>" not in helpers
 
 
 def test_shared_options_surface_smile_types_include_backend_response_fields() -> None:
