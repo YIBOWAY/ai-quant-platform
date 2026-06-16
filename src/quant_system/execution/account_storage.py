@@ -110,11 +110,10 @@ class PaperAccountStorage:
         if not self.account_path.exists():
             return None
         try:
-            data = json.loads(self.account_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            return self._load_account_file(self.account_path)
+        except (json.JSONDecodeError, OSError, ValueError):
             self._preserve_corrupt_account_file()
-            return None
-        return PaperAccount.model_validate(data)
+            return self._restore_backup_account()
 
     def load_or_open(
         self,
@@ -207,6 +206,24 @@ class PaperAccountStorage:
         path = self.account_dir / f"account.corrupt-{stamp}-{uuid.uuid4().hex[:6]}.json"
         os.replace(self.account_path, path)
         return path
+
+    @staticmethod
+    def _load_account_file(path: Path) -> PaperAccount:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return PaperAccount.model_validate(data)
+
+    def _restore_backup_account(self) -> PaperAccount | None:
+        if not self.account_backup_path.exists():
+            return None
+        try:
+            account = self._load_account_file(self.account_backup_path)
+            backup_text = self.account_backup_path.read_text(encoding="utf-8")
+        except (json.JSONDecodeError, OSError, ValueError):
+            return None
+        tmp_path = self.account_path.with_suffix(f".json.restore-{uuid.uuid4().hex}.tmp")
+        tmp_path.write_text(backup_text, encoding="utf-8")
+        self._atomic_replace(tmp_path, self.account_path)
+        return account
 
     def _write_positions_snapshot(
         self,

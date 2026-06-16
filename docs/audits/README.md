@@ -346,6 +346,9 @@ pytest、ruff、frontend lint、frontend type-check、frontend unit tests，buil
 `PaperAccountStorage.save()` 在覆盖 `account.json` 前写 `account.json.bak`，
 `load()` 读到损坏 JSON 时会把原文件移动成 `account.corrupt-<timestamp>.json`
 后再重新开户；`tests/test_paper_account.py` 覆盖前一版账户备份和损坏文件保留。
+2026-06-16 进一步补上恢复路径：如果 `account.json.bak` 是有效账户快照，
+`load()` 会先恢复备份到 `account.json` 并返回该账户；只有无有效备份时才重新开户。
+新增测试覆盖主文件损坏、备份有效时不会丢失原账户现金和账本。
 
 2026-06-16 状态补充：评估报告和前端审查中“限价单缺购买力/可卖数量预留”的
 剩余项已处理。`PendingAccountOrder` 持久化 `reserved_cash` / `reserved_quantity`；

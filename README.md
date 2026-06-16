@@ -282,6 +282,9 @@ simulation-only — no real orders, broker, wallet, or account unlock.
 - View / freeze / reset / ledger: `GET /api/paper/account`,
   `POST /api/paper/account/kill-switch`, `POST /api/paper/account/reset`,
   `GET /api/paper/account/ledger`.
+  The account store keeps `account.json.bak` before overwrites; if the main
+  account JSON is corrupt, it preserves the bad file as `account.corrupt-*.json`
+  and restores a valid backup before opening a fresh account.
   Paper-account domain failures return structured API details with
   `detail.code` and `detail.message` (for example `price_unavailable`,
   `account_frozen`, or `unsupported_account_rebalance_strategy`).

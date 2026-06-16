@@ -604,6 +604,27 @@ def test_storage_preserves_corrupt_account_file_before_reopening(tmp_path) -> No
     assert corrupt_files[0].read_text(encoding="utf-8") == "{not-json"
 
 
+def test_storage_recovers_valid_backup_when_account_file_is_corrupt(tmp_path) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    original = PaperAccount.open_new(initial_cash=100_000.0)
+    original.record_event(kind="note", note="before corruption")
+    storage.save(original)
+    storage.account_backup_path.write_text(
+        storage.account_path.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    storage.account_path.write_text("{not-json", encoding="utf-8")
+
+    account = storage.load_or_open(initial_cash=50_000.0)
+
+    assert account.cash == 100_000.0
+    assert len(account.ledger) == 2
+    assert json.loads(storage.account_path.read_text(encoding="utf-8"))["cash"] == 100_000.0
+    corrupt_files = list(storage.account_dir.glob("account.corrupt-*.json"))
+    assert len(corrupt_files) == 1
+    assert corrupt_files[0].read_text(encoding="utf-8") == "{not-json"
+
+
 def test_storage_snapshot_without_fresh_quotes_keeps_weight_and_fill_source(tmp_path) -> None:
     account = PaperAccount.open_new(initial_cash=100_000.0)
     account.apply_fill(
