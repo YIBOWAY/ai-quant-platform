@@ -39,6 +39,14 @@ conda base、`CONDA_PREFIX`、PATH 顺序寻找 Python，并把输出追加到
 但不会立即启动扫描。README、`docs/execution/phase_13_scheduler_setup.md` 与
 `tests/test_frontend_e2e_config.py` 已覆盖该入口。
 
+2026-06-16 状态补充：评估报告中“phase 编号脚本残骸 + scripts/README.md
+索引”的脚本目录卫生小项已先完成低风险部分。新增 `scripts/README.md`，
+按 Daily Entry Points、Data And Maintenance、Options Radar Operations、
+Legacy Or Historical Helpers 和 SQL 分组索引所有顶层 `.py` / `.ps1` / `.sh`
+入口，并明确 `start_phase9_full_stack.ps1` / `stop_phase9_full_stack.ps1` /
+`run_spy_qqq_phase5_full_check.py` 是兼容或历史验证用途；`tests/test_scripts_readme.py`
+会要求新增顶层脚本必须进入索引。
+
 2026-06-15 状态补充：评估报告中“缺少后端落盘日志”的小项已处理。后端
 CLI 启动和 app-factory 路径都会把结构化 JSONL 运行日志写入
 `data/_runtime/logs/backend.jsonl`，并由 `RotatingFileHandler` 控制文件大小；
