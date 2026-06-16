@@ -9,7 +9,7 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 | Method | Path | 说明 |
 | --- | --- | --- |
 | GET | `/api/health` | 返回服务状态和安全快照 |
-| GET | `/api/settings` | 返回脱敏后的配置 |
+| GET | `/api/settings` | 返回 `settings` wrapper 下的脱敏配置；顶层 `safety` 保留给安全 footer |
 | GET | `/api/symbols` | 返回本地或 sample symbol |
 | GET | `/api/ohlcv` | 返回 OHLCV 时间序列 |
 | GET | `/api/factors` | 返回默认因子注册表 |
@@ -84,7 +84,7 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 ## 验收标准
 
 - 所有 JSON 响应都有 `safety` 字段。
-- `/api/settings` 不泄露 API key、token、secret。
+- `/api/settings` 不泄露 API key、token、secret；真实配置位于 `settings` 字段下，避免被顶层 safety footer 覆盖。
 - `/api/orders/submit` 不存在。
 - `kill_switch=true` 时，paper API 不允许请求关闭 kill switch。
 - Agent review 只写 lock 文件，不注册因子。

@@ -9,7 +9,12 @@ from pydantic import SecretStr
 
 from quant_system.api.safety.masking import mask_secret_fields
 from quant_system.api.server import create_app
-from quant_system.config.settings import reload_settings
+from quant_system.config.settings import (
+    ApiKeySettings,
+    DatabaseSettings,
+    LLMSettings,
+    Settings,
+)
 
 
 def test_every_json_response_has_safety_footer(tmp_path) -> None:
@@ -52,17 +57,32 @@ def test_safety_footer_overrides_route_payload_safety(tmp_path) -> None:
     assert payload["safety"]["bind_address"] == "127.0.0.1"
 
 
-def test_settings_masks_secret_fields(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("QS_TIINGO_API_TOKEN", "super-secret-token")
-    reload_settings()
-    client = TestClient(create_app(output_dir=tmp_path))
+def test_settings_masks_secret_fields(tmp_path) -> None:
+    settings = Settings(
+        api_keys=ApiKeySettings(
+            tiingo_api_token=SecretStr("super-secret-token"),
+        ),
+        database=DatabaseSettings(
+            enabled=True,
+            url=SecretStr("postgresql://user:db-password@localhost:5432/quant"),
+        ),
+        llm=LLMSettings(api_key=SecretStr("llm-secret-key")),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     response = client.get("/api/settings")
 
     assert response.status_code == 200
+    payload = response.json()
     payload_text = response.text
     assert "super-secret-token" not in payload_text
-    assert payload_text.count("***") >= 1
+    assert "db-password" not in payload_text
+    assert "llm-secret-key" not in payload_text
+    assert payload["safety"]["bind_address"] == "127.0.0.1"
+    assert payload["settings"]["safety"]["max_order_value"] == 10_000
+    assert payload["settings"]["api_keys"]["tiingo_api_token"] == "***"
+    assert payload["settings"]["database"]["url"] == "**********"
+    assert payload["settings"]["llm"]["api_key"] == "***"
 
 
 def test_secret_values_are_masked_even_without_secret_like_keys() -> None:

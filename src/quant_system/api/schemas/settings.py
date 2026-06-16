@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import RootModel
+from pydantic import BaseModel
 
 
-class SettingsResponse(RootModel[dict[str, Any]]):
-    pass
+class SettingsResponse(BaseModel):
+    settings: dict[str, Any]

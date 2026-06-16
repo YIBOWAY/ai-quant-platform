@@ -263,6 +263,11 @@ Black-Scholes 参考值、Greeks 参考值、IV solver 正常恢复和 no-arbitr
 `password` / `private`，还会直接识别并遮蔽 `pydantic.SecretStr` /
 `SecretBytes` 值；测试覆盖字段名本身不含敏感关键词但值类型为 secret 的情况。
 
+2026-06-16 状态补充：`/api/settings` 的响应形状已从裸 settings dump 调整为
+`{"settings": <masked settings>, "safety": <footer>}`，避免中间件强制覆盖
+顶层 `safety` 时吞掉 `Settings.safety` 的完整配置；`mask_secret_fields()` 在
+`api_keys` 这类 secret-like 分组下会保留嵌套结构并遮蔽叶子值。
+
 2026-06-15 状态补充：评估报告中“Tiingo 可能使用未复权价格”的 critical 候选项
 在当前代码上已证伪。`TiingoEODProvider` 会优先使用 `adjOpen` / `adjHigh` /
 `adjLow` / `adjClose` / `adjVolume`，缺失时才回退 raw 字段，并写入

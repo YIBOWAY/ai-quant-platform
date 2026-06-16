@@ -1276,7 +1276,9 @@ export type OptionsDailyScanSymbolResponse = ApiEnvelope & {
 
 export type OptionsRadarSymbolResponse = OptionsDailyScanSymbolResponse;
 
-export type SettingsResponse = ApiEnvelope & Record<string, unknown>;
+export type SettingsResponse = ApiEnvelope & {
+  settings?: Record<string, unknown>;
+};
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 

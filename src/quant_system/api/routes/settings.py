@@ -11,4 +11,4 @@ router = APIRouter()
 
 @router.get("/settings", response_model=SettingsResponse)
 def settings(settings: SettingsDep) -> dict:
-    return mask_secret_fields(settings.model_dump(mode="json"))
+    return {"settings": mask_secret_fields(settings.model_dump(mode="json"))}

@@ -26,7 +26,7 @@ const copy = {
     armed: "armed",
     dumpTitle: "Backend Settings Dump",
     dumpMirrorsPrefix: "Mirrors ",
-    dumpMirrorsSuffix: ". Masked values stay masked (********).",
+    dumpMirrorsSuffix: ". Masked values stay masked.",
     interfaceTitle: "Interface",
     interfaceHint: "The only interface preference is the display language. It is stored in a cookie on this machine.",
     languageLabel: "Display language",
@@ -51,16 +51,18 @@ const copy = {
     armed: "已布防",
     dumpTitle: "后端设置导出",
     dumpMirrorsPrefix: "镜像 ",
-    dumpMirrorsSuffix: " 的返回结果。脱敏字段保持脱敏（********）。",
+    dumpMirrorsSuffix: " 的返回结果。脱敏字段保持脱敏。",
     interfaceTitle: "界面",
     interfaceHint: "界面偏好仅有显示语言一项，保存在本机 Cookie 中。",
     languageLabel: "显示语言",
   },
 } as const;
 
-function safeSettingsDump(settings: Record<string, unknown>) {
-  const { safety: _safety, apiError: _apiError, ...rest } = settings;
-  return JSON.stringify(rest, null, 2);
+function safeSettingsDump(payload: Record<string, unknown>) {
+  const { safety: _safety, apiError: _apiError, settings, ...rest } = payload;
+  const settingsDump =
+    settings && typeof settings === "object" && !Array.isArray(settings) ? settings : rest;
+  return JSON.stringify(settingsDump, null, 2);
 }
 
 export default async function SettingsPage() {
