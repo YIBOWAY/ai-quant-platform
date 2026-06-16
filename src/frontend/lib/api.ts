@@ -316,7 +316,7 @@ export type RecentRunsResponse = ApiEnvelope & {
   runs: RecentRun[];
 };
 
-export type AccountPositionView = {
+export type AccountPositionResponse = {
   symbol: string;
   quantity: number;
   avg_cost: number;
@@ -329,7 +329,9 @@ export type AccountPositionView = {
   price_as_of: string | null;
 };
 
-export type PendingAccountOrderView = {
+export type AccountPositionView = AccountPositionResponse;
+
+export type PendingAccountOrderResponse = {
   order_id: string;
   created_at: string;
   symbol: string;
@@ -343,6 +345,13 @@ export type PendingAccountOrderView = {
   last_checked_price?: number | null;
   last_checked_price_kind?: string | null;
   last_checked_at?: string | null;
+};
+
+export type PendingAccountOrderView = PendingAccountOrderResponse;
+
+export type PaperAccountPriceSourceResponse = {
+  kind: string;
+  as_of: string | null;
 };
 
 export type PaperAccountResponse = ApiEnvelope & {
@@ -359,14 +368,14 @@ export type PaperAccountResponse = ApiEnvelope & {
   pnl_pct: number;
   invested_pct: number;
   kill_switch: boolean;
-  price_source: { kind: string; as_of: string | null };
-  positions: AccountPositionView[];
-  pending_orders: PendingAccountOrderView[];
+  price_source: PaperAccountPriceSourceResponse;
+  positions: AccountPositionResponse[];
+  pending_orders: PendingAccountOrderResponse[];
   created_at: string;
   updated_at: string;
 };
 
-export type PaperAccountOrderOutcome = {
+export type PaperAccountOrderOutcomeResponse = {
   order_id?: string | null;
   status: string;
   symbol: string;
@@ -378,31 +387,35 @@ export type PaperAccountOrderOutcome = {
   rejected_reason?: string | null;
 };
 
+export type PaperAccountOrderOutcome = PaperAccountOrderOutcomeResponse;
+
 export type PaperAccountOrderResponse = ApiEnvelope & {
-  order: PaperAccountOrderOutcome;
+  order: PaperAccountOrderOutcomeResponse;
   account: PaperAccountResponse;
 };
 
 export type PaperAccountOrdersProcessResponse = ApiEnvelope & {
-  orders: PaperAccountOrderOutcome[];
+  orders: PaperAccountOrderOutcomeResponse[];
   account: PaperAccountResponse;
 };
 
-export type PaperAccountRebalanceSummary = {
+export type PaperAccountRebalanceSummaryResponse = {
   strategy_id: string;
   as_of?: string | null;
   aborted: boolean;
   target_weights: Record<string, number>;
   note?: string | null;
-  orders: PaperAccountOrderOutcome[];
+  orders: PaperAccountOrderOutcomeResponse[];
 };
 
+export type PaperAccountRebalanceSummary = PaperAccountRebalanceSummaryResponse;
+
 export type PaperAccountRebalanceResponse = ApiEnvelope & {
-  rebalance: PaperAccountRebalanceSummary;
+  rebalance: PaperAccountRebalanceSummaryResponse;
   account: PaperAccountResponse;
 };
 
-export type LedgerEntryView = {
+export type LedgerEntryResponse = {
   entry_id: string;
   timestamp: string;
   kind: string;
@@ -419,11 +432,13 @@ export type LedgerEntryView = {
   note?: string;
 };
 
+export type LedgerEntryView = LedgerEntryResponse;
+
 export type PaperLedgerResponse = ApiEnvelope & {
   total: number;
   limit: number;
   offset: number;
-  entries: LedgerEntryView[];
+  entries: LedgerEntryResponse[];
 };
 
 export type ExperimentSummary = {

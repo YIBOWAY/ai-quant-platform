@@ -13,12 +13,26 @@ def test_paper_account_mutations_use_shared_response_types() -> None:
     cancel_button = PENDING_CANCEL_BUTTON.read_text(encoding="utf-8")
 
     for type_name in [
-        "PaperAccountOrderOutcome",
+        "AccountPositionResponse",
+        "PendingAccountOrderResponse",
+        "PaperAccountPriceSourceResponse",
+        "PaperAccountOrderOutcomeResponse",
         "PaperAccountOrderResponse",
         "PaperAccountOrdersProcessResponse",
+        "PaperAccountRebalanceSummaryResponse",
         "PaperAccountRebalanceResponse",
+        "LedgerEntryResponse",
     ]:
         assert f"export type {type_name}" in api_types
+
+    for alias in [
+        "export type AccountPositionView = AccountPositionResponse;",
+        "export type PendingAccountOrderView = PendingAccountOrderResponse;",
+        "export type PaperAccountOrderOutcome = PaperAccountOrderOutcomeResponse;",
+        "export type PaperAccountRebalanceSummary = PaperAccountRebalanceSummaryResponse;",
+        "export type LedgerEntryView = LedgerEntryResponse;",
+    ]:
+        assert alias in api_types
 
     for local_type in [
         "type OrderResult =",
@@ -48,9 +62,13 @@ def test_shared_paper_account_mutation_types_include_backend_fields() -> None:
         "price?: number | null;",
         "price_kind?: string | null;",
         "rejected_reason?: string | null;",
+        "price_source: PaperAccountPriceSourceResponse;",
+        "positions: AccountPositionResponse[];",
+        "pending_orders: PendingAccountOrderResponse[];",
         "account: PaperAccountResponse;",
-        "orders: PaperAccountOrderOutcome[];",
+        "orders: PaperAccountOrderOutcomeResponse[];",
         "target_weights: Record<string, number>;",
-        "rebalance: PaperAccountRebalanceSummary;",
+        "rebalance: PaperAccountRebalanceSummaryResponse;",
+        "entries: LedgerEntryResponse[];",
     ]:
         assert field in api_types

@@ -470,3 +470,10 @@ Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入�
 同日补齐基础行情响应命名：`src/frontend/lib/api.ts` 现在导出后端一致的
 `OHLCVResponse`，`getOhlcv()` 已改用该类型；旧 `OhlcvResponse` 仅保留为
 兼容 alias，并由 `tests/test_frontend_data_response_type_contract.py` 防回归。
+
+同日补齐 persistent paper account 嵌套响应命名：`AccountPositionResponse`、
+`PendingAccountOrderResponse`、`PaperAccountPriceSourceResponse`、
+`PaperAccountOrderOutcomeResponse`、`PaperAccountRebalanceSummaryResponse` 与
+`LedgerEntryResponse` 现在在前端共享类型中显式导出；旧 View/短名类型继续作为
+兼容 alias，`tests/test_frontend_paper_account_response_type_contract.py` 覆盖这些
+mutation、ledger 与 account snapshot 类型关系。
