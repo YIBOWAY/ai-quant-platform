@@ -965,6 +965,25 @@ export type OptionsSimulationResponse = ApiEnvelope & {
   assumptions: string[];
 };
 
+export type OptionsStrategyTemplatesResponse = ApiEnvelope & {
+  templates: Array<Record<string, unknown>>;
+};
+
+export type OptionsStrategyBuildResponse = ApiEnvelope & {
+  mode: string;
+  template_id: string;
+  strategy: string;
+  spot: number;
+  expiry_days: number;
+  legs: Array<Record<string, unknown>>;
+  net_debit: number;
+  max_profit?: number | null;
+  max_loss?: number | null;
+  breakevens: number[];
+  risk_reward_ratio?: number | null;
+  assumptions: string[];
+};
+
 export type OptionsStrategyRank = {
   template_id: string;
   strategy: string;
@@ -1057,6 +1076,17 @@ export type OptionsUnusualActivityResponse = ApiEnvelope & {
   assumptions: string[];
 };
 
+export type OptionsWatchlistResponse = ApiEnvelope & {
+  watchlist: Array<Record<string, unknown>>;
+};
+
+export type OptionsAlertsEvaluationResponse = ApiEnvelope & {
+  success: boolean;
+  ticker: string;
+  triggered_alerts: Array<Record<string, unknown>>;
+  assumptions: string[];
+};
+
 export type OptionsSignalsResponse =
   | OptionsImpliedVolatilityResponse
   | OptionsBullPutSignalResponse
@@ -1065,6 +1095,12 @@ export type OptionsSignalsResponse =
   | OptionsSnapshotResponse
   | OptionsEarningsCrushResponse
   | OptionsUnusualActivityResponse;
+
+export type OptionsResearchOpsResponse =
+  | OptionsStrategyTemplatesResponse
+  | OptionsStrategyBuildResponse
+  | OptionsWatchlistResponse
+  | OptionsAlertsEvaluationResponse;
 
 export type OptionsRadarDatesResponse = ApiEnvelope & {
   dates: string[];

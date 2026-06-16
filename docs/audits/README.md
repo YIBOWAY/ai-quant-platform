@@ -419,3 +419,7 @@ P&L 曲线、breakevens、risk/reward、scenarios、assumptions 等字段。
 fear score、IV rank/snapshot、earnings crush、unusual activity 均使用
 `src/frontend/lib/api.ts` 的共享 `OptionsSignalsResponse` union 与具体响应类型，
 不再通过 `unknown` 或局部 `{ fear_score: number }` 接收。
+同日继续收敛 Research Ops 面板响应：strategy templates、strategy build、
+watchlist add/load、alerts evaluation 均使用共享 `OptionsResearchOpsResponse`
+union 与具体响应类型，`OptionsToolsWorkbench` 不再用 `payload: unknown` /
+`Promise<unknown>` 管理工具结果。

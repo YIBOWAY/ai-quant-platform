@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type {
   OptionContract,
+  OptionsAlertsEvaluationResponse,
   OptionsBullPutSignalResponse,
   OptionsChainResponse,
   OptionsContractScoreResponse,
@@ -21,13 +22,17 @@ import type {
   OptionsFearScoreResponse,
   OptionsGreeksResponse,
   OptionsImpliedVolatilityResponse,
+  OptionsResearchOpsResponse,
   OptionsSimulationResponse,
   OptionsSignalsResponse,
   OptionsSnapshotResponse,
+  OptionsStrategyBuildResponse,
+  OptionsStrategyTemplatesResponse,
   OptionsStrategyRankResponse,
   OptionsUnusualActivityResponse,
   OptionsVolSmileResponse,
   OptionsVolSurfaceResponse,
+  OptionsWatchlistResponse,
 } from "@/lib/api";
 import { ApiClientError, apiPost, apiRequest } from "@/lib/apiClient";
 import { InfoTip } from "@/components/InfoTip";
@@ -856,11 +861,11 @@ function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
 }
 
 function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
-  const [result, setResult] = useState<{ title: string; payload: unknown } | null>(null);
+  const [result, setResult] = useState<{ title: string; payload: OptionsResearchOpsResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<string | null>(null);
 
-  async function run(title: string, request: () => Promise<unknown>) {
+  async function run(title: string, request: () => Promise<OptionsResearchOpsResponse>) {
     setIsRunning(title);
     setError(null);
     try {
@@ -880,7 +885,9 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
       icon={ListChecks}
       isRunning={isRunning !== null}
       onRun={() =>
-        run(t.researchOps.strategyTemplates, () => apiRequest("/api/options/tools/strategy/templates"))
+        run(t.researchOps.strategyTemplates, () =>
+          apiRequest<OptionsStrategyTemplatesResponse>("/api/options/tools/strategy/templates"),
+        )
       }
       runningLabel={t.running}
       sourceDescription={t.sourceNotes.research}
@@ -894,7 +901,9 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
           {
             label: t.researchOps.strategyTemplates,
             onClick: () =>
-              run(t.researchOps.strategyTemplates, () => apiRequest("/api/options/tools/strategy/templates")),
+              run(t.researchOps.strategyTemplates, () =>
+                apiRequest<OptionsStrategyTemplatesResponse>("/api/options/tools/strategy/templates"),
+              ),
           },
           {
             label: t.researchOps.buildStrategy,
@@ -907,7 +916,7 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
             label: t.researchOps.addWatchlist,
             onClick: () =>
               run(t.researchOps.addWatchlist, () =>
-                apiPost("/api/options/tools/watchlist", {
+                apiPost<OptionsWatchlistResponse>("/api/options/tools/watchlist", {
                   ticker,
                   tags: ["local-research"],
                 }),
@@ -915,7 +924,10 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
           },
           {
             label: t.researchOps.loadWatchlist,
-            onClick: () => run(t.researchOps.loadWatchlist, () => apiRequest("/api/options/tools/watchlist")),
+            onClick: () =>
+              run(t.researchOps.loadWatchlist, () =>
+                apiRequest<OptionsWatchlistResponse>("/api/options/tools/watchlist"),
+              ),
           },
           {
             label: t.researchOps.evaluateAlerts,
@@ -1079,9 +1091,9 @@ async function liveUnusualActivity(ticker: string): Promise<OptionsUnusualActivi
   });
 }
 
-async function liveBuildStrategy(ticker: string) {
+async function liveBuildStrategy(ticker: string): Promise<OptionsStrategyBuildResponse> {
   const context = await loadLiveContext(ticker);
-  return apiPost("/api/options/tools/strategy/build", {
+  return apiPost<OptionsStrategyBuildResponse>("/api/options/tools/strategy/build", {
     mode: "template",
     template_id: "bull_call_spread",
     spot: context.spot,
@@ -1092,9 +1104,9 @@ async function liveBuildStrategy(ticker: string) {
   });
 }
 
-async function liveEvaluateAlerts(ticker: string) {
+async function liveEvaluateAlerts(ticker: string): Promise<OptionsAlertsEvaluationResponse> {
   const context = await loadLiveContext(ticker);
-  return apiPost("/api/options/tools/alerts/evaluate", {
+  return apiPost<OptionsAlertsEvaluationResponse>("/api/options/tools/alerts/evaluate", {
     alerts: [
       {
         id: "price-plus-5pct",

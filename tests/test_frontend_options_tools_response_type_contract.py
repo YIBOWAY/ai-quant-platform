@@ -101,6 +101,37 @@ def test_options_tools_signals_use_shared_response_types() -> None:
     assert "apiPost<{ fear_score: number }>" not in component
 
 
+def test_options_tools_research_ops_use_shared_response_types() -> None:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+    component = WORKBENCH.read_text(encoding="utf-8")
+
+    for type_name in [
+        "OptionsStrategyTemplatesResponse",
+        "OptionsStrategyBuildResponse",
+        "OptionsWatchlistResponse",
+        "OptionsAlertsEvaluationResponse",
+        "OptionsResearchOpsResponse",
+    ]:
+        assert f"export type {type_name}" in api_types
+
+    for type_name in [
+        "OptionsStrategyTemplatesResponse",
+        "OptionsStrategyBuildResponse",
+        "OptionsWatchlistResponse",
+        "OptionsAlertsEvaluationResponse",
+    ]:
+        assert type_name in component
+
+    assert "payload: OptionsResearchOpsResponse" in component
+    assert "request: () => Promise<OptionsResearchOpsResponse>" in component
+    assert "apiRequest<OptionsStrategyTemplatesResponse>" in component
+    assert "apiPost<OptionsStrategyBuildResponse>" in component
+    assert "apiPost<OptionsWatchlistResponse>" in component
+    assert "apiRequest<OptionsWatchlistResponse>" in component
+    assert "apiPost<OptionsAlertsEvaluationResponse>" in component
+    assert "Promise<unknown>" not in component
+
+
 def test_shared_options_surface_smile_types_include_backend_response_fields() -> None:
     api_types = API_TYPES.read_text(encoding="utf-8")
 
@@ -181,5 +212,24 @@ def test_shared_options_signal_types_include_backend_response_fields() -> None:
         "| OptionsSnapshotResponse",
         "| OptionsEarningsCrushResponse",
         "| OptionsUnusualActivityResponse",
+    ]:
+        assert field in api_types
+
+
+def test_shared_options_research_ops_types_include_backend_response_fields() -> None:
+    api_types = API_TYPES.read_text(encoding="utf-8")
+
+    for field in [
+        "templates: Array<Record<string, unknown>>;",
+        "mode: string;",
+        "template_id: string;",
+        "legs: Array<Record<string, unknown>>;",
+        "net_debit: number;",
+        "watchlist: Array<Record<string, unknown>>;",
+        "triggered_alerts: Array<Record<string, unknown>>;",
+        "| OptionsStrategyTemplatesResponse",
+        "| OptionsStrategyBuildResponse",
+        "| OptionsWatchlistResponse",
+        "| OptionsAlertsEvaluationResponse",
     ]:
         assert field in api_types
