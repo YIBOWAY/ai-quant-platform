@@ -330,7 +330,13 @@ Frontend lint:
 npm --prefix src/frontend run lint
 ```
 
-Frontend build and type validation:
+Frontend type validation:
+
+```powershell
+npm --prefix src/frontend run type-check
+```
+
+Frontend build:
 
 ```powershell
 npm --prefix src/frontend run build

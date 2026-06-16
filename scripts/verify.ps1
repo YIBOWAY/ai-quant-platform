@@ -47,6 +47,7 @@ Invoke-Step "Python version" @($PythonExe, "-c", "import sys; raise SystemExit(0
 Invoke-Step "Ruff" @("ruff", "check", "src/quant_system", "tests")
 Invoke-Step "Pytest" @($PythonExe, "-m", "pytest", "-q")
 Invoke-Step "Frontend lint" @("npm", "--prefix", "src/frontend", "run", "lint")
+Invoke-Step "Frontend type-check" @("npm", "--prefix", "src/frontend", "run", "type-check")
 Invoke-Step "Frontend tests" @("npm", "--prefix", "src/frontend", "run", "test")
 
 if ($Build) {

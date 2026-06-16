@@ -402,8 +402,8 @@ conda activate ai-quant
 .\scripts\verify.ps1
 ```
 
-This runs the Python version check, backend lint/tests, frontend lint, and
-frontend unit tests. It skips `npm run build` by default because that command
+This runs the Python version check, backend lint/tests, frontend lint,
+frontend type-check, and frontend unit tests. It skips `npm run build` by default because that command
 rewrites `src/frontend/.next`; run `.\scripts\verify.ps1 -Build` only when the
 frontend dev server is stopped.
 
@@ -420,6 +420,7 @@ Frontend-only checks:
 
 ```powershell
 npm --prefix src/frontend run lint
+npm --prefix src/frontend run type-check
 npm --prefix src/frontend run test
 npm --prefix src/frontend run build   # only when the dev server is stopped
 ```

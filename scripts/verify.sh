@@ -17,6 +17,7 @@ run_step "Python version" "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sy
 run_step "Ruff" ruff check src/quant_system tests
 run_step "Pytest" "$PYTHON_BIN" -m pytest -q
 run_step "Frontend lint" npm --prefix src/frontend run lint
+run_step "Frontend type-check" npm --prefix src/frontend run type-check
 run_step "Frontend tests" npm --prefix src/frontend run test
 
 if [[ "${RUN_BUILD:-0}" == "1" ]]; then

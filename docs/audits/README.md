@@ -279,7 +279,7 @@ kill switch 时会返回 `409 detail.code=replay_kill_switch_enabled`；若请�
 
 2026-06-15 状态补充：快赢 #10“`scripts/verify.sh` 一键验证 + conftest Python
 版本断言”已处理。仓库现在同时保留 PowerShell 与 POSIX shell 验证入口，默认跑
-pytest、ruff、frontend lint、frontend unit tests，build 需显式开启；
+pytest、ruff、frontend lint、frontend type-check、frontend unit tests，build 需显式开启；
 `tests/conftest.py` 会给出 Python 3.11+ / `conda activate ai-quant` 的清晰提示，
 `tests/test_verify_scripts.py` 锁定这些入口。
 
