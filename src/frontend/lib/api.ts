@@ -11,6 +11,11 @@ export type ApiEnvelope = {
   apiError?: string;
 };
 
+export type ErrorResponse = {
+  detail: string;
+  safety?: SafetyFooter | null;
+};
+
 export type HealthResponse = ApiEnvelope & {
   status: string;
   app_name: string;

@@ -477,3 +477,8 @@ Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入�
 `LedgerEntryResponse` 现在在前端共享类型中显式导出；旧 View/短名类型继续作为
 兼容 alias，`tests/test_frontend_paper_account_response_type_contract.py` 覆盖这些
 mutation、ledger 与 account snapshot 类型关系。
+
+同日补齐通用错误响应命名：前端共享类型现在导出 `ErrorResponse`，与后端
+`detail` + 可选 `safety` envelope 一致。至此 `src/quant_system/api/schemas/`
+中的 80 个 `*Response` Pydantic schema 均已有 `src/frontend/lib/api.ts` 同名导出；
+剩余工作不再是“是否有同名类型”，而是后续是否用 OpenAPI 生成替代手写定义。
