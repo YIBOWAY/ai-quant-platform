@@ -31,13 +31,14 @@
 3. **一个持久模拟账户，多 sleeve。** 不做多个独立账户；总账户用于合并净值、持仓地图、账本和风险视图。
 4. **sleeve 级资金和 lot 必须隔离。** `manual`、`strategy:<instance_id>` 等来源分别拥有现金和 lot。
 5. **策略不能默认卖 manual lot。** 策略只能卖自己的 lot；用户若要转移或干预，必须显式操作并记录。
-6. **手动交易默认作用于 manual sleeve。** 手动干预某个策略 sleeve 必须显式选择，并记为 `manual_intervention`。
+6. **手动交易默认作用于 manual sleeve。** 手动订单只能使用 manual cash，不能消费已划拨给 strategy sleeve 的 allocated cash；普通手动卖出也只能卖 manual lot，不能自动跨到 strategy sleeve lot。若用户想使用 strategy sleeve 的现金或 lot，必须进入显式干预流程，并记为 `manual_intervention`。
 7. **主视图可以合并，底层必须分账。** 持仓地图可显示一行 AAPL，但底层必须保存每个 sleeve 的数量、均价和归属。
-8. **allocated 执行禁止 sample/fallback 合成数据。** 真实数据不可用时记录 `data_unavailable`、`missed` 或 `skipped`，不伪造成交。
-9. **第一执行模型是 daily。** 默认 EOD 生成信号，下一交易日开盘模拟成交。near-close 5 分钟模式可后续加入，但不能补造错过的成交。
-10. **用户操作优先于自动化。** 账户冻结、sleeve 暂停、状态变化或价格过期，都会阻止策略执行并记录原因。
-11. **策略配置版本化。** 影响交易逻辑的配置变更必须生成新版本；运行中的 sleeve 绑定固定版本，升级必须显式操作。
-12. **第一版只支持股票/ETF。** 期权和 Polymarket 保持研究/只读，不进入 sleeve 执行。
+8. **MVP-1 不转移已有 lot。** 已有 manual lot 继续属于 manual sleeve；strategy sleeve 只能先获得 allocated cash，未来若要持有同一股票，应通过自己的执行窗口买入。
+9. **allocated 执行禁止 sample/fallback 合成数据。** 真实数据不可用时记录 `data_unavailable`、`missed` 或 `skipped`，不伪造成交。
+10. **第一执行模型是 daily。** 默认 EOD 生成信号，下一交易日开盘模拟成交。near-close 5 分钟模式可后续加入，但不能补造错过的成交。
+11. **用户操作优先于自动化。** 账户冻结、sleeve 暂停、状态变化或价格过期，都会阻止策略执行并记录原因。`paused` sleeve 可以继续记录观察信号，但不能生成可执行计划或 pending order。
+12. **策略配置版本化。** 影响交易逻辑的配置变更必须生成新版本；运行中的 sleeve 绑定固定版本，升级必须显式操作。
+13. **第一版只支持股票/ETF。** 期权和 Polymarket 保持研究/只读，不进入 sleeve 执行。
 
 ## 4. MVP-1 目标
 
@@ -74,6 +75,7 @@ MVP-1 成功标准：
 - 不做 near-close 5 分钟成交。
 - 不做 pending execution 生命周期。
 - 不做跨 sleeve 自动风险优化或再分配。
+- 不做 manual lot 到 strategy sleeve 的 lot transfer。
 - 不做期权/Polymarket sleeve。
 - 不允许裸因子直接运行伪实盘。
 - 不进行 `/paper-trading` 全页面大改。
@@ -173,10 +175,11 @@ StrategySignal
 ├─ proposed_orders
 ├─ warnings
 ├─ status                       # generated / data_unavailable / invalid
+├─ execution_blocked_reason     # sleeve_paused / account_frozen / stale_price / null
 └─ metadata
 ```
 
-MVP-1 只生成和展示信号，不执行订单。
+MVP-1 只生成和展示信号，不执行订单。`paused` sleeve 的信号仍可落盘，但必须标记 `execution_blocked_reason=sleeve_paused`，且不得写入 pending order。
 
 ## 7. 因子到策略配置的路线
 
@@ -425,6 +428,7 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
 4. **策略信号生成服务**
    - 从保存的 `StrategyConfig` 生成 daily signal。
    - MVP-1 只写入 `StrategySignal`，不产生实际 fill。
+   - `paused` sleeve 可以写入观察信号，但必须标记 `execution_blocked_reason=sleeve_paused`，且不能写 pending order。
    - 数据不可用时写 `data_unavailable`，不使用 sample/fallback 合成数据。
 
 5. **API contract**
@@ -448,6 +452,8 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
 - signal-only 不改现金和持仓。
 - allocated 创建只划拨现金，不自动成交。
 - strategy sleeve 不卖 manual lot。
+- 普通手动卖出不卖 strategy sleeve lot；超过 manual lot 可卖数量时应拒绝。
+- paused sleeve 可继续生成观察信号，但不能生成可执行计划或 pending order。
 - sample/fallback 数据不能进入 allocated 信号或后续执行路径。
 - legacy full-account rebalance 仍保持原行为，且不会被 UI 当作新 sleeve 主入口。
 
@@ -461,10 +467,13 @@ MVP-1 需要测试：
 - 创建 allocated sleeve 从 manual cash 划拨资金。
 - manual sleeve 与 strategy sleeve 现金隔离。
 - 同 symbol 多 sleeve lot 可并存。
+- 已有 manual lot 不能在 MVP-1 直接转入 strategy sleeve。
 - 策略不能卖 manual lot。
+- 普通手动卖出不能卖 strategy sleeve lot。
 - 生成 daily signal 写入 `signals.jsonl`。
 - sample 数据不能用于 allocated 路径。
 - 暂停 sleeve 后不能生成执行计划。
+- 暂停 sleeve 后仍可生成观察信号，并记录 `execution_blocked_reason=sleeve_paused`。
 - 现有 `/api/paper/account/rebalance` 行为不被误改。
 
 文档验收：
@@ -488,6 +497,7 @@ MVP-1 需要测试：
 | 2026-06-15 | 裸因子不能直接运行 sleeve，必须先形成策略草案并回测后保存为 StrategyConfig。 |
 | 2026-06-15 | MVP-1 不做完整自动成交，不做前端大改。 |
 | 2026-06-15 | 后续前端大改单独命名为 Paper Strategy Sleeves UX Redesign，使用前端 skills 做多方案设计。 |
+| 2026-06-16 | `paused` sleeve 仍可记录观察信号，但不能生成可执行计划或 pending order。 |
 
 ## 19. 相关代码入口
 
