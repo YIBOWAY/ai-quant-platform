@@ -352,3 +352,13 @@ manual registration status 等运行元数据。`tests/test_frontend_run_respons
 `success`、`source`、`iv_rank_source`、`assumptions`、`option_type` 等字段。
 `tests/test_frontend_options_response_type_contract.py` 锁定这两个组件必须复用共享
 options API 类型。
+
+2026-06-16 继续推进 buy-side options assistant 类型收敛：
+`BuySideOptionsAssistant` 不再在组件内手写 `AssistantResponse` / `Recommendation` /
+`StrategyLeg` 等响应类型；`src/frontend/lib/api.ts` 统一导出
+`BuySideAssistantResponse`、`BuySideDecisionThesis`、`BuySideRecommendation`、
+`BuySideStrategyLeg`、`BuySideScenarioSummary`、`BuySideScenarioEv`，覆盖后端
+`BuySideAssistantResponse` response model 中的 thesis、recommendations、assumptions、
+risk attribution、scenario summary / subjective EV、leg quote/greeks/computed 字段。
+`tests/test_frontend_buy_side_response_type_contract.py` 锁定该组件必须复用共享类型，
+防止本地窄响应类型回潮。

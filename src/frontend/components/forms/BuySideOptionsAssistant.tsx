@@ -15,6 +15,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import type {
+  BuySideAssistantResponse,
+  BuySideRecommendation,
+  BuySideStrategyLeg,
+} from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { buildBuySideOptionsPayload } from "@/lib/buySideOptionsPayload";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
@@ -335,100 +340,6 @@ const viewPresets: Record<FormValues["view_type"], Partial<FormValues>> = {
   },
 };
 
-type StrategyLeg = {
-  symbol?: string;
-  option_type?: "CALL" | "PUT" | "call" | "put";
-  side?: "long" | "short";
-  action?: "buy" | "sell";
-  expiry?: string;
-  expiration?: string;
-  strike?: number;
-  bid?: number | null;
-  ask?: number | null;
-  mid_price?: number | null;
-  premium?: number | null;
-  quantity?: number;
-  contract_size?: number;
-  dte?: number;
-};
-
-type ScenarioSummary = {
-  best_case_pnl?: number | null;
-  worst_case_pnl?: number | null;
-  flat_spot_iv_crush_pnl?: number | null;
-  spot_up_iv_down_pnl?: number | null;
-  theta_only_pnl?: number | null;
-  probability_not_calculated?: boolean;
-};
-
-type ScenarioContribution = {
-  label: string;
-  probability: number;
-  pnl: number;
-  expected_value_contribution?: number;
-  weighted_pnl?: number;
-};
-
-type ScenarioEv = {
-  expected_value: number;
-  contributions: ScenarioContribution[];
-};
-
-type Recommendation = {
-  strategy_type: string;
-  score: number;
-  rank: number;
-  one_line_summary: string;
-  key_reasons: string[];
-  key_risks: string[];
-  max_loss?: number | null;
-  max_profit?: number | null;
-  net_debit?: number | null;
-  legs?: StrategyLeg[];
-  break_even?: number | null;
-  required_move_pct?: number | null;
-  theta_burn_7d_pct?: number | null;
-  estimated_iv_crush_loss_pct?: number | null;
-  liquidity_score?: number | null;
-  risk_reward?: number | null;
-  expected_move_pct?: number | null;
-  target_vs_expected_move_ratio?: number | null;
-  buyer_friendliness_score?: number | null;
-  iv_crash_risk_score?: number | null;
-  risk_attribution: Record<"direction" | "time" | "volatility" | "liquidity", number>;
-  primary_risk_source: "direction" | "time" | "volatility" | "liquidity";
-  market_regime?: string | null;
-  market_regime_penalty?: number | null;
-  warnings: string[];
-  scenario_summary?: ScenarioSummary | null;
-  scenario_ev?: ScenarioEv | null;
-  demotion_badge?: string | null;
-  demotion_reason?: string | null;
-};
-
-type AssistantResponse = {
-  ticker: string;
-  generated_at?: string;
-  thesis: {
-    ticker: string;
-    spot_price: number;
-    target_price: number;
-    target_date: string;
-    max_loss_budget?: number | null;
-    iv_rank?: number | null;
-    as_of_date?: string | null;
-  };
-  recommendations: Recommendation[];
-  assumptions?: string[];
-  warnings?: string[];
-  safety?: {
-    dry_run: boolean;
-    paper_trading: boolean;
-    live_trading_enabled: boolean;
-    kill_switch: boolean;
-  };
-};
-
 export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh" }) {
   const hydrated = useIsHydrated();
   const text = copy[locale];
@@ -475,9 +386,9 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
     });
   }, [form, viewType]);
 
-  const mutation = useMutation<AssistantResponse, ApiClientError, FormValues>({
+  const mutation = useMutation<BuySideAssistantResponse, ApiClientError, FormValues>({
     mutationFn: (values) =>
-      apiPost<AssistantResponse>(
+      apiPost<BuySideAssistantResponse>(
         "/api/options/buy-side/assistant",
         buildBuySideOptionsPayload(values),
       ),
@@ -766,7 +677,7 @@ function RecommendationCard({
   text,
 }: {
   expanded: boolean;
-  item: Recommendation;
+  item: BuySideRecommendation;
   locale: "en" | "zh";
   onToggle: () => void;
   text: (typeof copy)["en"];
@@ -854,12 +765,12 @@ function RiskBars({
   attribution,
   primary,
 }: {
-  attribution: Recommendation["risk_attribution"];
-  primary: Recommendation["primary_risk_source"];
+  attribution: BuySideRecommendation["risk_attribution"];
+  primary: BuySideRecommendation["primary_risk_source"];
 }) {
   return (
     <div className="grid gap-2">
-      {(Object.keys(attribution) as Array<keyof Recommendation["risk_attribution"]>).map((key) => (
+      {(Object.keys(attribution) as Array<keyof BuySideRecommendation["risk_attribution"]>).map((key) => (
         <div className="grid grid-cols-[90px_1fr_42px] items-center gap-2" key={key}>
           <span className={key === primary ? "font-label-caps text-warning" : "font-label-caps text-text-secondary"}>{key}</span>
           <div className="h-2 overflow-hidden rounded-full bg-bg-surface-muted">
@@ -879,7 +790,7 @@ function ComparisonTable({
   recommendations,
   text,
 }: {
-  recommendations: Recommendation[];
+  recommendations: BuySideRecommendation[];
   text: (typeof copy)["en"];
 }) {
   return (
@@ -921,7 +832,7 @@ function Checklist({
   item,
   text,
 }: {
-  item?: Recommendation;
+  item?: BuySideRecommendation;
   text: (typeof copy)["en"];
 }) {
   const checks = [
@@ -947,7 +858,7 @@ function Checklist({
   );
 }
 
-function ScenarioLab({ item, text }: { item?: Recommendation; text: (typeof copy)["en"] }) {
+function ScenarioLab({ item, text }: { item?: BuySideRecommendation; text: (typeof copy)["en"] }) {
   const summary = item?.scenario_summary;
   const ev = item?.scenario_ev;
   return (
@@ -1018,7 +929,7 @@ function SelectedContracts({
   legs,
   locale,
 }: {
-  legs: StrategyLeg[];
+  legs: BuySideStrategyLeg[];
   locale: "en" | "zh";
 }) {
   if (!legs.length) {
@@ -1147,7 +1058,7 @@ function strategyLabel(strategy: string) {
   }[strategy] ?? strategy;
 }
 
-function legActionLabel(leg: StrategyLeg, locale: "en" | "zh") {
+function legActionLabel(leg: BuySideStrategyLeg, locale: "en" | "zh") {
   const side = (leg.action ?? leg.side ?? "").toLowerCase();
   const isShort = side === "sell" || side === "short";
   if (locale === "zh") {
@@ -1156,7 +1067,7 @@ function legActionLabel(leg: StrategyLeg, locale: "en" | "zh") {
   return isShort ? "Sell" : "Buy";
 }
 
-function legActionClass(leg: StrategyLeg) {
+function legActionClass(leg: BuySideStrategyLeg) {
   const side = (leg.action ?? leg.side ?? "").toLowerCase();
   const isShort = side === "sell" || side === "short";
   return isShort
@@ -1164,7 +1075,7 @@ function legActionClass(leg: StrategyLeg) {
     : "rounded-lg border border-accent-success/40 bg-accent-success/10 px-2 py-1 text-center font-label-caps text-accent-success";
 }
 
-function legTypeLabel(leg: StrategyLeg, locale: "en" | "zh") {
+function legTypeLabel(leg: BuySideStrategyLeg, locale: "en" | "zh") {
   const type = (leg.option_type ?? "CALL").toUpperCase();
   if (locale === "zh") {
     return type === "PUT" ? "看跌" : "看涨";
@@ -1205,22 +1116,22 @@ function highPct(value: number | null | undefined, thresholdPct: number) {
   return normalized > thresholdPct;
 }
 
-function expirationLabel(legs?: StrategyLeg[]) {
+function expirationLabel(legs?: BuySideStrategyLeg[]) {
   const expirations = [...new Set((legs ?? []).map((leg) => leg.expiry ?? leg.expiration).filter(Boolean))];
   return expirations.length ? expirations.join(" / ") : "--";
 }
 
-function strikeLabel(legs?: StrategyLeg[]) {
+function strikeLabel(legs?: BuySideStrategyLeg[]) {
   const strikes = (legs ?? []).map((leg) => leg.strike).filter((item): item is number => typeof item === "number");
   return strikes.length ? strikes.map((item) => item.toFixed(0)).join(" / ") : "--";
 }
 
-function minDte(legs?: StrategyLeg[]) {
+function minDte(legs?: BuySideStrategyLeg[]) {
   const values = (legs ?? []).map((leg) => leg.dte).filter((item): item is number => typeof item === "number");
   return values.length ? Math.min(...values) : null;
 }
 
-function hasWarning(item: Recommendation | undefined, warning: string) {
+function hasWarning(item: BuySideRecommendation | undefined, warning: string) {
   return item?.warnings?.includes(warning) ?? false;
 }
 

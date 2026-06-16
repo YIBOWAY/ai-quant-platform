@@ -530,6 +530,171 @@ export type OptionsRadarCandidate = {
   market_regime_penalty?: number | null;
 };
 
+export type BuySideStrategyType =
+  | "long_call"
+  | "bull_call_spread"
+  | "leaps_call"
+  | "leaps_call_spread";
+
+export type BuySideViewType =
+  | "long_term_aggressive_bullish"
+  | "long_term_conservative_bullish"
+  | "short_term_speculative_bullish"
+  | "short_term_conservative_bullish"
+  | "event_driven_bullish";
+
+export type BuySideVolatilityView =
+  | "auto"
+  | "prefer_low_iv"
+  | "expect_iv_crush"
+  | "expect_iv_expansion";
+
+export type BuySideRiskPreference = "aggressive" | "balanced" | "conservative";
+
+export type BuySideEventRisk =
+  | "none"
+  | "earnings"
+  | "fomc"
+  | "cpi"
+  | "product_event"
+  | "user_defined";
+
+export type BuySidePrimaryRiskSource =
+  | "direction"
+  | "time"
+  | "volatility"
+  | "liquidity";
+
+export type BuySideMarketRegime = "Normal" | "Elevated" | "Panic" | "Unknown";
+
+export type BuySideUserScenarioPnL = {
+  label: string;
+  probability: number;
+  spot_change_pct: number;
+  iv_change_vol_points: number;
+  days_passed: number;
+};
+
+export type BuySideDecisionThesis = {
+  ticker: string;
+  spot_price: number;
+  view_type: BuySideViewType;
+  target_price: number;
+  target_date: string;
+  max_loss_budget?: number | null;
+  risk_preference: BuySideRiskPreference;
+  allow_capped_upside: boolean;
+  avoid_high_iv: boolean;
+  volatility_view: BuySideVolatilityView;
+  event_risk: BuySideEventRisk;
+  expected_iv_change_vol_points?: number | null;
+  preferred_dte_range?: [number, number] | null;
+  iv_rank?: number | null;
+  historical_volatility?: number | null;
+  as_of_date?: string | null;
+  user_scenarios?: BuySideUserScenarioPnL[];
+  scenario_spot_changes?: number[];
+  scenario_iv_changes?: number[];
+  scenario_days_passed?: number[];
+};
+
+export type BuySideStrategyLeg = {
+  symbol: string;
+  option_type: "CALL" | "PUT" | "call" | "put";
+  side: "long" | "short";
+  action?: "buy" | "sell";
+  expiry: string;
+  expiration?: string;
+  strike: number;
+  spot?: number;
+  as_of_date?: string | null;
+  bid?: number | null;
+  ask?: number | null;
+  last?: number | null;
+  mid_price?: number | null;
+  premium?: number | null;
+  quantity: number;
+  contract_size: number;
+  implied_volatility?: number | null;
+  delta?: number | null;
+  gamma?: number | null;
+  theta?: number | null;
+  vega?: number | null;
+  rho?: number | null;
+  volume?: number | null;
+  open_interest?: number | null;
+  update_time?: string | null;
+  warnings?: string[];
+  spread_abs?: number | null;
+  spread_pct?: number | null;
+  call_moneyness?: number;
+  dte?: number;
+  is_tradable?: boolean;
+};
+
+export type BuySideScenarioSummary = {
+  best_case_pnl?: number | null;
+  worst_case_pnl?: number | null;
+  flat_spot_iv_crush_pnl?: number | null;
+  spot_up_iv_down_pnl?: number | null;
+  theta_only_pnl?: number | null;
+  probability_not_calculated: boolean;
+};
+
+export type BuySideScenarioContribution = {
+  label: string;
+  probability: number;
+  pnl: number;
+  expected_value_contribution: number;
+  weighted_pnl?: number;
+};
+
+export type BuySideScenarioEv = {
+  expected_value: number;
+  contributions: BuySideScenarioContribution[];
+};
+
+export type BuySideRecommendation = {
+  strategy_type: BuySideStrategyType;
+  score: number;
+  rank: number;
+  one_line_summary: string;
+  key_reasons: string[];
+  key_risks: string[];
+  max_loss?: number | null;
+  max_profit?: number | null;
+  net_debit?: number | null;
+  legs: BuySideStrategyLeg[];
+  break_even?: number | null;
+  required_move_pct?: number | null;
+  theta_burn_7d_pct?: number | null;
+  estimated_iv_crush_loss_pct?: number | null;
+  liquidity_score?: number | null;
+  risk_reward?: number | null;
+  expected_move_pct?: number | null;
+  target_vs_expected_move_ratio?: number | null;
+  buyer_friendliness_score?: number | null;
+  iv_crash_risk_score?: number | null;
+  risk_attribution: Record<BuySidePrimaryRiskSource, number>;
+  primary_risk_source: BuySidePrimaryRiskSource;
+  market_regime?: BuySideMarketRegime | null;
+  market_regime_penalty?: number | null;
+  warnings: string[];
+  scenario_summary?: BuySideScenarioSummary | null;
+  scenario_ev?: BuySideScenarioEv | null;
+  demotion_badge?: string | null;
+  demotion_reason?: string | null;
+};
+
+export type BuySideAssistantResponse = ApiEnvelope & {
+  ticker: string;
+  generated_at?: string;
+  thesis: BuySideDecisionThesis;
+  recommendations: BuySideRecommendation[];
+  assumptions: string[];
+  warnings?: string[];
+};
+
 export type OptionContract = {
   symbol?: string;
   option_type: string;
