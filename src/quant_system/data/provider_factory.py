@@ -83,6 +83,14 @@ class CachedOHLCVProvider:
             intervals = set(cached["interval"].astype(str))
             if intervals != {interval}:
                 return False
+        if self.provider_name == "tiingo":
+            if "price_adjustment" not in cached.columns:
+                return False
+            adjustments = cached["price_adjustment"].dropna().astype(str).str.lower().str.strip()
+            if len(adjustments) != len(cached):
+                return False
+            if not set(adjustments).issubset({"adjusted", "raw", "mixed"}):
+                return False
         request_start = pd.Timestamp(start, tz="UTC")
         request_end = pd.Timestamp(end, tz="UTC")
         normalized = cached.assign(

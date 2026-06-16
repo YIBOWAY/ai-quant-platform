@@ -295,6 +295,14 @@ Black-Scholes 参考值、Greeks 参考值、IV solver 正常恢复和 no-arbitr
 `price_adjustment=adjusted|raw|mixed`；`tests/test_data_tiingo_provider.py`
 已覆盖全复权、全缺失和部分缺失三种情形。
 
+2026-06-16 Remediation Package A 状态：当前 provider、schema 与本地缓存路径
+对该问题的状态为 **guarded**。`normalize_ohlcv_dataframe()` 会保留
+`price_adjustment`，`LocalDataStorage` 的 parquet / DuckDB 往返测试会验证该字段
+不丢失；`CachedOHLCVProvider` 现在拒绝复用缺少或带无效 `price_adjustment`
+标签的 Tiingo 旧缓存，并回源获取带 `adjusted|raw|mixed` 可见标签的新数据。
+本包不迁移历史缓存；如果后续审计发现已有研究结论依赖旧的无标签 Tiingo 缓存，
+应单独开“历史缓存可信度”整改包，而不是在结果可信度基线包中扩大为数据迁移。
+
 2026-06-16 状态补充：评估报告中“Tiingo 每次回测全量重下载、没有本地缓存接通”
 在当前代码上已不准确。`build_ohlcv_provider` 会把 Tiingo 包装为
 `CachedOHLCVProvider`，通过 `LocalDataStorage` 做 read-through 缓存：完整本地

@@ -93,6 +93,7 @@ def test_cached_provider_reuses_complete_local_ohlcv_window(tmp_path) -> None:
                 interval=interval,
             )
             frame["provider"] = self.provider_name
+            frame["price_adjustment"] = "adjusted"
             return frame
 
     upstream = CountingProvider()
@@ -106,6 +107,48 @@ def test_cached_provider_reuses_complete_local_ohlcv_window(tmp_path) -> None:
 
     assert upstream.calls == 1
     assert len(second) == len(first)
+
+
+@pytest.mark.parametrize("legacy_adjustment", [None, "split_adjusted"])
+def test_cached_provider_refetches_legacy_tiingo_cache_without_valid_adjustment_label(
+    tmp_path,
+    legacy_adjustment,
+) -> None:
+    class CountingProvider:
+        provider_name = "tiingo"
+
+        def __init__(self) -> None:
+            self.calls = 0
+            self.delegate = SampleOHLCVProvider()
+
+        def fetch_ohlcv(self, symbols, *, start, end, interval="1d"):
+            self.calls += 1
+            frame = self.delegate.fetch_ohlcv(
+                symbols,
+                start=start,
+                end=end,
+                interval=interval,
+            )
+            frame["provider"] = self.provider_name
+            frame["price_adjustment"] = "adjusted"
+            return frame
+
+    storage = LocalDataStorage(base_dir=tmp_path)
+    legacy_cached = SampleOHLCVProvider().fetch_ohlcv(
+        ["SPY"], start="2024-01-02", end="2024-01-05"
+    )
+    legacy_cached["provider"] = "tiingo"
+    if legacy_adjustment is not None:
+        legacy_cached["price_adjustment"] = legacy_adjustment
+    storage.save_ohlcv(legacy_cached)
+
+    upstream = CountingProvider()
+    provider = CachedOHLCVProvider(upstream=upstream, storage=storage)
+
+    frame = provider.fetch_ohlcv(["SPY"], start="2024-01-02", end="2024-01-05")
+
+    assert upstream.calls == 1
+    assert set(frame["price_adjustment"]) == {"adjusted"}
 
 
 def test_cached_provider_fetches_when_any_symbol_window_is_incomplete(tmp_path) -> None:
