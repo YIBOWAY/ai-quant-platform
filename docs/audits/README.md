@@ -200,6 +200,13 @@ app metadata 回流；同日移除了已被 `eslint.config.mjs` 取代且无引�
 `scripts/cleanup_api_run_duckdb.py` 先 dry-run 再 `--apply` 清理，且测试会确保
 该脚本只处理 `api_runs` 下的 run 副本，不触碰 ingest DuckDB 或 Futu 期权缓存。
 
+2026-06-16 状态补充：评估报告中“存储层 save_frame 复制粘贴”的结构项已先
+完成一个低风险切片。Backtest、Factor、Paper replay、Experiment 四条本地
+artifact storage 现在共用 `quant_system.storage.artifacts.save_parquet_artifact()`
+完成 `reset_index(drop=True)`、Parquet 写入和可选 DuckDB table 写入；业务层仍保留
+各自的目录、文件名和 experiment 表名后缀语义，尚未进入完整 ArtifactStore 重构。
+`tests/test_storage_artifacts.py` 覆盖公共 helper 的 Parquet 与带引号 DuckDB 表行为。
+
 2026-06-15 状态补充：评估报告中“Futu 期权缓存过期清扫”的快赢项已处理。
 `OptionQuotesCache.prune_expired()` 与 `expired_snapshot_ids()` 会按 `expires_at`
 删除过期 snapshot 及其 quote rows；`quant-system options prune-cache` 默认

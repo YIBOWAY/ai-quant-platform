@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import duckdb
 import pandas as pd
 
 from quant_system.backtest.metrics import PerformanceMetrics
+from quant_system.storage.artifacts import save_parquet_artifact
 
 
 class LocalBacktestStorage:
@@ -30,18 +30,14 @@ class LocalBacktestStorage:
         self.write_duckdb = write_duckdb
 
     def save_frame(self, frame: pd.DataFrame, *, filename: str, table_name: str) -> Path:
-        self.backtests_dir.mkdir(parents=True, exist_ok=True)
-        path = self.backtests_dir / filename
-        persisted = frame.reset_index(drop=True)
-        persisted.to_parquet(path, index=False)
-        if self.write_duckdb:
-            self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
-            with duckdb.connect(str(self.duckdb_path)) as connection:
-                connection.register("persisted_frame", persisted)
-                connection.execute(
-                    f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM persisted_frame"
-                )
-        return path
+        return save_parquet_artifact(
+            frame,
+            directory=self.backtests_dir,
+            filename=filename,
+            duckdb_path=self.duckdb_path,
+            table_name=table_name,
+            write_duckdb=self.write_duckdb,
+        )
 
     def save_metrics(self, metrics: PerformanceMetrics, filename: str = "metrics.json") -> Path:
         self.backtests_dir.mkdir(parents=True, exist_ok=True)

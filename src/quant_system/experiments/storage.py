@@ -5,10 +5,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pandas as pd
 
 from quant_system.experiments.models import ExperimentConfig
+from quant_system.storage.artifacts import save_parquet_artifact
 
 _SAFE_ID_PATTERN = re.compile(r"[^A-Za-z0-9_]+")
 
@@ -67,19 +67,15 @@ class LocalExperimentStorage:
         return path
 
     def save_frame(self, frame: pd.DataFrame, *, filename: str, table_name: str) -> Path:
-        self.experiments_dir.mkdir(parents=True, exist_ok=True)
-        path = self.experiments_dir / filename
-        persisted = frame.reset_index(drop=True)
-        persisted.to_parquet(path, index=False)
-        if self.write_duckdb:
-            self.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
-            suffixed_table = f"{table_name}{self._table_suffix}"
-            with duckdb.connect(str(self.duckdb_path)) as connection:
-                connection.register("persisted_frame", persisted)
-                connection.execute(
-                    f'CREATE OR REPLACE TABLE "{suffixed_table}" AS SELECT * FROM persisted_frame'
-                )
-        return path
+        return save_parquet_artifact(
+            frame,
+            directory=self.experiments_dir,
+            filename=filename,
+            duckdb_path=self.duckdb_path,
+            table_name=f"{table_name}{self._table_suffix}",
+            write_duckdb=self.write_duckdb,
+            quote_table_name=True,
+        )
 
     def save_report(self, markdown: str, filename: str = "experiment_comparison_report.md") -> Path:
         self.reports_dir.mkdir(parents=True, exist_ok=True)
