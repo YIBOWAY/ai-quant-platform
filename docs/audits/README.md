@@ -162,7 +162,10 @@ run metadata 聚合最近运行；首页 `src/frontend/app/page.tsx` 通过
 `QS_TEST_DATABASE_URL=postgresql://quant:quantpass@127.0.0.1:5432/quantplatform_codex_tmp`
 运行 `tests/test_runs_repository_postgres.py` 通过，说明可选 run index 仍可用。
 不要把该集成测试指向常用 `quantplatform` 库：测试会按临时文件系统视图对同 kind
-索引行做 prune，隔离库能避免误删本地已有 run index。
+索引行做 prune，隔离库能避免误删本地已有 run index。2026-06-16 继续补强该
+测试入口：当 `QS_TEST_DATABASE_URL` 指向明显的临时/测试库（库名以 `_tmp` 结尾或
+包含 `test`）时，测试会先通过 maintenance database 创建缺失的目标库；若 URL 指向
+非临时库则直接失败，避免误跑到常用索引库。
 
 2026-06-16 继续收敛 E2E 稳定性：`phase10-smoke.spec.ts` 的 POST 点击 helper
 不再使用固定 `waitForTimeout(3000)` 或 `.click({ force: true })`，改为等待目标

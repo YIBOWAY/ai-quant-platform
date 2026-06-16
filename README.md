@@ -216,6 +216,18 @@ concurrently. Check it with:
 curl http://127.0.0.1:8765/api/health   # database.reachable should be true
 ```
 
+Run the optional PostgreSQL integration test against a throwaway database, not
+your usual `quantplatform` database:
+
+```powershell
+$env:QS_TEST_DATABASE_URL='postgresql://quant:quantpass@127.0.0.1:5432/quantplatform_codex_tmp'
+python -m pytest tests/test_runs_repository_postgres.py -q
+```
+
+The test may create the target database when its name is clearly temporary
+(`*_tmp` or containing `test`). This keeps its prune checks away from your
+normal run index.
+
 The `psycopg` driver ships with the `api` extra. The database stores research
 run metadata only; the connection URL is masked in `/api/settings`. See
 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md).

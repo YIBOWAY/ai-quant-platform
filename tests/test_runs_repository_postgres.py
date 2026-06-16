@@ -4,7 +4,10 @@ import json
 import os
 from pathlib import Path
 
+import psycopg
 import pytest
+from psycopg import sql
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from quant_system.config.settings import DatabaseSettings, Settings
 from quant_system.storage import database as db
@@ -13,10 +16,34 @@ from quant_system.storage import runs_repository as rr
 pytestmark = pytest.mark.pg
 
 
+def _ensure_test_database(url: str) -> None:
+    params = conninfo_to_dict(url)
+    dbname = params.get("dbname")
+    if not dbname or not (dbname.endswith("_tmp") or "test" in dbname):
+        pytest.fail(
+            "QS_TEST_DATABASE_URL must point at a throwaway test database "
+            f"(got {dbname!r})"
+        )
+
+    maintenance_params = dict(params)
+    maintenance_params["dbname"] = "postgres"
+    maintenance_url = make_conninfo(**maintenance_params)
+    with psycopg.connect(maintenance_url, autocommit=True) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM pg_database WHERE datname = %s",
+            (dbname,),
+        ).fetchone()
+        if exists is None:
+            conn.execute(
+                sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname))
+            )
+
+
 def _postgres_settings() -> Settings:
     url = os.environ.get("QS_TEST_DATABASE_URL")
     if not url:
         pytest.skip("set QS_TEST_DATABASE_URL to run PostgreSQL integration tests")
+    _ensure_test_database(url)
     return Settings(
         database=DatabaseSettings(
             enabled=True,
