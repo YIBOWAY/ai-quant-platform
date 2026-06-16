@@ -288,6 +288,13 @@ kill switch 时会返回 `409 detail.code=replay_kill_switch_enabled`；若请�
 必须 blocked、试图 `--no-kill-switch` 但未先关闭全局环境变量时必须失败，
 以及只有 `QS_KILL_SWITCH=false` 的本地模拟进程才允许生成演示成交。
 
+2026-06-16 状态补充：评估报告中“回测与模拟执行订单生成行为漂移”的一处
+小切片已收紧。历史 paper replay 的 `_generate_rebalance_requests()` 现在会把
+目标或持仓标的的缺价、0 价、NaN/inf 价统一视为
+`missing order generation price` 并显式中止，不再静默跳过缺价目标或把无效价
+泄漏到除零 / Pydantic 校验错误。`tests/test_signal_paper_trading_integration.py`
+覆盖该边界。
+
 2026-06-15 状态补充：快赢 #9“回测详情页读取 `benchmark.source` 并挂
 `DataSourceBadge`”已处理。`/backtest` 列表页和 `/backtest/[runId]` 详情页
 都从详情响应里的 `benchmark` 对象读取持久化曲线与 `source`，不再现场调用

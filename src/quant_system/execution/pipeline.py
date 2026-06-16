@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import isfinite
 from pathlib import Path
 
 import pandas as pd
@@ -324,15 +325,25 @@ def _generate_rebalance_requests(
     prices: dict[str, float],
     min_order_value: float,
 ) -> list[OrderRequest]:
+    normalized_prices = {symbol.upper(): float(price) for symbol, price in prices.items()}
     target_map = {target.symbol.upper(): float(target.target_weight) for target in targets}
     symbols = sorted(set(portfolio.positions).union(target_map))
-    equity = portfolio.equity(prices)
+    missing_prices = [
+        symbol
+        for symbol in symbols
+        if symbol not in normalized_prices
+        or normalized_prices[symbol] <= 0
+        or not isfinite(normalized_prices[symbol])
+    ]
+    if missing_prices:
+        raise ValueError(
+            "missing order generation price for " + ", ".join(missing_prices)
+        )
+    equity = portfolio.equity(normalized_prices)
     requests: list[OrderRequest] = []
 
     for symbol in symbols:
-        price = prices.get(symbol)
-        if price is None:
-            continue
+        price = normalized_prices[symbol]
         current_value = portfolio.position(symbol) * price
         target_value = target_map.get(symbol, 0.0) * equity
         value_delta = target_value - current_value

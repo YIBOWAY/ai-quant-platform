@@ -1,5 +1,13 @@
+import pandas as pd
+import pytest
+
+from quant_system.backtest.models import TargetWeight
 from quant_system.data.providers.sample import SampleOHLCVProvider
-from quant_system.execution.pipeline import run_signal_paper_trading
+from quant_system.execution.pipeline import (
+    _generate_rebalance_requests,
+    run_signal_paper_trading,
+)
+from quant_system.execution.portfolio import PaperPortfolio
 from quant_system.experiments.models import FactorBlendConfig, FactorDirection, FactorWeight
 from quant_system.experiments.scoring import build_multifactor_score_frame
 from quant_system.factors.examples import MACDFactor, MomentumFactor, RSIFactor
@@ -85,3 +93,28 @@ def test_multi_factor_signal_feeds_phase_5_paper_trading(tmp_path) -> None:
     assert result.final_equity > 0
     assert result.trades_path.exists()
     assert result.risk_breaches_path.exists()
+
+
+@pytest.mark.parametrize(
+    "prices",
+    [
+        {},
+        {"QQQ": 0.0},
+        {"QQQ": float("nan")},
+    ],
+)
+def test_signal_rebalance_request_builder_rejects_missing_target_prices(
+    prices,
+) -> None:
+    timestamp = pd.Timestamp("2024-01-03", tz="UTC")
+
+    with pytest.raises(ValueError, match="missing order generation price for QQQ"):
+        _generate_rebalance_requests(
+            timestamp=timestamp,
+            targets=[
+                TargetWeight(timestamp=timestamp, symbol="QQQ", target_weight=0.5)
+            ],
+            portfolio=PaperPortfolio(initial_cash=100_000),
+            prices={"SPY": 100.0, **prices},
+            min_order_value=0.0,
+        )
