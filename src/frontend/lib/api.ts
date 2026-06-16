@@ -72,9 +72,11 @@ export type FactorMetadata = {
   description: string;
 };
 
-export type FactorsResponse = ApiEnvelope & {
+export type FactorCatalogResponse = ApiEnvelope & {
   factors: FactorMetadata[];
 };
+
+export type FactorsResponse = FactorCatalogResponse;
 
 export type PreviewRecord = Record<string, unknown>;
 
@@ -203,9 +205,11 @@ export type StrategyMetadata = {
   default_payload: Record<string, unknown>;
 };
 
-export type StrategiesResponse = ApiEnvelope & {
+export type StrategyCatalogResponse = ApiEnvelope & {
   strategies: StrategyMetadata[];
 };
+
+export type StrategiesResponse = StrategyCatalogResponse;
 
 export type StrategyRunResponse =
   | BacktestRunResponse
@@ -219,9 +223,11 @@ export type UniverseDefinition = {
   benchmark_symbol: string;
 };
 
-export type UniversesResponse = ApiEnvelope & {
+export type UniverseCatalogResponse = ApiEnvelope & {
   universes: UniverseDefinition[];
 };
+
+export type UniversesResponse = UniverseCatalogResponse;
 
 export type FactorLabRow = Record<string, string | number | boolean | null>;
 
@@ -1356,7 +1362,7 @@ export function getMarketDataHistory(
 }
 
 export function getFactors() {
-  return apiGet<FactorsResponse>("/api/factors", {
+  return apiGet<FactorCatalogResponse>("/api/factors", {
     factors: [],
     safety: FALLBACK_SAFETY,
   });
@@ -1416,14 +1422,14 @@ export function getReversalMomentumReplicationDetail(runId: string) {
 }
 
 export function getStrategies() {
-  return apiGet<StrategiesResponse>("/api/strategies", {
+  return apiGet<StrategyCatalogResponse>("/api/strategies", {
     strategies: [],
     safety: FALLBACK_SAFETY,
   });
 }
 
 export function getUniverses() {
-  return apiGet<UniversesResponse>("/api/universes", {
+  return apiGet<UniverseCatalogResponse>("/api/universes", {
     universes: [],
     safety: FALLBACK_SAFETY,
   });

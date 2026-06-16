@@ -454,3 +454,9 @@ Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入�
 `OptionsRadarCandidateResponse` 现在在前端共享类型中显式导出，`/options-radar/[symbol]`
 页面改用 `getOptionsDailyScanSymbol()`，旧 `getOptionsRadarSymbol()` 与
 `OptionsRadarSymbolResponse` 仅保留为兼容入口。
+
+同日补齐 catalog wrapper 前端类型命名：`StrategyCatalogResponse`、
+`UniverseCatalogResponse` 与 `FactorCatalogResponse` 现在与后端 schema 名称一致；
+旧 `StrategiesResponse`、`UniversesResponse`、`FactorsResponse` 保留为兼容 alias。
+`getStrategies()`、`getUniverses()`、`getFactors()` 已改用后端一致响应类型，并由
+`tests/test_frontend_catalog_response_type_contract.py` 防回归。
