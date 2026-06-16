@@ -942,6 +942,10 @@ export type OptionsGreeksResponse = ApiEnvelope & {
   volga: number;
 };
 
+export type OptionsImpliedVolatilityResponse = ApiEnvelope & {
+  implied_volatility: number;
+};
+
 export type OptionsSimulationPnlAtExpiry = {
   price_axis: number[];
   pnl_axis: number[];
@@ -1006,6 +1010,61 @@ export type OptionsContractScoreResponse = ApiEnvelope & {
   ranked_contracts: OptionsContractRank[];
   assumptions: string[];
 };
+
+export type OptionsBullPutSignalResponse = ApiEnvelope & {
+  success: boolean;
+  fear_score: number;
+  enter_signal: boolean;
+  selected_spread?: Record<string, unknown> | null;
+  reasons: string[];
+  assumptions: string[];
+};
+
+export type OptionsFearScoreResponse = ApiEnvelope & {
+  success: boolean;
+  fear_score: number;
+  tier: string;
+  components: Record<string, unknown>;
+  bull_put_spread_signal: boolean;
+  assumptions: string[];
+};
+
+export type OptionsIvRankResponse = ApiEnvelope & {
+  success: boolean;
+  ticker: string;
+  current_iv?: number | null;
+  sample_count: number;
+  iv_rank?: number | null;
+  iv_percentile?: number | null;
+  zone: string;
+  assumptions: string[];
+};
+
+export type OptionsEarningsCrushResponse = ApiEnvelope & {
+  success: boolean;
+  ticker: string;
+  sample_count: number;
+  average_crush_pct?: number | null;
+  expected_post_event_iv?: number | null;
+  implied_move_pct?: number | null;
+  strategy_tag: string;
+  assumptions: string[];
+};
+
+export type OptionsUnusualActivityResponse = ApiEnvelope & {
+  success: boolean;
+  events: Array<Record<string, unknown>>;
+  assumptions: string[];
+};
+
+export type OptionsSignalsResponse =
+  | OptionsImpliedVolatilityResponse
+  | OptionsBullPutSignalResponse
+  | OptionsFearScoreResponse
+  | OptionsIvRankResponse
+  | OptionsSnapshotResponse
+  | OptionsEarningsCrushResponse
+  | OptionsUnusualActivityResponse;
 
 export type OptionsRadarDatesResponse = ApiEnvelope & {
   dates: string[];

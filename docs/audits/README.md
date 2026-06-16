@@ -415,3 +415,7 @@ Simulator 面板不再局部手写 `GreeksResult` / `SimulationResult`；`src/fr
 统一导出 `OptionsGreeksResponse`、`OptionsSimulationResponse` 与
 `OptionsSimulationPnlAtExpiry`，覆盖后端 response model 中的二阶 Greeks、position、
 P&L 曲线、breakevens、risk/reward、scenarios、assumptions 等字段。
+2026-06-16 又收敛了 Signals 面板响应：implied volatility、bull-put signal、
+fear score、IV rank/snapshot、earnings crush、unusual activity 均使用
+`src/frontend/lib/api.ts` 的共享 `OptionsSignalsResponse` union 与具体响应类型，
+不再通过 `unknown` 或局部 `{ fear_score: number }` 接收。

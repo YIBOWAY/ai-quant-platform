@@ -14,12 +14,18 @@ import {
 } from "lucide-react";
 import type {
   OptionContract,
+  OptionsBullPutSignalResponse,
   OptionsChainResponse,
   OptionsContractScoreResponse,
+  OptionsEarningsCrushResponse,
+  OptionsFearScoreResponse,
   OptionsGreeksResponse,
+  OptionsImpliedVolatilityResponse,
   OptionsSimulationResponse,
+  OptionsSignalsResponse,
   OptionsSnapshotResponse,
   OptionsStrategyRankResponse,
+  OptionsUnusualActivityResponse,
   OptionsVolSmileResponse,
   OptionsVolSurfaceResponse,
 } from "@/lib/api";
@@ -762,11 +768,11 @@ function SmilePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy }) {
 }
 
 function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
-  const [result, setResult] = useState<{ title: string; payload: unknown } | null>(null);
+  const [result, setResult] = useState<{ title: string; payload: OptionsSignalsResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<string | null>(null);
 
-  async function run(title: string, request: () => Promise<unknown>) {
+  async function run(title: string, request: () => Promise<OptionsSignalsResponse>) {
     setIsRunning(title);
     setError(null);
     try {
@@ -824,7 +830,7 @@ function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
             label: t.signals.ivRank,
             onClick: () =>
               run(t.signals.ivRank, () =>
-                apiRequest(`/api/options/snapshot/${encodeURIComponent(ticker)}`),
+                apiRequest<OptionsSnapshotResponse>(`/api/options/snapshot/${encodeURIComponent(ticker)}`),
               ),
           },
           {
@@ -1015,14 +1021,14 @@ function buildLiveCallSpread(context: LiveContext) {
   return [longCall, shortCall] as const;
 }
 
-async function liveImpliedVolatility(ticker: string) {
+async function liveImpliedVolatility(ticker: string): Promise<OptionsImpliedVolatilityResponse> {
   const context = await loadLiveContext(ticker);
   const contract = pickAtmContract(context.contracts, context.spot, "CALL");
   const marketPrice = contract ? midPrice(contract) : null;
   if (!contract || marketPrice === null) {
     throw new Error(`No usable live call quote was found for ${context.ticker}.`);
   }
-  return apiPost("/api/options/tools/implied-volatility", {
+  return apiPost<OptionsImpliedVolatilityResponse>("/api/options/tools/implied-volatility", {
     market_price: marketPrice,
     spot: context.spot,
     strike: contract.strike,
@@ -1031,42 +1037,42 @@ async function liveImpliedVolatility(ticker: string) {
   });
 }
 
-async function liveFearScore(ticker: string) {
+async function liveFearScore(ticker: string): Promise<OptionsFearScoreResponse> {
   const context = await loadLiveContext(ticker);
-  return apiPost("/api/options/tools/fear-score", {
+  return apiPost<OptionsFearScoreResponse>("/api/options/tools/fear-score", {
     iv_rank: context.ivRank,
   });
 }
 
-async function liveBullPutSignal(ticker: string) {
+async function liveBullPutSignal(ticker: string): Promise<OptionsBullPutSignalResponse> {
   const context = await loadLiveContext(ticker);
-  const fear = await apiPost<{ fear_score: number }>("/api/options/tools/fear-score", {
+  const fear = await apiPost<OptionsFearScoreResponse>("/api/options/tools/fear-score", {
     iv_rank: context.ivRank,
   });
-  return apiPost("/api/options/tools/bull-put-signal", {
+  return apiPost<OptionsBullPutSignalResponse>("/api/options/tools/bull-put-signal", {
     contracts: context.contracts,
     spot: context.spot,
     fear_score: fear.fear_score,
   });
 }
 
-async function liveEarningsCrush(ticker: string) {
+async function liveEarningsCrush(ticker: string): Promise<OptionsEarningsCrushResponse> {
   const context = await loadLiveContext(ticker);
   const contract = pickAtmContract(context.contracts, context.spot, "CALL");
   const currentIv = context.atmIv ?? contract?.implied_volatility ?? null;
   if (currentIv === null) {
     throw new Error(`No live IV was found for ${context.ticker}.`);
   }
-  return apiPost("/api/options/tools/earnings-crush", {
+  return apiPost<OptionsEarningsCrushResponse>("/api/options/tools/earnings-crush", {
     ticker: context.ticker,
     current_iv: currentIv,
     historical_pre_post_iv: [],
   });
 }
 
-async function liveUnusualActivity(ticker: string) {
+async function liveUnusualActivity(ticker: string): Promise<OptionsUnusualActivityResponse> {
   const context = await loadLiveContext(ticker);
-  return apiPost("/api/options/tools/unusual-activity", {
+  return apiPost<OptionsUnusualActivityResponse>("/api/options/tools/unusual-activity", {
     contracts: context.contracts,
     min_volume_oi_ratio: 2,
     min_volume: 100,
