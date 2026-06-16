@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import type { PaperRunResponse } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { FutuUnavailableHint, futuOptionLabel } from "./FutuProviderHint";
@@ -77,10 +78,6 @@ const paperSchema = z.object({
 });
 
 type PaperFormValues = z.infer<typeof paperSchema>;
-
-type PaperRunResponse = {
-  run_id: string;
-};
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);

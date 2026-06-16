@@ -334,3 +334,11 @@ lab 看板、列表/详情、回测列表/详情、实验列表/详情、replay 
 `tests/test_api_agent_llm_config.py`、`tests/test_api_options_local_tools.py`、
 `tests/test_api_prediction_market.py` 继续覆盖 runtime 响应与 safety footer。下一步若要
 生成/替换前端类型，仍应按路由域逐批推进，而不是一次性替换全部前端类型。
+
+2026-06-16 状态补充：上述前端类型收敛已开始按路由域推进。Backtest、Factor、
+Experiment、Paper 四个核心 run-submit 表单不再在组件内局部手写窄响应类型；
+`src/frontend/lib/api.ts` 统一导出 `BacktestRunResponse`、`FactorRunResponse`、
+`ExperimentRunResponse`、`PaperRunResponse`，字段覆盖对应后端 `response_model`
+中的 source、warnings、paths、timings、execution status 等运行元数据。
+`tests/test_frontend_run_response_type_contract.py` 锁定这些表单必须使用共享 API
+类型，防止局部 response type 回潮。其余路由域仍可后续逐批收敛。

@@ -90,6 +90,16 @@ export type FactorRunsResponse = ApiEnvelope & {
   runs: FactorRunSummary[];
 };
 
+export type FactorRunResponse = ApiEnvelope & {
+  run_id: string;
+  source: string;
+  row_count: number;
+  signal_count: number;
+  warnings: string[];
+  request: Record<string, unknown>;
+  paths: Record<string, unknown>;
+};
+
 export type FactorRunDetailResponse = ApiEnvelope & {
   run_id: string;
   metadata: Record<string, unknown>;
@@ -111,6 +121,20 @@ export type BacktestSummary = {
 
 export type BacktestsResponse = ApiEnvelope & {
   backtests: BacktestSummary[];
+};
+
+export type BacktestRunResponse = ApiEnvelope & {
+  run_id: string;
+  source: string;
+  trade_count: number;
+  order_count: number;
+  warnings: string[];
+  timings_ms: Record<string, unknown>;
+  request: Record<string, unknown>;
+  metrics: Record<string, unknown>;
+  attribution: PreviewRecord[];
+  benchmark: Record<string, unknown>;
+  paths: Record<string, unknown>;
 };
 
 export type BenchmarkMetrics = {
@@ -223,6 +247,20 @@ export type PaperRunsResponse = ApiEnvelope & {
   paper_runs: PaperRunSummary[];
 };
 
+export type PaperRunResponse = ApiEnvelope & {
+  run_id: string;
+  source: string;
+  signal_count: number;
+  order_count: number;
+  trade_count: number;
+  risk_breach_count: number;
+  final_equity: number;
+  execution_status: string;
+  execution_note?: string | null;
+  request: Record<string, unknown>;
+  paths: Record<string, unknown>;
+};
+
 export type PaperRunDetailResponse = ApiEnvelope & {
   id: string;
   metadata: Record<string, unknown>;
@@ -331,6 +369,16 @@ export type ExperimentSummary = {
 
 export type ExperimentsResponse = ApiEnvelope & {
   experiments: ExperimentSummary[];
+};
+
+export type ExperimentRunResponse = ApiEnvelope & {
+  experiment_id: string;
+  raw_experiment_id: string;
+  provider: string;
+  source: string;
+  run_count: number;
+  best_run_id?: string | null;
+  paths: Record<string, unknown>;
 };
 
 export type ExperimentDetailResponse = ApiEnvelope & {

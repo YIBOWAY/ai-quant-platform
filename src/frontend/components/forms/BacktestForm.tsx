@@ -6,7 +6,12 @@ import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldError } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import type { FactorMetadata, StrategyMetadata, UniverseDefinition } from "@/lib/api";
+import type {
+  BacktestRunResponse,
+  FactorMetadata,
+  StrategyMetadata,
+  UniverseDefinition,
+} from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
@@ -134,10 +139,6 @@ function parseCap(value: string | undefined): number | undefined {
 
 type BacktestFormValues = z.infer<typeof backtestSchema>;
 export type BacktestFormInitialValues = Partial<BacktestFormValues>;
-
-type BacktestRunResponse = {
-  run_id: string;
-};
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);

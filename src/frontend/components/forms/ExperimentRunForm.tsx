@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import type { ExperimentRunResponse } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { Card } from "@/components/ui/primitives";
 import { buildExperimentRunPayload, type ExperimentProvider } from "@/lib/experimentRunPayload";
@@ -29,12 +30,6 @@ const experimentSchema = z.object({
 });
 
 type ExperimentFormValues = z.infer<typeof experimentSchema>;
-
-type ExperimentRunResponse = {
-  experiment_id: string;
-  run_count: number;
-  best_run_id?: string | null;
-};
 
 const copy = {
   en: {

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import type { FactorRunResponse } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath, type Locale } from "@/lib/locale";
@@ -20,10 +21,6 @@ const factorSchema = z.object({
 });
 
 type FactorFormValues = z.infer<typeof factorSchema>;
-
-type FactorRunResponse = {
-  run_id: string;
-};
 
 const copy = {
   en: {
