@@ -1207,7 +1207,8 @@ export type OptionsResearchOpsResponse =
   | OptionsStrategyBuildResponse
   | OptionsWatchlistResponse
   | OptionsAlertsEvaluationResponse
-  | OptionsResearchHealthCheckResponse;
+  | OptionsResearchHealthCheckResponse
+  | OptionsHedgeAdvisorResponse;
 
 export type OptionsDailyScanDatesResponse = ApiEnvelope & {
   dates: string[];

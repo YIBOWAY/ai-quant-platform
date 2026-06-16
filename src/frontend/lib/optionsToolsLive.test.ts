@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   calculateLiveGreeks,
+  liveHedgeAdvisor,
   liveResearchHealthCheck,
   rankLiveStrategies,
   simulateLiveCallSpread,
@@ -166,6 +167,29 @@ describe("optionsToolsLive", () => {
           thesis: "local research watch",
         },
       ],
+    });
+  });
+
+  it("builds a hedge-advisor request from live chain data and supplied holdings", async () => {
+    mockLiveContext();
+    apiClientMock.apiPost.mockResolvedValue({ success: true });
+
+    await liveHedgeAdvisor(" spy ", {
+      shares: 250,
+      costBasis: 96.5,
+      purpose: "protect",
+    });
+
+    expect(apiClientMock.apiPost).toHaveBeenCalledWith("/api/options/tools/hedge-advisor", {
+      ticker: "SPY",
+      shares: 250,
+      cost_basis: 96.5,
+      spot: 101,
+      purpose: "protect",
+      contracts: expect.arrayContaining([
+        expect.objectContaining({ option_type: "PUT", strike: 100, expiry: "2026-06-18" }),
+        expect.objectContaining({ option_type: "CALL", strike: 105, expiry: "2026-06-18" }),
+      ]),
     });
   });
 

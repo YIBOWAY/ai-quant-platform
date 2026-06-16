@@ -34,6 +34,7 @@ import {
   liveEarningsCrush,
   liveEvaluateAlerts,
   liveFearScore,
+  liveHedgeAdvisor,
   liveImpliedVolatility,
   liveIvRankSnapshot,
   liveResearchHealthCheck,
@@ -167,6 +168,12 @@ const copy = {
       addWatchlist: "Add Watchlist",
       loadWatchlist: "Load Watchlist",
       evaluateAlerts: "Evaluate Alerts",
+      hedgeAdvisor: "Hedge Advisor",
+      holdingInputs: "Holding inputs",
+      shares: "Shares",
+      costBasis: "Cost basis",
+      purpose: "Purpose",
+      protect: "Protect shares",
       healthCheck: "Health Check",
     },
     sourceNotes: {
@@ -277,6 +284,12 @@ const copy = {
       addWatchlist: "加入自选",
       loadWatchlist: "加载自选",
       evaluateAlerts: "评估提醒",
+      hedgeAdvisor: "对冲建议",
+      holdingInputs: "持仓输入",
+      shares: "股数",
+      costBasis: "成本价",
+      purpose: "用途",
+      protect: "保护持股",
       healthCheck: "健康检查",
     },
     sourceNotes: {
@@ -812,6 +825,9 @@ function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
 }
 
 function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
+  const [shares, setShares] = useState("100");
+  const [costBasis, setCostBasis] = useState("100");
+  const [purpose, setPurpose] = useState("protect");
   const [result, setResult] = useState<{ title: string; payload: OptionsResearchOpsResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<string | null>(null);
@@ -846,6 +862,43 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
       title={t.tabs.researchOps}
     >
       {error ? <ErrorLine message={error} /> : null}
+      <div
+        aria-label={t.researchOps.holdingInputs}
+        className="grid gap-3 rounded-lg border border-border-subtle bg-bg-surface p-3 sm:grid-cols-3"
+      >
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          <span className="font-label-caps uppercase text-text-secondary">{t.researchOps.shares}</span>
+          <input
+            className="h-9 rounded-lg border border-border-subtle bg-surface-container px-3 font-data-mono text-text-primary focus:border-accent-success/60 focus:outline-none"
+            min="1"
+            onChange={(event) => setShares(event.target.value)}
+            step="1"
+            type="number"
+            value={shares}
+          />
+        </label>
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          <span className="font-label-caps uppercase text-text-secondary">{t.researchOps.costBasis}</span>
+          <input
+            className="h-9 rounded-lg border border-border-subtle bg-surface-container px-3 font-data-mono text-text-primary focus:border-accent-success/60 focus:outline-none"
+            min="0.01"
+            onChange={(event) => setCostBasis(event.target.value)}
+            step="0.01"
+            type="number"
+            value={costBasis}
+          />
+        </label>
+        <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+          <span className="font-label-caps uppercase text-text-secondary">{t.researchOps.purpose}</span>
+          <select
+            className="h-9 rounded-lg border border-border-subtle bg-surface-container px-3 font-body-sm text-text-primary focus:border-accent-success/60 focus:outline-none"
+            onChange={(event) => setPurpose(event.target.value)}
+            value={purpose}
+          >
+            <option value="protect">{t.researchOps.protect}</option>
+          </select>
+        </label>
+      </div>
       <ActionGrid
         runningLabel={t.running}
         actions={[
@@ -882,6 +935,17 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
             onClick: () =>
               run(t.researchOps.evaluateAlerts, () =>
                 liveEvaluateAlerts(ticker),
+              ),
+          },
+          {
+            label: t.researchOps.hedgeAdvisor,
+            onClick: () =>
+              run(t.researchOps.hedgeAdvisor, () =>
+                liveHedgeAdvisor(ticker, {
+                  shares: Number.parseInt(shares, 10),
+                  costBasis: Number.parseFloat(costBasis),
+                  purpose,
+                }),
               ),
           },
           {

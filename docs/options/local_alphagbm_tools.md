@@ -6,7 +6,7 @@
 
 该本地工具集不调用 AlphaGBM API，也不需要 `ALPHAGBM_API_KEY`。Futu OpenD 作为实时股票与期权链数据的行情数据源。策略相关的数学计算在本地完成。
 
-在 `/options-tools` 页面上，对行情敏感的工具会先向后端请求所输入标的的 Futu 快照与期权链，然后用返回的合约运行本地计算器。手动 / 仅本地的工具仍可对所提供的输入使用，并被标注为本地后端研究操作，而非实时行情数据。
+在 `/options-tools` 页面上，对行情敏感的工具会先向后端请求所输入标的的 Futu 快照与期权链，然后用返回的合约运行本地计算器。Research Ops 中的 Hedge Advisor 会额外读取用户输入的股数、成本价和用途，再生成 Long Put / Collar 研究候选。手动 / 仅本地的工具仍可对所提供的输入使用，并被标注为本地后端研究操作，而非实时行情数据。
 
 任何端点都无法提交、修改、签署或下达真实订单。
 
@@ -242,6 +242,8 @@ curl "http://127.0.0.1:8765/api/options/tools/vol-smile/AAPL?provider=futu"
 ### POST `/api/options/tools/hedge-advisor`
 
 从所提供的持仓与期权合约，构建仅供研究的 Long Put / Collar 对冲候选。
+前端 `/options-tools` 的 Research Ops 面板会用当前标的的只读 Futu 快照/期权链补齐
+`spot` 与 `contracts`，用户只需要输入 shares、cost_basis 和 purpose。
 
 ### POST `/api/options/tools/unusual-activity`
 

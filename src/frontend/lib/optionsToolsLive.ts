@@ -7,6 +7,7 @@ import type {
   OptionsEarningsCrushResponse,
   OptionsFearScoreResponse,
   OptionsGreeksResponse,
+  OptionsHedgeAdvisorResponse,
   OptionsImpliedVolatilityResponse,
   OptionsMarketSentimentResponse,
   OptionsResearchHealthCheckResponse,
@@ -23,6 +24,12 @@ import type {
 import { apiPost, apiRequest } from "@/lib/apiClient";
 
 export type LiveContract = OptionContract;
+
+export type HedgeAdvisorInput = {
+  shares: number;
+  costBasis: number;
+  purpose?: string;
+};
 
 type LiveContext = {
   ticker: string;
@@ -180,6 +187,29 @@ export async function liveUnusualActivity(ticker: string): Promise<OptionsUnusua
     contracts: context.contracts,
     min_volume_oi_ratio: 2,
     min_volume: 100,
+  });
+}
+
+export async function liveHedgeAdvisor(
+  ticker: string,
+  input: HedgeAdvisorInput,
+): Promise<OptionsHedgeAdvisorResponse> {
+  const shares = Math.trunc(input.shares);
+  if (!Number.isFinite(shares) || shares <= 0) {
+    throw new Error("Shares must be a positive number.");
+  }
+  if (!Number.isFinite(input.costBasis) || input.costBasis <= 0) {
+    throw new Error("Cost basis must be a positive number.");
+  }
+
+  const context = await loadLiveContext(ticker);
+  return apiPost<OptionsHedgeAdvisorResponse>("/api/options/tools/hedge-advisor", {
+    ticker: context.ticker,
+    shares,
+    cost_basis: input.costBasis,
+    spot: context.spot,
+    purpose: input.purpose?.trim() || "protect",
+    contracts: context.contracts,
   });
 }
 

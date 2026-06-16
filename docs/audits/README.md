@@ -511,8 +511,10 @@ catalog-dispatched backtest run 与 reversal-momentum replication run；
 同日补齐 Options Tools 剩余本地研究响应合同：market sentiment、hedge advisor、
 research health check 现在都有共享 frontend response type，并纳入
 `OptionsSignalsResponse` / `OptionsResearchOpsResponse` union；页面接通了已有文案中的
-Market Sentiment 与 Health Check 按钮。Hedge Advisor 仍等待持仓输入设计后再接 UI，
-避免用任意 shares/cost_basis 构造伪请求。
+Market Sentiment 与 Health Check 按钮。随后 Research Ops 补上 Hedge Advisor
+持仓输入区（shares / cost_basis / purpose）和按钮，先读取当前标的只读 Futu
+快照与期权链，再把用户提供的持仓上下文发送到本地 hedge-advisor 端点；该入口只生成
+Long Put / Collar 研究候选，不创建订单。
 随后开始收敛 `OptionsToolsWorkbench` 巨型组件的职责边界：live option-chain
 上下文加载、ATM/strike 选择、工具 payload 组装、signals/research ops 请求已抽到
 `src/frontend/lib/optionsToolsLive.ts`；组件侧只保留 tab、状态和渲染逻辑。该批次不做
