@@ -43,7 +43,7 @@ from quant_system.execution.price_source import (
     PricedQuote,
     PriceUnavailableError,
 )
-from quant_system.storage.runs_repository import index_run, list_run_metadatas
+from quant_system.storage.runs_repository import list_run_metadatas, persist_run
 from quant_system.strategies.registry import build_default_strategy_registry
 
 router = APIRouter()
@@ -126,13 +126,7 @@ def run_paper(
             "report": str(result.report_path),
         },
     }
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "metadata.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    index_run("paper", metadata, run_dir, settings)
-    return metadata
+    return persist_run(run_dir, "paper", metadata, settings=settings)
 
 @router.get("/paper", response_model=PaperRunsResponse)
 def list_paper(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:

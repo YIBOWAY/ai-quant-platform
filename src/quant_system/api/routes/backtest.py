@@ -20,7 +20,7 @@ from quant_system.api.schemas.common import (
 )
 from quant_system.backtest.pipeline import run_backtest as execute_backtest
 from quant_system.data.provider_factory import DataProviderUnavailableError
-from quant_system.storage.runs_repository import index_run, list_run_metadatas
+from quant_system.storage.runs_repository import list_run_metadatas, persist_run
 
 router = APIRouter()
 
@@ -117,13 +117,7 @@ def run_backtest(
             "report": str(result.report_path),
         },
     }
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "metadata.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    index_run("backtest", metadata, run_dir, settings)
-    return metadata
+    return persist_run(run_dir, "backtest", metadata, settings=settings)
 
 
 

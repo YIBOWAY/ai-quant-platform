@@ -81,6 +81,9 @@ class BacktestRunPathsResponse(BaseModel):
 
 class BacktestRunResponse(BaseModel):
     run_id: str
+    kind: str = "backtest"
+    status: str = "completed"
+    created_at: str | None = None
     source: str
     trade_count: int
     order_count: int

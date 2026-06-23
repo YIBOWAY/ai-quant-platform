@@ -12,7 +12,7 @@
 CREATE SCHEMA IF NOT EXISTS quant_system;
 
 CREATE TABLE IF NOT EXISTS quant_system.runs (
-    kind          TEXT NOT NULL,        -- 'backtest' | 'factor' | 'paper'
+    kind          TEXT NOT NULL,        -- 'backtest' | 'factor' | 'paper' | 'replication'
     run_id        TEXT NOT NULL,
     source        TEXT,                 -- 'sample' | 'futu' | 'tiingo' | ...
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),  -- run time (from run_id, 1s resolution)
