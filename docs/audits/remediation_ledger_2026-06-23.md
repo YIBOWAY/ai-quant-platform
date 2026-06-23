@@ -91,7 +91,16 @@ Acceptance:
 
 ### Remediation Package B: Contract Drift Baseline
 
+Package B status: initial generation contract established.
+
 Purpose: 收敛后端 OpenAPI schema 与前端 TypeScript 类型之间的漂移。
+
+Current evidence:
+
+- `src/frontend/lib/api.generated.ts` is generated from FastAPI OpenAPI schema.
+- `src/frontend/scripts/generate-api-types.mjs` exports the local FastAPI OpenAPI schema and runs `openapi-typescript`.
+- FileResponse artifact download routes are explicit OpenAPI response-model exemptions.
+- Existing `apiGet` / `apiPost` client behavior remains hand-maintained.
 
 In scope:
 
