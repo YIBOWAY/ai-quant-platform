@@ -21,11 +21,12 @@
 
 ## 快速开始
 
-在已有的 conda 环境中安装 Python 依赖：
+创建并激活 uv 管理的 `ai-quant` 虚拟环境，然后安装 Python 依赖：
 
 ```powershell
-conda activate ai-quant
-python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev]"
+uv venv ai-quant --python 3.11
+.\ai-quant\Scripts\Activate.ps1
+uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev,prediction_market]"
 ```
 
 安装前端依赖：
@@ -38,7 +39,7 @@ npm install
 启动后端：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
@@ -48,7 +49,7 @@ CLI 后端入口会把结构化 JSONL 运行日志写入
 等效的直接 FastAPI 命令：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
@@ -129,7 +130,7 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 验证连接：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python scripts/verify_futu_connection.py
 ```
 
@@ -209,7 +210,7 @@ curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
 定时自动再平衡（例如通过 Windows 任务计划程序）：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system paper rebalance --account default --strategy cross_sectional_top_n
 ```
 
@@ -222,7 +223,7 @@ quant-system paper rebalance --account default --strategy cross_sectional_top_n
 自 2026-06-11 起，因子实验室界面默认使用真实数据（`provider=futu`），数据源/股票池/择时标的/基准可在侧栏调整，并支持可保存的因子研究运行。自 2026-06-15 起，查询卡还可以把当前数据源、股票池、基准和因子 ID 预填发送至回测器；该链接不会自动运行回测。下面的 CLI 用于从后端或计划任务刷新其本地诊断缓存：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system factor refresh-lab --provider sample --universe-id etf --symbol QQQ --benchmark-symbol QQQ
 ```
 
@@ -242,7 +243,7 @@ http://127.0.0.1:3001/options-screener
 每日卖方期权雷达：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system options daily-scan --top 10
 ```
 
@@ -269,7 +270,7 @@ http://127.0.0.1:3001/options-tools
 买方助手调试 CLI：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bullish --target-price 220 --target-date 2026-12-31
 ```
 
@@ -286,7 +287,7 @@ http://127.0.0.1:3001/options-buyside
 预测市场模块为只读研究：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system prediction-market collect --provider sample --duration 0 --limit 10
 quant-system prediction-market timeseries-backtest --provider sample
 ```
@@ -298,7 +299,7 @@ quant-system prediction-market timeseries-backtest --provider sample
 本地一键检查：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 .\scripts\verify.ps1
 ```
 
@@ -309,7 +310,7 @@ conda activate ai-quant
 仅后端：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system doctor
 python -m pytest -q
 ruff check src/quant_system tests

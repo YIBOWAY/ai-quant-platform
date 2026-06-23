@@ -243,16 +243,18 @@ storage work.
 
 ## Environment
 
-Use the existing conda environment for Python commands:
+Use the uv-managed `ai-quant` virtual environment for Python commands:
 
 ```powershell
-conda activate ai-quant
+uv venv ai-quant --python 3.11
+.\ai-quant\Scripts\Activate.ps1
+uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev,prediction_market]"
 ```
 
-When installing Python packages, prefer the Tsinghua mirror:
+When installing additional Python packages, prefer uv with the Tsinghua mirror:
 
 ```powershell
-python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple ...
+uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple ...
 ```
 
 ## Run Backend
@@ -260,7 +262,7 @@ python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple ...
 Preferred CLI wrapper:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
@@ -270,7 +272,7 @@ This writes structured backend JSONL logs to
 Equivalent direct FastAPI start:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
@@ -304,7 +306,7 @@ http://127.0.0.1:3001
 One-command local verification:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 .\scripts\verify.ps1
 ```
 
@@ -316,14 +318,14 @@ frontend dev server is stopped.
 Backend tests:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python -m pytest -q
 ```
 
 Backend lint:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 ruff check src/quant_system tests
 ```
 
@@ -361,7 +363,7 @@ cd src/frontend
 $env:PW_E2E="1"
 $env:PW_BACKEND_PORT="8766"
 $env:PW_FRONTEND_PORT="3002"
-$env:QUANT_API_COMMAND="D:\anaconda3\envs\ai-quant\python.exe -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8766"
+$env:QUANT_API_COMMAND=".\ai-quant\Scripts\python.exe -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8766"
 npx playwright test --config playwright.config.ts --workers=1
 ```
 

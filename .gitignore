@@ -1,5 +1,6 @@
 .env
 .venv/
+ai-quant/
 __pycache__/
 *.py[cod]
 .pytest_cache/

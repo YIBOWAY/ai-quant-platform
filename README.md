@@ -33,11 +33,12 @@ connection, signing, Futu account unlock, or real order placement.
 
 ## Quick Start
 
-Install Python dependencies in the existing conda environment:
+Create and activate the uv-managed `ai-quant` virtual environment, then install Python dependencies:
 
 ```powershell
-conda activate ai-quant
-python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev]"
+uv venv ai-quant --python 3.11
+.\ai-quant\Scripts\Activate.ps1
+uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev,prediction_market]"
 ```
 
 Install frontend dependencies:
@@ -50,7 +51,7 @@ npm install
 Start both local services from the repository root:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 .\scripts\dev.ps1
 ```
 
@@ -67,7 +68,7 @@ Stop the local services:
 Manual backend start:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
@@ -77,7 +78,7 @@ The CLI backend entrypoint writes structured JSONL runtime logs to
 Equivalent direct FastAPI command:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
@@ -165,7 +166,7 @@ Requirements:
 Verification:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python scripts/verify_futu_connection.py
 ```
 
@@ -239,7 +240,7 @@ Research runs and the persistent paper account are local files under
 `data/api_runs/`. Create a zip backup before large refactors or disk moves:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python scripts/backup_api_runs.py --data-dir data --output-dir data/backups
 ```
 
@@ -297,7 +298,7 @@ simulation-only — no real orders, broker, wallet, or account unlock.
 Scheduled auto-rebalance (e.g. via Windows Task Scheduler):
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system paper rebalance --account default --strategy cross_sectional_top_n
 ```
 
@@ -317,7 +318,7 @@ does not run a backtest. The CLI below refreshes the local diagnostics cache
 from the backend or a scheduled task:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system factor refresh-lab --provider sample --universe-id etf --symbol QQQ --benchmark-symbol QQQ
 ```
 
@@ -338,14 +339,14 @@ http://127.0.0.1:3001/options-screener
 Daily seller radar:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system options daily-scan --top 10
 ```
 
 Scheduled refresh + radar task:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
 ```
 
@@ -387,7 +388,7 @@ http://127.0.0.1:3001/options-tools
 Buy-side assistant debug CLI:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bullish --target-price 220 --target-date 2026-12-31
 ```
 
@@ -405,7 +406,7 @@ advice and cannot place orders.
 The prediction-market module is read-only research:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system prediction-market collect --provider sample --duration 0 --limit 10
 quant-system prediction-market timeseries-backtest --provider sample
 ```
@@ -417,7 +418,7 @@ It does not sign, redeem, transfer, or submit real market orders.
 One-command local check:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 .\scripts\verify.ps1
 ```
 
@@ -429,7 +430,7 @@ frontend dev server is stopped.
 Backend-only checks:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system doctor
 python -m pytest -q
 ruff check src/quant_system tests
@@ -460,7 +461,7 @@ cd src/frontend
 $env:PW_E2E="1"
 $env:PW_BACKEND_PORT="8766"
 $env:PW_FRONTEND_PORT="3002"
-$env:QUANT_API_COMMAND="D:\anaconda3\envs\ai-quant\python.exe -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8766"
+$env:QUANT_API_COMMAND=".\ai-quant\Scripts\python.exe -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8766"
 npx playwright test --config playwright.config.ts --workers=1
 ```
 
