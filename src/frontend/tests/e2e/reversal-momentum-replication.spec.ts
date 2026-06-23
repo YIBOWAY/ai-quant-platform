@@ -6,7 +6,7 @@ test.describe("strategy catalog", () => {
   test("runs the reversal and momentum strategy from the catalog", async ({ page }) => {
     test.setTimeout(90_000);
 
-    await page.goto("/replications", { waitUntil: "domcontentloaded" });
+    await page.goto("/strategies", { waitUntil: "domcontentloaded" });
 
     await expect(page.getByRole("heading", { name: "Strategy Catalog" })).toBeVisible();
     await expect(page.getByLabel("Strategy")).toContainText("Cross-Sectional Top-N");

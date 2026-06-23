@@ -12,7 +12,7 @@ const routes = [
   "/experiments",
   "/paper-trading",
   "/agent-studio",
-  "/order-book",
+  "/polymarket",
   "/position-map",
   "/settings",
   "/options-screener?lang=zh",
@@ -114,7 +114,7 @@ test("agent task workflow submits and renders candidate details", async ({ page 
 
 test("prediction market workflow buttons submit", async ({ page }) => {
   test.setTimeout(120_000);
-  await page.goto("/order-book");
+  await page.goto("/polymarket");
   await page.getByLabel("Provider").first().selectOption("sample");
   expect((await clickAndWaitForPost(page, "Run scanner", "/api/prediction-market/scan")).status()).toBe(200);
   expect((await clickAndWaitForPost(page, "Generate dry arbitrage", "/api/prediction-market/dry-arbitrage")).status()).toBe(200);
@@ -156,7 +156,7 @@ test("factor lab and strategy catalog render Chinese labels", async ({ page }) =
   await expect(page.getByRole("heading", { name: "因子实验室" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "横截面体检" })).toBeVisible();
 
-  await page.goto("/zh/replications");
+  await page.goto("/zh/strategies");
   await page.waitForLoadState("networkidle");
   await expect(page.getByRole("heading", { name: "策略目录" })).toBeVisible();
   await expect(page.getByLabel("策略")).toBeVisible();

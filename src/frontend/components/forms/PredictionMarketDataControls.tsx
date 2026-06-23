@@ -48,7 +48,7 @@ export function PredictionMarketDataControls({
       className="flex flex-wrap items-end gap-3"
       onSubmit={form.handleSubmit((values) => {
         const params = new URLSearchParams(values);
-        router.push(localizePath(`/order-book?${params.toString()}`, locale));
+        router.push(localizePath(`/polymarket?${params.toString()}`, locale));
       })}
     >
       <label className={labelClass}>

@@ -24,9 +24,9 @@ test("locale-prefixed settings route renders Chinese shell", async ({ page }) =>
 });
 
 test("prediction-market controls keep the active Chinese route", async ({ page }) => {
-  await page.goto("/zh/order-book?provider=sample", { waitUntil: "domcontentloaded" });
+  await page.goto("/zh/polymarket?provider=sample", { waitUntil: "domcontentloaded" });
 
   await page.getByRole("button", { name: "加载市场" }).click();
 
-  await expect(page).toHaveURL(/\/zh\/order-book\?/);
+  await expect(page).toHaveURL(/\/zh\/polymarket\?/);
 });

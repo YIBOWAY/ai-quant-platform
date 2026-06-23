@@ -4,7 +4,7 @@ import { getFactors, getStrategies, getUniverses } from "@/lib/api";
 import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
-export default async function ReplicationsPage() {
+export default async function StrategiesPage() {
   const locale = await getServerLocale();
   const [strategies, universes, factors, health] = await Promise.all([
     getStrategies(),

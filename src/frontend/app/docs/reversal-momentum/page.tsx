@@ -82,7 +82,7 @@ export default async function ReversalMomentumDocPage() {
             <p className="mt-3 font-body-sm text-text-secondary">{text.runBody}</p>
             <Link
               className="mt-4 inline-flex rounded-lg border border-accent-success/40 px-4 py-2 font-body-sm font-semibold text-accent-success transition-colors hover:bg-accent-success/10"
-              href={localizePath("/replications", locale)}
+              href={localizePath("/strategies", locale)}
             >
               {text.openWorkbench}
             </Link>

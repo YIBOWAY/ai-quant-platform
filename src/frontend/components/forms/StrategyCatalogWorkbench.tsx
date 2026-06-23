@@ -387,7 +387,7 @@ export function StrategyCatalogWorkbench({
               {result?.run_id && strategy?.result_type === "replication" ? (
                 <Link
                   className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-info"
-                  href={localizePath(`/replications/${String(result.run_id)}`, locale)}
+                  href={localizePath(`/strategies/${String(result.run_id)}`, locale)}
                 >
                   {text.openReplication}
                 </Link>
