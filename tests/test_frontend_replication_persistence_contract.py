@@ -6,13 +6,13 @@ def test_frontend_links_to_persisted_replication_runs() -> None:
     workbench = Path(
         "src/frontend/components/forms/StrategyCatalogWorkbench.tsx"
     ).read_text(encoding="utf-8")
-    detail_page = Path("src/frontend/app/replications/[runId]/page.tsx")
+    detail_page = Path("src/frontend/app/strategies/[runId]/page.tsx")
 
     assert "getReversalMomentumReplicationDetail" in api_client
     assert "/api/replications/reversal-momentum/${runId}" in api_client
     assert "initialResult" in workbench
     assert "openReplication" in workbench
-    assert "/replications/${String(result.run_id)}" in workbench
+    assert "/strategies/${String(result.run_id)}" in workbench
     assert detail_page.exists()
 
 
@@ -21,7 +21,7 @@ def test_strategy_catalog_uses_shared_run_response_types() -> None:
     workbench = Path(
         "src/frontend/components/forms/StrategyCatalogWorkbench.tsx"
     ).read_text(encoding="utf-8")
-    detail_page = Path("src/frontend/app/replications/[runId]/page.tsx").read_text(
+    detail_page = Path("src/frontend/app/strategies/[runId]/page.tsx").read_text(
         encoding="utf-8"
     )
 
