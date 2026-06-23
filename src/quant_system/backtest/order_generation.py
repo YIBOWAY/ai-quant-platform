@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 
 import pandas as pd
 
 from quant_system.backtest.models import BacktestConfig, Order, OrderSide, TargetWeight
 from quant_system.backtest.portfolio import Portfolio
+from quant_system.trading_kernel import plan_rebalance
+from quant_system.trading_kernel.weights import _apply_weight_constraints
 
 
 class OrderGenerator:
@@ -21,70 +22,50 @@ class OrderGenerator:
         portfolio: Portfolio,
         prices: Mapping[str, float],
     ) -> list[Order]:
-        normalized_prices = {symbol.upper(): float(price) for symbol, price in prices.items()}
-        target_map = {target.symbol.upper(): float(target.target_weight) for target in targets}
-        target_map = self._apply_weight_constraints(target_map)
-        symbols = sorted(set(portfolio.positions).union(target_map))
+        # Thin adapter over the shared pure kernel. The backtest is the superset
+        # call site: weight caps, whole-share flooring, and the double
+        # min-order-value gate, in sorted-union symbol order (no sells-first).
+        normalized_prices = {
+            symbol.upper(): float(price) for symbol, price in prices.items()
+        }
+        target_map = {
+            target.symbol.upper(): float(target.target_weight) for target in targets
+        }
         equity = portfolio.equity(normalized_prices)
-        orders: list[Order] = []
-
-        for index, symbol in enumerate(symbols, start=1):
-            if symbol not in normalized_prices:
-                raise ValueError(f"missing order generation price for {symbol}")
-            price = normalized_prices[symbol]
-            current_quantity = portfolio.position(symbol)
-            current_value = current_quantity * price
-            target_value = target_map.get(symbol, 0.0) * equity
-            value_delta = target_value - current_value
-            if abs(value_delta) < self.config.min_order_value:
-                continue
-            side = OrderSide.BUY if value_delta > 0 else OrderSide.SELL
-            quantity = abs(value_delta) / price
-            if self.config.whole_share_orders:
-                quantity = math.floor(quantity)
-            if quantity * price < self.config.min_order_value:
-                continue
-            if quantity <= 0:
-                continue
-            orders.append(
-                Order(
-                    order_id=f"{pd.Timestamp(timestamp).strftime('%Y%m%d')}-{index:04d}",
-                    timestamp=pd.Timestamp(timestamp),
-                    symbol=symbol,
-                    side=side,
-                    quantity=quantity,
-                    reason="rebalance_to_target_weight",
-                )
+        intents = plan_rebalance(
+            holdings=portfolio.positions,
+            target_weights=target_map,
+            prices=normalized_prices,
+            equity=equity,
+            min_order_value=self.config.min_order_value,
+            whole_share=self.config.whole_share_orders,
+            max_weight_per_symbol=self.config.max_weight_per_symbol,
+            sector_cap=self.config.sector_cap,
+            sector_map=self.config.sector_map,
+        )
+        order_date = pd.Timestamp(timestamp).strftime("%Y%m%d")
+        return [
+            Order(
+                order_id=f"{order_date}-{intent.symbol_index:04d}",
+                timestamp=pd.Timestamp(timestamp),
+                symbol=intent.symbol,
+                side=OrderSide(intent.side.value),
+                quantity=intent.quantity,
+                reason=intent.reason,
             )
-        return orders
+            for intent in intents
+        ]
 
     def _apply_weight_constraints(self, target_map: dict[str, float]) -> dict[str, float]:
         """Clamp target weights to the configured caps.
 
-        No-op when both ``max_weight_per_symbol`` and ``sector_cap`` are unset, so
-        the default order stream is unchanged. Caps only ever scale weights
-        *down*; freed weight is not redistributed, keeping gross exposure
-        predictable (v1 semantics).
+        Thin pass-through to the shared kernel constraint so the backtest and
+        paper paths apply identical capping. Kept as a method for the existing
+        engine-depth unit tests that exercise capping directly.
         """
-        max_weight = self.config.max_weight_per_symbol
-        sector_cap = self.config.sector_cap
-        if max_weight is None and sector_cap is None:
-            return target_map
-
-        capped = dict(target_map)
-        if max_weight is not None:
-            capped = {symbol: min(weight, max_weight) for symbol, weight in capped.items()}
-
-        if sector_cap is not None:
-            sector_map = self.config.sector_map
-            sector_totals: dict[str, float] = {}
-            for symbol, weight in capped.items():
-                sector = sector_map.get(symbol, symbol)
-                sector_totals[sector] = sector_totals.get(sector, 0.0) + weight
-            for sector, total in sector_totals.items():
-                if total > sector_cap and total > 0:
-                    scale = sector_cap / total
-                    for symbol in capped:
-                        if sector_map.get(symbol, symbol) == sector:
-                            capped[symbol] *= scale
-        return capped
+        return _apply_weight_constraints(
+            target_map,
+            max_weight_per_symbol=self.config.max_weight_per_symbol,
+            sector_cap=self.config.sector_cap,
+            sector_map=self.config.sector_map,
+        )
