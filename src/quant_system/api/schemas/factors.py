@@ -43,6 +43,9 @@ class FactorRunPathsResponse(BaseModel):
 
 class FactorRunResponse(BaseModel):
     run_id: str
+    kind: str = "factor"
+    status: str = "completed"
+    created_at: str | None = None
     source: str
     row_count: int
     signal_count: int

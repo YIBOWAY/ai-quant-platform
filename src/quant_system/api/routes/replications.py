@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -8,7 +7,12 @@ from pydantic import BaseModel, Field
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.errors import not_found_404
-from quant_system.api.schemas.common import make_run_id, read_json, resolve_run_dir
+from quant_system.api.schemas.common import (
+    make_run_id,
+    read_json,
+    resolve_run_dir,
+    write_json_atomic,
+)
 from quant_system.api.schemas.replications import (
     ReversalMomentumReplicationDetailResponse,
     ReversalMomentumReplicationRunResponse,
@@ -16,6 +20,7 @@ from quant_system.api.schemas.replications import (
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.data.providers.futu import FutuProviderError
 from quant_system.replication.reversal_momentum import build_reversal_momentum_replication
+from quant_system.storage.runs_repository import persist_run
 
 router = APIRouter()
 
@@ -96,15 +101,13 @@ def run_reversal_momentum_replication(
         "warnings": result.get("warnings", []),
         "paths": paths,
     }
-    run_dir.mkdir(parents=True, exist_ok=True)
-    result_path.write_text(
-        json.dumps(result, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    metadata_path.write_text(
-        json.dumps(metadata, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    # persist_run stamps the unified core fields (kind/status/created_at) onto the
+    # metadata; mirror them onto the result body so the run response and the
+    # persisted metadata.json agree.
+    persisted = persist_run(run_dir, "replication", metadata, settings=settings)
+    for core_field in ("kind", "status", "created_at"):
+        result[core_field] = persisted[core_field]
+    write_json_atomic(result_path, result)
     return result
 
 

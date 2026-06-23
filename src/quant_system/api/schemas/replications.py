@@ -22,6 +22,9 @@ class ReversalMomentumReplicationRunResponse(BaseModel):
     legs: list[dict[str, Any]]
     warnings: list[str]
     run_id: str
+    kind: str = "replication"
+    status: str = "completed"
+    created_at: str | None = None
     result_type: str
     source: str
     request: dict[str, Any]

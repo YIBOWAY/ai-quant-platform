@@ -29,6 +29,9 @@ class ExperimentRunPathsResponse(BaseModel):
 class ExperimentRunResponse(BaseModel):
     experiment_id: str
     raw_experiment_id: str
+    kind: str = "experiment"
+    status: str = "completed"
+    created_at: str | None = None
     provider: str
     source: str
     run_count: int

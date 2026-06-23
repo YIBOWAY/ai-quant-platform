@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 
 class RecentRun(BaseModel):
-    kind: Literal["backtest", "factor", "paper"]
+    kind: Literal["backtest", "factor", "paper", "replication"]
     run_id: str
     source: str
     created_at: str | None = None

@@ -37,6 +37,9 @@ class PaperRunPathsResponse(BaseModel):
 
 class PaperRunResponse(BaseModel):
     run_id: str
+    kind: str = "paper"
+    status: str = "completed"
+    created_at: str | None = None
     source: str
     signal_count: int
     order_count: int

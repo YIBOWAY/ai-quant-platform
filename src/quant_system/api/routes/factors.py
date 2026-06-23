@@ -23,7 +23,7 @@ from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.factors.lab import build_factor_lab_dashboard
 from quant_system.factors.pipeline import run_factor_research
 from quant_system.factors.registry import build_default_factor_registry
-from quant_system.storage.runs_repository import index_run, list_run_metadatas
+from quant_system.storage.runs_repository import list_run_metadatas, persist_run
 
 router = APIRouter()
 
@@ -82,13 +82,7 @@ def run_factor(
             "report": str(result.report_path),
         },
     }
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "metadata.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    index_run("factor", metadata, run_dir, settings)
-    return metadata
+    return persist_run(run_dir, "factor", metadata, settings=settings)
 
 
 

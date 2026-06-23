@@ -15,7 +15,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from quant_system.api.schemas.common import sorted_metadata_paths
+from quant_system.api.schemas.common import (
+    RunStatus,
+    sorted_metadata_paths,
+    write_json_atomic,
+)
 from quant_system.storage.database import SCHEMA, get_database
 
 if TYPE_CHECKING:
@@ -25,7 +29,12 @@ log = logging.getLogger(__name__)
 
 # Run kinds that follow the shared api_runs/<dir>/<run_id>/metadata.json layout,
 # mapped to their on-disk directory name (note: paper dir is "paper", not "papers").
-KIND_DIRS = {"backtest": "backtests", "factor": "factors", "paper": "paper"}
+KIND_DIRS = {
+    "backtest": "backtests",
+    "factor": "factors",
+    "paper": "paper",
+    "replication": "replications",
+}
 INDEXED_KINDS = tuple(KIND_DIRS)
 
 
@@ -39,6 +48,45 @@ def _created_at_from_run_id(run_id: str) -> str | None:
             except ValueError:
                 continue
     return None
+
+
+def persist_run(
+    run_dir: Path,
+    kind: str,
+    payload: dict[str, Any],
+    *,
+    settings: Settings,
+    status: RunStatus = RunStatus.COMPLETED,
+    index: bool = True,
+) -> dict[str, Any]:
+    """Write a run's ``metadata.json`` atomically under a unified schema.
+
+    Every run producer (backtest / paper / factor / experiment / replication)
+    routes its metadata through here so the on-disk ``metadata.json`` always
+    carries the shared core fields — ``run_id``, ``kind``, ``status`` and
+    ``created_at`` — alongside its kind-specific fields. The filesystem stays
+    the source of truth; the optional PostgreSQL index is updated as a best-effort
+    mirror when ``index`` is true and the kind is indexable.
+
+    ``payload`` is not mutated; the merged metadata dict (with core fields
+    filled in) is returned so the caller can echo it back in the HTTP response.
+    The run_id defaults to the run directory name when absent, and created_at is
+    derived from the run_id timestamp, then falls back to now.
+    """
+    run_dir = Path(run_dir)
+    metadata = dict(payload)
+    run_id = str(metadata.get("run_id") or run_dir.name)
+    metadata["run_id"] = run_id
+    metadata["kind"] = kind
+    metadata["status"] = RunStatus(status).value
+    if not metadata.get("created_at"):
+        metadata["created_at"] = (
+            _created_at_from_run_id(run_id) or datetime.now(UTC).isoformat()
+        )
+    write_json_atomic(run_dir / "metadata.json", metadata)
+    if index and kind in KIND_DIRS:
+        index_run(kind, metadata, run_dir, settings)
+    return metadata
 
 
 def index_run(
