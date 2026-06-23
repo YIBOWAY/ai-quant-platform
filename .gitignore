@@ -27,6 +27,10 @@ worktrees/
 .superpowers/
 Microsoft/
 
+# Local OS/tool scratch
+.DS_Store
+.understand-anything/.trash-*/
+
 # Local Futu / FastAPI / Next.js dev logs
 .futu-ui-backend.err.log
 .futu-ui-backend.out.log

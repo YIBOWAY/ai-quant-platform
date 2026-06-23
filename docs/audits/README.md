@@ -4,12 +4,15 @@
 
 如需了解平台当前状态，请从以下文档开始：
 
+- [remediation_ledger_2026-06-23.md](remediation_ledger_2026-06-23.md) — 当前整改台账：用户裁决、code graph 资产状态、已完成/部分完成/仍相关评估项，以及后续整改包队列。
 - [../../README.md](../../README.md)
 - [../INDEX.md](../INDEX.md)
 - [../OVERVIEW.md](../OVERVIEW.md)
 - [../delivery/phase_13_delivery.md](../delivery/phase_13_delivery.md)
 - [../delivery/phase_14_delivery.md](../delivery/phase_14_delivery.md)
 - [FRONTEND_REAL_DATA_REVIEW_2026-05-31.md](FRONTEND_REAL_DATA_REVIEW_2026-05-31.md)
+
+后续整改状态优先更新 `remediation_ledger_2026-06-23.md`，本 README 只保留历史审计入口与已存在的状态补充。
 
 2026-06-15 状态补充：评估报告中“显式 provider 请求失败静默降级 sample”的
 小项已加固。股票数据 provider override 现在只接受 `sample` / `futu` /

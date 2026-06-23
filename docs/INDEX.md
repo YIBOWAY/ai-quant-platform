@@ -26,6 +26,7 @@
 |---|---|
 | [../README.md](../README.md) | 快速项目入口与运行命令。 |
 | [audits/project_assessment_2026-06-11.html](audits/project_assessment_2026-06-11.html) | **2026-06-11 全项目评估报告（HTML）**：8 维度多智能体审核 + 对抗复核、"不顺手"根因分析、16 项快赢、分阶段治理路线图、渐进 vs 重构结论。 |
+| [audits/remediation_ledger_2026-06-23.md](audits/remediation_ledger_2026-06-23.md) | **2026-06-23 当前整改台账**：把 6-11 历史评估逐项对账为 Done / Partially done / Still relevant，并记录用户裁决与后续整改包队列。 |
 | [audits/remediation_goal_protocol.md](audits/remediation_goal_protocol.md) | `/goal` 长程整改执行协议：用“整改包”替代开放式优化，定义分层目标、机器验收、边界、降级、继续门禁与提交规则。 |
 | [OVERVIEW.md](OVERVIEW.md) | 简短的平台总览与安全摘要。 |
 | [SYSTEM_DESIGN_RESEARCH.md](SYSTEM_DESIGN_RESEARCH.md) | 最初的系统设计与长期架构。 |
