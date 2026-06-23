@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from quant_system.execution.models import ExecutionFill, OrderSide
+from quant_system.trading_kernel import roll_position_on_fill
 
 DEFAULT_ACCOUNT_ID = "default"
 DEFAULT_INITIAL_CASH = 1_000_000.0
@@ -198,24 +199,27 @@ class PaperAccount(BaseModel):
 
         symbol = fill.symbol.upper()
         position = self.positions.get(symbol, AccountPosition(symbol=symbol))
-        realized_delta = 0.0
 
+        # Numeric position/cash/avg_cost roll comes from the shared pure kernel;
+        # the ledger, source-quantity, and realized-P&L side effects stay here.
+        new_quantity, new_avg_cost, realized_delta, cash_delta = roll_position_on_fill(
+            side=fill.side,
+            position_quantity=position.quantity,
+            position_avg_cost=position.avg_cost,
+            fill_quantity=fill.quantity,
+            fill_price=fill.fill_price,
+            gross_value=fill.gross_value,
+            commission=fill.commission,
+        )
+        position.avg_cost = new_avg_cost
+        position.quantity = new_quantity
+        self.cash += cash_delta
         if fill.side == OrderSide.BUY:
-            total_basis = position.quantity * position.avg_cost
-            total_basis += fill.gross_value + fill.commission
-            new_quantity = position.quantity + fill.quantity
-            position.avg_cost = total_basis / new_quantity if new_quantity > 0 else 0.0
-            position.quantity = new_quantity
             position.source_quantity[source] = (
                 position.source_quantity.get(source, 0.0) + fill.quantity
             )
-            self.cash -= fill.gross_value + fill.commission
         else:  # SELL
-            realized_delta = fill.quantity * (fill.fill_price - position.avg_cost)
-            realized_delta -= fill.commission
             self.realized_pnl += realized_delta
-            position.quantity -= fill.quantity
-            self.cash += fill.gross_value - fill.commission
             self._reduce_source_quantity(position, fill.quantity)
 
         if abs(position.quantity) < 1e-9:

@@ -19,6 +19,7 @@ from quant_system.factors.pipeline import (
     build_factor_signal_frame,
     compute_factor_pipeline,
 )
+from quant_system.trading_kernel import plan_rebalance
 
 
 @dataclass
@@ -690,6 +691,10 @@ class PaperAccountService:
         prices: dict[str, float],
         equity: float,
     ) -> list[tuple[str, OrderSide, float]]:
+        # Thin adapter over the shared pure kernel. min_order_value=0.0 plus
+        # min_quantity=1e-9 reproduces the account's prior dust floor, with
+        # sells-before-buys ordering. The explicit price check is kept here so
+        # the account keeps raising PriceUnavailableError with its own message.
         symbols = sorted(set(account.positions) | set(target_weights))
         missing_prices = [
             symbol
@@ -702,19 +707,20 @@ class PaperAccountService:
             raise PriceUnavailableError(
                 "missing rebalance prices for: " + ", ".join(missing_prices)
             )
-        requests: list[tuple[str, OrderSide, float]] = []
-        for symbol in symbols:
-            price = prices[symbol]
-            current_value = account.position_quantity(symbol) * price
-            target_value = target_weights.get(symbol, 0.0) * equity
-            value_delta = target_value - current_value
-            quantity = abs(value_delta) / price
-            if quantity <= 1e-9:
-                continue
-            side = OrderSide.BUY if value_delta > 0 else OrderSide.SELL
-            requests.append((symbol, side, quantity))
-        # Sells before buys so cash is freed before it is spent.
-        return sorted(requests, key=lambda item: 0 if item[1] == OrderSide.SELL else 1)
+        holdings = {symbol: account.position_quantity(symbol) for symbol in symbols}
+        intents = plan_rebalance(
+            holdings=holdings,
+            target_weights=target_weights,
+            prices=prices,
+            equity=equity,
+            min_order_value=0.0,
+            sells_first=True,
+            min_quantity=1e-9,
+        )
+        return [
+            (intent.symbol, OrderSide(intent.side.value), intent.quantity)
+            for intent in intents
+        ]
 
     def _compute_target_weights(
         self,
