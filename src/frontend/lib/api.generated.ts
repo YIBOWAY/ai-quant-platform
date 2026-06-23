@@ -1745,6 +1745,13 @@ export interface components {
                 [key: string]: unknown;
             }[];
             benchmark: components["schemas"]["BacktestRunBenchmarkResponse"];
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Kind
+             * @default backtest
+             */
+            kind: string;
             metrics: components["schemas"]["BacktestRunMetricsResponse"];
             /** Order Count */
             order_count: number;
@@ -1754,6 +1761,11 @@ export interface components {
             run_id: string;
             /** Source */
             source: string;
+            /**
+             * Status
+             * @default completed
+             */
+            status: string;
             timings_ms: components["schemas"]["BacktestRunTimingsResponse"];
             /** Trade Count */
             trade_count: number;
@@ -2256,8 +2268,15 @@ export interface components {
         ExperimentRunResponse: {
             /** Best Run Id */
             best_run_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
             /** Experiment Id */
             experiment_id: string;
+            /**
+             * Kind
+             * @default experiment
+             */
+            kind: string;
             paths: components["schemas"]["ExperimentRunPathsResponse"];
             /** Provider */
             provider: string;
@@ -2267,6 +2286,11 @@ export interface components {
             run_count: number;
             /** Source */
             source: string;
+            /**
+             * Status
+             * @default completed
+             */
+            status: string;
         };
         /** ExperimentSummary */
         ExperimentSummary: {
@@ -2488,6 +2512,13 @@ export interface components {
         };
         /** FactorRunResponse */
         FactorRunResponse: {
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Kind
+             * @default factor
+             */
+            kind: string;
             paths: components["schemas"]["FactorRunPathsResponse"];
             request: components["schemas"]["FactorRunRequestEchoResponse"];
             /** Row Count */
@@ -2498,6 +2529,11 @@ export interface components {
             signal_count: number;
             /** Source */
             source: string;
+            /**
+             * Status
+             * @default completed
+             */
+            status: string;
             /** Warnings */
             warnings: string[];
         };
@@ -3743,12 +3779,19 @@ export interface components {
         };
         /** PaperRunResponse */
         PaperRunResponse: {
+            /** Created At */
+            created_at?: string | null;
             /** Execution Note */
             execution_note?: string | null;
             /** Execution Status */
             execution_status: string;
             /** Final Equity */
             final_equity: number;
+            /**
+             * Kind
+             * @default paper
+             */
+            kind: string;
             /** Order Count */
             order_count: number;
             paths: components["schemas"]["PaperRunPathsResponse"];
@@ -3761,6 +3804,11 @@ export interface components {
             signal_count: number;
             /** Source */
             source: string;
+            /**
+             * Status
+             * @default completed
+             */
+            status: string;
             /** Trade Count */
             trade_count: number;
         };
@@ -4266,7 +4314,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "backtest" | "factor" | "paper";
+            kind: "backtest" | "factor" | "paper" | "replication";
             /** Run Id */
             run_id: string;
             /** Source */
@@ -4302,6 +4350,8 @@ export interface components {
         ReversalMomentumReplicationRunResponse: {
             /** Artifact Path */
             artifact_path: string;
+            /** Created At */
+            created_at?: string | null;
             /** Diagnostics */
             diagnostics: {
                 [key: string]: unknown;
@@ -4310,6 +4360,11 @@ export interface components {
             equity_curve: {
                 [key: string]: unknown;
             }[];
+            /**
+             * Kind
+             * @default replication
+             */
+            kind: string;
             /** Legs */
             legs: {
                 [key: string]: unknown;
@@ -4348,6 +4403,11 @@ export interface components {
             run_id: string;
             /** Source */
             source: string;
+            /**
+             * Status
+             * @default completed
+             */
+            status: string;
             /** Warnings */
             warnings: string[];
         };

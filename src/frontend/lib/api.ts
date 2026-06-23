@@ -448,7 +448,7 @@ export type PaperRunDetailResponse = ApiEnvelope & {
   risk_breaches: PreviewRecord[];
 };
 
-export type RecentRunKind = "backtest" | "factor" | "paper";
+export type RecentRunKind = "backtest" | "factor" | "paper" | "replication";
 
 export type RecentRun = {
   kind: RecentRunKind;
