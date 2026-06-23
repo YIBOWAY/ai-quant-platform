@@ -23,6 +23,7 @@ worktrees/
 .claude/
 .agents/
 .codegraph/
+.mcp.json
 .omo/
 .sisyphus/
 .superpowers/
