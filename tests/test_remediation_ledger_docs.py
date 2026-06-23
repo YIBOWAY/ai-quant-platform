@@ -28,7 +28,18 @@ def test_remediation_ledger_records_user_decisions_and_package_queue() -> None:
         assert required in ledger
 
 
-def test_understand_anything_asset_policy_ignores_local_trash_only() -> None:
+def test_remediation_ledger_records_package_a_guarded_evidence() -> None:
+    ledger = Path("docs/audits/remediation_ledger_2026-06-23.md").read_text(
+        encoding="utf-8"
+    )
+
+    for required in (
+        "Package A status: guarded",
+        "Tiingo adjusted/raw/mixed fixtures are covered by `tests/test_data_tiingo_provider.py`",
+        "LocalDataStorage preserves `price_adjustment` through Parquet and DuckDB",
+        "Live split/dividend validation remains an external/manual gate",
+    ):
+        assert required in ledger
     gitignore = Path(".gitignore").read_text(encoding="utf-8")
 
     gitignore_lines = set(gitignore.splitlines())

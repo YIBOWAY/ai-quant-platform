@@ -57,7 +57,16 @@
 
 ### Remediation Package A: Result Credibility Baseline
 
+Package A status: guarded for fixture-based and local-storage evidence; partially open for live market validation.
+
 Purpose: 把结果可信度相关的 Tiingo adjusted-price 风险从“critical candidate”转为有机器证据的状态。
+
+Current evidence:
+
+- Tiingo adjusted/raw/mixed fixtures are covered by `tests/test_data_tiingo_provider.py`.
+- LocalDataStorage preserves `price_adjustment` through Parquet and DuckDB.
+- Cached Tiingo reads reject legacy cache rows with missing or invalid `price_adjustment` labels.
+- Live split/dividend validation remains an external/manual gate because it requires a real Tiingo token and market-data network access.
 
 In scope:
 
