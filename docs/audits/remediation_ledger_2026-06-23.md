@@ -57,7 +57,7 @@
 
 ### Remediation Package A: Result Credibility Baseline
 
-Package A status: guarded for fixture-based and local-storage evidence; partially open for live market validation.
+Package A status: guarded for fixture-based and local-storage evidence; live market validation is delivered as a reproducible operator/external gate (`scripts/verify_tiingo_adjustment.py`).
 
 Purpose: 把结果可信度相关的 Tiingo adjusted-price 风险从“critical candidate”转为有机器证据的状态。
 
@@ -67,6 +67,7 @@ Current evidence:
 - LocalDataStorage preserves `price_adjustment` through Parquet and DuckDB.
 - Cached Tiingo reads reject legacy cache rows with missing or invalid `price_adjustment` labels.
 - Live split/dividend validation remains an external/manual gate because it requires a real Tiingo token and market-data network access.
+- `scripts/verify_tiingo_adjustment.py` makes that gate reproducible: with a real token it asserts a known split window is `adjusted` and free of a split-sized discontinuity; without a token it skips. `tests/test_verify_tiingo_adjustment_script.py` guards its offline logic.
 
 In scope:
 

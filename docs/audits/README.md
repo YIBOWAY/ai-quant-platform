@@ -604,3 +604,16 @@ mutation、ledger 与 account snapshot 类型关系。
 `tests/test_frontend_backend_response_type_exports.py` 会全局扫描后端 schema 并锁定该
 前端导出覆盖率。剩余工作不再是“是否有同名类型”，而是后续是否用 OpenAPI 生成
 替代手写定义。
+
+2026-06-23 Remediation Package A 收口：评估报告中“Tiingo 可能使用未复权价格”
+critical 候选项的可复现验证入口已补齐。新增
+`scripts/verify_tiingo_adjustment.py` 作为 operator / external gate：配置真实
+`QS_TIINGO_API_TOKEN` 后，它会抓取已知拆股窗口（默认 AAPL 2020-08-31 4:1），
+断言每行 `price_adjustment == "adjusted"`，且复权后收盘价不再出现拆股级别的
+日内跳变（未复权 N:1 拆股会出现约 `ln(N)` 的跳变）；未配置 token 时打印 SKIP
+并退出 0，绝不联网，因此不进入 pytest。离线纯函数与 SKIP 路径由
+`tests/test_verify_tiingo_adjustment_script.py` 防回归。至此该风险在 provider、
+schema（`normalize_ohlcv_dataframe` 保留 `price_adjustment`）、本地缓存
+（`CachedOHLCVProvider` 拒绝无效标签 + `LocalDataStorage` parquet/DuckDB 往返
+保留该列）与可复现验证四个层面均为 **guarded**，仅真实拆股/分红的端到端确认
+仍依赖人工运行该脚本。

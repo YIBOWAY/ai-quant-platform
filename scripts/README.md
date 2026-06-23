@@ -18,9 +18,11 @@ helpers.
 | Script | Purpose |
 | --- | --- |
 | `backup_api_runs.py` | Zip `data/api_runs/` research and paper-account artifacts with a manifest, excluding secrets, DuckDB files, and locks. |
+| `export_openapi.py` | Dump the FastAPI OpenAPI schema to stdout; the frontend `npm run generate:api-types` pipeline consumes it to regenerate `src/frontend/lib/api.generated.ts`. |
 | `cleanup_api_run_duckdb.py` | Report or remove obsolete per-run DuckDB copies under `data/api_runs/`; does not touch ingest/cache DuckDB files. |
 | `check_api_keys.py` | Local-only smoke test for configured read-only provider keys. It does not print secret values. |
 | `verify_futu_connection.py` | Read-only Futu OpenD connectivity check. |
+| `verify_tiingo_adjustment.py` | Operator / external gate: with a real Tiingo token, validate that a known split window is adjusted (no split-sized discontinuity). Prints SKIP and exits 0 without a token; never part of pytest. |
 
 ## Options Radar Operations
 
