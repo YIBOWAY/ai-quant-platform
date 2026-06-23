@@ -189,6 +189,16 @@ export type BacktestRunMetricsResponse = {
   max_drawdown: number;
 };
 
+export type BacktestPerformanceMetricsResponse = {
+  total_return: number;
+  annualized_return: number;
+  volatility: number;
+  sharpe: number;
+  max_drawdown: number;
+  turnover: number;
+  attribution: Array<Record<string, number | string>>;
+};
+
 export type BacktestRunBenchmarkResponse = {
   symbol: string;
   source: string;
