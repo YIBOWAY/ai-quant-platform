@@ -107,7 +107,7 @@ export function Sidebar() {
         { name: text.nav.dataExplorer, href: "/data-explorer", icon: Database },
         { name: text.nav.factorLab, href: "/factor-lab", icon: FlaskConical },
         { name: text.nav.backtester, href: "/backtest", icon: LineChart },
-        { name: text.nav.replications, href: "/replications", icon: ScrollText },
+        { name: text.nav.replications, href: "/strategies", icon: ScrollText },
         { name: text.nav.experiments, href: "/experiments", icon: Beaker },
       ],
     },
@@ -130,7 +130,7 @@ export function Sidebar() {
     {
       name: text.groups.markets,
       items: [
-        { name: text.nav.orderBook, href: "/order-book", icon: BookOpen },
+        { name: text.nav.orderBook, href: "/polymarket", icon: BookOpen },
         { name: text.nav.agentStudio, href: "/agent-studio", icon: Zap },
       ],
     },

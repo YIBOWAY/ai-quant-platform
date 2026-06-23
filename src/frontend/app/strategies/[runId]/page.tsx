@@ -10,13 +10,13 @@ import type { ReversalMomentumReplicationRunResponse } from "@/lib/api";
 import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
-type ReplicationRunDetailPageProps = {
+type StrategyRunDetailPageProps = {
   params: Promise<{ runId: string }>;
 };
 
-export default async function ReplicationRunDetailPage({
+export default async function StrategyRunDetailPage({
   params,
-}: ReplicationRunDetailPageProps) {
+}: StrategyRunDetailPageProps) {
   const locale = await getServerLocale();
   const runId = (await params)?.runId ?? "";
   const [detail, strategies, universes, factors, health] = await Promise.all([

@@ -52,8 +52,8 @@ export function TopBar() {
     { name: text.paperTrading, href: "/paper-trading" },
     { name: text.marketData, href: "/data-explorer" },
     { name: text.options, href: "/options-screener" },
-    { name: text.replications, href: "/replications" },
-    { name: text.orderBook, href: "/order-book" },
+    { name: text.replications, href: "/strategies" },
+    { name: text.orderBook, href: "/polymarket" },
     { name: text.positionMap, href: "/position-map" },
     { name: text.settings, href: "/settings" },
   ];

@@ -8,7 +8,7 @@ import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/compon
 import { getPredictionMarkets } from "@/lib/api";
 import { getServerLocale } from "@/lib/serverLocale";
 
-type OrderBookPageProps = {
+type PolymarketPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
@@ -63,7 +63,7 @@ function single(value: string | string[] | undefined, fallback: string) {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
-export default async function OrderBookPage({ searchParams }: OrderBookPageProps) {
+export default async function PolymarketPage({ searchParams }: PolymarketPageProps) {
   const params = (await searchParams) ?? {};
   const locale = await getServerLocale(params);
   const text = copy[locale];
