@@ -366,6 +366,9 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.services = services
         services["api_runs_dir"].mkdir(parents=True, exist_ok=True)
+        backtest_job_runner = services["backtest_job_runner"]
+        if active_settings.backtest_jobs.enabled:
+            backtest_job_runner.reconcile_orphaned_jobs()
         _start_run_index_init(active_settings, services["api_runs_dir"])
         _start_options_radar_startup_catchup(active_settings)
         pending_order_processor = _start_paper_account_pending_order_processor(
@@ -375,6 +378,7 @@ def create_app(
         try:
             yield
         finally:
+            backtest_job_runner.shutdown(wait=False, cancel_futures=True)
             if pending_order_processor is not None:
                 stop_event, thread = pending_order_processor
                 stop_event.set()

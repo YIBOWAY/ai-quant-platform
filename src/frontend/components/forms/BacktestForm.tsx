@@ -7,12 +7,14 @@ import { useForm, useWatch, type FieldError } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import type {
+  BacktestJobStateResponse,
   BacktestRunResponse,
   FactorMetadata,
   StrategyMetadata,
   UniverseDefinition,
 } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
+import { isBacktestJobState, waitForBacktestJob } from "@/lib/backtestJobs";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
 import { FutuUnavailableHint, futuOptionLabel } from "./FutuProviderHint";
@@ -202,7 +204,7 @@ export function BacktestForm({
     defaultValues: defaults,
   });
   const mutation = useMutation({
-    mutationFn: (values: BacktestFormValues) => {
+    mutationFn: async (values: BacktestFormValues) => {
       const { max_weight_per_symbol, ...rest } = values;
       const body: Record<string, unknown> = {
         ...rest,
@@ -213,7 +215,11 @@ export function BacktestForm({
       if (maxWeight !== undefined) {
         body.max_weight_per_symbol = maxWeight;
       }
-      return apiPost<BacktestRunResponse>("/api/backtests/run", body);
+      const payload = await apiPost<BacktestRunResponse | BacktestJobStateResponse>(
+        "/api/backtests/run",
+        body,
+      );
+      return isBacktestJobState(payload) ? waitForBacktestJob(payload) : payload;
     },
     onSuccess: (payload) => {
       toast.success(text.created(payload.run_id));

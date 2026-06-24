@@ -417,6 +417,19 @@ class PredictionMarketSettings(BaseSettings):
         return self
 
 
+class BacktestJobSettings(BaseSettings):
+    """Lightweight in-process async backtest job settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_BACKTEST_JOBS_",
+        extra="ignore",
+    )
+
+    enabled: bool = False
+    max_workers: int = Field(default=1, ge=1, le=8)
+
+
 class Settings(BaseSettings):
     """Application-level settings."""
 
@@ -448,6 +461,7 @@ class Settings(BaseSettings):
     prediction_market: PredictionMarketSettings = Field(
         default_factory=PredictionMarketSettings
     )
+    backtest_jobs: BacktestJobSettings = Field(default_factory=BacktestJobSettings)
 
 
 # Note on env loading:

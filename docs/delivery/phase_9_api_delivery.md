@@ -18,7 +18,9 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 | GET | `/api/factors/{run_id}` | 读取因子结果 |
 | GET | `/api/strategies` | 返回策略目录 |
 | GET | `/api/universes` | 返回股票池目录 |
-| POST | `/api/backtests/run` | 跑策略、股票池、因子权重和基准回测 |
+| POST | `/api/backtests/run` | 默认同步跑回测；开启 async jobs 后返回可轮询 job state |
+| GET | `/api/backtests/jobs/{run_id}` | 轮询 backtest job 状态 |
+| POST | `/api/backtests/jobs/{run_id}/cancel` | 取消 queued job 或协作取消 running job |
 | GET | `/api/backtests` | 列出 API 回测 |
 | GET | `/api/backtests/{id}` | 读取回测详情 |
 | GET | `/api/benchmark` | 计算买入持有基准曲线 |
@@ -77,7 +79,8 @@ Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API �
 `POST /api/replications/reversal-momentum/run`，并由
 `tests/test_api_response_models.py` 锁定 OpenAPI schema 引用。
 `GET /api/prediction-market/timeseries-backtest/{run_id}/artifacts/{artifact_name}`
-是非 JSON `FileResponse`。OpenAPI 当前 40 个 POST JSON 响应均已挂 `$ref` response schema；
+是非 JSON `FileResponse`。OpenAPI 当前 POST JSON `200` 响应均已挂 `$ref` response schema；
+`POST /api/backtests/run` 另声明 `202 BacktestJobStateResponse`，用于开启 async backtest jobs 后的立即返回路径。
 后续如新增 POST/复杂写入路由，仍按 Phase 1 路线图逐步补齐，
 不应一次性替换全部前端手写类型。
 

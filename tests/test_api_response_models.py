@@ -357,6 +357,13 @@ def test_research_run_post_routes_publish_response_models(tmp_path) -> None:
         ]["schema"]
         assert response_schema == {"$ref": f"#/components/schemas/{model_name}"}
 
+    backtest_accepted_schema = openapi["paths"]["/api/backtests/run"]["post"]["responses"][
+        "202"
+    ]["content"]["application/json"]["schema"]
+    assert backtest_accepted_schema == {
+        "$ref": "#/components/schemas/BacktestJobStateResponse"
+    }
+
     components = openapi["components"]["schemas"]
     assert "signal_count" in components["FactorRunResponse"]["properties"]
     assert "trade_count" in components["BacktestRunResponse"]["properties"]

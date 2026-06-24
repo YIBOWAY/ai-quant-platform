@@ -26,7 +26,7 @@ The project is currently delivered through Phase 14. It includes:
 - Backtest engine controls: rebalance frequency (every bar / weekly / monthly),
   per-symbol weight cap, API-level sector cap when a sector map is supplied,
   and per-name return attribution.
-- Optional PostgreSQL run index over local backtest/factor/paper runs.
+- Optional PostgreSQL run index over local backtest/factor/paper/replication runs.
 
 This project does not add live trading, broker order submission, wallet
 connection, signing, Futu account unlock, or real order placement.
@@ -120,8 +120,8 @@ database-index settings, and the runtime log path.
 | `/data-explorer` | US equity historical data viewer. |
 | `/factor-lab` | Factor health and timing diagnostics (cross-section / timing tabs); provider, universe, timing symbol, benchmark, time window, lookback, and cache refresh adjustable in the sidebar (default `futu`), plus saveable factor research runs and a Backtester prefill link. |
 | `/backtest` | Run strategy, universe, factor-weight, and benchmark backtests. |
-| `/replications` | Strategy Catalog for registered research strategies. |
-| `/replications/[runId]` | Persisted reversal/momentum replication run detail. |
+| `/strategies` | Strategy Catalog for registered research strategies. |
+| `/strategies/[runId]` | Persisted reversal/momentum replication run detail. |
 | `/docs/reversal-momentum` | Frontend-readable notes for the paper replication. |
 | `/experiments` | Run provider-selectable experiment sweeps with optional walk-forward folds, inspect the fixed factor blend under test, and send best params with the same source to backtest. |
 | `/paper-trading` | Persistent paper account (manual orders + one-click strategy rebalance) plus historical replay. |
@@ -131,7 +131,7 @@ database-index settings, and the runtime log path.
 | `/options-radar/[symbol]` | Single-ticker radar drilldown and live chain loader. |
 | `/options-tools` | Local AlphaGBM-style options toolbox. |
 | `/options-buyside` | Buy-side options strategy assistant. |
-| `/order-book` | Read-only prediction-market research page. |
+| `/polymarket` | Read-only prediction-market research page. |
 | `/agent-studio` | AI research assistant candidate workflows. |
 | `/settings` | Masked local settings. |
 
@@ -147,6 +147,18 @@ At the provider layer, `SampleOHLCVProvider` and `TiingoEODProvider` reject
 non-`1d` intervals before returning data.
 The code default and `.env.example` both use `QS_DEFAULT_DATA_PROVIDER="futu"`;
 set it to `sample` only for explicit offline workflow tests.
+
+## Async Backtest Jobs
+
+`POST /api/backtests/run` keeps the historical synchronous `200 BacktestRunResponse`
+path by default. Set `QS_BACKTEST_JOBS_ENABLED=true` to make it return
+`202 BacktestJobStateResponse` immediately, with `poll_url` pointing at
+`GET /api/backtests/jobs/{run_id}` and `result_url` becoming available after the
+job reaches `completed`. `POST /api/backtests/jobs/{run_id}/cancel` cancels queued
+jobs and cooperatively cancels running jobs between backtest pipeline stages.
+The local runner is process-local (`ThreadPoolExecutor`, default
+`QS_BACKTEST_JOBS_MAX_WORKERS=1`) and marks queued/running/cancelling metadata as
+failed on API restart because there is no distributed queue to resume from.
 
 The UI is bilingual (English / 中文). Use the top-bar language toggle or open
 locale-prefixed paths such as `/en/options-radar` and `/zh/options-radar`.
@@ -184,11 +196,9 @@ slowly under Futu pacing.
 
 ## Optional PostgreSQL Run Index
 
-Backtest, factor, and paper runs are always written to local files under
-`data/api_runs/<kind>/<run_id>/`. You can optionally index those three kinds
-into PostgreSQL for fast history listing. Reversal/momentum replication runs are
-also file-persisted under `data/api_runs/replications/<run_id>/`, but they are
-not part of the optional PostgreSQL run index. It is **disabled by default**;
+Backtest, factor, paper, and replication runs are always written to local files
+under `data/api_runs/<kind>/<run_id>/`. You can optionally index those four
+kinds into PostgreSQL for fast history listing. It is **disabled by default**;
 when the database is off or unreachable, every indexed endpoint falls back to
 the filesystem.
 

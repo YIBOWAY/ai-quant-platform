@@ -19,8 +19,12 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 class RunStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
 
 
 class SafetyFooter(BaseModel):

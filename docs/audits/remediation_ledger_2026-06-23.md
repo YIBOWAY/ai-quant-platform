@@ -27,10 +27,10 @@
 | Port standardization | Frontend dev 固定 `127.0.0.1:3001`；backend default `8765` | 已完成 |
 | Futu env aliases | `FutuSettings` 使用 `AliasChoices` 接受 `QS_FUTU_*` 与 legacy `QS_*` | 已完成 |
 | Tiingo adjusted prices | Tiingo provider 优先 adjusted OHLCV；cache coverage 要求合法 `price_adjustment` label | 部分完成，需真实拆股/分红验证 |
-| API contracts | 大部分 FastAPI route 已声明 `response_model`；FileResponse artifact route 应明确豁免 | 部分完成 |
-| Frontend API types | `src/frontend/lib/api.ts` 仍是大型手写类型面 | 仍需 OpenAPI 生成类型改造 |
-| Run storage | per-run DuckDB 写入已跳过；Postgres run index 是可选镜像，文件系统仍是真相 | 部分完成 |
-| UI IA | Sidebar 已分组，但 route 仍保留 `/replications`、`/order-book`、多个 `/options-*` | 仍需产品 IA 整理 |
+| API contracts | FastAPI JSON 200 responses are `$ref`-backed; `/api/backtests/run` additionally advertises `202 BacktestJobStateResponse` for async mode | Done |
+| Frontend API types | `src/frontend/lib/api.generated.ts` is generated from FastAPI OpenAPI; `lib/api.ts` keeps hand-written helpers plus selected response aliases | Initial generation contract established |
+| Run storage | Shared `persist_run` writes atomic `metadata.json` for backtest/factor/paper/replication; Postgres run index is an optional mirror, filesystem remains truth | Done |
+| UI IA | `/strategies` and `/polymarket` are canonical; compatibility redirects/aliases preserve old `/replications` and `/order-book` paths | Done |
 
 ## Ledger
 
@@ -126,6 +126,8 @@ Acceptance:
 
 ### Remediation Package C: Shared Trading Kernel
 
+Package C status: completed; shared pure trading-kernel rules are used by backtest and paper adapters with byte-stability coverage.
+
 Purpose: 消除 backtest 与 paper replay/order accounting 之间的规则漂移，同时保持 paper-only 安全边界。
 
 In scope:
@@ -142,6 +144,8 @@ Out of scope:
 
 ### Remediation Package D: Run Artifact Store
 
+Package D status: completed; backtest/factor/paper/replication metadata flows through shared atomic run persistence and optional index mirroring.
+
 Purpose: 把 backtest / paper / factor / experiment / replication 的运行产物收敛到统一 artifact/run repository 抽象。
 
 In scope:
@@ -156,6 +160,8 @@ Out of scope:
 - 大规模历史数据迁移。
 
 ### Remediation Package E: IA And Route Rename
+
+Package E status: completed; `/strategies` and `/polymarket` are canonical while compatibility redirects preserve old paths.
 
 Purpose: 降低页面命名、URL 与内容错位带来的认知成本。
 
@@ -173,7 +179,17 @@ Out of scope:
 
 ### Remediation Package F: Async Backtest Jobs
 
+Package F status: completed; async mode is opt-in via `QS_BACKTEST_JOBS_ENABLED`, with synchronous default preserved.
+
 Purpose: 让长回测从同步 HTTP 请求变成可轮询、可取消、可恢复的本地 job。
+
+Current evidence:
+
+- `BacktestJobRunner` uses a bounded local `ThreadPoolExecutor` and atomic `metadata.json` transitions (`queued` / `running` / `cancelling` / `cancelled` / `completed` / `failed`).
+- `POST /api/backtests/run` still returns `200 BacktestRunResponse` by default; when async jobs are enabled it returns `202 BacktestJobStateResponse` with `poll_url` / `result_url`.
+- `GET /api/backtests/jobs/{run_id}` polls state; `POST /api/backtests/jobs/{run_id}/cancel` cancels queued jobs and cooperatively cancels running jobs between pipeline stages.
+- API startup marks orphaned queued/running/cancelling jobs as failed because local jobs are not distributed or resumable.
+- Frontend Backtester and Strategy Catalog poll async backtest jobs before navigating to detail pages.
 
 In scope:
 
@@ -188,7 +204,7 @@ Out of scope:
 
 ## Continue Gate
 
-当前下一步为 Package A，除非先完成本台账文档提交。进入每个 package 前必须重新定义 L2 contract，并在结束时验证：
+所有 packages A-F 已完成实现；后续进入收口验证、文档同步、commit/push 与回归维护。进入新 remediation package 前必须重新定义 L2 contract，并在结束时验证：
 
 1. 机器验证通过。
 2. 相关文档已同步。

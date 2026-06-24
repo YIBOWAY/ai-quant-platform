@@ -5,7 +5,10 @@ def test_dashboard_uses_recent_runs_activity_log() -> None:
     api_client = Path("src/frontend/lib/api.ts").read_text(encoding="utf-8")
     dashboard = Path("src/frontend/app/page.tsx").read_text(encoding="utf-8")
 
-    assert "export type RecentRunKind = \"backtest\" | \"factor\" | \"paper\";" in api_client
+    assert (
+        'export type RecentRunKind = "backtest" | "factor" | "paper" | "replication";'
+        in api_client
+    )
     assert "export function getRecentRuns" in api_client
     assert "/api/runs/recent?" in api_client
 

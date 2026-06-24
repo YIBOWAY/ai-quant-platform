@@ -96,6 +96,17 @@ class BacktestRunResponse(BaseModel):
     paths: BacktestRunPathsResponse
 
 
+class BacktestJobStateResponse(BaseModel):
+    run_id: str
+    kind: str = "backtest"
+    status: Literal["queued", "running", "completed", "failed", "cancelling", "cancelled"]
+    created_at: str | None = None
+    updated_at: str | None = None
+    poll_url: str
+    result_url: str | None = None
+    error: dict[str, Any] | None = None
+
+
 BacktestRecord = dict[str, Any]
 
 

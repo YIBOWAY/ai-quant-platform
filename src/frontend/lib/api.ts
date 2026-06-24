@@ -217,8 +217,19 @@ export type BacktestRunPathsResponse = {
   report: string;
 };
 
+export type BacktestRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelling"
+  | "cancelled";
+
 export type BacktestRunResponse = ApiEnvelope & {
   run_id: string;
+  kind: "backtest";
+  status: "completed";
+  created_at?: string | null;
   source: string;
   trade_count: number;
   order_count: number;
@@ -230,6 +241,19 @@ export type BacktestRunResponse = ApiEnvelope & {
   benchmark: BacktestRunBenchmarkResponse;
   paths: BacktestRunPathsResponse;
 };
+
+export type BacktestJobStateResponse = ApiEnvelope & {
+  run_id: string;
+  kind: "backtest";
+  status: BacktestRunStatus;
+  created_at?: string | null;
+  updated_at?: string | null;
+  poll_url: string;
+  result_url?: string | null;
+  error?: Record<string, unknown> | null;
+};
+
+export type BacktestRunResultResponse = BacktestRunResponse | BacktestJobStateResponse;
 
 export type BenchmarkMetrics = {
   total_return: number;
@@ -306,6 +330,7 @@ export type StrategiesResponse = StrategyCatalogResponse;
 
 export type StrategyRunResponse =
   | BacktestRunResponse
+  | BacktestJobStateResponse
   | ReversalMomentumReplicationRunResponse;
 
 export type UniverseDefinition = {

@@ -2,7 +2,7 @@
 
 这是整个仓库的主地图。用它来查找架构文档、执行手册、学习笔记、交付记录与安全边界。
 
-当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接、策略账户再平衡能力位，以及语言连续性修复，均记录在下文。最近一次大型变更为 2026-06-11 的前端全面重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38），见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
+当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接、策略账户再平衡能力位、语言连续性修复、策略/Polymarket 路由重命名，以及 opt-in async backtest jobs，均记录在下文。最近一次大型变更为 2026-06-11 的前端全面重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38），见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
 
 ## 0. 界面操作指南（新，建议先读）
 
@@ -12,7 +12,7 @@
 |---|---|
 | [guides/factor-lab.md](guides/factor-lab.md) | 因子实验室 `/factor-lab` |
 | [guides/backtester.md](guides/backtester.md) | 回测器 `/backtest` |
-| [guides/strategy-catalog.md](guides/strategy-catalog.md) | 策略目录 `/replications` |
+| [guides/strategy-catalog.md](guides/strategy-catalog.md) | 策略目录 `/strategies` |
 | [guides/experiments.md](guides/experiments.md) | 实验管理 `/experiments` |
 | [guides/paper-trading.md](guides/paper-trading.md) | 模拟交易 `/paper-trading` |
 | [guides/position-map.md](guides/position-map.md) | 持仓地图 `/position-map` |
@@ -60,6 +60,7 @@
 | 因子流水线 | `src/quant_system/factors/pipeline.py` |
 | 因子实验室仪表盘引擎 | `src/quant_system/factors/lab.py` |
 | 回测流水线 | `src/quant_system/backtest/pipeline.py` |
+| 回测 API job runner | `src/quant_system/api/jobs/backtest_jobs.py` |
 | 策略注册表（含账户再平衡能力位） | `src/quant_system/strategies/registry.py` |
 | Universe 注册表 | `src/quant_system/universe/registry.py` |
 | 反转/动量论文复现 | `src/quant_system/replication/reversal_momentum.py` |
@@ -133,8 +134,8 @@
 | `/factor-lab/[runId]` | 因子运行详情。 |
 | `/backtest` | 策略、universe 与因子权重回测运行。 |
 | `/backtest/[runId]` | 回测运行详情。 |
-| `/replications` | 由策略注册表支撑的策略目录。 |
-| `/replications/[runId]` | 已落盘的反转/动量研报复现运行详情。 |
+| `/strategies` | 由策略注册表支撑的策略目录。 |
+| `/strategies/[runId]` | 已落盘的反转/动量研报复现运行详情。 |
 | `/docs/reversal-momentum` | 前端可读的复现文档。 |
 | `/experiments` | 实验扫描、可选滚动验证折、固定因子组合摘要、数据源标注与最佳运行回顾。 |
 | `/paper-trading` | 持久模拟账户（手动下单 + 策略一键再平衡）＋历史回放（研究）。 |
@@ -145,7 +146,7 @@
 | `/options-radar/[symbol]` | 已保存的雷达候选，以及可选的实时期权链加载。 |
 | `/options-tools` | 本地 AlphaGBM 风格期权工具箱。 |
 | `/options-buyside` | 买方期权策略助手。 |
-| `/order-book` | 只读预测市场研究。 |
+| `/polymarket` | 只读预测市场研究。 |
 | `/agent-studio` | AI 研究助手工作流。 |
 | `/settings` | 脱敏后的本地设置。 |
 
@@ -226,7 +227,7 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
   （`storage/options_cache.py`）。
 - 一个可选的 PostgreSQL **运行索引**（`storage/database.py`、
   `storage/runs_repository.py`、`scripts/sql/001_runs_index.sql`）镜像
-  基于文件的 backtest/factor/paper 运行以便快速列出。它默认关闭
+  基于文件的 backtest/factor/paper/replication 运行以便快速列出。它默认关闭
   （`QS_DATABASE_ENABLED`），在启动时于后台与文件系统对账，当数据库
   关闭、缓慢或不可达时，API 回退到扫描文件。
 
@@ -237,7 +238,7 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 当前与下一步方向：
 
 - DuckDB 现用于本地 Futu 期权报价窗口。
-- PostgreSQL 现（可选）用于 backtest/factor/paper 运行索引。
+- PostgreSQL 现（可选）用于 backtest/factor/paper/replication 运行索引。
 - 剩余的 PostgreSQL 目标：雷达运行、请求日志，以及更丰富的
   API 可见快照。
 - 对大型 OHLCV 与分析型时间序列数据集采用 Parquet / DuckDB。

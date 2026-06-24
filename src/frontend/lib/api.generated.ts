@@ -106,6 +106,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backtests/jobs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backtest Job */
+        get: operations["backtest_job_api_backtests_jobs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backtests/jobs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Backtest Job */
+        post: operations["cancel_backtest_job_api_backtests_jobs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backtests/run": {
         parameters: {
             query?: never;
@@ -1545,6 +1579,33 @@ export interface components {
             trade_blotter: {
                 [key: string]: unknown;
             }[];
+        };
+        /** BacktestJobStateResponse */
+        BacktestJobStateResponse: {
+            /** Created At */
+            created_at?: string | null;
+            /** Error */
+            error?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Kind
+             * @default backtest
+             */
+            kind: string;
+            /** Poll Url */
+            poll_url: string;
+            /** Result Url */
+            result_url?: string | null;
+            /** Run Id */
+            run_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "failed" | "cancelling" | "cancelled";
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** BacktestPerformanceMetricsResponse */
         BacktestPerformanceMetricsResponse: {
@@ -4712,6 +4773,68 @@ export interface operations {
             };
         };
     };
+    backtest_job_api_backtests_jobs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacktestJobStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_backtest_job_api_backtests_jobs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacktestJobStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     run_backtest_api_backtests_run_post: {
         parameters: {
             query?: never;
@@ -4732,6 +4855,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BacktestRunResponse"];
+                };
+            };
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacktestJobStateResponse"];
                 };
             };
             /** @description Validation Error */

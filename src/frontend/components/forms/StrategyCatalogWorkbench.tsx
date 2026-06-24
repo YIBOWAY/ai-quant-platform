@@ -24,6 +24,7 @@ import type {
 } from "@/lib/api";
 import { formatPercent } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
+import { isBacktestJobState, waitForBacktestJob } from "@/lib/backtestJobs";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath, type Locale } from "@/lib/locale";
 import { asStringArray, buildStrategyPayload } from "@/lib/strategyPayload";
@@ -254,7 +255,10 @@ export function StrategyCatalogWorkbench({
         payload.strategy_id = strategy.id;
       }
       const response = await apiPost<StrategyRunResponse>(strategy.run_endpoint, payload);
-      setResult(response);
+      const completedResponse = isBacktestJobState(response)
+        ? await waitForBacktestJob(response)
+        : response;
+      setResult(completedResponse);
       toast.success(text.finished(strategy.name));
     } catch (requestError) {
       setError(

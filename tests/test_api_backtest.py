@@ -1,11 +1,15 @@
+import json
+import time
 from pathlib import Path
+from threading import Event
 
 import pandas as pd
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import ApiKeySettings, DataSettings, Settings
+from quant_system.backtest.pipeline import BacktestCancelledError
+from quant_system.config.settings import ApiKeySettings, BacktestJobSettings, DataSettings, Settings
 from quant_system.data.schema import normalize_ohlcv_dataframe
 
 
@@ -60,6 +64,222 @@ def _fake_tiingo_frame() -> pd.DataFrame:
         provider="tiingo",
         interval="1d",
     )
+
+
+def _wait_for_job_status(client: TestClient, run_id: str, statuses: set[str]) -> dict:
+    for _ in range(100):
+        response = client.get(f"/api/backtests/jobs/{run_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        if payload["status"] in statuses:
+            return payload
+        time.sleep(0.05)
+    raise AssertionError(f"async backtest {run_id} did not reach {statuses}")
+
+
+def test_backtest_run_accepts_async_job_when_enabled(tmp_path, monkeypatch) -> None:
+    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    release = Event()
+
+    def slow_backtest(*args, **kwargs):
+        release.wait(timeout=2)
+        raise RuntimeError("released test job")
+
+    monkeypatch.setattr("quant_system.api.jobs.backtest_jobs.execute_backtest", slow_backtest)
+    try:
+        with TestClient(create_app(settings=settings, output_dir=tmp_path)) as client:
+            response = client.post(
+                "/api/backtests/run",
+                json={
+                    "symbols": ["SPY", "QQQ"],
+                    "start": "2024-01-02",
+                    "end": "2024-02-15",
+                    "provider": "sample",
+                    "lookback": 3,
+                    "top_n": 1,
+                },
+            )
+
+            assert response.status_code == 202
+            payload = response.json()
+            assert payload["kind"] == "backtest"
+            assert payload["status"] == "queued"
+            assert payload["run_id"].startswith("backtest-")
+            assert payload["poll_url"] == f"/api/backtests/jobs/{payload['run_id']}"
+            metadata_path = (
+                tmp_path / "api_runs" / "backtests" / payload["run_id"] / "metadata.json"
+            )
+            assert json.loads(metadata_path.read_text(encoding="utf-8"))["status"] in {
+                "queued",
+                "running",
+            }
+    finally:
+        release.set()
+
+
+def test_backtest_async_job_polling_reaches_completed(tmp_path) -> None:
+    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    with TestClient(create_app(settings=settings, output_dir=tmp_path)) as client:
+        response = client.post(
+            "/api/backtests/run",
+            json={
+                "symbols": ["SPY", "QQQ"],
+                "start": "2024-01-02",
+                "end": "2024-01-12",
+                "provider": "sample",
+                "lookback": 3,
+                "top_n": 1,
+            },
+        )
+        assert response.status_code == 202
+        run_id = response.json()["run_id"]
+
+        payload = _wait_for_job_status(client, run_id, {"completed"})
+
+        assert payload["run_id"] == run_id
+        assert payload["result_url"] == f"/api/backtests/{run_id}"
+        detail = client.get(f"/api/backtests/{run_id}")
+        assert detail.status_code == 200
+
+
+def test_backtest_async_job_can_cancel_queued_job(tmp_path, monkeypatch) -> None:
+    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True, max_workers=1))
+    release = Event()
+
+    def blocking_backtest(*args, **kwargs):
+        release.wait(timeout=2)
+        raise RuntimeError("blocker released")
+
+    monkeypatch.setattr("quant_system.api.jobs.backtest_jobs.execute_backtest", blocking_backtest)
+    try:
+        with TestClient(create_app(settings=settings, output_dir=tmp_path)) as client:
+            first = client.post(
+                "/api/backtests/run",
+                json={
+                    "symbols": ["SPY", "QQQ"],
+                    "start": "2024-01-02",
+                    "end": "2024-02-15",
+                    "provider": "sample",
+                    "lookback": 3,
+                    "top_n": 1,
+                },
+            )
+            first_run_id = first.json()["run_id"]
+            _wait_for_job_status(client, first_run_id, {"running"})
+
+            second = client.post(
+                "/api/backtests/run",
+                json={
+                    "symbols": ["IWM", "DIA"],
+                    "start": "2024-01-02",
+                    "end": "2024-02-15",
+                    "provider": "sample",
+                    "lookback": 3,
+                    "top_n": 1,
+                },
+            )
+            run_id = second.json()["run_id"]
+
+            cancel = client.post(f"/api/backtests/jobs/{run_id}/cancel")
+
+            assert cancel.status_code == 200
+            assert cancel.json()["status"] == "cancelled"
+            assert client.get(f"/api/backtests/jobs/{run_id}").json()["status"] == "cancelled"
+    finally:
+        release.set()
+
+
+def test_backtest_async_job_can_cancel_running_job(tmp_path, monkeypatch) -> None:
+    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    started = Event()
+
+    def cancellable_backtest(*args, **kwargs):
+        cancel_event = kwargs["cancel_event"]
+        started.set()
+        for _ in range(100):
+            if cancel_event.is_set():
+                raise BacktestCancelledError("test cancellation observed")
+            time.sleep(0.01)
+        raise AssertionError("cancel_event was not set")
+
+    monkeypatch.setattr(
+        "quant_system.api.jobs.backtest_jobs.execute_backtest",
+        cancellable_backtest,
+    )
+    with TestClient(create_app(settings=settings, output_dir=tmp_path)) as client:
+        response = client.post(
+            "/api/backtests/run",
+            json={
+                "symbols": ["SPY", "QQQ"],
+                "start": "2024-01-02",
+                "end": "2024-02-15",
+                "provider": "sample",
+                "lookback": 3,
+                "top_n": 1,
+            },
+        )
+        run_id = response.json()["run_id"]
+        assert started.wait(timeout=2)
+        _wait_for_job_status(client, run_id, {"running"})
+
+        cancel = client.post(f"/api/backtests/jobs/{run_id}/cancel")
+
+        assert cancel.status_code == 200
+        assert cancel.json()["status"] == "cancelling"
+        payload = _wait_for_job_status(client, run_id, {"cancelled"})
+        assert payload["status"] == "cancelled"
+
+
+def test_backtest_async_job_records_failure_and_survives_restart(tmp_path, monkeypatch) -> None:
+    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+
+    def fail_backtest(*args, **kwargs):
+        raise ValueError("bad async request")
+
+    monkeypatch.setattr("quant_system.api.jobs.backtest_jobs.execute_backtest", fail_backtest)
+    with TestClient(create_app(settings=settings, output_dir=tmp_path)) as client:
+        response = client.post(
+            "/api/backtests/run",
+            json={
+                "symbols": ["SPY", "QQQ"],
+                "start": "2024-01-02",
+                "end": "2024-02-15",
+                "provider": "sample",
+                "lookback": 3,
+                "top_n": 1,
+            },
+        )
+        run_id = response.json()["run_id"]
+        _wait_for_job_status(client, run_id, {"failed"})
+
+    recovered = TestClient(create_app(settings=settings, output_dir=tmp_path))
+    poll = recovered.get(f"/api/backtests/jobs/{run_id}")
+
+    assert poll.status_code == 200
+    payload = poll.json()
+    assert payload["status"] == "failed"
+    assert payload["error"]["code"] == "invalid_backtest_request"
+    assert "bad async request" in payload["error"]["message"]
+
+
+def test_backtest_async_job_recovers_stale_running_metadata(tmp_path) -> None:
+    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    app = create_app(settings=settings, output_dir=tmp_path)
+    run_id = "backtest-20240101T000000Z-stalejob"
+    run_dir = tmp_path / "api_runs" / "backtests" / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "metadata.json").write_text(
+        json.dumps({"run_id": run_id, "kind": "backtest", "status": "running"}),
+        encoding="utf-8",
+    )
+
+    with TestClient(app) as client:
+        response = client.get(f"/api/backtests/jobs/{run_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["error"]["code"] == "job_recovered_after_restart"
 
 
 def test_backtest_run_list_and_detail(tmp_path) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from quant_system.api.jobs.backtest_jobs import BacktestJobRunner
 from quant_system.config.settings import Settings, reload_settings
 
 
@@ -21,9 +22,14 @@ def build_services(
 
     active_settings = settings or reload_settings()
     base_dir = Path(output_dir) if output_dir is not None else active_settings.data.data_dir
+    api_runs_dir = base_dir / "api_runs"
     return {
         "settings": active_settings,
         "bind_address": bind_address,
         "output_dir": base_dir,
-        "api_runs_dir": base_dir / "api_runs",
+        "api_runs_dir": api_runs_dir,
+        "backtest_job_runner": BacktestJobRunner(
+            api_runs_dir=api_runs_dir,
+            settings=active_settings,
+        ),
     }

@@ -5,6 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, Request
 
+from quant_system.api.jobs.backtest_jobs import BacktestJobRunner
 from quant_system.config.settings import Settings
 
 
@@ -24,6 +25,10 @@ def get_api_runs_dir(request: Request) -> Path:
     return request.app.state.services["api_runs_dir"]
 
 
+def get_backtest_job_runner(request: Request) -> BacktestJobRunner:
+    return request.app.state.services["backtest_job_runner"]
+
+
 def get_bind_address(request: Request) -> str:
     return request.app.state.services["bind_address"]
 
@@ -31,4 +36,5 @@ def get_bind_address(request: Request) -> str:
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 OutputDirDep = Annotated[Path, Depends(get_output_dir)]
 ApiRunsDirDep = Annotated[Path, Depends(get_api_runs_dir)]
+BacktestJobRunnerDep = Annotated[BacktestJobRunner, Depends(get_backtest_job_runner)]
 BindAddressDep = Annotated[str, Depends(get_bind_address)]

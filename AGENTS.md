@@ -80,9 +80,16 @@ Reversal/momentum replication runs (`result_type="replication"`) persist under
 `data/api_runs/replications/<run_id>/` as `metadata.json` + `result.json`.
 `POST /api/replications/reversal-momentum/run` returns a `replication-*`
 `run_id`; `GET /api/replications/reversal-momentum/{run_id}` and the frontend
-route `/replications/[runId]` read it back. These runs are file-persisted but
-are not part of the optional PostgreSQL run index, whose schema currently
-covers only backtest/factor/paper kinds.
+route `/strategies/[runId]` read it back. These runs are file-persisted and are
+included in the optional PostgreSQL run index / `/api/runs/recent` mirror; the
+filesystem remains the source of truth.
+
+`POST /api/backtests/run` is synchronous by default. If `QS_BACKTEST_JOBS_ENABLED=true`,
+it returns `202` job state from the process-local `BacktestJobRunner`; poll
+`GET /api/backtests/jobs/{run_id}` and cancel through
+`POST /api/backtests/jobs/{run_id}/cancel`. The runner is local-only, bounded by
+`QS_BACKTEST_JOBS_MAX_WORKERS`, and must keep queued/running/cancelling metadata
+recoverable across restart.
 
 ## Experiments Provider Semantics
 
