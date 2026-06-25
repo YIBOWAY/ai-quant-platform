@@ -1,6 +1,8 @@
 # Paper Strategy Sleeves MVP-1 设计文档
 
-> 状态：设计草案，待实现。  
+> 状态：MVP-1 第一切片后端基础已实现（2026-06-26）：领域模型 / API schema /
+> 本地文件存储 / cash 与 lot 分账基础已经落地；API 路由、CLI、前端最小入口、
+> daily signal 生成和自动执行仍待后续切片实现。
 > 日期：2026-06-15。  
 > 命名说明：本文的 **MVP-1** 指「Paper Strategy Sleeves」这条新业务线的第一实施阶段，**不是**项目历史阶段地图里的 Phase 1「数据层 MVP」。后续实现和提交信息应避免写成 `Phase 1`，统一写 `Paper Strategy Sleeves MVP-1`。
 
@@ -14,10 +16,14 @@
 
 ## 2. 当前代码事实
 
-这些事实来自当前代码阅读，后续实现前仍需以代码为准复核。
+这些事实来自代码阅读；2026-06-26 后端基础切片已更新其中一部分，但后续实现前仍需以代码为准复核。
 
-- `PaperAccount` 当前只有一份 `cash`，没有 sleeve 级现金。
+- `PaperAccount.cash` 仍是旧账户路径使用的总现金字段；2026-06-26 起新增
+  `sleeve_cash` 作为 Strategy Sleeves 的账内现金分配簿。旧全账户 rebalance
+  语义不依赖该字段。
 - `AccountPosition.source_quantity` 可以记录持仓来源占比，例如 `manual` 或 `strategy:<id>`，但当前卖出时按来源比例扣减，不能表达「只卖某个 sleeve 的 lot」。
+  2026-06-26 起新增 `SleeveLot` / `SleeveLotBook` 基础模型用于后续 sleeve 级 lot
+  隔离；旧聚合持仓模型尚未改为按 sleeve lot 执行撮合。
 - `PaperAccountService.rebalance_to_strategy()` 当前按整个账户权益计算目标，并把目标标的与账户全部现有持仓都纳入再平衡。
 - Futu 行情提供方已支持 `5m` K 线；但账户策略再平衡链路当前没有传 `interval`，实际仍走默认 `1d`。
 - 现有文件存储和运行索引方向是：本地文件为事实来源，PostgreSQL 只是可选索引。
@@ -413,17 +419,26 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
    - 新增 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal` 的后端模型。
    - 明确枚举：`signal_only` / `allocated`、`running` / `paused` / `stopped`、`generated` / `data_unavailable` / `invalid`。
    - 明确哪些字段属于交易逻辑字段，哪些字段可原地编辑。
+   - **2026-06-26 已完成第一切片**：模型位于
+     `src/quant_system/execution/paper_strategy_sleeves.py`，API response schema 位于
+     `src/quant_system/api/schemas/paper.py`。
 
 2. **本地文件存储**
    - 新增 strategy config、sleeve、signal 的读写模块。
    - 文件仍是 source of truth。
    - 写入需要保持原子性；失败时不能留下半写状态。
+   - **2026-06-26 已完成第一切片**：存储模块位于
+     `src/quant_system/execution/paper_strategy_sleeve_storage.py`，写入
+     `data/api_runs/paper_strategy_sleeves/`。
 
 3. **账户分账能力**
    - 为 `manual` 和 strategy sleeve 建立现金/lot 分账语义。
    - allocated 创建时从账户可用现金划拨到 sleeve cash。
    - 不改动旧 `/api/paper/account/rebalance` 的行为。
    - 策略路径不能按比例卖出 `source_quantity`，必须能定位到自己的 sleeve lot。
+   - **2026-06-26 已完成第一切片基础**：`PaperAccount.sleeve_cash` 记录 manual 与
+     strategy sleeve 的现金分配；`SleeveLotBook` 能隔离同 symbol 的多 sleeve lot。
+     旧 `/api/paper/account/rebalance` 仍保留全账户语义，尚未接入 sleeve lot 执行。
 
 4. **策略信号生成服务**
    - 从保存的 `StrategyConfig` 生成 daily signal。
@@ -443,7 +458,7 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
 - **CLI**：实现 config-create、sleeve-create、generate-signal、sleeve-show。
 - **前端最小入口**：在 `/paper-trading` 加 Strategy Sleeves 区域，调用已稳定 API。
 - **用户指南更新**：补 `docs/guides/paper-trading.md` 的用户心智说明。
-- **执行文档更新**：等 CLI/API 可运行后，再写 `docs/execution/paper_strategy_sleeves.md`。
+- **执行文档更新**：`docs/execution/paper_strategy_sleeves.md` 先记录第一切片后端基础状态；等 CLI/API 可运行后，再补正式命令和手动工作流。
 
 ### 16.3 验证闭环
 
@@ -479,7 +494,7 @@ MVP-1 需要测试：
 文档验收：
 
 - `docs/design/paper_strategy_sleeves_plan.md` 存在并说明 MVP-1 非目标。
-- `docs/execution/paper_strategy_sleeves.md` 记录 CLI 命令。
+- `docs/execution/paper_strategy_sleeves.md` 记录当前实现状态；CLI/API 可运行后再补正式命令。
 - `docs/guides/paper-trading.md` 说明 Strategy Sleeves 的用户心智。
 - `docs/INDEX.md` 有入口。
 
@@ -504,6 +519,8 @@ MVP-1 需要测试：
 | 关注点 | 当前入口 |
 |---|---|
 | 持久账户模型 | `src/quant_system/execution/account.py` |
+| Strategy Sleeves 领域模型 / 分账基础 | `src/quant_system/execution/paper_strategy_sleeves.py` |
+| Strategy Sleeves 本地存储 | `src/quant_system/execution/paper_strategy_sleeve_storage.py` |
 | 账户持久化 | `src/quant_system/execution/account_storage.py` |
 | 账户服务 | `src/quant_system/execution/account_service.py` |
 | 账户取价 | `src/quant_system/execution/price_source.py` |

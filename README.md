@@ -319,6 +319,28 @@ The legacy `POST /api/paper/run` historical replay lives on the
 [docs/guides/paper-trading.md](docs/guides/paper-trading.md) and
 [docs/design/paper_trading_position_map_redesign.md](docs/design/paper_trading_position_map_redesign.md).
 
+### Paper Strategy Sleeves
+
+Paper Strategy Sleeves are the next accounting layer for the persistent paper
+account: one account, multiple isolated manual/strategy cash and lot segments.
+The first backend foundation slice landed on 2026-06-26:
+
+- `StrategyConfig`, `StrategySleeve`, `SleeveLot`, `StrategySignal`, and
+  `SleeveLotBook` in `src/quant_system/execution/paper_strategy_sleeves.py`.
+- Local source-of-truth storage under
+  `data/api_runs/paper_strategy_sleeves/`.
+- `PaperAccount.sleeve_cash` for internal manual/strategy cash allocations,
+  while `PaperAccount.cash` remains the legacy total cash field used by the
+  existing full-account rebalance path.
+
+The user-facing Strategy Sleeves API, CLI, `/paper-trading` panel, daily signal
+generation, and automatic execution are not implemented yet. The existing
+`POST /api/paper/account/rebalance` endpoint remains a full-account
+rebalance path, not a Strategy Sleeves entrypoint. See
+[docs/design/paper_strategy_sleeves_plan.md](docs/design/paper_strategy_sleeves_plan.md)
+and
+[docs/execution/paper_strategy_sleeves.md](docs/execution/paper_strategy_sleeves.md).
+
 ## Factor Lab Refresh
 
 Since 2026-06-11 the Factor Lab UI defaults to real data (`provider=futu`),

@@ -233,6 +233,23 @@ quant-system paper rebalance --account default --strategy cross_sectional_top_n
 [docs/guides/paper-trading.md](docs/guides/paper-trading.md) 与
 [docs/design/paper_trading_position_map_redesign.md](docs/design/paper_trading_position_map_redesign.md)。
 
+### Paper Strategy Sleeves
+
+Paper Strategy Sleeves 是持久模拟账户的下一层分账模型：一个账户下区分
+manual sleeve 和多个 strategy sleeve，各自拥有现金分配和 lot 归属。2026-06-26
+已落地第一切片后端基础：
+
+- `src/quant_system/execution/paper_strategy_sleeves.py`：`StrategyConfig`、
+  `StrategySleeve`、`SleeveLot`、`StrategySignal`、`SleeveLotBook`。
+- `src/quant_system/execution/paper_strategy_sleeve_storage.py`：本地事实来源存储，
+  路径为 `data/api_runs/paper_strategy_sleeves/`。
+- `PaperAccount.sleeve_cash`：账内现金分配簿；`PaperAccount.cash` 继续作为旧账户路径的总现金字段。
+
+尚未实现：Strategy Sleeves API、CLI、`/paper-trading` 面板、daily signal 生成和自动成交。
+现有 `POST /api/paper/account/rebalance` 仍是全账户再平衡，不是 Strategy Sleeves 入口。详见
+[docs/design/paper_strategy_sleeves_plan.md](docs/design/paper_strategy_sleeves_plan.md) 与
+[docs/execution/paper_strategy_sleeves.md](docs/execution/paper_strategy_sleeves.md)。
+
 ## 因子实验室刷新
 
 自 2026-06-11 起，因子实验室界面默认使用真实数据（`provider=futu`），数据源/股票池/择时标的/基准可在侧栏调整，并支持可保存的因子研究运行。自 2026-06-15 起，查询卡还可以把当前数据源、股票池、基准和因子 ID 预填发送至回测器；该链接不会自动运行回测。下面的 CLI 用于从后端或计划任务刷新其本地诊断缓存：

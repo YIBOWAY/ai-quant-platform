@@ -44,6 +44,13 @@
 - 再平衡只接受 Futu / Tiingo 等真实历史数据；sample 演示策略历史不能改变持续账户。
 - 生成计划前，当前持仓和目标标的都必须有有限且大于 0 的纸面价格；缺价或无效价格会整体中止，不会静默跳过某个卖出/买入腿。
 - **原子性保证**：再平衡先在账户副本上**全量试算**，只有"所有腿都能成交"才提交到真实账户；只要有一腿被拒，**整体中止、不动账户**（不会出现"卖光了却买不进、变成全现金"），并如实返回 `aborted=true`。
+- 这条路径仍是**旧的全账户再平衡**，不是 Paper Strategy Sleeves 入口。它会按整个账户持仓与目标求差；未来的 strategy sleeve 入口必须走独立 API/CLI，不能复用这条路径冒充 sleeve。
+
+**Paper Strategy Sleeves 当前状态**：
+- 2026-06-26 已完成第一切片后端基础：版本化 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal`、本地存储、`sleeve_cash` 现金分配簿和 `SleeveLotBook` lot 隔离。
+- `/paper-trading` 还没有 Strategy Sleeves 面板；当前页面不能创建 signal-only / allocated sleeve，也不能生成 sleeve signal。
+- 尚无 Strategy Sleeves API、CLI 或自动成交。后续实现前，不要把 Strategy Sleeves 当成可点击的用户工作流。
+- 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。
 
@@ -62,7 +69,7 @@
 
 ### B. 历史回放（`POST /api/paper/run`，在「历史回放（研究）」标签页）
 
-逐 bar 回放：因子信号 → `ScoreSignalStrategy` 目标权重 → 先卖后买生成订单 → 风控 → 模拟撮合（次 bar 开盘价）。产出订单 / 成交 / 风控触发 parquet + 报告，列在运行索引里。标签页内：左侧 360px 卡是回放表单（`PaperRunForm`，默认 `SPY,QQQ` + `futu` + 截至今天的滚动 180 天窗口；安全锁开关常开，点它弹出说明对话框），右侧是最新运行指标、运行历史表（可切换显示被隐藏的 sample 运行）、成交 / 订单生命周期 / 风控触发明细表。当一次运行 0 成交且风控触发 > 0 时，页面会显示「全局安全锁拦截了订单」的解释卡。注意它受**全局** `QS_KILL_SWITCH` 约束（默认开 → 该路径会拦截订单），这条与上面的账户级冻结是两回事。
+逐 bar 回放：因子信号 → `ScoreSignalStrategy` 目标权重 → 先卖后买生成订单 → 风控 → 模拟撮合（次 bar 开盘价）。产出订单 / 成交 / 风控触发 parquet + 报告，列在运行索引里。标签页内：左侧 360px 卡是回放表单（`PaperRunForm`，默认 `SPY,QQQ` + `futu` + 截至当前运行日的滚动 180 天窗口；安全锁开关常开，点它弹出说明对话框），右侧是最新运行指标、运行历史表（可切换显示被隐藏的 sample 运行）、成交 / 订单生命周期 / 风控触发明细表。当一次运行 0 成交且风控触发 > 0 时，页面会显示「全局安全锁拦截了订单」的解释卡。注意它受**全局** `QS_KILL_SWITCH` 约束（默认开 → 该路径会拦截订单），这条与上面的账户级冻结是两回事。
 
 ---
 
@@ -129,6 +136,7 @@
 - 撮合 / 风控（复用）：`src/quant_system/execution/paper_broker.py`、`order_manager.py`、`src/quant_system/risk/engine.py`
 - API：`src/quant_system/api/routes/paper.py`、`src/quant_system/api/schemas/paper.py`
 - 策略再平衡能力声明：`src/quant_system/strategies/registry.py`（`supports_account_rebalance`）
+- Strategy Sleeves 第一切片后端基础：`src/quant_system/execution/paper_strategy_sleeves.py`、`src/quant_system/execution/paper_strategy_sleeve_storage.py`
 - CLI 定时再平衡：`src/quant_system/cli.py`（`paper rebalance` / `paper account-show`）
 - 前端：`src/frontend/app/paper-trading/page.tsx`、`src/frontend/components/forms/AccountTradePanel.tsx`、`src/frontend/lib/accountRebalanceStrategies.ts`
 - 历史回放（旧路径）：`src/quant_system/execution/pipeline.py`

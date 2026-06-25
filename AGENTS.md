@@ -196,6 +196,33 @@ on the Position Map.
   Futu snapshots first, then a real local/Tiingo close. Never use synthetic
   sample prices or sample strategy history to mutate the account.
 
+## Paper Strategy Sleeves
+
+Paper Strategy Sleeves are a new MVP-1 business line for isolating strategy
+cash/lots inside the single persistent paper account. As of 2026-06-26, only
+the first backend foundation slice is implemented:
+
+- Domain/accounting models:
+  `src/quant_system/execution/paper_strategy_sleeves.py`
+  (`StrategyConfig`, `StrategySleeve`, `SleeveLot`, `StrategySignal`,
+  `SleeveLotBook`, `PaperStrategySleeveService`).
+- Local file source of truth:
+  `src/quant_system/execution/paper_strategy_sleeve_storage.py`, under
+  `data/api_runs/paper_strategy_sleeves/`.
+- API response schema classes live in `src/quant_system/api/schemas/paper.py`.
+- `PaperAccount.sleeve_cash` is a cash allocation book. Keep
+  `PaperAccount.cash` as the legacy total cash field so the old full-account
+  rebalance path keeps its existing behavior.
+- Focused tests: `tests/test_paper_strategy_sleeves.py`, plus existing
+  `tests/test_paper_account.py` and `tests/test_api_paper_account.py`.
+
+Not yet implemented: Strategy Sleeves API routes, CLI, `/paper-trading` UI
+panel, daily signal generation service, automatic execution, next-open /
+near-close fills, or lot transfer. Do not document these as user-available
+until a later slice lands. The legacy `POST /api/paper/account/rebalance`
+remains an advanced full-account rebalance path, not a strategy sleeve
+entrypoint.
+
 ## Options Module Notes
 
 Current options work is split into sell-side and buy-side research modules:

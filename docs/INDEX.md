@@ -18,6 +18,7 @@
 | [guides/position-map.md](guides/position-map.md) | 持仓地图 `/position-map` |
 | [design/paper_trading_position_map_redesign.md](design/paper_trading_position_map_redesign.md) | 模拟交易 + 持仓地图**重设计**（设计文档 + 分阶段实现计划） |
 | [design/paper_strategy_sleeves_plan.md](design/paper_strategy_sleeves_plan.md) | Paper Strategy Sleeves **MVP-1**（策略资金段/信号观察/allocated 分账设计，非历史 Phase 1） |
+| [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 第一切片执行说明（后端基础已实现；API/CLI/前端尚未实现） |
 | [design/ai_news_integration_plan.md](design/ai_news_integration_plan.md) | AI News Integration **MVP-1**（AI HOT 只读新闻接入，Horizon 二期自托管雷达方向） |
 
 ## 1. 从这里开始
@@ -69,6 +70,8 @@
 | 模拟账户持久化 | `src/quant_system/execution/account_storage.py` |
 | 模拟账户取价（Futu 快照→最近收盘） | `src/quant_system/execution/price_source.py` |
 | 模拟账户下单/再平衡服务 | `src/quant_system/execution/account_service.py` |
+| Paper Strategy Sleeves 领域模型 / 分账基础 | `src/quant_system/execution/paper_strategy_sleeves.py` |
+| Paper Strategy Sleeves 本地存储 | `src/quant_system/execution/paper_strategy_sleeve_storage.py` |
 | 期权卖方筛选器 | `src/quant_system/options/screener.py` |
 | 期权雷达 | `src/quant_system/options/radar.py` |
 | 期权雷达刷新辅助 | `src/quant_system/options/data_refresh.py` |
