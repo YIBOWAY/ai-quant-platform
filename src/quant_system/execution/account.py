@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from quant_system.execution.models import ExecutionFill, OrderSide
 from quant_system.trading_kernel import roll_position_on_fill
@@ -98,6 +98,10 @@ class PaperAccount(BaseModel):
     base_currency: str = "USD"
     initial_cash: float = DEFAULT_INITIAL_CASH
     cash: float = DEFAULT_INITIAL_CASH
+    # Total account cash remains in ``cash`` for legacy/manual/rebalance paths.
+    # ``sleeve_cash`` is the internal allocation book for Paper Strategy Sleeves:
+    # manual cash plus per-sleeve allocated cash must come from the same account.
+    sleeve_cash: dict[str, float] = Field(default_factory=dict)
     realized_pnl: float = 0.0
     kill_switch: bool = False
     positions: dict[str, AccountPosition] = Field(default_factory=dict)
@@ -122,6 +126,7 @@ class PaperAccount(BaseModel):
             base_currency=base_currency,
             initial_cash=float(initial_cash),
             cash=float(initial_cash),
+            sleeve_cash={"manual": float(initial_cash)},
         )
         account._append_ledger(
             kind="deposit",
@@ -129,6 +134,26 @@ class PaperAccount(BaseModel):
             note=f"open account with {initial_cash:.2f} {base_currency}",
         )
         return account
+
+    @model_validator(mode="after")
+    def _ensure_manual_sleeve_cash(self) -> PaperAccount:
+        if not self.sleeve_cash:
+            self.sleeve_cash = {"manual": float(self.cash)}
+        else:
+            self.sleeve_cash = {
+                str(sleeve_id): float(cash)
+                for sleeve_id, cash in self.sleeve_cash.items()
+            }
+            allocated_cash = sum(
+                cash
+                for sleeve_id, cash in self.sleeve_cash.items()
+                if sleeve_id != "manual"
+            )
+            self.sleeve_cash.setdefault(
+                "manual",
+                max(float(self.cash) - allocated_cash, 0.0),
+            )
+        return self
 
     # --- read views -------------------------------------------------------
     def position_quantity(self, symbol: str) -> float:

@@ -11,6 +11,76 @@ class PaperRunSummary(BaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
 
 
+class StrategyConfigResponse(BaseModel):
+    strategy_config_id: str
+    version: int
+    name: str
+    description: str = ""
+    strategy_id: str
+    universe_id: str | None = None
+    symbols: list[str] = Field(default_factory=list)
+    factor_ids: list[str] = Field(default_factory=list)
+    weights: dict[str, float] = Field(default_factory=dict)
+    lookback: int
+    top_n: int
+    rebalance_frequency: str
+    max_weight_per_symbol: float
+    min_order_value: float
+    data_provider: str
+    execution_timing: str
+    created_at: str
+    updated_at: str
+    archived: bool = False
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategySleeveResponse(BaseModel):
+    sleeve_id: str
+    account_id: str
+    strategy_config_id: str
+    strategy_config_version: int
+    mode: Literal["signal_only", "allocated"]
+    status: Literal["running", "paused", "stopped"]
+    initial_allocated_cash: float
+    cash: float
+    created_at: str
+    updated_at: str
+    paused_at: str | None = None
+    stopped_at: str | None = None
+    stop_reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SleeveLotResponse(BaseModel):
+    lot_id: str
+    account_id: str
+    sleeve_id: str
+    symbol: str
+    quantity: float
+    avg_cost: float
+    opened_at: str
+    updated_at: str
+    source: str
+
+
+class StrategySignalResponse(BaseModel):
+    signal_id: str
+    sleeve_id: str
+    strategy_config_id: str
+    strategy_config_version: int
+    signal_date: str
+    generated_at: str
+    data_provider: str
+    data_as_of: str | None = None
+    target_weights: dict[str, float] = Field(default_factory=dict)
+    proposed_orders: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    status: Literal["generated", "data_unavailable", "invalid"]
+    execution_blocked_reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class PaperRunsResponse(BaseModel):
     paper_runs: list[PaperRunSummary]
 
