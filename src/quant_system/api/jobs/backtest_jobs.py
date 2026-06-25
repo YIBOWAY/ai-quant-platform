@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import wait as wait_for_futures
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -333,8 +334,47 @@ class BacktestJobRunner:
                         }
                     )
                     self._write_metadata_unlocked(run_id, metadata)
+        unfinished: set[Future[None]] = set()
+        if wait and active:
+            _, unfinished = wait_for_futures(
+                [future for _, future in active],
+                timeout=self._settings.backtest_jobs.shutdown_timeout_seconds,
+            )
+            if unfinished:
+                self._mark_shutdown_timeout(active, unfinished)
+        with self._lock:
             self._futures.clear()
-        self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+            self._cancel_events.clear()
+        self._executor.shutdown(wait=False, cancel_futures=cancel_futures)
+
+    def _mark_shutdown_timeout(
+        self,
+        active: list[tuple[str, Future[None]]],
+        unfinished: set[Future[None]],
+    ) -> None:
+        with self._lock:
+            now = utc_now()
+            for run_id, future in active:
+                if future not in unfinished:
+                    continue
+                try:
+                    metadata = self._read_metadata_unlocked(run_id)
+                except FileNotFoundError:
+                    continue
+                if metadata.get("status") not in _ACTIVE_STATUSES:
+                    continue
+                metadata.update(
+                    {
+                        "status": RunStatus.CANCELLED.value,
+                        "finished_at": now,
+                        "updated_at": now,
+                        "error": {
+                            "code": "job_cancelled_on_shutdown_timeout",
+                            "message": "Backtest job did not stop within the API shutdown timeout.",
+                        },
+                    }
+                )
+                self._write_metadata_unlocked(run_id, metadata)
 
     def _run_job(
         self,
@@ -416,18 +456,10 @@ class BacktestJobRunner:
                 metadata = self._read_metadata_unlocked(run_id)
             except FileNotFoundError:
                 return
-            if metadata.get("status") == RunStatus.CANCELLING.value:
-                now = utc_now()
-                metadata.update(
-                    {
-                        "status": RunStatus.CANCELLED.value,
-                        "finished_at": now,
-                        "updated_at": now,
-                    }
-                )
-                self._write_metadata_unlocked(run_id, metadata)
-                return
-            if metadata.get("status") != RunStatus.RUNNING.value:
+            if metadata.get("status") not in {
+                RunStatus.RUNNING.value,
+                RunStatus.CANCELLING.value,
+            }:
                 return
             now = utc_now()
             metadata.update(

@@ -43,9 +43,12 @@ HttpGet = Callable[..., Any]
 
 
 def _default_http_get() -> HttpGet:
-    import requests
+    import httpx
 
-    return requests.get
+    def _http_get(url: str, **kwargs: Any) -> Any:
+        return httpx.get(url, follow_redirects=True, **kwargs)
+
+    return _http_get
 
 
 def fetch_yahoo_chart(

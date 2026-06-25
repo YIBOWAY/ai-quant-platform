@@ -112,6 +112,21 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 代码默认值和 `.env.example` 均使用 `QS_DEFAULT_DATA_PROVIDER="futu"`；只有在
 明确做离线流程测试时才改为 `sample`。
 
+## 异步回测任务
+
+`POST /api/backtests/run` 默认保持历史同步 `200 BacktestRunResponse` 路径。
+设置 `QS_BACKTEST_JOBS_ENABLED=true` 后，它会立即返回
+`202 BacktestJobStateResponse`，其中 `poll_url` 指向
+`GET /api/backtests/jobs/{run_id}`，任务完成后才暴露 `result_url`。
+`POST /api/backtests/jobs/{run_id}/cancel` 可取消排队任务，并在回测流水线阶段之间
+协作取消运行中的任务。
+
+本地 runner 是进程内 `ThreadPoolExecutor`，默认
+`QS_BACKTEST_JOBS_MAX_WORKERS=1`。API 关闭时最多等待
+`QS_BACKTEST_JOBS_SHUTDOWN_TIMEOUT_SECONDS=5`；超过该时间仍未停止的任务会被标记为
+cancelled。启动时，遗留的 queued / running / cancelling metadata 会被标记为 failed，
+因为本地 runner 不是可恢复的分布式队列。
+
 界面支持中英双语。使用顶栏语言切换按钮，或直接访问带语言前缀的路径，如
 `/en/options-radar` 和 `/zh/options-radar`。语言选择也会存储在 `qs_lang` cookie
 中，用于无前缀路径。详见
@@ -239,6 +254,10 @@ quant-system factor refresh-lab --provider sample --universe-id etf --symbol QQQ
 ```text
 http://127.0.0.1:3001/options-screener
 ```
+
+该页面提供保守 / 平衡 / 激进预设，以及最低期权中间价、标的平均成交量、市值等质量过滤器。
+`min_market_cap=0` 表示不启用市值硬过滤。结果默认隐藏 `Avoid` 合约；排查筛选原因时可打开
+“显示避开合约” / `include_rejected=true`。备注列会说明合约被降级或过滤的原因。
 
 每日卖方期权雷达：
 

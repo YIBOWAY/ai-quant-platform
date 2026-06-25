@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from quant_system.data.provider_factory import build_ohlcv_provider
+from quant_system.data.provider_factory import DataProviderUnavailableError, build_ohlcv_provider
 from quant_system.experiments.models import WalkForwardConfig
 from quant_system.experiments.walk_forward import build_walk_forward_splits
 from quant_system.factors.evaluation import (
@@ -54,7 +54,10 @@ def build_factor_lab_dashboard(
     universe = build_default_universe_registry().get(universe_id)
     symbols = sorted(set(universe.normalized_symbols()).union({symbol.upper().strip()}))
     provider_instance, source = build_ohlcv_provider(settings, requested=provider)
-    ohlcv = provider_instance.fetch_ohlcv(symbols, start=start, end=end)
+    try:
+        ohlcv = provider_instance.fetch_ohlcv(symbols, start=start, end=end)
+    except Exception as exc:
+        raise DataProviderUnavailableError(provider, exc.__class__.__name__) from exc
     factors = [registry.create(factor_id, lookback=lookback) for factor_id in registry.factor_ids()]
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
     factor_metadata = registry.list_metadata()

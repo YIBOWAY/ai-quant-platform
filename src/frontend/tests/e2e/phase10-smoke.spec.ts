@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+
+const apiBase = `http://127.0.0.1:${process.env.PW_BACKEND_PORT ?? "8765"}`;
 
 test.beforeEach(() => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
@@ -58,6 +60,23 @@ async function expectRunIdVisible(page: Page, runId: string) {
   await expect(page.getByText(runId)).toBeVisible({ timeout: 45_000 });
 }
 
+async function selectAllProviderControls(page: Page, value: "sample" | "polymarket") {
+  const controls = page.getByLabel("Provider");
+  const count = await controls.count();
+  for (let index = 0; index < count; index += 1) {
+    const control = controls.nth(index);
+    if ((await control.locator(`option[value="${value}"]`).count()) > 0) {
+      await control.selectOption(value);
+    }
+  }
+}
+
+async function isFutuOpenDReachable(request: APIRequestContext) {
+  const response = await request.get(`${apiBase}/api/health`);
+  const payload = (await response.json()) as { futu_opend?: { reachable?: boolean } };
+  return payload.futu_opend?.reachable !== false;
+}
+
 // The replay form lives behind the "Historical Replay" tab; retry the click
 // until hydration makes the tab respond (aria-selected flips client-side).
 async function openTab(page: Page, name: string | RegExp) {
@@ -74,7 +93,7 @@ test("data explorer and backtest workflow buttons submit", async ({ page }) => {
   await page.getByRole("button", { name: "Load" }).click();
   await expect(page).toHaveURL(/data-explorer/);
 
-  await page.goto("/backtest");
+  await page.goto("/backtest?provider=sample&include_sample=1");
   const backtestResponse = await clickAndWaitForPost(page, "Run Backtest", "/api/backtests/run");
   expect(backtestResponse.status()).toBe(200);
   const backtestPayload = (await backtestResponse.json()) as { run_id: string };
@@ -83,7 +102,7 @@ test("data explorer and backtest workflow buttons submit", async ({ page }) => {
 });
 
 test("factor lab renders its research panels", async ({ page }) => {
-  await page.goto("/factor-lab");
+  await page.goto("/factor-lab?provider=sample&include_sample=1");
   await expect(page.getByRole("heading", { name: "Factor Lab" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Cross-Sectional Health" })).toBeVisible();
   await openTab(page, "Single-Ticker Timing");
@@ -114,8 +133,8 @@ test("agent task workflow submits and renders candidate details", async ({ page 
 
 test("prediction market workflow buttons submit", async ({ page }) => {
   test.setTimeout(120_000);
-  await page.goto("/polymarket");
-  await page.getByLabel("Provider").first().selectOption("sample");
+  await page.goto("/polymarket?provider=sample&cache_mode=prefer_cache&limit=6");
+  await selectAllProviderControls(page, "sample");
   expect((await clickAndWaitForPost(page, "Run scanner", "/api/prediction-market/scan")).status()).toBe(200);
   expect((await clickAndWaitForPost(page, "Generate dry arbitrage", "/api/prediction-market/dry-arbitrage")).status()).toBe(200);
   expect((await clickAndWaitForPost(page, "Run quasi-backtest", "/api/prediction-market/backtest")).status()).toBe(200);
@@ -132,7 +151,10 @@ test("prediction market workflow buttons submit", async ({ page }) => {
   await expect(page.getByAltText("Daily Opportunity Count")).toBeVisible();
 });
 
-test("options screener scans the DTE window without manual expiration selection", async ({ page }) => {
+test("options screener scans the DTE window without manual expiration selection", async ({
+  page,
+  request,
+}) => {
   test.setTimeout(90_000);
 
   await page.goto("/options-screener?lang=zh");
@@ -145,6 +167,12 @@ test("options screener scans the DTE window without manual expiration selection"
   );
   await page.getByRole("button", { name: "开始分析" }).click();
   const response = await responsePromise;
+  if (!(await isFutuOpenDReachable(request))) {
+    expect(response.status()).toBe(503);
+    await expect(page.getByText(/\[opend_unavailable\]/)).toBeVisible();
+    await expect(page.getByText(/unable to connect to OpenD/)).toBeVisible();
+    return;
+  }
   expect(response.status()).toBe(200);
   await expect(page.getByText("扫描到期日")).toBeVisible({ timeout: 45_000 });
   await expect(page.getByText("候选合约", { exact: true })).toBeVisible();

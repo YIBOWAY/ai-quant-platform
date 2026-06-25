@@ -1,10 +1,10 @@
-"""Run index repository: PostgreSQL-first reads with filesystem fallback.
+"""Run index repository with PostgreSQL as an optional metadata mirror.
 
 The file artifacts under ``data/api_runs/<kind>/<run_id>/metadata.json`` stay the
 source of truth. When the optional PostgreSQL index is enabled and reachable,
-list endpoints read from it (fast, ordered, no directory scan) and run endpoints
-index each new run into it. Any database error degrades silently to the existing
-filesystem behaviour, so the API never depends on the database being up.
+run endpoints mirror each new run into it. Any database error degrades silently
+to the existing filesystem behaviour, so the API never depends on the database
+being up.
 """
 
 from __future__ import annotations
@@ -144,9 +144,17 @@ def _db_metadatas(kind: str, settings: Settings) -> list[dict[str, Any]] | None:
         return None
 
 
-def _fs_metadatas(root: Path) -> list[dict[str, Any]]:
+def _metadata_path_is_publishable(kind: str | None, path: Path) -> bool:
+    if kind == "replication":
+        return (path.parent / "result.json").exists()
+    return True
+
+
+def _fs_metadatas(root: Path, *, kind: str | None = None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for path in sorted_metadata_paths(root):
+        if not _metadata_path_is_publishable(kind, path):
+            continue
         try:
             out.append(json.loads(path.read_text(encoding="utf-8")))
         except Exception as exc:  # noqa: BLE001 - skip unreadable run
@@ -162,9 +170,13 @@ def list_run_metadatas(kind: str, root: Path, settings: Settings) -> list[dict[s
     running visible immediately instead of waiting for the next startup sync.
     """
     db_rows = _db_metadatas(kind, settings)
-    paths = sorted_metadata_paths(root)
+    paths = [
+        path
+        for path in sorted_metadata_paths(root)
+        if _metadata_path_is_publishable(kind, path)
+    ]
     if db_rows is None:
-        return _fs_metadatas(root)
+        return _fs_metadatas(root, kind=kind)
 
     db_by_id = {
         str(metadata.get("run_id")): metadata
@@ -174,13 +186,13 @@ def list_run_metadatas(kind: str, root: Path, settings: Settings) -> list[dict[s
     out: list[dict[str, Any]] = []
     for path in paths:
         run_id = path.parent.name
-        metadata = db_by_id.get(run_id)
-        if metadata is not None:
-            out.append(metadata)
-            continue
         try:
             out.append(json.loads(path.read_text(encoding="utf-8")))
-        except Exception as exc:  # noqa: BLE001 - skip unreadable run
+        except Exception as exc:  # noqa: BLE001 - DB mirror is fallback only
+            metadata = db_by_id.get(run_id)
+            if metadata is not None:
+                out.append(metadata)
+                continue
             log.warning("skipping unreadable metadata %s: %s", path, exc)
     return out
 
@@ -227,7 +239,7 @@ def sync_filesystem_to_index(api_runs_dir: Path, settings: Settings) -> int:
     indexed = 0
     for kind, dirname in KIND_DIRS.items():
         root = api_runs_dir / dirname
-        present = _fs_metadatas(root)
+        present = _fs_metadatas(root, kind=kind)
         present_ids = {str(m.get("run_id")) for m in present if m.get("run_id")}
         # _fs_metadatas is newest-first; insert oldest-first so indexed_at
         # increases with run recency and ties order newest-first on read.

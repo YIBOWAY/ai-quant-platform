@@ -157,8 +157,10 @@ path by default. Set `QS_BACKTEST_JOBS_ENABLED=true` to make it return
 job reaches `completed`. `POST /api/backtests/jobs/{run_id}/cancel` cancels queued
 jobs and cooperatively cancels running jobs between backtest pipeline stages.
 The local runner is process-local (`ThreadPoolExecutor`, default
-`QS_BACKTEST_JOBS_MAX_WORKERS=1`) and marks queued/running/cancelling metadata as
-failed on API restart because there is no distributed queue to resume from.
+`QS_BACKTEST_JOBS_MAX_WORKERS=1`) and waits up to
+`QS_BACKTEST_JOBS_SHUTDOWN_TIMEOUT_SECONDS=5` during API shutdown before marking
+still-running jobs cancelled. Startup marks any leftover queued/running/cancelling
+metadata as failed because there is no distributed queue to resume from.
 
 The UI is bilingual (English / 中文). Use the top-bar language toggle or open
 locale-prefixed paths such as `/en/options-radar` and `/zh/options-radar`.
@@ -345,6 +347,13 @@ Single-ticker seller screener:
 ```text
 http://127.0.0.1:3001/options-screener
 ```
+
+The screener offers conservative / balanced / aggressive presets plus quality
+filters for minimum option mid price, underlying average daily volume, and
+market capitalization. `min_market_cap=0` disables the market-cap gate. Results
+hide `Avoid` contracts by default; enable "Show Avoid contracts" /
+`include_rejected=true` when auditing rejected rows. The Notes column explains
+why a row was downgraded or filtered.
 
 Daily seller radar:
 

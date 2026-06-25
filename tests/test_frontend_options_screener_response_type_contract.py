@@ -39,3 +39,16 @@ def test_shared_options_screener_types_include_backend_response_model_fields() -
         "assumptions: string[];",
     ]:
         assert field in api_types
+
+
+def test_options_screener_exposes_quality_filters_and_candidate_notes() -> None:
+    component = SCREENER_FORM.read_text(encoding="utf-8")
+
+    assert "minMarketCap" in component
+    assert "minAdv" in component
+    assert "minMid" in component
+    assert component.count("min_market_cap: 0") >= 4
+    assert "include_rejected: false" in component
+    assert "showRejected" in component
+    assert "candidate.notes.map" in component
+    assert "translateRejectionReason(note, locale)" in component

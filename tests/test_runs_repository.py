@@ -65,3 +65,27 @@ def test_db_backed_list_keeps_filesystem_as_source_of_truth(tmp_path: Path, monk
     rows = rr.list_run_metadatas("backtest", root, settings)
 
     assert [row["run_id"] for row in rows] == ["backtest-file-only"]
+
+
+def test_list_run_metadatas_prefers_filesystem_metadata_over_stale_db_row(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    settings = _disabled_db_settings()
+    root = tmp_path / "backtests"
+    run_id = "backtest-20240101T000001Z-aaaaaaaa"
+    _write_run(root, run_id, "sample")
+
+    monkeypatch.setattr(
+        rr,
+        "_db_metadatas",
+        lambda kind, current_settings: [
+            {"run_id": run_id, "source": "futu", "metrics": {"sharpe": -9.0}},
+        ],
+    )
+
+    rows = rr.list_run_metadatas("backtest", root, settings)
+
+    assert rows == [
+        {"run_id": run_id, "source": "sample", "metrics": {"sharpe": 1.0}}
+    ]

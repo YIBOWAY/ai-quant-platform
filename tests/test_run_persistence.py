@@ -162,11 +162,16 @@ def test_recent_runs_includes_replication_runs(tmp_path: Path) -> None:
         "backtest-20260601T010000Z-aaaaaaaa",
         {"source": "tiingo", "kind": "backtest", "metrics": {"sharpe": 1.2}},
     )
+    replication_run_id = "replication-20260605T010000Z-rrrrrrrr"
     _write_metadata(
         api_runs,
         "replications",
-        "replication-20260605T010000Z-rrrrrrrr",
+        replication_run_id,
         {"source": "sample", "kind": "replication", "result_type": "replication"},
+    )
+    (api_runs / "replications" / replication_run_id / "result.json").write_text(
+        json.dumps({"run_id": replication_run_id}),
+        encoding="utf-8",
     )
     client = TestClient(create_app(output_dir=tmp_path))
 

@@ -1,7 +1,91 @@
+import { execFileSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
+
+const repoRoot = findRepoRoot(process.cwd());
+const e2eDataRoot = path.join(repoRoot, "src", "frontend", ".tmp", "e2e-data");
+const parquetDir = path.join(e2eDataRoot, "parquet");
+const priceFixturePath = path.join(parquetDir, "ohlcv.parquet");
+
+function findRepoRoot(start: string) {
+  let current = path.resolve(start);
+  while (true) {
+    if (
+      fs.existsSync(path.join(current, "pyproject.toml")) &&
+      fs.existsSync(path.join(current, "src", "frontend", "package.json"))
+    ) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      throw new Error(`Unable to locate repository root from ${start}`);
+    }
+    current = parent;
+  }
+}
+
+function findPython() {
+  const candidates = [
+    process.env.PW_PYTHON,
+    path.join(repoRoot, "ai-quant", "bin", "python"),
+    path.join(repoRoot, "ai-quant", "Scripts", "python.exe"),
+    path.join(repoRoot, ".venv", "bin", "python"),
+    path.join(repoRoot, ".venv", "Scripts", "python.exe"),
+    "python3",
+    "python",
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  for (const candidate of candidates) {
+    const probe = spawnSync(candidate, ["--version"], { stdio: "ignore" });
+    if (probe.status === 0) {
+      return candidate;
+    }
+  }
+  throw new Error("Unable to find a Python interpreter for paper price fixtures.");
+}
+
+function writePaperPriceFixture() {
+  fs.mkdirSync(parquetDir, { recursive: true });
+  const scriptPath = path.join(parquetDir, "_write_paper_price_fixture.py");
+  const script = `
+from pathlib import Path
+import pandas as pd
+
+root = Path(r"""${parquetDir}""")
+root.mkdir(parents=True, exist_ok=True)
+today = pd.Timestamp.now(tz="UTC").normalize()
+prices = {"SPY": 500.0, "AAPL": 200.0}
+rows = []
+for symbol, close in prices.items():
+    for offset in range(3):
+        timestamp = today - pd.Timedelta(days=offset)
+        rows.append({
+            "symbol": symbol,
+            "timestamp": timestamp,
+            "open": close - 1.0,
+            "high": close + 2.0,
+            "low": close - 2.0,
+            "close": close,
+            "volume": 1_000_000,
+            "provider": "tiingo_fixture",
+        })
+pd.DataFrame(rows).to_parquet(root / "ohlcv.parquet", index=False)
+`;
+  fs.writeFileSync(scriptPath, script);
+  execFileSync(findPython(), [scriptPath], { stdio: "inherit" });
+  fs.rmSync(scriptPath, { force: true });
+}
 
 test.describe("position map", () => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
+
+  test.beforeAll(() => {
+    writePaperPriceFixture();
+  });
+
+  test.afterAll(() => {
+    fs.rmSync(priceFixturePath, { force: true });
+  });
 
   test("renders the live paper account exposure after a manual order", async ({ page, request }) => {
     test.setTimeout(90_000);

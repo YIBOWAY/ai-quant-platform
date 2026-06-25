@@ -38,7 +38,7 @@ const presets = {
     min_iv_input: 15,
     min_mid_price: 0.2,
     min_avg_daily_volume: 1_000_000,
-    min_market_cap: 10_000_000_000,
+    min_market_cap: 0,
     trend_filter: true,
     hv_iv_filter: true,
   },
@@ -54,7 +54,7 @@ const presets = {
     min_iv_input: 10,
     min_mid_price: 0.15,
     min_avg_daily_volume: 500_000,
-    min_market_cap: 2_000_000_000,
+    min_market_cap: 0,
     trend_filter: true,
     hv_iv_filter: true,
   },
@@ -98,8 +98,13 @@ const copy = {
     minOi: "Min Open Interest",
     maxHvIv: "Max HV/IV",
     minIv: "Min IV (%)",
+    qualityFilters: "Quality Filters",
+    minMid: "Min Mid (USD)",
+    minAdv: "Min Underlying ADV (0=off)",
+    minMarketCap: "Min Market Cap (0=off)",
     trendFilter: "Trend filter",
     hvIvFilter: "HV / IV timing filter",
+    showRejected: "Show Avoid contracts",
     run: "Run Screener",
     running: "Running...",
     warning: "Research-only output. These rows are not trade instructions and cannot place orders.",
@@ -125,7 +130,9 @@ const copy = {
     trendPassed: "Trend passed",
     trendWeak: "Trend warning",
     hvIvUnavailable: "No IV data",
-    headings: ["Symbol", "Type", "Expiry", "Strike", "Bid", "Ask", "Mid", "APR", "Spread", "IV", "Delta", "OI", "Rating"],
+    notes: "Notes",
+    noNotes: "Clear",
+    headings: ["Symbol", "Type", "Expiry", "Strike", "Bid", "Ask", "Mid", "APR", "Spread", "IV", "Delta", "OI", "Rating", "Notes"],
     parameterHelp: [
       ["DTE Window", "The screener scans every available Futu expiration inside this range and ranks the contracts."],
       ["Max Delta", "Lower absolute delta is more conservative for short premium screening."],
@@ -156,8 +163,13 @@ const copy = {
     minOi: "最低未平仓量",
     maxHvIv: "最大 HV/IV",
     minIv: "最低 IV (%)",
+    qualityFilters: "质量过滤",
+    minMid: "最低中间价 (美元)",
+    minAdv: "最低正股日均量 (0=关闭)",
+    minMarketCap: "最低市值 (0=关闭)",
     trendFilter: "趋势过滤",
     hvIvFilter: "HV / IV 择时过滤",
+    showRejected: "显示避开合约",
     run: "开始分析",
     running: "分析中...",
     warning: "仅用于研究筛选。这些结果不是交易指令，也不能发出真实订单。",
@@ -181,7 +193,9 @@ const copy = {
     trendPassed: "趋势通过",
     trendWeak: "趋势提醒",
     hvIvUnavailable: "缺少 IV 数据",
-    headings: ["代码", "类型", "到期日", "行权价", "买价", "卖价", "中间价", "年化", "价差", "IV", "Delta", "未平仓", "评级"],
+    notes: "提示",
+    noNotes: "通过",
+    headings: ["代码", "类型", "到期日", "行权价", "买价", "卖价", "中间价", "年化", "价差", "IV", "Delta", "未平仓", "评级", "提示"],
     parameterHelp: [
       ["DTE 窗口", "筛选器会扫描这个范围内的全部 Futu 到期日，并把合约统一排序。"],
       ["Max Delta", "绝对 Delta 越低越保守，适合卖方期权筛选。"],
@@ -210,6 +224,7 @@ const screenerSchema = z.object({
   min_market_cap: z.coerce.number().nonnegative(),
   trend_filter: z.boolean(),
   hv_iv_filter: z.boolean(),
+  include_rejected: z.boolean(),
   provider: z.literal("futu"),
 });
 
@@ -364,9 +379,10 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
       max_hv_iv: 1.2,
       min_mid_price: 0.15,
       min_avg_daily_volume: 500_000,
-      min_market_cap: 2_000_000_000,
+      min_market_cap: 0,
       trend_filter: true,
       hv_iv_filter: true,
+      include_rejected: false,
       provider: "futu",
     },
   });
@@ -474,6 +490,16 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             <NumberField label={text.maxHvIv} registration={form.register("max_hv_iv", { valueAsNumber: true })} step={0.1} />
             <NumberField label={text.minIv} registration={form.register("min_iv_input", { valueAsNumber: true })} step={1} />
           </div>
+          <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
+            <div className="mb-2 font-label-caps text-text-secondary">{text.qualityFilters}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField label={text.minMid} registration={form.register("min_mid_price", { valueAsNumber: true })} step={0.05} />
+              <NumberField label={text.minAdv} registration={form.register("min_avg_daily_volume", { valueAsNumber: true })} step={100000} />
+              <div className="col-span-2">
+                <NumberField label={text.minMarketCap} registration={form.register("min_market_cap", { valueAsNumber: true })} step={1000000000} />
+              </div>
+            </div>
+          </div>
           <label className="flex items-center gap-2 font-body-sm text-text-primary">
             <input type="checkbox" {...form.register("trend_filter")} />
             {text.trendFilter}
@@ -481,6 +507,10 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
           <label className="flex items-center gap-2 font-body-sm text-text-primary">
             <input type="checkbox" {...form.register("hv_iv_filter")} />
             {text.hvIvFilter}
+          </label>
+          <label className="flex items-center gap-2 font-body-sm text-text-primary">
+            <input type="checkbox" {...form.register("include_rejected")} />
+            {text.showRejected}
           </label>
           {error ? <p className="font-body-sm text-danger">{error}</p> : null}
           <button
@@ -586,6 +616,11 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
                         <td className="px-3 py-2">{formatNumber(candidate.delta, 3)}</td>
                         <td className="px-3 py-2">{formatNumber(candidate.open_interest, 0)}</td>
                         <td className="px-3 py-2">{ratingLabel(candidate.rating, locale)}</td>
+                        <td className="max-w-[360px] px-3 py-2 font-body-sm text-text-secondary">
+                          {candidate.notes.length
+                            ? candidate.notes.map((note) => translateRejectionReason(note, locale)).join(" | ")
+                            : text.noNotes}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

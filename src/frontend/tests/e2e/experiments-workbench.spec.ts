@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
@@ -30,6 +30,25 @@ function writeJson(filePath: string, payload: unknown) {
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
 }
 
+function findPython() {
+  const candidates = [
+    process.env.PW_PYTHON,
+    path.join(repoRoot, "ai-quant", "bin", "python"),
+    path.join(repoRoot, "ai-quant", "Scripts", "python.exe"),
+    path.join(repoRoot, ".venv", "bin", "python"),
+    path.join(repoRoot, ".venv", "Scripts", "python.exe"),
+    "python3",
+    "python",
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  for (const candidate of candidates) {
+    const probe = spawnSync(candidate, ["--version"], { stdio: "ignore" });
+    if (probe.status === 0) {
+      return candidate;
+    }
+  }
+  throw new Error("Unable to find a Python interpreter for experiment fixtures.");
+}
+
 function writeParquetFrames() {
   fs.mkdirSync(experimentDir, { recursive: true });
   const scriptPath = path.join(experimentDir, "_write_parquet_fixture.py");
@@ -50,11 +69,7 @@ pd.DataFrame([
 ]).to_parquet(root / "walk_forward_folds.parquet", index=False)
 `;
   fs.writeFileSync(scriptPath, script);
-  execFileSync(
-    "conda",
-    ["run", "-n", "ai-quant", "--no-capture-output", "python", scriptPath],
-    { stdio: "inherit" },
-  );
+  execFileSync(findPython(), [scriptPath], { stdio: "inherit" });
   fs.rmSync(scriptPath, { force: true });
 }
 

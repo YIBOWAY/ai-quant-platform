@@ -69,6 +69,10 @@ def run_backtest(
     return persist_run(run_dir, "backtest", metadata, settings=settings)
 
 
+def _is_completed_backtest_metadata(metadata: dict) -> bool:
+    return metadata.get("status", RunStatus.COMPLETED.value) == RunStatus.COMPLETED.value
+
+
 @router.get("/backtests", response_model=BacktestsResponse)
 def list_backtests(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     root = api_runs_dir / "backtests"
@@ -79,6 +83,7 @@ def list_backtests(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
             "metrics": metadata.get("metrics", {}),
         }
         for metadata in list_run_metadatas("backtest", root, settings)
+        if _is_completed_backtest_metadata(metadata)
     ]
     return {"backtests": backtests}
 
@@ -106,7 +111,7 @@ def backtest_detail(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     if not metadata_path.exists():
         raise not_found_404("backtest", run_id)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if metadata.get("status") != RunStatus.COMPLETED.value:
+    if not _is_completed_backtest_metadata(metadata):
         raise HTTPException(
             status_code=409,
             detail={"code": "backtest_not_completed", "status": metadata.get("status")},

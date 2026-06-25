@@ -73,3 +73,39 @@ def test_reversal_momentum_replication_detail_404_for_unknown_run(tmp_path) -> N
     response = client.get("/api/replications/reversal-momentum/replication-missing")
 
     assert response.status_code == 404
+
+
+def test_reversal_momentum_result_write_failure_does_not_publish_metadata(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    def fail_result_write(path, payload):
+        if path.name == "result.json":
+            raise PermissionError("result write failed")
+        from quant_system.api.schemas.common import write_json_atomic as real_write_json_atomic
+
+        return real_write_json_atomic(path, payload)
+
+    monkeypatch.setattr(
+        "quant_system.api.routes.replications.write_json_atomic",
+        fail_result_write,
+    )
+    client = TestClient(
+        create_app(output_dir=tmp_path),
+        raise_server_exceptions=False,
+    )
+
+    response = client.post(
+        "/api/replications/reversal-momentum/run",
+        json={
+            "symbols": ["SPY", "QQQ", "IWM", "DIA"],
+            "start": "2023-01-01",
+            "end": "2025-12-31",
+            "provider": "sample",
+            "top_n": 1,
+            "initial_cash": 1.0,
+        },
+    )
+
+    assert response.status_code == 500
+    assert not list((tmp_path / "api_runs" / "replications").glob("*/metadata.json"))

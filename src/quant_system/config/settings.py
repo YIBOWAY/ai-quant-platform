@@ -428,6 +428,7 @@ class BacktestJobSettings(BaseSettings):
 
     enabled: bool = False
     max_workers: int = Field(default=1, ge=1, le=8)
+    shutdown_timeout_seconds: float = Field(default=5.0, ge=0.0, le=300.0)
 
 
 class Settings(BaseSettings):

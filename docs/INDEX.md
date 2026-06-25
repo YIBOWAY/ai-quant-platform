@@ -2,7 +2,7 @@
 
 这是整个仓库的主地图。用它来查找架构文档、执行手册、学习笔记、交付记录与安全边界。
 
-当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接、策略账户再平衡能力位、语言连续性修复、策略/Polymarket 路由重命名，以及 opt-in async backtest jobs，均记录在下文。最近一次大型变更为 2026-06-11 的前端全面重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38），见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
+当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接、策略账户再平衡能力位、语言连续性修复、策略/Polymarket 路由重命名、opt-in async backtest jobs，以及 options screener 质量过滤 / `Avoid` 审计开关 / 备注列。2026-06-11 的大型前端重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38）见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
 
 ## 0. 界面操作指南（新，建议先读）
 
@@ -141,7 +141,7 @@
 | `/paper-trading` | 持久模拟账户（手动下单 + 策略一键再平衡）＋历史回放（研究）。 |
 | `/paper-trading/[runId]` | 历史回放运行详情。 |
 | `/position-map` | 模拟账户实时持仓地图（净值/现金/暴露/来源归因），另含回测暴露对比块。 |
-| `/options-screener` | 单标的卖方期权筛选。 |
+| `/options-screener` | 单标的卖方期权筛选，含质量过滤、`Avoid` 审计开关与备注列。 |
 | `/options-radar` | 每日卖方期权雷达快照。 |
 | `/options-radar/[symbol]` | 已保存的雷达候选，以及可选的实时期权链加载。 |
 | `/options-tools` | 本地 AlphaGBM 风格期权工具箱。 |

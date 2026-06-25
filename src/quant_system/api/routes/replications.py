@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -8,6 +9,7 @@ from pydantic import BaseModel, Field
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.errors import not_found_404
 from quant_system.api.schemas.common import (
+    RunStatus,
     make_run_id,
     read_json,
     resolve_run_dir,
@@ -101,13 +103,18 @@ def run_reversal_momentum_replication(
         "warnings": result.get("warnings", []),
         "paths": paths,
     }
-    # persist_run stamps the unified core fields (kind/status/created_at) onto the
-    # metadata; mirror them onto the result body so the run response and the
-    # persisted metadata.json agree.
-    persisted = persist_run(run_dir, "replication", metadata, settings=settings)
-    for core_field in ("kind", "status", "created_at"):
-        result[core_field] = persisted[core_field]
+    # Publish result.json before metadata/index visibility so recent-runs/detail
+    # never expose a completed replication without its required result artifact.
+    created_at = datetime.now(UTC).isoformat()
+    core_fields = {
+        "kind": "replication",
+        "status": RunStatus.COMPLETED.value,
+        "created_at": created_at,
+    }
+    result.update(core_fields)
+    metadata.update(core_fields)
     write_json_atomic(result_path, result)
+    persist_run(run_dir, "replication", metadata, settings=settings)
     return result
 
 

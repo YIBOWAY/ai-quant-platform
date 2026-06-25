@@ -133,6 +133,8 @@ def factor_lab_dashboard(
             status_code=400,
             detail={"code": "invalid_factor_lab_request", "message": str(exc)},
         ) from exc
+    except DataProviderUnavailableError as exc:
+        raise provider_unavailable_400(exc) from exc
 
 
 @router.get("/factors/{run_id}", response_model=FactorRunDetailResponse)

@@ -20,6 +20,7 @@ worktrees/
 *.pdf
 
 # Local agent / IDE config
+.codex/
 .claude/
 .agents/
 .codegraph/
@@ -40,10 +41,12 @@ Microsoft/
 *.log
 
 # Playwright run artefacts
+test-results/
 src/frontend/test-results/
 src/frontend/playwright-report/
 .playwright-cli/
 .playwright-mcp/
+.firecrawl/
 src/frontend/.tmp/
 
 # Local scratch / benchmark artefacts

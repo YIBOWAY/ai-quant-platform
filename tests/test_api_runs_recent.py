@@ -51,3 +51,50 @@ def test_recent_runs_aggregates_run_kinds_newest_first(tmp_path) -> None:
     ]
     assert payload["runs"][0]["source"] == "futu"
     assert payload["runs"][0]["summary"]["row_count"] == 42
+
+
+def test_recent_runs_omits_replication_without_result_json(tmp_path) -> None:
+    api_runs = tmp_path / "api_runs"
+    _write_metadata(
+        api_runs,
+        "replications",
+        "replication-20260604T010000Z-dddddddd",
+        {"kind": "replication", "source": "sample", "metrics": {"observation_months": 12}},
+    )
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/runs/recent")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["runs"] == []
+
+
+def test_recent_runs_omits_incomplete_backtest_jobs(tmp_path) -> None:
+    api_runs = tmp_path / "api_runs"
+    _write_metadata(
+        api_runs,
+        "backtests",
+        "backtest-20260604T010000Z-running1",
+        {"kind": "backtest", "status": "running", "source": "sample"},
+    )
+    _write_metadata(
+        api_runs,
+        "backtests",
+        "backtest-20260605T010000Z-done0001",
+        {
+            "kind": "backtest",
+            "status": "completed",
+            "source": "sample",
+            "metrics": {"sharpe": 1.1},
+        },
+    )
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/runs/recent")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["runs"][0]["run_id"] == "backtest-20260605T010000Z-done0001"

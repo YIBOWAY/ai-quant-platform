@@ -2,7 +2,7 @@
 
 本仓库是一个**本地优先**的 AI 量化研究与模拟交易平台。它面向研究、测试、报告与只读行情分析而构建，**不是实盘交易平台**。
 
-当前状态：Phase 14 已交付；在初始交付之后，又新增了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、策略/Polymarket 路由重命名、统一 run metadata/index，以及 opt-in async backtest jobs 等内容。
+当前状态：Phase 14 已交付；在初始交付之后，又新增了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、策略/Polymarket 路由重命名、统一 run metadata/index、opt-in async backtest jobs，以及 options screener 质量过滤 / `Avoid` 审计开关 / 备注列等内容。
 
 ## 它能做什么
 
@@ -19,7 +19,7 @@
 期权研究：
 
 - 读取 Futu 美股期权链与报价快照。
-- 运行单标的期权卖方收益筛选器（Options Income Screener）。
+- 运行单标的期权卖方收益筛选器（Options Income Screener），并通过质量过滤、`Avoid` 审计开关和备注列查看评级原因。
 - 在本地 universe 上运行每日期权雷达（Options Radar）扫描。
 - 从雷达 UI 刷新本地的雷达 universe、财报与 VIX 缓存；默认使用公开数据源，sample 数据仅作为明确的测试源。
 - 查看单标的雷达候选，并可选地加载实时期权链。
