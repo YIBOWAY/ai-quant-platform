@@ -588,6 +588,106 @@ export type PaperAccountRebalanceResponse = ApiEnvelope & {
   account: PaperAccountResponse;
 };
 
+export type PaperStrategyConfigResponse = {
+  strategy_config_id: string;
+  version: number;
+  name: string;
+  description: string;
+  strategy_id: string;
+  universe_id?: string | null;
+  symbols: string[];
+  factor_ids: string[];
+  weights: Record<string, number>;
+  lookback: number;
+  top_n: number;
+  rebalance_frequency: string;
+  max_weight_per_symbol: number;
+  min_order_value: number;
+  data_provider: string;
+  execution_timing: string;
+  created_at: string;
+  updated_at: string;
+  archived: boolean;
+  tags: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategyConfigMutationResponse = ApiEnvelope & {
+  config: PaperStrategyConfigResponse;
+};
+
+export type PaperStrategyConfigsResponse = ApiEnvelope & {
+  configs: PaperStrategyConfigResponse[];
+};
+
+export type PaperStrategySleeveMode = "signal_only" | "allocated";
+export type PaperStrategySleeveStatus = "running" | "paused" | "stopped";
+
+export type PaperStrategySleeveResponse = {
+  sleeve_id: string;
+  account_id: string;
+  strategy_config_id: string;
+  strategy_config_version: number;
+  mode: PaperStrategySleeveMode;
+  status: PaperStrategySleeveStatus;
+  initial_allocated_cash: number;
+  cash: number;
+  created_at: string;
+  updated_at: string;
+  paused_at?: string | null;
+  stopped_at?: string | null;
+  stop_reason?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategySleeveMutationResponse = ApiEnvelope & {
+  sleeve: PaperStrategySleeveResponse;
+  account: PaperAccountResponse;
+};
+
+export type PaperStrategySleevesResponse = ApiEnvelope & {
+  sleeves: PaperStrategySleeveResponse[];
+};
+
+export type PaperStrategySleeveLotResponse = {
+  lot_id: string;
+  account_id: string;
+  sleeve_id: string;
+  symbol: string;
+  quantity: number;
+  avg_cost: number;
+  opened_at: string;
+  updated_at: string;
+  source: string;
+};
+
+export type PaperStrategySignalResponse = {
+  signal_id: string;
+  sleeve_id: string;
+  strategy_config_id: string;
+  strategy_config_version: number;
+  signal_date: string;
+  generated_at: string;
+  data_provider: string;
+  data_as_of?: string | null;
+  target_weights: Record<string, number>;
+  proposed_orders: Array<Record<string, unknown>>;
+  warnings: string[];
+  status: "generated" | "data_unavailable" | "invalid";
+  execution_blocked_reason?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategySignalMutationResponse = ApiEnvelope & {
+  signal: PaperStrategySignalResponse;
+};
+
+export type PaperStrategySleeveDetailResponse = ApiEnvelope & {
+  sleeve: PaperStrategySleeveResponse;
+  lots: PaperStrategySleeveLotResponse[];
+  signals: PaperStrategySignalResponse[];
+};
+
 export type LedgerEntryResponse = {
   entry_id: string;
   timestamp: string;
@@ -1825,6 +1925,44 @@ export function getPaperAccountLedger(limit = 50, offset = 0) {
     entries: [],
     safety: FALLBACK_SAFETY,
   });
+}
+
+export function getPaperStrategyConfigs() {
+  return apiGet<PaperStrategyConfigsResponse>("/api/paper/strategy-configs", {
+    configs: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getPaperStrategySleeves() {
+  return apiGet<PaperStrategySleevesResponse>("/api/paper/strategy-sleeves", {
+    sleeves: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getPaperStrategySleeveDetail(sleeveId: string) {
+  return apiGet<PaperStrategySleeveDetailResponse>(
+    `/api/paper/strategy-sleeves/${encodeURIComponent(sleeveId)}`,
+    {
+      sleeve: {
+        sleeve_id: sleeveId,
+        account_id: "default",
+        strategy_config_id: "",
+        strategy_config_version: 1,
+        mode: "signal_only",
+        status: "stopped",
+        initial_allocated_cash: 0,
+        cash: 0,
+        created_at: "",
+        updated_at: "",
+        metadata: {},
+      },
+      lots: [],
+      signals: [],
+      safety: FALLBACK_SAFETY,
+    },
+  );
 }
 
 export function getExperiments() {
