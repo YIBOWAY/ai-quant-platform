@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import threading
-from contextlib import suppress
 
 from fastapi import APIRouter, HTTPException
 
@@ -30,6 +29,8 @@ from quant_system.api.schemas.paper import (
     StrategyConfigCreateRequest,
     StrategyConfigMutationResponse,
     StrategyConfigsResponse,
+    StrategySignalGenerateRequest,
+    StrategySignalMutationResponse,
     StrategySleeveCreateRequest,
     StrategySleeveDetailResponse,
     StrategySleeveMutationResponse,
@@ -46,6 +47,10 @@ from quant_system.execution.account_service import (
     StrategyDataUnavailableError,
 )
 from quant_system.execution.account_storage import PaperAccountStorage
+from quant_system.execution.paper_strategy_signal_service import (
+    PaperStrategySignalService,
+    StrategySignalGenerationError,
+)
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
@@ -184,6 +189,24 @@ def _account_storage(api_runs_dir) -> PaperAccountStorage:
 
 def _strategy_sleeve_storage(api_runs_dir) -> PaperStrategySleeveStorage:
     return PaperStrategySleeveStorage(api_runs_dir)
+
+
+def _account_snapshot_or_default(account_storage: PaperAccountStorage) -> PaperAccount:
+    account = account_storage.load()
+    if account is not None:
+        return account
+    return PaperAccount.open_new(
+        account_id=account_storage.account_id,
+        initial_cash=DEFAULT_INITIAL_CASH,
+    )
+
+
+def _reconcile_pending_strategy_sleeves(
+    *,
+    account_storage: PaperAccountStorage,
+    sleeve_storage: PaperStrategySleeveStorage,
+) -> None:
+    sleeve_storage.reconcile_pending_sleeves(account_storage.load())
 
 
 def _account_quotes(account: PaperAccount, *, settings) -> dict[str, PricedQuote]:
@@ -609,9 +632,16 @@ def create_strategy_sleeve(
     account_storage = _account_storage(api_runs_dir)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperStrategySleeveService(sleeve_storage)
-    with _account_lock(account_storage.account_id), account_storage.mutation_lock():
+    with (
+        _account_lock(account_storage.account_id),
+        account_storage.mutation_lock(),
+        sleeve_storage.mutation_lock(),
+    ):
+        _reconcile_pending_strategy_sleeves(
+            account_storage=account_storage,
+            sleeve_storage=sleeve_storage,
+        )
         account = account_storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
-        previous_account = account.model_copy(deep=True)
         try:
             config = sleeve_storage.load_strategy_config(
                 request.strategy_config_id,
@@ -635,19 +665,44 @@ def create_strategy_sleeve(
                 detail=_error_detail("cash_allocation_error", str(exc)),
             ) from exc
         quotes = _account_quotes(account, settings=settings)
-        _save_account(account_storage, account, quotes)
-        try:
-            sleeve_storage.save_sleeve(sleeve)
-        except (OSError, ValueError) as exc:
-            with suppress(Exception):
-                _save_account(account_storage, previous_account, quotes)
-            raise HTTPException(
-                status_code=500,
-                detail=_error_detail(
-                    "strategy_sleeve_storage_error",
-                    "failed to persist strategy sleeve after account update",
-                ),
-            ) from exc
+        if sleeve.mode == StrategySleeveMode.ALLOCATED:
+            try:
+                sleeve_storage.save_pending_sleeve(sleeve)
+                _save_account(account_storage, account, quotes)
+            except (OSError, ValueError) as exc:
+                sleeve_storage.discard_pending_sleeve(sleeve.sleeve_id)
+                raise HTTPException(
+                    status_code=500,
+                    detail=_error_detail(
+                        "strategy_sleeve_storage_error",
+                        "failed to persist strategy sleeve allocation",
+                    ),
+                ) from exc
+            try:
+                sleeve_storage.finalize_pending_sleeve(sleeve.sleeve_id)
+            except (OSError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=_error_detail(
+                        "strategy_sleeve_storage_pending",
+                        (
+                            "strategy sleeve allocation was saved to the account; "
+                            "pending sleeve journal will be reconciled on next access"
+                        ),
+                    ),
+                ) from exc
+        else:
+            try:
+                sleeve_storage.save_sleeve(sleeve)
+                _save_account(account_storage, account, quotes)
+            except (OSError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=_error_detail(
+                        "strategy_sleeve_storage_error",
+                        "failed to persist strategy sleeve",
+                    ),
+                ) from exc
         return {
             "sleeve": sleeve.model_dump(mode="json"),
             "account": _account_view(account, settings=settings, quotes=quotes),
@@ -659,11 +714,22 @@ def create_strategy_sleeve(
     response_model=StrategySleevesResponse,
 )
 def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep) -> dict:
+    account_storage = _account_storage(api_runs_dir)
     storage = _strategy_sleeve_storage(api_runs_dir)
+    with (
+        _account_lock(account_storage.account_id),
+        account_storage.mutation_lock(),
+        storage.mutation_lock(),
+    ):
+        _reconcile_pending_strategy_sleeves(
+            account_storage=account_storage,
+            sleeve_storage=storage,
+        )
+        sleeves = storage.list_sleeves()
     return {
         "sleeves": [
             sleeve.model_dump(mode="json")
-            for sleeve in storage.list_sleeves()
+            for sleeve in sleeves
         ]
     }
 
@@ -673,18 +739,77 @@ def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep) -> dict:
     response_model=StrategySleeveDetailResponse,
 )
 def get_strategy_sleeve(sleeve_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
+    account_storage = _account_storage(api_runs_dir)
     storage = _strategy_sleeve_storage(api_runs_dir)
-    try:
-        sleeve = storage.load_sleeve(sleeve_id)
-    except FileNotFoundError as exc:
-        raise not_found_404("strategy_sleeve", sleeve_id) from exc
+    with (
+        _account_lock(account_storage.account_id),
+        account_storage.mutation_lock(),
+        storage.mutation_lock(),
+    ):
+        _reconcile_pending_strategy_sleeves(
+            account_storage=account_storage,
+            sleeve_storage=storage,
+        )
+        try:
+            sleeve = storage.load_sleeve(sleeve_id)
+        except FileNotFoundError as exc:
+            raise not_found_404("strategy_sleeve", sleeve_id) from exc
+        lots = storage.load_sleeve_lots(sleeve_id)
+        signals = storage.load_signals(sleeve_id)
     return {
         "sleeve": sleeve.model_dump(mode="json"),
-        "lots": [lot.model_dump(mode="json") for lot in storage.load_sleeve_lots(sleeve_id)],
+        "lots": [lot.model_dump(mode="json") for lot in lots],
         "signals": [
-            signal.model_dump(mode="json") for signal in storage.load_signals(sleeve_id)
+            signal.model_dump(mode="json") for signal in signals
         ],
     }
+
+
+@router.post(
+    "/paper/strategy-sleeves/{sleeve_id}/signals",
+    response_model=StrategySignalMutationResponse,
+)
+def generate_strategy_sleeve_signal(
+    sleeve_id: str,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+    request: StrategySignalGenerateRequest | None = None,
+) -> dict:
+    payload = request or StrategySignalGenerateRequest()
+    account_storage = _account_storage(api_runs_dir)
+    sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
+    service = PaperStrategySignalService(storage=sleeve_storage, settings=settings)
+    with (
+        _account_lock(account_storage.account_id),
+        account_storage.mutation_lock(),
+        sleeve_storage.mutation_lock(),
+    ):
+        _reconcile_pending_strategy_sleeves(
+            account_storage=account_storage,
+            sleeve_storage=sleeve_storage,
+        )
+        account = _account_snapshot_or_default(account_storage)
+        try:
+            sleeve = sleeve_storage.load_sleeve(sleeve_id)
+            config = sleeve_storage.load_strategy_config(
+                sleeve.strategy_config_id,
+                version=sleeve.strategy_config_version,
+            )
+            signal = service.generate_daily_signal(
+                sleeve=sleeve,
+                config=config,
+                account=account,
+                signal_date=payload.signal_date,
+                history_days=payload.history_days,
+            )
+        except FileNotFoundError as exc:
+            raise not_found_404("strategy_sleeve", sleeve_id) from exc
+        except StrategySignalGenerationError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail("strategy_sleeve_stopped", str(exc)),
+            ) from exc
+    return {"signal": signal.model_dump(mode="json")}
 
 
 @router.post(
@@ -751,8 +876,16 @@ def _mutate_strategy_sleeve_status(
     account_storage = _account_storage(api_runs_dir)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperStrategySleeveService(sleeve_storage)
-    with _account_lock(account_storage.account_id), account_storage.mutation_lock():
-        account = account_storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+    with (
+        _account_lock(account_storage.account_id),
+        account_storage.mutation_lock(),
+        sleeve_storage.mutation_lock(),
+    ):
+        _reconcile_pending_strategy_sleeves(
+            account_storage=account_storage,
+            sleeve_storage=sleeve_storage,
+        )
+        account = _account_snapshot_or_default(account_storage)
         try:
             sleeve = sleeve_storage.load_sleeve(sleeve_id)
         except FileNotFoundError as exc:

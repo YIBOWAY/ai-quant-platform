@@ -2,7 +2,8 @@
 
 > 状态：MVP-1 第一切片后端基础已实现（2026-06-26）：领域模型 / API schema /
 > 本地文件存储 / cash 与 lot 分账基础已经落地；第二切片 API contract 已实现；
-> CLI、前端 UX redesign、daily signal 生成和自动执行仍待后续切片实现。
+> 第三切片 daily signal 生成 / 手动 CLI / opt-in 真实 Futu 测试已实现；
+> 前端 UX redesign 和自动执行仍待后续切片实现。
 > 日期：2026-06-15。  
 > 命名说明：本文的 **MVP-1** 指「Paper Strategy Sleeves」这条新业务线的第一实施阶段，**不是**项目历史阶段地图里的 Phase 1「数据层 MVP」。后续实现和提交信息应避免写成 `Phase 1`，统一写 `Paper Strategy Sleeves MVP-1`。
 
@@ -445,6 +446,10 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
    - MVP-1 只写入 `StrategySignal`，不产生实际 fill。
    - `paused` sleeve 可以写入观察信号，但必须标记 `execution_blocked_reason=sleeve_paused`，且不能写 pending order。
    - 数据不可用时写 `data_unavailable`，不使用 sample/fallback 合成数据。
+   - **2026-06-26 已完成第三切片**：服务位于
+     `src/quant_system/execution/paper_strategy_signal_service.py`，API 路径为
+     `POST /api/paper/strategy-sleeves/{id}/signals`，CLI 为
+     `quant-system paper strategies generate-signal --sleeve <id>`。
 
 5. **API contract**
    - 新增 strategy config 和 strategy sleeve API。
@@ -458,7 +463,8 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
 
 基础层稳定后，这些工作可以相对独立推进。
 
-- **CLI**：实现 config-create、sleeve-create、generate-signal、sleeve-show。
+- **CLI**：`generate-signal` 已完成；config-create、sleeve-create、sleeve-show
+  仍待后续实现。
 - **前端 UX redesign**：按 2026-06-26 用户反馈，第四切片不再只是最小入口；
   需要使用 web-design-engineer 类设计流程，先声明设计系统并确认，再重构
   `/paper-trading` 的 Strategy Sleeves 工作流。
@@ -475,8 +481,8 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
 - 普通手动卖出不卖 strategy sleeve lot；超过 manual lot 可卖数量时应拒绝。
 - paused sleeve 可继续生成观察信号，但不能生成可执行计划或 pending order。
 - sample/fallback 数据不能进入 allocated 信号或后续执行路径。
-- 第三切片需要包含 opt-in 真实 Futu/OpenD 集成测试，使用 `futu_opend`
-  pytest marker 和 `QS_TEST_FUTU_OPEND=1`，且只允许 read-only quote/OHLCV。
+- 第三切片已包含 opt-in 真实 Futu/OpenD 集成测试，使用 `futu_opend`
+  pytest marker 和 `QS_TEST_FUTU_OPEND=1`，且只允许 read-only OHLCV。
 - legacy full-account rebalance 仍保持原行为，且不会被 UI 当作新 sleeve 主入口。
 
 ## 17. 测试与验收
@@ -522,6 +528,7 @@ MVP-1 需要测试：
 | 2026-06-16 | `paused` sleeve 仍可记录观察信号，但不能生成可执行计划或 pending order。 |
 | 2026-06-26 | 第二切片已实现 StrategyConfig / StrategySleeve API contract，但 CLI、signal generation、前端和自动执行仍待后续切片。 |
 | 2026-06-26 | 第三切片必须同时包含 mock/provider 单测和 opt-in 真实 Futu/OpenD read-only 集成测试；正常 CI 不默认打 OpenD。 |
+| 2026-06-26 | 第三切片已实现 daily signal generation、`POST /signals`、`paper strategies generate-signal`，但仍不做 pending order、fill 或自动成交。 |
 | 2026-06-26 | 第四切片按用户反馈升级为 Paper Strategy Sleeves UX Redesign，不再只是最小面板。 |
 
 ## 19. 相关代码入口
@@ -531,6 +538,7 @@ MVP-1 需要测试：
 | 持久账户模型 | `src/quant_system/execution/account.py` |
 | Strategy Sleeves 领域模型 / 分账基础 | `src/quant_system/execution/paper_strategy_sleeves.py` |
 | Strategy Sleeves 本地存储 | `src/quant_system/execution/paper_strategy_sleeve_storage.py` |
+| Strategy Sleeves 信号生成 | `src/quant_system/execution/paper_strategy_signal_service.py` |
 | 账户持久化 | `src/quant_system/execution/account_storage.py` |
 | 账户服务 | `src/quant_system/execution/account_service.py` |
 | 账户取价 | `src/quant_system/execution/price_source.py` |

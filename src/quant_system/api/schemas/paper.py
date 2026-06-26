@@ -130,6 +130,15 @@ class StrategySleeveStopRequest(BaseModel):
     reason: str | None = None
 
 
+class StrategySignalGenerateRequest(BaseModel):
+    signal_date: str | None = None
+    history_days: int = Field(default=180, gt=0)
+
+
+class StrategySignalMutationResponse(BaseModel):
+    signal: StrategySignalResponse
+
+
 class PaperRunsResponse(BaseModel):
     paper_runs: list[PaperRunSummary]
 

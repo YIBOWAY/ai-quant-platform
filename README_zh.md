@@ -237,18 +237,21 @@ quant-system paper rebalance --account default --strategy cross_sectional_top_n
 
 Paper Strategy Sleeves 是持久模拟账户的下一层分账模型：一个账户下区分
 manual sleeve 和多个 strategy sleeve，各自拥有现金分配和 lot 归属。2026-06-26
-已落地后端基础与 API contract：
+已落地后端基础、API contract 与 daily signal 生成：
 
 - `src/quant_system/execution/paper_strategy_sleeves.py`：`StrategyConfig`、
   `StrategySleeve`、`SleeveLot`、`StrategySignal`、`SleeveLotBook`。
 - `src/quant_system/execution/paper_strategy_sleeve_storage.py`：本地事实来源存储，
   路径为 `data/api_runs/paper_strategy_sleeves/`。
 - `PaperAccount.sleeve_cash`：账内现金分配簿；`PaperAccount.cash` 继续作为旧账户路径的总现金字段。
-- 后端 API 已覆盖策略配置创建 / 列表 / 版本，以及 sleeve 创建 / 列表 / 详情 /
+- 后端 API 已覆盖策略配置创建 / 列表 / 版本，以及 sleeve 创建 / 列表 / 详情 / daily signal /
   pause / resume / stop：`/api/paper/strategy-configs` 与
   `/api/paper/strategy-sleeves`。
+- daily signal 可通过
+  `POST /api/paper/strategy-sleeves/{id}/signals` 或
+  `quant-system paper strategies generate-signal --sleeve <id>` 手动触发。
 
-尚未实现：CLI、`/paper-trading` 面板、daily signal 生成和自动成交。
+尚未实现：`/paper-trading` Strategy Sleeves 面板和自动成交。
 现有 `POST /api/paper/account/rebalance` 仍是全账户再平衡，不是 Strategy Sleeves 入口。详见
 [docs/design/paper_strategy_sleeves_plan.md](docs/design/paper_strategy_sleeves_plan.md) 与
 [docs/execution/paper_strategy_sleeves.md](docs/execution/paper_strategy_sleeves.md)。

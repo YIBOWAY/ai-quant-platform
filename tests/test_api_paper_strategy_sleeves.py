@@ -8,7 +8,15 @@ from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
+from quant_system.execution.paper_strategy_sleeves import StrategySleeveMode
 from quant_system.execution.price_source import PricedQuote
+from tests.test_paper_strategy_signals import (
+    FakeOHLCVProvider,
+    make_config,
+    make_ohlcv_frame,
+    make_sleeve,
+    patch_provider,
+)
 
 
 @pytest.fixture
@@ -196,16 +204,21 @@ def test_strategy_sleeve_api_does_not_save_sleeve_when_account_save_fails(
     assert account.sleeve_cash == {"manual": 1_000_000.0}
 
 
-def test_strategy_sleeve_api_rolls_back_account_when_sleeve_save_fails(
+def test_strategy_sleeve_api_recovers_pending_sleeve_after_finalize_failure(
     tmp_path, monkeypatch
 ) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
     config = _create_config(client)
+    original_finalize = PaperStrategySleeveStorage.finalize_pending_sleeve
 
-    def fail_save_sleeve(self, sleeve):  # noqa: ARG001
-        raise OSError("sleeve disk write failed")
+    def fail_finalize(self, sleeve_id):  # noqa: ARG001
+        raise OSError("sleeve finalization failed")
 
-    monkeypatch.setattr(PaperStrategySleeveStorage, "save_sleeve", fail_save_sleeve)
+    monkeypatch.setattr(
+        PaperStrategySleeveStorage,
+        "finalize_pending_sleeve",
+        fail_finalize,
+    )
 
     response = client.post(
         "/api/paper/strategy-sleeves",
@@ -217,12 +230,23 @@ def test_strategy_sleeve_api_rolls_back_account_when_sleeve_save_fails(
     )
 
     assert response.status_code == 500
-    assert response.json()["detail"]["code"] == "strategy_sleeve_storage_error"
-    assert client.get("/api/paper/strategy-sleeves").json()["sleeves"] == []
+    assert response.json()["detail"]["code"] == "strategy_sleeve_storage_pending"
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    pending = storage.list_pending_sleeves()
+    assert len(pending) == 1
     account = PaperAccountStorage(tmp_path / "api_runs").load()
     assert account is not None
-    assert account.sleeve_cash == {"manual": 1_000_000.0}
-    assert [entry.kind for entry in account.ledger] == ["deposit"]
+    assert account.sleeve_cash["manual"] == pytest.approx(750_000.0)
+    assert account.sleeve_cash[pending[0].sleeve_id] == pytest.approx(250_000.0)
+
+    monkeypatch.setattr(
+        PaperStrategySleeveStorage,
+        "finalize_pending_sleeve",
+        original_finalize,
+    )
+    listed = client.get("/api/paper/strategy-sleeves").json()["sleeves"]
+    assert [sleeve["sleeve_id"] for sleeve in listed] == [pending[0].sleeve_id]
+    assert storage.list_pending_sleeves() == []
 
 
 def test_strategy_sleeve_api_rejects_over_allocation_without_mutation(tmp_path) -> None:
@@ -268,6 +292,84 @@ def test_strategy_sleeve_api_lifecycle_transitions(tmp_path) -> None:
     assert stopped.status_code == 200
     assert stopped.json()["sleeve"]["status"] == "stopped"
     assert stopped.json()["sleeve"]["stop_reason"] == "finished observation"
+
+
+def test_strategy_sleeve_signal_api_generates_and_persists_daily_signal(
+    tmp_path, monkeypatch
+) -> None:
+    patch_provider(monkeypatch, FakeOHLCVProvider(make_ohlcv_frame()))
+    client = TestClient(create_app(output_dir=tmp_path))
+    config = _create_config(client)
+    created = client.post(
+        "/api/paper/strategy-sleeves",
+        json={
+            "strategy_config_id": config["strategy_config_id"],
+            "strategy_config_version": config["version"],
+            "mode": "allocated",
+            "allocated_cash": 50_000.0,
+        },
+    )
+    assert created.status_code == 200
+    sleeve = created.json()["sleeve"]
+
+    response = client.post(
+        f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}/signals",
+        json={"signal_date": "2024-03-20", "history_days": 90},
+    )
+
+    assert response.status_code == 200
+    signal = response.json()["signal"]
+    assert signal["status"] == "generated"
+    assert signal["data_provider"] == "futu"
+    assert signal["target_weights"] == {"AAPL": pytest.approx(1.0)}
+    assert signal["proposed_orders"][0]["symbol"] == "AAPL"
+    assert signal["proposed_orders"][0]["side"] == "buy"
+
+    detail = client.get(f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}").json()
+    assert [item["signal_id"] for item in detail["signals"]] == [signal["signal_id"]]
+    account = client.get("/api/paper/account").json()
+    assert account["cash"] == pytest.approx(1_000_000.0)
+    assert account["positions"] == []
+    assert account["pending_orders"] == []
+
+
+def test_strategy_sleeve_signal_api_rejects_stopped_sleeves(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    config = _create_config(client)
+    sleeve = client.post(
+        "/api/paper/strategy-sleeves",
+        json={"strategy_config_id": config["strategy_config_id"], "mode": "signal_only"},
+    ).json()["sleeve"]
+    client.post(
+        f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}/stop",
+        json={"reason": "done"},
+    )
+
+    response = client.post(f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}/signals")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "strategy_sleeve_stopped"
+
+
+def test_strategy_sleeve_signal_api_does_not_create_account_file(
+    tmp_path, monkeypatch
+) -> None:
+    patch_provider(monkeypatch, FakeOHLCVProvider(make_ohlcv_frame()))
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    config = make_config()
+    sleeve = make_sleeve(config, mode=StrategySleeveMode.SIGNAL_ONLY)
+    storage.save_strategy_config(config)
+    storage.save_sleeve(sleeve)
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        f"/api/paper/strategy-sleeves/{sleeve.sleeve_id}/signals",
+        json={"signal_date": "2024-03-20", "history_days": 90},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["signal"]["status"] == "generated"
+    assert PaperAccountStorage(tmp_path / "api_runs").account_path.exists() is False
 
 
 def test_legacy_account_rebalance_route_is_not_strategy_sleeve_entrypoint(

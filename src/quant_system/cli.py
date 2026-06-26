@@ -109,6 +109,9 @@ factor_app = typer.Typer(help="Run Phase 2 factor-research commands.")
 backtest_app = typer.Typer(help="Run Phase 3 backtest commands.")
 experiment_app = typer.Typer(help="Run Phase 4 experiment-management commands.")
 paper_app = typer.Typer(help="Run Phase 5 paper-trading commands.")
+paper_strategies_app = typer.Typer(
+    help="Manage Paper Strategy Sleeves strategy workflows."
+)
 agent_app = typer.Typer(help="Run Phase 7 AI research assistant commands.")
 prediction_market_app = typer.Typer(
     help="Run Phase 8 prediction-market dry scanning commands."
@@ -847,6 +850,78 @@ def paper_account_show_command(
     )
     for symbol, position in sorted(account.positions.items()):
         typer.echo(f"  {symbol}: qty={position.quantity:.4f} avg_cost={position.avg_cost:.2f}")
+
+
+@paper_strategies_app.command("generate-signal")
+def paper_strategy_generate_signal_command(
+    sleeve_id: Annotated[
+        str,
+        typer.Option("--sleeve", help="Strategy sleeve id to generate a signal for."),
+    ],
+    signal_date: Annotated[
+        str | None,
+        typer.Option("--signal-date", help="Signal date, for example 2024-03-20."),
+    ] = None,
+    history_days: Annotated[
+        int,
+        typer.Option("--history-days", help="Number of calendar days to request."),
+    ] = 180,
+) -> None:
+    """Generate and persist one daily Paper Strategy Sleeve signal."""
+    from quant_system.execution.account import PaperAccount
+    from quant_system.execution.account_storage import PaperAccountStorage
+    from quant_system.execution.paper_strategy_signal_service import (
+        PaperStrategySignalService,
+        StrategySignalGenerationError,
+    )
+    from quant_system.execution.paper_strategy_sleeve_storage import (
+        PaperStrategySleeveStorage,
+    )
+
+    settings = load_settings()
+    api_runs_dir = settings.data.data_dir / "api_runs"
+    account_storage = PaperAccountStorage(api_runs_dir)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    service = PaperStrategySignalService(storage=sleeve_storage, settings=settings)
+    with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
+        persisted_account = account_storage.load()
+        sleeve_storage.reconcile_pending_sleeves(persisted_account)
+        account = persisted_account or PaperAccount.open_new(
+            account_id=account_storage.account_id
+        )
+        try:
+            sleeve = sleeve_storage.load_sleeve(sleeve_id)
+            config = sleeve_storage.load_strategy_config(
+                sleeve.strategy_config_id,
+                version=sleeve.strategy_config_version,
+            )
+            signal = service.generate_daily_signal(
+                sleeve=sleeve,
+                config=config,
+                account=account,
+                signal_date=signal_date,
+                history_days=history_days,
+            )
+        except FileNotFoundError as exc:
+            typer.echo(f"strategy sleeve not found: {sleeve_id}")
+            raise typer.Exit(code=1) from exc
+        except StrategySignalGenerationError as exc:
+            typer.echo(f"signal generation unavailable: {exc}")
+            raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        " ".join(
+            [
+                f"sleeve={sleeve_id}",
+                f"signal_id={signal.signal_id}",
+                f"status={signal.status}",
+                f"data_provider={signal.data_provider}",
+                f"data_as_of={signal.data_as_of or '<none>'}",
+                f"targets={len(signal.target_weights)}",
+                f"proposed_orders={len(signal.proposed_orders)}",
+            ]
+        )
+    )
 
 
 @agent_app.command("propose-factor")
@@ -1817,6 +1892,7 @@ app.add_typer(data_app, name="data")
 app.add_typer(factor_app, name="factor")
 app.add_typer(backtest_app, name="backtest")
 app.add_typer(experiment_app, name="experiment")
+paper_app.add_typer(paper_strategies_app, name="strategies")
 app.add_typer(paper_app, name="paper")
 app.add_typer(agent_app, name="agent")
 app.add_typer(prediction_market_app, name="prediction-market")

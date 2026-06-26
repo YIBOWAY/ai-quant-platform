@@ -36,3 +36,22 @@ def test_build_factor_signal_frame_provides_phase_3_score_interface() -> None:
     assert {"symbol", "signal_ts", "tradeable_ts", "score"}.issubset(signal_frame.columns)
     assert {"momentum", "liquidity"}.issubset(signal_frame.columns)
     assert signal_frame["score"].notna().all()
+
+
+def test_build_factor_signal_frame_applies_optional_factor_weights() -> None:
+    frame = SampleOHLCVProvider().fetch_ohlcv(
+        ["SPY", "AAPL"],
+        start="2024-01-02",
+        end="2024-01-31",
+    )
+    factor_results = compute_factor_pipeline(
+        frame,
+        factors=[MomentumFactor(lookback=3), LiquidityFactor(lookback=3)],
+    )
+
+    signal_frame = build_factor_signal_frame(
+        factor_results,
+        weights={"momentum": 1.0},
+    )
+
+    assert signal_frame["score"].equals(signal_frame["momentum"])

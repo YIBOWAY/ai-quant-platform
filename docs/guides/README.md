@@ -16,7 +16,7 @@
 ## 重设计
 
 - [模拟交易 + 持仓地图 重设计](../design/paper_trading_position_map_redesign.md) — 单一 100 万模拟账户、策略「一键再平衡」+ 可选定时、手动美股下单（优先 Futu 实时快照，离线时只回退到真实最近收盘价，绝不使用演示价格）、统一持仓地图。**阶段 1-5 已实现**；该文档记录目标形态、API 设计与分阶段实现，落地后的操作说明见上面两份指南。
-- [Paper Strategy Sleeves MVP-1](../design/paper_strategy_sleeves_plan.md) — 策略资金段 / signal-only / allocated 分账设计。2026-06-26 已完成后端基础与 API contract；CLI、前端 UX redesign、daily signal 生成和自动成交尚未实现。执行状态见 [Paper Strategy Sleeves 执行说明](../execution/paper_strategy_sleeves.md)。
+- [Paper Strategy Sleeves MVP-1](../design/paper_strategy_sleeves_plan.md) — 策略资金段 / signal-only / allocated 分账设计。2026-06-26 已完成后端基础、API contract、daily signal 生成和手动 signal CLI；前端 UX redesign 与自动成交尚未实现。执行状态见 [Paper Strategy Sleeves 执行说明](../execution/paper_strategy_sleeves.md)。
 
 ## 阅读建议
 

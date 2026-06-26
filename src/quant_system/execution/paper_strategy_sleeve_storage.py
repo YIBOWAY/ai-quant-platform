@@ -16,6 +16,7 @@ from quant_system.execution.paper_strategy_sleeves import (
     StrategyConfig,
     StrategySignal,
     StrategySleeve,
+    StrategySleeveMode,
 )
 
 
@@ -107,6 +108,9 @@ class PaperStrategySleeveStorage:
     def sleeve_path(self, sleeve_id: str) -> Path:
         return self.sleeve_dir(sleeve_id) / "sleeve.json"
 
+    def pending_sleeve_path(self, sleeve_id: str) -> Path:
+        return self.sleeve_dir(sleeve_id) / "sleeve.pending.json"
+
     def sleeve_lots_path(self, sleeve_id: str) -> Path:
         return self.sleeve_dir(sleeve_id) / "lots.parquet"
 
@@ -162,6 +166,32 @@ class PaperStrategySleeveStorage:
         self._write_json_atomic(path, sleeve.model_dump(mode="json"))
         return path
 
+    def save_pending_sleeve(self, sleeve: StrategySleeve) -> Path:
+        path = self.pending_sleeve_path(sleeve.sleeve_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_json_atomic(path, sleeve.model_dump(mode="json"))
+        return path
+
+    def finalize_pending_sleeve(self, sleeve_id: str) -> Path:
+        pending_path = self.pending_sleeve_path(sleeve_id)
+        final_path = self.sleeve_path(sleeve_id)
+        if not pending_path.exists():
+            if final_path.exists():
+                return final_path
+            raise FileNotFoundError(pending_path)
+        if final_path.exists():
+            pending_payload = json.loads(pending_path.read_text(encoding="utf-8"))
+            final_payload = json.loads(final_path.read_text(encoding="utf-8"))
+            if pending_payload != final_payload:
+                raise FileExistsError(f"strategy sleeve already exists: {final_path}")
+            pending_path.unlink(missing_ok=True)
+            return final_path
+        self._atomic_replace(pending_path, final_path)
+        return final_path
+
+    def discard_pending_sleeve(self, sleeve_id: str) -> None:
+        self.pending_sleeve_path(sleeve_id).unlink(missing_ok=True)
+
     def load_sleeve(self, sleeve_id: str) -> StrategySleeve:
         path = self.sleeve_path(sleeve_id)
         return StrategySleeve.model_validate(json.loads(path.read_text(encoding="utf-8")))
@@ -177,6 +207,31 @@ class PaperStrategySleeveStorage:
                 )
             )
         return sleeves
+
+    def list_pending_sleeves(self) -> list[StrategySleeve]:
+        if not self.sleeves_dir.exists():
+            return []
+        return [
+            StrategySleeve.model_validate(json.loads(path.read_text(encoding="utf-8")))
+            for path in sorted(self.sleeves_dir.glob("*/sleeve.pending.json"))
+        ]
+
+    def reconcile_pending_sleeves(self, account) -> list[StrategySleeve]:
+        reconciled: list[StrategySleeve] = []
+        for sleeve in self.list_pending_sleeves():
+            if self.sleeve_path(sleeve.sleeve_id).exists():
+                self.discard_pending_sleeve(sleeve.sleeve_id)
+                continue
+            has_account_allocation = (
+                account is not None
+                and account.sleeve_cash.get(sleeve.sleeve_id, 0.0) > 0.0
+            )
+            if sleeve.mode == StrategySleeveMode.ALLOCATED and not has_account_allocation:
+                self.discard_pending_sleeve(sleeve.sleeve_id)
+                continue
+            self.finalize_pending_sleeve(sleeve.sleeve_id)
+            reconciled.append(self.load_sleeve(sleeve.sleeve_id))
+        return reconciled
 
     def save_sleeve_lots(self, sleeve_id: str, lots: list[SleeveLot]) -> Path:
         path = self.sleeve_lots_path(sleeve_id)
