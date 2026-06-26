@@ -354,6 +354,36 @@ class PaperStrategySleeveService:
         )
         if mode == StrategySleeveMode.ALLOCATED:
             self._allocate_cash(account, sleeve)
+        return sleeve
+
+    def pause_sleeve(self, sleeve: StrategySleeve) -> StrategySleeve:
+        if sleeve.status == StrategySleeveStatus.STOPPED:
+            raise ValueError("stopped sleeves cannot be paused")
+        sleeve.status = StrategySleeveStatus.PAUSED
+        sleeve.paused_at = _utc_now_iso()
+        sleeve.updated_at = sleeve.paused_at
+        self.storage.save_sleeve(sleeve)
+        return sleeve
+
+    def resume_sleeve(self, sleeve: StrategySleeve) -> StrategySleeve:
+        if sleeve.status == StrategySleeveStatus.STOPPED:
+            raise ValueError("stopped sleeves cannot be resumed")
+        sleeve.status = StrategySleeveStatus.RUNNING
+        sleeve.paused_at = None
+        sleeve.updated_at = _utc_now_iso()
+        self.storage.save_sleeve(sleeve)
+        return sleeve
+
+    def stop_sleeve(
+        self,
+        sleeve: StrategySleeve,
+        *,
+        reason: str | None = None,
+    ) -> StrategySleeve:
+        sleeve.status = StrategySleeveStatus.STOPPED
+        sleeve.stopped_at = _utc_now_iso()
+        sleeve.updated_at = sleeve.stopped_at
+        sleeve.stop_reason = reason
         self.storage.save_sleeve(sleeve)
         return sleeve
 

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +32,65 @@ class PaperStrategySleeveStorage:
     @property
     def sleeves_dir(self) -> Path:
         return self.root_dir / "sleeves"
+
+    @property
+    def lock_path(self) -> Path:
+        return self.root_dir / "paper_strategy_sleeves.lock"
+
+    @contextmanager
+    def mutation_lock(
+        self,
+        *,
+        timeout_seconds: float = 30.0,
+        poll_seconds: float = 0.05,
+    ) -> Iterator[None]:
+        """Serialize sleeve metadata mutations across local processes."""
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        with self.lock_path.open("a+b") as handle:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+
+            deadline = time.monotonic() + timeout_seconds
+            while True:
+                try:
+                    self._lock_file(handle)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"timed out waiting for strategy sleeve lock {self.lock_path}"
+                        ) from None
+                    time.sleep(poll_seconds)
+            try:
+                yield
+            finally:
+                self._unlock_file(handle)
+
+    @staticmethod
+    def _lock_file(handle) -> None:
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            return
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    @staticmethod
+    def _unlock_file(handle) -> None:
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def strategy_config_dir(self, strategy_config_id: str) -> Path:
         return self.strategy_configs_dir / strategy_config_id
@@ -80,6 +142,20 @@ class PaperStrategySleeveStorage:
         path = self.strategy_config_path(strategy_config_id, version)
         return StrategyConfig.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
+    def list_strategy_configs(self) -> list[StrategyConfig]:
+        if not self.strategy_configs_dir.exists():
+            return []
+        configs: list[StrategyConfig] = []
+        for metadata_path in sorted(self.strategy_configs_dir.glob("*/metadata.json")):
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            configs.append(
+                self.load_strategy_config(
+                    str(metadata["strategy_config_id"]),
+                    version=int(metadata["latest_version"]),
+                )
+            )
+        return configs
+
     def save_sleeve(self, sleeve: StrategySleeve) -> Path:
         path = self.sleeve_path(sleeve.sleeve_id)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,6 +165,18 @@ class PaperStrategySleeveStorage:
     def load_sleeve(self, sleeve_id: str) -> StrategySleeve:
         path = self.sleeve_path(sleeve_id)
         return StrategySleeve.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+    def list_sleeves(self) -> list[StrategySleeve]:
+        if not self.sleeves_dir.exists():
+            return []
+        sleeves = []
+        for sleeve_path in sorted(self.sleeves_dir.glob("*/sleeve.json")):
+            sleeves.append(
+                StrategySleeve.model_validate(
+                    json.loads(sleeve_path.read_text(encoding="utf-8"))
+                )
+            )
+        return sleeves
 
     def save_sleeve_lots(self, sleeve_id: str, lots: list[SleeveLot]) -> Path:
         path = self.sleeve_lots_path(sleeve_id)

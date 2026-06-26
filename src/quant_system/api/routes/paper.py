@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+from contextlib import suppress
 
 from fastapi import APIRouter, HTTPException
 
@@ -26,6 +27,14 @@ from quant_system.api.schemas.paper import (
     PaperRunRequest,
     PaperRunResponse,
     PaperRunsResponse,
+    StrategyConfigCreateRequest,
+    StrategyConfigMutationResponse,
+    StrategyConfigsResponse,
+    StrategySleeveCreateRequest,
+    StrategySleeveDetailResponse,
+    StrategySleeveMutationResponse,
+    StrategySleevesResponse,
+    StrategySleeveStopRequest,
 )
 from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
@@ -37,6 +46,15 @@ from quant_system.execution.account_service import (
     StrategyDataUnavailableError,
 )
 from quant_system.execution.account_storage import PaperAccountStorage
+from quant_system.execution.paper_strategy_sleeve_storage import (
+    PaperStrategySleeveStorage,
+)
+from quant_system.execution.paper_strategy_sleeves import (
+    CashAllocationError,
+    PaperStrategySleeveService,
+    StrategyConfig,
+    StrategySleeveMode,
+)
 from quant_system.execution.pipeline import run_paper_trading
 from quant_system.execution.price_source import (
     PaperPriceSource,
@@ -162,6 +180,10 @@ def _account_lock(account_id: str) -> threading.Lock:
 
 def _account_storage(api_runs_dir) -> PaperAccountStorage:
     return PaperAccountStorage(api_runs_dir)
+
+
+def _strategy_sleeve_storage(api_runs_dir) -> PaperStrategySleeveStorage:
+    return PaperStrategySleeveStorage(api_runs_dir)
 
 
 def _account_quotes(account: PaperAccount, *, settings) -> dict[str, PricedQuote]:
@@ -510,6 +532,248 @@ def rebalance_account(
                     for order in outcome.orders
                 ],
             },
+            "account": _account_view(account, settings=settings, quotes=quotes),
+        }
+
+
+@router.post(
+    "/paper/strategy-configs",
+    response_model=StrategyConfigMutationResponse,
+)
+def create_strategy_config(
+    request: StrategyConfigCreateRequest,
+    api_runs_dir: ApiRunsDirDep,
+) -> dict:
+    storage = _strategy_sleeve_storage(api_runs_dir)
+    with storage.mutation_lock():
+        config = StrategyConfig.create(**request.model_dump(mode="json"))
+        try:
+            storage.save_strategy_config(config)
+        except FileExistsError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail("strategy_config_conflict", str(exc)),
+            ) from exc
+    return {"config": config.model_dump(mode="json")}
+
+
+@router.get(
+    "/paper/strategy-configs",
+    response_model=StrategyConfigsResponse,
+)
+def list_strategy_configs(api_runs_dir: ApiRunsDirDep) -> dict:
+    storage = _strategy_sleeve_storage(api_runs_dir)
+    return {
+        "configs": [
+            config.model_dump(mode="json")
+            for config in storage.list_strategy_configs()
+        ]
+    }
+
+
+@router.post(
+    "/paper/strategy-configs/{strategy_config_id}/versions",
+    response_model=StrategyConfigMutationResponse,
+)
+def create_strategy_config_version(
+    strategy_config_id: str,
+    request: StrategyConfigCreateRequest,
+    api_runs_dir: ApiRunsDirDep,
+) -> dict:
+    storage = _strategy_sleeve_storage(api_runs_dir)
+    with storage.mutation_lock():
+        try:
+            latest = storage.load_strategy_config(strategy_config_id)
+        except FileNotFoundError as exc:
+            raise not_found_404("strategy_config", strategy_config_id) from exc
+        config = latest.new_version(**request.model_dump(mode="json"))
+        try:
+            storage.save_strategy_config(config)
+        except FileExistsError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail("strategy_config_conflict", str(exc)),
+            ) from exc
+    return {"config": config.model_dump(mode="json")}
+
+
+@router.post(
+    "/paper/strategy-sleeves",
+    response_model=StrategySleeveMutationResponse,
+)
+def create_strategy_sleeve(
+    request: StrategySleeveCreateRequest,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    account_storage = _account_storage(api_runs_dir)
+    sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
+    service = PaperStrategySleeveService(sleeve_storage)
+    with _account_lock(account_storage.account_id), account_storage.mutation_lock():
+        account = account_storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+        previous_account = account.model_copy(deep=True)
+        try:
+            config = sleeve_storage.load_strategy_config(
+                request.strategy_config_id,
+                version=request.strategy_config_version,
+            )
+            sleeve = service.create_sleeve(
+                account,
+                config=config,
+                mode=StrategySleeveMode(request.mode),
+                allocated_cash=request.allocated_cash,
+                metadata=request.metadata,
+            )
+        except FileNotFoundError as exc:
+            raise not_found_404(
+                "strategy_config",
+                request.strategy_config_id,
+            ) from exc
+        except CashAllocationError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=_error_detail("cash_allocation_error", str(exc)),
+            ) from exc
+        quotes = _account_quotes(account, settings=settings)
+        _save_account(account_storage, account, quotes)
+        try:
+            sleeve_storage.save_sleeve(sleeve)
+        except (OSError, ValueError) as exc:
+            with suppress(Exception):
+                _save_account(account_storage, previous_account, quotes)
+            raise HTTPException(
+                status_code=500,
+                detail=_error_detail(
+                    "strategy_sleeve_storage_error",
+                    "failed to persist strategy sleeve after account update",
+                ),
+            ) from exc
+        return {
+            "sleeve": sleeve.model_dump(mode="json"),
+            "account": _account_view(account, settings=settings, quotes=quotes),
+        }
+
+
+@router.get(
+    "/paper/strategy-sleeves",
+    response_model=StrategySleevesResponse,
+)
+def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep) -> dict:
+    storage = _strategy_sleeve_storage(api_runs_dir)
+    return {
+        "sleeves": [
+            sleeve.model_dump(mode="json")
+            for sleeve in storage.list_sleeves()
+        ]
+    }
+
+
+@router.get(
+    "/paper/strategy-sleeves/{sleeve_id}",
+    response_model=StrategySleeveDetailResponse,
+)
+def get_strategy_sleeve(sleeve_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
+    storage = _strategy_sleeve_storage(api_runs_dir)
+    try:
+        sleeve = storage.load_sleeve(sleeve_id)
+    except FileNotFoundError as exc:
+        raise not_found_404("strategy_sleeve", sleeve_id) from exc
+    return {
+        "sleeve": sleeve.model_dump(mode="json"),
+        "lots": [lot.model_dump(mode="json") for lot in storage.load_sleeve_lots(sleeve_id)],
+        "signals": [
+            signal.model_dump(mode="json") for signal in storage.load_signals(sleeve_id)
+        ],
+    }
+
+
+@router.post(
+    "/paper/strategy-sleeves/{sleeve_id}/pause",
+    response_model=StrategySleeveMutationResponse,
+)
+def pause_strategy_sleeve(
+    sleeve_id: str,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    return _mutate_strategy_sleeve_status(
+        sleeve_id,
+        api_runs_dir=api_runs_dir,
+        settings=settings,
+        action="pause",
+    )
+
+
+@router.post(
+    "/paper/strategy-sleeves/{sleeve_id}/resume",
+    response_model=StrategySleeveMutationResponse,
+)
+def resume_strategy_sleeve(
+    sleeve_id: str,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    return _mutate_strategy_sleeve_status(
+        sleeve_id,
+        api_runs_dir=api_runs_dir,
+        settings=settings,
+        action="resume",
+    )
+
+
+@router.post(
+    "/paper/strategy-sleeves/{sleeve_id}/stop",
+    response_model=StrategySleeveMutationResponse,
+)
+def stop_strategy_sleeve(
+    sleeve_id: str,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+    request: StrategySleeveStopRequest | None = None,
+) -> dict:
+    return _mutate_strategy_sleeve_status(
+        sleeve_id,
+        api_runs_dir=api_runs_dir,
+        settings=settings,
+        action="stop",
+        reason=request.reason if request else None,
+    )
+
+
+def _mutate_strategy_sleeve_status(
+    sleeve_id: str,
+    *,
+    api_runs_dir,
+    settings,
+    action: str,
+    reason: str | None = None,
+) -> dict:
+    account_storage = _account_storage(api_runs_dir)
+    sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
+    service = PaperStrategySleeveService(sleeve_storage)
+    with _account_lock(account_storage.account_id), account_storage.mutation_lock():
+        account = account_storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+        try:
+            sleeve = sleeve_storage.load_sleeve(sleeve_id)
+        except FileNotFoundError as exc:
+            raise not_found_404("strategy_sleeve", sleeve_id) from exc
+        try:
+            if action == "pause":
+                sleeve = service.pause_sleeve(sleeve)
+            elif action == "resume":
+                sleeve = service.resume_sleeve(sleeve)
+            elif action == "stop":
+                sleeve = service.stop_sleeve(sleeve, reason=reason)
+            else:
+                raise ValueError(f"unknown sleeve action: {action}")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=_error_detail("invalid_strategy_sleeve_state", str(exc)),
+            ) from exc
+        quotes = _account_quotes(account, settings=settings)
+        return {
+            "sleeve": sleeve.model_dump(mode="json"),
             "account": _account_view(account, settings=settings, quotes=quotes),
         }
 

@@ -199,8 +199,8 @@ on the Position Map.
 ## Paper Strategy Sleeves
 
 Paper Strategy Sleeves are a new MVP-1 business line for isolating strategy
-cash/lots inside the single persistent paper account. As of 2026-06-26, only
-the first backend foundation slice is implemented:
+cash/lots inside the single persistent paper account. As of 2026-06-26, the
+backend foundation and API contract slices are implemented:
 
 - Domain/accounting models:
   `src/quant_system/execution/paper_strategy_sleeves.py`
@@ -210,18 +210,29 @@ the first backend foundation slice is implemented:
   `src/quant_system/execution/paper_strategy_sleeve_storage.py`, under
   `data/api_runs/paper_strategy_sleeves/`.
 - API response schema classes live in `src/quant_system/api/schemas/paper.py`.
+- API routes live in `src/quant_system/api/routes/paper.py`:
+  `POST/GET /api/paper/strategy-configs`,
+  `POST /api/paper/strategy-configs/{id}/versions`,
+  `POST/GET /api/paper/strategy-sleeves`,
+  `GET /api/paper/strategy-sleeves/{id}`,
+  and pause/resume/stop endpoints.
 - `PaperAccount.sleeve_cash` is a cash allocation book. Keep
   `PaperAccount.cash` as the legacy total cash field so the old full-account
   rebalance path keeps its existing behavior.
 - Focused tests: `tests/test_paper_strategy_sleeves.py`, plus existing
-  `tests/test_paper_account.py` and `tests/test_api_paper_account.py`.
+  `tests/test_api_paper_strategy_sleeves.py`, `tests/test_paper_account.py`,
+  and `tests/test_api_paper_account.py`.
 
-Not yet implemented: Strategy Sleeves API routes, CLI, `/paper-trading` UI
-panel, daily signal generation service, automatic execution, next-open /
-near-close fills, or lot transfer. Do not document these as user-available
-until a later slice lands. The legacy `POST /api/paper/account/rebalance`
-remains an advanced full-account rebalance path, not a strategy sleeve
-entrypoint.
+Not yet implemented: CLI, `/paper-trading` UI panel, daily signal generation
+service, automatic execution, next-open / near-close fills, or lot transfer. Do
+not document these as user-available until a later slice lands. The legacy
+`POST /api/paper/account/rebalance` remains an advanced full-account rebalance
+path, not a strategy sleeve entrypoint.
+
+When adding the signal-generation slice, keep normal tests mocked/offline and
+put real Futu/OpenD checks behind the opt-in `futu_opend` pytest marker plus
+`QS_TEST_FUTU_OPEND=1`. Real Futu tests must stay read-only and must not import
+trade contexts.
 
 ## Options Module Notes
 

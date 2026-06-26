@@ -47,9 +47,9 @@
 - 这条路径仍是**旧的全账户再平衡**，不是 Paper Strategy Sleeves 入口。它会按整个账户持仓与目标求差；未来的 strategy sleeve 入口必须走独立 API/CLI，不能复用这条路径冒充 sleeve。
 
 **Paper Strategy Sleeves 当前状态**：
-- 2026-06-26 已完成第一切片后端基础：版本化 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal`、本地存储、`sleeve_cash` 现金分配簿和 `SleeveLotBook` lot 隔离。
+- 2026-06-26 已完成后端基础与 API contract：版本化 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal`、本地存储、`sleeve_cash` 现金分配簿、`SleeveLotBook` lot 隔离，以及 `/api/paper/strategy-configs` / `/api/paper/strategy-sleeves` 基础接口。
 - `/paper-trading` 还没有 Strategy Sleeves 面板；当前页面不能创建 signal-only / allocated sleeve，也不能生成 sleeve signal。
-- 尚无 Strategy Sleeves API、CLI 或自动成交。后续实现前，不要把 Strategy Sleeves 当成可点击的用户工作流。
+- 尚无 Strategy Sleeves CLI、daily signal 生成或自动成交。后续前端切片会按 UX redesign 做整体界面重构，不再只是最小入口。
 - 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。

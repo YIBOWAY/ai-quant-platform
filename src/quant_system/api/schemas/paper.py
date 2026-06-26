@@ -81,6 +81,55 @@ class StrategySignalResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class StrategyConfigCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    strategy_id: str
+    universe_id: str | None = None
+    symbols: list[str] = Field(default_factory=list)
+    factor_ids: list[str] = Field(default_factory=list)
+    weights: dict[str, float] = Field(default_factory=dict)
+    lookback: int = Field(default=20, gt=0)
+    top_n: int = Field(default=3, gt=0)
+    rebalance_frequency: str = "daily"
+    max_weight_per_symbol: float = Field(default=1.0, gt=0)
+    min_order_value: float = Field(default=0.0, ge=0)
+    data_provider: Literal["futu", "tiingo"] = "futu"
+    execution_timing: str = "next_open"
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyConfigMutationResponse(BaseModel):
+    config: StrategyConfigResponse
+
+
+class StrategyConfigsResponse(BaseModel):
+    configs: list[StrategyConfigResponse]
+
+
+class StrategySleeveCreateRequest(BaseModel):
+    strategy_config_id: str
+    strategy_config_version: int | None = Field(default=None, ge=1)
+    mode: Literal["signal_only", "allocated"]
+    allocated_cash: float = Field(default=0.0, ge=0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategySleevesResponse(BaseModel):
+    sleeves: list[StrategySleeveResponse]
+
+
+class StrategySleeveDetailResponse(BaseModel):
+    sleeve: StrategySleeveResponse
+    lots: list[SleeveLotResponse]
+    signals: list[StrategySignalResponse]
+
+
+class StrategySleeveStopRequest(BaseModel):
+    reason: str | None = None
+
+
 class PaperRunsResponse(BaseModel):
     paper_runs: list[PaperRunSummary]
 
@@ -175,6 +224,11 @@ class PaperAccountResponse(BaseModel):
     pending_orders: list[PendingAccountOrderResponse]
     created_at: str
     updated_at: str
+
+
+class StrategySleeveMutationResponse(BaseModel):
+    sleeve: StrategySleeveResponse
+    account: PaperAccountResponse
 
 
 class PaperAccountOrderOutcomeResponse(BaseModel):
