@@ -29,6 +29,11 @@ import type {
 import { formatMoney } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
+import {
+  formatStrategyConfigOptionLabel,
+  hasStrategyConfigNameConflict,
+  suggestNextStrategyConfigName,
+} from "@/lib/paperStrategySleeves";
 
 type Locale = "en" | "zh";
 
@@ -55,6 +60,8 @@ const copy = {
     creatingConfig: "Creating...",
     configCreated: "Strategy config created",
     configFailed: (reason: string) => `Config failed${reason ? `: ${reason}` : ""}`,
+    duplicateConfigName:
+      "A config with this name already exists. Use a distinct name; versions keep one config identity.",
     noConfig: "Create a config before opening a sleeve.",
     config: "Config",
     mode: "Mode",
@@ -104,6 +111,7 @@ const copy = {
     creatingConfig: "创建中...",
     configCreated: "策略配置已创建",
     configFailed: (reason: string) => `配置创建失败${reason ? `：${reason}` : ""}`,
+    duplicateConfigName: "已有同名配置。请改名；同一策略参数变更应走版本，不要再建同名配置。",
     noConfig: "先创建策略配置，再开设袖珍仓。",
     config: "配置",
     mode: "模式",
@@ -187,6 +195,7 @@ export function PaperStrategySleevesPanel({
     [sleeveDetails],
   );
   const allocatedTotal = sleeves.reduce((sum, sleeve) => sum + sleeve.cash, 0);
+  const configNameConflict = hasStrategyConfigNameConflict(configName, configs);
 
   const createConfigMutation = useMutation({
     mutationFn: () =>
@@ -207,6 +216,9 @@ export function PaperStrategySleevesPanel({
     onSuccess: (payload) => {
       toast.success(text.configCreated);
       setSelectedConfigId(payload.config.strategy_config_id);
+      setConfigName(
+        suggestNextStrategyConfigName(payload.config.name, [...configs, payload.config]),
+      );
       router.refresh();
     },
     onError: (error) => {
@@ -266,6 +278,7 @@ export function PaperStrategySleevesPanel({
     splitSymbols(symbols).length > 0 &&
     topN > 0 &&
     lookback > 0 &&
+    !configNameConflict &&
     !createConfigMutation.isPending;
   const canCreateSleeve =
     isHydrated &&
@@ -313,7 +326,14 @@ export function PaperStrategySleevesPanel({
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <label className={labelClass}>
               {text.name}
-              <input className={inputClass} value={configName} onChange={(event) => setConfigName(event.target.value)} />
+              <input
+                className={inputClass}
+                value={configName}
+                onChange={(event) => setConfigName(event.target.value)}
+              />
+              {configNameConflict ? (
+                <span className="font-body-sm text-warning">{text.duplicateConfigName}</span>
+              ) : null}
             </label>
             <label className={labelClass}>
               {text.strategy}
@@ -387,7 +407,7 @@ export function PaperStrategySleevesPanel({
               >
                 {configs.map((config) => (
                   <option key={`${config.strategy_config_id}-${config.version}`} value={config.strategy_config_id}>
-                    {config.name} v{config.version}
+                    {formatStrategyConfigOptionLabel(config, configs)}
                   </option>
                 ))}
               </select>

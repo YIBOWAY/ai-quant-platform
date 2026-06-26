@@ -227,6 +227,29 @@ def _account_quotes(account: PaperAccount, *, settings) -> dict[str, PricedQuote
     return quotes
 
 
+def _normalized_strategy_config_name(name: str) -> str:
+    return " ".join(name.split()).casefold()
+
+
+def _strategy_config_name_conflict(
+    storage: PaperStrategySleeveStorage,
+    name: str,
+    *,
+    exclude_strategy_config_id: str | None = None,
+) -> StrategyConfig | None:
+    normalized_name = _normalized_strategy_config_name(name)
+    if not normalized_name:
+        return None
+    for config in storage.list_strategy_configs():
+        if config.archived:
+            continue
+        if exclude_strategy_config_id and config.strategy_config_id == exclude_strategy_config_id:
+            continue
+        if _normalized_strategy_config_name(config.name) == normalized_name:
+            return config
+    return None
+
+
 def _save_account(
     storage: PaperAccountStorage,
     account: PaperAccount,
@@ -569,6 +592,15 @@ def create_strategy_config(
 ) -> dict:
     storage = _strategy_sleeve_storage(api_runs_dir)
     with storage.mutation_lock():
+        existing = _strategy_config_name_conflict(storage, request.name)
+        if existing is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail(
+                    "strategy_config_name_conflict",
+                    f"strategy config name already exists: {existing.name}",
+                ),
+            )
         config = StrategyConfig.create(**request.model_dump(mode="json"))
         try:
             storage.save_strategy_config(config)
@@ -610,6 +642,19 @@ def create_strategy_config_version(
         except FileNotFoundError as exc:
             raise not_found_404("strategy_config", strategy_config_id) from exc
         config = latest.new_version(**request.model_dump(mode="json"))
+        existing = _strategy_config_name_conflict(
+            storage,
+            config.name,
+            exclude_strategy_config_id=strategy_config_id,
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail(
+                    "strategy_config_name_conflict",
+                    f"strategy config name already exists: {existing.name}",
+                ),
+            )
         try:
             storage.save_strategy_config(config)
         except FileExistsError as exc:

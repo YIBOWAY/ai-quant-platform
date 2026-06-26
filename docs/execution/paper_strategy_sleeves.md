@@ -44,6 +44,10 @@ The second slice exposes the backend API contract:
 | `POST` | `/api/paper/strategy-sleeves/{id}/resume` | Resumes a paused sleeve. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/stop` | Stops the sleeve and keeps holdings. |
 
+Active strategy config names are unique at creation time. Reusing a name for a
+different config returns `409 strategy_config_name_conflict`; changing the same
+config through `/versions` keeps the config identity and increments `version`.
+
 Allocated sleeve creation runs under the existing paper-account in-process lock
 and filesystem lock. It allocates from `sleeve_cash["manual"]`, writes the sleeve
 cash allocation into the account cash book, and uses a `sleeve.pending.json`
@@ -80,8 +84,8 @@ The fourth slice adds the `/paper-trading` Strategy Sleeves workspace:
   create strategy configs, open `signal_only` or `allocated` sleeves, generate
   sleeve signals, and pause/resume/stop sleeves.
 - The existing full-account rebalance form is still present, but it is labeled
-  as an advanced full-account path and continues to call
-  `POST /api/paper/account/rebalance`.
+  as an advanced full-account path, not a liquidation button or sleeve
+  creation flow, and continues to call `POST /api/paper/account/rebalance`.
 
 The workspace is signal-first. Generating a sleeve signal does not create
 pending orders, fills, account position mutations, or automatic execution

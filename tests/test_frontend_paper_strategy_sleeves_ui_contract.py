@@ -57,8 +57,10 @@ def test_strategy_sleeves_panel_is_signal_first_without_auto_fill_language() -> 
 def test_legacy_rebalance_is_labeled_as_full_account_advanced_path() -> None:
     trade_panel = ACCOUNT_TRADE_PANEL.read_text(encoding="utf-8")
 
-    assert "Advanced Full-Account Rebalance" in trade_panel
-    assert "高级全账户再平衡" in trade_panel
+    assert "Advanced: Full-Account Rebalance (not a sleeve)" in trade_panel
+    assert "高级：全账户再平衡（非袖珍仓）" in trade_panel
     assert '"/api/paper/account/rebalance"' in trade_panel
     assert "Strategy Sleeves use the separate signal panel" in trade_panel
     assert "策略袖珍仓请使用独立信号面板" in trade_panel
+    assert "not a liquidation button or a new sleeve" in trade_panel
+    assert "它不是清仓按钮，也不是新建袖珍仓" in trade_panel

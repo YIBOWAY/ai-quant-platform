@@ -335,7 +335,9 @@ Strategy Sleeves workspace slices landed on 2026-06-26:
   existing full-account rebalance path.
 - Backend API routes now cover strategy config creation/listing/versioning and
   strategy sleeve create/list/detail/signal generation/pause/resume/stop:
-  `/api/paper/strategy-configs` and `/api/paper/strategy-sleeves`.
+  `/api/paper/strategy-configs` and `/api/paper/strategy-sleeves`. Active
+  strategy config names are unique; same-name creation returns a structured
+  `409 strategy_config_name_conflict`.
 - Daily signal generation is available through
   `POST /api/paper/strategy-sleeves/{id}/signals` and
   `quant-system paper strategies generate-signal --sleeve <id>`.
@@ -346,7 +348,7 @@ Strategy Sleeves workspace slices landed on 2026-06-26:
 Automatic sleeve execution is not implemented yet: generated signals do not
 create pending orders, fills, or account position mutations. The existing
 `POST /api/paper/account/rebalance` endpoint remains a full-account rebalance
-path, not a Strategy Sleeves entrypoint. See
+path, not a Strategy Sleeves entrypoint or liquidation shortcut. See
 [docs/design/paper_strategy_sleeves_plan.md](docs/design/paper_strategy_sleeves_plan.md)
 and
 [docs/execution/paper_strategy_sleeves.md](docs/execution/paper_strategy_sleeves.md).

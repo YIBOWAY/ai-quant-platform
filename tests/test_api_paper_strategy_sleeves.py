@@ -98,6 +98,19 @@ def test_strategy_config_api_creates_lists_and_versions(tmp_path) -> None:
     assert versioned.json()["config"]["top_n"] == 2
 
 
+def test_strategy_config_api_rejects_duplicate_active_names(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    _create_config(client)
+
+    duplicate = client.post(
+        "/api/paper/strategy-configs",
+        json=_config_payload(name=" sleeve top-n "),
+    )
+
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"]["code"] == "strategy_config_name_conflict"
+
+
 def test_strategy_config_version_conflict_returns_409(tmp_path, monkeypatch) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
     created = _create_config(client)
