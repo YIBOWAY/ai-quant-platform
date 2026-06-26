@@ -115,7 +115,7 @@ export function SectionTitle({
         <h2 className="font-label-caps text-text-primary">{title}</h2>
         {hint ? <p className="mt-1 font-body-sm text-text-secondary">{hint}</p> : null}
       </div>
-      {right}
+      {right ? <div className="shrink-0">{right}</div> : null}
     </div>
   );
 }
