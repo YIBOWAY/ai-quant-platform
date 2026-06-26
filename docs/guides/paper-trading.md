@@ -49,8 +49,8 @@
 **Paper Strategy Sleeves 当前状态**：
 - 2026-06-26 已完成后端基础、API contract 与 daily signal 生成：版本化 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal`、本地存储、`sleeve_cash` 现金分配簿、`SleeveLotBook` lot 隔离，以及 `/api/paper/strategy-configs` / `/api/paper/strategy-sleeves` / `POST /api/paper/strategy-sleeves/{id}/signals`。
 - 手动 signal CLI 已可用：`quant-system paper strategies generate-signal --sleeve <id>`。
-- `/paper-trading` 还没有 Strategy Sleeves 面板；当前页面不能创建 signal-only / allocated sleeve，也不能在页面内生成 sleeve signal。
-- 尚无自动成交。后续前端切片会按 UX redesign 做整体界面重构，不再只是最小入口。
+- `/paper-trading` 的「策略袖珍仓」工作区已可用：可以创建 strategy config，开设 `signal_only` 或 `allocated` sleeve，在页面内生成 sleeve signal，并暂停 / 恢复 / 停止 sleeve。`allocated` 模式会从手动现金通道划拨模拟现金；`signal_only` 不移动现金。
+- 尚无自动成交。页面内生成的 sleeve signal 只写入 `StrategySignal`，不会创建挂单、成交、账户持仓变更，也不会复用旧全账户再平衡路径。
 - 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。
@@ -139,5 +139,5 @@
 - 策略再平衡能力声明：`src/quant_system/strategies/registry.py`（`supports_account_rebalance`）
 - Strategy Sleeves 后端基础与信号生成：`src/quant_system/execution/paper_strategy_sleeves.py`、`src/quant_system/execution/paper_strategy_sleeve_storage.py`、`src/quant_system/execution/paper_strategy_signal_service.py`
 - CLI：`src/quant_system/cli.py`（`paper rebalance` / `paper account-show` / `paper strategies generate-signal`）
-- 前端：`src/frontend/app/paper-trading/page.tsx`、`src/frontend/components/forms/AccountTradePanel.tsx`、`src/frontend/lib/accountRebalanceStrategies.ts`
+- 前端：`src/frontend/app/paper-trading/page.tsx`、`src/frontend/components/forms/AccountTradePanel.tsx`、`src/frontend/components/forms/PaperStrategySleevesPanel.tsx`、`src/frontend/lib/api.ts`、`src/frontend/lib/accountRebalanceStrategies.ts`
 - 历史回放（旧路径）：`src/quant_system/execution/pipeline.py`

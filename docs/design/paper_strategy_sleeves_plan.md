@@ -3,7 +3,7 @@
 > 状态：MVP-1 第一切片后端基础已实现（2026-06-26）：领域模型 / API schema /
 > 本地文件存储 / cash 与 lot 分账基础已经落地；第二切片 API contract 已实现；
 > 第三切片 daily signal 生成 / 手动 CLI / opt-in 真实 Futu 测试已实现；
-> 前端 UX redesign 和自动执行仍待后续切片实现。
+> 第四切片 `/paper-trading` 前端 UX redesign 已实现；自动执行仍待后续切片实现。
 > 日期：2026-06-15。  
 > 命名说明：本文的 **MVP-1** 指「Paper Strategy Sleeves」这条新业务线的第一实施阶段，**不是**项目历史阶段地图里的 Phase 1「数据层 MVP」。后续实现和提交信息应避免写成 `Phase 1`，统一写 `Paper Strategy Sleeves MVP-1`。
 
@@ -320,9 +320,12 @@ CLI 不能只存在于代码里。新增或改名时必须同步更新：
 
 ## 12. 前端 MVP-1
 
-MVP-1 只做最小入口，不做全页面重设计。
+按 2026-06-26 用户反馈，前端第四切片从“最小入口”升级为
+`/paper-trading` 的 Strategy Sleeves UX Redesign。该切片已经落地：
+实时账户标签页现在包含独立的「策略袖珍仓」工作区，并把旧全账户
+rebalance 明确标为高级全账户路径。
 
-在 `/paper-trading` 的实时账户标签页加入 `Strategy Sleeves` 区域：
+`/paper-trading` 的实时账户标签页已加入 `Strategy Sleeves` 区域：
 
 - sleeve 名称
 - 模式：`signal-only` / `allocated`
@@ -330,33 +333,42 @@ MVP-1 只做最小入口，不做全页面重设计。
 - allocated cash
 - 最新信号时间
 - 最新信号摘要
+- 创建 strategy config
 - 创建 signal-only sleeve
 - 创建 allocated sleeve（分配现金）
+- 在页面内生成 sleeve signal
 - 暂停/恢复
 - 更多操作：停止，默认保留持仓
 
 UI 原则：
 
-- 主操作只放暂停/恢复。
-- 停止类操作放入更多操作。
+- 主工作区展示 strategy config / sleeve / 最新 signal。
+- 手动下单和高级全账户 rebalance 保留在右侧账户动作区。
+- 旧 `POST /api/paper/account/rebalance` 只能作为 advanced full-account path
+  展示，不能被包装成 Strategy Sleeves 入口。
 - 清仓类操作不在 MVP-1。
-- 不展示复杂交易工作台。
+- 不展示自动成交工作台。
 - 不弱化 paper-only / no live trading 安全文案。
 
 ## 13. 后续 UX Redesign 阶段
 
-前端大改不属于 MVP-1。单独设阶段：
+前端大改原计划不属于 MVP-1，但第四切片已按用户反馈提前落地为：
 
 **Paper Strategy Sleeves UX Redesign**
 
-推荐时机：MVP-1 完成后，MVP-2 自动执行设计定稿前后。
+当前已完成的目标：
 
-目标定位：
+- `/paper-trading` 信息架构重排为 account / Strategy Sleeves / manual &
+  advanced actions。
+- Strategy Sleeves 工作区支持 config 创建、signal-only / allocated sleeve
+  创建、manual signal 生成、pause / resume / stop。
+- 旧全账户 rebalance 文案和布局明确标为 advanced full-account path。
 
-- 研究流水线管理台为主。
-- 交易工作台为辅。
+后续 UX refinement 可在 MVP-2 自动执行设计定稿后继续，但不得提前展示
+自动成交为已可用能力。
 
-这个阶段应使用前端设计 skills 做 2-3 个信息架构/设计方案，再选定一个落到现有 Next.js / Tailwind 代码。
+这个阶段继续沿用现有 Next.js / Tailwind 设计系统：hairline border、
+8px radius、Inter + JetBrains Mono、状态色只表达真实状态。
 
 设计必须表达清楚：
 
@@ -465,11 +477,13 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
 
 - **CLI**：`generate-signal` 已完成；config-create、sleeve-create、sleeve-show
   仍待后续实现。
-- **前端 UX redesign**：按 2026-06-26 用户反馈，第四切片不再只是最小入口；
-  需要使用 web-design-engineer 类设计流程，先声明设计系统并确认，再重构
-  `/paper-trading` 的 Strategy Sleeves 工作流。
-- **用户指南更新**：补 `docs/guides/paper-trading.md` 的用户心智说明。
-- **执行文档更新**：`docs/execution/paper_strategy_sleeves.md` 先记录第一切片后端基础状态；等 CLI/API 可运行后，再补正式命令和手动工作流。
+- **前端 UX redesign**：2026-06-26 已完成第四切片。页面入口为
+  `src/frontend/components/forms/PaperStrategySleevesPanel.tsx`，挂载在
+  `/paper-trading` live account tab。
+- **用户指南更新**：`docs/guides/paper-trading.md` 已说明 Strategy Sleeves
+  用户心智、可用 UI 操作与自动成交边界。
+- **执行文档更新**：`docs/execution/paper_strategy_sleeves.md` 已记录后端基础、
+  API、manual signal CLI 和 `/paper-trading` 前端工作区状态。
 
 ### 16.3 验证闭环
 

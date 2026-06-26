@@ -228,6 +228,11 @@ implemented:
   stopped sleeves reject generation.
 - Manual CLI trigger:
   `quant-system paper strategies generate-signal --sleeve <id>`.
+- Frontend workspace:
+  `src/frontend/components/forms/PaperStrategySleevesPanel.tsx` is mounted in
+  `/paper-trading` live account tab. It can create strategy configs, open
+  signal-only or allocated sleeves, generate signals, and pause/resume/stop
+  sleeves. It is signal-first only; generated signals do not auto-fill orders.
 - `PaperAccount.sleeve_cash` is a cash allocation book. Keep
   `PaperAccount.cash` as the legacy total cash field so the old full-account
   rebalance path keeps its existing behavior.
@@ -237,9 +242,9 @@ implemented:
   `tests/test_paper_strategy_sleeves_futu_integration.py`,
   `tests/test_paper_account.py`, and `tests/test_api_paper_account.py`.
 
-Not yet implemented: config/sleeve creation CLI helpers, `/paper-trading` UI
-panel, automatic execution, next-open / near-close fills, or lot transfer. Do
-not document those as user-available until a later slice lands. The legacy
+Not yet implemented: config/sleeve creation CLI helpers, automatic execution,
+next-open / near-close fills, or lot transfer. Do not document those as
+user-available until a later slice lands. The legacy
 `POST /api/paper/account/rebalance` remains an advanced full-account rebalance
 path, not a strategy sleeve entrypoint.
 

@@ -1,9 +1,10 @@
 # Paper Strategy Sleeves MVP-1 Execution Notes
 
-> Status: first, second, and third backend slices implemented on 2026-06-26.
+> Status: first through fourth MVP-1 slices implemented on 2026-06-26.
 > Domain models, local storage, cash/lot accounting foundations, backend API
-> contract, daily signal generation, and the manual signal CLI are available.
-> Frontend panels and automatic execution are still future slices.
+> contract, daily signal generation, the manual signal CLI, and the
+> `/paper-trading` Strategy Sleeves workspace are available. Automatic
+> execution is still a future slice.
 
 ## What Exists Now
 
@@ -69,6 +70,23 @@ Paused sleeves still record observation signals with `execution_blocked_reason=s
 `execution_blocked_reason=account_frozen`. Stopped sleeves reject new signal
 generation.
 
+The fourth slice adds the `/paper-trading` Strategy Sleeves workspace:
+
+- Frontend component:
+  `src/frontend/components/forms/PaperStrategySleevesPanel.tsx`.
+- Frontend API wrapper/types:
+  `src/frontend/lib/api.ts`.
+- Live account tab capabilities:
+  create strategy configs, open `signal_only` or `allocated` sleeves, generate
+  sleeve signals, and pause/resume/stop sleeves.
+- The existing full-account rebalance form is still present, but it is labeled
+  as an advanced full-account path and continues to call
+  `POST /api/paper/account/rebalance`.
+
+The workspace is signal-first. Generating a sleeve signal does not create
+pending orders, fills, account position mutations, or automatic execution
+jobs.
+
 ## Local Storage Layout
 
 The first slice writes under the API runs directory:
@@ -98,7 +116,6 @@ later slice implements them:
 
 - `quant-system paper strategies config-create`
 - `quant-system paper strategies sleeve-create`
-- `/paper-trading` Strategy Sleeves panel
 - scheduled or automatic strategy execution
 - next-open or near-close simulated fills
 - lot transfer between manual and strategy sleeves

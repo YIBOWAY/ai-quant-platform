@@ -323,8 +323,8 @@ The legacy `POST /api/paper/run` historical replay lives on the
 
 Paper Strategy Sleeves are the next accounting layer for the persistent paper
 account: one account, multiple isolated manual/strategy cash and lot segments.
-The backend foundation, API contract, and daily signal slices landed on
-2026-06-26:
+The backend foundation, API contract, daily signal, and `/paper-trading`
+Strategy Sleeves workspace slices landed on 2026-06-26:
 
 - `StrategyConfig`, `StrategySleeve`, `SleeveLot`, `StrategySignal`, and
   `SleeveLotBook` in `src/quant_system/execution/paper_strategy_sleeves.py`.
@@ -339,10 +339,14 @@ The backend foundation, API contract, and daily signal slices landed on
 - Daily signal generation is available through
   `POST /api/paper/strategy-sleeves/{id}/signals` and
   `quant-system paper strategies generate-signal --sleeve <id>`.
+- The `/paper-trading` live account tab can create strategy configs, open
+  signal-only or allocated sleeves, generate sleeve signals, and pause/resume
+  or stop sleeves.
 
-The `/paper-trading` Strategy Sleeves panel and automatic execution are not
-implemented yet. The existing `POST /api/paper/account/rebalance` endpoint
-remains a full-account rebalance path, not a Strategy Sleeves entrypoint. See
+Automatic sleeve execution is not implemented yet: generated signals do not
+create pending orders, fills, or account position mutations. The existing
+`POST /api/paper/account/rebalance` endpoint remains a full-account rebalance
+path, not a Strategy Sleeves entrypoint. See
 [docs/design/paper_strategy_sleeves_plan.md](docs/design/paper_strategy_sleeves_plan.md)
 and
 [docs/execution/paper_strategy_sleeves.md](docs/execution/paper_strategy_sleeves.md).

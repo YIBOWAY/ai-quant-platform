@@ -18,7 +18,7 @@
 | [guides/position-map.md](guides/position-map.md) | 持仓地图 `/position-map` |
 | [design/paper_trading_position_map_redesign.md](design/paper_trading_position_map_redesign.md) | 模拟交易 + 持仓地图**重设计**（设计文档 + 分阶段实现计划） |
 | [design/paper_strategy_sleeves_plan.md](design/paper_strategy_sleeves_plan.md) | Paper Strategy Sleeves **MVP-1**（策略资金段/信号观察/allocated 分账设计，非历史 Phase 1） |
-| [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（后端基础、API contract、daily signal 与手动 signal CLI 已实现；前端/自动执行尚未实现） |
+| [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（后端基础、API contract、daily signal、手动 signal CLI 与 `/paper-trading` sleeves 工作区已实现；自动执行尚未实现） |
 | [design/ai_news_integration_plan.md](design/ai_news_integration_plan.md) | AI News Integration **MVP-1**（AI HOT 只读新闻接入，Horizon 二期自托管雷达方向） |
 
 ## 1. 从这里开始
