@@ -924,6 +924,184 @@ def paper_strategy_generate_signal_command(
     )
 
 
+@paper_strategies_app.command("create-execution")
+def paper_strategy_create_execution_command(
+    sleeve_id: Annotated[
+        str,
+        typer.Option("--sleeve", help="Strategy sleeve id that owns the signal."),
+    ],
+    signal_id: Annotated[
+        str,
+        typer.Option("--signal", help="Signal id to promote to a pending execution."),
+    ],
+    target_date: Annotated[
+        str | None,
+        typer.Option("--target-date", help="Execution target date, YYYY-MM-DD."),
+    ] = None,
+    window: Annotated[
+        str,
+        typer.Option("--window", help="Execution window. Currently next_open."),
+    ] = "next_open",
+) -> None:
+    """Create one pending Paper Strategy Sleeve execution from a signal."""
+    from quant_system.execution.account import PaperAccount
+    from quant_system.execution.account_storage import PaperAccountStorage
+    from quant_system.execution.paper_strategy_sleeve_storage import (
+        PaperStrategySleeveStorage,
+    )
+    from quant_system.execution.paper_strategy_sleeves import (
+        PaperStrategySleeveService,
+        StrategyExecutionPlanError,
+    )
+
+    settings = load_settings()
+    api_runs_dir = settings.data.data_dir / "api_runs"
+    account_storage = PaperAccountStorage(api_runs_dir)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    service = PaperStrategySleeveService(sleeve_storage)
+    execution_window = window.replace("-", "_")
+    with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
+        persisted_account = account_storage.load()
+        sleeve_storage.reconcile_pending_sleeves(persisted_account)
+        account = persisted_account or PaperAccount.open_new(
+            account_id=account_storage.account_id
+        )
+        try:
+            sleeve = sleeve_storage.load_sleeve(sleeve_id)
+        except FileNotFoundError as exc:
+            typer.echo(f"strategy sleeve not found: {sleeve_id}")
+            raise typer.Exit(code=1) from exc
+        signal = next(
+            (
+                item
+                for item in sleeve_storage.load_signals(sleeve_id)
+                if item.signal_id == signal_id
+            ),
+            None,
+        )
+        if signal is None:
+            typer.echo(f"strategy signal not found: {signal_id}")
+            raise typer.Exit(code=1)
+        try:
+            execution = service.create_execution_plan(
+                account,
+                sleeve=sleeve,
+                signal=signal,
+                execution_window=execution_window,
+                target_date=target_date,
+            )
+        except StrategyExecutionPlanError as exc:
+            typer.echo(f"execution unavailable: {exc.code}")
+            raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        " ".join(
+            [
+                f"sleeve={sleeve_id}",
+                f"signal_id={signal_id}",
+                f"execution_id={execution.execution_id}",
+                f"status={execution.status}",
+                f"window={execution.execution_window}",
+                f"target_date={execution.target_date or '<none>'}",
+            ]
+        )
+    )
+
+
+@paper_strategies_app.command("execute-pending")
+def paper_strategy_execute_pending_command(
+    sleeve_id: Annotated[
+        str | None,
+        typer.Option("--sleeve", help="Optional sleeve id filter."),
+    ] = None,
+    target_date: Annotated[
+        str | None,
+        typer.Option("--target-date", help="Execution target date, YYYY-MM-DD."),
+    ] = None,
+    window: Annotated[
+        str,
+        typer.Option("--window", help="Execution window. Currently next_open."),
+    ] = "next_open",
+    limit: Annotated[
+        int,
+        typer.Option("--limit", help="Maximum pending executions to process."),
+    ] = 50,
+) -> None:
+    """Process due pending Paper Strategy Sleeve executions once."""
+    from quant_system.execution.account_storage import PaperAccountStorage
+    from quant_system.execution.paper_strategy_execution_service import (
+        PaperStrategyExecutionError,
+        PaperStrategyExecutionService,
+    )
+    from quant_system.execution.paper_strategy_sleeve_storage import (
+        PaperStrategySleeveStorage,
+    )
+    from quant_system.execution.price_source import PaperPriceSource
+
+    settings = load_settings()
+    api_runs_dir = settings.data.data_dir / "api_runs"
+    account_storage = PaperAccountStorage(api_runs_dir)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    price_source = PaperPriceSource(settings)
+    service = PaperStrategyExecutionService(
+        storage=sleeve_storage,
+        price_source=price_source,
+    )
+    execution_window = window.replace("-", "_")
+    processed = []
+    filled_count = 0
+    blocked_count = 0
+    with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
+        account = account_storage.load_or_open()
+        sleeve_storage.reconcile_pending_sleeves(account)
+        try:
+            candidates = service.pending_plans(
+                sleeve_id=sleeve_id,
+                execution_window=execution_window,
+                target_date=target_date,
+                limit=limit,
+            )
+        except FileNotFoundError as exc:
+            typer.echo(f"strategy sleeve not found: {sleeve_id}")
+            raise typer.Exit(code=1) from exc
+        for sleeve, plan in candidates:
+            try:
+                execution = service.execute_plan(account, sleeve=sleeve, plan=plan)
+            except PaperStrategyExecutionError:
+                execution = plan
+            if execution.status == "filled":
+                filled_count += 1
+            elif execution.status == "blocked":
+                blocked_count += 1
+            processed.append(execution)
+        quotes = price_source.get_prices(list(account.positions)) if account.positions else {}
+        account_storage.save(
+            account,
+            prices={symbol: quote.price for symbol, quote in quotes.items()},
+            price_metadata={
+                symbol: {"kind": quote.price_kind, "as_of": quote.as_of}
+                for symbol, quote in quotes.items()
+            },
+        )
+
+    typer.echo(
+        f"processed={len(processed)} filled={filled_count} blocked={blocked_count}"
+    )
+    for execution in processed:
+        typer.echo(
+            " ".join(
+                [
+                    f"execution_id={execution.execution_id}",
+                    f"sleeve={execution.sleeve_id}",
+                    f"status={execution.status}",
+                    f"blocked_reason={execution.blocked_reason or '<none>'}",
+                ]
+            )
+        )
+    if blocked_count:
+        raise typer.Exit(code=1)
+
+
 @agent_app.command("propose-factor")
 def agent_propose_factor(
     goal: Annotated[str, typer.Option("--goal", help="Research goal for the candidate factor.")],

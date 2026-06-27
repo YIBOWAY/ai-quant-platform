@@ -420,6 +420,78 @@ def test_strategy_sleeve_execution_api_creates_pending_plan_without_account_muta
     assert account["pending_orders"] == []
 
 
+def test_strategy_sleeve_execution_api_processes_pending_plan(
+    tmp_path,
+    stub_prices,
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    config = _create_config(client)
+    created = client.post(
+        "/api/paper/strategy-sleeves",
+        json={
+            "strategy_config_id": config["strategy_config_id"],
+            "strategy_config_version": config["version"],
+            "mode": "allocated",
+            "allocated_cash": 50_000.0,
+        },
+    )
+    assert created.status_code == 200
+    sleeve = created.json()["sleeve"]
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    domain_sleeve = storage.load_sleeve(sleeve["sleeve_id"])
+    signal = StrategySignal.create(
+        sleeve=domain_sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        data_as_of="2026-06-26T20:00:00Z",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "target_weight": 1.0,
+                "current_value": 0.0,
+                "target_value": 50_000.0,
+                "notional_delta": 50_000.0,
+                "reference_price": 200.0,
+                "estimated_quantity": 250.0,
+                "reason": "advisory_only_no_execution",
+                "account_id": domain_sleeve.account_id,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    storage.append_signal(signal)
+    pending = client.post(
+        f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}/executions",
+        json={
+            "signal_id": signal.signal_id,
+            "execution_window": "next_open",
+            "target_date": "2026-06-29",
+        },
+    ).json()["execution"]
+
+    response = client.post(
+        "/api/paper/strategy-sleeves/executions/process",
+        json={"execution_window": "next_open", "target_date": "2026-06-29"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["processed_count"] == 1
+    assert payload["filled_count"] == 1
+    assert payload["blocked_count"] == 0
+    assert payload["executions"][0]["execution_id"] == pending["execution_id"]
+    assert payload["executions"][0]["status"] == "filled"
+    assert payload["account"]["cash"] == pytest.approx(950_000.0)
+    assert payload["account"]["positions"][0]["symbol"] == "AAPL"
+    assert payload["account"]["positions"][0]["quantity"] == pytest.approx(250.0)
+    assert payload["account"]["positions"][0]["source_breakdown"] == {
+        f"strategy:{sleeve['sleeve_id']}": pytest.approx(1.0)
+    }
+    assert storage.load_sleeve(sleeve["sleeve_id"]).cash == pytest.approx(0.0)
+
+
 def test_strategy_sleeve_signal_api_rejects_stopped_sleeves(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
     config = _create_config(client)

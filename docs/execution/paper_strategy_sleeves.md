@@ -5,8 +5,8 @@
 > storage, cash/lot accounting foundations, backend API contract, daily signal
 > generation, manual signal CLI, `/paper-trading` Strategy Sleeves workspace,
 > manual pending execution plan creation, and the backend next-open execution
-> processor are available. User-facing processing entrypoints and automatic
-> execution are still future slices.
+> processor are available. Manual processing API/CLI entrypoints are available;
+> automatic scheduling and UI execution controls are still future slices.
 
 ## What Exists Now
 
@@ -46,6 +46,7 @@ The second slice exposes the backend API contract:
 | `GET` | `/api/paper/strategy-sleeves/{id}` | Returns sleeve, lots, signals, and executions. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/signals` | Generates and persists one daily signal. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/executions` | Creates one pending execution plan from a selected generated signal. |
+| `POST` | `/api/paper/strategy-sleeves/executions/process` | Processes due pending execution plans once. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/pause` | Pauses a running sleeve. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/resume` | Resumes a paused sleeve. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/stop` | Stops the sleeve and keeps holdings. |
@@ -113,7 +114,21 @@ buying, updating only the addressed sleeve's lot/source ownership on sells, and
 persisting sleeve lots plus execution state. Hard failures such as missing
 prices or insufficient sleeve cash mark the plan `blocked` before raising and
 do not mutate account cash, positions, sleeve cash, or lots. This service is
-not yet exposed as a public API, CLI command, scheduler, or UI action.
+exposed through manual API/CLI entrypoints only; it is not a scheduler or UI
+action.
+
+The third MVP-2 slice exposes manual processing entrypoints:
+
+- API:
+  `POST /api/paper/strategy-sleeves/executions/process`.
+- CLI:
+  `quant-system paper strategies create-execution --sleeve <id> --signal <signal_id>`.
+- CLI:
+  `quant-system paper strategies execute-pending --target-date <YYYY-MM-DD>`.
+
+These entrypoints are one-shot commands intended for explicit local use or an
+external scheduler. The FastAPI process does not run an in-process recurring
+trading loop.
 
 ## Local Storage Layout
 
@@ -145,14 +160,14 @@ later slice implements them:
 
 - `quant-system paper strategies config-create`
 - `quant-system paper strategies sleeve-create`
-- pending execution processing CLI/API
 - scheduled or automatic strategy execution
-- user-facing next-open or near-close simulated fills
+- UI controls for next-open execution processing
+- near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
 The next implementation line is documented in
 [`docs/design/paper_strategy_sleeves_mvp2_plan.md`](../design/paper_strategy_sleeves_mvp2_plan.md).
-MVP-2 now continues with processing entrypoints; it
+MVP-2 now continues with UI execution state and opt-in real Futu verification; it
 must not add a FastAPI-resident scheduler or any real broker trading path.
 
 ## Real Futu Integration Tests

@@ -31,6 +31,8 @@ from quant_system.api.schemas.paper import (
     StrategyConfigsResponse,
     StrategyExecutionCreateRequest,
     StrategyExecutionMutationResponse,
+    StrategyExecutionProcessRequest,
+    StrategyExecutionProcessResponse,
     StrategySignalGenerateRequest,
     StrategySignalMutationResponse,
     StrategySleeveCreateRequest,
@@ -49,6 +51,10 @@ from quant_system.execution.account_service import (
     StrategyDataUnavailableError,
 )
 from quant_system.execution.account_storage import PaperAccountStorage
+from quant_system.execution.paper_strategy_execution_service import (
+    PaperStrategyExecutionError,
+    PaperStrategyExecutionService,
+)
 from quant_system.execution.paper_strategy_signal_service import (
     PaperStrategySignalService,
     StrategySignalGenerationError,
@@ -868,6 +874,68 @@ def create_strategy_sleeve_execution(
                 detail=_error_detail(exc.code, str(exc)),
             ) from exc
     return {"execution": execution.model_dump(mode="json")}
+
+
+@router.post(
+    "/paper/strategy-sleeves/executions/process",
+    response_model=StrategyExecutionProcessResponse,
+)
+def process_strategy_sleeve_executions(
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+    request: StrategyExecutionProcessRequest | None = None,
+) -> dict:
+    payload = request or StrategyExecutionProcessRequest()
+    account_storage = _account_storage(api_runs_dir)
+    sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
+    service = PaperStrategyExecutionService(
+        storage=sleeve_storage,
+        price_source=PaperPriceSource(settings),
+    )
+    processed = []
+    filled_count = 0
+    blocked_count = 0
+    with (
+        _account_lock(account_storage.account_id),
+        account_storage.mutation_lock(),
+        sleeve_storage.mutation_lock(),
+    ):
+        _reconcile_pending_strategy_sleeves(
+            account_storage=account_storage,
+            sleeve_storage=sleeve_storage,
+        )
+        account = account_storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+        try:
+            candidates = service.pending_plans(
+                sleeve_id=payload.sleeve_id,
+                execution_window=payload.execution_window,
+                target_date=payload.target_date,
+                limit=payload.limit,
+            )
+        except FileNotFoundError as exc:
+            raise not_found_404("strategy_sleeve", payload.sleeve_id or "") from exc
+        for sleeve, plan in candidates:
+            try:
+                execution = service.execute_plan(account, sleeve=sleeve, plan=plan)
+            except PaperStrategyExecutionError:
+                execution = plan
+            if execution.status == "filled":
+                filled_count += 1
+            elif execution.status == "blocked":
+                blocked_count += 1
+            processed.append(execution)
+        quotes = _account_quotes(account, settings=settings)
+        _save_account(account_storage, account, quotes)
+        account_view = _account_view(account, settings=settings, quotes=quotes)
+    return {
+        "processed_count": len(processed),
+        "filled_count": filled_count,
+        "blocked_count": blocked_count,
+        "executions": [
+            execution.model_dump(mode="json") for execution in processed
+        ],
+        "account": account_view,
+    }
 
 
 @router.post(

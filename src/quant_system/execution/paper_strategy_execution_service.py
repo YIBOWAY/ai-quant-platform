@@ -135,6 +135,33 @@ class PaperStrategyExecutionService:
         self._replace_execution(plan)
         return plan
 
+    def pending_plans(
+        self,
+        *,
+        sleeve_id: str | None = None,
+        execution_window: str = "next_open",
+        target_date: str | None = None,
+        limit: int = 50,
+    ) -> list[tuple[StrategySleeve, StrategyExecutionPlan]]:
+        sleeves = (
+            [self.storage.load_sleeve(sleeve_id)]
+            if sleeve_id is not None
+            else self.storage.list_sleeves()
+        )
+        plans: list[tuple[StrategySleeve, StrategyExecutionPlan]] = []
+        for sleeve in sleeves:
+            for plan in self.storage.load_executions(sleeve.sleeve_id):
+                if plan.status != StrategyExecutionStatus.PENDING:
+                    continue
+                if plan.execution_window != execution_window:
+                    continue
+                if target_date is not None and plan.target_date != target_date:
+                    continue
+                plans.append((sleeve, plan))
+                if len(plans) >= limit:
+                    return plans
+        return plans
+
     def _validate_execution_context(
         self,
         account: PaperAccount,

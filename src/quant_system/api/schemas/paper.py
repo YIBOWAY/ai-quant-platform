@@ -205,6 +205,21 @@ class StrategyExecutionMutationResponse(BaseModel):
     execution: StrategyExecutionPlanResponse
 
 
+class StrategyExecutionProcessRequest(BaseModel):
+    sleeve_id: str | None = None
+    execution_window: Literal["next_open"] = "next_open"
+    target_date: str | None = None
+    limit: int = Field(default=50, gt=0, le=500)
+
+
+class StrategyExecutionProcessResponse(BaseModel):
+    processed_count: int
+    filled_count: int
+    blocked_count: int
+    executions: list[StrategyExecutionPlanResponse]
+    account: PaperAccountResponse
+
+
 class PaperRunsResponse(BaseModel):
     paper_runs: list[PaperRunSummary]
 

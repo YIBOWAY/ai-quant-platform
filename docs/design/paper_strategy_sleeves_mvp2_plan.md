@@ -227,6 +227,8 @@ entrypoints remain Slice 3.
 
 ### Slice 3: CLI And API Processing Entrypoints
 
+Status: implemented on 2026-06-27.
+
 **Files:**
 
 - Modify: `src/quant_system/api/routes/paper.py`
