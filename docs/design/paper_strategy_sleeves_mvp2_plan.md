@@ -189,6 +189,9 @@ Status: implemented on 2026-06-27.
 
 ### Slice 2: Next-Open Execution Processor
 
+Status: backend service implemented on 2026-06-27. API/CLI processing
+entrypoints remain Slice 3.
+
 **Files:**
 
 - Create: `src/quant_system/execution/paper_strategy_execution_service.py`

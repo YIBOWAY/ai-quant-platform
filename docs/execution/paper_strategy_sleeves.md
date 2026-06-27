@@ -4,8 +4,9 @@
 > pending execution foundation implemented on 2026-06-27. Domain models, local
 > storage, cash/lot accounting foundations, backend API contract, daily signal
 > generation, manual signal CLI, `/paper-trading` Strategy Sleeves workspace,
-> and manual pending execution plan creation are available. Simulated fills and
-> automatic execution are still future slices.
+> manual pending execution plan creation, and the backend next-open execution
+> processor are available. User-facing processing entrypoints and automatic
+> execution are still future slices.
 
 ## What Exists Now
 
@@ -105,6 +106,15 @@ signal-only sleeves, paused/stopped sleeves, frozen accounts, non-generated
 signals, signals with no proposed orders, and duplicate execution plans for the
 same signal.
 
+The second MVP-2 slice adds the backend next-open execution processor in
+`src/quant_system/execution/paper_strategy_execution_service.py`. It processes a
+pending plan against paper prices by preflighting all legs, selling before
+buying, updating only the addressed sleeve's lot/source ownership on sells, and
+persisting sleeve lots plus execution state. Hard failures such as missing
+prices or insufficient sleeve cash mark the plan `blocked` before raising and
+do not mutate account cash, positions, sleeve cash, or lots. This service is
+not yet exposed as a public API, CLI command, scheduler, or UI action.
+
 ## Local Storage Layout
 
 The first slice writes under the API runs directory:
@@ -137,12 +147,12 @@ later slice implements them:
 - `quant-system paper strategies sleeve-create`
 - pending execution processing CLI/API
 - scheduled or automatic strategy execution
-- next-open or near-close simulated fills
+- user-facing next-open or near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
 The next implementation line is documented in
 [`docs/design/paper_strategy_sleeves_mvp2_plan.md`](../design/paper_strategy_sleeves_mvp2_plan.md).
-MVP-2 now continues with next-open paper fills and processing entrypoints; it
+MVP-2 now continues with processing entrypoints; it
 must not add a FastAPI-resident scheduler or any real broker trading path.
 
 ## Real Futu Integration Tests
@@ -174,8 +184,8 @@ Focused backend verification:
 
 ```powershell
 .\ai-quant\Scripts\Activate.ps1
-python -m pytest tests/test_paper_account.py tests/test_api_paper_account.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py -q
-ruff check src/quant_system/execution/account.py src/quant_system/execution/paper_strategy_sleeves.py src/quant_system/execution/paper_strategy_sleeve_storage.py src/quant_system/execution/paper_strategy_signal_service.py src/quant_system/factors/pipeline.py src/quant_system/api/schemas/paper.py src/quant_system/api/routes/paper.py src/quant_system/cli.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py
+python -m pytest tests/test_paper_account.py tests/test_api_paper_account.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py -q
+ruff check src/quant_system/execution/account.py src/quant_system/execution/paper_strategy_sleeves.py src/quant_system/execution/paper_strategy_sleeve_storage.py src/quant_system/execution/paper_strategy_signal_service.py src/quant_system/execution/paper_strategy_execution_service.py src/quant_system/factors/pipeline.py src/quant_system/api/schemas/paper.py src/quant_system/api/routes/paper.py src/quant_system/cli.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py
 git diff --check
 ```
 

@@ -19,7 +19,7 @@
 | [design/paper_trading_position_map_redesign.md](design/paper_trading_position_map_redesign.md) | 模拟交易 + 持仓地图**重设计**（设计文档 + 分阶段实现计划） |
 | [design/paper_strategy_sleeves_plan.md](design/paper_strategy_sleeves_plan.md) | Paper Strategy Sleeves **MVP-1**（策略资金段/信号观察/allocated 分账设计，非历史 Phase 1） |
 | [design/paper_strategy_sleeves_mvp2_plan.md](design/paper_strategy_sleeves_mvp2_plan.md) | Paper Strategy Sleeves **MVP-2**（pending execution / next-open 纸面执行计划） |
-| [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（后端基础、API contract、daily signal、手动 signal CLI 与 `/paper-trading` sleeves 工作区已实现；自动执行尚未实现） |
+| [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（后端基础、API contract、daily signal、手动 signal CLI、pending execution 与 backend next-open processor 已实现；公开处理入口/自动执行尚未实现） |
 | [design/ai_news_integration_plan.md](design/ai_news_integration_plan.md) | AI News Integration **MVP-1**（AI HOT 只读新闻接入，Horizon 二期自托管雷达方向） |
 
 ## 1. 从这里开始
@@ -74,6 +74,7 @@
 | Paper Strategy Sleeves 领域模型 / 分账基础 | `src/quant_system/execution/paper_strategy_sleeves.py` |
 | Paper Strategy Sleeves 本地存储 | `src/quant_system/execution/paper_strategy_sleeve_storage.py` |
 | Paper Strategy Sleeves 信号生成 | `src/quant_system/execution/paper_strategy_signal_service.py` |
+| Paper Strategy Sleeves next-open 执行处理器 | `src/quant_system/execution/paper_strategy_execution_service.py` |
 | Paper Strategy Sleeves MVP-2 计划 | `docs/design/paper_strategy_sleeves_mvp2_plan.md` |
 | 期权卖方筛选器 | `src/quant_system/options/screener.py` |
 | 期权雷达 | `src/quant_system/options/radar.py` |
