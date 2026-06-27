@@ -14,6 +14,7 @@ import pandas as pd
 from quant_system.execution.paper_strategy_sleeves import (
     SleeveLot,
     StrategyConfig,
+    StrategyExecutionPlan,
     StrategySignal,
     StrategySleeve,
     StrategySleeveMode,
@@ -116,6 +117,9 @@ class PaperStrategySleeveStorage:
 
     def sleeve_signals_path(self, sleeve_id: str) -> Path:
         return self.sleeve_dir(sleeve_id) / "signals.jsonl"
+
+    def sleeve_executions_path(self, sleeve_id: str) -> Path:
+        return self.sleeve_dir(sleeve_id) / "executions.jsonl"
 
     def save_strategy_config(self, config: StrategyConfig) -> Path:
         config_dir = self.strategy_config_dir(config.strategy_config_id)
@@ -289,6 +293,47 @@ class PaperStrategySleeveStorage:
             if line.strip():
                 signals.append(StrategySignal.model_validate(json.loads(line)))
         return signals
+
+    def append_execution(self, execution: StrategyExecutionPlan) -> Path:
+        executions = self.load_executions(execution.sleeve_id)
+        executions.append(execution)
+        return self.save_executions(execution.sleeve_id, executions)
+
+    def save_executions(
+        self,
+        sleeve_id: str,
+        executions: list[StrategyExecutionPlan],
+    ) -> Path:
+        path = self.sleeve_executions_path(sleeve_id)
+        lines = [
+            json.dumps(item.model_dump(mode="json"), sort_keys=True)
+            for item in executions
+        ]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(f".jsonl.{uuid.uuid4().hex}.tmp")
+        tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._atomic_replace(tmp_path, path)
+        return path
+
+    def load_executions(self, sleeve_id: str) -> list[StrategyExecutionPlan]:
+        path = self.sleeve_executions_path(sleeve_id)
+        if not path.exists():
+            return []
+        executions = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                executions.append(StrategyExecutionPlan.model_validate(json.loads(line)))
+        return executions
+
+    def latest_execution_for_signal(
+        self,
+        sleeve_id: str,
+        signal_id: str,
+    ) -> StrategyExecutionPlan | None:
+        for execution in reversed(self.load_executions(sleeve_id)):
+            if execution.signal_id == signal_id:
+                return execution
+        return None
 
     def _write_strategy_config_metadata(self, config: StrategyConfig) -> None:
         metadata_path = self.strategy_config_metadata_path(config.strategy_config_id)

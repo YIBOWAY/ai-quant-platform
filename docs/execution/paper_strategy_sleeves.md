@@ -1,10 +1,11 @@
 # Paper Strategy Sleeves MVP-1 Execution Notes
 
-> Status: first through fourth MVP-1 slices implemented on 2026-06-26.
-> Domain models, local storage, cash/lot accounting foundations, backend API
-> contract, daily signal generation, the manual signal CLI, and the
-> `/paper-trading` Strategy Sleeves workspace are available. Automatic
-> execution is still a future slice.
+> Status: first through fourth MVP-1 slices implemented on 2026-06-26. MVP-2
+> pending execution foundation implemented on 2026-06-27. Domain models, local
+> storage, cash/lot accounting foundations, backend API contract, daily signal
+> generation, manual signal CLI, `/paper-trading` Strategy Sleeves workspace,
+> and manual pending execution plan creation are available. Simulated fills and
+> automatic execution are still future slices.
 
 ## What Exists Now
 
@@ -15,6 +16,9 @@ The first slice establishes the accounting and persistence base:
   - `StrategySleeve`
   - `SleeveLot`
   - `StrategySignal`
+  - `StrategyExecutionPlan`
+  - `StrategyExecutionOrder`
+  - `StrategyExecutionFill`
 - API response schema classes for those models in `src/quant_system/api/schemas/paper.py`.
 - Local source-of-truth storage in
   `src/quant_system/execution/paper_strategy_sleeve_storage.py`.
@@ -38,8 +42,9 @@ The second slice exposes the backend API contract:
 | `POST` | `/api/paper/strategy-configs/{id}/versions` | Creates the next config version. |
 | `POST` | `/api/paper/strategy-sleeves` | Creates signal-only or allocated sleeves. |
 | `GET` | `/api/paper/strategy-sleeves` | Lists sleeves. |
-| `GET` | `/api/paper/strategy-sleeves/{id}` | Returns sleeve, lots, and signals. |
+| `GET` | `/api/paper/strategy-sleeves/{id}` | Returns sleeve, lots, signals, and executions. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/signals` | Generates and persists one daily signal. |
+| `POST` | `/api/paper/strategy-sleeves/{id}/executions` | Creates one pending execution plan from a selected generated signal. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/pause` | Pauses a running sleeve. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/resume` | Resumes a paused sleeve. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/stop` | Stops the sleeve and keeps holdings. |
@@ -91,6 +96,15 @@ The workspace is signal-first. Generating a sleeve signal does not create
 pending orders, fills, account position mutations, or automatic execution
 jobs.
 
+The first MVP-2 slice adds manual pending execution plan creation through
+`POST /api/paper/strategy-sleeves/{id}/executions`. A plan is created from one
+generated allocated-sleeve signal and is persisted to `executions.jsonl` with
+`status=pending`. This endpoint does not fetch execution prices, create paper
+orders, fill lots, mutate account positions, or change sleeve cash. It rejects
+signal-only sleeves, paused/stopped sleeves, frozen accounts, non-generated
+signals, signals with no proposed orders, and duplicate execution plans for the
+same signal.
+
 ## Local Storage Layout
 
 The first slice writes under the API runs directory:
@@ -106,12 +120,13 @@ data/api_runs/paper_strategy_sleeves/
     <sleeve_id>/
       sleeve.json
       signals.jsonl
+      executions.jsonl
       lots.parquet
 ```
 
-JSON writes use temp files and atomic replace. Signal JSONL persistence rewrites
-the complete file atomically for this MVP-1 foundation slice. Lots are persisted
-as parquet snapshots.
+JSON writes use temp files and atomic replace. Signal and execution JSONL
+persistence rewrites the complete file atomically for these foundation slices.
+Lots are persisted as parquet snapshots.
 
 ## Not Implemented Yet
 
@@ -120,14 +135,15 @@ later slice implements them:
 
 - `quant-system paper strategies config-create`
 - `quant-system paper strategies sleeve-create`
+- pending execution processing CLI/API
 - scheduled or automatic strategy execution
 - next-open or near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
 The next implementation line is documented in
 [`docs/design/paper_strategy_sleeves_mvp2_plan.md`](../design/paper_strategy_sleeves_mvp2_plan.md).
-MVP-2 starts with pending execution records and then adds next-open paper fills;
-it must not add a FastAPI-resident scheduler or any real broker trading path.
+MVP-2 now continues with next-open paper fills and processing entrypoints; it
+must not add a FastAPI-resident scheduler or any real broker trading path.
 
 ## Real Futu Integration Tests
 

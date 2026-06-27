@@ -81,6 +81,60 @@ class StrategySignalResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class StrategyExecutionOrderResponse(BaseModel):
+    symbol: str
+    side: str
+    target_weight: float | None = None
+    current_value: float | None = None
+    target_value: float | None = None
+    notional_delta: float | None = None
+    reference_price: float | None = None
+    estimated_quantity: float | None = None
+    reason: str | None = None
+    account_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyExecutionFillResponse(BaseModel):
+    fill_id: str
+    symbol: str
+    side: str
+    quantity: float
+    price: float
+    gross_value: float
+    price_kind: str
+    filled_at: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyExecutionPlanResponse(BaseModel):
+    execution_id: str
+    sleeve_id: str
+    account_id: str
+    signal_id: str
+    strategy_config_id: str
+    strategy_config_version: int
+    execution_window: str
+    target_date: str | None = None
+    created_at: str
+    updated_at: str
+    status: Literal[
+        "pending",
+        "filled",
+        "partially_filled",
+        "skipped",
+        "blocked",
+        "missed_window",
+        "failed",
+        "cancelled",
+    ]
+    blocked_reason: str | None = None
+    orders: list[StrategyExecutionOrderResponse] = Field(default_factory=list)
+    fills: list[StrategyExecutionFillResponse] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class StrategyConfigCreateRequest(BaseModel):
     name: str
     description: str = ""
@@ -124,6 +178,7 @@ class StrategySleeveDetailResponse(BaseModel):
     sleeve: StrategySleeveResponse
     lots: list[SleeveLotResponse]
     signals: list[StrategySignalResponse]
+    executions: list[StrategyExecutionPlanResponse] = Field(default_factory=list)
 
 
 class StrategySleeveStopRequest(BaseModel):
@@ -137,6 +192,17 @@ class StrategySignalGenerateRequest(BaseModel):
 
 class StrategySignalMutationResponse(BaseModel):
     signal: StrategySignalResponse
+
+
+class StrategyExecutionCreateRequest(BaseModel):
+    signal_id: str
+    execution_window: Literal["next_open"] = "next_open"
+    target_date: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyExecutionMutationResponse(BaseModel):
+    execution: StrategyExecutionPlanResponse
 
 
 class PaperRunsResponse(BaseModel):

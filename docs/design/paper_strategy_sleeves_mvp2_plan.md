@@ -148,6 +148,8 @@ missed plans if those states are expected and durably recorded.
 
 ### Slice 1: Pending Execution Foundation
 
+Status: implemented on 2026-06-27.
+
 **Files:**
 
 - Modify: `src/quant_system/execution/paper_strategy_sleeves.py`
@@ -232,12 +234,14 @@ missed plans if those states are expected and durably recorded.
 
 **Behavior:**
 
-- Add manual execution creation endpoint.
 - Add pending execution processing endpoint.
 - Add CLI commands:
   - `paper strategies create-execution`
   - `paper strategies execute-pending`
 - Maintain file and account locks around all mutations.
+
+The manual execution creation endpoint landed in Slice 1:
+`POST /api/paper/strategy-sleeves/{id}/executions`.
 
 **Verification:**
 

@@ -21,6 +21,8 @@ from quant_system.execution.paper_strategy_sleeves import (
     SleeveLot,
     SleeveLotBook,
     StrategyConfig,
+    StrategyExecutionPlanError,
+    StrategyExecutionStatus,
     StrategySignal,
     StrategySleeveMode,
     StrategySleeveStatus,
@@ -194,6 +196,117 @@ def test_sleeve_storage_round_trips_sleeves_lots_and_signals(tmp_path) -> None:
     assert reloaded_lots[0].symbol == "MSFT"
     assert reloaded_signals[0].signal_id == signal.signal_id
     assert list(lot_frame["symbol"]) == ["MSFT"]
+
+
+def test_allocated_sleeve_signal_creates_one_pending_execution_plan(tmp_path) -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    service = PaperStrategySleeveService(storage)
+    config = _config(min_order_value=100.0)
+    storage.save_strategy_config(config)
+    sleeve = service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    storage.save_sleeve(sleeve)
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        data_as_of="2026-06-26T20:00:00Z",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "target_weight": 1.0,
+                "current_value": 0.0,
+                "target_value": 25_000.0,
+                "notional_delta": 25_000.0,
+                "reference_price": 100.0,
+                "estimated_quantity": 250.0,
+                "reason": "advisory_only_no_execution",
+                "account_id": account.account_id,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    storage.append_signal(signal)
+
+    plan = service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        execution_window="next_open",
+        target_date="2026-06-29",
+    )
+
+    assert plan.status == StrategyExecutionStatus.PENDING
+    assert plan.signal_id == signal.signal_id
+    assert plan.execution_window == "next_open"
+    assert plan.target_date == "2026-06-29"
+    assert plan.orders[0].symbol == "AAPL"
+    assert plan.orders[0].estimated_quantity == pytest.approx(250.0)
+    assert plan.fills == []
+    latest = storage.latest_execution_for_signal(sleeve.sleeve_id, signal.signal_id)
+    assert latest is not None
+    assert latest.execution_id == plan.execution_id
+    assert storage.load_executions(sleeve.sleeve_id)[0].execution_id == plan.execution_id
+    assert sleeve.cash == pytest.approx(25_000.0)
+    assert account.positions == {}
+
+    with pytest.raises(StrategyExecutionPlanError, match="execution_already_exists"):
+        service.create_execution_plan(
+            account,
+            sleeve=sleeve,
+            signal=signal,
+            execution_window="next_open",
+            target_date="2026-06-29",
+        )
+
+
+def test_signal_only_sleeve_cannot_create_execution_plan(tmp_path) -> None:
+    account = PaperAccount.open_new(initial_cash=50_000.0)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    service = PaperStrategySleeveService(storage)
+    config = _config()
+    sleeve = service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.SIGNAL_ONLY,
+    )
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "target_weight": 1.0,
+                "current_value": 0.0,
+                "target_value": 10_000.0,
+                "notional_delta": 10_000.0,
+                "reference_price": 100.0,
+                "estimated_quantity": 100.0,
+                "reason": "advisory_only_no_execution",
+                "account_id": account.account_id,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+
+    with pytest.raises(StrategyExecutionPlanError, match="signal_only_no_execution"):
+        service.create_execution_plan(
+            account,
+            sleeve=sleeve,
+            signal=signal,
+            execution_window="next_open",
+            target_date="2026-06-29",
+        )
 
 
 def test_paper_strategy_sleeve_api_schemas_accept_domain_models() -> None:

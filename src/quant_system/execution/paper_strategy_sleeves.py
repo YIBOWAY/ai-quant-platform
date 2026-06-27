@@ -24,6 +24,14 @@ class InsufficientSleeveLotQuantity(ValueError):
     """Raised when a sell asks one sleeve to use another sleeve's lot."""
 
 
+class StrategyExecutionPlanError(ValueError):
+    """Raised when a strategy signal cannot be promoted to an execution plan."""
+
+    def __init__(self, code: str, message: str | None = None) -> None:
+        self.code = code
+        super().__init__(message or code)
+
+
 class StrategySleeveMode(StrEnum):
     SIGNAL_ONLY = "signal_only"
     ALLOCATED = "allocated"
@@ -39,6 +47,17 @@ class SignalStatus(StrEnum):
     GENERATED = "generated"
     DATA_UNAVAILABLE = "data_unavailable"
     INVALID = "invalid"
+
+
+class StrategyExecutionStatus(StrEnum):
+    PENDING = "pending"
+    FILLED = "filled"
+    PARTIALLY_FILLED = "partially_filled"
+    SKIPPED = "skipped"
+    BLOCKED = "blocked"
+    MISSED_WINDOW = "missed_window"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class StrategyConfig(BaseModel):
@@ -312,6 +331,115 @@ class StrategySignal(BaseModel):
         )
 
 
+class StrategyExecutionOrder(BaseModel):
+    """A single proposed order captured for later sleeve execution."""
+
+    symbol: str
+    side: str
+    target_weight: float | None = None
+    current_value: float | None = None
+    target_value: float | None = None
+    notional_delta: float | None = None
+    reference_price: float | None = None
+    estimated_quantity: float | None = None
+    reason: str | None = None
+    account_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_proposed_order(cls, order: dict[str, Any]) -> StrategyExecutionOrder:
+        payload = dict(order)
+        if "symbol" in payload:
+            payload["symbol"] = str(payload["symbol"]).upper().strip()
+        return cls.model_validate(payload)
+
+
+class StrategyExecutionFill(BaseModel):
+    """A fill event belonging to one strategy execution plan."""
+
+    fill_id: str
+    symbol: str
+    side: str
+    quantity: float = Field(gt=0)
+    price: float = Field(gt=0)
+    gross_value: float = Field(ge=0)
+    price_kind: str
+    filled_at: str = Field(default_factory=_utc_now_iso)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float,
+        price_kind: str,
+        gross_value: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> StrategyExecutionFill:
+        return cls(
+            fill_id=f"strategy-fill-{uuid.uuid4().hex[:12]}",
+            symbol=symbol.upper(),
+            side=side,
+            quantity=float(quantity),
+            price=float(price),
+            gross_value=float(gross_value if gross_value is not None else quantity * price),
+            price_kind=price_kind,
+            metadata=metadata or {},
+        )
+
+
+class StrategyExecutionPlan(BaseModel):
+    """Durable pending execution plan created from one generated signal."""
+
+    execution_id: str
+    sleeve_id: str
+    account_id: str
+    signal_id: str
+    strategy_config_id: str
+    strategy_config_version: int = Field(ge=1)
+    execution_window: str = "next_open"
+    target_date: str | None = None
+    created_at: str = Field(default_factory=_utc_now_iso)
+    updated_at: str = Field(default_factory=_utc_now_iso)
+    status: StrategyExecutionStatus = StrategyExecutionStatus.PENDING
+    blocked_reason: str | None = None
+    orders: list[StrategyExecutionOrder] = Field(default_factory=list)
+    fills: list[StrategyExecutionFill] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        account: PaperAccount,
+        sleeve: StrategySleeve,
+        signal: StrategySignal,
+        execution_window: str = "next_open",
+        target_date: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> StrategyExecutionPlan:
+        return cls(
+            execution_id=f"strategy-exec-{uuid.uuid4().hex[:12]}",
+            sleeve_id=sleeve.sleeve_id,
+            account_id=account.account_id,
+            signal_id=signal.signal_id,
+            strategy_config_id=signal.strategy_config_id,
+            strategy_config_version=signal.strategy_config_version,
+            execution_window=execution_window,
+            target_date=target_date,
+            orders=[
+                StrategyExecutionOrder.from_proposed_order(order)
+                for order in signal.proposed_orders
+            ],
+            warnings=list(signal.warnings),
+            metadata=metadata or {},
+        )
+
+
 class PaperStrategySleeveService:
     """Small accounting service for MVP-1 sleeve setup, with no auto execution."""
 
@@ -386,6 +514,55 @@ class PaperStrategySleeveService:
         sleeve.stop_reason = reason
         self.storage.save_sleeve(sleeve)
         return sleeve
+
+    def create_execution_plan(
+        self,
+        account: PaperAccount,
+        *,
+        sleeve: StrategySleeve,
+        signal: StrategySignal,
+        execution_window: str = "next_open",
+        target_date: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> StrategyExecutionPlan:
+        if sleeve.mode == StrategySleeveMode.SIGNAL_ONLY:
+            raise StrategyExecutionPlanError("signal_only_no_execution")
+        if sleeve.status == StrategySleeveStatus.PAUSED:
+            raise StrategyExecutionPlanError("sleeve_paused")
+        if sleeve.status == StrategySleeveStatus.STOPPED:
+            raise StrategyExecutionPlanError("sleeve_stopped")
+        if sleeve.account_id != account.account_id:
+            raise StrategyExecutionPlanError("account_sleeve_mismatch")
+        if signal.sleeve_id != sleeve.sleeve_id:
+            raise StrategyExecutionPlanError("signal_sleeve_mismatch")
+        if signal.strategy_config_id != sleeve.strategy_config_id:
+            raise StrategyExecutionPlanError("signal_config_mismatch")
+        if signal.status != SignalStatus.GENERATED:
+            raise StrategyExecutionPlanError("signal_not_generated")
+        if signal.execution_blocked_reason:
+            raise StrategyExecutionPlanError(signal.execution_blocked_reason)
+        if account.kill_switch:
+            raise StrategyExecutionPlanError("account_frozen")
+        if execution_window != "next_open":
+            raise StrategyExecutionPlanError("unsupported_execution_window")
+        if not signal.proposed_orders:
+            raise StrategyExecutionPlanError("no_proposed_orders")
+        existing = self.storage.latest_execution_for_signal(
+            sleeve.sleeve_id,
+            signal.signal_id,
+        )
+        if existing is not None:
+            raise StrategyExecutionPlanError("execution_already_exists")
+        plan = StrategyExecutionPlan.create(
+            account=account,
+            sleeve=sleeve,
+            signal=signal,
+            execution_window=execution_window,
+            target_date=target_date,
+            metadata=metadata,
+        )
+        self.storage.append_execution(plan)
+        return plan
 
     @staticmethod
     def _ensure_manual_cash_book(account: PaperAccount) -> None:

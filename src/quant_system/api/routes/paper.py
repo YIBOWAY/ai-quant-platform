@@ -29,6 +29,8 @@ from quant_system.api.schemas.paper import (
     StrategyConfigCreateRequest,
     StrategyConfigMutationResponse,
     StrategyConfigsResponse,
+    StrategyExecutionCreateRequest,
+    StrategyExecutionMutationResponse,
     StrategySignalGenerateRequest,
     StrategySignalMutationResponse,
     StrategySleeveCreateRequest,
@@ -58,6 +60,7 @@ from quant_system.execution.paper_strategy_sleeves import (
     CashAllocationError,
     PaperStrategySleeveService,
     StrategyConfig,
+    StrategyExecutionPlanError,
     StrategySleeveMode,
 )
 from quant_system.execution.pipeline import run_paper_trading
@@ -801,13 +804,70 @@ def get_strategy_sleeve(sleeve_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
             raise not_found_404("strategy_sleeve", sleeve_id) from exc
         lots = storage.load_sleeve_lots(sleeve_id)
         signals = storage.load_signals(sleeve_id)
+        executions = storage.load_executions(sleeve_id)
     return {
         "sleeve": sleeve.model_dump(mode="json"),
         "lots": [lot.model_dump(mode="json") for lot in lots],
         "signals": [
             signal.model_dump(mode="json") for signal in signals
         ],
+        "executions": [
+            execution.model_dump(mode="json") for execution in executions
+        ],
     }
+
+
+@router.post(
+    "/paper/strategy-sleeves/{sleeve_id}/executions",
+    response_model=StrategyExecutionMutationResponse,
+)
+def create_strategy_sleeve_execution(
+    sleeve_id: str,
+    request: StrategyExecutionCreateRequest,
+    api_runs_dir: ApiRunsDirDep,
+) -> dict:
+    account_storage = _account_storage(api_runs_dir)
+    sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
+    service = PaperStrategySleeveService(sleeve_storage)
+    with (
+        _account_lock(account_storage.account_id),
+        account_storage.mutation_lock(),
+        sleeve_storage.mutation_lock(),
+    ):
+        _reconcile_pending_strategy_sleeves(
+            account_storage=account_storage,
+            sleeve_storage=sleeve_storage,
+        )
+        account = _account_snapshot_or_default(account_storage)
+        try:
+            sleeve = sleeve_storage.load_sleeve(sleeve_id)
+        except FileNotFoundError as exc:
+            raise not_found_404("strategy_sleeve", sleeve_id) from exc
+        signal = next(
+            (
+                item
+                for item in sleeve_storage.load_signals(sleeve_id)
+                if item.signal_id == request.signal_id
+            ),
+            None,
+        )
+        if signal is None:
+            raise not_found_404("strategy_signal", request.signal_id)
+        try:
+            execution = service.create_execution_plan(
+                account,
+                sleeve=sleeve,
+                signal=signal,
+                execution_window=request.execution_window,
+                target_date=request.target_date,
+                metadata=request.metadata,
+            )
+        except StrategyExecutionPlanError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail(exc.code, str(exc)),
+            ) from exc
+    return {"execution": execution.model_dump(mode="json")}
 
 
 @router.post(
