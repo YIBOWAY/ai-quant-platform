@@ -682,10 +682,78 @@ export type PaperStrategySignalMutationResponse = ApiEnvelope & {
   signal: PaperStrategySignalResponse;
 };
 
+export type PaperStrategyExecutionStatus =
+  | "pending"
+  | "filled"
+  | "partially_filled"
+  | "skipped"
+  | "blocked"
+  | "missed_window"
+  | "failed"
+  | "cancelled";
+
+export type PaperStrategyExecutionOrderResponse = {
+  symbol: string;
+  side: string;
+  target_weight?: number | null;
+  current_value?: number | null;
+  target_value?: number | null;
+  notional_delta?: number | null;
+  reference_price?: number | null;
+  estimated_quantity?: number | null;
+  reason?: string | null;
+  account_id?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategyExecutionFillResponse = {
+  fill_id: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  price: number;
+  gross_value: number;
+  price_kind: string;
+  filled_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategyExecutionPlanResponse = {
+  execution_id: string;
+  sleeve_id: string;
+  account_id: string;
+  signal_id: string;
+  strategy_config_id: string;
+  strategy_config_version: number;
+  execution_window: string;
+  target_date?: string | null;
+  created_at: string;
+  updated_at: string;
+  status: PaperStrategyExecutionStatus;
+  blocked_reason?: string | null;
+  orders: PaperStrategyExecutionOrderResponse[];
+  fills: PaperStrategyExecutionFillResponse[];
+  warnings: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategyExecutionMutationResponse = ApiEnvelope & {
+  execution: PaperStrategyExecutionPlanResponse;
+};
+
+export type PaperStrategyExecutionProcessResponse = ApiEnvelope & {
+  processed_count: number;
+  filled_count: number;
+  blocked_count: number;
+  executions: PaperStrategyExecutionPlanResponse[];
+  account: PaperAccountResponse;
+};
+
 export type PaperStrategySleeveDetailResponse = ApiEnvelope & {
   sleeve: PaperStrategySleeveResponse;
   lots: PaperStrategySleeveLotResponse[];
   signals: PaperStrategySignalResponse[];
+  executions: PaperStrategyExecutionPlanResponse[];
 };
 
 export type LedgerEntryResponse = {
@@ -1960,6 +2028,7 @@ export function getPaperStrategySleeveDetail(sleeveId: string) {
       },
       lots: [],
       signals: [],
+      executions: [],
       safety: FALLBACK_SAFETY,
     },
   );

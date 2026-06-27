@@ -257,6 +257,8 @@ The manual execution creation endpoint landed in Slice 1:
 
 ### Slice 4: Paper Trading UI Execution State
 
+**Status:** implemented on 2026-06-27.
+
 **Files:**
 
 - Modify: `src/frontend/lib/api.ts`
@@ -269,6 +271,8 @@ The manual execution creation endpoint landed in Slice 1:
 - Show latest pending/executed/missed execution per sleeve.
 - Add a conservative "Create execution plan" action only for allocated running
   sleeves with a generated unblocked signal.
+- Add a conservative manual "Process pending" action that calls the backend
+  one-shot processor for the selected sleeve.
 - Do not show an auto-run toggle until a scheduler story exists.
 - Keep all copy explicit: paper-only, no live trading, no broker execution.
 

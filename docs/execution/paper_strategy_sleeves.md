@@ -5,8 +5,9 @@
 > storage, cash/lot accounting foundations, backend API contract, daily signal
 > generation, manual signal CLI, `/paper-trading` Strategy Sleeves workspace,
 > manual pending execution plan creation, and the backend next-open execution
-> processor are available. Manual processing API/CLI entrypoints are available;
-> automatic scheduling and UI execution controls are still future slices.
+> processor are available. Manual processing API/CLI entrypoints and UI
+> execution-state controls are available; automatic scheduling remains a future
+> slice.
 
 ## What Exists Now
 
@@ -130,6 +131,19 @@ These entrypoints are one-shot commands intended for explicit local use or an
 external scheduler. The FastAPI process does not run an in-process recurring
 trading loop.
 
+The fourth MVP-2 slice exposes the same manual execution lifecycle in the
+`/paper-trading` Strategy Sleeves workspace. For each sleeve, the panel shows
+the latest execution plan state and can:
+
+- create a `next_open` pending execution plan from the latest generated signal
+  when the sleeve is allocated, running, and has proposed orders
+- process due pending plans through
+  `POST /api/paper/strategy-sleeves/executions/process`
+
+These buttons are explicit one-shot local paper actions. They do not add a
+FastAPI-resident scheduler, do not place real broker orders, and do not call the
+legacy full-account rebalance endpoint.
+
 ## Local Storage Layout
 
 The first slice writes under the API runs directory:
@@ -161,13 +175,12 @@ later slice implements them:
 - `quant-system paper strategies config-create`
 - `quant-system paper strategies sleeve-create`
 - scheduled or automatic strategy execution
-- UI controls for next-open execution processing
 - near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
 The next implementation line is documented in
 [`docs/design/paper_strategy_sleeves_mvp2_plan.md`](../design/paper_strategy_sleeves_mvp2_plan.md).
-MVP-2 now continues with UI execution state and opt-in real Futu verification; it
+MVP-2 now continues with opt-in real Futu verification and later scheduling; it
 must not add a FastAPI-resident scheduler or any real broker trading path.
 
 ## Real Futu Integration Tests

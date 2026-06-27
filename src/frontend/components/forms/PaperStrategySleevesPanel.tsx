@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Activity,
+  CheckCircle2,
   Pause,
   Play,
   Plus,
   Radio,
   RefreshCw,
+  Send,
   Square,
   WalletCards,
 } from "lucide-react";
@@ -18,6 +20,9 @@ import { Card, MetricStat, StatusPill } from "@/components/ui/primitives";
 import type {
   PaperStrategyConfigMutationResponse,
   PaperStrategyConfigResponse,
+  PaperStrategyExecutionMutationResponse,
+  PaperStrategyExecutionPlanResponse,
+  PaperStrategyExecutionProcessResponse,
   PaperStrategySignalMutationResponse,
   PaperStrategySignalResponse,
   PaperStrategySleeveDetailResponse,
@@ -77,6 +82,16 @@ const copy = {
     generatingSignal: "Generating...",
     signalOk: (status: string) => `Signal ${status}`,
     signalFailed: (reason: string) => `Signal failed${reason ? `: ${reason}` : ""}`,
+    createExecution: "Create plan",
+    creatingExecution: "Creating plan...",
+    executionCreated: (status: string) => `Execution plan ${status}`,
+    executionFailed: (reason: string) => `Execution failed${reason ? `: ${reason}` : ""}`,
+    processPending: "Process pending",
+    processingPending: "Processing...",
+    processOk: (filled: number, blocked: number) => `Processed: ${filled} filled, ${blocked} blocked`,
+    latestExecution: "Latest execution",
+    noExecution: "No execution plan",
+    planFirst: "Create a pending plan first.",
     pause: "Pause",
     resume: "Resume",
     stop: "Stop",
@@ -127,6 +142,16 @@ const copy = {
     generatingSignal: "生成中...",
     signalOk: (status: string) => `信号状态：${status}`,
     signalFailed: (reason: string) => `信号生成失败${reason ? `：${reason}` : ""}`,
+    createExecution: "创建计划",
+    creatingExecution: "创建中...",
+    executionCreated: (status: string) => `执行计划状态：${status}`,
+    executionFailed: (reason: string) => `执行失败${reason ? `：${reason}` : ""}`,
+    processPending: "处理待执行",
+    processingPending: "处理中...",
+    processOk: (filled: number, blocked: number) => `处理完成：${filled} 已成交，${blocked} 阻塞`,
+    latestExecution: "最新执行",
+    noExecution: "尚无执行计划",
+    planFirst: "请先创建待执行计划。",
     pause: "暂停",
     resume: "恢复",
     stop: "停止",
@@ -255,6 +280,36 @@ export function PaperStrategySleevesPanel({
     },
     onError: (error) => {
       toast.error(text.signalFailed(apiErrorMessage(error)));
+    },
+  });
+
+  const createExecutionMutation = useMutation({
+    mutationFn: ({ sleeveId, signalId }: { sleeveId: string; signalId: string }) =>
+      apiPost<PaperStrategyExecutionMutationResponse>(
+        `/api/paper/strategy-sleeves/${encodeURIComponent(sleeveId)}/executions`,
+        { signal_id: signalId, execution_window: "next_open" },
+      ),
+    onSuccess: (payload) => {
+      toast.success(text.executionCreated(payload.execution.status));
+      router.refresh();
+    },
+    onError: (error) => {
+      toast.error(text.executionFailed(apiErrorMessage(error)));
+    },
+  });
+
+  const processExecutionMutation = useMutation({
+    mutationFn: (sleeveId: string) =>
+      apiPost<PaperStrategyExecutionProcessResponse>(
+        "/api/paper/strategy-sleeves/executions/process",
+        { sleeve_id: sleeveId, execution_window: "next_open", limit: 10 },
+      ),
+    onSuccess: (payload) => {
+      toast.success(text.processOk(payload.filled_count, payload.blocked_count));
+      router.refresh();
+    },
+    onError: (error) => {
+      toast.error(text.executionFailed(apiErrorMessage(error)));
     },
   });
 
@@ -476,17 +531,36 @@ export function PaperStrategySleevesPanel({
               const config = configById.get(sleeve.strategy_config_id);
               const detail = detailBySleeve.get(sleeve.sleeve_id);
               const latestSignal = latestByGeneratedAt(detail?.signals ?? []);
+              const latestExecution = latestByUpdatedAt(detail?.executions ?? []);
               const isGenerating = generateSignalMutation.isPending && generateSignalMutation.variables === sleeve.sleeve_id;
+              const isCreatingExecution =
+                createExecutionMutation.isPending &&
+                createExecutionMutation.variables?.sleeveId === sleeve.sleeve_id;
+              const isProcessingExecution =
+                processExecutionMutation.isPending &&
+                processExecutionMutation.variables === sleeve.sleeve_id;
               const isStatusChanging =
                 statusMutation.isPending && statusMutation.variables?.sleeveId === sleeve.sleeve_id;
               return (
                 <SleeveRow
                   config={config}
+                  isCreatingExecution={isCreatingExecution}
                   isGenerating={isGenerating}
+                  isProcessingExecution={isProcessingExecution}
                   isStatusChanging={isStatusChanging}
+                  latestExecution={latestExecution}
                   key={sleeve.sleeve_id}
                   latestSignal={latestSignal}
+                  onCreateExecution={() => {
+                    if (latestSignal) {
+                      createExecutionMutation.mutate({
+                        sleeveId: sleeve.sleeve_id,
+                        signalId: latestSignal.signal_id,
+                      });
+                    }
+                  }}
                   onGenerate={() => generateSignalMutation.mutate(sleeve.sleeve_id)}
+                  onProcessExecution={() => processExecutionMutation.mutate(sleeve.sleeve_id)}
                   onStatus={(action) => statusMutation.mutate({ sleeveId: sleeve.sleeve_id, action })}
                   sleeve={sleeve}
                   text={text}
@@ -502,19 +576,29 @@ export function PaperStrategySleevesPanel({
 
 function SleeveRow({
   config,
+  isCreatingExecution,
   isGenerating,
+  isProcessingExecution,
   isStatusChanging,
+  latestExecution,
   latestSignal,
+  onCreateExecution,
   onGenerate,
+  onProcessExecution,
   onStatus,
   sleeve,
   text,
 }: {
   config?: PaperStrategyConfigResponse;
+  isCreatingExecution: boolean;
   isGenerating: boolean;
+  isProcessingExecution: boolean;
   isStatusChanging: boolean;
+  latestExecution?: PaperStrategyExecutionPlanResponse;
   latestSignal?: PaperStrategySignalResponse;
+  onCreateExecution: () => void;
   onGenerate: () => void;
+  onProcessExecution: () => void;
   onStatus: (action: SleeveAction) => void;
   sleeve: PaperStrategySleeveResponse;
   text: (typeof copy)["en"] | (typeof copy)["zh"];
@@ -529,6 +613,18 @@ function SleeveRow({
         .join(" · ")
     : "";
   const proposedOrders = latestSignal?.proposed_orders.length ?? 0;
+  const canCreateExecution =
+    sleeve.mode === "allocated" &&
+    sleeve.status === "running" &&
+    latestSignal?.status === "generated" &&
+    proposedOrders > 0 &&
+    latestExecution?.signal_id !== latestSignal.signal_id &&
+    !isCreatingExecution;
+  const canProcessExecution =
+    sleeve.mode === "allocated" &&
+    sleeve.status === "running" &&
+    latestExecution?.status === "pending" &&
+    !isProcessingExecution;
 
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
@@ -579,6 +675,27 @@ function SleeveRow({
         )}
       </div>
 
+      <div className="mt-3 rounded-lg border border-border-subtle bg-bg-surface-muted/40 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-label-caps text-text-secondary">{text.latestExecution}</span>
+          {latestExecution ? (
+            <StatusPill label="" value={latestExecution.status} tone={executionTone(latestExecution.status)} />
+          ) : null}
+        </div>
+        {latestExecution ? (
+          <div className="mt-2 grid grid-cols-1 gap-2 font-data-mono text-xs text-text-secondary sm:grid-cols-3">
+            <span>{formatShortDate(latestExecution.updated_at)}</span>
+            <span>{latestExecution.execution_window}</span>
+            <span>{latestExecution.target_date ?? "--"}</span>
+            <span>{latestExecution.orders.length} orders</span>
+            <span>{latestExecution.fills.length} fills</span>
+            <span>{latestExecution.blocked_reason ?? "--"}</span>
+          </div>
+        ) : (
+          <p className="mt-2 font-body-sm text-text-secondary">{text.noExecution}</p>
+        )}
+      </div>
+
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 font-body-sm font-semibold text-info disabled:cursor-not-allowed disabled:opacity-50"
@@ -588,6 +705,25 @@ function SleeveRow({
         >
           <RefreshCw size={14} />
           {isGenerating ? text.generatingSignal : text.generateSignal}
+        </button>
+        <button
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 font-body-sm font-semibold text-info disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!canCreateExecution}
+          onClick={onCreateExecution}
+          title={!latestSignal ? text.planFirst : undefined}
+          type="button"
+        >
+          <Send size={14} />
+          {isCreatingExecution ? text.creatingExecution : text.createExecution}
+        </button>
+        <button
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-accent-success/40 bg-accent-success/10 px-3 py-2 font-body-sm font-semibold text-accent-success disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!canProcessExecution}
+          onClick={onProcessExecution}
+          type="button"
+        >
+          <CheckCircle2 size={14} />
+          {isProcessingExecution ? text.processingPending : text.processPending}
         </button>
         {sleeve.status === "paused" ? (
           <button className={secondaryButtonClass} disabled={isStatusChanging} onClick={() => onStatus("resume")} type="button">
@@ -623,10 +759,21 @@ function latestByGeneratedAt(signals: PaperStrategySignalResponse[]) {
   return [...signals].sort((a, b) => b.generated_at.localeCompare(a.generated_at))[0];
 }
 
+function latestByUpdatedAt(executions: PaperStrategyExecutionPlanResponse[]) {
+  return [...executions].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+}
+
 function signalTone(status: PaperStrategySignalResponse["status"]) {
   if (status === "generated") return "success";
   if (status === "data_unavailable") return "warning";
   return "danger";
+}
+
+function executionTone(status: PaperStrategyExecutionPlanResponse["status"]) {
+  if (status === "filled") return "success";
+  if (status === "pending") return "info";
+  if (status === "blocked" || status === "failed") return "danger";
+  return "warning";
 }
 
 function apiErrorMessage(error: unknown) {
