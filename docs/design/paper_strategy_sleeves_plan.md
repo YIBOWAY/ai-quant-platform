@@ -391,6 +391,10 @@ research -> backtest -> signal-only -> allocated sleeve -> pseudo-live execution
 
 MVP-2 才进入自动成交。
 
+2026-06-27 起，MVP-2 的详细实施计划单独维护在
+[Paper Strategy Sleeves MVP-2 Implementation Plan](paper_strategy_sleeves_mvp2_plan.md)。
+本文只保留方向和边界，后续实现以 MVP-2 文档为准。
+
 默认路径：
 
 - EOD 生成信号。

@@ -124,6 +124,11 @@ later slice implements them:
 - next-open or near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
+The next implementation line is documented in
+[`docs/design/paper_strategy_sleeves_mvp2_plan.md`](../design/paper_strategy_sleeves_mvp2_plan.md).
+MVP-2 starts with pending execution records and then adds next-open paper fills;
+it must not add a FastAPI-resident scheduler or any real broker trading path.
+
 ## Real Futu Integration Tests
 
 Normal CI remains mocked/offline. The signal-generation slice includes opt-in

@@ -51,7 +51,7 @@
 - 手动 signal CLI 已可用：`quant-system paper strategies generate-signal --sleeve <id>`。
 - `/paper-trading` 的「策略袖珍仓」工作区已可用：可以创建 strategy config，开设 `signal_only` 或 `allocated` sleeve，在页面内生成 sleeve signal，并暂停 / 恢复 / 停止 sleeve。新建 strategy config 的活跃名称必须唯一；同名历史配置会在下拉里追加短 id 区分。`allocated` 模式会从手动现金通道划拨模拟现金；`signal_only` 不移动现金。
 - 尚无自动成交。页面内生成的 sleeve signal 只写入 `StrategySignal`，不会创建挂单、成交、账户持仓变更，也不会复用旧全账户再平衡路径。
-- 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
+- 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md)、[MVP-2 自动执行计划](../design/paper_strategy_sleeves_mvp2_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。
 
