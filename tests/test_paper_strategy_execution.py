@@ -21,7 +21,7 @@ from quant_system.execution.paper_strategy_sleeves import (
     StrategySignal,
     StrategySleeveMode,
 )
-from quant_system.execution.price_source import PricedQuote
+from quant_system.execution.price_source import PricedQuote, PriceUnavailableError
 
 
 class FakePriceSource:
@@ -40,6 +40,11 @@ class FakePriceSource:
             for symbol in symbols
             if symbol.upper() in self.prices
         }
+
+
+class UnavailablePriceSource:
+    def get_prices(self, symbols: list[str], **_kwargs) -> dict[str, PricedQuote]:  # noqa: ARG002
+        raise PriceUnavailableError("no real price available")
 
 
 def _config() -> StrategyConfig:
@@ -257,6 +262,60 @@ def test_next_open_execution_blocks_insufficient_sleeve_cash_without_mutation(
     reloaded = storage.load_executions(sleeve.sleeve_id)[0]
     assert reloaded.status == StrategyExecutionStatus.BLOCKED
     assert reloaded.blocked_reason == "insufficient_sleeve_cash"
+    assert sleeve.cash == pytest.approx(10_000.0)
+    assert account.cash == pytest.approx(100_000.0)
+    assert account.positions == {}
+    assert storage.load_sleeve_lots(sleeve.sleeve_id) == []
+
+
+def test_next_open_execution_blocks_price_source_failures_without_mutation(
+    tmp_path,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    sleeve_service = PaperStrategySleeveService(storage)
+    config = _config()
+    storage.save_strategy_config(config)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=10_000.0,
+    )
+    storage.save_sleeve(sleeve)
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "notional_delta": 5_000.0,
+                "target_weight": 1.0,
+                "reference_price": 100.0,
+                "estimated_quantity": 50.0,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    plan = sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+
+    with pytest.raises(PaperStrategyExecutionError, match="price_unavailable"):
+        PaperStrategyExecutionService(
+            storage=storage,
+            price_source=UnavailablePriceSource(),
+        ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    reloaded = storage.load_executions(sleeve.sleeve_id)[0]
+    assert reloaded.status == StrategyExecutionStatus.BLOCKED
+    assert reloaded.blocked_reason == "price_unavailable"
     assert sleeve.cash == pytest.approx(10_000.0)
     assert account.cash == pytest.approx(100_000.0)
     assert account.positions == {}

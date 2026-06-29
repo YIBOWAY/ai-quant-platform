@@ -45,17 +45,18 @@
 - 生成计划前，当前持仓和目标标的都必须有有限且大于 0 的纸面价格；缺价或无效价格会整体中止，不会静默跳过某个卖出/买入腿。
 - **原子性保证**：再平衡先在账户副本上**全量试算**，只有"所有腿都能成交"才提交到真实账户；只要有一腿被拒，**整体中止、不动账户**（不会出现"卖光了却买不进、变成全现金"），并如实返回 `aborted=true`。
 - 这条路径仍是**旧的全账户再平衡**，不是 Paper Strategy Sleeves 入口。它不是清仓按钮，也不是新建袖珍仓；它会按整个账户持仓与目标求差并直接买卖整个模拟账户，不能复用这条路径冒充 sleeve。
+- 如果账户里已经有真实 sleeve-owned lot，后端会拒绝这条旧路径并返回 `409 strategy_sleeve_positions_present`；这样它不会绕过 sleeve lot book 去卖策略袖珍仓的持仓。
 
 **Paper Strategy Sleeves 当前状态**：
 - 2026-06-26 已完成后端基础、API contract 与 daily signal 生成：版本化 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal`、本地存储、`sleeve_cash` 现金分配簿、`SleeveLotBook` lot 隔离，以及 `/api/paper/strategy-configs` / `/api/paper/strategy-sleeves` / `POST /api/paper/strategy-sleeves/{id}/signals`。
 - 2026-06-27 已完成 MVP-2 第一切片：`StrategyExecutionPlan` / `StrategyExecutionOrder` / `StrategyExecutionFill` 后端模型、`executions.jsonl` 本地持久化、`GET /api/paper/strategy-sleeves/{id}` 返回 executions，以及 `POST /api/paper/strategy-sleeves/{id}/executions` 从已生成 signal 创建 pending execution plan。
 - 2026-06-27 已完成 MVP-2 第二/第三切片：`paper_strategy_execution_service.py` 可以处理 next-open pending plan，按 sleeve cash/lot/source 隔离更新模拟账户；`POST /api/paper/strategy-sleeves/executions/process`、`quant-system paper strategies create-execution`、`quant-system paper strategies execute-pending` 已可手动触发。
 - 2026-06-27 已完成 MVP-2 第四切片：`/paper-trading` 的「策略袖珍仓」面板会展示每个 sleeve 的最新 execution state，并提供「创建计划」与「处理待执行」两个一次性纸面执行按钮。
-- 2026-06-29 已完成 MVP-2 第五切片：真实 Futu/OpenD opt-in 测试覆盖 signal 生成和 next-open paper execution processor；未显式传 `target_date` 时，只处理本地运行日期对应的 due plan。
+- 2026-06-29 已完成 MVP-2 第五切片：真实 Futu/OpenD opt-in 测试覆盖 signal 生成和 next-open paper execution processor；创建 execution plan 未显式传 `target_date` 时，会默认使用本地运行日期；处理 pending execution 未显式传 `target_date` 时，只处理本地运行日期对应的 due plan。
 - 手动 signal CLI 已可用：`quant-system paper strategies generate-signal --sleeve <id>`。
 - `/paper-trading` 的「策略袖珍仓」工作区已可用：可以创建 strategy config，开设 `signal_only` 或 `allocated` sleeve，在页面内生成 sleeve signal，并暂停 / 恢复 / 停止 sleeve。新建 strategy config 的活跃名称必须唯一；同名历史配置会在下拉里追加短 id 区分。`allocated` 模式会从手动现金通道划拨模拟现金；`signal_only` 不移动现金。
 - 尚无常驻自动成交。页面执行按钮只是显式的一次性本地纸面动作：先从已生成 signal 创建 pending execution plan，再手动处理本地运行日期到期的 plan；不会复用旧全账户再平衡路径，也不会触碰真实交易接口。
-- 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md)、[MVP-2 自动执行计划](../design/paper_strategy_sleeves_mvp2_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
+- 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md)、[MVP-2 执行计划](../design/paper_strategy_sleeves_mvp2_plan.md)、[MVP-3 运维与自动化计划](../design/paper_strategy_sleeves_mvp3_operations_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。
 

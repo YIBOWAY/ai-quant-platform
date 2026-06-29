@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 API_TYPES = Path("src/frontend/lib/api.ts")
 PAPER_TRADING_PAGE = Path("src/frontend/app/paper-trading/page.tsx")
 SLEEVES_PANEL = Path("src/frontend/components/forms/PaperStrategySleevesPanel.tsx")
@@ -42,6 +41,13 @@ def test_paper_trading_page_mounts_strategy_sleeves_workspace() -> None:
     assert "strategySleeves.apiError" in page
 
 
+def test_paper_trading_page_fetches_details_for_all_strategy_sleeves() -> None:
+    page = PAPER_TRADING_PAGE.read_text(encoding="utf-8")
+
+    assert "getPaperStrategySleeveDetail(sleeve.sleeve_id)" in page
+    assert ".slice(0, 6)" not in page
+
+
 def test_strategy_sleeves_panel_is_signal_first_without_auto_fill_language() -> None:
     panel = SLEEVES_PANEL.read_text(encoding="utf-8")
 
@@ -52,6 +58,22 @@ def test_strategy_sleeves_panel_is_signal_first_without_auto_fill_language() -> 
     assert "allocated_cash: mode === \"allocated\" ? allocatedCash : 0" in panel
     assert "auto-fill" not in panel.lower()
     assert "automatic execution" not in panel.lower()
+
+
+def test_strategy_sleeves_panel_processes_due_pending_execution_not_latest_only() -> None:
+    panel = SLEEVES_PANEL.read_text(encoding="utf-8")
+
+    assert "duePendingExecution" in panel
+    assert "latestDuePendingExecution" in panel
+    assert "localIsoDate" in panel
+    assert 'latestExecution?.status === "pending"' not in panel
+
+
+def test_strategy_sleeves_panel_does_not_label_sleeves_with_wrong_config_version() -> None:
+    panel = SLEEVES_PANEL.read_text(encoding="utf-8")
+
+    assert "config?.version === sleeve.strategy_config_version" in panel
+    assert "boundConfig" in panel
 
 
 def test_legacy_rebalance_is_labeled_as_full_account_advanced_path() -> None:

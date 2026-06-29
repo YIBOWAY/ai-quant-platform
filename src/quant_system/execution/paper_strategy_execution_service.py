@@ -17,7 +17,7 @@ from quant_system.execution.paper_strategy_sleeves import (
     StrategySleeveMode,
     StrategySleeveStatus,
 )
-from quant_system.execution.price_source import PricedQuote
+from quant_system.execution.price_source import PricedQuote, PriceUnavailableError
 
 EPSILON = 1e-9
 
@@ -191,7 +191,10 @@ class PaperStrategyExecutionService:
 
     def _load_quotes(self, plan: StrategyExecutionPlan) -> dict[str, PricedQuote]:
         symbols = sorted({order.symbol.upper() for order in plan.orders})
-        quotes = self.price_source.get_prices(symbols)
+        try:
+            quotes = self.price_source.get_prices(symbols)
+        except PriceUnavailableError as exc:
+            raise PaperStrategyExecutionError("price_unavailable") from exc
         missing = [symbol for symbol in symbols if symbol not in quotes]
         if missing:
             raise PaperStrategyExecutionError("price_unavailable")

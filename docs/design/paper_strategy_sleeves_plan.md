@@ -387,13 +387,17 @@ research -> backtest -> signal-only -> allocated sleeve -> pseudo-live execution
 
 交易按钮保持克制。实现后用 Playwright 做桌面和移动端截图验证。
 
-## 14. MVP-2 自动执行方向
+## 14. MVP-2 / MVP-3 执行与运维方向
 
-MVP-2 才进入自动成交。
+MVP-2 进入手动 pseudo-live paper execution：从已生成的 signal 创建
+pending execution plan，再通过 API/CLI/UI 显式处理到期的 `next_open` plan。
+它不是常驻自动成交。
 
 2026-06-27 起，MVP-2 的详细实施计划单独维护在
 [Paper Strategy Sleeves MVP-2 Implementation Plan](paper_strategy_sleeves_mvp2_plan.md)。
-本文只保留方向和边界，后续实现以 MVP-2 文档为准。
+2026-06-29 起，MVP-3 的运维与自动化计划单独维护在
+[Paper Strategy Sleeves MVP-3 Operations & Automation Plan](paper_strategy_sleeves_mvp3_operations_plan.md)。
+本文只保留方向和边界，后续实现以对应阶段文档为准。
 
 默认路径：
 
@@ -408,7 +412,9 @@ near-close 方向：
 - 在下一交易日收盘前约 5 分钟用真实 snapshot 或 5m bar 模拟成交。
 - 若错过窗口，记录 `missed_window`，不事后用历史 5m K 线补造成交。
 
-第一版自动化建议使用 CLI + Windows Task Scheduler，而不是把常驻调度器放进 FastAPI 进程。
+第一版自动化建议使用 CLI + host scheduler（`launchd` / cron / Windows
+Task Scheduler / 后续 Codex automation），而不是把常驻调度器放进 FastAPI
+进程。MVP-3 必须先补执行 journal / recovery，再做 unattended scheduling。
 
 ## 15. 账户级风险方向
 
@@ -501,7 +507,8 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
 - sample/fallback 数据不能进入 allocated 信号或后续执行路径。
 - 第三切片已包含 opt-in 真实 Futu/OpenD 集成测试，使用 `futu_opend`
   pytest marker 和 `QS_TEST_FUTU_OPEND=1`，且只允许 read-only OHLCV。
-- legacy full-account rebalance 仍保持原行为，且不会被 UI 当作新 sleeve 主入口。
+- legacy full-account rebalance 不会被 UI 当作新 sleeve 主入口；当账户中已有
+  actual sleeve-owned lot 时，API 会拒绝该旧路径以保护 sleeve lot 隔离。
 
 ## 17. 测试与验收
 
@@ -548,6 +555,7 @@ MVP-1 需要测试：
 | 2026-06-26 | 第三切片必须同时包含 mock/provider 单测和 opt-in 真实 Futu/OpenD read-only 集成测试；正常 CI 不默认打 OpenD。 |
 | 2026-06-26 | 第三切片已实现 daily signal generation、`POST /signals`、`paper strategies generate-signal`，但仍不做 pending order、fill 或自动成交。 |
 | 2026-06-26 | 第四切片按用户反馈升级为 Paper Strategy Sleeves UX Redesign，不再只是最小面板。 |
+| 2026-06-29 | MVP-2 已形成手动 pending execution / next-open processor / UI execution state；MVP-3 从 execution journal、recovery、scheduler-safe CLI 和 ops status 开始，不从 FastAPI 常驻调度器开始。 |
 
 ## 19. 相关代码入口
 
@@ -557,6 +565,7 @@ MVP-1 需要测试：
 | Strategy Sleeves 领域模型 / 分账基础 | `src/quant_system/execution/paper_strategy_sleeves.py` |
 | Strategy Sleeves 本地存储 | `src/quant_system/execution/paper_strategy_sleeve_storage.py` |
 | Strategy Sleeves 信号生成 | `src/quant_system/execution/paper_strategy_signal_service.py` |
+| Strategy Sleeves 执行处理 | `src/quant_system/execution/paper_strategy_execution_service.py` |
 | 账户持久化 | `src/quant_system/execution/account_storage.py` |
 | 账户服务 | `src/quant_system/execution/account_service.py` |
 | 账户取价 | `src/quant_system/execution/price_source.py` |

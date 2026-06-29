@@ -256,9 +256,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
   const [detail, sleeveDetails] = await Promise.all([
     latestRun ? getPaperRunDetail(latestRun.id) : Promise.resolve(null),
     Promise.all(
-      strategySleeves.sleeves
-        .slice(0, 6)
-        .map((sleeve) => getPaperStrategySleeveDetail(sleeve.sleeve_id)),
+      strategySleeves.sleeves.map((sleeve) => getPaperStrategySleeveDetail(sleeve.sleeve_id)),
     ),
   ]);
   const latest = latestRun?.summary;

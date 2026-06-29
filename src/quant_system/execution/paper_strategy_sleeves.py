@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Any, ClassVar
 
@@ -558,7 +558,7 @@ class PaperStrategySleeveService:
             sleeve=sleeve,
             signal=signal,
             execution_window=execution_window,
-            target_date=target_date,
+            target_date=target_date or date.today().isoformat(),
             metadata=metadata,
         )
         self.storage.append_execution(plan)

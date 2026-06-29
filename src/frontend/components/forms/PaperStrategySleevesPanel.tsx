@@ -529,9 +529,12 @@ export function PaperStrategySleevesPanel({
           <div className="grid grid-cols-1 gap-3 2xl:grid-cols-2">
             {sleeves.map((sleeve) => {
               const config = configById.get(sleeve.strategy_config_id);
+              const boundConfig =
+                config?.version === sleeve.strategy_config_version ? config : undefined;
               const detail = detailBySleeve.get(sleeve.sleeve_id);
               const latestSignal = latestByGeneratedAt(detail?.signals ?? []);
               const latestExecution = latestByUpdatedAt(detail?.executions ?? []);
+              const duePendingExecution = latestDuePendingExecution(detail?.executions ?? []);
               const isGenerating = generateSignalMutation.isPending && generateSignalMutation.variables === sleeve.sleeve_id;
               const isCreatingExecution =
                 createExecutionMutation.isPending &&
@@ -543,11 +546,12 @@ export function PaperStrategySleevesPanel({
                 statusMutation.isPending && statusMutation.variables?.sleeveId === sleeve.sleeve_id;
               return (
                 <SleeveRow
-                  config={config}
+                  config={boundConfig}
                   isCreatingExecution={isCreatingExecution}
                   isGenerating={isGenerating}
                   isProcessingExecution={isProcessingExecution}
                   isStatusChanging={isStatusChanging}
+                  duePendingExecution={duePendingExecution}
                   latestExecution={latestExecution}
                   key={sleeve.sleeve_id}
                   latestSignal={latestSignal}
@@ -580,6 +584,7 @@ function SleeveRow({
   isGenerating,
   isProcessingExecution,
   isStatusChanging,
+  duePendingExecution,
   latestExecution,
   latestSignal,
   onCreateExecution,
@@ -594,6 +599,7 @@ function SleeveRow({
   isGenerating: boolean;
   isProcessingExecution: boolean;
   isStatusChanging: boolean;
+  duePendingExecution?: PaperStrategyExecutionPlanResponse;
   latestExecution?: PaperStrategyExecutionPlanResponse;
   latestSignal?: PaperStrategySignalResponse;
   onCreateExecution: () => void;
@@ -623,7 +629,7 @@ function SleeveRow({
   const canProcessExecution =
     sleeve.mode === "allocated" &&
     sleeve.status === "running" &&
-    latestExecution?.status === "pending" &&
+    duePendingExecution !== undefined &&
     !isProcessingExecution;
 
   return (
@@ -761,6 +767,23 @@ function latestByGeneratedAt(signals: PaperStrategySignalResponse[]) {
 
 function latestByUpdatedAt(executions: PaperStrategyExecutionPlanResponse[]) {
   return [...executions].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+}
+
+function latestDuePendingExecution(executions: PaperStrategyExecutionPlanResponse[]) {
+  const currentDate = localIsoDate();
+  return executions
+    .filter(
+      (execution) =>
+        execution.status === "pending" &&
+        execution.execution_window === "next_open" &&
+        execution.target_date === currentDate,
+    )
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+}
+
+function localIsoDate(value = new Date()) {
+  const localTime = value.getTime() - value.getTimezoneOffset() * 60_000;
+  return new Date(localTime).toISOString().slice(0, 10);
 }
 
 function signalTone(status: PaperStrategySignalResponse["status"]) {

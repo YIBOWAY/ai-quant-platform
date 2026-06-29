@@ -34,7 +34,10 @@ The first slice establishes the accounting and persistence base:
 
 `PaperAccount.cash` remains the legacy total cash field. The existing
 `POST /api/paper/account/rebalance` path still uses the old full-account
-rebalance semantics and is not the Strategy Sleeves entrypoint.
+rebalance semantics and is not the Strategy Sleeves entrypoint. It is rejected
+with `409 strategy_sleeve_positions_present` when actual sleeve-owned lots are
+present, so it cannot sell strategy sleeve holdings outside the sleeve
+execution processor.
 
 The second slice exposes the backend API contract:
 
@@ -107,7 +110,8 @@ generated allocated-sleeve signal and is persisted to `executions.jsonl` with
 orders, fill lots, mutate account positions, or change sleeve cash. It rejects
 signal-only sleeves, paused/stopped sleeves, frozen accounts, non-generated
 signals, signals with no proposed orders, and duplicate execution plans for the
-same signal.
+same signal. If the request omits `target_date`, the plan uses the local run
+date; invalid `target_date` values are rejected by the API schema.
 
 The second MVP-2 slice adds the backend next-open execution processor in
 `src/quant_system/execution/paper_strategy_execution_service.py`. It processes a
@@ -133,6 +137,9 @@ external scheduler. The FastAPI process does not run an in-process recurring
 trading loop. When processing pending executions without an explicit
 `target_date`, the service selects only plans whose `target_date` is the local
 run date. Historical catch-up or replay must pass `target_date` explicitly.
+Unavailable paper prices or provider failures are recorded on the execution as
+`blocked` with reason `price_unavailable`; they are not silently retried or
+filled with sample data.
 
 The fourth MVP-2 slice exposes the same manual execution lifecycle in the
 `/paper-trading` Strategy Sleeves workspace. For each sleeve, the panel shows
@@ -178,13 +185,15 @@ later slice implements them:
 - `quant-system paper strategies config-create`
 - `quant-system paper strategies sleeve-create`
 - scheduled or automatic strategy execution
+- cross-file execution journals and unattended recovery
 - near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
 The next implementation line is documented in
-[`docs/design/paper_strategy_sleeves_mvp2_plan.md`](../design/paper_strategy_sleeves_mvp2_plan.md).
-MVP-2 now continues with later scheduling and near-close research; it
-must not add a FastAPI-resident scheduler or any real broker trading path.
+[`docs/design/paper_strategy_sleeves_mvp3_operations_plan.md`](../design/paper_strategy_sleeves_mvp3_operations_plan.md).
+MVP-3 starts with execution journaling/recovery, then scheduler-safe CLI
+commands and operator status. It must not add a FastAPI-resident scheduler or
+any real broker trading path.
 
 ## Real Futu Integration Tests
 
@@ -229,7 +238,7 @@ On macOS in this checkout the equivalent interpreter path is:
 git diff --check
 ```
 
-Expected focused result as of 2026-06-26 after the third slice:
+Expected focused result after MVP-2 hardening:
 
 - focused mock/API/CLI/factor tests pass
 - `QS_TEST_FUTU_OPEND=1` Futu/OpenD integration tests pass when local OpenD is running

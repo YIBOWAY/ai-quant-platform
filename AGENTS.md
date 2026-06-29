@@ -249,7 +249,10 @@ controls are implemented:
   does not auto-run a scheduler and generated signals do not auto-fill orders.
 - `PaperAccount.sleeve_cash` is a cash allocation book. Keep
   `PaperAccount.cash` as the legacy total cash field so the old full-account
-  rebalance path keeps its existing behavior.
+  rebalance path keeps its existing behavior for non-sleeve positions. When
+  actual sleeve-owned lots exist, the old full-account rebalance API must reject
+  with `strategy_sleeve_positions_present` instead of selling those lots outside
+  the sleeve execution processor.
 - Focused tests: `tests/test_paper_strategy_sleeves.py`, plus existing
   `tests/test_paper_strategy_signals.py`,
   `tests/test_api_paper_strategy_sleeves.py`,
@@ -257,9 +260,9 @@ controls are implemented:
   `tests/test_paper_strategy_execution.py`,
   `tests/test_paper_account.py`, and `tests/test_api_paper_account.py`.
 
-Not yet implemented: config/sleeve creation CLI helpers, automatic execution,
-near-close fills, or lot transfer. Do not document those as user-available until
-a later slice lands. The legacy
+Not yet implemented: cross-file execution journals/recovery, config/sleeve
+creation CLI helpers, automatic execution, near-close fills, or lot transfer.
+Do not document those as user-available until a later slice lands. The legacy
 `POST /api/paper/account/rebalance` remains an advanced full-account rebalance
 path, not a strategy sleeve entrypoint.
 

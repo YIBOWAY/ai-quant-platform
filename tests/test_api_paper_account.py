@@ -176,6 +176,12 @@ def test_rebalance_applies_strategy_targets_to_account(tmp_path, stub_prices, mo
         1.0
     )
 
+    repeat = client.post(
+        "/api/paper/account/rebalance",
+        json={"strategy_id": "cross_sectional_top_n", "symbols": ["AAPL", "MSFT"], "top_n": 2},
+    )
+    assert repeat.status_code == 200
+
 
 def test_paper_run_still_works_alongside_account(tmp_path, stub_prices) -> None:
     """The legacy historical-replay endpoint must remain functional."""

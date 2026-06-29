@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class PaperRunSummary(BaseModel):
@@ -200,6 +201,11 @@ class StrategyExecutionCreateRequest(BaseModel):
     target_date: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("target_date")
+    @classmethod
+    def validate_target_date(cls, value: str | None) -> str | None:
+        return _validate_iso_date(value)
+
 
 class StrategyExecutionMutationResponse(BaseModel):
     execution: StrategyExecutionPlanResponse
@@ -211,6 +217,11 @@ class StrategyExecutionProcessRequest(BaseModel):
     target_date: str | None = None
     limit: int = Field(default=50, gt=0, le=500)
 
+    @field_validator("target_date")
+    @classmethod
+    def validate_target_date(cls, value: str | None) -> str | None:
+        return _validate_iso_date(value)
+
 
 class StrategyExecutionProcessResponse(BaseModel):
     processed_count: int
@@ -218,6 +229,16 @@ class StrategyExecutionProcessResponse(BaseModel):
     blocked_count: int
     executions: list[StrategyExecutionPlanResponse]
     account: PaperAccountResponse
+
+
+def _validate_iso_date(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("target_date must be an ISO date in YYYY-MM-DD format") from exc
+    return parsed.isoformat()
 
 
 class PaperRunsResponse(BaseModel):

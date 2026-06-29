@@ -274,6 +274,19 @@ def _save_account(
     )
 
 
+def _has_strategy_sleeve_positions(
+    account: PaperAccount,
+    *,
+    sleeve_ids: set[str],
+) -> bool:
+    sleeve_sources = {f"strategy:{sleeve_id}" for sleeve_id in sleeve_ids}
+    for position in account.positions.values():
+        for source, quantity in position.source_quantity.items():
+            if source in sleeve_sources and quantity > 1e-9:
+                return True
+    return False
+
+
 def _account_view(
     account: PaperAccount,
     *,
@@ -541,9 +554,27 @@ def rebalance_account(
 ) -> dict:
     strategy_id = _account_rebalance_strategy_id(request.strategy_id)
     storage = _account_storage(api_runs_dir)
+    sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperAccountService(settings=settings)
-    with _account_lock(storage.account_id), storage.mutation_lock():
+    with (
+        _account_lock(storage.account_id),
+        storage.mutation_lock(),
+        sleeve_storage.mutation_lock(),
+    ):
         account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+        sleeve_storage.reconcile_pending_sleeves(account)
+        sleeve_ids = {sleeve.sleeve_id for sleeve in sleeve_storage.list_sleeves()}
+        if _has_strategy_sleeve_positions(account, sleeve_ids=sleeve_ids):
+            raise HTTPException(
+                status_code=409,
+                detail=_error_detail(
+                    "strategy_sleeve_positions_present",
+                    (
+                        "full-account rebalance is disabled while strategy sleeve "
+                        "positions exist; use the strategy sleeve execution panel"
+                    ),
+                ),
+            )
         try:
             outcome = service.rebalance_to_strategy(
                 account,
