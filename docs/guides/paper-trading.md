@@ -57,7 +57,7 @@
 - 2026-06-29 已开始 MVP-3 第二步：新增共享 operations runner，`execute-pending`、API 手动处理入口和 scheduler-safe CLI 状态命令开始复用同一套锁、恢复和执行编排。可用命令包括 `quant-system paper strategies generate-due-signals`、`execute-due`、`execute-pending` 与 `ops-status --format json`。
 - 手动 signal CLI 已可用：`quant-system paper strategies generate-signal --sleeve <id>`。
 - `/paper-trading` 的「策略袖珍仓」工作区已可用：可以创建 strategy config，开设 `signal_only` 或 `allocated` sleeve，在页面内生成 sleeve signal，并暂停 / 恢复 / 停止 sleeve。新建 strategy config 的活跃名称必须唯一；同名历史配置会在下拉里追加短 id 区分。`allocated` 模式会从手动现金通道划拨模拟现金；`signal_only` 不移动现金。
-- 尚未安装常驻自动成交调度。页面执行按钮和 CLI `execute-due` 都只是显式的一次性本地纸面动作：先从已生成 signal 创建 pending execution plan，再处理目标日期到期的 plan；不会复用旧全账户再平衡路径，也不会触碰真实交易接口。后续 Mac 常驻方向会先用 LaunchAgent 管本地服务/one-shot 命令，而不是新增真实交易通路。
+- 已有 Mac LaunchAgent 模板和 runbook，但尚未默认启用常驻自动成交调度。页面执行按钮和 CLI `execute-due` 都只是显式的一次性本地纸面动作：先从已生成 signal 创建 pending execution plan，再处理目标日期到期的 plan；不会复用旧全账户再平衡路径，也不会触碰真实交易接口。Mac 常驻方向会用 LaunchAgent 管本地服务/one-shot 命令，而不是新增真实交易通路。
 - 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md)、[MVP-2 执行计划](../design/paper_strategy_sleeves_mvp2_plan.md)、[MVP-3 运维与自动化计划](../design/paper_strategy_sleeves_mvp3_operations_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。

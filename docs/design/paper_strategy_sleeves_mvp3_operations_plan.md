@@ -3,6 +3,7 @@
 **Status:** Slice 0 execution journal/recovery started on 2026-06-29.
 Revised on 2026-06-29 for the Mac always-on local-service direction.
 Slice 1 operations runner and scheduler-safe CLI commands started on 2026-06-29.
+Slice 2 macOS LaunchAgent templates and runbook started on 2026-06-29.
 
 **Goal:** make Paper Strategy Sleeves reliable as a Mac-local paper-trading
 operations workflow: supervised local services, scheduled signal generation,
@@ -263,6 +264,18 @@ Initial stance:
 For the web app, long-running local use should prefer production-style frontend
 serving over `npm run dev`. Never run `npm run build` while a frontend dev
 server is using the same `.next` directory.
+
+Implemented in Slice 2 so far:
+
+- backend and frontend LaunchAgent templates are separated from strategy
+  one-shot job templates
+- backend/frontend wrappers bind to localhost and write runtime logs
+- strategy wrappers expose `ops-status`, `generate-due-signals`, and
+  `execute-due`
+- install/uninstall scripts render templates into `~/Library/LaunchAgents/`
+  and use `launchctl bootstrap/bootout gui/$(id -u)` without `sudo`
+- runbook:
+  `docs/execution/paper_strategy_sleeves_launchd.md`
 
 ### Slice 3: Retry Semantics
 

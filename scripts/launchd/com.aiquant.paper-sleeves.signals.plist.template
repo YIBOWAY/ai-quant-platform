@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aiquant.paper-sleeves.signals</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__ROOT__/scripts/run_paper_strategy_sleeves.sh</string>
+    <string>generate-due-signals</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__ROOT__</string>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>10</integer></dict>
+  </array>
+  <key>StandardOutPath</key>
+  <string>__ROOT__/data/_runtime/logs/paper-sleeves-signals.launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__ROOT__/data/_runtime/logs/paper-sleeves-signals.launchd.err.log</string>
+</dict>
+</plist>

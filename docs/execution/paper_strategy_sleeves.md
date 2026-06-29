@@ -9,7 +9,8 @@
 > execution-state controls are available. Opt-in read-only Futu/OpenD checks now
 > cover both signal generation and paper execution processing. MVP-3 Slice 1
 > adds a shared operations runner plus scheduler-safe one-shot CLI/status
-> commands; installing automatic scheduling remains a future slice.
+> commands. MVP-3 Slice 2 adds macOS LaunchAgent templates/runbook; automatic
+> scheduling is not active until the operator runs the install script.
 
 ## What Exists Now
 
@@ -181,6 +182,20 @@ executions, and recovery-required counts without placing any real broker orders.
 These commands are safe to call from a host scheduler because file locks and
 idempotency checks remain in the backend runner.
 
+MVP-3 Slice 2 adds macOS LaunchAgent assets and a runbook:
+
+- `scripts/run_quant_backend.sh`
+- `scripts/run_quant_frontend.sh`
+- `scripts/run_paper_strategy_sleeves.sh`
+- `scripts/launchd/*.plist.template`
+- `scripts/install_paper_strategy_sleeves_launchagent.sh`
+- `scripts/uninstall_paper_strategy_sleeves_launchagent.sh`
+- `docs/execution/paper_strategy_sleeves_launchd.md`
+
+The backend/frontend LaunchAgents are long-running local services. Strategy
+sleeve jobs are one-shot commands with `KeepAlive=false`; UI availability does
+not imply automatic execution is enabled.
+
 The fourth MVP-2 slice exposes the same manual execution lifecycle in the
 `/paper-trading` Strategy Sleeves workspace. For each sleeve, the panel shows
 the latest execution plan state and can:
@@ -229,15 +244,14 @@ later slice implements them:
 - `quant-system paper strategies config-create`
 - `quant-system paper strategies sleeve-create`
 - scheduled or automatic strategy execution
-- installed macOS LaunchAgent scheduling
+- enabled macOS LaunchAgent scheduling before the operator explicitly installs it
 - near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
 The next implementation line is documented in
 [`docs/design/paper_strategy_sleeves_mvp3_operations_plan.md`](../design/paper_strategy_sleeves_mvp3_operations_plan.md).
-MVP-3 continues with macOS LaunchAgent lifecycle assets, retry semantics, and a
-frontend operator status surface. It must not add duplicate schedulers or any
-real broker trading path.
+MVP-3 continues with retry semantics and a frontend operator status surface. It
+must not add duplicate schedulers or any real broker trading path.
 
 ## Real Futu Integration Tests
 

@@ -13,6 +13,20 @@ helpers.
 | `verify.ps1` | Run the standard local verification suite on Windows. Skips frontend build unless `-Build` is passed. |
 | `verify.sh` | Unix shell equivalent for the standard verification suite. |
 
+## macOS Local Services
+
+| Script | Purpose |
+| --- | --- |
+| `run_quant_backend.sh` | LaunchAgent target for the localhost FastAPI backend on `127.0.0.1:8765`. |
+| `run_quant_frontend.sh` | LaunchAgent target for the built Next.js frontend on `127.0.0.1:3001`. Requires `npm --prefix src/frontend run build` first. |
+| `run_paper_strategy_sleeves.sh` | LaunchAgent/CLI wrapper for one-shot Paper Strategy Sleeves ops commands (`ops-status`, `generate-due-signals`, `execute-due`). |
+| `install_paper_strategy_sleeves_launchagent.sh` | Render and bootstrap user-level macOS LaunchAgents under `~/Library/LaunchAgents/`; does not use sudo. |
+| `uninstall_paper_strategy_sleeves_launchagent.sh` | Boot out and remove the rendered user-level LaunchAgents. |
+
+See `docs/execution/paper_strategy_sleeves_launchd.md` before installing. The
+backend/frontend jobs are long-running local services; strategy-sleeve jobs are
+one-shot paper commands.
+
 ## Data And Maintenance
 
 | Script | Purpose |
