@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -490,6 +492,78 @@ def test_strategy_sleeve_execution_api_processes_pending_plan(
         f"strategy:{sleeve['sleeve_id']}": pytest.approx(1.0)
     }
     assert storage.load_sleeve(sleeve["sleeve_id"]).cash == pytest.approx(0.0)
+
+
+def test_strategy_sleeve_execution_api_defaults_to_due_target_date(
+    tmp_path,
+    stub_prices,
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    config = _create_config(client)
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    today = date.today().isoformat()
+    future = (date.today() + timedelta(days=1)).isoformat()
+
+    def create_pending(target_date: str) -> dict:
+        created = client.post(
+            "/api/paper/strategy-sleeves",
+            json={
+                "strategy_config_id": config["strategy_config_id"],
+                "strategy_config_version": config["version"],
+                "mode": "allocated",
+                "allocated_cash": 50_000.0,
+            },
+        )
+        assert created.status_code == 200
+        sleeve = created.json()["sleeve"]
+        domain_sleeve = storage.load_sleeve(sleeve["sleeve_id"])
+        signal = StrategySignal.create(
+            sleeve=domain_sleeve,
+            signal_date="2026-06-26",
+            data_provider="futu",
+            data_as_of="2026-06-26T20:00:00Z",
+            target_weights={"AAPL": 1.0},
+            proposed_orders=[
+                {
+                    "symbol": "AAPL",
+                    "side": "buy",
+                    "target_weight": 1.0,
+                    "current_value": 0.0,
+                    "target_value": 50_000.0,
+                    "notional_delta": 50_000.0,
+                    "reference_price": 200.0,
+                    "estimated_quantity": 250.0,
+                    "reason": "advisory_only_no_execution",
+                    "account_id": domain_sleeve.account_id,
+                }
+            ],
+            status=SignalStatus.GENERATED,
+        )
+        storage.append_signal(signal)
+        response = client.post(
+            f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}/executions",
+            json={
+                "signal_id": signal.signal_id,
+                "execution_window": "next_open",
+                "target_date": target_date,
+            },
+        )
+        assert response.status_code == 200
+        return response.json()["execution"]
+
+    due_execution = create_pending(today)
+    future_execution = create_pending(future)
+
+    response = client.post(
+        "/api/paper/strategy-sleeves/executions/process",
+        json={"execution_window": "next_open"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["processed_count"] == 1
+    assert payload["executions"][0]["execution_id"] == due_execution["execution_id"]
+    assert storage.load_executions(future_execution["sleeve_id"])[0].status == "pending"
 
 
 def test_strategy_sleeve_signal_api_rejects_stopped_sleeves(tmp_path) -> None:

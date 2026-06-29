@@ -263,7 +263,7 @@ The manual execution creation endpoint landed in Slice 1:
 
 - Modify: `src/frontend/lib/api.ts`
 - Modify: `src/frontend/components/forms/PaperStrategySleevesPanel.tsx`
-- Modify: `tests/test_frontend_paper_strategy_sleeves_ui_contract.py`
+- Optional: `tests/test_frontend_paper_strategy_sleeves_ui_contract.py`
 - Optional after backend is stable: `src/frontend/lib/paperStrategySleeves.ts`
 
 **Behavior:**
@@ -287,14 +287,21 @@ npm --prefix src/frontend test -- paperStrategySleeves.test.ts
 
 ### Slice 5: Opt-In Real Futu Execution Window Check
 
+**Status:** implemented on 2026-06-29.
+
 **Files:**
 
 - Modify: `tests/test_paper_strategy_sleeves_futu_integration.py`
+- Modify: `tests/test_api_paper_strategy_sleeves.py`
+- Modify: `src/quant_system/execution/paper_strategy_execution_service.py`
 - Modify: `docs/execution/paper_strategy_sleeves.md`
 
 **Behavior:**
 
 - Keep normal CI mocked/offline.
+- Default pending processing without an explicit `target_date` only selects
+  due plans whose `target_date` is the local run date. Historical catch-up must
+  pass `target_date` explicitly.
 - Under `QS_TEST_FUTU_OPEND=1`, verify that a real Futu snapshot or latest real
   close can support the execution processor without importing trade contexts.
 - The test must stay read-only and must not place real orders.
@@ -303,6 +310,7 @@ npm --prefix src/frontend test -- paperStrategySleeves.test.ts
 
 ```bash
 QS_TEST_FUTU_OPEND=1 ./ai-quant/bin/python -m pytest -q tests/test_paper_strategy_sleeves_futu_integration.py
+./ai-quant/bin/python -m pytest -q tests/test_api_paper_strategy_sleeves.py::test_strategy_sleeve_execution_api_defaults_to_due_target_date
 ```
 
 ## Done Criteria For MVP-2

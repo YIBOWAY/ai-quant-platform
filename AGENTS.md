@@ -199,14 +199,23 @@ on the Position Map.
 ## Paper Strategy Sleeves
 
 Paper Strategy Sleeves are a new MVP-1 business line for isolating strategy
-cash/lots inside the single persistent paper account. As of 2026-06-26, the
-backend foundation, API contract, and daily signal generation slices are
-implemented:
+cash/lots inside the single persistent paper account. As of 2026-06-29, the
+backend foundation, API contract, daily signal generation, manual pending
+execution planning, next-open paper execution processor, and UI execution-state
+controls are implemented:
 
 - Domain/accounting models:
   `src/quant_system/execution/paper_strategy_sleeves.py`
   (`StrategyConfig`, `StrategySleeve`, `SleeveLot`, `StrategySignal`,
+  `StrategyExecutionPlan`, `StrategyExecutionOrder`, `StrategyExecutionFill`,
   `SleeveLotBook`, `PaperStrategySleeveService`).
+- Execution processor:
+  `src/quant_system/execution/paper_strategy_execution_service.py` processes
+  due `next_open` pending plans through `PaperPriceSource`, updates only the
+  addressed sleeve cash/lots plus aggregate paper-account view, and records
+  `sleeve_execution_fill` ledger entries. Default pending processing only
+  selects plans whose `target_date` is the local run date; historical catch-up
+  must pass an explicit target date.
 - Local file source of truth:
   `src/quant_system/execution/paper_strategy_sleeve_storage.py`, under
   `data/api_runs/paper_strategy_sleeves/`. Allocated sleeve creation uses a
@@ -219,6 +228,8 @@ implemented:
   `POST/GET /api/paper/strategy-sleeves`,
   `GET /api/paper/strategy-sleeves/{id}`,
   `POST /api/paper/strategy-sleeves/{id}/signals`,
+  `POST /api/paper/strategy-sleeves/{id}/executions`,
+  `POST /api/paper/strategy-sleeves/executions/process`,
   and pause/resume/stop endpoints.
 - Daily signal generation service:
   `src/quant_system/execution/paper_strategy_signal_service.py`. It writes
@@ -227,12 +238,15 @@ implemented:
   no account exists yet. Paused/frozen states set `execution_blocked_reason`;
   stopped sleeves reject generation.
 - Manual CLI trigger:
-  `quant-system paper strategies generate-signal --sleeve <id>`.
+  `quant-system paper strategies generate-signal --sleeve <id>`,
+  `quant-system paper strategies create-execution --sleeve <id> --signal <signal_id>`,
+  and `quant-system paper strategies execute-pending`.
 - Frontend workspace:
   `src/frontend/components/forms/PaperStrategySleevesPanel.tsx` is mounted in
   `/paper-trading` live account tab. It can create strategy configs, open
   signal-only or allocated sleeves, generate signals, and pause/resume/stop
-  sleeves. It is signal-first only; generated signals do not auto-fill orders.
+  sleeves, then explicitly create/process one-shot paper execution plans. It
+  does not auto-run a scheduler and generated signals do not auto-fill orders.
 - `PaperAccount.sleeve_cash` is a cash allocation book. Keep
   `PaperAccount.cash` as the legacy total cash field so the old full-account
   rebalance path keeps its existing behavior.
@@ -240,17 +254,19 @@ implemented:
   `tests/test_paper_strategy_signals.py`,
   `tests/test_api_paper_strategy_sleeves.py`,
   `tests/test_paper_strategy_sleeves_futu_integration.py`,
+  `tests/test_paper_strategy_execution.py`,
   `tests/test_paper_account.py`, and `tests/test_api_paper_account.py`.
 
 Not yet implemented: config/sleeve creation CLI helpers, automatic execution,
-next-open / near-close fills, or lot transfer. Do not document those as
-user-available until a later slice lands. The legacy
+near-close fills, or lot transfer. Do not document those as user-available until
+a later slice lands. The legacy
 `POST /api/paper/account/rebalance` remains an advanced full-account rebalance
 path, not a strategy sleeve entrypoint.
 
 Normal signal-generation tests stay mocked/offline. Real Futu/OpenD checks are
 behind the opt-in `futu_opend` pytest marker plus `QS_TEST_FUTU_OPEND=1`. Real
-Futu tests must stay read-only and must not import trade contexts.
+Futu tests cover read-only signal generation plus the paper next-open execution
+processor, and must not import trade contexts.
 
 ## Options Module Notes
 

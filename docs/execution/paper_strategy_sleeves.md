@@ -6,8 +6,9 @@
 > generation, manual signal CLI, `/paper-trading` Strategy Sleeves workspace,
 > manual pending execution plan creation, and the backend next-open execution
 > processor are available. Manual processing API/CLI entrypoints and UI
-> execution-state controls are available; automatic scheduling remains a future
-> slice.
+> execution-state controls are available. Opt-in read-only Futu/OpenD checks now
+> cover both signal generation and paper execution processing; automatic
+> scheduling remains a future slice.
 
 ## What Exists Now
 
@@ -129,7 +130,9 @@ The third MVP-2 slice exposes manual processing entrypoints:
 
 These entrypoints are one-shot commands intended for explicit local use or an
 external scheduler. The FastAPI process does not run an in-process recurring
-trading loop.
+trading loop. When processing pending executions without an explicit
+`target_date`, the service selects only plans whose `target_date` is the local
+run date. Historical catch-up or replay must pass `target_date` explicitly.
 
 The fourth MVP-2 slice exposes the same manual execution lifecycle in the
 `/paper-trading` Strategy Sleeves workspace. For each sleeve, the panel shows
@@ -180,25 +183,26 @@ later slice implements them:
 
 The next implementation line is documented in
 [`docs/design/paper_strategy_sleeves_mvp2_plan.md`](../design/paper_strategy_sleeves_mvp2_plan.md).
-MVP-2 now continues with opt-in real Futu verification and later scheduling; it
+MVP-2 now continues with later scheduling and near-close research; it
 must not add a FastAPI-resident scheduler or any real broker trading path.
 
 ## Real Futu Integration Tests
 
-Normal CI remains mocked/offline. The signal-generation slice includes opt-in
-read-only Futu/OpenD tests under a dedicated pytest marker:
+Normal CI remains mocked/offline. The signal-generation and execution slices
+include opt-in read-only Futu/OpenD tests under a dedicated pytest marker:
 
 ```text
 pytestmark = pytest.mark.futu_opend
 QS_TEST_FUTU_OPEND=1
 ```
 
-The marker is registered in `pyproject.toml`. These tests verify only
-read-only data access and signal persistence: OpenD reachable, small OHLCV fetch
-works for configured symbols, `StrategySignal.data_provider == "futu"`, real
-`data_as_of` is recorded, and unavailable real data becomes `data_unavailable`
-instead of falling back to sample data. Do not import or instantiate Futu trade
-contexts.
+The marker is registered in `pyproject.toml`. These tests verify only read-only
+data access and local paper accounting: OpenD reachable, small OHLCV fetch works
+for configured symbols, `StrategySignal.data_provider == "futu"`, real
+`data_as_of` is recorded, a real `PaperPriceSource` snapshot/latest close can
+drive the next-open paper execution processor, and unavailable real data becomes
+`data_unavailable` instead of falling back to sample data. Do not import or
+instantiate Futu trade contexts.
 
 Run them only when a local read-only OpenD service is intentionally available:
 
@@ -228,6 +232,6 @@ git diff --check
 Expected focused result as of 2026-06-26 after the third slice:
 
 - focused mock/API/CLI/factor tests pass
-- `QS_TEST_FUTU_OPEND=1` Futu/OpenD integration test passes when local OpenD is running
+- `QS_TEST_FUTU_OPEND=1` Futu/OpenD integration tests pass when local OpenD is running
 - ruff clean
 - `git diff --check` clean

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import NamedTuple
 
 import pandas as pd
@@ -143,6 +143,7 @@ class PaperStrategyExecutionService:
         target_date: str | None = None,
         limit: int = 50,
     ) -> list[tuple[StrategySleeve, StrategyExecutionPlan]]:
+        due_target_date = target_date or date.today().isoformat()
         sleeves = (
             [self.storage.load_sleeve(sleeve_id)]
             if sleeve_id is not None
@@ -155,7 +156,7 @@ class PaperStrategyExecutionService:
                     continue
                 if plan.execution_window != execution_window:
                     continue
-                if target_date is not None and plan.target_date != target_date:
+                if plan.target_date != due_target_date:
                     continue
                 plans.append((sleeve, plan))
                 if len(plans) >= limit:
