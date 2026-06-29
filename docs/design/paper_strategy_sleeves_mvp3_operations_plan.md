@@ -1,15 +1,19 @@
 # Paper Strategy Sleeves MVP-3 Operations & Automation Plan
 
 **Status:** Slice 0 execution journal/recovery started on 2026-06-29.
+Revised on 2026-06-29 for the Mac always-on local-service direction.
 
-**Goal:** make Paper Strategy Sleeves reliable as a local paper-trading
-operations workflow: scheduled signal generation, scheduled due-plan
-processing, recoverable execution state, clear retry semantics, and operator
-visibility. MVP-3 is still paper-only and read-only with respect to brokers.
+**Goal:** make Paper Strategy Sleeves reliable as a Mac-local paper-trading
+operations workflow: supervised local services, scheduled signal generation,
+scheduled due-plan processing, recoverable execution state, clear retry
+semantics, and operator visibility. MVP-3 is still paper-only and read-only with
+respect to brokers.
 
 ## 1. First-Principles Check
 
-The core product promise is not "the app keeps running." The promise is:
+The user now wants the app to be able to keep running on the local Mac, start
+when the Mac/user session starts, and stop when the Mac shuts down. That changes
+the process-lifecycle plan, but it does not change the core product promise:
 
 1. a strategy sleeve owns a bounded cash and lot book inside one persistent
    paper account
@@ -20,11 +24,25 @@ The core product promise is not "the app keeps running." The promise is:
 5. missed data, missed windows, and local process downtime are visible instead
    of silently fabricated
 
-From those principles, MVP-3 should not start with an in-process FastAPI
-scheduler. A web server can stop, reload, or be launched only for UI work. The
-durable automation unit should be a CLI command run by the host scheduler
-(`launchd`, cron, Windows Task Scheduler, or a future Codex automation), with
-file locks and idempotent execution protecting the state.
+From those principles, MVP-3 should separate **service lifecycle** from
+**workflow scheduling**:
+
+- `launchd` may supervise the local backend and frontend so the web app is
+  available after login.
+- Strategy automation should first be expressed as one-shot, scheduler-safe
+  operations with deterministic exits and structured status.
+- A single backend operations module should own recovery, due-work discovery,
+  signal generation, execution processing, and status summarization.
+- CLI commands, FastAPI routes, and any future resident worker must call that
+  same operations module instead of each encoding business rules.
+- MVP-3 should not start with a default FastAPI recurring strategy loop. A
+  resident worker can be considered later, behind an explicit setting, only
+  after one-shot operation semantics, status, locks, and recovery are stable.
+
+For macOS, use user-level **LaunchAgents** first. They fit this repo's user-owned
+paths, local virtualenv, `.env`, Futu/OpenD session assumptions, and
+`data/api_runs/` permissions. A root-level LaunchDaemon should be avoided unless
+there is a later explicit need to run before user login.
 
 ## 2. Non-Goals
 
@@ -33,7 +51,10 @@ MVP-3 must not add:
 - real broker trade placement, trade unlock, order modification, or cancellation
 - Futu trade contexts; read-only quote and OHLCV access only
 - automatic execution from the React UI without an explicit API/CLI action
-- a FastAPI-resident recurring strategy scheduler
+- duplicate schedulers that can process the same due work through different
+  business-rule paths
+- a default FastAPI-resident recurring strategy scheduler before one-shot
+  operation semantics and status are stable
 - synthetic sample prices for account mutation
 - cross-sleeve cash reallocation or automatic lot transfer
 - near-close fills until next-open automation and recovery are stable
@@ -53,6 +74,12 @@ MVP-3 must not add:
 - The same execution plan can be processed repeatedly without duplicate fills.
 - Cross-file state changes must become recoverable before unattended scheduling
   is considered done.
+- Only one active scheduler path should be enabled for strategy-sleeve
+  execution at a time.
+- LaunchAgent scripts must run as the local user, never as root, so local files
+  and locks keep the same ownership as API/CLI/manual workflows.
+- Shell scripts and plist templates must not contain business logic beyond
+  selecting the command to run and where logs go.
 
 ## 4. Current Adversarial Findings
 
@@ -76,6 +103,10 @@ The 2026-06-29 audit found several issues that shaped MVP-3:
   mutating files. API/CLI success paths finalize the journal only after the
   account save succeeds; later sleeve detail/process access reconciles pending
   journals.
+- **MVP-3 plan revision:** Mac always-on mode changes the service lifecycle
+  target to LaunchAgent-supervised local processes, but scheduler semantics
+  remain one-shot and lock-protected until the operations runner, status, and
+  retry model are stable.
 - **Still open for MVP-3:** lock-timeout errors and retryable vs terminal
   blocked states need explicit operator semantics.
 
@@ -143,7 +174,32 @@ Still open after Slice 0:
 - map lock timeouts to structured API/CLI status
 - split retryable vs terminal blocked states
 
-### Slice 1: Scheduler-Safe CLI Commands
+### Slice 1: Operations Runner And Scheduler-Safe Commands
+
+Add a deep operations module that becomes the single seam used by CLI, API, and
+future schedulers:
+
+```text
+src/quant_system/execution/paper_strategy_operations.py
+  PaperStrategyOperationsRunner
+    generate_signal_once(...)
+    create_execution_once(...)
+    process_pending_executions_once(...)
+    ops_status(...)
+```
+
+Responsibilities:
+
+- acquire account and sleeve locks in the established order
+- reconcile pending sleeve allocation journals
+- reconcile execution journals before status or processing
+- discover due signals and due execution plans
+- call `PaperStrategySignalService`, `PaperStrategySleeveService`, and
+  `PaperStrategyExecutionService`
+- save account state and finalize execution journals in the existing recovery
+  order
+- return structured results that CLI/API/UI can render without reimplementing
+  accounting rules
 
 Add host-scheduler friendly commands with deterministic exits and structured
 status output:
@@ -156,14 +212,46 @@ quant-system paper strategies ops-status --date YYYY-MM-DD --format json
 
 Behavior:
 
-- no daemon
-- no background thread in FastAPI
+- no default resident strategy scheduler
+- no route-level scheduling logic
 - one command does one bounded unit of work
 - file locks protect CLI/API concurrency
 - lock timeout returns a documented non-zero exit and structured status
 - `--dry-run` is available for status and plan preview commands only
+- CLI can be used directly by LaunchAgent one-shot jobs or by an operator during
+  manual recovery
 
-### Slice 2: Retry Semantics
+### Slice 2: Mac Local Service Lifecycle
+
+Add macOS local-service assets only after Slice 1 has stable status semantics.
+
+Recommended files:
+
+```text
+scripts/run_paper_strategy_sleeves.sh
+scripts/launchd/com.aiquant.paper-sleeves.signals.plist.template
+scripts/launchd/com.aiquant.paper-sleeves.execute-due.plist.template
+scripts/install_paper_strategy_sleeves_launchagent.sh
+scripts/uninstall_paper_strategy_sleeves_launchagent.sh
+docs/execution/paper_strategy_sleeves_launchd.md
+```
+
+Initial stance:
+
+- use LaunchAgent, not LaunchDaemon
+- do not require `sudo`
+- use absolute paths for the repo and Python interpreter
+- write logs under `data/_runtime/logs/`
+- keep strategy tasks as one-shot jobs with `KeepAlive=false`
+- install backend/frontend LaunchAgents separately from strategy one-shot jobs
+  so UI availability does not imply auto-execution is enabled
+- document how to bootstrap, unload, inspect logs, and run commands manually
+
+For the web app, long-running local use should prefer production-style frontend
+serving over `npm run dev`. Never run `npm run build` while a frontend dev
+server is using the same `.next` directory.
+
+### Slice 3: Retry Semantics
 
 Split blocked outcomes into terminal and retryable classes.
 
@@ -197,7 +285,7 @@ MVP-3 can either add `retry_class` to the existing model or introduce the
 change after tests prove the UI and CLI can distinguish operator action from
 automatic retry.
 
-### Slice 3: Config And Sleeve CLI Helpers
+### Slice 4: Config And Sleeve CLI Helpers
 
 Add CLI helpers only after recovery and scheduler status are in place:
 
@@ -210,7 +298,7 @@ quant-system paper strategies sleeve-show --sleeve <id>
 These are convenience wrappers around existing API/domain behavior. They must
 not add new execution semantics.
 
-### Slice 4: Operations Surface
+### Slice 5: Operations Surface
 
 Add a compact status panel to `/paper-trading`, not a separate heavy dashboard
 at first:
@@ -225,7 +313,18 @@ at first:
 The UI should remain explicit that the user is seeing local paper automation,
 not broker automation.
 
-### Slice 5: Near-Close Research Gate
+Frontend design direction:
+
+- place the panel in the live account tab after account summary and before the
+  sleeve workspace
+- keep the visual language dense, calm, and audit-oriented
+- show `paper-only`, `live trading disabled`, scheduler mode, target date, local
+  timezone, last refresh, due counts, retryable issues, recovery-required
+  items, and latest command result
+- keep refresh/status actions separate from execution actions
+- do not merge old full-account rebalance into this panel
+
+### Slice 6: Near-Close Research Gate
 
 Only start near-close simulation after Slice 0 through Slice 4 pass.
 
@@ -236,7 +335,7 @@ Required design decisions:
 - missed window semantics
 - no historical backfill that pretends the near-close window was observed live
 
-### Slice 6: Manual Lot Transfer
+### Slice 7: Manual Lot Transfer
 
 Lot transfer is optional and should remain operator-explicit:
 
@@ -291,8 +390,11 @@ documentation, not runtime strategy-sleeve code.
 
 MVP-3 is done only when:
 
-- scheduled commands can be run repeatedly by an external scheduler
+- scheduled commands can be run repeatedly by LaunchAgent or another external
+  scheduler
 - a stopped FastAPI/frontend process does not lose due work
+- Mac service lifecycle docs explain start on login, stop on shutdown, logs,
+  unload, and manual recovery
 - interrupted execution processing is recoverable and tested
 - operator status tells the user what ran, what filled, what was skipped, and
   what needs manual intervention
