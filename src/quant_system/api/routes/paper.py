@@ -215,7 +215,19 @@ def _reconcile_pending_strategy_sleeves(
     account_storage: PaperAccountStorage,
     sleeve_storage: PaperStrategySleeveStorage,
 ) -> None:
-    sleeve_storage.reconcile_pending_sleeves(account_storage.load())
+    account = account_storage.load()
+    sleeve_storage.reconcile_pending_sleeves(account)
+    if account is None:
+        return
+    service = PaperStrategyExecutionService(
+        storage=sleeve_storage,
+        price_source=None,
+    )
+    recovered = service.reconcile_execution_journals(account, commit=False)
+    if recovered:
+        account_storage.save(account)
+        for execution in recovered:
+            service.commit_execution_journal(execution)
 
 
 def _account_quotes(account: PaperAccount, *, settings) -> dict[str, PricedQuote]:
@@ -957,6 +969,9 @@ def process_strategy_sleeve_executions(
             processed.append(execution)
         quotes = _account_quotes(account, settings=settings)
         _save_account(account_storage, account, quotes)
+        for execution in processed:
+            if execution.status == "filled":
+                service.commit_execution_journal(execution)
         account_view = _account_view(account, settings=settings, quotes=quotes)
     return {
         "processed_count": len(processed),

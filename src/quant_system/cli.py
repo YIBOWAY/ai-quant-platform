@@ -1054,6 +1054,11 @@ def paper_strategy_execute_pending_command(
     with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
         account = account_storage.load_or_open()
         sleeve_storage.reconcile_pending_sleeves(account)
+        recovered = service.reconcile_execution_journals(account, commit=False)
+        if recovered:
+            account_storage.save(account)
+            for execution in recovered:
+                service.commit_execution_journal(execution)
         try:
             candidates = service.pending_plans(
                 sleeve_id=sleeve_id,
@@ -1083,6 +1088,9 @@ def paper_strategy_execute_pending_command(
                 for symbol, quote in quotes.items()
             },
         )
+        for execution in processed:
+            if execution.status == "filled":
+                service.commit_execution_journal(execution)
 
     typer.echo(
         f"processed={len(processed)} filled={filled_count} blocked={blocked_count}"

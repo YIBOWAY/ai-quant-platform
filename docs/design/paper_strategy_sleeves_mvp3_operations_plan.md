@@ -1,6 +1,6 @@
 # Paper Strategy Sleeves MVP-3 Operations & Automation Plan
 
-**Status:** planned after MVP-2 manual execution.
+**Status:** Slice 0 execution journal/recovery started on 2026-06-29.
 
 **Goal:** make Paper Strategy Sleeves reliable as a local paper-trading
 operations workflow: scheduled signal generation, scheduled due-plan
@@ -71,9 +71,11 @@ The 2026-06-29 audit found several issues that shaped MVP-3:
 - **Fixed in MVP-2 hardening:** old full-account rebalance is blocked only when
   actual sleeve-owned sources exist, not merely because legacy strategy sources
   exist.
-- **Still open for MVP-3:** execution processing writes account, sleeve, lots,
-  and execution state across multiple files. Individual file writes are atomic,
-  but the operation is not yet globally transactional.
+- **Fixed in MVP-3 Slice 0:** execution processing writes a pending journal
+  with before/after account, sleeve, lots, and execution snapshots before
+  mutating files. API/CLI success paths finalize the journal only after the
+  account save succeeds; later sleeve detail/process access reconciles pending
+  journals.
 - **Still open for MVP-3:** lock-timeout errors and retryable vs terminal
   blocked states need explicit operator semantics.
 
@@ -117,11 +119,29 @@ Recovery rules:
 
 Tests:
 
-- crash after journal before account save
-- crash after account save before sleeve/lots save
-- crash after sleeve/lots save before execution state save
+- crash after journal/sleeve/lots/execution writes before account save
+- account already has fill ledger entries while sleeve/lots/execution lag
+- detail/process recovery finalizes pending journals after account save
 - double process after committed journal
-- corrupt journal is preserved and reported, not silently deleted
+- corrupt journal is preserved and skipped, not silently deleted
+
+Implemented in Slice 0:
+
+- `PaperStrategyExecutionService.execute_plan()` computes the after-state on
+  deep copies, writes a pending journal, then materializes account, sleeve,
+  lots, and execution state.
+- `PaperStrategyExecutionService.reconcile_execution_journals()` repairs
+  interrupted executions from pending journals and can defer journal finalizing
+  until the caller saves the account.
+- `PaperStrategySleeveStorage` owns pending/committed/corrupt journal files.
+- API sleeve detail/process and CLI `execute-pending` reconcile pending
+  journals under the existing account+sleeve locks.
+
+Still open after Slice 0:
+
+- expose `recovery_required` in an operator status view
+- map lock timeouts to structured API/CLI status
+- split retryable vs terminal blocked states
 
 ### Slice 1: Scheduler-Safe CLI Commands
 

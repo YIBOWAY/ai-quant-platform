@@ -371,3 +371,143 @@ def test_next_open_execution_does_not_reprocess_filled_plan(tmp_path) -> None:
     assert reloaded.status == StrategyExecutionStatus.FILLED
     assert account.cash == pytest.approx(75_000.0)
     assert account.positions["AAPL"].quantity == pytest.approx(250.0)
+
+
+def test_execution_journal_recovers_account_when_account_save_was_interrupted(
+    tmp_path,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    sleeve_service = PaperStrategySleeveService(storage)
+    config = _config()
+    storage.save_strategy_config(config)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    storage.save_sleeve(sleeve)
+    account_before_execution = account.model_copy(deep=True)
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "notional_delta": 25_000.0,
+                "target_weight": 1.0,
+                "reference_price": 100.0,
+                "estimated_quantity": 250.0,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    plan = sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+    processor = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+    )
+
+    processor.execute_plan(account, sleeve=sleeve, plan=plan)
+
+    pending_path = storage.execution_journal_pending_path(
+        sleeve.sleeve_id,
+        plan.execution_id,
+    )
+    assert pending_path.exists()
+
+    recovered_account = account_before_execution.model_copy(deep=True)
+    recovered = processor.reconcile_execution_journals(recovered_account)
+
+    assert [item.execution_id for item in recovered] == [plan.execution_id]
+    assert recovered_account.cash == pytest.approx(75_000.0)
+    assert recovered_account.sleeve_cash[sleeve.sleeve_id] == pytest.approx(0.0)
+    assert recovered_account.positions["AAPL"].quantity == pytest.approx(250.0)
+    assert recovered_account.ledger[-1].kind == "sleeve_execution_fill"
+    assert storage.execution_journal_committed_path(
+        sleeve.sleeve_id,
+        plan.execution_id,
+    ).exists()
+    assert not pending_path.exists()
+
+
+def test_corrupt_execution_journal_is_preserved_and_skipped(tmp_path) -> None:
+    storage = PaperStrategySleeveStorage(tmp_path)
+    pending_path = storage.execution_journal_pending_path("sleeve-test", "exec-test")
+    pending_path.parent.mkdir(parents=True, exist_ok=True)
+    pending_path.write_text("{not json", encoding="utf-8")
+
+    assert storage.load_pending_execution_journals() == []
+    assert not pending_path.exists()
+    corrupt_files = list(pending_path.parent.glob("exec-test.corrupt-*.json"))
+    assert len(corrupt_files) == 1
+    assert corrupt_files[0].read_text(encoding="utf-8") == "{not json"
+
+
+def test_execution_journal_marks_mismatched_account_for_manual_recovery(
+    tmp_path,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    sleeve_service = PaperStrategySleeveService(storage)
+    config = _config()
+    storage.save_strategy_config(config)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    storage.save_sleeve(sleeve)
+    before_sleeve = sleeve.model_copy(deep=True)
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "notional_delta": 25_000.0,
+                "target_weight": 1.0,
+                "reference_price": 100.0,
+                "estimated_quantity": 250.0,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    plan = sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+    before_plan = plan.model_copy(deep=True)
+    processor = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+    )
+    processor.execute_plan(account, sleeve=sleeve, plan=plan)
+    storage.save_sleeve(before_sleeve)
+    storage.save_sleeve_lots(before_sleeve.sleeve_id, [])
+    storage.save_executions(before_sleeve.sleeve_id, [before_plan])
+    mismatched_account = PaperAccount.open_new(initial_cash=123_000.0)
+
+    recovered = processor.reconcile_execution_journals(mismatched_account)
+
+    assert recovered[0].status == StrategyExecutionStatus.BLOCKED
+    assert recovered[0].blocked_reason == "recovery_required"
+    assert mismatched_account.cash == pytest.approx(123_000.0)
+    assert storage.load_sleeve(sleeve.sleeve_id).cash == pytest.approx(25_000.0)
+    assert storage.load_sleeve_lots(sleeve.sleeve_id) == []
+    assert storage.load_executions(sleeve.sleeve_id)[0].blocked_reason == "recovery_required"

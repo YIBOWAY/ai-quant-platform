@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -120,6 +121,23 @@ class PaperStrategySleeveStorage:
 
     def sleeve_executions_path(self, sleeve_id: str) -> Path:
         return self.sleeve_dir(sleeve_id) / "executions.jsonl"
+
+    def execution_journal_dir(self, sleeve_id: str) -> Path:
+        return self.sleeve_dir(sleeve_id) / "execution_journal"
+
+    def execution_journal_pending_path(
+        self,
+        sleeve_id: str,
+        execution_id: str,
+    ) -> Path:
+        return self.execution_journal_dir(sleeve_id) / f"{execution_id}.pending.json"
+
+    def execution_journal_committed_path(
+        self,
+        sleeve_id: str,
+        execution_id: str,
+    ) -> Path:
+        return self.execution_journal_dir(sleeve_id) / f"{execution_id}.committed.json"
 
     def save_strategy_config(self, config: StrategyConfig) -> Path:
         config_dir = self.strategy_config_dir(config.strategy_config_id)
@@ -334,6 +352,49 @@ class PaperStrategySleeveStorage:
             if execution.signal_id == signal_id:
                 return execution
         return None
+
+    def save_execution_journal_pending(
+        self,
+        *,
+        sleeve_id: str,
+        execution_id: str,
+        payload: dict[str, Any],
+    ) -> Path:
+        path = self.execution_journal_pending_path(sleeve_id, execution_id)
+        self._write_json_atomic(path, payload)
+        return path
+
+    def load_pending_execution_journals(self) -> list[dict[str, Any]]:
+        if not self.sleeves_dir.exists():
+            return []
+        journals: list[dict[str, Any]] = []
+        for path in sorted(self.sleeves_dir.glob("*/execution_journal/*.pending.json")):
+            try:
+                journals.append(json.loads(path.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError):
+                self._preserve_corrupt_execution_journal(path)
+        return journals
+
+    def commit_execution_journal(self, *, sleeve_id: str, execution_id: str) -> Path:
+        pending_path = self.execution_journal_pending_path(sleeve_id, execution_id)
+        committed_path = self.execution_journal_committed_path(sleeve_id, execution_id)
+        if committed_path.exists():
+            pending_path.unlink(missing_ok=True)
+            return committed_path
+        if not pending_path.exists():
+            raise FileNotFoundError(pending_path)
+        self._atomic_replace(pending_path, committed_path)
+        return committed_path
+
+    @staticmethod
+    def _preserve_corrupt_execution_journal(path: Path) -> Path:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S_%fZ")
+        execution_id = path.name.removesuffix(".pending.json")
+        corrupt_path = path.with_name(
+            f"{execution_id}.corrupt-{stamp}-{uuid.uuid4().hex[:6]}.json"
+        )
+        os.replace(path, corrupt_path)
+        return corrupt_path
 
     def _write_strategy_config_metadata(self, config: StrategyConfig) -> None:
         metadata_path = self.strategy_config_metadata_path(config.strategy_config_id)

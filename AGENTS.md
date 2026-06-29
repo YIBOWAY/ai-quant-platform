@@ -215,12 +215,18 @@ controls are implemented:
   addressed sleeve cash/lots plus aggregate paper-account view, and records
   `sleeve_execution_fill` ledger entries. Default pending processing only
   selects plans whose `target_date` is the local run date; historical catch-up
-  must pass an explicit target date.
+  must pass an explicit target date. Filled executions write a pending
+  execution journal with before/after account, sleeve, lots, and execution
+  snapshots before mutating files; API/CLI success paths commit the journal only
+  after the account save succeeds, and later sleeve detail/process access can
+  reconcile pending journals.
 - Local file source of truth:
   `src/quant_system/execution/paper_strategy_sleeve_storage.py`, under
   `data/api_runs/paper_strategy_sleeves/`. Allocated sleeve creation uses a
   `sleeve.pending.json` journal and reconciles it against
-  `PaperAccount.sleeve_cash` on later list/detail/signal access.
+  `PaperAccount.sleeve_cash` on later list/detail/signal access. Filled
+  execution journals live under each sleeve's `execution_journal/` directory as
+  `.pending.json`, `.committed.json`, or preserved `.corrupt-*.json` files.
 - API response schema classes live in `src/quant_system/api/schemas/paper.py`.
 - API routes live in `src/quant_system/api/routes/paper.py`:
   `POST/GET /api/paper/strategy-configs`,
@@ -260,9 +266,9 @@ controls are implemented:
   `tests/test_paper_strategy_execution.py`,
   `tests/test_paper_account.py`, and `tests/test_api_paper_account.py`.
 
-Not yet implemented: cross-file execution journals/recovery, config/sleeve
-creation CLI helpers, automatic execution, near-close fills, or lot transfer.
-Do not document those as user-available until a later slice lands. The legacy
+Not yet implemented: scheduler-safe due-signal commands, config/sleeve creation
+CLI helpers, automatic execution, near-close fills, or lot transfer. Do not
+document those as user-available until a later slice lands. The legacy
 `POST /api/paper/account/rebalance` remains an advanced full-account rebalance
 path, not a strategy sleeve entrypoint.
 

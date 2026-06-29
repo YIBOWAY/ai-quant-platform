@@ -117,11 +117,11 @@ The second MVP-2 slice adds the backend next-open execution processor in
 `src/quant_system/execution/paper_strategy_execution_service.py`. It processes a
 pending plan against paper prices by preflighting all legs, selling before
 buying, updating only the addressed sleeve's lot/source ownership on sells, and
-persisting sleeve lots plus execution state. Hard failures such as missing
-prices or insufficient sleeve cash mark the plan `blocked` before raising and
-do not mutate account cash, positions, sleeve cash, or lots. This service is
-exposed through manual API/CLI entrypoints only; it is not a scheduler or UI
-action.
+persisting account/sleeve/lots/execution state through a local execution
+journal. Hard failures such as missing prices or insufficient sleeve cash mark
+the plan `blocked` before raising and do not mutate account cash, positions,
+sleeve cash, or lots. This service is exposed through manual API/CLI
+entrypoints only; it is not a scheduler or UI action.
 
 The third MVP-2 slice exposes manual processing entrypoints:
 
@@ -140,6 +140,19 @@ run date. Historical catch-up or replay must pass `target_date` explicitly.
 Unavailable paper prices or provider failures are recorded on the execution as
 `blocked` with reason `price_unavailable`; they are not silently retried or
 filled with sample data.
+
+MVP-3 Slice 0 adds recovery journals for filled execution plans:
+
+- before any file mutation, `execute_plan()` writes
+  `execution_journal/<execution_id>.pending.json` with before/after snapshots of
+  account, sleeve, lots, and execution state
+- API/CLI processing moves the journal to
+  `execution_journal/<execution_id>.committed.json` only after the account save
+  succeeds
+- sleeve detail/process paths and CLI `execute-pending` reconcile pending
+  journals under the existing account+sleeve locks
+- corrupt pending journal files are preserved as
+  `<execution_id>.corrupt-*.json` and skipped rather than deleted silently
 
 The fourth MVP-2 slice exposes the same manual execution lifecycle in the
 `/paper-trading` Strategy Sleeves workspace. For each sleeve, the panel shows
@@ -171,6 +184,10 @@ data/api_runs/paper_strategy_sleeves/
       signals.jsonl
       executions.jsonl
       lots.parquet
+      execution_journal/
+        <execution_id>.pending.json
+        <execution_id>.committed.json
+        <execution_id>.corrupt-*.json
 ```
 
 JSON writes use temp files and atomic replace. Signal and execution JSONL
@@ -185,15 +202,14 @@ later slice implements them:
 - `quant-system paper strategies config-create`
 - `quant-system paper strategies sleeve-create`
 - scheduled or automatic strategy execution
-- cross-file execution journals and unattended recovery
 - near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
 The next implementation line is documented in
 [`docs/design/paper_strategy_sleeves_mvp3_operations_plan.md`](../design/paper_strategy_sleeves_mvp3_operations_plan.md).
-MVP-3 starts with execution journaling/recovery, then scheduler-safe CLI
-commands and operator status. It must not add a FastAPI-resident scheduler or
-any real broker trading path.
+MVP-3 continues with scheduler-safe CLI commands, retry semantics, and operator
+status. It must not add a FastAPI-resident scheduler or any real broker trading
+path.
 
 ## Real Futu Integration Tests
 

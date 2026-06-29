@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pandas as pd
 
 from quant_system.execution.account import PaperAccount
 from quant_system.execution.models import ExecutionFill, OrderSide
 from quant_system.execution.paper_strategy_sleeves import (
+    SleeveLot,
     SleeveLotBook,
     StrategyExecutionFill,
     StrategyExecutionOrder,
@@ -69,10 +70,127 @@ class PaperStrategyExecutionService:
             raise
 
         lots = self.storage.load_sleeve_lots(sleeve.sleeve_id)
+        account_after = account.model_copy(deep=True)
+        sleeve_after = sleeve.model_copy(deep=True)
+        plan_after = plan.model_copy(deep=True)
         lot_book = SleeveLotBook([lot.model_copy(deep=True) for lot in lots])
+        self._apply_steps(
+            account_after,
+            sleeve=sleeve_after,
+            plan=plan_after,
+            lot_book=lot_book,
+            steps=steps,
+        )
+        after_lots = lot_book.lots()
+        self.storage.save_execution_journal_pending(
+            sleeve_id=sleeve.sleeve_id,
+            execution_id=plan.execution_id,
+            payload=self._execution_journal_payload(
+                before_account=account,
+                after_account=account_after,
+                before_sleeve=sleeve,
+                after_sleeve=sleeve_after,
+                before_lots=lots,
+                after_lots=after_lots,
+                before_execution=plan,
+                after_execution=plan_after,
+            ),
+        )
+        self._copy_model_state(account, account_after)
+        self._copy_model_state(sleeve, sleeve_after)
+        self._copy_model_state(plan, plan_after)
+        self.storage.save_sleeve(sleeve)
+        self.storage.save_sleeve_lots(sleeve.sleeve_id, after_lots)
+        self._replace_execution(plan)
+        return plan
+
+    def reconcile_execution_journals(
+        self,
+        account: PaperAccount,
+        *,
+        commit: bool = True,
+    ) -> list[StrategyExecutionPlan]:
+        recovered: list[StrategyExecutionPlan] = []
+        for payload in self.storage.load_pending_execution_journals():
+            sleeve_id = str(payload["sleeve_id"])
+            execution_id = str(payload["execution_id"])
+            before_account = PaperAccount.model_validate(payload["before_account"])
+            after_account = PaperAccount.model_validate(payload["after_account"])
+            after_sleeve = StrategySleeve.model_validate(payload["after_sleeve"])
+            after_lots = [
+                SleeveLot.model_validate(row)
+                for row in payload.get("after_lots", [])
+            ]
+            after_execution = StrategyExecutionPlan.model_validate(
+                payload["after_execution"]
+            )
+            can_finalize_state = True
+            if self._account_has_execution(account, execution_id):
+                pass
+            elif self._accounts_match(account, before_account):
+                self._copy_model_state(account, after_account)
+            else:
+                can_finalize_state = False
+                after_execution.status = StrategyExecutionStatus.BLOCKED
+                after_execution.blocked_reason = "recovery_required"
+                after_execution.updated_at = _utc_now_iso()
+            if can_finalize_state:
+                self.storage.save_sleeve(after_sleeve)
+                self.storage.save_sleeve_lots(sleeve_id, after_lots)
+            self._replace_execution(after_execution)
+            if commit:
+                self.storage.commit_execution_journal(
+                    sleeve_id=sleeve_id,
+                    execution_id=execution_id,
+                )
+            recovered.append(after_execution)
+        return recovered
+
+    def commit_execution_journal(self, plan: StrategyExecutionPlan) -> None:
+        self.storage.commit_execution_journal(
+            sleeve_id=plan.sleeve_id,
+            execution_id=plan.execution_id,
+        )
+
+    def pending_plans(
+        self,
+        *,
+        sleeve_id: str | None = None,
+        execution_window: str = "next_open",
+        target_date: str | None = None,
+        limit: int = 50,
+    ) -> list[tuple[StrategySleeve, StrategyExecutionPlan]]:
+        due_target_date = target_date or date.today().isoformat()
+        sleeves = (
+            [self.storage.load_sleeve(sleeve_id)]
+            if sleeve_id is not None
+            else self.storage.list_sleeves()
+        )
+        plans: list[tuple[StrategySleeve, StrategyExecutionPlan]] = []
+        for sleeve in sleeves:
+            for plan in self.storage.load_executions(sleeve.sleeve_id):
+                if plan.status != StrategyExecutionStatus.PENDING:
+                    continue
+                if plan.execution_window != execution_window:
+                    continue
+                if plan.target_date != due_target_date:
+                    continue
+                plans.append((sleeve, plan))
+                if len(plans) >= limit:
+                    return plans
+        return plans
+
+    def _apply_steps(
+        self,
+        account: PaperAccount,
+        *,
+        sleeve: StrategySleeve,
+        plan: StrategyExecutionPlan,
+        lot_book: SleeveLotBook,
+        steps: list[_ExecutionStep],
+    ) -> None:
         fills: list[StrategyExecutionFill] = []
         source = f"strategy:{sleeve.sleeve_id}"
-
         for step in self._ordered_steps(steps):
             account_fill = self._account_fill(plan, step)
             if step.side == OrderSide.SELL:
@@ -112,7 +230,6 @@ class PaperStrategyExecutionService:
                     source=source,
                 )
                 sleeve.cash -= step.gross_value
-
             fills.append(
                 StrategyExecutionFill.create(
                     symbol=step.symbol,
@@ -123,45 +240,56 @@ class PaperStrategyExecutionService:
                     gross_value=step.gross_value,
                 )
             )
-
         sleeve.cash = max(sleeve.cash, 0.0)
         account.sleeve_cash[sleeve.sleeve_id] = sleeve.cash
         sleeve.updated_at = _utc_now_iso()
         plan.fills = fills
         plan.status = StrategyExecutionStatus.FILLED
         plan.updated_at = _utc_now_iso()
-        self.storage.save_sleeve(sleeve)
-        self.storage.save_sleeve_lots(sleeve.sleeve_id, lot_book.lots())
-        self._replace_execution(plan)
-        return plan
 
-    def pending_plans(
-        self,
+    @staticmethod
+    def _execution_journal_payload(
         *,
-        sleeve_id: str | None = None,
-        execution_window: str = "next_open",
-        target_date: str | None = None,
-        limit: int = 50,
-    ) -> list[tuple[StrategySleeve, StrategyExecutionPlan]]:
-        due_target_date = target_date or date.today().isoformat()
-        sleeves = (
-            [self.storage.load_sleeve(sleeve_id)]
-            if sleeve_id is not None
-            else self.storage.list_sleeves()
+        before_account: PaperAccount,
+        after_account: PaperAccount,
+        before_sleeve: StrategySleeve,
+        after_sleeve: StrategySleeve,
+        before_lots: list[SleeveLot],
+        after_lots: list[SleeveLot],
+        before_execution: StrategyExecutionPlan,
+        after_execution: StrategyExecutionPlan,
+    ) -> dict[str, Any]:
+        return {
+            "journal_version": 1,
+            "created_at": _utc_now_iso(),
+            "account_id": before_account.account_id,
+            "sleeve_id": before_sleeve.sleeve_id,
+            "execution_id": before_execution.execution_id,
+            "before_account": before_account.model_dump(mode="json"),
+            "after_account": after_account.model_dump(mode="json"),
+            "before_sleeve": before_sleeve.model_dump(mode="json"),
+            "after_sleeve": after_sleeve.model_dump(mode="json"),
+            "before_lots": [lot.model_dump(mode="json") for lot in before_lots],
+            "after_lots": [lot.model_dump(mode="json") for lot in after_lots],
+            "before_execution": before_execution.model_dump(mode="json"),
+            "after_execution": after_execution.model_dump(mode="json"),
+        }
+
+    @staticmethod
+    def _copy_model_state(target, source) -> None:
+        for field_name in type(source).model_fields:
+            setattr(target, field_name, getattr(source, field_name))
+
+    @staticmethod
+    def _accounts_match(left: PaperAccount, right: PaperAccount) -> bool:
+        return left.model_dump(mode="json") == right.model_dump(mode="json")
+
+    @staticmethod
+    def _account_has_execution(account: PaperAccount, execution_id: str) -> bool:
+        return any(
+            entry.kind == "sleeve_execution_fill" and entry.note == execution_id
+            for entry in account.ledger
         )
-        plans: list[tuple[StrategySleeve, StrategyExecutionPlan]] = []
-        for sleeve in sleeves:
-            for plan in self.storage.load_executions(sleeve.sleeve_id):
-                if plan.status != StrategyExecutionStatus.PENDING:
-                    continue
-                if plan.execution_window != execution_window:
-                    continue
-                if plan.target_date != due_target_date:
-                    continue
-                plans.append((sleeve, plan))
-                if len(plans) >= limit:
-                    return plans
-        return plans
 
     def _validate_execution_context(
         self,

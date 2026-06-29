@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
 from quant_system.execution.account_storage import PaperAccountStorage
+from quant_system.execution.paper_strategy_execution_service import (
+    PaperStrategyExecutionService,
+)
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
@@ -23,6 +26,24 @@ from tests.test_paper_strategy_signals import (
     make_sleeve,
     patch_provider,
 )
+
+
+class InlinePriceSource:
+    def __init__(self, prices: dict[str, float]) -> None:
+        self.prices = {symbol.upper(): price for symbol, price in prices.items()}
+
+    def get_prices(self, symbols, **_kwargs):
+        return {
+            symbol.upper(): PricedQuote(
+                symbol=symbol.upper(),
+                price=self.prices[symbol.upper()],
+                price_kind="futu_snapshot",
+                as_of="2026-06-29T13:30:00Z",
+                source="inline",
+            )
+            for symbol in symbols
+            if symbol.upper() in self.prices
+        }
 
 
 @pytest.fixture
@@ -492,6 +513,96 @@ def test_strategy_sleeve_execution_api_processes_pending_plan(
         f"strategy:{sleeve['sleeve_id']}": pytest.approx(1.0)
     }
     assert storage.load_sleeve(sleeve["sleeve_id"]).cash == pytest.approx(0.0)
+    assert storage.execution_journal_committed_path(
+        sleeve["sleeve_id"],
+        pending["execution_id"],
+    ).exists()
+    assert not storage.execution_journal_pending_path(
+        sleeve["sleeve_id"],
+        pending["execution_id"],
+    ).exists()
+
+
+def test_strategy_sleeve_detail_recovers_interrupted_execution_journal(
+    tmp_path,
+    stub_prices,
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    config = _create_config(client)
+    created = client.post(
+        "/api/paper/strategy-sleeves",
+        json={
+            "strategy_config_id": config["strategy_config_id"],
+            "strategy_config_version": config["version"],
+            "mode": "allocated",
+            "allocated_cash": 50_000.0,
+        },
+    )
+    assert created.status_code == 200
+    sleeve = created.json()["sleeve"]
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    account_storage = PaperAccountStorage(tmp_path / "api_runs")
+    domain_sleeve = storage.load_sleeve(sleeve["sleeve_id"])
+    signal = StrategySignal.create(
+        sleeve=domain_sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        data_as_of="2026-06-26T20:00:00Z",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "target_weight": 1.0,
+                "current_value": 0.0,
+                "target_value": 50_000.0,
+                "notional_delta": 50_000.0,
+                "reference_price": 200.0,
+                "estimated_quantity": 250.0,
+                "reason": "advisory_only_no_execution",
+                "account_id": domain_sleeve.account_id,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    storage.append_signal(signal)
+    pending = client.post(
+        f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}/executions",
+        json={
+            "signal_id": signal.signal_id,
+            "execution_window": "next_open",
+            "target_date": "2026-06-29",
+        },
+    ).json()["execution"]
+    stale_account = account_storage.load()
+    assert stale_account is not None
+    interrupted_account = stale_account.model_copy(deep=True)
+    PaperStrategyExecutionService(
+        storage=storage,
+        price_source=InlinePriceSource({"AAPL": 200.0}),
+    ).execute_plan(
+        interrupted_account,
+        sleeve=storage.load_sleeve(sleeve["sleeve_id"]),
+        plan=storage.load_executions(sleeve["sleeve_id"])[0],
+    )
+    assert account_storage.load().positions == {}
+
+    detail = client.get(f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}")
+
+    assert detail.status_code == 200
+    assert detail.json()["executions"][0]["status"] == "filled"
+    reloaded_account = account_storage.load()
+    assert reloaded_account is not None
+    assert reloaded_account.cash == pytest.approx(950_000.0)
+    assert reloaded_account.positions["AAPL"].quantity == pytest.approx(250.0)
+    assert storage.execution_journal_committed_path(
+        sleeve["sleeve_id"],
+        pending["execution_id"],
+    ).exists()
+    assert not storage.execution_journal_pending_path(
+        sleeve["sleeve_id"],
+        pending["execution_id"],
+    ).exists()
 
 
 def test_strategy_sleeve_execution_api_defaults_to_due_target_date(
