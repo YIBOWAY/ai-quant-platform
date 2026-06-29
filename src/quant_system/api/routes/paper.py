@@ -52,9 +52,9 @@ from quant_system.execution.account_service import (
 )
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.paper_strategy_execution_service import (
-    PaperStrategyExecutionError,
     PaperStrategyExecutionService,
 )
+from quant_system.execution.paper_strategy_operations import PaperStrategyOperationsRunner
 from quant_system.execution.paper_strategy_signal_service import (
     PaperStrategySignalService,
     StrategySignalGenerationError,
@@ -931,25 +931,14 @@ def process_strategy_sleeve_executions(
     payload = request or StrategyExecutionProcessRequest()
     account_storage = _account_storage(api_runs_dir)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
-    service = PaperStrategyExecutionService(
-        storage=sleeve_storage,
-        price_source=PaperPriceSource(settings),
+    runner = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
     )
-    processed = []
-    filled_count = 0
-    blocked_count = 0
-    with (
-        _account_lock(account_storage.account_id),
-        account_storage.mutation_lock(),
-        sleeve_storage.mutation_lock(),
-    ):
-        _reconcile_pending_strategy_sleeves(
-            account_storage=account_storage,
-            sleeve_storage=sleeve_storage,
-        )
-        account = account_storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+    with _account_lock(account_storage.account_id):
         try:
-            candidates = service.pending_plans(
+            result = runner.process_pending_executions_once(
                 sleeve_id=payload.sleeve_id,
                 execution_window=payload.execution_window,
                 target_date=payload.target_date,
@@ -957,28 +946,15 @@ def process_strategy_sleeve_executions(
             )
         except FileNotFoundError as exc:
             raise not_found_404("strategy_sleeve", payload.sleeve_id or "") from exc
-        for sleeve, plan in candidates:
-            try:
-                execution = service.execute_plan(account, sleeve=sleeve, plan=plan)
-            except PaperStrategyExecutionError:
-                execution = plan
-            if execution.status == "filled":
-                filled_count += 1
-            elif execution.status == "blocked":
-                blocked_count += 1
-            processed.append(execution)
+        account = result.account or _account_snapshot_or_default(account_storage)
         quotes = _account_quotes(account, settings=settings)
-        _save_account(account_storage, account, quotes)
-        for execution in processed:
-            if execution.status == "filled":
-                service.commit_execution_journal(execution)
         account_view = _account_view(account, settings=settings, quotes=quotes)
     return {
-        "processed_count": len(processed),
-        "filled_count": filled_count,
-        "blocked_count": blocked_count,
+        "processed_count": result.processed_count,
+        "filled_count": result.filled_count,
+        "blocked_count": result.blocked_count,
         "executions": [
-            execution.model_dump(mode="json") for execution in processed
+            execution.model_dump(mode="json") for execution in result.executions
         ],
         "account": account_view,
     }

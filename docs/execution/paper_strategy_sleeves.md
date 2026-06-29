@@ -7,8 +7,9 @@
 > manual pending execution plan creation, and the backend next-open execution
 > processor are available. Manual processing API/CLI entrypoints and UI
 > execution-state controls are available. Opt-in read-only Futu/OpenD checks now
-> cover both signal generation and paper execution processing; automatic
-> scheduling remains a future slice.
+> cover both signal generation and paper execution processing. MVP-3 Slice 1
+> adds a shared operations runner plus scheduler-safe one-shot CLI/status
+> commands; installing automatic scheduling remains a future slice.
 
 ## What Exists Now
 
@@ -131,6 +132,10 @@ The third MVP-2 slice exposes manual processing entrypoints:
   `quant-system paper strategies create-execution --sleeve <id> --signal <signal_id>`.
 - CLI:
   `quant-system paper strategies execute-pending --target-date <YYYY-MM-DD>`.
+- CLI:
+  `quant-system paper strategies execute-due --target-date <YYYY-MM-DD>`.
+- CLI:
+  `quant-system paper strategies ops-status --target-date <YYYY-MM-DD> --format json`.
 
 These entrypoints are one-shot commands intended for explicit local use or an
 external scheduler. The FastAPI process does not run an in-process recurring
@@ -153,6 +158,28 @@ MVP-3 Slice 0 adds recovery journals for filled execution plans:
   journals under the existing account+sleeve locks
 - corrupt pending journal files are preserved as
   `<execution_id>.corrupt-*.json` and skipped rather than deleted silently
+
+MVP-3 Slice 1 adds the shared operations runner in
+`src/quant_system/execution/paper_strategy_operations.py`. CLI commands, API
+execution processing, and future scheduler adapters should call this runner
+rather than duplicate lock, recovery, pending-plan scanning, account-save, or
+journal-commit logic.
+
+Scheduler-safe one-shot commands now available:
+
+```bash
+quant-system paper strategies generate-due-signals --date 2024-03-20 --format json
+quant-system paper strategies execute-due --target-date 2026-06-29
+quant-system paper strategies ops-status --target-date 2026-06-29 --format json
+```
+
+`generate-due-signals` generates one daily signal per eligible sleeve for the
+given date and skips sleeves that already have a signal for that date.
+`execute-due` is the scheduler-friendly alias for the existing one-shot pending
+execution processor. `ops-status` reports due work, pending journals, blocked
+executions, and recovery-required counts without placing any real broker orders.
+These commands are safe to call from a host scheduler because file locks and
+idempotency checks remain in the backend runner.
 
 The fourth MVP-2 slice exposes the same manual execution lifecycle in the
 `/paper-trading` Strategy Sleeves workspace. For each sleeve, the panel shows
@@ -202,14 +229,15 @@ later slice implements them:
 - `quant-system paper strategies config-create`
 - `quant-system paper strategies sleeve-create`
 - scheduled or automatic strategy execution
+- installed macOS LaunchAgent scheduling
 - near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
 The next implementation line is documented in
 [`docs/design/paper_strategy_sleeves_mvp3_operations_plan.md`](../design/paper_strategy_sleeves_mvp3_operations_plan.md).
-MVP-3 continues with scheduler-safe CLI commands, retry semantics, and operator
-status. It must not add a FastAPI-resident scheduler or any real broker trading
-path.
+MVP-3 continues with macOS LaunchAgent lifecycle assets, retry semantics, and a
+frontend operator status surface. It must not add duplicate schedulers or any
+real broker trading path.
 
 ## Real Futu Integration Tests
 
@@ -241,16 +269,16 @@ Focused backend verification:
 
 ```powershell
 .\ai-quant\Scripts\Activate.ps1
-python -m pytest tests/test_paper_account.py tests/test_api_paper_account.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py -q
-ruff check src/quant_system/execution/account.py src/quant_system/execution/paper_strategy_sleeves.py src/quant_system/execution/paper_strategy_sleeve_storage.py src/quant_system/execution/paper_strategy_signal_service.py src/quant_system/execution/paper_strategy_execution_service.py src/quant_system/factors/pipeline.py src/quant_system/api/schemas/paper.py src/quant_system/api/routes/paper.py src/quant_system/cli.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py
+python -m pytest tests/test_paper_account.py tests/test_api_paper_account.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_paper_strategy_operations.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py -q
+ruff check src/quant_system/execution/account.py src/quant_system/execution/paper_strategy_sleeves.py src/quant_system/execution/paper_strategy_sleeve_storage.py src/quant_system/execution/paper_strategy_signal_service.py src/quant_system/execution/paper_strategy_execution_service.py src/quant_system/execution/paper_strategy_operations.py src/quant_system/factors/pipeline.py src/quant_system/api/schemas/paper.py src/quant_system/api/routes/paper.py src/quant_system/cli.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_paper_strategy_operations.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py
 git diff --check
 ```
 
 On macOS in this checkout the equivalent interpreter path is:
 
 ```bash
-./ai-quant/bin/python -m pytest tests/test_paper_account.py tests/test_api_paper_account.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py -q
-./ai-quant/bin/python -m ruff check src/quant_system/execution/account.py src/quant_system/execution/paper_strategy_sleeves.py src/quant_system/execution/paper_strategy_sleeve_storage.py src/quant_system/execution/paper_strategy_signal_service.py src/quant_system/factors/pipeline.py src/quant_system/api/schemas/paper.py src/quant_system/api/routes/paper.py src/quant_system/cli.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py
+./ai-quant/bin/python -m pytest tests/test_paper_account.py tests/test_api_paper_account.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_paper_strategy_operations.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py -q
+./ai-quant/bin/python -m ruff check src/quant_system/execution/account.py src/quant_system/execution/paper_strategy_sleeves.py src/quant_system/execution/paper_strategy_sleeve_storage.py src/quant_system/execution/paper_strategy_signal_service.py src/quant_system/execution/paper_strategy_execution_service.py src/quant_system/execution/paper_strategy_operations.py src/quant_system/factors/pipeline.py src/quant_system/api/schemas/paper.py src/quant_system/api/routes/paper.py src/quant_system/cli.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_paper_strategy_operations.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py
 git diff --check
 ```
 

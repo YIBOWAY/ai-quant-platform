@@ -54,9 +54,10 @@
 - 2026-06-27 已完成 MVP-2 第四切片：`/paper-trading` 的「策略袖珍仓」面板会展示每个 sleeve 的最新 execution state，并提供「创建计划」与「处理待执行」两个一次性纸面执行按钮。
 - 2026-06-29 已完成 MVP-2 第五切片：真实 Futu/OpenD opt-in 测试覆盖 signal 生成和 next-open paper execution processor；创建 execution plan 未显式传 `target_date` 时，会默认使用本地运行日期；处理 pending execution 未显式传 `target_date` 时，只处理本地运行日期对应的 due plan。
 - 2026-06-29 已开始 MVP-3 第一切片：next-open 手动纸面执行会写本地 execution journal；如果进程在 account/sleeve/lots/execution 多文件写入中途停止，后续 sleeve detail/process 访问会尝试恢复。
+- 2026-06-29 已开始 MVP-3 第二步：新增共享 operations runner，`execute-pending`、API 手动处理入口和 scheduler-safe CLI 状态命令开始复用同一套锁、恢复和执行编排。可用命令包括 `quant-system paper strategies generate-due-signals`、`execute-due`、`execute-pending` 与 `ops-status --format json`。
 - 手动 signal CLI 已可用：`quant-system paper strategies generate-signal --sleeve <id>`。
 - `/paper-trading` 的「策略袖珍仓」工作区已可用：可以创建 strategy config，开设 `signal_only` 或 `allocated` sleeve，在页面内生成 sleeve signal，并暂停 / 恢复 / 停止 sleeve。新建 strategy config 的活跃名称必须唯一；同名历史配置会在下拉里追加短 id 区分。`allocated` 模式会从手动现金通道划拨模拟现金；`signal_only` 不移动现金。
-- 尚无常驻自动成交。页面执行按钮只是显式的一次性本地纸面动作：先从已生成 signal 创建 pending execution plan，再手动处理本地运行日期到期的 plan；不会复用旧全账户再平衡路径，也不会触碰真实交易接口。
+- 尚未安装常驻自动成交调度。页面执行按钮和 CLI `execute-due` 都只是显式的一次性本地纸面动作：先从已生成 signal 创建 pending execution plan，再处理目标日期到期的 plan；不会复用旧全账户再平衡路径，也不会触碰真实交易接口。后续 Mac 常驻方向会先用 LaunchAgent 管本地服务/one-shot 命令，而不是新增真实交易通路。
 - 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md)、[MVP-2 执行计划](../design/paper_strategy_sleeves_mvp2_plan.md)、[MVP-3 运维与自动化计划](../design/paper_strategy_sleeves_mvp3_operations_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。
@@ -143,7 +144,7 @@
 - 撮合 / 风控（复用）：`src/quant_system/execution/paper_broker.py`、`order_manager.py`、`src/quant_system/risk/engine.py`
 - API：`src/quant_system/api/routes/paper.py`、`src/quant_system/api/schemas/paper.py`
 - 策略再平衡能力声明：`src/quant_system/strategies/registry.py`（`supports_account_rebalance`）
-- Strategy Sleeves 后端基础、信号生成与 pending execution：`src/quant_system/execution/paper_strategy_sleeves.py`、`src/quant_system/execution/paper_strategy_sleeve_storage.py`、`src/quant_system/execution/paper_strategy_signal_service.py`、`src/quant_system/execution/paper_strategy_execution_service.py`
+- Strategy Sleeves 后端基础、信号生成、pending execution 与 ops runner：`src/quant_system/execution/paper_strategy_sleeves.py`、`src/quant_system/execution/paper_strategy_sleeve_storage.py`、`src/quant_system/execution/paper_strategy_signal_service.py`、`src/quant_system/execution/paper_strategy_execution_service.py`、`src/quant_system/execution/paper_strategy_operations.py`
 - CLI：`src/quant_system/cli.py`（`paper rebalance` / `paper account-show` / `paper strategies generate-signal` / `paper strategies create-execution` / `paper strategies execute-pending`）
 - 前端：`src/frontend/app/paper-trading/page.tsx`、`src/frontend/components/forms/AccountTradePanel.tsx`、`src/frontend/components/forms/PaperStrategySleevesPanel.tsx`、`src/frontend/lib/api.ts`、`src/frontend/lib/accountRebalanceStrategies.ts`
 - 历史回放（旧路径）：`src/quant_system/execution/pipeline.py`

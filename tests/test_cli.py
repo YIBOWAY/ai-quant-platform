@@ -1,3 +1,5 @@
+import json
+
 from typer.testing import CliRunner
 
 from quant_system.cli import app
@@ -211,6 +213,141 @@ def test_paper_strategies_execute_pending_command(tmp_path, monkeypatch) -> None
     assert reloaded_account.cash == 75_000.0
     assert reloaded_account.positions["AAPL"].quantity == 250.0
     assert sleeve_storage.load_executions(sleeve.sleeve_id)[0].status == "filled"
+
+
+def test_paper_strategies_ops_status_command_outputs_json(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("QS_DATA_DIR", str(tmp_path))
+    reload_settings()
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    sleeve_storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    account_storage = PaperAccountStorage(tmp_path / "api_runs")
+    config = make_config()
+    sleeve_storage.save_strategy_config(config)
+    sleeve_service = PaperStrategySleeveService(sleeve_storage)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    sleeve_storage.save_sleeve(sleeve)
+    account_storage.save(account)
+    signal = _strategy_signal(sleeve)
+    sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "paper",
+            "strategies",
+            "ops-status",
+            "--target-date",
+            "2026-06-29",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["target_date"] == "2026-06-29"
+    assert payload["sleeve_count"] == 1
+    assert payload["pending_due_count"] == 1
+    assert payload["pending_journal_count"] == 0
+
+
+def test_paper_strategies_generate_due_signals_command_outputs_json(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QS_DATA_DIR", str(tmp_path))
+    reload_settings()
+    patch_provider(monkeypatch, FakeOHLCVProvider(make_ohlcv_frame()))
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    sleeve_storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    account_storage = PaperAccountStorage(tmp_path / "api_runs")
+    config = make_config()
+    sleeve_storage.save_strategy_config(config)
+    sleeve = PaperStrategySleeveService(sleeve_storage).create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    sleeve_storage.save_sleeve(sleeve)
+    account_storage.save(account)
+
+    result = runner.invoke(
+        app,
+        [
+            "paper",
+            "strategies",
+            "generate-due-signals",
+            "--date",
+            "2024-03-20",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["signal_date"] == "2024-03-20"
+    assert payload["generated_count"] == 1
+    assert payload["skipped_count"] == 0
+    assert len(sleeve_storage.load_signals(sleeve.sleeve_id)) == 1
+
+
+def test_paper_strategies_execute_due_command_processes_due_plan(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QS_DATA_DIR", str(tmp_path))
+    reload_settings()
+    _stub_paper_prices(monkeypatch, {"AAPL": 100.0})
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    sleeve_storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    account_storage = PaperAccountStorage(tmp_path / "api_runs")
+    config = make_config()
+    sleeve_storage.save_strategy_config(config)
+    sleeve_service = PaperStrategySleeveService(sleeve_storage)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    sleeve_storage.save_sleeve(sleeve)
+    account_storage.save(account)
+    signal = _strategy_signal(sleeve)
+    sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "paper",
+            "strategies",
+            "execute-due",
+            "--target-date",
+            "2026-06-29",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "filled=1" in result.output
+    reloaded_account = account_storage.load()
+    assert reloaded_account is not None
+    assert reloaded_account.positions["AAPL"].quantity == 250.0
 
 
 def _strategy_signal(sleeve) -> StrategySignal:

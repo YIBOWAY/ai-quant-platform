@@ -2,6 +2,7 @@
 
 **Status:** Slice 0 execution journal/recovery started on 2026-06-29.
 Revised on 2026-06-29 for the Mac always-on local-service direction.
+Slice 1 operations runner and scheduler-safe CLI commands started on 2026-06-29.
 
 **Goal:** make Paper Strategy Sleeves reliable as a Mac-local paper-trading
 operations workflow: supervised local services, scheduled signal generation,
@@ -173,6 +174,18 @@ Still open after Slice 0:
 - expose `recovery_required` in an operator status view
 - map lock timeouts to structured API/CLI status
 - split retryable vs terminal blocked states
+
+Implemented in Slice 1 so far:
+
+- `src/quant_system/execution/paper_strategy_operations.py` defines
+  `PaperStrategyOperationsRunner`, the shared operations seam for CLI/API/future
+  scheduler adapters.
+- CLI commands now include `generate-due-signals`, `execute-due`, and
+  `ops-status`.
+- `execute-pending` remains available and now delegates to the operations
+  runner.
+- `POST /api/paper/strategy-sleeves/executions/process` delegates to the same
+  runner instead of carrying its own pending-plan processing loop.
 
 ### Slice 1: Operations Runner And Scheduler-Safe Commands
 

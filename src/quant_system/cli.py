@@ -852,6 +852,23 @@ def paper_account_show_command(
         typer.echo(f"  {symbol}: qty={position.quantity:.4f} avg_cost={position.avg_cost:.2f}")
 
 
+def _paper_strategy_operations_runner(settings):
+    from quant_system.execution.account_storage import PaperAccountStorage
+    from quant_system.execution.paper_strategy_operations import (
+        PaperStrategyOperationsRunner,
+    )
+    from quant_system.execution.paper_strategy_sleeve_storage import (
+        PaperStrategySleeveStorage,
+    )
+
+    api_runs_dir = settings.data.data_dir / "api_runs"
+    return PaperStrategyOperationsRunner(
+        account_storage=PaperAccountStorage(api_runs_dir),
+        sleeve_storage=PaperStrategySleeveStorage(api_runs_dir),
+        settings=settings,
+    )
+
+
 @paper_strategies_app.command("generate-signal")
 def paper_strategy_generate_signal_command(
     sleeve_id: Annotated[
@@ -922,6 +939,56 @@ def paper_strategy_generate_signal_command(
             ]
         )
     )
+
+
+@paper_strategies_app.command("generate-due-signals")
+def paper_strategy_generate_due_signals_command(
+    signal_date: Annotated[
+        str | None,
+        typer.Option("--date", help="Signal date, for example 2024-03-20."),
+    ] = None,
+    history_days: Annotated[
+        int,
+        typer.Option("--history-days", help="Number of calendar days to request."),
+    ] = 180,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", help="Maximum sleeves to generate for."),
+    ] = 50,
+    output_format: Annotated[
+        Literal["text", "json"],
+        typer.Option("--format", help="Output format."),
+    ] = "text",
+) -> None:
+    """Generate due Paper Strategy Sleeve daily signals once."""
+    settings = load_settings()
+    runner = _paper_strategy_operations_runner(settings)
+    try:
+        result = runner.generate_due_signals_once(
+            signal_date=signal_date,
+            history_days=history_days,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output_format == "json":
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return
+    typer.echo(
+        f"signal_date={result.signal_date} "
+        f"generated={result.generated_count} skipped={result.skipped_count}"
+    )
+    for signal in result.signals:
+        typer.echo(
+            " ".join(
+                [
+                    f"sleeve={signal.sleeve_id}",
+                    f"signal_id={signal.signal_id}",
+                    f"status={signal.status}",
+                    f"data_provider={signal.data_provider}",
+                ]
+            )
+        )
 
 
 @paper_strategies_app.command("create-execution")
@@ -1028,74 +1095,27 @@ def paper_strategy_execute_pending_command(
     ] = 50,
 ) -> None:
     """Process due pending Paper Strategy Sleeve executions once."""
-    from quant_system.execution.account_storage import PaperAccountStorage
-    from quant_system.execution.paper_strategy_execution_service import (
-        PaperStrategyExecutionError,
-        PaperStrategyExecutionService,
-    )
-    from quant_system.execution.paper_strategy_sleeve_storage import (
-        PaperStrategySleeveStorage,
-    )
-    from quant_system.execution.price_source import PaperPriceSource
-
     settings = load_settings()
-    api_runs_dir = settings.data.data_dir / "api_runs"
-    account_storage = PaperAccountStorage(api_runs_dir)
-    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
-    price_source = PaperPriceSource(settings)
-    service = PaperStrategyExecutionService(
-        storage=sleeve_storage,
-        price_source=price_source,
-    )
+    runner = _paper_strategy_operations_runner(settings)
     execution_window = window.replace("-", "_")
-    processed = []
-    filled_count = 0
-    blocked_count = 0
-    with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
-        account = account_storage.load_or_open()
-        sleeve_storage.reconcile_pending_sleeves(account)
-        recovered = service.reconcile_execution_journals(account, commit=False)
-        if recovered:
-            account_storage.save(account)
-            for execution in recovered:
-                service.commit_execution_journal(execution)
-        try:
-            candidates = service.pending_plans(
-                sleeve_id=sleeve_id,
-                execution_window=execution_window,
-                target_date=target_date,
-                limit=limit,
-            )
-        except FileNotFoundError as exc:
-            typer.echo(f"strategy sleeve not found: {sleeve_id}")
-            raise typer.Exit(code=1) from exc
-        for sleeve, plan in candidates:
-            try:
-                execution = service.execute_plan(account, sleeve=sleeve, plan=plan)
-            except PaperStrategyExecutionError:
-                execution = plan
-            if execution.status == "filled":
-                filled_count += 1
-            elif execution.status == "blocked":
-                blocked_count += 1
-            processed.append(execution)
-        quotes = price_source.get_prices(list(account.positions)) if account.positions else {}
-        account_storage.save(
-            account,
-            prices={symbol: quote.price for symbol, quote in quotes.items()},
-            price_metadata={
-                symbol: {"kind": quote.price_kind, "as_of": quote.as_of}
-                for symbol, quote in quotes.items()
-            },
+    try:
+        result = runner.process_pending_executions_once(
+            sleeve_id=sleeve_id,
+            execution_window=execution_window,
+            target_date=target_date,
+            limit=limit,
         )
-        for execution in processed:
-            if execution.status == "filled":
-                service.commit_execution_journal(execution)
+    except FileNotFoundError as exc:
+        typer.echo(f"strategy sleeve not found: {sleeve_id}")
+        raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     typer.echo(
-        f"processed={len(processed)} filled={filled_count} blocked={blocked_count}"
+        f"processed={result.processed_count} "
+        f"filled={result.filled_count} blocked={result.blocked_count}"
     )
-    for execution in processed:
+    for execution in result.executions:
         typer.echo(
             " ".join(
                 [
@@ -1106,8 +1126,80 @@ def paper_strategy_execute_pending_command(
                 ]
             )
         )
-    if blocked_count:
+    if result.blocked_count:
         raise typer.Exit(code=1)
+
+
+@paper_strategies_app.command("execute-due")
+def paper_strategy_execute_due_command(
+    sleeve_id: Annotated[
+        str | None,
+        typer.Option("--sleeve", help="Optional sleeve id filter."),
+    ] = None,
+    target_date: Annotated[
+        str | None,
+        typer.Option("--target-date", help="Execution target date, YYYY-MM-DD."),
+    ] = None,
+    window: Annotated[
+        str,
+        typer.Option("--window", help="Execution window. Currently next_open."),
+    ] = "next_open",
+    limit: Annotated[
+        int,
+        typer.Option("--limit", help="Maximum pending executions to process."),
+    ] = 50,
+) -> None:
+    """Scheduler-friendly alias for processing due strategy executions once."""
+    paper_strategy_execute_pending_command(
+        sleeve_id=sleeve_id,
+        target_date=target_date,
+        window=window,
+        limit=limit,
+    )
+
+
+@paper_strategies_app.command("ops-status")
+def paper_strategy_ops_status_command(
+    target_date: Annotated[
+        str | None,
+        typer.Option("--target-date", help="Status target date, YYYY-MM-DD."),
+    ] = None,
+    window: Annotated[
+        str,
+        typer.Option("--window", help="Execution window. Currently next_open."),
+    ] = "next_open",
+    output_format: Annotated[
+        Literal["text", "json"],
+        typer.Option("--format", help="Output format."),
+    ] = "text",
+) -> None:
+    """Print Paper Strategy Sleeves local operations status."""
+    settings = load_settings()
+    runner = _paper_strategy_operations_runner(settings)
+    try:
+        status = runner.ops_status(
+            target_date=target_date,
+            execution_window=window.replace("-", "_"),
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = status.to_dict()
+    if output_format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(
+        " ".join(
+            [
+                f"target_date={status.target_date}",
+                f"sleeves={status.sleeve_count}",
+                f"pending_due={status.pending_due_count}",
+                f"pending_executions={status.pending_execution_count}",
+                f"blocked={status.blocked_count}",
+                f"recovery_required={status.recovery_required_count}",
+                f"pending_journals={status.pending_journal_count}",
+            ]
+        )
+    )
 
 
 @agent_app.command("propose-factor")
