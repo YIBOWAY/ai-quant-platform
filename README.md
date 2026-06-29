@@ -323,8 +323,9 @@ The legacy `POST /api/paper/run` historical replay lives on the
 
 Paper Strategy Sleeves are the next accounting layer for the persistent paper
 account: one account, multiple isolated manual/strategy cash and lot segments.
-The backend foundation, API contract, daily signal, and `/paper-trading`
-Strategy Sleeves workspace slices landed on 2026-06-26:
+The backend foundation, API contract, daily signal, `/paper-trading`
+Strategy Sleeves workspace, and manual next-open paper execution slices are
+available:
 
 - `StrategyConfig`, `StrategySleeve`, `SleeveLot`, `StrategySignal`, and
   `SleeveLotBook` in `src/quant_system/execution/paper_strategy_sleeves.py`.
@@ -343,13 +344,21 @@ Strategy Sleeves workspace slices landed on 2026-06-26:
   `quant-system paper strategies generate-signal --sleeve <id>`.
 - The `/paper-trading` live account tab can create strategy configs, open
   signal-only or allocated sleeves, generate sleeve signals, and pause/resume
-  or stop sleeves.
+  or stop sleeves. Allocated sleeves can explicitly create and process one-shot
+  pending execution plans.
+- Manual execution entrypoints are available through
+  `POST /api/paper/strategy-sleeves/{id}/executions`,
+  `POST /api/paper/strategy-sleeves/executions/process`,
+  `quant-system paper strategies create-execution`, and
+  `quant-system paper strategies execute-pending`.
 
-Automatic sleeve execution is not implemented yet: generated signals do not
-create pending orders, fills, or account position mutations. The existing
-`POST /api/paper/account/rebalance` endpoint remains a full-account rebalance
-path, not a Strategy Sleeves entrypoint or liquidation shortcut. See
-[docs/design/paper_strategy_sleeves_plan.md](docs/design/paper_strategy_sleeves_plan.md)
+Scheduled sleeve execution is not implemented yet: generated signals do not
+auto-fill and the FastAPI process does not run a resident scheduler. The
+existing `POST /api/paper/account/rebalance` endpoint remains a full-account
+rebalance path, not a Strategy Sleeves entrypoint or liquidation shortcut; it is
+rejected when actual sleeve-owned lots exist. See
+[docs/design/paper_strategy_sleeves_plan.md](docs/design/paper_strategy_sleeves_plan.md),
+[docs/design/paper_strategy_sleeves_mvp3_operations_plan.md](docs/design/paper_strategy_sleeves_mvp3_operations_plan.md),
 and
 [docs/execution/paper_strategy_sleeves.md](docs/execution/paper_strategy_sleeves.md).
 
