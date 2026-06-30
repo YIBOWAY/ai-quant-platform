@@ -418,6 +418,49 @@ class PaperLedgerResponse(BaseModel):
     entries: list[LedgerEntryResponse]
 
 
+class PaperAccountOrderHistoryRowResponse(BaseModel):
+    event_id: str
+    order_id: str | None = None
+    timestamp: str
+    status: str
+    kind: str
+    source: str
+    symbol: str | None = None
+    side: str | None = None
+    quantity: float | None = None
+    price: float | None = None
+    gross_value: float | None = None
+    commission: float = 0.0
+    price_kind: str | None = None
+    realized_pnl_delta: float = 0.0
+    cash_after: float | None = None
+    note: str | None = None
+
+
+class PaperAccountBalanceHistoryRowResponse(BaseModel):
+    event_id: str
+    timestamp: str
+    kind: str
+    source: str
+    cash_after: float
+    cash_delta: float
+    note: str | None = None
+
+
+class PaperAccountActivityResponse(BaseModel):
+    account: PaperAccountResponse
+    pending_orders: list[PendingAccountOrderResponse]
+    order_history: list[PaperAccountOrderHistoryRowResponse]
+    balance_history: list[PaperAccountBalanceHistoryRowResponse]
+    trade_log: list[LedgerEntryResponse]
+    pending_order_total: int
+    order_history_total: int
+    balance_history_total: int
+    trade_log_total: int
+    limit: int
+    offset: int
+
+
 PaperRunRecord = dict[str, Any]
 
 

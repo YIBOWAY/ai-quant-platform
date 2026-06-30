@@ -15,10 +15,13 @@ import {
   formatMoney,
   getBacktestDetail,
   getBacktests,
-  getPaperAccount,
-  getPaperAccountLedger,
+  getPaperAccountActivity,
   type AccountPositionView,
   type LedgerEntryView,
+  type PaperAccountActivityResponse,
+  type PaperAccountBalanceHistoryRowResponse,
+  type PaperAccountOrderHistoryRowResponse,
+  type PendingAccountOrderView,
   type PreviewRecord,
 } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
@@ -39,7 +42,6 @@ const copy = {
     orderHistoryTab: "Order History",
     balanceHistoryTab: "Balance History",
     tradeLogTab: "Trade Log",
-    tabDisabledHint: "This panel is planned for a later slice.",
     accountBalance: "Account Balance",
     netValue: "Net Value",
     realizedPnl: "Realized P&L",
@@ -73,7 +75,23 @@ const copy = {
     accountFrozen: "frozen",
     positionsTitle: "Account Positions",
     positionsDesc: "Live holdings with average cost, current price, weight and unrealized P&L.",
+    ordersTitle: "Open Orders",
+    ordersDesc: "Pending paper limit orders with reserved cash or reserved quantity.",
+    orderHistoryTitle: "Order History",
+    orderHistoryDesc: "Completed and cancelled paper-account order events from the ledger.",
+    balanceHistoryTitle: "Balance History",
+    balanceHistoryDesc: "Cash movement reconstructed from the append-only account ledger.",
+    tradeLogTitle: "Trade Log",
+    tradeLogDesc: "Complete account ledger: deposits, fills, cancellations, freezes and sleeve events.",
     noPositionRowsDesc: "No account positions yet.",
+    noOrdersTitle: "No open orders",
+    noOrdersDesc: "Pending limit orders will appear here until they fill or are cancelled.",
+    noOrderHistoryTitle: "No order history",
+    noOrderHistoryDesc: "Filled and cancelled paper orders will appear here.",
+    noBalanceHistoryTitle: "No balance history",
+    noBalanceHistoryDesc: "Cash movements will appear after the account opens or mutates.",
+    noTradeLogTitle: "No trade log",
+    noTradeLogDesc: "Ledger events will appear here once the paper account records activity.",
     product: "Product",
     buySell: "Buy/Sell",
     quantity: "Qty",
@@ -82,6 +100,16 @@ const copy = {
     unrealizedPct: "Unrealized %",
     tradeValue: "Trade Value",
     sourceLabel: "Source",
+    time: "Time",
+    orderId: "Order ID",
+    status: "Status",
+    limitPrice: "Limit",
+    reserved: "Reserved",
+    lastCheck: "Last Check",
+    event: "Event",
+    cashDelta: "Cash Δ",
+    cashAfterShort: "Cash After",
+    note: "Note",
     ledgerTitle: "Account Activity",
     ledgerDesc: "Latest ledger entries — every order, rebalance and reset is recorded here.",
     ledgerEmptyTitle: "No activity yet",
@@ -95,6 +123,15 @@ const copy = {
       fee: "Fee",
       freeze: "Freeze",
       unfreeze: "Unfreeze",
+      order_cancelled: "Cancelled",
+      sleeve_cash_allocated: "Sleeve cash",
+      sleeve_execution_fill: "Sleeve fill",
+    } as Record<string, string>,
+    statusLabels: {
+      pending: "Pending",
+      filled: "Filled",
+      cancelled: "Cancelled",
+      event: "Event",
     } as Record<string, string>,
     side: { BUY: "Buy", SELL: "Sell" } as Record<string, string>,
     cashAfter: "cash after",
@@ -133,7 +170,6 @@ const copy = {
     orderHistoryTab: "订单历史",
     balanceHistoryTab: "余额历史",
     tradeLogTab: "交易日志",
-    tabDisabledHint: "该面板将在后续切片接入。",
     accountBalance: "账户余额",
     netValue: "净值",
     realizedPnl: "已实现损益",
@@ -167,7 +203,23 @@ const copy = {
     accountFrozen: "已冻结",
     positionsTitle: "账户持仓",
     positionsDesc: "实时持仓：均价、现价、权重与未实现盈亏。",
+    ordersTitle: "当前订单",
+    ordersDesc: "尚未成交的模拟限价单，以及冻结的现金或数量。",
+    orderHistoryTitle: "订单历史",
+    orderHistoryDesc: "来自账户账本的已成交、已取消订单事件。",
+    balanceHistoryTitle: "余额历史",
+    balanceHistoryDesc: "从追加式账户账本重建的现金变化。",
+    tradeLogTitle: "交易日志",
+    tradeLogDesc: "完整账户账本：入金、成交、取消、冻结与袖珍仓事件。",
     noPositionRowsDesc: "账户暂无持仓。",
+    noOrdersTitle: "暂无当前订单",
+    noOrdersDesc: "等待成交的限价单会显示在这里，直到成交或取消。",
+    noOrderHistoryTitle: "暂无订单历史",
+    noOrderHistoryDesc: "模拟订单成交或取消后会显示在这里。",
+    noBalanceHistoryTitle: "暂无余额历史",
+    noBalanceHistoryDesc: "账户打开或发生变化后，现金流水会显示在这里。",
+    noTradeLogTitle: "暂无交易日志",
+    noTradeLogDesc: "模拟账户记录账本事件后会显示在这里。",
     product: "商品",
     buySell: "买/卖方",
     quantity: "数量",
@@ -176,6 +228,16 @@ const copy = {
     unrealizedPct: "未实现损益%",
     tradeValue: "交易值",
     sourceLabel: "来源",
+    time: "时间",
+    orderId: "订单号",
+    status: "状态",
+    limitPrice: "限价",
+    reserved: "冻结",
+    lastCheck: "最近检查",
+    event: "事件",
+    cashDelta: "现金变化",
+    cashAfterShort: "余额",
+    note: "备注",
     ledgerTitle: "账户流水",
     ledgerDesc: "最近的账本记录——每一笔下单、再平衡与重置都在这里留痕。",
     ledgerEmptyTitle: "暂无流水",
@@ -189,6 +251,15 @@ const copy = {
       fee: "费用",
       freeze: "冻结",
       unfreeze: "解冻",
+      order_cancelled: "已取消",
+      sleeve_cash_allocated: "袖珍仓现金",
+      sleeve_execution_fill: "袖珍仓成交",
+    } as Record<string, string>,
+    statusLabels: {
+      pending: "等待",
+      filled: "已成交",
+      cancelled: "已取消",
+      event: "事件",
     } as Record<string, string>,
     side: { BUY: "买入", SELL: "卖出" } as Record<string, string>,
     cashAfter: "余额",
@@ -221,16 +292,36 @@ type PositionMapPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type AccountTab = "positions" | "orders" | "order-history" | "balance-history" | "trade-log";
+
+const accountTabs: AccountTab[] = ["positions", "orders", "order-history", "balance-history", "trade-log"];
+
+function resolveAccountTab(value: string | string[] | undefined): AccountTab {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return accountTabs.includes(raw as AccountTab) ? (raw as AccountTab) : "positions";
+}
+
+function accountTabHref(tab: AccountTab, locale: "en" | "zh") {
+  const path = tab === "positions" ? "/position-map" : `/position-map?tab=${tab}`;
+  return localizePath(path, locale);
+}
+
 export default async function PositionMapPage({ searchParams }: PositionMapPageProps) {
   const params = (await searchParams) ?? {};
   const locale = await getServerLocale(params);
   const text = copy[locale];
-  const [account, ledger, backtests, health] = await Promise.all([
-    getPaperAccount(),
-    getPaperAccountLedger(12),
+  const activeTab = resolveAccountTab(params.tab);
+  const [activity, backtests, health] = await Promise.all([
+    getPaperAccountActivity(200),
     getBacktests(),
     getCachedHealth(),
   ]);
+  const account = activity.account;
+  const ledger = {
+    apiError: activity.apiError,
+    entries: activity.trade_log.slice(0, 12),
+    total: activity.trade_log_total,
+  };
   const includeSample = shouldIncludeSampleRuns(params);
   const latestBacktest = selectDisplayRun(backtests.backtests, includeSample);
   const backtestDetail = latestBacktest ? await getBacktestDetail(latestBacktest.id) : null;
@@ -248,7 +339,7 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
     <div className="flex h-full flex-1 flex-col overflow-y-auto bg-bg-base text-text-primary">
       <ErrorBanner
         locale={locale}
-        messages={[account.apiError, ledger.apiError, backtests.apiError, health.apiError, backtestDetail?.apiError]}
+        messages={[activity.apiError, account.apiError, backtests.apiError, health.apiError, backtestDetail?.apiError]}
       />
 
       <header className="border-b border-border-subtle bg-bg-surface px-4 py-4 lg:px-6">
@@ -315,11 +406,31 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <nav className="flex flex-wrap gap-2" aria-label={text.positionsTitle}>
-            <TradingTab active label={`${text.positionsTab} ${positions.length}`} />
-            <TradingTab disabledHint={text.tabDisabledHint} label={text.ordersTab} />
-            <TradingTab disabledHint={text.tabDisabledHint} label={text.orderHistoryTab} />
-            <TradingTab disabledHint={text.tabDisabledHint} label={text.balanceHistoryTab} />
-            <TradingTab disabledHint={text.tabDisabledHint} label={text.tradeLogTab} />
+            <TradingTab
+              active={activeTab === "positions"}
+              href={accountTabHref("positions", locale)}
+              label={`${text.positionsTab} ${positions.length}`}
+            />
+            <TradingTab
+              active={activeTab === "orders"}
+              href={accountTabHref("orders", locale)}
+              label={`${text.ordersTab} ${activity.pending_order_total}`}
+            />
+            <TradingTab
+              active={activeTab === "order-history"}
+              href={accountTabHref("order-history", locale)}
+              label={text.orderHistoryTab}
+            />
+            <TradingTab
+              active={activeTab === "balance-history"}
+              href={accountTabHref("balance-history", locale)}
+              label={text.balanceHistoryTab}
+            />
+            <TradingTab
+              active={activeTab === "trade-log"}
+              href={accountTabHref("trade-log", locale)}
+              label={text.tradeLogTab}
+            />
           </nav>
           <div className="flex items-center gap-2 text-text-secondary">
             <span className="hidden items-center gap-1.5 font-data-mono text-[10px] uppercase sm:flex">
@@ -337,7 +448,13 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
       ) : null}
 
       <main className="flex flex-col gap-4 p-4 lg:p-6">
-        <PositionsTradingPanel accountDown={accountDown} positions={positions} text={text} />
+        <AccountActivityPanel
+          accountDown={accountDown}
+          activeTab={activeTab}
+          activity={activity}
+          positions={positions}
+          text={text}
+        />
 
         <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -523,26 +640,74 @@ function TerminalMetric({
 function TradingTab({
   label,
   active = false,
-  disabledHint,
+  href,
 }: {
   label: string;
   active?: boolean;
-  disabledHint?: string;
+  href: string;
 }) {
   return (
-    <span
+    <Link
       aria-current={active ? "page" : undefined}
-      aria-disabled={active ? undefined : true}
       className={`inline-flex h-9 items-center rounded-full px-4 font-body-md transition-colors ${
         active
           ? "bg-text-primary text-bg-base"
-          : "cursor-not-allowed bg-bg-surface-muted text-text-secondary/55"
+          : "bg-bg-surface-muted text-text-secondary hover:bg-border-subtle hover:text-text-primary"
       }`}
-      title={active ? undefined : disabledHint}
+      href={href}
     >
       {label}
-    </span>
+    </Link>
   );
+}
+
+function AccountActivityPanel({
+  accountDown,
+  activeTab,
+  activity,
+  positions,
+  text,
+}: {
+  accountDown: boolean;
+  activeTab: AccountTab;
+  activity: PaperAccountActivityResponse;
+  positions: AccountPositionView[];
+  text: PositionCopy;
+}) {
+  if (activeTab === "orders") {
+    return <OrdersPanel accountDown={accountDown} orders={activity.pending_orders} text={text} />;
+  }
+  if (activeTab === "order-history") {
+    return (
+      <OrderHistoryPanel
+        accountDown={accountDown}
+        rows={activity.order_history}
+        text={text}
+        total={activity.order_history_total}
+      />
+    );
+  }
+  if (activeTab === "balance-history") {
+    return (
+      <BalanceHistoryPanel
+        accountDown={accountDown}
+        rows={activity.balance_history}
+        text={text}
+        total={activity.balance_history_total}
+      />
+    );
+  }
+  if (activeTab === "trade-log") {
+    return (
+      <TradeLogPanel
+        accountDown={accountDown}
+        rows={activity.trade_log}
+        text={text}
+        total={activity.trade_log_total}
+      />
+    );
+  }
+  return <PositionsTradingPanel accountDown={accountDown} positions={positions} text={text} />;
 }
 
 function PositionsTradingPanel({
@@ -605,6 +770,271 @@ function PositionsTradingPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function AccountPanelShell({
+  accountDown,
+  children,
+  countLabel,
+  description,
+  emptyDescription,
+  emptyTitle,
+  hasRows,
+  title,
+}: {
+  accountDown: boolean;
+  children: ReactNode;
+  countLabel: string;
+  description: string;
+  emptyDescription: string;
+  emptyTitle: string;
+  hasRows: boolean;
+  title: string;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+        <div>
+          <h2 className="font-label-caps text-text-primary">{title}</h2>
+          <p className="mt-1 font-body-sm text-text-secondary">{description}</p>
+        </div>
+        <span className="font-data-mono text-[10px] uppercase text-text-secondary">{countLabel}</span>
+      </div>
+      {accountDown ? (
+        <p className="py-10 text-center font-body-sm text-text-secondary">{emptyDescription}</p>
+      ) : hasRows ? (
+        children
+      ) : (
+        <EmptyState title={emptyTitle} description={emptyDescription} />
+      )}
+    </section>
+  );
+}
+
+function OrdersPanel({
+  accountDown,
+  orders,
+  text,
+}: {
+  accountDown: boolean;
+  orders: PendingAccountOrderView[];
+  text: PositionCopy;
+}) {
+  return (
+    <AccountPanelShell
+      accountDown={accountDown}
+      countLabel={`${orders.length} ${text.ordersTab}`}
+      description={text.ordersDesc}
+      emptyDescription={accountDown ? text.accountUnavailable : text.noOrdersDesc}
+      emptyTitle={text.noOrdersTitle}
+      hasRows={orders.length > 0}
+      title={text.ordersTitle}
+    >
+      <div className="overflow-x-auto" data-position-table-scroll="true">
+        <table className="w-full min-w-[980px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {[text.time, text.orderId, text.product, text.buySell, text.quantity, text.limitPrice, text.reserved, text.lastCheck].map(
+                (heading, index) => (
+                  <th className={`px-4 py-3 font-label-caps ${index >= 4 && index <= 6 ? "text-right" : ""}`} key={heading}>
+                    {heading}
+                  </th>
+                ),
+              )}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">
+            {orders.map((order) => (
+              <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={order.order_id}>
+                <td className="px-4 py-3 text-text-secondary">{formatTimestamp(order.created_at)}</td>
+                <td className="px-4 py-3 text-text-secondary">{shortId(order.order_id)}</td>
+                <td className="px-4 py-3 font-semibold">{order.symbol}</td>
+                <td className={order.side.toLowerCase() === "buy" ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
+                  {formatSide(order.side, text)}
+                </td>
+                <NumericCell>{formatQuantity(order.quantity)}</NumericCell>
+                <NumericCell>{formatPrice(order.limit_price)}</NumericCell>
+                <NumericCell>{formatReserved(order)}</NumericCell>
+                <td className="px-4 py-3 text-text-secondary">
+                  {order.last_checked_at ? formatTimestamp(order.last_checked_at) : "--"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </AccountPanelShell>
+  );
+}
+
+function OrderHistoryPanel({
+  accountDown,
+  rows,
+  text,
+  total,
+}: {
+  accountDown: boolean;
+  rows: PaperAccountOrderHistoryRowResponse[];
+  text: PositionCopy;
+  total: number;
+}) {
+  return (
+    <AccountPanelShell
+      accountDown={accountDown}
+      countLabel={`${total} ${text.orderHistoryTab}`}
+      description={text.orderHistoryDesc}
+      emptyDescription={accountDown ? text.accountUnavailable : text.noOrderHistoryDesc}
+      emptyTitle={text.noOrderHistoryTitle}
+      hasRows={rows.length > 0}
+      title={text.orderHistoryTitle}
+    >
+      <div className="overflow-x-auto" data-position-table-scroll="true">
+        <table className="w-full min-w-[1120px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {[text.time, text.status, text.orderId, text.product, text.buySell, text.quantity, text.avgFill, text.tradeValue, text.sourceLabel].map(
+                (heading, index) => (
+                  <th className={`px-4 py-3 font-label-caps ${index >= 5 && index <= 7 ? "text-right" : ""}`} key={heading}>
+                    {heading}
+                  </th>
+                ),
+              )}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">
+            {rows.map((row) => (
+              <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={row.event_id}>
+                <td className="px-4 py-3 text-text-secondary">{formatTimestamp(row.timestamp)}</td>
+                <td className="px-4 py-3">
+                  <StatusBadge label={statusLabel(row.status, text)} status={row.status} />
+                </td>
+                <td className="px-4 py-3 text-text-secondary">{row.order_id ? shortId(row.order_id) : "--"}</td>
+                <td className="px-4 py-3 font-semibold">{row.symbol ?? "--"}</td>
+                <td className={row.side?.toLowerCase() === "buy" ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
+                  {formatSide(row.side, text)}
+                </td>
+                <NumericCell>{formatMaybeQuantity(row.quantity)}</NumericCell>
+                <NumericCell>{formatMaybePrice(row.price)}</NumericCell>
+                <NumericCell>{formatMaybeMoney(row.gross_value)}</NumericCell>
+                <td className="px-4 py-3 text-text-secondary">{row.source}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </AccountPanelShell>
+  );
+}
+
+function BalanceHistoryPanel({
+  accountDown,
+  rows,
+  text,
+  total,
+}: {
+  accountDown: boolean;
+  rows: PaperAccountBalanceHistoryRowResponse[];
+  text: PositionCopy;
+  total: number;
+}) {
+  return (
+    <AccountPanelShell
+      accountDown={accountDown}
+      countLabel={`${total} ${text.balanceHistoryTab}`}
+      description={text.balanceHistoryDesc}
+      emptyDescription={accountDown ? text.accountUnavailable : text.noBalanceHistoryDesc}
+      emptyTitle={text.noBalanceHistoryTitle}
+      hasRows={rows.length > 0}
+      title={text.balanceHistoryTitle}
+    >
+      <div className="overflow-x-auto" data-position-table-scroll="true">
+        <table className="w-full min-w-[860px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {[text.time, text.event, text.cashDelta, text.cashAfterShort, text.sourceLabel, text.note].map((heading, index) => (
+                <th className={`px-4 py-3 font-label-caps ${index === 2 || index === 3 ? "text-right" : ""}`} key={heading}>
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">
+            {rows.map((row) => {
+              const tone = pnlTone(row.cash_delta);
+              const toneClass =
+                tone === "success" ? "text-accent-success" : tone === "danger" ? "text-danger" : "text-text-primary";
+              return (
+                <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={row.event_id}>
+                  <td className="px-4 py-3 text-text-secondary">{formatTimestamp(row.timestamp)}</td>
+                  <td className="px-4 py-3">{eventLabel(row.kind, text)}</td>
+                  <NumericCell className={toneClass}>{signedMoney(row.cash_delta)}</NumericCell>
+                  <NumericCell>{formatMoney(row.cash_after)}</NumericCell>
+                  <td className="px-4 py-3 text-text-secondary">{row.source}</td>
+                  <td className="max-w-[360px] truncate px-4 py-3 text-text-secondary">{row.note || "--"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </AccountPanelShell>
+  );
+}
+
+function TradeLogPanel({
+  accountDown,
+  rows,
+  text,
+  total,
+}: {
+  accountDown: boolean;
+  rows: LedgerEntryView[];
+  text: PositionCopy;
+  total: number;
+}) {
+  return (
+    <AccountPanelShell
+      accountDown={accountDown}
+      countLabel={`${total} ${text.tradeLogTab}`}
+      description={text.tradeLogDesc}
+      emptyDescription={accountDown ? text.accountUnavailable : text.noTradeLogDesc}
+      emptyTitle={text.noTradeLogTitle}
+      hasRows={rows.length > 0}
+      title={text.tradeLogTitle}
+    >
+      <div className="overflow-x-auto" data-position-table-scroll="true">
+        <table className="w-full min-w-[1120px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {[text.time, text.event, text.product, text.buySell, text.quantity, text.avgFill, text.cashAfterShort, text.note].map(
+                (heading, index) => (
+                  <th className={`px-4 py-3 font-label-caps ${index >= 4 && index <= 6 ? "text-right" : ""}`} key={heading}>
+                    {heading}
+                  </th>
+                ),
+              )}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">
+            {rows.map((row) => (
+              <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={row.entry_id}>
+                <td className="px-4 py-3 text-text-secondary">{formatTimestamp(row.timestamp)}</td>
+                <td className="px-4 py-3">{eventLabel(row.kind, text)}</td>
+                <td className="px-4 py-3 font-semibold">{row.symbol ?? "--"}</td>
+                <td className={row.side?.toLowerCase() === "buy" ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
+                  {formatSide(row.side, text)}
+                </td>
+                <NumericCell>{formatMaybeQuantity(row.quantity)}</NumericCell>
+                <NumericCell>{formatMaybePrice(row.price)}</NumericCell>
+                <NumericCell>{formatMaybeMoney(row.cash_after)}</NumericCell>
+                <td className="max-w-[360px] truncate px-4 py-3 text-text-secondary">{row.note || "--"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </AccountPanelShell>
   );
 }
 
@@ -823,6 +1253,58 @@ function formatPrice(value: number) {
 
 function formatQuantity(value: number) {
   return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "--";
+}
+
+function formatMaybeQuantity(value: number | null | undefined) {
+  return typeof value === "number" ? formatQuantity(value) : "--";
+}
+
+function formatMaybePrice(value: number | null | undefined) {
+  return typeof value === "number" ? formatPrice(value) : "--";
+}
+
+function formatMaybeMoney(value: number | null | undefined) {
+  return typeof value === "number" ? formatMoney(value) : "--";
+}
+
+function formatReserved(order: PendingAccountOrderView) {
+  if (order.reserved_cash > 0) {
+    return formatMoney(order.reserved_cash);
+  }
+  if (order.reserved_quantity > 0) {
+    return formatQuantity(order.reserved_quantity);
+  }
+  return "--";
+}
+
+function formatSide(side: string | null | undefined, text: PositionCopy) {
+  if (!side) {
+    return "--";
+  }
+  const key = side.toUpperCase();
+  return text.side[key] ?? side;
+}
+
+function shortId(id: string) {
+  return id.length > 12 ? `${id.slice(0, 8)}...` : id;
+}
+
+function statusLabel(status: string, text: PositionCopy) {
+  return text.statusLabels[status] ?? status;
+}
+
+function eventLabel(kind: string, text: PositionCopy) {
+  return text.kind[kind] ?? kind;
+}
+
+function StatusBadge({ label, status }: { label: string; status: string }) {
+  const tone =
+    status === "filled"
+      ? "border-accent-success/30 bg-accent-success/10 text-accent-success"
+      : status === "cancelled"
+        ? "border-danger/30 bg-danger/10 text-danger"
+        : "border-border-subtle bg-bg-surface-muted text-text-secondary";
+  return <span className={`inline-flex rounded-full border px-2 py-0.5 font-data-mono text-[10px] uppercase ${tone}`}>{label}</span>;
 }
 
 type BacktestExposureRow = {

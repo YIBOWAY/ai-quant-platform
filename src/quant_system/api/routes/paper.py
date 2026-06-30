@@ -19,6 +19,7 @@ from quant_system.api.schemas.paper import (
     AccountResetRequest,
     KillSwitchRequest,
     ManualOrderRequest,
+    PaperAccountActivityResponse,
     PaperAccountOrderResponse,
     PaperAccountOrdersProcessResponse,
     PaperAccountRebalanceResponse,
@@ -364,6 +365,103 @@ def _account_view(
     }
 
 
+_ORDER_HISTORY_KINDS = {"fill", "rebalance_fill", "sleeve_execution_fill", "order_cancelled"}
+
+
+def _window_rows(rows: list[dict], *, limit: int, offset: int) -> list[dict]:
+    safe_offset = max(offset, 0)
+    safe_limit = max(limit, 0)
+    return rows[safe_offset : safe_offset + safe_limit]
+
+
+def _entry_order_id(entry: dict) -> str | None:
+    note = entry.get("note")
+    if not isinstance(note, str) or not note:
+        return None
+    return note.split(":", 1)[0].strip() or None
+
+
+def _entry_order_status(entry: dict) -> str:
+    kind = entry.get("kind")
+    if kind == "order_cancelled":
+        return "cancelled"
+    if kind in {"fill", "rebalance_fill", "sleeve_execution_fill"}:
+        return "filled"
+    return str(kind or "event")
+
+
+def _account_activity_view(
+    account: PaperAccount,
+    *,
+    settings,
+    limit: int,
+    offset: int,
+) -> dict:
+    quotes = _account_quotes(account, settings=settings)
+    account_view = _account_view(account, settings=settings, quotes=quotes)
+    chronological = [entry.model_dump(mode="json") for entry in account.ledger]
+    newest_first = list(reversed(chronological))
+
+    order_history = [
+        {
+            "event_id": entry["entry_id"],
+            "order_id": _entry_order_id(entry),
+            "timestamp": entry["timestamp"],
+            "status": _entry_order_status(entry),
+            "kind": entry["kind"],
+            "source": entry["source"],
+            "symbol": entry.get("symbol"),
+            "side": entry.get("side"),
+            "quantity": entry.get("quantity"),
+            "price": entry.get("price"),
+            "gross_value": entry.get("gross_value"),
+            "commission": entry.get("commission", 0.0),
+            "price_kind": entry.get("price_kind"),
+            "realized_pnl_delta": entry.get("realized_pnl_delta", 0.0),
+            "cash_after": entry.get("cash_after"),
+            "note": entry.get("note"),
+        }
+        for entry in newest_first
+        if entry.get("kind") in _ORDER_HISTORY_KINDS
+    ]
+
+    balance_history_chronological = []
+    previous_cash: float | None = None
+    for entry in chronological:
+        cash_after = entry.get("cash_after")
+        if cash_after is None:
+            continue
+        cash_after = float(cash_after)
+        cash_delta = 0.0 if previous_cash is None else cash_after - previous_cash
+        balance_history_chronological.append(
+            {
+                "event_id": entry["entry_id"],
+                "timestamp": entry["timestamp"],
+                "kind": entry["kind"],
+                "source": entry["source"],
+                "cash_after": cash_after,
+                "cash_delta": cash_delta,
+                "note": entry.get("note"),
+            }
+        )
+        previous_cash = cash_after
+    balance_history = list(reversed(balance_history_chronological))
+
+    return {
+        "account": account_view,
+        "pending_orders": account_view["pending_orders"],
+        "order_history": _window_rows(order_history, limit=limit, offset=offset),
+        "balance_history": _window_rows(balance_history, limit=limit, offset=offset),
+        "trade_log": _window_rows(newest_first, limit=limit, offset=offset),
+        "pending_order_total": len(account_view["pending_orders"]),
+        "order_history_total": len(order_history),
+        "balance_history_total": len(balance_history),
+        "trade_log_total": len(newest_first),
+        "limit": limit,
+        "offset": max(offset, 0),
+    }
+
+
 def _process_pending_account_orders(
     api_runs_dir,
     settings,
@@ -453,6 +551,23 @@ def get_account_ledger(
     entries.reverse()  # newest first
     window = entries[offset : offset + max(limit, 0)]
     return {"total": len(entries), "limit": limit, "offset": offset, "entries": window}
+
+
+@router.get("/paper/account/activity", response_model=PaperAccountActivityResponse)
+def get_account_activity(
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+    limit: int = 200,
+    offset: int = 0,
+) -> dict:
+    storage = _account_storage(api_runs_dir)
+    account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+    return _account_activity_view(
+        account,
+        settings=settings,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("/paper/account/orders", response_model=PaperAccountOrderResponse)

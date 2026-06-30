@@ -146,6 +146,40 @@ def test_ledger_records_orders_newest_first(tmp_path, stub_prices) -> None:
     assert symbols[0] == "MSFT"
 
 
+def test_account_activity_groups_tabs_from_ledger(tmp_path, stub_prices) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    filled = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 5},
+    )
+    assert filled.status_code == 200
+    queued = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "MSFT", "side": "buy", "quantity": 3, "limit_price": 50.0},
+    )
+    assert queued.status_code == 200
+    queued_order_id = queued.json()["order"]["order_id"]
+
+    activity = client.get("/api/paper/account/activity").json()
+    assert activity["account"]["positions"][0]["symbol"] == "AAPL"
+    assert activity["pending_order_total"] == 1
+    assert activity["pending_orders"][0]["order_id"] == queued_order_id
+    assert activity["order_history_total"] >= 1
+    assert activity["order_history"][0]["status"] == "filled"
+    assert activity["order_history"][0]["symbol"] == "AAPL"
+    assert activity["balance_history_total"] >= 2
+    assert activity["balance_history"][0]["cash_after"] == pytest.approx(999_000.0)
+    assert activity["trade_log_total"] >= activity["balance_history_total"]
+
+    cancelled = client.post(f"/api/paper/account/orders/{queued_order_id}/cancel")
+    assert cancelled.status_code == 200
+    after_cancel = client.get("/api/paper/account/activity").json()
+    assert after_cancel["pending_order_total"] == 0
+    assert after_cancel["order_history"][0]["status"] == "cancelled"
+    assert after_cancel["order_history"][0]["order_id"] == queued_order_id
+
+
 def test_rebalance_applies_strategy_targets_to_account(tmp_path, stub_prices, monkeypatch) -> None:
     # Stub the strategy target computation so the rebalance is deterministic and
     # offline (no factor pipeline / provider needed).

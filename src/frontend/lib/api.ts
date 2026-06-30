@@ -782,6 +782,49 @@ export type PaperLedgerResponse = ApiEnvelope & {
   entries: LedgerEntryResponse[];
 };
 
+export type PaperAccountOrderHistoryRowResponse = {
+  event_id: string;
+  order_id?: string | null;
+  timestamp: string;
+  status: string;
+  kind: string;
+  source: string;
+  symbol?: string | null;
+  side?: string | null;
+  quantity?: number | null;
+  price?: number | null;
+  gross_value?: number | null;
+  commission?: number;
+  price_kind?: string | null;
+  realized_pnl_delta?: number;
+  cash_after?: number | null;
+  note?: string | null;
+};
+
+export type PaperAccountBalanceHistoryRowResponse = {
+  event_id: string;
+  timestamp: string;
+  kind: string;
+  source: string;
+  cash_after: number;
+  cash_delta: number;
+  note?: string | null;
+};
+
+export type PaperAccountActivityResponse = ApiEnvelope & {
+  account: PaperAccountResponse;
+  pending_orders: PendingAccountOrderResponse[];
+  order_history: PaperAccountOrderHistoryRowResponse[];
+  balance_history: PaperAccountBalanceHistoryRowResponse[];
+  trade_log: LedgerEntryResponse[];
+  pending_order_total: number;
+  order_history_total: number;
+  balance_history_total: number;
+  trade_log_total: number;
+  limit: number;
+  offset: number;
+};
+
 export type ExperimentSummary = {
   id: string;
   path: string;
@@ -1991,6 +2034,24 @@ export function getPaperAccountLedger(limit = 50, offset = 0) {
     limit,
     offset,
     entries: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getPaperAccountActivity(limit = 200, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return apiGet<PaperAccountActivityResponse>(`/api/paper/account/activity?${params.toString()}`, {
+    account: FALLBACK_ACCOUNT,
+    pending_orders: [],
+    order_history: [],
+    balance_history: [],
+    trade_log: [],
+    pending_order_total: 0,
+    order_history_total: 0,
+    balance_history_total: 0,
+    trade_log_total: 0,
+    limit,
+    offset,
     safety: FALLBACK_SAFETY,
   });
 }
