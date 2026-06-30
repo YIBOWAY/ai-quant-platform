@@ -231,6 +231,22 @@ class StrategyExecutionProcessResponse(BaseModel):
     account: PaperAccountResponse
 
 
+class StrategyOpsStatusPayload(BaseModel):
+    target_date: str
+    sleeve_count: int
+    running_sleeve_count: int
+    pending_execution_count: int
+    pending_due_count: int
+    filled_count: int
+    blocked_count: int
+    recovery_required_count: int
+    pending_journal_count: int
+
+
+class StrategyOpsStatusResponse(BaseModel):
+    status: StrategyOpsStatusPayload
+
+
 def _validate_iso_date(value: str | None) -> str | None:
     if value is None:
         return None

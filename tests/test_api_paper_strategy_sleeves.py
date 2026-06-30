@@ -677,6 +677,82 @@ def test_strategy_sleeve_execution_api_defaults_to_due_target_date(
     assert storage.load_executions(future_execution["sleeve_id"])[0].status == "pending"
 
 
+def test_strategy_sleeve_ops_status_reports_due_pending_executions(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    config = _create_config(client)
+    created = client.post(
+        "/api/paper/strategy-sleeves",
+        json={
+            "strategy_config_id": config["strategy_config_id"],
+            "strategy_config_version": config["version"],
+            "mode": "allocated",
+            "allocated_cash": 50_000.0,
+        },
+    )
+    assert created.status_code == 200
+    sleeve = created.json()["sleeve"]
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    domain_sleeve = storage.load_sleeve(sleeve["sleeve_id"])
+    signal = StrategySignal.create(
+        sleeve=domain_sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        data_as_of="2026-06-26T20:00:00Z",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "target_weight": 1.0,
+                "current_value": 0.0,
+                "target_value": 50_000.0,
+                "notional_delta": 50_000.0,
+                "reference_price": 200.0,
+                "estimated_quantity": 250.0,
+                "reason": "advisory_only_no_execution",
+                "account_id": domain_sleeve.account_id,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    storage.append_signal(signal)
+    today = date.today().isoformat()
+    pending = client.post(
+        f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}/executions",
+        json={
+            "signal_id": signal.signal_id,
+            "execution_window": "next_open",
+            "target_date": today,
+        },
+    )
+    assert pending.status_code == 200
+
+    response = client.get("/api/paper/strategy-sleeves/ops/status")
+
+    assert response.status_code == 200
+    status = response.json()["status"]
+    assert status["target_date"] == today
+    assert status["sleeve_count"] == 1
+    assert status["running_sleeve_count"] == 1
+    assert status["pending_execution_count"] == 1
+    assert status["pending_due_count"] == 1
+    assert status["filled_count"] == 0
+    assert status["blocked_count"] == 0
+    assert status["recovery_required_count"] == 0
+    assert status["pending_journal_count"] == 0
+
+
+def test_strategy_sleeve_ops_status_rejects_invalid_target_date(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get(
+        "/api/paper/strategy-sleeves/ops/status",
+        params={"target_date": "2026/06/29"},
+    )
+
+    assert response.status_code == 422
+
+
 def test_strategy_sleeve_execution_api_created_without_target_date_is_due_today(
     tmp_path,
     stub_prices,

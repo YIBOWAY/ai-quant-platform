@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 
@@ -33,6 +35,7 @@ from quant_system.api.schemas.paper import (
     StrategyExecutionMutationResponse,
     StrategyExecutionProcessRequest,
     StrategyExecutionProcessResponse,
+    StrategyOpsStatusResponse,
     StrategySignalGenerateRequest,
     StrategySignalMutationResponse,
     StrategySleeveCreateRequest,
@@ -829,6 +832,31 @@ def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep) -> dict:
             for sleeve in sleeves
         ]
     }
+
+
+@router.get(
+    "/paper/strategy-sleeves/ops/status",
+    response_model=StrategyOpsStatusResponse,
+)
+def get_strategy_sleeve_ops_status(
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+    target_date: date | None = None,
+    execution_window: Literal["next_open"] = "next_open",
+) -> dict:
+    account_storage = _account_storage(api_runs_dir)
+    sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
+    runner = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+    )
+    with _account_lock(account_storage.account_id):
+        status = runner.ops_status(
+            target_date=target_date,
+            execution_window=execution_window,
+        )
+    return {"status": status.to_dict()}
 
 
 @router.get(
