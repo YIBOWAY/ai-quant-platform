@@ -3,10 +3,7 @@ import type { ReactNode } from "react";
 import {
   ArrowRight,
   BriefcaseBusiness,
-  ChevronDown,
-  Download,
   Layers,
-  ListFilter,
   ShieldCheck,
 } from "lucide-react";
 import { AccountRefreshControl } from "@/components/AccountRefreshControl";
@@ -42,6 +39,7 @@ const copy = {
     orderHistoryTab: "Order History",
     balanceHistoryTab: "Balance History",
     tradeLogTab: "Trade Log",
+    tabDisabledHint: "This panel is planned for a later slice.",
     accountBalance: "Account Balance",
     netValue: "Net Value",
     realizedPnl: "Realized P&L",
@@ -80,13 +78,10 @@ const copy = {
     buySell: "Buy/Sell",
     quantity: "Qty",
     avgFill: "Avg Fill",
-    takeProfit: "Take Profit",
-    stopLoss: "Stop Loss",
     latestPrice: "Last",
     unrealizedPct: "Unrealized %",
     tradeValue: "Trade Value",
     sourceLabel: "Source",
-    actions: "Actions",
     ledgerTitle: "Account Activity",
     ledgerDesc: "Latest ledger entries — every order, rebalance and reset is recorded here.",
     ledgerEmptyTitle: "No activity yet",
@@ -138,6 +133,7 @@ const copy = {
     orderHistoryTab: "订单历史",
     balanceHistoryTab: "余额历史",
     tradeLogTab: "交易日志",
+    tabDisabledHint: "该面板将在后续切片接入。",
     accountBalance: "账户余额",
     netValue: "净值",
     realizedPnl: "已实现损益",
@@ -176,13 +172,10 @@ const copy = {
     buySell: "买/卖方",
     quantity: "数量",
     avgFill: "平均成交价",
-    takeProfit: "止盈",
-    stopLoss: "止损",
     latestPrice: "最新价",
     unrealizedPct: "未实现损益%",
     tradeValue: "交易值",
     sourceLabel: "来源",
-    actions: "操作",
     ledgerTitle: "账户流水",
     ledgerDesc: "最近的账本记录——每一笔下单、再平衡与重置都在这里留痕。",
     ledgerEmptyTitle: "暂无流水",
@@ -283,10 +276,7 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
         <div className="mt-6 flex flex-col gap-4 xl:flex-row xl:items-center">
           <div className="inline-flex min-w-[220px] items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-base px-3 py-2 text-text-primary">
             <span className="min-w-0 truncate font-body-md">{accountDown ? text.accountSelector : account.account_id}</span>
-            <span className="flex items-center gap-1 font-data-mono text-xs uppercase text-text-secondary">
-              {account.base_currency}
-              <ChevronDown size={14} />
-            </span>
+            <span className="font-data-mono text-xs uppercase text-text-secondary">{account.base_currency}</span>
           </div>
           <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-8 gap-y-3 md:grid-cols-4 2xl:grid-cols-8">
             <TerminalMetric
@@ -297,12 +287,12 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
             <TerminalMetric
               label={text.realizedPnl}
               value={accountDown ? "--" : signedMoney(account.realized_pnl)}
-              tone={account.realized_pnl >= 0 ? "success" : "danger"}
+              tone={accountDown ? "neutral" : pnlTone(account.realized_pnl)}
             />
             <TerminalMetric
               label={text.unrealized}
               value={accountDown ? "--" : signedMoney(account.unrealized_pnl)}
-              tone={account.unrealized_pnl >= 0 ? "success" : "danger"}
+              tone={accountDown ? "neutral" : pnlTone(account.unrealized_pnl)}
             />
             <TerminalMetric
               label={text.accountMargin}
@@ -326,27 +316,15 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <nav className="flex flex-wrap gap-2" aria-label={text.positionsTitle}>
             <TradingTab active label={`${text.positionsTab} ${positions.length}`} />
-            <TradingTab label={text.ordersTab} />
-            <TradingTab label={text.orderHistoryTab} />
-            <TradingTab label={text.balanceHistoryTab} />
-            <TradingTab label={text.tradeLogTab} />
+            <TradingTab disabledHint={text.tabDisabledHint} label={text.ordersTab} />
+            <TradingTab disabledHint={text.tabDisabledHint} label={text.orderHistoryTab} />
+            <TradingTab disabledHint={text.tabDisabledHint} label={text.balanceHistoryTab} />
+            <TradingTab disabledHint={text.tabDisabledHint} label={text.tradeLogTab} />
           </nav>
           <div className="flex items-center gap-2 text-text-secondary">
             <span className="hidden items-center gap-1.5 font-data-mono text-[10px] uppercase sm:flex">
               {text.priceSource}: {priceSourceLabel}
               {account.price_source.as_of ? ` · ${text.asOf} ${formatTimestamp(account.price_source.as_of)}` : ""}
-            </span>
-            <span
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle bg-bg-surface-muted"
-              aria-hidden="true"
-            >
-              <Download size={16} />
-            </span>
-            <span
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle bg-bg-surface-muted"
-              aria-hidden="true"
-            >
-              <ListFilter size={16} />
             </span>
           </div>
         </div>
@@ -523,24 +501,44 @@ function TerminalMetric({
   value: string;
   tone?: Tone;
 }) {
-  const toneClass =
-    tone === "success" ? "text-accent-success" : tone === "danger" ? "text-danger" : "text-text-primary";
+  const toneStyle =
+    tone === "success"
+      ? { color: "var(--color-accent-success)" }
+      : tone === "danger"
+        ? { color: "var(--color-danger)" }
+        : undefined;
   return (
     <div className="min-w-0">
       <div className="whitespace-nowrap font-label-caps text-text-secondary">{label}</div>
-      <div className={`mt-1 whitespace-nowrap font-data-mono text-base tabular-nums ${toneClass}`}>{value}</div>
+      <div
+        className="mt-1 whitespace-nowrap font-data-mono text-base font-semibold tabular-nums text-text-primary"
+        style={toneStyle}
+      >
+        {value}
+      </div>
     </div>
   );
 }
 
-function TradingTab({ label, active = false }: { label: string; active?: boolean }) {
+function TradingTab({
+  label,
+  active = false,
+  disabledHint,
+}: {
+  label: string;
+  active?: boolean;
+  disabledHint?: string;
+}) {
   return (
     <span
+      aria-current={active ? "page" : undefined}
+      aria-disabled={active ? undefined : true}
       className={`inline-flex h-9 items-center rounded-full px-4 font-body-md transition-colors ${
         active
           ? "bg-text-primary text-bg-base"
-          : "bg-bg-surface-muted text-text-secondary hover:bg-border-subtle hover:text-text-primary"
+          : "cursor-not-allowed bg-bg-surface-muted text-text-secondary/55"
       }`}
+      title={active ? undefined : disabledHint}
     >
       {label}
     </span>
@@ -573,7 +571,7 @@ function PositionsTradingPanel({
         <EmptyState title={text.noPositionsTitle} description={text.noPositionsDesc} />
       ) : (
         <div className="overflow-x-auto" data-position-table-scroll="true">
-          <table className="w-full min-w-[1180px] border-collapse text-left">
+          <table className="w-full min-w-[980px] border-collapse text-left">
             <thead>
               <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
                 {[
@@ -581,18 +579,15 @@ function PositionsTradingPanel({
                   text.buySell,
                   text.quantity,
                   text.avgFill,
-                  text.takeProfit,
-                  text.stopLoss,
                   text.latestPrice,
                   text.unrealized,
                   text.unrealizedPct,
                   text.tradeValue,
                   text.sourceLabel,
-                  text.actions,
                 ].map((heading, index) => (
                   <th
                     className={`px-4 py-3 font-label-caps ${
-                      index >= 2 && index <= 9 ? "text-right" : ""
+                      index >= 2 && index <= 7 ? "text-right" : ""
                     }`}
                     key={heading}
                   >
@@ -615,7 +610,9 @@ function PositionsTradingPanel({
 
 function PositionTradingRow({ position, text }: { position: AccountPositionView; text: PositionCopy }) {
   const isLong = position.quantity >= 0;
-  const pnlPositive = position.unrealized_pnl >= 0;
+  const pnl = pnlTone(position.unrealized_pnl);
+  const pnlClass =
+    pnl === "success" ? "text-accent-success" : pnl === "danger" ? "text-danger" : "text-text-primary";
   const costBasis = Math.abs(position.quantity) * position.avg_cost;
   const pnlPct = costBasis > 0 ? position.unrealized_pnl / costBasis : 0;
   const source = positionSourceLabel(position, text);
@@ -646,29 +643,14 @@ function PositionTradingRow({ position, text }: { position: AccountPositionView;
       </td>
       <NumericCell>{formatQuantity(position.quantity)}</NumericCell>
       <NumericCell>{formatPrice(position.avg_cost)}</NumericCell>
-      <NumericCell>--</NumericCell>
-      <NumericCell>--</NumericCell>
       <NumericCell>{formatPrice(position.last_price)}</NumericCell>
-      <NumericCell className={pnlPositive ? "text-accent-success" : "text-danger"}>
-        {signedMoney(position.unrealized_pnl)}
-      </NumericCell>
-      <NumericCell className={pnlPositive ? "text-accent-success" : "text-danger"}>
-        {signedPct(pnlPct)}
-      </NumericCell>
+      <NumericCell className={pnlClass}>{signedMoney(position.unrealized_pnl)}</NumericCell>
+      <NumericCell className={pnlClass}>{signedPct(pnlPct)}</NumericCell>
       <NumericCell>{formatMoney(Math.abs(position.market_value))}</NumericCell>
       <td className="px-4 py-3">
         <span className={`inline-flex rounded-full border px-2 py-0.5 font-data-mono text-[10px] uppercase ${sourceTone}`}>
           {source}
         </span>
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2 text-text-secondary">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-warning/15 text-warning">
-            D
-          </span>
-          <span className="h-4 w-px bg-border-subtle" />
-          <span className="text-base leading-none">×</span>
-        </div>
       </td>
     </tr>
   );
@@ -815,6 +797,13 @@ function positionSourceLabel(row: AccountPositionView, text: PositionCopy) {
     return text.strategy;
   }
   return text.mixed;
+}
+
+function pnlTone(value: number): Tone {
+  if (!Number.isFinite(value) || value === 0) {
+    return "neutral";
+  }
+  return value > 0 ? "success" : "danger";
 }
 
 function signedMoney(value: number) {
