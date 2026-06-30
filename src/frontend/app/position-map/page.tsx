@@ -1,11 +1,19 @@
 import Link from "next/link";
-import { ArrowRight, BriefcaseBusiness, Layers, ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
+import {
+  ArrowRight,
+  BriefcaseBusiness,
+  ChevronDown,
+  Download,
+  Layers,
+  ListFilter,
+  ShieldCheck,
+} from "lucide-react";
 import { AccountRefreshControl } from "@/components/AccountRefreshControl";
-import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
-import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
+import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import {
   formatMoney,
   getBacktestDetail,
@@ -28,6 +36,19 @@ const copy = {
     subtitle:
       "One persistent simulated account: equity vs the funded base, cash, per-symbol exposure with strategy/manual attribution, and the audit ledger.",
     openPaperTrading: "Trade / Rebalance",
+    accountSelector: "default paper account",
+    positionsTab: "Positions",
+    ordersTab: "Orders",
+    orderHistoryTab: "Order History",
+    balanceHistoryTab: "Balance History",
+    tradeLogTab: "Trade Log",
+    accountBalance: "Account Balance",
+    netValue: "Net Value",
+    realizedPnl: "Realized P&L",
+    accountMargin: "Account Margin",
+    availableFunds: "Available Funds",
+    orderMargin: "Order Margin",
+    marginBuffer: "Margin Buffer",
     accountValue: "Account Value",
     pnl: "Total P&L",
     cash: "Available Cash",
@@ -55,6 +76,17 @@ const copy = {
     positionsTitle: "Account Positions",
     positionsDesc: "Live holdings with average cost, current price, weight and unrealized P&L.",
     noPositionRowsDesc: "No account positions yet.",
+    product: "Product",
+    buySell: "Buy/Sell",
+    quantity: "Qty",
+    avgFill: "Avg Fill",
+    takeProfit: "Take Profit",
+    stopLoss: "Stop Loss",
+    latestPrice: "Last",
+    unrealizedPct: "Unrealized %",
+    tradeValue: "Trade Value",
+    sourceLabel: "Source",
+    actions: "Actions",
     ledgerTitle: "Account Activity",
     ledgerDesc: "Latest ledger entries — every order, rebalance and reset is recorded here.",
     ledgerEmptyTitle: "No activity yet",
@@ -100,6 +132,19 @@ const copy = {
     subtitle:
       "单一持续模拟账户：净值对比初始本金、现金、按标的的暴露（策略/手动归因），以及完整账本流水。",
     openPaperTrading: "去下单 / 再平衡",
+    accountSelector: "默认模拟账户",
+    positionsTab: "持仓",
+    ordersTab: "订单",
+    orderHistoryTab: "订单历史",
+    balanceHistoryTab: "余额历史",
+    tradeLogTab: "交易日志",
+    accountBalance: "账户余额",
+    netValue: "净值",
+    realizedPnl: "已实现损益",
+    accountMargin: "账户保证金",
+    availableFunds: "可用资金",
+    orderMargin: "订单保证金",
+    marginBuffer: "保证金缓冲",
     accountValue: "账户净值",
     pnl: "总盈亏",
     cash: "可用现金",
@@ -127,6 +172,17 @@ const copy = {
     positionsTitle: "账户持仓",
     positionsDesc: "实时持仓：均价、现价、权重与未实现盈亏。",
     noPositionRowsDesc: "账户暂无持仓。",
+    product: "商品",
+    buySell: "买/卖方",
+    quantity: "数量",
+    avgFill: "平均成交价",
+    takeProfit: "止盈",
+    stopLoss: "止损",
+    latestPrice: "最新价",
+    unrealizedPct: "未实现损益%",
+    tradeValue: "交易值",
+    sourceLabel: "来源",
+    actions: "操作",
     ledgerTitle: "账户流水",
     ledgerDesc: "最近的账本记录——每一笔下单、再平衡与重置都在这里留痕。",
     ledgerEmptyTitle: "暂无流水",
@@ -192,62 +248,120 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
     (a, b) => Math.abs(b.market_value) - Math.abs(a.market_value),
   );
   const grossInvested = positions.reduce((sum, p) => sum + Math.abs(p.market_value), 0);
-  const pnlPositive = account.pnl_abs >= 0;
   const priceSourceLabel = text.priceKinds[account.price_source.kind] ?? account.price_source.kind;
+  const marginBuffer = account.equity > 0 ? account.available_cash / account.equity : 0;
 
   return (
-    <div className="flex h-full flex-1 flex-col gap-4 overflow-y-auto bg-bg-base p-4 lg:p-6">
+    <div className="flex h-full flex-1 flex-col overflow-y-auto bg-bg-base text-text-primary">
       <ErrorBanner
         locale={locale}
         messages={[account.apiError, ledger.apiError, backtests.apiError, health.apiError, backtestDetail?.apiError]}
       />
 
-      <PageHeader
-        eyebrow={text.eyebrow}
-        icon={<Layers size={18} className="text-accent-success" />}
-        title={text.title}
-        subtitle={text.subtitle}
-        actions={
-          <>
+      <header className="border-b border-border-subtle bg-bg-surface px-4 py-4 lg:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-text-secondary">
+              <Layers size={18} className="text-text-primary" />
+              <span className="font-label-caps uppercase">{text.eyebrow}</span>
+            </div>
+            <h1 className="mt-1 font-headline-xl text-text-primary">{text.title}</h1>
+            <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">{text.subtitle}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <AccountRefreshControl locale={locale} />
             <Link
-              className="flex items-center gap-1.5 rounded-lg border border-accent-success/40 bg-accent-success/10 px-3 py-1.5 font-body-sm text-accent-success transition-colors hover:bg-accent-success/20"
+              className="flex items-center gap-1.5 rounded-full border border-border-subtle bg-bg-surface-muted px-3 py-1.5 font-body-sm text-text-primary transition-colors hover:border-text-secondary/50 hover:bg-bg-surface"
               href={localizePath("/paper-trading", locale)}
             >
               <BriefcaseBusiness size={14} />
               {text.openPaperTrading}
             </Link>
-          </>
-        }
-      />
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-4 xl:flex-row xl:items-center">
+          <div className="inline-flex min-w-[220px] items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-base px-3 py-2 text-text-primary">
+            <span className="min-w-0 truncate font-body-md">{accountDown ? text.accountSelector : account.account_id}</span>
+            <span className="flex items-center gap-1 font-data-mono text-xs uppercase text-text-secondary">
+              {account.base_currency}
+              <ChevronDown size={14} />
+            </span>
+          </div>
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-8 gap-y-3 md:grid-cols-4 2xl:grid-cols-8">
+            <TerminalMetric
+              label={text.accountBalance}
+              value={accountDown ? "--" : formatMoney(account.cash)}
+            />
+            <TerminalMetric label={text.netValue} value={accountDown ? "--" : formatMoney(account.equity)} />
+            <TerminalMetric
+              label={text.realizedPnl}
+              value={accountDown ? "--" : signedMoney(account.realized_pnl)}
+              tone={account.realized_pnl >= 0 ? "success" : "danger"}
+            />
+            <TerminalMetric
+              label={text.unrealized}
+              value={accountDown ? "--" : signedMoney(account.unrealized_pnl)}
+              tone={account.unrealized_pnl >= 0 ? "success" : "danger"}
+            />
+            <TerminalMetric
+              label={text.accountMargin}
+              value={accountDown ? "--" : formatMoney(grossInvested)}
+            />
+            <TerminalMetric
+              label={text.availableFunds}
+              value={accountDown ? "--" : formatMoney(account.available_cash)}
+            />
+            <TerminalMetric
+              label={text.orderMargin}
+              value={accountDown ? "--" : formatMoney(account.reserved_cash)}
+            />
+            <TerminalMetric
+              label={text.marginBuffer}
+              value={accountDown ? "--" : `${(marginBuffer * 100).toFixed(2)}%`}
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <nav className="flex flex-wrap gap-2" aria-label={text.positionsTitle}>
+            <TradingTab active label={`${text.positionsTab} ${positions.length}`} />
+            <TradingTab label={text.ordersTab} />
+            <TradingTab label={text.orderHistoryTab} />
+            <TradingTab label={text.balanceHistoryTab} />
+            <TradingTab label={text.tradeLogTab} />
+          </nav>
+          <div className="flex items-center gap-2 text-text-secondary">
+            <span className="hidden items-center gap-1.5 font-data-mono text-[10px] uppercase sm:flex">
+              {text.priceSource}: {priceSourceLabel}
+              {account.price_source.as_of ? ` · ${text.asOf} ${formatTimestamp(account.price_source.as_of)}` : ""}
+            </span>
+            <span
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle bg-bg-surface-muted"
+              aria-hidden="true"
+            >
+              <Download size={16} />
+            </span>
+            <span
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle bg-bg-surface-muted"
+              aria-hidden="true"
+            >
+              <ListFilter size={16} />
+            </span>
+          </div>
+        </div>
+      </header>
 
       {accountDown ? (
-        <Card tone="danger" padded>
+        <Card tone="danger" padded className="m-4 lg:m-6">
           <p className="font-body-sm text-danger">{text.accountUnavailable}</p>
         </Card>
       ) : null}
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <MetricStat label={text.accountValue} value={accountDown ? "--" : formatMoney(account.equity)} />
-        <MetricStat
-          label={text.pnl}
-          value={accountDown ? "--" : `${pnlPositive ? "+" : ""}${formatMoney(account.pnl_abs)}`}
-          delta={accountDown ? undefined : `${(account.pnl_pct * 100).toFixed(2)}%`}
-          tone={accountDown ? "neutral" : pnlPositive ? "success" : "danger"}
-        />
-        <MetricStat label={text.cash} value={accountDown ? "--" : formatMoney(account.available_cash)} />
-        <MetricStat
-          label={text.invested}
-          value={accountDown ? "--" : `${(account.invested_pct * 100).toFixed(1)}%`}
-        />
-        <MetricStat
-          label={text.unrealized}
-          value={accountDown ? "--" : `${account.unrealized_pnl >= 0 ? "+" : ""}${formatMoney(account.unrealized_pnl)}`}
-          tone={accountDown ? "neutral" : account.unrealized_pnl >= 0 ? "success" : "danger"}
-        />
-      </section>
+      <main className="flex flex-col gap-4 p-4 lg:p-6">
+        <PositionsTradingPanel accountDown={accountDown} positions={positions} text={text} />
 
-      <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+        <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
         <div className="flex min-w-0 flex-col gap-4">
           <Card padded>
             <SectionTitle
@@ -298,33 +412,6 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
               />
             )}
           </Card>
-
-          <DataPreviewTable
-            columns={[
-              "symbol",
-              "quantity",
-              "avg_cost",
-              "last_price",
-              "weight",
-              "market_value",
-              "unrealized_pnl",
-              "source",
-              "price_kind",
-            ]}
-            columnLabels={text.columns}
-            columnTips={{
-              price_kind: text.tips.price_kind,
-              source: text.tips.source,
-              weight: text.tips.weight,
-            }}
-            description={text.positionsDesc}
-            emptyDescription={text.noPositionRowsDesc}
-            emptyTitle={text.positionsTitle}
-            locale={locale}
-            maxRows={30}
-            rows={positionTableRows(positions, text)}
-            title={text.positionsTitle}
-          />
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
@@ -376,9 +463,9 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
             <p className="mt-3 font-body-sm text-text-secondary">{text.paperBadge}</p>
           </Card>
         </div>
-      </section>
+        </section>
 
-      <section>
+        <section>
         <Card padded>
           <SectionTitle
             title={text.comparisonTitle}
@@ -418,9 +505,177 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
             <EmptyState title={text.comparisonTitle} description={text.noBacktestDesc} />
           )}
         </Card>
-      </section>
+        </section>
+      </main>
     </div>
   );
+}
+
+type PositionCopy = (typeof copy)["en"] | (typeof copy)["zh"];
+type Tone = "neutral" | "success" | "danger";
+
+function TerminalMetric({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: Tone;
+}) {
+  const toneClass =
+    tone === "success" ? "text-accent-success" : tone === "danger" ? "text-danger" : "text-text-primary";
+  return (
+    <div className="min-w-0">
+      <div className="whitespace-nowrap font-label-caps text-text-secondary">{label}</div>
+      <div className={`mt-1 whitespace-nowrap font-data-mono text-base tabular-nums ${toneClass}`}>{value}</div>
+    </div>
+  );
+}
+
+function TradingTab({ label, active = false }: { label: string; active?: boolean }) {
+  return (
+    <span
+      className={`inline-flex h-9 items-center rounded-full px-4 font-body-md transition-colors ${
+        active
+          ? "bg-text-primary text-bg-base"
+          : "bg-bg-surface-muted text-text-secondary hover:bg-border-subtle hover:text-text-primary"
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function PositionsTradingPanel({
+  accountDown,
+  positions,
+  text,
+}: {
+  accountDown: boolean;
+  positions: AccountPositionView[];
+  text: PositionCopy;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+        <div>
+          <h2 className="font-label-caps text-text-primary">{text.positionsTitle}</h2>
+          <p className="mt-1 font-body-sm text-text-secondary">{text.positionsDesc}</p>
+        </div>
+        <span className="font-data-mono text-[10px] uppercase text-text-secondary">
+          {positions.length} {text.positionsTab}
+        </span>
+      </div>
+      {accountDown ? (
+        <p className="py-10 text-center font-body-sm text-text-secondary">{text.accountUnavailable}</p>
+      ) : positions.length === 0 ? (
+        <EmptyState title={text.noPositionsTitle} description={text.noPositionsDesc} />
+      ) : (
+        <div className="overflow-x-auto" data-position-table-scroll="true">
+          <table className="w-full min-w-[1180px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+                {[
+                  text.product,
+                  text.buySell,
+                  text.quantity,
+                  text.avgFill,
+                  text.takeProfit,
+                  text.stopLoss,
+                  text.latestPrice,
+                  text.unrealized,
+                  text.unrealizedPct,
+                  text.tradeValue,
+                  text.sourceLabel,
+                  text.actions,
+                ].map((heading, index) => (
+                  <th
+                    className={`px-4 py-3 font-label-caps ${
+                      index >= 2 && index <= 9 ? "text-right" : ""
+                    }`}
+                    key={heading}
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="font-data-mono text-sm text-text-primary">
+              {positions.map((position) => (
+                <PositionTradingRow key={position.symbol} position={position} text={text} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PositionTradingRow({ position, text }: { position: AccountPositionView; text: PositionCopy }) {
+  const isLong = position.quantity >= 0;
+  const pnlPositive = position.unrealized_pnl >= 0;
+  const costBasis = Math.abs(position.quantity) * position.avg_cost;
+  const pnlPct = costBasis > 0 ? position.unrealized_pnl / costBasis : 0;
+  const source = positionSourceLabel(position, text);
+  const sourceTone =
+    source === text.strategy
+      ? "border-accent-success/30 bg-accent-success/10 text-accent-success"
+      : source === text.manual
+        ? "border-border-subtle bg-bg-surface-muted text-text-secondary"
+        : "border-warning/30 bg-warning/10 text-warning";
+
+  return (
+    <tr
+      className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45"
+      data-position-row="true"
+    >
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-surface-muted font-data-mono text-[10px] uppercase text-text-secondary">
+            {position.symbol.slice(0, 2)}
+          </span>
+          <span className="rounded-md bg-bg-surface-muted px-2.5 py-1 font-data-mono font-semibold text-text-primary">
+            {position.symbol}
+          </span>
+        </div>
+      </td>
+      <td className={isLong ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
+        {isLong ? text.long : text.short}
+      </td>
+      <NumericCell>{formatQuantity(position.quantity)}</NumericCell>
+      <NumericCell>{formatPrice(position.avg_cost)}</NumericCell>
+      <NumericCell>--</NumericCell>
+      <NumericCell>--</NumericCell>
+      <NumericCell>{formatPrice(position.last_price)}</NumericCell>
+      <NumericCell className={pnlPositive ? "text-accent-success" : "text-danger"}>
+        {signedMoney(position.unrealized_pnl)}
+      </NumericCell>
+      <NumericCell className={pnlPositive ? "text-accent-success" : "text-danger"}>
+        {signedPct(pnlPct)}
+      </NumericCell>
+      <NumericCell>{formatMoney(Math.abs(position.market_value))}</NumericCell>
+      <td className="px-4 py-3">
+        <span className={`inline-flex rounded-full border px-2 py-0.5 font-data-mono text-[10px] uppercase ${sourceTone}`}>
+          {source}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2 text-text-secondary">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-warning/15 text-warning">
+            D
+          </span>
+          <span className="h-4 w-px bg-border-subtle" />
+          <span className="text-base leading-none">×</span>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function NumericCell({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <td className={`px-4 py-3 text-right tabular-nums ${className}`}>{children}</td>;
 }
 
 function ExposureBar({
@@ -490,7 +745,7 @@ function LedgerRow({
   text,
 }: {
   entry: LedgerEntryView;
-  text: (typeof copy)["en"] | (typeof copy)["zh"];
+  text: PositionCopy;
 }) {
   const kindLabel = text.kind[entry.kind] ?? entry.kind;
   const sideLabel = entry.side ? (text.side[entry.side.toUpperCase()] ?? entry.side) : null;
@@ -539,31 +794,6 @@ function LedgerRow({
   );
 }
 
-function positionTableRows(
-  rows: AccountPositionView[],
-  text: (typeof copy)["en"] | (typeof copy)["zh"],
-) {
-  return rows.map((row) => {
-    let manualShare = 0;
-    for (const [source, share] of Object.entries(row.source_breakdown)) {
-      if (source === "manual") manualShare += share;
-    }
-    const source =
-      manualShare >= 0.999 ? text.manual : manualShare <= 0.001 ? text.strategy : text.mixed;
-    return {
-      symbol: row.symbol,
-      quantity: Number(row.quantity.toFixed(4)),
-      avg_cost: Number(row.avg_cost.toFixed(2)),
-      last_price: Number(row.last_price.toFixed(2)),
-      weight: `${(Math.max(0, Math.min(1, row.weight)) * 100).toFixed(1)}%`,
-      market_value: Number(row.market_value.toFixed(2)),
-      unrealized_pnl: Number(row.unrealized_pnl.toFixed(2)),
-      source,
-      price_kind: text.priceKinds[row.price_kind] ?? row.price_kind,
-    };
-  });
-}
-
 function formatTimestamp(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.valueOf())) {
@@ -571,6 +801,39 @@ function formatTimestamp(value: string) {
   }
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
+function positionSourceLabel(row: AccountPositionView, text: PositionCopy) {
+  let manualShare = 0;
+  for (const [source, share] of Object.entries(row.source_breakdown)) {
+    if (source === "manual") manualShare += share;
+  }
+  if (manualShare >= 0.999) {
+    return text.manual;
+  }
+  if (manualShare <= 0.001) {
+    return text.strategy;
+  }
+  return text.mixed;
+}
+
+function signedMoney(value: number) {
+  return `${value >= 0 ? "+" : ""}${formatMoney(value)}`;
+}
+
+function signedPct(value: number) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
+}
+
+function formatPrice(value: number) {
+  return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : "--";
+}
+
+function formatQuantity(value: number) {
+  return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "--";
 }
 
 type BacktestExposureRow = {

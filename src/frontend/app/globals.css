@@ -3,26 +3,26 @@
 /*
  * QUANTUM_CORE design tokens — single source of truth.
  *
- * Palette: design brief (docs/frontend/design_brief.md) — dark, blue-based,
- * one brand accent (#00C896). Linear/Vercel density, Bloomberg-terminal data
- * voice. No Material-3 palette: the legacy M3 names below are COMPAT ALIASES
- * mapped onto this palette so older class names resolve to the same colors.
+ * Palette: TradingView-inspired terminal dark — neutral black/graphite
+ * surfaces, dense table contrast, and restrained status colors. No Material-3
+ * palette: the legacy M3 names below are COMPAT ALIASES mapped onto this
+ * palette so older class names resolve to the same colors.
  */
 @theme {
   /* ---- Canonical palette ---- */
-  --color-bg-base: #0B1220;          /* page background */
-  --color-bg-surface: #111827;       /* cards, tables, panels */
-  --color-bg-surface-muted: #1F2937; /* inputs, nested panels, hover */
-  --color-border-subtle: #1F2937;    /* hairline borders */
+  --color-bg-base: #0F0F0F;          /* page background */
+  --color-bg-surface: #151515;       /* cards, tables, panels */
+  --color-bg-surface-muted: #242424; /* inputs, nested panels, hover */
+  --color-border-subtle: #2A2A2A;    /* hairline borders */
 
-  --color-text-primary: #F1F5F9;
-  --color-text-secondary: #94A3B8;
-  --color-text-mono: #E5E7EB;
+  --color-text-primary: #E0E3EB;
+  --color-text-secondary: #8A8D95;
+  --color-text-mono: #D1D4DC;
 
-  --color-accent-success: #00C896;   /* the one brand accent */
-  --color-warning: #F59E0B;
-  --color-danger: #FF4D4F;
-  --color-info: #60A5FA;
+  --color-accent-success: #089981;   /* trading gain / active accent */
+  --color-warning: #F0B90B;
+  --color-danger: #F23645;
+  --color-info: #2962FF;
 
   /* ---- Compat aliases (legacy class names -> canonical palette) ----
      Kept so `bg-base`, `bg-surface`, `bg-surface-muted`, `text-primary`,
@@ -30,26 +30,26 @@
      across older components resolve to the SAME palette instead of the
      removed Material-3 greens (or silently rendering nothing). Prefer the
      canonical names in new code. */
-  --color-base: #0B1220;
-  --color-background: #0B1220;
-  --color-surface: #111827;
-  --color-surface-dim: #0B1220;
-  --color-surface-bright: #1F2937;
-  --color-surface-muted: #1F2937;
-  --color-surface-container-lowest: #0B1220;
-  --color-surface-container-low: #161E2E;
-  --color-surface-container: #1F2937;
-  --color-surface-container-high: #283548;
-  --color-surface-container-highest: #283548;
-  --color-on-surface: #F1F5F9;
-  --color-on-background: #F1F5F9;
-  --color-outline: #283548;
-  --color-outline-variant: #1F2937;
-  --color-primary: #00C896;
-  --color-on-primary: #04221A;
-  --color-secondary: #60A5FA;
-  --color-error: #FF4D4F;
-  --color-data-mono: #E5E7EB;
+  --color-base: #0F0F0F;
+  --color-background: #0F0F0F;
+  --color-surface: #151515;
+  --color-surface-dim: #0F0F0F;
+  --color-surface-bright: #242424;
+  --color-surface-muted: #242424;
+  --color-surface-container-lowest: #0F0F0F;
+  --color-surface-container-low: #151515;
+  --color-surface-container: #1E1E1E;
+  --color-surface-container-high: #242424;
+  --color-surface-container-highest: #2A2A2A;
+  --color-on-surface: #E0E3EB;
+  --color-on-background: #E0E3EB;
+  --color-outline: #2A2A2A;
+  --color-outline-variant: #242424;
+  --color-primary: #089981;
+  --color-on-primary: #041D18;
+  --color-secondary: #2962FF;
+  --color-error: #F23645;
+  --color-data-mono: #D1D4DC;
 
   /* ---- Layout spacings ---- */
   --spacing-safety-strip-height: 36px;

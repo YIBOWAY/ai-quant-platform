@@ -105,7 +105,7 @@ test.describe("position map", () => {
     await page.goto("/position-map", { waitUntil: "domcontentloaded" });
 
     await expect(page.getByRole("heading", { name: "Position Map" })).toBeVisible();
-    await expect(page.getByText("Account Value")).toBeVisible();
+    await expect(page.getByText("Net Value")).toBeVisible();
     await expect(page.getByText("Account Exposure by Symbol")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Account Positions" })).toBeVisible();
     await expect(page.getByText("SPY").first()).toBeVisible();
