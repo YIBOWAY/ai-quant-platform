@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { TerminalToolbarButton, terminalInputCompactClass } from "@/components/ui/primitives";
 import type { UniverseDefinition } from "@/lib/api";
 import { localizePath, type Locale } from "@/lib/locale";
 
@@ -34,8 +35,7 @@ const copy = {
   },
 } as const;
 
-const inputClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-2 py-1.5 font-data-mono text-xs text-text-primary";
+const inputClass = `${terminalInputCompactClass} py-1.5 text-xs`;
 
 export type FactorLabControlsInitial = {
   provider: string;
@@ -149,14 +149,14 @@ export function FactorLabControls({
           {text.forceRefresh}
         </label>
       </div>
-      <button
-        className="rounded-lg border border-accent-success bg-accent-success/10 px-3 py-1.5 font-body-sm font-semibold text-accent-success transition-colors hover:bg-accent-success/20 disabled:opacity-50"
+      <TerminalToolbarButton
+        className="h-8"
         disabled={isPending}
         onClick={apply}
-        type="button"
+        tone="info"
       >
         {isPending ? text.applying : text.apply}
-      </button>
+      </TerminalToolbarButton>
       <p className="font-body-sm text-text-secondary">{text.hint}</p>
     </div>
   );

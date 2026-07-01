@@ -11,7 +11,13 @@ import type { AgentReviewResponse, AgentTaskResponse, CandidateSummary } from "@
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
-import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
+import {
+  Card,
+  SectionTitle,
+  StatusPill,
+  TerminalToolbarButton,
+  terminalInputClass,
+} from "@/components/ui/primitives";
 
 const copy = {
   en: {
@@ -101,8 +107,7 @@ function statusTone(status: string): Tone {
   return "neutral";
 }
 
-const fieldClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-text-primary focus:border-accent-success/50 focus:outline-none";
+const fieldClass = terminalInputClass;
 
 function ReviewDialog({
   candidate,
@@ -263,9 +268,14 @@ export function AgentTaskForm({ candidates, locale = "en" }: { candidates: Candi
             </label>
           </div>
           {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-          <button className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary transition-colors hover:bg-accent-success/90 disabled:cursor-not-allowed disabled:opacity-50" disabled={!isHydrated || mutation.isPending} onClick={() => void runTask()} type="button">
+          <TerminalToolbarButton
+            className="h-9"
+            disabled={!isHydrated || mutation.isPending}
+            onClick={() => void runTask()}
+            tone="info"
+          >
             {mutation.isPending ? text.running : text.runTask}
-          </button>
+          </TerminalToolbarButton>
         </form>
       </Card>
 
