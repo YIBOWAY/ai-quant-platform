@@ -12,7 +12,15 @@ import {
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
-import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
+import {
+  Card,
+  MetricStat,
+  PageHeader,
+  SectionTitle,
+  StatusPill,
+  TerminalTable,
+  ToneBadge,
+} from "@/components/ui/primitives";
 import {
   formatMoney,
   formatPercent,
@@ -64,6 +72,10 @@ const copy = {
     candidatesReview: (n: number) => `${n} candidates require manual review.`,
     activityLog: "Activity log",
     activityLogDesc: "No recent research activity to show yet. Runs you start from the workbench pages will appear here.",
+    runType: "Type",
+    runId: "Run",
+    runSummary: "Summary",
+    created: "Created",
     quickActions: "QUICK ACTIONS",
     startBacktest: "Start New Backtest",
     runFactor: "Run Factor Analysis",
@@ -107,6 +119,10 @@ const copy = {
     candidatesReview: (n: number) => `有 ${n} 个候选需要人工复核。`,
     activityLog: "活动日志",
     activityLogDesc: "暂时还没有研究活动。你在各工作台页面发起的运行会显示在这里。",
+    runType: "类型",
+    runId: "运行",
+    runSummary: "摘要",
+    created: "创建时间",
     quickActions: "快捷操作",
     startBacktest: "新建回测",
     runFactor: "运行因子分析",
@@ -320,34 +336,44 @@ export default async function Dashboard() {
                 </span>
               }
             />
-            <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
+            <TerminalTable
+              columns={[
+                { label: text.runType, className: "w-[168px]" },
+                { label: text.runId },
+                { label: text.runSummary, className: "w-[280px]" },
+                { label: text.created, align: "right", className: "w-[148px]" },
+              ]}
+              minWidth="920px"
+            >
               {recentRuns.runs.map((run) => (
-                <Link
+                <tr
                   key={`${run.kind}-${run.run_id}`}
-                  href={localizePath(dashboardRunHref(run), locale)}
-                  className="grid gap-2 border-b border-border-subtle px-3 py-3 transition-colors last:border-b-0 hover:bg-bg-surface-muted sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] sm:items-center"
+                  className="border-b border-border-subtle/80 transition-colors last:border-b-0 hover:bg-bg-surface-muted/45"
                 >
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <RunKindIcon iconKind={dashboardRunIconKind(run)} />
-                      <span className="font-label-caps text-text-secondary">
-                        {dashboardRunKindLabel(run, locale)}
-                      </span>
+                  <td className="px-3 py-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <RunKindIcon iconKind={dashboardRunIconKind(run)} />{" "}
+                      <ToneBadge tone="neutral">{dashboardRunKindLabel(run, locale)}</ToneBadge>
                       {run.source ? <DataSourceBadge source={run.source} /> : null}
                     </div>
-                    <div className="mt-1 truncate font-data-mono text-xs text-text-primary">
+                  </td>
+                  <td className="px-3 py-3">
+                    <Link
+                      className="block truncate font-data-mono text-xs font-semibold text-text-primary transition-colors hover:text-info"
+                      href={localizePath(dashboardRunHref(run), locale)}
+                    >
                       {run.run_id}
-                    </div>
-                  </div>
-                  <div className="font-data-mono text-xs text-text-secondary">
+                    </Link>
+                  </td>
+                  <td className="px-3 py-3 font-data-mono text-xs text-text-secondary">
                     {dashboardRunSummary(run)}
-                  </div>
-                  <div className="font-data-mono text-xs text-text-secondary sm:text-right">
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right font-data-mono text-xs text-text-secondary">
                     {formatRunTimestamp(run.created_at)}
-                  </div>
-                </Link>
+                  </td>
+                </tr>
               ))}
-            </div>
+            </TerminalTable>
           </section>
         ) : (
           <EmptyState
