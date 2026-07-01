@@ -389,9 +389,9 @@ export default async function Dashboard() {
           <div className="space-y-2">
             <Link
               href={localizePath("/backtest", locale)}
-              className="flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-accent-success"
+              className="flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-info"
             >
-              <Play size={14} className="text-accent-success" /> {text.startBacktest}
+              <Play size={14} className="text-info" /> {text.startBacktest}
             </Link>
             <Link
               href={localizePath("/factor-lab", locale)}

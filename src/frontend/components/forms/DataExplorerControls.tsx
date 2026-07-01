@@ -121,7 +121,7 @@ export function DataExplorerControls({
       <div className="flex items-center gap-1 pb-1">
         {Object.entries(text.presets).map(([label, days]) => (
           <button
-            className="rounded-lg border border-border-subtle px-2 py-1 font-data-mono text-[11px] text-text-secondary transition-colors hover:border-accent-success/50 hover:text-accent-success"
+            className="rounded-lg border border-border-subtle px-2 py-1 font-data-mono text-[11px] text-text-secondary transition-colors hover:border-info/50 hover:text-info"
             key={label}
             onClick={() => applyPreset(days)}
             type="button"

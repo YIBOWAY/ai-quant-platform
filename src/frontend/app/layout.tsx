@@ -27,7 +27,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = await getServerLocale();
   return (
     <html lang={locale === 'zh' ? 'zh' : 'en'} className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
-      <body className="min-h-screen bg-bg-base antialiased selection:bg-accent-success selection:text-bg-base">
+      <body className="min-h-screen bg-bg-base antialiased selection:bg-info selection:text-bg-base">
         <LocaleProvider locale={locale}>
           <Providers>
             <Sidebar />
