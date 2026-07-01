@@ -14,7 +14,13 @@ import {
 import { toast } from "sonner";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
-import { Card, MetricStat, PageHeader, SectionTitle } from "@/components/ui/primitives";
+import {
+  Card,
+  MetricStat,
+  PageHeader,
+  SectionTitle,
+  TerminalToolbarButton,
+} from "@/components/ui/primitives";
 import type {
   FactorMetadata,
   PreviewRecord,
@@ -356,14 +362,14 @@ export function StrategyCatalogWorkbench({
               ) : null}
             </div>
           ) : null}
-          <button
-            className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+          <TerminalToolbarButton
+            className="h-9"
             disabled={!isHydrated || pending}
             onClick={() => void submit()}
-            type="button"
+            tone="info"
           >
             {pending ? text.running : text.run}
-          </button>
+          </TerminalToolbarButton>
         </section>
       </aside>
 

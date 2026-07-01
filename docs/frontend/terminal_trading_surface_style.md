@@ -84,6 +84,8 @@ scrolling and row-density contract when data is present.
 - Primary run/load actions use `TerminalToolbarButton` with info tone; avoid
   filled green submit buttons unless a future workflow needs a truly primary
   global CTA.
+- Research handoff links such as "Send to Backtest" should visually match the
+  same compact bordered info action instead of becoming large filled CTAs.
 - These migrations are visual-only. They must not change react-hook-form
   field names, validation schemas, request payloads, read-only safety text, or
   route destinations.
