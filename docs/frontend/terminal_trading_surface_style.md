@@ -1,6 +1,6 @@
 # Terminal Trading Surface Style
 
-Last reviewed: 2026-06-30
+Last reviewed: 2026-07-01
 
 This note captures the visual direction validated on `/position-map`. The goal is a
 neutral trading-terminal surface inspired by market tools, not a copy of any
@@ -32,9 +32,13 @@ specific product.
 
 - `TerminalMetric`: compact label/value metric with semantic gain/loss tone.
 - `TerminalTable`: dense table wrapper with internal horizontal scrolling,
-  numeric cell alignment, row hover, and stable test markers.
+  numeric cell alignment, row hover, and stable test markers. First shared
+  implementation lives in `src/frontend/components/ui/primitives.tsx`.
 - `ToneBadge`: shared badge contract for source, status, provider, and safety
-  labels.
+  labels. First shared implementation lives in
+  `src/frontend/components/ui/primitives.tsx`.
+- `TerminalToolbarButton`: small operational toolbar action with real disabled
+  state and terminal-surface hover behavior.
 - `ExposureBarStack`: strategy/manual attribution bar used by account exposure
   and research comparison views.
 
@@ -52,3 +56,8 @@ the terminal system:
   headline text, and a small original-link action.
 - Keep errors in danger styling; keep source-readiness/status in warning/info
   styling.
+
+Status: `/ai-news` feed has been migrated from timeline cards to dense terminal
+blotter tables using the shared `TerminalTable`, `ToneBadge`, and
+`TerminalToolbarButton` primitives. Daily report cards remain compatible with
+the same flat terminal surfaces and can be tightened further in a later slice.

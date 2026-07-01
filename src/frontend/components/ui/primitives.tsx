@@ -180,3 +180,97 @@ export function StatusPill({
     </span>
   );
 }
+
+export type TerminalTableColumn = {
+  label: ReactNode;
+  align?: "left" | "right" | "center";
+  className?: string;
+};
+
+const alignClass: Record<NonNullable<TerminalTableColumn["align"]>, string> = {
+  left: "text-left",
+  right: "text-right",
+  center: "text-center",
+};
+
+/** Dense, internally scrolling data table for terminal-style operational pages. */
+export function TerminalTable({
+  columns,
+  children,
+  minWidth = "880px",
+  className = "",
+}: {
+  columns: TerminalTableColumn[];
+  children: ReactNode;
+  minWidth?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`overflow-hidden rounded-lg border border-border-subtle bg-bg-surface ${className}`}>
+      <div className="overflow-x-auto" data-terminal-table-scroll="true">
+        <table className="w-full border-collapse text-left" style={{ minWidth }}>
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {columns.map((column, index) => (
+                <th
+                  className={`px-3 py-2.5 font-label-caps ${alignClass[column.align ?? "left"]} ${column.className ?? ""}`}
+                  key={`${String(column.label)}-${index}`}
+                >
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">{children}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Compact semantic badge shared by terminal tables, feeds, and status strips. */
+export function ToneBadge({
+  children,
+  tone = "neutral",
+  title,
+}: {
+  children: ReactNode;
+  tone?: Tone;
+  title?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex max-w-full items-center rounded-md border px-2 py-1 font-data-mono text-[10px] uppercase leading-none ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]}`}
+      title={title}
+    >
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+/** Small toolbar action matching the terminal surface contract. */
+export function TerminalToolbarButton({
+  children,
+  disabled,
+  onClick,
+  title,
+  type = "button",
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+  title?: string;
+  type?: "button" | "submit";
+}) {
+  return (
+    <button
+      className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 font-body-sm text-text-primary transition-colors hover:border-info hover:text-info disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      type={type}
+    >
+      {children}
+    </button>
+  );
+}

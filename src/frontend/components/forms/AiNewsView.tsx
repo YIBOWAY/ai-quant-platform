@@ -19,7 +19,14 @@ import {
   type AiHotItem,
 } from "@/lib/api";
 import { useIsHydrated } from "@/lib/hydration";
-import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
+import {
+  Card,
+  SectionTitle,
+  StatusPill,
+  TerminalTable,
+  TerminalToolbarButton,
+  ToneBadge,
+} from "@/components/ui/primitives";
 
 type Locale = "en" | "zh";
 type Tab = "feed" | "daily";
@@ -62,7 +69,14 @@ const copy = {
     safety:
       "AI HOT is an external beta source. Summaries may be LLM-generated. Verify against original sources before citing. This page does not create trading signals, trigger strategies, or mutate the paper account.",
     feedTitle: "News feed",
-    feedHint: "Read-only headlines grouped into a Beijing-time research timeline.",
+    feedHint: "Read-only headlines in a Beijing-time market-news blotter.",
+    feedCount: "Rows",
+    time: "Time",
+    headline: "Headline",
+    categoryColumn: "Category",
+    signalColumn: "Signal",
+    action: "Action",
+    score: "Score",
     dailyTitle: "Daily report",
     dailyHint: "AI HOT daily sections and archive links.",
     dailyDate: "Daily date",
@@ -103,7 +117,14 @@ const copy = {
     safety:
       "AI HOT 是外部测试版数据源，摘要可能由 LLM 生成。引用前请回原文核对。本页不会生成交易信号，不会触发策略，也不会修改模拟账户。",
     feedTitle: "新闻动态",
-    feedHint: "只读外部标题，按北京时间组织成研究时间轴。",
+    feedHint: "只读外部标题，按北京时间组织成市场新闻 blotter。",
+    feedCount: "行数",
+    time: "时间",
+    headline: "标题",
+    categoryColumn: "分类",
+    signalColumn: "信号",
+    action: "操作",
+    score: "评分",
     dailyTitle: "AI 日报",
     dailyHint: "AI HOT 日报版块和近期归档。",
     dailyDate: "日报日期",
@@ -219,16 +240,14 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
               />
               <StatusPill label={text.beta} value={statusQuery.data?.provider_beta ? "ON" : "--"} tone="warning" />
               <StatusPill label={text.fetched} value={formatDateTime(activeFetchedAt, locale) || text.none} />
-              <button
-                className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 font-body-sm text-text-primary transition-colors hover:border-info hover:text-info disabled:opacity-50"
+              <TerminalToolbarButton
                 disabled={!hydrated || isRefreshing}
                 onClick={refreshActive}
                 title={text.refresh}
-                type="button"
               >
                 <RefreshCw className={isRefreshing ? "animate-spin" : ""} size={15} />
                 {text.refresh}
-              </button>
+              </TerminalToolbarButton>
             </div>
           </div>
 
@@ -385,34 +404,47 @@ function FeedPanel({
 
   return (
     <section className="mt-5">
-      <SectionTitle title={text.feedTitle} hint={text.feedHint} />
+      <SectionTitle
+        title={text.feedTitle}
+        hint={text.feedHint}
+        right={
+          <span className="font-data-mono text-[10px] uppercase text-text-secondary">
+            {text.feedCount} {items.length}
+          </span>
+        }
+      />
       {loading ? <LoadingRows /> : null}
       {!loading && items.length === 0 ? <EmptyState label={text.emptyFeed} /> : null}
-      <div className="grid gap-5">
+      <div className="grid gap-4">
         {groups.map((group) => (
           <div className="grid gap-2" key={group.label}>
-            <div className="grid items-center gap-0 sm:grid-cols-[86px_28px_minmax(0,1fr)]">
-              <div className="pr-2 font-body-md text-text-secondary sm:text-right">{group.label}</div>
-              <div className="hidden md:block" />
+            <div className="flex items-center gap-2">
+              <span className="font-data-mono text-xs font-semibold uppercase text-text-primary">{group.label}</span>
+              <span className="h-px flex-1 bg-border-subtle" />
             </div>
-            <div className="grid gap-0">
+            <TerminalTable
+              columns={[
+                { label: text.time, className: "w-[92px]" },
+                { label: text.source, className: "w-[128px]" },
+                { label: text.headline },
+                { label: text.categoryColumn, className: "w-[132px]" },
+                { label: text.signalColumn, align: "right", className: "w-[132px]" },
+                { label: text.action, align: "right", className: "w-[116px]" },
+              ]}
+              minWidth="980px"
+            >
               {group.items.map((item) => (
                 <TimelineArticle item={item} key={item.id} locale={locale} />
               ))}
-            </div>
+            </TerminalTable>
           </div>
         ))}
       </div>
       {!loading && hasNext ? (
         <div className="mt-4 flex justify-center">
-          <button
-            className="inline-flex h-9 items-center justify-center rounded-lg border border-border-subtle bg-bg-surface px-4 font-body-sm text-text-primary transition-colors hover:border-info hover:text-info disabled:opacity-50"
-            disabled={loadingMore}
-            onClick={onLoadMore}
-            type="button"
-          >
+          <TerminalToolbarButton disabled={loadingMore} onClick={onLoadMore}>
             {loadingMore ? text.loadingMore : text.loadMore}
-          </button>
+          </TerminalToolbarButton>
         </div>
       ) : null}
     </section>
@@ -426,36 +458,17 @@ function TimelineArticle({ item, locale }: { item: AiHotItem; locale: Locale }) 
   const safeUrl = safeExternalUrl(item.url);
 
   return (
-    <div className="grid grid-cols-[52px_18px_minmax(0,1fr)] pb-2 sm:grid-cols-[86px_28px_minmax(0,1fr)]">
-      <div className="pr-2 pt-3 text-right font-data-mono text-[14px] font-extrabold leading-5 text-text-primary sm:text-[18px]">
+    <tr className="border-b border-border-subtle/80 align-top transition-colors last:border-b-0 hover:bg-bg-surface-muted/45">
+      <td className="whitespace-nowrap px-3 py-3 font-data-mono text-xs text-text-secondary">
         {time || text.unknownDate}
-      </div>
-      <div className="relative flex justify-center">
-        <span className="absolute inset-y-0 w-px bg-border-subtle/80" />
-        <span className="relative mt-[18px] h-2 w-2 rounded-full bg-info/80 shadow-[0_0_0_4px_rgba(56,189,248,0.10)]" />
-      </div>
-      <article className="group rounded-lg border border-border-subtle bg-bg-surface px-4 py-3.5 transition-colors hover:bg-bg-surface-muted/60">
-        <div className="mb-1.5 flex items-start justify-between gap-3">
-          <div className="min-w-0 truncate text-[11px] leading-[11px] text-text-secondary/70">
-            {item.source}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {item.selected ? (
-              <span className="rounded-md border border-warning/30 bg-warning/10 px-2 py-[3px] font-data-mono text-[10.5px] font-semibold leading-none text-warning">
-                {text.selectedBadge}
-              </span>
-            ) : null}
-            {typeof item.score === "number" ? (
-              <span className="rounded-md border border-info/25 bg-info/10 px-[7px] py-[3px] font-data-mono text-[11px] font-extrabold leading-none text-info">
-                {scoreLabel(item.score)}
-              </span>
-            ) : null}
-          </div>
-        </div>
-
+      </td>
+      <td className="max-w-[140px] px-3 py-3 text-xs text-text-secondary">
+        <span className="block truncate">{item.source}</span>
+      </td>
+      <td className="px-3 py-3">
         {safeUrl ? (
           <a
-            className="block text-[15px] font-bold leading-[22.5px] text-text-primary transition-colors hover:text-info"
+            className="block font-body-sm font-semibold leading-5 text-text-primary transition-colors hover:text-info"
             href={safeUrl}
             rel="noreferrer"
             target="_blank"
@@ -463,34 +476,48 @@ function TimelineArticle({ item, locale }: { item: AiHotItem; locale: Locale }) 
             {item.title}
           </a>
         ) : (
-          <div className="block text-[15px] font-bold leading-[22.5px] text-text-primary">
+          <div className="block font-body-sm font-semibold leading-5 text-text-primary">
             {item.title}
           </div>
         )}
         {summary ? (
-          <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-5 text-text-secondary">{summary}</p>
+          <p className="mt-1 line-clamp-2 font-body-sm text-text-secondary">{summary}</p>
         ) : null}
-
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {item.category ? (
-            <span className="rounded-[5px] bg-bg-surface-muted px-2 py-1 text-[11px] leading-none text-text-secondary">
-              {categoryName(item.category, locale)}
-            </span>
+      </td>
+      <td className="px-3 py-3">
+        {item.category ? (
+          <ToneBadge tone="neutral">{categoryName(item.category, locale)}</ToneBadge>
+        ) : (
+          <span className="text-text-secondary">--</span>
+        )}
+      </td>
+      <td className="px-3 py-3 text-right">
+        <div className="flex justify-end gap-1.5">
+          {item.selected ? <ToneBadge tone="warning">{text.selectedBadge}</ToneBadge> : null}
+          {typeof item.score === "number" ? (
+            <ToneBadge tone="info">
+              {text.score} {scoreLabel(item.score)}
+            </ToneBadge>
           ) : null}
-          {safeUrl ? (
-            <a
-              className="rounded-[5px] bg-bg-surface-muted px-2 py-1 text-[11px] leading-none text-text-secondary transition-colors hover:text-info"
-              href={safeUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {text.openOriginal}
-            </a>
-          ) : null}
+          {!item.selected && typeof item.score !== "number" ? <span className="text-text-secondary">--</span> : null}
         </div>
-
-      </article>
-    </div>
+      </td>
+      <td className="px-3 py-3 text-right">
+        {safeUrl ? (
+          <a
+            className="inline-flex items-center justify-end gap-1 rounded-lg border border-border-subtle px-2 py-1 font-body-sm text-text-primary transition-colors hover:border-info hover:text-info"
+            href={safeUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <ExternalLink size={13} />
+            {text.openOriginal}
+          </a>
+        ) : (
+          <span className="text-text-secondary">{text.none}</span>
+        )}
+      </td>
+    </tr>
   );
 }
 
