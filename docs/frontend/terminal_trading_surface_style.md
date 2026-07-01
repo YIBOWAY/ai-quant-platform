@@ -61,3 +61,6 @@ Status: `/ai-news` feed has been migrated from timeline cards to dense terminal
 blotter tables using the shared `TerminalTable`, `ToneBadge`, and
 `TerminalToolbarButton` primitives. Daily report cards remain compatible with
 the same flat terminal surfaces and can be tightened further in a later slice.
+`DataPreviewTable` also now composes `TerminalTable`, so backtest, factor,
+paper-run, options-radar, and strategy-catalog preview tables inherit the same
+scrolling and row-density contract when data is present.

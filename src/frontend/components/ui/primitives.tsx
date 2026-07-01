@@ -185,6 +185,7 @@ export type TerminalTableColumn = {
   label: ReactNode;
   align?: "left" | "right" | "center";
   className?: string;
+  title?: string;
 };
 
 const alignClass: Record<NonNullable<TerminalTableColumn["align"]>, string> = {
@@ -215,6 +216,7 @@ export function TerminalTable({
                 <th
                   className={`px-3 py-2.5 font-label-caps ${alignClass[column.align ?? "left"]} ${column.className ?? ""}`}
                   key={`${String(column.label)}-${index}`}
+                  title={column.title}
                 >
                   {column.label}
                 </th>
