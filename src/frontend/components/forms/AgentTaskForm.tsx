@@ -143,18 +143,14 @@ function ReviewDialog({
 
   return (
     <>
-      <button
-        className={`flex-1 rounded-lg border px-3 py-2 font-body-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-          decision === "approve"
-            ? "border-accent-success/40 bg-accent-success/5 text-accent-success hover:bg-accent-success/10"
-            : "border-danger/40 bg-danger/5 text-danger hover:bg-danger/10"
-        }`}
+      <TerminalToolbarButton
+        className="h-9 flex-1"
         disabled={!isHydrated}
         onClick={() => setOpen(true)}
-        type="button"
+        tone={decision === "approve" ? "info" : "danger"}
       >
         {decision === "approve" ? text.approve : text.reject}
-      </button>
+      </TerminalToolbarButton>
       {open ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-lg rounded-lg border border-warning/40 bg-bg-surface p-5" role="alertdialog" aria-modal="true">
@@ -180,12 +176,12 @@ function ReviewDialog({
               </label>
               {error ? <p className="font-body-sm text-danger">{error}</p> : null}
               <div className="flex justify-end gap-2">
-                <button className="rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary hover:bg-bg-surface-muted" onClick={() => setOpen(false)} type="button">
+                <TerminalToolbarButton onClick={() => setOpen(false)} tone="neutral">
                   {text.cancel}
-                </button>
-                <button className="rounded-lg bg-warning px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={!isHydrated || mutation.isPending} onClick={() => void writeReview()} type="button">
+                </TerminalToolbarButton>
+                <TerminalToolbarButton disabled={!isHydrated || mutation.isPending} onClick={() => void writeReview()} tone="warning">
                   {mutation.isPending ? text.writingLock : text.confirm}
-                </button>
+                </TerminalToolbarButton>
               </div>
             </form>
           </div>

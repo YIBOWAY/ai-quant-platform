@@ -8,8 +8,8 @@ import type { ReactNode } from "react";
  * Design system (anchor: Linear spacing/motion + Bloomberg Terminal density):
  * - Surfaces: hairline borders (border-border-subtle), no drop shadows.
  * - Radius: rounded-lg (8px) uniformly.
- * - Accent: a single brand green (accent-success / #00C896). Status colors
- *   (warning/danger/info) are reserved for genuine state, never decoration.
+ * - Semantic color: success/danger are reserved for genuine financial or
+ *   safety outcomes; info/neutral carry active navigation and generic actions.
  * - Data is monospace (font-data-mono); labels are uppercase caps (font-label-caps).
  * - Spacing rhythm: 4 / 8 / 12 / 16 / 24 (Tailwind 1/2/3/4/6).
  *

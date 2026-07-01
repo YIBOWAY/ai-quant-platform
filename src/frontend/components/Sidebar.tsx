@@ -162,7 +162,7 @@ export function Sidebar() {
 
       <div className="border-b border-border-subtle p-4">
         <Link
-          className="font-label-caps flex w-full items-center justify-center gap-2 rounded-lg border border-accent-success py-2 text-accent-success transition-colors hover:bg-accent-success/10"
+          className="font-label-caps flex w-full items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/5 py-2 text-info transition-colors hover:bg-bg-surface"
           href={localizePath("/backtest", locale)}
         >
           <Plus size={16} />
@@ -186,7 +186,7 @@ export function Sidebar() {
                         href={localizePath(item.href, locale)}
                         className={`flex items-center gap-3 rounded-lg px-3 py-2 font-sans text-xs tracking-tight transition-colors ${
                           isActive
-                            ? "border-l-2 border-accent-success bg-bg-surface font-semibold text-accent-success"
+                            ? "border-l-2 border-text-primary bg-bg-surface font-semibold text-text-primary"
                             : "border-l-2 border-transparent text-text-secondary hover:bg-bg-surface hover:text-text-primary"
                         }`}
                       >
@@ -226,8 +226,8 @@ export function Sidebar() {
       </div>
 
       <div className="flex items-center gap-3 border-t border-border-subtle p-4" title={text.paperOnlyHint}>
-        <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-accent-success/30 bg-accent-success/10">
-          <ShieldCheck size={16} className="text-accent-success" />
+        <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-info/30 bg-info/5">
+          <ShieldCheck size={16} className="text-info" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate font-sans text-xs font-medium text-text-primary">

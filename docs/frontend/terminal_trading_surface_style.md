@@ -86,6 +86,8 @@ scrolling and row-density contract when data is present.
   global CTA.
 - Research handoff links such as "Send to Backtest" should visually match the
   same compact bordered info action instead of becoming large filled CTAs.
+- Navigation, tabs, locale toggles, and generic retry/review actions should use
+  neutral/info states. Do not use success green for selection or app chrome.
 - These migrations are visual-only. They must not change react-hook-form
   field names, validation schemas, request payloads, read-only safety text, or
   route destinations.

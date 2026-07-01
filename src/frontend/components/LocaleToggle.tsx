@@ -16,8 +16,8 @@ export function LocaleToggle() {
         aria-label={target === "zh" ? "切换到中文" : "切换到英文"}
         className={`inline-flex min-w-8 items-center justify-center whitespace-nowrap px-2.5 py-1 leading-none transition-colors ${
           active
-            ? "bg-accent-success text-bg-base"
-            : "text-text-secondary hover:bg-bg-surface hover:text-accent-success"
+            ? "bg-bg-surface-muted text-text-primary"
+            : "text-text-secondary hover:bg-bg-surface hover:text-text-primary"
         }`}
         href={href}
         onClick={(event) => {

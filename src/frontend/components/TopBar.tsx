@@ -102,14 +102,14 @@ export function TopBar() {
         <div className="hidden items-center gap-2 border-l border-border-subtle pl-4 text-text-secondary lg:flex">
           <Link
             aria-label="Open agent console"
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-accent-success"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info"
             href={localizePath("/agent-studio", locale)}
           >
             <Terminal size={18} />
           </Link>
           <Link
             aria-label="Open settings"
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-accent-success"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info"
             href={localizePath("/settings", locale)}
           >
             <Settings size={18} />
@@ -124,8 +124,8 @@ export function TopBar() {
             <Link
               className={`rounded border px-3 py-2 font-body-sm ${
                 activePath === item.href
-                  ? "border-accent-success/50 bg-accent-success/10 text-accent-success"
-                  : "border-border-subtle text-text-primary"
+                  ? "border-border-subtle bg-bg-surface-muted text-text-primary"
+                  : "border-border-subtle text-text-primary hover:bg-bg-surface"
               }`}
               href={localizePath(item.href, locale)}
               key={item.href}

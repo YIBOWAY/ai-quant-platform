@@ -42,8 +42,8 @@ export function Tabs({
               onClick={() => setActive(item.id)}
               className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 font-body-sm font-medium transition-colors ${
                 isActive
-                  ? "bg-accent-success/15 text-accent-success"
-                  : "text-text-secondary hover:bg-bg-surface-muted hover:text-text-primary"
+                  ? "border border-border-subtle bg-bg-surface-muted text-text-primary"
+                  : "border border-transparent text-text-secondary hover:bg-bg-surface-muted hover:text-text-primary"
               }`}
             >
               {item.label}
