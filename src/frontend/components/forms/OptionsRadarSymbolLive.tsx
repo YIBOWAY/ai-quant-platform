@@ -9,6 +9,7 @@ import type {
   OptionsSnapshotResponse,
 } from "@/lib/api";
 import { apiRequest } from "@/lib/apiClient";
+import { TerminalToolbarButton } from "@/components/ui/primitives";
 
 type OptionsRadarSymbolLiveProps = {
   symbol: string;
@@ -62,17 +63,18 @@ export function OptionsRadarSymbolLive({
             Read-only Futu snapshot and option chain. This area never places orders.
           </p>
         </div>
-        <Activity size={18} className="text-accent-success" />
+        <Activity size={18} className="text-info" />
       </div>
       {!loadLive ? (
-        <button
-          className="mb-4 inline-flex items-center gap-2 rounded-lg border border-accent-success bg-accent-success px-3 py-2 font-label-caps uppercase text-bg-base"
+        <TerminalToolbarButton
+          className="mb-4"
           onClick={() => setLoadLive(true)}
+          tone="info"
           type="button"
         >
           <Play size={14} />
           Load Live Chain
-        </button>
+        </TerminalToolbarButton>
       ) : null}
       {snapshotQuery.error ? (
         <WarningLine message="Live snapshot unavailable. Check Futu OpenD before using the live chain." />

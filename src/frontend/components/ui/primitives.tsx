@@ -279,7 +279,7 @@ export function TerminalToolbarButton({
 }) {
   return (
     <button
-      className={`inline-flex h-8 items-center justify-center gap-2 rounded-lg border px-3 font-body-sm transition-colors hover:bg-bg-surface disabled:cursor-not-allowed disabled:opacity-50 ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]} ${className}`}
+      className={`inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border px-3 font-body-sm transition-colors hover:bg-bg-surface disabled:cursor-not-allowed disabled:opacity-50 ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]} ${className}`}
       disabled={disabled}
       onClick={onClick}
       title={title}

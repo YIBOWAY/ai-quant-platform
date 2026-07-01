@@ -11,9 +11,13 @@ import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
+import {
+  TerminalToolbarButton,
+  terminalInputClass,
+  terminalInputCompactClass,
+} from "@/components/ui/primitives";
 
-const selectClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-text-primary";
+const selectClass = terminalInputClass;
 
 // Maps screener column index to a glossary term so headers can show a hint.
 const headingTips: Record<number, GlossaryKey> = {
@@ -513,14 +517,15 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             {text.showRejected}
           </label>
           {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-          <button
-            className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+          <TerminalToolbarButton
+            className="h-10 w-full justify-center"
             disabled={!isHydrated || mutation.isPending}
             onClick={() => void run()}
+            tone="info"
             type="button"
           >
             {mutation.isPending ? text.running : text.run}
-          </button>
+          </TerminalToolbarButton>
         </form>
       </aside>
 
@@ -655,7 +660,7 @@ function NumberField({
     <label className="flex flex-col gap-1 font-body-sm text-text-primary">
       {label}
       <input
-        className="rounded-lg border border-border-subtle bg-bg-surface-muted px-2 py-2 font-data-mono text-text-primary"
+        className={terminalInputCompactClass}
         step={step}
         type="number"
         {...registration}

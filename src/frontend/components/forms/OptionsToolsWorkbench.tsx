@@ -24,7 +24,6 @@ import type {
 } from "@/lib/api";
 import { ApiClientError } from "@/lib/apiClient";
 import { InfoTip } from "@/components/InfoTip";
-import { Card, PageHeader, StatusPill } from "@/components/ui/primitives";
 import type { Locale } from "@/lib/locale";
 import {
   addWatchlistTicker,
@@ -49,6 +48,13 @@ import {
   simulateLiveCallSpread,
   type LiveContract,
 } from "@/lib/optionsToolsLive";
+import {
+  Card,
+  PageHeader,
+  StatusPill,
+  TerminalToolbarButton,
+  terminalInputClass,
+} from "@/components/ui/primitives";
 
 type TabId =
   | "greeks"
@@ -324,12 +330,12 @@ export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
               <label className="flex items-center gap-2 font-body-sm text-text-secondary">
                 {text.ticker}
                 <input
-                  className="h-9 w-28 rounded-lg border border-border-subtle bg-surface-container px-3 font-data-mono uppercase text-text-primary focus:border-accent-success/60 focus:outline-none"
+                  className={`${terminalInputClass} h-9 w-28 uppercase`}
                   onChange={(event) => setSharedTicker(event.target.value.toUpperCase())}
                   value={sharedTicker}
                 />
               </label>
-              <StatusPill label="●" value={text.researchOnly} tone="success" />
+              <StatusPill label="●" value={text.researchOnly} tone="info" />
             </div>
           }
         />
@@ -344,17 +350,17 @@ export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
               return (
                 <button
                   aria-selected={selected}
-                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left font-body-sm transition-colors ${
+                  className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left font-body-sm transition-colors ${
                     selected
-                      ? "bg-surface-container text-accent-success"
-                      : "text-text-secondary hover:bg-surface-container/70 hover:text-text-primary"
+                      ? "border-border-subtle bg-bg-surface-muted font-semibold text-text-primary"
+                      : "border-transparent text-text-secondary hover:bg-surface-container/70 hover:text-text-primary"
                   }`}
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   role="tab"
                   type="button"
                 >
-                  <Icon size={16} className={selected ? "text-accent-success" : "text-text-secondary"} />
+                  <Icon size={16} className={selected ? "text-text-primary" : "text-text-secondary"} />
                   <span className="flex-1">{text.tabs[tab.id]}</span>
                   <span className={`rounded-lg px-1.5 py-0.5 text-[10px] font-label-caps uppercase ${tab.live ? "bg-info/10 text-info" : "bg-bg-surface-muted text-text-secondary"}`}>
                     {tab.live ? text.live : text.example}
@@ -869,7 +875,7 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           <span className="font-label-caps uppercase text-text-secondary">{t.researchOps.shares}</span>
           <input
-            className="h-9 rounded-lg border border-border-subtle bg-surface-container px-3 font-data-mono text-text-primary focus:border-accent-success/60 focus:outline-none"
+            className={`${terminalInputClass} h-9`}
             min="1"
             onChange={(event) => setShares(event.target.value)}
             step="1"
@@ -880,7 +886,7 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           <span className="font-label-caps uppercase text-text-secondary">{t.researchOps.costBasis}</span>
           <input
-            className="h-9 rounded-lg border border-border-subtle bg-surface-container px-3 font-data-mono text-text-primary focus:border-accent-success/60 focus:outline-none"
+            className={`${terminalInputClass} h-9`}
             min="0.01"
             onChange={(event) => setCostBasis(event.target.value)}
             step="0.01"
@@ -891,7 +897,7 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
         <label className="flex flex-col gap-1 font-body-sm text-text-primary">
           <span className="font-label-caps uppercase text-text-secondary">{t.researchOps.purpose}</span>
           <select
-            className="h-9 rounded-lg border border-border-subtle bg-surface-container px-3 font-body-sm text-text-primary focus:border-accent-success/60 focus:outline-none"
+            className={`${terminalInputClass} h-9 font-body-sm`}
             onChange={(event) => setPurpose(event.target.value)}
             value={purpose}
           >
@@ -1023,7 +1029,7 @@ function ToolPanel({
     <div className="mx-auto flex max-w-6xl flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border-subtle pb-4">
         <div className="flex items-start gap-3">
-          <div className="mt-0.5 rounded-lg border border-border-subtle bg-surface-container p-2 text-accent-success">
+          <div className="mt-0.5 rounded-lg border border-border-subtle bg-surface-container p-2 text-info">
             <Icon size={18} />
           </div>
           <div>
@@ -1041,15 +1047,16 @@ function ToolPanel({
         </div>
         <div className="flex flex-wrap items-end gap-2">
           {controls}
-          <button
-            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-accent-success bg-accent-success px-3 py-2 font-label-caps uppercase text-bg-base transition-opacity hover:opacity-90 disabled:opacity-60"
+          <TerminalToolbarButton
+            className="h-9 px-3 font-label-caps uppercase"
             disabled={isRunning}
             onClick={onRun}
+            tone="info"
             type="button"
           >
             <Play size={14} />
             <span>{isRunning ? runningLabel : actionLabel}</span>
-          </button>
+          </TerminalToolbarButton>
         </div>
       </div>
       {children}
@@ -1062,7 +1069,7 @@ function TickerInput({ onChange, value, label }: { onChange: (value: string) => 
     <label className="flex flex-col gap-1 font-body-sm text-text-primary">
       {label}
       <input
-        className="h-9 w-28 rounded-lg border border-border-subtle bg-surface-container px-3 font-data-mono uppercase text-text-primary focus:border-accent-success/60 focus:outline-none"
+        className={`${terminalInputClass} h-9 w-28 uppercase`}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       />
@@ -1197,15 +1204,16 @@ function ActionGrid({
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
       {actions.map((action) => (
-        <button
-          className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-accent-success/40 hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-60"
+        <TerminalToolbarButton
+          className="h-auto min-h-10 w-full justify-start px-3 py-2 text-left"
           disabled={isRunning !== null}
           key={action.label}
           onClick={action.onClick}
+          tone="neutral"
           type="button"
         >
           {isRunning === action.label ? runningLabel : action.label}
-        </button>
+        </TerminalToolbarButton>
       ))}
     </div>
   );
