@@ -497,7 +497,7 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
                 description={text.noPositionsDesc}
                 action={
                   <Link
-                    className="flex items-center gap-1.5 rounded-lg border border-accent-success/40 bg-accent-success/10 px-3 py-1.5 font-body-sm text-accent-success transition-colors hover:bg-accent-success/20"
+                    className="flex items-center gap-1.5 rounded-lg border border-info/40 bg-info/10 px-3 py-1.5 font-body-sm text-info transition-colors hover:bg-info/20"
                     href={localizePath("/paper-trading", locale)}
                   >
                     {text.goTrade}
