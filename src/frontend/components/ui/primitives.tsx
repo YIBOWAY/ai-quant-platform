@@ -253,20 +253,24 @@ export function ToneBadge({
 /** Small toolbar action matching the terminal surface contract. */
 export function TerminalToolbarButton({
   children,
+  className = "",
   disabled,
   onClick,
+  tone = "neutral",
   title,
   type = "button",
 }: {
   children: ReactNode;
+  className?: string;
   disabled?: boolean;
   onClick?: () => void;
+  tone?: Tone;
   title?: string;
   type?: "button" | "submit";
 }) {
   return (
     <button
-      className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 font-body-sm text-text-primary transition-colors hover:border-info hover:text-info disabled:cursor-not-allowed disabled:opacity-50"
+      className={`inline-flex h-8 items-center justify-center gap-2 rounded-lg border px-3 font-body-sm transition-colors hover:bg-bg-surface disabled:cursor-not-allowed disabled:opacity-50 ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]} ${className}`}
       disabled={disabled}
       onClick={onClick}
       title={title}

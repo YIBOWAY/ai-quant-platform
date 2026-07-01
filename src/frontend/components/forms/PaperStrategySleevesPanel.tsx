@@ -16,7 +16,13 @@ import {
   Square,
   WalletCards,
 } from "lucide-react";
-import { Card, MetricStat, StatusPill } from "@/components/ui/primitives";
+import {
+  Card,
+  MetricStat,
+  StatusPill,
+  TerminalToolbarButton,
+  ToneBadge,
+} from "@/components/ui/primitives";
 import type {
   PaperStrategyConfigMutationResponse,
   PaperStrategyConfigResponse,
@@ -169,10 +175,10 @@ const copy = {
 } as const;
 
 const inputClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
+  "rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info";
 const labelClass = "flex flex-col gap-1 font-body-sm text-text-primary";
 const secondaryButtonClass =
-  "inline-flex items-center justify-center gap-2 rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary transition-colors hover:bg-bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 font-body-sm text-text-primary transition-colors hover:bg-bg-surface disabled:cursor-not-allowed disabled:opacity-50";
 
 export function PaperStrategySleevesPanel({
   locale = "en",
@@ -342,7 +348,7 @@ export function PaperStrategySleevesPanel({
     (mode === "signal_only" || (!accountDown && allocatedCash > 0));
 
   return (
-    <Card tone="info" padded>
+    <Card padded>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 font-headline-lg text-text-primary">
@@ -435,14 +441,14 @@ export function PaperStrategySleevesPanel({
                 <option value="tiingo">Tiingo</option>
               </select>
             </label>
-            <button
-              className="self-end rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+            <TerminalToolbarButton
+              className="self-end"
               disabled={!canCreateConfig}
               onClick={() => createConfigMutation.mutate()}
-              type="button"
+              tone="info"
             >
               {createConfigMutation.isPending ? text.creatingConfig : text.createConfig}
-            </button>
+            </TerminalToolbarButton>
           </div>
         </section>
 
@@ -492,14 +498,14 @@ export function PaperStrategySleevesPanel({
               </label>
             </div>
             <p className="font-body-sm text-text-secondary">{configs.length ? text.modeHelp : text.noConfig}</p>
-            <button
-              className="rounded-lg border border-accent-success bg-accent-success/10 px-4 py-2 font-body-sm font-semibold text-accent-success disabled:cursor-not-allowed disabled:opacity-50"
+            <TerminalToolbarButton
+              className="w-full"
               disabled={!canCreateSleeve}
               onClick={() => createSleeveMutation.mutate()}
-              type="button"
+              tone="success"
             >
               {createSleeveMutation.isPending ? text.openingSleeve : text.openSleeve}
-            </button>
+            </TerminalToolbarButton>
           </div>
         </section>
       </div>
@@ -633,15 +639,15 @@ function SleeveRow({
     !isProcessingExecution;
 
   return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 transition-colors hover:bg-bg-surface-muted/30">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate font-data-mono text-sm font-bold text-text-primary">
               {config?.name ?? text.staleConfig}
             </span>
-            <StatusPill label="" value={sleeve.status} tone={tone} />
-            <StatusPill label="" value={sleeve.mode} tone={sleeve.mode === "allocated" ? "success" : "info"} />
+            <ToneBadge tone={tone}>{sleeve.status}</ToneBadge>
+            <ToneBadge tone={sleeve.mode === "allocated" ? "success" : "info"}>{sleeve.mode}</ToneBadge>
           </div>
           <p className="mt-1 truncate font-data-mono text-[10px] text-text-secondary" title={sleeve.sleeve_id}>
             {sleeve.sleeve_id}
@@ -653,11 +659,11 @@ function SleeveRow({
         </div>
       </div>
 
-      <div className="mt-3 rounded-lg border border-border-subtle bg-bg-surface-muted/40 p-3">
+      <div className="mt-3 rounded-lg border border-border-subtle bg-bg-base p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-label-caps text-text-secondary">{text.latestSignal}</span>
           {latestSignal ? (
-            <StatusPill label="" value={latestSignal.status} tone={signalTone(latestSignal.status)} />
+            <ToneBadge tone={signalTone(latestSignal.status)}>{latestSignal.status}</ToneBadge>
           ) : null}
         </div>
         {latestSignal ? (
@@ -681,11 +687,11 @@ function SleeveRow({
         )}
       </div>
 
-      <div className="mt-3 rounded-lg border border-border-subtle bg-bg-surface-muted/40 p-3">
+      <div className="mt-3 rounded-lg border border-border-subtle bg-bg-base p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-label-caps text-text-secondary">{text.latestExecution}</span>
           {latestExecution ? (
-            <StatusPill label="" value={latestExecution.status} tone={executionTone(latestExecution.status)} />
+            <ToneBadge tone={executionTone(latestExecution.status)}>{latestExecution.status}</ToneBadge>
           ) : null}
         </div>
         {latestExecution ? (
@@ -703,34 +709,31 @@ function SleeveRow({
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 font-body-sm font-semibold text-info disabled:cursor-not-allowed disabled:opacity-50"
+        <TerminalToolbarButton
           disabled={isGenerating || sleeve.status === "stopped"}
           onClick={onGenerate}
-          type="button"
+          tone="info"
         >
           <RefreshCw size={14} />
           {isGenerating ? text.generatingSignal : text.generateSignal}
-        </button>
-        <button
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 font-body-sm font-semibold text-info disabled:cursor-not-allowed disabled:opacity-50"
+        </TerminalToolbarButton>
+        <TerminalToolbarButton
           disabled={!canCreateExecution}
           onClick={onCreateExecution}
           title={!latestSignal ? text.planFirst : undefined}
-          type="button"
+          tone="info"
         >
           <Send size={14} />
           {isCreatingExecution ? text.creatingExecution : text.createExecution}
-        </button>
-        <button
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-accent-success/40 bg-accent-success/10 px-3 py-2 font-body-sm font-semibold text-accent-success disabled:cursor-not-allowed disabled:opacity-50"
+        </TerminalToolbarButton>
+        <TerminalToolbarButton
           disabled={!canProcessExecution}
           onClick={onProcessExecution}
-          type="button"
+          tone="success"
         >
           <CheckCircle2 size={14} />
           {isProcessingExecution ? text.processingPending : text.processPending}
-        </button>
+        </TerminalToolbarButton>
         {sleeve.status === "paused" ? (
           <button className={secondaryButtonClass} disabled={isStatusChanging} onClick={() => onStatus("resume")} type="button">
             <Play size={14} />
@@ -747,15 +750,14 @@ function SleeveRow({
             {text.pause}
           </button>
         )}
-        <button
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 font-body-sm text-danger disabled:cursor-not-allowed disabled:opacity-50"
+        <TerminalToolbarButton
           disabled={isStatusChanging || sleeve.status === "stopped"}
           onClick={() => onStatus("stop")}
-          type="button"
+          tone="danger"
         >
           <Square size={14} />
           {text.stop}
-        </button>
+        </TerminalToolbarButton>
       </div>
     </div>
   );

@@ -64,3 +64,14 @@ the same flat terminal surfaces and can be tightened further in a later slice.
 `DataPreviewTable` also now composes `TerminalTable`, so backtest, factor,
 paper-run, options-radar, and strategy-catalog preview tables inherit the same
 scrolling and row-density contract when data is present.
+
+## Paper Trading Convergence
+
+- Manual order, pending-limit check, full-account rebalance, account freeze, and
+  strategy sleeve actions now use the shared `TerminalToolbarButton` contract
+  instead of heavy filled green buttons.
+- Strategy sleeve state chips use `ToneBadge`; the sleeve panel remains
+  operational and dense without introducing broker-specific chrome.
+- The migration is visual only: manual orders, pending-order processing,
+  full-account rebalance behavior, sleeve signal generation, and explicit
+  execution processing keep their existing API paths and safety semantics.

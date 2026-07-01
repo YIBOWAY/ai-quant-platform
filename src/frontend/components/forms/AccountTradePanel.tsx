@@ -21,6 +21,7 @@ import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
 import { ArrowRight, RefreshCw } from "lucide-react";
+import { TerminalToolbarButton, ToneBadge } from "@/components/ui/primitives";
 
 type Locale = "en" | "zh";
 
@@ -182,7 +183,7 @@ type Receipt = {
 };
 
 const inputClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
+  "rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info";
 const labelClass = "flex flex-col gap-1 font-body-sm text-text-primary";
 
 function formatPrice(value?: number | null) {
@@ -389,18 +390,19 @@ export function AccountTradePanel({
           <span className="font-body-sm text-text-secondary">{text.limitPriceHint}</span>
         </label>
         {manualError ? <p className="font-body-sm text-danger">{manualError}</p> : null}
-        <button
-          className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || killSwitch || manualMutation.isPending}
           type="submit"
+          tone="info"
         >
           {manualMutation.isPending ? text.submitting : text.submit}
-        </button>
+        </TerminalToolbarButton>
         </fieldset>
       </form>
 
-      <button
-        className="flex items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/10 px-4 py-2 font-body-sm font-semibold text-info disabled:cursor-not-allowed disabled:opacity-50"
+      <TerminalToolbarButton
+        className="h-9"
         disabled={
           !isHydrated ||
           killSwitch ||
@@ -408,14 +410,14 @@ export function AccountTradePanel({
           processPendingMutation.isPending
         }
         onClick={() => processPendingMutation.mutate()}
-        type="button"
+        tone="info"
       >
         <RefreshCw size={15} />
         {processPendingMutation.isPending ? text.checkingPending : text.checkPending}
         {pendingOrderCount > 0 ? (
-          <span className="font-data-mono text-xs">({pendingOrderCount})</span>
-        ) : null}
-      </button>
+            <span className="font-data-mono text-xs">({pendingOrderCount})</span>
+          ) : null}
+      </TerminalToolbarButton>
 
       <form
         className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4"
@@ -464,13 +466,14 @@ export function AccountTradePanel({
           </label>
         </div>
         {rebalanceError ? <p className="font-body-sm text-danger">{rebalanceError}</p> : null}
-        <button
-          className="rounded-lg border border-accent-success bg-accent-success/10 px-4 py-2 font-body-sm font-semibold text-accent-success disabled:cursor-not-allowed disabled:opacity-50"
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || killSwitch || rebalanceMutation.isPending}
           type="submit"
+          tone="warning"
         >
           {rebalanceMutation.isPending ? text.rebalancing : text.rebalance}
-        </button>
+        </TerminalToolbarButton>
         </fieldset>
       </form>
 
@@ -525,17 +528,19 @@ export function AccountTradePanel({
           <h2 className="font-label-caps text-text-primary">{text.freezeTitle}</h2>
           <p className="mt-1 font-body-sm text-text-secondary">{text.freezeDesc}</p>
         </div>
-        <div className={`font-data-mono ${killSwitch ? "text-danger" : "text-accent-success"}`}>
-          {killSwitch ? text.frozen : text.active}
+        <div>
+          <ToneBadge tone={killSwitch ? "danger" : "success"}>
+            {killSwitch ? text.frozen : text.active}
+          </ToneBadge>
         </div>
-        <button
-          className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-2 font-body-sm text-warning disabled:opacity-50"
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || freezeMutation.isPending}
           onClick={() => freezeMutation.mutate(!killSwitch)}
-          type="button"
+          tone="warning"
         >
           {killSwitch ? text.unfreeze : text.freeze}
-        </button>
+        </TerminalToolbarButton>
       </div>
     </div>
   );
