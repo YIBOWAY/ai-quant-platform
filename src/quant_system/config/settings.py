@@ -72,12 +72,13 @@ class DataSettings(BaseSettings):
 
 
 class DatabaseSettings(BaseSettings):
-    """Optional PostgreSQL index over file-based run artifacts.
+    """Optional PostgreSQL mirrors for local research metadata.
 
-    Disabled by default. When enabled and reachable, list endpoints read the run
-    index from PostgreSQL and run endpoints index new runs into it; otherwise the
-    API transparently falls back to scanning the filesystem. The URL is held as a
-    secret so it is masked in the settings dump (it carries a password).
+    Disabled by default. When enabled and reachable, run list endpoints can use
+    the run index, new runs are indexed best-effort, and AI News items can be
+    cached for stale fallback. Otherwise the API transparently falls back to
+    files/live upstreams. The URL is held as a secret so it is masked in the
+    settings dump (it carries a password).
     """
 
     model_config = SettingsConfigDict(
@@ -329,6 +330,49 @@ class LLMSettings(BaseSettings):
         return "**********" if value else None
 
 
+DEFAULT_AIHOT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
+
+class AiHotSettings(BaseSettings):
+    """Read-only AI HOT public news feed settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_AIHOT_ENABLED"),
+    )
+    base_url: str = Field(
+        default="https://aihot.virxact.com",
+        validation_alias=AliasChoices("QS_AIHOT_BASE_URL"),
+        min_length=1,
+    )
+    timeout_seconds: int = Field(
+        default=8,
+        validation_alias=AliasChoices("QS_AIHOT_TIMEOUT_SECONDS"),
+        gt=0,
+    )
+    cache_ttl_seconds: int = Field(
+        default=120,
+        validation_alias=AliasChoices("QS_AIHOT_CACHE_TTL_SECONDS"),
+        ge=0,
+    )
+    user_agent: str = Field(
+        default=DEFAULT_AIHOT_USER_AGENT,
+        validation_alias=AliasChoices("QS_AIHOT_USER_AGENT"),
+        min_length=1,
+    )
+
+
 class PredictionMarketSettings(BaseSettings):
     """Read-only prediction market research settings."""
 
@@ -459,6 +503,7 @@ class Settings(BaseSettings):
     futu: FutuSettings = Field(default_factory=FutuSettings)
     options_radar: OptionsRadarSettings = Field(default_factory=OptionsRadarSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    aihot: AiHotSettings = Field(default_factory=AiHotSettings)
     prediction_market: PredictionMarketSettings = Field(
         default_factory=PredictionMarketSettings
     )

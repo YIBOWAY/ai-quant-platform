@@ -200,6 +200,11 @@ def _account_storage(api_runs_dir) -> PaperAccountStorage:
     return PaperAccountStorage(api_runs_dir)
 
 
+def _load_or_open_account(storage: PaperAccountStorage) -> PaperAccount:
+    with _account_lock(storage.account_id), storage.mutation_lock():
+        return storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+
+
 def _strategy_sleeve_storage(api_runs_dir) -> PaperStrategySleeveStorage:
     return PaperStrategySleeveStorage(api_runs_dir)
 
@@ -503,7 +508,7 @@ def process_pending_account_orders_once(api_runs_dir, settings) -> list[OrderOut
 @router.get("/paper/account", response_model=PaperAccountResponse)
 def get_account(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     storage = _account_storage(api_runs_dir)
-    account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+    account = _load_or_open_account(storage)
     return _account_view(account, settings=settings)
 
 
@@ -546,7 +551,7 @@ def get_account_ledger(
     offset: int = 0,
 ) -> dict:
     storage = _account_storage(api_runs_dir)
-    account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+    account = _load_or_open_account(storage)
     entries = [entry.model_dump(mode="json") for entry in account.ledger]
     entries.reverse()  # newest first
     window = entries[offset : offset + max(limit, 0)]
@@ -561,7 +566,7 @@ def get_account_activity(
     offset: int = 0,
 ) -> dict:
     storage = _account_storage(api_runs_dir)
-    account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+    account = _load_or_open_account(storage)
     return _account_activity_view(
         account,
         settings=settings,

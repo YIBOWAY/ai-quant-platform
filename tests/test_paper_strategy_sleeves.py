@@ -4,6 +4,7 @@ import json
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from quant_system.api.schemas.paper import (
     StrategyConfigResponse,
@@ -153,6 +154,24 @@ def test_sleeve_lot_book_keeps_same_symbol_lots_isolated() -> None:
     assert book.quantity("sleeve-abc", "AAPL") == pytest.approx(10)
     assert book.lot("sleeve-abc", "AAPL").avg_cost == pytest.approx(130.0)
     assert book.aggregate_quantity("AAPL") == pytest.approx(16)
+
+
+def test_sleeve_lot_book_full_sell_removes_lot_without_invalid_assignment() -> None:
+    lot = SleeveLot.create(
+        account_id="default",
+        sleeve_id="sleeve-abc",
+        symbol="AAPL",
+        quantity=5,
+        avg_cost=120.0,
+        source="strategy:sleeve-abc",
+    )
+    book = SleeveLotBook([lot])
+
+    assert book.sell(sleeve_id="sleeve-abc", symbol="AAPL", quantity=5) is None
+
+    assert book.lots() == []
+    with pytest.raises(ValidationError):
+        lot.quantity = 0
 
 
 def test_sleeve_storage_round_trips_sleeves_lots_and_signals(tmp_path) -> None:

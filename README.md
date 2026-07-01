@@ -19,6 +19,7 @@ The project is currently delivered through Phase 14. It includes:
 - Futu read-only US stock and options data.
 - Options Income Screener, Options Radar, and Buy-Side Options Assistant.
 - Local AlphaGBM-style options toolbox and local Futu option quote cache.
+- Read-only AI HOT news research feed with optional PostgreSQL stale fallback.
 - Strategy Catalog with the reversal/momentum replication, the registered
   cross-sectional Top-N backtest strategy, and a mean-reversion Top-N strategy.
 - Reversal/momentum replication runs persist as local `replication-*` artifacts
@@ -26,7 +27,7 @@ The project is currently delivered through Phase 14. It includes:
 - Backtest engine controls: rebalance frequency (every bar / weekly / monthly),
   per-symbol weight cap, API-level sector cap when a sector map is supplied,
   and per-name return attribution.
-- Optional PostgreSQL run index over local backtest/factor/paper/replication runs.
+- Optional PostgreSQL local mirror for run history and AI HOT news cache.
 
 This project does not add live trading, broker order submission, wallet
 connection, signing, Futu account unlock, or real order placement.
@@ -131,6 +132,7 @@ database-index settings, and the runtime log path.
 | `/options-radar/[symbol]` | Single-ticker radar drilldown and live chain loader. |
 | `/options-tools` | Local AlphaGBM-style options toolbox. |
 | `/options-buyside` | Buy-side options strategy assistant. |
+| `/ai-news` | Read-only AI HOT news feed with selected/all items, category/keyword/time-window filters, daily reports, original-source links, and no strategy/backtest/paper-account mutations. |
 | `/polymarket` | Read-only prediction-market research page. |
 | `/agent-studio` | AI research assistant candidate workflows. |
 | `/settings` | Masked local settings. |
@@ -196,13 +198,14 @@ DuckDB-backed Futu option quote cache, and a one-time retry for Futu rate-limit
 responses. Broad daily scans should still be scheduled and expected to run
 slowly under Futu pacing.
 
-## Optional PostgreSQL Run Index
+## Optional PostgreSQL Local Mirror
 
 Backtest, factor, paper, and replication runs are always written to local files
 under `data/api_runs/<kind>/<run_id>/`. You can optionally index those four
-kinds into PostgreSQL for fast history listing. It is **disabled by default**;
-when the database is off or unreachable, every indexed endpoint falls back to
-the filesystem.
+kinds into PostgreSQL for fast history listing. The same optional database also
+stores read-only AI HOT item rows for `/ai-news` stale fallback. It is
+**disabled by default**; when the database is off or unreachable, run endpoints
+fall back to the filesystem and AI News falls back to live proxy/error handling.
 
 To enable it against a local Docker container:
 
@@ -219,12 +222,13 @@ QS_DATABASE_CONNECT_TIMEOUT_SECONDS=1
 QS_DATABASE_AUTO_MIGRATE=true
 ```
 
-On startup the backend starts run-index migration/backfill in the background:
-it creates the `quant_system.runs` table, backfills existing file runs, and
-prunes index rows whose files were removed. If PostgreSQL is down, the first
-probe is short and later failed requests use a brief cooldown window while
-continuing to read local files. Healthy PostgreSQL connections may proceed
-concurrently. Check it with:
+On startup the backend starts database migration/backfill in the background:
+it applies `scripts/sql/*.sql`, creates `quant_system.runs`,
+`quant_system.ai_news_items`, and `quant_system.ai_news_fetches`, backfills
+existing file runs, and prunes run-index rows whose files were removed. If
+PostgreSQL is down, the first probe is short and later failed requests use a
+brief cooldown window while continuing to read local files or live upstreams.
+Healthy PostgreSQL connections may proceed concurrently. Check it with:
 
 ```powershell
 curl http://127.0.0.1:8765/api/health   # database.reachable should be true
@@ -243,8 +247,32 @@ The test may create the target database when its name is clearly temporary
 normal run index.
 
 The `psycopg` driver ships with the `api` extra. The database stores research
-run metadata only; the connection URL is masked in `/api/settings`. See
+run metadata and read-only AI news metadata only; the connection URL is masked
+in `/api/settings`. See
 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md).
+
+## AI News Research Feed
+
+`/ai-news` is a local FastAPI proxy for AI HOT public endpoints. The frontend
+only calls `/api/news/aihot/*`; the backend adds the browser-style User-Agent
+required by AI HOT, normalizes responses, and keeps the feature research-only.
+
+Optional configuration:
+
+```text
+QS_AIHOT_ENABLED=true
+QS_AIHOT_BASE_URL="https://aihot.virxact.com"
+QS_AIHOT_TIMEOUT_SECONDS=8
+QS_AIHOT_CACHE_TTL_SECONDS=120
+QS_AIHOT_USER_AGENT="Mozilla/5.0 ..."
+```
+
+When `QS_DATABASE_ENABLED=true`, successful feed requests are mirrored into
+`quant_system.ai_news_items`. If AI HOT is temporarily unavailable, the items
+endpoint can return matching cached rows with a warning. The page never creates
+trading signals, starts backtests, mutates the paper account, or calls broker
+trading APIs. See [docs/guides/ai-news.md](docs/guides/ai-news.md) and
+[docs/design/ai_news_integration_plan.md](docs/design/ai_news_integration_plan.md).
 
 ## Backup Local Runs
 
@@ -349,8 +377,10 @@ available:
 - Manual execution entrypoints are available through
   `POST /api/paper/strategy-sleeves/{id}/executions`,
   `POST /api/paper/strategy-sleeves/executions/process`,
+  `GET /api/paper/strategy-sleeves/ops/status`,
   `quant-system paper strategies create-execution`, and
-  `quant-system paper strategies execute-pending`.
+  `quant-system paper strategies execute-pending` / `execute-due` /
+  `ops-status`.
 
 Scheduled sleeve execution is not implemented yet: generated signals do not
 auto-fill and the FastAPI process does not run a resident scheduler. The
@@ -547,6 +577,11 @@ Current options docs:
 Paper replication:
 
 - [docs/replications/reversal_momentum_replication.md](docs/replications/reversal_momentum_replication.md)
+
+AI News:
+
+- [docs/guides/ai-news.md](docs/guides/ai-news.md)
+- [docs/design/ai_news_integration_plan.md](docs/design/ai_news_integration_plan.md)
 
 Local cache plan and current status:
 

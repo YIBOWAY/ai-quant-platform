@@ -172,7 +172,6 @@ Implemented in Slice 0:
 
 Still open after Slice 0:
 
-- expose `recovery_required` in an operator status view
 - map lock timeouts to structured API/CLI status
 - split retryable vs terminal blocked states
 
@@ -187,6 +186,8 @@ Implemented in Slice 1 so far:
   runner.
 - `POST /api/paper/strategy-sleeves/executions/process` delegates to the same
   runner instead of carrying its own pending-plan processing loop.
+- `GET /api/paper/strategy-sleeves/ops/status` exposes the same operations
+  status payload for local operator views.
 
 ### Slice 1: Operations Runner And Scheduler-Safe Commands
 
@@ -219,9 +220,9 @@ Add host-scheduler friendly commands with deterministic exits and structured
 status output:
 
 ```bash
-quant-system paper strategies generate-due-signals --date YYYY-MM-DD
+quant-system paper strategies generate-due-signals --target-date YYYY-MM-DD
 quant-system paper strategies execute-due --window next_open --target-date YYYY-MM-DD
-quant-system paper strategies ops-status --date YYYY-MM-DD --format json
+quant-system paper strategies ops-status --target-date YYYY-MM-DD --format json
 ```
 
 Behavior:

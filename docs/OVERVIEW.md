@@ -2,7 +2,7 @@
 
 本仓库是一个**本地优先**的 AI 量化研究与模拟交易平台。它面向研究、测试、报告与只读行情分析而构建，**不是实盘交易平台**。
 
-当前状态：Phase 14 已交付；在初始交付之后，又新增了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、策略/Polymarket 路由重命名、统一 run metadata/index、opt-in async backtest jobs，以及 options screener 质量过滤 / `Avoid` 审计开关 / 备注列等内容。
+当前状态：Phase 14 已交付；在初始交付之后，又新增了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、策略/Polymarket 路由重命名、统一 run metadata/index、opt-in async backtest jobs、AI HOT 只读新闻研究流及其可选 PostgreSQL 缓存兜底，以及 options screener 质量过滤 / `Avoid` 审计开关 / 备注列等内容。
 
 ## 它能做什么
 
@@ -39,6 +39,14 @@ AI 研究助手：
 - 生成候选因子、实验配置与报告。
 - 将候选项存入评审池。
 - 任何内容晋级前都必须经过人工评审。
+
+AI 行业资讯：
+
+- 浏览 AI HOT 精选或全部新闻流。
+- 按分类、关键词和时间窗筛选，查看日报和近期日报归档。
+- 打开原文链接核对来源。
+- 当可选 PostgreSQL 启用且已有缓存时，上游暂时失败可显示本地缓存并标注 warning。
+- 资讯页面只用于研究阅读，不生成交易信号，不触发策略、回测或模拟账户。
 
 ## 它不能做什么
 
@@ -95,6 +103,7 @@ http://127.0.0.1:3001
 - [实验管理 Experiments](guides/experiments.md)
 - [模拟交易 Paper Trading](guides/paper-trading.md)
 - [持仓地图 Position Map](guides/position-map.md)
+- [AI 新闻研究流 AI News](guides/ai-news.md)
 
 模拟交易与持仓地图的设计与实现记录（单一 100 万模拟账户、策略一键再平衡 + 手动美股下单、统一持仓地图，**阶段 1-5 已实现**）：
 

@@ -197,6 +197,36 @@ def test_signal_service_marks_frozen_account_blocked_without_plan(
     assert signal.proposed_orders == []
 
 
+@pytest.mark.parametrize("bad_close", [float("nan"), float("inf")])
+def test_signal_service_skips_non_finite_latest_prices(
+    tmp_path,
+    monkeypatch,
+    bad_close: float,
+) -> None:
+    frame = make_ohlcv_frame()
+    latest_aapl = frame[frame["symbol"] == "AAPL"]["timestamp"].idxmax()
+    frame.loc[latest_aapl, "close"] = bad_close
+    provider = FakeOHLCVProvider(frame)
+    patch_provider(monkeypatch, provider)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    config = make_config(top_n=2, min_order_value=1.0)
+    sleeve = make_sleeve(config)
+
+    signal = PaperStrategySignalService(
+        storage=storage,
+        settings=load_settings(),
+    ).generate_daily_signal(
+        sleeve=sleeve,
+        config=config,
+        account=PaperAccount.open_new(),
+        signal_date="2024-03-20",
+        history_days=90,
+    )
+
+    assert all(order["symbol"] != "AAPL" for order in signal.proposed_orders)
+    assert any("missing latest price for AAPL" in warning for warning in signal.warnings)
+
+
 def test_signal_service_persists_data_unavailable_instead_of_sample_fallback(
     tmp_path, monkeypatch
 ) -> None:

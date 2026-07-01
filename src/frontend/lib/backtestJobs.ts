@@ -9,10 +9,31 @@ type BacktestDetailLike = Partial<BacktestRunResponse> & {
 type WaitForBacktestJobOptions = {
   pollIntervalMs?: number;
   timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const DEFAULT_JOB_TIMEOUT_MS = 10 * 60 * 1000;
+
+function pollingCancelledError() {
+  return new ApiClientError("Backtest job polling was cancelled.");
+}
+
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(pollingCancelledError());
+      return;
+    }
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timeoutId);
+      reject(pollingCancelledError());
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export function isBacktestJobState(payload: unknown): payload is BacktestJobStateResponse {
@@ -45,10 +66,11 @@ function normalizeCompletedRun(
   } as BacktestRunResponse;
 }
 
-async function fetchCompletedRun(payload: BacktestJobStateResponse) {
-  const detail = await apiRequest<BacktestDetailLike>(
-    payload.result_url ?? `/api/backtests/${payload.run_id}`,
-  );
+async function fetchCompletedRun(payload: BacktestJobStateResponse, signal?: AbortSignal) {
+  const path = payload.result_url ?? `/api/backtests/${payload.run_id}`;
+  const detail = signal
+    ? await apiRequest<BacktestDetailLike>(path, { signal })
+    : await apiRequest<BacktestDetailLike>(path);
   return normalizeCompletedRun(payload, detail);
 }
 
@@ -57,19 +79,26 @@ export async function waitForBacktestJob(
   options: WaitForBacktestJobOptions = {},
 ) {
   const pollIntervalMs = options.pollIntervalMs ?? 1000;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS;
   const startedAt = Date.now();
   let current = payload;
   while (true) {
+    if (options.signal?.aborted) {
+      throw pollingCancelledError();
+    }
     if (current.status === "completed") {
-      return fetchCompletedRun(current);
+      return fetchCompletedRun(current, options.signal);
     }
     if (current.status === "failed" || current.status === "cancelled") {
       throw new ApiClientError(jobErrorMessage(current));
     }
-    if (options.timeoutMs !== undefined && Date.now() - startedAt >= options.timeoutMs) {
-      throw new ApiClientError(`Backtest job did not finish within ${options.timeoutMs}ms.`);
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new ApiClientError(`Backtest job did not finish within ${timeoutMs}ms.`);
     }
-    await sleep(pollIntervalMs);
-    current = await apiRequest<BacktestJobStateResponse>(current.poll_url);
+    await sleep(pollIntervalMs, options.signal);
+    current = await apiRequest<BacktestJobStateResponse>(
+      current.poll_url,
+      options.signal ? { signal: options.signal } : {},
+    );
   }
 }

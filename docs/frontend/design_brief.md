@@ -87,7 +87,8 @@
 | `Beaker` | Experiments | `/experiments` | Phase 4 |
 | `Wallet` | Paper Trading | `/paper-trading` | Phase 5 |
 | `Bot` | Agent Studio | `/agent-studio` | Phase 7 |
-| `BookOpen` | Order Book | `/order-book` | Phase 8 |
+| `Newspaper` | AI News | `/ai-news` | AI HOT read-only |
+| `BookOpen` | Polymarket Markets | `/polymarket` | Phase 8 |
 | `Layers` | Position Map | `/position-map` | Phase 5 visualization |
 | `Settings` | Settings | `/settings` | 全局 |
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
+from math import isfinite
 from typing import Any
 
 import pandas as pd
@@ -228,7 +229,7 @@ class PaperStrategySignalService:
         proposed_orders: list[dict[str, Any]] = []
         for symbol in sorted(set(current_values) | set(target_weights)):
             price = latest_prices.get(symbol)
-            if price is None or price <= 0:
+            if price is None or not isfinite(price) or price <= 0:
                 warnings.append(f"missing latest price for {symbol}; proposed order skipped")
                 continue
             current_value = current_values.get(symbol, 0.0)
@@ -276,7 +277,7 @@ class PaperStrategySignalService:
     @staticmethod
     def _resolve_signal_date(value: str | date | None) -> date:
         if value is None:
-            return datetime.now(UTC).date()
+            return date.today()
         if isinstance(value, date):
             return value
         return date.fromisoformat(value)
@@ -306,8 +307,10 @@ class PaperStrategySignalService:
         frame["symbol"] = frame["symbol"].astype(str).str.upper().str.strip()
         frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
         frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
-        latest = frame.dropna(subset=["close"]).sort_values(["symbol", "timestamp"])
-        return {
-            row.symbol: float(row.close)
-            for row in latest.groupby("symbol", sort=True).tail(1).itertuples(index=False)
-        }
+        latest = frame.sort_values(["symbol", "timestamp"])
+        prices: dict[str, float] = {}
+        for row in latest.groupby("symbol", sort=True).tail(1).itertuples(index=False):
+            price = float(row.close)
+            if isfinite(price) and price > 0:
+                prices[row.symbol] = price
+        return prices

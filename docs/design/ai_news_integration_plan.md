@@ -1,7 +1,7 @@
-# AI News Integration MVP-1 设计文档
+# AI News Integration MVP-1 / MVP-2 设计文档
 
-> 状态：设计草案，待实现。  
-> 日期：2026-06-15。  
+> 状态：MVP-1 已实现；MVP-2 可选 Postgres 读穿缓存已补齐。
+> 日期：2026-06-15；最近更新：2026-06-29。
 > 命名说明：本文的 **AI News Integration MVP-1** 指「外部 AI 新闻只读接入」的第一阶段，不属于项目历史 Phase 阶段地图，也不属于 Paper Strategy Sleeves 路线。
 
 ## 1. 背景与目标
@@ -22,15 +22,17 @@ MVP-1 推荐先接 **AI HOT**，只做 `AI News Research Feed`。Horizon 保留�
 3. **不生成交易建议。** 页面文案必须明确：摘要由外部/LLM 生成，引用前回原文核对，不构成投资建议。
 4. **后端代理，前端不直连。** 前端只调用本地 FastAPI；外部 API base URL、超时、错误语义由后端封装。
 5. **测试不打真实外网。** 后端测试必须 mock AI HOT 响应；不能依赖 `aihot.virxact.com` 当前可用。
-6. **轻量接入。** MVP-1 不引入数据库、不引入常驻调度器、不拉取 Horizon 仓库、不存长期新闻归档。
+6. **轻量接入。** MVP-1 不引入数据库、不引入常驻调度器、不拉取 Horizon 仓库、不存长期新闻归档。MVP-2 只允许使用现有可选 Postgres 作为读穿缓存，不新增调度器或自有抓取流水线。
 7. **显式 beta 风险。** UI 和 API 响应保留 provider beta / upstream unstable 的提示。
+8. **状态端点不探测外网。** `status` 只返回本地配置、beta/read-only 声明和进程内最近错误；不能为了显示状态主动访问 AI HOT。
+9. **可测试的 HTTP 边界。** AI HOT client 必须支持注入 HTTP transport/client；单元测试通过 mock transport 构造上游响应，禁止真实 DNS/网络请求。
 
 ## 3. 当前项目匹配点
 
 当前代码中已有类似形态可参考：
 
 - `/options-radar` 是只读外部/本地数据页面，带筛选、刷新、状态、风险文案。
-- `src/frontend/components/Sidebar.tsx` 已有 `markets` 分组，当前包含 `/order-book` 和 `/agent-studio`，适合放 `/ai-news`。
+- `src/frontend/components/Sidebar.tsx` 已有 `markets` 分组，当前包含预测市场和 Agent Studio 等研究入口，适合放 `/ai-news`。
 - `src/frontend/components/ui/primitives.tsx` 提供 `PageHeader`、`Card`、`StatusPill` 等统一 UI primitive。
 - API 路由集中注册在 `src/quant_system/api/server.py`。
 - 前端 API client 集中在 `src/frontend/lib/api.ts`。
@@ -55,9 +57,9 @@ MVP-1 只做以下能力：
 
 ### 4.2 非目标
 
-MVP-1 不做：
+MVP-1 / MVP-2 不做：
 
-- 新闻长期入库。
+- 新闻长期全量归档或自有多源抓取。
 - 新闻到因子或策略的自动映射。
 - 新闻情绪分数。
 - 自动生成交易信号。
@@ -130,6 +132,7 @@ src/quant_system/news/
   __init__.py
   aihot_client.py
   models.py
+  repository.py
 
 src/quant_system/api/routes/news.py
 src/quant_system/api/schemas/news.py
@@ -139,8 +142,17 @@ src/quant_system/api/schemas/news.py
 
 - `news/aihot_client.py`：只负责调用 AI HOT、超时、解析、错误归一化。
 - `news/models.py`：内部 provider 模型，不依赖 FastAPI。
+- `news/repository.py`：可选 Postgres 读穿缓存；只缓存 AI HOT items，不是长期新闻仓库。
 - `api/schemas/news.py`：API 请求/响应 schema。
 - `api/routes/news.py`：FastAPI 路由、query 参数校验、把 provider 错误映射成 HTTP 错误。
+
+实现约束：
+
+- `AiHotClient` 构造参数必须允许注入 `httpx.Client` 或等价 fetcher；生产默认创建短超时 client，测试使用 `httpx.MockTransport`。
+- parser 先把上游 payload 转成内部模型，再由 route 转成 API schema；不要把上游原始 dict 直接作为前端契约。
+- `status` route 不能调用 `AiHotClient.items()` / `daily()` / `dailies()`，否则页面加载状态就会隐式打外网。
+- 所有新增路由必须是 `GET`，不引入后台线程、run artifact、strategy/backtest/paper-account 调用。
+- `items` 成功响应可以 best-effort 写入现有可选 Postgres 缓存；数据库关闭、慢或不可达时必须静默降级为实时代理。
 
 不要把 AI HOT 调用写进前端，也不要写进 strategies、factors、execution、options 模块。
 
@@ -153,6 +165,7 @@ QS_AIHOT_ENABLED=true
 QS_AIHOT_BASE_URL=https://aihot.virxact.com
 QS_AIHOT_TIMEOUT_SECONDS=8
 QS_AIHOT_CACHE_TTL_SECONDS=120
+QS_AIHOT_USER_AGENT=Mozilla/5.0 ... Safari/537.36
 ```
 
 说明：
@@ -161,6 +174,10 @@ QS_AIHOT_CACHE_TTL_SECONDS=120
 - `QS_AIHOT_BASE_URL` 便于测试和未来切换 mirror。
 - timeout 不宜过长，避免页面卡死。
 - cache TTL 是短期 in-process cache，不是长期存档。
+- 可选 Postgres 缓存复用 `QS_DATABASE_*`；`QS_DATABASE_ENABLED=false` 时不连接数据库。启用后由现有 `scripts/sql/*.sql` 迁移创建 `quant_system.ai_news_items` 和 `quant_system.ai_news_fetches`。
+- AI HOT `/api/public/*` 需要浏览器式 `User-Agent`；生产默认应带安全的只读 UA，测试要断言该 header 被发送。
+- 这些变量需要落到 `src/quant_system/config/settings.py` 的独立 `AiHotSettings`，并同步 `.env.example`；不要只写在文档里。
+- `QS_AIHOT_BASE_URL` 需要在 client 内部去掉尾部 `/` 后再拼接路径，避免 `//api/...`。
 
 ### 6.3 API 草案
 
@@ -181,7 +198,7 @@ category=<string>
 q=<string>
 since=<ISO-8601 datetime>
 cursor=<string>
-limit=<int, optional local cap>
+take=<int, 1..100>
 ```
 
 `daily` query：
@@ -193,7 +210,7 @@ date=YYYY-MM-DD optional
 `dailies` query：
 
 ```text
-take=1..30
+take=1..180
 ```
 
 ### 6.4 API 响应模型
@@ -225,7 +242,7 @@ has_next
 next_cursor
 items
 warnings
-safety
+research_safety
 ```
 
 `AiHotDailyResponse`：
@@ -241,11 +258,13 @@ lead
 sections
 flashes
 warnings
-safety
+research_safety
 raw
 ```
 
-`safety` 建议固定包含：
+注意：本项目已有全局 API middleware 会注入顶层 `safety` footer，并会覆盖 route payload 中的同名字段。AI News 的研究边界字段必须命名为 `research_safety`，不能使用顶层 `safety`。
+
+`research_safety` 建议固定包含：
 
 ```text
 research_only = true
@@ -264,7 +283,7 @@ verify_original_source = true
 | JSON 结构无法解析 | `502` | `aihot_invalid_response` |
 | 本地 query 参数非法 | `422` | FastAPI validation |
 
-MVP-1 不建议做复杂 stale fallback。可以做短期 in-process TTL cache；如果上游失败，前端显示清晰错误和重试按钮。
+MVP-1 使用短期 in-process TTL cache；MVP-2 增加可选 Postgres stale fallback。`items` 上游成功时返回实时结果并 best-effort 写缓存；上游失败时，如果本地 Postgres 有匹配缓存，返回 `200` 和缓存条目，并在 `warnings` 中写明上游错误和本地缓存来源；没有缓存时保留原来的 `502/503` 结构化错误。
 
 ## 7. 前端设计
 
@@ -367,6 +386,14 @@ User
   -> src/quant_system/api/routes/news.py
   -> src/quant_system/news/aihot_client.py
   -> https://aihot.virxact.com/api/public/*
+
+Successful items fetch
+  -> src/quant_system/news/repository.py
+  -> optional Postgres quant_system.ai_news_items / ai_news_fetches
+
+Upstream items failure
+  -> optional Postgres cache fallback
+  -> response warnings mark cached data and upstream error
 ```
 
 禁止的数据流：
@@ -423,6 +450,7 @@ Owned News Radar / Horizon Bridge
    - 新增 `src/quant_system/api/routes/news.py`。
    - 在 `server.py` 注册 router。
    - 只暴露 `GET` 只读端点。
+   - `status` 只读本地 settings 和最近错误，不触发上游请求。
 
 3. **前端 API client**
    - 在 `src/frontend/lib/api.ts` 加类型和函数。
@@ -439,10 +467,10 @@ Owned News Radar / Horizon Bridge
 
 ### 10.3 验证闭环
 
-MVP-1 验收：
+MVP-1 / MVP-2 验收：
 
 - 后端测试在无网络环境下通过。
-- AI HOT 上游错误会返回明确 `502/503`，前端不崩溃。
+- AI HOT 上游错误会返回明确 `502/503`；如果启用数据库且存在匹配缓存，则返回缓存并标注 warning。
 - `/ai-news` 显示 provider beta 和 research-only 文案。
 - 页面不存在任何下单、策略启动、paper account mutation 按钮。
 - `tests/test_api_safety.py` 或等价安全测试仍通过。
@@ -453,9 +481,18 @@ MVP-1 验收：
 
 ```powershell
 python -m pytest tests/test_api_news_aihot.py -q
+python -m pytest tests/test_news_aihot_repository.py -q
+python -m pytest tests/test_settings_aihot.py -q
 python -m pytest tests/test_api_safety.py -q
 ruff check src/quant_system tests
 ```
+
+测试约束：
+
+- `tests/test_api_news_aihot.py` 必须通过 mock client/transport 覆盖成功、关闭、超时、上游错误、无效 JSON/结构容错。
+- `tests/test_news_aihot_repository.py` 必须使用 fake database / monkeypatch；默认测试不能访问真实 Postgres。
+- 测试中不允许访问真实 `https://aihot.virxact.com`；可通过 monkeypatch 把 route 的 client factory 替换成 fake client，或直接用 `httpx.MockTransport`。
+- `status` 测试应断言不会调用 fake 上游 client。
 
 前端：
 
@@ -476,19 +513,21 @@ npm --prefix src/frontend run build
 ```powershell
 cd src/frontend
 $env:PW_E2E="1"
-npx playwright test --config playwright.config.ts --workers=1 tests/e2e/ai-news-smoke.spec.ts
+npx playwright test --config playwright.config.ts --workers=1
 ```
+
+当前仓库还没有独立的 `ai-news-smoke.spec.ts`；如果后续补专用 e2e，可以再把命令收窄到该文件。
 
 ## 12. 风险与缓解
 
 | 风险 | 缓解 |
 |---|---|
 | AI HOT 测试版接口变化 | 后端 parser 容忍未知字段；错误清晰显示；不作为核心依赖 |
-| 上游慢或不可用 | 短 timeout；前端重试；可选短 TTL cache |
+| 上游慢或不可用 | 短 timeout；前端重试；短 TTL cache；可选 Postgres stale fallback |
 | 摘要不准确 | 强制显示回原文核对提示 |
 | 用户误以为是交易信号 | 页面和 API safety 字段明确 research-only / not investment advice |
 | 与策略 sleeve 混淆 | 禁止任何自动联动；文档中明确两条路线独立 |
-| 依赖膨胀 | Horizon 放二期；MVP-1 不引入调度、数据库、LLM key |
+| 依赖膨胀 | Horizon 放二期；MVP-2 只复用现有可选 Postgres，不引入调度或 LLM key |
 
 ## 13. 文档与索引
 
@@ -558,4 +597,4 @@ Paper Strategy Sleeves 路线：
 | 2026-06-15 | Horizon 放二期，作为自托管多源新闻雷达或产物桥接方向。 |
 | 2026-06-15 | AI News 不触发策略、因子、回测、paper account 或 strategy sleeve。 |
 | 2026-06-15 | MVP-1 不写 execution 文档；只有引入 CLI/调度/Horizon 本地流水线时再写 runbook。 |
-
+| 2026-06-29 | MVP-2 复用现有可选 Postgres 增加 AI HOT items 读穿缓存；测试仍 mock 外网和数据库。 |

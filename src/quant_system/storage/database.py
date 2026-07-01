@@ -1,11 +1,11 @@
-"""Optional PostgreSQL connection helper for the local run index.
+"""Optional PostgreSQL connection helper for local metadata mirrors.
 
 This module deliberately avoids a connection pool and an ORM. The platform is a
 single-user local service, so short-lived ``psycopg`` connections (mirroring the
 DuckDB cache style in ``storage/options_cache.py``) are simpler and survive a
 container restart without stale pooled handles. The whole layer is optional:
 ``get_database`` returns ``None`` when ``QS_DATABASE_ENABLED`` is false or no URL
-is configured, and every caller must treat ``None`` as "use the filesystem".
+is configured, and every caller must treat ``None`` as "use files/live upstreams".
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Schema/table the migrations create. Kept in sync with scripts/sql/001_runs_index.sql.
+# Schema the migrations create. Keep table details in scripts/sql/*.sql.
 SCHEMA = "quant_system"
 DEFAULT_FAILURE_COOLDOWN_SECONDS = 30.0
 MAX_OPTIONAL_CONNECT_TIMEOUT_SECONDS = 1

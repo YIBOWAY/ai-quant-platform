@@ -12,10 +12,11 @@
 - 富途 OpenD 只读美股及期权数据。
 - 期权收入筛选器（Options Income Screener）、期权雷达（Options Radar）、买方期权助手（Buy-Side Options Assistant）。
 - 本地 AlphaGBM 风格期权工具箱及本地富途期权报价缓存。
+- AI HOT 只读新闻研究流，支持精选/全部动态、分类/关键词/时间窗筛选、日报和原文链接。
 - 策略目录：包含 reversal/momentum 论文复现、已注册的横截面 Top-N 回测策略、均值回归 Top-N 策略。
 - reversal/momentum 复现运行会以 `replication-*` 形式本地持久化，并提供专门详情页。
 - 回测引擎控制项：再平衡频率（每根 K 线 / 每周 / 每月）、单标的权重上限、提供行业映射时的 API 层面行业上限、以及按标的的收益归因。
-- 可选 PostgreSQL 运行索引（覆盖本地回测/因子/模拟交易运行记录）。
+- 可选 PostgreSQL 本地镜像（覆盖运行历史索引和 AI HOT 新闻缓存兜底）。
 
 本项目**不包含**实盘交易、券商下单、钱包连接、签名、富途账户解锁或真实订单提交。
 
@@ -90,8 +91,8 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 | `/data-explorer` | 美股历史数据查看器。 |
 | `/factor-lab` | 因子健康与择时诊断（横截面 / 择时两个标签页）；数据源/股票池/择时标的/基准可在侧栏调整（默认 `futu`），并可保存因子研究运行、预填发送至回测器。 |
 | `/backtest` | 运行策略、股票池、因子加权及基准回测。 |
-| `/replications` | 已注册研究策略的策略目录。 |
-| `/replications/[runId]` | 已落盘的 reversal/momentum 复现运行详情。 |
+| `/strategies` | 已注册研究策略的策略目录。 |
+| `/strategies/[runId]` | 已落盘的 reversal/momentum 复现运行详情。 |
 | `/docs/reversal-momentum` | 论文复现的前端可读笔记。 |
 | `/experiments` | 运行可选数据源的实验扫描，可显式开启滚动验证折，查看被测试的固定因子组合，并将最佳参数和同一数据源发送至回测。 |
 | `/paper-trading` | 持久模拟账户（手动下单 + 策略一键再平衡）＋历史回放（研究）。 |
@@ -101,7 +102,8 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 | `/options-radar/[symbol]` | 单标的雷达下钻与实时期权链加载。 |
 | `/options-tools` | 本地 AlphaGBM 风格期权工具箱。 |
 | `/options-buyside` | 买方期权策略助手。 |
-| `/order-book` | 只读预测市场研究页面。 |
+| `/ai-news` | AI HOT 只读新闻研究流，含精选/全部动态、分类/关键词/时间窗筛选、日报和原文链接，不触发策略、回测或模拟账户。 |
+| `/polymarket` | 只读预测市场研究页面。 |
 | `/agent-studio` | AI 研究助手候选流程。 |
 | `/settings` | 脱敏后的本地设置。 |
 
@@ -158,12 +160,12 @@ python scripts/verify_futu_connection.py
 
 交互式期权页面包含短期进程内缓存、本地 DuckDB 支持的富途期权报价缓存，以及针对富途限频响应的单次重试。宽泛的每日扫描仍应计划执行，并在富途限速下预计运行较慢。
 
-## 可选 PostgreSQL 运行索引
+## 可选 PostgreSQL 本地镜像
 
-回测、因子和模拟交易运行记录始终写入本地文件
-`data/api_runs/<kind>/<run_id>/`。你可以选择将这三类运行索引到 PostgreSQL 中以加速历史列表查询。
-reversal/momentum 复现运行也会写入 `data/api_runs/replications/<run_id>/`，但暂不进入可选 PostgreSQL run index。
-该功能**默认关闭**；当数据库关闭或无法访问时，所有已索引端点自动回退到文件系统读取。
+回测、因子、模拟交易和 reversal/momentum 复现运行记录始终写入本地文件
+`data/api_runs/<kind>/<run_id>/`。你可以选择将这四类运行索引到 PostgreSQL 中以加速历史列表查询。
+同一个可选数据库也会缓存 AI HOT 只读新闻条目，供 `/ai-news` 在上游暂时不可用时兜底。
+该功能**默认关闭**；当数据库关闭或无法访问时，运行端点自动回退到文件系统读取，AI News 回退到实时代理或明确错误。
 
 通过本地 Docker 容器启用：
 
@@ -180,16 +182,41 @@ QS_DATABASE_CONNECT_TIMEOUT_SECONDS=1
 QS_DATABASE_AUTO_MIGRATE=true
 ```
 
-后端启动时会在后台线程中运行索引迁移/回填：创建 `quant_system.runs` 表，回填已有的文件运行记录，
-并清理文件已被删除的索引行。如果 PostgreSQL 不可用，首次探测很短，后续失败请求在短暂的冷却窗口内
-继续从本地文件读取；健康的 PostgreSQL 短连接可以并发执行。可通过以下命令检查：
+后端启动时会在后台线程中运行迁移/回填：应用 `scripts/sql/*.sql`，创建
+`quant_system.runs`、`quant_system.ai_news_items` 和 `quant_system.ai_news_fetches`，
+回填已有的文件运行记录，并清理文件已被删除的运行索引行。如果 PostgreSQL 不可用，
+首次探测很短，后续失败请求在短暂的冷却窗口内继续从本地文件或实时上游读取；健康的 PostgreSQL
+短连接可以并发执行。可通过以下命令检查：
 
 ```powershell
 curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
 ```
 
-`psycopg` 驱动随 `api` extra 一起安装。数据库仅存储研究运行元数据；连接 URL 在 `/api/settings`
-中已脱敏。详见 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md)。
+`psycopg` 驱动随 `api` extra 一起安装。数据库仅存储研究运行元数据和只读 AI 新闻元数据；
+连接 URL 在 `/api/settings` 中已脱敏。详见
+[docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md)。
+
+## AI 新闻研究流
+
+`/ai-news` 是 AI HOT 公共端点的本地 FastAPI 代理。前端只调用
+`/api/news/aihot/*`；后端负责发送 AI HOT API 所需的浏览器式 User-Agent、解析响应、
+归一化错误，并保留 research-only 安全字段。
+
+可选配置：
+
+```text
+QS_AIHOT_ENABLED=true
+QS_AIHOT_BASE_URL="https://aihot.virxact.com"
+QS_AIHOT_TIMEOUT_SECONDS=8
+QS_AIHOT_CACHE_TTL_SECONDS=120
+QS_AIHOT_USER_AGENT="Mozilla/5.0 ..."
+```
+
+当 `QS_DATABASE_ENABLED=true` 时，成功的新闻流请求会镜像到
+`quant_system.ai_news_items`。如果 AI HOT 暂时不可用，items 端点可以返回匹配缓存并显示 warning。
+该页面不会生成交易信号、启动回测、修改模拟账户或调用任何券商交易 API。详见
+[docs/guides/ai-news.md](docs/guides/ai-news.md) 与
+[docs/design/ai_news_integration_plan.md](docs/design/ai_news_integration_plan.md)。
 
 ## 模拟账户
 
@@ -257,8 +284,9 @@ next-open 纸面执行：
   execution plan。
 - 手动执行入口包括 `POST /api/paper/strategy-sleeves/{id}/executions`、
   `POST /api/paper/strategy-sleeves/executions/process`、
+  `GET /api/paper/strategy-sleeves/ops/status`、
   `quant-system paper strategies create-execution` 和
-  `quant-system paper strategies execute-pending`。
+  `quant-system paper strategies execute-pending` / `execute-due` / `ops-status`。
 
 尚未实现：常驻/调度式自动执行、near-close 模拟成交和 lot transfer。生成信号不会
 自动成交，FastAPI 进程也不会启动常驻策略调度器。现有
@@ -406,6 +434,11 @@ npx playwright test --config playwright.config.ts --workers=1
 论文复现：
 
 - [docs/replications/reversal_momentum_replication.md](docs/replications/reversal_momentum_replication.md)
+
+AI 新闻：
+
+- [docs/guides/ai-news.md](docs/guides/ai-news.md)
+- [docs/design/ai_news_integration_plan.md](docs/design/ai_news_integration_plan.md)
 
 本地缓存方案及当前状态：
 

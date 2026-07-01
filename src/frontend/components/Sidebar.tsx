@@ -13,6 +13,7 @@ import {
   Database,
   BookOpen,
   Map,
+  Newspaper,
   FileText,
   HelpCircle,
   Plus,
@@ -54,6 +55,7 @@ const copy = {
       experiments: "Experiments",
       paperTrading: "Paper Trading",
       agentStudio: "Agent Studio",
+      aiNews: "AI News",
       orderBook: "Polymarket Markets",
       positionMap: "Position Map",
       settings: "Settings",
@@ -86,6 +88,7 @@ const copy = {
       experiments: "实验管理",
       paperTrading: "模拟交易",
       agentStudio: "智能体工作室",
+      aiNews: "AI 新闻",
       orderBook: "Polymarket 市场",
       positionMap: "持仓地图",
       settings: "设置",
@@ -130,6 +133,7 @@ export function Sidebar() {
     {
       name: text.groups.markets,
       items: [
+        { name: text.nav.aiNews, href: "/ai-news", icon: Newspaper },
         { name: text.nav.orderBook, href: "/polymarket", icon: BookOpen },
         { name: text.nav.agentStudio, href: "/agent-studio", icon: Zap },
       ],

@@ -149,10 +149,7 @@ class PaperAccount(BaseModel):
                 for sleeve_id, cash in self.sleeve_cash.items()
                 if sleeve_id != "manual"
             )
-            self.sleeve_cash.setdefault(
-                "manual",
-                max(float(self.cash) - allocated_cash, 0.0),
-            )
+            self.sleeve_cash["manual"] = max(float(self.cash) - allocated_cash, 0.0)
         return self
 
     # --- read views -------------------------------------------------------
@@ -239,6 +236,11 @@ class PaperAccount(BaseModel):
         position.avg_cost = new_avg_cost
         position.quantity = new_quantity
         self.cash += cash_delta
+        self._sync_manual_sleeve_cash(
+            cash_delta,
+            source=source,
+            kind=kind,
+        )
         if fill.side == OrderSide.BUY:
             position.source_quantity[source] = (
                 position.source_quantity.get(source, 0.0) + fill.quantity
@@ -283,6 +285,20 @@ class PaperAccount(BaseModel):
         # Drop residual rounding so an emptied position has no source dust.
         if position.quantity <= 1e-9:
             position.source_quantity.clear()
+
+    def _sync_manual_sleeve_cash(self, cash_delta: float, *, source: str, kind: str) -> None:
+        if not self._cash_delta_belongs_to_manual_sleeve(source=source, kind=kind):
+            return
+        manual_cash = self.sleeve_cash.get("manual", 0.0) + cash_delta
+        self.sleeve_cash["manual"] = 0.0 if abs(manual_cash) < 1e-9 else manual_cash
+
+    def _cash_delta_belongs_to_manual_sleeve(self, *, source: str, kind: str) -> bool:
+        if kind == "sleeve_execution_fill":
+            return False
+        if source.startswith("strategy:"):
+            sleeve_id = source.removeprefix("strategy:")
+            return sleeve_id not in self.sleeve_cash
+        return True
 
     def record_event(
         self,

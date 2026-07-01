@@ -3,9 +3,10 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from math import isfinite
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from quant_system.execution.account import DEFAULT_ACCOUNT_ID, PaperAccount
 
@@ -170,6 +171,8 @@ class StrategySleeve(BaseModel):
 class SleeveLot(BaseModel):
     """A position lot owned by exactly one sleeve."""
 
+    model_config = ConfigDict(allow_inf_nan=False, validate_assignment=True)
+
     lot_id: str
     account_id: str = DEFAULT_ACCOUNT_ID
     sleeve_id: str
@@ -243,6 +246,8 @@ class SleeveLotBook:
         normalized = symbol.upper()
         key = (sleeve_id, normalized)
         if key not in self._lots:
+            self._validate_positive_finite(quantity, "quantity")
+            self._validate_positive_finite(price, "price")
             lot = SleeveLot.create(
                 account_id=account_id,
                 sleeve_id=sleeve_id,
@@ -255,7 +260,12 @@ class SleeveLotBook:
             return lot
         lot = self._lots[key]
         total_quantity = lot.quantity + quantity
-        lot.avg_cost = ((lot.quantity * lot.avg_cost) + (quantity * price)) / total_quantity
+        self._validate_positive_finite(quantity, "quantity")
+        self._validate_positive_finite(price, "price")
+        self._validate_positive_finite(total_quantity, "total_quantity")
+        next_avg_cost = ((lot.quantity * lot.avg_cost) + (quantity * price)) / total_quantity
+        self._validate_non_negative_finite(next_avg_cost, "avg_cost")
+        lot.avg_cost = next_avg_cost
         lot.quantity = total_quantity
         lot.updated_at = _utc_now_iso()
         return lot
@@ -270,12 +280,24 @@ class SleeveLotBook:
                 f"sleeve {sleeve_id!r} has {available:.4f} {normalized}, "
                 f"cannot sell {quantity:.4f}"
             )
-        lot.quantity -= quantity
-        lot.updated_at = _utc_now_iso()
-        if lot.quantity <= 1e-9:
+        self._validate_positive_finite(quantity, "quantity")
+        remaining_quantity = lot.quantity - quantity
+        if remaining_quantity <= 1e-9:
             self._lots.pop(key, None)
             return None
+        lot.quantity = remaining_quantity
+        lot.updated_at = _utc_now_iso()
         return lot
+
+    @staticmethod
+    def _validate_positive_finite(value: float, name: str) -> None:
+        if not isfinite(float(value)) or value <= 0:
+            raise ValueError(f"{name} must be positive and finite")
+
+    @staticmethod
+    def _validate_non_negative_finite(value: float, name: str) -> None:
+        if not isfinite(float(value)) or value < 0:
+            raise ValueError(f"{name} must be non-negative and finite")
 
 
 class StrategySignal(BaseModel):
@@ -569,10 +591,12 @@ class PaperStrategySleeveService:
         if not account.sleeve_cash:
             account.sleeve_cash[MANUAL_SLEEVE_ID] = float(account.cash)
             return
-        account.sleeve_cash.setdefault(
-            MANUAL_SLEEVE_ID,
-            max(account.cash - sum(account.sleeve_cash.values()), 0.0),
+        allocated_cash = sum(
+            cash
+            for sleeve_id, cash in account.sleeve_cash.items()
+            if sleeve_id != MANUAL_SLEEVE_ID
         )
+        account.sleeve_cash[MANUAL_SLEEVE_ID] = max(account.cash - allocated_cash, 0.0)
 
     @staticmethod
     def _allocate_cash(account: PaperAccount, sleeve: StrategySleeve) -> None:

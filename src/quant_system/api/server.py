@@ -22,6 +22,7 @@ from quant_system.api.routes import (
     factors,
     health,
     market_data,
+    news,
     options,
     options_radar,
     paper,
@@ -81,6 +82,27 @@ def _start_run_index_init(active_settings: Settings, api_runs_dir: Path) -> None
         daemon=True,
     )
     thread.start()
+
+
+def _reconcile_orphaned_backtest_jobs(backtest_job_runner) -> None:
+    try:
+        recovered = backtest_job_runner.reconcile_orphaned_jobs()
+    except Exception as exc:  # noqa: BLE001 - startup must continue serving
+        logger.warning("backtest job reconciliation skipped: %s", exc)
+        return
+    if recovered:
+        logger.info("reconciled %s orphaned backtest job(s)", recovered)
+
+
+def _start_backtest_job_reconciliation(backtest_job_runner) -> threading.Thread:
+    thread = threading.Thread(
+        target=_reconcile_orphaned_backtest_jobs,
+        args=(backtest_job_runner,),
+        name="quant-system-backtest-job-reconcile",
+        daemon=True,
+    )
+    thread.start()
+    return thread
 
 
 def _nth_weekday(year: int, month: int, weekday: int, occurrence: int) -> date:
@@ -367,7 +389,9 @@ def create_app(
         app.state.services = services
         services["api_runs_dir"].mkdir(parents=True, exist_ok=True)
         backtest_job_runner = services["backtest_job_runner"]
-        backtest_job_runner.reconcile_orphaned_jobs()
+        backtest_reconcile_thread = _start_backtest_job_reconciliation(
+            backtest_job_runner
+        )
         _start_run_index_init(active_settings, services["api_runs_dir"])
         _start_options_radar_startup_catchup(active_settings)
         pending_order_processor = _start_paper_account_pending_order_processor(
@@ -377,7 +401,9 @@ def create_app(
         try:
             yield
         finally:
+            backtest_reconcile_thread.join(timeout=1.0)
             backtest_job_runner.shutdown(wait=True, cancel_futures=True)
+            news.close_aihot_clients()
             if pending_order_processor is not None:
                 stop_event, thread = pending_order_processor
                 stop_event.set()
@@ -401,6 +427,7 @@ def create_app(
     app.include_router(settings_routes.router, prefix="/api", tags=["settings"])
     app.include_router(data.router, prefix="/api", tags=["data"])
     app.include_router(market_data.router, prefix="/api", tags=["market-data"])
+    app.include_router(news.router, prefix="/api", tags=["news"])
     app.include_router(options.router, prefix="/api", tags=["options"])
     app.include_router(options_radar.router, prefix="/api", tags=["options-radar"])
     app.include_router(factors.router, prefix="/api", tags=["factors"])

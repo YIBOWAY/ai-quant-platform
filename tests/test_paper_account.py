@@ -149,6 +149,39 @@ def test_source_breakdown_merges_manual_and_strategy() -> None:
     assert breakdown["strategy:cross_sectional_top_n"] == pytest.approx(0.4)
 
 
+def test_manual_sleeve_cash_tracks_manual_and_legacy_strategy_fills() -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    account.sleeve_cash = {"manual": 75_000.0, "sleeve-abc": 25_000.0}
+
+    account.apply_fill(_fill("AAPL", OrderSide.BUY, 10, 100.0), source="manual")
+    account.apply_fill(
+        _fill("MSFT", OrderSide.BUY, 5, 200.0),
+        source="strategy:cross_sectional_top_n",
+        kind="rebalance_fill",
+    )
+    account.apply_fill(
+        _fill("NVDA", OrderSide.BUY, 2, 500.0),
+        source="strategy:sleeve-abc",
+        kind="sleeve_execution_fill",
+    )
+
+    assert account.cash == pytest.approx(97_000.0)
+    assert account.sleeve_cash["manual"] == pytest.approx(73_000.0)
+    assert account.sleeve_cash["sleeve-abc"] == pytest.approx(25_000.0)
+
+
+def test_stale_manual_sleeve_cash_is_recomputed_on_load() -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    payload = account.model_dump(mode="json")
+    payload["cash"] = 120_000.0
+    payload["sleeve_cash"] = {"manual": 50_000.0, "sleeve-abc": 25_000.0}
+
+    restored = PaperAccount.model_validate(payload)
+
+    assert restored.sleeve_cash["manual"] == pytest.approx(95_000.0)
+    assert restored.sleeve_cash["sleeve-abc"] == pytest.approx(25_000.0)
+
+
 def test_manual_order_via_service_updates_account() -> None:
     account = PaperAccount.open_new(initial_cash=1_000_000.0)
     service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 200.0}))

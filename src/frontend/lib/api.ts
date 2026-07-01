@@ -1665,6 +1665,84 @@ export type OptionsDailyScanSymbolResponse = ApiEnvelope & {
 
 export type OptionsRadarSymbolResponse = OptionsDailyScanSymbolResponse;
 
+export type AiHotResearchSafety = {
+  research_only: boolean;
+  not_investment_advice: boolean;
+  does_not_trigger_trading: boolean;
+  verify_original_source: boolean;
+};
+
+export type AiHotItem = {
+  id: string;
+  title: string;
+  title_en?: string | null;
+  url: string;
+  source: string;
+  published_at?: string | null;
+  summary?: string | null;
+  category?: string | null;
+  score?: number | null;
+  selected?: boolean | null;
+  raw?: Record<string, unknown>;
+};
+
+export type AiHotItemsResponse = ApiEnvelope & {
+  provider: "aihot" | string;
+  provider_beta: boolean;
+  fetched_at: string;
+  count: number;
+  has_next: boolean;
+  next_cursor?: string | null;
+  items: AiHotItem[];
+  warnings: string[];
+  research_safety: AiHotResearchSafety;
+};
+
+export type AiHotDailyResponse = ApiEnvelope & {
+  provider: "aihot" | string;
+  provider_beta: boolean;
+  fetched_at: string;
+  date: string;
+  generated_at?: string | null;
+  window_start?: string | null;
+  window_end?: string | null;
+  lead?: Record<string, unknown> | null;
+  sections: Array<Record<string, unknown>>;
+  flashes: Array<Record<string, unknown>>;
+  warnings: string[];
+  research_safety: AiHotResearchSafety;
+  raw?: Record<string, unknown>;
+};
+
+export type AiHotDailyIndex = {
+  date: string;
+  generated_at?: string | null;
+  lead_title?: string | null;
+  raw?: Record<string, unknown>;
+};
+
+export type AiHotDailiesResponse = ApiEnvelope & {
+  provider: "aihot" | string;
+  provider_beta: boolean;
+  fetched_at: string;
+  count: number;
+  items: AiHotDailyIndex[];
+  warnings: string[];
+  research_safety: AiHotResearchSafety;
+};
+
+export type AiHotStatusResponse = ApiEnvelope & {
+  provider: "aihot" | string;
+  provider_beta: boolean;
+  enabled: boolean;
+  base_url: string;
+  timeout_seconds: number;
+  cache_ttl_seconds: number;
+  last_error?: Record<string, unknown> | null;
+  warnings: string[];
+  research_safety: AiHotResearchSafety;
+};
+
 export type SettingsResponse = ApiEnvelope & {
   settings?: Record<string, unknown>;
 };
@@ -1677,6 +1755,13 @@ const FALLBACK_SAFETY: SafetyFooter = {
   live_trading_enabled: false,
   kill_switch: true,
   bind_address: "127.0.0.1",
+};
+
+const AIHOT_RESEARCH_SAFETY: AiHotResearchSafety = {
+  research_only: true,
+  not_investment_advice: true,
+  does_not_trigger_trading: true,
+  verify_original_source: true,
 };
 
 async function apiGet<T extends ApiEnvelope>(path: string, fallback: T): Promise<T> {
@@ -1744,6 +1829,98 @@ export function getHealth() {
 
 export function getSettings() {
   return apiGet<SettingsResponse>("/api/settings", {
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export type AiHotItemsQuery = {
+  mode?: "selected" | "all";
+  category?: string;
+  q?: string;
+  since?: string;
+  cursor?: string;
+  take?: number;
+};
+
+export function getAiHotItems(query: AiHotItemsQuery = {}) {
+  const params = new URLSearchParams();
+  params.set("mode", query.mode ?? "selected");
+  if (query.category) {
+    params.set("category", query.category);
+  }
+  if (query.q) {
+    params.set("q", query.q);
+  }
+  if (query.since) {
+    params.set("since", query.since);
+  }
+  if (query.cursor) {
+    params.set("cursor", query.cursor);
+  }
+  params.set("take", String(query.take ?? 50));
+  return apiGet<AiHotItemsResponse>(`/api/news/aihot/items?${params.toString()}`, {
+    provider: "aihot",
+    provider_beta: true,
+    fetched_at: "",
+    count: 0,
+    has_next: false,
+    next_cursor: null,
+    items: [],
+    warnings: ["AI HOT feed is unavailable."],
+    research_safety: AIHOT_RESEARCH_SAFETY,
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getAiHotDaily(date?: string) {
+  const params = new URLSearchParams();
+  if (date) {
+    params.set("date", date);
+  }
+  const query = params.toString();
+  return apiGet<AiHotDailyResponse>(`/api/news/aihot/daily${query ? `?${query}` : ""}`, {
+    provider: "aihot",
+    provider_beta: true,
+    fetched_at: "",
+    date: date ?? "",
+    generated_at: null,
+    window_start: null,
+    window_end: null,
+    lead: null,
+    sections: [],
+    flashes: [],
+    warnings: ["AI HOT daily report is unavailable."],
+    research_safety: AIHOT_RESEARCH_SAFETY,
+    raw: {},
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getAiHotDailies(take = 14) {
+  const params = new URLSearchParams({ take: String(take) });
+  return apiGet<AiHotDailiesResponse>(`/api/news/aihot/dailies?${params.toString()}`, {
+    provider: "aihot",
+    provider_beta: true,
+    fetched_at: "",
+    count: 0,
+    items: [],
+    warnings: ["AI HOT daily archive is unavailable."],
+    research_safety: AIHOT_RESEARCH_SAFETY,
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getAiHotStatus() {
+  return apiGet<AiHotStatusResponse>("/api/news/aihot/status", {
+    provider: "aihot",
+    provider_beta: true,
+    enabled: false,
+    base_url: "",
+    timeout_seconds: 0,
+    cache_ttl_seconds: 0,
+    last_error: null,
+    warnings: ["AI HOT status is unavailable."],
+    research_safety: AIHOT_RESEARCH_SAFETY,
     safety: FALLBACK_SAFETY,
   });
 }

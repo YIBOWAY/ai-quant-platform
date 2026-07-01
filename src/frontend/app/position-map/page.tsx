@@ -327,7 +327,7 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
   const backtestDetail = latestBacktest ? await getBacktestDetail(latestBacktest.id) : null;
   const backtestExposure = latestExposure(backtestDetail?.positions ?? []);
 
-  const accountDown = Boolean(account.apiError);
+  const accountDown = Boolean(activity.apiError || account.apiError);
   const positions = [...account.positions].sort(
     (a, b) => Math.abs(b.market_value) - Math.abs(a.market_value),
   );

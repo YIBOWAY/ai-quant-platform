@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from math import isfinite
 from typing import Any, NamedTuple
 
 import pandas as pd
@@ -327,9 +328,12 @@ class PaperStrategyExecutionService:
         if missing:
             raise PaperStrategyExecutionError("price_unavailable")
         for symbol, quote in quotes.items():
-            if quote.price <= 0:
+            price = float(quote.price)
+            if not isfinite(price) or price <= 0:
                 raise PaperStrategyExecutionError("price_unavailable")
-            quotes[symbol] = quote.model_copy(update={"symbol": symbol.upper()})
+            quotes[symbol] = quote.model_copy(
+                update={"symbol": symbol.upper(), "price": price}
+            )
         return quotes
 
     def _build_steps(
@@ -346,9 +350,13 @@ class PaperStrategyExecutionService:
                 raise PaperStrategyExecutionError("invalid_order_side") from exc
             quote = quotes[symbol]
             quantity = self._execution_quantity(order, quote.price)
+            if not isfinite(quantity):
+                raise PaperStrategyExecutionError("invalid_order_quantity")
             if quantity <= EPSILON:
                 continue
             gross_value = quantity * quote.price
+            if not isfinite(gross_value):
+                raise PaperStrategyExecutionError("invalid_order_value")
             steps.append(
                 _ExecutionStep(
                     order=order,

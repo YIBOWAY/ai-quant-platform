@@ -7,6 +7,9 @@ import pytest
 from quant_system.config.settings import reload_settings
 from quant_system.execution.account import PaperAccount
 from quant_system.execution.account_storage import PaperAccountStorage
+from quant_system.execution.paper_strategy_execution_service import (
+    PaperStrategyExecutionService,
+)
 from quant_system.execution.paper_strategy_operations import PaperStrategyOperationsRunner
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
@@ -183,6 +186,44 @@ def test_operations_runner_process_pending_executes_and_commits_journal_after_ac
         plan.execution_id,
     ).exists()
     assert not sleeve_storage.execution_journal_pending_path(
+        sleeve.sleeve_id,
+        plan.execution_id,
+    ).exists()
+
+
+def test_operations_runner_reports_recovered_execution_journals(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings_for_tmp_data(tmp_path, monkeypatch)
+    account_storage, sleeve_storage, account, _config, sleeve = _allocated_sleeve_fixture(
+        tmp_path
+    )
+    signal = _strategy_signal(sleeve)
+    plan = PaperStrategySleeveService(sleeve_storage).create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+    PaperStrategyExecutionService(
+        storage=sleeve_storage,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+    ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    result = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+    ).process_pending_executions_once(target_date="2026-06-29")
+
+    assert result.processed_count == 0
+    assert result.recovered_count == 1
+    assert result.account is not None
+    assert result.account.cash == pytest.approx(75_000.0)
+    assert result.account.positions["AAPL"].quantity == pytest.approx(250.0)
+    assert sleeve_storage.execution_journal_committed_path(
         sleeve.sleeve_id,
         plan.execution_id,
     ).exists()

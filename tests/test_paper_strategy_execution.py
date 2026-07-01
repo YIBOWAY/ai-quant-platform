@@ -322,6 +322,108 @@ def test_next_open_execution_blocks_price_source_failures_without_mutation(
     assert storage.load_sleeve_lots(sleeve.sleeve_id) == []
 
 
+@pytest.mark.parametrize("price", [float("nan"), float("inf")])
+def test_next_open_execution_blocks_non_finite_prices_without_mutation(
+    tmp_path,
+    price: float,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    sleeve_service = PaperStrategySleeveService(storage)
+    config = _config()
+    storage.save_strategy_config(config)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=10_000.0,
+    )
+    storage.save_sleeve(sleeve)
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "notional_delta": 5_000.0,
+                "target_weight": 1.0,
+                "reference_price": 100.0,
+                "estimated_quantity": 50.0,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    plan = sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+
+    with pytest.raises(PaperStrategyExecutionError, match="price_unavailable"):
+        PaperStrategyExecutionService(
+            storage=storage,
+            price_source=FakePriceSource({"AAPL": price}),
+        ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    reloaded = storage.load_executions(sleeve.sleeve_id)[0]
+    assert reloaded.status == StrategyExecutionStatus.BLOCKED
+    assert reloaded.blocked_reason == "price_unavailable"
+    assert account.cash == pytest.approx(100_000.0)
+    assert account.positions == {}
+
+
+def test_next_open_execution_blocks_non_finite_order_quantity_without_mutation(
+    tmp_path,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    sleeve_service = PaperStrategySleeveService(storage)
+    config = _config()
+    storage.save_strategy_config(config)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=10_000.0,
+    )
+    storage.save_sleeve(sleeve)
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "target_weight": 1.0,
+                "reference_price": 100.0,
+                "estimated_quantity": float("nan"),
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    plan = sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+
+    with pytest.raises(PaperStrategyExecutionError, match="invalid_order_quantity"):
+        PaperStrategyExecutionService(
+            storage=storage,
+            price_source=FakePriceSource({"AAPL": 100.0}),
+        ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    assert account.cash == pytest.approx(100_000.0)
+    assert account.positions == {}
+
+
 def test_next_open_execution_does_not_reprocess_filled_plan(tmp_path) -> None:
     account = PaperAccount.open_new(initial_cash=100_000.0)
     storage = PaperStrategySleeveStorage(tmp_path)
@@ -451,6 +553,48 @@ def test_corrupt_execution_journal_is_preserved_and_skipped(tmp_path) -> None:
     corrupt_files = list(pending_path.parent.glob("exec-test.corrupt-*.json"))
     assert len(corrupt_files) == 1
     assert corrupt_files[0].read_text(encoding="utf-8") == "{not json"
+
+
+def test_corrupt_execution_journal_logs_preserved_file(tmp_path, caplog) -> None:
+    storage = PaperStrategySleeveStorage(tmp_path)
+    pending_path = storage.execution_journal_pending_path("sleeve-test", "exec-test")
+    pending_path.parent.mkdir(parents=True, exist_ok=True)
+    pending_path.write_text("{not json", encoding="utf-8")
+
+    with caplog.at_level("WARNING", logger="quant_system.execution.paper_strategy_sleeve_storage"):
+        assert storage.load_pending_execution_journals() == []
+
+    assert "corrupt paper strategy execution journal preserved" in caplog.text
+    assert "exec-test.pending.json" in caplog.text
+
+
+def test_pending_execution_journals_are_sorted_by_created_at(tmp_path) -> None:
+    storage = PaperStrategySleeveStorage(tmp_path)
+    storage.save_execution_journal_pending(
+        sleeve_id="sleeve-test",
+        execution_id="z-last-by-path",
+        payload={
+            "created_at": "2026-06-29T00:02:00+00:00",
+            "sleeve_id": "sleeve-test",
+            "execution_id": "z-last-by-path",
+        },
+    )
+    storage.save_execution_journal_pending(
+        sleeve_id="sleeve-test",
+        execution_id="a-first-by-path",
+        payload={
+            "created_at": "2026-06-29T00:01:00+00:00",
+            "sleeve_id": "sleeve-test",
+            "execution_id": "a-first-by-path",
+        },
+    )
+
+    journals = storage.load_pending_execution_journals()
+
+    assert [journal["execution_id"] for journal in journals] == [
+        "a-first-by-path",
+        "z-last-by-path",
+    ]
 
 
 def test_execution_journal_marks_mismatched_account_for_manual_recovery(

@@ -17,10 +17,11 @@ src/quant_system/
                           order manager, paper broker, price source.
   experiments/            Experiment configs, storage, summaries.
   factors/                Factor definitions, registry, pipeline.
+  news/                   Read-only AI HOT news client, models, optional cache.
   options/                Futu read-only options research modules.
   prediction_market/      Read-only Polymarket / prediction market research.
   risk/                   Risk limits and checks.
-  storage/                DuckDB options cache + optional PostgreSQL run index.
+  storage/                DuckDB options cache + optional PostgreSQL helper/run index.
   strategies/             Strategy metadata registry (catalog entries).
 
 src/frontend/
@@ -41,7 +42,7 @@ docs/
 
 tests/                    Python unit and API tests.
 scripts/                  Local verification and refresh scripts.
-scripts/sql/              Plain SQL migrations for the optional run index.
+scripts/sql/              Plain SQL migrations for optional local PostgreSQL mirrors.
 data/                     Local cache, fixtures, generated research outputs.
 ```
 
@@ -115,20 +116,47 @@ providers, and unavailable explicit real providers, must return
 provider fallback may still use a clearly labelled sample response for read-only
 market-data viewing when no provider override was supplied.
 
-## Optional PostgreSQL Run Index
+## Optional PostgreSQL Local Mirrors
 
-Backtest/factor/paper runs are file-based under `data/api_runs/`. An optional
-PostgreSQL index (`storage/database.py`, `storage/runs_repository.py`,
-`scripts/sql/001_runs_index.sql`) speeds up listing. Off by default; controlled
-by `QS_DATABASE_ENABLED` / `QS_DATABASE_URL` / `QS_DATABASE_CONNECT_TIMEOUT_SECONDS`
-/ `QS_DATABASE_AUTO_MIGRATE`; default connect timeout is 1 second. Startup
+Backtest/factor/paper/replication runs are file-based under `data/api_runs/`.
+An optional PostgreSQL run index (`storage/database.py`,
+`storage/runs_repository.py`, `scripts/sql/001_runs_index.sql`) speeds up
+listing. AI News also uses the same optional database as a read-only stale
+fallback cache (`news/repository.py`, `scripts/sql/002_ai_news_cache.sql`).
+The database is off by default; controlled by `QS_DATABASE_ENABLED` /
+`QS_DATABASE_URL` / `QS_DATABASE_CONNECT_TIMEOUT_SECONDS` /
+`QS_DATABASE_AUTO_MIGRATE`; default connect timeout is 1 second. Startup
 migration/backfill runs in a background thread, healthy short-lived connections
-may proceed concurrently, failed probes enter a short cooldown, and list endpoints
-must keep falling back to the filesystem when the database is off, slow, or
-unreachable. Tests must not touch a real database
-(`tests/conftest.py` forces it off). Never run `npm run build` while the
-frontend dev server is running — they share `src/frontend/.next` and the build
-corrupts the dev server.
+may proceed concurrently, failed probes enter a short cooldown, and endpoints
+must keep falling back to files/live upstreams when the database is off, slow,
+or unreachable. Tests must not touch a real database (`tests/conftest.py`
+forces it off; AI News repository tests use fakes). Never run `npm run build`
+while the frontend dev server is running — they share `src/frontend/.next` and
+the build corrupts the dev server.
+
+## AI News Integration
+
+AI News is a read-only AI HOT integration:
+
+- Backend modules: `src/quant_system/news/aihot_client.py`,
+  `src/quant_system/news/models.py`, `src/quant_system/news/repository.py`.
+- API route/schema: `src/quant_system/api/routes/news.py` and
+  `src/quant_system/api/schemas/news.py`.
+- Frontend route/component: `/ai-news`,
+  `src/frontend/app/ai-news/page.tsx`, and
+  `src/frontend/components/forms/AiNewsView.tsx`.
+- Public local API: `GET /api/news/aihot/items`,
+  `GET /api/news/aihot/daily`, `GET /api/news/aihot/dailies`,
+  `GET /api/news/aihot/status`.
+- Settings: `QS_AIHOT_ENABLED`, `QS_AIHOT_BASE_URL`,
+  `QS_AIHOT_TIMEOUT_SECONDS`, `QS_AIHOT_CACHE_TTL_SECONDS`,
+  `QS_AIHOT_USER_AGENT`.
+
+Rules: AI HOT `/api/public/*` needs a browser-style User-Agent; the status
+route must not probe upstream; tests must mock AI HOT and must not hit real
+network; cached fallback is for `items` only and must be labelled via warnings.
+Do not connect AI News to factors, strategies, backtests, paper account,
+strategy sleeves, Futu trade contexts, or any trading path.
 
 ## Paper Account (Interactive Auto + Manual Trading)
 
@@ -235,6 +263,7 @@ controls are implemented:
   `GET /api/paper/strategy-sleeves/{id}`,
   `POST /api/paper/strategy-sleeves/{id}/signals`,
   `POST /api/paper/strategy-sleeves/{id}/executions`,
+  `GET /api/paper/strategy-sleeves/ops/status`,
   `POST /api/paper/strategy-sleeves/executions/process`,
   and pause/resume/stop endpoints.
 - Daily signal generation service:
@@ -246,7 +275,9 @@ controls are implemented:
 - Manual CLI trigger:
   `quant-system paper strategies generate-signal --sleeve <id>`,
   `quant-system paper strategies create-execution --sleeve <id> --signal <signal_id>`,
-  and `quant-system paper strategies execute-pending`.
+  `quant-system paper strategies execute-pending`,
+  `quant-system paper strategies execute-due`,
+  and `quant-system paper strategies ops-status`.
 - Frontend workspace:
   `src/frontend/components/forms/PaperStrategySleevesPanel.tsx` is mounted in
   `/paper-trading` live account tab. It can create strategy configs, open

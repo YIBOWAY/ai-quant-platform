@@ -54,6 +54,12 @@ class PaperStrategySignalBatchResult:
 
 
 @dataclass(frozen=True)
+class _AccountReconcileResult:
+    account: PaperAccount | None
+    recovered: list[StrategyExecutionPlan] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class PaperStrategyOpsStatus:
     target_date: str
     sleeve_count: int
@@ -109,7 +115,8 @@ class PaperStrategyOperationsRunner:
             settings=self.settings,
         )
         with self.account_storage.mutation_lock(), self.sleeve_storage.mutation_lock():
-            account = self._load_account_after_reconcile(open_if_missing=False)
+            load_result = self._load_account_after_reconcile(open_if_missing=False)
+            account = load_result.account
             if account is None:
                 account = PaperAccount.open_new(account_id=self.account_storage.account_id)
             sleeve = self.sleeve_storage.load_sleeve(sleeve_id)
@@ -140,7 +147,8 @@ class PaperStrategyOperationsRunner:
         generated: list[StrategySignal] = []
         skipped_count = 0
         with self.account_storage.mutation_lock(), self.sleeve_storage.mutation_lock():
-            account = self._load_account_after_reconcile(open_if_missing=False)
+            load_result = self._load_account_after_reconcile(open_if_missing=False)
+            account = load_result.account
             if account is None:
                 account = PaperAccount.open_new(account_id=self.account_storage.account_id)
             for sleeve in self.sleeve_storage.list_sleeves():
@@ -187,7 +195,8 @@ class PaperStrategyOperationsRunner:
     ) -> StrategyExecutionPlan:
         sleeve_service = PaperStrategySleeveService(self.sleeve_storage)
         with self.account_storage.mutation_lock(), self.sleeve_storage.mutation_lock():
-            account = self._load_account_after_reconcile(open_if_missing=False)
+            load_result = self._load_account_after_reconcile(open_if_missing=False)
+            account = load_result.account
             if account is None:
                 account = PaperAccount.open_new(account_id=self.account_storage.account_id)
             sleeve = self.sleeve_storage.load_sleeve(sleeve_id)
@@ -217,19 +226,14 @@ class PaperStrategyOperationsRunner:
         filled_count = 0
         blocked_count = 0
         with self.account_storage.mutation_lock(), self.sleeve_storage.mutation_lock():
-            account = self._load_account_after_reconcile(
+            load_result = self._load_account_after_reconcile(
                 open_if_missing=True,
                 execution_service=execution_service,
             )
-            assert account is not None
-            recovered = execution_service.reconcile_execution_journals(
-                account,
-                commit=False,
-            )
-            if recovered:
-                self._save_account_snapshot(account)
-                for execution in recovered:
-                    execution_service.commit_execution_journal(execution)
+            account = load_result.account
+            if account is None:
+                raise RuntimeError("paper account could not be opened")
+            recovered = load_result.recovered
 
             candidates = execution_service.pending_plans(
                 sleeve_id=sleeve_id,
@@ -330,7 +334,7 @@ class PaperStrategyOperationsRunner:
         *,
         open_if_missing: bool,
         execution_service: PaperStrategyExecutionService | None = None,
-    ) -> PaperAccount | None:
+    ) -> _AccountReconcileResult:
         account = (
             self.account_storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
             if open_if_missing
@@ -338,7 +342,7 @@ class PaperStrategyOperationsRunner:
         )
         self.sleeve_storage.reconcile_pending_sleeves(account)
         if account is None:
-            return None
+            return _AccountReconcileResult(account=None)
         service = execution_service or PaperStrategyExecutionService(
             storage=self.sleeve_storage,
             price_source=self.price_source,
@@ -348,7 +352,7 @@ class PaperStrategyOperationsRunner:
             self._save_account_snapshot(account)
             for execution in recovered:
                 service.commit_execution_journal(execution)
-        return account
+        return _AccountReconcileResult(account=account, recovered=recovered)
 
     def _load_signal(self, sleeve_id: str, signal_id: str) -> StrategySignal:
         for signal in self.sleeve_storage.load_signals(sleeve_id):

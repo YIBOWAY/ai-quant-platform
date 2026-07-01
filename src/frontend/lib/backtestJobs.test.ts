@@ -55,29 +55,20 @@ describe("waitForBacktestJob", () => {
     );
   });
 
-  it("does not impose a default five-minute polling cap", async () => {
-    mockedApiRequest
-      .mockResolvedValueOnce(jobState("running"))
-      .mockResolvedValueOnce(jobState("completed"))
-      .mockResolvedValueOnce({
-        id: "backtest-20260624T010203Z-testjob",
-        metadata: { run_id: "backtest-20260624T010203Z-testjob" },
-        metrics: {},
-        equity_curve: [],
-        benchmark: null,
-        orders: [],
-        positions: [],
-        trade_blotter: [],
-        attribution: [],
-      });
+  it("imposes a default polling cap", async () => {
+    mockedApiRequest.mockResolvedValue(jobState("running"));
 
-    const promise = waitForBacktestJob(jobState("running"), { pollIntervalMs: 1 });
-    await vi.advanceTimersByTimeAsync(1);
-    await vi.advanceTimersByTimeAsync(1);
-
-    await expect(promise).resolves.toMatchObject({
-      run_id: "backtest-20260624T010203Z-testjob",
+    const promise = waitForBacktestJob(jobState("running"), {
+      pollIntervalMs: 60_000,
     });
+    const assertion = expect(promise).rejects.toMatchObject({
+      message: "Backtest job did not finish within 600000ms.",
+      name: "ApiClientError",
+    } satisfies Partial<ApiClientError>);
+
+    await vi.advanceTimersByTimeAsync(600_001);
+
+    await assertion;
   });
 
   it("supports an explicit timeout for callers that need one", async () => {
@@ -95,5 +86,24 @@ describe("waitForBacktestJob", () => {
     await vi.advanceTimersByTimeAsync(3);
 
     await assertion;
+  });
+
+  it("supports aborting polling when callers unmount", async () => {
+    mockedApiRequest.mockResolvedValue(jobState("running"));
+    const controller = new AbortController();
+
+    const promise = waitForBacktestJob(jobState("running"), {
+      pollIntervalMs: 1000,
+      signal: controller.signal,
+    });
+    const assertion = expect(promise).rejects.toMatchObject({
+      message: "Backtest job polling was cancelled.",
+      name: "ApiClientError",
+    } satisfies Partial<ApiClientError>);
+
+    controller.abort();
+
+    await assertion;
+    expect(mockedApiRequest).not.toHaveBeenCalled();
   });
 });

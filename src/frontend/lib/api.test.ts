@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getFactorLabDashboard, type FactorLabResponse } from "./api";
+import { getAiHotItems, getFactorLabDashboard, type FactorLabResponse } from "./api";
 
 const factorLabPayload = {
   source: "sample",
@@ -98,5 +98,60 @@ describe("getFactorLabDashboard", () => {
         },
       }),
     ).toBe("3:basic_passed");
+  });
+});
+
+describe("getAiHotItems", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("passes the AI HOT feed query to the backend without contacting the upstream provider", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          provider: "aihot",
+          provider_beta: true,
+          fetched_at: "2026-06-28T00:00:00Z",
+          count: 0,
+          has_next: false,
+          next_cursor: null,
+          items: [],
+          warnings: [],
+          research_safety: {
+            research_only: true,
+            not_investment_advice: true,
+            does_not_trigger_trading: true,
+            verify_original_source: true,
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getAiHotItems({
+      mode: "all",
+      category: "ai-models",
+      q: "OpenAI",
+      since: "2026-06-28T00:00:00Z",
+      cursor: "opaque-cursor",
+      take: 25,
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const url = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(url.pathname).toBe("/api/news/aihot/items");
+    expect(Object.fromEntries(url.searchParams.entries())).toEqual({
+      mode: "all",
+      category: "ai-models",
+      q: "OpenAI",
+      since: "2026-06-28T00:00:00Z",
+      cursor: "opaque-cursor",
+      take: "25",
+    });
   });
 });

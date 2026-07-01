@@ -89,7 +89,7 @@ The same commands can be run without launchd:
 
 ```bash
 scripts/run_paper_strategy_sleeves.sh ops-status
-scripts/run_paper_strategy_sleeves.sh generate-due-signals --date 2024-03-20
+scripts/run_paper_strategy_sleeves.sh generate-due-signals --target-date 2024-03-20
 scripts/run_paper_strategy_sleeves.sh execute-due --target-date 2026-06-29
 ```
 

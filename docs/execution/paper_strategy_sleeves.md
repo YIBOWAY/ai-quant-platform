@@ -53,6 +53,7 @@ The second slice exposes the backend API contract:
 | `GET` | `/api/paper/strategy-sleeves/{id}` | Returns sleeve, lots, signals, and executions. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/signals` | Generates and persists one daily signal. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/executions` | Creates one pending execution plan from a selected generated signal. |
+| `GET` | `/api/paper/strategy-sleeves/ops/status` | Returns local operations status for sleeves, due pending executions, blocked executions, recovery-required executions, and pending journals. |
 | `POST` | `/api/paper/strategy-sleeves/executions/process` | Processes due pending execution plans once. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/pause` | Pauses a running sleeve. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/resume` | Resumes a paused sleeve. |
@@ -169,7 +170,7 @@ journal-commit logic.
 Scheduler-safe one-shot commands now available:
 
 ```bash
-quant-system paper strategies generate-due-signals --date 2024-03-20 --format json
+quant-system paper strategies generate-due-signals --target-date 2024-03-20 --format json
 quant-system paper strategies execute-due --target-date 2026-06-29
 quant-system paper strategies ops-status --target-date 2026-06-29 --format json
 ```
@@ -181,6 +182,15 @@ execution processor. `ops-status` reports due work, pending journals, blocked
 executions, and recovery-required counts without placing any real broker orders.
 These commands are safe to call from a host scheduler because file locks and
 idempotency checks remain in the backend runner.
+
+The same status payload is exposed through:
+
+```bash
+curl "http://127.0.0.1:8765/api/paper/strategy-sleeves/ops/status?target_date=2026-06-29"
+```
+
+The API accepts `target_date=YYYY-MM-DD` and currently supports
+`execution_window=next_open`.
 
 MVP-3 Slice 2 adds macOS LaunchAgent assets and a runbook:
 

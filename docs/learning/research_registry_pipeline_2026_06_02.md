@@ -30,7 +30,7 @@
 - `reversal_momentum`：短期反转 / 长期动量论文复现。
 - `mean_reversion_top_n`：均值回归，买入综合打分最低的 Top-N（横截面 Top-N 的反向对照）。
 
-前端 `/replications` 现在是“策略目录”，会读取 `GET /api/strategies`，按每个策略声明的参数表单自动渲染，不再为每个策略单独手写一整页。每个策略会标注它是“可在独立回测器运行”还是“研报复现”。
+前端 `/strategies` 现在是“策略目录”，会读取 `GET /api/strategies`，按每个策略声明的参数表单自动渲染，不再为每个策略单独手写一整页。每个策略会标注它是“可在独立回测器运行”还是“研报复现”。旧 `/replications` 路径由前端 redirect 兼容。
 
 ### UniverseRegistry
 
@@ -71,8 +71,8 @@
 + 在 builder 表里加一个构造项，前端无需改动即可选用并运行。论文复现策略
 `reversal_momentum` 仍走自己的论文复现接口。运行时会生成 `replication-*`
 `run_id`，写入 `data/api_runs/replications/<run_id>/metadata.json` 与
-`result.json`，并可通过 `/replications/<run_id>` 复看；它暂不进入可选
-PostgreSQL run index。
+`result.json`，并可通过 `/strategies/<run_id>` 复看；启用可选 PostgreSQL
+本地镜像时，复现运行也会 best-effort 写入 run index / recent mirror，但文件系统仍是事实来源。
 
 ## 4. Factor Lab 变化
 

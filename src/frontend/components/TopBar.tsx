@@ -17,6 +17,7 @@ const copy = {
     options: "Options",
     replications: "Strategy Catalog",
     orderBook: "Polymarket Markets",
+    aiNews: "AI News",
     positionMap: "Position Map",
     dashboard: "Dashboard",
     paperTrading: "Paper Trading",
@@ -30,6 +31,7 @@ const copy = {
     options: "期权",
     replications: "策略目录",
     orderBook: "Polymarket 市场",
+    aiNews: "AI 新闻",
     positionMap: "持仓地图",
     dashboard: "仪表盘",
     paperTrading: "模拟交易",
@@ -54,6 +56,7 @@ export function TopBar() {
     { name: text.options, href: "/options-screener" },
     { name: text.replications, href: "/strategies" },
     { name: text.orderBook, href: "/polymarket" },
+    { name: text.aiNews, href: "/ai-news" },
     { name: text.positionMap, href: "/position-map" },
     { name: text.settings, href: "/settings" },
   ];

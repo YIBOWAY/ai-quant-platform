@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
@@ -20,6 +21,8 @@ from quant_system.execution.paper_strategy_sleeves import (
     StrategySleeve,
     StrategySleeveMode,
 )
+
+log = logging.getLogger(__name__)
 
 
 class PaperStrategySleeveStorage:
@@ -367,13 +370,22 @@ class PaperStrategySleeveStorage:
     def load_pending_execution_journals(self) -> list[dict[str, Any]]:
         if not self.sleeves_dir.exists():
             return []
-        journals: list[dict[str, Any]] = []
+        journal_records: list[tuple[str, str, dict[str, Any]]] = []
         for path in sorted(self.sleeves_dir.glob("*/execution_journal/*.pending.json")):
             try:
-                journals.append(json.loads(path.read_text(encoding="utf-8")))
-            except (json.JSONDecodeError, OSError):
-                self._preserve_corrupt_execution_journal(path)
-        return journals
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                journal_records.append(
+                    (str(payload.get("created_at", "")), str(path), payload)
+                )
+            except (json.JSONDecodeError, OSError) as exc:
+                corrupt_path = self._preserve_corrupt_execution_journal(path)
+                log.warning(
+                    "corrupt paper strategy execution journal preserved: %s -> %s (%s)",
+                    path,
+                    corrupt_path,
+                    exc,
+                )
+        return [payload for _, _, payload in sorted(journal_records)]
 
     def commit_execution_journal(self, *, sleeve_id: str, execution_id: str) -> Path:
         pending_path = self.execution_journal_pending_path(sleeve_id, execution_id)

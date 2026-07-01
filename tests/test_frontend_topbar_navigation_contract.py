@@ -12,3 +12,10 @@ def test_topbar_is_not_a_second_desktop_navigation() -> None:
 
     assert "/options-radar" in sidebar
     assert "/backtest" in sidebar
+
+
+def test_topbar_mobile_menu_exposes_ai_news() -> None:
+    topbar = Path("src/frontend/components/TopBar.tsx").read_text(encoding="utf-8")
+
+    assert "aiNews" in topbar
+    assert 'href: "/ai-news"' in topbar

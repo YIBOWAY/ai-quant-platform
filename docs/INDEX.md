@@ -2,7 +2,7 @@
 
 这是整个仓库的主地图。用它来查找架构文档、执行手册、学习笔记、交付记录与安全边界。
 
-当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接、策略账户再平衡能力位、语言连续性修复、策略/Polymarket 路由重命名、opt-in async backtest jobs，以及 options screener 质量过滤 / `Avoid` 审计开关 / 备注列。2026-06-11 的大型前端重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38）见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
+当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接、策略账户再平衡能力位、语言连续性修复、策略/Polymarket 路由重命名、opt-in async backtest jobs、AI HOT 只读新闻接入，以及 options screener 质量过滤 / `Avoid` 审计开关 / 备注列。2026-06-11 的大型前端重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38）见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
 
 ## 0. 界面操作指南（新，建议先读）
 
@@ -16,11 +16,12 @@
 | [guides/experiments.md](guides/experiments.md) | 实验管理 `/experiments` |
 | [guides/paper-trading.md](guides/paper-trading.md) | 模拟交易 `/paper-trading` |
 | [guides/position-map.md](guides/position-map.md) | 持仓地图 `/position-map` |
+| [guides/ai-news.md](guides/ai-news.md) | AI 新闻研究流 `/ai-news` |
 | [design/paper_trading_position_map_redesign.md](design/paper_trading_position_map_redesign.md) | 模拟交易 + 持仓地图**重设计**（设计文档 + 分阶段实现计划） |
 | [design/paper_strategy_sleeves_plan.md](design/paper_strategy_sleeves_plan.md) | Paper Strategy Sleeves **MVP-1**（策略资金段/信号观察/allocated 分账设计，非历史 Phase 1） |
 | [design/paper_strategy_sleeves_mvp2_plan.md](design/paper_strategy_sleeves_mvp2_plan.md) | Paper Strategy Sleeves **MVP-2**（pending execution / next-open 纸面执行计划） |
 | [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（后端基础、API contract、daily signal、手动 signal CLI、pending execution、backend next-open processor、手动处理 API/CLI、UI 执行状态控件与 opt-in 真实 Futu 验证已实现；自动调度尚未实现） |
-| [design/ai_news_integration_plan.md](design/ai_news_integration_plan.md) | AI News Integration **MVP-1**（AI HOT 只读新闻接入，Horizon 二期自托管雷达方向） |
+| [design/ai_news_integration_plan.md](design/ai_news_integration_plan.md) | AI News Integration **MVP-1 / MVP-2**（AI HOT 只读新闻接入、可选 Postgres 缓存兜底，Horizon 二期自托管雷达方向） |
 
 ## 1. 从这里开始
 
@@ -84,11 +85,14 @@
 | Futu 期权 DuckDB 缓存 | `src/quant_system/storage/options_cache.py` |
 | PostgreSQL 运行索引（可选） | `src/quant_system/storage/runs_repository.py` |
 | 数据库连接 + 迁移 | `src/quant_system/storage/database.py` |
+| AI HOT 只读新闻缓存（可选） | `src/quant_system/news/repository.py` / `scripts/sql/002_ai_news_cache.sql` |
 | 买方指标 | `src/quant_system/options/buy_side_metrics.py` |
 | 买方策略生成 | `src/quant_system/options/buy_side_strategy.py` |
 | 买方场景实验室 | `src/quant_system/options/buy_side_scenarios.py` |
 | 买方决策 API 逻辑 | `src/quant_system/options/buy_side_decision.py` |
 | Futu 股票/期权提供方 | `src/quant_system/data/providers/futu.py` |
+| AI HOT 只读新闻 client | `src/quant_system/news/aihot_client.py` |
+| AI News API route/schema | `src/quant_system/api/routes/news.py` / `src/quant_system/api/schemas/news.py` |
 | 预测市场提供方工厂 | `src/quant_system/prediction_market/provider_factory.py` |
 | 预测市场采集器 | `src/quant_system/prediction_market/collector.py` |
 | 预测市场回放回测 | `src/quant_system/prediction_market/timeseries_backtest.py` |
@@ -153,6 +157,7 @@
 | `/options-radar/[symbol]` | 已保存的雷达候选，以及可选的实时期权链加载。 |
 | `/options-tools` | 本地 AlphaGBM 风格期权工具箱。 |
 | `/options-buyside` | 买方期权策略助手。 |
+| `/ai-news` | AI HOT 只读新闻研究流，含精选动态、关键词/分类/时间窗筛选、日报和原文链接。 |
 | `/polymarket` | 只读预测市场研究。 |
 | `/agent-studio` | AI 研究助手工作流。 |
 | `/settings` | 脱敏后的本地设置。 |
@@ -228,7 +233,7 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 
 ## 10. 缓存层状态
 
-已实现两个本地存储层：
+已实现三个本地存储层：
 
 - DuckDB 缓存本地 Futu 期权报价窗口
   （`storage/options_cache.py`）。
@@ -237,6 +242,9 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
   基于文件的 backtest/factor/paper/replication 运行以便快速列出。它默认关闭
   （`QS_DATABASE_ENABLED`），在启动时于后台与文件系统对账，当数据库
   关闭、缓慢或不可达时，API 回退到扫描文件。
+- 一个可选的 PostgreSQL **AI HOT 新闻缓存**（`news/repository.py`、
+  `scripts/sql/002_ai_news_cache.sql`）镜像只读 AI 新闻条目；实时请求成功后写入，
+  上游失败时可作为 `/ai-news` 的 stale fallback，并通过 warning 告知用户。
 
 延伸阅读：
 
@@ -246,6 +254,7 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 
 - DuckDB 现用于本地 Futu 期权报价窗口。
 - PostgreSQL 现（可选）用于 backtest/factor/paper/replication 运行索引。
+- PostgreSQL 现（可选）也用于 AI HOT 只读新闻条目缓存。
 - 剩余的 PostgreSQL 目标：雷达运行、请求日志，以及更丰富的
   API 可见快照。
 - 对大型 OHLCV 与分析型时间序列数据集采用 Parquet / DuckDB。

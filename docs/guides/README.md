@@ -2,16 +2,17 @@
 
 这些文档面向"看着界面理解不了它在干什么"的使用者。每篇都**基于真实代码**编写，诚实说明每个界面**实际**能做什么、怎么操作、字段含义，以及当前"承诺 vs 实现"的落差与改进建议。
 
-## 研究流水线六个界面
+## 研究流水线与研究入口
 
 | 指南 | 界面路由 | 一句话 |
 |---|---|---|
 | [因子实验室 Factor Lab](factor-lab.md) | `/factor-lab` | 因子诊断面板（IC、IC 衰减、分位收益、择时）+ 可保存的因子研究运行；数据源/股票池/择时标的/基准可在侧栏调整，并可把当前上下文发送至回测器预填表单。 |
 | [回测器 Backtester](backtester.md) | `/backtest` | 真正能跑的回测引擎：因子打分→选股→下单→撮合→绩效；六个界面里最名副其实。 |
-| [策略目录 Strategy Catalog](strategy-catalog.md) | `/replications` | 注册表驱动的策略启动器，按 schema 自动生成参数表单。 |
+| [策略目录 Strategy Catalog](strategy-catalog.md) | `/strategies` | 注册表驱动的策略启动器，按 schema 自动生成参数表单。 |
 | [实验管理 Experiments](experiments.md) | `/experiments` | 在 sample/futu/tiingo 数据源上做参数网格扫描，可显式开启滚动验证折，按 Sharpe 选最佳，并保持发送至回测的数据源一致。 |
 | [模拟交易 Paper Trading](paper-trading.md) | `/paper-trading` | 持久 100 万模拟账户：手动下单 + 策略一键再平衡；另含历史回放（研究）。 |
 | [持仓地图 Position Map](position-map.md) | `/position-map` | 模拟账户实时持仓地图（净值/暴露/来源归因），另含回测暴露对比块。 |
+| [AI 新闻研究流 AI News](ai-news.md) | `/ai-news` | AI HOT 只读新闻入口：精选/全部动态、分类/关键词/时间窗筛选、日报、原文链接；不触发策略、回测或模拟账户。 |
 
 ## 重设计
 

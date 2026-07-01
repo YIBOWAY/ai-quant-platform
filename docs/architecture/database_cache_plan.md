@@ -1,8 +1,9 @@
 # 数据库缓存方案
 
-状态：目前已实现两个本地存储层 —— (1) 基于 DuckDB 的富途 (Futu)
-期权缓存，以及 (2) 一个可选的 PostgreSQL **运行索引 (run index)**，覆盖基于文件的
-回测 / 因子 / 模拟盘运行记录。
+状态：目前已实现三个本地存储层 —— (1) 基于 DuckDB 的富途 (Futu)
+期权缓存，(2) 一个可选的 PostgreSQL **运行索引 (run index)**，覆盖基于文件的
+回测 / 因子 / 模拟盘 / 研报复现运行记录，以及 (3) 一个可选的 PostgreSQL
+**AI HOT 新闻缓存**，用于 `/ai-news` 上游失败时的只读 stale fallback。
 
 DuckDB 期权缓存位于 `src/quant_system/storage/options_cache.py`，
 在 `QS_FUTU_USE_CACHE=true`（默认值）时，会将富途期权报价窗口持久化到
@@ -13,6 +14,11 @@ PostgreSQL 运行索引位于 `src/quant_system/storage/database.py` 和
 `scripts/sql/001_runs_index.sql` 中。它是**可选的，且默认关闭**；启用后
 会对已有的基于文件的运行记录建立索引以实现快速列举，而当数据库被禁用或不可达时，
 API 会退回到扫描文件系统。
+
+AI HOT 新闻缓存位于 `src/quant_system/news/repository.py`，schema 定义在
+`scripts/sql/002_ai_news_cache.sql` 中。它复用同一套 `QS_DATABASE_*` 配置；启用后
+仅缓存 AI HOT `items` 条目和 fetch audit，不缓存日报正文、不启动调度器，也不会让新闻进入
+策略、回测、paper account 或交易链路。
 
 ## PostgreSQL 运行索引（已实现）
 
@@ -27,9 +33,8 @@ truth)。运行索引是一个可查询的镜像，而非替代品。
   - `QS_DATABASE_AUTO_MIGRATE`（默认 `true`）
 - Schema：单张表 `quant_system.runs`（`kind`、`run_id`、`source`、
   `created_at`、`indexed_at`、`artifact_path`、`metadata` JSONB），以
-  `(kind, run_id)` 为键。`kind` 取值为 `backtest`、`factor` 或 `paper`。
-  反转/动量研报复现运行也会落盘到 `data/api_runs/replications/<run_id>/`，
-  但当前不进入该 PostgreSQL 索引。
+  `(kind, run_id)` 为键。`kind` 取值为 `backtest`、`factor`、`paper` 或
+  `replication`。
 - 启动时（`api/server.py` lifespan）在后台线程中执行迁移 / 对账：它会回填已存在的
   文件运行记录，并清除那些对应文件已不存在的索引行（自愈机制，避免列举出一个
   其详情会返回 404 的运行），同时不会阻塞 API 启动。
@@ -47,6 +52,31 @@ truth)。运行索引是一个可查询的镜像，而非替代品。
 
 直接使用 `psycopg`（无 ORM，无连接池 —— 采用每次操作单独建立的短生命周期
 连接，与 DuckDB 缓存的风格一致）。
+
+## PostgreSQL AI HOT 新闻缓存（已实现）
+
+AI News 的事实来源仍是 AI HOT public API。PostgreSQL 只作为本地只读缓存，用于实时
+请求成功后的镜像和上游失败时的兜底。
+
+- 配置项：复用 `QS_DATABASE_ENABLED`、`QS_DATABASE_URL`、
+  `QS_DATABASE_CONNECT_TIMEOUT_SECONDS` 和 `QS_DATABASE_AUTO_MIGRATE`。
+- 业务配置仍在 `AiHotSettings`：
+  `QS_AIHOT_ENABLED`、`QS_AIHOT_BASE_URL`、`QS_AIHOT_TIMEOUT_SECONDS`、
+  `QS_AIHOT_CACHE_TTL_SECONDS`、`QS_AIHOT_USER_AGENT`。
+- Schema：
+  - `quant_system.ai_news_items`：`provider`、`item_id`、`title`、`title_en`、
+    `url`、`source`、`published_at`、`summary`、`category`、`score`、`selected`、
+    `raw`、`fetched_at`、`updated_at`，主键为 `(provider, item_id)`。
+  - `quant_system.ai_news_fetches`：每次成功 fetch 的 provider、mode、category、
+    search query、since、cursor、take、item count 和 warnings。
+- API 行为：
+  - `GET /api/news/aihot/items` 先调用 AI HOT 实时接口。
+  - 实时成功后 best-effort upsert 到 `ai_news_items`，缓存失败不影响响应。
+  - 实时失败时尝试按 mode/category/q/since/take 读取缓存；命中则返回 `200`、
+    `warnings` 中标注本地缓存和上游错误；未命中则保留原 `502/503`。
+  - cursor 请求不使用缓存兜底，避免把不透明上游 cursor 伪装成本地分页。
+- 测试要求：默认测试不得连接真实 AI HOT 或真实 Postgres；API 测试 monkeypatch
+  provider/repository，repository 测试使用 fake database。
 
 ## 为何需要它
 
@@ -91,6 +121,8 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
 | `vix_history` | 若日后从 CSV 迁出，则存放 VIX/VIX3M 缓存行。 |
 | `options_radar_runs` | 每日雷达运行的元数据。 |
 | `options_radar_candidates` | 供 API 和前端过滤使用的雷达候选行。 |
+| `ai_news_items` | 已实现；AI HOT `items` 的只读缓存行。 |
+| `ai_news_fetches` | 已实现；AI HOT `items` 成功 fetch 的审计记录。 |
 
 在首个 DuckDB 实现中已落地：
 
@@ -138,7 +170,7 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
    - `src/quant_system/storage/runs_repository.py`（文件为准，数据库元数据镜像 + 回退）
    - `src/quant_system/storage/options_cache.py`（DuckDB 期权缓存）
 3. 在 `scripts/sql/` 下添加纯 SQL 迁移。（已实现：
-   `scripts/sql/001_runs_index.sql`）
+   `scripts/sql/001_runs_index.sql`、`scripts/sql/002_ai_news_cache.sql`）
 4. 优先缓存富途期权链和快照结果。（已为期权报价窗口实现）
 5. 将期权筛选器和买方期权助手接入缓存优先的路径。
    （已通过共享的富途数据源实现）
@@ -166,7 +198,7 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
 ## 尚未解决的问题
 
 - PostgreSQL 现在是可选的且默认关闭；仅当 `QS_DATABASE_ENABLED=true` 时，运行索引
-  才指向本地 Docker 容器 `quantplatform-db`。是否同时将期权缓存和雷达运行记录
+  和 AI HOT 新闻缓存才指向本地 Docker 容器 `quantplatform-db`。是否同时将期权缓存和雷达运行记录
   迁入 PostgreSQL 仍未确定。
 - 用户本地的 Docker 镜像中是否提供 TimescaleDB 仍待确认。
 - 运行索引以 JSONB 形式存储完整的运行元数据。若期权报价快照（日后迁入 PostgreSQL）
