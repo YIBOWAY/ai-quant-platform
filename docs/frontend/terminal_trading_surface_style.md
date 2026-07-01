@@ -75,3 +75,15 @@ scrolling and row-density contract when data is present.
 - The migration is visual only: manual orders, pending-order processing,
   full-account rebalance behavior, sleeve signal generation, and explicit
   execution processing keep their existing API paths and safety semantics.
+
+## Research Form Controls
+
+- Backtest, Factor Lab, paper replay, experiments, data explorer, and
+  prediction-market research controls should share the terminal input classes
+  from `primitives.tsx`.
+- Primary run/load actions use `TerminalToolbarButton` with info tone; avoid
+  filled green submit buttons unless a future workflow needs a truly primary
+  global CTA.
+- These migrations are visual-only. They must not change react-hook-form
+  field names, validation schemas, request payloads, read-only safety text, or
+  route destinations.

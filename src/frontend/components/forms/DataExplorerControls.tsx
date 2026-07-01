@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+import { TerminalToolbarButton, terminalFilterInputClass } from "@/components/ui/primitives";
 import { localizePath } from "@/lib/locale";
 
 const controlSchema = z
@@ -48,8 +49,7 @@ const labels = {
   },
 };
 
-const fieldClass =
-  "h-8 rounded-lg border border-border-subtle bg-bg-surface-muted px-2 font-data-mono text-text-primary focus:border-info focus:outline-none focus:ring-1 focus:ring-info";
+const fieldClass = terminalFilterInputClass;
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -149,13 +149,14 @@ export function DataExplorerControls({
           <option>tiingo</option>
         </select>
       </label>
-      <button
-        className="h-8 rounded-lg bg-accent-success px-4 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+      <TerminalToolbarButton
+        className="h-8"
         disabled={isPending || intradayBlocked}
         type="submit"
+        tone="info"
       >
         {isPending ? text.loading : text.load}
-      </button>
+      </TerminalToolbarButton>
       {intradayBlocked ? (
         <span className="pb-1.5 font-body-sm text-warning">{text.intradayHint}</span>
       ) : null}

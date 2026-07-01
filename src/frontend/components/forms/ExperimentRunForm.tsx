@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import type { ExperimentRunResponse } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
-import { Card } from "@/components/ui/primitives";
+import { Card, TerminalToolbarButton, terminalInputClass } from "@/components/ui/primitives";
 import { buildExperimentRunPayload, type ExperimentProvider } from "@/lib/experimentRunPayload";
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
@@ -119,8 +119,7 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
     useWatch({ control: form.control, name: "walk_forward_enabled" }) ?? false;
 
   const fieldLabel = "flex flex-col gap-1 font-body-sm text-text-primary";
-  const fieldInput =
-    "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary focus:border-accent-success/60 focus:outline-none";
+  const fieldInput = terminalInputClass;
   const fieldError = (name: keyof ExperimentFormValues) => {
     const message = form.formState.errors[name]?.message;
     return message ? <span className="font-body-sm text-danger">{String(message)}</span> : null;
@@ -239,13 +238,14 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
             </label>
           </div>
           {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-          <button
-            className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          <TerminalToolbarButton
+            className="h-9"
             disabled={!isHydrated || mutation.isPending}
             type="submit"
+            tone="info"
           >
             {mutation.isPending ? text.running : text.run}
-          </button>
+          </TerminalToolbarButton>
         </div>
       </form>
     </Card>

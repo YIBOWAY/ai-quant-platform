@@ -43,6 +43,15 @@ const toneSurfaceTint: Record<Tone, string> = {
   info: "bg-info/5",
 };
 
+export const terminalInputClass =
+  "rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info disabled:cursor-not-allowed disabled:opacity-50";
+
+export const terminalInputCompactClass =
+  "rounded-lg border border-border-subtle bg-bg-base px-2 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info disabled:cursor-not-allowed disabled:opacity-50";
+
+export const terminalFilterInputClass =
+  "h-8 rounded-lg border border-border-subtle bg-bg-base px-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info disabled:cursor-not-allowed disabled:opacity-50";
+
 /** A bordered surface. The base building block for every panel. */
 export function Card({
   children,

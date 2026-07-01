@@ -8,6 +8,11 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { PaperRunResponse } from "@/lib/api";
+import {
+  TerminalToolbarButton,
+  terminalInputClass,
+  terminalInputCompactClass,
+} from "@/components/ui/primitives";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { FutuUnavailableHint, futuOptionLabel } from "./FutuProviderHint";
@@ -99,10 +104,8 @@ function recentDefaults(): PaperFormValues {
   };
 }
 
-const inputClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
-const inputClassCompact =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-2 py-2 font-data-mono text-text-primary";
+const inputClass = terminalInputClass;
+const inputClassCompact = terminalInputCompactClass;
 
 export function PaperRunForm({
   locale = "en",
@@ -218,13 +221,14 @@ export function PaperRunForm({
           <p className="font-body-sm text-warning">{text.replayLocked}</p>
         ) : null}
         {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-        <button
-          className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || mutation.isPending || replayKillSwitch}
           type="submit"
+          tone="info"
         >
           {mutation.isPending ? text.running : text.runPaperTrading}
-        </button>
+        </TerminalToolbarButton>
       </form>
 
       {dialogOpen ? (
