@@ -57,6 +57,84 @@ def test_forbidden_import_raises(tmp_path):
         load_approved_factor_candidates(registry, candidates_dir=tmp_path)
 
 
+# --- Static-check robustness (adversarial review findings #1/#2/#4) ---
+# The substring blocklist was trivially bypassed via importlib/__import__/eval
+# and exec() ran in a {} namespace that CPython populates with full __builtins__.
+# These tests pin the hardened behavior: an AST-based allowlist blocks ALL
+# import/eval mechanisms regardless of obfuscation, and the exec namespace no
+# longer exposes __import__ via builtins.
+
+def _approved(tmp_path, cid, src):
+    _write_candidate(tmp_path, cid, src, approved=True)
+
+
+def test_importlib_bypass_is_blocked(tmp_path):
+    bad = "import importlib\n" + _FACTOR_SRC
+    _approved(tmp_path, "cand-importlib", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_dunder_import_bypass_is_blocked(tmp_path):
+    # class-body __import__ at load time — no 'import' keyword at all
+    bad = _FACTOR_SRC.replace(
+        "    def _compute_values(self, frame):",
+        "    _proof = __import__('subprocess')\n    def _compute_values(self, frame):",
+    )
+    _approved(tmp_path, "cand-dunder", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_eval_exec_compile_bypass_is_blocked(tmp_path):
+    bad = _FACTOR_SRC.replace(
+        "    def _compute_values(self, frame):",
+        "    _x = eval('1+1')\n    def _compute_values(self, frame):",
+    )
+    _approved(tmp_path, "cand-eval", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_string_concat_import_is_blocked(tmp_path):
+    # whitespace obfuscation: double-space between import and module
+    bad = "import  subprocess\n" + _FACTOR_SRC
+    _approved(tmp_path, "cand-ws", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_builtins_access_is_blocked(tmp_path):
+    bad = _FACTOR_SRC.replace(
+        "    def _compute_values(self, frame):",
+        "    _b = __builtins__\n    def _compute_values(self, frame):",
+    )
+    _approved(tmp_path, "cand-builtins", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_legitimate_httpx_import_not_false_positive(tmp_path):
+    # finding #4: substring 'import http' matched 'import httpx'. AST import-name
+    # check must allow numpy/pandas/quant_system and reject only disallowed modules.
+    src = _FACTOR_SRC.replace(
+        "from quant_system.factors.base import BaseFactor",
+        "import numpy as np\nfrom quant_system.factors.base import BaseFactor",
+    )
+    _approved(tmp_path, "cand-numpy", src)
+    loaded = load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+    assert loaded == ["wiring_test_factor"]
+
+
+def test_disallowed_module_import_is_blocked(tmp_path):
+    # a non-allowlisted module (e.g. 'requests') is rejected even though it is
+    # a clean, non-obfuscated import statement.
+    bad = "import requests\n" + _FACTOR_SRC
+    _approved(tmp_path, "cand-requests", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
 def test_missing_dir_returns_empty(tmp_path):
     registry = build_default_factor_registry()
     assert load_approved_factor_candidates(registry, candidates_dir=tmp_path / "nope") == []

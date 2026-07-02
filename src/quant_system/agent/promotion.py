@@ -3,34 +3,170 @@
 The gate stays observation-only -- this module NEVER creates approval locks;
 it only loads factor sources for candidates a human has already approved via
 ``quant-system agent review --decision approve``.
+
+Two layers of defense sit behind that human gate:
+
+1. A static **AST** check rejects any candidate source that imports a module
+   outside an explicit allowlist or references any dynamic code-execution
+   primitive (``__import__``, ``importlib``, ``eval``, ``exec``, ``compile``,
+   ``globals``, ``vars``, ``builtins``, ``getattr`` on builtins, ``ctypes``).
+   AST analysis is robust to the obfuscation that defeated the prior substring
+   blocklist (whitespace, concatenation, ``chr``-assembly, nested ``exec``).
+2. The candidate source is ``exec``'d in a namespace whose ``__builtins__`` is
+   emptied, so even a name the AST missed cannot reach ``__import__``/``eval``
+   via the builtins dict that CPython otherwise auto-injects.
+
+These are defense-in-depth, NOT a sandbox. The human approval of the candidate
+factor source remains the primary control. Both layers can be defeated by a
+sufficiently determined author; their job is to make accidental/LLM-drift
+escapes noisy and to stop the trivial bypasses, not to contain a hostile
+cryptographic adversary who has already cleared human review.
 """
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from quant_system.agent.safety import SafetyGate
 from quant_system.factors.base import BaseFactor
 from quant_system.factors.registry import FactorRegistry
 
-_FORBIDDEN_SNIPPETS = (
-    "import socket",
-    "import subprocess",
-    "import urllib",
-    "import requests",
-    "import http",
-    "import os",
-    "from socket",
-    "from subprocess",
-    "from urllib",
-    "from requests",
-    "from http",
-    "from os",
+# Modules a candidate factor may import. Numeric/data plumbing + the platform's
+# own factor base. Anything else (network, subprocess, os, importlib, ...) is
+# rejected at static-analysis time.
+_ALLOWED_IMPORT_MODULES: frozenset[str] = frozenset(
+    {
+        "math",
+        "statistics",
+        "datetime",
+        "collections",
+        "itertools",
+        "functools",
+        "operator",
+        "typing",
+        "numpy",
+        "pandas",
+        "quant_system",
+    }
 )
+
+# Names whose bare reference in any expression context means the candidate is
+# reaching for a dynamic import / code execution / introspection primitive.
+_FORBIDDEN_NAMES: frozenset[str] = frozenset(
+    {
+        "__import__",
+        "importlib",
+        "eval",
+        "exec",
+        "compile",
+        "globals",
+        "vars",
+        "builtins",
+        "__builtins__",
+        "ctypes",
+    }
+)
+
+# A restricted ``__builtins__`` for the candidate ``exec`` namespace. CPython
+# auto-injects the *full* builtins dict when ``__builtins__`` is absent, exposing
+# ``__import__``/``eval``/``exec``/``open``/``getattr`` to the candidate source.
+# We pass an explicit mapping instead, exposing only the safe builtins a factor
+# genuinely needs (math/sequence/container helpers) plus a *guarded* ``__import__``
+# that enforces the same module allowlist as the static AST check at runtime --
+# defense in depth: even if the AST check missed an obfuscated import, the live
+# ``__import__`` still rejects disallowed modules.
+import builtins as _builtins
+
+_SAFE_BUILTIN_NAMES: frozenset[str] = frozenset(
+    {
+        "abs", "min", "max", "sum", "round", "len", "range", "enumerate", "zip",
+        "sorted", "reversed", "map", "filter", "any", "all", "int", "float",
+        "str", "bool", "list", "tuple", "dict", "set", "frozenset", "print",
+        "isinstance", "issubclass", "type", "None", "True", "False",
+    }
+)
+
+
+def _make_safe_builtins() -> dict[str, object]:
+    def _guarded_import(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
+        root = name.split(".")[0]
+        if root not in _ALLOWED_IMPORT_MODULES:
+            raise ImportError(f"candidate import of {name!r} is not permitted")
+        return _builtins.__import__(name, globals, locals, fromlist, level)
+
+    safe: dict[str, object] = {name: getattr(_builtins, name) for name in _SAFE_BUILTIN_NAMES}
+    safe["__import__"] = _guarded_import
+    safe["__build_class__"] = _builtins.__build_class__  # required for `class` statements
+    return safe
 
 
 class CandidateLoadError(RuntimeError):
     """A candidate factor source failed the static safety check."""
+
+
+def _check_source(source: str, candidate_id: str) -> None:
+    """Statically reject disallowed imports and dangerous name references.
+
+    Raises ``CandidateLoadError`` on the first violation.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} is not valid Python: {exc}"
+        ) from exc
+
+    for node in ast.walk(tree):
+        # `import x` / `import x.y` / `import x as z`
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                if root not in _ALLOWED_IMPORT_MODULES:
+                    raise CandidateLoadError(
+                        f"candidate {candidate_id!r} imports disallowed module {alias.name!r}"
+                    )
+            continue
+        # `from x import y` (optionally `from . import y`)
+        if isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                # relative `from . import y` — root is the package itself; treat
+                # as allowed only if it resolves under a permitted package. We
+                # cannot resolve relatives statically without the package, so
+                # reject (candidate factors are self-contained, no relative imports).
+                raise CandidateLoadError(
+                    f"candidate {candidate_id!r} uses a relative import, which is not permitted"
+                )
+            root = node.module.split(".")[0]
+            if root not in _ALLOWED_IMPORT_MODULES:
+                raise CandidateLoadError(
+                    f"candidate {candidate_id!r} imports from disallowed module {node.module!r}"
+                )
+            continue
+        # Any bare/attribute reference to a forbidden name.
+        if isinstance(node, ast.Name) and node.id in _FORBIDDEN_NAMES:
+            raise CandidateLoadError(
+                f"candidate {candidate_id!r} references forbidden name {node.id!r}"
+            )
+        if isinstance(node, ast.Attribute):
+            attr_chain = _attribute_chain(node)
+            if attr_chain and attr_chain[0] in _FORBIDDEN_NAMES:
+                raise CandidateLoadError(
+                    f"candidate {candidate_id!r} references forbidden attribute chain "
+                    f"{'.'.join(attr_chain)!r}"
+                )
+
+
+def _attribute_chain(node: ast.Attribute) -> list[str]:
+    parts: list[str] = [node.attr]
+    cur: ast.expr = node.value
+    while isinstance(cur, ast.Attribute):
+        parts.append(cur.attr)
+        cur = cur.value
+    if isinstance(cur, ast.Name):
+        parts.append(cur.id)
+    parts.reverse()
+    return parts
 
 
 def load_approved_factor_candidates(
@@ -50,13 +186,16 @@ def load_approved_factor_candidates(
         if not gate.allow_promotion(candidate_dir.name):
             continue
         source = source_path.read_text(encoding="utf-8")
-        lowered = source.lower()
-        for snippet in _FORBIDDEN_SNIPPETS:
-            if snippet in lowered:
-                raise CandidateLoadError(
-                    f"candidate {candidate_dir.name!r} contains forbidden code: {snippet!r}"
-                )
-        namespace: dict[str, object] = {}
+        _check_source(source, candidate_dir.name)
+        # Restricted namespace: pass an explicit __builtins__ so CPython does not
+        # inject the full builtins dict (which would expose __import__/eval/exec).
+        # The guarded __import__ enforces the module allowlist at runtime too.
+        # __name__ is seeded so `class` statements (and any module-introspection)
+        # see a conventional module name rather than NameError.
+        namespace: dict[str, object] = {
+            "__builtins__": _make_safe_builtins(),
+            "__name__": candidate_dir.name,
+        }
         # Human-approved candidate (approved.lock verified above); static check passed.
         exec(compile(source, str(source_path), "exec"), namespace)  # noqa: S102
         for value in namespace.values():
