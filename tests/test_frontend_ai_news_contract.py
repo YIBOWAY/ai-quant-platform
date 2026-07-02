@@ -30,8 +30,64 @@ def test_ai_news_view_uses_terminal_surface_style() -> None:
 
     assert "bg-bg-base" in source
     assert "bg-bg-surface" in source
+    assert 'tone="warning">{text.selectedBadge}</ToneBadge>' not in source
     assert "radial-gradient" not in source
     assert "shadow-[0_24px_80px" not in source
+
+
+def test_ai_news_view_uses_color_encoded_news_system() -> None:
+    source = Path("src/frontend/components/forms/AiNewsView.tsx").read_text(encoding="utf-8")
+
+    assert "categoryToneClass" in source
+    assert 'data-ai-news-accent-rail="true"' in source
+    assert 'aria-hidden="true"' in source
+    assert 'data-ai-news-category-tone' in source
+    assert 'data-ai-news-timeline-dot' in source
+    assert "aiNewsAccentRailClass" in source
+    assert "categoryName(category, locale)" in source
+    assert '<ToneBadge tone="neutral">{categoryName(item.category, locale)}</ToneBadge>' not in source
+
+
+def test_ai_news_feed_uses_responsive_cards_before_desktop_table() -> None:
+    source = Path("src/frontend/components/forms/AiNewsView.tsx").read_text(encoding="utf-8")
+
+    assert "FeedCardList" in source
+    assert "FeedTable" in source
+    assert 'data-ai-news-card-list="true"' in source
+    assert 'data-ai-news-card="true"' in source
+    assert 'className="grid gap-2 lg:hidden"' in source
+    assert 'className="hidden lg:block"' in source
+
+
+def test_ai_news_view_marks_toggle_state_for_assistive_tech() -> None:
+    source = Path("src/frontend/components/forms/AiNewsView.tsx").read_text(encoding="utf-8")
+
+    assert 'aria-pressed={tab === item}' in source
+    assert 'role="tablist"' not in source
+    assert 'role="tab"' not in source
+    assert 'aria-pressed={mode === item}' in source
+    assert 'aria-pressed={category === item.value}' in source
+    assert 'aria-pressed={windowKey === item}' in source
+
+
+def test_ai_news_view_keeps_mobile_search_available() -> None:
+    source = Path("src/frontend/components/forms/AiNewsView.tsx").read_text(encoding="utf-8")
+
+    assert "mobileSearchOpen" in source
+    assert 'aria-controls="ai-news-mobile-search"' in source
+    assert 'id="ai-news-mobile-search"' in source
+    assert 'sm:hidden' in source
+    assert 'data-testid="ai-news-search"' in source
+
+
+def test_ai_news_view_exposes_stable_smoke_selectors() -> None:
+    source = Path("src/frontend/components/forms/AiNewsView.tsx").read_text(encoding="utf-8")
+
+    assert 'data-testid="ai-news-root"' in source
+    assert 'data-testid="ai-news-readonly-safety"' in source
+    assert 'data-testid="ai-news-toolbar"' in source
+    assert 'data-testid="ai-news-feed"' in source
+    assert 'data-testid="ai-news-original-link"' in source
 
 
 def test_ai_news_view_debounces_search_and_supports_load_more() -> None:

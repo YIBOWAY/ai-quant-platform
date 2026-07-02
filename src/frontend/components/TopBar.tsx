@@ -76,6 +76,7 @@ export function TopBar() {
     <header className="fixed top-0 left-0 right-0 z-40 flex h-16 items-center justify-between border-b border-border-subtle bg-bg-base/80 px-3 backdrop-blur-md lg:left-[240px] lg:px-6">
       <div className="flex h-full min-w-0 w-full items-center gap-3 lg:gap-8">
         <button
+          aria-controls="mobile-navigation"
           aria-expanded={menuOpen}
           aria-label={text.mobileMenu}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle text-text-primary lg:hidden"
@@ -119,9 +120,10 @@ export function TopBar() {
     </header>
     {menuOpen ? (
       <div className="fixed left-0 right-0 top-16 z-50 border-b border-border-subtle bg-bg-base p-3 shadow-xl lg:hidden">
-        <nav className="grid grid-cols-2 gap-2">
+        <nav aria-label={text.mobileMenu} className="grid grid-cols-2 gap-2" id="mobile-navigation">
           {mobileNavItems.map((item) => (
             <Link
+              aria-current={activePath === item.href ? "page" : undefined}
               className={`rounded border px-3 py-2 font-body-sm ${
                 activePath === item.href
                   ? "border-border-subtle bg-bg-surface-muted text-text-primary"

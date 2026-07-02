@@ -19,3 +19,11 @@ def test_topbar_mobile_menu_exposes_ai_news() -> None:
 
     assert "aiNews" in topbar
     assert 'href: "/ai-news"' in topbar
+
+
+def test_topbar_mobile_menu_exposes_accessible_state() -> None:
+    topbar = Path("src/frontend/components/TopBar.tsx").read_text(encoding="utf-8")
+
+    assert 'aria-controls="mobile-navigation"' in topbar
+    assert 'id="mobile-navigation"' in topbar
+    assert 'aria-current={activePath === item.href ? "page" : undefined}' in topbar

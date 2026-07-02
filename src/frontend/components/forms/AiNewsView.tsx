@@ -8,7 +8,7 @@ import {
   Search,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   getAiHotDaily,
   getAiHotDailies,
@@ -25,7 +25,6 @@ import {
   StatusPill,
   TerminalTable,
   TerminalToolbarButton,
-  ToneBadge,
 } from "@/components/ui/primitives";
 
 type Locale = "en" | "zh";
@@ -44,6 +43,58 @@ const categoryOptions = [
   { value: "tip", en: "Tips", zh: "技巧观点" },
 ];
 
+const aiNewsAccentRailClass =
+  "bg-[linear-gradient(90deg,#2dd4bf_0%,#57c1ff_35%,#f0b90b_70%,#c084fc_100%)]";
+
+const aiNewsHeaderWashClass =
+  "bg-[linear-gradient(135deg,#2dd4bf18_0%,#57c1ff12_45%,#f0b90b10_100%)]";
+
+type NewsTone = {
+  name: string;
+  badge: string;
+  buttonActive: string;
+  dot: string;
+};
+
+const categoryToneClasses: Record<string, NewsTone> = {
+  default: {
+    name: "neutral",
+    badge: "border-border-subtle bg-bg-surface-muted text-text-primary",
+    buttonActive: "border-text-secondary/40 bg-text-secondary/10 text-text-primary",
+    dot: "bg-text-secondary/70 shadow-[0_0_0_3px_rgba(138,141,149,0.12)]",
+  },
+  "ai-models": {
+    name: "ai-models",
+    badge: "border-[#57c1ff]/45 bg-[#57c1ff]/10 text-text-primary",
+    buttonActive: "border-[#57c1ff]/55 bg-[#57c1ff]/10 text-[#d8f2ff]",
+    dot: "bg-[#57c1ff] shadow-[0_0_0_3px_rgba(87,193,255,0.16)]",
+  },
+  "ai-products": {
+    name: "ai-products",
+    badge: "border-[#2dd4bf]/45 bg-[#2dd4bf]/10 text-text-primary",
+    buttonActive: "border-[#2dd4bf]/55 bg-[#2dd4bf]/10 text-[#d6fffb]",
+    dot: "bg-[#2dd4bf] shadow-[0_0_0_3px_rgba(45,212,191,0.16)]",
+  },
+  industry: {
+    name: "industry",
+    badge: "border-[#f0b90b]/45 bg-[#f0b90b]/10 text-text-primary",
+    buttonActive: "border-[#f0b90b]/55 bg-[#f0b90b]/10 text-[#ffe8a3]",
+    dot: "bg-[#f0b90b] shadow-[0_0_0_3px_rgba(240,185,11,0.16)]",
+  },
+  paper: {
+    name: "paper",
+    badge: "border-[#c084fc]/45 bg-[#c084fc]/10 text-text-primary",
+    buttonActive: "border-[#c084fc]/55 bg-[#c084fc]/10 text-[#eadcff]",
+    dot: "bg-[#c084fc] shadow-[0_0_0_3px_rgba(192,132,252,0.16)]",
+  },
+  tip: {
+    name: "tip",
+    badge: "border-[#ff8a65]/45 bg-[#ff8a65]/10 text-text-primary",
+    buttonActive: "border-[#ff8a65]/55 bg-[#ff8a65]/10 text-[#ffddcf]",
+    dot: "bg-[#ff8a65] shadow-[0_0_0_3px_rgba(255,138,101,0.16)]",
+  },
+};
+
 const copy = {
   en: {
     eyebrow: "Read-only · External beta source",
@@ -51,6 +102,7 @@ const copy = {
     subtitle:
       "AI HOT headlines for research reading. No strategy, backtest, paper account, or trade path is triggered from this page.",
     safetyCompact: "Read-only AI HOT beta. Verify summaries against originals. No strategy, backtest, paper account, or trade path is triggered.",
+    safetyShort: "Read-only news. No strategy, backtest, paper account, or trade path.",
     mode: "Mode",
     selected: "Selected",
     all: "All",
@@ -74,9 +126,10 @@ const copy = {
     time: "Time",
     headline: "Headline",
     categoryColumn: "Category",
-    signalColumn: "Signal",
+    signalColumn: "Focus",
     action: "Action",
     score: "Score",
+    newTab: "opens in a new tab",
     dailyTitle: "Daily report",
     dailyHint: "AI HOT daily sections and archive links.",
     dailyDate: "Daily date",
@@ -99,6 +152,7 @@ const copy = {
     title: "AI 新闻研究流",
     subtitle: "读取 AI HOT 热点用于研究浏览。本页不会触发策略、回测、模拟账户或任何交易链路。",
     safetyCompact: "只读 AI HOT 测试源；摘要需回原文核对；不会触发策略、回测、模拟账户或任何交易链路。",
+    safetyShort: "只读资讯；不触发策略、回测、模拟账户或交易链路。",
     mode: "模式",
     selected: "精选",
     all: "全部",
@@ -122,9 +176,10 @@ const copy = {
     time: "时间",
     headline: "标题",
     categoryColumn: "分类",
-    signalColumn: "信号",
+    signalColumn: "关注",
     action: "操作",
     score: "评分",
+    newTab: "新标签页打开",
     dailyTitle: "AI 日报",
     dailyHint: "AI HOT 日报版块和近期归档。",
     dailyDate: "日报日期",
@@ -154,6 +209,7 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
   const [windowKey, setWindowKey] = useState<WindowKey>("24h");
   const [take, setTake] = useState(50);
   const [dailyDate, setDailyDate] = useState("");
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const since = useMemo(() => sinceForWindow(windowKey), [windowKey]);
   const normalizedKeyword = keyword.trim();
@@ -215,52 +271,88 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
     statusQuery.isFetching || itemsQuery.isFetching || dailyQuery.isFetching || dailiesQuery.isFetching;
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto bg-bg-base text-text-primary">
-      <main className="mx-auto flex w-full max-w-[1240px] flex-col gap-4 px-4 py-4 sm:px-6 lg:py-6">
-        <div className="flex items-center gap-2 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 font-body-sm text-warning">
-          <ShieldCheck className="shrink-0" size={15} />
+    <div
+      aria-busy={isRefreshing}
+      className="h-full min-h-0 overflow-y-auto bg-bg-base text-text-primary"
+      data-testid="ai-news-root"
+    >
+      <main className="mx-auto flex w-full max-w-[1240px] flex-col gap-3 px-3 py-3 sm:px-6 lg:py-4">
+        <div
+          className="sr-only"
+          data-testid="ai-news-readonly-safety"
+        >
+          <ShieldCheck aria-hidden="true" className="shrink-0" size={15} />
           <span>{text.safetyCompact}</span>
         </div>
 
-        <header className="rounded-lg border border-border-subtle bg-bg-surface p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <header className={`relative overflow-hidden rounded-lg border border-border-subtle bg-bg-surface p-3 sm:p-4 ${aiNewsHeaderWashClass}`}>
+          <span
+            aria-hidden="true"
+            className={`absolute inset-x-0 top-0 h-0.5 ${aiNewsAccentRailClass}`}
+            data-ai-news-accent-rail="true"
+          />
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="font-label-caps uppercase text-info">{text.eyebrow}</p>
-              <div className="mt-2 flex items-center gap-2">
-                <Rss className="shrink-0 text-info" size={22} />
-                <h1 className="font-headline-xl text-text-primary">{text.title}</h1>
+              <p className="font-label-caps uppercase text-text-secondary">{text.eyebrow}</p>
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <Rss className="shrink-0 text-info" size={20} />
+                <h1 className="min-w-0 flex-1 font-headline-xl text-text-primary">{text.title}</h1>
+                <TerminalToolbarButton
+                  className="border-info/40 bg-info/5 text-text-primary hover:border-info sm:hidden"
+                  disabled={!hydrated || isRefreshing}
+                  onClick={refreshActive}
+                  title={text.refresh}
+                >
+                  <RefreshCw aria-hidden="true" className={isRefreshing ? "animate-spin" : ""} size={15} />
+                  {text.refresh}
+                </TerminalToolbarButton>
               </div>
-              <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">{text.subtitle}</p>
+              <p className="mt-1 max-w-3xl font-body-sm text-text-secondary sm:hidden">
+                {text.safetyShort}
+              </p>
+              <p className="mt-1 hidden max-w-3xl font-body-sm text-text-secondary sm:block">
+                {text.subtitle}
+              </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusPill
+            <div className="hidden flex-wrap items-center gap-2 sm:flex">
+              <HeaderStatusPill
                 label={text.source}
-                value={statusQuery.data?.enabled === false ? text.unavailable : "AI HOT"}
                 tone={statusQuery.data?.enabled === false ? "warning" : "info"}
+                value={statusQuery.data?.enabled === false ? text.unavailable : "AI HOT"}
               />
-              <StatusPill label={text.beta} value={statusQuery.data?.provider_beta ? "ON" : "--"} tone="warning" />
+              <StatusPill label={text.beta} value={statusQuery.data?.provider_beta ? "ON" : "--"} />
               <StatusPill label={text.fetched} value={formatDateTime(activeFetchedAt, locale) || text.none} />
               <TerminalToolbarButton
+                className="border-info/40 bg-info/5 text-text-primary hover:border-info"
                 disabled={!hydrated || isRefreshing}
                 onClick={refreshActive}
                 title={text.refresh}
               >
-                <RefreshCw className={isRefreshing ? "animate-spin" : ""} size={15} />
+                <RefreshCw aria-hidden="true" className={isRefreshing ? "animate-spin" : ""} size={15} />
                 {text.refresh}
               </TerminalToolbarButton>
             </div>
           </div>
 
-          <form className="mt-4 border-t border-border-subtle pt-4" onSubmit={(event) => event.preventDefault()}>
+          <form
+            className="mt-3 border-t border-border-subtle pt-3"
+            data-testid="ai-news-toolbar"
+            onSubmit={(event) => event.preventDefault()}
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex rounded-lg border border-border-subtle bg-bg-base p-1">
+              <div
+                aria-label={text.mode}
+                className="flex rounded-lg border border-border-subtle bg-bg-base p-1"
+              >
                 {(["feed", "daily"] as const).map((item) => (
                   <button
+                    aria-pressed={tab === item}
                     className={`rounded-md px-3 py-1.5 font-body-sm transition-colors ${
                       tab === item
-                        ? "bg-bg-surface-muted text-text-primary"
+                        ? "bg-info/10 text-text-primary shadow-[inset_0_-1px_0_rgba(87,193,255,0.55)]"
                         : "text-text-secondary hover:text-text-primary"
                     }`}
+                    data-testid="ai-news-view-toggle"
                     key={item}
                     onClick={() => setTab(item)}
                     type="button"
@@ -271,26 +363,62 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
               </div>
 
               {tab === "feed" ? (
-                <label className="flex min-w-[240px] flex-1 items-center gap-2 rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-secondary focus-within:border-info sm:max-w-sm">
-                  <Search size={16} className="shrink-0" />
-                  <input
-                    className="min-w-0 flex-1 bg-transparent text-text-primary outline-none"
-                    onChange={(event) => setKeyword(event.target.value)}
-                    placeholder={text.keywordPlaceholder}
-                    value={keyword}
-                  />
-                </label>
+                <>
+                  <button
+                    aria-controls="ai-news-mobile-search"
+                    aria-expanded={mobileSearchOpen || Boolean(keyword)}
+                    className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-border-subtle bg-bg-base px-3 font-body-sm text-text-secondary transition-colors hover:border-info/45 hover:bg-bg-surface-muted hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info sm:hidden"
+                    onClick={() => setMobileSearchOpen((value) => !value)}
+                    type="button"
+                  >
+                    <Search aria-hidden="true" size={15} />
+                    {text.keyword}
+                  </button>
+                  <label className="hidden min-w-[240px] flex-1 items-center gap-2 rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-secondary focus-within:border-info sm:flex sm:max-w-sm">
+                    <Search aria-hidden="true" size={16} className="shrink-0" />
+                    <input
+                      aria-label={text.keyword}
+                      data-testid="ai-news-search"
+                      className="min-w-0 flex-1 bg-transparent text-text-primary outline-none"
+                      onChange={(event) => setKeyword(event.target.value)}
+                      placeholder={text.keywordPlaceholder}
+                      value={keyword}
+                    />
+                  </label>
+                </>
               ) : null}
             </div>
 
+            {tab === "feed" && (mobileSearchOpen || keyword) ? (
+              <label
+                className="mt-2 flex items-center gap-2 rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-secondary focus-within:border-info sm:hidden"
+                id="ai-news-mobile-search"
+              >
+                <Search aria-hidden="true" size={15} className="shrink-0" />
+                <input
+                  aria-label={text.keyword}
+                  data-testid="ai-news-search"
+                  className="min-w-0 flex-1 bg-transparent text-text-primary outline-none"
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder={text.keywordPlaceholder}
+                  value={keyword}
+                />
+              </label>
+            ) : null}
+
             {tab === "feed" ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <div className="flex rounded-lg border border-border-subtle bg-bg-base p-1">
+              <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1">
+                <div
+                  aria-label={text.mode}
+                  className="flex shrink-0 rounded-lg border border-border-subtle bg-bg-base p-1"
+                  role="group"
+                >
                   {(["selected", "all"] as const).map((item) => (
                     <button
+                      aria-pressed={mode === item}
                       className={`rounded-md px-3 py-1.5 font-body-sm transition-colors ${
                         mode === item
-                          ? "bg-bg-surface-muted text-text-primary"
+                          ? "bg-info/10 text-text-primary shadow-[inset_0_-1px_0_rgba(87,193,255,0.55)]"
                           : "text-text-secondary hover:text-text-primary"
                       }`}
                       key={item}
@@ -302,12 +430,18 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
                   ))}
                 </div>
 
-                <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+                <div
+                  aria-label={text.category}
+                  className="flex shrink-0 gap-2"
+                  data-testid="ai-news-category-strip"
+                  role="group"
+                >
                   {categoryOptions.map((item) => (
                     <button
-                      className={`shrink-0 rounded-md border px-3 py-1.5 font-body-sm transition-colors ${
+                      aria-pressed={category === item.value}
+                      className={`shrink-0 rounded-md border px-3 py-1.5 font-body-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info ${
                         category === item.value
-                          ? "border-info/50 bg-info/10 text-info"
+                          ? categoryToneClass(item.value).buttonActive
                           : "border-border-subtle bg-bg-base text-text-secondary hover:bg-bg-surface-muted hover:text-text-primary"
                       }`}
                       key={item.value || "all"}
@@ -319,12 +453,18 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
                   ))}
                 </div>
 
-                <div className="flex rounded-lg border border-border-subtle bg-bg-base p-1">
+                <div
+                  aria-label={text.window}
+                  className="flex shrink-0 rounded-lg border border-border-subtle bg-bg-base p-1"
+                  data-testid="ai-news-window-filter"
+                  role="group"
+                >
                   {(["24h", "3d", "7d"] as const).map((item) => (
                     <button
+                      aria-pressed={windowKey === item}
                       className={`rounded-md px-3 py-1.5 font-data-mono transition-colors ${
                         windowKey === item
-                          ? "bg-bg-surface-muted text-text-primary"
+                          ? "bg-info/10 text-text-primary shadow-[inset_0_-1px_0_rgba(87,193,255,0.55)]"
                           : "text-text-secondary hover:text-text-primary"
                       }`}
                       key={item}
@@ -336,7 +476,7 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
                   ))}
                 </div>
 
-                <label className="flex items-center gap-2 rounded-lg border border-border-subtle bg-bg-base px-3 py-1.5 font-label-caps uppercase text-text-secondary">
+                <label className="hidden items-center gap-2 whitespace-nowrap rounded-lg border border-border-subtle bg-bg-base px-3 py-1.5 font-label-caps uppercase text-text-secondary lg:flex">
                   <span>{text.take}</span>
                   <input
                     className="w-12 bg-transparent font-data-mono text-text-primary outline-none"
@@ -368,6 +508,7 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
             loadingMore={itemsQuery.isFetchingNextPage}
             locale={locale}
             onLoadMore={loadMore}
+            panelId="ai-news-feed-panel"
           />
         ) : (
           <DailyPanel
@@ -377,6 +518,7 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
             loading={!hydrated || dailyQuery.isFetching}
             locale={locale}
             onDailyDateChange={setDailyDate}
+            panelId="ai-news-daily-panel"
           />
         )}
       </main>
@@ -391,6 +533,7 @@ function FeedPanel({
   loadingMore,
   locale,
   onLoadMore,
+  panelId,
 }: {
   hasNext: boolean;
   items: AiHotItem[];
@@ -398,45 +541,37 @@ function FeedPanel({
   loadingMore: boolean;
   locale: Locale;
   onLoadMore: () => void;
+  panelId: string;
 }) {
   const text = copy[locale];
   const groups = groupFeedItems(items, locale, text.unknownDate);
 
   return (
-    <section className="mt-5">
-      <SectionTitle
-        title={text.feedTitle}
-        hint={text.feedHint}
-        right={
-          <span className="font-data-mono text-[10px] uppercase text-text-secondary">
-            {text.feedCount} {items.length}
-          </span>
-        }
-      />
+    <section
+      className="mt-2"
+      data-testid="ai-news-feed"
+      id={panelId}
+    >
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="font-label-caps text-text-primary">{text.feedTitle}</h2>
+          <span className="hidden font-body-sm text-text-secondary sm:inline">{text.feedHint}</span>
+        </div>
+        <span className="shrink-0 font-data-mono text-[10px] uppercase text-text-secondary">
+          {text.feedCount} {items.length}
+        </span>
+      </div>
       {loading ? <LoadingRows /> : null}
       {!loading && items.length === 0 ? <EmptyState label={text.emptyFeed} /> : null}
-      <div className="grid gap-4">
+      <div className="grid gap-3">
         {groups.map((group) => (
           <div className="grid gap-2" key={group.label}>
             <div className="flex items-center gap-2">
               <span className="font-data-mono text-xs font-semibold uppercase text-text-primary">{group.label}</span>
               <span className="h-px flex-1 bg-border-subtle" />
             </div>
-            <TerminalTable
-              columns={[
-                { label: text.time, className: "w-[92px]" },
-                { label: text.source, className: "w-[128px]" },
-                { label: text.headline },
-                { label: text.categoryColumn, className: "w-[132px]" },
-                { label: text.signalColumn, align: "right", className: "w-[132px]" },
-                { label: text.action, align: "right", className: "w-[116px]" },
-              ]}
-              minWidth="980px"
-            >
-              {group.items.map((item) => (
-                <TimelineArticle item={item} key={item.id} locale={locale} />
-              ))}
-            </TerminalTable>
+            <FeedCardList items={group.items} locale={locale} />
+            <FeedTable items={group.items} locale={locale} />
           </div>
         ))}
       </div>
@@ -451,16 +586,135 @@ function FeedPanel({
   );
 }
 
+function FeedCardList({ items, locale }: { items: AiHotItem[]; locale: Locale }) {
+  return (
+    <div className="grid gap-2 lg:hidden" data-ai-news-card-list="true">
+      {items.map((item, index) => (
+        <FeedCard isFirst={index === 0} item={item} key={item.id} locale={locale} />
+      ))}
+    </div>
+  );
+}
+
+function FeedCard({
+  isFirst = false,
+  item,
+  locale,
+}: {
+  isFirst?: boolean;
+  item: AiHotItem;
+  locale: Locale;
+}) {
+  const text = copy[locale];
+  const time = formatTime(item.published_at, locale);
+  const summary = item.summary || item.title_en || "";
+  const safeUrl = safeExternalUrl(item.url);
+  const tone = categoryToneClass(item.category);
+
+  return (
+    <article
+      className="relative overflow-hidden rounded-lg border border-border-subtle bg-bg-surface p-3 pl-8 transition-colors hover:bg-bg-surface-muted/45"
+      data-ai-news-card="true"
+      data-ai-news-first-item={isFirst ? "true" : undefined}
+      data-category={item.category ?? ""}
+      data-has-score={typeof item.score === "number" ? "true" : "false"}
+      data-item-id={item.id}
+      data-selected={item.selected ? "true" : "false"}
+      data-testid="ai-news-item"
+    >
+      <span
+        aria-hidden="true"
+        className={`absolute left-3 top-5 h-2.5 w-2.5 rounded-full ${tone.dot}`}
+        data-ai-news-timeline-dot="true"
+      />
+      <span
+        aria-hidden="true"
+        className="absolute bottom-4 left-[16px] top-9 w-px bg-border-subtle/80"
+      />
+      <div className="flex flex-wrap items-center gap-2 font-data-mono text-[11px] text-text-secondary">
+        <span>{time || text.unknownDate}</span>
+        <span className="h-1 w-1 rounded-full bg-border-subtle" />
+        <span className="min-w-0 truncate">{item.source}</span>
+        {item.category ? <CategoryBadge category={item.category} locale={locale} /> : null}
+      </div>
+      {safeUrl ? (
+        <a
+          className="mt-2 block font-body-sm font-semibold leading-5 text-text-primary transition-colors hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+          aria-label={`${text.openOriginal}: ${item.title} (${text.newTab})`}
+          href={safeUrl}
+          rel="noreferrer noopener"
+          target="_blank"
+        >
+          {item.title}
+        </a>
+      ) : (
+        <div className="mt-2 block font-body-sm font-semibold leading-5 text-text-primary">
+          {item.title}
+        </div>
+      )}
+      {summary ? <p className="mt-1 line-clamp-2 font-body-sm text-text-secondary">{summary}</p> : null}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <FeedBadges item={item} locale={locale} />
+        {safeUrl ? (
+          <a
+            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-border-subtle px-2 py-1 font-body-sm text-text-primary transition-colors hover:border-info hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+            aria-label={`${text.openOriginal}: ${item.title} (${text.newTab})`}
+            data-testid="ai-news-original-link"
+            href={safeUrl}
+            rel="noreferrer noopener"
+            target="_blank"
+          >
+            <ExternalLink aria-hidden="true" size={13} />
+            {text.openOriginal}
+          </a>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function FeedTable({ items, locale }: { items: AiHotItem[]; locale: Locale }) {
+  const text = copy[locale];
+
+  return (
+    <div className="hidden lg:block" data-testid="ai-news-feed-table">
+      <TerminalTable
+        columns={[
+          { label: text.time, className: "w-[92px]" },
+          { label: text.source, className: "w-[128px]" },
+          { label: text.headline },
+          { label: text.categoryColumn, className: "w-[132px]" },
+          { label: text.signalColumn, align: "right", className: "w-[132px]" },
+          { label: text.action, align: "right", className: "w-[116px]" },
+        ]}
+        minWidth="980px"
+      >
+        {items.map((item) => (
+          <TimelineArticle item={item} key={item.id} locale={locale} />
+        ))}
+      </TerminalTable>
+    </div>
+  );
+}
+
 function TimelineArticle({ item, locale }: { item: AiHotItem; locale: Locale }) {
   const text = copy[locale];
   const time = formatTime(item.published_at, locale);
   const summary = item.summary || item.title_en || "";
   const safeUrl = safeExternalUrl(item.url);
+  const tone = categoryToneClass(item.category);
 
   return (
     <tr className="border-b border-border-subtle/80 align-top transition-colors last:border-b-0 hover:bg-bg-surface-muted/45">
       <td className="whitespace-nowrap px-3 py-3 font-data-mono text-xs text-text-secondary">
-        {time || text.unknownDate}
+        <span className="inline-flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className={`h-2 w-2 rounded-full ${tone.dot}`}
+            data-ai-news-timeline-dot="true"
+          />
+          <span>{time || text.unknownDate}</span>
+        </span>
       </td>
       <td className="max-w-[140px] px-3 py-3 text-xs text-text-secondary">
         <span className="block truncate">{item.source}</span>
@@ -468,9 +722,10 @@ function TimelineArticle({ item, locale }: { item: AiHotItem; locale: Locale }) 
       <td className="px-3 py-3">
         {safeUrl ? (
           <a
-            className="block font-body-sm font-semibold leading-5 text-text-primary transition-colors hover:text-info"
+            className="block font-body-sm font-semibold leading-5 text-text-primary transition-colors hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+            aria-label={`${text.openOriginal}: ${item.title} (${text.newTab})`}
             href={safeUrl}
-            rel="noreferrer"
+            rel="noreferrer noopener"
             target="_blank"
           >
             {item.title}
@@ -486,31 +741,25 @@ function TimelineArticle({ item, locale }: { item: AiHotItem; locale: Locale }) 
       </td>
       <td className="px-3 py-3">
         {item.category ? (
-          <ToneBadge tone="neutral">{categoryName(item.category, locale)}</ToneBadge>
+          <CategoryBadge category={item.category} locale={locale} />
         ) : (
           <span className="text-text-secondary">--</span>
         )}
       </td>
       <td className="px-3 py-3 text-right">
-        <div className="flex justify-end gap-1.5">
-          {item.selected ? <ToneBadge tone="warning">{text.selectedBadge}</ToneBadge> : null}
-          {typeof item.score === "number" ? (
-            <ToneBadge tone="info">
-              {text.score} {scoreLabel(item.score)}
-            </ToneBadge>
-          ) : null}
-          {!item.selected && typeof item.score !== "number" ? <span className="text-text-secondary">--</span> : null}
-        </div>
+        <FeedBadges item={item} locale={locale} align="end" />
       </td>
       <td className="px-3 py-3 text-right">
         {safeUrl ? (
           <a
-            className="inline-flex items-center justify-end gap-1 rounded-lg border border-border-subtle px-2 py-1 font-body-sm text-text-primary transition-colors hover:border-info hover:text-info"
+            className="inline-flex items-center justify-end gap-1 rounded-lg border border-border-subtle px-2 py-1 font-body-sm text-text-primary transition-colors hover:border-info hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+            aria-label={`${text.openOriginal}: ${item.title} (${text.newTab})`}
+            data-testid="ai-news-original-link"
             href={safeUrl}
-            rel="noreferrer"
+            rel="noreferrer noopener"
             target="_blank"
           >
-            <ExternalLink size={13} />
+            <ExternalLink aria-hidden="true" size={13} />
             {text.openOriginal}
           </a>
         ) : (
@@ -521,6 +770,110 @@ function TimelineArticle({ item, locale }: { item: AiHotItem; locale: Locale }) 
   );
 }
 
+function FeedBadges({
+  align = "start",
+  item,
+  locale,
+}: {
+  align?: "start" | "end";
+  item: AiHotItem;
+  locale: Locale;
+}) {
+  const text = copy[locale];
+  const hasScore = typeof item.score === "number";
+
+  if (!item.selected && !hasScore) {
+    return <span className="text-text-secondary">--</span>;
+  }
+
+  return (
+    <div className={`flex flex-wrap gap-1.5 ${align === "end" ? "justify-end" : ""}`}>
+      {item.selected ? (
+        <NewsBadge className="border-[#f0b90b]/45 bg-[#f0b90b]/10 text-text-primary">
+          {text.selectedBadge}
+        </NewsBadge>
+      ) : null}
+      {hasScore ? (
+        <NewsBadge className={scoreToneClass(item.score as number)}>
+          {text.score} {scoreLabel(item.score as number)}
+        </NewsBadge>
+      ) : null}
+    </div>
+  );
+}
+
+function CategoryBadge({ category, locale }: { category: string; locale: Locale }) {
+  const tone = categoryToneClass(category);
+  return (
+    <span
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 font-data-mono text-[10px] uppercase leading-none ${tone.badge}`}
+      data-ai-news-category-tone={tone.name}
+      data-testid="ai-news-category-badge"
+      title={categoryName(category, locale)}
+    >
+      <span
+        aria-hidden="true"
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`}
+        data-ai-news-timeline-dot="true"
+      />
+      <span className="truncate">{categoryName(category, locale)}</span>
+    </span>
+  );
+}
+
+function NewsBadge({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className: string;
+}) {
+  return (
+    <span
+      className={`inline-flex max-w-full items-center rounded-md border px-2 py-1 font-data-mono text-[10px] uppercase leading-none ${className}`}
+    >
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+function HeaderStatusPill({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: "info" | "warning";
+  value: ReactNode;
+}) {
+  const toneClass =
+    tone === "warning"
+      ? "border-[#f0b90b]/45 bg-[#f0b90b]/10"
+      : "border-[#57c1ff]/45 bg-[#57c1ff]/10";
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-data-mono text-[10px] uppercase text-text-primary ${toneClass}`}
+    >
+      <span className="text-text-secondary">{label}</span>
+      <span className="font-bold">{value}</span>
+    </span>
+  );
+}
+
+function categoryToneClass(value: string | null | undefined) {
+  return categoryToneClasses[value || "default"] ?? categoryToneClasses.default;
+}
+
+function scoreToneClass(value: number) {
+  if (value >= 80) {
+    return "border-[#f0b90b]/45 bg-[#f0b90b]/10 text-text-primary";
+  }
+  if (value >= 70) {
+    return "border-[#57c1ff]/45 bg-[#57c1ff]/10 text-text-primary";
+  }
+  return "border-border-subtle bg-bg-surface-muted text-text-primary";
+}
+
 function DailyPanel({
   archive,
   daily,
@@ -528,6 +881,7 @@ function DailyPanel({
   loading,
   locale,
   onDailyDateChange,
+  panelId,
 }: {
   archive: AiHotDailyIndex[];
   daily?: AiHotDailyResponse;
@@ -535,29 +889,36 @@ function DailyPanel({
   loading: boolean;
   locale: Locale;
   onDailyDateChange: (value: string) => void;
+  panelId: string;
 }) {
   const text = copy[locale];
   return (
-    <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+    <section
+      className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]"
+      id={panelId}
+    >
       <div>
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <SectionTitle title={text.dailyTitle} hint={text.dailyHint} />
-          <label className="flex items-center gap-2 font-body-sm text-text-secondary">
-            {text.dailyDate}
+          <div className="flex items-center gap-2 font-body-sm text-text-secondary">
+            <label htmlFor="ai-news-daily-date">{text.dailyDate}</label>
             <input
               className={`${inputClass} font-data-mono`}
+              id="ai-news-daily-date"
               onChange={(event) => onDailyDateChange(event.target.value)}
               type="date"
               value={dailyDate}
             />
             <button
+              aria-label={text.latestDaily}
+              aria-pressed={dailyDate === ""}
               className="rounded-lg border border-border-subtle px-3 py-2 text-text-primary hover:border-info hover:text-info"
               onClick={() => onDailyDateChange("")}
               type="button"
             >
               {text.latestDaily}
             </button>
-          </label>
+          </div>
         </div>
         {loading ? <LoadingRows /> : null}
         {!loading && !daily?.date ? <EmptyState label={text.emptyDaily} /> : null}
@@ -640,11 +1001,12 @@ function DailyItem({ item, locale }: { item: Record<string, unknown>; locale: Lo
         {safeSourceUrl ? (
           <a
             className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border-subtle px-2 py-1 font-body-sm text-text-primary hover:border-info hover:text-info"
+            aria-label={`${text.openOriginal}: ${recordText(item, "title")} (${text.newTab})`}
             href={safeSourceUrl}
-            rel="noreferrer"
+            rel="noreferrer noopener"
             target="_blank"
           >
-            <ExternalLink size={14} />
+            <ExternalLink aria-hidden="true" size={14} />
             {text.openOriginal}
           </a>
         ) : null}
@@ -662,7 +1024,10 @@ function ErrorStrip({ errors }: { errors: Array<string | undefined> }) {
     return null;
   }
   return (
-    <div className="mt-4 rounded-lg border border-warning/40 bg-warning/5 p-3 font-body-sm text-warning">
+    <div
+      className="mt-4 rounded-lg border border-danger/40 bg-danger/5 p-3 font-body-sm text-danger"
+      role="alert"
+    >
       {active.join(" · ")}
     </div>
   );
@@ -676,7 +1041,10 @@ function OperationalWarningStrip({ warnings }: { warnings: string[] }) {
     return null;
   }
   return (
-    <div className="mt-4 rounded-lg border border-warning/35 bg-warning/5 p-3 font-body-sm text-warning">
+    <div
+      aria-live="polite"
+      className="mt-4 rounded-lg border border-warning/35 bg-warning/5 p-3 font-body-sm text-warning"
+    >
       {operationalWarnings.join(" · ")}
     </div>
   );
