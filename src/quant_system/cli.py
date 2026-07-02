@@ -17,6 +17,7 @@ from quant_system.agent.runner import AgentRunner
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
 from quant_system.config.settings import load_settings, reload_settings
 from quant_system.data.pipeline import IngestionResult, run_sample_ingestion, run_tiingo_ingestion
+from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.execution.pipeline import PaperTradingRunResult, run_sample_paper_trading
 from quant_system.experiments.config import load_experiment_config
@@ -655,10 +656,21 @@ def run_config_experiment_command(
             help="Override output directory. Defaults to QS_DATA_DIR/QS_REPORTS_DIR settings.",
         ),
     ] = None,
+    provider: Annotated[
+        Literal["sample", "futu", "tiingo"],
+        typer.Option("--provider", help="OHLCV data provider for the experiment."),
+    ] = "sample",
 ) -> None:
     """Run a Phase 4 experiment from a JSON config file."""
     config = load_experiment_config(config_path)
-    result = run_experiment(config, output_dir=output_dir)
+    settings = reload_settings()
+    provider_instance, data_source = build_ohlcv_provider(settings, requested=provider)
+    result = run_experiment(
+        config,
+        output_dir=output_dir,
+        provider=provider_instance,
+        data_source=data_source,
+    )
     _emit_experiment_summary(result)
 
 
