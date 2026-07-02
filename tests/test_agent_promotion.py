@@ -166,3 +166,38 @@ def test_run_experiment_accepts_candidate_factor_registry(tmp_path):
     )
     assert result.run_count >= 1
     assert result.agent_summary_path.exists()
+
+
+def test_run_experiment_threads_candidate_registry_through_walk_forward(tmp_path):
+    # Coverage lock for the walk-forward path: _run_walk_forward_combination must
+    # thread factor_registry into _run_single_backtest -> _create_factors. If the
+    # candidate-only factor_id 'wiring_test_factor' is not resolved via the passed
+    # registry, build_default_factor_registry() raises KeyError for it and the
+    # experiment crashes. A green run here proves the threading is intact on the
+    # walk-forward branch (not just the plain backtest branch).
+    from quant_system.experiments.config import load_experiment_config
+    from quant_system.experiments.runner import run_experiment
+    import json
+
+    _write_candidate(tmp_path / "cands", "cand-a", _FACTOR_SRC, approved=True)
+    registry = build_default_factor_registry()
+    load_approved_factor_candidates(registry, candidates_dir=tmp_path / "cands")
+
+    config_payload = {
+        "experiment_name": "candidate-walkforward",
+        "symbols": ["SPY", "QQQ"],
+        "start": "2024-01-02",
+        "end": "2024-06-15",
+        "factor_blend": {"factors": [{"factor_id": "wiring_test_factor"}, {"factor_id": "momentum"}]},
+        "walk_forward": {"enabled": True, "train_bars": 40, "validation_bars": 15, "step_bars": 15},
+    }
+    config_file = tmp_path / "exp.json"
+    config_file.write_text(json.dumps(config_payload), encoding="utf-8")
+
+    result = run_experiment(
+        load_experiment_config(config_file),
+        output_dir=tmp_path / "out",
+        factor_registry=registry,
+    )
+    assert result.run_count >= 1
+    assert result.folds_path.exists()
