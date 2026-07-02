@@ -676,7 +676,11 @@ def run_config_experiment_command(
     factor_registry = None
     if include_approved_candidates:
         factor_registry = build_default_factor_registry()
-        candidates_dir = Path(settings.data.data_dir) / "agent" / "candidates"
+        # Mirror the agent CLI's candidate output dir: propose-factor / agent
+        # review default output_dir to "data/agent_run" and CandidatePool writes
+        # approved.lock under <output_dir>/agent/candidates/<id>. Reading from
+        # settings.data.data_dir/"agent"/"candidates" would miss the real path.
+        candidates_dir = Path("data/agent_run") / "agent" / "candidates"
         loaded = load_approved_factor_candidates(factor_registry, candidates_dir=candidates_dir)
         typer.echo(f"approved_candidates_loaded={','.join(loaded) or '<none>'}")
     result = run_experiment(

@@ -83,3 +83,45 @@ def test_run_config_defaults_to_sample(tmp_path, monkeypatch):
     result = runner.invoke(app, ["experiment", "run-config", "--config", str(_write_config(tmp_path))])
     assert result.exit_code == 0, result.output
     assert captured["data_source"] == "sample"
+
+
+def test_include_approved_candidates_reads_same_dir_agent_cli_writes_to(tmp_path, monkeypatch):
+    # Finding #3: --include-approved-candidates must read from the directory the
+    # agent CLI (propose-factor / agent review) actually writes approved.lock to,
+    # i.e. CandidatePool(output_dir).candidates_dir with output_dir defaulting to
+    # "data/agent_run". A mismatch silently loads zero candidates.
+    from quant_system.agent.candidate_pool import CandidatePool
+
+    captured = {}
+
+    def fake_load(registry, *, candidates_dir):
+        captured["candidates_dir"] = candidates_dir
+        return []
+
+    monkeypatch.setattr(cli_module, "load_approved_factor_candidates", fake_load)
+    monkeypatch.setattr(
+        cli_module, "build_ohlcv_provider", lambda settings, *, requested: (object(), requested)
+    )
+
+    class _R:
+        experiment_id = "e-1"
+        run_count = 1
+        best_run_id = None
+        config_path = tmp_path / "c"
+        runs_path = tmp_path / "r"
+        folds_path = tmp_path / "f"
+        agent_summary_path = tmp_path / "a.json"
+        report_path = tmp_path / "rep.md"
+
+    monkeypatch.setattr(cli_module, "run_experiment", lambda *a, **k: _R())
+
+    result = runner.invoke(
+        app,
+        ["experiment", "run-config", "--config", str(_write_config(tmp_path)),
+         "--include-approved-candidates"],
+    )
+    assert result.exit_code == 0, result.output
+    expected = str(CandidatePool("data/agent_run").candidates_dir)
+    assert str(captured["candidates_dir"]) == expected, (
+        f"loader reads {captured['candidates_dir']!r}, but agent CLI writes to {expected!r}"
+    )
