@@ -28,7 +28,7 @@ from quant_system.experiments.storage import LocalExperimentStorage
 from quant_system.experiments.sweep import expand_parameter_grid
 from quant_system.experiments.walk_forward import build_walk_forward_splits
 from quant_system.factors.pipeline import compute_factor_pipeline
-from quant_system.factors.registry import build_default_factor_registry
+from quant_system.factors.registry import FactorRegistry, build_default_factor_registry
 
 
 class ExperimentResult(BaseModel):
@@ -87,6 +87,7 @@ def run_experiment(
     output_dir: str | Path | None = None,
     provider: HistoricalDataProvider | None = None,
     data_source: str = "sample",
+    factor_registry: FactorRegistry | None = None,
 ) -> ExperimentResult:
     now_utc = datetime.now(UTC)
     created_at = now_utc.isoformat()
@@ -103,6 +104,7 @@ def run_experiment(
             combination=combination,
             ohlcv=ohlcv,
             created_at=created_at,
+            factor_registry=factor_registry,
         )
         runs.append(run)
         fold_records.extend(folds)
@@ -173,6 +175,7 @@ def _run_combination(
     combination: ParameterCombination,
     ohlcv: pd.DataFrame,
     created_at: str,
+    factor_registry: FactorRegistry | None = None,
 ) -> tuple[ExperimentRunSummary, list[dict[str, Any]]]:
     if config.walk_forward.enabled:
         return _run_walk_forward_combination(
@@ -180,6 +183,7 @@ def _run_combination(
             combination=combination,
             ohlcv=ohlcv,
             created_at=created_at,
+            factor_registry=factor_registry,
         )
 
     metrics = _run_single_backtest(
@@ -187,6 +191,7 @@ def _run_combination(
         combination=combination,
         ohlcv=ohlcv,
         signal_filter=None,
+        factor_registry=factor_registry,
     )
     return (
         _summary_from_metrics(
@@ -205,6 +210,7 @@ def _run_walk_forward_combination(
     combination: ParameterCombination,
     ohlcv: pd.DataFrame,
     created_at: str,
+    factor_registry: FactorRegistry | None = None,
 ) -> tuple[ExperimentRunSummary, list[dict[str, Any]]]:
     timestamps = ohlcv["timestamp"].drop_duplicates().sort_values()
     splits = build_walk_forward_splits(timestamps, config.walk_forward)
@@ -219,6 +225,7 @@ def _run_walk_forward_combination(
                 & (ohlcv["timestamp"] <= split.validation_end)
             ],
             signal_filter=split,
+            factor_registry=factor_registry,
         )
         fold_metrics.append(metrics)
         record = _fold_record(combination=combination, split=split, metrics=metrics)
@@ -242,10 +249,11 @@ def _run_single_backtest(
     combination: ParameterCombination,
     ohlcv: pd.DataFrame,
     signal_filter: WalkForwardSplit | None,
+    factor_registry: FactorRegistry | None = None,
 ) -> PerformanceMetrics:
     lookback = int(combination.parameters.get("lookback", 20))
     top_n = int(combination.parameters.get("top_n", 3))
-    factors = _create_factors(config, lookback=lookback)
+    factors = _create_factors(config, lookback=lookback, registry=factor_registry)
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
     score_frame = build_multifactor_score_frame(factor_results, config.factor_blend)
 
@@ -275,10 +283,10 @@ def _run_single_backtest(
     return BacktestEngine(backtest_config).run(backtest_ohlcv, strategy).metrics
 
 
-def _create_factors(config: ExperimentConfig, *, lookback: int):
-    registry = build_default_factor_registry()
+def _create_factors(config: ExperimentConfig, *, lookback: int, registry: FactorRegistry | None = None):
+    active_registry = registry or build_default_factor_registry()
     return [
-        registry.create(factor.factor_id, lookback=lookback)
+        active_registry.create(factor.factor_id, lookback=lookback)
         for factor in config.factor_blend.factors
     ]
 

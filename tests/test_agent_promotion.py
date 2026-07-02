@@ -60,3 +60,31 @@ def test_forbidden_import_raises(tmp_path):
 def test_missing_dir_returns_empty(tmp_path):
     registry = build_default_factor_registry()
     assert load_approved_factor_candidates(registry, candidates_dir=tmp_path / "nope") == []
+
+
+def test_run_experiment_accepts_candidate_factor_registry(tmp_path):
+    from quant_system.experiments.config import load_experiment_config
+    from quant_system.experiments.runner import run_experiment
+    import json
+
+    _write_candidate(tmp_path / "cands", "cand-a", _FACTOR_SRC, approved=True)
+    registry = build_default_factor_registry()
+    load_approved_factor_candidates(registry, candidates_dir=tmp_path / "cands")
+
+    config_payload = {
+        "experiment_name": "candidate-e2e",
+        "symbols": ["SPY", "QQQ"],
+        "start": "2024-01-02",
+        "end": "2024-03-15",
+        "factor_blend": {"factors": [{"factor_id": "wiring_test_factor"}, {"factor_id": "momentum"}]},
+    }
+    config_file = tmp_path / "exp.json"
+    config_file.write_text(json.dumps(config_payload), encoding="utf-8")
+
+    result = run_experiment(
+        load_experiment_config(config_file),
+        output_dir=tmp_path / "out",
+        factor_registry=registry,
+    )
+    assert result.run_count >= 1
+    assert result.agent_summary_path.exists()

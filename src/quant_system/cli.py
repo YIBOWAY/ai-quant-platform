@@ -13,6 +13,7 @@ import typer
 from quant_system import __version__
 from quant_system.agent.llm.base import LLMClient
 from quant_system.agent.llm.stub import StubLLMClient
+from quant_system.agent.promotion import load_approved_factor_candidates
 from quant_system.agent.runner import AgentRunner
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
 from quant_system.config.settings import load_settings, reload_settings
@@ -660,16 +661,30 @@ def run_config_experiment_command(
         Literal["sample", "futu", "tiingo"],
         typer.Option("--provider", help="OHLCV data provider for the experiment."),
     ] = "sample",
+    include_approved_candidates: Annotated[
+        bool,
+        typer.Option(
+            "--include-approved-candidates",
+            help="Load human-approved agent candidate factors into the registry.",
+        ),
+    ] = False,
 ) -> None:
     """Run a Phase 4 experiment from a JSON config file."""
     config = load_experiment_config(config_path)
     settings = reload_settings()
     provider_instance, data_source = build_ohlcv_provider(settings, requested=provider)
+    factor_registry = None
+    if include_approved_candidates:
+        factor_registry = build_default_factor_registry()
+        candidates_dir = Path(settings.data.data_dir) / "agent" / "candidates"
+        loaded = load_approved_factor_candidates(factor_registry, candidates_dir=candidates_dir)
+        typer.echo(f"approved_candidates_loaded={','.join(loaded) or '<none>'}")
     result = run_experiment(
         config,
         output_dir=output_dir,
         provider=provider_instance,
         data_source=data_source,
+        factor_registry=factor_registry,
     )
     _emit_experiment_summary(result)
 
