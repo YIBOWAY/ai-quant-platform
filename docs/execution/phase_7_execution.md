@@ -1,5 +1,9 @@
 # Phase 7 执行文档
 
+> 历史文档提示（2026-07-03）：HQA D-19 已将因子源码生成职责收归
+> `/Users/sunyibo/programs/Hermes-quant-agent`。新 Scene-B 流程不要走
+> 平台 `--llm openai`；使用 `agent propose-factor --source-file <path>`。
+
 ## 环境要求
 
 - Windows PowerShell
@@ -87,16 +91,12 @@ quant-system agent audit-leakage `
 
 输出是人工 review 用的 Markdown 清单。
 
-## 使用 OpenAI 可选路径
+## 历史 OpenAI 可选路径（不用于 HQA）
 
-默认不调用 OpenAI。如果显式使用：
-
-```powershell
-$env:QS_OPENAI_API_KEY="..."
-quant-system agent propose-factor --goal "low-vol momentum" --llm openai
-```
-
-缺少 key 或 SDK 时，CLI 会直接报错，不会回退到不透明行为。
+Phase 7 交付时曾保留平台侧 OpenAI client 作为显式可选路径。2026-07-03
+之后，HQA Scene-B 不再使用这条路径；因子源码由 Hermes 会话生成，平台用
+`agent propose-factor --source-file <path>` 接收确定性 artifact。保留本节只为
+解释旧错误信息和历史交付边界。
 
 ## 测试步骤
 
@@ -111,7 +111,7 @@ ruff check .
 
 | 报错 | 处理 |
 | --- | --- |
-| `QS_OPENAI_API_KEY is required` | 不使用 OpenAI 时去掉 `--llm openai` |
+| `OpenAI API key is required` | 命中了历史平台 LLM 路径；HQA 流程应改用 `--source-file` |
 | 找不到 candidate id | 先运行 `agent list-candidates --output-dir ...` 确认目录 |
 | 生成了 `.candidate` 但不能 import | 这是预期行为；候选文件必须人工审查后才能改名接入 |
 

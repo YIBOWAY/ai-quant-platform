@@ -247,7 +247,7 @@ $env:PYTHONPATH = "."
 - [docs/execution/phase_13_execution.md](execution/phase_13_execution.md) — 实操步骤、命令、Windows Scheduler 截图说明。
 - [docs/learning/phase_13_learning.md](learning/phase_13_learning.md) — 设计决策、踩坑、IVR 累积冷启动问题、Earnings 数据源选型。
 - [docs/delivery/phase_13_delivery.md](delivery/phase_13_delivery.md) — DoD 验收清单、测试结果、commit 列表。
-- [phase_13_design_spec.md](phase_13_design_spec.md) — 完整设计冻结。
+- [phase_13_design_spec.md](../archive/phases/phase_13_design_spec.md) — 完整设计冻结。
 - 在 [INDEX.md](../INDEX.md) 的"阶段地图"和"特别专题"两个表格加 Phase 13 行。
 
 ---

@@ -4,6 +4,10 @@
 
 当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接、策略账户再平衡能力位、语言连续性修复、策略/Polymarket 路由重命名、opt-in async backtest jobs、AI HOT 只读新闻接入，以及 options screener 质量过滤 / `Avoid` 审计开关 / 备注列。2026-06-11 的大型前端重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38）见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
 
+2026-07-03 起，本仓库的后续迭代由
+`/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`
+拉动；`ai-quant-platform` 是量化领域后端，不再按独立 Phase 15 产品路线扩张。
+
 ## 0. 界面操作指南（新，建议先读）
 
 如果你看着研究流水线的界面"理解不了它在干什么"，先读这些基于真实代码编写的中文操作与说明文档：
@@ -31,6 +35,7 @@
 | [audits/project_assessment_2026-06-11.html](audits/project_assessment_2026-06-11.html) | **2026-06-11 全项目评估报告（HTML）**：8 维度多智能体审核 + 对抗复核、"不顺手"根因分析、16 项快赢、分阶段治理路线图、渐进 vs 重构结论。 |
 | [audits/remediation_ledger_2026-06-23.md](audits/remediation_ledger_2026-06-23.md) | **2026-06-23 当前整改台账**：把 6-11 历史评估逐项对账为 Done / Partially done / Still relevant，并记录用户裁决与后续整改包队列。 |
 | [audits/remediation_goal_protocol.md](audits/remediation_goal_protocol.md) | `/goal` 长程整改执行协议：用“整改包”替代开放式优化，定义分层目标、机器验收、边界、降级、继续门禁与提交规则。 |
+| [phases/phase_15_iteration_roadmap.md](phases/phase_15_iteration_roadmap.md) | **Phase 15 素材档案**：已被 HQA D-18/D-24 接管，不再是独立 active roadmap；仅保留 P0-P5 的素材价值。 |
 | [OVERVIEW.md](OVERVIEW.md) | 简短的平台总览与安全摘要。 |
 | [SYSTEM_DESIGN_RESEARCH.md](SYSTEM_DESIGN_RESEARCH.md) | 最初的系统设计与长期架构。 |
 | [AGENTS.md](../AGENTS.md) | 本仓库中 AI 代理工作的规则。 |
@@ -53,6 +58,7 @@
 | 12 | Polymarket 历史回放 | [架构](architecture/phase_12_architecture.md) | [执行](execution/phase_12_execution.md) | [学习](learning/phase_12_learning.md) | [交付](delivery/phase_12_delivery.md) |
 | 13 | 期权雷达 | [架构](architecture/phase_13_architecture.md) | [执行](execution/phase_13_execution.md) | [学习](learning/phase_13_learning.md) | [交付](delivery/phase_13_delivery.md) |
 | 14 | 买方期权助手 | - | [执行](execution/phase_14_execution.md) | [学习](options/buyside_strategy_learning.md) | [交付](delivery/phase_14_delivery.md) |
+| 15 | 历史维护素材（非活跃路线） | [素材](phases/phase_15_iteration_roadmap.md) | - | - | - |
 
 ## 3. 关键代码入口
 
@@ -141,7 +147,7 @@
 | 页面 | 用途 |
 |---|---|
 | `/data-explorer` | 股票数据查看器。 |
-| `/factor-lab` | 只读因子健康度与单标的择时仪表盘，可把当前上下文预填发送至回测器。 |
+| `/factor-lab` | 现有只读因子健康度与单标的择时仪表盘；HQA 工作台落地后应从一级入口降级为 run/detail 分析面。 |
 | `/factor-lab/[runId]` | 因子运行详情。 |
 | `/backtest` | 策略、universe 与因子权重回测运行。 |
 | `/backtest/[runId]` | 回测运行详情。 |
@@ -159,7 +165,7 @@
 | `/options-buyside` | 买方期权策略助手。 |
 | `/ai-news` | AI HOT 只读新闻研究流，含精选动态、关键词/分类/时间窗筛选、日报和原文链接。 |
 | `/polymarket` | 只读预测市场研究。 |
-| `/agent-studio` | AI 研究助手工作流。 |
+| `/agent-studio` | 现有候选池与人工审批 UI；HQA 工作台落地后保留审批能力，移除平台侧 LLM/task-running 表象。 |
 | `/settings` | 脱敏后的本地设置。 |
 
 前端文档：

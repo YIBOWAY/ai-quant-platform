@@ -82,6 +82,19 @@ python -m quant_system.cli experiment run-sample --symbol SPY --symbol AAPL --sy
 python -m quant_system.cli experiment run-config --config configs/phase4_experiment.json --output-dir data/phase4_config_run
 ```
 
+若需要把人工批准的 Agent 候选因子纳入实验注册表，显式开启候选加载：
+
+```powershell
+python -m quant_system.cli experiment run-config --config configs/phase4_experiment.json --include-approved-candidates
+```
+
+默认候选目录为 `data/agent_run/agent/candidates`。如果候选由非默认
+Agent 输出目录生成，可传入：
+
+```powershell
+python -m quant_system.cli experiment run-config --config configs/phase4_experiment.json --include-approved-candidates --candidates-dir data/custom_agent/agent/candidates
+```
+
 ## 测试步骤
 
 运行全部测试：

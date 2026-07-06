@@ -46,6 +46,21 @@ scripts/sql/              Plain SQL migrations for optional local PostgreSQL mir
 data/                     Local cache, fixtures, generated research outputs.
 ```
 
+## Hermes Integration Route
+
+- This repository is the domain backend for
+  `/Users/sunyibo/programs/Hermes-quant-agent`.
+- The active cross-repo roadmap lives in
+  `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`.
+- `docs/phases/phase_15_iteration_roadmap.md` is reference material only; do
+  not continue it as a standalone product roadmap.
+- Candidate factors must not reach resident paper/live paths from `.candidate`
+  files. One-shot research backtests may explicitly load approved candidates;
+  paper sleeve allocation requires promoted, registered, tested factor code.
+- Future frontend convergence should fold `/factor-lab` and `/agent-studio`
+  into the Hermes workbench while preserving approval UI and removing platform
+  LLM/task-running affordances.
+
 ## Backtest Strategy Registry
 
 Backtest-engine strategies are dispatched by `strategy_id` in

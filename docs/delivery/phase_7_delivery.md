@@ -1,5 +1,9 @@
 # Phase 7 交付记录
 
+> 历史文档提示（2026-07-03）：HQA D-19 已将因子源码生成职责收归
+> `/Users/sunyibo/programs/Hermes-quant-agent`。新 Scene-B 流程不要走
+> 平台 `--llm openai`；使用 `agent propose-factor --source-file <path>`。
+
 ## 本阶段完成内容
 
 Phase 7 已交付一个本地 AI 研究助手骨架，默认离线运行。
@@ -11,7 +15,7 @@ Phase 7 已交付一个本地 AI 研究助手骨架，默认离线运行。
 - 新增审计日志，把 task、tool_call、candidate_written、review_recorded 写入 JSONL。
 - 新增安全门，默认拒绝候选升级。
 - 新增确定性 `StubLLMClient`。
-- 新增可选 `OpenAIClient`，仅在显式 `--llm openai` 时尝试使用。
+- 新增历史可选 `OpenAIClient`；HQA D-19 之后不作为新流程入口。
 - 新增 Agent CLI 命令组。
 - 新增 Phase 7 自动化测试。
 
@@ -99,4 +103,4 @@ metadata=data\_smoke_p7\agent\candidates\factor-low_vol_momentum_on_liquid_etfs-
 
 测试：`pytest tests/test_agent_*` → 全部通过；`ruff check .` clean。
 
-注意：本次 smoke 使用默认 `StubLLMClient`，候选源码内容是确定性模板，不代表真实 LLM 的产出质量。要看真实质量需 `--llm openai` + 配置 `QS_OPENAI_API_KEY`。
+注意：本次 smoke 使用默认 `StubLLMClient`，候选源码内容是确定性模板，不代表真实 LLM 的产出质量。HQA D-19 之后，真实源码质量应在 Hermes 会话内评估，并通过 `agent propose-factor --source-file <path>` 进入候选池。

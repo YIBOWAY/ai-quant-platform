@@ -4,6 +4,9 @@
 
 当前项目交付至 Phase 14，主要功能包括：
 
+2026-07-03 起，后续跨项目路线由
+`/Users/sunyibo/programs/Hermes-quant-agent` 拉动；本仓库是该 Hermes 工作流的量化领域后端，不再独立扩张 Phase 15 产品路线。
+
 - 美股及 ETF 历史数据流水线。
 - 因子研究、因子实验室诊断（2026-06-11 起真实数据优先：默认 `futu`，数据源/股票池/择时标的/基准可在界面调整，可保存因子研究运行，并可预填发送至回测器）、策略/股票池注册、回测、实验和模拟交易。
 - 本地 FastAPI 后端 + Next.js 前端。
@@ -89,7 +92,7 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 | 页面 | 用途 |
 |---|---|
 | `/data-explorer` | 美股历史数据查看器。 |
-| `/factor-lab` | 因子健康与择时诊断（横截面 / 择时两个标签页）；数据源/股票池/择时标的/基准可在侧栏调整（默认 `futu`），并可保存因子研究运行、预填发送至回测器。 |
+| `/factor-lab` | 当前因子诊断面；HQA 工作台落地后应降级为 run/detail 分析面。 |
 | `/backtest` | 运行策略、股票池、因子加权及基准回测。 |
 | `/strategies` | 已注册研究策略的策略目录。 |
 | `/strategies/[runId]` | 已落盘的 reversal/momentum 复现运行详情。 |
@@ -104,7 +107,7 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 | `/options-buyside` | 买方期权策略助手。 |
 | `/ai-news` | AI HOT 只读新闻研究流，含精选/全部动态、分类/关键词/时间窗筛选、日报和原文链接，不触发策略、回测或模拟账户。 |
 | `/polymarket` | 只读预测市场研究页面。 |
-| `/agent-studio` | AI 研究助手候选流程。 |
+| `/agent-studio` | 当前候选审批面；HQA 工作台落地后保留审批 UI，移除平台侧 LLM/task-running 表象。 |
 | `/settings` | 脱敏后的本地设置。 |
 
 股票数据端点只接受显式 `provider=sample|futu|tiingo`。未知 provider，

@@ -7,6 +7,10 @@ and options research platform.
 
 The project is currently delivered through Phase 14. It includes:
 
+Future cross-repo work is driven by
+`/Users/sunyibo/programs/Hermes-quant-agent`; this repository is now the domain
+backend for that Hermes workflow, not an independent Phase 15 product track.
+
 - US equity and ETF historical data workflows.
 - Factor research, Factor Lab diagnostics (real-data-first since 2026-06-11,
   with in-UI provider/universe/symbol/benchmark/time-window/lookback controls,
@@ -119,7 +123,7 @@ database-index settings, and the runtime log path.
 | Page | Purpose |
 |---|---|
 | `/data-explorer` | US equity historical data viewer. |
-| `/factor-lab` | Factor health and timing diagnostics (cross-section / timing tabs); provider, universe, timing symbol, benchmark, time window, lookback, and cache refresh adjustable in the sidebar (default `futu`), plus saveable factor research runs and a Backtester prefill link. |
+| `/factor-lab` | Current factor diagnostics surface; planned to become a run/detail analysis surface under the Hermes workbench. |
 | `/backtest` | Run strategy, universe, factor-weight, and benchmark backtests. |
 | `/strategies` | Strategy Catalog for registered research strategies. |
 | `/strategies/[runId]` | Persisted reversal/momentum replication run detail. |
@@ -134,7 +138,7 @@ database-index settings, and the runtime log path.
 | `/options-buyside` | Buy-side options strategy assistant. |
 | `/ai-news` | Read-only AI HOT news feed with selected/all items, category/keyword/time-window filters, daily reports, original-source links, and no strategy/backtest/paper-account mutations. |
 | `/polymarket` | Read-only prediction-market research page. |
-| `/agent-studio` | AI research assistant candidate workflows. |
+| `/agent-studio` | Current candidate review surface; planned to keep approval UI under the Hermes workbench and remove platform-side LLM/task-running affordances. |
 | `/settings` | Masked local settings. |
 
 Equity data endpoints only accept explicit `provider=sample|futu|tiingo`.
