@@ -26,16 +26,17 @@ cryptographic adversary who has already cleared human review.
 from __future__ import annotations
 
 import ast
+import builtins as _builtins
 from pathlib import Path
 
 from quant_system.agent.safety import SafetyGate
 from quant_system.factors.base import BaseFactor
 from quant_system.factors.registry import FactorRegistry
 
-# Modules a candidate factor may import. Numeric/data plumbing + the platform's
-# own factor base. Anything else (network, subprocess, os, importlib, ...) is
-# rejected at static-analysis time.
-_ALLOWED_IMPORT_MODULES: frozenset[str] = frozenset(
+# External module roots a candidate factor may import. Numeric/data plumbing and
+# Python type helpers are allowed by root so submodules such as collections.abc
+# or numpy.linalg can work without opening unrelated platform modules.
+_ALLOWED_IMPORT_ROOTS: frozenset[str] = frozenset(
     {
         "math",
         "statistics",
@@ -47,7 +48,15 @@ _ALLOWED_IMPORT_MODULES: frozenset[str] = frozenset(
         "typing",
         "numpy",
         "pandas",
-        "quant_system",
+    }
+)
+
+# Exact in-repo modules candidate factors may import. Do not allow the
+# `quant_system` root package here: many safe-looking submodules re-export
+# filesystem, CLI, or process objects that candidate code must not reach.
+_ALLOWED_PLATFORM_MODULES: frozenset[str] = frozenset(
+    {
+        "quant_system.factors.base",
     }
 )
 
@@ -65,6 +74,16 @@ _FORBIDDEN_NAMES: frozenset[str] = frozenset(
         "builtins",
         "__builtins__",
         "ctypes",
+        "getattr",
+        "setattr",
+        "delattr",
+        "locals",
+        "dir",
+        "open",
+        "object",
+        "__class__",
+        "__mro__",
+        "__subclasses__",
     }
 )
 
@@ -72,11 +91,10 @@ _FORBIDDEN_NAMES: frozenset[str] = frozenset(
 # auto-injects the *full* builtins dict when ``__builtins__`` is absent, exposing
 # ``__import__``/``eval``/``exec``/``open``/``getattr`` to the candidate source.
 # We pass an explicit mapping instead, exposing only the safe builtins a factor
-# genuinely needs (math/sequence/container helpers) plus a *guarded* ``__import__``
-# that enforces the same module allowlist as the static AST check at runtime --
-# defense in depth: even if the AST check missed an obfuscated import, the live
-# ``__import__`` still rejects disallowed modules.
-import builtins as _builtins
+# genuinely needs (math/sequence/container helpers) plus a *guarded*
+# ``__import__`` that enforces the same module allowlist as the static AST check
+# at runtime -- defense in depth: even if the AST check missed an obfuscated
+# import, the live ``__import__`` still rejects disallowed modules.
 
 _SAFE_BUILTIN_NAMES: frozenset[str] = frozenset(
     {
@@ -90,8 +108,7 @@ _SAFE_BUILTIN_NAMES: frozenset[str] = frozenset(
 
 def _make_safe_builtins() -> dict[str, object]:
     def _guarded_import(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
-        root = name.split(".")[0]
-        if root not in _ALLOWED_IMPORT_MODULES:
+        if not _is_allowed_import(name):
             raise ImportError(f"candidate import of {name!r} is not permitted")
         return _builtins.__import__(name, globals, locals, fromlist, level)
 
@@ -103,6 +120,16 @@ def _make_safe_builtins() -> dict[str, object]:
 
 class CandidateLoadError(RuntimeError):
     """A candidate factor source failed the static safety check."""
+
+
+def _is_allowed_import(module_name: str) -> bool:
+    root = module_name.split(".")[0]
+    if root in _ALLOWED_IMPORT_ROOTS:
+        return True
+    return any(
+        module_name == allowed or module_name.startswith(f"{allowed}.")
+        for allowed in _ALLOWED_PLATFORM_MODULES
+    )
 
 
 def _check_source(source: str, candidate_id: str) -> None:
@@ -121,8 +148,7 @@ def _check_source(source: str, candidate_id: str) -> None:
         # `import x` / `import x.y` / `import x as z`
         if isinstance(node, ast.Import):
             for alias in node.names:
-                root = alias.name.split(".")[0]
-                if root not in _ALLOWED_IMPORT_MODULES:
+                if not _is_allowed_import(alias.name):
                     raise CandidateLoadError(
                         f"candidate {candidate_id!r} imports disallowed module {alias.name!r}"
                     )
@@ -137,8 +163,7 @@ def _check_source(source: str, candidate_id: str) -> None:
                 raise CandidateLoadError(
                     f"candidate {candidate_id!r} uses a relative import, which is not permitted"
                 )
-            root = node.module.split(".")[0]
-            if root not in _ALLOWED_IMPORT_MODULES:
+            if not _is_allowed_import(node.module):
                 raise CandidateLoadError(
                     f"candidate {candidate_id!r} imports from disallowed module {node.module!r}"
                 )
@@ -150,7 +175,11 @@ def _check_source(source: str, candidate_id: str) -> None:
             )
         if isinstance(node, ast.Attribute):
             attr_chain = _attribute_chain(node)
-            if attr_chain and attr_chain[0] in _FORBIDDEN_NAMES:
+            forbidden_part = next(
+                (part for part in attr_chain if part in _FORBIDDEN_NAMES),
+                None,
+            )
+            if forbidden_part is not None:
                 raise CandidateLoadError(
                     f"candidate {candidate_id!r} references forbidden attribute chain "
                     f"{'.'.join(attr_chain)!r}"
@@ -199,7 +228,11 @@ def load_approved_factor_candidates(
         # Human-approved candidate (approved.lock verified above); static check passed.
         exec(compile(source, str(source_path), "exec"), namespace)  # noqa: S102
         for value in namespace.values():
-            if isinstance(value, type) and issubclass(value, BaseFactor) and value is not BaseFactor:
+            if (
+                isinstance(value, type)
+                and issubclass(value, BaseFactor)
+                and value is not BaseFactor
+            ):
                 try:
                     registry.register(value)
                 except ValueError:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from quant_system.agent.audit import AgentAuditLog
 from quant_system.agent.candidate_pool import CandidatePool
@@ -35,7 +35,13 @@ class AgentRunner:
         self.llm = llm or StubLLMClient()
         self.candidates = CandidatePool(self.output_dir)
 
-    def propose_factor(self, *, goal: str, universe: list[str]) -> CandidateArtifact:
+    def propose_factor(
+        self,
+        *,
+        goal: str,
+        universe: list[str],
+        metadata_extra: dict[str, Any] | None = None,
+    ) -> CandidateArtifact:
         task = AgentTask(
             task_id=_task_id(AgentTaskType.FACTOR_PROPOSAL, goal),
             task_type=AgentTaskType.FACTOR_PROPOSAL,
@@ -51,6 +57,7 @@ class AgentRunner:
             task=task,
             goal=goal,
             universe=universe,
+            metadata_extra=metadata_extra,
         )
 
     def propose_experiment(self, *, goal: str, universe: list[str]) -> CandidateArtifact:

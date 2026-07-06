@@ -756,6 +756,37 @@ export type PaperStrategySleeveDetailResponse = ApiEnvelope & {
   executions: PaperStrategyExecutionPlanResponse[];
 };
 
+export type PaperStrategyOpsStatus = {
+  target_date: string;
+  sleeve_count: number;
+  running_sleeve_count: number;
+  pending_execution_count: number;
+  pending_due_count: number;
+  filled_count: number;
+  blocked_count: number;
+  recovery_required_count: number;
+  pending_journal_count: number;
+};
+
+export type StrategyConfigResponse = PaperStrategyConfigResponse;
+export type StrategySleeveResponse = PaperStrategySleeveResponse;
+export type SleeveLotResponse = PaperStrategySleeveLotResponse;
+export type StrategySignalResponse = PaperStrategySignalResponse;
+export type StrategyExecutionOrderResponse = PaperStrategyExecutionOrderResponse;
+export type StrategyExecutionFillResponse = PaperStrategyExecutionFillResponse;
+export type StrategyExecutionPlanResponse = PaperStrategyExecutionPlanResponse;
+export type StrategyConfigMutationResponse = PaperStrategyConfigMutationResponse;
+export type StrategyConfigsResponse = PaperStrategyConfigsResponse;
+export type StrategySleevesResponse = PaperStrategySleevesResponse;
+export type StrategySleeveDetailResponse = PaperStrategySleeveDetailResponse;
+export type StrategySignalMutationResponse = PaperStrategySignalMutationResponse;
+export type StrategyExecutionMutationResponse = PaperStrategyExecutionMutationResponse;
+export type StrategyExecutionProcessResponse = PaperStrategyExecutionProcessResponse;
+export type StrategyOpsStatusResponse = ApiEnvelope & {
+  status: PaperStrategyOpsStatus;
+};
+export type StrategySleeveMutationResponse = PaperStrategySleeveMutationResponse;
+
 export type LedgerEntryResponse = {
   entry_id: string;
   timestamp: string;
@@ -1686,6 +1717,8 @@ export type AiHotItem = {
   raw?: Record<string, unknown>;
 };
 
+export type AiHotItemResponse = AiHotItem;
+
 export type AiHotItemsResponse = ApiEnvelope & {
   provider: "aihot" | string;
   provider_beta: boolean;
@@ -1720,6 +1753,8 @@ export type AiHotDailyIndex = {
   lead_title?: string | null;
   raw?: Record<string, unknown>;
 };
+
+export type AiHotDailyIndexResponse = AiHotDailyIndex;
 
 export type AiHotDailiesResponse = ApiEnvelope & {
   provider: "aihot" | string;

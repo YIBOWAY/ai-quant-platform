@@ -4,7 +4,7 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import ApiKeySettings, DataSettings, Settings
+from quant_system.config.settings import ApiKeySettings, DataSettings, FutuSettings, Settings
 from quant_system.data.providers.futu import FutuProviderError
 from quant_system.data.schema import normalize_ohlcv_dataframe
 
@@ -42,7 +42,12 @@ def test_market_data_history_uses_futu_provider(tmp_path, monkeypatch) -> None:
         "quant_system.data.provider_factory.FutuMarketDataProvider.fetch_ohlcv",
         fake_fetch,
     )
-    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+    client = TestClient(
+        create_app(
+            settings=Settings(futu=FutuSettings(enabled=True)),
+            output_dir=tmp_path,
+        )
+    )
 
     response = client.get(
         "/api/market-data/history",
@@ -71,7 +76,12 @@ def test_market_data_history_maps_futu_error(tmp_path, monkeypatch) -> None:
         "quant_system.data.provider_factory.FutuMarketDataProvider.fetch_ohlcv",
         fake_fetch,
     )
-    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+    client = TestClient(
+        create_app(
+            settings=Settings(futu=FutuSettings(enabled=True)),
+            output_dir=tmp_path,
+        )
+    )
 
     response = client.get(
         "/api/market-data/history",
@@ -163,7 +173,10 @@ def test_market_data_history_does_not_fallback_to_sample_for_intraday_default(
         "quant_system.data.provider_factory.FutuMarketDataProvider.fetch_ohlcv",
         fake_fetch,
     )
-    settings = Settings(data=DataSettings(default_data_provider="futu"))
+    settings = Settings(
+        data=DataSettings(default_data_provider="futu"),
+        futu=FutuSettings(enabled=True),
+    )
     client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     response = client.get(
@@ -193,7 +206,10 @@ def test_market_data_history_falls_back_when_default_futu_provider_fails(
         "quant_system.data.provider_factory.FutuMarketDataProvider.fetch_ohlcv",
         fake_fetch,
     )
-    settings = Settings(data=DataSettings(default_data_provider="futu"))
+    settings = Settings(
+        data=DataSettings(default_data_provider="futu"),
+        futu=FutuSettings(enabled=True),
+    )
     client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     response = client.get(
@@ -210,4 +226,3 @@ def test_market_data_history_falls_back_when_default_futu_provider_fails(
     assert payload["source"].startswith("sample (futu failed: opend_unavailable)")
     assert payload["metadata"]["requested_provider"] == "futu"
     assert payload["rows"]
-

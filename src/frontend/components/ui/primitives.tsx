@@ -44,13 +44,13 @@ const toneSurfaceTint: Record<Tone, string> = {
 };
 
 export const terminalInputClass =
-  "rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info disabled:cursor-not-allowed disabled:opacity-50";
+  "rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50";
 
 export const terminalInputCompactClass =
-  "rounded-lg border border-border-subtle bg-bg-base px-2 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info disabled:cursor-not-allowed disabled:opacity-50";
+  "rounded-lg border border-border-subtle bg-bg-base px-2 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50";
 
 export const terminalFilterInputClass =
-  "h-8 rounded-lg border border-border-subtle bg-bg-base px-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info disabled:cursor-not-allowed disabled:opacity-50";
+  "h-8 rounded-lg border border-border-subtle bg-bg-base px-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50";
 
 /** A bordered surface. The base building block for every panel. */
 export function Card({
@@ -217,7 +217,12 @@ export function TerminalTable({
 }) {
   return (
     <div className={`overflow-hidden rounded-lg border border-border-subtle bg-bg-surface ${className}`}>
-      <div className="overflow-x-auto" data-terminal-table-scroll="true">
+      <div
+        aria-label="Scrollable data table"
+        className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+        data-terminal-table-scroll="true"
+        tabIndex={0}
+      >
         <table className="w-full border-collapse text-left" style={{ minWidth }}>
           <thead>
             <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
@@ -259,6 +264,37 @@ export function ToneBadge({
   );
 }
 
+/** Responsive workbench shell: stacked and page-scrollable on mobile, split on desktop. */
+export function TerminalSplitShell({
+  sidebar,
+  children,
+  className = "",
+  sidebarClassName = "",
+  mainClassName = "",
+}: {
+  sidebar: ReactNode;
+  children: ReactNode;
+  className?: string;
+  sidebarClassName?: string;
+  mainClassName?: string;
+}) {
+  return (
+    <div
+      className={`flex h-full min-h-0 flex-col overflow-y-auto bg-bg-base text-text-primary lg:flex-row lg:overflow-hidden ${className}`}
+      data-terminal-split-shell="true"
+    >
+      <aside
+        className={`flex shrink-0 flex-col border-b border-border-subtle bg-bg-surface lg:h-full lg:overflow-y-auto lg:border-b-0 lg:border-r ${sidebarClassName}`}
+      >
+        {sidebar}
+      </aside>
+      <section className={`flex min-w-0 flex-1 flex-col gap-4 p-5 lg:overflow-y-auto ${mainClassName}`}>
+        {children}
+      </section>
+    </div>
+  );
+}
+
 /** Small toolbar action matching the terminal surface contract. */
 export function TerminalToolbarButton({
   children,
@@ -279,7 +315,7 @@ export function TerminalToolbarButton({
 }) {
   return (
     <button
-      className={`inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border px-3 font-body-sm transition-colors hover:bg-bg-surface disabled:cursor-not-allowed disabled:opacity-50 ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]} ${className}`}
+      className={`inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border px-3 font-body-sm transition-colors hover:bg-bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]} ${className}`}
       disabled={disabled}
       onClick={onClick}
       title={title}

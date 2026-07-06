@@ -45,7 +45,10 @@ def test_ai_news_view_uses_color_encoded_news_system() -> None:
     assert 'data-ai-news-timeline-dot' in source
     assert "aiNewsAccentRailClass" in source
     assert "categoryName(category, locale)" in source
-    assert '<ToneBadge tone="neutral">{categoryName(item.category, locale)}</ToneBadge>' not in source
+    assert (
+        '<ToneBadge tone="neutral">{categoryName(item.category, locale)}</ToneBadge>'
+        not in source
+    )
 
 
 def test_ai_news_feed_uses_responsive_cards_before_desktop_table() -> None:
@@ -68,6 +71,14 @@ def test_ai_news_view_marks_toggle_state_for_assistive_tech() -> None:
     assert 'aria-pressed={mode === item}' in source
     assert 'aria-pressed={category === item.value}' in source
     assert 'aria-pressed={windowKey === item}' in source
+
+
+def test_ai_news_toolbar_wraps_filters_on_mobile() -> None:
+    source = Path("src/frontend/components/forms/AiNewsView.tsx").read_text(encoding="utf-8")
+
+    assert "mt-2 flex flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto" in source
+    assert "flex min-w-0 flex-wrap gap-2 sm:shrink-0 sm:flex-nowrap" in source
+    assert "mt-2 flex items-center gap-2 overflow-x-auto pb-1" not in source
 
 
 def test_ai_news_view_keeps_mobile_search_available() -> None:

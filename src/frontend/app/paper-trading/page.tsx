@@ -91,6 +91,10 @@ const copy = {
     sharesUnit: "sh",
     invested: "Invested",
     priceSource: "Prices",
+    marketValue: "Market Value",
+    avgCost: "Avg Cost",
+    lastPrice: "Last",
+    sourceMix: "Source Mix",
     weight: "weight",
     pnl: "P&L",
     tradeActions: "Manual & Advanced Actions",
@@ -191,6 +195,10 @@ const copy = {
     sharesUnit: "股",
     invested: "已投资",
     priceSource: "报价",
+    marketValue: "市值",
+    avgCost: "均价",
+    lastPrice: "现价",
+    sourceMix: "来源拆分",
     weight: "权重",
     pnl: "盈亏",
     tradeActions: "手动与高级账户动作",
@@ -788,7 +796,9 @@ function HoldingRow({
   text: (typeof copy)["en"] | (typeof copy)["zh"];
 }) {
   const pnlPositive = position.unrealized_pnl >= 0;
-  const weightPct = Math.max(0, Math.min(1, position.weight)) * 100;
+  const isLong = position.quantity >= 0;
+  const weightPct = Math.max(0, Math.min(1, Math.abs(position.weight))) * 100;
+  const barWidthPct = Math.max(weightPct, 2);
   let manualShare = 0;
   for (const [source, share] of Object.entries(position.source_breakdown)) {
     if (source === "manual") manualShare += share;
@@ -803,38 +813,69 @@ function HoldingRow({
         : `${text.strategy} ${(strategyShare * 100).toFixed(0)}% · ${text.manual} ${(manualShare * 100).toFixed(0)}%`;
 
   return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface-muted/40 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="font-data-mono font-bold text-text-primary">{position.symbol}</span>
-          <span className="truncate font-data-mono text-xs text-text-secondary">
-            {position.quantity.toLocaleString(undefined, { maximumFractionDigits: 2 })} @ {position.avg_cost.toFixed(2)}
-          </span>
-          <span
-            className={`shrink-0 rounded-lg border px-1.5 py-0.5 font-data-mono text-[10px] uppercase ${
-              manualShare >= 0.999
-                ? "border-info/40 bg-info/10 text-info"
-                : "border-accent-success/40 bg-accent-success/10 text-accent-success"
-            }`}
-            title={sourceLabel}
-          >
-            {sourceLabel}
-          </span>
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-3">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-data-mono text-base font-bold text-text-primary">{position.symbol}</span>
+            <span className={`font-label-caps ${isLong ? "text-text-secondary" : "text-danger"}`}>
+              {position.quantity.toLocaleString(undefined, { maximumFractionDigits: 2 })} {text.sharesUnit}
+            </span>
+            <span
+              className={`shrink-0 rounded-full border px-2 py-0.5 font-data-mono text-[10px] uppercase ${
+                manualShare >= 0.999
+                  ? "border-info/40 bg-info/10 text-info"
+                  : "border-accent-success/40 bg-accent-success/10 text-accent-success"
+              }`}
+              title={sourceLabel}
+            >
+              {sourceLabel}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 font-data-mono text-xs sm:grid-cols-3">
+            <span className="text-text-secondary">
+              {text.avgCost} <span className="text-text-primary">{position.avg_cost.toFixed(2)}</span>
+            </span>
+            <span className="text-text-secondary">
+              {text.lastPrice} <span className="text-text-primary">{position.last_price.toFixed(2)}</span>
+            </span>
+            <span className="text-text-secondary">
+              {text.weight} <span className="text-text-primary">{weightPct.toFixed(1)}%</span>
+            </span>
+          </div>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="font-data-mono text-sm text-text-primary">{formatMoney(position.market_value)}</div>
+        <div className="shrink-0 text-left md:text-right">
+          <div className="font-label-caps text-text-secondary">{text.marketValue}</div>
+          <div className="font-data-mono text-sm font-bold text-text-primary">
+            {formatMoney(position.market_value)}
+          </div>
           <div className={`font-data-mono text-xs ${pnlPositive ? "text-accent-success" : "text-danger"}`}>
             {text.pnl} {pnlPositive ? "+" : ""}{formatMoney(position.unrealized_pnl)}
           </div>
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-surface-muted">
-          <div className="h-full rounded-full bg-accent-success" style={{ width: `${weightPct}%` }} />
+
+      <div className="mt-3 space-y-1">
+        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-bg-surface-muted" title={sourceLabel}>
+          <div className="flex h-full" style={{ width: `${barWidthPct}%` }}>
+            {strategyShare > 0 ? (
+              <div
+                className={isLong ? "h-full bg-accent-success" : "h-full bg-danger"}
+                style={{ width: `${strategyShare * 100}%` }}
+              />
+            ) : null}
+            {manualShare > 0 ? (
+              <div
+                className={isLong ? "h-full bg-info" : "h-full bg-danger/60"}
+                style={{ width: `${manualShare * 100}%` }}
+              />
+            ) : null}
+          </div>
         </div>
-        <span className="font-data-mono text-[10px] text-text-secondary">
-          {text.weight} {weightPct.toFixed(1)}%
-        </span>
+        <div className="flex flex-wrap items-center justify-between gap-2 font-label-caps text-[10px] text-text-secondary">
+          <span>{text.sourceMix}</span>
+          <span>{text.strategy} {(strategyShare * 100).toFixed(0)}% · {text.manual} {(manualShare * 100).toFixed(0)}%</span>
+        </div>
       </div>
     </div>
   );

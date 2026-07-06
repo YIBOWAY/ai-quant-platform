@@ -22,7 +22,7 @@
   --color-accent-success: #089981;   /* trading gain / genuine success */
   --color-warning: #F0B90B;
   --color-danger: #F23645;
-  --color-info: #2962FF;
+  --color-info: #5EA2FF;
 
   /* ---- Compat aliases (legacy class names -> canonical palette) ----
      Kept so `bg-base`, `bg-surface`, `bg-surface-muted`, `text-primary`,
@@ -47,7 +47,7 @@
   --color-outline-variant: #242424;
   --color-primary: #089981;
   --color-on-primary: #041D18;
-  --color-secondary: #2962FF;
+  --color-secondary: #5EA2FF;
   --color-error: #F23645;
   --color-data-mono: #D1D4DC;
 

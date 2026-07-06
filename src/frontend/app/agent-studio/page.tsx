@@ -2,7 +2,12 @@ import { Bot, Cpu, Network, ShieldCheck } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { AgentTaskForm } from "@/components/forms/AgentTaskForm";
-import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
+import {
+  Card,
+  SectionTitle,
+  StatusPill,
+  TerminalSplitShell,
+} from "@/components/ui/primitives";
 import {
   getAgentCandidateDetail,
   getAgentCandidates,
@@ -16,9 +21,9 @@ const copy = {
     eyebrow: "Research Agents",
     title: "Agent Studio",
     inertNote: "Candidates are inert files until manual review.",
-    safetyTitle: "Read-only · never imported or executed",
+    safetyTitle: "Plain-text by default · explicit CLI load only",
     safetyBody:
-      "Agent candidates are written to disk as plain text. The platform never imports or executes candidate code, and approval only writes a lock file — it never registers a factor.",
+      "Agent candidates are written to disk as plain text. Approval only records manual review; candidate factor code is loaded only by the explicit CLI flag and still passes backend safety checks before registration.",
     candidatePool: "Candidate Pool",
     candidatePoolHint: "Pending files awaiting manual review.",
     noCandidatesTitle: "No candidates",
@@ -27,7 +32,7 @@ const copy = {
     registeredFactors: "Registered factors",
     selected: "Selected",
     noCandidateSelected: "No candidate selected",
-    sourcePreviewNote: "Source preview is read as text only. It is never imported or executed.",
+    sourcePreviewNote: "Source preview is read as text only; the frontend never imports or executes it.",
     manualReviewRequired: "manual review required",
     sourcePreview: "Source Preview",
     sourcePreviewSub: "Latest candidate file read from disk as plain text only.",
@@ -53,9 +58,9 @@ const copy = {
     eyebrow: "研究智能体",
     title: "智能体工作室",
     inertNote: "候选在人工复核前仅为惰性文件。",
-    safetyTitle: "只读 · 绝不导入或执行",
+    safetyTitle: "默认纯文本 · 仅显式 CLI 加载",
     safetyBody:
-      "智能体候选以纯文本写入磁盘。平台绝不会导入或执行候选代码，批准也仅写入锁文件，绝不会注册因子。",
+      "智能体候选以纯文本写入磁盘。批准只记录人工复核；候选因子代码只有在显式 CLI 参数开启时才会加载，并且注册前仍会通过后端安全检查。",
     candidatePool: "候选池",
     candidatePoolHint: "等待人工复核的待处理文件。",
     noCandidatesTitle: "暂无候选",
@@ -64,7 +69,7 @@ const copy = {
     registeredFactors: "已注册因子",
     selected: "已选择",
     noCandidateSelected: "未选择候选",
-    sourcePreviewNote: "源码预览仅以文本方式读取，绝不会被导入或执行。",
+    sourcePreviewNote: "源码预览仅以文本方式读取，不会由前端导入或执行。",
     manualReviewRequired: "需人工复核",
     sourcePreview: "源码预览",
     sourcePreviewSub: "最新候选文件仅以纯文本方式从磁盘读取。",
@@ -111,8 +116,9 @@ export default async function AgentStudio() {
     : null;
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-bg-base">
-      <aside className="flex h-full w-[300px] shrink-0 flex-col border-r border-border-subtle bg-bg-surface">
+    <TerminalSplitShell
+      sidebar={
+        <>
         <div className="border-b border-border-subtle bg-surface-dim p-4">
           <p className="font-label-caps uppercase text-text-secondary">{text.eyebrow}</p>
           <div className="mt-1 flex items-center gap-2">
@@ -174,7 +180,11 @@ export default async function AgentStudio() {
             </Card>
           </section>
         </div>
-      </aside>
+        </>
+      }
+      sidebarClassName="lg:w-[300px]"
+      mainClassName="gap-0 p-0"
+    >
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-between gap-3 border-b border-border-subtle bg-bg-surface px-4 py-3">
@@ -275,6 +285,6 @@ export default async function AgentStudio() {
           )}
         </div>
       </div>
-    </div>
+    </TerminalSplitShell>
   );
 }

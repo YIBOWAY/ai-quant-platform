@@ -7,6 +7,7 @@ const repoRoot = findRepoRoot(process.cwd());
 const e2eDataRoot = path.join(repoRoot, "src", "frontend", ".tmp", "e2e-data");
 const parquetDir = path.join(e2eDataRoot, "parquet");
 const priceFixturePath = path.join(parquetDir, "ohlcv.parquet");
+const apiBase = `http://127.0.0.1:${process.env.PW_BACKEND_PORT ?? "8765"}`;
 
 function findRepoRoot(start: string) {
   let current = path.resolve(start);
@@ -92,12 +93,12 @@ test.describe("position map", () => {
 
     // Start from a clean funded account, then place a manual buy. The account
     // is the source of truth for the redesigned Position Map.
-    const reset = await request.post("http://127.0.0.1:8765/api/paper/account/reset", {
+    const reset = await request.post(`${apiBase}/api/paper/account/reset`, {
       data: { initial_cash: 1000000 },
     });
     expect(reset.status()).toBe(200);
 
-    const order = await request.post("http://127.0.0.1:8765/api/paper/account/orders", {
+    const order = await request.post(`${apiBase}/api/paper/account/orders`, {
       data: { symbol: "SPY", side: "buy", notional: 100000 },
     });
     expect(order.status()).toBe(200);
@@ -111,17 +112,17 @@ test.describe("position map", () => {
     await expect(page.getByText("SPY").first()).toBeVisible();
 
     // Clean up so repeated local runs start fresh.
-    await request.post("http://127.0.0.1:8765/api/paper/account/reset", {
+    await request.post(`${apiBase}/api/paper/account/reset`, {
       data: { initial_cash: 1000000 },
     });
   });
 
   test("paper account reports partial fills clearly in the UI", async ({ page, request }) => {
     test.setTimeout(90_000);
-    await request.post("http://127.0.0.1:8765/api/paper/account/reset", {
+    await request.post(`${apiBase}/api/paper/account/reset`, {
       data: { initial_cash: 1000000 },
     });
-    await request.post("http://127.0.0.1:8765/api/paper/account/orders", {
+    await request.post(`${apiBase}/api/paper/account/orders`, {
       data: { symbol: "AAPL", side: "buy", quantity: 1 },
     });
 
@@ -133,7 +134,7 @@ test.describe("position map", () => {
 
     await expect(page.getByText(/Order partially filled/)).toBeVisible();
 
-    await request.post("http://127.0.0.1:8765/api/paper/account/reset", {
+    await request.post(`${apiBase}/api/paper/account/reset`, {
       data: { initial_cash: 1000000 },
     });
   });
@@ -147,7 +148,7 @@ test.describe("position map", () => {
     // Live-account tab is the default: manual controls come first on mobile,
     // replay research is not rendered until its tab is opened.
     await expect(page.getByText("手动下单", { exact: true })).toBeVisible();
-    await expect(page.getByText("策略再平衡", { exact: true })).toBeVisible();
+    await expect(page.getByText("高级：全账户再平衡（非袖珍仓）", { exact: true })).toBeVisible();
     await expect(page.getByText("历史回放（研究）", { exact: true })).toHaveCount(0);
 
     const replayTab = page.getByRole("tab", { name: "历史回放" });

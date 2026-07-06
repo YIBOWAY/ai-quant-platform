@@ -283,7 +283,12 @@ def _run_single_backtest(
     return BacktestEngine(backtest_config).run(backtest_ohlcv, strategy).metrics
 
 
-def _create_factors(config: ExperimentConfig, *, lookback: int, registry: FactorRegistry | None = None):
+def _create_factors(
+    config: ExperimentConfig,
+    *,
+    lookback: int,
+    registry: FactorRegistry | None = None,
+):
     active_registry = registry or build_default_factor_registry()
     return [
         active_registry.create(factor.factor_id, lookback=lookback)

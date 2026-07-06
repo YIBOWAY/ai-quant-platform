@@ -10,7 +10,7 @@ def test_verify_scripts_run_core_checks_without_frontend_build_by_default() -> N
     )
 
     assert '@($PythonExe, "-m", "pytest", "-q")' in powershell
-    assert '@("ruff", "check", "src/quant_system", "tests")' in powershell
+    assert '@($PythonExe, "-m", "ruff", "check", "src/quant_system", "tests")' in powershell
     assert '@("npm", "--prefix", "src/frontend", "run", "lint")' in powershell
     assert '@("npm", "--prefix", "src/frontend", "run", "type-check")' in powershell
     assert '@("npm", "--prefix", "src/frontend", "run", "test")' in powershell
@@ -24,7 +24,7 @@ def test_verify_scripts_run_core_checks_without_frontend_build_by_default() -> N
     assert 'PYTHON_BIN="${PYTHON_BIN:-python}"' in shell
     assert '"$PYTHON_BIN" -m pytest -q' in shell
     assert 'export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"' in shell
-    assert "ruff check src/quant_system tests" in shell
+    assert '"$PYTHON_BIN" -m ruff check src/quant_system tests' in shell
     assert "npm --prefix src/frontend run lint" in shell
     assert "npm --prefix src/frontend run type-check" in shell
     assert "npm --prefix src/frontend run test" in shell

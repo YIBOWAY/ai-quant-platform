@@ -138,6 +138,29 @@ def test_review_approve_creates_lock_only(tmp_path) -> None:
     assert candidate_id not in build_default_factor_registry().factor_ids()
 
 
+def test_review_rejection_revokes_prior_approval(tmp_path) -> None:
+    pool = CandidatePool(tmp_path)
+    artifact = pool.write_candidate(
+        task_id="task-approve-reject",
+        goal="candidate factor",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content="class CandidateFactor:\n    pass\n",
+    )
+    candidate_dir = pool.candidates_dir / artifact.candidate_id
+    gate = SafetyGate(pool.candidates_dir)
+
+    pool.review(candidate_id=artifact.candidate_id, decision="approve", note="looks safe")
+    assert gate.allow_promotion(artifact.candidate_id) is True
+
+    pool.review(candidate_id=artifact.candidate_id, decision="reject", note="revoked")
+
+    assert not (candidate_dir / "approved.lock").exists()
+    assert (candidate_dir / "rejected.lock").exists()
+    assert gate.allow_promotion(artifact.candidate_id) is False
+    assert pool.list_candidates()[0]["status"] == "rejected"
+
+
 def test_stub_llm_is_deterministic() -> None:
     client = StubLLMClient()
 

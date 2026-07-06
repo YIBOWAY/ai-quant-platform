@@ -32,7 +32,14 @@ def test_run_config_passes_provider_to_run_experiment(tmp_path, monkeypatch):
         cli_module, "build_ohlcv_provider", lambda settings, *, requested: (sentinel, requested)
     )
 
-    def fake_run_experiment(config, *, output_dir=None, provider=None, data_source="sample", **kwargs):
+    def fake_run_experiment(
+        config,
+        *,
+        output_dir=None,
+        provider=None,
+        data_source="sample",
+        **kwargs,
+    ):
         captured.update(provider=provider, data_source=data_source)
 
         class _R:
@@ -50,7 +57,15 @@ def test_run_config_passes_provider_to_run_experiment(tmp_path, monkeypatch):
     monkeypatch.setattr(cli_module, "run_experiment", fake_run_experiment)
 
     result = runner.invoke(
-        app, ["experiment", "run-config", "--config", str(_write_config(tmp_path)), "--provider", "tiingo"]
+        app,
+        [
+            "experiment",
+            "run-config",
+            "--config",
+            str(_write_config(tmp_path)),
+            "--provider",
+            "tiingo",
+        ],
     )
     assert result.exit_code == 0, result.output
     assert captured["provider"] is sentinel
@@ -80,7 +95,10 @@ def test_run_config_defaults_to_sample(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cli_module, "run_experiment", fake_run_experiment)
 
-    result = runner.invoke(app, ["experiment", "run-config", "--config", str(_write_config(tmp_path))])
+    result = runner.invoke(
+        app,
+        ["experiment", "run-config", "--config", str(_write_config(tmp_path))],
+    )
     assert result.exit_code == 0, result.output
     assert captured["data_source"] == "sample"
 
@@ -117,11 +135,61 @@ def test_include_approved_candidates_reads_same_dir_agent_cli_writes_to(tmp_path
 
     result = runner.invoke(
         app,
-        ["experiment", "run-config", "--config", str(_write_config(tmp_path)),
-         "--include-approved-candidates"],
+        [
+            "experiment",
+            "run-config",
+            "--config",
+            str(_write_config(tmp_path)),
+            "--include-approved-candidates",
+        ],
     )
     assert result.exit_code == 0, result.output
     expected = str(CandidatePool("data/agent_run").candidates_dir)
     assert str(captured["candidates_dir"]) == expected, (
         f"loader reads {captured['candidates_dir']!r}, but agent CLI writes to {expected!r}"
     )
+
+
+def test_include_approved_candidates_accepts_candidates_dir_override(
+    tmp_path,
+    monkeypatch,
+):
+    custom_candidates_dir = tmp_path / "custom" / "agent" / "candidates"
+    captured = {}
+
+    def fake_load(registry, *, candidates_dir):
+        captured["candidates_dir"] = candidates_dir
+        return []
+
+    monkeypatch.setattr(cli_module, "load_approved_factor_candidates", fake_load)
+    monkeypatch.setattr(
+        cli_module, "build_ohlcv_provider", lambda settings, *, requested: (object(), requested)
+    )
+
+    class _R:
+        experiment_id = "e-1"
+        run_count = 1
+        best_run_id = None
+        config_path = tmp_path / "c"
+        runs_path = tmp_path / "r"
+        folds_path = tmp_path / "f"
+        agent_summary_path = tmp_path / "a.json"
+        report_path = tmp_path / "rep.md"
+
+    monkeypatch.setattr(cli_module, "run_experiment", lambda *a, **k: _R())
+
+    result = runner.invoke(
+        app,
+        [
+            "experiment",
+            "run-config",
+            "--config",
+            str(_write_config(tmp_path)),
+            "--include-approved-candidates",
+            "--candidates-dir",
+            str(custom_candidates_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["candidates_dir"] == custom_candidates_dir

@@ -21,9 +21,43 @@ def test_topbar_mobile_menu_exposes_ai_news() -> None:
     assert 'href: "/ai-news"' in topbar
 
 
+def test_topbar_mobile_menu_exposes_sidebar_primary_routes() -> None:
+    topbar = Path("src/frontend/components/TopBar.tsx").read_text(encoding="utf-8")
+
+    expected_routes = [
+        'href: "/"',
+        'href: "/data-explorer"',
+        'href: "/factor-lab"',
+        'href: "/backtest"',
+        'href: "/strategies"',
+        'href: "/experiments"',
+        'href: "/paper-trading"',
+        'href: "/position-map"',
+        'href: "/options-screener"',
+        'href: "/options-radar"',
+        'href: "/options-tools"',
+        'href: "/options-buyside"',
+        'href: "/ai-news"',
+        'href: "/polymarket"',
+        'href: "/agent-studio"',
+        'href: "/settings"',
+    ]
+
+    for route in expected_routes:
+        assert route in topbar
+
+    assert "mobileNavSections" in topbar
+    assert "max-h-[calc(100dvh-4rem)] overflow-y-auto" in topbar
+    assert "key={`${section.name}-${item.href}-${item.name}`}" in topbar
+    assert "key={`${section.name}-${item.href}`}" not in topbar
+
+
 def test_topbar_mobile_menu_exposes_accessible_state() -> None:
     topbar = Path("src/frontend/components/TopBar.tsx").read_text(encoding="utf-8")
 
     assert 'aria-controls="mobile-navigation"' in topbar
     assert 'id="mobile-navigation"' in topbar
     assert 'aria-current={activePath === item.href ? "page" : undefined}' in topbar
+    assert "window.addEventListener(\"keydown\", onKeyDown)" in topbar
+    assert 'event.key === "Escape"' in topbar
+    assert "menuButtonRef.current?.focus()" in topbar

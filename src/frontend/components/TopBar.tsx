@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Menu, Search, Settings, Terminal, X } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { LocaleToggle } from "@/components/LocaleToggle";
@@ -20,9 +20,27 @@ const copy = {
     aiNews: "AI News",
     positionMap: "Position Map",
     dashboard: "Dashboard",
+    dataExplorer: "Data Explorer",
+    factorLab: "Factor Lab",
+    backtester: "Backtester",
+    experiments: "Experiments",
     paperTrading: "Paper Trading",
+    optionsScreener: "Options Screener",
+    optionsRadar: "Options Radar",
+    optionsTools: "Options Tools",
+    buySide: "Buy-side Options",
+    agentStudio: "Agent Studio",
     settings: "Settings",
+    docs: "Docs",
+    support: "Help",
     mobileMenu: "Open navigation",
+    groups: {
+      research: "Research Pipeline",
+      paper: "Paper Trading",
+      options: "Options Research",
+      markets: "Markets & AI",
+      system: "System",
+    },
   },
   zh: {
     search: "搜索标的...",
@@ -34,9 +52,27 @@ const copy = {
     aiNews: "AI 新闻",
     positionMap: "持仓地图",
     dashboard: "仪表盘",
+    dataExplorer: "行情浏览",
+    factorLab: "因子实验室",
+    backtester: "回测器",
+    experiments: "实验管理",
     paperTrading: "模拟交易",
+    optionsScreener: "期权筛选器",
+    optionsRadar: "期权雷达",
+    optionsTools: "期权工具",
+    buySide: "买方期权",
+    agentStudio: "智能体工作室",
     settings: "设置",
+    docs: "文档",
+    support: "帮助",
     mobileMenu: "打开导航",
+    groups: {
+      research: "研究流水线",
+      paper: "模拟交易",
+      options: "期权研究",
+      markets: "市场与 AI",
+      system: "系统",
+    },
   },
 };
 
@@ -47,20 +83,68 @@ export function TopBar() {
   const text = copy[locale];
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
-  const mobileNavItems = [
-    { name: text.dashboard, href: "/" },
-    { name: text.runBacktest, href: "/backtest" },
-    { name: text.paperTrading, href: "/paper-trading" },
-    { name: text.marketData, href: "/data-explorer" },
-    { name: text.options, href: "/options-screener" },
-    { name: text.replications, href: "/strategies" },
-    { name: text.orderBook, href: "/polymarket" },
-    { name: text.aiNews, href: "/ai-news" },
-    { name: text.positionMap, href: "/position-map" },
-    { name: text.settings, href: "/settings" },
+  const mobileNavSections = [
+    {
+      name: text.groups.research,
+      items: [
+        { name: text.dashboard, href: "/" },
+        { name: text.dataExplorer, href: "/data-explorer" },
+        { name: text.factorLab, href: "/factor-lab" },
+        { name: text.backtester, href: "/backtest" },
+        { name: text.replications, href: "/strategies" },
+        { name: text.experiments, href: "/experiments" },
+      ],
+    },
+    {
+      name: text.groups.paper,
+      items: [
+        { name: text.paperTrading, href: "/paper-trading" },
+        { name: text.positionMap, href: "/position-map" },
+      ],
+    },
+    {
+      name: text.groups.options,
+      items: [
+        { name: text.optionsScreener, href: "/options-screener" },
+        { name: text.optionsRadar, href: "/options-radar" },
+        { name: text.optionsTools, href: "/options-tools" },
+        { name: text.buySide, href: "/options-buyside" },
+      ],
+    },
+    {
+      name: text.groups.markets,
+      items: [
+        { name: text.aiNews, href: "/ai-news" },
+        { name: text.orderBook, href: "/polymarket" },
+        { name: text.agentStudio, href: "/agent-studio" },
+      ],
+    },
+    {
+      name: text.groups.system,
+      items: [
+        { name: text.settings, href: "/settings" },
+        { name: text.docs, href: "/docs/reversal-momentum" },
+        { name: text.support, href: "/settings" },
+      ],
+    },
   ];
   const activePath = splitLocalePath(pathname).pathname;
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -79,8 +163,9 @@ export function TopBar() {
           aria-controls="mobile-navigation"
           aria-expanded={menuOpen}
           aria-label={text.mobileMenu}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle text-text-primary lg:hidden"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info lg:hidden"
           onClick={() => setMenuOpen((value) => !value)}
+          ref={menuButtonRef}
           type="button"
         >
           {menuOpen ? <X size={18} /> : <Menu size={18} />}
@@ -89,7 +174,7 @@ export function TopBar() {
           <Search className="absolute left-3 text-text-secondary" size={16} />
           <input
             aria-label={text.search}
-            className="w-64 rounded-lg border border-border-subtle bg-bg-surface py-1.5 pl-9 pr-4 font-sans text-sm text-text-primary placeholder-text-secondary focus:border-info focus:outline-none focus:ring-1 focus:ring-info"
+            className="w-64 rounded-lg border border-border-subtle bg-bg-surface py-1.5 pl-9 pr-4 font-sans text-sm text-text-primary placeholder-text-secondary focus:border-info focus:outline-none focus:ring-1 focus:ring-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
             onChange={(event) => setQuery(event.target.value)}
             placeholder={text.search}
             type="text"
@@ -103,14 +188,14 @@ export function TopBar() {
         <div className="hidden items-center gap-2 border-l border-border-subtle pl-4 text-text-secondary lg:flex">
           <Link
             aria-label="Open agent console"
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
             href={localizePath("/agent-studio", locale)}
           >
             <Terminal size={18} />
           </Link>
           <Link
             aria-label="Open settings"
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
             href={localizePath("/settings", locale)}
           >
             <Settings size={18} />
@@ -119,22 +204,31 @@ export function TopBar() {
       </div>
     </header>
     {menuOpen ? (
-      <div className="fixed left-0 right-0 top-16 z-50 border-b border-border-subtle bg-bg-base p-3 shadow-xl lg:hidden">
-        <nav aria-label={text.mobileMenu} className="grid grid-cols-2 gap-2" id="mobile-navigation">
-          {mobileNavItems.map((item) => (
-            <Link
-              aria-current={activePath === item.href ? "page" : undefined}
-              className={`rounded border px-3 py-2 font-body-sm ${
-                activePath === item.href
-                  ? "border-border-subtle bg-bg-surface-muted text-text-primary"
-                  : "border-border-subtle text-text-primary hover:bg-bg-surface"
-              }`}
-              href={localizePath(item.href, locale)}
-              key={item.href}
-              onClick={() => setMenuOpen(false)}
-            >
-              {item.name}
-            </Link>
+      <div className="fixed left-0 right-0 top-16 z-50 max-h-[calc(100dvh-4rem)] overflow-y-auto border-b border-border-subtle bg-bg-base p-3 shadow-xl lg:hidden">
+        <nav aria-label={text.mobileMenu} className="space-y-4" id="mobile-navigation">
+          {mobileNavSections.map((section) => (
+            <section key={section.name}>
+              <h2 className="px-1 pb-2 font-label-caps text-[10px] text-text-secondary/70">
+                {section.name}
+              </h2>
+              <div className="grid grid-cols-2 gap-2">
+                {section.items.map((item) => (
+                  <Link
+                    aria-current={activePath === item.href ? "page" : undefined}
+                    className={`rounded-lg border px-3 py-2 font-body-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info ${
+                      activePath === item.href
+                        ? "border-border-subtle bg-bg-surface-muted text-text-primary"
+                        : "border-border-subtle text-text-primary hover:bg-bg-surface"
+                    }`}
+                    href={localizePath(item.href, locale)}
+                    key={`${section.name}-${item.href}-${item.name}`}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    {item.name}
+                  </Link>
+                ))}
+              </div>
+            </section>
           ))}
         </nav>
       </div>

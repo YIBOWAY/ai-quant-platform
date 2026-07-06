@@ -4,7 +4,13 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { ExperimentRunForm } from "@/components/forms/ExperimentRunForm";
 import { ExperimentTabs } from "@/components/forms/ExperimentTabs";
-import { Card, MetricStat, PageHeader, StatusPill } from "@/components/ui/primitives";
+import {
+  Card,
+  MetricStat,
+  PageHeader,
+  StatusPill,
+  TerminalSplitShell,
+} from "@/components/ui/primitives";
 import { getBacktests, getExperimentDetail, getExperiments } from "@/lib/api";
 import { getServerLocale } from "@/lib/serverLocale";
 
@@ -63,8 +69,9 @@ export default async function Experiments({
     : null;
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-bg-base">
-      <aside className="flex h-full w-[320px] shrink-0 flex-col border-r border-border-subtle bg-bg-surface">
+    <TerminalSplitShell
+      sidebar={
+        <>
         <div className="border-b border-border-subtle bg-surface-dim p-4">
           <h2 className="font-headline-lg text-text-primary">{text.sidebarTitle}</h2>
           <p className="mt-1 font-body-sm text-text-secondary">{text.sidebarSubtitle}</p>
@@ -117,9 +124,12 @@ export default async function Experiments({
             />
           )}
         </div>
-      </aside>
+        </>
+      }
+      sidebarClassName="lg:w-[320px]"
+      mainClassName="gap-0 p-0"
+    >
 
-      <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg-base">
         <div className="border-b border-border-subtle bg-surface-dim px-6 py-5">
           <PageHeader
             eyebrow={text.eyebrow}
@@ -155,7 +165,6 @@ export default async function Experiments({
           />
           <ExperimentTabs detail={experimentDetail} experiment={selectedExperiment} locale={locale} />
         </div>
-      </section>
-    </div>
+    </TerminalSplitShell>
   );
 }

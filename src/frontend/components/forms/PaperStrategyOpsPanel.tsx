@@ -11,25 +11,10 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { Card, MetricStat, StatusPill } from "@/components/ui/primitives";
+import type { StrategyOpsStatusResponse } from "@/lib/api";
 import { ApiClientError, apiRequest } from "@/lib/apiClient";
 
 type Locale = "en" | "zh";
-
-type StrategyOpsStatus = {
-  target_date: string;
-  sleeve_count: number;
-  running_sleeve_count: number;
-  pending_execution_count: number;
-  pending_due_count: number;
-  filled_count: number;
-  blocked_count: number;
-  recovery_required_count: number;
-  pending_journal_count: number;
-};
-
-type StrategyOpsStatusResponse = {
-  status: StrategyOpsStatus;
-};
 
 const copy = {
   en: {

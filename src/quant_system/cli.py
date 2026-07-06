@@ -12,6 +12,7 @@ import typer
 
 from quant_system import __version__
 from quant_system.agent.llm.base import LLMClient
+from quant_system.agent.llm.fixed import FixedContentLLMClient
 from quant_system.agent.llm.stub import StubLLMClient
 from quant_system.agent.promotion import load_approved_factor_candidates
 from quant_system.agent.runner import AgentRunner
@@ -668,6 +669,16 @@ def run_config_experiment_command(
             help="Load human-approved agent candidate factors into the registry.",
         ),
     ] = False,
+    candidates_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--candidates-dir",
+            help=(
+                "Candidate directory to load when --include-approved-candidates is set. "
+                "Defaults to data/agent_run/agent/candidates."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Run a Phase 4 experiment from a JSON config file."""
     config = load_experiment_config(config_path)
@@ -680,8 +691,15 @@ def run_config_experiment_command(
         # review default output_dir to "data/agent_run" and CandidatePool writes
         # approved.lock under <output_dir>/agent/candidates/<id>. Reading from
         # settings.data.data_dir/"agent"/"candidates" would miss the real path.
-        candidates_dir = Path("data/agent_run") / "agent" / "candidates"
-        loaded = load_approved_factor_candidates(factor_registry, candidates_dir=candidates_dir)
+        active_candidates_dir = (
+            Path(candidates_dir)
+            if candidates_dir is not None
+            else Path("data/agent_run") / "agent" / "candidates"
+        )
+        loaded = load_approved_factor_candidates(
+            factor_registry,
+            candidates_dir=active_candidates_dir,
+        )
         typer.echo(f"approved_candidates_loaded={','.join(loaded) or '<none>'}")
     result = run_experiment(
         config,
@@ -1248,12 +1266,33 @@ def agent_propose_factor(
         Literal["stub", "openai"],
         typer.Option("--llm", help="LLM backend. Defaults to deterministic stub."),
     ] = "stub",
+    source_file: Annotated[
+        str | None,
+        typer.Option(
+            "--source-file",
+            help="Externally generated factor source to ingest as a pending candidate.",
+        ),
+    ] = None,
 ) -> None:
     """Create an inert candidate factor file for human review."""
+    metadata_extra = None
+    if source_file is not None:
+        path = Path(source_file)
+        llm = FixedContentLLMClient(path.read_text(encoding="utf-8"))
+        metadata_extra = {
+            "generator": "external-source",
+            "source_file_name": path.name,
+        }
+    else:
+        llm = _build_agent_llm(llm_name)
     artifact = AgentRunner(
         output_dir=output_dir,
-        llm=_build_agent_llm(llm_name),
-    ).propose_factor(goal=goal, universe=_parse_universe(universe))
+        llm=llm,
+    ).propose_factor(
+        goal=goal,
+        universe=_parse_universe(universe),
+        metadata_extra=metadata_extra,
+    )
     _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
 
 

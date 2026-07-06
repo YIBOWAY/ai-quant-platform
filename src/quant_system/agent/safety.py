@@ -27,7 +27,9 @@ class SafetyGate:
             candidate_dir.relative_to(root)
         except ValueError:
             return False
-        return (candidate_dir / "approved.lock").exists()
+        return (candidate_dir / "approved.lock").exists() and not (
+            candidate_dir / "rejected.lock"
+        ).exists()
 
     def evaluate(self, candidate_id: str) -> AgentDecision:
         allowed = self.allow_promotion(candidate_id)

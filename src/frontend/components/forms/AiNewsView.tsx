@@ -407,7 +407,7 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
             ) : null}
 
             {tab === "feed" ? (
-              <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1">
+              <div className="mt-2 flex flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto">
                 <div
                   aria-label={text.mode}
                   className="flex shrink-0 rounded-lg border border-border-subtle bg-bg-base p-1"
@@ -432,7 +432,7 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
 
                 <div
                   aria-label={text.category}
-                  className="flex shrink-0 gap-2"
+                  className="flex min-w-0 flex-wrap gap-2 sm:shrink-0 sm:flex-nowrap"
                   data-testid="ai-news-category-strip"
                   role="group"
                 >

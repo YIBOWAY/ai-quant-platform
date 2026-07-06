@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import ApiKeySettings, DataSettings, Settings
+from quant_system.config.settings import ApiKeySettings, DataSettings, FutuSettings, Settings
 from quant_system.data.schema import normalize_ohlcv_dataframe
 
 
@@ -73,7 +73,12 @@ def test_ohlcv_provider_param_uses_futu_when_requested(
         "quant_system.data.provider_factory.FutuMarketDataProvider.fetch_ohlcv",
         fake_fetch,
     )
-    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+    client = TestClient(
+        create_app(
+            settings=Settings(futu=FutuSettings(enabled=True)),
+            output_dir=tmp_path,
+        )
+    )
 
     response = client.get(
         "/api/ohlcv",

@@ -12,6 +12,7 @@ import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
 import {
+  TerminalSplitShell,
   TerminalToolbarButton,
   terminalInputClass,
   terminalInputCompactClass,
@@ -423,8 +424,9 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[380px_1fr] overflow-hidden">
-      <aside className="overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
+    <TerminalSplitShell
+      sidebar={
+        <>
         <h2 className="font-headline-lg text-text-primary">{text.title}</h2>
         <p className="mt-1 font-body-sm text-text-secondary">{text.intro}</p>
         <a
@@ -527,9 +529,12 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             {mutation.isPending ? text.running : text.run}
           </TerminalToolbarButton>
         </form>
-      </aside>
+        </>
+      }
+      sidebarClassName="p-4 lg:w-[380px]"
+      mainClassName="p-4"
+    >
 
-      <section className="min-w-0 overflow-y-auto bg-bg-base p-4">
         <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
           {text.warning}
         </div>
@@ -642,8 +647,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             </div>
           </div>
         )}
-      </section>
-    </div>
+    </TerminalSplitShell>
   );
 }
 

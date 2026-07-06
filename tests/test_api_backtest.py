@@ -660,7 +660,12 @@ def test_benchmark_returns_equity_curve(tmp_path) -> None:
 
     response = client.get(
         "/api/benchmark",
-        params={"symbol": "SPY", "start": "2024-01-02", "end": "2024-01-12"},
+        params={
+            "symbol": "SPY",
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "sample",
+        },
     )
 
     assert response.status_code == 200

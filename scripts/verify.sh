@@ -14,7 +14,7 @@ run_step() {
 }
 
 run_step "Python version" "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else "Python 3.11+ required; run: uv venv ai-quant --python 3.11 && source ai-quant/bin/activate")'
-run_step "Ruff" ruff check src/quant_system tests
+run_step "Ruff" "$PYTHON_BIN" -m ruff check src/quant_system tests
 run_step "Pytest" "$PYTHON_BIN" -m pytest -q
 run_step "Frontend lint" npm --prefix src/frontend run lint
 run_step "Frontend type-check" npm --prefix src/frontend run type-check

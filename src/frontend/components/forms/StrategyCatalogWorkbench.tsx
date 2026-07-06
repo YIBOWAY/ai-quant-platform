@@ -19,6 +19,7 @@ import {
   MetricStat,
   PageHeader,
   SectionTitle,
+  TerminalSplitShell,
   TerminalToolbarButton,
 } from "@/components/ui/primitives";
 import type {
@@ -280,8 +281,9 @@ export function StrategyCatalogWorkbench({
   }
 
   return (
-    <main className="flex h-full min-h-0 bg-bg-base">
-      <aside className="flex h-full w-[360px] shrink-0 flex-col overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
+    <TerminalSplitShell
+      sidebar={
+        <>
         <h2 className="font-headline-lg text-text-primary">{text.title}</h2>
         <p className="mt-2 font-body-sm text-text-secondary">{text.subtitle}</p>
 
@@ -371,9 +373,11 @@ export function StrategyCatalogWorkbench({
             {pending ? text.running : text.run}
           </TerminalToolbarButton>
         </section>
-      </aside>
+        </>
+      }
+      sidebarClassName="p-4 lg:w-[360px]"
+    >
 
-      <section className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
         <PageHeader
           eyebrow={text.eyebrow}
           title={strategy?.name ?? text.title}
@@ -496,8 +500,7 @@ export function StrategyCatalogWorkbench({
             <SectionTitle title={text.noResultTitle} hint={text.noResult} />
           </Card>
         )}
-      </section>
-    </main>
+    </TerminalSplitShell>
   );
 }
 

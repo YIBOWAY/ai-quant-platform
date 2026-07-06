@@ -43,7 +43,7 @@ async function waitForEnabledButton(page: Page, name: string | RegExp) {
   return button;
 }
 
-async function clickAndWaitForPost(page: Page, buttonName: string, urlPart: string) {
+async function clickAndWaitForPost(page: Page, buttonName: string | RegExp, urlPart: string) {
   const button = await waitForEnabledButton(page, buttonName);
   const [response] = await Promise.all([
     page.waitForResponse(
@@ -135,19 +135,51 @@ test("prediction market workflow buttons submit", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto("/polymarket?provider=sample&cache_mode=prefer_cache&limit=6");
   await selectAllProviderControls(page, "sample");
-  expect((await clickAndWaitForPost(page, "Run scanner", "/api/prediction-market/scan")).status()).toBe(200);
-  expect((await clickAndWaitForPost(page, "Generate dry arbitrage", "/api/prediction-market/dry-arbitrage")).status()).toBe(200);
-  expect((await clickAndWaitForPost(page, "Run quasi-backtest", "/api/prediction-market/backtest")).status()).toBe(200);
-  await expect(page.getByText("Opportunities")).toBeVisible();
-  expect((await clickAndWaitForPost(page, "Collect snapshots", "/api/prediction-market/collect")).status()).toBe(200);
+  expect(
+    (
+      await clickAndWaitForPost(
+        page,
+        /^(Run scanner|运行扫描器)$/,
+        "/api/prediction-market/scan",
+      )
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await clickAndWaitForPost(
+        page,
+        /^(Generate dry arbitrage|生成模拟套利)$/,
+        "/api/prediction-market/dry-arbitrage",
+      )
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await clickAndWaitForPost(
+        page,
+        /^(Run quasi-backtest|运行准回测)$/,
+        "/api/prediction-market/backtest",
+      )
+    ).status(),
+  ).toBe(200);
+  await expect(page.getByText(/^(Opportunities|机会数)$/)).toBeVisible();
+  expect(
+    (
+      await clickAndWaitForPost(
+        page,
+        /^(Collect snapshots|采集快照)$/,
+        "/api/prediction-market/collect",
+      )
+    ).status(),
+  ).toBe(200);
   const timeseriesResponse = await clickAndWaitForPost(
     page,
-    "Run historical replay",
+    /^(Run historical replay|运行历史回放)$/,
     "/api/prediction-market/timeseries-backtest",
   );
   expect(timeseriesResponse.status()).toBe(200);
-  await expect(page.getByText("Historical Snapshot Replay")).toBeVisible();
-  await expect(page.getByText("Estimated profit", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^(Historical Snapshot Replay|历史快照回放)$/)).toBeVisible();
+  await expect(page.getByText(/^(Estimated profit|预计收益)$/)).toBeVisible();
   await expect(page.getByAltText("Daily Opportunity Count")).toBeVisible();
 });
 

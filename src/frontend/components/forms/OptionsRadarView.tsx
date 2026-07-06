@@ -31,6 +31,7 @@ import {
   PageHeader,
   SectionTitle,
   StatusPill,
+  TerminalSplitShell,
   TerminalToolbarButton,
   terminalInputClass,
 } from "@/components/ui/primitives";
@@ -333,8 +334,9 @@ export function OptionsRadarView({
   }, [scanMutation.isPending, scanStartedAt]);
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[360px_1fr] overflow-hidden bg-bg-base text-text-primary">
-      <aside className="flex min-h-0 flex-col overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
+    <TerminalSplitShell
+      sidebar={
+        <>
         <div className="flex items-center gap-2">
           <Radar className="text-info" size={18} />
           <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
@@ -453,7 +455,7 @@ export function OptionsRadarView({
           ) : null}
           <div className="mt-1 rounded-lg border border-border-subtle bg-bg-surface-muted">
             <button
-              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left font-label-caps text-text-secondary"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left font-label-caps text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
               onClick={() => setAdvancedOpen((open) => !open)}
               type="button"
             >
@@ -524,8 +526,10 @@ export function OptionsRadarView({
             ) : null}
           </div>
         </form>
-      </aside>
-      <main className="flex min-w-0 flex-col gap-4 overflow-y-auto p-5">
+        </>
+      }
+      sidebarClassName="p-4 lg:w-[360px]"
+    >
         <PageHeader
           eyebrow={text.eyebrow}
           title={text.title}
@@ -653,14 +657,14 @@ export function OptionsRadarView({
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-3">
                           <button
-                            className="text-info"
+                            className="rounded-md text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
                             onClick={() => setExpanded(expanded === candidate.symbol ? null : candidate.symbol)}
                             type="button"
                           >
                             {text.details}
                           </button>
                           <Link
-                            className="inline-flex items-center gap-1 text-info hover:text-text-primary"
+                            className="inline-flex items-center gap-1 rounded-md text-info hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
                             href={localizePath(`/options-radar/${candidate.ticker}?date=${scanQuery.data?.run_date ?? activeDate}&expiry=${candidate.expiry}&option_type=${candidate.strategy === "sell_put" ? "PUT" : "CALL"}`, locale)}
                           >
                             {text.openChain}
@@ -683,8 +687,7 @@ export function OptionsRadarView({
           </div>
           )}
         </Card>
-      </main>
-    </div>
+    </TerminalSplitShell>
   );
 }
 

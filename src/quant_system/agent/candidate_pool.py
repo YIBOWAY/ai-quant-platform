@@ -120,7 +120,9 @@ class CandidatePool:
 
         status = CandidateStatus.APPROVED if decision == "approve" else CandidateStatus.REJECTED
         lock_name = "approved.lock" if decision == "approve" else "rejected.lock"
+        opposite_lock_name = "rejected.lock" if decision == "approve" else "approved.lock"
         (candidate_dir / lock_name).write_text(record.model_dump_json(indent=2), encoding="utf-8")
+        (candidate_dir / opposite_lock_name).unlink(missing_ok=True)
 
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["status"] = status.value
