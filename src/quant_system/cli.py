@@ -14,6 +14,7 @@ from quant_system import __version__
 from quant_system.agent.llm.base import LLMClient
 from quant_system.agent.llm.fixed import FixedContentLLMClient
 from quant_system.agent.llm.stub import StubLLMClient
+from quant_system.agent.promote import PromotionError, promote_candidate
 from quant_system.agent.promotion import load_approved_factor_candidates
 from quant_system.agent.runner import AgentRunner
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
@@ -1419,6 +1420,49 @@ def agent_review(
                 "registration=manual_required",
             ]
         )
+    )
+
+
+@agent_app.command("promote-candidate")
+def agent_promote_candidate(
+    candidate_id: Annotated[
+        str,
+        typer.Option("--candidate-id", help="Approved candidate id from list-candidates."),
+    ],
+    candidates_dir: Annotated[
+        str,
+        typer.Option(
+            "--candidates-dir",
+            help="Candidate directory (defaults to data/agent_run/agent/candidates).",
+        ),
+    ] = "data/agent_run/agent/candidates",
+    library_dir: Annotated[
+        str,
+        typer.Option("--library-dir", help="Promoted factor library package directory."),
+    ] = "src/quant_system/factors/library/promoted",
+    tests_dir: Annotated[
+        str,
+        typer.Option("--tests-dir", help="Directory for generated factor test scaffolds."),
+    ] = "tests/factors",
+) -> None:
+    """Write the deterministic Gate-3 promotion diff; NEVER commits (D-20)."""
+    try:
+        result = promote_candidate(
+            candidate_id,
+            candidates_dir=Path(candidates_dir),
+            library_dir=Path(library_dir),
+            tests_dir=Path(tests_dir),
+        )
+    except PromotionError as exc:
+        typer.echo(f"promotion_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"factor_id={result.factor_id}")
+    typer.echo(f"module={result.module_path}")
+    typer.echo(f"init={result.init_path}")
+    typer.echo(f"test={result.test_path}")
+    typer.echo(
+        "GATE 3 — review the diff and commit yourself: "
+        f"git diff -- {result.module_path} {result.init_path} {result.test_path}"
     )
 
 

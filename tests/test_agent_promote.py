@@ -1,0 +1,302 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+import quant_system.agent.promote as promote_module
+from quant_system.agent.promote import PromotionError, promote_candidate
+from quant_system.cli import app
+
+runner = CliRunner()
+
+_FACTOR_SRC = '''
+from quant_system.factors.base import BaseFactor
+
+
+class WiringTestFactor(BaseFactor):
+    factor_id = "wiring_test_factor"
+    factor_name = "Wiring Test Factor"
+    factor_version = "0.1.0-candidate"
+    default_lookback = 20
+    direction = "higher_is_better"
+    description = "test candidate"
+
+    def _compute_values(self, frame):
+        return frame["close"] * 0.0
+'''
+
+_SECOND_FACTOR_SRC = '''
+from quant_system.factors.base import BaseFactor
+
+
+class AlphaScaffoldFactor(BaseFactor):
+    factor_id = "alpha_scaffold_factor"
+    factor_name = "Alpha Scaffold Factor"
+    factor_version = "0.1.0-candidate"
+    default_lookback = 10
+    direction = "lower_is_better"
+    description = "second test candidate"
+
+    def _compute_values(self, frame):
+        return frame["close"] * 0.0
+'''
+
+_EVIL_SRC = '''
+import os
+from quant_system.factors.base import BaseFactor
+
+
+class EvilFactor(BaseFactor):
+    factor_id = "evil_factor"
+    factor_name = "Evil Factor"
+    factor_version = "0.1.0-candidate"
+    default_lookback = 20
+    direction = "higher_is_better"
+    description = "reads the filesystem"
+
+    def _compute_values(self, frame):
+        return frame["close"] * 0.0
+'''
+
+_NO_CLASS_SRC = "VALUE = 1\n"
+
+_TWO_CLASSES_SRC = _FACTOR_SRC + '''
+
+class SecondFactor(BaseFactor):
+    factor_id = "second_factor"
+    factor_name = "Second Factor"
+    factor_version = "0.1.0-candidate"
+    default_lookback = 5
+    direction = "neutral"
+    description = "duplicate class"
+
+    def _compute_values(self, frame):
+        return frame["close"] * 0.0
+'''
+
+_NON_STRING_ID_SRC = _FACTOR_SRC.replace('factor_id = "wiring_test_factor"', "factor_id = 123")
+
+
+def _write_candidate(root: Path, candidate_id: str, source: str, *, approved: bool = True) -> None:
+    cdir = root / candidate_id
+    cdir.mkdir(parents=True)
+    (cdir / "factor.py.candidate").write_text(source, encoding="utf-8")
+    (cdir / "metadata.json").write_text("{}", encoding="utf-8")
+    if approved:
+        (cdir / "approved.lock").write_text("{}", encoding="utf-8")
+
+
+@pytest.fixture()
+def dirs(tmp_path: Path) -> dict[str, Path]:
+    return {
+        "candidates": tmp_path / "candidates",
+        "library": tmp_path / "library" / "promoted",
+        "tests": tmp_path / "tests" / "factors",
+    }
+
+
+def _promote(candidate_id: str, dirs: dict[str, Path], **kwargs):
+    return promote_candidate(
+        candidate_id,
+        candidates_dir=dirs["candidates"],
+        library_dir=dirs["library"],
+        tests_dir=dirs["tests"],
+        **kwargs,
+    )
+
+
+def test_happy_path_writes_module_init_and_test_scaffold(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+
+    result = _promote("cand-ok", dirs, promotion_date="2026-01-02")
+
+    assert result.factor_id == "wiring_test_factor"
+    assert result.module_path == dirs["library"] / "wiring_test_factor.py"
+    assert result.init_path == dirs["library"] / "__init__.py"
+    assert result.test_path == dirs["tests"] / "test_wiring_test_factor.py"
+
+    module_content = result.module_path.read_text(encoding="utf-8")
+    # Provenance header, then the candidate source verbatim.
+    assert "candidate_id: cand-ok" in module_content
+    assert "approved.lock" in module_content
+    assert "promoted_on: 2026-01-02" in module_content
+    assert module_content.endswith(_FACTOR_SRC)
+
+    init_content = result.init_path.read_text(encoding="utf-8")
+    assert (
+        "from quant_system.factors.library.promoted.wiring_test_factor "
+        "import WiringTestFactor as wiring_test_factor_factor"
+    ) in init_content
+    assert "PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = (" in init_content
+    assert "wiring_test_factor_factor," in init_content
+    ast.parse(init_content)
+
+    test_content = result.test_path.read_text(encoding="utf-8")
+    assert (
+        "from quant_system.factors.library.promoted.wiring_test_factor import WiringTestFactor"
+    ) in test_content
+    assert 'metadata.factor_id == "wiring_test_factor"' in test_content
+    assert "compute" in test_content
+    ast.parse(test_content)
+
+
+def test_init_regeneration_is_sorted_across_promotions(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-w", _FACTOR_SRC)
+    _write_candidate(dirs["candidates"], "cand-a", _SECOND_FACTOR_SRC)
+
+    _promote("cand-w", dirs)
+    result = _promote("cand-a", dirs)
+
+    init_content = result.init_path.read_text(encoding="utf-8")
+    alpha_import = init_content.index("promoted.alpha_scaffold_factor import")
+    wiring_import = init_content.index("promoted.wiring_test_factor import")
+    assert alpha_import < wiring_import
+    assert init_content.index("alpha_scaffold_factor_factor,") < init_content.index(
+        "wiring_test_factor_factor,"
+    )
+    ast.parse(init_content)
+
+
+def test_unapproved_candidate_refused_and_nothing_written(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-pending", _FACTOR_SRC, approved=False)
+
+    with pytest.raises(PromotionError, match="approv"):
+        _promote("cand-pending", dirs)
+    assert not dirs["library"].exists() or not list(dirs["library"].iterdir())
+    assert not dirs["tests"].exists() or not list(dirs["tests"].iterdir())
+
+
+def test_rejected_lock_refuses_even_with_approved_lock(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-rejected", _FACTOR_SRC, approved=True)
+    (dirs["candidates"] / "cand-rejected" / "rejected.lock").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(PromotionError):
+        _promote("cand-rejected", dirs)
+
+
+def test_missing_candidate_source_refuses(dirs) -> None:
+    cdir = dirs["candidates"] / "cand-empty"
+    cdir.mkdir(parents=True)
+    (cdir / "approved.lock").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(PromotionError, match="factor.py.candidate"):
+        _promote("cand-empty", dirs)
+
+
+def test_ast_violation_refuses_and_nothing_written(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-evil", _EVIL_SRC)
+
+    with pytest.raises(PromotionError, match="cand-evil"):
+        _promote("cand-evil", dirs)
+    assert not dirs["library"].exists() or not list(dirs["library"].iterdir())
+
+
+def test_zero_factor_classes_refuses(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-none", _NO_CLASS_SRC)
+
+    with pytest.raises(PromotionError, match="exactly one"):
+        _promote("cand-none", dirs)
+
+
+def test_multiple_factor_classes_refuses(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-two", _TWO_CLASSES_SRC)
+
+    with pytest.raises(PromotionError, match="exactly one"):
+        _promote("cand-two", dirs)
+
+
+def test_non_string_factor_id_refuses(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-badid", _NON_STRING_ID_SRC)
+
+    with pytest.raises(PromotionError, match="factor_id"):
+        _promote("cand-badid", dirs)
+
+
+def test_second_promotion_of_same_factor_refuses(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    _promote("cand-ok", dirs)
+
+    with pytest.raises(PromotionError, match="already exists"):
+        _promote("cand-ok", dirs)
+
+
+def test_existing_target_module_refuses_before_any_write(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    dirs["library"].mkdir(parents=True)
+    (dirs["library"] / "wiring_test_factor.py").write_text(_FACTOR_SRC, encoding="utf-8")
+
+    with pytest.raises(PromotionError, match="already exists"):
+        _promote("cand-ok", dirs)
+    # Pre-existing module untouched, no init/test written.
+    assert (dirs["library"] / "wiring_test_factor.py").read_text(encoding="utf-8") == _FACTOR_SRC
+    assert not (dirs["library"] / "__init__.py").exists()
+    assert not dirs["tests"].exists() or not list(dirs["tests"].iterdir())
+
+
+def test_promote_module_never_touches_git_or_spawns_processes() -> None:
+    source = Path(promote_module.__file__.replace(".pyc", ".py")).read_text(encoding="utf-8")
+    assert "subprocess" not in source
+    assert "Popen" not in source
+    tree = ast.parse(source)
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            roots.add(node.module.split(".")[0])
+    assert roots.isdisjoint({"subprocess", "git", "os", "sys"})
+
+
+def test_cli_promote_candidate_prints_files_and_gate3_line(dirs, tmp_path: Path) -> None:
+    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "promote-candidate",
+            "--candidate-id",
+            "cand-ok",
+            "--candidates-dir",
+            str(dirs["candidates"]),
+            "--library-dir",
+            str(dirs["library"]),
+            "--tests-dir",
+            str(dirs["tests"]),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "factor_id=wiring_test_factor" in result.output
+    assert str(dirs["library"] / "wiring_test_factor.py") in result.output
+    assert str(dirs["library"] / "__init__.py") in result.output
+    assert str(dirs["tests"] / "test_wiring_test_factor.py") in result.output
+    gate_lines = [line for line in result.output.splitlines() if line.startswith("GATE 3")]
+    assert len(gate_lines) == 1
+    assert "git diff --" in gate_lines[0]
+
+
+def test_cli_promote_candidate_refusal_exits_nonzero(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-pending", _FACTOR_SRC, approved=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "promote-candidate",
+            "--candidate-id",
+            "cand-pending",
+            "--candidates-dir",
+            str(dirs["candidates"]),
+            "--library-dir",
+            str(dirs["library"]),
+            "--tests-dir",
+            str(dirs["tests"]),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "promotion_refused" in result.output
