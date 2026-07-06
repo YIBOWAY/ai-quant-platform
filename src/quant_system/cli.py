@@ -197,8 +197,18 @@ def _runtime_log_dir(settings) -> Path:
     return settings.data.data_dir / "_runtime" / "logs"
 
 
+def _emit_json(payload: dict[str, Any]) -> None:
+    """D-22 machine contract: exactly one JSON object on the last stdout line."""
+    typer.echo(json.dumps(payload, sort_keys=True))
+
+
 @app.command()
-def doctor() -> None:
+def doctor(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Append a machine-readable JSON summary line."),
+    ] = False,
+) -> None:
     """Print an offline local platform health summary."""
     settings = load_settings()
     logger = configure_logging(settings.log_level, log_dir=_runtime_log_dir(settings))
@@ -232,6 +242,19 @@ def doctor() -> None:
         f"auto_migrate={str(settings.database.auto_migrate).lower()}"
     )
     typer.echo(f"runtime.log={log_path}")
+    if json_output:
+        _emit_json(
+            {
+                "environment": settings.environment,
+                "safety": {
+                    "dry_run": settings.safety.dry_run,
+                    "paper_trading": settings.safety.paper_trading,
+                    "live_trading_enabled": settings.safety.live_trading_enabled,
+                    "kill_switch": settings.safety.kill_switch,
+                },
+                "ok": True,
+            }
+        )
 
 
 @app.command("serve")
@@ -680,12 +703,17 @@ def run_config_experiment_command(
             ),
         ),
     ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Append a machine-readable JSON summary line."),
+    ] = False,
 ) -> None:
     """Run a Phase 4 experiment from a JSON config file."""
     config = load_experiment_config(config_path)
     settings = reload_settings()
     provider_instance, data_source = build_ohlcv_provider(settings, requested=provider)
     factor_registry = None
+    loaded: list[str] = []
     if include_approved_candidates:
         factor_registry = build_default_factor_registry()
         # Mirror the agent CLI's candidate output dir: propose-factor / agent
@@ -697,9 +725,11 @@ def run_config_experiment_command(
             if candidates_dir is not None
             else Path("data/agent_run") / "agent" / "candidates"
         )
-        loaded = load_approved_factor_candidates(
-            factor_registry,
-            candidates_dir=active_candidates_dir,
+        loaded = list(
+            load_approved_factor_candidates(
+                factor_registry,
+                candidates_dir=active_candidates_dir,
+            )
         )
         typer.echo(f"approved_candidates_loaded={','.join(loaded) or '<none>'}")
     result = run_experiment(
@@ -710,6 +740,17 @@ def run_config_experiment_command(
         factor_registry=factor_registry,
     )
     _emit_experiment_summary(result)
+    if json_output:
+        _emit_json(
+            {
+                "experiment_id": result.experiment_id,
+                "run_count": result.run_count,
+                "best_run_id": result.best_run_id,
+                "agent_summary": str(result.agent_summary_path),
+                "report": str(result.report_path),
+                "approved_candidates_loaded": loaded,
+            }
+        )
 
 
 @paper_app.command("run-sample")
@@ -1274,6 +1315,10 @@ def agent_propose_factor(
             help="Externally generated factor source to ingest as a pending candidate.",
         ),
     ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Append a machine-readable JSON summary line."),
+    ] = False,
 ) -> None:
     """Create an inert candidate factor file for human review."""
     metadata_extra = None
@@ -1295,6 +1340,15 @@ def agent_propose_factor(
         metadata_extra=metadata_extra,
     )
     _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
+    if json_output:
+        _emit_json(
+            {
+                "candidate_id": artifact.candidate_id,
+                "status": "pending",
+                "path": str(artifact.path),
+                "metadata_path": str(artifact.metadata_path),
+            }
+        )
 
 
 @agent_app.command("propose-experiment")
@@ -1405,6 +1459,10 @@ def agent_review(
         str,
         typer.Option("--output-dir", help="Agent artifact output directory."),
     ] = "data/agent_run",
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Append a machine-readable JSON summary line."),
+    ] = False,
 ) -> None:
     """Record a manual review; approve only writes an approval lock."""
     record = AgentRunner(output_dir=output_dir).review(
@@ -1421,6 +1479,14 @@ def agent_review(
             ]
         )
     )
+    if json_output:
+        _emit_json(
+            {
+                "candidate_id": record.candidate_id,
+                "decision": record.decision,
+                "registration": "manual_required",
+            }
+        )
 
 
 @agent_app.command("promote-candidate")
