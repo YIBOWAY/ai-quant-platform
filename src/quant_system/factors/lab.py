@@ -17,7 +17,7 @@ from quant_system.factors.evaluation import (
     make_forward_returns,
 )
 from quant_system.factors.pipeline import compute_factor_pipeline
-from quant_system.factors.registry import build_default_factor_registry
+from quant_system.factors.registry import build_factor_registry
 from quant_system.universe.registry import build_default_universe_registry
 
 
@@ -50,7 +50,7 @@ def build_factor_lab_dashboard(
             cached["cache"]["status"] = "cached"
             return cached
 
-    registry = build_default_factor_registry()
+    registry = build_factor_registry()
     universe = build_default_universe_registry().get(universe_id)
     symbols = sorted(set(universe.normalized_symbols()).union({symbol.upper().strip()}))
     provider_instance, source = build_ohlcv_provider(settings, requested=provider)

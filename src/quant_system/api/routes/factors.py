@@ -22,7 +22,7 @@ from quant_system.api.schemas.factors import (
 from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.factors.lab import build_factor_lab_dashboard
 from quant_system.factors.pipeline import run_factor_research
-from quant_system.factors.registry import build_default_factor_registry
+from quant_system.factors.registry import build_factor_registry
 from quant_system.storage.runs_repository import list_run_metadatas, persist_run
 
 router = APIRouter()
@@ -30,7 +30,8 @@ router = APIRouter()
 
 @router.get("/factors", response_model=FactorCatalogResponse)
 def list_factors() -> dict:
-    registry = build_default_factor_registry()
+    # P2 will add ?include_candidates plumbing; keep candidates off for now.
+    registry = build_factor_registry(include_approved_candidates=False)
     return {
         "factors": [
             metadata.model_dump(mode="json")

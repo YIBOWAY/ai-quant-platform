@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 
 from quant_system.factors.base import BaseFactor, FactorMetadata
 from quant_system.factors.examples import (
@@ -9,6 +10,14 @@ from quant_system.factors.examples import (
     MomentumFactor,
     RSIFactor,
     VolatilityFactor,
+)
+
+_EXAMPLE_FACTORS: tuple[type[BaseFactor], ...] = (
+    MomentumFactor,
+    VolatilityFactor,
+    LiquidityFactor,
+    RSIFactor,
+    MACDFactor,
 )
 
 
@@ -39,14 +48,46 @@ class FactorRegistry:
         return [self.create(factor_id, **kwargs) for factor_id in factor_ids]
 
 
-def build_default_factor_registry() -> FactorRegistry:
+def build_factor_registry(
+    *,
+    include_promoted: bool = True,
+    include_approved_candidates: bool = False,
+    candidates_dir: str | Path | None = None,
+) -> FactorRegistry:
+    """Single construction point for the factor registry.
+
+    Examples are always registered. Promoted, code-reviewed factors
+    (``library.promoted.PROMOTED_FACTORS``) are registered by default. Approved
+    agent candidates are loaded only when ``include_approved_candidates`` is set
+    — that path ``exec``'s candidate source and is reserved for one-shot research
+    (``run-config --include-approved-candidates``), NEVER the resident trading
+    path (D-20 resident-path purity).
+    """
     registry = FactorRegistry()
-    registry.register(MomentumFactor)
-    registry.register(VolatilityFactor)
-    registry.register(LiquidityFactor)
-    registry.register(RSIFactor)
-    registry.register(MACDFactor)
+    for factor_cls in _EXAMPLE_FACTORS:
+        registry.register(factor_cls)
+
+    if include_promoted:
+        # Import the package (not the tuple by value) so promotions and test
+        # monkeypatches of PROMOTED_FACTORS are observed at call time.
+        from quant_system.factors.library import promoted
+
+        for factor_cls in promoted.PROMOTED_FACTORS:
+            registry.register(factor_cls)
+
+    if include_approved_candidates and candidates_dir is not None:
+        # Reuse the single approved-candidate loader (SafetyGate + AST check).
+        # Lazy import avoids a circular import: promotion imports FactorRegistry.
+        from quant_system.agent.promotion import load_approved_factor_candidates
+
+        load_approved_factor_candidates(registry, candidates_dir=candidates_dir)
+
     return registry
+
+
+def build_default_factor_registry() -> FactorRegistry:
+    """Thin alias of :func:`build_factor_registry` (examples + promoted)."""
+    return build_factor_registry()
 
 
 def register_alpha101_library(registry: FactorRegistry) -> FactorRegistry:
