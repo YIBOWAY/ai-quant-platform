@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 
+import quant_system.api.routes.factors as factors_route
+from quant_system.api.server import create_app
 from quant_system.factors import library
 from quant_system.factors.base import BaseFactor
 from quant_system.factors.registry import (
@@ -100,3 +103,89 @@ def test_approved_candidates_requested_without_dir_is_safe(tmp_path) -> None:
         include_approved_candidates=True, candidates_dir=tmp_path / "missing"
     )
     assert set(registry.factor_ids()) == _EXAMPLE_IDS
+
+
+# --- origin provenance metadata (Task P2) --------------------------------
+
+
+def test_registry_tracks_origin_per_registration_pass(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        library.promoted, "PROMOTED_FACTORS", (_StubPromotedFactor,), raising=True
+    )
+    _write_candidate(tmp_path, "cand-approved", _CANDIDATE_SRC, approved=True)
+
+    registry = build_factor_registry(
+        include_approved_candidates=True, candidates_dir=tmp_path
+    )
+
+    origins = registry.origins()
+    for example_id in _EXAMPLE_IDS:
+        assert origins[example_id] == "builtin"
+    assert origins["stub_promoted"] == "promoted"
+    assert origins["wiring_test_factor"] == "candidate"
+
+
+def test_default_registry_has_no_candidate_origins() -> None:
+    registry = build_factor_registry()
+    assert set(registry.origins().values()) <= {"builtin", "promoted"}
+
+
+# --- API /factors provenance (Task P2) -----------------------------------
+
+
+def _api_client(tmp_path, monkeypatch, candidates_dir):
+    # Point the route's candidate lookup at an isolated tmp dir instead of the
+    # on-disk data/agent_run/agent/candidates default.
+    monkeypatch.setattr(
+        factors_route, "AGENT_CANDIDATES_DIR", candidates_dir, raising=True
+    )
+    return TestClient(create_app(output_dir=tmp_path / "api"))
+
+
+def test_factors_default_call_has_no_candidate_origin(tmp_path, monkeypatch) -> None:
+    candidates_dir = tmp_path / "candidates"
+    candidates_dir.mkdir()
+    _write_candidate(candidates_dir, "cand-approved", _CANDIDATE_SRC, approved=True)
+    client = _api_client(tmp_path, monkeypatch, candidates_dir)
+
+    response = client.get("/api/factors")
+
+    assert response.status_code == 200
+    factors = response.json()["factors"]
+    origins = {item["factor_id"]: item["origin"] for item in factors}
+    assert set(origins) == _EXAMPLE_IDS
+    assert all(origin == "builtin" for origin in origins.values())
+    assert "wiring_test_factor" not in origins
+
+
+def test_factors_include_candidates_lists_approved_candidate(
+    tmp_path, monkeypatch
+) -> None:
+    candidates_dir = tmp_path / "candidates"
+    candidates_dir.mkdir()
+    _write_candidate(candidates_dir, "cand-approved", _CANDIDATE_SRC, approved=True)
+    client = _api_client(tmp_path, monkeypatch, candidates_dir)
+
+    response = client.get("/api/factors", params={"include_candidates": "true"})
+
+    assert response.status_code == 200
+    origins = {item["factor_id"]: item["origin"] for item in response.json()["factors"]}
+    assert origins["wiring_test_factor"] == "candidate"
+    for example_id in _EXAMPLE_IDS:
+        assert origins[example_id] == "builtin"
+
+
+def test_factors_include_candidates_excludes_pending_candidate(
+    tmp_path, monkeypatch
+) -> None:
+    candidates_dir = tmp_path / "candidates"
+    candidates_dir.mkdir()
+    _write_candidate(candidates_dir, "cand-pending", _CANDIDATE_SRC, approved=False)
+    client = _api_client(tmp_path, monkeypatch, candidates_dir)
+
+    response = client.get("/api/factors", params={"include_candidates": "true"})
+
+    assert response.status_code == 200
+    factor_ids = {item["factor_id"] for item in response.json()["factors"]}
+    assert "wiring_test_factor" not in factor_ids
+    assert factor_ids == _EXAMPLE_IDS

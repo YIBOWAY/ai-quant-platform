@@ -24,12 +24,29 @@ _EXAMPLE_FACTORS: tuple[type[BaseFactor], ...] = (
 class FactorRegistry:
     def __init__(self) -> None:
         self._factor_classes: dict[str, type[BaseFactor]] = {}
+        self._origins: dict[str, str] = {}
 
-    def register(self, factor_cls: type[BaseFactor]) -> None:
+    def register(self, factor_cls: type[BaseFactor], *, origin: str = "builtin") -> None:
         factor = factor_cls()
         if factor.factor_id in self._factor_classes:
             raise ValueError(f"factor_id {factor.factor_id!r} is already registered")
         self._factor_classes[factor.factor_id] = factor_cls
+        self._origins[factor.factor_id] = origin
+
+    def set_origin(self, factor_id: str, origin: str) -> None:
+        """Retag a registered factor's provenance.
+
+        Lets :func:`build_factor_registry` label factors by the registration
+        pass that loaded them (e.g. the approved-candidate loader, which does not
+        know its own provenance) without re-parsing sources.
+        """
+        if factor_id not in self._factor_classes:
+            raise KeyError(f"unknown factor_id {factor_id!r}")
+        self._origins[factor_id] = origin
+
+    def origins(self) -> dict[str, str]:
+        """Map each registered ``factor_id`` to its provenance origin."""
+        return dict(self._origins)
 
     def factor_ids(self) -> list[str]:
         return list(self._factor_classes)
@@ -65,7 +82,7 @@ def build_factor_registry(
     """
     registry = FactorRegistry()
     for factor_cls in _EXAMPLE_FACTORS:
-        registry.register(factor_cls)
+        registry.register(factor_cls, origin="builtin")
 
     if include_promoted:
         # Import the package (not the tuple by value) so promotions and test
@@ -73,14 +90,18 @@ def build_factor_registry(
         from quant_system.factors.library import promoted
 
         for factor_cls in promoted.PROMOTED_FACTORS:
-            registry.register(factor_cls)
+            registry.register(factor_cls, origin="promoted")
 
     if include_approved_candidates and candidates_dir is not None:
         # Reuse the single approved-candidate loader (SafetyGate + AST check).
         # Lazy import avoids a circular import: promotion imports FactorRegistry.
         from quant_system.agent.promotion import load_approved_factor_candidates
 
-        load_approved_factor_candidates(registry, candidates_dir=candidates_dir)
+        loaded = load_approved_factor_candidates(registry, candidates_dir=candidates_dir)
+        # Origin is tracked from which pass registered the id, not by re-parsing:
+        # the loader reports exactly the ids it added, so retag them as candidate.
+        for factor_id in loaded:
+            registry.set_origin(factor_id, "candidate")
 
     return registry
 
