@@ -39,7 +39,7 @@ GEHC,GE HealthCare,Health Care,US,both
 GILD,Gilead Sciences,Health Care,US,both
 GOOG,Alphabet Inc. (Class C),Communication Services,US,both
 GOOGL,Alphabet Inc. (Class A),Communication Services,US,both
-HON,Honeywell,Industrials,US,both
+HON,Honeywell Technologies,Industrials,US,both
 IDXX,Idexx Laboratories,Health Care,US,both
 INTC,Intel,Information Technology,US,both
 INTU,Intuit,Information Technology,US,both
@@ -55,6 +55,7 @@ MDLZ,Mondelez International,Consumer Staples,US,both
 META,Meta Platforms,Communication Services,US,both
 MNST,Monster Beverage,Consumer Staples,US,both
 MPWR,Monolithic Power Systems,Information Technology,US,both
+MRVL,Marvell Technology,Information Technology,US,both
 MSFT,Microsoft,Information Technology,US,both
 MU,Micron Technology,Information Technology,US,both
 NFLX,Netflix,Communication Services,US,both
@@ -93,7 +94,6 @@ CCEP,Coca-Cola Europacific Partners,Soft Drinks,US,nasdaq100
 FER,Ferrovial,"Military, Government, Technical",US,nasdaq100
 INSM,Insmed Incorporated,Biotechnology,US,nasdaq100
 MELI,Mercado Libre,Catalog/Specialty Distribution,US,nasdaq100
-MRVL,Marvell Technology,Semiconductors,US,nasdaq100
 MSTR,MicroStrategy,Computer Software,US,nasdaq100
 PDD,PDD Holdings,EDP Services,US,nasdaq100
 SHOP,Shopify,Computer Software,US,nasdaq100
@@ -158,7 +158,6 @@ BSX,Boston Scientific,Health Care,US,sp500
 BX,Blackstone Inc.,Financials,US,sp500
 BXP,"BXP, Inc.",Real Estate,US,sp500
 C,Citigroup,Financials,US,sp500
-CAG,Conagra Brands,Consumer Staples,US,sp500
 CAH,Cardinal Health,Health Care,US,sp500
 CARR,Carrier Global,Industrials,US,sp500
 CASY,Casey's,Consumer Staples,US,sp500
@@ -191,7 +190,6 @@ COO,Cooper Companies (The),Health Care,US,sp500
 COP,ConocoPhillips,Energy,US,sp500
 COR,Cencora,Health Care,US,sp500
 CPAY,Corpay,Financials,US,sp500
-CPB,Campbell's Company (The),Consumer Staples,US,sp500
 CPT,Camden Property Trust,Real Estate,US,sp500
 CRH,CRH plc,Materials,US,sp500
 CRL,Charles River Laboratories,Health Care,US,sp500
@@ -223,6 +221,7 @@ DUK,Duke Energy,Utilities,US,sp500
 DVA,DaVita,Health Care,US,sp500
 DVN,Devon Energy,Energy,US,sp500
 EBAY,eBay Inc.,Consumer Discretionary,US,sp500
+ECHO,EchoStar,Communication Services,US,sp500
 ECL,Ecolab,Materials,US,sp500
 ED,Consolidated Edison,Utilities,US,sp500
 EFX,Equifax,Industrials,US,sp500
@@ -259,6 +258,7 @@ FIS,Fidelity National Information Services,Financials,US,sp500
 FISV,Fiserv,Financials,US,sp500
 FITB,Fifth Third Bancorp,Financials,US,sp500
 FIX,Comfort Systems USA,Industrials,US,sp500
+FLEX,Flex Ltd.,Information Technology,US,sp500
 FOX,Fox Corporation (Class B),Communication Services,US,sp500
 FOXA,Fox Corporation (Class A),Communication Services,US,sp500
 FRT,Federal Realty Investment Trust,Real Estate,US,sp500
@@ -287,6 +287,7 @@ HD,Home Depot (The),Consumer Discretionary,US,sp500
 HIG,Hartford (The),Financials,US,sp500
 HII,Huntington Ingalls Industries,Industrials,US,sp500
 HLT,Hilton Worldwide,Consumer Discretionary,US,sp500
+HONA,Honeywell Aerospace,Industrials,US,sp500
 HOOD,Robinhood Markets,Financials,US,sp500
 HPE,Hewlett Packard Enterprise,Information Technology,US,sp500
 HPQ,HP Inc.,Information Technology,US,sp500
@@ -405,7 +406,6 @@ PNC,PNC Financial Services,Financials,US,sp500
 PNR,Pentair,Industrials,US,sp500
 PNW,Pinnacle West Capital,Utilities,US,sp500
 PODD,Insulet Corporation,Health Care,US,sp500
-POOL,Pool Corporation,Consumer Discretionary,US,sp500
 PPG,PPG Industries,Materials,US,sp500
 PPL,PPL Corporation,Utilities,US,sp500
 PRU,Prudential Financial,Financials,US,sp500
@@ -426,7 +426,6 @@ ROL,"Rollins, Inc.",Industrials,US,sp500
 RSG,Republic Services,Industrials,US,sp500
 RTX,RTX Corporation,Industrials,US,sp500
 RVTY,Revvity,Health Care,US,sp500
-SATS,EchoStar,Communication Services,US,sp500
 SBAC,SBA Communications,Real Estate,US,sp500
 SCHW,Charles Schwab Corporation,Financials,US,sp500
 SHW,Sherwin-Williams,Materials,US,sp500
