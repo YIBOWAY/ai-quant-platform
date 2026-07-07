@@ -19,6 +19,7 @@ source files under the promoted library. It is deliberately boring:
 from __future__ import annotations
 
 import ast
+import keyword
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,7 +30,9 @@ from quant_system.agent.promotion import CandidateLoadError, _check_source
 from quant_system.agent.safety import SafetyGate
 
 _PROMOTED_PACKAGE = "quant_system.factors.library.promoted"
-_SAFE_FACTOR_ID = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Must start with a letter: `_regenerate_init` skips `_*.py` modules, so a
+# leading-underscore factor_id would be written but never registered (F5).
+_SAFE_FACTOR_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
 _INIT_DOCSTRING = '''"""Code-reviewed, promoted factor library (Gate-3 output of D-20).
 
@@ -92,38 +95,82 @@ def promote_candidate(
     # 3. Static discovery of the single factor class -- no exec.
     class_name, factor_id = _extract_factor_class(source, candidate_id)
 
+    # 4. Registry-collision refusal (review finding F4 + adversarial re-review):
+    # a promoted module whose factor_id shadows any registrable factor would make
+    # a `build_factor_registry()`/`register_*_library()` call raise at its call
+    # site once the diff is committed. The default registry omits alpha101 (it is
+    # layered on only at specific call sites), so the reserved set must union
+    # every registrable library, not just the default registry. Lazy imports
+    # avoid a circular import (registry -> promotion -> FactorRegistry).
+    from quant_system.factors.library.alpha101 import ALPHA101_FACTORS
+    from quant_system.factors.registry import build_factor_registry
+
+    existing_ids = set(build_factor_registry(include_promoted=True).factor_ids())
+    existing_ids |= {factor_cls().factor_id for factor_cls in ALPHA101_FACTORS}
+    if factor_id in existing_ids:
+        raise PromotionError(
+            f"factor_id {factor_id!r} already exists in the registry "
+            "(builtin, promoted, or a registrable library); choose a distinct factor_id"
+        )
+
     module_path = library_dir / f"{factor_id}.py"
     test_path = tests_dir / f"test_{factor_id}.py"
-    if module_path.exists():
-        raise PromotionError(
-            f"promoted module {module_path} already exists; "
-            f"factor {factor_id!r} was already promoted"
-        )
-    if test_path.exists():
-        raise PromotionError(f"test scaffold {test_path} already exists")
 
-    # All checks passed -- write the three files (Gate-3 diff).
     promoted_on = promotion_date or datetime.now(UTC).date().isoformat()
     approval_note = candidates_dir / candidate_id / "approved.lock"
 
+    # 5. Serialize the check -> write -> regenerate-init critical section with an
+    # advisory lock (review findings F2/F3). Two concurrent promotions must not
+    # both pass the module-exists check and then interleave their
+    # `_regenerate_init` glob+rewrite, which would drop a factor from
+    # PROMOTED_FACTORS. `touch(exist_ok=False)` is an atomic exclusive create;
+    # the finally clause releases only the lock this call created.
     library_dir.mkdir(parents=True, exist_ok=True)
-    module_path.write_text(
-        _provenance_header(
-            candidate_id=candidate_id,
-            approval_note=approval_note,
-            promoted_on=promoted_on,
+    lock_path = library_dir / ".promote.lock"
+    try:
+        lock_path.touch(exist_ok=False)
+    except FileExistsError as exc:
+        raise PromotionError(
+            f"a promotion is in progress ({lock_path} exists); if no promotion "
+            "is running, remove the stale lock file and retry"
+        ) from exc
+
+    try:
+        if module_path.exists():
+            raise PromotionError(
+                f"promoted module {module_path} already exists; "
+                f"factor {factor_id!r} was already promoted"
+            )
+        if test_path.exists():
+            raise PromotionError(f"test scaffold {test_path} already exists")
+
+        # All checks passed -- write the three files (Gate-3 diff). Exclusive
+        # create ("x") is a hard backstop against writing over an existing file
+        # even if a check above were bypassed. If any step after the module write
+        # fails, roll the module back so a refusal leaves the working tree
+        # untouched (docstring contract) and a re-run is not falsely blocked.
+        _write_new(
+            module_path,
+            _provenance_header(
+                candidate_id=candidate_id,
+                approval_note=approval_note,
+                promoted_on=promoted_on,
+            )
+            + source,
         )
-        + source,
-        encoding="utf-8",
-    )
+        try:
+            init_path = _regenerate_init(library_dir)
 
-    init_path = _regenerate_init(library_dir)
-
-    tests_dir.mkdir(parents=True, exist_ok=True)
-    test_path.write_text(
-        _test_scaffold(class_name=class_name, factor_id=factor_id),
-        encoding="utf-8",
-    )
+            tests_dir.mkdir(parents=True, exist_ok=True)
+            _write_new(
+                test_path,
+                _test_scaffold(class_name=class_name, factor_id=factor_id),
+            )
+        except BaseException:
+            module_path.unlink(missing_ok=True)
+            raise
+    finally:
+        lock_path.unlink(missing_ok=True)
 
     return PromotionResult(
         factor_id=factor_id,
@@ -131,6 +178,12 @@ def promote_candidate(
         test_path=test_path,
         init_path=init_path,
     )
+
+
+def _write_new(path: Path, content: str) -> None:
+    """Write ``content`` to ``path``, refusing to overwrite an existing file."""
+    with path.open("x", encoding="utf-8") as handle:
+        handle.write(content)
 
 
 def _extract_factor_class(source: str, context: str) -> tuple[str, str]:
@@ -156,6 +209,15 @@ def _extract_factor_class(source: str, context: str) -> tuple[str, str]:
     if _SAFE_FACTOR_ID.fullmatch(factor_id) is None:
         raise PromotionError(
             f"candidate {context!r} factor_id {factor_id!r} is not a safe module name"
+        )
+    # A factor_id that is a Python keyword passes the regex but yields an
+    # unimportable module filename (e.g. import.py -> `from ...promoted.import
+    # import ...` is a SyntaxError), which would brick build_factor_registry()
+    # platform-wide (adversarial re-review). Reject hard and soft keywords.
+    if keyword.iskeyword(factor_id) or keyword.issoftkeyword(factor_id):
+        raise PromotionError(
+            f"candidate {context!r} factor_id {factor_id!r} is a Python keyword "
+            "and cannot be a module name"
         )
     return class_def.name, factor_id
 
@@ -233,7 +295,15 @@ def _regenerate_init(library_dir: Path) -> Path:
     lines.extend(["", '__all__ = ["PROMOTED_FACTORS"]', ""])
 
     init_path = library_dir / "__init__.py"
-    init_path.write_text("\n".join(lines), encoding="utf-8")
+    # Atomic write: a concurrent cold import of the promoted package (any
+    # build_factor_registry() call site) must never observe a truncated/0-byte
+    # __init__.py. write_text truncates in place; instead write a temp file in
+    # the same directory and Path.replace (atomic rename on POSIX) it into place
+    # so readers always see the complete old or complete new file (adversarial
+    # re-review). Path.replace keeps this module dependency-free (pathlib only).
+    tmp_path = library_dir / "__init__.py.tmp"
+    tmp_path.write_text("\n".join(lines), encoding="utf-8")
+    tmp_path.replace(init_path)
     return init_path
 
 

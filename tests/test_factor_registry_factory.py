@@ -188,3 +188,19 @@ def test_factors_include_candidates_excludes_pending_candidate(
     factor_ids = {item["factor_id"] for item in response.json()["factors"]}
     assert "wiring_test_factor" not in factor_ids
     assert factor_ids == _EXAMPLE_IDS
+
+
+# --- Candidate dir path resolution (review finding F6) --------------------
+
+
+def test_agent_candidates_dir_is_absolute_and_cwd_independent() -> None:
+    # A relative AGENT_CANDIDATES_DIR silently resolves against the process CWD;
+    # under any CWD other than the repo root the approved-candidate catalog view
+    # fails closed (empty), which reads as "no candidates" rather than an error.
+    # Pin it to an absolute, CWD-independent path anchored on the repo layout.
+    assert factors_route.AGENT_CANDIDATES_DIR.is_absolute()
+    assert factors_route.AGENT_CANDIDATES_DIR.parts[-3:] == (
+        "agent_run",
+        "agent",
+        "candidates",
+    )

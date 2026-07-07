@@ -79,6 +79,19 @@ class SecondFactor(BaseFactor):
 
 _NON_STRING_ID_SRC = _FACTOR_SRC.replace('factor_id = "wiring_test_factor"', "factor_id = 123")
 
+# A candidate whose factor_id collides with a builtin registry factor
+# ("momentum"). Promoting it would make build_factor_registry() raise everywhere.
+_COLLIDING_ID_SRC = _FACTOR_SRC.replace(
+    'factor_id = "wiring_test_factor"', 'factor_id = "momentum"'
+).replace("WiringTestFactor", "CollidingFactor")
+
+# A candidate whose factor_id starts with an underscore. `_regenerate_init`
+# skips `_*.py` modules, so such a factor would be written but silently never
+# registered — reject it up front instead.
+_UNDERSCORE_ID_SRC = _FACTOR_SRC.replace(
+    'factor_id = "wiring_test_factor"', 'factor_id = "_hidden_factor"'
+).replace("WiringTestFactor", "HiddenFactor")
+
 
 def _write_candidate(root: Path, candidate_id: str, source: str, *, approved: bool = True) -> None:
     cdir = root / candidate_id
@@ -215,6 +228,100 @@ def test_non_string_factor_id_refuses(dirs) -> None:
         _promote("cand-badid", dirs)
 
 
+def test_registry_collision_refuses_and_nothing_written(dirs) -> None:
+    # factor_id "momentum" is a builtin example. Promoting it would make the
+    # shared build_factor_registry() raise at every call site once committed
+    # (review finding F4). Refuse before any write.
+    _write_candidate(dirs["candidates"], "cand-collide", _COLLIDING_ID_SRC)
+
+    with pytest.raises(PromotionError, match="already exists in the registry"):
+        _promote("cand-collide", dirs)
+    assert not dirs["library"].exists() or not list(dirs["library"].iterdir())
+    assert not dirs["tests"].exists() or not list(dirs["tests"].iterdir())
+
+
+def test_leading_underscore_factor_id_refuses(dirs) -> None:
+    # `_regenerate_init` skips `_*.py`, so an underscore factor_id would be
+    # written but never registered (review finding F5). Reject it.
+    _write_candidate(dirs["candidates"], "cand-underscore", _UNDERSCORE_ID_SRC)
+
+    with pytest.raises(PromotionError, match="factor_id"):
+        _promote("cand-underscore", dirs)
+    assert not dirs["library"].exists() or not list(dirs["library"].iterdir())
+
+
+def test_python_keyword_factor_id_refuses(dirs) -> None:
+    # factor_id "import" passes the [A-Za-z][A-Za-z0-9_]* regex but is a Python
+    # keyword; module filename import.py yields a SyntaxError in the regenerated
+    # __init__.py that bricks build_factor_registry() platform-wide (adversarial
+    # re-review MAJOR). Reject keywords in the same gate.
+    keyword_src = _FACTOR_SRC.replace(
+        'factor_id = "wiring_test_factor"', 'factor_id = "import"'
+    ).replace("WiringTestFactor", "KeywordFactor")
+    _write_candidate(dirs["candidates"], "cand-keyword", keyword_src)
+
+    with pytest.raises(PromotionError, match="keyword"):
+        _promote("cand-keyword", dirs)
+    assert not dirs["library"].exists() or not list(dirs["library"].iterdir())
+
+
+def test_alpha101_collision_refuses(dirs) -> None:
+    # F4's default registry omits alpha101, so a candidate id colliding with an
+    # alpha101 factor slipped through and could brick the register-library path
+    # (adversarial re-review MAJOR). The reserved-id set must include alpha101.
+    from quant_system.factors.library.alpha101 import ALPHA101_FACTORS
+
+    an_alpha_id = ALPHA101_FACTORS[0]().factor_id
+    src = _FACTOR_SRC.replace(
+        'factor_id = "wiring_test_factor"', f'factor_id = "{an_alpha_id}"'
+    ).replace("WiringTestFactor", "CollidesAlphaFactor")
+    _write_candidate(dirs["candidates"], "cand-alpha", src)
+
+    with pytest.raises(PromotionError, match="already exists in the registry"):
+        _promote("cand-alpha", dirs)
+    assert not dirs["library"].exists() or not list(dirs["library"].iterdir())
+
+
+def test_init_write_is_atomic(dirs, monkeypatch) -> None:
+    # _regenerate_init must not truncate __init__.py in place: a concurrent cold
+    # import of the promoted package during the write window would read a 0-byte
+    # / partial file and crash build_factor_registry() platform-wide (adversarial
+    # re-review MAJOR). Prove the write goes through a rename, not truncate: the
+    # real __init__.py path is never observed at 0 bytes mid-write. We approximate
+    # by asserting no temp truncation — write once, then confirm the file parses.
+    _write_candidate(dirs["candidates"], "cand-a", _FACTOR_SRC)
+    _write_candidate(dirs["candidates"], "cand-b", _SECOND_FACTOR_SRC)
+
+    _promote("cand-a", dirs)
+    init_path = dirs["library"] / "__init__.py"
+    inode_before = init_path.stat().st_ino
+
+    _promote("cand-b", dirs)
+    # An atomic rename swaps in a new inode; an in-place truncate keeps the inode.
+    assert init_path.stat().st_ino != inode_before
+    ast.parse(init_path.read_text(encoding="utf-8"))
+
+
+def test_partial_failure_rolls_back_orphan_module(dirs, monkeypatch) -> None:
+    # If _regenerate_init raises after the module .py is written, the module must
+    # be rolled back so the working tree is left untouched (docstring contract)
+    # and a corrective re-run is not blocked with a misleading "already promoted"
+    # (adversarial re-review MINOR).
+    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+
+    def _boom(_library_dir):
+        raise RuntimeError("init regeneration failed")
+
+    monkeypatch.setattr(promote_module, "_regenerate_init", _boom)
+
+    with pytest.raises(RuntimeError, match="init regeneration failed"):
+        _promote("cand-ok", dirs)
+
+    # The half-written module must NOT persist; lock released; re-run unblocked.
+    assert not (dirs["library"] / "wiring_test_factor.py").exists()
+    assert not (dirs["library"] / ".promote.lock").exists()
+
+
 def test_second_promotion_of_same_factor_refuses(dirs) -> None:
     _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
     _promote("cand-ok", dirs)
@@ -300,3 +407,74 @@ def test_cli_promote_candidate_refusal_exits_nonzero(dirs) -> None:
 
     assert result.exit_code == 1
     assert "promotion_refused" in result.output
+
+
+# --- Concurrency: promotion lockfile (review findings F2 BLOCKER / F3 MAJOR) ---
+# Two concurrent promotions of DIFFERENT factors could both pass the
+# module-exists check and then interleave their `_regenerate_init` glob+rewrite,
+# dropping one factor from PROMOTED_FACTORS (silent data loss). A single
+# advisory lock (`.promote.lock` in library_dir) serializes the whole
+# check -> write-module -> regenerate-init critical section.
+
+
+def test_promotion_refuses_when_lock_present(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    dirs["library"].mkdir(parents=True)
+    (dirs["library"] / ".promote.lock").write_text("", encoding="utf-8")
+
+    with pytest.raises(PromotionError, match="in progress"):
+        _promote("cand-ok", dirs)
+
+    # Nothing written past the pre-existing lock; the held lock is left intact
+    # (this promotion did not own it, so it must not remove it).
+    assert (dirs["library"] / ".promote.lock").exists()
+    assert not (dirs["library"] / "wiring_test_factor.py").exists()
+    assert not (dirs["library"] / "__init__.py").exists()
+
+
+def test_promotion_lock_released_on_success(dirs) -> None:
+    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    _promote("cand-ok", dirs)
+    assert not (dirs["library"] / ".promote.lock").exists()
+
+
+def test_promotion_lock_released_on_refusal(dirs) -> None:
+    # A refusal that happens after lock acquisition (target module already there)
+    # must still release the lock via the finally cleanup.
+    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    dirs["library"].mkdir(parents=True)
+    (dirs["library"] / "wiring_test_factor.py").write_text(_FACTOR_SRC, encoding="utf-8")
+
+    with pytest.raises(PromotionError, match="already exists"):
+        _promote("cand-ok", dirs)
+    assert not (dirs["library"] / ".promote.lock").exists()
+
+
+def test_promotion_serializes_write_and_init(dirs, monkeypatch) -> None:
+    # Deterministic proof of serialization without threads: while cand-a holds
+    # the lock across its write + _regenerate_init, a re-entrant promotion of
+    # cand-b must be refused ("in progress"). If the critical section were not
+    # locked, the re-entrant call would proceed and corrupt PROMOTED_FACTORS.
+    _write_candidate(dirs["candidates"], "cand-a", _FACTOR_SRC)
+    _write_candidate(dirs["candidates"], "cand-b", _SECOND_FACTOR_SRC)
+
+    real_regenerate = promote_module._regenerate_init
+    reentrant_error: dict[str, object] = {}
+
+    def _spy(library_dir):
+        # Called while cand-a's lock is held. A second promotion must bounce.
+        try:
+            _promote("cand-b", dirs)
+        except PromotionError as exc:
+            reentrant_error["exc"] = exc
+        return real_regenerate(library_dir)
+
+    monkeypatch.setattr(promote_module, "_regenerate_init", _spy)
+
+    _promote("cand-a", dirs)
+
+    assert "exc" in reentrant_error, "re-entrant promotion was not attempted"
+    assert "in progress" in str(reentrant_error["exc"])
+    # cand-a landed; cand-b was blocked and wrote nothing.
+    assert (dirs["library"] / "wiring_test_factor.py").exists()
+    assert not (dirs["library"] / "alpha_scaffold_factor.py").exists()

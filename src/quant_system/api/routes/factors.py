@@ -33,7 +33,10 @@ router = APIRouter()
 # API output_dir, because HQA drives propose/approve through the CLI. Loading
 # from here execs approved candidate source (SafetyGate + AST gated) and is
 # reserved for this opt-in catalog view — never the resident trading path.
-AGENT_CANDIDATES_DIR = Path("data/agent_run") / "agent" / "candidates"
+# Anchored on the repo root (this file: src/quant_system/api/routes/factors.py)
+# so it does not silently fail closed under a non-repo-root CWD (F6).
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+AGENT_CANDIDATES_DIR = _REPO_ROOT / "data" / "agent_run" / "agent" / "candidates"
 
 
 @router.get("/factors", response_model=FactorCatalogResponse)

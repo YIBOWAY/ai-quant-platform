@@ -152,6 +152,181 @@ def test_quant_system_reexport_import_is_blocked(tmp_path):
         load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
 
 
+# --- Dunder-gadget hardening (review finding F1 BLOCKER) ---
+# The Name/Attribute-only denylist let `type(x).__getattribute__(x, "__class__")`
+# — a dunder-METHOD call whose argument is a dunder STRING CONSTANT — walk to
+# object.__subclasses__() and reach subprocess.Popen at promoted-module import
+# time, defeating both the AST layer and the emptied-builtins exec layer. The
+# hardened check rejects (a) any attribute whose name is a dunder except
+# __init__, and (b) any string constant that names a dunder.
+
+
+def test_dunder_getattribute_gadget_is_blocked(tmp_path):
+    # The exact confirmed bypass: dunder-method attribute call with a dunder
+    # string-constant argument. Neither node type tripped the old denylist.
+    bad = _FACTOR_SRC.replace(
+        "    def _compute_values(self, frame):",
+        '    _p = type(BaseFactor).__getattribute__(BaseFactor, "__class__")\n'
+        "    def _compute_values(self, frame):",
+    )
+    _approved(tmp_path, "cand-gadget", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_dunder_attribute_access_is_blocked(tmp_path):
+    # __globals__ was not in the original denylist; the generic dunder-attribute
+    # rule must reject it (and __code__, __closure__, etc.) without enumeration.
+    bad = _FACTOR_SRC.replace(
+        "    def _compute_values(self, frame):",
+        "    _g = (lambda: 0).__globals__\n    def _compute_values(self, frame):",
+    )
+    _approved(tmp_path, "cand-globals", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_dunder_string_constant_is_blocked(tmp_path):
+    # A bare dunder string constant is the raw material for getattr/gadget walks;
+    # reject it even when it is not (yet) passed anywhere interesting.
+    bad = _FACTOR_SRC.replace(
+        "    def _compute_values(self, frame):",
+        '    _name = "__subclasses__"\n    def _compute_values(self, frame):',
+    )
+    _approved(tmp_path, "cand-dunderstr", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_super_init_still_allowed(tmp_path):
+    # The __init__ exception must survive: a factor that chains its constructor
+    # via super().__init__(...) is legitimate and must still load.
+    src = _FACTOR_SRC.replace(
+        "    def _compute_values(self, frame):",
+        "    def __init__(self, *, lookback=None):\n"
+        "        super().__init__(lookback=lookback)\n"
+        "    def _compute_values(self, frame):",
+    )
+    _approved(tmp_path, "cand-superinit", src)
+    loaded = load_approved_factor_candidates(
+        build_default_factor_registry(), candidates_dir=tmp_path
+    )
+    assert loaded == ["wiring_test_factor"]
+
+
+def test_attrgetter_string_indirection_is_blocked(tmp_path):
+    # operator.attrgetter turns a runtime-built string into an arbitrary
+    # attribute fetch, bridging string CONCATENATION (which dodges the
+    # dunder-constant rule) to a gadget attribute. operator is an allowed import
+    # root, so the attribute-fetch-by-name primitives themselves must be denied.
+    bad = _FACTOR_SRC.replace(
+        "from quant_system.factors.base import BaseFactor",
+        "import operator\nfrom quant_system.factors.base import BaseFactor",
+    ).replace(
+        "    def _compute_values(self, frame):",
+        '    _g = operator.attrgetter("__glob" + "als__")\n'
+        "    def _compute_values(self, frame):",
+    )
+    _approved(tmp_path, "cand-attrgetter", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_methodcaller_string_indirection_is_blocked(tmp_path):
+    bad = _FACTOR_SRC.replace(
+        "from quant_system.factors.base import BaseFactor",
+        "from operator import methodcaller\nfrom quant_system.factors.base import BaseFactor",
+    ).replace(
+        "    def _compute_values(self, frame):",
+        '    _m = methodcaller("__reduce" + "__")\n'
+        "    def _compute_values(self, frame):",
+    )
+    _approved(tmp_path, "cand-methodcaller", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+# --- Re-export RCE class (adversarial re-review: BLOCKER + MAJOR) ---
+# numpy/pandas are allowed import roots but re-export os/subprocess as PLAIN
+# (non-dunder) attributes, so `np.ctypeslib.os.system(...)` reached a shell at
+# class-body eval time, and `pd.read_pickle(...)`/`pd.read_csv(...)` are
+# arbitrary-code / arbitrary-file-read primitives — all through legitimate
+# allowed roots. The AST check now rejects (a) any attribute-chain part that
+# names a dangerous stdlib module and (b) deserialization / file-IO reader
+# methods, so such an attack must look obviously weird for the human Gate-2.
+
+
+def test_numpy_os_reexport_chain_is_blocked(tmp_path):
+    bad = _FACTOR_SRC.replace(
+        "from quant_system.factors.base import BaseFactor",
+        "import numpy as np\nfrom quant_system.factors.base import BaseFactor",
+    ).replace(
+        "    def _compute_values(self, frame):",
+        '    _x = np.ctypeslib.os\n    def _compute_values(self, frame):',
+    )
+    _approved(tmp_path, "cand-npos", bad)
+    with pytest.raises(CandidateLoadError, match="os"):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_pandas_subprocess_reexport_chain_is_blocked(tmp_path):
+    bad = _FACTOR_SRC.replace(
+        "from quant_system.factors.base import BaseFactor",
+        "import pandas as pd\nfrom quant_system.factors.base import BaseFactor",
+    ).replace(
+        "    def _compute_values(self, frame):",
+        "    _x = pd.compat.os\n    def _compute_values(self, frame):",
+    )
+    _approved(tmp_path, "cand-pdos", bad)
+    with pytest.raises(CandidateLoadError):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_pandas_read_pickle_is_blocked(tmp_path):
+    # read_pickle is a pickle-deserialization RCE primitive; reject the reader
+    # method name regardless of the object it is called on.
+    bad = _FACTOR_SRC.replace(
+        "from quant_system.factors.base import BaseFactor",
+        "import pandas as pd\nfrom quant_system.factors.base import BaseFactor",
+    ).replace(
+        "    def _compute_values(self, frame):",
+        '    _x = pd.read_pickle("/etc/passwd")\n    def _compute_values(self, frame):',
+    )
+    _approved(tmp_path, "cand-readpickle", bad)
+    with pytest.raises(CandidateLoadError, match="read_pickle"):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_pandas_read_csv_is_blocked(tmp_path):
+    bad = _FACTOR_SRC.replace(
+        "from quant_system.factors.base import BaseFactor",
+        "import pandas as pd\nfrom quant_system.factors.base import BaseFactor",
+    ).replace(
+        "    def _compute_values(self, frame):",
+        '    _x = pd.read_csv("/etc/passwd")\n    def _compute_values(self, frame):',
+    )
+    _approved(tmp_path, "cand-readcsv", bad)
+    with pytest.raises(CandidateLoadError, match="read_csv"):
+        load_approved_factor_candidates(build_default_factor_registry(), candidates_dir=tmp_path)
+
+
+def test_legitimate_numpy_pandas_math_still_loads(tmp_path):
+    # Guard against over-blocking: ordinary factor math on numpy/pandas must
+    # still load. Uses the real allowed vocabulary (rolling/mean/pct_change).
+    src = _FACTOR_SRC.replace(
+        "from quant_system.factors.base import BaseFactor",
+        "import numpy as np\nimport pandas as pd\nfrom quant_system.factors.base import BaseFactor",
+    ).replace(
+        "        return frame[\"close\"] * 0.0",
+        "        return frame[\"close\"].pct_change().rolling(self.lookback).mean() * np.float64(1.0)",
+    )
+    _approved(tmp_path, "cand-legitmath", src)
+    loaded = load_approved_factor_candidates(
+        build_default_factor_registry(), candidates_dir=tmp_path
+    )
+    assert loaded == ["wiring_test_factor"]
+
+
 def test_missing_dir_returns_empty(tmp_path):
     registry = build_default_factor_registry()
     assert load_approved_factor_candidates(registry, candidates_dir=tmp_path / "nope") == []
