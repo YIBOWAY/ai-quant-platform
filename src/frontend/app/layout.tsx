@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import { Inter, JetBrains_Mono, Noto_Serif_SC, Source_Serif_4 } from 'next/font/google';
 import './globals.css';
 import { Sidebar } from '@/components/Sidebar';
 import { TopBar } from '@/components/TopBar';
@@ -18,6 +18,23 @@ const jetbrainsMono = JetBrains_Mono({
   variable: '--font-mono',
 });
 
+const sourceSerif = Source_Serif_4({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  style: ['normal', 'italic'],
+  variable: '--font-serif',
+  display: 'swap',
+  fallback: ['Georgia', 'serif'],
+});
+
+const notoSerifSC = Noto_Serif_SC({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  variable: '--font-serif-sc',
+  display: 'swap',
+  fallback: ['Songti SC', 'serif'],
+});
+
 export const metadata: Metadata = {
   title: 'QUANTUM_CORE',
   description: 'AI Quant Platform',
@@ -26,7 +43,10 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getServerLocale();
   return (
-    <html lang={locale === 'zh' ? 'zh' : 'en'} className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang={locale === 'zh' ? 'zh' : 'en'}
+      className={`dark ${inter.variable} ${jetbrainsMono.variable} ${sourceSerif.variable} ${notoSerifSC.variable}`}
+    >
       <body className="min-h-screen bg-bg-base antialiased selection:bg-info selection:text-bg-base">
         <LocaleProvider locale={locale}>
           <Providers>
