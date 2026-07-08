@@ -80,3 +80,8 @@ def test_split_workbench_pages_use_responsive_terminal_shell() -> None:
         assert "<TerminalSplitShell" in source
         for fragment in forbidden_fragments:
             assert fragment not in source
+
+
+def test_frontend_component_directory_contracts_exist() -> None:
+    assert Path("src/frontend/components/editorial/index.ts").is_file()
+    assert Path("src/frontend/components/hermes/index.ts").is_file()
