@@ -32,16 +32,19 @@ export async function SafetyStrip() {
   const paperOnly = Boolean(safety?.dry_run && safety?.paper_trading);
   const liveDisabled = safety?.live_trading_enabled === false;
   const killSwitchOn = safety?.kill_switch === true;
+  const desktopStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
+    liveDisabled ? text.liveDisabled : text.liveEnabled
+  } · ${text.kill} ${killSwitchOn ? text.on : text.off} · ${text.api} ${health.status}`;
+  const mobileStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
+    liveDisabled ? text.liveDisabled : text.liveEnabled
+  } · ${text.api} ${health.status}`;
 
   return (
-    <div className="fixed top-16 left-0 right-0 z-30 flex h-[36px] items-center justify-center overflow-hidden border-b border-amber-900/50 bg-amber-950/20 px-3 lg:left-[240px]">
-      <div className="flex items-center gap-2 whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-widest text-amber-500">
+    <div className="fixed top-16 left-0 right-0 z-30 flex h-[36px] items-center justify-start overflow-hidden border-b border-amber-900/50 bg-amber-950/20 px-3 sm:justify-center lg:left-[240px]">
+      <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-widest text-amber-500">
         <ShieldAlert size={14} className="text-amber-500" />
-        <span>
-          {paperOnly ? text.paperOnly : text.paperUnavailable} ·{" "}
-          {liveDisabled ? text.liveDisabled : text.liveEnabled} · {text.kill}{" "}
-          {killSwitchOn ? text.on : text.off} · {text.api} {health.status}
-        </span>
+        <span className="min-w-0 truncate sm:hidden">{mobileStatus}</span>
+        <span className="hidden sm:inline">{desktopStatus}</span>
       </div>
     </div>
   );
