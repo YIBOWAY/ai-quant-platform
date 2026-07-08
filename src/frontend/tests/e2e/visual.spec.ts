@@ -50,14 +50,14 @@ test.describe("mobile shell visual baseline", () => {
 });
 
 test.describe("brief trial smoke", () => {
-  test("brief renders the read-only trial and fits mobile width", async ({ page }) => {
+  test("brief renders the editorial trial columns and fits mobile width", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await preparePage(page, "/brief");
 
-    await expect(page.getByRole("heading", { name: "Morning Brief" })).toBeVisible();
-    await expect(page.getByText("Read-only snapshot")).toBeVisible();
-    await expect(page.getByText("Artifact tape")).toBeVisible();
-    await expect(page.getByText(/paper-only research/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Hermes Morning Brief" })).toBeVisible();
+    await expect(page.getByText("THE ACCOUNT")).toBeVisible();
+    await expect(page.getByText("A BACKTEST STUDY")).toBeVisible();
+    await expect(page.getByText(/live trading never implied active/i)).toBeVisible();
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(390);
