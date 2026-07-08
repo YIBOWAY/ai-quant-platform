@@ -21,7 +21,7 @@ describe("editorial design tokens", () => {
       "--color-stream-bg: #17171C;",
       "--color-stream-surface: #1F1F27;",
       "--color-stream-surface-2: #262631;",
-      "--font-editorial-serif: var(--font-serif, 'Source Serif 4'), Georgia, 'Noto Serif SC', 'Songti SC', serif;",
+      "--font-editorial-serif: var(--font-serif), var(--font-serif-sc), Georgia, 'Songti SC', serif;",
       "--spacing-rail-width: 208px;",
       "--spacing-right-panel: 340px;",
       "--spacing-stream-max: 720px;",
@@ -32,5 +32,9 @@ describe("editorial design tokens", () => {
     for (const token of expectedTokens) {
       expect(globalsCss).toContain(token);
     }
+  });
+
+  it("routes Chinese editorial text through the Next-hosted SC font variable", () => {
+    expect(globalsCss).toContain("var(--font-serif-sc)");
   });
 });

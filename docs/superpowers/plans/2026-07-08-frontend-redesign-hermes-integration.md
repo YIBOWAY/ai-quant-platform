@@ -103,7 +103,7 @@
 
 | 路径 | 改动 |
 |---|---|
-| `app/layout.tsx` | 第2行新增 `Source_Serif_4` + `Noto_Serif_SC` via next/font/google 挂 `--font-editorial-serif`;html className 第29行保留现有变量不动 |
+| `app/layout.tsx` | 第2行新增 `Source_Serif_4` + `Noto_Serif_SC` via next/font/google 挂 `--font-serif` / `--font-serif-sc`;html className 第29行保留现有变量不动 |
 | `components/Sidebar.tsx` | 第105-147行 navSections 改为从 `lib/navConfig.ts` 读;copy 加 `nav.hermes` 键 |
 | `components/TopBar.tsx` | 第88-132行 mobileNavSections 改为从 `lib/navConfig.ts` 读;第192行 agent console 图标改指 `/hermes`;copy 加 `nav.hermes` 键 |
 | `components/CandlestickChart.tsx` | 第24-33行 `CHART_COLORS` 改为从 props 读 `theme` 默认 `terminalChartTheme`,修复 `#111827`/`#151515` 与 `#00C896`/`#089981` 漂移 |
@@ -262,7 +262,7 @@ Expected: FAIL — 所有 token 未找到(globals.css 尚未新增)
 在 `@theme` 块内 `--font-code-sm: ...` 行之后,加字体 token(实际字体变量在 P0-2 由 next/font 注入,这里先声明语义名):
 
 ```css
-  --font-editorial-serif: var(--font-serif, 'Source Serif 4'), Georgia, 'Noto Serif SC', 'Songti SC', serif;
+  --font-editorial-serif: var(--font-serif), var(--font-serif-sc), Georgia, 'Songti SC', serif;
 ```
 
 - [ ] **Step 4: 运行测试确认通过**
@@ -292,8 +292,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Modify: `app/layout.tsx`(第2行 next/font/google import 区;第29行 html className)
 
 **Interfaces:**
-- Produces: `--font-serif` CSS 变量(由 next/font 注入到 html className),供 `--font-editorial-serif` 引用
-- Consumes: P0-1 的 `--font-editorial-serif` token
+- Produces: `--font-serif` / `--font-serif-sc` CSS 变量(由 next/font 注入到 html className),供 `--font-editorial-serif` 引用
+- Consumes: P0-1 的 `--font-editorial-serif` token,其字体栈必须包含 `var(--font-serif)` 与 `var(--font-serif-sc)`
 
 - [ ] **Step 1: 写失败测试 — 验证 Source Serif 4 + Noto Serif SC 已加载**
 
