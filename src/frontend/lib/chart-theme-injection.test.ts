@@ -66,9 +66,12 @@ describe("chart theme injection", () => {
   it("applies candlestick theme changes through refs with primitive dependencies", () => {
     const source = readChartFile("candlestick");
 
-    expect(source).toContain("chartRef.current?.applyOptions({");
-    expect(source).toContain("candleSeriesRef.current?.applyOptions({");
-    expect(source).toContain("volumeSeriesRef.current?.applyOptions({");
+    expect(source).toContain(
+      "applyThemeToChart(chartRef.current, candleSeriesRef.current, volumeSeriesRef.current, currentTheme);",
+    );
+    expect(source).toContain("chart?.applyOptions({");
+    expect(source).toContain("candleSeries?.applyOptions({");
+    expect(source).toContain("volumeSeries?.applyOptions({");
     expect(source).toContain(`[
     theme.background,
     theme.text,
@@ -79,5 +82,29 @@ describe("chart theme injection", () => {
     theme.volumeUp,
     theme.volumeDown,
   ]`);
+  });
+
+  it("seeds recreated candlestick chart instances from latest theme and chart data refs", () => {
+    const source = readChartFile("candlestick");
+
+    expect(source).toContain("const latestThemeRef = useRef(theme);");
+    expect(source).toContain("const latestChartDataRef = useRef(chartData);");
+    expect(source).toContain("latestThemeRef.current = theme;");
+    expect(source).toContain("latestChartDataRef.current = chartData;");
+    expect(source).toContain("applyThemeToChart(chart, candleSeries, volumeSeries, latestThemeRef.current);");
+    expect(source).toContain(
+      "applyChartDataToChart(chart, candleSeries, volumeSeries, latestChartDataRef.current);",
+    );
+
+    const refAssignmentIndex = source.indexOf("volumeSeriesRef.current = volumeSeries;");
+    const themeSeedIndex = source.indexOf(
+      "applyThemeToChart(chart, candleSeries, volumeSeries, latestThemeRef.current);",
+    );
+    const dataSeedIndex = source.indexOf(
+      "applyChartDataToChart(chart, candleSeries, volumeSeries, latestChartDataRef.current);",
+    );
+
+    expect(themeSeedIndex).toBeGreaterThan(refAssignmentIndex);
+    expect(dataSeedIndex).toBeGreaterThan(refAssignmentIndex);
   });
 });
