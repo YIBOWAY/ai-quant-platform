@@ -23,8 +23,29 @@ import {
 
 export type NavSurface = "sidebar" | "mobile";
 
+export type NavItemId =
+  | "dashboard"
+  | "hermes"
+  | "dataExplorer"
+  | "factorLab"
+  | "backtester"
+  | "replications"
+  | "experiments"
+  | "paperTrading"
+  | "positionMap"
+  | "optionsScreener"
+  | "optionsRadar"
+  | "optionsTools"
+  | "buySide"
+  | "aiNews"
+  | "orderBook"
+  | "agentStudio"
+  | "settings"
+  | "docs"
+  | "support";
+
 export type NavItem = {
-  id: string;
+  id: NavItemId;
   href: string;
   icon: LucideIcon;
   surfaces?: NavSurface[];

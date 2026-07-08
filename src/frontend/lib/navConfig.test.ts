@@ -1,11 +1,47 @@
 import { describe, expect, it } from "vitest";
 
-import { isVisibleOnSurface, navSections, type NavItem, type NavSection } from "./navConfig";
+import {
+  isVisibleOnSurface,
+  navSections,
+  type NavItem,
+  type NavItemId,
+  type NavSection,
+  type NavSurface,
+} from "./navConfig";
+
+const expectedItemIds: NavItemId[] = [
+  "dashboard",
+  "hermes",
+  "dataExplorer",
+  "factorLab",
+  "backtester",
+  "replications",
+  "experiments",
+  "paperTrading",
+  "positionMap",
+  "optionsScreener",
+  "optionsRadar",
+  "optionsTools",
+  "buySide",
+  "aiNews",
+  "orderBook",
+  "agentStudio",
+  "settings",
+  "docs",
+  "support",
+];
 
 function itemRoutesFor(sectionId: NavSection["id"]) {
   return navSections
     .find((section) => section.id === sectionId)
     ?.items.map(({ id, href }) => ({ id, href }));
+}
+
+function routesForSurface(surface: NavSurface) {
+  return navSections
+    .flatMap((section) => section.items)
+    .filter((item) => isVisibleOnSurface(item, surface))
+    .map((item) => item.href);
 }
 
 describe("navSections", () => {
@@ -58,6 +94,22 @@ describe("navSections", () => {
     expect(itemIds).toContain("agentStudio");
   });
 
+  it("keeps the item id set aligned with NavItemId", () => {
+    const itemIds = navSections.flatMap((section) => section.items.map((item) => item.id));
+
+    expect(itemIds).toEqual(expectedItemIds);
+  });
+
+  it("computes full route lists by navigation surface", () => {
+    const sidebarRoutes = routesForSurface("sidebar");
+    const mobileRoutes = routesForSurface("mobile");
+
+    expect(sidebarRoutes).not.toContain("/docs/reversal-momentum");
+    expect(sidebarRoutes.filter((href) => href === "/settings")).toHaveLength(1);
+    expect(mobileRoutes).toContain("/docs/reversal-momentum");
+    expect(mobileRoutes.filter((href) => href === "/settings")).toHaveLength(2);
+  });
+
   it("marks docs and support as mobile-only", () => {
     const system = navSections.find((section) => section.id === "system");
     const docs = system?.items.find((item) => item.id === "docs");
@@ -83,7 +135,7 @@ describe("navSections", () => {
 describe("isVisibleOnSurface", () => {
   it("defaults to visible on every surface when surfaces is omitted", () => {
     const item: NavItem = {
-      id: "default",
+      id: "dashboard",
       href: "/default",
       icon: navSections[0].items[0].icon,
     };
