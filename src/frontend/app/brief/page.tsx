@@ -6,15 +6,19 @@ import {
   formatPercent,
   getAgentCandidates,
   getAiHotItems,
-  getBacktestDetail,
   getBacktests,
   getFactors,
+  getMarketDataHistory,
+  getOptionsDailyScanStatus,
   getPaperAccount,
+  getPaperAccountActivity,
   getPaperRuns,
   getRecentRuns,
   getSymbols,
   type AccountPositionResponse,
-  type PreviewRecord,
+  type MarketDataHistoryResponse,
+  type OptionsDailyScanStatusResponse,
+  type PaperAccountActivityResponse,
   type RecentRun,
 } from "@/lib/api";
 import {
@@ -24,18 +28,17 @@ import {
   formatCount,
 } from "@/lib/dashboardRuns";
 import { localizePath } from "@/lib/locale";
-import { selectDisplayRun } from "@/lib/runSource";
 import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
   en: {
-    stripTitle: "Direction B · Research Daily",
+    stripTitle: "Daily Morning Brief",
     stripPreview: "trial",
     stripSource: "local backend facts",
     volume: "VOL. CXXIII",
     edition: "U.S. research edition",
-    title: "Hermes Morning Brief",
+    title: "Daily Morning Brief",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
     author: "Editor Hermes · arranged by the local agent overnight",
     subscriber: "subscriber one · private use",
@@ -55,23 +58,22 @@ const copy = {
     weight: "Weight",
     emptyPositions: "No current positions",
     accountSource: "source: local paper account engine",
-    backtest: "Backtest Study",
-    backtestEn: "A BACKTEST STUDY",
-    figureTitle: "Figure 1 · strategy equity curve, normalized from the latest run",
-    latestRun: "latest run",
-    cumulativeReturn: "cumulative return",
-    sharpe: "Sharpe",
-    maxDrawdown: "max drawdown",
-    noChart: "No equity curve has been written yet.",
+    backtest: "Paper Return",
+    backtestEn: "ONE-WEEK PAPER RETURN",
+    figureTitle: "Figure 1 · paper account one-week return from balance history proxy",
+    chartSource: "source: /api/paper/account/activity balance history proxy + current paper equity",
+    latestRun: "paper account",
+    cumulativeReturn: "one-week return",
+    sharpe: "events",
+    maxDrawdown: "latest equity",
+    chartNote: "Real historical equity snapshots need a future read-only account curve endpoint.",
+    noChart: "No paper account balance history has been written yet.",
     market: "Market",
     marketEn: "THE MARKET",
-    symbols: "Symbols",
-    factors: "Factors",
-    candidates: "Candidates",
-    hermesReady: "Hermes",
-    ready: "editor ready",
+    marketSummary: "Market summary",
+    marketUnavailable: "market move unavailable",
     quote:
-      "This brief is a layout-first read of the research desk: treat every number as paper evidence, then open the artifact before trusting the conclusion.",
+      "Market data is incomplete; Hermes is holding the daily read to paper evidence until SPY, QQQ, SOXX, and IGV all publish fresh bars.",
     quoteSig: "Hermes note · editor's margin",
     digest: "AI Intelligence Digest",
     digestEn: "INTELLIGENCE DIGEST",
@@ -85,12 +87,12 @@ const copy = {
     neverActive: "never implied active",
   },
   zh: {
-    stripTitle: "Direction B · 研究日报",
+    stripTitle: "每日晨报",
     stripPreview: "试跑稿",
     stripSource: "数据来自本地后端",
     volume: "VOL. CXXIII",
     edition: "美股研究版",
-    title: "宿契晨报",
+    title: "每日晨报",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
     author: "主笔 Hermes · 由本地代理彻夜整理",
     subscriber: "订户一人 · 自用",
@@ -110,24 +112,23 @@ const copy = {
     weight: "权重",
     emptyPositions: "当前空仓",
     accountSource: "资料来源：本地模拟盘引擎",
-    backtest: "回测研究",
-    backtestEn: "A BACKTEST STUDY",
-    figureTitle: "图一 · 最新运行策略权益曲线归一化",
-    latestRun: "最新运行",
-    cumulativeReturn: "累计回报",
-    sharpe: "夏普",
-    maxDrawdown: "最大回撤",
-    noChart: "尚未写入权益曲线。",
+    backtest: "模拟盘收益",
+    backtestEn: "ONE-WEEK PAPER RETURN",
+    figureTitle: "图一 · 模拟盘近 7 日收益；当前为资金流水代理曲线",
+    chartSource: "来源：/api/paper/account/activity balance history proxy + 当前模拟权益",
+    latestRun: "模拟账户",
+    cumulativeReturn: "一周收益",
+    sharpe: "事件数",
+    maxDrawdown: "最新权益",
+    chartNote: "真正的历史权益曲线需要后续增加只读账户曲线接口。",
+    noChart: "尚未写入模拟盘资金历史。",
     market: "市场",
     marketEn: "THE MARKET",
-    symbols: "标的",
-    factors: "因子",
-    candidates: "候选",
-    hermesReady: "Hermes",
-    ready: "主笔就绪",
+    marketSummary: "市场概括",
+    marketUnavailable: "市场涨跌数据不足",
+    quoteSig: "Hermes 市场手记",
     quote:
-      "今晨这份 brief 先看研究证据，不下结论。所有数字都只是 paper evidence；真正要信任它之前，先打开 artifact 看来源、窗口和约束。",
-    quoteSig: "Hermes 手记 · 主笔按",
+      "市场涨跌数据暂不完整；Hermes 先把每日判断压回纸面证据，等待 SPY、QQQ、SOXX、IGV 四组日线全部刷新。",
     digest: "AI 情报摘要",
     digestEn: "INTELLIGENCE DIGEST",
     noDigest: "本地 AI 情报源暂无条目。",
@@ -143,6 +144,21 @@ const copy = {
 
 type BriefCopy = (typeof copy)["en"] | (typeof copy)["zh"];
 type ChartPoint = { x: string; y: number };
+type MarketSnapshot = {
+  symbol: "SPY" | "QQQ" | "SOXX" | "IGV";
+  last?: number;
+  changePct?: number;
+  source?: string;
+  asOf?: string;
+};
+
+type BriefLogEntry = {
+  timestamp?: string | null;
+  status: "ok" | "warn";
+  text: string;
+  href?: string;
+  summary?: string;
+};
 
 function formatDate(value: Date, locale: "en" | "zh") {
   return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
@@ -169,67 +185,140 @@ function formatTimestamp(value?: string | null) {
   }).format(date);
 }
 
-function recordNumber(record: PreviewRecord, key: string) {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+function formatLogTime(value: string | null | undefined, locale: "en" | "zh") {
+  if (!value) {
+    return "--";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
-function recordString(record: PreviewRecord, key: string) {
-  const value = record[key];
-  return typeof value === "string" ? value : undefined;
+function ymd(value: Date) {
+  return value.toISOString().slice(0, 10);
 }
 
-function normalizeCurve(rows: PreviewRecord[]): ChartPoint[] {
-  const parsed = rows
+function normalizePaperAccountCurve(
+  activity: PaperAccountActivityResponse,
+  currentEquity: number,
+): ChartPoint[] {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const points = activity.balance_history
     .map((row) => ({
-      x: recordString(row, "timestamp") ?? recordString(row, "date") ?? "",
-      equity: recordNumber(row, "equity"),
+      x: row.timestamp,
+      y: row.cash_after,
     }))
-    .filter((row): row is { x: string; equity: number } => Boolean(row.x) && row.equity !== undefined);
-  const first = parsed[0]?.equity;
+    .filter((row) => {
+      const time = new Date(row.x).getTime();
+      return Boolean(row.x) && Number.isFinite(row.y) && !Number.isNaN(time) && time >= cutoff;
+    })
+    .sort((a, b) => new Date(a.x).getTime() - new Date(b.x).getTime())
+    .slice(-7);
+  if (!points.length) {
+    return [];
+  }
+  const now = new Date().toISOString();
+  if (Number.isFinite(currentEquity)) {
+    points.push({ x: now, y: currentEquity });
+  }
+  const first = points[0]?.y;
   if (!first) {
     return [];
   }
-  return parsed.map((row) => ({ x: row.x, y: (row.equity / first - 1) * 100 }));
+  return points.map((row) => ({ x: row.x, y: (row.y / first - 1) * 100 }));
 }
 
-function normalizeBenchmark(rows: Array<{ timestamp: string; equity: number }> | undefined) {
-  if (!rows?.length) {
-    return [];
+function formatSignedPointReturn(value: number | undefined) {
+  if (value === undefined || Number.isNaN(value)) {
+    return "--";
   }
-  const first = rows[0]?.equity;
-  if (!first) {
-    return [];
+  return `${value >= 0 ? "▲ " : "▼ "}${Math.abs(value).toFixed(2)}%`;
+}
+
+function formatPrice(value: number | undefined) {
+  if (value === undefined || Number.isNaN(value)) {
+    return "--";
   }
-  return rows.map((row) => ({ x: row.timestamp, y: (row.equity / first - 1) * 100 }));
+  return `$${value.toFixed(2)}`;
+}
+
+function marketSnapshot(symbol: MarketSnapshot["symbol"], data: MarketDataHistoryResponse): MarketSnapshot {
+  const rows = data.rows.filter((row) => Number.isFinite(row.close));
+  const latest = rows.at(-1);
+  const previous = rows.at(-2);
+  const changePct =
+    latest && previous?.close
+      ? (latest.close / previous.close - 1)
+      : undefined;
+  return {
+    symbol,
+    last: latest?.close,
+    changePct,
+    source: data.source,
+    asOf: latest?.timestamp,
+  };
+}
+
+function marketTone(changePct: number | undefined): "neutral" | "up" | "down" {
+  if (changePct === undefined) {
+    return "neutral";
+  }
+  return changePct >= 0 ? "up" : "down";
+}
+
+function formatMarketChange(changePct: number | undefined) {
+  if (changePct === undefined) {
+    return "--";
+  }
+  return `${changePct >= 0 ? "▲ " : "▼ "}${formatPercent(Math.abs(changePct))}`;
+}
+
+function buildMarketNote(markets: MarketSnapshot[], text: BriefCopy) {
+  const complete = markets.filter((item) => item.changePct !== undefined);
+  if (complete.length < 4) {
+    return text.quote;
+  }
+  const strongest = [...complete].sort((a, b) => (b.changePct ?? 0) - (a.changePct ?? 0))[0];
+  const weakest = [...complete].sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0))[0];
+  const positiveCount = complete.filter((item) => (item.changePct ?? 0) >= 0).length;
+  if (text === copy.zh) {
+    return `今日四个观察指数中 ${positiveCount}/4 收涨，${strongest.symbol} 最强（${formatMarketChange(strongest.changePct)}），${weakest.symbol} 最弱（${formatMarketChange(weakest.changePct)}）；Hermes 建议先看半导体与软件的相对强弱，再决定是否扩大风险敞口。`;
+  }
+  return `${positiveCount}/4 watched ETFs are up today; ${strongest.symbol} leads (${formatMarketChange(strongest.changePct)}) while ${weakest.symbol} lags (${formatMarketChange(weakest.changePct)}). Hermes would read semis versus software before expanding risk.`;
 }
 
 function buildLede({
   text,
   equity,
-  totalReturn,
-  sharpe,
+  paperWeekReturn,
+  marketNote,
   digestCount,
 }: {
   text: BriefCopy;
   equity: string;
-  totalReturn: string;
-  sharpe: string;
+  paperWeekReturn: string;
+  marketNote: string;
   digestCount: number;
 }) {
   if (text === copy.zh) {
     return (
       <>
-        今晨，本模拟盘权益报 <strong>{equity}</strong>；最新策略回测录得{" "}
-        <strong>{totalReturn}</strong> 累计回报，夏普 <strong>{sharpe}</strong>；Hermes 已为你整理{" "}
+        今晨，模拟盘权益报 <strong>{equity}</strong>，近 7 日代理收益{" "}
+        <strong>{paperWeekReturn}</strong>；Hermes 手记：{marketNote} 另整理{" "}
         <strong>{formatCount(digestCount)}</strong> 条 AI 业内情报。
       </>
     );
   }
   return (
     <>
-      This morning, paper equity prints at <strong>{equity}</strong>; the latest strategy run shows{" "}
-      <strong>{totalReturn}</strong> cumulative return with Sharpe <strong>{sharpe}</strong>; Hermes has set{" "}
+      This morning, paper equity prints at <strong>{equity}</strong> with a{" "}
+      <strong>{paperWeekReturn}</strong> seven-day proxy return; Hermes note: {marketNote} It has set{" "}
       <strong>{formatCount(digestCount)}</strong> AI intelligence items in type.
     </>
   );
@@ -296,15 +385,15 @@ function AccountTable({
 }
 
 function EditorialChart({
-  strategy,
+  series,
   benchmark,
   text,
 }: {
-  strategy: ChartPoint[];
+  series: ChartPoint[];
   benchmark: ChartPoint[];
   text: BriefCopy;
 }) {
-  const all = [...strategy, ...benchmark];
+  const all = [...series, ...benchmark];
   if (!all.length) {
     return (
       <div className="flex h-[280px] items-center justify-center border border-editorial-rule bg-paper-surface font-data-mono text-sm text-ink-secondary">
@@ -321,7 +410,7 @@ function EditorialChart({
   const minY = Math.min(0, ...yValues);
   const maxY = Math.max(1, ...yValues);
   const spanY = maxY - minY || 1;
-  const maxLen = Math.max(strategy.length, benchmark.length, 2);
+  const maxLen = Math.max(series.length, benchmark.length, 2);
   const xFor = (index: number) => padX + (index / (maxLen - 1)) * (width - padX * 2);
   const yFor = (value: number) => height - padY - ((value - minY) / spanY) * (height - padY * 2);
   const pointsFor = (points: ChartPoint[]) =>
@@ -355,21 +444,23 @@ function EditorialChart({
             strokeWidth="2"
           />
         ) : null}
-        {strategy.length ? (
+        {series.length ? (
           <polyline
             className="fill-none stroke-editorial-accent"
-            points={pointsFor(strategy)}
+            points={pointsFor(series)}
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth="2.5"
           />
         ) : null}
         <text className="fill-editorial-accent font-data-mono text-[11px] font-bold" x={width - 92} y={28}>
-          strategy
+          paper
         </text>
-        <text className="fill-editorial-down font-data-mono text-[11px] font-bold" x={width - 92} y={44}>
-          benchmark
-        </text>
+        {benchmark.length ? (
+          <text className="fill-editorial-down font-data-mono text-[11px] font-bold" x={width - 92} y={44}>
+            benchmark
+          </text>
+        ) : null}
       </svg>
     </div>
   );
@@ -384,9 +475,16 @@ function MarketCell({
   title: string;
   value: string;
   detail: string;
-  tone?: "neutral" | "up" | "accent";
+  tone?: "neutral" | "up" | "down" | "accent";
 }) {
-  const toneClass = tone === "up" ? "text-editorial-up" : tone === "accent" ? "text-editorial-accent" : "text-ink";
+  const toneClass =
+    tone === "up"
+      ? "text-editorial-up"
+      : tone === "down"
+        ? "text-editorial-down"
+        : tone === "accent"
+          ? "text-editorial-accent"
+          : "text-ink";
   return (
     <div className="border-t-2 border-ink pt-2">
       <div className="flex items-baseline justify-between gap-3">
@@ -398,31 +496,115 @@ function MarketCell({
   );
 }
 
-function RunLog({
+function buildRunAction(run: RecentRun, locale: "en" | "zh"): BriefLogEntry {
+  const kindLabel = dashboardRunKindLabel(run, locale);
+  const summary = dashboardRunSummary(run);
+  const inlineSummary = summary.replaceAll(" | ", " · ");
+  let text = `${kindLabel} · ${run.run_id}`;
+  if (locale === "zh") {
+    if (run.kind === "backtest") {
+      text = `Hermes 完成回测 · ${inlineSummary}`;
+    } else if (run.kind === "factor") {
+      text = `Hermes 完成因子分析 · ${inlineSummary}`;
+    } else if (run.kind === "replication") {
+      text = `Hermes 添加/复现策略 · ${inlineSummary}`;
+    } else {
+      text = `Hermes 完成模拟盘运行 · ${inlineSummary}`;
+    }
+  } else if (run.kind === "backtest") {
+    text = `Hermes completed backtest · ${inlineSummary}`;
+  } else if (run.kind === "factor") {
+    text = `Hermes completed factor analysis · ${inlineSummary}`;
+  } else if (run.kind === "replication") {
+    text = `Hermes added/replicated strategy · ${inlineSummary}`;
+  } else {
+    text = `Hermes completed paper run · ${inlineSummary}`;
+  }
+  return {
+    timestamp: run.created_at,
+    status: "ok",
+    text,
+    href: dashboardRunHref(run),
+    summary: run.run_id,
+  };
+}
+
+function buildBriefLogEntries({
   runs,
+  candidates,
+  optionsStatus,
+  locale,
+}: {
+  runs: RecentRun[];
+  candidates: { candidate_id: string; artifact_type: string; status: string; goal?: string }[];
+  optionsStatus: OptionsDailyScanStatusResponse;
+  locale: "en" | "zh";
+}) {
+  const entries = runs.slice(0, 5).map((run) => buildRunAction(run, locale));
+  const status = optionsStatus.status;
+  if (status) {
+    const strategies = status.strategies?.length ? status.strategies.join(" / ") : "--";
+    entries.push({
+      timestamp: status.finished_at ?? status.started_at,
+      status: status.status === "completed" ? "ok" : "warn",
+      text:
+        locale === "zh"
+          ? `期权每日扫描${status.status === "completed" ? "完成" : "更新"} · ${strategies}`
+          : `Options daily scan ${status.status ?? "updated"} · ${strategies}`,
+      summary: status.provider ? `provider=${status.provider}` : undefined,
+    });
+  }
+  for (const candidate of candidates.slice(0, 2)) {
+    entries.push({
+      timestamp: null,
+      status: candidate.status === "pending" ? "warn" : "ok",
+      text:
+        locale === "zh"
+          ? `Hermes 产出候选 ${candidate.artifact_type} · ${candidate.candidate_id}`
+          : `Hermes produced candidate ${candidate.artifact_type} · ${candidate.candidate_id}`,
+      summary: candidate.goal ?? `status=${candidate.status}`,
+    });
+  }
+  entries.push({
+    timestamp: new Date().toISOString(),
+    status: "warn",
+    text: locale === "zh" ? "晨报已排印 · 导语由主笔撰写" : "Morning brief printed · lede prepared by Hermes",
+  });
+  return entries.slice(0, 8);
+}
+
+function RunLog({
+  entries,
   locale,
   text,
 }: {
-  runs: RecentRun[];
+  entries: BriefLogEntry[];
   locale: "en" | "zh";
   text: BriefCopy;
 }) {
-  if (!runs.length) {
+  if (!entries.length) {
     return <p className="font-data-mono text-sm text-ink-secondary">{text.noRuns}</p>;
   }
   return (
     <div className="font-data-mono text-xs text-ink-secondary">
-      {runs.slice(0, 5).map((run) => (
-        <div className="flex gap-4 border-b border-dotted border-editorial-rule py-1.5" key={`${run.kind}-${run.run_id}`}>
-          <span className="w-[72px] shrink-0 text-ink-secondary">{formatTimestamp(run.created_at)}</span>
-          <Link
-            className="min-w-0 flex-1 text-ink transition-colors hover:text-editorial-accent"
-            href={localizePath(dashboardRunHref(run), locale)}
-          >
-            {dashboardRunKindLabel(run, locale)} · {run.run_id}
-            <ArrowUpRight className="ml-1 inline h-3 w-3" aria-hidden="true" />
-          </Link>
-          <span className="hidden max-w-[360px] truncate lg:inline">{dashboardRunSummary(run)}</span>
+      {entries.map((entry, index) => (
+        <div className="flex gap-4 border-b border-dotted border-editorial-rule py-1.5" key={`${entry.text}-${index}`}>
+          <span className="w-[72px] shrink-0 text-ink-secondary">{formatLogTime(entry.timestamp, locale)}</span>
+          <span className={entry.status === "ok" ? "text-editorial-up" : "text-warning"}>
+            {entry.status === "ok" ? "✓" : "△"}
+          </span>
+          {entry.href ? (
+            <Link
+              className="min-w-0 flex-1 text-ink transition-colors hover:text-editorial-accent"
+              href={localizePath(entry.href, locale)}
+            >
+              {entry.text}
+              <ArrowUpRight className="ml-1 inline h-3 w-3" aria-hidden="true" />
+            </Link>
+          ) : (
+            <span className="min-w-0 flex-1 text-ink">{entry.text}</span>
+          )}
+          {entry.summary ? <span className="hidden max-w-[360px] truncate lg:inline">{entry.summary}</span> : null}
         </div>
       ))}
     </div>
@@ -430,6 +612,9 @@ function RunLog({
 }
 
 export default async function BriefPage() {
+  const today = new Date();
+  const marketStart = new Date(today);
+  marketStart.setDate(today.getDate() - 14);
   const [
     health,
     symbols,
@@ -437,9 +622,15 @@ export default async function BriefPage() {
     backtests,
     paperRuns,
     paperAccount,
+    paperActivity,
     recentRuns,
     candidates,
     digest,
+    optionsStatus,
+    spyHistory,
+    qqqHistory,
+    soxxHistory,
+    igvHistory,
     locale,
   ] = await Promise.all([
     getCachedHealth(),
@@ -448,20 +639,33 @@ export default async function BriefPage() {
     getBacktests(),
     getPaperRuns(),
     getPaperAccount(),
+    getPaperAccountActivity(120),
     getRecentRuns(8),
     getAgentCandidates(),
     getAiHotItems({ take: 6 }),
+    getOptionsDailyScanStatus(),
+    getMarketDataHistory("SPY", ymd(marketStart), ymd(today), "1d"),
+    getMarketDataHistory("QQQ", ymd(marketStart), ymd(today), "1d"),
+    getMarketDataHistory("SOXX", ymd(marketStart), ymd(today), "1d"),
+    getMarketDataHistory("IGV", ymd(marketStart), ymd(today), "1d"),
     getServerLocale(),
   ]);
   const text = copy[locale];
-  const latestBacktest = selectDisplayRun(backtests.backtests);
-  const latestPaper = selectDisplayRun(paperRuns.paper_runs);
-  const backtestDetail = latestBacktest ? await getBacktestDetail(latestBacktest.id) : null;
-  const strategyCurve = normalizeCurve(backtestDetail?.equity_curve ?? []);
-  const benchmarkCurve = normalizeBenchmark(backtestDetail?.benchmark?.equity_curve);
-  const today = new Date();
-  const totalReturn = formatPercent(latestBacktest?.metrics?.total_return);
-  const sharpe = latestBacktest?.metrics?.sharpe?.toFixed(2) ?? "--";
+  const paperCurve = normalizePaperAccountCurve(paperActivity, paperAccount.equity);
+  const marketSnapshots = [
+    marketSnapshot("SPY", spyHistory),
+    marketSnapshot("QQQ", qqqHistory),
+    marketSnapshot("SOXX", soxxHistory),
+    marketSnapshot("IGV", igvHistory),
+  ];
+  const marketNote = buildMarketNote(marketSnapshots, text);
+  const logEntries = buildBriefLogEntries({
+    runs: recentRuns.runs,
+    candidates: candidates.candidates,
+    optionsStatus,
+    locale,
+  });
+  const paperWeekReturn = paperCurve.at(-1)?.y;
   const digestItems = digest.items.slice(0, 6);
 
   return (
@@ -484,10 +688,15 @@ export default async function BriefPage() {
             backtests.apiError,
             paperRuns.apiError,
             paperAccount.apiError,
+            paperActivity.apiError,
             recentRuns.apiError,
             candidates.apiError,
             digest.apiError,
-            backtestDetail?.apiError,
+            optionsStatus.apiError,
+            spyHistory.apiError,
+            qqqHistory.apiError,
+            soxxHistory.apiError,
+            igvHistory.apiError,
           ]}
         />
 
@@ -516,8 +725,8 @@ export default async function BriefPage() {
             {buildLede({
               text,
               equity: formatMoney(paperAccount.equity),
-              totalReturn,
-              sharpe,
+              paperWeekReturn: formatSignedPointReturn(paperWeekReturn),
+              marketNote,
               digestCount: digestItems.length,
             })}
           </p>
@@ -561,35 +770,36 @@ export default async function BriefPage() {
           <figure>
             <div className="mb-2 flex justify-between gap-3 font-data-mono text-[11px] text-ink-secondary">
               <span>{text.figureTitle}</span>
-              <span>{latestBacktest?.id ?? "--"}</span>
+              <span>{text.chartSource}</span>
             </div>
-            <EditorialChart strategy={strategyCurve} benchmark={benchmarkCurve} text={text} />
+            <EditorialChart series={paperCurve} benchmark={[]} text={text} />
             <figcaption className="mt-2 text-center font-editorial-caps text-sm text-ink-secondary">
-              {text.latestRun} <strong className="text-ink">{latestBacktest?.id ?? "--"}</strong> ·{" "}
-              {text.cumulativeReturn} <strong className="text-ink">{totalReturn}</strong> · {text.sharpe}{" "}
-              <strong className="text-ink">{sharpe}</strong> · {text.maxDrawdown}{" "}
-              <strong className="text-ink">{formatPercent(latestBacktest?.metrics?.max_drawdown)}</strong>
+              {text.latestRun} <strong className="text-ink">{paperAccount.account_id}</strong> ·{" "}
+              {text.cumulativeReturn} <strong className="text-ink">{formatSignedPointReturn(paperWeekReturn)}</strong> ·{" "}
+              {text.sharpe} <strong className="text-ink">{formatCount(paperCurve.length)}</strong> · {text.maxDrawdown}{" "}
+              <strong className="text-ink">{formatMoney(paperAccount.equity)}</strong>
             </figcaption>
+            <p className="mt-2 text-center font-data-mono text-[11px] text-ink-secondary">{text.chartNote}</p>
           </figure>
         </section>
 
         <section className="border-b border-editorial-rule py-7">
           <SectionHeader title={text.market} en={text.marketEn} />
           <div className="grid gap-5 md:grid-cols-4">
-            <MarketCell title={text.symbols} value={symbols.symbols.join(", ") || "--"} detail={`source=${symbols.source}`} />
-            <MarketCell title={text.factors} value={formatCount(factors.factors.length)} detail="/api/factors" tone="accent" />
-            <MarketCell title={text.candidates} value={formatCount(candidates.candidates.length)} detail="/api/agent/candidates" />
-            <MarketCell
-              title={text.hermesReady}
-              value={text.ready}
-              detail={`${formatCount(recentRuns.runs.length)} artifacts · ${latestPaper?.id ?? "--"}`}
-              tone="up"
-            />
+            {marketSnapshots.map((snapshot) => (
+              <MarketCell
+                detail={`${formatPrice(snapshot.last)} · source=${snapshot.source ?? "--"} · ${snapshot.asOf?.slice(0, 10) ?? "--"}`}
+                key={snapshot.symbol}
+                title={snapshot.symbol}
+                tone={marketTone(snapshot.changePct)}
+                value={formatMarketChange(snapshot.changePct)}
+              />
+            ))}
           </div>
         </section>
 
         <aside className="mx-auto my-7 max-w-3xl border-l-4 border-editorial-accent bg-paper-surface px-6 py-4">
-          <p className="font-editorial-body text-base italic leading-7 text-ink">“{text.quote}”</p>
+          <p className="font-editorial-body text-base italic leading-7 text-ink">“{marketNote}”</p>
           <div className="mt-2 font-data-mono text-xs text-ink-secondary">-- {text.quoteSig}</div>
         </aside>
 
@@ -621,7 +831,7 @@ export default async function BriefPage() {
 
         <section className="border-b border-editorial-rule py-7">
           <SectionHeader title={text.log} en={text.logEn} />
-          <RunLog runs={recentRuns.runs} locale={locale} text={text} />
+          <RunLog entries={logEntries} locale={locale} text={text} />
         </section>
 
         <footer className="py-8 text-center font-data-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary">

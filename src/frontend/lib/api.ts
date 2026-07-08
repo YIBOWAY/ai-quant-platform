@@ -2382,6 +2382,15 @@ export function getOptionsRadarDates() {
   });
 }
 
+export function getOptionsDailyScanStatus() {
+  return apiGet<OptionsDailyScanStatusResponse>("/api/options/daily-scan/status", {
+    exists: false,
+    status_path: "",
+    status: null,
+    safety: FALLBACK_SAFETY,
+  });
+}
+
 export function getOptionsDailyScan(params: {
   date?: string;
   strategy?: string;

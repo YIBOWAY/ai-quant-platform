@@ -18,11 +18,20 @@ describe("/brief route contract", () => {
       "getFactors",
       "getBacktests",
       "getPaperRuns",
+      "getPaperAccount",
+      "getPaperAccountActivity",
       "getRecentRuns",
       "getAgentCandidates",
+      "getAiHotItems",
+      "getOptionsDailyScanStatus",
+      "getMarketDataHistory",
       "getServerLocale",
     ]) {
       expect(source).toContain(getter);
+    }
+
+    for (const symbol of ["SPY", "QQQ", "SOXX", "IGV"]) {
+      expect(source).toContain(`getMarketDataHistory("${symbol}"`);
     }
   });
 
@@ -47,6 +56,13 @@ describe("/brief route contract", () => {
     expect(source).toContain("paper-ink");
     expect(source).toContain("text-ink");
     expect(source).toContain("font-editorial-display");
+    expect(source).toContain("Daily Morning Brief");
+    expect(source).toContain("每日晨报");
+    expect(source).toContain("ONE-WEEK PAPER RETURN");
+    expect(source).toContain("balance history proxy");
+    expect(source).toContain("Hermes 市场手记");
+    expect(source).toContain("Hermes completed backtest");
+    expect(source).toContain("Options daily scan");
     expect(source).toContain("Compiled from platform facts");
     expect(source).toContain("template");
     expect(source).toContain("live trading");
@@ -58,5 +74,12 @@ describe("/brief route contract", () => {
     expect(source).not.toContain("POST");
     expect(source).not.toContain("generate");
     expect(source).not.toContain("llm");
+    expect(source).not.toContain("getBacktestDetail");
+    expect(source).not.toContain("strategy={strategyCurve}");
+    expect(source).not.toContain("text.symbols");
+    expect(source).not.toContain("text.factors");
+    expect(source).not.toContain("text.candidates");
+    expect(source).not.toContain("text.hermesReady");
+    expect(source).not.toContain("RunLog runs=");
   });
 });

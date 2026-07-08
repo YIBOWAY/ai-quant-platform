@@ -54,9 +54,15 @@ test.describe("brief trial smoke", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await preparePage(page, "/brief");
 
-    await expect(page.getByRole("heading", { name: "Hermes Morning Brief" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Daily Morning Brief" })).toBeVisible();
     await expect(page.getByText("THE ACCOUNT")).toBeVisible();
-    await expect(page.getByText("A BACKTEST STUDY")).toBeVisible();
+    await expect(page.getByText("ONE-WEEK PAPER RETURN")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "SPY" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "QQQ" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "SOXX" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "IGV" })).toBeVisible();
+    await expect(page.getByText("-- Hermes note · editor's margin", { exact: true })).toBeVisible();
+    await expect(page.getByText("Morning brief printed · lede prepared by Hermes", { exact: true })).toBeVisible();
     await expect(page.getByText(/live trading never implied active/i)).toBeVisible();
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
