@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { isVisibleOnSurface, navSections, type NavItem } from "./navConfig";
+import { isVisibleOnSurface, navSections, type NavItem, type NavSection } from "./navConfig";
+
+function itemRoutesFor(sectionId: NavSection["id"]) {
+  return navSections
+    .find((section) => section.id === sectionId)
+    ?.items.map(({ id, href }) => ({ id, href }));
+}
 
 describe("navSections", () => {
   it("keeps the five top-level navigation groups in product order", () => {
@@ -13,12 +19,35 @@ describe("navSections", () => {
     ]);
   });
 
-  it("starts research with dashboard and Hermes", () => {
-    const research = navSections.find((section) => section.id === "research");
-
-    expect(research?.items.slice(0, 2).map(({ id, href }) => ({ id, href }))).toEqual([
+  it("keeps exact item routes for every navigation group", () => {
+    expect(itemRoutesFor("research")).toEqual([
       { id: "dashboard", href: "/" },
       { id: "hermes", href: "/hermes" },
+      { id: "dataExplorer", href: "/data-explorer" },
+      { id: "factorLab", href: "/factor-lab" },
+      { id: "backtester", href: "/backtest" },
+      { id: "replications", href: "/strategies" },
+      { id: "experiments", href: "/experiments" },
+    ]);
+    expect(itemRoutesFor("paper")).toEqual([
+      { id: "paperTrading", href: "/paper-trading" },
+      { id: "positionMap", href: "/position-map" },
+    ]);
+    expect(itemRoutesFor("options")).toEqual([
+      { id: "optionsScreener", href: "/options-screener" },
+      { id: "optionsRadar", href: "/options-radar" },
+      { id: "optionsTools", href: "/options-tools" },
+      { id: "buySide", href: "/options-buyside" },
+    ]);
+    expect(itemRoutesFor("markets")).toEqual([
+      { id: "aiNews", href: "/ai-news" },
+      { id: "orderBook", href: "/polymarket" },
+      { id: "agentStudio", href: "/agent-studio" },
+    ]);
+    expect(itemRoutesFor("system")).toEqual([
+      { id: "settings", href: "/settings" },
+      { id: "docs", href: "/docs/reversal-momentum" },
+      { id: "support", href: "/settings" },
     ]);
   });
 
