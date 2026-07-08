@@ -149,7 +149,7 @@
 - 3 个图表组件 refactor(签名不变,theme 参数 optional)
 - 建 `components/editorial/` + `components/hermes/` 空目录占位
 - 建 `tests/e2e/visual.spec.ts` scoped 截图基线(先 6-8 个稳定/高风险路由,不做 22 页硬门禁)
-- contract 测试只加不删(新增「新原语存在」「`/hermes` 导航存在」断言)
+- contract 测试只加不删(P0 只新增「新原语目录存在」断言;`/hermes` TopBar/Sidebar 导航断言等 P1 接入 navConfig 后再加)
 
 **Deliverables:**
 - `globals.css` 扩展后的 @theme(editorial + hermes 语义层,现有 token 0 改动)
@@ -157,7 +157,7 @@
 - `lib/chartTokens.ts` 两套图表主题常量
 - 3 个图表组件 refactor 签名不变
 - `tests/e2e/visual.spec.ts` scoped 截图基线
-- contract 测试新增断言不删旧
+- contract 测试新增目录断言不删旧
 
 **Dependencies:** 无(P0 是一切起点)
 
@@ -965,24 +965,15 @@ git commit -m "test(frontend): add scoped Playwright visual baselines
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
-#### Task P0-9: contract 测试新增「新原语 + /hermes 导航」断言(不删旧)
+#### Task P0-9: contract 测试新增「新原语目录存在」断言(不删旧)
 
 **Files:**
 - Modify: `tests/test_frontend_terminal_surface_contract.py`(新增断言)
-- Modify: `tests/test_frontend_topbar_navigation_contract.py`(新增 `/hermes` 断言,不删 factor-lab/agent-studio 断言)
 
 **Interfaces:**
-- Produces: contract 测试只加不删,P1 才删旧断言
+- Produces: contract 测试只加不删。P0 不要求 TopBar/Sidebar 已经暴露 `/hermes`;P1 接入 navConfig 后再新增 `/hermes` 导航断言。
 
-- [ ] **Step 1: 读现有 contract 测试结构**
-
-读 `tests/test_frontend_topbar_navigation_contract.py` 第30-31行与第42行的 `expected_routes` 断言结构,确认新增 `/hermes` 的位置。
-
-- [ ] **Step 2: 在 topbar navigation contract 加 /hermes 断言**
-
-在 `expected_routes` 列表中新增 `'/hermes'`(不删 `'/factor-lab'` 与 `'/agent-studio'` 两行,P1 才删)。
-
-- [ ] **Step 3: 在 terminal surface contract 加「新原语目录存在」断言**
+- [ ] **Step 1: 在 terminal surface contract 加「新原语目录存在」断言**
 
 在 `test_frontend_terminal_surface_contract.py` 末尾新增测试函数:
 
@@ -995,23 +986,23 @@ def test_editorial_and_hermes_component_dirs_exist():
     assert (frontend / "hermes" / "index.ts").exists()
 ```
 
-- [ ] **Step 4: 运行两个 contract 测试确认通过**
+- [ ] **Step 2: 运行 contract 测试确认通过**
 
 Run:
 ```bash
 cd /Users/sunyibo/programs/ai-quant-platform
-pytest tests/test_frontend_topbar_navigation_contract.py tests/test_frontend_terminal_surface_contract.py -v
+pytest tests/test_frontend_terminal_surface_contract.py -v
 ```
-Expected: PASS(旧断言 + 新断言全过)
+Expected: PASS(旧断言 + 新目录断言全过)
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 3: 提交**
 
 ```bash
 cd /Users/sunyibo/programs/ai-quant-platform
-git add tests/test_frontend_topbar_navigation_contract.py tests/test_frontend_terminal_surface_contract.py
-git commit -m "test(frontend): add /hermes nav + editorial/hermes dir contract assertions
+git add tests/test_frontend_terminal_surface_contract.py
+git commit -m "test(frontend): add editorial/hermes dir contract assertion
 
-只加不删 — factor-lab/agent-studio 旧断言保留,parity 完成后的 P4 再删。
+P0 只锁定 editorial/hermes 组件目录存在。/hermes 导航 contract 等 P1 navConfig 接入后再加。
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
