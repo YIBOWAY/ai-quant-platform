@@ -14,20 +14,14 @@ import {
   YAxis,
 } from "recharts";
 import type { PreviewRecord } from "@/lib/api";
+import { terminalChartTheme, type ChartTheme } from "@/lib/chartTokens";
 
 type Locale = "en" | "zh";
 
-// Mirrors @theme tokens.
-const COLORS = {
-  ic: "#60A5FA",
-  rankIc: "#00C896",
-  positive: "#00C896",
-  negative: "#FF4D4F",
-  axis: "#64748B",
-  tick: "#94A3B8",
-  grid: "rgba(148, 163, 184, 0.12)",
-  tooltipBg: "#111827",
-  tooltipBorder: "rgba(148, 163, 184, 0.24)",
+type FactorChartProps = {
+  rows: PreviewRecord[];
+  locale?: Locale;
+  theme?: ChartTheme;
 };
 
 const copy = {
@@ -66,19 +60,22 @@ function useContainerWidth(initial = 640) {
   return { ref, width };
 }
 
-const tooltipStyle = {
-  background: COLORS.tooltipBg,
-  border: `1px solid ${COLORS.tooltipBorder}`,
-  borderRadius: 8,
-  color: "#E2E8F0",
-  fontSize: 12,
-};
+function getTooltipStyle(theme: ChartTheme) {
+  return {
+    background: theme.tooltipBg,
+    border: `1px solid ${theme.tooltipBorder}`,
+    borderRadius: theme.tooltipBorderRadius,
+    color: theme.tooltipText,
+    fontSize: 12,
+  };
+}
 
 /** IC / Rank-IC line chart from a factor run's information_coefficients rows
  *  ({factor_id, signal_ts, ic, rank_ic, n}). Renders nothing if unusable. */
-export function ICLineChart({ rows, locale = "en" }: { rows: PreviewRecord[]; locale?: Locale }) {
+export function ICLineChart({ rows, locale = "en", theme = terminalChartTheme }: FactorChartProps) {
   const text = copy[locale];
   const { ref, width } = useContainerWidth();
+  const tooltipStyle = getTooltipStyle(theme);
   const data = rows
     .map((row) => ({
       date: String(row.signal_ts ?? row.timestamp ?? "").slice(0, 10),
@@ -95,13 +92,13 @@ export function ICLineChart({ rows, locale = "en" }: { rows: PreviewRecord[]; lo
       <p className="mb-3 mt-1 font-body-sm text-text-secondary">{text.icDesc}</p>
       <div ref={ref}>
         <LineChart data={data} height={240} margin={{ bottom: 4, left: 0, right: 12, top: 8 }} width={width}>
-          <CartesianGrid stroke={COLORS.grid} vertical={false} />
-          <XAxis dataKey="date" minTickGap={42} stroke={COLORS.axis} tick={{ fill: COLORS.tick, fontSize: 11 }} tickLine={false} />
-          <YAxis stroke={COLORS.axis} tick={{ fill: COLORS.tick, fontSize: 11 }} tickFormatter={(v) => Number(v).toFixed(2)} tickLine={false} width={46} />
-          <Tooltip contentStyle={tooltipStyle} formatter={(value) => Number(value).toFixed(4)} labelStyle={{ color: COLORS.tick }} />
-          <ReferenceLine stroke={COLORS.axis} strokeDasharray="4 4" y={0} />
-          <Line connectNulls dataKey="rank_ic" dot={false} name={text.rankIc} stroke={COLORS.rankIc} strokeWidth={2} type="monotone" />
-          <Line connectNulls dataKey="ic" dot={false} name={text.ic} stroke={COLORS.ic} strokeOpacity={0.7} strokeWidth={1.5} type="monotone" />
+          <CartesianGrid stroke={theme.rechartsGrid} vertical={false} />
+          <XAxis dataKey="date" minTickGap={42} stroke={theme.axis} tick={{ fill: theme.tick, fontSize: 11 }} tickLine={false} />
+          <YAxis stroke={theme.axis} tick={{ fill: theme.tick, fontSize: 11 }} tickFormatter={(v) => Number(v).toFixed(2)} tickLine={false} width={46} />
+          <Tooltip contentStyle={tooltipStyle} formatter={(value) => Number(value).toFixed(4)} labelStyle={{ color: theme.tick }} />
+          <ReferenceLine stroke={theme.axis} strokeDasharray="4 4" y={0} />
+          <Line connectNulls dataKey="rank_ic" dot={false} name={text.rankIc} stroke={theme.rankIc} strokeWidth={2} type="monotone" />
+          <Line connectNulls dataKey="ic" dot={false} name={text.ic} stroke={theme.ic} strokeOpacity={0.7} strokeWidth={1.5} type="monotone" />
         </LineChart>
       </div>
     </section>
@@ -110,9 +107,10 @@ export function ICLineChart({ rows, locale = "en" }: { rows: PreviewRecord[]; lo
 
 /** Quantile mean-forward-return bar chart from quantile_returns rows
  *  ({factor_id, quantile, mean_forward_return, ...}). Averages across dates if needed. */
-export function QuantileReturnChart({ rows, locale = "en" }: { rows: PreviewRecord[]; locale?: Locale }) {
+export function QuantileReturnChart({ rows, locale = "en", theme = terminalChartTheme }: FactorChartProps) {
   const text = copy[locale];
   const { ref, width } = useContainerWidth();
+  const tooltipStyle = getTooltipStyle(theme);
   const buckets = new Map<number, { sum: number; count: number }>();
   for (const row of rows) {
     const quantile = toNumber(row.quantile);
@@ -138,14 +136,14 @@ export function QuantileReturnChart({ rows, locale = "en" }: { rows: PreviewReco
       <p className="mb-3 mt-1 font-body-sm text-text-secondary">{text.quantileDesc}</p>
       <div ref={ref}>
         <BarChart data={data} height={220} margin={{ bottom: 4, left: 0, right: 12, top: 8 }} width={width}>
-          <CartesianGrid stroke={COLORS.grid} vertical={false} />
-          <XAxis dataKey="bucket" stroke={COLORS.axis} tick={{ fill: COLORS.tick, fontSize: 11 }} tickLine={false} />
-          <YAxis stroke={COLORS.axis} tick={{ fill: COLORS.tick, fontSize: 11 }} tickFormatter={(v) => `${(Number(v) * 100).toFixed(2)}%`} tickLine={false} width={62} />
-          <Tooltip contentStyle={tooltipStyle} formatter={(value) => `${(Number(value) * 100).toFixed(3)}%`} labelStyle={{ color: COLORS.tick }} />
-          <ReferenceLine stroke={COLORS.axis} strokeDasharray="4 4" y={0} />
+          <CartesianGrid stroke={theme.rechartsGrid} vertical={false} />
+          <XAxis dataKey="bucket" stroke={theme.axis} tick={{ fill: theme.tick, fontSize: 11 }} tickLine={false} />
+          <YAxis stroke={theme.axis} tick={{ fill: theme.tick, fontSize: 11 }} tickFormatter={(v) => `${(Number(v) * 100).toFixed(2)}%`} tickLine={false} width={62} />
+          <Tooltip contentStyle={tooltipStyle} formatter={(value) => `${(Number(value) * 100).toFixed(3)}%`} labelStyle={{ color: theme.tick }} />
+          <ReferenceLine stroke={theme.axis} strokeDasharray="4 4" y={0} />
           <Bar dataKey="value" radius={[3, 3, 0, 0]}>
             {data.map((entry) => (
-              <Cell fill={entry.value >= 0 ? COLORS.positive : COLORS.negative} key={entry.bucket} />
+              <Cell fill={entry.value >= 0 ? theme.positive : theme.negative} key={entry.bucket} />
             ))}
           </Bar>
         </BarChart>

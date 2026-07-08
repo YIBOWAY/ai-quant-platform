@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { terminalChartTheme, type ChartTheme } from "@/lib/chartTokens";
 
 type EquityPoint = {
   timestamp: string;
@@ -22,23 +23,14 @@ type EquityComparisonChartProps = {
   height?: number;
   /** Localized series names; defaults to English. */
   labels?: { strategy: string; benchmark: string };
-};
-
-// Mirrors @theme tokens (accent-success / info / bg-surface).
-const COLORS = {
-  strategy: "#00C896",
-  benchmark: "#60A5FA",
-  axis: "#64748B",
-  tick: "#94A3B8",
-  grid: "rgba(148, 163, 184, 0.12)",
-  tooltipBg: "#111827",
-  tooltipBorder: "rgba(148, 163, 184, 0.24)",
+  theme?: ChartTheme;
 };
 
 export function EquityComparisonChart({
   rows,
   height = 360,
   labels = { strategy: "Strategy", benchmark: "Benchmark" },
+  theme = terminalChartTheme,
 }: EquityComparisonChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(720);
@@ -69,40 +61,40 @@ export function EquityComparisonChart({
       style={{ height }}
     >
       <LineChart data={rows} height={height - 24} margin={{ bottom: 8, left: 0, right: 16, top: 12 }} width={width}>
-        <CartesianGrid stroke={COLORS.grid} vertical={false} />
+        <CartesianGrid stroke={theme.rechartsGrid} vertical={false} />
         <XAxis
           dataKey="timestamp"
           minTickGap={34}
-          stroke={COLORS.axis}
-          tick={{ fill: COLORS.tick, fontSize: 11 }}
+          stroke={theme.axis}
+          tick={{ fill: theme.tick, fontSize: 11 }}
           tickLine={false}
         />
         <YAxis
           domain={["auto", "auto"]}
-          stroke={COLORS.axis}
-          tick={{ fill: COLORS.tick, fontSize: 11 }}
+          stroke={theme.axis}
+          tick={{ fill: theme.tick, fontSize: 11 }}
           tickFormatter={(value) => Number(value).toFixed(2)}
           tickLine={false}
           width={54}
         />
         <Tooltip
           contentStyle={{
-            background: COLORS.tooltipBg,
-            border: `1px solid ${COLORS.tooltipBorder}`,
-            borderRadius: 8,
-            color: "#E2E8F0",
+            background: theme.tooltipBg,
+            border: `1px solid ${theme.tooltipBorder}`,
+            borderRadius: theme.tooltipBorderRadius,
+            color: theme.tooltipText,
           }}
           formatter={(value) => Number(value).toFixed(4)}
-          labelStyle={{ color: COLORS.tick }}
+          labelStyle={{ color: theme.tick }}
         />
-        <Legend wrapperStyle={{ color: "#CBD5E1", fontSize: 12 }} />
+        <Legend wrapperStyle={{ color: theme.legendText, fontSize: 12 }} />
         <Line
           activeDot={{ r: 4 }}
           connectNulls
           dataKey="strategy"
           dot={false}
           name={labels.strategy}
-          stroke={COLORS.strategy}
+          stroke={theme.strategy}
           strokeWidth={2}
           type="monotone"
         />
@@ -111,7 +103,7 @@ export function EquityComparisonChart({
           dataKey="benchmark"
           dot={false}
           name={labels.benchmark}
-          stroke={COLORS.benchmark}
+          stroke={theme.benchmark}
           strokeWidth={2}
           type="monotone"
         />
