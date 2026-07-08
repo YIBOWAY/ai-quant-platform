@@ -53,4 +53,31 @@ describe("chart theme injection", () => {
     expect(source).toContain("theme.text");
     expect(source).toContain("theme.volumeUp");
   });
+
+  it("keeps candlestick chart lifecycle independent from theme object identity", () => {
+    const source = readChartFile("candlestick");
+
+    expect(source).not.toContain("[fixedHeight, theme]");
+    expect(source).not.toContain("normalizeRows(rows, theme)");
+    expect(source).toContain("normalizeRows(rows, theme.volumeUp, theme.volumeDown)");
+    expect(source).toContain("[rows, theme.volumeUp, theme.volumeDown]");
+  });
+
+  it("applies candlestick theme changes through refs with primitive dependencies", () => {
+    const source = readChartFile("candlestick");
+
+    expect(source).toContain("chartRef.current?.applyOptions({");
+    expect(source).toContain("candleSeriesRef.current?.applyOptions({");
+    expect(source).toContain("volumeSeriesRef.current?.applyOptions({");
+    expect(source).toContain(`[
+    theme.background,
+    theme.text,
+    theme.grid,
+    theme.border,
+    theme.up,
+    theme.down,
+    theme.volumeUp,
+    theme.volumeDown,
+  ]`);
+  });
 });

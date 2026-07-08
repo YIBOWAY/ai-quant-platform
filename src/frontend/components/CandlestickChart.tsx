@@ -30,7 +30,10 @@ export function CandlestickChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const chartData = useMemo(() => normalizeRows(rows, theme), [rows, theme]);
+  const chartData = useMemo(
+    () => normalizeRows(rows, theme.volumeUp, theme.volumeDown),
+    [rows, theme.volumeUp, theme.volumeDown],
+  );
 
   useEffect(() => {
     const host = chartHostRef.current;
@@ -43,18 +46,18 @@ export function CandlestickChart({
       height: fixedHeight ?? Math.max(host.clientHeight, 240),
       width: host.clientWidth,
       layout: {
-        background: { color: theme.background },
-        textColor: theme.text,
+        background: { color: terminalChartTheme.background },
+        textColor: terminalChartTheme.text,
       },
       grid: {
-        vertLines: { color: theme.grid },
-        horzLines: { color: theme.grid },
+        vertLines: { color: terminalChartTheme.grid },
+        horzLines: { color: terminalChartTheme.grid },
       },
       rightPriceScale: {
-        borderColor: theme.border,
+        borderColor: terminalChartTheme.border,
       },
       timeScale: {
-        borderColor: theme.border,
+        borderColor: terminalChartTheme.border,
         timeVisible: false,
       },
       crosshair: {
@@ -62,15 +65,15 @@ export function CandlestickChart({
       },
     });
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: theme.up,
-      downColor: theme.down,
-      borderUpColor: theme.up,
-      borderDownColor: theme.down,
-      wickUpColor: theme.up,
-      wickDownColor: theme.down,
+      upColor: terminalChartTheme.up,
+      downColor: terminalChartTheme.down,
+      borderUpColor: terminalChartTheme.up,
+      borderDownColor: terminalChartTheme.down,
+      wickUpColor: terminalChartTheme.up,
+      wickDownColor: terminalChartTheme.down,
     });
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      color: theme.volumeUp,
+      color: terminalChartTheme.volumeUp,
       priceFormat: { type: "volume" },
       priceScaleId: "",
     });
@@ -104,7 +107,46 @@ export function CandlestickChart({
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [fixedHeight, theme]);
+  }, [fixedHeight]);
+
+  useEffect(() => {
+    chartRef.current?.applyOptions({
+      layout: {
+        background: { color: theme.background },
+        textColor: theme.text,
+      },
+      grid: {
+        vertLines: { color: theme.grid },
+        horzLines: { color: theme.grid },
+      },
+      rightPriceScale: {
+        borderColor: theme.border,
+      },
+      timeScale: {
+        borderColor: theme.border,
+      },
+    });
+    candleSeriesRef.current?.applyOptions({
+      upColor: theme.up,
+      downColor: theme.down,
+      borderUpColor: theme.up,
+      borderDownColor: theme.down,
+      wickUpColor: theme.up,
+      wickDownColor: theme.down,
+    });
+    volumeSeriesRef.current?.applyOptions({
+      color: theme.volumeUp,
+    });
+  }, [
+    theme.background,
+    theme.text,
+    theme.grid,
+    theme.border,
+    theme.up,
+    theme.down,
+    theme.volumeUp,
+    theme.volumeDown,
+  ]);
 
   useEffect(() => {
     // setData asserts on unsorted/duplicate times; normalizeRows guarantees
@@ -145,7 +187,7 @@ export function CandlestickChart({
   );
 }
 
-function normalizeRows(rows: OhlcvRow[], theme: ChartTheme) {
+function normalizeRows(rows: OhlcvRow[], volumeUp: string, volumeDown: string) {
   // Daily bars can use the date string; intraday bars MUST use epoch seconds,
   // otherwise multiple bars of one day collapse onto the same time key and
   // lightweight-charts throws ("data must be asc ordered by time").
@@ -185,7 +227,7 @@ function normalizeRows(rows: OhlcvRow[], theme: ChartTheme) {
   const volume = deduped.map(({ row, time }) => ({
     time,
     value: row.volume,
-    color: row.close >= row.open ? theme.volumeUp : theme.volumeDown,
+    color: row.close >= row.open ? volumeUp : volumeDown,
   }));
   return { candles, volume, intraday };
 }

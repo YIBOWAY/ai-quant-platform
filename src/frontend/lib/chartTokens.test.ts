@@ -33,12 +33,16 @@ const chartThemeKeys = [
 
 describe("chart theme tokens", () => {
   it("preserves the terminal chart literal colors used by existing charts", () => {
-    expect(terminalChartTheme).toMatchObject({
+    expect(terminalChartTheme).toEqual({
       background: "#111827",
       text: "#94A3B8",
+      grid: "rgba(148, 163, 184, 0.10)",
+      rechartsGrid: "rgba(148, 163, 184, 0.12)",
+      border: "rgba(148, 163, 184, 0.22)",
       up: "#00C896",
       down: "#FF4D4F",
       volumeUp: "rgba(0, 200, 150, 0.32)",
+      volumeDown: "rgba(255, 77, 79, 0.32)",
       strategy: "#00C896",
       benchmark: "#60A5FA",
       ic: "#60A5FA",
@@ -48,6 +52,8 @@ describe("chart theme tokens", () => {
       axis: "#64748B",
       tick: "#94A3B8",
       tooltipBg: "#111827",
+      tooltipBorder: "rgba(148, 163, 184, 0.24)",
+      tooltipText: "#E2E8F0",
       tooltipBorderRadius: 8,
       legendText: "#CBD5E1",
     });
