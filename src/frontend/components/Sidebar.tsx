@@ -148,7 +148,7 @@ export function Sidebar() {
 
   return (
     <nav
-      className="fixed left-0 top-0 z-50 hidden h-full w-[240px] flex-col border-r border-border-subtle bg-bg-base lg:flex"
+      className="fixed left-0 top-0 z-50 hidden h-full w-[240px] flex-col border-r border-border-subtle bg-bg-sidebar lg:flex"
       data-testid="desktop-sidebar"
     >
       <div className="border-b border-border-subtle p-6">
@@ -162,7 +162,7 @@ export function Sidebar() {
 
       <div className="border-b border-border-subtle p-4">
         <Link
-          className="font-label-caps flex w-full items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/5 py-2 text-info transition-colors hover:bg-bg-surface"
+          className="font-label-caps flex w-full items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/5 py-2 text-info transition-colors hover:bg-bg-sidebar-muted"
           href={localizePath("/backtest", locale)}
         >
           <Plus size={16} />
@@ -186,8 +186,8 @@ export function Sidebar() {
                         href={localizePath(item.href, locale)}
                         className={`flex items-center gap-3 rounded-lg px-3 py-2 font-sans text-xs tracking-tight transition-colors ${
                           isActive
-                            ? "border-l-2 border-text-primary bg-bg-surface font-semibold text-text-primary"
-                            : "border-l-2 border-transparent text-text-secondary hover:bg-bg-surface hover:text-text-primary"
+                            ? "border-l-2 border-text-primary bg-bg-sidebar-muted font-semibold text-text-primary"
+                            : "border-l-2 border-transparent text-text-secondary hover:bg-bg-sidebar-muted hover:text-text-primary"
                         }`}
                       >
                         <item.icon size={18} />
@@ -207,7 +207,7 @@ export function Sidebar() {
           <li>
             <Link
               href={localizePath("/docs/reversal-momentum", locale)}
-              className="flex items-center gap-3 rounded-lg px-3 py-1.5 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-surface hover:text-text-primary"
+              className="flex items-center gap-3 rounded-lg px-3 py-1.5 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
             >
               <FileText size={16} />
               <span>{text.docs}</span>
@@ -216,7 +216,7 @@ export function Sidebar() {
           <li>
             <Link
               href={localizePath("/settings", locale)}
-              className="flex items-center gap-3 rounded-lg px-3 py-1.5 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-surface hover:text-text-primary"
+              className="flex items-center gap-3 rounded-lg px-3 py-1.5 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
             >
               <HelpCircle size={16} />
               <span>{text.support}</span>

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from quant_system.data.providers.futu import FutuProviderError
 from quant_system.data.schema import normalize_ohlcv_dataframe
 from quant_system.options.earnings_calendar import EarningsCalendar
 from quant_system.options.iv_history import IvHistoryStore
@@ -30,7 +31,7 @@ class _RadarProvider:
 
     def fetch_option_expirations(self, underlying: str) -> pd.DataFrame:
         if underlying in self.failing:
-            raise RuntimeError("opend_unavailable")
+            raise FutuProviderError("rate_limited", "Futu quote rate limit")
         return pd.DataFrame(
             [
                 {"strike_time": "2026-05-22", "option_expiry_date_distance": 19},
@@ -118,7 +119,7 @@ def test_run_options_radar_isolates_ticker_failures_and_sorts(tmp_path: Path) ->
 
     assert report.universe_size == 3
     assert report.scanned_tickers == 2
-    assert report.failed_tickers == [("FAIL", "RuntimeError")]
+    assert report.failed_tickers == [("FAIL", "FutuProviderError:rate_limited")]
     assert {candidate.ticker for candidate in report.candidates} == {"AAA", "BBB"}
     assert report.candidates == sorted(
         report.candidates,

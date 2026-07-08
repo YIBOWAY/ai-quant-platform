@@ -353,6 +353,37 @@ class PaperAccountResponse(BaseModel):
     updated_at: str
 
 
+class PaperAccountEquityCurvePointResponse(BaseModel):
+    timestamp: str
+    equity: float
+    cash: float
+    market_value: float
+    realized_pnl: float
+    source: Literal["ledger", "current_quote"]
+    event_id: str | None = None
+    event_kind: str | None = None
+    symbol: str | None = None
+    side: str | None = None
+    quantity: float | None = None
+    price: float | None = None
+    price_source: PaperAccountPriceSourceResponse
+
+
+class PaperAccountEquityCurveResponse(BaseModel):
+    account_id: str
+    account_exists: bool
+    total: int
+    limit: int
+    offset: int
+    points: list[PaperAccountEquityCurvePointResponse]
+
+
+class PaperAccountSnapshotResponse(BaseModel):
+    account_id: str
+    account_exists: bool
+    account: PaperAccountResponse | None = None
+
+
 class StrategySleeveMutationResponse(BaseModel):
     sleeve: StrategySleeveResponse
     account: PaperAccountResponse

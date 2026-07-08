@@ -3,7 +3,11 @@
 状态：目前已实现三个本地存储层 —— (1) 基于 DuckDB 的富途 (Futu)
 期权缓存，(2) 一个可选的 PostgreSQL **运行索引 (run index)**，覆盖基于文件的
 回测 / 因子 / 模拟盘 / 研报复现运行记录，以及 (3) 一个可选的 PostgreSQL
-**AI HOT 新闻缓存**，用于 `/ai-news` 上游失败时的只读 stale fallback。
+**AI HOT 新闻缓存**，用于 `/ai-news` 上游失败时的只读 stale fallback。2026-07-08
+新增了第 (4) 个 PostgreSQL 业务事实层：
+`app_users`、每日晨报 issue/snapshot/source 表和 owner-scoped
+`ai_news_daily_reports`。这些表已经具备迁移、契约测试、brief archive 读写 API
+和 AI HOT daily report fallback。当前 paper account 仍以文件为事实源。
 
 DuckDB 期权缓存位于 `src/quant_system/storage/options_cache.py`，
 在 `QS_FUTU_USE_CACHE=true`（默认值）时，会将富途期权报价窗口持久化到
@@ -15,10 +19,13 @@ PostgreSQL 运行索引位于 `src/quant_system/storage/database.py` 和
 会对已有的基于文件的运行记录建立索引以实现快速列举，而当数据库被禁用或不可达时，
 API 会退回到扫描文件系统。
 
-AI HOT 新闻缓存位于 `src/quant_system/news/repository.py`，schema 定义在
+AI HOT 新闻 item 缓存位于 `src/quant_system/news/repository.py`，schema 定义在
 `scripts/sql/002_ai_news_cache.sql` 中。它复用同一套 `QS_DATABASE_*` 配置；启用后
-仅缓存 AI HOT `items` 条目和 fetch audit，不缓存日报正文、不启动调度器，也不会让新闻进入
-策略、回测、paper account 或交易链路。
+缓存 AI HOT `items` 条目和 fetch audit，不启动调度器，也不会让新闻进入策略、回测、
+paper account 或交易链路。`scripts/sql/003_app_users_brief_ai_reports.sql`
+还创建了 `ai_news_daily_reports` 表。Slice 3 已将 `/api/news/aihot/daily` 接入
+owner-scoped 持久化与 stale fallback;live 成功时 best-effort 写缓存,上游失败时按
+日期读取缓存并在 warnings 中标明来源。
 
 ## PostgreSQL 运行索引（已实现）
 
@@ -69,14 +76,54 @@ AI News 的事实来源仍是 AI HOT public API。PostgreSQL 只作为本地只�
     `raw`、`fetched_at`、`updated_at`，主键为 `(provider, item_id)`。
   - `quant_system.ai_news_fetches`：每次成功 fetch 的 provider、mode、category、
     search query、since、cursor、take、item count 和 warnings。
+  - `quant_system.ai_news_daily_reports`：由
+    `scripts/sql/003_app_users_brief_ai_reports.sql` 创建的 owner-scoped 日报缓存表,
+    主键为 `(owner_user_id, provider, report_date)`。`/api/news/aihot/daily`
+    成功响应会 best-effort upsert,上游失败时可按日期读取 stale fallback。
 - API 行为：
   - `GET /api/news/aihot/items` 先调用 AI HOT 实时接口。
   - 实时成功后 best-effort upsert 到 `ai_news_items`，缓存失败不影响响应。
   - 实时失败时尝试按 mode/category/q/since/take 读取缓存；命中则返回 `200`、
     `warnings` 中标注本地缓存和上游错误；未命中则保留原 `502/503`。
   - cursor 请求不使用缓存兜底，避免把不透明上游 cursor 伪装成本地分页。
+  - `GET /api/news/aihot/daily` 实时成功后 best-effort upsert 到
+    `ai_news_daily_reports`;缓存失败不影响响应。上游失败时按 requested date
+    或 UTC 当天读取缓存;命中则返回 `200`,并在 `warnings` 中标注 cache 来源和上游错误。
 - 测试要求：默认测试不得连接真实 AI HOT 或真实 Postgres；API 测试 monkeypatch
   provider/repository，repository 测试使用 fake database。
+
+## PostgreSQL Brief / Daily Report 业务事实（brief archive MVP 已实现）
+
+每日晨报归档需要不可变 URL 和可回看 payload，因此它不能只依赖当天聚合 API 的现场结果。
+`scripts/sql/003_app_users_brief_ai_reports.sql` 已经创建以下表：
+
+- `quant_system.app_users`：固定 seed 本地 root 用户
+  `00000000-0000-0000-0000-000000000001`，后续新业务表统一挂
+  `owner_user_id`。
+- `quant_system.brief_issues`：每日晨报 issue 元数据，包含 `public_id`、
+  `issue_date`、`locale`、`latest_snapshot_id` 和可选 `share_token_hash`。
+- `quant_system.brief_snapshots`：append-only 快照版本，存放 JSONB payload、
+  rendered text 和 source watermark。
+- `quant_system.brief_snapshot_sources`：快照来源引用和来源 payload，用于审计。
+- `quant_system.ai_news_daily_reports`：AI HOT daily report 的 owner-scoped 本地缓存。
+
+约束要点：
+
+- root 用户 UUID 固定；如果已有 `root` username 指向不同 UUID，migration 会显式失败，
+  避免静默污染 owner 关系。
+- `brief_issues.latest_snapshot_id` 是 `(issue_id, latest_snapshot_id)` 复合外键，
+  只能指向同一 issue 下的 snapshot。
+- `ai_news_daily_reports` 可从旧版 `(provider, report_date)` primary key 原地升级为
+  `(owner_user_id, provider, report_date)`，并保留已有日报行。
+- 这些表是可查询业务事实，不承载研究 artifact、大体量行情宽表、DuckDB option cache
+  或实盘交易状态。
+
+当前实现边界：schema、brief repository、`POST /api/brief/issues/generate`、
+`GET /api/brief/issues/{public_id}`、`/brief/{public_id}` 前端归档页和 contract
+tests 已存在。`/api/brief/live`、`/api/brief/issues/latest`、`/brief` 生成入口、
+paper account DB mirror/canonical 仍按
+`docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md`
+的 Slice 4+ / Slice 7 推进。
 
 ## 为何需要它
 
@@ -123,6 +170,11 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
 | `options_radar_candidates` | 供 API 和前端过滤使用的雷达候选行。 |
 | `ai_news_items` | 已实现；AI HOT `items` 的只读缓存行。 |
 | `ai_news_fetches` | 已实现；AI HOT `items` 成功 fetch 的审计记录。 |
+| `app_users` | 已实现 schema；本地 root 用户与后续 owner-scoped 业务事实的所有者。 |
+| `brief_issues` | 已实现 schema；每日晨报 issue 元数据和不可变 public id。 |
+| `brief_snapshots` | 已实现 schema；每日晨报 append-only payload 快照。 |
+| `brief_snapshot_sources` | 已实现 schema；晨报快照来源审计。 |
+| `ai_news_daily_reports` | 已实现；AI HOT daily report owner-scoped cache 与 `/api/news/aihot/daily` stale fallback。 |
 
 在首个 DuckDB 实现中已落地：
 
@@ -170,7 +222,8 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
    - `src/quant_system/storage/runs_repository.py`（文件为准，数据库元数据镜像 + 回退）
    - `src/quant_system/storage/options_cache.py`（DuckDB 期权缓存）
 3. 在 `scripts/sql/` 下添加纯 SQL 迁移。（已实现：
-   `scripts/sql/001_runs_index.sql`、`scripts/sql/002_ai_news_cache.sql`）
+   `scripts/sql/001_runs_index.sql`、`scripts/sql/002_ai_news_cache.sql`、
+   `scripts/sql/003_app_users_brief_ai_reports.sql`）
 4. 优先缓存富途期权链和快照结果。（已为期权报价窗口实现）
 5. 将期权筛选器和买方期权助手接入缓存优先的路径。
    （已通过共享的富途数据源实现）

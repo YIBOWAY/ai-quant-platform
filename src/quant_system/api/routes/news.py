@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -15,6 +16,10 @@ from quant_system.api.schemas.news import (
 )
 from quant_system.config.settings import Settings
 from quant_system.news.aihot_client import AiHotClient, AiHotProviderError
+from quant_system.news.daily_report_repository import (
+    cache_aihot_daily_report,
+    load_cached_aihot_daily_report,
+)
 from quant_system.news.models import AiHotDailiesPage, AiHotDaily, AiHotItemsPage
 from quant_system.news.repository import (
     AiHotItemsCacheQuery,
@@ -113,7 +118,15 @@ def aihot_daily(
         daily = _client_for_settings(settings).daily(date=date)
     except AiHotProviderError as exc:
         _remember_error(exc)
+        cached_daily = _load_cached_daily_report(
+            date=date or _current_utc_date(),
+            settings=settings,
+        )
+        if cached_daily is not None:
+            warnings = [*cached_daily.warnings, exc.message]
+            return _daily_payload(replace(cached_daily, warnings=warnings))
         raise _http_error(exc) from exc
+    _cache_daily_report(daily, settings=settings)
     return _daily_payload(daily)
 
 
@@ -192,6 +205,26 @@ def _load_cached_items_page(
     query: AiHotItemsCacheQuery,
 ) -> AiHotItemsPage | None:
     return load_cached_aihot_items(settings=settings, query=query)
+
+
+def _cache_daily_report(
+    daily: AiHotDaily,
+    *,
+    settings: Settings,
+) -> None:
+    cache_aihot_daily_report(daily, settings=settings)
+
+
+def _load_cached_daily_report(
+    date: str,
+    *,
+    settings: Settings,
+) -> AiHotDaily | None:
+    return load_cached_aihot_daily_report(date, settings=settings)
+
+
+def _current_utc_date() -> str:
+    return datetime.now(UTC).date().isoformat()
 
 
 def _items_payload(page: AiHotItemsPage) -> dict:

@@ -1,3 +1,5 @@
+import { buildBriefIssuePath, type BriefIssueEnvelope } from "./briefArchive";
+
 export type SafetyFooter = {
   dry_run: boolean;
   paper_trading: boolean;
@@ -854,6 +856,31 @@ export type PaperAccountActivityResponse = ApiEnvelope & {
   trade_log_total: number;
   limit: number;
   offset: number;
+};
+
+export type PaperAccountEquityCurvePointResponse = {
+  timestamp: string;
+  equity: number;
+  cash: number;
+  market_value: number;
+  realized_pnl: number;
+  source: "ledger" | "current_quote";
+  event_id?: string | null;
+  event_kind?: string | null;
+  symbol?: string | null;
+  side?: string | null;
+  quantity?: number | null;
+  price?: number | null;
+  price_source: PaperAccountPriceSourceResponse;
+};
+
+export type PaperAccountEquityCurveResponse = ApiEnvelope & {
+  account_id: string;
+  account_exists: boolean;
+  total: number;
+  limit: number;
+  offset: number;
+  points: PaperAccountEquityCurvePointResponse[];
 };
 
 export type ExperimentSummary = {
@@ -1868,6 +1895,26 @@ export function getSettings() {
   });
 }
 
+export function getBriefIssue(publicId: string) {
+  return apiGet<BriefIssueEnvelope>(buildBriefIssuePath(publicId), {
+    issue: {
+      issue_id: "",
+      public_id: publicId,
+      issue_date: "",
+      locale: "",
+      status: "unavailable",
+    },
+    snapshot: {
+      snapshot_id: "",
+      version: 0,
+      payload: {},
+      source_watermark: {},
+    },
+    warnings: ["Brief archive issue is unavailable."],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
 export type AiHotItemsQuery = {
   mode?: "selected" | "all";
   category?: string;
@@ -2266,6 +2313,26 @@ export function getPaperAccountActivity(limit = 200, offset = 0) {
     offset,
     safety: FALLBACK_SAFETY,
   });
+}
+
+export function getPaperAccountEquityCurve(days = 7, limit = 200, offset = 0) {
+  const params = new URLSearchParams({
+    days: String(days),
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return apiGet<PaperAccountEquityCurveResponse>(
+    `/api/paper/account/equity-curve?${params.toString()}`,
+    {
+      account_id: "default",
+      account_exists: false,
+      total: 0,
+      limit,
+      offset,
+      points: [],
+      safety: FALLBACK_SAFETY,
+    },
+  );
 }
 
 export function getPaperStrategyConfigs() {

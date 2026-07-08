@@ -207,9 +207,11 @@ slowly under Futu pacing.
 Backtest, factor, paper, and replication runs are always written to local files
 under `data/api_runs/<kind>/<run_id>/`. You can optionally index those four
 kinds into PostgreSQL for fast history listing. The same optional database also
-stores read-only AI HOT item rows for `/ai-news` stale fallback. It is
+stores read-only AI HOT item rows for `/ai-news` stale fallback and now has
+schema-ready tables for root-owned brief snapshots and AI daily reports. It is
 **disabled by default**; when the database is off or unreachable, run endpoints
 fall back to the filesystem and AI News falls back to live proxy/error handling.
+Paper account remains file-canonical until the mirror/reconciliation slices land.
 
 To enable it against a local Docker container:
 
@@ -228,8 +230,11 @@ QS_DATABASE_AUTO_MIGRATE=true
 
 On startup the backend starts database migration/backfill in the background:
 it applies `scripts/sql/*.sql`, creates `quant_system.runs`,
-`quant_system.ai_news_items`, and `quant_system.ai_news_fetches`, backfills
-existing file runs, and prunes run-index rows whose files were removed. If
+`quant_system.ai_news_items`, `quant_system.ai_news_fetches`,
+`quant_system.app_users`, `quant_system.brief_issues`,
+`quant_system.brief_snapshots`, `quant_system.brief_snapshot_sources`, and
+`quant_system.ai_news_daily_reports`, backfills existing file runs, and prunes
+run-index rows whose files were removed. If
 PostgreSQL is down, the first probe is short and later failed requests use a
 brief cooldown window while continuing to read local files or live upstreams.
 Healthy PostgreSQL connections may proceed concurrently. Check it with:
@@ -243,7 +248,7 @@ your usual `quantplatform` database:
 
 ```powershell
 $env:QS_TEST_DATABASE_URL='postgresql://quant:quantpass@127.0.0.1:5432/quantplatform_codex_tmp'
-python -m pytest tests/test_runs_repository_postgres.py -q
+python -m pytest tests/test_runs_repository_postgres.py tests/test_api_brief_persistence.py -q -m pg
 ```
 
 The test may create the target database when its name is clearly temporary
@@ -251,9 +256,17 @@ The test may create the target database when its name is clearly temporary
 normal run index.
 
 The `psycopg` driver ships with the `api` extra. The database stores research
-run metadata and read-only AI news metadata only; the connection URL is masked
-in `/api/settings`. See
+run metadata, read-only AI news metadata, and schema-ready brief/AI daily report
+business facts; it does not store credentials or live trading state. The
+connection URL is masked in `/api/settings`. See
 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md).
+
+The brief archive MVP uses the same optional database: `POST
+/api/brief/issues/generate` writes an immutable snapshot version, `GET
+/api/brief/issues/{public_id}` reads the latest stored snapshot, and
+`/brief/{public_id}` renders that archive. When the database is disabled or
+unavailable, archive generation and archive reads fail closed instead of
+fabricating history.
 
 ## AI News Research Feed
 
@@ -273,7 +286,10 @@ QS_AIHOT_USER_AGENT="Mozilla/5.0 ..."
 
 When `QS_DATABASE_ENABLED=true`, successful feed requests are mirrored into
 `quant_system.ai_news_items`. If AI HOT is temporarily unavailable, the items
-endpoint can return matching cached rows with a warning. The page never creates
+endpoint can return matching cached rows with a warning. The 003 migration also
+creates `quant_system.ai_news_daily_reports`; the daily endpoint now writes
+successful reports best-effort and can return same-date cached daily reports
+with warnings when AI HOT is temporarily unavailable. The page never creates
 trading signals, starts backtests, mutates the paper account, or calls broker
 trading APIs. See [docs/guides/ai-news.md](docs/guides/ai-news.md) and
 [docs/design/ai_news_integration_plan.md](docs/design/ai_news_integration_plan.md).

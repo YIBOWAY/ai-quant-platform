@@ -53,7 +53,9 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/backtests/{run_id}": "BacktestDetailResponse",
         "/api/paper": "PaperRunsResponse",
         "/api/paper/account": "PaperAccountResponse",
+        "/api/paper/account/equity-curve": "PaperAccountEquityCurveResponse",
         "/api/paper/account/ledger": "PaperLedgerResponse",
+        "/api/paper/account/snapshot": "PaperAccountSnapshotResponse",
         "/api/agent/candidates": "AgentCandidatesResponse",
         "/api/agent/candidates/{candidate_id}": "AgentCandidateDetailResponse",
         "/api/experiments": "ExperimentsResponse",
@@ -117,6 +119,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "positions" in components["PaperAccountResponse"]["properties"]
     assert "reserved_cash" in components["PaperAccountResponse"]["properties"]
     assert "available_cash" in components["PaperAccountResponse"]["properties"]
+    assert "points" in components["PaperAccountEquityCurveResponse"]["properties"]
+    assert "account" in components["PaperAccountSnapshotResponse"]["properties"]
     assert "reserved_quantity" in components["PendingAccountOrderResponse"]["properties"]
     assert "entries" in components["PaperLedgerResponse"]["properties"]
     assert "candidates" in components["AgentCandidatesResponse"]["properties"]
@@ -206,6 +210,30 @@ def test_agent_post_routes_publish_response_models(tmp_path) -> None:
     components = openapi["components"]["schemas"]
     assert "metadata" in components["AgentTaskResponse"]["properties"]
     assert "registration" in components["AgentReviewResponse"]["properties"]
+
+
+def test_brief_archive_routes_publish_response_models(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    get_schema = openapi["paths"]["/api/brief/issues/{public_id}"]["get"][
+        "responses"
+    ]["200"]["content"]["application/json"]["schema"]
+    post_schema = openapi["paths"]["/api/brief/issues/generate"]["post"][
+        "responses"
+    ]["200"]["content"]["application/json"]["schema"]
+
+    assert get_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
+    assert post_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
+
+    components = openapi["components"]["schemas"]
+    assert "issue" in components["BriefIssueEnvelopeResponse"]["properties"]
+    assert "snapshot" in components["BriefIssueEnvelopeResponse"]["properties"]
+    assert "warnings" in components["BriefIssueEnvelopeResponse"]["properties"]
+    assert "public_id" in components["BriefIssueResponse"]["properties"]
+    assert "version" in components["BriefSnapshotResponse"]["properties"]
+    assert "payload" in components["BriefSnapshotResponse"]["properties"]
 
 
 def test_options_radar_post_routes_publish_response_models(tmp_path) -> None:

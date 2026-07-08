@@ -4,6 +4,7 @@ from quant_system.api.routes import news as news_routes
 from quant_system.api.server import create_app
 from quant_system.config.settings import AiHotSettings, Settings
 from quant_system.news.aihot_client import AiHotProviderError
+from quant_system.news.daily_report_repository import daily_report_cache_warning
 from quant_system.news.models import (
     AiHotDailiesPage,
     AiHotDaily,
@@ -137,6 +138,25 @@ def test_aihot_items_route_caches_live_page_best_effort(tmp_path, monkeypatch) -
     assert query.take == 2
 
 
+def test_aihot_daily_route_caches_live_report_best_effort(tmp_path, monkeypatch) -> None:
+    fake = FakeAiHotClient()
+    cached: list[AiHotDaily] = []
+
+    def capture_cache(daily: AiHotDaily, *, settings: Settings) -> None:
+        cached.append(daily)
+
+    monkeypatch.setattr(news_routes, "_client_for_settings", lambda _settings: fake)
+    monkeypatch.setattr(news_routes, "_cache_daily_report", capture_cache, raising=False)
+    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+
+    response = client.get("/api/news/aihot/daily", params={"date": "2026-06-28"})
+
+    assert response.status_code == 200
+    assert len(cached) == 1
+    assert cached[0].date == "2026-06-28"
+    assert fake.calls == [("daily", {"date": "2026-06-28"})]
+
+
 def test_aihot_client_for_settings_reuses_client_until_closed() -> None:
     news_routes.close_aihot_clients()
     settings = Settings(aihot=AiHotSettings(cache_ttl_seconds=30))
@@ -208,6 +228,53 @@ def test_aihot_items_route_returns_cached_page_when_upstream_fails(
     assert "Using cached AI HOT items from the local database." in payload["warnings"]
     assert "AI HOT request timed out" in payload["warnings"]
     assert payload["research_safety"]["does_not_trigger_trading"] is True
+
+
+def test_aihot_daily_route_returns_cached_report_when_upstream_fails(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    class TimeoutClient:
+        def daily(self, **_kwargs):
+            raise AiHotProviderError(
+                code="aihot_timeout",
+                message="AI HOT request timed out",
+                status_code=503,
+            )
+
+    captured_dates: list[str] = []
+
+    def cached_daily(date: str, *, settings: Settings) -> AiHotDaily:
+        captured_dates.append(date)
+        return AiHotDaily(
+            date=date,
+            generated_at="2026-07-08T00:01:00+00:00",
+            window_start="2026-07-07T00:00:00+00:00",
+            window_end="2026-07-08T00:00:00+00:00",
+            lead={"title": "Cached daily"},
+            sections=[{"label": "Models"}],
+            flashes=[],
+            warnings=[daily_report_cache_warning(date)],
+            raw={"date": date},
+            fetched_at="2026-07-08T08:00:00+00:00",
+        )
+
+    monkeypatch.setattr(news_routes, "_client_for_settings", lambda _settings: TimeoutClient())
+    monkeypatch.setattr(news_routes, "_load_cached_daily_report", cached_daily, raising=False)
+    client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
+
+    response = client.get("/api/news/aihot/daily", params={"date": "2026-07-08"})
+
+    assert response.status_code == 200
+    assert captured_dates == ["2026-07-08"]
+    payload = response.json()
+    assert payload["date"] == "2026-07-08"
+    assert payload["lead"] == {"title": "Cached daily"}
+    assert payload["research_safety"]["research_only"] is True
+    assert payload["research_safety"]["does_not_trigger_trading"] is True
+    assert daily_report_cache_warning("2026-07-08") in payload["warnings"]
+    assert "AI HOT request timed out" in payload["warnings"]
+    assert any("external beta source" in warning for warning in payload["warnings"])
 
 
 def test_aihot_daily_and_dailies_routes_proxy_read_only(tmp_path, monkeypatch) -> None:

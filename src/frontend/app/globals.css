@@ -4,21 +4,23 @@
 /*
  * QUANTUM_CORE design tokens — single source of truth.
  *
- * Palette: TradingView-inspired terminal dark — neutral black/graphite
- * surfaces, dense table contrast, and restrained status colors. No Material-3
- * palette: the legacy M3 names below are COMPAT ALIASES mapped onto this
- * palette so older class names resolve to the same colors.
+ * Palette: warm terminal dark — a near-black research shell blended with the
+ * Hermes editorial page tone, dense table contrast, and restrained status
+ * colors. No Material-3 palette: the legacy M3 names below are COMPAT ALIASES
+ * mapped onto this palette so older class names resolve to the same colors.
  */
 @theme {
   /* ---- Canonical palette ---- */
-  --color-bg-base: #0F0F0F;          /* page background */
-  --color-bg-surface: #151515;       /* cards, tables, panels */
-  --color-bg-surface-muted: #242424; /* inputs, nested panels, hover */
-  --color-border-subtle: #2A2A2A;    /* hairline borders */
+  --color-bg-base: #12110E;          /* page background */
+  --color-bg-sidebar: #1C1B20;       /* navigation shell: lighter, same family */
+  --color-bg-sidebar-muted: #25242A; /* sidebar hover / selected states */
+  --color-bg-surface: #181714;       /* cards, tables, panels */
+  --color-bg-surface-muted: #23211C; /* inputs, nested panels, hover */
+  --color-border-subtle: #302C25;    /* hairline borders */
 
-  --color-text-primary: #E0E3EB;
-  --color-text-secondary: #8A8D95;
-  --color-text-mono: #D1D4DC;
+  --color-text-primary: #E7E0D3;
+  --color-text-secondary: #9B9488;
+  --color-text-mono: #D8D1C4;
 
   --color-accent-success: #089981;   /* trading gain / genuine success */
   --color-warning: #F0B90B;
@@ -31,31 +33,33 @@
      across older components resolve to the SAME palette instead of the
      removed Material-3 greens (or silently rendering nothing). Prefer the
      canonical names in new code. */
-  --color-base: #0F0F0F;
-  --color-background: #0F0F0F;
-  --color-surface: #151515;
-  --color-surface-dim: #0F0F0F;
-  --color-surface-bright: #242424;
-  --color-surface-muted: #242424;
-  --color-surface-container-lowest: #0F0F0F;
-  --color-surface-container-low: #151515;
-  --color-surface-container: #1E1E1E;
-  --color-surface-container-high: #242424;
-  --color-surface-container-highest: #2A2A2A;
-  --color-on-surface: #E0E3EB;
-  --color-on-background: #E0E3EB;
-  --color-outline: #2A2A2A;
-  --color-outline-variant: #242424;
+  --color-base: #12110E;
+  --color-background: #12110E;
+  --color-sidebar: #1C1B20;
+  --color-sidebar-muted: #25242A;
+  --color-surface: #181714;
+  --color-surface-dim: #12110E;
+  --color-surface-bright: #23211C;
+  --color-surface-muted: #23211C;
+  --color-surface-container-lowest: #12110E;
+  --color-surface-container-low: #181714;
+  --color-surface-container: #1E1C18;
+  --color-surface-container-high: #23211C;
+  --color-surface-container-highest: #302C25;
+  --color-on-surface: #E7E0D3;
+  --color-on-background: #E7E0D3;
+  --color-outline: #302C25;
+  --color-outline-variant: #23211C;
   --color-primary: #089981;
   --color-on-primary: #041D18;
   --color-secondary: #5EA2FF;
   --color-error: #F23645;
-  --color-data-mono: #D1D4DC;
+  --color-data-mono: #D8D1C4;
 
   /* ---- Editorial paper / Hermes stream additions ---- */
-  --color-paper-ink: #14130F;
-  --color-paper-surface: #1A1916;
-  --color-paper-surface-muted: #222019;
+  --color-paper-ink: var(--color-bg-base);
+  --color-paper-surface: var(--color-bg-surface);
+  --color-paper-surface-muted: var(--color-bg-surface-muted);
   --color-ink: #EDE7DA;
   --color-ink-secondary: #A39E92;
   --color-editorial-rule: #3A3733;

@@ -19,7 +19,7 @@ describe("/brief route contract", () => {
       "getBacktests",
       "getPaperRuns",
       "getPaperAccount",
-      "getPaperAccountActivity",
+      "getPaperAccountEquityCurve",
       "getRecentRuns",
       "getAgentCandidates",
       "getAiHotItems",
@@ -59,10 +59,14 @@ describe("/brief route contract", () => {
     expect(source).toContain("Daily Morning Brief");
     expect(source).toContain("每日晨报");
     expect(source).toContain("ONE-WEEK PAPER RETURN");
-    expect(source).toContain("balance history proxy");
+    expect(source).toContain("/api/paper/account/equity-curve");
+    expect(source).toContain("account ledger");
     expect(source).toContain("Hermes 市场手记");
     expect(source).toContain("Hermes completed backtest");
     expect(source).toContain("Options daily scan");
+    expect(source).toContain("safeExternalUrl(item.url)");
+    expect(source).toContain("target=\"_blank\"");
+    expect(source).toContain("rel=\"noreferrer noopener\"");
     expect(source).toContain("Compiled from platform facts");
     expect(source).toContain("template");
     expect(source).toContain("live trading");
@@ -72,6 +76,7 @@ describe("/brief route contract", () => {
     expect(source).not.toContain("apiRequest");
     expect(source).not.toContain("fetch(");
     expect(source).not.toContain("POST");
+    expect(source).not.toContain("balance history proxy");
     expect(source).not.toContain("generate");
     expect(source).not.toContain("llm");
     expect(source).not.toContain("getBacktestDetail");

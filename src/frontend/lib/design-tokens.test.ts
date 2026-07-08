@@ -7,9 +7,14 @@ const globalsCss = readFileSync(path.join(process.cwd(), "app/globals.css"), "ut
 describe("editorial design tokens", () => {
   it("defines the additive paper, Hermes stream, layout, and editorial radius tokens", () => {
     const expectedTokens = [
-      "--color-paper-ink: #14130F;",
-      "--color-paper-surface: #1A1916;",
-      "--color-paper-surface-muted: #222019;",
+      "--color-bg-base: #12110E;",
+      "--color-bg-sidebar: #1C1B20;",
+      "--color-bg-sidebar-muted: #25242A;",
+      "--color-bg-surface: #181714;",
+      "--color-bg-surface-muted: #23211C;",
+      "--color-paper-ink: var(--color-bg-base);",
+      "--color-paper-surface: var(--color-bg-surface);",
+      "--color-paper-surface-muted: var(--color-bg-surface-muted);",
       "--color-ink: #EDE7DA;",
       "--color-ink-secondary: #A39E92;",
       "--color-editorial-rule: #3A3733;",

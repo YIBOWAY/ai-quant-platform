@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from quant_system.data.providers.futu import FutuProviderError
 from quant_system.options.earnings_calendar import EarningsCalendar
 from quant_system.options.iv_history import IvHistoryStore, compute_iv_rank
 from quant_system.options.market_regime import (
@@ -102,7 +103,7 @@ def run_options_radar(
                     market_regime=market_regime,
                 )
             except Exception as exc:
-                failed.append((entry.ticker, type(exc).__name__))
+                failed.append((entry.ticker, _failure_label(exc)))
                 ticker_failed = True
                 break
 
@@ -187,6 +188,12 @@ def run_options_radar(
         failed_tickers=failed,
         candidates=candidates,
     )
+
+
+def _failure_label(exc: Exception) -> str:
+    if isinstance(exc, FutuProviderError):
+        return f"FutuProviderError:{exc.code}"
+    return type(exc).__name__
 
 
 def compute_global_score(

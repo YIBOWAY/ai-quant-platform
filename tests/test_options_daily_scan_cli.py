@@ -5,10 +5,12 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from quant_system.cli import app
+from quant_system.options.radar import OptionsRadarReport
 
 runner = CliRunner()
 
@@ -144,6 +146,91 @@ def test_options_daily_task_refreshes_inputs_and_writes_status(tmp_path: Path) -
     assert status["run_date"] == "2026-05-03"
     assert status["steps"]["universe"]["status"] == "refreshed"
     assert status["steps"]["scan"]["candidate_count"] > 0
+
+
+def test_options_daily_task_records_partial_scan_as_warning(tmp_path: Path, monkeypatch) -> None:
+    universe_path = tmp_path / "inputs" / "universe.csv"
+    earnings_path = tmp_path / "inputs" / "earnings.csv"
+    vix_path = tmp_path / "inputs" / "vix.csv"
+    output_dir = tmp_path / "scans"
+
+    def fake_run_options_radar(**_kwargs):
+        return OptionsRadarReport(
+            run_date="2026-05-03",
+            started_at="2026-05-03T00:00:00+00:00",
+            finished_at="2026-05-03T00:01:00+00:00",
+            universe_size=2,
+            scanned_tickers=1,
+            failed_tickers=[("FAIL", "FutuProviderError:rate_limited")],
+            candidates=[],
+        )
+
+    monkeypatch.setattr("quant_system.cli.run_options_radar", fake_run_options_radar)
+
+    result = runner.invoke(
+        app,
+        [
+            "options",
+            "daily-task",
+            "--provider",
+            "sample",
+            "--top",
+            "2",
+            "--date",
+            "2026-05-03",
+            "--universe-source",
+            "sample",
+            "--earnings-source",
+            "sample",
+            "--vix-source",
+            "sample",
+            "--universe-path",
+            str(universe_path),
+            "--earnings-path",
+            str(earnings_path),
+            "--vix-path",
+            str(vix_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "warning=partial_scan failed_tickers=1" in result.output
+    status = json.loads((output_dir / "daily_task_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "completed_with_warnings"
+    assert status["steps"]["scan"]["failed_tickers"] == 1
+
+
+def test_options_radar_provider_uses_steady_futu_pacing(tmp_path: Path, monkeypatch) -> None:
+    captured: dict[str, float] = {}
+
+    class FakeBucket:
+        def __init__(self, *, max_tokens, refill_seconds):
+            captured["max_tokens"] = max_tokens
+            captured["refill_seconds"] = refill_seconds
+
+    monkeypatch.setattr("quant_system.cli.TokenBucket", FakeBucket)
+
+    from quant_system.cli import _build_options_radar_provider
+
+    settings = SimpleNamespace(
+        futu=SimpleNamespace(
+            host="127.0.0.1",
+            port=11111,
+            request_timeout_seconds=15,
+            cache_dir=tmp_path,
+            use_cache=False,
+        ),
+        options_radar=SimpleNamespace(
+            snapshot_batch_size=200,
+            futu_request_pause_seconds=3.1,
+        ),
+    )
+
+    _build_options_radar_provider(settings, "futu")
+
+    assert captured == {"max_tokens": 1, "refill_seconds": 3.1}
 
 
 def test_options_daily_task_fails_when_scan_lock_is_held(tmp_path: Path, monkeypatch) -> None:

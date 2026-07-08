@@ -138,6 +138,10 @@ An optional PostgreSQL run index (`storage/database.py`,
 `storage/runs_repository.py`, `scripts/sql/001_runs_index.sql`) speeds up
 listing. AI News also uses the same optional database as a read-only stale
 fallback cache (`news/repository.py`, `scripts/sql/002_ai_news_cache.sql`).
+`scripts/sql/003_app_users_brief_ai_reports.sql` adds the root user plus
+brief issue/snapshot/source and AI daily report tables. Brief archive
+generate/read APIs, `/brief/{public_id}`, and AI HOT daily report stale
+fallback are wired; paper-account DB mirror/canonical remains follow-on work.
 The database is off by default; controlled by `QS_DATABASE_ENABLED` /
 `QS_DATABASE_URL` / `QS_DATABASE_CONNECT_TIMEOUT_SECONDS` /
 `QS_DATABASE_AUTO_MIGRATE`; default connect timeout is 1 second. Startup

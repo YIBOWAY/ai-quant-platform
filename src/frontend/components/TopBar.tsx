@@ -204,7 +204,7 @@ export function TopBar() {
       </div>
     </header>
     {menuOpen ? (
-      <div className="fixed left-0 right-0 top-16 z-50 max-h-[calc(100dvh-4rem)] overflow-y-auto border-b border-border-subtle bg-bg-base p-3 shadow-xl lg:hidden">
+      <div className="fixed left-0 right-0 top-16 z-50 max-h-[calc(100dvh-4rem)] overflow-y-auto border-b border-border-subtle bg-bg-sidebar p-3 shadow-xl lg:hidden">
         <nav aria-label={text.mobileMenu} className="space-y-4" id="mobile-navigation">
           {mobileNavSections.map((section) => (
             <section key={section.name}>
@@ -217,8 +217,8 @@ export function TopBar() {
                     aria-current={activePath === item.href ? "page" : undefined}
                     className={`rounded-lg border px-3 py-2 font-body-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info ${
                       activePath === item.href
-                        ? "border-border-subtle bg-bg-surface-muted text-text-primary"
-                        : "border-border-subtle text-text-primary hover:bg-bg-surface"
+                        ? "border-border-subtle bg-bg-sidebar-muted text-text-primary"
+                        : "border-border-subtle text-text-primary hover:bg-bg-sidebar-muted"
                     }`}
                     href={localizePath(item.href, locale)}
                     key={`${section.name}-${item.href}-${item.name}`}

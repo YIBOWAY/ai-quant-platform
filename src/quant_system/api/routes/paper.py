@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -20,10 +20,12 @@ from quant_system.api.schemas.paper import (
     KillSwitchRequest,
     ManualOrderRequest,
     PaperAccountActivityResponse,
+    PaperAccountEquityCurveResponse,
     PaperAccountOrderResponse,
     PaperAccountOrdersProcessResponse,
     PaperAccountRebalanceResponse,
     PaperAccountResponse,
+    PaperAccountSnapshotResponse,
     PaperLedgerResponse,
     PaperRunDetailResponse,
     PaperRunRequest,
@@ -46,7 +48,11 @@ from quant_system.api.schemas.paper import (
     StrategySleeveStopRequest,
 )
 from quant_system.data.provider_factory import DataProviderUnavailableError
-from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
+from quant_system.execution.account import (
+    DEFAULT_INITIAL_CASH,
+    AccountPosition,
+    PaperAccount,
+)
 from quant_system.execution.account_service import (
     AccountFrozenError,
     OrderOutcome,
@@ -81,6 +87,7 @@ from quant_system.execution.price_source import (
 )
 from quant_system.storage.runs_repository import list_run_metadatas, persist_run
 from quant_system.strategies.registry import build_default_strategy_registry
+from quant_system.trading_kernel import roll_position_on_fill
 
 router = APIRouter()
 
@@ -255,6 +262,184 @@ def _account_quotes(account: PaperAccount, *, settings) -> dict[str, PricedQuote
                 source="account",
             )
     return quotes
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+_EQUITY_CURVE_FILL_KINDS = {"fill", "rebalance_fill", "sleeve_execution_fill"}
+
+
+def _price_source_from_quotes(quotes: dict[str, PricedQuote]) -> dict[str, str | None]:
+    price_kinds = {quote.price_kind for quote in quotes.values()}
+    price_kind = (
+        next(iter(price_kinds))
+        if len(price_kinds) == 1
+        else ("mixed" if price_kinds else "none")
+    )
+    as_of = next(iter(quotes.values())).as_of if len(quotes) == 1 else None
+    return {"kind": price_kind, "as_of": as_of}
+
+
+def _replay_account_equity_curve(
+    account: PaperAccount,
+    *,
+    settings,
+) -> list[dict]:
+    cash = 0.0
+    realized_pnl = 0.0
+    positions: dict[str, AccountPosition] = {}
+    mark_prices: dict[str, float] = {}
+    points: list[dict] = []
+
+    for entry in account.ledger:
+        if entry.kind == "reset":
+            positions = {}
+            mark_prices = {}
+            realized_pnl = 0.0
+
+        if (
+            entry.kind in _EQUITY_CURVE_FILL_KINDS
+            and entry.symbol
+            and entry.side
+            and entry.quantity is not None
+            and entry.price is not None
+        ):
+            symbol = entry.symbol.upper()
+            position = positions.get(symbol, AccountPosition(symbol=symbol))
+            quantity = float(entry.quantity)
+            price = float(entry.price)
+            gross_value = (
+                float(entry.gross_value)
+                if entry.gross_value is not None
+                else quantity * price
+            )
+            new_quantity, new_avg_cost, realized_delta, _ = roll_position_on_fill(
+                side=entry.side,
+                position_quantity=position.quantity,
+                position_avg_cost=position.avg_cost,
+                fill_quantity=quantity,
+                fill_price=price,
+                gross_value=gross_value,
+                commission=float(entry.commission or 0.0),
+            )
+            realized_pnl += realized_delta
+            position.quantity = new_quantity
+            position.avg_cost = new_avg_cost
+            mark_prices[symbol] = price
+            if abs(position.quantity) < 1e-9:
+                positions.pop(symbol, None)
+                mark_prices.pop(symbol, None)
+            else:
+                positions[symbol] = position
+        else:
+            realized_pnl += float(entry.realized_pnl_delta or 0.0)
+
+        cash = float(entry.cash_after)
+        market_value = sum(
+            position.market_value(mark_prices.get(symbol, position.avg_cost))
+            for symbol, position in positions.items()
+        )
+        points.append(
+            {
+                "timestamp": entry.timestamp,
+                "equity": cash + market_value,
+                "cash": cash,
+                "market_value": market_value,
+                "realized_pnl": realized_pnl,
+                "source": "ledger",
+                "event_id": entry.entry_id,
+                "event_kind": entry.kind,
+                "symbol": entry.symbol,
+                "side": entry.side,
+                "quantity": entry.quantity,
+                "price": entry.price,
+                "price_source": {
+                    "kind": entry.price_kind or "ledger",
+                    "as_of": entry.timestamp,
+                },
+            }
+        )
+
+    quotes = _account_quotes(account, settings=settings)
+    prices = {symbol: quote.price for symbol, quote in quotes.items()}
+    current_price_source = _price_source_from_quotes(quotes)
+    current_market_value = account.market_value(prices)
+    points.append(
+        {
+            "timestamp": current_price_source["as_of"] or datetime.now(UTC).isoformat(),
+            "equity": account.cash + current_market_value,
+            "cash": account.cash,
+            "market_value": current_market_value,
+            "realized_pnl": account.realized_pnl,
+            "source": "current_quote",
+            "event_id": None,
+            "event_kind": "current",
+            "symbol": None,
+            "side": None,
+            "quantity": None,
+            "price": None,
+            "price_source": current_price_source,
+        }
+    )
+    return points
+
+
+def _filter_recent_equity_points(points: list[dict], *, days: int) -> list[dict]:
+    if days <= 0:
+        return points
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    filtered: list[dict] = []
+    for point in points:
+        if point.get("source") == "current_quote":
+            filtered.append(point)
+            continue
+        timestamp = point.get("timestamp")
+        if not isinstance(timestamp, str):
+            continue
+        parsed = _parse_timestamp(timestamp)
+        if parsed is None or parsed >= cutoff:
+            filtered.append(point)
+    return filtered
+
+
+def _account_equity_curve_view(
+    account: PaperAccount | None,
+    *,
+    settings,
+    days: int,
+    limit: int,
+    offset: int,
+) -> dict:
+    if account is None:
+        return {
+            "account_id": "default",
+            "account_exists": False,
+            "total": 0,
+            "limit": limit,
+            "offset": max(offset, 0),
+            "points": [],
+        }
+
+    points = _filter_recent_equity_points(
+        _replay_account_equity_curve(account, settings=settings),
+        days=days,
+    )
+    return {
+        "account_id": account.account_id,
+        "account_exists": True,
+        "total": len(points),
+        "limit": limit,
+        "offset": max(offset, 0),
+        "points": _window_rows(points, limit=limit, offset=offset),
+    }
 
 
 def _normalized_strategy_config_name(name: str) -> str:
@@ -510,6 +695,42 @@ def get_account(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     storage = _account_storage(api_runs_dir)
     account = _load_or_open_account(storage)
     return _account_view(account, settings=settings)
+
+
+@router.get("/paper/account/snapshot", response_model=PaperAccountSnapshotResponse)
+def get_account_snapshot(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
+    storage = _account_storage(api_runs_dir)
+    account = storage.load()
+    if account is None:
+        return {
+            "account_id": storage.account_id,
+            "account_exists": False,
+            "account": None,
+        }
+    return {
+        "account_id": account.account_id,
+        "account_exists": True,
+        "account": _account_view(account, settings=settings),
+    }
+
+
+@router.get("/paper/account/equity-curve", response_model=PaperAccountEquityCurveResponse)
+def get_account_equity_curve(
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+    days: int = 7,
+    limit: int = 200,
+    offset: int = 0,
+) -> dict:
+    storage = _account_storage(api_runs_dir)
+    account = storage.load()
+    return _account_equity_curve_view(
+        account,
+        settings=settings,
+        days=days,
+        limit=max(limit, 0),
+        offset=max(offset, 0),
+    )
 
 
 @router.post("/paper/account/reset", response_model=PaperAccountResponse)

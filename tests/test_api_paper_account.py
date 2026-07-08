@@ -180,6 +180,85 @@ def test_account_activity_groups_tabs_from_ledger(tmp_path, stub_prices) -> None
     assert after_cancel["order_history"][0]["order_id"] == queued_order_id
 
 
+def test_account_equity_curve_does_not_open_missing_account(tmp_path, stub_prices) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/paper/account/equity-curve")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_exists"] is False
+    assert payload["points"] == []
+    assert PaperAccountStorage(tmp_path / "api_runs").load() is None
+
+
+def test_account_snapshot_does_not_open_missing_account(tmp_path, stub_prices) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/paper/account/snapshot")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_exists"] is False
+    assert payload["account"] is None
+    assert PaperAccountStorage(tmp_path / "api_runs").load() is None
+
+
+def test_account_snapshot_reads_existing_account(tmp_path, stub_prices) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 3},
+    )
+
+    response = client.get("/api/paper/account/snapshot")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_exists"] is True
+    account = payload["account"]
+    assert account["account_id"] == "default"
+    assert account["positions"][0]["symbol"] == "AAPL"
+    assert account["positions"][0]["quantity"] == pytest.approx(3)
+
+
+def test_account_equity_curve_replays_ledger_and_current_mark(
+    tmp_path,
+    stub_prices,
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 100},
+    )
+    stub_prices["AAPL"] = 210.0
+
+    response = client.get("/api/paper/account/equity-curve")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_exists"] is True
+    assert payload["account_id"] == "default"
+    assert payload["total"] == 3
+    assert [point["source"] for point in payload["points"]] == [
+        "ledger",
+        "ledger",
+        "current_quote",
+    ]
+    deposit, fill, current = payload["points"]
+    assert deposit["event_kind"] == "deposit"
+    assert deposit["equity"] == pytest.approx(1_000_000.0)
+    assert fill["event_kind"] == "fill"
+    assert fill["symbol"] == "AAPL"
+    assert fill["quantity"] == pytest.approx(100.0)
+    assert fill["market_value"] == pytest.approx(20_000.0)
+    assert fill["equity"] == pytest.approx(1_000_000.0)
+    assert current["event_kind"] == "current"
+    assert current["price_source"]["kind"] == "futu_snapshot"
+    assert current["market_value"] == pytest.approx(21_000.0)
+    assert current["equity"] == pytest.approx(1_001_000.0)
+
+
 def test_rebalance_applies_strategy_targets_to_account(tmp_path, stub_prices, monkeypatch) -> None:
     # Stub the strategy target computation so the rebalance is deterministic and
     # offline (no factor pipeline / provider needed).

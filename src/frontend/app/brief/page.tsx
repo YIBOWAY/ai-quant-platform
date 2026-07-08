@@ -11,14 +11,15 @@ import {
   getMarketDataHistory,
   getOptionsDailyScanStatus,
   getPaperAccount,
-  getPaperAccountActivity,
+  getPaperAccountEquityCurve,
   getPaperRuns,
   getRecentRuns,
   getSymbols,
   type AccountPositionResponse,
+  type AiHotItem,
   type MarketDataHistoryResponse,
   type OptionsDailyScanStatusResponse,
-  type PaperAccountActivityResponse,
+  type PaperAccountEquityCurveResponse,
   type RecentRun,
 } from "@/lib/api";
 import {
@@ -60,14 +61,14 @@ const copy = {
     accountSource: "source: local paper account engine",
     backtest: "Paper Return",
     backtestEn: "ONE-WEEK PAPER RETURN",
-    figureTitle: "Figure 1 · paper account one-week return from balance history proxy",
-    chartSource: "source: /api/paper/account/activity balance history proxy + current paper equity",
+    figureTitle: "Figure 1 · paper account one-week return from account ledger",
+    chartSource: "source: /api/paper/account/equity-curve account ledger + current quote",
     latestRun: "paper account",
     cumulativeReturn: "one-week return",
-    sharpe: "events",
+    sharpe: "points",
     maxDrawdown: "latest equity",
-    chartNote: "Real historical equity snapshots need a future read-only account curve endpoint.",
-    noChart: "No paper account balance history has been written yet.",
+    chartNote: "Historical points are replayed from the paper-account ledger; the final mark uses the latest paper quote.",
+    noChart: "No paper account equity curve has been written yet.",
     market: "Market",
     marketEn: "THE MARKET",
     marketSummary: "Market summary",
@@ -114,14 +115,14 @@ const copy = {
     accountSource: "资料来源：本地模拟盘引擎",
     backtest: "模拟盘收益",
     backtestEn: "ONE-WEEK PAPER RETURN",
-    figureTitle: "图一 · 模拟盘近 7 日收益；当前为资金流水代理曲线",
-    chartSource: "来源：/api/paper/account/activity balance history proxy + 当前模拟权益",
+    figureTitle: "图一 · 模拟盘近 7 日权益曲线",
+    chartSource: "来源：/api/paper/account/equity-curve 账户账本 + 当前报价",
     latestRun: "模拟账户",
     cumulativeReturn: "一周收益",
-    sharpe: "事件数",
+    sharpe: "点数",
     maxDrawdown: "最新权益",
-    chartNote: "真正的历史权益曲线需要后续增加只读账户曲线接口。",
-    noChart: "尚未写入模拟盘资金历史。",
+    chartNote: "历史点由模拟账户账本回放，最后一点使用最新纸面报价。",
+    noChart: "尚未写入模拟盘权益曲线。",
     market: "市场",
     marketEn: "THE MARKET",
     marketSummary: "市场概括",
@@ -204,28 +205,20 @@ function ymd(value: Date) {
   return value.toISOString().slice(0, 10);
 }
 
-function normalizePaperAccountCurve(
-  activity: PaperAccountActivityResponse,
-  currentEquity: number,
-): ChartPoint[] {
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const points = activity.balance_history
+function normalizePaperEquityCurve(curve: PaperAccountEquityCurveResponse): ChartPoint[] {
+  const points = curve.points
     .map((row) => ({
       x: row.timestamp,
-      y: row.cash_after,
+      y: row.equity,
     }))
     .filter((row) => {
       const time = new Date(row.x).getTime();
-      return Boolean(row.x) && Number.isFinite(row.y) && !Number.isNaN(time) && time >= cutoff;
+      return Boolean(row.x) && Number.isFinite(row.y) && !Number.isNaN(time);
     })
     .sort((a, b) => new Date(a.x).getTime() - new Date(b.x).getTime())
-    .slice(-7);
+    .slice(-24);
   if (!points.length) {
     return [];
-  }
-  const now = new Date().toISOString();
-  if (Number.isFinite(currentEquity)) {
-    points.push({ x: now, y: currentEquity });
   }
   const first = points[0]?.y;
   if (!first) {
@@ -246,6 +239,18 @@ function formatPrice(value: number | undefined) {
     return "--";
   }
   return `$${value.toFixed(2)}`;
+}
+
+function safeExternalUrl(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
 }
 
 function marketSnapshot(symbol: MarketSnapshot["symbol"], data: MarketDataHistoryResponse): MarketSnapshot {
@@ -309,7 +314,7 @@ function buildLede({
   if (text === copy.zh) {
     return (
       <>
-        今晨，模拟盘权益报 <strong>{equity}</strong>，近 7 日代理收益{" "}
+        今晨，模拟盘权益报 <strong>{equity}</strong>，近 7 日权益收益{" "}
         <strong>{paperWeekReturn}</strong>；Hermes 手记：{marketNote} 另整理{" "}
         <strong>{formatCount(digestCount)}</strong> 条 AI 业内情报。
       </>
@@ -318,7 +323,7 @@ function buildLede({
   return (
     <>
       This morning, paper equity prints at <strong>{equity}</strong> with a{" "}
-      <strong>{paperWeekReturn}</strong> seven-day proxy return; Hermes note: {marketNote} It has set{" "}
+      <strong>{paperWeekReturn}</strong> seven-day paper return; Hermes note: {marketNote} It has set{" "}
       <strong>{formatCount(digestCount)}</strong> AI intelligence items in type.
     </>
   );
@@ -611,6 +616,46 @@ function RunLog({
   );
 }
 
+function DigestArticle({
+  item,
+  index,
+  text,
+}: {
+  item: AiHotItem;
+  index: number;
+  text: BriefCopy;
+}) {
+  const sourceUrl = safeExternalUrl(item.url);
+
+  return (
+    <article className="mb-5 break-inside-avoid">
+      <div className="font-data-mono text-[10px] font-bold uppercase tracking-[0.12em] text-editorial-down">
+        {item.source} · {item.category ?? "feed"}
+      </div>
+      <h3 className="mt-1 text-lg font-bold leading-6 text-ink [font-family:var(--font-editorial-serif)]">
+        {sourceUrl ? (
+          <a
+            className="transition-colors hover:text-editorial-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-editorial-accent"
+            href={sourceUrl}
+            rel="noreferrer noopener"
+            target="_blank"
+          >
+            {item.title}
+          </a>
+        ) : (
+          item.title
+        )}
+      </h3>
+      <div className="mt-1 font-data-mono text-[11px] text-ink-secondary">
+        {formatTimestamp(item.published_at)} · {text.score} {item.score ?? "--"}
+      </div>
+      <p className={index === 0 ? "mt-1 first-letter:float-left first-letter:pr-2 first-letter:font-editorial-display first-letter:text-4xl first-letter:font-bold first-letter:text-editorial-accent" : "mt-1"}>
+        {item.summary ?? item.url}
+      </p>
+    </article>
+  );
+}
+
 export default async function BriefPage() {
   const today = new Date();
   const marketStart = new Date(today);
@@ -622,7 +667,7 @@ export default async function BriefPage() {
     backtests,
     paperRuns,
     paperAccount,
-    paperActivity,
+    paperEquityCurve,
     recentRuns,
     candidates,
     digest,
@@ -639,7 +684,7 @@ export default async function BriefPage() {
     getBacktests(),
     getPaperRuns(),
     getPaperAccount(),
-    getPaperAccountActivity(120),
+    getPaperAccountEquityCurve(7),
     getRecentRuns(8),
     getAgentCandidates(),
     getAiHotItems({ take: 6 }),
@@ -651,7 +696,7 @@ export default async function BriefPage() {
     getServerLocale(),
   ]);
   const text = copy[locale];
-  const paperCurve = normalizePaperAccountCurve(paperActivity, paperAccount.equity);
+  const paperCurve = normalizePaperEquityCurve(paperEquityCurve);
   const marketSnapshots = [
     marketSnapshot("SPY", spyHistory),
     marketSnapshot("QQQ", qqqHistory),
@@ -688,7 +733,7 @@ export default async function BriefPage() {
             backtests.apiError,
             paperRuns.apiError,
             paperAccount.apiError,
-            paperActivity.apiError,
+            paperEquityCurve.apiError,
             recentRuns.apiError,
             candidates.apiError,
             digest.apiError,
@@ -808,20 +853,7 @@ export default async function BriefPage() {
           {digestItems.length ? (
             <div className="gap-8 text-sm leading-7 text-ink-secondary md:columns-2 md:[column-rule:1px_solid_var(--color-editorial-rule)]">
               {digestItems.map((item, index) => (
-                <article className="mb-5 break-inside-avoid" key={item.id}>
-                  <div className="font-data-mono text-[10px] font-bold uppercase tracking-[0.12em] text-editorial-down">
-                    {item.source} · {item.category ?? "feed"}
-                  </div>
-                  <h3 className="mt-1 text-lg font-bold leading-6 text-ink [font-family:var(--font-editorial-serif)]">
-                    {item.title}
-                  </h3>
-                  <div className="mt-1 font-data-mono text-[11px] text-ink-secondary">
-                    {formatTimestamp(item.published_at)} · {text.score} {item.score ?? "--"}
-                  </div>
-                  <p className={index === 0 ? "mt-1 first-letter:float-left first-letter:pr-2 first-letter:font-editorial-display first-letter:text-4xl first-letter:font-bold first-letter:text-editorial-accent" : "mt-1"}>
-                    {item.summary ?? item.url}
-                  </p>
-                </article>
+                <DigestArticle index={index} item={item} key={item.id} text={text} />
               ))}
             </div>
           ) : (

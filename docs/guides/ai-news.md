@@ -84,9 +84,11 @@ QS_AIHOT_USER_AGENT=Mozilla/5.0 ...
 
 如果启用现有 `QS_DATABASE_*` Postgres 配置，`/api/news/aihot/items` 会在实时请求成功后把 AI HOT items 写入 `quant_system.ai_news_items`。当上游暂时失败时，后端会尝试返回匹配的本地缓存，并在 `warnings` 中标明“来自本地数据库缓存”和上游错误。
 
+2026-07-08 起，数据库迁移还会创建 `quant_system.ai_news_daily_reports`。这张表把 AI HOT 日报正文按 `owner_user_id + provider + report_date` 持久化，支撑每日晨报归档和上游失败时的日报 fallback。`/api/news/aihot/daily` 实时成功后会 best-effort 写入缓存；上游失败且本地有同日缓存时，会返回缓存并在 `warnings` 中同时标明缓存来源和上游错误。
+
 这个缓存只用于页面只读兜底：
 
-- 不缓存日报正文。
+- `items` fallback 与 `daily report` fallback 均已可用。
 - 不运行调度器。
 - 不生成信号、因子或交易建议。
 - 数据库不可用时，新闻功能仍按实时代理方式工作。
@@ -107,6 +109,7 @@ docker exec quantplatform-db psql -U quant -d quantplatform -c "SELECT table_nam
 正常情况下会看到：
 
 ```text
+ai_news_daily_reports
 ai_news_fetches
 ai_news_items
 ```
@@ -116,7 +119,7 @@ ai_news_items
 离线测试不得访问真实 AI HOT，也不得访问真实 Postgres：
 
 ```powershell
-python -m pytest tests/test_api_news_aihot.py tests/test_news_aihot_client.py tests/test_news_aihot_repository.py tests/test_settings_aihot.py -q
+python -m pytest tests/test_api_news_aihot.py tests/test_news_aihot_client.py tests/test_news_aihot_repository.py tests/test_news_daily_report_repository.py tests/test_settings_aihot.py -q
 python -m pytest tests/test_frontend_ai_news_contract.py -q
 npm --prefix src/frontend run type-check
 npm --prefix src/frontend run lint

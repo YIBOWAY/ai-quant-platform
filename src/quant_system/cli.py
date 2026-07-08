@@ -2014,10 +2014,11 @@ def options_daily_task(
         _echo_options_daily_task_step("scan", steps["scan"])
 
         current_step = "status"
+        status_value = "completed_with_warnings" if report.failed_tickers else "completed"
         status_path = _write_options_daily_task_status(
             active_output_dir,
             {
-                "status": "completed",
+                "status": status_value,
                 "run_date": steps["scan"]["run_date"],
                 "provider": active_provider_name,
                 "strategies": list(selected_strategies),
@@ -2057,7 +2058,7 @@ def options_daily_task(
     if report.scanned_tickers == 0:
         raise typer.Exit(code=3)
     if report.failed_tickers:
-        raise typer.Exit(code=2)
+        typer.echo(f"warning=partial_scan failed_tickers={len(report.failed_tickers)}")
 
 
 @options_app.command("buyside-screen")
@@ -2247,8 +2248,8 @@ def _build_options_radar_provider(settings, provider: Literal["futu", "sample"])
     return RateLimitedFutuProvider(
         futu_provider,
         bucket=TokenBucket(
-            max_tokens=settings.options_radar.futu_rate_limit_per_30s,
-            refill_seconds=30,
+            max_tokens=1,
+            refill_seconds=settings.options_radar.futu_request_pause_seconds,
         ),
     )
 
