@@ -231,6 +231,9 @@ def test_account_repository_factory_selects_configured_mode(tmp_path) -> None:
     from quant_system.execution.account_dual_write_repository import (
         DualWritePaperAccountRepository,
     )
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
     from quant_system.execution.account_repository_factory import (
         build_paper_account_repository,
     )
@@ -250,7 +253,133 @@ def test_account_repository_factory_selects_configured_mode(tmp_path) -> None:
 
     assert isinstance(file_repository, PaperAccountStorage)
     assert isinstance(mirror_repository, DualWritePaperAccountRepository)
-    assert isinstance(canonical_repository, PaperAccountStorage)
+    assert isinstance(canonical_repository, PostgresPaperAccountRepository)
+    assert not isinstance(canonical_repository, PaperAccountStorage)
+    assert canonical_repository.source == "api_canonical"
+
+
+def test_paper_account_canonical_mode_rejects_mutation_when_db_unavailable(
+    tmp_path,
+    stub_prices,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+
+    class UnavailablePostgres(PostgresPaperAccountRepository):
+        def available_for_mutation(self) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        UnavailablePostgres,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(enabled=False, url=None),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 1},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "paper_account_database_unavailable"
+
+    reset_response = client.post(
+        "/api/paper/account/reset",
+        json={"initial_cash": 1000.0},
+    )
+    assert reset_response.status_code == 503
+    assert (
+        reset_response.json()["detail"]["code"]
+        == "paper_account_database_unavailable"
+    )
+
+
+
+
+def test_paper_account_canonical_mode_maps_midflight_save_failure_to_503(
+    tmp_path,
+    stub_prices,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account import PaperAccount
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+
+    class FlakyPostgres(PostgresPaperAccountRepository):
+        def available_for_mutation(self) -> bool:
+            return True
+
+        def load_or_open(self, *, initial_cash: float = 1_000_000.0):
+            return PaperAccount.open_new(
+                account_id=self.account_id,
+                initial_cash=initial_cash,
+            )
+
+        def save(self, account, **_kwargs):
+            raise RuntimeError(
+                "PostgreSQL database is unavailable for paper account canonical save"
+            )
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        FlakyPostgres,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(enabled=True, url="postgresql://user:pass@localhost:5432/tmp"),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 1},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "paper_account_database_unavailable"
+
+
+def test_paper_account_canonical_get_open_maps_db_failure_to_503(
+    tmp_path,
+    stub_prices,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+
+    class FailingLoadOpen(PostgresPaperAccountRepository):
+        def load_or_open(self, *, initial_cash: float = 1_000_000.0):
+            raise RuntimeError(
+                "PostgreSQL database is unavailable for paper account load"
+            )
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        FailingLoadOpen,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(enabled=False, url=None),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+    response = client.get("/api/paper/account")
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "paper_account_database_unavailable"
 
 
 def test_mirror_mode_order_response_stays_file_canonical_when_postgres_fails(
@@ -263,9 +392,16 @@ def test_mirror_mode_order_response_stays_file_canonical_when_postgres_fails(
     failures: list[str] = []
 
     class FailingPostgresRepository:
-        def __init__(self, *, settings, account_id: str = "default") -> None:
+        def __init__(
+            self,
+            *,
+            settings,
+            account_id: str = "default",
+            source: str = "api_dual_write",
+        ) -> None:
             self.settings = settings
             self.account_id = account_id
+            self.source = source
 
         def save(self, account, **_kwargs):
             failures.append(account.account_id)
@@ -291,12 +427,9 @@ def test_mirror_mode_order_response_stays_file_canonical_when_postgres_fails(
     assert response.status_code == 200
     payload = response.json()
     assert set(payload) == {"order", "account", "safety"}
-    assert {
-        "storage_mode",
-        "stale",
-        "reconciliation",
-        "warning",
-    }.isdisjoint(payload["account"])
+    assert payload["account"]["storage_mode"] == "mirror"
+    assert payload["account"]["stale"] is False
+    assert isinstance(payload["account"]["warnings"], list)
     assert payload["account"]["positions"][0]["quantity"] == pytest.approx(2)
     assert failures == ["default", "default"]
 

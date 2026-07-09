@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import threading
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
+from functools import wraps
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -64,7 +66,6 @@ from quant_system.execution.account_service import (
     PendingOrderNotFoundError,
     StrategyDataUnavailableError,
 )
-from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionService,
 )
@@ -207,10 +208,6 @@ def _account_lock(account_id: str) -> threading.Lock:
         return lock
 
 
-def _account_storage(api_runs_dir) -> PaperAccountStorage:
-    return PaperAccountStorage(api_runs_dir)
-
-
 def _account_repository(api_runs_dir, settings) -> PaperAccountRepository:
     return build_paper_account_repository(
         api_runs_dir,
@@ -218,13 +215,149 @@ def _account_repository(api_runs_dir, settings) -> PaperAccountRepository:
     )
 
 
-def _load_or_open_account(storage: PaperAccountRepository) -> PaperAccount:
-    with _account_lock(storage.account_id), storage.mutation_lock():
-        return storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+class PaperAccountDatabaseUnavailable(RuntimeError):
+    def __init__(
+        self,
+        message: str = (
+            "Paper account database is unavailable; "
+            "mutations are disabled in canonical mode."
+        ),
+    ) -> None:
+        super().__init__(message)
+        self.code = "paper_account_database_unavailable"
+
+
+def _map_repository_runtime_error(
+    exc: Exception,
+) -> PaperAccountDatabaseUnavailable | None:
+    """Map repository DB outage RuntimeErrors to the stable fail-closed exception."""
+    if isinstance(exc, PaperAccountDatabaseUnavailable):
+        return exc
+    if not isinstance(exc, RuntimeError):
+        return None
+    text = str(exc).lower()
+    if "paper account" not in text:
+        return None
+    if (
+        "unavailable" in text
+        or "mirror write skipped" in text
+        or "not configured" in text
+    ):
+        return PaperAccountDatabaseUnavailable(
+            "Paper account database is unavailable; "
+            "mutations are disabled in canonical mode."
+        )
+    return None
+
+
+def _ensure_account_mutable(
+    repository: PaperAccountRepository,
+    settings,
+) -> None:
+    if settings.paper_account.db_mode != "canonical":
+        return
+    if getattr(repository, "available_for_mutation", lambda: True)():
+        return
+    raise PaperAccountDatabaseUnavailable(
+        "Paper account database is unavailable; mutations are disabled in canonical mode."
+    )
+
+
+def _http_account_db_unavailable(
+    exc: PaperAccountDatabaseUnavailable,
+) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail=_error_detail(exc.code, str(exc)),
+    )
+
+
+
+@contextmanager
+def _canonical_mutation_guard(settings):
+    """Map repository DB RuntimeErrors to HTTP 503 in canonical mode."""
+    try:
+        yield
+    except HTTPException:
+        raise
+    except PaperAccountDatabaseUnavailable as exc:
+        raise _http_account_db_unavailable(exc) from exc
+    except Exception as exc:  # noqa: BLE001
+        if settings.paper_account.db_mode == "canonical":
+            _reraise_account_db_http(exc)
+        raise
+
+
+def _with_canonical_db_errors(settings, fn, *args, **kwargs):
+    with _canonical_mutation_guard(settings):
+        return fn(*args, **kwargs)
+
+
+def _fail_closed_canonical(handler):
+    @wraps(handler)
+    def wrapped(*args, **kwargs):
+        settings = kwargs.get("settings")
+        if settings is None:
+            for value in list(args) + list(kwargs.values()):
+                if hasattr(value, "paper_account"):
+                    settings = value
+                    break
+        try:
+            return handler(*args, **kwargs)
+        except HTTPException:
+            raise
+        except PaperAccountDatabaseUnavailable as exc:
+            raise _http_account_db_unavailable(exc) from exc
+        except Exception as exc:  # noqa: BLE001
+            if (
+                settings is not None
+                and getattr(settings, "paper_account", None) is not None
+                and settings.paper_account.db_mode == "canonical"
+            ):
+                _reraise_account_db_http(exc)
+            raise
+
+    return wrapped
+
+
+def _reraise_account_db_http(exc: Exception) -> None:
+    """Re-raise mapped paper-account DB failures as HTTP 503."""
+    if isinstance(exc, PaperAccountDatabaseUnavailable):
+        raise _http_account_db_unavailable(exc) from exc
+    mapped = _map_repository_runtime_error(exc)
+    if mapped is not None:
+        raise _http_account_db_unavailable(mapped) from exc
+
+
+def _load_or_open_account(
+    storage: PaperAccountRepository,
+    *,
+    settings,
+) -> PaperAccount:
+    try:
+        with _account_lock(storage.account_id), storage.mutation_lock():
+            return storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
+    except Exception as exc:  # noqa: BLE001 - map canonical DB failures only
+        if settings.paper_account.db_mode == "canonical":
+            _reraise_account_db_http(exc)
+        raise
 
 
 def _strategy_sleeve_storage(api_runs_dir) -> PaperStrategySleeveStorage:
     return PaperStrategySleeveStorage(api_runs_dir)
+
+
+def _load_account_mapped(
+    storage: PaperAccountRepository,
+    *,
+    settings,
+) -> PaperAccount | None:
+    try:
+        return storage.load()
+    except Exception as exc:  # noqa: BLE001
+        if settings.paper_account.db_mode == "canonical":
+            _reraise_account_db_http(exc)
+        raise
 
 
 def _account_snapshot_or_default(account_storage: PaperAccountRepository) -> PaperAccount:
@@ -241,8 +374,24 @@ def _reconcile_pending_strategy_sleeves(
     *,
     account_storage: PaperAccountRepository,
     sleeve_storage: PaperStrategySleeveStorage,
+    settings=None,
+    require_account_write: bool = False,
 ) -> None:
-    account = account_storage.load()
+    try:
+        account = account_storage.load()
+    except RuntimeError as exc:
+        mapped = _map_repository_runtime_error(exc)
+        if mapped is None:
+            raise
+        if require_account_write or (
+            settings is not None and settings.paper_account.db_mode == "canonical"
+        ):
+            if require_account_write:
+                raise mapped from exc
+            # Read/status paths: skip recovery writes when DB is down.
+            return
+        raise
+
     sleeve_storage.reconcile_pending_sleeves(account)
     if account is None:
         return
@@ -251,10 +400,31 @@ def _reconcile_pending_strategy_sleeves(
         price_source=None,
     )
     recovered = service.reconcile_execution_journals(account, commit=False)
-    if recovered:
+    if not recovered:
+        return
+
+    can_write = True
+    if settings is not None and settings.paper_account.db_mode == "canonical":
+        can_write = bool(getattr(account_storage, "available_for_mutation", lambda: True)())
+    if not can_write:
+        if require_account_write:
+            raise PaperAccountDatabaseUnavailable(
+                "Paper account database is unavailable; "
+                "mutations are disabled in canonical mode."
+            )
+        return
+
+    try:
         account_storage.save(account)
-        for execution in recovered:
-            service.commit_execution_journal(execution)
+    except RuntimeError as exc:
+        mapped = _map_repository_runtime_error(exc)
+        if mapped is None:
+            raise
+        if require_account_write:
+            raise mapped from exc
+        return
+    for execution in recovered:
+        service.commit_execution_journal(execution)
 
 
 def _account_quotes(account: PaperAccount, *, settings) -> dict[str, PricedQuote]:
@@ -480,15 +650,24 @@ def _save_account(
     storage: PaperAccountRepository,
     account: PaperAccount,
     quotes: dict[str, PricedQuote],
+    *,
+    settings=None,
 ) -> None:
-    storage.save(
-        account,
-        prices={symbol: quote.price for symbol, quote in quotes.items()},
-        price_metadata={
-            symbol: {"kind": quote.price_kind, "as_of": quote.as_of}
-            for symbol, quote in quotes.items()
-        },
-    )
+    try:
+        storage.save(
+            account,
+            prices={symbol: quote.price for symbol, quote in quotes.items()},
+            price_metadata={
+                symbol: {"kind": quote.price_kind, "as_of": quote.as_of}
+                for symbol, quote in quotes.items()
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - map canonical DB failures only
+        if settings is not None and settings.paper_account.db_mode == "canonical":
+            mapped = _map_repository_runtime_error(exc)
+            if mapped is not None:
+                raise mapped from exc
+        raise
 
 
 def _has_strategy_sleeve_positions(
@@ -509,6 +688,7 @@ def _account_view(
     *,
     settings,
     quotes: dict[str, PricedQuote] | None = None,
+    repository: PaperAccountRepository | None = None,
 ) -> dict:
     """Materialise a price-aware account view for the Position Map."""
     quotes = quotes if quotes is not None else _account_quotes(account, settings=settings)
@@ -542,7 +722,7 @@ def _account_view(
         )
 
     pnl_abs = equity - account.initial_cash
-    return {
+    view = {
         "account_id": account.account_id,
         "base_currency": account.base_currency,
         "initial_cash": account.initial_cash,
@@ -564,6 +744,24 @@ def _account_view(
         "created_at": account.created_at,
         "updated_at": account.updated_at,
     }
+
+    mode = settings.paper_account.db_mode
+    stale = False
+    if repository is not None:
+        stale_fn = getattr(repository, "is_stale", None)
+        if callable(stale_fn):
+            stale = bool(stale_fn())
+
+    warnings: list[str] = []
+    if repository is not None:
+        last_warning = getattr(repository, "last_warning", None)
+        if isinstance(last_warning, str) and last_warning:
+            warnings.append(last_warning)
+
+    view["storage_mode"] = mode
+    view["stale"] = stale
+    view["warnings"] = warnings
+    return view
 
 
 _ORDER_HISTORY_KINDS = {"fill", "rebalance_fill", "sleeve_execution_fill", "order_cancelled"}
@@ -597,9 +795,15 @@ def _account_activity_view(
     settings,
     limit: int,
     offset: int,
+    repository: PaperAccountRepository | None = None,
 ) -> dict:
     quotes = _account_quotes(account, settings=settings)
-    account_view = _account_view(account, settings=settings, quotes=quotes)
+    account_view = _account_view(
+        account,
+        settings=settings,
+        quotes=quotes,
+        repository=repository,
+    )
     chronological = [entry.model_dump(mode="json") for entry in account.ledger]
     newest_first = list(reversed(chronological))
 
@@ -671,6 +875,7 @@ def _process_pending_account_orders(
     quote_when_idle: bool,
 ) -> tuple[list[OrderOutcome], PaperAccount | None, dict[str, PricedQuote]]:
     storage = _account_repository(api_runs_dir, settings)
+    _ensure_account_mutable(storage, settings)
     service = PaperAccountService(settings=settings)
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = (
@@ -687,7 +892,7 @@ def _process_pending_account_orders(
             return [], account, quotes
         outcomes = service.process_pending_orders(account)
         quotes = _account_quotes(account, settings=settings)
-        _save_account(storage, account, quotes)
+        _save_account(storage, account, quotes, settings=settings)
         return outcomes, account, quotes
 
 
@@ -704,14 +909,14 @@ def process_pending_account_orders_once(api_runs_dir, settings) -> list[OrderOut
 @router.get("/paper/account", response_model=PaperAccountResponse)
 def get_account(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     storage = _account_repository(api_runs_dir, settings)
-    account = _load_or_open_account(storage)
-    return _account_view(account, settings=settings)
+    account = _load_or_open_account(storage, settings=settings)
+    return _account_view(account, settings=settings, repository=storage)
 
 
 @router.get("/paper/account/snapshot", response_model=PaperAccountSnapshotResponse)
 def get_account_snapshot(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     storage = _account_repository(api_runs_dir, settings)
-    account = storage.load()
+    account = _load_account_mapped(storage, settings=settings)
     if account is None:
         return {
             "account_id": storage.account_id,
@@ -721,7 +926,7 @@ def get_account_snapshot(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> 
     return {
         "account_id": account.account_id,
         "account_exists": True,
-        "account": _account_view(account, settings=settings),
+        "account": _account_view(account, settings=settings, repository=storage),
     }
 
 
@@ -734,7 +939,7 @@ def get_account_equity_curve(
     offset: int = 0,
 ) -> dict:
     storage = _account_repository(api_runs_dir, settings)
-    account = storage.load()
+    account = _load_account_mapped(storage, settings=settings)
     return _account_equity_curve_view(
         account,
         settings=settings,
@@ -745,24 +950,34 @@ def get_account_equity_curve(
 
 
 @router.post("/paper/account/reset", response_model=PaperAccountResponse)
+@_fail_closed_canonical
 def reset_account(
     request: AccountResetRequest,
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
     storage = _account_repository(api_runs_dir, settings)
+    try:
+        _ensure_account_mutable(storage, settings)
+    except PaperAccountDatabaseUnavailable as exc:
+        raise _http_account_db_unavailable(exc) from exc
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = storage.reset(initial_cash=request.initial_cash)
-        return _account_view(account, settings=settings)
+        return _account_view(account, settings=settings, repository=storage)
 
 
 @router.post("/paper/account/kill-switch", response_model=PaperAccountResponse)
+@_fail_closed_canonical
 def set_account_kill_switch(
     request: KillSwitchRequest,
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
     storage = _account_repository(api_runs_dir, settings)
+    try:
+        _ensure_account_mutable(storage, settings)
+    except PaperAccountDatabaseUnavailable as exc:
+        raise _http_account_db_unavailable(exc) from exc
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
         account.kill_switch = request.enabled
@@ -771,8 +986,10 @@ def set_account_kill_switch(
             note=f"account kill switch set to {request.enabled}",
         )
         quotes = _account_quotes(account, settings=settings)
-        _save_account(storage, account, quotes)
-        return _account_view(account, settings=settings, quotes=quotes)
+        _save_account(storage, account, quotes, settings=settings)
+        return _account_view(
+            account, settings=settings, quotes=quotes, repository=storage
+        )
 
 
 @router.get("/paper/account/ledger", response_model=PaperLedgerResponse)
@@ -783,7 +1000,7 @@ def get_account_ledger(
     offset: int = 0,
 ) -> dict:
     storage = _account_repository(api_runs_dir, settings)
-    account = _load_or_open_account(storage)
+    account = _load_or_open_account(storage, settings=settings)
     entries = [entry.model_dump(mode="json") for entry in account.ledger]
     entries.reverse()  # newest first
     window = entries[offset : offset + max(limit, 0)]
@@ -798,22 +1015,28 @@ def get_account_activity(
     offset: int = 0,
 ) -> dict:
     storage = _account_repository(api_runs_dir, settings)
-    account = _load_or_open_account(storage)
+    account = _load_or_open_account(storage, settings=settings)
     return _account_activity_view(
         account,
         settings=settings,
         limit=limit,
         offset=offset,
+        repository=storage,
     )
 
 
 @router.post("/paper/account/orders", response_model=PaperAccountOrderResponse)
+@_fail_closed_canonical
 def place_account_order(
     request: ManualOrderRequest,
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
     storage = _account_repository(api_runs_dir, settings)
+    try:
+        _ensure_account_mutable(storage, settings)
+    except PaperAccountDatabaseUnavailable as exc:
+        raise _http_account_db_unavailable(exc) from exc
     service = PaperAccountService(settings=settings)
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
@@ -842,10 +1065,12 @@ def place_account_order(
                 detail=_error_detail("invalid_account_order", str(exc)),
             ) from exc
         quotes = _account_quotes(account, settings=settings)
-        _save_account(storage, account, quotes)
+        _save_account(storage, account, quotes, settings=settings)
         return {
             "order": _order_outcome_view(outcome),
-            "account": _account_view(account, settings=settings, quotes=quotes),
+            "account": _account_view(
+                account, settings=settings, quotes=quotes, repository=storage
+            ),
         }
 
 
@@ -853,6 +1078,7 @@ def place_account_order(
     "/paper/account/orders/process",
     response_model=PaperAccountOrdersProcessResponse,
 )
+@_fail_closed_canonical
 def process_pending_account_orders(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
@@ -864,6 +1090,11 @@ def process_pending_account_orders(
             open_if_missing=True,
             quote_when_idle=True,
         )
+    except PaperAccountDatabaseUnavailable as exc:
+        raise _http_account_db_unavailable(exc) from exc
+    except RuntimeError as exc:
+        _reraise_account_db_http(exc)
+        raise
     except AccountFrozenError as exc:
         raise HTTPException(
             status_code=409,
@@ -876,9 +1107,12 @@ def process_pending_account_orders(
         ) from exc
     if account is None:
         raise RuntimeError("paper account should be opened for manual processing")
+    storage = _account_repository(api_runs_dir, settings)
     return {
         "orders": [_order_outcome_view(outcome) for outcome in outcomes],
-        "account": _account_view(account, settings=settings, quotes=quotes),
+        "account": _account_view(
+            account, settings=settings, quotes=quotes, repository=storage
+        ),
     }
 
 
@@ -886,12 +1120,17 @@ def process_pending_account_orders(
     "/paper/account/orders/{order_id}/cancel",
     response_model=PaperAccountOrderResponse,
 )
+@_fail_closed_canonical
 def cancel_pending_account_order(
     order_id: str,
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
     storage = _account_repository(api_runs_dir, settings)
+    try:
+        _ensure_account_mutable(storage, settings)
+    except PaperAccountDatabaseUnavailable as exc:
+        raise _http_account_db_unavailable(exc) from exc
     service = PaperAccountService(settings=settings)
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
@@ -903,10 +1142,12 @@ def cancel_pending_account_order(
                 detail=_error_detail("pending_order_not_found", str(exc)),
             ) from exc
         quotes = _account_quotes(account, settings=settings)
-        _save_account(storage, account, quotes)
+        _save_account(storage, account, quotes, settings=settings)
         return {
             "order": _order_outcome_view(outcome),
-            "account": _account_view(account, settings=settings, quotes=quotes),
+            "account": _account_view(
+                account, settings=settings, quotes=quotes, repository=storage
+            ),
         }
 
 
@@ -914,6 +1155,7 @@ def cancel_pending_account_order(
     "/paper/account/rebalance",
     response_model=PaperAccountRebalanceResponse,
 )
+@_fail_closed_canonical
 def rebalance_account(
     request: AccountRebalanceRequest,
     api_runs_dir: ApiRunsDirDep,
@@ -921,6 +1163,10 @@ def rebalance_account(
 ) -> dict:
     strategy_id = _account_rebalance_strategy_id(request.strategy_id)
     storage = _account_repository(api_runs_dir, settings)
+    try:
+        _ensure_account_mutable(storage, settings)
+    except PaperAccountDatabaseUnavailable as exc:
+        raise _http_account_db_unavailable(exc) from exc
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperAccountService(settings=settings)
     with (
@@ -972,7 +1218,7 @@ def rebalance_account(
                 detail=_error_detail("invalid_account_rebalance", str(exc)),
             ) from exc
         quotes = _account_quotes(account, settings=settings)
-        _save_account(storage, account, quotes)
+        _save_account(storage, account, quotes, settings=settings)
         return {
             "rebalance": {
                 "strategy_id": outcome.strategy_id,
@@ -985,7 +1231,9 @@ def rebalance_account(
                     for order in outcome.orders
                 ],
             },
-            "account": _account_view(account, settings=settings, quotes=quotes),
+            "account": _account_view(
+                account, settings=settings, quotes=quotes, repository=storage
+            ),
         }
 
 
@@ -1076,12 +1324,17 @@ def create_strategy_config_version(
     "/paper/strategy-sleeves",
     response_model=StrategySleeveMutationResponse,
 )
+@_fail_closed_canonical
 def create_strategy_sleeve(
     request: StrategySleeveCreateRequest,
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
     account_storage = _account_repository(api_runs_dir, settings)
+    try:
+        _ensure_account_mutable(account_storage, settings)
+    except PaperAccountDatabaseUnavailable as exc:
+        raise _http_account_db_unavailable(exc) from exc
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperStrategySleeveService(sleeve_storage)
     with (
@@ -1092,6 +1345,7 @@ def create_strategy_sleeve(
         _reconcile_pending_strategy_sleeves(
             account_storage=account_storage,
             sleeve_storage=sleeve_storage,
+            settings=settings,
         )
         account = account_storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
         try:
@@ -1120,7 +1374,7 @@ def create_strategy_sleeve(
         if sleeve.mode == StrategySleeveMode.ALLOCATED:
             try:
                 sleeve_storage.save_pending_sleeve(sleeve)
-                _save_account(account_storage, account, quotes)
+                _save_account(account_storage, account, quotes, settings=settings)
             except (OSError, ValueError) as exc:
                 sleeve_storage.discard_pending_sleeve(sleeve.sleeve_id)
                 raise HTTPException(
@@ -1146,7 +1400,7 @@ def create_strategy_sleeve(
         else:
             try:
                 sleeve_storage.save_sleeve(sleeve)
-                _save_account(account_storage, account, quotes)
+                _save_account(account_storage, account, quotes, settings=settings)
             except (OSError, ValueError) as exc:
                 raise HTTPException(
                     status_code=500,
@@ -1157,7 +1411,12 @@ def create_strategy_sleeve(
                 ) from exc
         return {
             "sleeve": sleeve.model_dump(mode="json"),
-            "account": _account_view(account, settings=settings, quotes=quotes),
+            "account": _account_view(
+                account,
+                settings=settings,
+                quotes=quotes,
+                repository=account_storage,
+            ),
         }
 
 
@@ -1176,6 +1435,7 @@ def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) ->
         _reconcile_pending_strategy_sleeves(
             account_storage=account_storage,
             sleeve_storage=storage,
+            settings=settings,
         )
         sleeves = storage.list_sleeves()
     return {
@@ -1230,6 +1490,7 @@ def get_strategy_sleeve(
         _reconcile_pending_strategy_sleeves(
             account_storage=account_storage,
             sleeve_storage=storage,
+            settings=settings,
         )
         try:
             sleeve = storage.load_sleeve(sleeve_id)
@@ -1271,6 +1532,7 @@ def create_strategy_sleeve_execution(
         _reconcile_pending_strategy_sleeves(
             account_storage=account_storage,
             sleeve_storage=sleeve_storage,
+            settings=settings,
         )
         account = _account_snapshot_or_default(account_storage)
         try:
@@ -1308,6 +1570,7 @@ def create_strategy_sleeve_execution(
     "/paper/strategy-sleeves/executions/process",
     response_model=StrategyExecutionProcessResponse,
 )
+@_fail_closed_canonical
 def process_strategy_sleeve_executions(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
@@ -1315,6 +1578,10 @@ def process_strategy_sleeve_executions(
 ) -> dict:
     payload = request or StrategyExecutionProcessRequest()
     account_storage = _account_repository(api_runs_dir, settings)
+    try:
+        _ensure_account_mutable(account_storage, settings)
+    except PaperAccountDatabaseUnavailable as exc:
+        raise _http_account_db_unavailable(exc) from exc
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     runner = PaperStrategyOperationsRunner(
         account_storage=account_storage,
@@ -1333,7 +1600,12 @@ def process_strategy_sleeve_executions(
             raise not_found_404("strategy_sleeve", payload.sleeve_id or "") from exc
         account = result.account or _account_snapshot_or_default(account_storage)
         quotes = _account_quotes(account, settings=settings)
-        account_view = _account_view(account, settings=settings, quotes=quotes)
+        account_view = _account_view(
+            account,
+            settings=settings,
+            quotes=quotes,
+            repository=account_storage,
+        )
     return {
         "processed_count": result.processed_count,
         "filled_count": result.filled_count,
@@ -1367,6 +1639,7 @@ def generate_strategy_sleeve_signal(
         _reconcile_pending_strategy_sleeves(
             account_storage=account_storage,
             sleeve_storage=sleeve_storage,
+            settings=settings,
         )
         account = _account_snapshot_or_default(account_storage)
         try:
@@ -1464,6 +1737,7 @@ def _mutate_strategy_sleeve_status(
         _reconcile_pending_strategy_sleeves(
             account_storage=account_storage,
             sleeve_storage=sleeve_storage,
+            settings=settings,
         )
         account = _account_snapshot_or_default(account_storage)
         try:
@@ -1487,7 +1761,12 @@ def _mutate_strategy_sleeve_status(
         quotes = _account_quotes(account, settings=settings)
         return {
             "sleeve": sleeve.model_dump(mode="json"),
-            "account": _account_view(account, settings=settings, quotes=quotes),
+            "account": _account_view(
+                account,
+                settings=settings,
+                quotes=quotes,
+                repository=account_storage,
+            ),
         }
 
 

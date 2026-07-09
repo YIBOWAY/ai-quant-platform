@@ -97,20 +97,43 @@ class _ExecuteCall:
 class _FakeConnection:
     def __init__(self) -> None:
         self.calls: list[_ExecuteCall] = []
+        self._fetchone_results: list[Any] = []
+        self._raise_on_execute: Exception | None = None
+
+    def queue_fetchone(self, *rows: Any) -> None:
+        self._fetchone_results.extend(rows)
+
+    def raise_on_execute(self, exc: Exception) -> None:
+        self._raise_on_execute = exc
 
     def execute(
         self,
         query: str,
         params: tuple[Any, ...] | list[Any] | None = None,
     ) -> _FakeConnection:
+        if self._raise_on_execute is not None:
+            raise self._raise_on_execute
         normalized_params = tuple(params) if params is not None else None
         self.calls.append(_ExecuteCall(_compact(query), normalized_params))
         return self
+
+    def fetchone(self) -> Any:
+        if not self._fetchone_results:
+            return None
+        return self._fetchone_results.pop(0)
 
 
 class _FakeDatabase:
     def __init__(self) -> None:
         self.connection = _FakeConnection()
+        self._healthy = True
+        self._can_attempt = True
+
+    def healthy(self) -> bool:
+        return self._healthy
+
+    def can_attempt_connect(self) -> bool:
+        return self._can_attempt
 
     @contextmanager
     def connect(self) -> Iterator[_FakeConnection]:
@@ -284,9 +307,7 @@ def test_dual_write_repository_save_keeps_file_result_when_postgres_fails(
 
     assert result == file_repo.account_path
     assert file_repo.load() is not None
-    assert repository.last_warning is not None
-    assert "paper account DB mirror write skipped" in repository.last_warning
-    assert "db down for acct-mirror-failure" in repository.last_warning
+    assert repository.last_warning == "paper_account_db_mirror_unavailable"
     assert "paper account DB mirror write skipped" in caplog.text
     assert "db down for acct-mirror-failure" in caplog.text
 
@@ -661,3 +682,221 @@ def test_backfill_replaces_ledger_when_retained_entry_moves_to_lower_seq(
                 )
         finally:
             db.reset_database_cache()
+
+def test_postgres_repository_load_reads_raw_jsonb(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+
+    account = _account_with_position(account_id="acct-pg-load")
+    raw = account.model_dump(mode="json")
+    fake_database.connection.queue_fetchone((raw,))
+
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-pg-load",
+        source="api_canonical",
+    )
+    loaded = repository.load()
+
+    assert loaded is not None
+    assert loaded.account_id == account.account_id
+    assert loaded.cash == pytest.approx(account.cash)
+    assert loaded.positions["AAPL"].quantity == pytest.approx(10)
+    assert loaded.pending_orders[0].order_id == "pending-aapl-buy"
+    select_calls = [
+        call
+        for call in fake_database.connection.calls
+        if "SELECT raw FROM quant_system.paper_accounts" in call.sql
+    ]
+    assert len(select_calls) == 1
+    assert select_calls[0].params == ("acct-pg-load",)
+
+
+def test_postgres_repository_load_returns_none_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    fake_database.connection.queue_fetchone(None)
+
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-missing",
+    )
+    assert repository.load() is None
+
+
+def test_postgres_repository_load_or_open_creates_and_saves_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    fake_database.connection.queue_fetchone(None)
+
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-open-new",
+        source="api_canonical",
+    )
+    account = repository.load_or_open(initial_cash=25_000.0)
+
+    assert account.account_id == "acct-open-new"
+    assert account.initial_cash == pytest.approx(25_000.0)
+    assert account.ledger
+    assert account.ledger[0].kind == "deposit"
+    written_sql = " ".join(call.sql for call in fake_database.connection.calls)
+    assert "SELECT raw FROM quant_system.paper_accounts" in written_sql
+    assert "INSERT INTO quant_system.paper_accounts" in written_sql
+
+
+def test_postgres_repository_load_or_open_returns_existing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+
+    existing = _account_with_position(account_id="acct-existing")
+    fake_database.connection.queue_fetchone((existing.model_dump(mode="json"),))
+
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-existing",
+        source="api_canonical",
+    )
+    account = repository.load_or_open(initial_cash=99_000.0)
+
+    assert account.account_id == "acct-existing"
+    assert account.cash == pytest.approx(existing.cash)
+    assert not any(
+        "INSERT INTO quant_system.paper_accounts" in call.sql
+        for call in fake_database.connection.calls
+    )
+
+
+def test_postgres_repository_reset_writes_fresh_account_with_reset_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-reset",
+        source="api_canonical",
+    )
+    account = repository.reset(initial_cash=12_345.0)
+
+    assert account.account_id == "acct-reset"
+    assert account.initial_cash == pytest.approx(12_345.0)
+    assert account.cash == pytest.approx(12_345.0)
+    assert any(entry.kind == "reset" for entry in account.ledger)
+    written_sql = " ".join(call.sql for call in fake_database.connection.calls)
+    assert "INSERT INTO quant_system.paper_accounts" in written_sql
+    assert "api_canonical" in str(fake_database.connection.calls)
+
+
+def test_postgres_repository_available_for_mutation_false_when_db_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    monkeypatch.setattr(module, "get_database", lambda settings: None)
+    repository = module.PostgresPaperAccountRepository(
+        settings=Settings(database=DatabaseSettings(enabled=False, url=None)),
+        account_id="acct-disabled",
+    )
+    assert repository.available_for_mutation() is False
+
+
+def test_postgres_repository_available_for_mutation_uses_can_attempt_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-health",
+    )
+
+    fake_database._can_attempt = True
+    assert repository.available_for_mutation() is True
+    fake_database._can_attempt = False
+    assert repository.available_for_mutation() is False
+
+
+def test_postgres_repository_load_wraps_connect_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    fake_database.connection.raise_on_execute(OSError("connection refused"))
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-fail",
+    )
+
+    with pytest.raises(RuntimeError, match="unavailable for paper account load"):
+        repository.load()
+
+
+
+def test_postgres_repository_canonical_save_error_message_avoids_mirror_wording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    monkeypatch.setattr(module, "get_database", lambda settings: None)
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-msg",
+        source="api_canonical",
+    )
+    account = _account_with_position(account_id="acct-msg")
+    with pytest.raises(RuntimeError, match="canonical save"):
+        repository.save(account)
+
+
+def test_postgres_repository_load_error_omits_raw_exception_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    fake_database.connection.raise_on_execute(OSError("password=supersecret connection refused"))
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-fail-secret",
+        source="api_canonical",
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        repository.load()
+    message = str(excinfo.value)
+    assert "password=supersecret" not in message
+    assert "unavailable for paper account load" in message

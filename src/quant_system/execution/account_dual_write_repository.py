@@ -8,6 +8,9 @@ from quant_system.execution.account_repository import PaperAccountRepository
 
 logger = logging.getLogger(__name__)
 
+# Public, non-secret warning code surfaced in API responses.
+MIRROR_UNAVAILABLE_WARNING = "paper_account_db_mirror_unavailable"
+
 
 class DualWritePaperAccountRepository:
     """File-canonical repository with best-effort PostgreSQL mirror writes."""
@@ -80,7 +83,17 @@ class DualWritePaperAccountRepository:
         try:
             self.postgres_repo.save(account, **kwargs)
         except Exception as exc:  # noqa: BLE001 - mirror must not break file writes
-            self.last_warning = f"paper account DB mirror write skipped: {exc}"
-            logger.warning(self.last_warning, exc_info=True)
+            # Keep raw exception details in server logs only.
+            logger.warning(
+                "paper account DB mirror write skipped for %s: %s",
+                account.account_id,
+                exc,
+                exc_info=True,
+            )
+            self.last_warning = MIRROR_UNAVAILABLE_WARNING
         else:
             self.last_warning = None
+
+    def available_for_mutation(self) -> bool:
+        # Mirror mode remains fail-open for mutations.
+        return True

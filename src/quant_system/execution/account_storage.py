@@ -35,6 +35,9 @@ class PaperAccountStorage:
         self.account_id = account_id
         self.account_dir = Path(base_dir) / "paper_account" / account_id
 
+    def available_for_mutation(self) -> bool:
+        return True
+
     @property
     def account_path(self) -> Path:
         return self.account_dir / "account.json"

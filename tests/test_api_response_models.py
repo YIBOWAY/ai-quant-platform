@@ -119,6 +119,24 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "positions" in components["PaperAccountResponse"]["properties"]
     assert "reserved_cash" in components["PaperAccountResponse"]["properties"]
     assert "available_cash" in components["PaperAccountResponse"]["properties"]
+    props = components["PaperAccountResponse"]["properties"]
+    assert "storage_mode" in props
+    assert "stale" in props
+    assert "warnings" in props
+    required = components["PaperAccountResponse"].get("required") or []
+    assert "storage_mode" not in required
+    assert "stale" not in required
+    assert "warnings" not in required
+    storage_mode = props["storage_mode"]
+    # optional nullable enum / anyOf depending on pydantic version
+    enum_values = storage_mode.get("enum")
+    if enum_values is None and "anyOf" in storage_mode:
+        for item in storage_mode["anyOf"]:
+            if "enum" in item:
+                enum_values = item["enum"]
+                break
+    if enum_values is not None:
+        assert set(enum_values) >= {"file", "mirror", "canonical"}
     assert "points" in components["PaperAccountEquityCurveResponse"]["properties"]
     assert "account" in components["PaperAccountSnapshotResponse"]["properties"]
     assert "reserved_quantity" in components["PendingAccountOrderResponse"]["properties"]
@@ -223,7 +241,6 @@ def test_brief_archive_routes_publish_response_models(tmp_path) -> None:
     post_schema = openapi["paths"]["/api/brief/issues/generate"]["post"][
         "responses"
     ]["200"]["content"]["application/json"]["schema"]
-
     assert get_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
     assert post_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
 

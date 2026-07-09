@@ -7,6 +7,14 @@ from quant_system.execution.account import PaperAccount
 
 
 class PaperAccountRepository(Protocol):
+    """Paper account persistence protocol.
+
+    Optional duck-typed helpers used by API routes:
+    - ``available_for_mutation() -> bool`` (defaults to True when absent)
+    - ``last_warning: str | None`` (dual-write mirror warnings)
+    - ``is_stale() -> bool`` (reserved for later reconciliation)
+    """
+
     account_id: str
 
     def mutation_lock(

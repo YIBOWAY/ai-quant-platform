@@ -351,6 +351,9 @@ class PaperAccountResponse(BaseModel):
     pending_orders: list[PendingAccountOrderResponse]
     created_at: str
     updated_at: str
+    storage_mode: Literal["file", "mirror", "canonical"] | None = None
+    stale: bool = False
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PaperAccountEquityCurvePointResponse(BaseModel):
