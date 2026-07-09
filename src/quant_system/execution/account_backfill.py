@@ -1,8 +1,8 @@
-"""Explicit backfill from a file-backed paper account into PostgreSQL.
+"""Backfill and mirror helpers for file-backed paper accounts.
 
 The file-backed ``PaperAccount`` remains the source of truth. This module only
-mirrors a caller-provided account JSON file into the optional database; it is
-not imported by API routes and never opens or creates an account.
+mirrors caller-provided account state into the optional database; it never opens
+or creates an account.
 
 Mirror semantics are intentionally asymmetric:
 - account, pending orders, and current positions are current-state mirrors;
@@ -79,6 +79,7 @@ def _write_account(
     payload: dict[str, Any],
     *,
     source: str,
+    prices: dict[str, float] | None = None,
 ) -> None:
     account_id = account.account_id
     now = datetime.now(UTC).isoformat()
@@ -133,7 +134,13 @@ def _write_account(
     _replace_ledger(conn, account)
     _upsert_pending_orders(conn, account)
     _upsert_current_positions(conn, account)
-    _insert_position_snapshot(conn, account, source=source, snapshot_at=now)
+    _insert_position_snapshot(
+        conn,
+        account,
+        source=source,
+        snapshot_at=now,
+        prices=prices,
+    )
 
 
 def _replace_ledger(conn: Any, account: PaperAccount) -> None:
@@ -264,13 +271,15 @@ def _insert_position_snapshot(
     *,
     source: str,
     snapshot_at: str,
+    prices: dict[str, float] | None = None,
 ) -> None:
     snapshot_id = str(uuid.uuid4())
-    prices = {
-        symbol: position.avg_cost
+    normalized_prices = {symbol.upper(): price for symbol, price in (prices or {}).items()}
+    mark_prices = {
+        symbol: normalized_prices.get(symbol.upper(), position.avg_cost)
         for symbol, position in account.positions.items()
     }
-    equity = account.equity(prices)
+    equity = account.equity(mark_prices)
     metadata = {
         "ledger_entries": len(account.ledger),
         "pending_orders": len(account.pending_orders),
@@ -293,7 +302,7 @@ def _insert_position_snapshot(
         ),
     )
     for symbol, position in sorted(account.positions.items()):
-        last_price = position.avg_cost
+        last_price = mark_prices.get(symbol, position.avg_cost)
         market_value = position.market_value(last_price)
         conn.execute(
             f"""

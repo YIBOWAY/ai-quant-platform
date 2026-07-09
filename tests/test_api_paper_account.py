@@ -6,7 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import PaperAccountSettings, SafetySettings, Settings
+from quant_system.config.settings import (
+    DatabaseSettings,
+    PaperAccountSettings,
+    SafetySettings,
+    Settings,
+)
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.price_source import PricedQuote
 
@@ -220,6 +225,84 @@ def test_account_snapshot_reads_existing_account(tmp_path, stub_prices) -> None:
     assert account["account_id"] == "default"
     assert account["positions"][0]["symbol"] == "AAPL"
     assert account["positions"][0]["quantity"] == pytest.approx(3)
+
+
+def test_account_repository_factory_selects_configured_mode(tmp_path) -> None:
+    from quant_system.execution.account_dual_write_repository import (
+        DualWritePaperAccountRepository,
+    )
+    from quant_system.execution.account_repository_factory import (
+        build_paper_account_repository,
+    )
+
+    file_repository = build_paper_account_repository(
+        tmp_path,
+        settings=Settings(paper_account=PaperAccountSettings(db_mode="file")),
+    )
+    mirror_repository = build_paper_account_repository(
+        tmp_path,
+        settings=Settings(paper_account=PaperAccountSettings(db_mode="mirror")),
+    )
+    canonical_repository = build_paper_account_repository(
+        tmp_path,
+        settings=Settings(paper_account=PaperAccountSettings(db_mode="canonical")),
+    )
+
+    assert isinstance(file_repository, PaperAccountStorage)
+    assert isinstance(mirror_repository, DualWritePaperAccountRepository)
+    assert isinstance(canonical_repository, PaperAccountStorage)
+
+
+def test_mirror_mode_order_response_stays_file_canonical_when_postgres_fails(
+    tmp_path,
+    stub_prices,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+
+    failures: list[str] = []
+
+    class FailingPostgresRepository:
+        def __init__(self, *, settings, account_id: str = "default") -> None:
+            self.settings = settings
+            self.account_id = account_id
+
+        def save(self, account, **_kwargs):
+            failures.append(account.account_id)
+            raise RuntimeError("mirror database unavailable")
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        FailingPostgresRepository,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(enabled=False, url=None),
+        paper_account=PaperAccountSettings(db_mode="mirror"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 2},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"order", "account", "safety"}
+    assert {
+        "storage_mode",
+        "stale",
+        "reconciliation",
+        "warning",
+    }.isdisjoint(payload["account"])
+    assert payload["account"]["positions"][0]["quantity"] == pytest.approx(2)
+    assert failures == ["default", "default"]
+
+    persisted = PaperAccountStorage(tmp_path / "api_runs").load()
+    assert persisted is not None
+    assert persisted.positions["AAPL"].quantity == pytest.approx(2)
 
 
 def test_account_equity_curve_replays_ledger_and_current_mark(

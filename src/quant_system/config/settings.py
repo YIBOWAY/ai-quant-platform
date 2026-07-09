@@ -108,6 +108,7 @@ class PaperAccountSettings(BaseSettings):
 
     auto_process_pending_orders_enabled: bool = True
     auto_process_interval_seconds: float = Field(default=30.0, gt=0)
+    db_mode: Literal["file", "mirror", "canonical"] = "file"
 
 
 class ApiKeySettings(BaseSettings):

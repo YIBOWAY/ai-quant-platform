@@ -53,6 +53,12 @@ def _fill(symbol: str, side: OrderSide, qty: float, price: float) -> ExecutionFi
 
 
 def _write_account_file(tmp_path: Path, *, account_id: str = "acct-pgtest") -> Path:
+    account = _account_with_position(account_id=account_id)
+    path = tmp_path / f"{account_id}.json"
+    return _write_account(path, account)
+
+
+def _account_with_position(*, account_id: str = "acct-pgtest") -> PaperAccount:
     account = PaperAccount.open_new(account_id=account_id, initial_cash=10_000.0)
     account.apply_fill(
         _fill("AAPL", OrderSide.BUY, 10, 150.0),
@@ -71,8 +77,7 @@ def _write_account_file(tmp_path: Path, *, account_id: str = "acct-pgtest") -> P
             reason="manual_order",
         )
     )
-    path = tmp_path / f"{account_id}.json"
-    return _write_account(path, account)
+    return account
 
 
 def _write_account(path: Path, account: PaperAccount) -> Path:
@@ -223,6 +228,100 @@ def test_backfill_requires_enabled_optional_database(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="PostgreSQL database is disabled"):
         backfill.backfill_account_file(account_path, settings=settings)
+
+
+def test_postgres_repository_save_reuses_backfill_writer_and_returns_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+
+    repository = module.PostgresPaperAccountRepository(settings=_enabled_settings())
+    account = _account_with_position(account_id="acct-pg-repo")
+
+    result = repository.save(account)
+
+    assert result == {
+        "accounts": 1,
+        "ledger_entries": 2,
+        "positions": 1,
+        "pending_orders": 1,
+    }
+    written_sql = " ".join(call.sql for call in fake_database.connection.calls)
+    assert "INSERT INTO quant_system.paper_accounts" in written_sql
+    assert "INSERT INTO quant_system.paper_account_ledger" in written_sql
+    assert "INSERT INTO quant_system.paper_positions_current" in written_sql
+    assert "INSERT INTO quant_system.paper_position_snapshots" in written_sql
+    assert "account_json" not in str(fake_database.connection.calls)
+    assert "api_dual_write" in str(fake_database.connection.calls)
+
+
+def test_dual_write_repository_save_keeps_file_result_when_postgres_fails(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_dual_write_repository"
+    )
+    from quant_system.execution.account_storage import PaperAccountStorage
+
+    class FailingPostgresRepository:
+        def save(self, account: PaperAccount, **_kwargs: object) -> None:
+            raise RuntimeError(f"db down for {account.account_id}")
+
+    file_repo = PaperAccountStorage(tmp_path, account_id="acct-mirror-failure")
+    repository = module.DualWritePaperAccountRepository(
+        file_repo=file_repo,
+        postgres_repo=FailingPostgresRepository(),
+    )
+    account = _account_with_position(account_id="acct-mirror-failure")
+
+    caplog.set_level("WARNING")
+    result = repository.save(account)
+
+    assert result == file_repo.account_path
+    assert file_repo.load() is not None
+    assert repository.last_warning is not None
+    assert "paper account DB mirror write skipped" in repository.last_warning
+    assert "db down for acct-mirror-failure" in repository.last_warning
+    assert "paper account DB mirror write skipped" in caplog.text
+    assert "db down for acct-mirror-failure" in caplog.text
+
+
+def test_postgres_repository_save_uses_supplied_snapshot_prices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "quant_system.execution.account_postgres_repository"
+    )
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    repository = module.PostgresPaperAccountRepository(settings=_enabled_settings())
+    account = _account_with_position(account_id="acct-pg-priced-snapshot")
+
+    repository.save(account, prices={"AAPL": 222.0})
+
+    snapshot_call = next(
+        call
+        for call in fake_database.connection.calls
+        if "INSERT INTO quant_system.paper_position_snapshots" in call.sql
+    )
+    row_call = next(
+        call
+        for call in fake_database.connection.calls
+        if "INSERT INTO quant_system.paper_position_snapshot_rows" in call.sql
+    )
+    assert snapshot_call.params is not None
+    assert row_call.params is not None
+    assert snapshot_call.params[3] == pytest.approx(account.equity({"AAPL": 222.0}))
+    assert row_call.params[4] == pytest.approx(222.0)
+    assert row_call.params[5] == pytest.approx(2220.0)
+    assert row_call.params[6] == pytest.approx(
+        account.positions["AAPL"].unrealized_pnl(222.0)
+    )
 
 
 def test_backfill_uses_parameterized_upserts_and_returns_counts(

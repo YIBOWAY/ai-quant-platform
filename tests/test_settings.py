@@ -38,6 +38,19 @@ def test_paper_account_auto_processor_defaults_to_enabled(monkeypatch) -> None:
 
     assert settings.auto_process_pending_orders_enabled is True
     assert settings.auto_process_interval_seconds == 30.0
+    assert settings.db_mode == "file"
+
+
+def test_paper_account_settings_expose_db_mode() -> None:
+    assert PaperAccountSettings(db_mode="mirror").db_mode == "mirror"
+    assert PaperAccountSettings(db_mode="canonical").db_mode == "canonical"
+
+    try:
+        PaperAccountSettings(db_mode="invalid")
+    except ValidationError as exc:
+        assert "db_mode" in str(exc)
+    else:
+        raise AssertionError("paper account db_mode should reject unknown modes")
 
 
 def test_live_trading_requires_manual_confirmation_phrase() -> None:

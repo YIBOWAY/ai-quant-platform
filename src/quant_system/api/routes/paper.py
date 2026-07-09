@@ -53,6 +53,10 @@ from quant_system.execution.account import (
     AccountPosition,
     PaperAccount,
 )
+from quant_system.execution.account_repository import PaperAccountRepository
+from quant_system.execution.account_repository_factory import (
+    build_paper_account_repository,
+)
 from quant_system.execution.account_service import (
     AccountFrozenError,
     OrderOutcome,
@@ -207,7 +211,14 @@ def _account_storage(api_runs_dir) -> PaperAccountStorage:
     return PaperAccountStorage(api_runs_dir)
 
 
-def _load_or_open_account(storage: PaperAccountStorage) -> PaperAccount:
+def _account_repository(api_runs_dir, settings) -> PaperAccountRepository:
+    return build_paper_account_repository(
+        api_runs_dir,
+        settings=settings,
+    )
+
+
+def _load_or_open_account(storage: PaperAccountRepository) -> PaperAccount:
     with _account_lock(storage.account_id), storage.mutation_lock():
         return storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
 
@@ -216,7 +227,7 @@ def _strategy_sleeve_storage(api_runs_dir) -> PaperStrategySleeveStorage:
     return PaperStrategySleeveStorage(api_runs_dir)
 
 
-def _account_snapshot_or_default(account_storage: PaperAccountStorage) -> PaperAccount:
+def _account_snapshot_or_default(account_storage: PaperAccountRepository) -> PaperAccount:
     account = account_storage.load()
     if account is not None:
         return account
@@ -228,7 +239,7 @@ def _account_snapshot_or_default(account_storage: PaperAccountStorage) -> PaperA
 
 def _reconcile_pending_strategy_sleeves(
     *,
-    account_storage: PaperAccountStorage,
+    account_storage: PaperAccountRepository,
     sleeve_storage: PaperStrategySleeveStorage,
 ) -> None:
     account = account_storage.load()
@@ -466,7 +477,7 @@ def _strategy_config_name_conflict(
 
 
 def _save_account(
-    storage: PaperAccountStorage,
+    storage: PaperAccountRepository,
     account: PaperAccount,
     quotes: dict[str, PricedQuote],
 ) -> None:
@@ -659,7 +670,7 @@ def _process_pending_account_orders(
     open_if_missing: bool,
     quote_when_idle: bool,
 ) -> tuple[list[OrderOutcome], PaperAccount | None, dict[str, PricedQuote]]:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     service = PaperAccountService(settings=settings)
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = (
@@ -692,14 +703,14 @@ def process_pending_account_orders_once(api_runs_dir, settings) -> list[OrderOut
 
 @router.get("/paper/account", response_model=PaperAccountResponse)
 def get_account(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     account = _load_or_open_account(storage)
     return _account_view(account, settings=settings)
 
 
 @router.get("/paper/account/snapshot", response_model=PaperAccountSnapshotResponse)
 def get_account_snapshot(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     account = storage.load()
     if account is None:
         return {
@@ -722,7 +733,7 @@ def get_account_equity_curve(
     limit: int = 200,
     offset: int = 0,
 ) -> dict:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     account = storage.load()
     return _account_equity_curve_view(
         account,
@@ -739,7 +750,7 @@ def reset_account(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = storage.reset(initial_cash=request.initial_cash)
         return _account_view(account, settings=settings)
@@ -751,7 +762,7 @@ def set_account_kill_switch(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
         account.kill_switch = request.enabled
@@ -771,7 +782,7 @@ def get_account_ledger(
     limit: int = 200,
     offset: int = 0,
 ) -> dict:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     account = _load_or_open_account(storage)
     entries = [entry.model_dump(mode="json") for entry in account.ledger]
     entries.reverse()  # newest first
@@ -786,7 +797,7 @@ def get_account_activity(
     limit: int = 200,
     offset: int = 0,
 ) -> dict:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     account = _load_or_open_account(storage)
     return _account_activity_view(
         account,
@@ -802,7 +813,7 @@ def place_account_order(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     service = PaperAccountService(settings=settings)
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
@@ -880,7 +891,7 @@ def cancel_pending_account_order(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     service = PaperAccountService(settings=settings)
     with _account_lock(storage.account_id), storage.mutation_lock():
         account = storage.load_or_open(initial_cash=DEFAULT_INITIAL_CASH)
@@ -909,7 +920,7 @@ def rebalance_account(
     settings: SettingsDep,
 ) -> dict:
     strategy_id = _account_rebalance_strategy_id(request.strategy_id)
-    storage = _account_storage(api_runs_dir)
+    storage = _account_repository(api_runs_dir, settings)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperAccountService(settings=settings)
     with (
@@ -1070,7 +1081,7 @@ def create_strategy_sleeve(
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
 ) -> dict:
-    account_storage = _account_storage(api_runs_dir)
+    account_storage = _account_repository(api_runs_dir, settings)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperStrategySleeveService(sleeve_storage)
     with (
@@ -1154,8 +1165,8 @@ def create_strategy_sleeve(
     "/paper/strategy-sleeves",
     response_model=StrategySleevesResponse,
 )
-def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep) -> dict:
-    account_storage = _account_storage(api_runs_dir)
+def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
+    account_storage = _account_repository(api_runs_dir, settings)
     storage = _strategy_sleeve_storage(api_runs_dir)
     with (
         _account_lock(account_storage.account_id),
@@ -1185,7 +1196,7 @@ def get_strategy_sleeve_ops_status(
     target_date: date | None = None,
     execution_window: Literal["next_open"] = "next_open",
 ) -> dict:
-    account_storage = _account_storage(api_runs_dir)
+    account_storage = _account_repository(api_runs_dir, settings)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     runner = PaperStrategyOperationsRunner(
         account_storage=account_storage,
@@ -1204,8 +1215,12 @@ def get_strategy_sleeve_ops_status(
     "/paper/strategy-sleeves/{sleeve_id}",
     response_model=StrategySleeveDetailResponse,
 )
-def get_strategy_sleeve(sleeve_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
-    account_storage = _account_storage(api_runs_dir)
+def get_strategy_sleeve(
+    sleeve_id: str,
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    account_storage = _account_repository(api_runs_dir, settings)
     storage = _strategy_sleeve_storage(api_runs_dir)
     with (
         _account_lock(account_storage.account_id),
@@ -1243,8 +1258,9 @@ def create_strategy_sleeve_execution(
     sleeve_id: str,
     request: StrategyExecutionCreateRequest,
     api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
 ) -> dict:
-    account_storage = _account_storage(api_runs_dir)
+    account_storage = _account_repository(api_runs_dir, settings)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperStrategySleeveService(sleeve_storage)
     with (
@@ -1298,7 +1314,7 @@ def process_strategy_sleeve_executions(
     request: StrategyExecutionProcessRequest | None = None,
 ) -> dict:
     payload = request or StrategyExecutionProcessRequest()
-    account_storage = _account_storage(api_runs_dir)
+    account_storage = _account_repository(api_runs_dir, settings)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     runner = PaperStrategyOperationsRunner(
         account_storage=account_storage,
@@ -1340,7 +1356,7 @@ def generate_strategy_sleeve_signal(
     request: StrategySignalGenerateRequest | None = None,
 ) -> dict:
     payload = request or StrategySignalGenerateRequest()
-    account_storage = _account_storage(api_runs_dir)
+    account_storage = _account_repository(api_runs_dir, settings)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperStrategySignalService(storage=sleeve_storage, settings=settings)
     with (
@@ -1437,7 +1453,7 @@ def _mutate_strategy_sleeve_status(
     action: str,
     reason: str | None = None,
 ) -> dict:
-    account_storage = _account_storage(api_runs_dir)
+    account_storage = _account_repository(api_runs_dir, settings)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
     service = PaperStrategySleeveService(sleeve_storage)
     with (

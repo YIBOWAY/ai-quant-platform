@@ -869,17 +869,23 @@ def paper_account_rebalance_command(
     Designed to be run on a schedule (e.g. Windows Task Scheduler) so the
     account auto-trades each trading day. Simulation only: no real orders.
     """
+    from quant_system.execution.account_repository_factory import (
+        build_paper_account_repository,
+    )
     from quant_system.execution.account_service import (
         AccountFrozenError,
         PaperAccountService,
         StrategyDataUnavailableError,
     )
-    from quant_system.execution.account_storage import PaperAccountStorage
     from quant_system.execution.price_source import PriceUnavailableError
 
     settings = load_settings()
     api_runs_dir = settings.data.data_dir / "api_runs"
-    storage = PaperAccountStorage(api_runs_dir, account_id=account_id)
+    storage = build_paper_account_repository(
+        api_runs_dir,
+        settings=settings,
+        account_id=account_id,
+    )
     service = PaperAccountService(settings=settings)
     with storage.mutation_lock():
         account = storage.load_or_open()
@@ -927,11 +933,17 @@ def paper_account_show_command(
     ] = "default",
 ) -> None:
     """Print a persistent paper account's cash and positions."""
-    from quant_system.execution.account_storage import PaperAccountStorage
+    from quant_system.execution.account_repository_factory import (
+        build_paper_account_repository,
+    )
 
     settings = load_settings()
     api_runs_dir = settings.data.data_dir / "api_runs"
-    storage = PaperAccountStorage(api_runs_dir, account_id=account_id)
+    storage = build_paper_account_repository(
+        api_runs_dir,
+        settings=settings,
+        account_id=account_id,
+    )
     with storage.mutation_lock():
         account = storage.load_or_open()
     typer.echo(
@@ -944,7 +956,9 @@ def paper_account_show_command(
 
 
 def _paper_strategy_operations_runner(settings):
-    from quant_system.execution.account_storage import PaperAccountStorage
+    from quant_system.execution.account_repository_factory import (
+        build_paper_account_repository,
+    )
     from quant_system.execution.paper_strategy_operations import (
         PaperStrategyOperationsRunner,
     )
@@ -954,7 +968,10 @@ def _paper_strategy_operations_runner(settings):
 
     api_runs_dir = settings.data.data_dir / "api_runs"
     return PaperStrategyOperationsRunner(
-        account_storage=PaperAccountStorage(api_runs_dir),
+        account_storage=build_paper_account_repository(
+            api_runs_dir,
+            settings=settings,
+        ),
         sleeve_storage=PaperStrategySleeveStorage(api_runs_dir),
         settings=settings,
     )
@@ -977,7 +994,9 @@ def paper_strategy_generate_signal_command(
 ) -> None:
     """Generate and persist one daily Paper Strategy Sleeve signal."""
     from quant_system.execution.account import PaperAccount
-    from quant_system.execution.account_storage import PaperAccountStorage
+    from quant_system.execution.account_repository_factory import (
+        build_paper_account_repository,
+    )
     from quant_system.execution.paper_strategy_signal_service import (
         PaperStrategySignalService,
         StrategySignalGenerationError,
@@ -988,7 +1007,7 @@ def paper_strategy_generate_signal_command(
 
     settings = load_settings()
     api_runs_dir = settings.data.data_dir / "api_runs"
-    account_storage = PaperAccountStorage(api_runs_dir)
+    account_storage = build_paper_account_repository(api_runs_dir, settings=settings)
     sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
     service = PaperStrategySignalService(storage=sleeve_storage, settings=settings)
     with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
@@ -1103,7 +1122,9 @@ def paper_strategy_create_execution_command(
 ) -> None:
     """Create one pending Paper Strategy Sleeve execution from a signal."""
     from quant_system.execution.account import PaperAccount
-    from quant_system.execution.account_storage import PaperAccountStorage
+    from quant_system.execution.account_repository_factory import (
+        build_paper_account_repository,
+    )
     from quant_system.execution.paper_strategy_sleeve_storage import (
         PaperStrategySleeveStorage,
     )
@@ -1114,7 +1135,7 @@ def paper_strategy_create_execution_command(
 
     settings = load_settings()
     api_runs_dir = settings.data.data_dir / "api_runs"
-    account_storage = PaperAccountStorage(api_runs_dir)
+    account_storage = build_paper_account_repository(api_runs_dir, settings=settings)
     sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
     service = PaperStrategySleeveService(sleeve_storage)
     execution_window = window.replace("-", "_")

@@ -215,6 +215,74 @@ def test_paper_strategies_execute_pending_command(tmp_path, monkeypatch) -> None
     assert sleeve_storage.load_executions(sleeve.sleeve_id)[0].status == "filled"
 
 
+def test_paper_strategies_execute_pending_mirrors_account_in_mirror_mode(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+
+    mirror_saves: list[str] = []
+
+    class RecordingPostgresRepository:
+        def __init__(self, *, settings, account_id: str = "default") -> None:
+            self.settings = settings
+            self.account_id = account_id
+
+        def save(self, account, **_kwargs) -> dict[str, int]:
+            mirror_saves.append(account.account_id)
+            return {
+                "accounts": 1,
+                "ledger_entries": len(account.ledger),
+                "positions": len(account.positions),
+                "pending_orders": len(account.pending_orders),
+            }
+
+    monkeypatch.setenv("QS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("QS_PAPER_ACCOUNT_DB_MODE", "mirror")
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        RecordingPostgresRepository,
+    )
+    reload_settings()
+    _stub_paper_prices(monkeypatch, {"AAPL": 100.0})
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    sleeve_storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    account_storage = PaperAccountStorage(tmp_path / "api_runs")
+    config = make_config()
+    sleeve_storage.save_strategy_config(config)
+    sleeve_service = PaperStrategySleeveService(sleeve_storage)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    sleeve_storage.save_sleeve(sleeve)
+    account_storage.save(account)
+    signal = _strategy_signal(sleeve)
+    sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "paper",
+            "strategies",
+            "execute-pending",
+            "--target-date",
+            "2026-06-29",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert mirror_saves == ["default"]
+
+
 def test_paper_strategies_ops_status_command_outputs_json(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("QS_DATA_DIR", str(tmp_path))
     reload_settings()

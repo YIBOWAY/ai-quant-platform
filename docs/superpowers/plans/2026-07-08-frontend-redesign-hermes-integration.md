@@ -145,8 +145,9 @@
 | `src/quant_system/api/routes/brief.py` | 当前新增 `POST /api/brief/issues/generate` 与 `GET /api/brief/issues/{public_id}`;`/api/brief/live` 和 `/api/brief/issues/latest` 留给 Slice 7 |
 | `src/quant_system/news/daily_report_repository.py` | `GET /api/news/aihot/daily` 成功后写 `ai_news_daily_reports`,失败时可读缓存并带 warning |
 | `src/quant_system/execution/account_repository.py` | 抽象 paper account repository contract,把 File/Postgres/DualWrite 三种实现的接口固定下来 |
+| `src/quant_system/execution/account_repository_factory.py` | API 与 CLI 共用的 paper account repository factory;Slice 5 中 `mirror` 双写,`canonical` 暂回落文件并记录 warning |
 | `src/quant_system/execution/account_postgres_repository.py` | Postgres paper account mirror/canonical 实现,按 ledger 写入并物化 current positions |
-| `src/quant_system/execution/account_dual_write_repository.py` | mirror 阶段双写文件与 DB,返回 reconciliation 差异 |
+| `src/quant_system/execution/account_dual_write_repository.py` | mirror 阶段先写文件、再 best-effort 写 DB;DB 失败不改变 response,但记录 warning log |
 | `src/quant_system/execution/account_backfill.py` | 一次性 backfill: `account.json` + `archive/*.json` → account/ledger/current positions/snapshots |
 | `src/frontend/app/brief/[publicId]/page.tsx` | 渲染已归档每日晨报 `/brief/{public_id}` |
 | `src/frontend/lib/briefArchive.ts` | 前端归档 brief getter 类型与 normalize 工具,复用 `lib/api.ts` 的 fetch 模式 |
@@ -163,7 +164,8 @@
 | `src/quant_system/storage/database.py` | 继续按 `scripts/sql/*.sql` 字典序执行 migration;新增 migration 必须幂等 |
 | `src/quant_system/api/server.py` | include 新的 `brief.router` |
 | `src/quant_system/api/routes/news.py` | `aihot_daily` 成功时写 `ai_news_daily_reports`;upstream 失败时尝试按 date 读缓存 |
-| `src/quant_system/api/routes/paper.py` | 后续把 `_account_storage` 调用点包进 `PaperAccountRepository` adapter;mirror 阶段外部 response 不变 |
+| `src/quant_system/api/routes/paper.py` | 已把 account mutation/read helper 接到共用 `PaperAccountRepository` factory;mirror 阶段外部 response 不变 |
+| `src/quant_system/cli.py` | paper account rebalance/show 与 strategy operations 调度路径共用 repository factory,避免 CLI 写入绕过 mirror |
 | `src/quant_system/api/schemas/paper.py` | 如需暴露 `storage_mode` / `stale` / `reconciliation` warning,只 additive 新增 nullable 字段 |
 | `src/frontend/app/brief/page.tsx` | `/brief` 保持当天动态预览,新增归档入口/链接;真实数据缺失时显示 stale/source warning |
 | `src/frontend/lib/api.ts` | 新增 read-only brief archive getter: latest/byPublicId/generate;不改现有 getter 语义 |
@@ -914,16 +916,26 @@ git commit -m "feat(paper): add Postgres schema and backfill path for paper acco
 
 **Goal:** API mutation 仍以文件为事实源,同时写 DB mirror 并暴露 reconciliation 差异,不改变外部 response contract。
 
+**Status 2026-07-09:** 已完成。实现时根据 code review 将 factory 下沉到
+`execution/account_repository_factory.py`,使 API 与 CLI/调度账户写路径共用同一 file/mirror
+选择逻辑。Slice 5 中 `canonical` 是保留配置:settings 可解析该字面量,但 factory 暂回落
+`PaperAccountStorage` 并记录 warning,避免在 Slice 6 fail-closed contract 落地前把合法配置导向
+`PostgresPaperAccountRepository.load/load_or_open/reset` 的 `NotImplementedError`。
+
 **Files:**
 - Create: `src/quant_system/execution/account_repository.py`
+- Create: `src/quant_system/execution/account_repository_factory.py`
 - Create: `src/quant_system/execution/account_postgres_repository.py`
 - Create: `src/quant_system/execution/account_dual_write_repository.py`
 - Modify: `src/quant_system/config/settings.py`
 - Modify: `src/quant_system/api/routes/paper.py`
+- Modify: `src/quant_system/cli.py`
+- Modify: `src/quant_system/execution/account_backfill.py`
 - Test: `tests/test_paper_account_postgres_repository.py`
 - Test: `tests/test_api_paper_account.py`
+- Test: `tests/test_cli.py`
 
-- [ ] **Step 1: 写失败测试 — settings 有 mirror/canonical 模式**
+- [x] **Step 1: 写失败测试 — settings 有 mirror/canonical 模式**
 
 ```python
 from quant_system.config.settings import PaperAccountSettings
@@ -934,7 +946,7 @@ def test_paper_account_settings_expose_db_mode() -> None:
     assert settings.db_mode == "mirror"
 ```
 
-- [ ] **Step 2: 修改 settings**
+- [x] **Step 2: 修改 settings**
 
 在 `PaperAccountSettings` 加:
 
@@ -944,7 +956,7 @@ db_mode: Literal["file", "mirror", "canonical"] = "file"
 
 并在文件顶部 typing import 加 `Literal`。
 
-- [ ] **Step 3: 定义 repository contract**
+- [x] **Step 3: 定义 repository contract**
 
 `account_repository.py`:
 
@@ -963,7 +975,7 @@ class PaperAccountRepository(Protocol):
     def reset(self, *, initial_cash: float) -> PaperAccount: ...
 ```
 
-- [ ] **Step 4: 实现 dual-write wrapper**
+- [x] **Step 4: 实现 dual-write wrapper**
 
 `account_dual_write_repository.py` 的 save contract:
 
@@ -978,45 +990,64 @@ class DualWritePaperAccountRepository:
         return file_result
 ```
 
-- [ ] **Step 5: paper.py 只改工厂,不改 route response**
+- [x] **Step 5: paper.py 与 CLI 使用共用 factory,不改 route response**
 
-`_account_storage(api_runs_dir)` 保留;新增 `_account_repository(api_runs_dir, settings)`:
+`_account_storage(api_runs_dir)` 保留;新增 `_account_repository(api_runs_dir, settings)` 并调用
+`build_paper_account_repository(...)`:
 
 ```python
-def _account_repository(api_runs_dir, settings) -> PaperAccountRepository:
-    file_repo = PaperAccountStorage(api_runs_dir)
-    if settings.paper_account.db_mode == "file":
-        return file_repo
-    postgres_repo = PostgresPaperAccountRepository(settings=settings)
+def build_paper_account_repository(api_runs_dir, *, settings, account_id="default") -> PaperAccountRepository:
+    file_repo = PaperAccountStorage(api_runs_dir, account_id=account_id)
     if settings.paper_account.db_mode == "mirror":
+        postgres_repo = PostgresPaperAccountRepository(settings=settings, account_id=account_id)
         return DualWritePaperAccountRepository(file_repo=file_repo, postgres_repo=postgres_repo)
-    return postgres_repo
+    return file_repo
 ```
 
-- [ ] **Step 6: 运行验证**
+Review 后追加约束:
+- API 与 CLI/调度写路径必须共用 factory,避免 `quant-system paper rebalance` 或
+  `paper strategies execute-pending` 只写文件导致 DB mirror 立刻 stale。
+- DB mirror 失败只记录 `last_warning` 与 warning log,不改变外部 response contract。
+- 在线 mirror 的 position snapshot 使用 API/runner 当时传入的 quotes;一次性 backfill 继续默认用
+  account avg cost。
+- `canonical` 的真实 DB read/reset/fail-closed 仍属于 Slice 6。
+
+- [x] **Step 6: 运行验证**
 
 Run:
 ```bash
-pytest tests/test_settings.py tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py -q
-ruff check src/quant_system/config/settings.py src/quant_system/api/routes/paper.py src/quant_system/execution/account_repository.py src/quant_system/execution/account_postgres_repository.py src/quant_system/execution/account_dual_write_repository.py
+./.venv/bin/pytest tests/test_settings.py tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py -q
+PYTHONPATH=. ./.venv/bin/pytest tests/test_cli.py tests/test_api_paper_strategy_sleeves.py -q
+./.venv/bin/ruff check src/quant_system/config/settings.py src/quant_system/api/routes/paper.py src/quant_system/cli.py src/quant_system/execution/account_repository.py src/quant_system/execution/account_repository_factory.py src/quant_system/execution/account_postgres_repository.py src/quant_system/execution/account_dual_write_repository.py src/quant_system/execution/account_backfill.py tests/test_settings.py tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py tests/test_cli.py
+git diff --check
 ```
 
 Expected:
 ```text
-tests pass
+52 passed, 2 skipped
+35 passed
 ruff exits 0
+diff check exits 0
 ```
 
 - [ ] **Step 7: 提交**
 
 ```bash
-git add src/quant_system/config/settings.py src/quant_system/api/routes/paper.py src/quant_system/execution/account_repository.py src/quant_system/execution/account_postgres_repository.py src/quant_system/execution/account_dual_write_repository.py tests/test_settings.py tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py
+git add src/quant_system/config/settings.py src/quant_system/api/routes/paper.py src/quant_system/cli.py src/quant_system/execution/account_repository.py src/quant_system/execution/account_repository_factory.py src/quant_system/execution/account_postgres_repository.py src/quant_system/execution/account_dual_write_repository.py src/quant_system/execution/account_backfill.py tests/test_settings.py tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py tests/test_cli.py
 git commit -m "feat(paper): mirror paper account mutations to Postgres"
 ```
 
 ### Slice 6 — Paper account DB canonical + fail-closed mutation
 
 **Goal:** 在 reconciliation 连续通过后,把 paper account 的事实源切到 DB;文件只做 export/backup。
+
+**Slice 6 notes from Slice 5 review:**
+- `PostgresPaperAccountRepository.load/load_or_open/reset` 必须成为 DB authoritative,且 DB 不可用时 mutation fail closed。
+- response 字段只能 additive (`storage_mode`/`stale`/`warnings`),旧前端必须可忽略。
+- 切换前定义 reconciliation criteria:ledger count/seq/current positions/pending orders/snapshot freshness 必须连续通过。
+- 决定 CLI `quant-system paper rebalance` 是否也要持久化 rebalance 当次 prices。Slice 5 已覆盖 mirror,
+  但该 CLI save 未传 prices,DB snapshot 会退回 avg_cost；API 与 strategy operations runner 的在线保存已传入
+  quotes。
 
 **Files:**
 - Modify: `src/quant_system/execution/account_postgres_repository.py`
@@ -1170,7 +1201,7 @@ git commit -m "feat(frontend): link daily brief to archived snapshots"
 | 2 | `/api/brief/*` + `/brief/{public_id}` 可用 | `pytest tests/test_api_brief_persistence.py tests/test_api_response_models.py -q`, `npx vitest run lib/briefArchive.test.ts` |
 | 3 | AI HOT daily report cache 可回放 | `pytest tests/test_news_daily_report_repository.py tests/test_api_news_aihot.py -q` |
 | 4 | paper account ledger/positions 可 backfill 到 DB mirror | `pytest tests/test_paper_account_postgres_repository.py -q`, opt-in `QS_TEST_DATABASE_URL=... pytest tests/test_paper_account_postgres_repository.py -q -m pg` |
-| 5 | paper account mutation 双写 DB mirror 且 response 不变 | `pytest tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py -q` |
+| 5 | paper account API/CLI mutation 双写 DB mirror 且 response 不变 | `pytest tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py -q`, `PYTHONPATH=. pytest tests/test_cli.py tests/test_api_paper_strategy_sleeves.py -q` |
 | 6 | DB canonical mutation fail closed | `pytest tests/test_api_paper_account.py tests/test_api_response_models.py tests/test_paper_account_postgres_repository.py -q` |
 | 7 | `/brief` 可跳归档,视觉基线覆盖日报 | `PW_E2E=1 npx playwright test tests/e2e/brief-archive.spec.ts tests/e2e/visual.spec.ts` |
 
@@ -2296,14 +2327,14 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [x] AI HOT daily report cache → Slice 3
 - [x] paper account ledger/positions backfill → Slice 4
 - [x] paper account dual-write mirror + reconciliation → Slice 5
-- [x] paper account DB canonical fail closed → Slice 6
+- [ ] paper account DB canonical fail closed → Slice 6
 - [x] 旧前端 P0-P4 详细设计仍保留,并标记为 backlog/历史参考 → 分阶段计划前说明
 
 **未覆盖项:** 无。旧 P1/P2/P3/P4 仍有概要任务,但当前可执行路线已经由 slice0-slice7 给出 bite-sized TDD 步骤和命令;旧概要仅作为前端 redesign backlog。
 
 ### 2. Placeholder scan
 
-- 当前权威 slice0-slice7 无占位词或空泛实现指令。
+- 当前权威 slice0-slice7 无占位词或空泛实现指令;Slice 6 仍是未执行的下一步。
 - 旧 P0-P4 内保留的“阶段概要”已被文档明确标记为历史 backlog,不得作为当前执行路线照抄。
 - 旧 P0 中关于“冷黑 token 值不变”的措辞已改成“无布局/可读性回归”,与 Q1 当前裁决一致。
 
@@ -2312,7 +2343,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - `BriefGenerateRequest`, `BriefIssueResponse`, `BriefSnapshotResponse`, `BriefIssueEnvelope` 在 Slice 2 schema 中定义,API route 和前端 getter 使用同一字段名。
 - `buildBriefIssuePath(publicId)` 在 Slice 2 定义,Slice 7 E2E 只检查 `/brief/brf_*` 前端 route 与 `/api/brief/issues/{public_id}` API route。
 - `app_users.id` 使用固定 root UUID `00000000-0000-0000-0000-000000000001`,`brief_issues.owner_user_id` 与 `paper_accounts.owner_user_id` 均引用该表。
-- `PaperAccountSettings.db_mode` 只允许 `"file" | "mirror" | "canonical"`,Slice 5/6 的 repository factory 和 tests 使用同一字面量。
+- `PaperAccountSettings.db_mode` 只允许 `"file" | "mirror" | "canonical"`。Slice 5 中 factory 对 `"mirror"` 启用 file-first dual-write;`"canonical"` 暂回落文件并 warning,避免提前进入未实现 DB authoritative methods。Slice 6 再改为 DB canonical + fail-closed。
 - `PaperAccount.ledger` 字段名与 `paper_account_ledger` columns 一一对应: `entry_id`, `timestamp`, `kind`, `source`, `symbol`, `side`, `quantity`, `price`, `gross_value`, `commission`, `price_kind`, `realized_pnl_delta`, `cash_after`, `note`。
 - 旧前端 `ChartTheme`、`NavSection`、editorial/hermes token 名仍保留在 P0-P4 backlog,但当前先执行 persistence slices。
 
@@ -2328,4 +2359,4 @@ Plan complete and saved to `docs/superpowers/plans/2026-07-08-frontend-redesign-
 
 **2. Inline Execution** - 当前会话按 slice0 → slice7 顺序执行,每个 slice 完成后暂停做测试结果与 diff review。
 
-**Recommended next slice:** Slice 1-Slice 4 已完成。下一步进入 Slice 5 `PaperAccountRepository` + file/Postgres dual-write mirror + reconciliation warning；仍保持文件为事实源,外部 response contract 不变。
+**Recommended next slice:** Slice 1-Slice 5 已完成。下一步进入 Slice 6 `PostgresPaperAccountRepository` DB authoritative read/reset + mutation fail-closed;文件仍保留 export/backup,外部 response 只做 additive warning/stale 字段。

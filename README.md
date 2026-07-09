@@ -211,9 +211,12 @@ stores read-only AI HOT item rows for `/ai-news` stale fallback and now has
 schema-ready tables for root-owned brief snapshots and AI daily reports. It is
 **disabled by default**; when the database is off or unreachable, run endpoints
 fall back to the filesystem and AI News falls back to live proxy/error handling.
-Paper account remains file-canonical; the 004 migration plus
+Paper account remains file-canonical. The 004 migration plus
 `execution/account_backfill.py` can explicitly mirror a provided account JSON
-into PostgreSQL, while API dual-write/reconciliation remains a later slice.
+into PostgreSQL, and `QS_PAPER_ACCOUNT_DB_MODE=mirror` now makes API and CLI
+paper-account mutations write a best-effort PostgreSQL mirror after the file
+write. `canonical` mode is reserved for the next fail-closed slice and currently
+falls back to file storage with a warning.
 
 To enable it against a local Docker container:
 
@@ -264,7 +267,8 @@ normal run index.
 The `psycopg` driver ships with the `api` extra. The database stores research
 run metadata, read-only AI news metadata, and schema-ready brief/AI daily report
 business facts. Paper-account DB rows are explicit mirrors of local JSON files;
-they are not the API source of truth yet and do not store credentials or live trading state. The
+they are not the API source of truth yet and do not store credentials or live
+trading state. The
 connection URL is masked in `/api/settings`. See
 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md).
 
