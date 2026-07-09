@@ -141,7 +141,10 @@ fallback cache (`news/repository.py`, `scripts/sql/002_ai_news_cache.sql`).
 `scripts/sql/003_app_users_brief_ai_reports.sql` adds the root user plus
 brief issue/snapshot/source and AI daily report tables. Brief archive
 generate/read APIs, `/brief/{public_id}`, and AI HOT daily report stale
-fallback are wired; paper-account DB mirror/canonical remains follow-on work.
+fallback are wired; paper-account dual-write/canonical remains follow-on work.
+`scripts/sql/004_paper_account_tables.sql` and
+`execution/account_backfill.py` add a read-only paper-account mirror/backfill
+foundation; API reads/writes remain file-canonical until the dual-write slice.
 The database is off by default; controlled by `QS_DATABASE_ENABLED` /
 `QS_DATABASE_URL` / `QS_DATABASE_CONNECT_TIMEOUT_SECONDS` /
 `QS_DATABASE_AUTO_MIGRATE`; default connect timeout is 1 second. Startup

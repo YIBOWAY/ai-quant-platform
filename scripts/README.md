@@ -62,4 +62,5 @@ one-shot paper commands.
 | --- | --- |
 | `sql/001_runs_index.sql` | Optional PostgreSQL run-index migration. The file-based `data/api_runs/` artifacts remain the source of truth. |
 | `sql/002_ai_news_cache.sql` | Optional PostgreSQL AI HOT item cache and fetch-audit migration for read-only `/ai-news` stale fallback. |
-| `sql/003_app_users_brief_ai_reports.sql` | Optional PostgreSQL root user, brief issue/snapshot/source, and AI daily report tables. Brief archive APIs and AI daily fallback are wired; paper-account DB mirror/canonical remains later work. |
+| `sql/003_app_users_brief_ai_reports.sql` | Optional PostgreSQL root user, brief issue/snapshot/source, and AI daily report tables. Brief archive APIs and AI daily fallback are wired. |
+| `sql/004_paper_account_tables.sql` | Optional PostgreSQL paper account mirror tables for explicit `account.json` backfill. File storage remains canonical until the later dual-write/canonical slices. |

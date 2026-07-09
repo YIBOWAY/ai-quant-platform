@@ -211,7 +211,9 @@ stores read-only AI HOT item rows for `/ai-news` stale fallback and now has
 schema-ready tables for root-owned brief snapshots and AI daily reports. It is
 **disabled by default**; when the database is off or unreachable, run endpoints
 fall back to the filesystem and AI News falls back to live proxy/error handling.
-Paper account remains file-canonical until the mirror/reconciliation slices land.
+Paper account remains file-canonical; the 004 migration plus
+`execution/account_backfill.py` can explicitly mirror a provided account JSON
+into PostgreSQL, while API dual-write/reconciliation remains a later slice.
 
 To enable it against a local Docker container:
 
@@ -233,7 +235,11 @@ it applies `scripts/sql/*.sql`, creates `quant_system.runs`,
 `quant_system.ai_news_items`, `quant_system.ai_news_fetches`,
 `quant_system.app_users`, `quant_system.brief_issues`,
 `quant_system.brief_snapshots`, `quant_system.brief_snapshot_sources`, and
-`quant_system.ai_news_daily_reports`, backfills existing file runs, and prunes
+`quant_system.ai_news_daily_reports`, `quant_system.paper_accounts`,
+`quant_system.paper_account_ledger`, `quant_system.paper_pending_orders`,
+`quant_system.paper_positions_current`, `quant_system.paper_position_snapshots`,
+and `quant_system.paper_position_snapshot_rows`, backfills existing file runs,
+and prunes
 run-index rows whose files were removed. If
 PostgreSQL is down, the first probe is short and later failed requests use a
 brief cooldown window while continuing to read local files or live upstreams.
@@ -257,7 +263,8 @@ normal run index.
 
 The `psycopg` driver ships with the `api` extra. The database stores research
 run metadata, read-only AI news metadata, and schema-ready brief/AI daily report
-business facts; it does not store credentials or live trading state. The
+business facts. Paper-account DB rows are explicit mirrors of local JSON files;
+they are not the API source of truth yet and do not store credentials or live trading state. The
 connection URL is masked in `/api/settings`. See
 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md).
 

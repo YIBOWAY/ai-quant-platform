@@ -7,7 +7,8 @@
 新增了第 (4) 个 PostgreSQL 业务事实层：
 `app_users`、每日晨报 issue/snapshot/source 表和 owner-scoped
 `ai_news_daily_reports`。这些表已经具备迁移、契约测试、brief archive 读写 API
-和 AI HOT daily report fallback。当前 paper account 仍以文件为事实源。
+和 AI HOT daily report fallback。2026-07-09 又新增 paper account mirror
+schema 与显式 backfill 模块；当前 paper account API 仍以文件为事实源。
 
 DuckDB 期权缓存位于 `src/quant_system/storage/options_cache.py`，
 在 `QS_FUTU_USE_CACHE=true`（默认值）时，会将富途期权报价窗口持久化到
@@ -121,9 +122,34 @@ AI News 的事实来源仍是 AI HOT public API。PostgreSQL 只作为本地只�
 当前实现边界：schema、brief repository、`POST /api/brief/issues/generate`、
 `GET /api/brief/issues/{public_id}`、`/brief/{public_id}` 前端归档页和 contract
 tests 已存在。`/api/brief/live`、`/api/brief/issues/latest`、`/brief` 生成入口、
-paper account DB mirror/canonical 仍按
+paper account dual-write/canonical 仍按
 `docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md`
-的 Slice 4+ / Slice 7 推进。
+的 Slice 5+ / Slice 7 推进。
+
+## PostgreSQL Paper Account Mirror（schema/backfill 已实现）
+
+`scripts/sql/004_paper_account_tables.sql` 创建 paper account 的显式镜像表：
+
+- `quant_system.paper_accounts`：账户 current metadata 与完整 account JSON raw。
+- `quant_system.paper_account_ledger`：按当前 JSON ledger 整体替换的事件镜像。
+- `quant_system.paper_pending_orders`：当前 pending order payload 镜像。
+- `quant_system.paper_positions_current`：当前持仓、均价和 source quantity 镜像。
+- `quant_system.paper_position_snapshots` 与
+  `quant_system.paper_position_snapshot_rows`：每次 backfill 追加的审计快照。
+
+`src/quant_system/execution/account_backfill.py` 暴露
+`backfill_account_file(account_path, settings=..., source="account_json")`。它只读取调用方传入的
+JSON 文件,使用 `PaperAccount.model_validate` 校验,然后在同一事务内写入 DB mirror。
+API route、`PaperAccountStorage` mutation、真实券商和回测链路都不调用该模块。
+
+当前语义：
+
+- 文件 JSON 仍是事实源；Postgres 只是 mirror。
+- `paper_account_ledger` 每次按当前 JSON ledger 整体替换,避免 reset 或手工修正后残留旧
+  entry 或 sequence 冲突。
+- pending orders 与 current positions 是 current-state mirror,会清理 JSON 中已不存在的行。
+- position snapshots 是 append-only audit points,重复 backfill 会新增 snapshot。
+- Slice 5 才会引入 dual-write repository/reconciliation；Slice 6 才讨论 DB canonical。
 
 ## 为何需要它
 
@@ -175,6 +201,12 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
 | `brief_snapshots` | 已实现 schema；每日晨报 append-only payload 快照。 |
 | `brief_snapshot_sources` | 已实现 schema；晨报快照来源审计。 |
 | `ai_news_daily_reports` | 已实现；AI HOT daily report owner-scoped cache 与 `/api/news/aihot/daily` stale fallback。 |
+| `paper_accounts` | 已实现 schema/backfill；file-backed paper account 的 root-owned mirror。 |
+| `paper_account_ledger` | 已实现 schema/backfill；按 JSON ledger 整体替换的事件镜像。 |
+| `paper_pending_orders` | 已实现 schema/backfill；当前 pending order payload mirror。 |
+| `paper_positions_current` | 已实现 schema/backfill；当前持仓和 source quantity mirror。 |
+| `paper_position_snapshots` | 已实现 schema/backfill；每次 backfill 追加的持仓审计快照。 |
+| `paper_position_snapshot_rows` | 已实现 schema/backfill；持仓审计快照明细。 |
 
 在首个 DuckDB 实现中已落地：
 
@@ -223,7 +255,8 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
    - `src/quant_system/storage/options_cache.py`（DuckDB 期权缓存）
 3. 在 `scripts/sql/` 下添加纯 SQL 迁移。（已实现：
    `scripts/sql/001_runs_index.sql`、`scripts/sql/002_ai_news_cache.sql`、
-   `scripts/sql/003_app_users_brief_ai_reports.sql`）
+   `scripts/sql/003_app_users_brief_ai_reports.sql`、
+   `scripts/sql/004_paper_account_tables.sql`）
 4. 优先缓存富途期权链和快照结果。（已为期权报价窗口实现）
 5. 将期权筛选器和买方期权助手接入缓存优先的路径。
    （已通过共享的富途数据源实现）

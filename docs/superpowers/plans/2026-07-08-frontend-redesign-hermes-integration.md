@@ -740,12 +740,20 @@ git commit -m "feat(news): cache AI HOT daily reports for brief archives"
 
 **Goal:** 把 `account.json`/archive 中的 ledger 与 current positions 导入 DB mirror,但不改变当前 API 读写路径。
 
+**Status 2026-07-09:** Slice 4 已完成 schema + explicit one-file backfill
+foundation。当前仍不改变 API read/write/mutation path；`account.json` 仍是事实源。
+`backfill_account_file(account_path, settings=..., source="account_json")` 只读取调用方提供的
+JSON 文件并写入 Postgres mirror。ledger mirror 采用事务内整表替换,避免 reset/修正 JSON 后
+遗留旧 entry 或 seq 冲突；pending/current positions 是 current-state mirror；position
+snapshots 是 append-only audit points。Archive 批量扫描/backfill runner 与 API dual-write
+留给 Slice 5+。
+
 **Files:**
 - Create: `scripts/sql/004_paper_account_tables.sql`
 - Create: `src/quant_system/execution/account_backfill.py`
 - Test: `tests/test_paper_account_postgres_repository.py`
 
-- [ ] **Step 1: 写失败测试 — migration 必须包含 ledger 与 current positions**
+- [x] **Step 1: 写失败测试 — migration 必须包含 ledger 与 current positions**
 
 ```python
 from pathlib import Path
@@ -760,7 +768,7 @@ def test_paper_account_migration_defines_ledger_tables() -> None:
     assert "CREATE TABLE IF NOT EXISTS quant_system.paper_position_snapshot_rows" in sql
 ```
 
-- [ ] **Step 2: 创建 migration**
+- [x] **Step 2: 创建 migration**
 
 `scripts/sql/004_paper_account_tables.sql`:
 
@@ -850,7 +858,7 @@ CREATE INDEX IF NOT EXISTS idx_paper_snapshots_account_time
     ON quant_system.paper_position_snapshots (account_id, snapshot_at DESC);
 ```
 
-- [ ] **Step 3: 实现 backfill 只读导入**
+- [x] **Step 3: 实现 backfill 只读导入**
 
 `src/quant_system/execution/account_backfill.py` 必须暴露:
 
@@ -865,7 +873,7 @@ def backfill_account_file(account_path: Path, *, settings: Settings, source: str
 {"accounts": 1, "ledger_entries": len(account.ledger), "positions": len(account.positions), "pending_orders": len(account.pending_orders)}
 ```
 
-- [ ] **Step 4: 运行验证**
+- [x] **Step 4: 运行验证**
 
 Run:
 ```bash
@@ -877,6 +885,22 @@ Expected:
 ```text
 tests pass
 ruff exits 0
+```
+
+Actual verification:
+```bash
+./.venv/bin/pytest tests/test_paper_account_postgres_repository.py -q -rs
+QS_TEST_DATABASE_URL='postgresql://quant:quantpass@127.0.0.1:5432/quantplatform_codex_tmp' ./.venv/bin/pytest tests/test_paper_account_postgres_repository.py -q -m pg -rs
+./.venv/bin/ruff check src/quant_system/execution/account_backfill.py tests/test_paper_account_postgres_repository.py
+git diff --cached --check
+```
+
+Result:
+```text
+5 passed, 2 skipped
+2 passed
+All checks passed
+diff check passed
 ```
 
 - [ ] **Step 5: 提交**
@@ -1145,7 +1169,7 @@ git commit -m "feat(frontend): link daily brief to archived snapshots"
 | 1 | brief/AI daily/root schema 入库 | `pytest tests/test_api_brief_persistence.py -q` |
 | 2 | `/api/brief/*` + `/brief/{public_id}` 可用 | `pytest tests/test_api_brief_persistence.py tests/test_api_response_models.py -q`, `npx vitest run lib/briefArchive.test.ts` |
 | 3 | AI HOT daily report cache 可回放 | `pytest tests/test_news_daily_report_repository.py tests/test_api_news_aihot.py -q` |
-| 4 | paper account ledger/positions 可 backfill 到 DB mirror | `pytest tests/test_paper_account_postgres_repository.py -q` |
+| 4 | paper account ledger/positions 可 backfill 到 DB mirror | `pytest tests/test_paper_account_postgres_repository.py -q`, opt-in `QS_TEST_DATABASE_URL=... pytest tests/test_paper_account_postgres_repository.py -q -m pg` |
 | 5 | paper account mutation 双写 DB mirror 且 response 不变 | `pytest tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py -q` |
 | 6 | DB canonical mutation fail closed | `pytest tests/test_api_paper_account.py tests/test_api_response_models.py tests/test_paper_account_postgres_repository.py -q` |
 | 7 | `/brief` 可跳归档,视觉基线覆盖日报 | `PW_E2E=1 npx playwright test tests/e2e/brief-archive.spec.ts tests/e2e/visual.spec.ts` |
@@ -2304,4 +2328,4 @@ Plan complete and saved to `docs/superpowers/plans/2026-07-08-frontend-redesign-
 
 **2. Inline Execution** - 当前会话按 slice0 → slice7 顺序执行,每个 slice 完成后暂停做测试结果与 diff review。
 
-**Recommended next slice:** Slice 1-Slice 3 已完成。下一步进入 Slice 4 `scripts/sql/004_paper_account_tables.sql` + paper account backfill,先把 `account.json`/archive 中的 ledger 与 current positions 导入 DB mirror,但不改变当前 API 读写路径。
+**Recommended next slice:** Slice 1-Slice 4 已完成。下一步进入 Slice 5 `PaperAccountRepository` + file/Postgres dual-write mirror + reconciliation warning；仍保持文件为事实源,外部 response contract 不变。
