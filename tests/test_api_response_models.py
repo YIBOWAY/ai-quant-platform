@@ -241,8 +241,13 @@ def test_brief_archive_routes_publish_response_models(tmp_path) -> None:
     post_schema = openapi["paths"]["/api/brief/issues/generate"]["post"][
         "responses"
     ]["200"]["content"]["application/json"]["schema"]
+    latest_schema = openapi["paths"]["/api/brief/issues/latest"]["get"][
+        "responses"
+    ]["200"]["content"]["application/json"]["schema"]
+
     assert get_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
     assert post_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
+    assert latest_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
 
     components = openapi["components"]["schemas"]
     assert "issue" in components["BriefIssueEnvelopeResponse"]["properties"]

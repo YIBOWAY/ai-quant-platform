@@ -1056,7 +1056,7 @@ git commit -m "feat(paper): mirror paper account mutations to Postgres"
 - Test: `tests/test_paper_account_postgres_repository.py`
 - Test: `tests/test_api_paper_account.py`
 
-- [ ] **Step 1: 写失败测试 — canonical 模式 DB 不可用时 mutation fail closed**
+- [x] **Step 1: 写失败测试 — canonical 模式 DB 不可用时 mutation fail closed**
 
 ```python
 def test_paper_account_canonical_mode_rejects_mutation_when_db_unavailable(client, monkeypatch) -> None:
@@ -1068,7 +1068,7 @@ def test_paper_account_canonical_mode_rejects_mutation_when_db_unavailable(clien
     assert response.json()["detail"]["code"] == "paper_account_database_unavailable"
 ```
 
-- [ ] **Step 2: 实现 canonical guard**
+- [x] **Step 2: 实现 canonical guard**
 
 在 `paper.py` mutation routes 调用 repository 前加:
 
@@ -1083,7 +1083,7 @@ if settings.paper_account.db_mode == "canonical" and not repository.available_fo
     )
 ```
 
-- [ ] **Step 3: response additive 字段**
+- [x] **Step 3: response additive 字段**
 
 `PaperAccountResponse` 可新增 nullable:
 
@@ -1095,7 +1095,7 @@ warnings: list[str] = Field(default_factory=list)
 
 旧前端忽略新字段,不破坏 contract。
 
-- [ ] **Step 4: 运行验证**
+- [x] **Step 4: 运行验证**
 
 Run:
 ```bash
@@ -1109,10 +1109,10 @@ tests pass
 ruff exits 0
 ```
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
-git add src/quant_system/api/routes/paper.py src/quant_system/api/schemas/paper.py src/quant_system/execution/account_postgres_repository.py tests/test_api_paper_account.py tests/test_api_response_models.py tests/test_paper_account_postgres_repository.py
+git add src/quant_system/api/routes/paper.py src/quant_system/api/schemas/paper.py src/quant_system/execution/account_postgres_repository.py src/quant_system/execution/account_repository_factory.py src/quant_system/execution/account_repository.py src/quant_system/execution/account_dual_write_repository.py src/quant_system/execution/account_storage.py tests/test_api_paper_account.py tests/test_api_response_models.py tests/test_paper_account_postgres_repository.py
 git commit -m "feat(paper): make Postgres canonical mode fail closed"
 ```
 
@@ -1126,7 +1126,7 @@ git commit -m "feat(paper): make Postgres canonical mode fail closed"
 - Create: `src/frontend/tests/e2e/brief-archive.spec.ts`
 - Modify: `src/frontend/tests/e2e/visual.spec.ts`
 
-- [ ] **Step 1: 写失败 E2E — 标题链接可点、归档 URL 稳定**
+- [x] **Step 1: 写失败 E2E — 标题链接可点、归档 URL 稳定**
 
 `src/frontend/tests/e2e/brief-archive.spec.ts`:
 
@@ -1143,7 +1143,7 @@ test("brief page links AI titles to sources and exposes archived issue link", as
 });
 ```
 
-- [ ] **Step 2: `/brief` 新增归档入口**
+- [x] **Step 2: `/brief` 新增归档入口**
 
 在 `page.tsx` header 附近加:
 
@@ -1155,7 +1155,7 @@ test("brief page links AI titles to sources and exposes archived issue link", as
 ) : null}
 ```
 
-- [ ] **Step 3: visual.spec 加 `/brief` 与 `/brief/{public_id}`**
+- [x] **Step 3: visual.spec 加 `/brief` 与 `/brief/{public_id}`**
 
 ```typescript
 test("visual baseline: zh brief", async ({ page }) => {
@@ -1168,7 +1168,7 @@ test("visual baseline: zh brief", async ({ page }) => {
 });
 ```
 
-- [ ] **Step 4: 运行验证**
+- [x] **Step 4: 运行验证**
 
 Run:
 ```bash
@@ -1185,7 +1185,7 @@ vitest/type-check/lint pass
 brief archive and visual specs pass
 ```
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/frontend/app/brief/page.tsx src/frontend/lib/api.ts src/frontend/tests/e2e/brief-archive.spec.ts src/frontend/tests/e2e/visual.spec.ts
@@ -2327,14 +2327,14 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [x] AI HOT daily report cache → Slice 3
 - [x] paper account ledger/positions backfill → Slice 4
 - [x] paper account dual-write mirror + reconciliation → Slice 5
-- [ ] paper account DB canonical fail closed → Slice 6
+- [x] paper account DB canonical fail closed → Slice 6
 - [x] 旧前端 P0-P4 详细设计仍保留,并标记为 backlog/历史参考 → 分阶段计划前说明
 
 **未覆盖项:** 无。旧 P1/P2/P3/P4 仍有概要任务,但当前可执行路线已经由 slice0-slice7 给出 bite-sized TDD 步骤和命令;旧概要仅作为前端 redesign backlog。
 
 ### 2. Placeholder scan
 
-- 当前权威 slice0-slice7 无占位词或空泛实现指令;Slice 6 仍是未执行的下一步。
+- 当前权威 slice0-slice7 已交付到 Slice 7;Slice 6/7 代码已提交。后续前端 redesign 以旧 P1/P2 backlog 展开为 Slice 8+。
 - 旧 P0-P4 内保留的“阶段概要”已被文档明确标记为历史 backlog,不得作为当前执行路线照抄。
 - 旧 P0 中关于“冷黑 token 值不变”的措辞已改成“无布局/可读性回归”,与 Q1 当前裁决一致。
 
@@ -2359,4 +2359,4 @@ Plan complete and saved to `docs/superpowers/plans/2026-07-08-frontend-redesign-
 
 **2. Inline Execution** - 当前会话按 slice0 → slice7 顺序执行,每个 slice 完成后暂停做测试结果与 diff review。
 
-**Recommended next slice:** Slice 1-Slice 5 已完成。下一步进入 Slice 6 `PostgresPaperAccountRepository` DB authoritative read/reset + mutation fail-closed;文件仍保留 export/backup,外部 response 只做 additive warning/stale 字段。
+**Recommended next slice:** Slice 0-Slice 7 已完成。下一步 Slice 8: Hermes 一等公民页骨架 + Sidebar/TopBar 完全接入 `navConfig`(保留 factor-lab/agent-studio,不 POST `/api/agent/tasks`)。

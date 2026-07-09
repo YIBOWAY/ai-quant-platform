@@ -26,6 +26,7 @@ describe("/brief route contract", () => {
       "getOptionsDailyScanStatus",
       "getMarketDataHistory",
       "getServerLocale",
+      "getLatestBriefIssue",
     ]) {
       expect(source).toContain(getter);
     }

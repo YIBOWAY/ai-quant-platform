@@ -1,4 +1,8 @@
-import { buildBriefIssuePath, type BriefIssueEnvelope } from "./briefArchive";
+import {
+  buildBriefIssuePath,
+  buildLatestBriefIssuePath,
+  type BriefIssueEnvelope,
+} from "./briefArchive";
 
 export type SafetyFooter = {
   dry_run: boolean;
@@ -1902,6 +1906,27 @@ export function getBriefIssue(publicId: string) {
       public_id: publicId,
       issue_date: "",
       locale: "",
+      status: "unavailable",
+    },
+    snapshot: {
+      snapshot_id: "",
+      version: 0,
+      payload: {},
+      source_watermark: {},
+    },
+    warnings: ["Brief archive issue is unavailable."],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getLatestBriefIssue(query: { locale?: string } = {}) {
+  const locale = query.locale ?? "zh";
+  return apiGet<BriefIssueEnvelope>(buildLatestBriefIssuePath(locale), {
+    issue: {
+      issue_id: "",
+      public_id: "",
+      issue_date: "",
+      locale,
       status: "unavailable",
     },
     snapshot: {

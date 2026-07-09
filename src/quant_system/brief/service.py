@@ -33,6 +33,18 @@ class BriefService:
     def get_issue(self, public_id: str) -> BriefIssueEnvelope:
         return self._repository.get_latest_by_public_id(public_id)
 
+    def get_latest_issue(
+        self,
+        *,
+        locale: str,
+        issue_date: date | None = None,
+    ) -> BriefIssueEnvelope:
+        normalized_locale = locale.strip() or "zh"
+        return self._repository.get_latest(
+            locale=normalized_locale,
+            issue_date=issue_date,
+        )
+
 
 def _build_payload(*, issue_date: date, locale: str) -> dict[str, Any]:
     return {

@@ -45,6 +45,12 @@ export function buildBriefIssuePath(publicId: string) {
   return `/api/brief/issues/${encodeURIComponent(publicId)}`;
 }
 
+export function buildLatestBriefIssuePath(locale: string) {
+  const params = new URLSearchParams();
+  params.set("locale", locale || "zh");
+  return `/api/brief/issues/latest?${params.toString()}`;
+}
+
 export function normalizeBriefIssueEnvelope(envelope: BriefIssueEnvelope): BriefIssueArchiveView {
   const payloadTitle = envelope.snapshot.payload.title;
   const title =

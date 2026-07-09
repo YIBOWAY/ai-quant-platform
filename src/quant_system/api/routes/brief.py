@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from datetime import date
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query
 
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.brief import (
@@ -36,6 +39,28 @@ def generate_brief_issue(
         )
     except BriefDatabaseUnavailable as exc:
         raise _database_unavailable_503() from exc
+    return _to_response(envelope)
+
+
+@router.get(
+    "/brief/issues/latest",
+    response_model=BriefIssueEnvelopeResponse,
+)
+def get_latest_brief_issue(
+    settings: SettingsDep,
+    locale: Annotated[str, Query()] = "zh",
+    issue_date: Annotated[date | None, Query()] = None,
+) -> BriefIssueEnvelopeResponse:
+    service = BriefService(BriefRepository(settings))
+    try:
+        envelope = service.get_latest_issue(
+            locale=locale,
+            issue_date=issue_date,
+        )
+    except BriefDatabaseUnavailable as exc:
+        raise _database_unavailable_503() from exc
+    except BriefNotFound as exc:
+        raise _latest_not_found_404() from exc
     return _to_response(envelope)
 
 
@@ -93,5 +118,15 @@ def _not_found_404(public_id: str) -> HTTPException:
             "code": "brief_not_found",
             "public_id": public_id,
             "message": f"Brief archive issue {public_id!r} was not found.",
+        },
+    )
+
+
+def _latest_not_found_404() -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={
+            "code": "brief_not_found",
+            "message": "No brief archive issue was found for the requested locale.",
         },
     )

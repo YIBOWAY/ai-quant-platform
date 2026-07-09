@@ -154,6 +154,55 @@ class BriefRepository:
             snapshot=_snapshot_from_row(row[5:]),
         )
 
+    def get_latest(
+        self,
+        *,
+        locale: str,
+        issue_date: date | None = None,
+    ) -> BriefIssueEnvelope:
+        database = self._require_database()
+        params: list[Any] = [ROOT_USER_ID, locale]
+        date_filter = ""
+        if issue_date is not None:
+            date_filter = "AND i.issue_date = %s"
+            params.append(issue_date)
+        try:
+            with database.connect() as conn:
+                row = conn.execute(
+                    f"""
+                    SELECT i.issue_id::text,
+                           i.public_id,
+                           i.issue_date,
+                           i.locale,
+                           i.status,
+                           s.snapshot_id::text,
+                           s.version,
+                           s.payload,
+                           s.source_watermark
+                    FROM {SCHEMA}.brief_issues AS i
+                    JOIN {SCHEMA}.brief_snapshots AS s
+                      ON s.issue_id = i.issue_id
+                     AND s.snapshot_id = i.latest_snapshot_id
+                    WHERE i.owner_user_id = %s
+                      AND i.locale = %s
+                      {date_filter}
+                    ORDER BY i.issue_date DESC, i.updated_at DESC
+                    LIMIT 1
+                    """,
+                    tuple(params),
+                ).fetchone()
+        except DatabaseUnavailable as exc:
+            raise BriefDatabaseUnavailable(str(exc)) from exc
+        except psycopg.Error as exc:
+            raise BriefDatabaseUnavailable(str(exc)) from exc
+
+        if row is None:
+            raise BriefNotFound("latest")
+        return BriefIssueEnvelope(
+            issue=_issue_from_row(row[:5]),
+            snapshot=_snapshot_from_row(row[5:]),
+        )
+
     def _require_database(self) -> Database:
         database = get_database(self._settings)
         if database is None:

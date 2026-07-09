@@ -8,6 +8,7 @@ import {
   getAiHotItems,
   getBacktests,
   getFactors,
+  getLatestBriefIssue,
   getMarketDataHistory,
   getOptionsDailyScanStatus,
   getPaperAccount,
@@ -44,6 +45,7 @@ const copy = {
     author: "Editor Hermes · arranged by the local agent overnight",
     subscriber: "subscriber one · private use",
     safetyLine: "paper-only journal · dry-run rehearsal · live trading never implied active",
+    archiveCta: "Open archived issue",
     ledeByline: "Compiled from platform facts · template lede",
     account: "Account",
     accountEn: "THE ACCOUNT",
@@ -98,6 +100,7 @@ const copy = {
     author: "主笔 Hermes · 由本地代理彻夜整理",
     subscriber: "订户一人 · 自用",
     safetyLine: "本刊为模拟盘刊物 · DRY-RUN 演练 · live trading never implied active",
+    archiveCta: "查看归档版",
     ledeByline: "导语由平台事实模板排印",
     account: "账户",
     accountEn: "THE ACCOUNT",
@@ -660,6 +663,7 @@ export default async function BriefPage() {
   const today = new Date();
   const marketStart = new Date(today);
   marketStart.setDate(today.getDate() - 14);
+  const locale = await getServerLocale();
   const [
     health,
     symbols,
@@ -676,7 +680,7 @@ export default async function BriefPage() {
     qqqHistory,
     soxxHistory,
     igvHistory,
-    locale,
+    archivedEnvelope,
   ] = await Promise.all([
     getCachedHealth(),
     getSymbols(),
@@ -693,9 +697,14 @@ export default async function BriefPage() {
     getMarketDataHistory("QQQ", ymd(marketStart), ymd(today), "1d"),
     getMarketDataHistory("SOXX", ymd(marketStart), ymd(today), "1d"),
     getMarketDataHistory("IGV", ymd(marketStart), ymd(today), "1d"),
-    getServerLocale(),
+    getLatestBriefIssue({ locale }),
   ]);
   const text = copy[locale];
+  const archivedIssuePublicId =
+    archivedEnvelope.issue.status !== "unavailable" &&
+    archivedEnvelope.issue.public_id.trim().length > 0
+      ? archivedEnvelope.issue.public_id
+      : null;
   const paperCurve = normalizePaperEquityCurve(paperEquityCurve);
   const marketSnapshots = [
     marketSnapshot("SPY", spyHistory),
@@ -759,6 +768,16 @@ export default async function BriefPage() {
             <span>{text.author}</span>
             <span>{text.subscriber}</span>
           </div>
+          {archivedIssuePublicId ? (
+            <div className="mt-3">
+              <Link
+                href={localizePath(`/brief/${archivedIssuePublicId}`, locale)}
+                className="text-ink-secondary underline decoration-editorial-rule underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-editorial-accent"
+              >
+                {text.archiveCta}
+              </Link>
+            </div>
+          ) : null}
         </header>
 
         <div className="border-b border-editorial-rule py-2 text-center font-data-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary">

@@ -20,6 +20,14 @@ describe("brief archive API contract", () => {
     expect(buildBriefIssuePath(publicId)).toBe(`/api/brief/issues/${encodeURIComponent(publicId)}`);
   });
 
+  it("builds the latest brief issue path from locale", async () => {
+    const { buildLatestBriefIssuePath } = await import("./briefArchive");
+
+    expect(buildLatestBriefIssuePath("zh")).toBe("/api/brief/issues/latest?locale=zh");
+    expect(buildLatestBriefIssuePath("en")).toBe("/api/brief/issues/latest?locale=en");
+    expect(buildLatestBriefIssuePath("")).toBe("/api/brief/issues/latest?locale=zh");
+  });
+
   it("normalizes the issue envelope into archive display data", async () => {
     const { normalizeBriefIssueEnvelope } = await import("./briefArchive");
 
@@ -118,6 +126,104 @@ describe("getBriefIssue", () => {
     expect(envelope.snapshot.version).toBe(0);
     expect(envelope.warnings).toContain("Brief archive issue is unavailable.");
     expect(envelope.apiError).toContain("[brief_not_found]");
+  });
+});
+
+describe("getLatestBriefIssue", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("requests the latest archive endpoint with locale", async () => {
+    const { buildLatestBriefIssuePath } = await import("./briefArchive");
+    const { getLatestBriefIssue } = await import("./api");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          issue: {
+            issue_id: "iss_1",
+            public_id: "brf_20260708_7k3f2",
+            issue_date: "2026-07-08",
+            locale: "zh",
+            status: "published",
+          },
+          snapshot: {
+            snapshot_id: "snap_1",
+            version: 1,
+            payload: { title: "Archived Brief" },
+            source_watermark: {},
+          },
+          warnings: [],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getLatestBriefIssue({ locale: "zh" });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0][0])).toContain(buildLatestBriefIssuePath("zh"));
+  });
+
+  it("returns unavailable fallback with empty public_id on 404", async () => {
+    const { getLatestBriefIssue } = await import("./api");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: {
+            code: "brief_not_found",
+            message: "No brief archive issue was found for the requested locale.",
+          },
+        }),
+        {
+          status: 404,
+          statusText: "Not Found",
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const envelope = await getLatestBriefIssue({ locale: "zh" });
+
+    expect(envelope.issue.public_id).toBe("");
+    expect(envelope.issue.locale).toBe("zh");
+    expect(envelope.issue.status).toBe("unavailable");
+    expect(envelope.snapshot.version).toBe(0);
+    expect(envelope.warnings).toContain("Brief archive issue is unavailable.");
+    expect(envelope.apiError).toContain("[brief_not_found]");
+  });
+
+  it("returns unavailable fallback with empty public_id on 503", async () => {
+    const { getLatestBriefIssue } = await import("./api");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: {
+            code: "brief_database_unavailable",
+            message: "Brief archive database is unavailable.",
+          },
+        }),
+        {
+          status: 503,
+          statusText: "Service Unavailable",
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const envelope = await getLatestBriefIssue({ locale: "en" });
+
+    expect(envelope.issue.public_id).toBe("");
+    expect(envelope.issue.locale).toBe("en");
+    expect(envelope.issue.status).toBe("unavailable");
+    expect(envelope.warnings).toContain("Brief archive issue is unavailable.");
+    expect(envelope.apiError).toContain("[brief_database_unavailable]");
   });
 });
 

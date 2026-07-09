@@ -234,6 +234,132 @@ def test_get_brief_issue_requires_database_when_disabled(tmp_path) -> None:
     assert response.json()["detail"]["code"] == "brief_database_unavailable"
 
 
+def test_get_latest_brief_issue_requires_database_when_disabled(tmp_path) -> None:
+    db.reset_database_cache()
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/brief/issues/latest", params={"locale": "zh"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "brief_database_unavailable"
+
+
+@pytest.mark.pg
+def test_get_latest_brief_issue_returns_404_when_empty(tmp_path) -> None:
+    settings = _postgres_settings(auto_migrate=False)
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+
+    try:
+        db.run_migrations(database)
+        with database.connect() as conn:
+            conn.execute(
+                """
+                DELETE FROM quant_system.brief_issues
+                WHERE owner_user_id = %s
+                  AND locale = %s
+                """,
+                (ROOT_USER_ID, "zh"),
+            )
+
+        client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+        response = client.get("/api/brief/issues/latest", params={"locale": "zh"})
+
+        assert response.status_code == 404
+        detail = response.json()["detail"]
+        assert detail["code"] == "brief_not_found"
+        assert "public_id" not in detail
+    finally:
+        db.reset_database_cache()
+
+
+@pytest.mark.pg
+def test_get_latest_brief_issue_returns_newest_for_locale(tmp_path) -> None:
+    settings = _postgres_settings(auto_migrate=False)
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+
+    try:
+        db.run_migrations(database)
+        with database.connect() as conn:
+            conn.execute(
+                """
+                DELETE FROM quant_system.brief_issues
+                WHERE owner_user_id = %s
+                  AND locale IN (%s, %s)
+                  AND issue_date IN (%s, %s)
+                """,
+                (ROOT_USER_ID, "zh", "en", "2026-07-07", "2026-07-08"),
+            )
+
+        client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+        older = client.post(
+            "/api/brief/issues/generate",
+            json={"issue_date": "2026-07-07", "locale": "zh"},
+        )
+        newer = client.post(
+            "/api/brief/issues/generate",
+            json={"issue_date": "2026-07-08", "locale": "zh"},
+        )
+        assert older.status_code == 200
+        assert newer.status_code == 200
+        newer_body = newer.json()
+        public_id = newer_body["issue"]["public_id"]
+
+        latest = client.get("/api/brief/issues/latest", params={"locale": "zh"})
+        assert latest.status_code == 200
+        latest_body = latest.json()
+        assert latest_body["issue"]["public_id"] == public_id
+        assert latest_body["issue"]["issue_date"] == "2026-07-08"
+        assert latest_body["issue"]["locale"] == "zh"
+        assert latest_body["snapshot"]["version"] == newer_body["snapshot"]["version"]
+
+        second = client.post(
+            "/api/brief/issues/generate",
+            json={"issue_date": "2026-07-08", "locale": "zh"},
+        )
+        assert second.status_code == 200
+        second_body = second.json()
+        assert second_body["issue"]["public_id"] == public_id
+        assert second_body["snapshot"]["version"] == newer_body["snapshot"]["version"] + 1
+
+        latest_after = client.get("/api/brief/issues/latest", params={"locale": "zh"})
+        assert latest_after.status_code == 200
+        latest_after_body = latest_after.json()
+        assert latest_after_body["issue"]["public_id"] == public_id
+        assert latest_after_body["snapshot"]["version"] == second_body["snapshot"]["version"]
+
+        en_only = client.post(
+            "/api/brief/issues/generate",
+            json={"issue_date": "2026-07-08", "locale": "en"},
+        )
+        assert en_only.status_code == 200
+        en_public_id = en_only.json()["issue"]["public_id"]
+        en_latest = client.get("/api/brief/issues/latest", params={"locale": "en"})
+        assert en_latest.status_code == 200
+        assert en_latest.json()["issue"]["public_id"] == en_public_id
+        assert en_latest.json()["issue"]["locale"] == "en"
+        zh_latest = client.get("/api/brief/issues/latest", params={"locale": "zh"})
+        assert zh_latest.status_code == 200
+        assert zh_latest.json()["issue"]["public_id"] == public_id
+    finally:
+        try:
+            with database.connect() as conn:
+                conn.execute(
+                    """
+                    DELETE FROM quant_system.brief_issues
+                    WHERE owner_user_id = %s
+                      AND locale IN (%s, %s)
+                      AND issue_date IN (%s, %s)
+                    """,
+                    (ROOT_USER_ID, "zh", "en", "2026-07-07", "2026-07-08"),
+                )
+        finally:
+            db.reset_database_cache()
+
+
 @pytest.mark.pg
 def test_generate_brief_issue_persists_postgres_snapshot_versions(tmp_path) -> None:
     settings = _postgres_settings(auto_migrate=False)
