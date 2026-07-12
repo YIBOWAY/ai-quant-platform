@@ -11,6 +11,9 @@
 > adds a shared operations runner plus scheduler-safe one-shot CLI/status
 > commands. MVP-3 Slice 2 adds macOS LaunchAgent templates/runbook; automatic
 > scheduling is not active until the operator runs the install script.
+> Phase 1a-4 v2 Slice 9A (2026-07-10) separates observation from recovery:
+> every strategy-sleeve GET and `ops-status` is strictly read-only; crash
+> recovery now requires an explicit mutation or `paper strategies recover-pending`.
 
 ## What Exists Now
 
@@ -49,11 +52,11 @@ The second slice exposes the backend API contract:
 | `GET` | `/api/paper/strategy-configs` | Lists latest config versions. |
 | `POST` | `/api/paper/strategy-configs/{id}/versions` | Creates the next config version. |
 | `POST` | `/api/paper/strategy-sleeves` | Creates signal-only or allocated sleeves. |
-| `GET` | `/api/paper/strategy-sleeves` | Lists sleeves. |
-| `GET` | `/api/paper/strategy-sleeves/{id}` | Returns sleeve, lots, signals, and executions. |
+| `GET` | `/api/paper/strategy-sleeves` | Lists finalized sleeves without reconciling pending files. |
+| `GET` | `/api/paper/strategy-sleeves/{id}` | Returns persisted sleeve, lots, signals, and executions without recovery writes. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/signals` | Generates and persists one daily signal. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/executions` | Creates one pending execution plan from a selected generated signal. |
-| `GET` | `/api/paper/strategy-sleeves/ops/status` | Returns local operations status for sleeves, due pending executions, blocked executions, recovery-required executions, and pending journals. |
+| `GET` | `/api/paper/strategy-sleeves/ops/status` | Returns a best-effort read-only status, including separate pending sleeve/journal counts. |
 | `POST` | `/api/paper/strategy-sleeves/executions/process` | Processes due pending execution plans once. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/pause` | Pauses a running sleeve. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/resume` | Resumes a paused sleeve. |
@@ -67,9 +70,11 @@ Allocated sleeve creation runs under the existing paper-account in-process lock
 and filesystem lock. It allocates from `sleeve_cash["manual"]`, writes the sleeve
 cash allocation into the account cash book, and uses a `sleeve.pending.json`
 journal before finalizing `sleeve.json`. If the process exits after the account
-allocation is saved but before finalization, later sleeve list/detail/signal
-paths reconcile the pending journal against `PaperAccount.sleeve_cash`. It does
-not change `PaperAccount.cash`, and it does not execute orders.
+allocation is saved but before finalization, GET list/detail/status leaves the
+journal untouched. Run `quant-system paper strategies recover-pending`, or a
+later explicit strategy mutation, to reconcile it against
+`PaperAccount.sleeve_cash`. Recovery does not create or process a new execution
+plan.
 
 The third slice adds manual daily signal generation:
 
@@ -138,6 +143,8 @@ The third MVP-2 slice exposes manual processing entrypoints:
   `quant-system paper strategies execute-due --target-date <YYYY-MM-DD>`.
 - CLI:
   `quant-system paper strategies ops-status --target-date <YYYY-MM-DD> --format json`.
+- CLI:
+  `quant-system paper strategies recover-pending --format json`.
 
 These entrypoints are one-shot commands intended for explicit local use or an
 external scheduler. The FastAPI process does not run an in-process recurring
@@ -156,8 +163,9 @@ MVP-3 Slice 0 adds recovery journals for filled execution plans:
 - API/CLI processing moves the journal to
   `execution_journal/<execution_id>.committed.json` only after the account save
   succeeds
-- sleeve detail/process paths and CLI `execute-pending` reconcile pending
-  journals under the existing account+sleeve locks
+- explicit process paths, CLI `execute-pending`, and the recovery-only CLI
+  `recover-pending` reconcile pending journals under the existing
+  account+sleeve locks
 - corrupt pending journal files are preserved as
   `<execution_id>.corrupt-*.json` and skipped rather than deleted silently
 
@@ -178,10 +186,54 @@ quant-system paper strategies ops-status --target-date 2026-06-29 --format json
 `generate-due-signals` generates one daily signal per eligible sleeve for the
 given date and skips sleeves that already have a signal for that date.
 `execute-due` is the scheduler-friendly alias for the existing one-shot pending
-execution processor. `ops-status` reports due work, pending journals, blocked
-executions, and recovery-required counts without placing any real broker orders.
-These commands are safe to call from a host scheduler because file locks and
-idempotency checks remain in the backend runner.
+execution processor. `ops-status` reports finalized/pending sleeves, due work,
+pending journal files, blocked executions, and recovery-required counts. It
+does not load the account repository, acquire mutation locks, repair corrupt
+journals, or change disk state; its multi-file result is a best-effort rather
+than transactionally consistent snapshot.
+
+Crash recovery is deliberately separate:
+
+```bash
+quant-system paper strategies recover-pending --format json
+```
+
+`recover-pending` reconciles sleeve/execution crash journals but never generates
+signals, creates plans, or processes a pending plan. This command is a mutation
+and must not be added to read-only wrapper allowlists.
+
+## Slice 9G bounded observations
+
+HQA links an opportunity to platform activity only through exact persisted
+signal and execution identities. The platform exposes those facts through a
+separate bounded CLI read:
+
+```bash
+quant-system paper strategies observations \
+  --from-date 2026-07-01 \
+  --to-date 2026-07-12 \
+  --signal-id <signal_id> \
+  --limit 200 \
+  --format json
+```
+
+All filters are optional and `limit` is bounded to 1-500. The versioned JSON
+envelope contains `snapshot_at`, the normalized `query`,
+`read_status=available|empty|degraded`, `returned_count`, `truncated`,
+`ops_quality`, bounded `observations`, and `errors`. Quality counters cover
+pending sleeves/journals, corrupt journals and recovery-required executions.
+Each observation carries the complete strategy signal identity plus every
+causally linked execution identity and literal status; ticker similarity is not
+a link.
+
+`empty` with zero quality counters and no errors is an honest complete result,
+not a failure. `degraded`, non-zero quality, errors or `truncated=true` cannot
+establish complete action coverage. The reader never computes `missed`.
+
+This seam is CLI-only and file-backed. It does not open the account repository
+or market provider, take mutation locks, perform crash recovery, expose an HTTP
+route, or add a database table/migration. Reads must leave every sleeve and
+journal file unchanged.
 
 The same status payload is exposed through:
 

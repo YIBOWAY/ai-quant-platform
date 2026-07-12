@@ -1,12 +1,42 @@
 # 文档索引
 
-这是整个仓库的主地图。用它来查找架构文档、执行手册、学习笔记、交付记录与安全边界。
+这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
+指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-当前状态：Phase 14 已交付，后续还补充了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、PostgreSQL 运行索引加固、研报复现运行持久化、实验数据源选择、实验固定因子组合摘要、Factor Lab 到 Backtester 的预填链接、策略账户再平衡能力位、语言连续性修复、策略/Polymarket 路由重命名、opt-in async backtest jobs、AI HOT 只读新闻接入，以及 options screener 质量过滤 / `Avoid` 审计开关 / 备注列。2026-06-11 的大型前端重构（设计系统统一 + 全页面布局/可解释性整治 + E2E 38/38）见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
+## 当前工作（2026-07-12）
 
-2026-07-03 起，本仓库的后续迭代由
-`/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`
-拉动；`ai-quant-platform` 是量化领域后端，不再按独立 Phase 15 产品路线扩张。
+| 层级 | 权威入口 | 状态 |
+|---|---|---|
+| 跨仓产品路线 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md` | Hermes 是 COO/编排层；本仓库是领域后端。 |
+| 当前实现计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | Slice 9A-9G + mini 9H 已完成；完整 9H cron/notify 是下一切片。 |
+| 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
+| 被替代计划 | HQA `2026-07-07-phase-1a-4-research-employees.md` | 目标保留，旧 implementation 模板不得原样执行。 |
+| 历史路线 | [Phase 15 素材档案](phases/phase_15_iteration_roadmap.md) | 仅作素材，不是独立 roadmap。 |
+
+前序计划已把 `/brief`、PostgreSQL 业务事实、paper account 存储迁移、`/hermes`
+只读骨架和渐进前端重设计放在同一条 expand-contract 路线上。2026-07-11 已将 8765
+重启到最终 9D 工作树：live `quantplatform` 的四份 migration 共 14 张表全部存在，其中
+003/004 是 11 张业务表；health、brief archive、paper API reconciliation 和关键页面
+smoke 均通过。paper
+mode 仍刻意保持默认 `file`；canonical 只是已验收能力，尚未成为运行事实源。当前
+Slice 9A 已把 sleeve list/detail/status 与 crash recovery 分缝：GET/`ops-status` 不写盘，
+`paper strategies recover-pending` 才显式恢复。Slice 9B 已让 API、CLI 与 HQA 共用
+统一 paper snapshot read-model；live 仍刻意保持 `file` mode。HQA Slice 9C 已只读消费
+该 snapshot，产出当前敞口/集中度 artifact。Slice 9D 新增严格只读 `data prices` JSON
+seam：仅 Futu/QFQ/1d，限制 25 个标的与 500 个含首尾日历日期，不允许
+sample/local/Tiingo/Longbridge fallback。HQA v2 以 previous UTC date 为 `end`、
+`end-400 days` 为 `start`，先做全局日期 inner join 再算收益，最少要求 60 个对齐收益；输出逐仓相对
+SPY 的 beta 与持仓两两 correlation，不计算 aggregate beta、VaR 或阈值 verdict。
+2026-07-11 真实验收使用 274 个对齐收益，AAPL beta 为 `0.8576599678`；平台全量
+`1027 passed, 15 skipped`，20 个受观察状态/缓存文件的 bytes、mtime、hash 均未变化。
+HQA Slice 9E 已复用该 seam，真实临时 prediction ledger smoke 与到期评分通过。Slice
+9F 已发布严格 Futu/QFQ 证据支持、proposal-only 的 market-foresight 候选；mini 9H
+通过 `GET /api/hermes/artifacts` 和真实 `/hermes` 卡片展示组合风险、预测状态和推演产物，
+Composer 继续禁用。Slice 9G 新增 HQA 本地 opportunity ledger，并通过平台 CLI-only
+`paper strategies observations` 读取精确 signal/execution facts；平台没有新增机会账本
+数据库、HTTP route 或 UI。真实 59 条 options 信号因无 paper-options route 均为
+`not_actionable`，零虚假 missed。下一步不回到旧前端 P2/P3，而是为完整 9H 的调度、
+聚合、通知与 freshness 另立当前计划。
 
 ## 0. 界面操作指南（新，建议先读）
 
@@ -32,8 +62,11 @@
 | 文档 | 用途 |
 |---|---|
 | [../README.md](../README.md) | 快速项目入口与运行命令。 |
-| [audits/project_assessment_2026-06-11.html](audits/project_assessment_2026-06-11.html) | **2026-06-11 全项目评估报告（HTML）**：8 维度多智能体审核 + 对抗复核、"不顺手"根因分析、16 项快赢、分阶段治理路线图、渐进 vs 重构结论。 |
-| [audits/remediation_ledger_2026-06-23.md](audits/remediation_ledger_2026-06-23.md) | **2026-06-23 当前整改台账**：把 6-11 历史评估逐项对账为 Done / Partially done / Still relevant，并记录用户裁决与后续整改包队列。 |
+| `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | **当前实现计划**：只执行其中 current slice。 |
+| [superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 实现记录与未来前端 backlog。 |
+| [architecture/database_cache_plan.md](architecture/database_cache_plan.md) | 当前本地存储与 PostgreSQL 业务事实架构。 |
+| [audits/project_assessment_2026-06-11.html](audits/project_assessment_2026-06-11.html) | **2026-06-11 历史评估快照（HTML）**。 |
+| [audits/remediation_ledger_2026-06-23.md](audits/remediation_ledger_2026-06-23.md) | **2026-06-23 整改快照**，不承担当前进度维护。 |
 | [audits/remediation_goal_protocol.md](audits/remediation_goal_protocol.md) | `/goal` 长程整改执行协议：用“整改包”替代开放式优化，定义分层目标、机器验收、边界、降级、继续门禁与提交规则。 |
 | [phases/phase_15_iteration_roadmap.md](phases/phase_15_iteration_roadmap.md) | **Phase 15 素材档案**：已被 HQA D-18/D-24 接管，不再是独立 active roadmap；仅保留 P0-P5 的素材价值。 |
 | [OVERVIEW.md](OVERVIEW.md) | 简短的平台总览与安全摘要。 |
@@ -76,12 +109,14 @@
 | 模拟交易历史回放流水线 | `src/quant_system/execution/pipeline.py` |
 | 持久模拟账户模型 + 账本 | `src/quant_system/execution/account.py` |
 | 模拟账户持久化 | `src/quant_system/execution/account_storage.py` |
+| 模拟账户统一观察快照 | `src/quant_system/execution/account_snapshot.py` |
 | 模拟账户取价（Futu 快照→最近收盘） | `src/quant_system/execution/price_source.py` |
 | 模拟账户下单/再平衡服务 | `src/quant_system/execution/account_service.py` |
 | Paper Strategy Sleeves 领域模型 / 分账基础 | `src/quant_system/execution/paper_strategy_sleeves.py` |
 | Paper Strategy Sleeves 本地存储 | `src/quant_system/execution/paper_strategy_sleeve_storage.py` |
 | Paper Strategy Sleeves 信号生成 | `src/quant_system/execution/paper_strategy_signal_service.py` |
 | Paper Strategy Sleeves next-open 执行处理器 | `src/quant_system/execution/paper_strategy_execution_service.py` |
+| Paper Strategy Sleeves 9G bounded observations | `src/quant_system/execution/paper_strategy_observations.py` |
 | Paper Strategy Sleeves MVP-2 计划 | `docs/design/paper_strategy_sleeves_mvp2_plan.md` |
 | 期权卖方筛选器 | `src/quant_system/options/screener.py` |
 | 期权雷达 | `src/quant_system/options/radar.py` |
@@ -91,7 +126,10 @@
 | Futu 期权 DuckDB 缓存 | `src/quant_system/storage/options_cache.py` |
 | PostgreSQL 运行索引（可选） | `src/quant_system/storage/runs_repository.py` |
 | 数据库连接 + 迁移 | `src/quant_system/storage/database.py` |
+| Brief 业务事实 | `src/quant_system/brief/` / `src/quant_system/api/routes/brief.py` |
 | AI HOT 只读新闻缓存（可选） | `src/quant_system/news/repository.py` / `scripts/sql/002_ai_news_cache.sql` |
+| Paper repository factory | `src/quant_system/execution/account_repository_factory.py` |
+| Paper PostgreSQL / mirror repository | `src/quant_system/execution/account_postgres_repository.py` / `account_dual_write_repository.py` |
 | 买方指标 | `src/quant_system/options/buy_side_metrics.py` |
 | 买方策略生成 | `src/quant_system/options/buy_side_strategy.py` |
 | 买方场景实验室 | `src/quant_system/options/buy_side_scenarios.py` |
@@ -147,6 +185,9 @@
 | 页面 | 用途 |
 |---|---|
 | `/data-explorer` | 股票数据查看器。 |
+| `/brief` | 当日动态晨报预览；归档入口读取 PostgreSQL 中不可变 brief snapshot。 |
+| `/brief/[publicId]` | 已归档晨报的只读快照页。 |
+| `/hermes` | mini 9H 只读产物架：展示风险、预测状态和 proposal-only 市场推演；不提交 agent task 或交易动作。 |
 | `/factor-lab` | 现有只读因子健康度与单标的择时仪表盘；HQA 工作台落地后应从一级入口降级为 run/detail 分析面。 |
 | `/factor-lab/[runId]` | 因子运行详情。 |
 | `/backtest` | 策略、universe 与因子权重回测运行。 |
@@ -239,7 +280,7 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 
 ## 10. 缓存层状态
 
-已实现三个本地存储层：
+已实现五类本地存储能力：
 
 - DuckDB 缓存本地 Futu 期权报价窗口
   （`storage/options_cache.py`）。
@@ -251,6 +292,13 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 - 一个可选的 PostgreSQL **AI HOT 新闻缓存**（`news/repository.py`、
   `scripts/sql/002_ai_news_cache.sql`）镜像只读 AI 新闻条目；实时请求成功后写入，
   上游失败时可作为 `/ai-news` 的 stale fallback，并通过 warning 告知用户。
+- PostgreSQL **brief / AI daily 业务事实**（migration 003）：root owner、不可变
+  brief issue/snapshot/source 和 owner-scoped AI 日报。
+- PostgreSQL **paper account repository**（migration 004）：`file` 默认、
+  file-authoritative `mirror`、DB-authoritative `canonical` 三种模式；API additive
+  返回 `storage_mode/stale/warnings/reconciliation`。reconciliation 对账 raw、账户
+  物化列、完整 ledger、positions、pending orders 和 snapshot state/integrity/freshness，
+  不自动切换模式；canonical 缺账户时要求显式 backfill，不由普通 GET 创建。
 
 延伸阅读：
 
@@ -261,6 +309,13 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 - DuckDB 现用于本地 Futu 期权报价窗口。
 - PostgreSQL 现（可选）用于 backtest/factor/paper/replication 运行索引。
 - PostgreSQL 现（可选）也用于 AI HOT 只读新闻条目缓存。
+- 四份 migration 的 14 张表（其中 003/004 为 11 张业务表）、brief archive 与 paper repository 已在代码、
+  throwaway DB 和重启后的 live 库验证。
+- paper account 当前默认仍是 `file`，不能把 canonical 能力误写成已切换状态。
+- `quant-system data prices` 现为只读 Futu/QFQ/1d JSON seam；不读取 local cache，也不
+  回退到 sample、Tiingo 或 Longbridge。
+- 当前跨仓下一步是为 HQA 完整 9H cron、prediction reconcile、weekly aggregation、
+  notify 与 freshness monitoring 另立 bite-sized plan。
 - 剩余的 PostgreSQL 目标：雷达运行、请求日志，以及更丰富的
   API 可见快照。
 - 对大型 OHLCV 与分析型时间序列数据集采用 Parquet / DuckDB。

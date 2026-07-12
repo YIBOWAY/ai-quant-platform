@@ -5,11 +5,29 @@
 Local-first quant research, backtesting, paper-trading, read-only market-data,
 and options research platform.
 
-The project is currently delivered through Phase 14. It includes:
-
-Future cross-repo work is driven by
-`/Users/sunyibo/programs/Hermes-quant-agent`; this repository is now the domain
-backend for that Hermes workflow, not an independent Phase 15 product track.
+The Phase 0-14 documents describe delivered historical capability layers, not
+the current implementation queue. Start with [docs/INDEX.md](docs/INDEX.md).
+Current engineering work follows HQA's
+`docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md`; Slices 9A-9G and the
+read-only mini 9H Hermes artifact shelf are delivered. Full 9H cron/notify is
+next and remains queued pending a current bite-sized plan. Slice 9E is an HQA-local locked
+prediction event ledger that reuses, but does not modify, the platform. Slice 9D adds a strict read-only
+`data prices` JSON seam: explicit Futu, QFQ, and 1d only; at most 25 symbols
+and 500 inclusive calendar dates; no sample/local/Tiingo/Longbridge fallback.
+HQA portfolio-risk v2 uses the previous UTC date as `end` and `end-400 days`
+as `start`,
+globally inner-joins dates before computing returns, requires at least 60
+aligned returns, and reports per-position beta versus SPY plus position-pair
+correlations. It does not calculate aggregate beta, VaR, or a threshold
+verdict. The 2026-07-11 live acceptance used 274 aligned returns and measured
+AAPL beta at `0.8576599678`; the platform suite reported
+`1027 passed, 15 skipped`, while 20 observed state/cache files retained
+identical bytes, mtimes,
+and hashes. This repository's
+[frontend redesign and Hermes integration plan](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
+is the Slice 0-8 delivery record and UI backlog. The cross-repo product roadmap
+remains in `/Users/sunyibo/programs/Hermes-quant-agent`; this repository is its
+domain backend, not an independent Phase 15 product track.
 
 - US equity and ETF historical data workflows.
 - Factor research, Factor Lab diagnostics (real-data-first since 2026-06-11,
@@ -31,7 +49,8 @@ backend for that Hermes workflow, not an independent Phase 15 product track.
 - Backtest engine controls: rebalance frequency (every bar / weekly / monthly),
   per-symbol weight cap, API-level sector cap when a sector map is supplied,
   and per-name return attribution.
-- Optional PostgreSQL local mirror for run history and AI HOT news cache.
+- Optional PostgreSQL run/news caches plus brief, AI daily-report, and paper
+  account business facts with explicit `file` / `mirror` / `canonical` modes.
 
 This project does not add live trading, broker order submission, wallet
 connection, signing, Futu account unlock, or real order placement.
@@ -190,6 +209,19 @@ Verification:
 python scripts/verify_futu_connection.py
 ```
 
+Strict multi-symbol QFQ daily history for machine consumers:
+
+```powershell
+quant-system data prices --symbol AAPL --symbol SPY --start 2026-01-01 --end 2026-07-10 --provider futu --adjustment qfq --format json
+```
+
+This leaf emits exactly one JSON document on stdout, uses no local/sample
+fallback, and does not persist OHLCV or initialize the option DuckDB cache.
+Dates must be `YYYY-MM-DD`; the window is capped at 500 dates including both
+endpoints. Invalid settings/requests and OpenD connect/query failures return a
+typed JSON error with a nonzero exit. `QS_FUTU_REQUEST_TIMEOUT_SECONDS`
+controls both initial connection and request deadlines.
+
 Important constraints:
 
 - No Futu trade context.
@@ -197,26 +229,73 @@ Important constraints:
 - No order placement.
 - No broker execution.
 
+## Read-only Hermes Artifact Shelf
+
+`GET /api/hermes/artifacts?limit=20` reads HQA's versioned, rebuildable
+`artifacts/hermes-feed/manifest.v1.json` and returns portfolio-risk,
+prediction-state, and proposal-only market-foresight cards. It never parses raw
+HQA JSONL, never writes HQA state, and does not enable the `/hermes` Composer or
+`POST /api/agent/tasks`.
+
+The catalog reports stable `available`, `empty`, `degraded`, or `unavailable`
+states, validates the manifest, limits file size, and does not expose local paths
+or raw exceptions. Configure it with:
+
+```text
+QS_HERMES_ARTIFACT_FEED_PATH=/absolute/path/to/manifest.v1.json
+QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS=900
+QS_HERMES_ARTIFACT_MAX_FUTURE_CLOCK_SKEW_SECONDS=300
+QS_HERMES_ARTIFACT_MAX_MANIFEST_BYTES=4194304
+```
+
+The default path resolves to the sibling `Hermes-quant-agent` repository. A
+prediction source may legitimately be `empty`; the real `/hermes` page still
+shows healthy risk and foresight sources. Scheduling and notifications remain
+HQA full-9H work.
+
 Interactive options pages include a short-lived in-process cache, a local
 DuckDB-backed Futu option quote cache, and a one-time retry for Futu rate-limit
 responses. Broad daily scans should still be scheduled and expected to run
 slowly under Futu pacing.
 
-## Optional PostgreSQL Local Mirror
+## Optional PostgreSQL Business Facts
 
-Backtest, factor, paper, and replication runs are always written to local files
-under `data/api_runs/<kind>/<run_id>/`. You can optionally index those four
-kinds into PostgreSQL for fast history listing. The same optional database also
-stores read-only AI HOT item rows for `/ai-news` stale fallback and now has
-schema-ready tables for root-owned brief snapshots and AI daily reports. It is
-**disabled by default**; when the database is off or unreachable, run endpoints
-fall back to the filesystem and AI News falls back to live proxy/error handling.
-Paper account remains file-canonical. The 004 migration plus
-`execution/account_backfill.py` can explicitly mirror a provided account JSON
-into PostgreSQL, and `QS_PAPER_ACCOUNT_DB_MODE=mirror` now makes API and CLI
-paper-account mutations write a best-effort PostgreSQL mirror after the file
-write. `canonical` mode is reserved for the next fail-closed slice and currently
-falls back to file storage with a warning.
+Backtest, factor, paper-run, and replication artifacts remain files under
+`data/api_runs/<kind>/<run_id>/`; PostgreSQL only indexes those run records.
+The same optional database stores AI HOT cache rows, immutable brief snapshots,
+owner-scoped AI daily reports, and the persistent paper account's simulated
+ledger/current state. It never stores broker credentials or live orders.
+`QS_DATABASE_ENABLED` defaults to `false`; paper mode defaults to `file`.
+
+Paper-account persistence has three explicit modes:
+
+- `file` (default): local `account.json` is authoritative; PostgreSQL account
+  reconciliation is not applicable.
+- `mirror`: files remain authoritative; API/CLI/operations writes then update
+  PostgreSQL best-effort. A database failure leaves the file mutation intact
+  and surfaces a warning.
+- `canonical`: PostgreSQL is authoritative for load/open/save/reset. Mutations
+  fail closed when the database is unavailable; the factory never silently
+  changes the configured mode to file. If the canonical account is absent,
+  ordinary GET/mutation paths return `409 paper_account_bootstrap_required`;
+  they never create a replacement account in an unbackfilled database.
+
+All paper-account entrypoints use the same repository factory. Account IDs are
+centrally validated before they can become a filesystem path or database key;
+the repository key must also match the payload account ID. API snapshot reads
+and `quant-system paper account-show --format text|json` share
+`PaperAccountSnapshotReader`. In file/mirror mode a missing account is reported
+without creating directories, locks, or a new account; canonical mode returns
+the explicit bootstrap error. A corrupt primary may be read from a valid backup,
+but read-only paths never rename or repair files; repair happens only on a locked
+mutation path.
+
+Paper-account API responses add `storage_mode`, `stale`, `warnings`, and a
+structured `reconciliation` object. Reconciliation reports `in_sync`,
+`different`, `unavailable`, or `not_applicable`, with summary hashes and typed
+differences for raw state, account materialized columns, full ledger rows,
+positions, pending orders, and latest snapshot state/integrity/freshness. These
+fields are diagnostic evidence; they do not authorize a mode switch.
 
 To enable it against a local Docker container:
 
@@ -231,19 +310,17 @@ QS_DATABASE_ENABLED=true
 QS_DATABASE_URL="postgresql://quant:quantpass@127.0.0.1:5432/quantplatform"
 QS_DATABASE_CONNECT_TIMEOUT_SECONDS=1
 QS_DATABASE_AUTO_MIGRATE=true
+QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 ```
 
-On startup the backend starts database migration/backfill in the background:
-it applies `scripts/sql/*.sql`, creates `quant_system.runs`,
-`quant_system.ai_news_items`, `quant_system.ai_news_fetches`,
-`quant_system.app_users`, `quant_system.brief_issues`,
-`quant_system.brief_snapshots`, `quant_system.brief_snapshot_sources`, and
-`quant_system.ai_news_daily_reports`, `quant_system.paper_accounts`,
-`quant_system.paper_account_ledger`, `quant_system.paper_pending_orders`,
-`quant_system.paper_positions_current`, `quant_system.paper_position_snapshots`,
-and `quant_system.paper_position_snapshot_rows`, backfills existing file runs,
-and prunes
-run-index rows whose files were removed. If
+On startup the backend applies `scripts/sql/*.sql` in lexical order. Migrations
+003/004 create 11 business tables: root user, brief issue/snapshot/source,
+AI daily reports, and six paper-account tables for account, ledger, pending
+orders, current positions, and position snapshots. Together with migration
+001's run index and migration 002's two AI-news cache tables, all four files
+define 14 `quant_system` tables. There is no `schema_migrations` ledger; the SQL
+files are idempotently replayed in lexical order. Startup also backfills the
+file-based run index and prunes index rows whose files were removed. If
 PostgreSQL is down, the first probe is short and later failed requests use a
 brief cooldown window while continuing to read local files or live upstreams.
 Healthy PostgreSQL connections may proceed concurrently. Check it with:
@@ -257,27 +334,22 @@ your usual `quantplatform` database:
 
 ```powershell
 $env:QS_TEST_DATABASE_URL='postgresql://quant:quantpass@127.0.0.1:5432/quantplatform_codex_tmp'
-python -m pytest tests/test_runs_repository_postgres.py tests/test_api_brief_persistence.py -q -m pg
+python -m pytest tests/test_runs_repository_postgres.py tests/test_api_brief_persistence.py tests/test_paper_account_postgres_repository.py -q -m pg
 ```
 
 The test may create the target database when its name is clearly temporary
 (`*_tmp` or containing `test`). This keeps its prune checks away from your
 normal run index.
 
-The `psycopg` driver ships with the `api` extra. The database stores research
-run metadata, read-only AI news metadata, and schema-ready brief/AI daily report
-business facts. Paper-account DB rows are explicit mirrors of local JSON files;
-they are not the API source of truth yet and do not store credentials or live
-trading state. The
-connection URL is masked in `/api/settings`. See
+The `psycopg` driver ships with the `api` extra, and the connection URL is
+masked in `/api/settings`. See
 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md).
 
-The brief archive MVP uses the same optional database: `POST
-/api/brief/issues/generate` writes an immutable snapshot version, `GET
-/api/brief/issues/{public_id}` reads the latest stored snapshot, and
-`/brief/{public_id}` renders that archive. When the database is disabled or
-unavailable, archive generation and archive reads fail closed instead of
-fabricating history.
+The brief archive uses the same database: `POST /api/brief/issues/generate`
+writes an immutable version, `GET /api/brief/issues/latest` resolves the latest
+issue, `GET /api/brief/issues/{public_id}` reads a stored issue, and
+`/brief/{public_id}` renders it. Database-unavailable paths fail explicitly
+instead of fabricating history.
 
 ## AI News Research Feed
 
@@ -411,7 +483,14 @@ available:
   `GET /api/paper/strategy-sleeves/ops/status`,
   `quant-system paper strategies create-execution`, and
   `quant-system paper strategies execute-pending` / `execute-due` /
-  `ops-status`.
+  `ops-status`. Strategy GET/status reads are observational and never reconcile
+  files; use the explicit recovery-only command
+  `quant-system paper strategies recover-pending` for crash journals.
+- Slice 9G adds a separate bounded observation command for exact causal audit:
+  `quant-system paper strategies observations --from-date 2026-07-01
+  --to-date 2026-07-12 --signal-id <signal_id> --limit 200 --format json`.
+  It is CLI-only and strictly read-only: there is no HTTP route, account/provider
+  access, recovery, mutation, scheduler or missed-opportunity calculation.
 
 Scheduled sleeve execution is not implemented yet: generated signals do not
 auto-fill and the FastAPI process does not run a resident scheduler. The
@@ -592,9 +671,13 @@ npx playwright test --config playwright.config.ts --workers=1
 
 Start here:
 
-- [docs/OVERVIEW.md](docs/OVERVIEW.md)
 - [docs/INDEX.md](docs/INDEX.md)
-- [docs/SYSTEM_DESIGN_RESEARCH.md](docs/SYSTEM_DESIGN_RESEARCH.md)
+- [docs/OVERVIEW.md](docs/OVERVIEW.md)
+- [Previous frontend/Hermes Slice 0-8 record](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
+- [Local storage and PostgreSQL status](docs/architecture/database_cache_plan.md)
+
+`docs/SYSTEM_DESIGN_RESEARCH.md`, phase delivery records, and audits are
+historical design/evidence sources, not the current work queue.
 
 Current options docs:
 

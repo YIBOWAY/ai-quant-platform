@@ -2,10 +2,22 @@
 
 本地优先的量化研究、回测、模拟交易、只读行情与期权研究平台。
 
-当前项目交付至 Phase 14，主要功能包括：
-
-2026-07-03 起，后续跨项目路线由
-`/Users/sunyibo/programs/Hermes-quant-agent` 拉动；本仓库是该 Hermes 工作流的量化领域后端，不再独立扩张 Phase 15 产品路线。
+Phase 0-14 文档描述已经交付的历史能力层，不是当前实现队列。先读
+[docs/INDEX.md](docs/INDEX.md)。当前工程按 HQA
+`docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` 推进：Slice 9A-9G 与只读
+mini 9H Hermes 产物架已完成。下一步是完整 9H cron/notify，开始前仍需按当前源码
+另立 bite-sized plan。9E 是 HQA 本地带锁的 prediction event ledger，复用但
+不修改平台代码或 schema。9D 新增严格只读的 `data prices` JSON seam：只接受
+显式 Futu、QFQ、1d，最多 25 个标的和 500 个含首尾日历日期，不回退到
+sample/local/Tiingo/Longbridge。HQA 组合风险 v2 以 previous UTC date 为 `end`、
+`end-400 days` 为 `start`，先做全局日期 inner join 再计算收益，至少需要 60 个对齐收益；只报告
+逐仓相对 SPY 的 beta 与持仓两两 correlation，不计算 aggregate beta、VaR 或阈值
+verdict。2026-07-11 真实验收得到 274 个对齐收益，AAPL beta 为
+`0.8576599678`；平台全量为 1027 passed、15 skipped，20 个受观察状态/缓存文件的
+bytes、mtime、hash 均未变化。[前端渐进改造与 Hermes 集成计划](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
+保留为 Slice 0-8 交付记录与 UI backlog；跨仓产品路线仍由
+`/Users/sunyibo/programs/Hermes-quant-agent` 管理。
+本仓库是该 Hermes 工作流的量化领域后端，不再独立扩张 Phase 15 产品路线。
 
 - 美股及 ETF 历史数据流水线。
 - 因子研究、因子实验室诊断（2026-06-11 起真实数据优先：默认 `futu`，数据源/股票池/择时标的/基准可在界面调整，可保存因子研究运行，并可预填发送至回测器）、策略/股票池注册、回测、实验和模拟交易。
@@ -19,7 +31,8 @@
 - 策略目录：包含 reversal/momentum 论文复现、已注册的横截面 Top-N 回测策略、均值回归 Top-N 策略。
 - reversal/momentum 复现运行会以 `replication-*` 形式本地持久化，并提供专门详情页。
 - 回测引擎控制项：再平衡频率（每根 K 线 / 每周 / 每月）、单标的权重上限、提供行业映射时的 API 层面行业上限、以及按标的的收益归因。
-- 可选 PostgreSQL 本地镜像（覆盖运行历史索引和 AI HOT 新闻缓存兜底）。
+- 可选 PostgreSQL 运行/新闻缓存，以及 brief、AI 日报和 paper account 业务事实；
+  paper account 明确区分 `file` / `mirror` / `canonical` 三种模式。
 
 本项目**不包含**实盘交易、券商下单、钱包连接、签名、富途账户解锁或真实订单提交。
 
@@ -154,6 +167,17 @@ cancelled。启动时，遗留的 queued / running / cancelling metadata 会被�
 python scripts/verify_futu_connection.py
 ```
 
+供机器消费的严格多标的 QFQ 日线命令：
+
+```powershell
+quant-system data prices --symbol AAPL --symbol SPY --start 2026-01-01 --end 2026-07-10 --provider futu --adjustment qfq --format json
+```
+
+该 leaf 的 stdout 恰好只有一个 JSON 文档，不读取 local/sample fallback，不保存 OHLCV，
+也不会仅因 provider 构造就初始化期权 DuckDB。日期必须为 `YYYY-MM-DD`，窗口最多包含
+首尾在内 500 个日期；配置、请求、OpenD 首连或查询失败均以 typed JSON + 非零 exit
+返回。`QS_FUTU_REQUEST_TIMEOUT_SECONDS` 同时约束首连和查询 deadline。
+
 **重要约束**：
 
 - 不使用富途交易上下文（TradeContext）。
@@ -161,14 +185,55 @@ python scripts/verify_futu_connection.py
 - 不进行下单。
 - 不进行券商执行。
 
+## 只读 Hermes 产物架
+
+`GET /api/hermes/artifacts?limit=20` 只读 HQA 可重建、版本化的
+`artifacts/hermes-feed/manifest.v1.json`，返回组合风险、预测状态和 proposal-only
+市场推演卡片。它不解析 HQA 原始 JSONL，不写 HQA 状态，也不会启用 `/hermes`
+Composer 或 `POST /api/agent/tasks`。
+
+catalog 会稳定返回 `available`、`empty`、`degraded` 或 `unavailable`，校验 manifest
+并限制文件大小，不向 API 暴露本地路径或原始异常。配置项为：
+
+```text
+QS_HERMES_ARTIFACT_FEED_PATH=/absolute/path/to/manifest.v1.json
+QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS=900
+QS_HERMES_ARTIFACT_MAX_FUTURE_CLOCK_SKEW_SECONDS=300
+QS_HERMES_ARTIFACT_MAX_MANIFEST_BYTES=4194304
+```
+
+默认路径指向同级 `Hermes-quant-agent` 仓库。prediction 来源可以合法地为 `empty`，
+页面仍会显示健康的风险与推演来源；调度和通知留给 HQA 完整 9H。
+
 交互式期权页面包含短期进程内缓存、本地 DuckDB 支持的富途期权报价缓存，以及针对富途限频响应的单次重试。宽泛的每日扫描仍应计划执行，并在富途限速下预计运行较慢。
 
-## 可选 PostgreSQL 本地镜像
+## 可选 PostgreSQL 业务事实
 
-回测、因子、模拟交易和 reversal/momentum 复现运行记录始终写入本地文件
-`data/api_runs/<kind>/<run_id>/`。你可以选择将这四类运行索引到 PostgreSQL 中以加速历史列表查询。
-同一个可选数据库也会缓存 AI HOT 只读新闻条目，供 `/ai-news` 在上游暂时不可用时兜底。
-该功能**默认关闭**；当数据库关闭或无法访问时，运行端点自动回退到文件系统读取，AI News 回退到实时代理或明确错误。
+回测、因子、paper-run 和 reversal/momentum 复现 artifact 仍保存在
+`data/api_runs/<kind>/<run_id>/`；PostgreSQL 只索引这些运行记录。同一个可选数据库
+还保存 AI HOT 缓存、不可变 brief 快照、owner-scoped AI 日报和持久 paper account
+的模拟账本/当前状态，不保存券商凭证或真实订单。`QS_DATABASE_ENABLED` 默认
+`false`，paper mode 默认 `file`。
+
+paper account 有三种显式模式：
+
+- `file`（默认）：本地 `account.json` 是事实源。
+- `mirror`：文件仍是事实源，API/CLI/operations 写文件后 best-effort 镜像到
+  PostgreSQL；数据库失败不回滚文件写入，但会返回 warning。
+- `canonical`：PostgreSQL 是 load/open/save/reset 的事实源；数据库不可用时
+  mutation fail closed，factory 不会静默切回文件模式；如果 canonical 中没有账户，
+  普通 GET/写请求返回 `409 paper_account_bootstrap_required`，不会在空库新建替代账户。
+
+所有 paper account 入口共用 repository factory。account ID 会统一校验，repository key
+也必须与载荷 account ID 一致。API snapshot 与
+`quant-system paper account-show --format text|json` 共用
+`PaperAccountSnapshotReader`：file/mirror 缺账户时不会创建目录、锁文件或账户，canonical
+则返回显式 bootstrap error；主文件损坏时只读路径最多读取有效备份，不会重命名或修复
+磁盘文件。
+API 额外返回 `storage_mode`、`stale`、`warnings` 和结构化 `reconciliation`：
+它通过摘要 hash 对账 raw、账户物化列、完整 ledger、positions、pending orders 和
+最新 snapshot 的状态/内部一致性/freshness，
+状态为 `in_sync` / `different` / `unavailable` / `not_applicable`。
 
 通过本地 Docker 容器启用：
 
@@ -183,11 +248,15 @@ QS_DATABASE_ENABLED=true
 QS_DATABASE_URL="postgresql://quant:quantpass@127.0.0.1:5432/quantplatform"
 QS_DATABASE_CONNECT_TIMEOUT_SECONDS=1
 QS_DATABASE_AUTO_MIGRATE=true
+QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 ```
 
-后端启动时会在后台线程中运行迁移/回填：应用 `scripts/sql/*.sql`，创建
-`quant_system.runs`、`quant_system.ai_news_items` 和 `quant_system.ai_news_fetches`，
-回填已有的文件运行记录，并清理文件已被删除的运行索引行。如果 PostgreSQL 不可用，
+后端启动时按文件名字典序应用 `scripts/sql/*.sql`。003/004 migration 会创建 11 张
+业务表：root 用户、brief issue/snapshot/source、AI 日报，以及 paper account 的账户、
+账本、挂单、当前持仓和持仓快照六张表。加上 001 的 run index 与 002 的两张 AI 新闻
+缓存表，四份 migration 共定义 14 张 `quant_system` 表。系统不维护
+`schema_migrations` 台账，而是按文件名幂等重放 SQL。启动流程还会回填运行索引，并清理对应文件
+已删除的索引行。如果 PostgreSQL 不可用，
 首次探测很短，后续失败请求在短暂的冷却窗口内继续从本地文件或实时上游读取；健康的 PostgreSQL
 短连接可以并发执行。可通过以下命令检查：
 
@@ -195,8 +264,9 @@ QS_DATABASE_AUTO_MIGRATE=true
 curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
 ```
 
-`psycopg` 驱动随 `api` extra 一起安装。数据库仅存储研究运行元数据和只读 AI 新闻元数据；
-连接 URL 在 `/api/settings` 中已脱敏。详见
+`psycopg` 驱动随 `api` extra 一起安装；连接 URL 在 `/api/settings` 中已脱敏。
+brief archive 的 generate/latest/by-public-id 路径只读取已落库快照，数据库不可用时
+明确失败，不伪造历史。详见
 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md)。
 
 ## AI 新闻研究流
@@ -290,6 +360,13 @@ next-open 纸面执行：
   `GET /api/paper/strategy-sleeves/ops/status`、
   `quant-system paper strategies create-execution` 和
   `quant-system paper strategies execute-pending` / `execute-due` / `ops-status`。
+  strategy GET/status 现在只做观察，绝不隐式对账或改写文件；crash journal 请显式运行
+  `quant-system paper strategies recover-pending` 恢复。
+- Slice 9G 新增独立的精确因果审计命令：
+  `quant-system paper strategies observations --from-date 2026-07-01
+  --to-date 2026-07-12 --signal-id <signal_id> --limit 200 --format json`。
+  它只提供有界、纯只读 CLI 事实；没有 HTTP route，不访问 account/provider，不做恢复、
+  mutation、调度或 missed-opportunity 判断。
 
 尚未实现：常驻/调度式自动执行、near-close 模拟成交和 lot transfer。生成信号不会
 自动成交，FastAPI 进程也不会启动常驻策略调度器。现有
@@ -421,9 +498,13 @@ npx playwright test --config playwright.config.ts --workers=1
 
 从这里开始：
 
-- [docs/OVERVIEW.md](docs/OVERVIEW.md)
 - [docs/INDEX.md](docs/INDEX.md)
-- [docs/SYSTEM_DESIGN_RESEARCH.md](docs/SYSTEM_DESIGN_RESEARCH.md)
+- [docs/OVERVIEW.md](docs/OVERVIEW.md)
+- [前序前端/Hermes Slice 0-8 记录](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
+- [本地存储与 PostgreSQL 状态](docs/architecture/database_cache_plan.md)
+
+`docs/SYSTEM_DESIGN_RESEARCH.md`、phase 交付记录和 audits 是历史设计/证据，不是
+当前待办队列。
 
 当前期权相关文档：
 

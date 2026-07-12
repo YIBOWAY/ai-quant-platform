@@ -8,13 +8,53 @@
 
 **Tech Stack:** Next.js 15 App Router · React 19 · Tailwind 4(@theme + @tailwindcss/typography)· TanStack Query 5 · recharts + lightweight-charts · motion(^12,已装零启用)· react-hook-form + zod · Vitest · @playwright/test · next/font/google(Source Serif 4 + Noto Serif SC)· FastAPI 后端(:8765)
 
+## 当前执行状态（2026-07-12）
+
+本文件现在是 **Slice 0-8 实现记录与未来前端 backlog**。当前实现已切到
+`/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md`
+；其 Slice 9A-9G + mini 9H 已完成，下一步为完整 9H cron/notify，开始前仍需按
+当前源码另立 bite-sized plan。跨仓产品方向仍由 HQA
+roadmap 管理。
+
+| 事实层 | 状态 |
+|---|---|
+| Slice 0-8 | 本文件保留已交付实现和未来前端 backlog；Git/进程状态在每次交接时由命令核验，不在计划正文维护易腐 ahead/dirty 快照。 |
+| Slice 9A-9G + mini 9H | 当前跨仓计划已完成。9G 是 HQA ledger + 平台 CLI-only observation seam，没有新增数据库 migration、HTTP route、前端或 `/hermes` 卡片。 |
+| 下一步 | 完整 9H cron、prediction reconcile、weekly aggregation、notify 与 freshness；必须另立当前计划，不能从旧 P2/P3 直接续写。 |
+
+用户已授权选择/创建计划并继续实现。复审结果为旧 HQA Phase 1a-4
+**ACCEPT-AFTER-REPLAN**；v2 Slice 9A-9G + mini 9H 已完成，下一步是完整 9H，
+仍不从本文件直接续写旧 P2/P3。
+旧 P0-P4 的逐步代码模板已移入
+[归档计划](../../archive/plans/2026-07-08-frontend-redesign-hermes-integration-original-p0-p4.md)，
+不能直接照抄执行。
+
+当前审查门禁：平台 Python 全量 `1090 passed, 15 skipped`；HQA `429 passed, 2 skipped`；
+前端 Vitest 24 files / 84 tests、type-check、ESLint、scoped Ruff 通过；mini 9H 的固定
+三类产物全栈 Playwright 正向用例通过；throwaway
+PostgreSQL 的 13 个 migration / persistence / backfill / reconciliation / advisory-lock tests 通过。
+`api.generated.ts` 已从当前 OpenAPI
+确定性重生成，并由 focused contract test 覆盖 brief、paper snapshot 与 reconciliation。
+live backend/数据库、brief archive、Hermes 与 paper 页面 smoke 已验收；
+`brief-zh.png` / `hermes-desktop.png` 已在禁用 AI HOT 外网的隔离 E2E 环境生成并稳定
+复跑；改用按端口复制的临时前端工作区后，E2E 不再干扰当前 3001 服务或改写源码侧
+TypeScript 配置。上述前端、E2E 与运行栈事实是 2026-07-10 的验收快照，不是永久证明。
+
+Slice 9D 的平台合同是严格只读 `quant-system data prices` JSON seam：显式
+Futu/QFQ/1d，最多 25 个标的和 500 个含首尾日历日期，不从 sample、local、Tiingo 或
+Longbridge 回退。HQA portfolio-risk v2 使用 previous UTC date 为 `end`、`end-400 days`
+为 `start`，
+在收益计算前做 global date inner join，至少要求 60 个对齐收益；只计算逐仓相对 SPY
+的 beta 和持仓两两 correlation，不计算 aggregate beta、VaR 或阈值 verdict。这里是
+2026-07-11 的当前快照，不覆盖上面的历史交付日期。
+
 ## Global Constraints
 
 - **项目路径:** ai-quant-platform 前端在 `/Users/sunyibo/programs/ai-quant-platform/src/frontend`,后端在 `/Users/sunyibo/programs/ai-quant-platform/src/quant_system`。本计划所有前端文件路径相对 `src/frontend/`,后端相对 `src/quant_system/`。
 - **不破坏现有功能红线:** 迁移期不改现有业务 getter 语义、不改 `lib/apiClient.ts`、不改各 form 的 `useQuery/useMutation` 调用点。视觉迁移只改 `className` + JSX 结构 + 原语替换。Hermes/brief getter 必须是 read-only additive wrapper;允许读取 `/api/paper/account/snapshot` 与 `/api/paper/account/equity-curve`,但不得触发策略、回测、paper account mutation、真实券商或任何交易链路。
 - **token 演进红线:** 不重命名或删除现有 `globals.css` token 与 Material-3 兼容别名。2026-07-08 已拍板把全局底色统一到 warm near-black (`--color-bg-base #12110E`) 并新增 sidebar rail token (`--color-bg-sidebar #1C1B20`, `--color-bg-sidebar-muted #25242A`);后续视觉改动只能通过语义 token 扩展或局部 class opt-in,不能散落硬编码色值。
 - **Postgres 持久化边界:** Docker Postgres 只承载可查询、可审计、需要稳定回看的业务事实:brief issues/snapshots/sources、AI HOT daily reports、paper account ledger/current positions/snapshots/root user。大体量 backtest artifact、OHLCV 宽表、DuckDB option cache、Prediction Market JSONL/HTTP cache 暂不迁入 Postgres。
-- **paper account 安全迁移:** `PaperAccount.ledger` 是权威事件流。迁移时禁止只迁 cash/positions 当前视图;必须先 backfill ledger + current positions,再 dual-write + reconciliation,最后切 DB canonical。DB canonical 后,Postgres 不可用时 mutation fail closed,只允许读最后快照并显示 stale warning。
+- **paper account 安全迁移:** `PaperAccount.ledger` 是权威事件流。迁移时禁止只迁 cash/positions 当前视图；必须先 backfill ledger + current positions，再 dual-write + reconciliation，最后经人工运营门切 DB canonical。canonical 模式下 PostgreSQL authoritative，数据库不可用时 mutation fail closed；不得伪造“最后快照”或静默切回 file。`stale/warnings/reconciliation` 只陈述存储事实，不自动切模式。
 - **数据层同构:** 服务端走 `lib/api.ts` 的 `apiGet`(cache:no-store,60s超时,ApiEnvelope fallback),客户端走 `lib/apiClient.ts` 的 `apiRequest`(180s超时,1次重试,AbortController)。Hermes 页必须复用此模式,不新建 fetch 基建。
 - **i18n 现状:** middleware.ts 重写做 i18n(非 `[locale]` 段),`localizePath/splitLocalePath` 对任意 pathname 透明。新增 `/hermes` 无需改 `locale.ts`,只需在 Sidebar/TopBar copy 对象加 `nav.hermes` 键(en+zh)。
 - **不引入 feature flag:** 通过语义 token 与局部页面 opt-in 让新旧视觉天然同进程并存,无需 next.config flag 或 middleware 切换。中途想看旧版直接 `git revert` 页面文件。
@@ -57,7 +97,8 @@
 
 ## 已拍板的 11 个决策(Q1-Q11)
 
-本节是 2026-07-08 多子智能体评审与后续实屏反馈后的执行裁决。后续 slice0-slice7 必须以本节为准;若与下方旧 P0-P4 任务代码块冲突,以本节为准。
+本节是 2026-07-08 多子智能体评审与后续实屏反馈后的执行裁决。后续
+Slice 0-Slice 8 必须以本节为准；若与归档的旧 P0-P4 任务代码块冲突，以本节为准。
 
 - [x] **Q1【全局色温】** 全局 shell 采用 warm near-black,不是冷黑。当前已执行裁决:`--color-bg-base #12110E`,主内容区渲染 `rgb(18,17,14)`;sidebar rail 采用稍浅同主题色 `--color-bg-sidebar #1C1B20`,hover/active 使用 `--color-bg-sidebar-muted #25242A`。`/brief` 与 `/hermes` 继续使用 paper/editorial 语义 alias,但不得再把 sidebar 做成孤立冷蓝/冷灰。
 
@@ -71,7 +112,7 @@
 
 - [x] **Q6【Hermes 流式传输方式】** MVP 采用 artifact-first + polling。只有当后端返回真实 job state + `poll_url` 时才新增 `lib/hermesJobs.ts`;当前 `/api/agent/tasks` 是同步端点,不能按异步 job 使用。SSE 后置,WebSocket 不做。
 
-- [x] **Q7【总工期/执行节奏】** 当前执行方式从旧 P0-P4 线性阶段修订为 slice0-slice7:先确认现状与契约,再做 brief 持久化,再做 AI daily cache,再做 paper account DB mirror/reconciliation,最后才切 DB canonical 和继续前端全量迁移。3-4 周 MVP 只保证 `/brief` 可归档、`/hermes` 有入口、关键业务事实可回看;全量 redesign、options cluster、position-map、物理删除属于 follow-on。
+- [x] **Q7【总工期/执行节奏】** 当前执行方式从旧 P0-P4 线性阶段修订为 Slice 0-Slice 8：先确认现状与契约，再做 brief 持久化、AI daily cache、paper account DB mirror/canonical，随后交付 `/brief` 归档入口与 `/hermes` 只读骨架。全量 redesign、options cluster、position-map、旧页面物理删除属于 follow-on，必须重新展开为后续 slice。
 
 - [x] **Q8【视觉回归基线】** 引入 Playwright screenshot,但 staged/scoped:先覆盖 `/brief`、shell/sidebar、`/hermes` 与 6-8 个稳定路由,对时间戳、动画、动态图表做 mask 或 reduced-motion。不把 22 页 golden master 作为第一阶段硬门禁;已迁页面才升级为硬 gate。当前已用浏览器确认 `/zh/brief` 主区/侧栏实际色值与 token 一致。
 
@@ -88,7 +129,7 @@
 - [x] **DP3【日报 URL】** `/brief` 是当天动态预览;`/brief/{public_id}` 是不可变归档,例如 `brf_20260708_7k3f2`。分享 token 只做 bearer secret,数据库只存 `sha256(token)`,支持 rotate/revoke。
 - [x] **DP4【快照不可变】** `brief_snapshots` append-only,修订生成 `version + 1`;旧版本保留。前端渲染归档页只读 latest snapshot,不得现场重新聚合 API 替换历史。
 - [x] **DP5【paper account】** `PaperAccount.ledger` 是事实源。先从 `account.json` 和 `archive/*.json` backfill,再 dual-write DB + 文件并 reconciliation,最后切 DB canonical。切换前不得删除文件备份。
-- [x] **DP6【失败模式】** DB mirror 阶段数据库不可用时继续文件路径并记录 warning;DB canonical 阶段数据库不可用时所有 mutation fail closed,避免再次出现账户状态被局部文件重置污染。
+- [x] **DP6【失败模式】** DB mirror 阶段数据库不可用时继续文件路径并记录 warning；DB canonical 阶段数据库不可用时 mutation fail closed，读失败显式返回错误，不伪造 file fallback。
 
 ---
 
@@ -141,14 +182,15 @@
 | `src/quant_system/brief/models.py` | 定义 `BriefIssue`, `BriefSnapshot`, `BriefSourceRef`, `BriefGenerateRequest` 等 Pydantic/domain model |
 | `src/quant_system/brief/repository.py` | Postgres 读写 brief issue/snapshot/sources;DB disabled 时返回 `None` 或明确 unavailable |
 | `src/quant_system/brief/service.py` | 聚合当前 live facts 生成 deterministic brief payload;负责 `public_id` 与 token hash 生成 |
-| `src/quant_system/api/schemas/brief.py` | FastAPI response/request schema: generate/by-id 已落地;latest/live 留给 Slice 7 |
-| `src/quant_system/api/routes/brief.py` | 当前新增 `POST /api/brief/issues/generate` 与 `GET /api/brief/issues/{public_id}`;`/api/brief/live` 和 `/api/brief/issues/latest` 留给 Slice 7 |
+| `src/quant_system/api/schemas/brief.py` | FastAPI generate/latest/by-id response/request schema |
+| `src/quant_system/api/routes/brief.py` | `POST /api/brief/issues/generate`、`GET /api/brief/issues/latest`、`GET /api/brief/issues/{public_id}` |
 | `src/quant_system/news/daily_report_repository.py` | `GET /api/news/aihot/daily` 成功后写 `ai_news_daily_reports`,失败时可读缓存并带 warning |
-| `src/quant_system/execution/account_repository.py` | 抽象 paper account repository contract,把 File/Postgres/DualWrite 三种实现的接口固定下来 |
-| `src/quant_system/execution/account_repository_factory.py` | API 与 CLI 共用的 paper account repository factory;Slice 5 中 `mirror` 双写,`canonical` 暂回落文件并记录 warning |
+| `src/quant_system/execution/account_repository.py` | repository contract + 结构化 reconciliation result/difference schema |
+| `src/quant_system/execution/account_repository_factory.py` | API/CLI/operations 共用 factory；精确选择 `file`/`mirror`/`canonical`，不静默回落 |
 | `src/quant_system/execution/account_postgres_repository.py` | Postgres paper account mirror/canonical 实现,按 ledger 写入并物化 current positions |
 | `src/quant_system/execution/account_dual_write_repository.py` | mirror 阶段先写文件、再 best-effort 写 DB;DB 失败不改变 response,但记录 warning log |
-| `src/quant_system/execution/account_backfill.py` | 一次性 backfill: `account.json` + `archive/*.json` → account/ledger/current positions/snapshots |
+| `src/quant_system/execution/account_backfill.py` | 显式单文件 backfill：调用方提供一个 account/archive JSON → account/ledger/current positions/snapshots |
+| `src/quant_system/execution/account_storage.py` | file repository；集中校验 account ID，并提供只读 `not_applicable` reconciliation |
 | `src/frontend/app/brief/[publicId]/page.tsx` | 渲染已归档每日晨报 `/brief/{public_id}` |
 | `src/frontend/lib/briefArchive.ts` | 前端归档 brief getter 类型与 normalize 工具,复用 `lib/api.ts` 的 fetch 模式 |
 | `tests/test_api_brief_persistence.py` | 后端 brief 归档/读取/不可变版本测试 |
@@ -166,7 +208,7 @@
 | `src/quant_system/api/routes/news.py` | `aihot_daily` 成功时写 `ai_news_daily_reports`;upstream 失败时尝试按 date 读缓存 |
 | `src/quant_system/api/routes/paper.py` | 已把 account mutation/read helper 接到共用 `PaperAccountRepository` factory;mirror 阶段外部 response 不变 |
 | `src/quant_system/cli.py` | paper account rebalance/show 与 strategy operations 调度路径共用 repository factory,避免 CLI 写入绕过 mirror |
-| `src/quant_system/api/schemas/paper.py` | 如需暴露 `storage_mode` / `stale` / `reconciliation` warning,只 additive 新增 nullable 字段 |
+| `src/quant_system/api/schemas/paper.py` | additive 暴露 `storage_mode` / `stale` / `warnings` / `reconciliation` |
 | `src/frontend/app/brief/page.tsx` | `/brief` 保持当天动态预览,新增归档入口/链接;真实数据缺失时显示 stale/source warning |
 | `src/frontend/lib/api.ts` | 新增 read-only brief archive getter: latest/byPublicId/generate;不改现有 getter 语义 |
 | `tests/test_api_response_models.py` | 加 brief endpoints schema contract;paper response 字段 additive 更新 |
@@ -184,9 +226,11 @@
 
 ---
 
-## 2026-07-08 权威执行节奏(Slice0-Slice7)
+## 2026-07-08 权威执行节奏（Slice 0-Slice 8）
 
-> 本节是当前执行路线。下方旧 P0-P4 保留为前端设计 backlog 与历史细节,但真正开工按 slice0-slice7 推进。每个 slice 完成后必须跑本节列出的验证命令并单独提交;共享文件(`globals.css`, `lib/api.ts`, `paper.py`, `settings.py`)不得并行写。
+> 本节是当前执行路线。旧 P0-P4 已移入归档，只保留设计素材；真正开工按
+> Slice 0-Slice 8 和后续明确新增的 slice 推进。每个 slice 完成后必须跑本节列出的
+> 验证命令；共享文件（`globals.css`、`lib/api.ts`、`paper.py`、`settings.py`）不得并行写。
 
 ### Slice 0 — 现状锁定与计划同步
 
@@ -197,7 +241,7 @@
 - Modify: `src/frontend/lib/design-tokens.test.ts`
 - Read-only verify: `data/api_runs/paper_account/default/account.json`, `data/api_runs/paper_account/default/archive/*.json`
 
-- [ ] **Step 1: 锁定当前全局色温测试**
+- [x] **Step 1: 锁定当前全局色温测试**
 
 确保 `src/frontend/lib/design-tokens.test.ts` 包含以下断言:
 
@@ -218,7 +262,7 @@ describe("editorial design tokens", () => {
 });
 ```
 
-- [ ] **Step 2: 运行前端契约**
+- [x] **Step 2: 运行前端契约**
 
 Run:
 ```bash
@@ -235,7 +279,7 @@ tsc --noEmit exits 0
 eslint exits 0
 ```
 
-- [ ] **Step 3: 记录 AAPL 现状为迁移输入,不修改账户文件**
+- [x] **Step 3: 记录 AAPL 现状为迁移输入,不修改账户文件**
 
 Run:
 ```bash
@@ -250,7 +294,7 @@ current account shows the active mutable file state
 archive files still contain historical snapshots used for backfill
 ```
 
-- [ ] **Step 4: 提交计划同步**
+- [x] **Step 4: 提交计划同步** — 由 2026-07-08 的 plan/foundation commits 覆盖。
 
 ```bash
 cd /Users/sunyibo/programs/ai-quant-platform
@@ -262,10 +306,10 @@ git commit -m "docs(frontend): align Hermes redesign plan with persistence slice
 
 **Goal:** 建 Postgres 表,让每日晨报和 AI HOT daily report 有稳定、可查询、可回看的存储面。
 
-**Status 2026-07-08:** Slice 1 schema foundation 已完成,但当前 shell 未配置
-`QS_TEST_DATABASE_URL`,所以 PostgreSQL integration tests 只做了 opt-in skip,未对用户
-当前 Docker DB 执行 live migration。实际 SQL 以
-`scripts/sql/003_app_users_brief_ai_reports.sql` 为准;下方保留执行摘要,不再以内联
+**Status 2026-07-10:** Slice 1 schema foundation 已完成。Migrations 003/004 已在
+throwaway `quantplatform_codex_tmp` 通过当前 13 个 PostgreSQL tests，并确认 11 张业务表
+存在；live 8765 也已重启并把两份 migration 应用到 `quantplatform`。实际 SQL 以
+`scripts/sql/003_app_users_brief_ai_reports.sql` 为准；下方保留执行摘要，不再以内联
 SQL 草稿作为权威。
 
 **Files:**
@@ -311,7 +355,11 @@ ruff exits 0
 diff check exits 0
 ```
 
-- [ ] **Step 4: 如果 Docker DB 已启用,执行迁移并核对表**
+- [x] **Step 4: 重启 live backend，执行 auto-migrate 并核对 live 表**
+
+2026-07-10 已备份 live DB 后重启 8765；health 显示 database reachable，live
+`quantplatform` 已确认 003/004 的 11 张目标表真实存在。该证据与 throwaway DB 测试
+分开记录。
 
 Run:
 ```bash
@@ -341,7 +389,7 @@ Expected:
 [('ai_news_daily_reports',), ('app_users',), ('brief_issues',), ('brief_snapshot_sources',), ('brief_snapshots',)]
 ```
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交** — 已由 `e9b7389` 合并交付 Slice 1-Slice 3。
 
 ```bash
 git add scripts/sql/003_app_users_brief_ai_reports.sql tests/test_api_brief_persistence.py
@@ -355,7 +403,7 @@ git commit -m "feat(db): add brief and AI daily report persistence schema"
 **Status 2026-07-08:** Slice 2 已完成后端 repository/API 与前端归档页最小闭环。默认
 测试环境数据库关闭时不会伪造归档;真实归档只从 Postgres snapshot 读取。当前已实现
 `POST /api/brief/issues/generate` 与 `GET /api/brief/issues/{public_id}`;`/api/brief/live`、
-`/api/brief/issues/latest` 与 `/brief` 上的生成入口仍留给 Slice 7。
+`/api/brief/issues/latest` 与 `/brief` 上的归档入口当时留给 Slice 7，现已交付。
 
 **Files:**
 - Created: `src/quant_system/brief/models.py`
@@ -562,7 +610,7 @@ frontend briefArchive: 6 passed
 frontend type-check/lint exit 0
 ```
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交** — 已由 `e9b7389` 合并交付 Slice 1-Slice 3。
 
 ```bash
 git add src/quant_system/brief src/quant_system/api/schemas/brief.py src/quant_system/api/routes/brief.py src/quant_system/api/server.py tests/test_api_brief_persistence.py tests/test_api_response_models.py src/frontend/lib/api.ts src/frontend/lib/briefArchive.ts src/frontend/lib/briefArchive.test.ts src/frontend/app/brief/[publicId]/page.tsx
@@ -731,7 +779,7 @@ Expected:
 ruff exits 0
 ```
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交** — 已由 `e9b7389` 合并交付 Slice 1-Slice 3。
 
 ```bash
 git add src/quant_system/news/daily_report_repository.py src/quant_system/api/routes/news.py tests/test_news_daily_report_repository.py
@@ -749,6 +797,10 @@ JSON 文件并写入 Postgres mirror。ledger mirror 采用事务内整表替换
 遗留旧 entry 或 seq 冲突；pending/current positions 是 current-state mirror；position
 snapshots 是 append-only audit points。Archive 批量扫描/backfill runner 与 API dual-write
 留给 Slice 5+。
+
+2026-07-10 补充：migration 004 已在 throwaway DB 与 003 一起实测，也已由重启后的
+8765 应用到 live 库；现有一个 account 已显式 backfill，mirror/canonical 对账均为
+`in_sync`。paper mode 仍刻意保持 `file`，没有自动切换事实源。
 
 **Files:**
 - Create: `scripts/sql/004_paper_account_tables.sql`
@@ -853,8 +905,8 @@ CREATE TABLE IF NOT EXISTS quant_system.paper_position_snapshot_rows (
     PRIMARY KEY (snapshot_id, symbol)
 );
 
-CREATE INDEX IF NOT EXISTS idx_paper_ledger_account_seq
-    ON quant_system.paper_account_ledger (account_id, seq);
+-- UNIQUE (account_id, seq) 已提供同列 B-tree；当前 migration 会删除旧重复索引。
+DROP INDEX IF EXISTS quant_system.idx_paper_ledger_account_seq;
 
 CREATE INDEX IF NOT EXISTS idx_paper_snapshots_account_time
     ON quant_system.paper_position_snapshots (account_id, snapshot_at DESC);
@@ -905,7 +957,7 @@ All checks passed
 diff check passed
 ```
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交** — commit `f56dbf4`。
 
 ```bash
 git add scripts/sql/004_paper_account_tables.sql src/quant_system/execution/account_backfill.py tests/test_paper_account_postgres_repository.py
@@ -916,11 +968,11 @@ git commit -m "feat(paper): add Postgres schema and backfill path for paper acco
 
 **Goal:** API mutation 仍以文件为事实源,同时写 DB mirror 并暴露 reconciliation 差异,不改变外部 response contract。
 
-**Status 2026-07-09:** 已完成。实现时根据 code review 将 factory 下沉到
-`execution/account_repository_factory.py`,使 API 与 CLI/调度账户写路径共用同一 file/mirror
-选择逻辑。Slice 5 中 `canonical` 是保留配置:settings 可解析该字面量,但 factory 暂回落
-`PaperAccountStorage` 并记录 warning,避免在 Slice 6 fail-closed contract 落地前把合法配置导向
-`PostgresPaperAccountRepository.load/load_or_open/reset` 的 `NotImplementedError`。
+**Status 2026-07-10:** commit `322879b` 已交付 file-authoritative dual-write mirror。
+当前 code-review 工作树补齐结构化 reconciliation：mirror 用 file account 对比
+PostgreSQL raw/materialized state，file 返回 `not_applicable`，差异以 summary hash、typed
+differences 和 snapshot freshness 表达。API additive 返回
+`storage_mode/stale/warnings/reconciliation`。这些 review 修复尚未提交。
 
 **Files:**
 - Create: `src/quant_system/execution/account_repository.py`
@@ -1010,7 +1062,8 @@ Review 后追加约束:
 - DB mirror 失败只记录 `last_warning` 与 warning log,不改变外部 response contract。
 - 在线 mirror 的 position snapshot 使用 API/runner 当时传入的 quotes;一次性 backfill 继续默认用
   account avg cost。
-- `canonical` 的真实 DB read/reset/fail-closed 仍属于 Slice 6。
+- `canonical` 的真实 DB read/reset/fail-closed 由 Slice 6 交付；不要把本段 Slice 5
+  的中间态代码块当作当前 factory 实现。
 
 - [x] **Step 6: 运行验证**
 
@@ -1030,7 +1083,7 @@ ruff exits 0
 diff check exits 0
 ```
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交** — commit `322879b`。
 
 ```bash
 git add src/quant_system/config/settings.py src/quant_system/api/routes/paper.py src/quant_system/cli.py src/quant_system/execution/account_repository.py src/quant_system/execution/account_repository_factory.py src/quant_system/execution/account_postgres_repository.py src/quant_system/execution/account_dual_write_repository.py src/quant_system/execution/account_backfill.py tests/test_settings.py tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py tests/test_cli.py
@@ -1039,12 +1092,22 @@ git commit -m "feat(paper): mirror paper account mutations to Postgres"
 
 ### Slice 6 — Paper account DB canonical + fail-closed mutation
 
-**Goal:** 在 reconciliation 连续通过后,把 paper account 的事实源切到 DB;文件只做 export/backup。
+**Goal:** 实现 DB-authoritative canonical 能力与 fail-closed contract。真正把运行环境
+切到 canonical 是独立运营动作，必须在 live migration/backfill/reconciliation 连续通过后执行。
+
+**Status 2026-07-10:** canonical repository 能力已由本地 commit `c78140b` 实现；
+`@Code Reviewer` 后续补齐 account ID 校验、缺账户 bootstrap fail-closed、锁内业务异常
+原样传播、纯读取不修复文件，以及覆盖 account/ledger/positions/pending/latest snapshot
+的结构化 reconciliation。live 账户 backfill 和 mirror/canonical smoke 已通过，但配置
+仍是默认 `file`；因此只能宣称能力已验收，不能宣称运行事实源已切到 canonical。
 
 **Slice 6 notes from Slice 5 review:**
 - `PostgresPaperAccountRepository.load/load_or_open/reset` 必须成为 DB authoritative,且 DB 不可用时 mutation fail closed。
-- response 字段只能 additive (`storage_mode`/`stale`/`warnings`),旧前端必须可忽略。
-- 切换前定义 reconciliation criteria:ledger count/seq/current positions/pending orders/snapshot freshness 必须连续通过。
+- response 字段只能 additive（`storage_mode`/`stale`/`warnings`/`reconciliation`），旧前端必须可忽略。
+- 切换前定义 reconciliation criteria：raw account、账户物化列、完整 ledger 物化
+  字段/row raw/seq、current positions、pending orders、latest snapshot state/integrity/
+  provenance/freshness 必须连续通过；canonical 缺账户只能显式 backfill，普通 GET
+  不得 bootstrap。
 - 决定 CLI `quant-system paper rebalance` 是否也要持久化 rebalance 当次 prices。Slice 5 已覆盖 mirror,
   但该 CLI save 未传 prices,DB snapshot 会退回 avg_cost；API 与 strategy operations runner 的在线保存已传入
   quotes。
@@ -1091,6 +1154,7 @@ if settings.paper_account.db_mode == "canonical" and not repository.available_fo
 storage_mode: Literal["file", "mirror", "canonical"] | None = None
 stale: bool = False
 warnings: list[str] = Field(default_factory=list)
+reconciliation: PaperAccountReconciliationResponse | None = None
 ```
 
 旧前端忽略新字段,不破坏 contract。
@@ -1119,6 +1183,11 @@ git commit -m "feat(paper): make Postgres canonical mode fail closed"
 ### Slice 7 — Frontend archived brief integration + visual baseline
 
 **Goal:** 让用户从 `/brief` 进入已归档的 `/brief/{public_id}`,并用视觉测试锁定 direction B 日报布局、链接出处、侧栏底色协调。
+
+**Status 2026-07-10:** 归档入口代码已由 `fc85598` 提交；重启后的 current backend
+已生成并读取 `brf_20260710_3yz4rm`，浏览器完成 `/zh/brief` → archive、`/zh/hermes`
+和 `/zh/paper-trading` smoke，未见 console warning/error。`brief-zh.png` 已在
+`QS_AIHOT_ENABLED=false` 的隔离 Playwright 环境生成并复跑通过。
 
 **Files:**
 - Modify: `src/frontend/app/brief/page.tsx`
@@ -1168,7 +1237,11 @@ test("visual baseline: zh brief", async ({ page }) => {
 });
 ```
 
-- [x] **Step 4: 运行验证**
+- [x] **Step 4: 完成 Playwright/runtime 验收**
+
+Vitest/type-check/lint 已通过；brief archive、Hermes baseline 与 brief baseline 已在
+隔离 backend/frontend 上通过（3 passed）。Playwright 后端显式禁用 AI HOT，避免
+browser test 触发真实外网。
 
 Run:
 ```bash
@@ -1201,1111 +1274,127 @@ git commit -m "feat(frontend): link daily brief to archived snapshots"
 | 2 | `/api/brief/*` + `/brief/{public_id}` 可用 | `pytest tests/test_api_brief_persistence.py tests/test_api_response_models.py -q`, `npx vitest run lib/briefArchive.test.ts` |
 | 3 | AI HOT daily report cache 可回放 | `pytest tests/test_news_daily_report_repository.py tests/test_api_news_aihot.py -q` |
 | 4 | paper account ledger/positions 可 backfill 到 DB mirror | `pytest tests/test_paper_account_postgres_repository.py -q`, opt-in `QS_TEST_DATABASE_URL=... pytest tests/test_paper_account_postgres_repository.py -q -m pg` |
-| 5 | paper account API/CLI mutation 双写 DB mirror 且 response 不变 | `pytest tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py -q`, `PYTHONPATH=. pytest tests/test_cli.py tests/test_api_paper_strategy_sleeves.py -q` |
-| 6 | DB canonical mutation fail closed | `pytest tests/test_api_paper_account.py tests/test_api_response_models.py tests/test_paper_account_postgres_repository.py -q` |
+| 5 | paper account API/CLI mutation 双写 DB mirror，结构化 reconciliation 可发现漂移 | `pytest tests/test_api_paper_account.py tests/test_paper_account_postgres_repository.py -q`, opt-in PG tests |
+| 6 | DB canonical authoritative + mutation fail closed；运行环境仍需单独切换 | `pytest tests/test_api_paper_account.py tests/test_api_response_models.py tests/test_paper_account_postgres_repository.py -q` |
 | 7 | `/brief` 可跳归档,视觉基线覆盖日报 | `PW_E2E=1 npx playwright test tests/e2e/brief-archive.spec.ts tests/e2e/visual.spec.ts` |
+| 8 | `/hermes` 只读骨架 + Sidebar/TopBar 完全由 `navConfig` 驱动 | `pytest tests/test_frontend_topbar_navigation_contract.py tests/test_frontend_terminal_surface_contract.py -q`, `npx vitest run lib/navConfig.test.ts`, `npm run type-check`, `npm run lint` |
+| 9A | strategy GET/status 严格只读；crash recovery 显式分缝 | 见 HQA `2026-07-10-phase-1a-4-v2.md`；`pytest tests/test_paper_strategy_operations.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py -q` |
+| 9B | API/CLI/HQA 共用统一 paper snapshot read-model | 见 HQA `2026-07-10-phase-1a-4-v2.md`；`pytest tests/test_paper_account_snapshot.py tests/test_cli.py -q` |
+| 9C | HQA 只读当前 snapshot 的敞口/集中度 artifact | 见 HQA `2026-07-10-phase-1a-4-v2.md` 与 HQA `tests/test_portfolio_risk.py` |
+| 9D | 严格 Futu/QFQ/1d 历史价格 seam + portfolio-risk v2 | `pytest tests/test_price_history.py tests/test_cli_price_history.py -q`；HQA `tests/test_historical_risk.py tests/test_portfolio_risk.py` |
+| 9E | HQA 并发安全 prediction ledger；平台代码/schema/前端无改动 | 见 HQA active v2 plan；HQA `tests/test_predictions.py tests/test_prediction_cli.py tests/test_install.py` |
+| 9F | HQA proposal-only market-foresight；严格 Futu/QFQ evidence、原子/幂等发布 | 见 HQA `2026-07-12-slice-9f-mini-9h.md` 与 `tests/test_market_foresight.py` |
+| mini 9H | HQA versioned feed → `GET /api/hermes/artifacts` → `/hermes` 真实只读卡片 | `pytest tests/test_api_hermes_artifacts.py tests/test_api_response_models.py -q`；前端 Vitest/type-check/lint；live browser smoke |
+| 9G | HQA stable signal/decision/action/coverage ledger + 平台 bounded observation CLI；无 DB/API/UI | 见 HQA `2026-07-12-slice-9g-opportunity-ledger.md`；平台 `pytest tests/test_paper_strategy_observations.py tests/test_cli.py -q` |
+
+### Slice 8 — Hermes first-class shell + navConfig chrome
+
+**Goal:** 把 Hermes 做成一等公民只读工作台骨架,并把 Sidebar/TopBar 完全接到 `lib/navConfig.ts` SSOT。保留 factor-lab/agent-studio 入口;不启用 `POST /api/agent/tasks`、不复活平台侧 LLM runner、不提交 paper/live 交易动作。
+
+**Status 2026-07-10 historical:** 代码当时已落地并本地验证通过，但尚未 commit；
+当前发布状态不由这一历史 checkbox 维护。
+
+**Files:**
+- Create: `src/frontend/app/hermes/page.tsx`
+- Create: `src/frontend/app/hermes/loading.tsx`
+- Create: `src/frontend/components/hermes/ComposerDock.tsx`
+- Modify: `src/frontend/components/hermes/index.ts`
+- Modify: `src/frontend/components/Sidebar.tsx`
+- Modify: `src/frontend/components/TopBar.tsx`
+- Modify: `src/frontend/app/page.tsx` (dashboard quick action → `/hermes`)
+- Modify: `tests/test_frontend_topbar_navigation_contract.py`
+- Modify: `tests/test_frontend_terminal_surface_contract.py`
+- Modify: `src/frontend/tests/e2e/navigation-layout.spec.ts`
+- Modify: `src/frontend/tests/e2e/visual.spec.ts` (`hermes-desktop.png` 已生成并稳定复跑)
+
+- [x] **Step 1: Sidebar/TopBar 改为 `navConfig` 驱动**
+  - `Sidebar` / `TopBar` 从 `navSections` + `isVisibleOnSurface(..., "sidebar"|"mobile")` 映射
+  - labels 仍用本地 en/zh copy;routes/icons 不硬编码列表
+  - TopBar Terminal 图标 → `/hermes`, `aria-label={text.openHermes}`
+  - Sidebar/mobile 链接保留 `aria-current="page"`
+
+- [x] **Step 2: `/hermes` 只读 RSC 骨架**
+  - server component 调 `getAgentCandidates()` 读面
+  - safety banner(paper-only)
+  - candidates rail + empty stream placeholders + stream tokens
+  - `ComposerDock` 默认 `disabled` + `allowSubmit={false}`;`preventDefault`;无 `fetch`/`apiPost`/`AgentTaskForm`/`/api/agent/tasks`
+
+- [x] **Step 3: contract / unit / lint 门禁**
+  - `pytest tests/test_frontend_topbar_navigation_contract.py tests/test_frontend_terminal_surface_contract.py` → 11 passed
+  - `npx vitest run lib/navConfig.test.ts` → 8 passed
+  - `npm run lint` → clean(已去掉 form 上非法 `aria-disabled`)
+  - `npm run type-check` → type check OK(沙箱下 `tsconfig.tsbuildinfo` 写失败可忽略)
+
+- [ ] **Step 4: 提交（历史验收时尚未执行；当前状态查 git）**
+  ```bash
+  git add \
+    src/frontend/app/hermes/ \
+    src/frontend/components/hermes/ \
+    src/frontend/components/Sidebar.tsx \
+    src/frontend/components/TopBar.tsx \
+    src/frontend/app/page.tsx \
+    src/frontend/tests/e2e/navigation-layout.spec.ts \
+    src/frontend/tests/e2e/visual.spec.ts \
+    tests/test_frontend_topbar_navigation_contract.py \
+    tests/test_frontend_terminal_surface_contract.py \
+    docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md
+  git commit -m "feat(frontend): add Hermes workbench shell driven by navConfig"
+  ```
+
+**Out of scope / residuals:**
+- 不 POST agent tasks;不启用 composer submit
+- 不删除/重定向 factor-lab/agent-studio(parity 后才做)
+- Playwright E2E 需本地前端服务；本地隔离端口复跑已通过
 
 ---
 
-## 分阶段计划
-
-> 历史说明:下方 P0-P4 是原前端渐进 redesign 计划的详细 backlog。2026-07-08 之后的实际开工顺序以 slice0-slice7 为准;P0-P4 中与当前 token/brief/persistence 裁决冲突的代码块只作为历史参考,不得照抄执行。
-
-### Phase P0 · Week 1 — 设计地基(token + 字体 + chartTheme + navConfig + 视觉基线)
-
-**目标:** 兼容式扩展 token 层、字体、图表主题、导航配置,不触碰任何业务 getter 或 form hook,建立新旧视觉并存的物理基础 + 锁定当前视觉基线。
-
-> **P0 执行前修正:** 当前 `src/frontend/vitest.config.ts` 的 `include` 仅有 `lib/**/*.test.ts`。P0 新增 Vitest 测试统一放在 `lib/*.test.ts`,确保 `npx vitest run` 默认会执行到。
-
-**Scope:**
-- `globals.css` @theme 新增 editorial + hermes 语义层,并保留现有 token 名称与兼容别名
-- `layout.tsx` 加 Source Serif 4 + Noto Serif SC 字体
-- 建 `lib/navConfig.ts` 单一导航数据源(不删 factor-lab/agent-studio 项,仅加 Hermes)
-- 建 `lib/chartTokens.ts` 两套图表主题
-- 3 个图表组件 refactor(签名不变,theme 参数 optional)
-- 建 `components/editorial/` + `components/hermes/` 空目录占位
-- 建 `tests/e2e/visual.spec.ts` scoped 截图基线(先 6-8 个稳定/高风险路由,不做 22 页硬门禁)
-- contract 测试只加不删(P0 只新增「新原语目录存在」断言;`/hermes` TopBar/Sidebar 导航断言等 P1 接入 navConfig 后再加)
-
-**Deliverables:**
-- `globals.css` 扩展后的 @theme(editorial + hermes 语义层,现有 token 0 改动)
-- `lib/navConfig.ts` 单一导航数据源
-- `lib/chartTokens.ts` 两套图表主题常量
-- 3 个图表组件 refactor 签名不变
-- `tests/e2e/visual.spec.ts` scoped 截图基线
-- contract 测试新增目录断言不删旧
-
-**Dependencies:** 无(P0 是一切起点)
-
-**Validation:**
-- `npm run type-check` + `lint` + `vitest run` 全绿
-- `npm run build` 全绿
-- `PW_E2E=1 npm run test:e2e` 全绿(含 scoped visual.spec 首次 capture)
-- `pytest tests/test_frontend_terminal_surface_contract.py tests/test_frontend_topbar_navigation_contract.py` 全绿(旧断言未改,仅新增)
-- 手动目检 22 个现有页面确认未出现布局、对比度、可读性回归;注意 2026-07-08 已统一 warm base/sidebar,不再要求冷黑色值不变
-- 浏览器 DevTools `:root` 确认新 token 可见
-- 访问临时 `/dev/preview`(若有)确认 editorial/hermes 组件渲染
-
-#### Task P0-1: globals.css 扩展 editorial + hermes token 层
-
-**Files:**
-- Modify: `app/globals.css`(在现有 @theme 块末尾、compat aliases 之前插入新 token)
-
-**Interfaces:**
-- Produces: `--color-paper-ink #14130F`、`--color-paper-surface #1A1916`、`--color-paper-surface-muted #222019`、`--color-ink #EDE7DA`、`--color-ink-secondary #A39E92`、`--color-editorial-rule #3A3733`、`--color-editorial-accent #7B8FD0`、`--color-editorial-up #2E9E6A`、`--color-editorial-down #C84A52`、`--color-hermes #9085E9`、`--color-hermes-glow rgba(144,133,233,.4)`、`--color-stream-bg #17171C`、`--color-stream-surface #1F1F27`、`--color-stream-surface-2 #262631`、`--font-editorial-serif`、`--spacing-rail-width 208px`、`--spacing-right-panel 340px`、`--spacing-stream-max 720px`、`--spacing-editorial-column 1120px`、`--radius-editorial 2px`
-
-- [ ] **Step 1: 写失败测试 — 验证新 token 存在于 :root**
-
-新建 `lib/design-tokens.test.ts`:
-
-```typescript
-import { describe, it, expect } from 'vitest';
-
-// P0-1: 验证 editorial + hermes token 层已加入 globals.css @theme
-// 这些 token 必须出现在编译后的 CSS :root 里(Tailwind 4 @theme 会输出到 :root)
-describe('editorial + hermes design tokens', () => {
-  const expectedTokens = [
-    '--color-paper-ink',
-    '--color-paper-surface',
-    '--color-paper-surface-muted',
-    '--color-ink',
-    '--color-ink-secondary',
-    '--color-editorial-rule',
-    '--color-editorial-accent',
-    '--color-editorial-up',
-    '--color-editorial-down',
-    '--color-hermes',
-    '--color-hermes-glow',
-    '--color-stream-bg',
-    '--color-stream-surface',
-    '--color-stream-surface-2',
-    '--font-editorial-serif',
-    '--spacing-rail-width',
-    '--spacing-right-panel',
-    '--spacing-stream-max',
-    '--spacing-editorial-column',
-    '--radius-editorial',
-  ];
-
-  it.each(expectedTokens)('%s is defined in globals.css @theme', async (token) => {
-    const css = await import('fs').then(fs =>
-      fs.readFileSync('app/globals.css', 'utf-8')
-    );
-    expect(css).toContain(`--${token.replace('--', '')}:`);
-  });
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `cd src/frontend && npx vitest run lib/design-tokens.test.ts`
-Expected: FAIL — 所有 token 未找到(globals.css 尚未新增)
-
-- [ ] **Step 3: 在 globals.css @theme 块插入 editorial + hermes token**
-
-在 `app/globals.css` 的 `@theme { ... }` 块内,在现有 `--color-data-mono: #D1D4DC;` 行之后、`/* ---- Compat aliases ----` 注释之前,插入:
-
-```css
-  /* ---- Editorial layer (B 暗色编辑式: 暖灰近黑 + 象牙暖白) ----
-     仅在 B/C 页面(dashboard 晨报/Hermes/docs/ai-news)opt-in 引用。
-     操作型页面继续用上面的 QUANTUM_CORE 冷黑 token。两套 up/down 按页面角色分套不复用。 */
-  --color-paper-ink: #14130F;            /* 暖灰近黑底,近黑微暖不偏棕 */
-  --color-paper-surface: #1A1916;        /* 编辑卡片/印刷图版底 */
-  --color-paper-surface-muted: #222019;  /* figure 底/嵌套 */
-  --color-ink: #EDE7DA;                  /* 象牙暖白文字,替代冷白 #E0E3EB */
-  --color-ink-secondary: #A39E92;        /* 暖灰次要文字 */
-  --color-editorial-rule: #3A3733;       /* 暖灰规则线,替代冷灰 #2A2A2A */
-  --color-editorial-accent: #7B8FD0;     /* 编辑蓝紫(section rule/figure 边框/数据线) */
-  --color-editorial-up: #2E9E6A;         /* 编辑哑光涨 */
-  --color-editorial-down: #C84A52;       /* 编辑哑光跌 */
-
-  /* ---- Hermes layer (C 对话流: 冷紫品牌色) ----
-     hermes 紫专用于 Hermes 主体(球/头像/run 态/send/链接)。 */
-  --color-hermes: #9085E9;
-  --color-hermes-glow: rgba(144, 133, 233, 0.4);
-  --color-stream-bg: #17171C;
-  --color-stream-surface: #1F1F27;
-  --color-stream-surface-2: #262631;
-
-  /* ---- Editorial + Hermes layout tokens ---- */
-  --spacing-rail-width: 208px;        /* C 对话流左轨宽度 */
-  --spacing-right-panel: 340px;       /* C 对话流右栏宽度 */
-  --spacing-stream-max: 720px;        /* C 主流 max-width */
-  --spacing-editorial-column: 1120px; /* B 晨报版心 max-width */
-  --radius-editorial: 2px;            /* 印刷直角感,区别于 primitives 的 rounded-lg 8px */
-```
-
-在 `@theme` 块内 `--font-code-sm: ...` 行之后,加字体 token(实际字体变量在 P0-2 由 next/font 注入,这里先声明语义名):
-
-```css
-  --font-editorial-serif: var(--font-serif), var(--font-serif-sc), Georgia, 'Songti SC', serif;
-```
-
-- [ ] **Step 4: 运行测试确认通过**
-
-Run: `cd src/frontend && npx vitest run lib/design-tokens.test.ts`
-Expected: PASS — 20 个 token 全部找到
-
-- [ ] **Step 5: 手动确认 22 个现有页面无布局/可读性回归**
-
-Run: `cd src/frontend && npm run build && npm run dev`,浏览器打开 `localhost:3001` 目检 dashboard/backtest/options-screener 等 3-5 页,确认 warm base/sidebar 改动没有造成布局、对比度、可读性回归。
-
-- [ ] **Step 6: 提交**
-
-```bash
-cd src/frontend
-git add app/globals.css lib/design-tokens.test.ts
-git commit -m "feat(frontend): add editorial + hermes design token layers (pure additive)
-
-新增 B 暗色编辑式(暖灰近黑)与 C Hermes 对话流(冷紫)两层语义 token,
-现有 QUANTUM_CORE token 名称与兼容别名保留。22 个旧页无布局/可读性回归。
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
-#### Task P0-2: layout.tsx 加 Source Serif 4 + Noto Serif SC 字体
-
-**Files:**
-- Modify: `app/layout.tsx`(第2行 next/font/google import 区;第29行 html className)
-
-**Interfaces:**
-- Produces: `--font-serif` / `--font-serif-sc` CSS 变量(由 next/font 注入到 html className),供 `--font-editorial-serif` 引用
-- Consumes: P0-1 的 `--font-editorial-serif` token,其字体栈必须包含 `var(--font-serif)` 与 `var(--font-serif-sc)`
-
-- [ ] **Step 1: 写失败测试 — 验证 Source Serif 4 + Noto Serif SC 已加载**
-
-新建 `lib/editorial-font.test.ts`:
-
-```typescript
-import { describe, it, expect } from 'vitest';
-import * as fs from 'fs';
-
-describe('editorial serif font loading', () => {
-  it('layout.tsx imports Source_Serif_4 and Noto_Serif_SC via next/font/google', () => {
-    const src = fs.readFileSync('app/layout.tsx', 'utf-8');
-    expect(src).toMatch(/Source_Serif_4/);
-    expect(src).toMatch(/Noto_Serif_SC/);
-  });
-
-  it('layout.tsx assigns serif font to --font-serif variable on html', () => {
-    const src = fs.readFileSync('app/layout.tsx', 'utf-8');
-    // next/font 的 variable 选项定义 CSS 变量,html className 引用它
-    expect(src).toMatch(/variable:\s*['"]--font-serif['"]/);
-  });
-
-  it('html className preserves existing inter + jetbrains variables', () => {
-    const src = fs.readFileSync('app/layout.tsx', 'utf-8');
-    // 现有第29行 html className 含 inter.variable + jetbrains.variable,不能删
-    expect(src).toMatch(/inter\.variable/);
-    expect(src).toMatch(/jetbrains\.variable/);
-  });
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `cd src/frontend && npx vitest run lib/editorial-font.test.ts`
-Expected: FAIL — Source_Serif_4 / Noto_Serif_SC / --font-serif 未找到
-
-- [ ] **Step 3: 在 layout.tsx 加字体 import 与配置**
-
-在 `app/layout.tsx` 顶部 next/font import 区(第2行附近,现有 Inter + JetBrains_Mono import 之后)加:
-
-```typescript
-import { Source_Serif_4, Noto_Serif_SC } from "next/font/google";
-```
-
-在现有 `const inter = Inter({...})` 与 `const jetbrains = JetBrains_Mono({...})` 之后加:
-
-```typescript
-const sourceSerif = Source_Serif_4({
-  subsets: ["latin"],
-  variable: "--font-serif",
-  display: "swap",
-  weight: ["400", "600", "700"],
-  style: ["normal", "italic"],
-  fallback: ["Georgia", "serif"],
-});
-
-const notoSerifSC = Noto_Serif_SC({
-  subsets: ["latin"],
-  variable: "--font-serif-sc",
-  display: "swap",
-  weight: ["400", "700"],
-  fallback: ["Songti SC", "serif"],
-});
-```
-
-修改 `<html>` 标签的 className(第29行附近),在现有 `inter.variable` + `jetbrains.variable` 之后追加 `sourceSerif.variable` + `notoSerifSC.variable`:
-
-```typescript
-<html lang="..." className={`${inter.variable} ${jetbrains.variable} ${sourceSerif.variable} ${notoSerifSC.variable}`}>
-```
-
-- [ ] **Step 4: 运行测试确认通过**
-
-Run: `cd src/frontend && npx vitest run lib/editorial-font.test.ts`
-Expected: PASS
-
-- [ ] **Step 5: 手动确认字体加载不破坏首屏**
-
-Run: `cd src/frontend && npm run build && npm run dev`,打开 `localhost:3001`,DevTools Network 确认 Source Serif 4 + Noto Serif SC 字体文件加载(200),首屏 LCP 无明显回退(衬线只用于后续 B/C 页面,现有页面不引用 `--font-editorial-serif`)。
-
-- [ ] **Step 6: 提交**
-
-```bash
-cd src/frontend
-git add app/layout.tsx lib/editorial-font.test.ts
-git commit -m "feat(frontend): load Source Serif 4 + Noto Serif SC for editorial layer
-
-挂 --font-serif / --font-serif-sc 变量,供 --font-editorial-serif 引用。
-现有 inter/jetbrains 变量保留不动。display:swap 避免 FOIT。
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
-#### Task P0-3: globals.css 新增 editorial 排版类 + 启用 typography 插件
-
-**Files:**
-- Modify: `app/globals.css`(在现有 `.font-*` 排版类之后新增;顶部 `@import` 之后加 `@plugin`)
-
-**Interfaces:**
-- Produces: `.font-editorial-display`(衬线46px)、`.font-editorial-body`(衬线21px)、`.font-editorial-caps`(衬线斜体小字)排版类;`prose` 基础(由 @tailwindcss/typography 提供)
-
-- [ ] **Step 1: 写失败测试 — 验证 editorial 排版类存在**
-
-新建 `lib/editorial-typography.test.ts`:
-
-```typescript
-import { describe, it, expect } from 'vitest';
-import * as fs from 'fs';
-
-describe('editorial typography classes', () => {
-  it('globals.css defines .font-editorial-display/.font-editorial-body/.font-editorial-caps', () => {
-    const css = fs.readFileSync('app/globals.css', 'utf-8');
-    expect(css).toMatch(/\.font-editorial-display\s*\{/);
-    expect(css).toMatch(/\.font-editorial-body\s*\{/);
-    expect(css).toMatch(/\.font-editorial-caps\s*\{/);
-  });
-
-  it('globals.css enables @tailwindcss/typography plugin via @plugin', () => {
-    const css = fs.readFileSync('app/globals.css', 'utf-8');
-    expect(css).toMatch(/@plugin\s+["']@tailwindcss\/typography["']/);
-  });
-
-  it('editorial classes use var(--font-editorial-serif)', () => {
-    const css = fs.readFileSync('app/globals.css', 'utf-8');
-    expect(css).toMatch(/font-family:\s*var\(--font-editorial-serif\)/);
-  });
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `cd src/frontend && npx vitest run lib/editorial-typography.test.ts`
-Expected: FAIL
-
-- [ ] **Step 3: 在 globals.css 启用 typography 插件**
-
-在 `app/globals.css` 顶部 `@import "tailwindcss";` 行之后加:
-
-```css
-@plugin "@tailwindcss/typography";
-```
-
-- [ ] **Step 4: 在 globals.css 现有 `.font-*` 排版类区块末尾加 editorial 排版类**
-
-在现有 `.font-code-sm { ... }` 块之后加:
-
-```css
-/* ---- Editorial typography (B 暗色编辑式: 衬线) ---- */
-.font-editorial-display {
-  font-family: var(--font-editorial-serif);
-  font-size: 46px;
-  line-height: 54px;
-  letter-spacing: 0;
-  font-weight: 700;
-}
-.font-editorial-body {
-  font-family: var(--font-editorial-serif);
-  font-size: 21px;
-  line-height: 32px;
-  font-weight: 400;
-}
-.font-editorial-caps {
-  font-family: var(--font-editorial-serif);
-  font-size: 13px;
-  line-height: 18px;
-  font-style: italic;
-  font-weight: 400;
-}
-```
-
-- [ ] **Step 5: 运行测试确认通过**
-
-Run: `cd src/frontend && npx vitest run lib/editorial-typography.test.ts`
-Expected: PASS
-
-- [ ] **Step 6: 手动确认现有页面不引用新类(无副作用)**
-
-Run: `cd src/frontend && grep -r 'font-editorial-' app components --include='*.tsx' || echo "无引用,符合预期(新类仅供后续 B/C 页面用)"`
-
-- [ ] **Step 7: 提交**
-
-```bash
-cd src/frontend
-git add app/globals.css lib/editorial-typography.test.ts
-git commit -m "feat(frontend): add editorial typography classes + enable typography plugin
-
-.font-editorial-display/body/caps 衬线排版类 + @plugin @tailwindcss/typography
-为 B 编辑正文提供 prose 基础。现有页面不引用新类,零副作用。
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
-#### Task P0-4: 建 lib/navConfig.ts 单一导航数据源
-
-**Files:**
-- Create: `lib/navConfig.ts`
-- Test: `lib/navConfig.test.ts`
-
-**Interfaces:**
-- Produces: `navSections` 数组(含 icon 映射)、`NavSection` / `NavItem` 类型。Sidebar.tsx 与 TopBar.tsx 将在 P1 改为从此 import。
-- Consumes: 现有 `Sidebar.tsx` 第105-147行 navSections 结构(逐项迁移,含 factor-lab/agent-studio 项暂保留)
-
-- [ ] **Step 1: 写失败测试 — 验证 navConfig 导出结构与 Sidebar 现有导航一致**
-
-新建 `lib/navConfig.test.ts`:
-
-```typescript
-import { describe, it, expect } from 'vitest';
-import { navSections, type NavSection } from '@/lib/navConfig';
-
-describe('navConfig single source of truth', () => {
-  it('exports navSections array with 5 groups', () => {
-    expect(Array.isArray(navSections)).toBe(true);
-    expect(navSections).toHaveLength(5);
-  });
-
-  it('groups match existing Sidebar groups', () => {
-    const groupIds = navSections.map((s: NavSection) => s.id);
-    expect(groupIds).toEqual([
-      'research',
-      'paper',
-      'options',
-      'markets',
-      'system',
-    ]);
-  });
-
-  it('includes hermes nav item in research group top', () => {
-    const research = navSections.find((s: NavSection) => s.id === 'research');
-    expect(research).toBeDefined();
-    expect(research!.items[0].href).toBe('/hermes');
-    expect(research!.items[0].id).toBe('hermes');
-  });
-
-  it('still includes factorLab and agentStudio items until parity is complete', () => {
-    const allItems = navSections.flatMap((s: NavSection) => s.items);
-    expect(allItems.some(i => i.id === 'factorLab')).toBe(true);
-    expect(allItems.some(i => i.id === 'agentStudio')).toBe(true);
-  });
-
-  it('each item has id/href/icon keys', () => {
-    for (const section of navSections) {
-      for (const item of section.items) {
-        expect(item).toHaveProperty('id');
-        expect(item).toHaveProperty('href');
-        expect(item).toHaveProperty('icon');
-      }
-    }
-  });
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `cd src/frontend && npx vitest run lib/navConfig.test.ts`
-Expected: FAIL — `@/lib/navConfig` 未找到
-
-- [ ] **Step 3: 创建 lib/navConfig.ts**
-
-先读 `components/Sidebar.tsx` 第105-147行拿现有 navSections 的 id/href/icon 映射,然后创建 `lib/navConfig.ts`:
-
-```typescript
-import {
-  BadgeDollarSign, BriefcaseBusiness, LayoutDashboard, Zap, LineChart,
-  FlaskConical, Settings, Database, BookOpen, Map, Newspaper, FileText,
-  HelpCircle, Plus, ListFilter, Radar, ShieldCheck, Wrench, ScrollText,
-  Beaker, Sparkles,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-
-export type NavItem = {
-  id: string;
-  href: string;
-  icon: LucideIcon;
-};
-
-export type NavSection = {
-  id: "research" | "paper" | "options" | "markets" | "system";
-  items: NavItem[];
-};
-
-// 单一导航数据源 — Sidebar.tsx 与 TopBar.tsx 共享。
-// P0: 从 Sidebar.tsx 第105-147行迁移,保留 factorLab/agentStudio 项(避免 TS 报错),
-//     新增 hermes 项置 research 顶部。
-// P4: approval parity + factor evidence parity 完成后再移除 factorLab/agentStudio 项。
-export const navSections: NavSection[] = [
-  {
-    id: "research",
-    items: [
-      { id: "hermes", href: "/hermes", icon: Sparkles },
-      { id: "dashboard", href: "/", icon: LayoutDashboard },
-      { id: "dataExplorer", href: "/data-explorer", icon: Database },
-      { id: "factorLab", href: "/factor-lab", icon: FlaskConical },
-      { id: "backtester", href: "/backtest", icon: LineChart },
-      { id: "replications", href: "/strategies", icon: ScrollText },
-      { id: "experiments", href: "/experiments", icon: Beaker },
-    ],
-  },
-  {
-    id: "paper",
-    items: [
-      { id: "paperTrading", href: "/paper-trading", icon: BadgeDollarSign },
-      { id: "agentStudio", href: "/agent-studio", icon: Zap },
-    ],
-  },
-  {
-    id: "options",
-    items: [
-      { id: "optionsScreener", href: "/options-screener", icon: ListFilter },
-      { id: "optionsRadar", href: "/options-radar", icon: Radar },
-      { id: "optionsTools", href: "/options-tools", icon: Wrench },
-      { id: "buySide", href: "/options-buyside", icon: ShieldCheck },
-    ],
-  },
-  {
-    id: "markets",
-    items: [
-      { id: "aiNews", href: "/ai-news", icon: Newspaper },
-      { id: "orderBook", href: "/polymarket", icon: BriefcaseBusiness },
-      { id: "positionMap", href: "/position-map", icon: Map },
-    ],
-  },
-  {
-    id: "system",
-    items: [
-      { id: "docs", href: "/docs", icon: BookOpen },
-      { id: "settings", href: "/settings", icon: Settings },
-      { id: "support", href: "/docs", icon: HelpCircle },
-    ],
-  },
-];
-```
-
-> **注意:** 上面的 icon 映射与 item 顺序需对照 `Sidebar.tsx` 第105-147行实际值核对修正——P0 实施时由执行 agent 读真实代码确认,此处给出结构与 hermes 顶置的契约。
-
-- [ ] **Step 4: 运行测试确认通过**
-
-Run: `cd src/frontend && npx vitest run lib/navConfig.test.ts`
-Expected: PASS
-
-- [ ] **Step 5: 确认 Sidebar/TopBar 尚未引用(P0 只建数据源,不改组件)**
-
-Run: `cd src/frontend && grep -l 'navConfig' components/Sidebar.tsx components/TopBar.tsx 2>/dev/null || echo "未引用,符合预期(P1 才接入)"`
-
-- [ ] **Step 6: 提交**
-
-```bash
-cd src/frontend
-git add lib/navConfig.ts lib/navConfig.test.ts
-git commit -m "feat(frontend): add lib/navConfig.ts single nav data source
-
-从 Sidebar.tsx 第105-147行抽出 navSections 单一数据源,新增 hermes 项置 research 顶部。
-factorLab/agentStudio 项暂保留到 parity 完成。Sidebar/TopBar P1 才接入 navConfig。
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
-#### Task P0-5: 建 lib/chartTokens.ts 两套图表主题
-
-**Files:**
-- Create: `lib/chartTokens.ts`
-- Test: `lib/chartTokens.test.ts`
-
-**Interfaces:**
-- Produces: `terminalChartTheme`(兼容现有 Candlestick/Recharts 全部字面色值)、`editorialChartTheme`(暖灰哑光 + 直角 tooltip)、`readCssVar(name, fallback)` 工具、`ChartTheme` 类型
-- `ChartTheme` 必须覆盖 3 个现有图表的真实字段,不能只含 `background/up/down/grid`:Candlestick 需要 `text/border/volumeUp/volumeDown`;EquityComparison 需要 `strategy/benchmark/axis/tick/rechartsGrid/tooltipBorder/legendText`;FactorRunCharts 需要 `ic/rankIc/positive/negative`。
-- Consumes: 无(自包含常量)
-
-- [ ] **Step 1: 写失败测试 — 验证两套 theme 与 readCssVar**
-
-新建 `lib/chartTokens.test.ts`:
-
-```typescript
-import { describe, it, expect } from 'vitest';
-import {
-  terminalChartTheme,
-  editorialChartTheme,
-  readCssVar,
-  type ChartTheme,
-} from '@/lib/chartTokens';
-
-describe('chartTokens', () => {
-  it('terminalChartTheme keeps existing colors for compat', () => {
-    expect(terminalChartTheme.background).toBe('#111827');
-    expect(terminalChartTheme.up).toBe('#00C896');
-    expect(terminalChartTheme.down).toBe('#FF4D4F');
-    expect(terminalChartTheme.strategy).toBe('#00C896');
-    expect(terminalChartTheme.benchmark).toBe('#60A5FA');
-    expect(terminalChartTheme.rankIc).toBe('#00C896');
-  });
-
-  it('editorialChartTheme uses warm-grey palette', () => {
-    expect(editorialChartTheme.background).toBe('#1A1916');
-    expect(editorialChartTheme.up).toBe('#2E9E6A');
-    expect(editorialChartTheme.down).toBe('#C84A52');
-    expect(editorialChartTheme.tooltipBorderRadius).toBe(2);
-  });
-
-  it('both themes have required ChartTheme keys', () => {
-    const keys: (keyof ChartTheme)[] = [
-      'background', 'text', 'grid', 'rechartsGrid', 'border',
-      'up', 'down', 'volumeUp', 'volumeDown',
-      'strategy', 'benchmark', 'ic', 'rankIc', 'positive', 'negative',
-      'axis', 'tick', 'tooltipBg', 'tooltipBorder', 'tooltipText', 'tooltipBorderRadius', 'legendText',
-    ];
-    for (const k of keys) {
-      expect(terminalChartTheme[k]).toBeDefined();
-      expect(editorialChartTheme[k]).toBeDefined();
-    }
-  });
-
-  it('readCssVar returns fallback when window undefined (SSR safe)', () => {
-    expect(readCssVar('--color-paper-ink', '#14130F')).toBe('#14130F');
-  });
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `cd src/frontend && npx vitest run lib/chartTokens.test.ts`
-Expected: FAIL — 模块未找到
-
-- [ ] **Step 3: 创建 lib/chartTokens.ts**
-
-```typescript
-// 单一图表色真相源 — lightweight-charts 与 recharts 都需字面色值(不读 CSS 变量),
-// 故集中在此替代散落的 CHART_COLORS 常量。两套 theme 按页面角色选用:
-//   terminalChartTheme: 操作型页面(backtest/options/paper-trading),兼容现有色
-//   editorialChartTheme: 阅读型页面(晨报/Hermes 报告),暖灰哑光
-
-export type ChartTheme = {
-  background: string;
-  text: string;
-  grid: string;
-  rechartsGrid: string;
-  border: string;
-  up: string;
-  down: string;
-  volumeUp: string;
-  volumeDown: string;
-  strategy: string;
-  benchmark: string;
-  ic: string;
-  rankIc: string;
-  positive: string;
-  negative: string;
-  axis: string;
-  tick: string;
-  tooltipBg: string;
-  tooltipBorder: string;
-  tooltipText: string;
-  tooltipBorderRadius: number;
-  legendText: string;
-};
-
-export const terminalChartTheme: ChartTheme = {
-  background: '#111827',
-  text: '#94A3B8',
-  grid: 'rgba(148, 163, 184, 0.10)',
-  rechartsGrid: 'rgba(148, 163, 184, 0.12)',
-  border: 'rgba(148, 163, 184, 0.22)',
-  up: '#00C896',
-  down: '#FF4D4F',
-  volumeUp: 'rgba(0, 200, 150, 0.32)',
-  volumeDown: 'rgba(255, 77, 79, 0.32)',
-  strategy: '#00C896',
-  benchmark: '#60A5FA',
-  ic: '#60A5FA',
-  rankIc: '#00C896',
-  positive: '#00C896',
-  negative: '#FF4D4F',
-  axis: '#64748B',
-  tick: '#94A3B8',
-  tooltipBg: '#111827',
-  tooltipBorder: 'rgba(148, 163, 184, 0.24)',
-  tooltipText: '#E2E8F0',
-  tooltipBorderRadius: 8,
-  legendText: '#CBD5E1',
-};
-
-export const editorialChartTheme: ChartTheme = {
-  background: '#1A1916',
-  text: '#A39E92',
-  grid: '#3A3733',
-  rechartsGrid: '#3A3733',
-  border: '#3A3733',
-  up: '#2E9E6A',
-  down: '#C84A52',
-  volumeUp: 'rgba(46, 158, 106, 0.28)',
-  volumeDown: 'rgba(200, 74, 82, 0.28)',
-  strategy: '#2E9E6A',
-  benchmark: '#7B8FD0',
-  ic: '#7B8FD0',
-  rankIc: '#2E9E6A',
-  positive: '#2E9E6A',
-  negative: '#C84A52',
-  axis: '#A39E92',
-  tick: '#A39E92',
-  tooltipBg: '#222019',
-  tooltipBorder: '#3A3733',
-  tooltipText: '#EDE7DA',
-  tooltipBorderRadius: 2,
-  legendText: '#EDE7DA',
-};
-
-// SSR-safe CSS 变量读取(图表组件若需在 client 侧读 token 可用)
-export function readCssVar(name: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
-}
-```
-
-- [ ] **Step 4: 运行测试确认通过**
-
-Run: `cd src/frontend && npx vitest run lib/chartTokens.test.ts`
-Expected: PASS
-
-- [ ] **Step 5: 提交**
-
-```bash
-cd src/frontend
-git add lib/chartTokens.ts lib/chartTokens.test.ts
-git commit -m "feat(frontend): add lib/chartTokens.ts single chart-color source
-
-terminalChartTheme(兼容现有) + editorialChartTheme(暖灰哑光)两套常量,
-消除 CandlestickChart/EquityComparisonChart 硬编码色与 token 漂移隐患。
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
-#### Task P0-6: 3 个图表组件 refactor 为 theme 注入(签名不变)
-
-**Files:**
-- Modify: `components/CandlestickChart.tsx`(第24-33行 CHART_COLORS)
-- Modify: `components/EquityComparisonChart.tsx`(第28-36行 COLORS)
-- Modify: `components/FactorRunCharts.tsx`(同理)
-- Test: `lib/chart-theme-injection.test.ts`
-
-**Interfaces:**
-- Consumes: P0-5 的 `terminalChartTheme` + `ChartTheme` 类型
-- Produces: 3 个图表组件新增 optional `theme?: ChartTheme` prop(默认 `terminalChartTheme`,签名向后兼容)
-
-- [ ] **Step 1: 写失败测试 — 验证图表组件接受 theme prop 且默认 terminal**
-
-新建 `lib/chart-theme-injection.test.ts`:
-
-```typescript
-import { describe, it, expect } from 'vitest';
-import * as fs from 'fs';
-
-describe('chart components accept optional theme prop', () => {
-  it('CandlestickChart imports terminalChartTheme as default', () => {
-    const src = fs.readFileSync('components/CandlestickChart.tsx', 'utf-8');
-    expect(src).toMatch(/import.*terminalChartTheme.*from.*['"]@\/lib\/chartTokens['"]/);
-    expect(src).not.toMatch(/const CHART_COLORS\s*=\s*\{/); // 旧常量已删
-  });
-
-  it('CandlestickChart has optional theme prop defaulting to terminalChartTheme', () => {
-    const src = fs.readFileSync('components/CandlestickChart.tsx', 'utf-8');
-    expect(src).toMatch(/theme\??\s*[:=]/);
-  });
-
-  it('EquityComparisonChart imports from chartTokens', () => {
-    const src = fs.readFileSync('components/EquityComparisonChart.tsx', 'utf-8');
-    expect(src).toMatch(/import.*from.*['"]@\/lib\/chartTokens['"]/);
-    expect(src).not.toMatch(/const COLORS\s*=\s*\{[^}]*#00C896/);
-  });
-
-  it('FactorRunCharts imports from chartTokens', () => {
-    const src = fs.readFileSync('components/FactorRunCharts.tsx', 'utf-8');
-    expect(src).toMatch(/import.*from.*['"]@\/lib\/chartTokens['"]/);
-  });
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `cd src/frontend && npx vitest run lib/chart-theme-injection.test.ts`
-Expected: FAIL — 仍用旧 CHART_COLORS 常量
-
-- [ ] **Step 3: refactor CandlestickChart.tsx**
-
-读 `components/CandlestickChart.tsx` 第1-40行,然后:
-
-1. 删除第24-33行 `const CHART_COLORS = { ... }`
-2. 顶部加 `import { terminalChartTheme, type ChartTheme } from "@/lib/chartTokens";`
-3. 在组件 props 类型加 `theme?: ChartTheme`(optional)
-4. 组件内 `const t = theme ?? terminalChartTheme;`
-5. 把所有 `CHART_COLORS.xxx` 替换为 `t.xxx`(background/text/grid/border/up/down/volumeUp/volumeDown)
-
-> **注意:** 不改 lightweight-charts 的 API 调用方式,只替换色值来源。component 签名向后兼容(theme optional 默认 terminal)。
-
-- [ ] **Step 4: refactor EquityComparisonChart.tsx 与 FactorRunCharts.tsx**
-
-同理:删旧 `COLORS` 常量,import `terminalChartTheme` + `ChartTheme`,加 optional `theme` prop,替换色值引用。EquityComparisonChart 使用 `strategy/benchmark/axis/tick/rechartsGrid/tooltipBg/tooltipBorder/tooltipText/tooltipBorderRadius/legendText`;FactorRunCharts 使用 `ic/rankIc/positive/negative/axis/tick/rechartsGrid/tooltip*`。
-
-- [ ] **Step 5: 运行测试确认通过**
-
-Run: `cd src/frontend && npx vitest run lib/chart-theme-injection.test.ts`
-Expected: PASS
-
-- [ ] **Step 6: 运行 type-check + 现有图表相关 E2E 确认无回归**
-
-Run:
-```bash
-cd src/frontend
-npx tsc --noEmit
-PW_E2E=1 npx playwright test tests/e2e/ --grep "backtest|data-explorer|factor"
-```
-Expected: 全绿(图表渲染不变,因为默认 theme = terminalChartTheme = 旧色)
-
-- [ ] **Step 7: 提交**
-
-```bash
-cd src/frontend
-git add components/CandlestickChart.tsx components/EquityComparisonChart.tsx components/FactorRunCharts.tsx lib/chart-theme-injection.test.ts
-git commit -m "refactor(frontend): inject chart theme via props, fix color drift
-
-3 个图表组件改为从 props 读 theme(默认 terminalChartTheme),签名向后兼容。
-修复 CHART_COLORS.background=#111827 与 token #151515 漂移隐患。
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
-#### Task P0-7: 建 components/editorial/ + components/hermes/ 空目录占位
-
-**Files:**
-- Create: `components/editorial/index.ts`(空导出占位)
-- Create: `components/hermes/index.ts`(空导出占位)
-
-**Interfaces:**
-- Produces: 两个目录存在,P2 填充组件时无 import 报错
-
-- [ ] **Step 1: 创建占位 index.ts**
-
-`components/editorial/index.ts`:
-```typescript
-// B 暗色编辑式组件库 — P2 填充。
-// 预期组件: Masthead / Lede / SectionHead / EditorialFigure / PosTable / NewsColumns / HermesQuote / ErrataLog
-export {};
-```
-
-`components/hermes/index.ts`:
-```typescript
-// C Hermes 对话流组件库 — P2 填充。
-// 预期组件: HermesOrb / UserBubble / HermesMessageCard / HermesExecCard / HermesArtifactCard / HermesArtifactBadge / HermesCodeCard / NewsCard / FillReceiptCard / SystemCard / Daybreak / ComposerDock
-export {};
-```
-
-- [ ] **Step 2: 确认目录可被 import**
-
-Run: `cd src/frontend && npx tsc --noEmit`
-Expected: 无错误(空导出不破坏类型)
-
-- [ ] **Step 3: 提交**
-
-```bash
-cd src/frontend
-git add components/editorial/index.ts components/hermes/index.ts
-git commit -m "feat(frontend): scaffold editorial + hermes component dirs
-
-P2 填充前的空目录占位,避免后续 import 报错。
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
-#### Task P0-8: 建 tests/e2e/visual.spec.ts scoped 视觉基线
-
-> **Q8 裁决:** 启用视觉回归,但 staged/scoped。先覆盖 6-8 个稳定/高风险路由与移动端 shell,不把 22 页 golden master 作为第一阶段硬门禁。已迁移页面后续逐页升级为硬 gate。
-
-**Files:**
-- Create: `tests/e2e/visual.spec.ts`
-
-**Interfaces:**
-- Produces: 6-8 个 scoped `toHaveScreenshot` baseline(maxDiffPixelRatio 0.05),优先覆盖 `/`, `/backtest`, `/data-explorer`, `/strategies`, `/options-screener`, `/paper-trading` 或 `/position-map`,以及一个 mobile shell viewport。`/brief` 与 `/hermes` 创建后再加入。
-
-- [ ] **Step 1: 写 visual.spec.ts 对 scoped routes 截基线**
-
-```typescript
-import { test, expect } from '@playwright/test';
-
-const pages = [
-  '/',
-  '/backtest',
-  '/data-explorer',
-  '/strategies',
-  '/options-screener',
-  '/paper-trading',
-  '/position-map',
-];
-
-for (const path of pages) {
-  test(`visual baseline: ${path}`, async ({ page }) => {
-    await page.goto(path);
-    await page.waitForLoadState('networkidle');
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await expect(page).toHaveScreenshot(`baseline-${path.replace('/', '_')}.png`, {
-      maxDiffPixelRatio: 0.05,
-      animations: 'disabled',
-    });
-  });
-}
-```
-
-> **注意:** 需用 PW_E2E 已注入的 `e2e-data` 固定 sample 数据源避免动态数据噪音。执行 agent 需确认 `playwright.config.ts` 的 baseURL 与数据注入方式;对时间戳、闪烁动画、动态图表可加 mask 或专用等待。
-
-- [ ] **Step 2: 首次 capture 基线**
-
-Run: `cd src/frontend && PW_E2E=1 npx playwright test tests/e2e/visual.spec.ts --update-snapshots`
-Expected: 生成 scoped baseline PNG
-
-- [ ] **Step 3: 重新运行确认基线稳定**
-
-Run: `cd src/frontend && PW_E2E=1 npx playwright test tests/e2e/visual.spec.ts`
-Expected: PASS(与刚 capture 的基线一致)
-
-- [ ] **Step 4: 提交**
-
-```bash
-cd src/frontend
-git add tests/e2e/visual.spec.ts tests/e2e/visual.spec.ts-snapshots/
-git commit -m "test(frontend): add scoped Playwright visual baselines
-
-先锁定 6-8 个稳定/高风险路由与 mobile shell,避免 22 页字体/时间戳噪音。
-后续逐页迁移时用「有意更新该页基线 + 未迁页不变」检测跨页回归。
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
-#### Task P0-9: contract 测试新增「新原语目录存在」断言(不删旧)
-
-**Files:**
-- Modify: `tests/test_frontend_terminal_surface_contract.py`(新增断言)
-
-**Interfaces:**
-- Produces: contract 测试只加不删。P0 不要求 TopBar/Sidebar 已经暴露 `/hermes`;P1 接入 navConfig 后再新增 `/hermes` 导航断言。
-
-- [ ] **Step 1: 在 terminal surface contract 加「新原语目录存在」断言**
-
-在 `test_frontend_terminal_surface_contract.py` 末尾新增测试函数:
-
-```python
-def test_editorial_and_hermes_component_dirs_exist():
-    """P0: editorial + hermes 组件目录已建(P2 填充组件)。"""
-    from pathlib import Path
-    frontend = Path(__file__).parent.parent / "src" / "frontend" / "components"
-    assert (frontend / "editorial" / "index.ts").exists()
-    assert (frontend / "hermes" / "index.ts").exists()
-```
-
-- [ ] **Step 2: 运行 contract 测试确认通过**
-
-Run:
-```bash
-cd /Users/sunyibo/programs/ai-quant-platform
-pytest tests/test_frontend_terminal_surface_contract.py -v
-```
-Expected: PASS(旧断言 + 新目录断言全过)
-
-- [ ] **Step 3: 提交**
-
-```bash
-cd /Users/sunyibo/programs/ai-quant-platform
-git add tests/test_frontend_terminal_surface_contract.py
-git commit -m "test(frontend): add editorial/hermes dir contract assertion
-
-P0 只锁定 editorial/hermes 组件目录存在。/hermes 导航 contract 等 P1 navConfig 接入后再加。
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
-#### P0 阶段验证(Exit Criteria)
-
-执行完 P0-1 ~ P0-9 后:
-
-- [ ] **V1:** `cd src/frontend && npx tsc --noEmit` 全绿
-- [ ] **V2:** `cd src/frontend && npm run lint` 全绿
-- [ ] **V3:** `cd src/frontend && npx vitest run` 全绿(含新 design-tokens/editorial-font/editorial-typography/navConfig/chartTokens/chart-theme-injection 6 个测试文件)
-- [ ] **V4:** `cd src/frontend && npm run build` 全绿
-- [ ] **V5:** `cd src/frontend && PW_E2E=1 npx playwright test` 全绿(现有 10 个 E2E 零回归)
-- [ ] **V6:** `cd /Users/sunyibo/programs/ai-quant-platform && pytest tests/test_frontend_topbar_navigation_contract.py tests/test_frontend_terminal_surface_contract.py` 全绿
-- [ ] **V7:** 手动目检 22 个现有页面确认 warm base/sidebar 改动后无布局、对比度、可读性回归
-- [ ] **V8:** 浏览器 DevTools `:root` 确认 editorial + hermes token 可见
+### Slice 9A — Paper strategy read-model safety seam
+
+权威范围与后续顺序见
+`/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md`。
+本仓实现结果：
+
+- sleeve list/detail/status GET 与 CLI `ops-status` 走同一个
+  `PaperStrategyOpsObserver`，不读 account repository、不拿 mutation lock、不 reconcile。
+- status 分开报告 finalized/pending sleeve、pending/corrupt journal；corrupt artifact 在
+  显式恢复后仍持续告警。
+- `paper strategies recover-pending` 是独立显式 mutation，只恢复 crash journal，不生成
+  signal、不创建/处理 execution plan；canonical account 缺失时 fail closed。
+- API schema、OpenAPI generated types、手写 TypeScript 与 PaperStrategyOpsPanel 已同步；
+  file/mirror/canonical、CLI text/json、missing storage 与 bytes/mtime 目录指纹均有回归测试。
+- `ops-status --window` 只接受 `next_open` / 规范化的 `next-open`，拼写错误非零退出。
+- Playwright 使用按端口复制的 `.tmp/e2e-frontend-*` 临时工作区，不再清理正在运行
+  前端的 `.next`，也不改写源码侧 `next-env.d.ts`/`tsconfig.json`；关键三页在隔离
+  E2E 前后均保持 HTTP 200。
+
+本 slice 在当时验收点尚未 commit/push；这是历史事实，当前发布状态以 git 为准。
 
 ---
 
-### Phase P1 · Week 2 — `/brief` 试跑 + Hermes 一等入口 + navConfig 接入
+### Mini 9H follow-on — real read-only artifact shelf
 
-**目标:** 用 navConfig 单一数据源重构 Sidebar/TopBar,新增 `/hermes` 一等入口,同时创建 `/brief` 暗色晨报试跑页。P1 不删除 factor-lab/agent-studio 导航、不加无上下文重定向;旧入口要等 approval parity + factor evidence parity 完成后再下线。
+**Status 2026-07-12 historical:** 本地代码与真实运行验收完成；当时尚未
+commit/push，当前发布状态以 git 为准。
 
-**Scope:**
-- Sidebar.tsx + TopBar.tsx 改为从 `lib/navConfig.ts` 读 navSections
-- navConfig + Sidebar/TopBar copy 新增 `nav.hermes`(factorLab/agentStudio 暂保留)
-- app/page.tsx quick actions 新增 `/hermes` 入口;不替换首页主体
-- app/brief/page.tsx 试跑晨报(暖灰暗色,模板 lede,只读现有 dashboard facts)
-- contract 测试只加 `/hermes` 断言,不删 factor-lab/agent-studio 断言
-- visual.spec 加入 `/brief` 与 `/hermes`(若 `/hermes` 已有 placeholder)
+- HQA 把 portfolio-risk、folded prediction states、market-foresight candidates 投影到
+  `artifacts/hermes-feed/manifest.v1.json`；该 feed 可删除重建，不是新事实源。
+- 平台新增窄的 `GET /api/hermes/artifacts?limit=20`，对 manifest 做大小、schema、
+  freshness 与语义校验；缺失/损坏/陈旧/部分来源失败均返回稳定状态，不泄漏路径或异常。
+- `/hermes` RSC 并发读取候选池和 artifact feed；`ArtifactShelf` 展示三类真实卡片及
+  empty/degraded/unavailable 状态。Composer 的 textarea 和按钮继续 disabled，页面没有
+  mutation fetch，也不调用 `/api/agent/tasks`。
+- live `/zh/hermes` 已显示 AAPL market-foresight、组合风险和三来源状态；prediction
+  ledger 当前无正式事件，因此 `empty` 是诚实状态而非未接通。
 
-**Deliverables:**
-- `/brief` 暗色晨报 trial 页面
-- Sidebar/TopBar/page.tsx 接入 Hermes 入口
-- contract 测试只加不删
-- visual baseline 包含 `/brief`
-
-**Dependencies:** P0(navConfig 已建)
-
-**Validation:**
-- type-check + lint + vitest + E2E 全绿
-- 手动访问 `/brief` 确认暖灰暗色晨报可读,不替换 `/`
-- 手动访问 `/` 确认 dashboard 仍是安全/状态锚点,仅新增 Hermes 入口且布局未错位
-- 手动访问 `/factor-lab` `/agent-studio` 确认旧入口仍可用(未完成 parity 前不做早跳转)
-- 中英双语 shell 目检
-
-> **P1 bite-sized Task 需在 P0 完成后按本节裁决展开。**
-
-#### P1 Task 概要(P0 后展开为 bite-sized 步骤)
-
-- P1-1: Sidebar.tsx + TopBar.tsx 改为从 `lib/navConfig.ts` 读(消除双份维护)
-- P1-2: navConfig + Sidebar/TopBar copy 新增 hermes 项,factorLab/agentStudio 暂保留
-- P1-3: app/page.tsx quick actions 新增 `/hermes`,不替换首页主体
-- P1-4: 建 app/brief/page.tsx 试跑晨报(模板 lede,只读 dashboard facts)
-- P1-5: contract 测试同步更新(只加 /hermes)
-- P1-6: visual.spec 加入 `/brief` baseline
-- P1-7: P1 阶段验证与截图评审
+完整 9H 仍需另立 bite-sized plan 实现 cron、prediction reconciliation cadence、weekly
+aggregation、通知和 freshness monitoring；本 follow-on 不声称它们已自动运行。
 
 ---
 
-### Phase P2 · Week 3-4 — B/C 组件 + Hermes artifact-first 骨架 + read-only 数据层
 
-**目标:** 建 B 暗色编辑式基础组件库 + C Hermes 对话/任务流组件 + EditorialFigure 融合容器;搭 Hermes 页骨架与静态对话流(mock 数据验证 C 视觉);接 candidates/detail/review/provenance 与只读 artifact timeline。P2 不接平台侧 LLM runner,不使用 `/api/agent/tasks` 伪造 Hermes 长任务。
+## 历史前端 backlog
 
-**Scope:**
-- components/editorial/ 实现 8 个组件:Masthead / Lede / SectionHead / EditorialFigure / PosTable / NewsColumns / HermesQuote / ErrataLog
-- components/hermes/ 实现 11 个组件:HermesOrb / UserBubble / HermesMessageCard / HermesExecCard / HermesArtifactCard / HermesArtifactBadge / HermesCodeCard / NewsCard / FillReceiptCard / SystemCard / Daybreak / ComposerDock
-- EditorialFigure 融合机制(包裹 C 卡片时抑制 hover/box-shadow,加暖灰 rule + 衬线 figcaption)
-- app/hermes/page.tsx + loading.tsx(server 壳 + client 主体三栏 + ComposerDock)
-- components/hermes/HermesConversation.tsx 静态对话流(mock 数据)
-- lib/api.ts 新增只读 Hermes getters(复用 /api/agent/candidates、candidate detail/review/provenance;或读取 read-only artifact timeline)
-- ComposerDock MVP 只做 disabled/queued/local draft 状态或跳转到 HQA 指令,不 POST `/api/agent/tasks`
-- `lib/hermesJobs.ts` 后置:只有后端提供真实 job state + `poll_url` 后再实现
-- HermesArtifactCard/Badge 跨页组件 + 回流深链
-- strategies 页一拆为二(目录 + CTA)
-- tests/e2e/hermes.spec.ts
-
-**Deliverables:**
-- app/hermes/page.tsx + loading.tsx 骨架
-- components/hermes/ 11 个对话流组件(mock 数据)
-- components/editorial/ 8 个 B 编辑基础组件
-- EditorialFigure 融合容器
-- HermesArtifactCard/Badge 跨页组件
-- Hermes read-only 数据层(candidate/artifact timeline)
-- strategies 页拆分
-- hermes.spec E2E + 回流用例
-
-**Dependencies:** P0(token + navConfig + chartTokens),P1(Hermes 在 Sidebar 有入口)
-
-**Validation:**
-- type-check + lint + vitest 全绿(含新 Hermes 数据层单测)
-- PW_E2E=1 E2E 全绿 + 新增 hermes.spec
-- /hermes 页渲染完整 artifact-first 对话流,呼吸动画在 run 态可见且尊重 reduced-motion
-- 现有 22 页 E2E 零回归
-- Lighthouse 衬线对比度 ≥ 4.5:1
-
-> **P2 的 bite-sized Task 在 P1 完成后展开。色温已裁决:暖灰近黑只用于 `/brief`、`/hermes`、报告/叙事块。**
-
-#### P2 Task 概要(P1 后展开为 bite-sized 步骤)
-
-- P2-1 ~ P2-8: 逐个实现 editorial 组件(每个一个 Task:TDD,先写 vitest + 可选 screenshot,再实现)
-- P2-9 ~ P2-19: 逐个实现 hermes 组件(每个一个 Task)
-- P2-20: EditorialFigure 融合容器(包裹 C 卡片印刷化)
-- P2-21: app/hermes/page.tsx + loading.tsx 骨架
-- P2-22: HermesConversation.tsx 静态对话流(mock)
-- P2-23: lib/api.ts Hermes read-only getter(candidate/detail/review/provenance 或 artifact timeline)
-- P2-24: ComposerDock MVP disabled/queued/local draft 状态,不接 `/api/agent/tasks`
-- P2-25: HermesArtifactCard/Badge 跨页 + 回流深链
-- P2-26: strategies 页拆分
-- P2-27: tests/e2e/hermes.spec.ts
-- P2-28: P2 阶段验证
-
----
-
-### Phase P3 · Week 5-6 — approval/factor evidence parity + 一条核心迁移
-
-**目标:** 先把 agent-studio 与 factor-lab 的有用能力吸收到 Hermes:候选列表、源码预览、审计/review、approve affordance、历史 factor run evidence/charts/provenance。完成 parity 后,再迁移一条核心研究页面(backtest 或 data-explorer)验证 B/C 回流模式。首页替换仍以后续 `/brief` 实屏确认作为门槛。
-
-**Scope:**
-- Hermes approval parity: candidate list/source preview/audit/reviews/approve 状态搬入 `/hermes`
-- Hermes factor evidence parity: historical factor run detail/charts/provenance 搬入 read-only evidence panel 或 generic run detail
-- app/backtest 或 app/data-explorer 选择一条核心页面做编辑式迁移,保留 form hooks 零改动
-- Hermes 回流徽章集成(由 Hermes 产出的 artifact/run 显示 HermesArtifactBadge)
-- visual.spec 相关页基线更新
-
-**Deliverables:**
-- approval queue/detail parity
-- factor run evidence/detail parity
-- 1 条核心页面编辑式皮肤
-- Hermes 回流徽章集成
-- visual.spec 基线更新
-
-**Dependencies:** P2(B/C 组件库 + Hermes 数据层)
-
-**Validation:**
-- 每迁一页 type-check + lint + vitest + 该页 E2E 全绿
-- 视觉 diff 手动截图确认只皮肤变布局数据不变
-- 全量 E2E 里程碑跑一次确认无跨页回归
-- 手动跑一次被迁移页面的 sample flow 确认原 API 行为不变
-
----
-
-### Phase P4 · Week 7+ — homepage decision + 软下线/物理删除 follow-on
-
-**目标:** 在 `/brief` 与 `/hermes` 经实屏确认、approval parity/factor evidence parity 通过后,再决定是否把 `/` 替换为 Morning Brief / Workbench,并分阶段下线 factor-lab/agent-studio。物理删除与大件迁移不属于 3-4 周 MVP。
-
-**Scope:**
-- 首页决策:若 `/brief` 明显优于 dashboard,替换 `/`;旧 dashboard 可保留 `/dashboard`
-- 软下线:从 nav/quick actions 移除 factor-lab/agent-studio,加带上下文的 redirect/archived 状态
-- 物理删 app/factor-lab/ 与 app/agent-studio/ 目录(仅 parity 完成后)
-- 删或迁移孤儿组件(FactorLabControls/FactorLabDashboard/FactorRunForm/AgentTaskForm/FactorRunCharts)
-- 删或迁移 lib/factorLabHandoff.ts + test
-- lib/api.ts 移除已无引用的 factor-lab 专用 getter(保留 getFactors/getUniverses)
-- E2E(phase10-smoke/run-detail-routes)更新
-- contract 测试移除 agent-studio fragments 断言
-- 后端 agent.py 保留(供 candidates/detail/review/provenance 读面)
-- weekly follow-on:迁移 options cluster / paper-trading / position-map 大件
-
-**Deliverables:**
-- 首页替换或保留的明确裁决
-- 两旧入口软下线 + 可回滚重定向
-- 两目录物理删除(可拆 follow-on)
-- 孤儿组件删除或迁移
-- lib/api factor-lab getter 移除
-- E2E + contract 测试更新
-- 大件迁移计划或 follow-on 列表
-
-**Dependencies:** P3(approval parity + factor evidence parity 已完成,Hermes 已承接旧入口能力)
-
-**Validation:**
-- type-check + lint + vitest + E2E + contract 全绿
-- `grep -r 'factor-lab|agent-studio|FactorLab|AgentStudio' app components lib` 确认零残留(除 next.config 重定向规则与历史注释)
-- 访问 `/factor-lab` `/agent-studio` 确认 308→`/hermes`
-- build 产物体积对比确认未因孤儿残留膨胀
-
----
+旧 P0-P4 任务已移至 [归档计划](../../archive/plans/2026-07-08-frontend-redesign-hermes-integration-original-p0-p4.md)。它们只保留未来前端 backlog 设计素材，不占用 HQA v2 的 9A+ slice 编号，也不是当前可直接执行的步骤；恢复任一项前必须另立新计划并核对现有代码。
 
 ## Self-Review
 
@@ -2313,10 +1402,10 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [x] Q1 色温改为当前实屏确认的 warm shell + sidebar rail → Q1 + Slice 0
 - [x] Q2 首页晨报路径保持 `/brief` 试跑,标题「每日晨报」→ Q2 + Slice 7
-- [x] Q3 Hermes 一等入口但不抢替 `/` → Q3 + 旧 P1/P2 backlog
+- [x] Q3 Hermes 一等入口但不抢替 `/` → Q3 + Slice 8
 - [x] Q4 factor run history 不隐藏、不无上下文跳转 → Q4 + 旧 P3/P4 backlog
 - [x] Q5/Q6 Hermes 后端复用读面,artifact-first + polling → Q5/Q6 + 旧 P2 backlog
-- [x] Q7 执行节奏从 P0-P4 修订为 slice0-slice7 → Q7 + Slice Gate Summary
+- [x] Q7 执行节奏从 P0-P4 修订为 Slice 0-Slice 8 → Q7 + Slice Gate Summary
 - [x] Q8 scoped 视觉基线 → Q8 + Slice 7 + 旧 P0-8 backlog
 - [x] Q9 strategies/Hermes promote 关系 → Q9 + 旧 P2/P3 backlog
 - [x] Q10 晨报内容必须来自真实数据或归档快照 → Q10 + Slice 1/2/3/7
@@ -2328,13 +1417,16 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [x] paper account ledger/positions backfill → Slice 4
 - [x] paper account dual-write mirror + reconciliation → Slice 5
 - [x] paper account DB canonical fail closed → Slice 6
-- [x] 旧前端 P0-P4 详细设计仍保留,并标记为 backlog/历史参考 → 分阶段计划前说明
+- [x] 旧前端 P0-P4 详细设计已移入 archive，并标记为 backlog/历史参考
 
-**未覆盖项:** 无。旧 P1/P2/P3/P4 仍有概要任务,但当前可执行路线已经由 slice0-slice7 给出 bite-sized TDD 步骤和命令;旧概要仅作为前端 redesign backlog。
+**未覆盖项:** 旧 P1-P4 中尚未展开的 follow-on 不是当前执行步骤。需要继续前端改造时，
+从归档 backlog 选择一件，按最新代码另立 bite-sized 计划；不得借用当前 HQA 9A+ 编号。
 
 ### 2. Placeholder scan
 
-- 当前权威 slice0-slice7 已交付到 Slice 7;Slice 6/7 代码已提交。后续前端 redesign 以旧 P1/P2 backlog 展开为 Slice 8+。
+- 当前权威 slice0-slice8 均已有实现记录；Slice 8 在最初验收时尚未提交，该历史状态
+  不再承担当前 git 跟踪。后续 redesign 必须从旧 P2/P3 backlog 另立前端计划，不得与
+  HQA v2 slice 编号混用。
 - 旧 P0-P4 内保留的“阶段概要”已被文档明确标记为历史 backlog,不得作为当前执行路线照抄。
 - 旧 P0 中关于“冷黑 token 值不变”的措辞已改成“无布局/可读性回归”,与 Q1 当前裁决一致。
 
@@ -2343,7 +1435,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - `BriefGenerateRequest`, `BriefIssueResponse`, `BriefSnapshotResponse`, `BriefIssueEnvelope` 在 Slice 2 schema 中定义,API route 和前端 getter 使用同一字段名。
 - `buildBriefIssuePath(publicId)` 在 Slice 2 定义,Slice 7 E2E 只检查 `/brief/brf_*` 前端 route 与 `/api/brief/issues/{public_id}` API route。
 - `app_users.id` 使用固定 root UUID `00000000-0000-0000-0000-000000000001`,`brief_issues.owner_user_id` 与 `paper_accounts.owner_user_id` 均引用该表。
-- `PaperAccountSettings.db_mode` 只允许 `"file" | "mirror" | "canonical"`。Slice 5 中 factory 对 `"mirror"` 启用 file-first dual-write;`"canonical"` 暂回落文件并 warning,避免提前进入未实现 DB authoritative methods。Slice 6 再改为 DB canonical + fail-closed。
+- `PaperAccountSettings.db_mode` 只允许 `"file" | "mirror" | "canonical"`。factory 精确选择 file、file-first dual-write mirror 或 DB-authoritative canonical；不静默回落。当前 live 仍配置为默认 `file`。
 - `PaperAccount.ledger` 字段名与 `paper_account_ledger` columns 一一对应: `entry_id`, `timestamp`, `kind`, `source`, `symbol`, `side`, `quantity`, `price`, `gross_value`, `commission`, `price_kind`, `realized_pnl_delta`, `cash_after`, `note`。
 - 旧前端 `ChartTheme`、`NavSection`、editorial/hermes token 名仍保留在 P0-P4 backlog,但当前先执行 persistence slices。
 
@@ -2357,6 +1449,9 @@ Plan complete and saved to `docs/superpowers/plans/2026-07-08-frontend-redesign-
 
 **1. Subagent-Driven (recommended)** - 每个 slice 派 fresh subagent 执行,主线程做 review 与集成。共享文件禁止并行写;Slice 1/2/3 可由后端 agent 顺序推进,Slice 7 可在 Slice 2 之后由前端 agent 接手。
 
-**2. Inline Execution** - 当前会话按 slice0 → slice7 顺序执行,每个 slice 完成后暂停做测试结果与 diff review。
+**2. Inline Execution** - 按当前 slice 顺序执行，每个 slice 完成后暂停做测试结果与 diff review。
 
-**Recommended next slice:** Slice 0-Slice 7 已完成。下一步 Slice 8: Hermes 一等公民页骨架 + Sidebar/TopBar 完全接入 `navConfig`(保留 factor-lab/agent-studio,不 POST `/api/agent/tasks`)。
+**Current handoff:** Slice 9A-9G + mini 9H 已按 HQA v2 计划实现；下一步不是旧
+P2/P3，而是为完整 9H 的调度、prediction reconcile、weekly aggregation、通知与
+freshness 另立 bite-sized plan。Git 与运行状态在每次交接时现场核验，不在本计划写
+易腐的 ahead/dirty/尚未推送描述。

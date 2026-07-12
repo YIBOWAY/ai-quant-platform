@@ -5,6 +5,13 @@ Revised on 2026-06-29 for the Mac always-on local-service direction.
 Slice 1 operations runner and scheduler-safe CLI commands started on 2026-06-29.
 Slice 2 macOS LaunchAgent templates and runbook started on 2026-06-29.
 
+> **Historical contract note (2026-07-10):** Phase 1a-4 v2 Slice 9A replaced
+> the old “detail/status access performs recovery” behavior. All GET/status
+> surfaces are now observational; recovery is explicit via
+> `paper strategies recover-pending` or another named mutation path. Sections
+> below describe the original MVP-3 design and must not override the current
+> execution guide.
+
 **Goal:** make Paper Strategy Sleeves reliable as a Mac-local paper-trading
 operations workflow: supervised local services, scheduled signal generation,
 scheduled due-plan processing, recoverable execution state, clear retry

@@ -2,7 +2,17 @@
 
 本仓库是一个**本地优先**的 AI 量化研究与模拟交易平台。它面向研究、测试、报告与只读行情分析而构建，**不是实盘交易平台**。
 
-当前状态：Phase 14 已交付；在初始交付之后，又新增了本地期权工具、雷达下钻、运行详情页、实验回顾、本地 Futu 期权报价缓存、策略/Polymarket 路由重命名、统一 run metadata/index、opt-in async backtest jobs、AI HOT 只读新闻研究流及其可选 PostgreSQL 缓存兜底，以及 options screener 质量过滤 / `Avoid` 审计开关 / 备注列等内容。
+Phase 0-14 是已交付的历史能力层，不是当前开发路线。当前实现按 HQA
+`docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` 的小切片顺序推进；
+[前端渐进改造与 Hermes 集成计划](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
+保留 Slice 0-8 记录与未来 UI backlog。Slice 9A-9G 与只读 mini 9H 已完成，下一步是
+完整 9H cron/notify，开始前仍需当前 bite-sized plan。9E 位于 HQA；它复用 9D 的 `data prices`
+严格只读 Futu/QFQ/1d JSON seam（25 个标的、500 个
+含首尾日历日期上限，无其他 provider 或 local fallback）；HQA v2 以 previous UTC date
+为 `end`、`end-400 days` 为 `start`，经全局日期 inner join 和至少 60 个对齐收益，输出逐仓 beta 与持仓两两
+correlation，不输出 aggregate beta、VaR 或阈值 verdict。当前进度先看
+[INDEX.md](INDEX.md)，
+不要从旧 phase 文档的标题或 checkbox 推断。
 
 ## 它能做什么
 
@@ -34,11 +44,17 @@
 - 运行回放式时间序列回测。
 - 生成报告与图表。
 
-AI 研究助手：
+Hermes 与 AI 研究工作流：
 
-- 生成候选因子、实验配置与报告。
-- 将候选项存入评审池。
-- 任何内容晋级前都必须经过人工评审。
+- Hermes 会话负责生成研究源码/产物；平台负责确定性摄入、候选池、人工审批、
+  一次性研究回测和 promote diff。
+- `/brief` 提供动态晨报和不可变归档；`/hermes` 已通过只读
+  `GET /api/hermes/artifacts` 展示风险、预测状态和 proposal-only 市场推演产物。
+- 9G 由 HQA 本地 JSONL opportunity ledger 负责；平台只提供 CLI-only、file-backed 的
+  `paper strategies observations` 精确行动事实。9G 没有新增平台数据库表、HTTP route、
+  `/hermes` 卡片或调度器。
+- 平台不复活 LLM runner，不把 disabled composer 伪装成可执行任务面。
+- 任何候选晋级前都必须经过人工评审；常驻 paper/live 路径不加载 candidate 文件。
 
 AI 行业资讯：
 
@@ -113,13 +129,15 @@ http://127.0.0.1:3001
 
 ## 新贡献者阅读顺序
 
-1. [README.md](../README.md)
-2. [INDEX.md](INDEX.md)
-3. [SYSTEM_DESIGN_RESEARCH.md](SYSTEM_DESIGN_RESEARCH.md)
-4. [execution/phase_13_execution.md](execution/phase_13_execution.md)
-5. [delivery/phase_13_delivery.md](delivery/phase_13_delivery.md)
-6. [execution/phase_14_execution.md](execution/phase_14_execution.md)
-7. [delivery/phase_14_delivery.md](delivery/phase_14_delivery.md)
+1. [INDEX.md](INDEX.md) — 当前主线和文档分类。
+2. [README.md](../README.md) — 启动、稳定能力和安全边界。
+3. HQA `docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md`（当前实现计划）。
+4. [前序 Slice 0-8 记录](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)。
+5. [数据库/存储架构](architecture/database_cache_plan.md)。
+6. 改到具体功能时再读对应 `guides/`、`execution/` 和测试。
+
+`SYSTEM_DESIGN_RESEARCH.md`、Phase 0-15、delivery 和 audit 文档是设计/交付历史，
+需要追溯决策时再读，不作为“下一步”入口。
 
 期权方向，另读：
 
@@ -127,6 +145,6 @@ http://127.0.0.1:3001
 - [options/options_screener_learning.md](options/options_screener_learning.md)
 - [options/buyside_strategy_learning.md](options/buyside_strategy_learning.md)
 
-下一步数据库/缓存方向，请读：
+当前数据库/缓存实现，请读：
 
 - [architecture/database_cache_plan.md](architecture/database_cache_plan.md)

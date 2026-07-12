@@ -1,15 +1,27 @@
 # 数据库缓存方案
 
-状态：目前已实现三个本地存储层 —— (1) 基于 DuckDB 的富途 (Futu)
-期权缓存，(2) 一个可选的 PostgreSQL **运行索引 (run index)**，覆盖基于文件的
-回测 / 因子 / 模拟盘 / 研报复现运行记录，以及 (3) 一个可选的 PostgreSQL
-**AI HOT 新闻缓存**，用于 `/ai-news` 上游失败时的只读 stale fallback。2026-07-08
-新增了第 (4) 个 PostgreSQL 业务事实层：
-`app_users`、每日晨报 issue/snapshot/source 表和 owner-scoped
-`ai_news_daily_reports`。这些表已经具备迁移、契约测试、brief archive 读写 API
-和 AI HOT daily report fallback。2026-07-09 又新增 paper account mirror
-schema、显式 backfill 模块，以及 API/CLI 共用的 file-first dual-write mirror；
-当前 paper account API 仍以文件为事实源。
+状态（2026-07-10）：本地存储分为五类能力：
+
+1. DuckDB 富途期权报价缓存。
+2. 可选 PostgreSQL run index；研究 artifact 仍以文件为事实源。
+3. 可选 PostgreSQL AI HOT items/fetch cache。
+4. PostgreSQL root user、不可变 brief issue/snapshot/source 和 owner-scoped
+   AI daily report 业务事实。
+5. paper account repository：`file`、file-authoritative `mirror`、
+   PostgreSQL-authoritative `canonical` 三种显式模式，并提供结构化 reconciliation。
+
+数据库功能在代码中已实现，但不能把“实现 canonical”写成“运行环境已经切到
+canonical”。截至本快照，live `quantplatform` 的四份 migration 共 14 张表全部存在
+（003/004 为 11 张业务表）；当前 8765 以 `QS_DATABASE_AUTO_MIGRATE=false` 运行并确认
+数据库可达。现有账户已显式 backfill，并在 mirror/canonical 临时进程中得到
+`in_sync` reconciliation。默认 8765 仍是 `file` 模式，这是一项尚未执行的运营切换，
+不是代码缺失。迁移器不维护 `schema_migrations` 表，而是按词法序幂等重放 SQL。
+
+Slice 9G 本身没有新增 SQL migration 或数据库表。HQA opportunity ledger 是 HQA
+仓库内的本地 JSONL 事实源；平台 `paper strategies observations` 只读取现有
+file-backed strategy-sleeve 事实。既有四份 migration / 14 张表的状态不因 9G 改变；
+本工作树中的 `004_paper_account_tables.sql` 调整属于前序 paper-account 交付，不能归因
+为 9G 数据库迁移。
 
 DuckDB 期权缓存位于 `src/quant_system/storage/options_cache.py`，
 在 `QS_FUTU_USE_CACHE=true`（默认值）时，会将富途期权报价窗口持久化到
@@ -121,13 +133,11 @@ AI News 的事实来源仍是 AI HOT public API。PostgreSQL 只作为本地只�
   或实盘交易状态。
 
 当前实现边界：schema、brief repository、`POST /api/brief/issues/generate`、
-`GET /api/brief/issues/{public_id}`、`/brief/{public_id}` 前端归档页和 contract
-tests 已存在。`/api/brief/live`、`/api/brief/issues/latest`、`/brief` 生成入口、
-paper account DB canonical 仍按
-`docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md`
-的 Slice 6 / Slice 7 推进。
+`GET /api/brief/issues/latest`、`GET /api/brief/issues/{public_id}`、
+`/brief/{public_id}` 前端归档页和 contract tests 已存在。数据库关闭/不可达时
+归档路径明确失败，不用当日 live 数据伪造历史快照。
 
-## PostgreSQL Paper Account Mirror（schema/backfill/dual-write 已实现）
+## PostgreSQL Paper Account Repositories（已实现，运行切换未完成）
 
 `scripts/sql/004_paper_account_tables.sql` 创建 paper account 的显式镜像表：
 
@@ -140,22 +150,72 @@ paper account DB canonical 仍按
 
 `src/quant_system/execution/account_backfill.py` 暴露
 `backfill_account_file(account_path, settings=..., source="account_json")`。它只读取调用方传入的
-JSON 文件,使用 `PaperAccount.model_validate` 校验,然后在同一事务内写入 DB mirror。
-`src/quant_system/execution/account_repository_factory.py` 负责 API route 与 CLI/调度共用的
-repository 选择:`file` 为默认,`mirror` 使用 file-first `DualWritePaperAccountRepository`,
-`canonical` 在 Slice 5 暂回落文件并记录 warning。
+JSON 文件，使用 `PaperAccount.model_validate` 校验，再在同一事务内写入 DB。
+它不是自动扫描全部 archive 的 runner。
 
-当前语义：
+`src/quant_system/execution/account_repository_factory.py` 是 API、CLI 和 operations 的
+唯一选择入口：
 
-- 文件 JSON 仍是事实源；Postgres 只是 mirror。
-- API 与 CLI paper-account mutation 在 `QS_PAPER_ACCOUNT_DB_MODE=mirror` 时先写文件,
-  再 best-effort 写 PostgreSQL；DB 失败只写 warning log,不改变 API response contract。
-- `paper_account_ledger` 每次按当前 JSON ledger 整体替换,避免 reset 或手工修正后残留旧
-  entry 或 sequence 冲突。
-- pending orders 与 current positions 是 current-state mirror,会清理 JSON 中已不存在的行。
-- position snapshots 是 append-only audit points,重复 backfill 或在线 mirror 会新增 snapshot;
-  在线 mirror 使用当次 quote 估值,显式 backfill 默认使用账户 avg cost。
-- Slice 6 才会启用 DB canonical authoritative read/reset 和 mutation fail-closed。
+- `file`（默认）：`PaperAccountStorage`，文件事实源。
+- `mirror`：`DualWritePaperAccountRepository`，先写文件，再 best-effort 写 PostgreSQL。
+- `canonical`：`PostgresPaperAccountRepository`，PostgreSQL 对 load/open/save/reset
+  authoritative；数据库不可用时 mutation fail closed，不静默回退文件。DB 中缺账户
+  时返回 `paper_account_bootstrap_required`，必须显式 backfill/reconciliation，普通 GET
+  不会新建一套默认账户。
+
+account ID 统一通过 `validate_paper_account_id` 校验，避免路径逃逸或非法 DB key；repository
+key/path 与载荷内 `PaperAccount.account_id` 也必须相同。读到不匹配载荷会按损坏状态处理，
+保存不匹配载荷会在任何文件/数据库写入前拒绝，不能跨账户返回或串写。
+
+`src/quant_system/execution/account_snapshot.py` 的 `PaperAccountSnapshotReader` 是 API、CLI
+和 HQA 的统一观察读模型：
+
+```text
+repository factory → repository.load → quote/provenance → reconciliation → response
+```
+
+`GET /api/paper/account/snapshot` 与
+`quant-system paper account-show --account default --format json` 共用该 reader 和
+`{account_id, account_exists, account}` envelope；默认 text 仍是同一命令的人工入口。
+snapshot 不拿 mutation lock、不开户、不修复/重命名损坏文件，接受弱一致观察。file/mirror
+缺账户返回 `account_exists=false`；canonical 缺账户返回
+`paper_account_bootstrap_required`，数据库不可用返回
+`paper_account_database_unavailable`，均不回退文件。主 JSON 损坏时纯读取最多使用有效
+backup 并返回 warning；主备份都不可读时返回 `paper_account_storage_corrupt`。corrupt
+preservation/restore 只在持锁的 `load_or_open`/save 变更路径发生。
+
+当前估值只来自 repository 当前账户和只读 quote source；
+`positions_snapshot.parquet` 与 PostgreSQL position snapshots 是保存/审计派生产物，不是
+snapshot reader 的当前账户来源。行情不可用时允许以 `avg_cost_fallback` 保持结构可读，
+但必须附 `paper_account_price_unavailable`，不得把成本价描述成实时价。
+
+`PaperAccountResponse` 以 additive 字段暴露：
+
+- `storage_mode`：请求实际配置的 `file|mirror|canonical`。
+- `reconciliation`：`status`、source/target、checked time、expected/actual summary、
+  typed differences。
+- `stale`：reconciliation 为 `different` 或 `unavailable` 时为 true。
+- `warnings`：mirror/reconciliation 不可用、repository out-of-sync、backup fallback 或
+  quote unavailable 等稳定 warning code；不可读 storage 则以稳定错误失败。
+
+reconciliation 使用摘要 hash 对比 raw account、`paper_accounts` 物化列、完整 ledger
+物化字段/row raw/sequence、positions、pending orders，以及最新 position snapshot 的
+cash/position state、行内算术、metadata counts 和 freshness：
+snapshot source 还必须属于当前 repository/backfill 的已知 provenance 集合；任意非空
+字符串不再被视为有效来源。
+
+- file 模式：`not_applicable`，纯观察且不创建账户。
+- mirror 模式：用 file account 作为 expected，对比 PostgreSQL materialized state。
+- canonical 模式：对比 PostgreSQL raw account 与同库 ledger/position/pending/snapshot
+  materialized tables，发现内部漂移。
+
+持久化语义保持：ledger/current positions/pending orders 写入同一事务；ledger 按当前
+完整事件流替换，current-state 表清理已不存在的行；position snapshots append-only。
+结构化 reconciliation 是切换证据，不会自动把模式从 file/mirror 改成 canonical。
+
+迁移验证已在 throwaway `quantplatform_codex_tmp` 跑过 13 个 PostgreSQL tests，
+并确认四份 migration 的 14 张表全部存在。live `quantplatform` 另行完成备份、
+重启/auto-migrate、表核对、现有账户 backfill 和 API smoke；两组证据没有混用。
 
 ## 为何需要它
 
@@ -207,12 +267,12 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
 | `brief_snapshots` | 已实现 schema；每日晨报 append-only payload 快照。 |
 | `brief_snapshot_sources` | 已实现 schema；晨报快照来源审计。 |
 | `ai_news_daily_reports` | 已实现；AI HOT daily report owner-scoped cache 与 `/api/news/aihot/daily` stale fallback。 |
-| `paper_accounts` | 已实现 schema/backfill/dual-write；file-backed paper account 的 root-owned mirror。 |
-| `paper_account_ledger` | 已实现 schema/backfill/dual-write；按 JSON ledger 整体替换的事件镜像。 |
-| `paper_pending_orders` | 已实现 schema/backfill/dual-write；当前 pending order payload mirror。 |
-| `paper_positions_current` | 已实现 schema/backfill/dual-write；当前持仓和 source quantity mirror。 |
-| `paper_position_snapshots` | 已实现 schema/backfill/dual-write；每次 mirror 追加的持仓审计快照。 |
-| `paper_position_snapshot_rows` | 已实现 schema/backfill/dual-write；持仓审计快照明细。 |
+| `paper_accounts` | 已实现；mirror/canonical 共用的 root-owned raw account 与 metadata。 |
+| `paper_account_ledger` | 已实现；完整事件流 materialization 与 reconciliation 输入。 |
+| `paper_pending_orders` | 已实现；当前挂单 materialization 与 reconciliation 输入。 |
+| `paper_positions_current` | 已实现；当前持仓/source quantity materialization。 |
+| `paper_position_snapshots` | 已实现；append-only 持仓审计快照与 freshness 证据。 |
+| `paper_position_snapshot_rows` | 已实现；持仓审计快照明细。 |
 
 在首个 DuckDB 实现中已落地：
 
@@ -281,7 +341,7 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
 
 ## 安全规则
 
-- 数据库仅存储市场数据和研究产出。
+- 数据库存储研究/只读内容和本地 paper simulation 业务事实；不存实盘状态。
 - 不存储密钥、账户解锁状态、券商凭证、私钥、钱包数据或实盘下单指令。
 - 不添加富途交易上下文。
 - 不添加真实订单表。
@@ -289,9 +349,12 @@ PostgreSQL 很适合用户本地的 Docker 配置，尤其适用于查询最新�
 
 ## 尚未解决的问题
 
-- PostgreSQL 现在是可选的且默认关闭；仅当 `QS_DATABASE_ENABLED=true` 时，运行索引
-  和 AI HOT 新闻缓存才指向本地 Docker 容器 `quantplatform-db`。是否同时将期权缓存和雷达运行记录
-  迁入 PostgreSQL 仍未确定。
+- PostgreSQL 仍是可选能力；paper account 默认 `file`。是否切 mirror/canonical 是
+  独立运营决策，必须先完成 live migration、backfill、连续 reconciliation 和回滚验证。
+- live backend 已完成 migrations 003/004、brief API 与 paper
+  `storage_mode/reconciliation` smoke；仍需积累连续 reconciliation 和回滚演练，才可
+  考虑把运营模式从 `file` 切到 mirror/canonical。
+- 是否将期权缓存和雷达运行记录迁入 PostgreSQL 仍未确定。
 - 用户本地的 Docker 镜像中是否提供 TimescaleDB 仍待确认。
 - 运行索引以 JSONB 形式存储完整的运行元数据。若期权报价快照（日后迁入 PostgreSQL）
   应采用压缩 JSONB 还是完全归一化的行，仍未确定。首个 DuckDB 实现存储的是

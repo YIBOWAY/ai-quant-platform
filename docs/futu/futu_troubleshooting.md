@@ -76,6 +76,26 @@ python scripts/verify_futu_connection.py
 curl "http://127.0.0.1:8765/api/market-data/history?ticker=SPY&start=2024-01-02&end=2024-01-12&freq=1d&provider=futu"
 ```
 
+## `data prices` 返回非零或超时
+
+先直接复现严格只读 leaf：
+
+```powershell
+quant-system data prices --symbol AAPL --symbol SPY --start 2026-01-01 --end 2026-07-10 --provider futu --adjustment qfq --format json
+```
+
+- `historical_prices_invalid_request`（exit 2）：检查严格 `YYYY-MM-DD`、start/end 顺序、
+  25-symbol 与 500-inclusive-date 上限，以及重复/非美股 symbol。
+- `historical_prices_configuration_error`：检查 `QS_FUTU_PORT` 等配置类型与范围。
+- `historical_prices_provider_unavailable` / `historical_prices_provider_error`：查看
+  `provider_code`，确认 OpenD 已登录、权限和端口。
+- `provider_timeout`：TCP 可达不代表 OpenD 协议握手正常。可检查 OpenD 日志，并按需调整
+  正整数 `QS_FUTU_REQUEST_TIMEOUT_SECONDS`；它同时约束 TCP 探针、首连与查询。
+- `historical_prices_contract_invalid`：Futu 返回缺标的、重复日期、非法价格或 provenance
+  漂移；不要改用 sample/local 数据掩盖问题。
+
+该命令的 stdout 应能作为一个完整 JSON 文档解析；Futu lifecycle 日志只在 stderr。
+
 ## 前端无法连接后端
 
 检查后端是否在运行：
