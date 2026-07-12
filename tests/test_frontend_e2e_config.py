@@ -47,23 +47,32 @@ def test_hermes_e2e_fixture_covers_all_read_only_artifact_kinds() -> None:
         encoding="utf-8"
     )
 
-    assert {item["kind"] for item in fixture["items"]} == {
+    expected_kinds = {
         "portfolio_risk",
         "prediction",
         "market_foresight",
+        "weekly_review",
+        "opportunity_summary",
+        "automation_status",
     }
-    assert {source["kind"] for source in fixture["sources"]} == {
-        "portfolio_risk",
-        "prediction",
-        "market_foresight",
-    }
+    assert fixture["schema_version"] == "1.1"
+    assert {item["kind"] for item in fixture["items"]} == expected_kinds
+    assert {source["kind"] for source in fixture["sources"]} == expected_kinds
     candidate = next(
         item for item in fixture["items"] if item["kind"] == "market_foresight"
     )["data"]["candidates"][0]
     assert candidate["proposal_only"] is True
     assert candidate["requires_human_confirmation"] is True
     assert candidate["trading_allowed"] is False
+    for kind in ("weekly_review", "opportunity_summary", "automation_status"):
+        data = next(item for item in fixture["items"] if item["kind"] == kind)[
+            "data"
+        ]
+        assert data["proposal_only"] is True
+        assert data["trading_allowed"] is False
     assert 'page.goto("/zh/hermes")' in spec
+    for visible_text in ("周报复盘", "机会复盘", "自动化状态"):
+        assert visible_text in spec
     assert "toBeDisabled()" in spec
 
 

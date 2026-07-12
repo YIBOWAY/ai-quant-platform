@@ -71,6 +71,16 @@ def test_hermes_artifact_settings_accept_env_overrides(monkeypatch, tmp_path) ->
     assert settings.max_manifest_bytes == 2048
 
 
+def test_hermes_artifact_feed_defaults_to_three_hour_freshness_budget(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS", raising=False)
+
+    settings = HermesArtifactSettings()
+
+    assert settings.freshness_budget_seconds == 10_800
+
+
 def test_live_trading_requires_manual_confirmation_phrase() -> None:
     try:
         SafetySettings(live_trading_enabled=True)

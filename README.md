@@ -7,10 +7,10 @@ and options research platform.
 
 The Phase 0-14 documents describe delivered historical capability layers, not
 the current implementation queue. Start with [docs/INDEX.md](docs/INDEX.md).
-Current engineering work follows HQA's
-`docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md`; Slices 9A-9G and the
-read-only mini 9H Hermes artifact shelf are delivered. Full 9H cron/notify is
-next and remains queued pending a current bite-sized plan. Slice 9E is an HQA-local locked
+HQA Slices 9A-9G, the read-only mini 9H Hermes artifact shelf, and full 9H
+automation/notifications are delivered. No next implementation slice is
+selected; returning to this repository's frontend backlog requires a new
+product decision and an independent bite-sized plan. Slice 9E is an HQA-local locked
 prediction event ledger that reuses, but does not modify, the platform. Slice 9D adds a strict read-only
 `data prices` JSON seam: explicit Futu, QFQ, and 1d only; at most 25 symbols
 and 500 inclusive calendar dates; no sample/local/Tiingo/Longbridge fallback.
@@ -232,9 +232,11 @@ Important constraints:
 ## Read-only Hermes Artifact Shelf
 
 `GET /api/hermes/artifacts?limit=20` reads HQA's versioned, rebuildable
-`artifacts/hermes-feed/manifest.v1.json` and returns portfolio-risk,
-prediction-state, and proposal-only market-foresight cards. It never parses raw
-HQA JSONL, never writes HQA state, and does not enable the `/hermes` Composer or
+`artifacts/hermes-feed/manifest.v1.json`. Schema 1.0 keeps exactly three sources
+(`portfolio_risk`, `prediction`, `market_foresight`); schema 1.1 requires exactly
+six by adding `weekly_review`, `opportunity_summary`, and `automation_status`.
+The `/hermes` page renders all six artifact kinds. The platform never parses
+raw HQA JSONL, writes HQA state, enables the Composer, or calls
 `POST /api/agent/tasks`.
 
 The catalog reports stable `available`, `empty`, `degraded`, or `unavailable`
@@ -243,15 +245,16 @@ or raw exceptions. Configure it with:
 
 ```text
 QS_HERMES_ARTIFACT_FEED_PATH=/absolute/path/to/manifest.v1.json
-QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS=900
+QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS=10800
 QS_HERMES_ARTIFACT_MAX_FUTURE_CLOCK_SKEW_SECONDS=300
 QS_HERMES_ARTIFACT_MAX_MANIFEST_BYTES=4194304
 ```
 
 The default path resolves to the sibling `Hermes-quant-agent` repository. A
-prediction source may legitimately be `empty`; the real `/hermes` page still
-shows healthy risk and foresight sources. Scheduling and notifications remain
-HQA full-9H work.
+source may legitimately be `empty` while other source cards remain healthy.
+Full 9H scheduling and outbound delivery run in HQA; this platform remains a
+read-only consumer and adds no Hermes scheduler, outbound worker, POST route,
+or database migration.
 
 Interactive options pages include a short-lived in-process cache, a local
 DuckDB-backed Futu option quote cache, and a one-time retry for Futu rate-limit
@@ -678,6 +681,10 @@ Start here:
 
 `docs/SYSTEM_DESIGN_RESEARCH.md`, phase delivery records, and audits are
 historical design/evidence sources, not the current work queue.
+
+Current handoff: HQA 9A-9G, mini 9H, and full 9H are complete, and no next
+implementation slice is selected. Future frontend backlog work starts only
+after a new product decision and a separate bite-sized plan.
 
 Current options docs:
 

@@ -114,6 +114,160 @@ const availableShelf = {
 } satisfies HermesArtifactShelfEnvelope;
 
 describe("Hermes artifact shelf", () => {
+  it("renders schema 1.1 weekly, opportunity, and degraded automation cards explicitly", () => {
+    const automationShelf = {
+      schema_version: "1.1",
+      read_status: "available",
+      as_of: "2026-07-12T01:00:00Z",
+      items: [
+        {
+          id: "weekly-2026-W28",
+          kind: "weekly_review",
+          occurred_at: "2026-07-12T00:59:00Z",
+          quality: "available",
+          status: "available",
+          data: {
+            week_id: "2026-W28",
+            period_start: "2026-07-05T00:00:00Z",
+            period_end: "2026-07-12T00:00:00Z",
+            safety_alert_count: 1,
+            unique_signal_count: 3,
+            review_draft_count: 2,
+            review_confirmed_count: 1,
+            prediction_created_count: 0,
+            prediction_scored_count: 0,
+            prediction_hit_count: 0,
+            mean_direction_brier: null,
+            opportunity_observed_count: 4,
+            opportunity_missed_count: 1,
+            opportunity_coverage_unknown_count: 1,
+            limitations: ["read_only_research_summary"],
+            proposal_only: true,
+            trading_allowed: false,
+          },
+        },
+        {
+          id: "opportunities-2026-W28",
+          kind: "opportunity_summary",
+          occurred_at: "2026-07-12T00:58:00Z",
+          quality: "available",
+          status: "available",
+          data: {
+            window_start: "2026-07-05T00:00:00Z",
+            window_end: "2026-07-12T00:00:00Z",
+            total_count: 4,
+            resolution_counts: {
+              open: 1,
+              deferred: 0,
+              acted: 1,
+              action_failed: 0,
+              declined: 0,
+              missed: 1,
+              expired_coverage_unknown: 1,
+              not_actionable: 0,
+              unknown: 0,
+            },
+            miss_reason_counts: {
+              no_decision: 1,
+              act_without_action: 0,
+              defer_expired: 0,
+            },
+            proposal_only: true,
+            trading_allowed: false,
+          },
+        },
+        {
+          id: "automation-latest",
+          kind: "automation_status",
+          occurred_at: "2026-07-12T00:57:00Z",
+          quality: "degraded",
+          status: "degraded",
+          data: {
+            checked_at: "2026-07-12T00:57:00Z",
+            overall_status: "degraded",
+            jobs: [
+              {
+                job_id: "weekly",
+                expected_schedule: "0 9 * * 0",
+                timezone: "Asia/Shanghai",
+                freshness_budget_seconds: 691200,
+                last_attempt_at: null,
+                last_success_at: null,
+                fresh_until: null,
+                status: "never_run",
+                reason_code: "never_run",
+                last_run_id: null,
+                notification_status: "queued",
+              },
+            ],
+            proposal_only: true,
+            trading_allowed: false,
+          },
+        },
+      ],
+      sources: [
+        ...availableShelf.sources,
+        {
+          kind: "weekly_review",
+          status: "available",
+          latest_at: "2026-07-12T00:59:00Z",
+          reason_code: null,
+        },
+        {
+          kind: "opportunity_summary",
+          status: "available",
+          latest_at: "2026-07-12T00:58:00Z",
+          reason_code: null,
+        },
+        {
+          kind: "automation_status",
+          status: "available",
+          latest_at: "2026-07-12T00:57:00Z",
+          reason_code: null,
+        },
+      ],
+      warnings: [],
+    } satisfies HermesArtifactShelfEnvelope;
+
+    const english = renderToStaticMarkup(
+      createElement(ArtifactShelf, { envelope: automationShelf, locale: "en" }),
+    );
+    const chinese = renderToStaticMarkup(
+      createElement(ArtifactShelf, { envelope: automationShelf, locale: "zh" }),
+    );
+
+    expect(english).toContain("Weekly review · 2026-W28");
+    expect(english).toContain("No scored predictions yet");
+    expect(english).toContain("Opportunity review");
+    expect(english.match(/>Period</g)).toHaveLength(2);
+    expect(english).toContain("Missed opportunities");
+    expect(english).toContain("Action failed");
+    expect(english).toContain("Not actionable");
+    expect(english).toContain("Automation status");
+    expect(english).toContain("Degraded · attention required");
+    expect(english).toContain("Never run");
+    expect(english).toContain("Freshness budget");
+    expect(english).toContain("Fresh until");
+    expect(english).toContain("Queued");
+    expect(english).not.toContain(">Market foresight</h3>");
+    expect(english.match(/<article/g)).toHaveLength(3);
+
+    expect(chinese).toContain("周报复盘 · 2026-W28");
+    expect(chinese).toContain("暂无已评分预测");
+    expect(chinese).toContain("机会复盘");
+    expect(chinese.match(/>统计区间</g)).toHaveLength(2);
+    expect(chinese).toContain("错过机会");
+    expect(chinese).toContain("行动失败");
+    expect(chinese).toContain("不可行动");
+    expect(chinese).toContain("自动化状态");
+    expect(chinese).toContain("已降级 · 需要检查");
+    expect(chinese).toContain("从未运行");
+    expect(chinese).toContain("时效预算");
+    expect(chinese).toContain("保鲜截止");
+    expect(chinese).toContain("排队中");
+    expect(chinese).not.toContain(">市场推演</h3>");
+  });
+
   it("shows that an empty prediction ledger is connected but has no entries", () => {
     const shelfWithoutPredictions = {
       ...availableShelf,

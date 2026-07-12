@@ -8,7 +8,9 @@
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
 | 跨仓产品路线 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md` | Hermes 是 COO/编排层；本仓库是领域后端。 |
-| 当前实现计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | Slice 9A-9G + mini 9H 已完成；完整 9H cron/notify 是下一切片。 |
+| 已交付跨仓计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | Slice 9A-9G + mini 9H 已完成。 |
+| 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
+| 当前实现选择 | 尚未选定 | 若恢复前端 backlog，先做新的产品决定并另立独立 bite-sized plan。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
 | 被替代计划 | HQA `2026-07-07-phase-1a-4-research-employees.md` | 目标保留，旧 implementation 模板不得原样执行。 |
 | 历史路线 | [Phase 15 素材档案](phases/phase_15_iteration_roadmap.md) | 仅作素材，不是独立 roadmap。 |
@@ -35,8 +37,11 @@ HQA Slice 9E 已复用该 seam，真实临时 prediction ledger smoke 与到期�
 Composer 继续禁用。Slice 9G 新增 HQA 本地 opportunity ledger，并通过平台 CLI-only
 `paper strategies observations` 读取精确 signal/execution facts；平台没有新增机会账本
 数据库、HTTP route 或 UI。真实 59 条 options 信号因无 paper-options route 均为
-`not_actionable`，零虚假 missed。下一步不回到旧前端 P2/P3，而是为完整 9H 的调度、
-聚合、通知与 freshness 另立当前计划。
+`not_actionable`，零虚假 missed。完整 9H 随后在 HQA 完成调度、prediction/opportunity
+对账、周报聚合、job freshness 与通知投递。平台现在兼容 feed schema 1.0 的精确三来源
+合同和 schema 1.1 的精确六来源合同；`/hermes` 展示风险、预测、推演、周报、机会与
+自动化状态，whole-feed freshness budget 为 10800 秒。平台没有为完整 9H 新增
+scheduler、outbound worker、POST route 或数据库 migration。目前没有选定下一切片。
 
 ## 0. 界面操作指南（新，建议先读）
 
@@ -62,7 +67,8 @@ Composer 继续禁用。Slice 9G 新增 HQA 本地 opportunity ledger，并通�
 | 文档 | 用途 |
 |---|---|
 | [../README.md](../README.md) | 快速项目入口与运行命令。 |
-| `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | **当前实现计划**：只执行其中 current slice。 |
+| `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | **已交付记录**：Slice 9A-9G + mini 9H。 |
+| `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | **已交付记录**：完整 9H 自动化与通知。 |
 | [superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 实现记录与未来前端 backlog。 |
 | [architecture/database_cache_plan.md](architecture/database_cache_plan.md) | 当前本地存储与 PostgreSQL 业务事实架构。 |
 | [audits/project_assessment_2026-06-11.html](audits/project_assessment_2026-06-11.html) | **2026-06-11 历史评估快照（HTML）**。 |
@@ -187,7 +193,7 @@ Composer 继续禁用。Slice 9G 新增 HQA 本地 opportunity ledger，并通�
 | `/data-explorer` | 股票数据查看器。 |
 | `/brief` | 当日动态晨报预览；归档入口读取 PostgreSQL 中不可变 brief snapshot。 |
 | `/brief/[publicId]` | 已归档晨报的只读快照页。 |
-| `/hermes` | mini 9H 只读产物架：展示风险、预测状态和 proposal-only 市场推演；不提交 agent task 或交易动作。 |
+| `/hermes` | 只读产物架：展示风险、预测、推演、周报、机会与自动化状态；不提交 agent task 或交易动作。 |
 | `/factor-lab` | 现有只读因子健康度与单标的择时仪表盘；HQA 工作台落地后应从一级入口降级为 run/detail 分析面。 |
 | `/factor-lab/[runId]` | 因子运行详情。 |
 | `/backtest` | 策略、universe 与因子权重回测运行。 |
@@ -304,7 +310,7 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 
 - [architecture/database_cache_plan.md](architecture/database_cache_plan.md)
 
-当前与下一步方向：
+当前状态与后续决策：
 
 - DuckDB 现用于本地 Futu 期权报价窗口。
 - PostgreSQL 现（可选）用于 backtest/factor/paper/replication 运行索引。
@@ -314,8 +320,8 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 - paper account 当前默认仍是 `file`，不能把 canonical 能力误写成已切换状态。
 - `quant-system data prices` 现为只读 Futu/QFQ/1d JSON seam；不读取 local cache，也不
   回退到 sample、Tiingo 或 Longbridge。
-- 当前跨仓下一步是为 HQA 完整 9H cron、prediction reconcile、weekly aggregation、
-  notify 与 freshness monitoring 另立 bite-sized plan。
+- HQA 9A-9G、mini 9H 与完整 9H 均已完成；目前没有选定下一实现切片。
+- 未来前端 backlog 需要新的产品决定，并按最新源码另立独立 bite-sized plan。
 - 剩余的 PostgreSQL 目标：雷达运行、请求日志，以及更丰富的
   API 可见快照。
 - 对大型 OHLCV 与分析型时间序列数据集采用 Parquet / DuckDB。

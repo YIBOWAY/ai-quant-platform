@@ -3,10 +3,10 @@
 本地优先的量化研究、回测、模拟交易、只读行情与期权研究平台。
 
 Phase 0-14 文档描述已经交付的历史能力层，不是当前实现队列。先读
-[docs/INDEX.md](docs/INDEX.md)。当前工程按 HQA
-`docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` 推进：Slice 9A-9G 与只读
-mini 9H Hermes 产物架已完成。下一步是完整 9H cron/notify，开始前仍需按当前源码
-另立 bite-sized plan。9E 是 HQA 本地带锁的 prediction event ledger，复用但
+[docs/INDEX.md](docs/INDEX.md)。HQA Slice 9A-9G、只读 mini 9H Hermes 产物架与
+完整 9H 自动化/通知均已完成。目前没有选定下一实现切片；若回到本仓库的前端
+backlog，必须先有新的产品决定并另立独立的 bite-sized plan。9E 是 HQA 本地带锁的
+prediction event ledger，复用但
 不修改平台代码或 schema。9D 新增严格只读的 `data prices` JSON seam：只接受
 显式 Futu、QFQ、1d，最多 25 个标的和 500 个含首尾日历日期，不回退到
 sample/local/Tiingo/Longbridge。HQA 组合风险 v2 以 previous UTC date 为 `end`、
@@ -188,22 +188,25 @@ quant-system data prices --symbol AAPL --symbol SPY --start 2026-01-01 --end 202
 ## 只读 Hermes 产物架
 
 `GET /api/hermes/artifacts?limit=20` 只读 HQA 可重建、版本化的
-`artifacts/hermes-feed/manifest.v1.json`，返回组合风险、预测状态和 proposal-only
-市场推演卡片。它不解析 HQA 原始 JSONL，不写 HQA 状态，也不会启用 `/hermes`
-Composer 或 `POST /api/agent/tasks`。
+`artifacts/hermes-feed/manifest.v1.json`。schema 1.0 精确包含三种来源
+（`portfolio_risk`、`prediction`、`market_foresight`）；schema 1.1 精确包含六种，
+再加入 `weekly_review`、`opportunity_summary` 与 `automation_status`。`/hermes`
+会展示全部六类产物。平台不解析 HQA 原始 JSONL、不写 HQA 状态，也不会启用
+Composer 或调用 `POST /api/agent/tasks`。
 
 catalog 会稳定返回 `available`、`empty`、`degraded` 或 `unavailable`，校验 manifest
 并限制文件大小，不向 API 暴露本地路径或原始异常。配置项为：
 
 ```text
 QS_HERMES_ARTIFACT_FEED_PATH=/absolute/path/to/manifest.v1.json
-QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS=900
+QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS=10800
 QS_HERMES_ARTIFACT_MAX_FUTURE_CLOCK_SKEW_SECONDS=300
 QS_HERMES_ARTIFACT_MAX_MANIFEST_BYTES=4194304
 ```
 
-默认路径指向同级 `Hermes-quant-agent` 仓库。prediction 来源可以合法地为 `empty`，
-页面仍会显示健康的风险与推演来源；调度和通知留给 HQA 完整 9H。
+默认路径指向同级 `Hermes-quant-agent` 仓库。某一来源可以合法地为 `empty`，
+其他来源卡片仍可保持健康。完整 9H 的调度与外发投递运行在 HQA；平台仍只是只读
+消费者，没有新增 Hermes scheduler、outbound worker、POST route 或数据库 migration。
 
 交互式期权页面包含短期进程内缓存、本地 DuckDB 支持的富途期权报价缓存，以及针对富途限频响应的单次重试。宽泛的每日扫描仍应计划执行，并在富途限速下预计运行较慢。
 
@@ -505,6 +508,9 @@ npx playwright test --config playwright.config.ts --workers=1
 
 `docs/SYSTEM_DESIGN_RESEARCH.md`、phase 交付记录和 audits 是历史设计/证据，不是
 当前待办队列。
+
+当前交接：HQA 9A-9G、mini 9H 与完整 9H 已完成，目前没有选定下一实现切片。
+未来前端 backlog 只有在新的产品决定后，才能按独立 bite-sized plan 启动。
 
 当前期权相关文档：
 

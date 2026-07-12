@@ -11,34 +11,39 @@
 ## 当前执行状态（2026-07-12）
 
 本文件现在是 **Slice 0-8 实现记录与未来前端 backlog**。当前实现已切到
-`/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md`
-；其 Slice 9A-9G + mini 9H 已完成，下一步为完整 9H cron/notify，开始前仍需按
-当前源码另立 bite-sized plan。跨仓产品方向仍由 HQA
-roadmap 管理。
+HQA，并已完成 `2026-07-10-phase-1a-4-v2.md` 的 Slice 9A-9G + mini 9H，以及
+`2026-07-12-full-9h-automation-notifications.md` 的完整 9H。跨仓产品方向仍由 HQA
+roadmap 管理；目前没有选定下一实现切片。
 
 | 事实层 | 状态 |
 |---|---|
 | Slice 0-8 | 本文件保留已交付实现和未来前端 backlog；Git/进程状态在每次交接时由命令核验，不在计划正文维护易腐 ahead/dirty 快照。 |
-| Slice 9A-9G + mini 9H | 当前跨仓计划已完成。9G 是 HQA ledger + 平台 CLI-only observation seam，没有新增数据库 migration、HTTP route、前端或 `/hermes` 卡片。 |
-| 下一步 | 完整 9H cron、prediction reconcile、weekly aggregation、notify 与 freshness；必须另立当前计划，不能从旧 P2/P3 直接续写。 |
+| Slice 9A-9G + mini 9H | 已完成。9G 是 HQA ledger + 平台 CLI-only observation seam，没有新增数据库 migration、HTTP route、前端或 `/hermes` 卡片。 |
+| 完整 9H | 已完成。调度、对账、周报、freshness 与通知位于 HQA；平台兼容 feed 1.0/1.1 并展示六类只读产物。 |
+| 当前选择 | 尚未选定下一实现切片。未来前端 backlog 需要新的产品决定，并按最新源码另立独立 bite-sized plan。 |
 
-用户已授权选择/创建计划并继续实现。复审结果为旧 HQA Phase 1a-4
-**ACCEPT-AFTER-REPLAN**；v2 Slice 9A-9G + mini 9H 已完成，下一步是完整 9H，
-仍不从本文件直接续写旧 P2/P3。
+复审结果为旧 HQA Phase 1a-4 **ACCEPT-AFTER-REPLAN**；v2 Slice 9A-9G + mini 9H
+与完整 9H 后续计划均已交付。当前 handoff 不从本文件直接续写旧 P2/P3，也不预选
+新的实现切片。
 旧 P0-P4 的逐步代码模板已移入
 [归档计划](../../archive/plans/2026-07-08-frontend-redesign-hermes-integration-original-p0-p4.md)，
 不能直接照抄执行。
 
-当前审查门禁：平台 Python 全量 `1090 passed, 15 skipped`；HQA `429 passed, 2 skipped`；
-前端 Vitest 24 files / 84 tests、type-check、ESLint、scoped Ruff 通过；mini 9H 的固定
-三类产物全栈 Playwright 正向用例通过；throwaway
+当前 full 9H 审查门禁：平台 Python 全量 `1122 passed, 15 skipped`；前端 Vitest
+24 files / 85 tests、type-check 与 ESLint 通过；feed schema 1.0 精确三来源和 1.1
+精确六来源的后端/前端合同均通过；throwaway
 PostgreSQL 的 13 个 migration / persistence / backfill / reconciliation / advisory-lock tests 通过。
 `api.generated.ts` 已从当前 OpenAPI
 确定性重生成，并由 focused contract test 覆盖 brief、paper snapshot 与 reconciliation。
-live backend/数据库、brief archive、Hermes 与 paper 页面 smoke 已验收；
+2026-07-10 历史验收时，live backend/数据库、brief archive、Hermes 与 paper 页面 smoke 已验收；
 `brief-zh.png` / `hermes-desktop.png` 已在禁用 AI HOT 外网的隔离 E2E 环境生成并稳定
 复跑；改用按端口复制的临时前端工作区后，E2E 不再干扰当前 3001 服务或改写源码侧
-TypeScript 配置。上述前端、E2E 与运行栈事实是 2026-07-10 的验收快照，不是永久证明。
+TypeScript 配置。这些 live、截图与运行栈事实是历史快照，不是永久证明。
+
+当前平台 full 9H 合同仅扩展只读消费：schema 1.0 必须精确三来源，schema 1.1 必须
+精确六来源；`/hermes` 展示 risk、prediction、foresight、weekly、opportunity 与
+automation，whole-feed freshness budget 为 10800 秒。scheduler、outbound worker
+与通知投递留在 HQA；平台没有新增 POST route 或数据库 migration。
 
 Slice 9D 的平台合同是严格只读 `quant-system data prices` JSON seam：显式
 Futu/QFQ/1d，最多 25 个标的和 500 个含首尾日历日期，不从 sample、local、Tiingo 或
@@ -1286,6 +1291,7 @@ git commit -m "feat(frontend): link daily brief to archived snapshots"
 | 9F | HQA proposal-only market-foresight；严格 Futu/QFQ evidence、原子/幂等发布 | 见 HQA `2026-07-12-slice-9f-mini-9h.md` 与 `tests/test_market_foresight.py` |
 | mini 9H | HQA versioned feed → `GET /api/hermes/artifacts` → `/hermes` 真实只读卡片 | `pytest tests/test_api_hermes_artifacts.py tests/test_api_response_models.py -q`；前端 Vitest/type-check/lint；live browser smoke |
 | 9G | HQA stable signal/decision/action/coverage ledger + 平台 bounded observation CLI；无 DB/API/UI | 见 HQA `2026-07-12-slice-9g-opportunity-ledger.md`；平台 `pytest tests/test_paper_strategy_observations.py tests/test_cli.py -q` |
+| 完整 9H | HQA 调度/对账/周报/freshness/通知 + feed 1.1；平台双版本只读消费与六类卡片，无 scheduler/outbound worker/POST/DB migration | 见 HQA `2026-07-12-full-9h-automation-notifications.md`；平台 Python 全量、前端 Vitest/type-check/lint、13 个 PostgreSQL tests |
 
 ### Slice 8 — Hermes first-class shell + navConfig chrome
 
@@ -1371,7 +1377,7 @@ git commit -m "feat(frontend): link daily brief to archived snapshots"
 
 ---
 
-### Mini 9H follow-on — real read-only artifact shelf
+### Mini 9H historical follow-on — real read-only artifact shelf
 
 **Status 2026-07-12 historical:** 本地代码与真实运行验收完成；当时尚未
 commit/push，当前发布状态以 git 为准。
@@ -1386,8 +1392,9 @@ commit/push，当前发布状态以 git 为准。
 - live `/zh/hermes` 已显示 AAPL market-foresight、组合风险和三来源状态；prediction
   ledger 当前无正式事件，因此 `empty` 是诚实状态而非未接通。
 
-完整 9H 仍需另立 bite-sized plan 实现 cron、prediction reconciliation cadence、weekly
-aggregation、通知和 freshness monitoring；本 follow-on 不声称它们已自动运行。
+以上是 mini 9H 当时的历史边界；其中“完整 9H 尚未运行”的陈述不再代表当前状态。
+完整 9H 后续已由 HQA `2026-07-12-full-9h-automation-notifications.md` 交付，平台仍只做
+schema 1.0/1.1 的确定性只读消费。
 
 ---
 
@@ -1420,7 +1427,8 @@ aggregation、通知和 freshness monitoring；本 follow-on 不声称它们已�
 - [x] 旧前端 P0-P4 详细设计已移入 archive，并标记为 backlog/历史参考
 
 **未覆盖项:** 旧 P1-P4 中尚未展开的 follow-on 不是当前执行步骤。需要继续前端改造时，
-从归档 backlog 选择一件，按最新代码另立 bite-sized 计划；不得借用当前 HQA 9A+ 编号。
+先做新的产品决定，再从归档 backlog 选择一件并按最新代码另立 bite-sized 计划；不得
+借用 HQA 9A+ 编号。
 
 ### 2. Placeholder scan
 
@@ -1445,13 +1453,14 @@ aggregation、通知和 freshness monitoring；本 follow-on 不声称它们已�
 
 Plan complete and saved to `docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md`.
 
-**Two execution options:**
+**Historical Slice 0-8 execution options:**
 
 **1. Subagent-Driven (recommended)** - 每个 slice 派 fresh subagent 执行,主线程做 review 与集成。共享文件禁止并行写;Slice 1/2/3 可由后端 agent 顺序推进,Slice 7 可在 Slice 2 之后由前端 agent 接手。
 
 **2. Inline Execution** - 按当前 slice 顺序执行，每个 slice 完成后暂停做测试结果与 diff review。
 
-**Current handoff:** Slice 9A-9G + mini 9H 已按 HQA v2 计划实现；下一步不是旧
-P2/P3，而是为完整 9H 的调度、prediction reconcile、weekly aggregation、通知与
-freshness 另立 bite-sized plan。Git 与运行状态在每次交接时现场核验，不在本计划写
-易腐的 ahead/dirty/尚未推送描述。
+**Current handoff:** Slice 9A-9G、mini 9H 与完整 9H 均已实现，目前没有选定下一
+实现切片。平台现兼容 schema 1.0 exact-three 与 schema 1.1 exact-six feed，并在
+`/hermes` 展示六类只读产物；HQA 负责调度与外发投递。若恢复旧前端 P2/P3 backlog，
+必须先有新的产品决定，再按最新源码另立独立 bite-sized plan。Git 与运行状态在每次
+交接时现场核验，不在本计划写易腐的 ahead/dirty/尚未推送描述。

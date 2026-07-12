@@ -492,7 +492,7 @@ class HermesArtifactSettings(BaseSettings):
         / "hermes-feed"
         / "manifest.v1.json"
     )
-    freshness_budget_seconds: int = Field(default=86_400, gt=0)
+    freshness_budget_seconds: int = Field(default=10_800, gt=0)
     max_future_clock_skew_seconds: int = Field(default=300, ge=0, le=86_400)
     max_manifest_bytes: int = Field(default=4 * 1024 * 1024, gt=0)
 

@@ -3272,23 +3272,23 @@ export interface components {
             read_status: "empty" | "available" | "degraded" | "unavailable";
             /**
              * Schema Version
-             * @constant
+             * @enum {string}
              */
-            schema_version: "1.0";
+            schema_version: "1.0" | "1.1";
             /** Sources */
             sources: components["schemas"]["HermesArtifactSourceResponse"][];
             /** Warnings */
             warnings: components["schemas"]["HermesArtifactWarningResponse"][];
         };
         /** HermesArtifactItemResponse */
-        HermesArtifactItemResponse: components["schemas"]["HermesPortfolioRiskItem"] | components["schemas"]["HermesPredictionItem"] | components["schemas"]["HermesMarketForesightItem"];
+        HermesArtifactItemResponse: components["schemas"]["HermesPortfolioRiskItem"] | components["schemas"]["HermesPredictionItem"] | components["schemas"]["HermesMarketForesightItem"] | components["schemas"]["HermesWeeklyReviewItem"] | components["schemas"]["HermesOpportunitySummaryItem"] | components["schemas"]["HermesAutomationStatusItem"];
         /** HermesArtifactSourceResponse */
         HermesArtifactSourceResponse: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "portfolio_risk" | "prediction" | "market_foresight";
+            kind: "portfolio_risk" | "prediction" | "market_foresight" | "weekly_review" | "opportunity_summary" | "automation_status";
             /** Latest At */
             latest_at: string | null;
             /** Reason Code */
@@ -3305,6 +3305,88 @@ export interface components {
             code: string;
             /** Source */
             source: string;
+        };
+        /** HermesAutomationJobStatus */
+        HermesAutomationJobStatus: {
+            /** Expected Schedule */
+            expected_schedule: string;
+            /** Fresh Until */
+            fresh_until: string | null;
+            /** Freshness Budget Seconds */
+            freshness_budget_seconds: number;
+            /**
+             * Job Id
+             * @enum {string}
+             */
+            job_id: "daily_close" | "freshness" | "weekly" | "notification_drain";
+            /** Last Attempt At */
+            last_attempt_at: string | null;
+            /** Last Run Id */
+            last_run_id: string | null;
+            /** Last Success At */
+            last_success_at: string | null;
+            /**
+             * Notification Status
+             * @enum {string}
+             */
+            notification_status: "delivered" | "queued" | "fallback_persisted" | "not_required" | "delivery_unknown";
+            /** Reason Code */
+            reason_code: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "fresh" | "stale" | "failed" | "never_run";
+            /**
+             * Timezone
+             * @constant
+             */
+            timezone: "Asia/Shanghai";
+        };
+        /** HermesAutomationStatusData */
+        HermesAutomationStatusData: {
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Jobs */
+            jobs: components["schemas"]["HermesAutomationJobStatus"][];
+            /**
+             * Overall Status
+             * @enum {string}
+             */
+            overall_status: "fresh" | "degraded";
+            /**
+             * Proposal Only
+             * @constant
+             */
+            proposal_only: true;
+            /**
+             * Trading Allowed
+             * @constant
+             */
+            trading_allowed: false;
+        };
+        /** HermesAutomationStatusItem */
+        HermesAutomationStatusItem: {
+            data: components["schemas"]["HermesAutomationStatusData"];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "automation_status";
+            /** Occurred At */
+            occurred_at: string;
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "available" | "degraded" | "not_applicable" | "unavailable";
+            /** Status */
+            status: string;
         };
         /** HermesForesightCandidate */
         HermesForesightCandidate: {
@@ -3382,6 +3464,83 @@ export interface components {
              * @enum {string}
              */
             kind: "market_foresight";
+            /** Occurred At */
+            occurred_at: string;
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "available" | "degraded" | "not_applicable" | "unavailable";
+            /** Status */
+            status: string;
+        };
+        /** HermesOpportunityMissReasonCounts */
+        HermesOpportunityMissReasonCounts: {
+            /** Act Without Action */
+            act_without_action: number;
+            /** Defer Expired */
+            defer_expired: number;
+            /** No Decision */
+            no_decision: number;
+        };
+        /** HermesOpportunityResolutionCounts */
+        HermesOpportunityResolutionCounts: {
+            /** Acted */
+            acted: number;
+            /** Action Failed */
+            action_failed: number;
+            /** Declined */
+            declined: number;
+            /** Deferred */
+            deferred: number;
+            /** Expired Coverage Unknown */
+            expired_coverage_unknown: number;
+            /** Missed */
+            missed: number;
+            /** Not Actionable */
+            not_actionable: number;
+            /** Open */
+            open: number;
+            /** Unknown */
+            unknown: number;
+        };
+        /** HermesOpportunitySummaryData */
+        HermesOpportunitySummaryData: {
+            miss_reason_counts: components["schemas"]["HermesOpportunityMissReasonCounts"];
+            /**
+             * Proposal Only
+             * @constant
+             */
+            proposal_only: true;
+            resolution_counts: components["schemas"]["HermesOpportunityResolutionCounts"];
+            /** Total Count */
+            total_count: number;
+            /**
+             * Trading Allowed
+             * @constant
+             */
+            trading_allowed: false;
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
+        };
+        /** HermesOpportunitySummaryItem */
+        HermesOpportunitySummaryItem: {
+            data: components["schemas"]["HermesOpportunitySummaryData"];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "opportunity_summary";
             /** Occurred At */
             occurred_at: string;
             /**
@@ -3502,6 +3661,75 @@ export interface components {
             symbol: string;
             /** Value */
             value: number | null;
+        };
+        /** HermesWeeklyReviewData */
+        HermesWeeklyReviewData: {
+            /** Limitations */
+            limitations: string[];
+            /** Mean Direction Brier */
+            mean_direction_brier: number | null;
+            /** Opportunity Coverage Unknown Count */
+            opportunity_coverage_unknown_count: number;
+            /** Opportunity Missed Count */
+            opportunity_missed_count: number;
+            /** Opportunity Observed Count */
+            opportunity_observed_count: number;
+            /**
+             * Period End
+             * Format: date-time
+             */
+            period_end: string;
+            /**
+             * Period Start
+             * Format: date-time
+             */
+            period_start: string;
+            /** Prediction Created Count */
+            prediction_created_count: number;
+            /** Prediction Hit Count */
+            prediction_hit_count: number;
+            /** Prediction Scored Count */
+            prediction_scored_count: number;
+            /**
+             * Proposal Only
+             * @constant
+             */
+            proposal_only: true;
+            /** Review Confirmed Count */
+            review_confirmed_count: number;
+            /** Review Draft Count */
+            review_draft_count: number;
+            /** Safety Alert Count */
+            safety_alert_count: number;
+            /**
+             * Trading Allowed
+             * @constant
+             */
+            trading_allowed: false;
+            /** Unique Signal Count */
+            unique_signal_count: number;
+            /** Week Id */
+            week_id: string;
+        };
+        /** HermesWeeklyReviewItem */
+        HermesWeeklyReviewItem: {
+            data: components["schemas"]["HermesWeeklyReviewData"];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "weekly_review";
+            /** Occurred At */
+            occurred_at: string;
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "available" | "degraded" | "not_applicable" | "unavailable";
+            /** Status */
+            status: string;
         };
         /** KillSwitchRequest */
         KillSwitchRequest: {

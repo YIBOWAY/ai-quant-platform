@@ -982,6 +982,12 @@ export type HermesForesightCandidateData =
   HermesSchemas["HermesForesightCandidate"];
 export type HermesMarketForesightArtifactData =
   HermesSchemas["HermesMarketForesightData"];
+export type HermesWeeklyReviewArtifactData =
+  HermesSchemas["HermesWeeklyReviewData"];
+export type HermesOpportunitySummaryArtifactData =
+  HermesSchemas["HermesOpportunitySummaryData"];
+export type HermesAutomationStatusArtifactData =
+  HermesSchemas["HermesAutomationStatusData"];
 export type HermesArtifactSource =
   HermesSchemas["HermesArtifactSourceResponse"];
 export type HermesArtifactWarning =

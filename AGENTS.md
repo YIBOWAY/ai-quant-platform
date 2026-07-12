@@ -54,15 +54,20 @@ data/                     Local cache, fixtures, generated research outputs.
   `/Users/sunyibo/programs/Hermes-quant-agent`.
 - The active cross-repo roadmap lives in
   `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`.
-- The current implementation plan is
-  `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md`;
-  Slices 9A-9G and the read-only mini 9H artifact shelf are delivered; full 9H
-  cron/notify is next and remains queued pending a current bite-sized plan. Slice 9E lives in
-  HQA and reuses Slice 9D's price seam. Slice 9D's
+- HQA Slices 9A-9G, the read-only mini 9H artifact shelf, and full 9H
+  automation/notifications are delivered. There is no selected next slice;
+  future frontend backlog work needs a new product decision and an independent
+  bite-sized plan. Slice 9E lives in HQA and reuses Slice 9D's price seam. Slice 9D's
   `data prices` seam is strictly read-only Futu/QFQ/1d JSON, capped at 25
   symbols and 500 calendar days, with no sample/local/Tiingo/Longbridge
   fallback. The platform 2026-07-08 frontend plan is the Slice 0-8 record and
   future UI backlog.
+- The platform consumes Hermes feed schema 1.0 with exactly three sources and
+  schema 1.1 with exactly six: risk, prediction, foresight, weekly review,
+  opportunity summary, and automation status. Whole-feed freshness is 10,800
+  seconds. Full 9H scheduling and outbound delivery live in HQA; this platform
+  has no Hermes scheduler, outbound worker, new POST route, or new database
+  migration for that slice.
 - The HQA 2026-07-07 Phase 1a-4 plan is superseded implementation material.
   Do not follow its task templates directly.
 - `docs/phases/phase_15_iteration_roadmap.md` is reference material only; do
@@ -133,9 +138,10 @@ data/                     Local cache, fixtures, generated research outputs.
   archived inputs, not executable instructions.
 - `lib/navConfig.ts` is the navigation route/order source of truth. Keep copy
   localized in the rendering components unless the active plan changes it.
-- `/hermes` is a read-only artifact shelf backed by `GET /api/hermes/artifacts`:
-  no `POST /api/agent/tasks`, no fake async jobs, and no enabled composer until
-  a real backend contract and approval path exist.
+- `/hermes` is a read-only artifact shelf backed by `GET /api/hermes/artifacts`.
+  It renders risk, prediction, foresight, weekly, opportunity, and automation
+  artifacts; there is no `POST /api/agent/tasks`, fake async job, or enabled
+  composer.
 - Keep `/factor-lab` and `/agent-studio` until approval and evidence parity is
   proven; do not add early redirects or delete deep links.
 - Server reads use the existing `lib/api.ts` pattern; client mutations use

@@ -8,9 +8,19 @@ from typing import Any
 from quant_system.hermes.models import HermesArtifactFeedResponse
 
 _EXPECTED_SOURCE_KINDS = {
-    "portfolio_risk",
-    "prediction",
-    "market_foresight",
+    "1.0": {
+        "portfolio_risk",
+        "prediction",
+        "market_foresight",
+    },
+    "1.1": {
+        "portfolio_risk",
+        "prediction",
+        "market_foresight",
+        "weekly_review",
+        "opportunity_summary",
+        "automation_status",
+    },
 }
 
 
@@ -104,13 +114,17 @@ class HermesArtifactCatalog:
             return _unavailable("feed_corrupt")
         if not isinstance(raw, dict):
             return _unavailable("feed_corrupt")
-        if raw.get("schema_version") != "1.0":
+        schema_version = raw.get("schema_version")
+        if schema_version not in _EXPECTED_SOURCE_KINDS:
             return _unavailable("feed_schema_unsupported")
+        if raw.get("as_of") is None:
+            return _unavailable("feed_corrupt")
         try:
             manifest = HermesArtifactFeedResponse.model_validate(raw)
         except (RecursionError, TypeError, ValueError):
             return _unavailable("feed_corrupt")
         payload = manifest.model_dump(mode="json")
+        causality_invalid = False
         try:
             as_of = (
                 None if payload["as_of"] is None else _aware_timestamp(payload["as_of"])
@@ -125,11 +139,13 @@ class HermesArtifactCatalog:
             source_kinds = [source["kind"] for source in payload["sources"]]
             if len(source_kinds) != len(set(source_kinds)):
                 raise _ManifestInvalid("manifest source kinds must be unique")
-            if set(source_kinds) != _EXPECTED_SOURCE_KINDS:
+            if set(source_kinds) != _EXPECTED_SOURCE_KINDS[schema_version]:
                 raise _ManifestInvalid("manifest must report every artifact source")
             source_statuses = {
                 source["kind"]: source["status"] for source in payload["sources"]
             }
+            if any(item["kind"] not in source_statuses for item in payload["items"]):
+                raise _ManifestInvalid("artifact item kind is not part of this schema")
             item_times = {
                 item["id"]: _aware_timestamp(item["occurred_at"])
                 for item in payload["items"]
@@ -149,6 +165,49 @@ class HermesArtifactCatalog:
                     raise _ManifestInvalid("healthy source must not have reason_code")
                 if latest_at is not None:
                     source_times.append(_aware_timestamp(latest_at))
+            nested_times: list[datetime] = []
+            for item in payload["items"]:
+                data = item["data"]
+                occurred_at = item_times[item["id"]]
+                if item["kind"] == "weekly_review":
+                    period_end = _aware_timestamp(data["period_end"])
+                    if period_end > occurred_at:
+                        causality_invalid = True
+                    nested_times.extend(
+                        (
+                            _aware_timestamp(data["period_start"]),
+                            period_end,
+                        )
+                    )
+                elif item["kind"] == "opportunity_summary":
+                    window_end = _aware_timestamp(data["window_end"])
+                    if window_end > occurred_at:
+                        causality_invalid = True
+                    nested_times.extend(
+                        (
+                            _aware_timestamp(data["window_start"]),
+                            window_end,
+                        )
+                    )
+                elif item["kind"] == "automation_status":
+                    checked_at = _aware_timestamp(data["checked_at"])
+                    if checked_at > occurred_at:
+                        causality_invalid = True
+                    nested_times.append(checked_at)
+                    for job in data["jobs"]:
+                        nested_times.extend(
+                            _aware_timestamp(value)
+                            for value in (
+                                job["last_attempt_at"],
+                                job["last_success_at"],
+                            )
+                            if value is not None
+                        )
+            if schema_version == "1.1" and as_of is not None and any(
+                timestamp > as_of
+                for timestamp in [*item_times.values(), *source_times]
+            ):
+                causality_invalid = True
             if any(
                 source_statuses[item["kind"]] != "available"
                 for item in payload["items"]
@@ -182,9 +241,16 @@ class HermesArtifactCatalog:
         )
         if any(
             timestamp is not None and timestamp > future_boundary
-            for timestamp in [as_of, *item_times.values(), *source_times]
+            for timestamp in [
+                as_of,
+                *item_times.values(),
+                *source_times,
+                *nested_times,
+            ]
         ):
             return _unavailable("feed_clock_skew")
+        if causality_invalid:
+            return _unavailable("feed_corrupt")
         payload["items"] = sorted(
             payload["items"],
             key=lambda item: (item_times[item["id"]], item["id"]),

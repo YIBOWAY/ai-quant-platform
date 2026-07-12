@@ -1,4 +1,11 @@
-import { Activity, BrainCircuit, Telescope } from "lucide-react";
+import {
+  Activity,
+  BrainCircuit,
+  CalendarCheck,
+  ListChecks,
+  Telescope,
+  Workflow,
+} from "lucide-react";
 
 import { EmptyState } from "@/components/EmptyState";
 import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
@@ -21,6 +28,9 @@ const copy = {
     portfolioRisk: "Portfolio risk",
     prediction: "Prediction",
     marketForesight: "Market foresight",
+    weeklyReview: "Weekly review",
+    opportunityReview: "Opportunity review",
+    automationStatus: "Automation status",
     grossExposure: "Gross exposure",
     topHolding: "Largest holding",
     historicalRisk: "Historical risk",
@@ -32,11 +42,58 @@ const copy = {
     direction: "Direction",
     outcomeReturn: "Outcome return",
     directionBrier: "Direction Brier",
+    noScoredPredictions: "No scored predictions yet",
+    period: "Period",
+    safetyAlerts: "Safety alerts",
+    uniqueSignals: "Unique signals",
+    reviewDrafts: "Review drafts",
+    reviewConfirmed: "Reviews confirmed",
+    predictionsCreated: "Predictions created",
+    predictionsScored: "Predictions scored",
+    predictionHits: "Prediction hits",
+    opportunitiesObserved: "Opportunities observed",
+    missedOpportunities: "Missed opportunities",
+    coverageUnknown: "Coverage unknown",
+    limitations: "Limitations",
+    totalOpportunities: "Total opportunities",
+    acted: "Acted",
+    open: "Open",
+    deferred: "Deferred",
+    actionFailed: "Action failed",
+    declined: "Declined",
+    notActionable: "Not actionable",
+    unknown: "Unknown",
+    missNoDecision: "No decision",
+    missActWithoutAction: "Act without action",
+    missDeferExpired: "Deferred then expired",
+    automationFresh: "Fresh · schedules are current",
+    automationDegraded: "Degraded · attention required",
+    automationJobsAria: "Automation job freshness",
+    expectedSchedule: "Expected schedule",
+    freshnessBudget: "Freshness budget",
+    lastAttempt: "Last attempt",
+    lastSuccess: "Last success",
+    freshUntil: "Fresh until",
+    lastRun: "Last run",
+    notification: "Notification",
+    neverRun: "Never run",
+    stale: "Stale",
+    failed: "Failed",
+    fresh: "Fresh",
+    notRequired: "Not required",
+    delivered: "Delivered",
+    queued: "Queued",
+    fallbackPersisted: "Fallback persisted",
+    deliveryUnknown: "Delivery unknown",
+    proposalSummary: "Read-only summary · trading disabled",
     timelineAria: "Research artifact timeline",
     sourceAria: "Artifact source status",
     portfolioRiskSource: "Portfolio risk source",
     predictionSource: "Prediction ledger",
     marketForesightSource: "Market foresight source",
+    weeklyReviewSource: "Weekly review source",
+    opportunitySummarySource: "Opportunity summary source",
+    automationStatusSource: "Automation status source",
     emptyTitle: "No research artifacts yet",
     emptyDescription: "Hermes jobs can populate this read-only shelf after their first run.",
     degradedTitle: "Artifact shelf is degraded",
@@ -55,6 +112,9 @@ const copy = {
     portfolioRisk: "组合风险",
     prediction: "预测",
     marketForesight: "市场推演",
+    weeklyReview: "周报复盘",
+    opportunityReview: "机会复盘",
+    automationStatus: "自动化状态",
     grossExposure: "总敞口",
     topHolding: "最大持仓",
     historicalRisk: "历史风险",
@@ -66,11 +126,58 @@ const copy = {
     direction: "方向",
     outcomeReturn: "结果收益",
     directionBrier: "方向 Brier 分数",
+    noScoredPredictions: "暂无已评分预测",
+    period: "统计区间",
+    safetyAlerts: "安全告警",
+    uniqueSignals: "去重信号",
+    reviewDrafts: "复盘草稿",
+    reviewConfirmed: "已确认复盘",
+    predictionsCreated: "新建预测",
+    predictionsScored: "已评分预测",
+    predictionHits: "预测命中",
+    opportunitiesObserved: "已观察机会",
+    missedOpportunities: "错过机会",
+    coverageUnknown: "覆盖状态未知",
+    limitations: "局限说明",
+    totalOpportunities: "机会总数",
+    acted: "已行动",
+    open: "待处理",
+    deferred: "已延期",
+    actionFailed: "行动失败",
+    declined: "已拒绝",
+    notActionable: "不可行动",
+    unknown: "状态未知",
+    missNoDecision: "未决策",
+    missActWithoutAction: "决定行动但无行动记录",
+    missDeferExpired: "延期后过期",
+    automationFresh: "运行正常 · 调度均在时效内",
+    automationDegraded: "已降级 · 需要检查",
+    automationJobsAria: "自动化任务时效",
+    expectedSchedule: "预期调度",
+    freshnessBudget: "时效预算",
+    lastAttempt: "最近尝试",
+    lastSuccess: "最近成功",
+    freshUntil: "保鲜截止",
+    lastRun: "最近运行",
+    notification: "通知状态",
+    neverRun: "从未运行",
+    stale: "已过期",
+    failed: "失败",
+    fresh: "正常",
+    notRequired: "无需通知",
+    delivered: "已送达",
+    queued: "排队中",
+    fallbackPersisted: "已写入本地兜底",
+    deliveryUnknown: "送达状态未知",
+    proposalSummary: "只读汇总 · 禁止交易",
     timelineAria: "研究产物时间线",
     sourceAria: "产物来源状态",
     portfolioRiskSource: "组合风险来源",
     predictionSource: "预测账本",
     marketForesightSource: "市场推演来源",
+    weeklyReviewSource: "周报复盘来源",
+    opportunitySummarySource: "机会复盘来源",
+    automationStatusSource: "自动化状态来源",
     emptyTitle: "暂无研究产物",
     emptyDescription: "Hermes 任务首次运行后，会把只读产物放到这里。",
     degradedTitle: "产物货架已降级",
@@ -210,7 +317,19 @@ function ArtifactIcon({ artifact }: { artifact: HermesArtifact }) {
   if (artifact.kind === "prediction") {
     return <BrainCircuit aria-hidden="true" className="shrink-0 text-[var(--color-hermes)]" size={16} />;
   }
-  return <Telescope aria-hidden="true" className="shrink-0 text-warning" size={16} />;
+  if (artifact.kind === "market_foresight") {
+    return <Telescope aria-hidden="true" className="shrink-0 text-warning" size={16} />;
+  }
+  if (artifact.kind === "weekly_review") {
+    return <CalendarCheck aria-hidden="true" className="shrink-0 text-info" size={16} />;
+  }
+  if (artifact.kind === "opportunity_summary") {
+    return <ListChecks aria-hidden="true" className="shrink-0 text-warning" size={16} />;
+  }
+  if (artifact.kind === "automation_status") {
+    return <Workflow aria-hidden="true" className="shrink-0 text-[var(--color-hermes)]" size={16} />;
+  }
+  return assertNever(artifact);
 }
 
 function ArtifactBody({ artifact, locale }: { artifact: HermesArtifact; locale: Locale }) {
@@ -254,7 +373,7 @@ function ArtifactBody({ artifact, locale }: { artifact: HermesArtifact; locale: 
       </div>
     );
   }
-  return (
+  if (artifact.kind === "market_foresight") return (
     <div className="space-y-3">
       <p className="font-body-sm text-text-secondary">{artifact.data.summary ?? "--"}</p>
       <p className="font-body-sm font-semibold text-warning">{text.proposalOnly}</p>
@@ -288,6 +407,153 @@ function ArtifactBody({ artifact, locale }: { artifact: HermesArtifact; locale: 
       ) : null}
     </div>
   );
+  if (artifact.kind === "weekly_review") {
+    return (
+      <div className="space-y-3">
+        <p className="font-body-sm font-semibold text-warning">{text.proposalSummary}</p>
+        <dl className="grid gap-3 sm:grid-cols-3">
+          <Fact
+            label={text.period}
+            value={`${formatDateTime(artifact.data.period_start, locale)} – ${formatDateTime(artifact.data.period_end, locale)}`}
+          />
+          <Fact label={text.safetyAlerts} value={String(artifact.data.safety_alert_count)} />
+          <Fact label={text.uniqueSignals} value={String(artifact.data.unique_signal_count)} />
+          <Fact label={text.reviewDrafts} value={String(artifact.data.review_draft_count)} />
+          <Fact label={text.reviewConfirmed} value={String(artifact.data.review_confirmed_count)} />
+          <Fact label={text.predictionsCreated} value={String(artifact.data.prediction_created_count)} />
+          <Fact label={text.predictionsScored} value={String(artifact.data.prediction_scored_count)} />
+          <Fact label={text.predictionHits} value={String(artifact.data.prediction_hit_count)} />
+          <Fact
+            label={text.directionBrier}
+            value={
+              artifact.data.mean_direction_brier === null
+                ? text.noScoredPredictions
+                : formatDecimal(artifact.data.mean_direction_brier, 3)
+            }
+          />
+          <Fact
+            label={text.opportunitiesObserved}
+            value={String(artifact.data.opportunity_observed_count)}
+          />
+          <Fact
+            label={text.missedOpportunities}
+            value={String(artifact.data.opportunity_missed_count)}
+          />
+          <Fact
+            label={text.coverageUnknown}
+            value={String(artifact.data.opportunity_coverage_unknown_count)}
+          />
+        </dl>
+        {artifact.data.limitations.length ? (
+          <div>
+            <p className="font-label-caps text-text-secondary">{text.limitations}</p>
+            <ul className="mt-1 space-y-1 font-body-sm text-text-secondary">
+              {artifact.data.limitations.map((limitation) => (
+                <li key={limitation}>{humanizeReasonCode(limitation, locale)}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+  if (artifact.kind === "opportunity_summary") {
+    const resolution = artifact.data.resolution_counts;
+    const missReasons = artifact.data.miss_reason_counts;
+    return (
+      <div className="space-y-3">
+        <p className="font-body-sm font-semibold text-warning">{text.proposalSummary}</p>
+        <dl className="grid gap-3 sm:grid-cols-3">
+          <Fact
+            label={text.period}
+            value={`${formatDateTime(artifact.data.window_start, locale)} – ${formatDateTime(artifact.data.window_end, locale)}`}
+          />
+          <Fact label={text.totalOpportunities} value={String(artifact.data.total_count)} />
+          <Fact label={text.acted} value={String(resolution.acted)} />
+          <Fact label={text.open} value={String(resolution.open)} />
+          <Fact label={text.deferred} value={String(resolution.deferred)} />
+          <Fact label={text.actionFailed} value={String(resolution.action_failed)} />
+          <Fact label={text.declined} value={String(resolution.declined)} />
+          <Fact label={text.missedOpportunities} value={String(resolution.missed)} />
+          <Fact
+            label={text.coverageUnknown}
+            value={String(resolution.expired_coverage_unknown)}
+          />
+          <Fact label={text.notActionable} value={String(resolution.not_actionable)} />
+          <Fact label={text.unknown} value={String(resolution.unknown)} />
+          <Fact label={text.missNoDecision} value={String(missReasons.no_decision)} />
+          <Fact
+            label={text.missActWithoutAction}
+            value={String(missReasons.act_without_action)}
+          />
+          <Fact label={text.missDeferExpired} value={String(missReasons.defer_expired)} />
+        </dl>
+      </div>
+    );
+  }
+  if (artifact.kind === "automation_status") {
+    return (
+      <div className="space-y-3">
+        <p
+          className={
+            artifact.data.overall_status === "fresh"
+              ? "font-body-sm font-semibold text-accent-success"
+              : "font-body-sm font-semibold text-warning"
+          }
+        >
+          {artifact.data.overall_status === "fresh"
+            ? text.automationFresh
+            : text.automationDegraded}
+        </p>
+        <ul aria-label={text.automationJobsAria} className="space-y-2">
+          {artifact.data.jobs.map((job) => (
+            <li className="rounded-lg border border-border-subtle bg-bg-base p-3" key={job.job_id}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-data-mono text-sm font-semibold text-text-primary">
+                  {automationJobLabel(job.job_id, locale)}
+                </p>
+                <StatusPill
+                  label={text.status}
+                  value={automationStatusLabel(job.status, locale)}
+                  tone={automationStatusTone(job.status)}
+                />
+              </div>
+              <dl className="mt-2 grid gap-2 sm:grid-cols-3">
+                <Fact label={text.expectedSchedule} value={`${job.expected_schedule} · ${job.timezone}`} />
+                <Fact
+                  label={text.freshnessBudget}
+                  value={formatDuration(job.freshness_budget_seconds, locale)}
+                />
+                <Fact
+                  label={text.lastAttempt}
+                  value={job.last_attempt_at ? formatDateTime(job.last_attempt_at, locale) : text.neverRun}
+                />
+                <Fact
+                  label={text.lastSuccess}
+                  value={job.last_success_at ? formatDateTime(job.last_success_at, locale) : text.neverRun}
+                />
+                <Fact
+                  label={text.freshUntil}
+                  value={job.fresh_until ? formatDateTime(job.fresh_until, locale) : text.neverRun}
+                />
+                <Fact label={text.lastRun} value={job.last_run_id ?? text.neverRun} />
+                <Fact
+                  label={text.notification}
+                  value={notificationStatusLabel(job.notification_status, locale)}
+                />
+              </dl>
+              {job.reason_code ? (
+                <p className="mt-2 font-data-mono text-xs text-warning">
+                  {humanizeReasonCode(job.reason_code, locale)}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  return assertNever(artifact);
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -305,7 +571,13 @@ function artifactTitle(artifact: HermesArtifact, locale: Locale) {
   if (artifact.kind === "prediction") {
     return `${text.prediction} · ${artifact.data.symbol ?? artifact.data.prediction_id ?? "--"}`;
   }
-  return text.marketForesight;
+  if (artifact.kind === "market_foresight") return text.marketForesight;
+  if (artifact.kind === "weekly_review") {
+    return `${text.weeklyReview} · ${artifact.data.week_id}`;
+  }
+  if (artifact.kind === "opportunity_summary") return text.opportunityReview;
+  if (artifact.kind === "automation_status") return text.automationStatus;
+  return assertNever(artifact);
 }
 
 function qualityTone(quality: HermesArtifactQuality): Tone {
@@ -326,7 +598,92 @@ function sourceLabel(kind: HermesArtifactKind, locale: Locale) {
   const text = copy[locale];
   if (kind === "portfolio_risk") return text.portfolioRiskSource;
   if (kind === "prediction") return text.predictionSource;
-  return text.marketForesightSource;
+  if (kind === "market_foresight") return text.marketForesightSource;
+  if (kind === "weekly_review") return text.weeklyReviewSource;
+  if (kind === "opportunity_summary") return text.opportunitySummarySource;
+  if (kind === "automation_status") return text.automationStatusSource;
+  return assertNever(kind);
+}
+
+function automationJobLabel(
+  job: "daily_close" | "freshness" | "weekly" | "notification_drain",
+  locale: Locale,
+) {
+  const labels = locale === "zh"
+    ? {
+        daily_close: "每日收盘研究",
+        freshness: "时效巡检",
+        weekly: "每周复盘",
+        notification_drain: "通知投递",
+      }
+    : {
+        daily_close: "Daily-close research",
+        freshness: "Freshness monitor",
+        weekly: "Weekly review",
+        notification_drain: "Notification delivery",
+      };
+  return labels[job];
+}
+
+function automationStatusLabel(
+  status: "fresh" | "stale" | "failed" | "never_run",
+  locale: Locale,
+) {
+  const text = copy[locale];
+  if (status === "fresh") return text.fresh;
+  if (status === "stale") return text.stale;
+  if (status === "failed") return text.failed;
+  return text.neverRun;
+}
+
+function automationStatusTone(
+  status: "fresh" | "stale" | "failed" | "never_run",
+): Tone {
+  if (status === "fresh") return "success";
+  if (status === "failed") return "danger";
+  return "warning";
+}
+
+function notificationStatusLabel(
+  status: "delivered" | "queued" | "fallback_persisted" | "not_required" | "delivery_unknown",
+  locale: Locale,
+) {
+  const text = copy[locale];
+  if (status === "delivered") return text.delivered;
+  if (status === "queued") return text.queued;
+  if (status === "fallback_persisted") return text.fallbackPersisted;
+  if (status === "delivery_unknown") return text.deliveryUnknown;
+  return text.notRequired;
+}
+
+function humanizeReasonCode(code: string, locale: Locale) {
+  const labels = locale === "zh"
+    ? {
+        never_run: "从未运行",
+        freshness_budget_exceeded: "超过时效窗口",
+        last_attempt_degraded: "最近一次运行已降级",
+        no_successful_run: "尚无成功运行",
+        read_only_research_summary: "只读研究汇总",
+      }
+    : {
+        never_run: "Never run",
+        freshness_budget_exceeded: "Freshness window exceeded",
+        last_attempt_degraded: "Latest attempt was degraded",
+        no_successful_run: "No successful run yet",
+        read_only_research_summary: "Read-only research summary",
+      };
+  if (code in labels) return labels[code as keyof typeof labels];
+  return code.replaceAll("_", " ");
+}
+
+function formatDuration(seconds: number, locale: Locale) {
+  const units = locale === "zh"
+    ? { day: "天", hour: "小时", minute: "分钟", second: "秒" }
+    : { day: "days", hour: "hours", minute: "minutes", second: "seconds" };
+  if (seconds % 86_400 === 0) return `${seconds / 86_400} ${units.day}`;
+  if (seconds % 3_600 === 0) return `${seconds / 3_600} ${units.hour}`;
+  if (seconds % 60 === 0) return `${seconds / 60} ${units.minute}`;
+  return `${seconds} ${units.second}`;
 }
 
 function formatDateTime(value: string, locale: Locale) {
@@ -367,4 +724,8 @@ function formatDecimal(value: number | null | undefined, digits: number) {
 
 function safeDomId(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unsupported Hermes artifact variant: ${JSON.stringify(value)}`);
 }

@@ -1,11 +1,13 @@
 import json
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
 from quant_system.config.settings import HermesArtifactSettings, Settings
+from quant_system.hermes.models import HermesArtifactFeedResponse
 
 
 def _risk_data() -> dict:
@@ -76,6 +78,196 @@ def _sources(**overrides: dict) -> list[dict]:
         row.update(overrides.get(kind, {}))
         rows.append(row)
     return rows
+
+
+def _sources_v11(**overrides: dict) -> list[dict]:
+    rows = []
+    for kind in (
+        "portfolio_risk",
+        "prediction",
+        "market_foresight",
+        "weekly_review",
+        "opportunity_summary",
+        "automation_status",
+    ):
+        row = {
+            "kind": kind,
+            "status": "empty",
+            "latest_at": None,
+            "reason_code": None,
+        }
+        row.update(overrides.get(kind, {}))
+        rows.append(row)
+    return rows
+
+
+def _weekly_review_data(now: str) -> dict:
+    parsed_now = datetime.fromisoformat(now.replace("Z", "+00:00")).astimezone(UTC)
+    now = parsed_now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    period_start = (parsed_now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    week_year, week_number, _ = parsed_now.astimezone(
+        ZoneInfo("Asia/Shanghai")
+    ).isocalendar()
+    return {
+        "week_id": f"{week_year:04d}-W{week_number:02d}",
+        "period_start": period_start,
+        "period_end": now,
+        "safety_alert_count": 1,
+        "unique_signal_count": 3,
+        "review_draft_count": 2,
+        "review_confirmed_count": 1,
+        "prediction_created_count": 2,
+        "prediction_scored_count": 1,
+        "prediction_hit_count": 1,
+        "mean_direction_brier": 0.09,
+        "opportunity_observed_count": 4,
+        "opportunity_missed_count": 1,
+        "opportunity_coverage_unknown_count": 1,
+        "limitations": ["read_only_research_summary"],
+        "proposal_only": True,
+        "trading_allowed": False,
+    }
+
+
+def _opportunity_summary_data(now: str) -> dict:
+    parsed_now = datetime.fromisoformat(now.replace("Z", "+00:00")).astimezone(UTC)
+    now = parsed_now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {
+        "window_start": (parsed_now - timedelta(days=7)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
+        "window_end": now,
+        "total_count": 4,
+        "resolution_counts": {
+            "open": 1,
+            "deferred": 0,
+            "acted": 1,
+            "action_failed": 0,
+            "declined": 0,
+            "missed": 1,
+            "expired_coverage_unknown": 1,
+            "not_actionable": 0,
+            "unknown": 0,
+        },
+        "miss_reason_counts": {
+            "no_decision": 1,
+            "act_without_action": 0,
+            "defer_expired": 0,
+        },
+        "proposal_only": True,
+        "trading_allowed": False,
+    }
+
+
+def _automation_status_data(now: str) -> dict:
+    parsed_now = datetime.fromisoformat(now.replace("Z", "+00:00")).astimezone(UTC)
+    now = parsed_now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {
+        "checked_at": now,
+        "overall_status": "degraded",
+        "jobs": [
+            {
+                "job_id": "daily_close",
+                "expected_schedule": "30 6 * * *",
+                "timezone": "Asia/Shanghai",
+                "freshness_budget_seconds": 108000,
+                "last_attempt_at": now,
+                "last_success_at": now,
+                "fresh_until": (
+                    parsed_now + timedelta(seconds=108000)
+                ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "status": "fresh",
+                "reason_code": None,
+                "last_run_id": "daily-close-001",
+                "notification_status": "not_required",
+            },
+            {
+                "job_id": "weekly",
+                "expected_schedule": "0 9 * * 0",
+                "timezone": "Asia/Shanghai",
+                "freshness_budget_seconds": 691200,
+                "last_attempt_at": None,
+                "last_success_at": None,
+                "fresh_until": None,
+                "status": "never_run",
+                "reason_code": "never_run",
+                "last_run_id": None,
+                "notification_status": "not_required",
+            },
+            {
+                "job_id": "freshness",
+                "expected_schedule": "17 */2 * * *",
+                "timezone": "Asia/Shanghai",
+                "freshness_budget_seconds": 10800,
+                "last_attempt_at": None,
+                "last_success_at": None,
+                "fresh_until": None,
+                "status": "never_run",
+                "reason_code": "never_run",
+                "last_run_id": None,
+                "notification_status": "not_required",
+            },
+            {
+                "job_id": "notification_drain",
+                "expected_schedule": "*/15 * * * *",
+                "timezone": "Asia/Shanghai",
+                "freshness_budget_seconds": 1800,
+                "last_attempt_at": None,
+                "last_success_at": None,
+                "fresh_until": None,
+                "status": "never_run",
+                "reason_code": "never_run",
+                "last_run_id": None,
+                "notification_status": "not_required",
+            },
+        ],
+        "proposal_only": True,
+        "trading_allowed": False,
+    }
+
+
+def _manifest_v11(now: str) -> dict:
+    now = datetime.fromisoformat(now.replace("Z", "+00:00")).astimezone(UTC).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    items = [
+        {
+            "id": "weekly-2026-W28",
+            "kind": "weekly_review",
+            "occurred_at": now,
+            "quality": "available",
+            "status": "available",
+            "data": _weekly_review_data(now),
+        },
+        {
+            "id": "opportunities-2026-W28",
+            "kind": "opportunity_summary",
+            "occurred_at": now,
+            "quality": "available",
+            "status": "available",
+            "data": _opportunity_summary_data(now),
+        },
+        {
+            "id": "automation-latest",
+            "kind": "automation_status",
+            "occurred_at": now,
+            "quality": "degraded",
+            "status": "degraded",
+            "data": _automation_status_data(now),
+        },
+    ]
+    return {
+        "schema_version": "1.1",
+        "read_status": "available",
+        "as_of": now,
+        "items": items,
+        "sources": _sources_v11(
+            weekly_review={"status": "available", "latest_at": now},
+            opportunity_summary={"status": "available", "latest_at": now},
+            automation_status={"status": "available", "latest_at": now},
+        ),
+        "warnings": [],
+    }
 
 
 def test_hermes_artifacts_missing_feed_is_empty_and_read_only(tmp_path) -> None:
@@ -178,6 +370,247 @@ def test_hermes_artifacts_returns_newest_valid_items_with_limit(tmp_path) -> Non
     )
     assert payload["warnings"] == []
     assert feed_path.read_bytes() == manifest_before
+
+
+def test_hermes_artifacts_reads_strict_schema_v11_with_six_sources(tmp_path) -> None:
+    now = datetime.now(UTC).replace(microsecond=0)
+    now_text = now.isoformat().replace("+00:00", "Z")
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(
+        json.dumps(_manifest_v11(now_text)),
+        encoding="utf-8",
+    )
+    manifest_before = feed_path.read_bytes()
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(feed_path=feed_path),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema_version"] == "1.1"
+    assert payload["read_status"] == "available"
+    assert {item["kind"] for item in payload["items"]} == {
+        "weekly_review",
+        "opportunity_summary",
+        "automation_status",
+    }
+    assert payload["sources"] == _sources_v11(
+        weekly_review={"status": "available", "latest_at": now_text},
+        opportunity_summary={"status": "available", "latest_at": now_text},
+        automation_status={"status": "available", "latest_at": now_text},
+    )
+    assert feed_path.read_bytes() == manifest_before
+
+
+def test_schema_v11_accepts_truthful_queued_notification_state() -> None:
+    manifest = _manifest_v11("2026-07-12T01:00:00Z")
+    manifest["items"][2]["data"]["jobs"][0]["notification_status"] = "queued"
+
+    validated = HermesArtifactFeedResponse.model_validate(manifest)
+
+    assert validated.items[2].root.data.jobs[0].notification_status == "queued"
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda manifest: manifest["sources"].pop(),
+        lambda manifest: manifest["items"][0]["data"].update(
+            {"prediction_hit_count": 2}
+        ),
+        lambda manifest: manifest["items"][1]["data"][
+            "resolution_counts"
+        ].update({"open": 2}),
+        lambda manifest: manifest["items"][1]["data"][
+            "miss_reason_counts"
+        ].update({"no_decision": 0}),
+        lambda manifest: manifest["items"][2]["data"]["jobs"].append(
+            manifest["items"][2]["data"]["jobs"][0].copy()
+        ),
+        lambda manifest: manifest["items"][2]["data"]["jobs"].pop(),
+        lambda manifest: manifest["items"][0]["data"].update(
+            {"private_path": "/Users/private/weekly.json"}
+        ),
+        lambda manifest: manifest["items"][0]["data"].update(
+            {"week_id": "week 28"}
+        ),
+        lambda manifest: manifest["items"][0]["data"].update(
+            {"limitations": [f"limitation_{index}" for index in range(21)]}
+        ),
+        lambda manifest: manifest["items"][0]["data"].update(
+            {"safety_alert_count": True}
+        ),
+        lambda manifest: manifest["items"][0]["data"].update(
+            {"mean_direction_brier": True}
+        ),
+        lambda manifest: manifest["items"][1]["data"].update(
+            {"proposal_only": 1, "trading_allowed": 0}
+        ),
+        lambda manifest: manifest["items"][0]["data"].update(
+            {"period_start": 123}
+        ),
+        lambda manifest: manifest["items"][2]["data"].update(
+            {"checked_at": 123}
+        ),
+    ],
+    ids=(
+        "wrong-source-set",
+        "weekly-hit-count",
+        "resolution-sum",
+        "miss-reason-sum",
+        "duplicate-job",
+        "incomplete-job-set",
+        "extra-payload-key",
+        "invalid-week-id",
+        "too-many-limitations",
+        "boolean-count",
+        "boolean-brier",
+        "numeric-safety-flags",
+        "numeric-period-timestamp",
+        "numeric-checked-at",
+    ),
+)
+def test_hermes_artifacts_rejects_inconsistent_schema_v11_payloads(
+    mutate,
+    tmp_path,
+) -> None:
+    now = datetime.now(UTC).replace(microsecond=0).isoformat()
+    manifest = _manifest_v11(now)
+    mutate(manifest)
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(json.dumps(manifest), encoding="utf-8")
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(feed_path=feed_path),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["read_status"] == "unavailable"
+    assert response.json()["warnings"] == [
+        {"source": "artifact_feed", "code": "feed_corrupt"}
+    ]
+    assert "/Users/private" not in response.text
+
+
+def test_weekly_missed_count_may_refer_to_an_opportunity_observed_before_window(
+    tmp_path,
+) -> None:
+    now = datetime.now(UTC).replace(microsecond=0).isoformat()
+    manifest = _manifest_v11(now)
+    weekly = manifest["items"][0]["data"]
+    weekly["opportunity_observed_count"] = 0
+    weekly["opportunity_missed_count"] = 1
+    weekly["opportunity_coverage_unknown_count"] = 0
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(json.dumps(manifest), encoding="utf-8")
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(feed_path=feed_path),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["read_status"] == "available"
+
+
+def test_hermes_artifacts_rejects_non_finite_schema_v11_numbers(tmp_path) -> None:
+    now = datetime.now(UTC).replace(microsecond=0).isoformat()
+    manifest_text = json.dumps(_manifest_v11(now)).replace(
+        '"mean_direction_brier": 0.09',
+        '"mean_direction_brier": NaN',
+    )
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(manifest_text, encoding="utf-8")
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(feed_path=feed_path),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["warnings"] == [
+        {"source": "artifact_feed", "code": "feed_corrupt"}
+    ]
+
+
+def test_hermes_artifacts_rejects_nested_schema_v11_future_timestamp(tmp_path) -> None:
+    now = datetime.now(UTC).replace(microsecond=0)
+    manifest = _manifest_v11(now.isoformat())
+    manifest["items"][2]["data"]["checked_at"] = (
+        now + timedelta(minutes=10)
+    ).isoformat().replace("+00:00", "Z")
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(json.dumps(manifest), encoding="utf-8")
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(
+                    feed_path=feed_path,
+                    max_future_clock_skew_seconds=60,
+                ),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["warnings"] == [
+        {"source": "artifact_feed", "code": "feed_clock_skew"}
+    ]
+
+
+def test_hermes_artifacts_allows_schedule_aware_future_fresh_until(
+    tmp_path,
+) -> None:
+    now = datetime.now(UTC).replace(microsecond=0)
+    manifest = _manifest_v11(now.isoformat())
+    manifest["items"][2]["data"]["jobs"][0]["fresh_until"] = (
+        now + timedelta(days=3)
+    ).isoformat().replace("+00:00", "Z")
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(json.dumps(manifest), encoding="utf-8")
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(
+                    feed_path=feed_path,
+                    max_future_clock_skew_seconds=60,
+                ),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["schema_version"] == "1.1"
+    assert response.json()["read_status"] == "available"
 
 
 def test_hermes_artifacts_marks_an_old_manifest_degraded(tmp_path) -> None:
@@ -583,6 +1016,185 @@ def test_hermes_artifacts_requires_as_of_for_available_manifest(tmp_path) -> Non
     assert response.json()["warnings"] == [
         {"source": "artifact_feed", "code": "feed_corrupt"}
     ]
+
+
+def test_hermes_artifacts_requires_as_of_for_persisted_empty_manifest(tmp_path) -> None:
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.1",
+                "read_status": "empty",
+                "as_of": None,
+                "items": [],
+                "sources": _sources_v11(),
+                "warnings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(
+                    feed_path=feed_path,
+                    freshness_budget_seconds=1,
+                ),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["read_status"] == "unavailable"
+    assert response.json()["warnings"] == [
+        {"source": "artifact_feed", "code": "feed_corrupt"}
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda manifest: manifest["items"][0]["data"].update(
+            {"week_id": "2026-W99"}
+        ),
+        lambda manifest: manifest["items"][0]["data"].update(
+            {"period_start": "2026-07-12T00:00:00Z"}
+        ),
+        lambda manifest: manifest["items"][1]["data"].update(
+            {"window_start": "2026-07-12T00:00:00Z"}
+        ),
+        lambda manifest: manifest["items"][2]["data"]["jobs"][0].update(
+            {
+                "last_attempt_at": "2026-07-12T02:00:00Z",
+                "last_success_at": "2026-07-12T01:30:00Z",
+            }
+        ),
+    ],
+    ids=(
+        "invalid-iso-week",
+        "short-weekly-window",
+        "short-opportunity-window",
+        "inverted-timeline",
+    ),
+)
+def test_schema_v11_rejects_invalid_period_and_automation_causality(mutate) -> None:
+    manifest = _manifest_v11("2026-07-12T01:00:00Z")
+    mutate(manifest)
+
+    with pytest.raises(ValueError):
+        HermesArtifactFeedResponse.model_validate(manifest)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["weekly_review", "opportunity_summary", "automation_status"],
+)
+def test_hermes_artifacts_rejects_nested_fact_after_item_occurrence(
+    tmp_path,
+    kind: str,
+) -> None:
+    as_of = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=30)
+    manifest = _manifest_v11(as_of.isoformat().replace("+00:00", "Z"))
+    item = next(item for item in manifest["items"] if item["kind"] == kind)
+    item["occurred_at"] = (as_of - timedelta(minutes=10)).isoformat().replace(
+        "+00:00", "Z"
+    )
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(json.dumps(manifest), encoding="utf-8")
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(feed_path=feed_path),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["warnings"] == [
+        {"source": "artifact_feed", "code": "feed_corrupt"}
+    ]
+
+
+@pytest.mark.parametrize("field", ["item", "source"])
+def test_hermes_artifacts_rejects_manifest_fact_after_as_of(
+    tmp_path,
+    field: str,
+) -> None:
+    as_of = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=30)
+    manifest = _manifest_v11(as_of.isoformat().replace("+00:00", "Z"))
+    later = (as_of + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+    if field == "item":
+        manifest["items"][0]["occurred_at"] = later
+    else:
+        manifest["sources"][3]["latest_at"] = later
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(json.dumps(manifest), encoding="utf-8")
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(feed_path=feed_path),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["warnings"] == [
+        {"source": "artifact_feed", "code": "feed_corrupt"}
+    ]
+
+
+def test_schema_v10_keeps_legacy_clock_skew_contract(tmp_path) -> None:
+    now = datetime.now(UTC).replace(microsecond=0)
+    now_text = now.isoformat()
+    within_skew = (now + timedelta(seconds=30)).isoformat()
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "read_status": "available",
+                "as_of": now_text,
+                "items": [
+                    {
+                        "id": "legacy-prediction",
+                        "kind": "prediction",
+                        "occurred_at": within_skew,
+                        "quality": "available",
+                        "status": "open",
+                        "data": _prediction_data(),
+                    }
+                ],
+                "sources": _sources(
+                    prediction={"status": "available", "latest_at": within_skew}
+                ),
+                "warnings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                hermes_artifacts=HermesArtifactSettings(feed_path=feed_path),
+            ),
+            output_dir=tmp_path / "platform",
+        )
+    )
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["read_status"] == "available"
+    assert response.json()["warnings"] == []
 
 
 def test_hermes_artifacts_keeps_healthy_empty_sources_empty(tmp_path) -> None:

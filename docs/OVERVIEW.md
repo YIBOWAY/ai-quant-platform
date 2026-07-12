@@ -2,11 +2,11 @@
 
 本仓库是一个**本地优先**的 AI 量化研究与模拟交易平台。它面向研究、测试、报告与只读行情分析而构建，**不是实盘交易平台**。
 
-Phase 0-14 是已交付的历史能力层，不是当前开发路线。当前实现按 HQA
-`docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` 的小切片顺序推进；
+Phase 0-14 是已交付的历史能力层，不是当前开发路线。HQA Slice 9A-9G、只读
+mini 9H 与完整 9H 自动化/通知均已完成；目前没有选定下一实现切片。
 [前端渐进改造与 Hermes 集成计划](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
-保留 Slice 0-8 记录与未来 UI backlog。Slice 9A-9G 与只读 mini 9H 已完成，下一步是
-完整 9H cron/notify，开始前仍需当前 bite-sized plan。9E 位于 HQA；它复用 9D 的 `data prices`
+保留 Slice 0-8 记录与未来 UI backlog；恢复该 backlog 前必须先做新的产品决定并另立
+独立 bite-sized plan。9E 位于 HQA；它复用 9D 的 `data prices`
 严格只读 Futu/QFQ/1d JSON seam（25 个标的、500 个
 含首尾日历日期上限，无其他 provider 或 local fallback）；HQA v2 以 previous UTC date
 为 `end`、`end-400 days` 为 `start`，经全局日期 inner join 和至少 60 个对齐收益，输出逐仓 beta 与持仓两两
@@ -48,11 +48,15 @@ Hermes 与 AI 研究工作流：
 
 - Hermes 会话负责生成研究源码/产物；平台负责确定性摄入、候选池、人工审批、
   一次性研究回测和 promote diff。
-- `/brief` 提供动态晨报和不可变归档；`/hermes` 已通过只读
-  `GET /api/hermes/artifacts` 展示风险、预测状态和 proposal-only 市场推演产物。
+- `/brief` 提供动态晨报和不可变归档；`/hermes` 通过只读
+  `GET /api/hermes/artifacts` 展示风险、预测、推演、周报、机会与自动化状态。
+- 平台兼容 schema 1.0 的精确三来源合同与 schema 1.1 的精确六来源合同；whole-feed
+  freshness budget 是 10800 秒。
 - 9G 由 HQA 本地 JSONL opportunity ledger 负责；平台只提供 CLI-only、file-backed 的
   `paper strategies observations` 精确行动事实。9G 没有新增平台数据库表、HTTP route、
   `/hermes` 卡片或调度器。
+- 完整 9H 的 scheduler 与 outbound delivery 位于 HQA；平台没有为此新增 scheduler、
+  outbound worker、POST route 或数据库 migration。
 - 平台不复活 LLM runner，不把 disabled composer 伪装成可执行任务面。
 - 任何候选晋级前都必须经过人工评审；常驻 paper/live 路径不加载 candidate 文件。
 
@@ -131,7 +135,8 @@ http://127.0.0.1:3001
 
 1. [INDEX.md](INDEX.md) — 当前主线和文档分类。
 2. [README.md](../README.md) — 启动、稳定能力和安全边界。
-3. HQA `docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md`（当前实现计划）。
+3. HQA `docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` 与
+   `docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md`（已交付记录）。
 4. [前序 Slice 0-8 记录](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)。
 5. [数据库/存储架构](architecture/database_cache_plan.md)。
 6. 改到具体功能时再读对应 `guides/`、`execution/` 和测试。
@@ -148,3 +153,9 @@ http://127.0.0.1:3001
 当前数据库/缓存实现，请读：
 
 - [architecture/database_cache_plan.md](architecture/database_cache_plan.md)
+
+## 当前交接
+
+HQA 9A-9G、mini 9H 与完整 9H 已完成，目前没有选定下一实现切片。未来前端 backlog
+需要新的产品决定，并按最新源码另立独立 bite-sized plan；平台继续只读消费 HQA
+产物，不承担调度或外发投递。
