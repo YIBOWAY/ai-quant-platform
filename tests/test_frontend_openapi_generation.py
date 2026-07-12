@@ -32,6 +32,13 @@ def test_frontend_declares_openapi_type_generation_contract(tmp_path) -> None:
     schemas = create_app(output_dir=tmp_path).openapi()["components"]["schemas"]
     for schema_name in (
         "BacktestRunResponse",
+        "BriefIssueEnvelopeResponse",
+        "HermesArtifactFeedResponse",
+        "HermesMarketForesightItem",
+        "HermesPortfolioRiskItem",
+        "HermesPredictionItem",
+        "PaperAccountReconciliationResponse",
+        "PaperAccountSnapshotResponse",
         "PaperRunResponse",
         "RecentRunsResponse",
         "PredictionMarketTimeseriesBacktestResultResponse",
@@ -39,12 +46,22 @@ def test_frontend_declares_openapi_type_generation_contract(tmp_path) -> None:
         assert schema_name in schemas
         assert f"{schema_name}:" in generated
 
+    for route in (
+        "/api/brief/issues/latest",
+        "/api/hermes/artifacts",
+        "/api/paper/account/snapshot",
+    ):
+        assert f'"{route}":' in generated
+
+    assert "Canonical paper account requires explicit bootstrap." in generated
+    assert "Paper account storage or canonical database is unavailable." in generated
+
 
 def test_remediation_ledger_records_openapi_generation_scope() -> None:
     ledger = LEDGER.read_text(encoding="utf-8")
 
     for required in (
-        "Package B status: initial generation contract established",
+        "Package B status: generation contract established; generated types refreshed",
         "`src/frontend/lib/api.generated.ts` is generated from FastAPI OpenAPI schema",
         "FileResponse artifact download routes are explicit OpenAPI response-model exemptions",
         "Existing `apiGet` / `apiPost` client behavior remains hand-maintained",

@@ -35,18 +35,26 @@ const copy = {
     review: "review",
     offline: "offline",
     runningSleeves: "Running sleeves",
+    pendingSleeves: "Pending sleeves",
     pendingPlans: "Pending plans",
     duePlans: "Due today",
     blockedPlans: "Blocked",
     recovery: "Recovery",
     journals: "Journals",
+    corruptJournals: "Corrupt journals",
     allClear: "No due local execution work.",
     dueHint: "Due plans are waiting for the scheduled next-open processor.",
     blockedHint: "Blocked executions need manual review before another run.",
     recoveryHint: "Recovery-required executions indicate an interrupted journal.",
-    journalHint: "Pending journals should reconcile on the next status/detail access.",
+    pendingSleeveHint:
+      "Run paper strategies recover-pending (or another explicit strategy mutation); this view never changes pending sleeves.",
+    journalHint:
+      "Pending journals remain untouched here; use paper strategies recover-pending instead of the explicit execution processor when you only want recovery.",
+    corruptJournalHint:
+      "A corrupt recovery journal was preserved for manual inspection; status will not hide it.",
     unavailable: "Automation status unavailable",
-    accountDown: "Account API is unreachable; status may be stale until the backend recovers.",
+    accountDown:
+      "Account API is unreachable; status remains read-only, but recovery and execution are unavailable.",
   },
   zh: {
     title: "自动化运维",
@@ -66,18 +74,24 @@ const copy = {
     review: "查看",
     offline: "离线",
     runningSleeves: "运行袖珍仓",
+    pendingSleeves: "待恢复袖珍仓",
     pendingPlans: "待执行计划",
     duePlans: "今日待执行",
     blockedPlans: "阻塞",
     recovery: "待恢复",
     journals: "日志",
+    corruptJournals: "损坏日志",
     allClear: "暂无到期的本地执行工作。",
     dueHint: "到期计划正在等待定时的 next-open 处理器。",
     blockedHint: "阻塞执行需要人工查看后再运行。",
     recoveryHint: "待恢复通常表示执行日志曾被中断。",
-    journalHint: "待提交日志会在下一次状态或详情访问时尝试对账。",
+    pendingSleeveHint:
+      "请运行 paper strategies recover-pending（或另一项显式策略变更）；本视图绝不改写待恢复袖珍仓。",
+    journalHint:
+      "本视图不会改写待提交日志；若只需恢复，请运行 paper strategies recover-pending，而不是显式执行处理器。",
+    corruptJournalHint: "损坏的恢复日志已保留供人工检查；状态页不会隐藏它。",
     unavailable: "自动化状态不可用",
-    accountDown: "账户 API 当前不可达；后端恢复前状态可能滞后。",
+    accountDown: "账户 API 当前不可达；状态仍可只读查看，但恢复和执行暂不可用。",
   },
 } as const;
 
@@ -108,13 +122,18 @@ export function PaperStrategyOpsPanel({
   const refreshing = statusQuery.isFetching;
 
   const healthTone = useMemo(() => {
-    if (error || accountDown) {
+    if (error) {
       return "danger" as const;
+    }
+    if (accountDown) {
+      return "warning" as const;
     }
     if (
       (status?.blocked_count ?? 0) > 0 ||
       (status?.recovery_required_count ?? 0) > 0 ||
-      (status?.pending_journal_count ?? 0) > 0
+      (status?.pending_sleeve_count ?? 0) > 0 ||
+      (status?.pending_journal_count ?? 0) > 0 ||
+      (status?.corrupt_journal_count ?? 0) > 0
     ) {
       return "warning" as const;
     }
@@ -125,13 +144,18 @@ export function PaperStrategyOpsPanel({
   }, [accountDown, error, status]);
 
   const healthLabel = useMemo(() => {
-    if (error || accountDown) {
+    if (error) {
       return text.offline;
+    }
+    if (accountDown) {
+      return text.review;
     }
     if (
       (status?.blocked_count ?? 0) > 0 ||
       (status?.recovery_required_count ?? 0) > 0 ||
-      (status?.pending_journal_count ?? 0) > 0
+      (status?.pending_sleeve_count ?? 0) > 0 ||
+      (status?.pending_journal_count ?? 0) > 0 ||
+      (status?.corrupt_journal_count ?? 0) > 0
     ) {
       return text.review;
     }
@@ -170,12 +194,28 @@ export function PaperStrategyOpsPanel({
         tone: "text-danger",
       });
     }
+    if (status.pending_sleeve_count > 0) {
+      rows.push({
+        key: "pending-sleeves",
+        label: text.pendingSleeveHint,
+        count: status.pending_sleeve_count,
+        tone: "text-warning",
+      });
+    }
     if (status.pending_journal_count > 0) {
       rows.push({
         key: "journals",
         label: text.journalHint,
         count: status.pending_journal_count,
         tone: "text-warning",
+      });
+    }
+    if (status.corrupt_journal_count > 0) {
+      rows.push({
+        key: "corrupt-journals",
+        label: text.corruptJournalHint,
+        count: status.corrupt_journal_count,
+        tone: "text-danger",
       });
     }
     return rows;
@@ -236,11 +276,17 @@ export function PaperStrategyOpsPanel({
         <MetricStat label={text.lastUpdated} value={updatedLabel} size="inline" />
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-8">
         <MetricStat
           label={text.runningSleeves}
           value={status?.running_sleeve_count ?? "..."}
           size="inline"
+        />
+        <MetricStat
+          label={text.pendingSleeves}
+          value={status?.pending_sleeve_count ?? "..."}
+          size="inline"
+          tone={(status?.pending_sleeve_count ?? 0) > 0 ? "warning" : "neutral"}
         />
         <MetricStat
           label={text.pendingPlans}
@@ -271,6 +317,12 @@ export function PaperStrategyOpsPanel({
           value={status?.pending_journal_count ?? "..."}
           size="inline"
           tone={(status?.pending_journal_count ?? 0) > 0 ? "warning" : "neutral"}
+        />
+        <MetricStat
+          label={text.corruptJournals}
+          value={status?.corrupt_journal_count ?? "..."}
+          size="inline"
+          tone={(status?.corrupt_journal_count ?? 0) > 0 ? "danger" : "neutral"}
         />
       </div>
 

@@ -23,6 +23,7 @@ const desktopRoutes = [
   },
   { path: "/paper-trading", snapshot: "paper-trading-desktop.png", title: "paper trading" },
   { path: "/position-map", snapshot: "position-map-desktop.png", title: "position map" },
+  { path: "/hermes", snapshot: "hermes-desktop.png", title: "hermes" },
 ] as const;
 
 test.beforeEach(() => {
@@ -62,7 +63,9 @@ test.describe("brief trial smoke", () => {
     await expect(page.getByRole("heading", { name: "QQQ" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "SOXX" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "IGV" })).toBeVisible();
-    await expect(page.getByText(/Hermes note|editor's margin/i)).toBeVisible();
+    await expect(
+      page.getByText("-- Hermes note · editor's margin", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText(/Morning brief printed|lede prepared by Hermes/i)).toBeVisible();
     await expect(page.getByText(/live trading never implied active/i)).toBeVisible();
 

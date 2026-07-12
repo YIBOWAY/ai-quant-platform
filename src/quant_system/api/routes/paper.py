@@ -55,7 +55,11 @@ from quant_system.execution.account import (
     AccountPosition,
     PaperAccount,
 )
-from quant_system.execution.account_repository import PaperAccountRepository
+from quant_system.execution.account_repository import (
+    PaperAccountBootstrapRequired,
+    PaperAccountRepository,
+    PaperAccountStorageCorrupt,
+)
 from quant_system.execution.account_repository_factory import (
     build_paper_account_repository,
 )
@@ -66,10 +70,19 @@ from quant_system.execution.account_service import (
     PendingOrderNotFoundError,
     StrategyDataUnavailableError,
 )
+from quant_system.execution.account_snapshot import (
+    PaperAccountSnapshotReader,
+    PaperAccountSnapshotReadError,
+    materialize_account_view,
+    resolve_account_quotes,
+)
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionService,
 )
-from quant_system.execution.paper_strategy_operations import PaperStrategyOperationsRunner
+from quant_system.execution.paper_strategy_operations import (
+    PaperStrategyOperationsRunner,
+    PaperStrategyOpsObserver,
+)
 from quant_system.execution.paper_strategy_signal_service import (
     PaperStrategySignalService,
     StrategySignalGenerationError,
@@ -86,7 +99,6 @@ from quant_system.execution.paper_strategy_sleeves import (
 )
 from quant_system.execution.pipeline import run_paper_trading
 from quant_system.execution.price_source import (
-    PaperPriceSource,
     PricedQuote,
     PriceUnavailableError,
 )
@@ -176,6 +188,7 @@ def run_paper(
     }
     return persist_run(run_dir, "paper", metadata, settings=settings)
 
+
 @router.get("/paper", response_model=PaperRunsResponse)
 def list_paper(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     root = api_runs_dir / "paper"
@@ -219,8 +232,7 @@ class PaperAccountDatabaseUnavailable(RuntimeError):
     def __init__(
         self,
         message: str = (
-            "Paper account database is unavailable; "
-            "mutations are disabled in canonical mode."
+            "Paper account database is unavailable; mutations are disabled in canonical mode."
         ),
     ) -> None:
         super().__init__(message)
@@ -238,14 +250,9 @@ def _map_repository_runtime_error(
     text = str(exc).lower()
     if "paper account" not in text:
         return None
-    if (
-        "unavailable" in text
-        or "mirror write skipped" in text
-        or "not configured" in text
-    ):
+    if "unavailable" in text or "mirror write skipped" in text or "not configured" in text:
         return PaperAccountDatabaseUnavailable(
-            "Paper account database is unavailable; "
-            "mutations are disabled in canonical mode."
+            "Paper account database is unavailable; mutations are disabled in canonical mode."
         )
     return None
 
@@ -272,6 +279,23 @@ def _http_account_db_unavailable(
     )
 
 
+def _http_account_bootstrap_required(
+    exc: PaperAccountBootstrapRequired,
+) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail=_error_detail(exc.code, str(exc)),
+    )
+
+
+def _http_account_storage_corrupt(
+    exc: PaperAccountStorageCorrupt,
+) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail=_error_detail(exc.code, str(exc)),
+    )
+
 
 @contextmanager
 def _canonical_mutation_guard(settings):
@@ -280,6 +304,10 @@ def _canonical_mutation_guard(settings):
         yield
     except HTTPException:
         raise
+    except PaperAccountStorageCorrupt as exc:
+        raise _http_account_storage_corrupt(exc) from exc
+    except PaperAccountBootstrapRequired as exc:
+        raise _http_account_bootstrap_required(exc) from exc
     except PaperAccountDatabaseUnavailable as exc:
         raise _http_account_db_unavailable(exc) from exc
     except Exception as exc:  # noqa: BLE001
@@ -306,6 +334,10 @@ def _fail_closed_canonical(handler):
             return handler(*args, **kwargs)
         except HTTPException:
             raise
+        except PaperAccountStorageCorrupt as exc:
+            raise _http_account_storage_corrupt(exc) from exc
+        except PaperAccountBootstrapRequired as exc:
+            raise _http_account_bootstrap_required(exc) from exc
         except PaperAccountDatabaseUnavailable as exc:
             raise _http_account_db_unavailable(exc) from exc
         except Exception as exc:  # noqa: BLE001
@@ -322,6 +354,10 @@ def _fail_closed_canonical(handler):
 
 def _reraise_account_db_http(exc: Exception) -> None:
     """Re-raise mapped paper-account DB failures as HTTP 503."""
+    if isinstance(exc, PaperAccountStorageCorrupt):
+        raise _http_account_storage_corrupt(exc) from exc
+    if isinstance(exc, PaperAccountBootstrapRequired):
+        raise _http_account_bootstrap_required(exc) from exc
     if isinstance(exc, PaperAccountDatabaseUnavailable):
         raise _http_account_db_unavailable(exc) from exc
     mapped = _map_repository_runtime_error(exc)
@@ -409,8 +445,7 @@ def _reconcile_pending_strategy_sleeves(
     if not can_write:
         if require_account_write:
             raise PaperAccountDatabaseUnavailable(
-                "Paper account database is unavailable; "
-                "mutations are disabled in canonical mode."
+                "Paper account database is unavailable; mutations are disabled in canonical mode."
             )
         return
 
@@ -428,21 +463,7 @@ def _reconcile_pending_strategy_sleeves(
 
 
 def _account_quotes(account: PaperAccount, *, settings) -> dict[str, PricedQuote]:
-    """Resolve a current read-only quote for every held symbol."""
-    price_source = PaperPriceSource(settings)
-    quotes: dict[str, PricedQuote] = {}
-    for symbol, position in account.positions.items():
-        try:
-            quotes[symbol] = price_source.get_price(symbol)
-        except PriceUnavailableError:
-            quotes[symbol] = PricedQuote(
-                symbol=symbol,
-                price=position.avg_cost,
-                price_kind="avg_cost_fallback",
-                as_of=account.updated_at,
-                source="account",
-            )
-    return quotes
+    return resolve_account_quotes(account, settings=settings)
 
 
 def _parse_timestamp(value: str) -> datetime | None:
@@ -461,9 +482,7 @@ _EQUITY_CURVE_FILL_KINDS = {"fill", "rebalance_fill", "sleeve_execution_fill"}
 def _price_source_from_quotes(quotes: dict[str, PricedQuote]) -> dict[str, str | None]:
     price_kinds = {quote.price_kind for quote in quotes.values()}
     price_kind = (
-        next(iter(price_kinds))
-        if len(price_kinds) == 1
-        else ("mixed" if price_kinds else "none")
+        next(iter(price_kinds)) if len(price_kinds) == 1 else ("mixed" if price_kinds else "none")
     )
     as_of = next(iter(quotes.values())).as_of if len(quotes) == 1 else None
     return {"kind": price_kind, "as_of": as_of}
@@ -498,9 +517,7 @@ def _replay_account_equity_curve(
             quantity = float(entry.quantity)
             price = float(entry.price)
             gross_value = (
-                float(entry.gross_value)
-                if entry.gross_value is not None
-                else quantity * price
+                float(entry.gross_value) if entry.gross_value is not None else quantity * price
             )
             new_quantity, new_avg_cost, realized_delta, _ = roll_position_on_fill(
                 side=entry.side,
@@ -690,78 +707,12 @@ def _account_view(
     quotes: dict[str, PricedQuote] | None = None,
     repository: PaperAccountRepository | None = None,
 ) -> dict:
-    """Materialise a price-aware account view for the Position Map."""
-    quotes = quotes if quotes is not None else _account_quotes(account, settings=settings)
-    prices = {symbol: quote.price for symbol, quote in quotes.items()}
-    price_kinds = {quote.price_kind for quote in quotes.values()}
-    price_kind = (
-        next(iter(price_kinds))
-        if len(price_kinds) == 1
-        else ("mixed" if price_kinds else "none")
+    return materialize_account_view(
+        account,
+        settings=settings,
+        quotes=quotes,
+        repository=repository,
     )
-    as_of = next(iter(quotes.values())).as_of if len(quotes) == 1 else None
-
-    equity = account.equity(prices)
-    positions = []
-    for symbol, position in sorted(account.positions.items()):
-        quote = quotes.get(symbol)
-        last_price = quote.price if quote is not None else position.avg_cost
-        positions.append(
-            {
-                "symbol": symbol,
-                "quantity": position.quantity,
-                "avg_cost": position.avg_cost,
-                "last_price": last_price,
-                "market_value": position.market_value(last_price),
-                "weight": (position.market_value(last_price) / equity) if equity else 0.0,
-                "unrealized_pnl": position.unrealized_pnl(last_price),
-                "source_breakdown": position.source_breakdown(),
-                "price_kind": quote.price_kind if quote is not None else "avg_cost_fallback",
-                "price_as_of": quote.as_of if quote is not None else account.updated_at,
-            }
-        )
-
-    pnl_abs = equity - account.initial_cash
-    view = {
-        "account_id": account.account_id,
-        "base_currency": account.base_currency,
-        "initial_cash": account.initial_cash,
-        "cash": account.cash,
-        "reserved_cash": account.reserved_cash(),
-        "available_cash": account.available_cash(),
-        "equity": equity,
-        "realized_pnl": account.realized_pnl,
-        "unrealized_pnl": account.unrealized_pnl(prices),
-        "pnl_abs": pnl_abs,
-        "pnl_pct": (pnl_abs / account.initial_cash) if account.initial_cash else 0.0,
-        "invested_pct": (account.market_value(prices) / equity) if equity else 0.0,
-        "kill_switch": account.kill_switch,
-        "price_source": {"kind": price_kind, "as_of": as_of},
-        "positions": positions,
-        "pending_orders": [
-            order.model_dump(mode="json") for order in account.pending_orders
-        ],
-        "created_at": account.created_at,
-        "updated_at": account.updated_at,
-    }
-
-    mode = settings.paper_account.db_mode
-    stale = False
-    if repository is not None:
-        stale_fn = getattr(repository, "is_stale", None)
-        if callable(stale_fn):
-            stale = bool(stale_fn())
-
-    warnings: list[str] = []
-    if repository is not None:
-        last_warning = getattr(repository, "last_warning", None)
-        if isinstance(last_warning, str) and last_warning:
-            warnings.append(last_warning)
-
-    view["storage_mode"] = mode
-    view["stale"] = stale
-    view["warnings"] = warnings
-    return view
 
 
 _ORDER_HISTORY_KINDS = {"fill", "rebalance_fill", "sleeve_execution_fill", "order_cancelled"}
@@ -886,9 +837,7 @@ def _process_pending_account_orders(
         if account is None:
             return [], None, {}
         if not account.pending_orders:
-            quotes = (
-                _account_quotes(account, settings=settings) if quote_when_idle else {}
-            )
+            quotes = _account_quotes(account, settings=settings) if quote_when_idle else {}
             return [], account, quotes
         outcomes = service.process_pending_orders(account)
         quotes = _account_quotes(account, settings=settings)
@@ -913,21 +862,32 @@ def get_account(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     return _account_view(account, settings=settings, repository=storage)
 
 
-@router.get("/paper/account/snapshot", response_model=PaperAccountSnapshotResponse)
+@router.get(
+    "/paper/account/snapshot",
+    response_model=PaperAccountSnapshotResponse,
+    responses={
+        409: {"description": "Canonical paper account requires explicit bootstrap."},
+        503: {"description": ("Paper account storage or canonical database is unavailable.")},
+    },
+)
 def get_account_snapshot(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
     storage = _account_repository(api_runs_dir, settings)
-    account = _load_account_mapped(storage, settings=settings)
-    if account is None:
-        return {
-            "account_id": storage.account_id,
-            "account_exists": False,
-            "account": None,
-        }
-    return {
-        "account_id": account.account_id,
-        "account_exists": True,
-        "account": _account_view(account, settings=settings, repository=storage),
-    }
+    try:
+        return (
+            PaperAccountSnapshotReader(
+                repository=storage,
+                settings=settings,
+            )
+            .read()
+            .to_dict()
+        )
+    except PaperAccountBootstrapRequired as exc:
+        raise _http_account_bootstrap_required(exc) from exc
+    except PaperAccountSnapshotReadError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=_error_detail(exc.code, str(exc)),
+        ) from exc
 
 
 @router.get("/paper/account/equity-curve", response_model=PaperAccountEquityCurveResponse)
@@ -987,9 +947,7 @@ def set_account_kill_switch(
         )
         quotes = _account_quotes(account, settings=settings)
         _save_account(storage, account, quotes, settings=settings)
-        return _account_view(
-            account, settings=settings, quotes=quotes, repository=storage
-        )
+        return _account_view(account, settings=settings, quotes=quotes, repository=storage)
 
 
 @router.get("/paper/account/ledger", response_model=PaperLedgerResponse)
@@ -1068,9 +1026,7 @@ def place_account_order(
         _save_account(storage, account, quotes, settings=settings)
         return {
             "order": _order_outcome_view(outcome),
-            "account": _account_view(
-                account, settings=settings, quotes=quotes, repository=storage
-            ),
+            "account": _account_view(account, settings=settings, quotes=quotes, repository=storage),
         }
 
 
@@ -1110,9 +1066,7 @@ def process_pending_account_orders(
     storage = _account_repository(api_runs_dir, settings)
     return {
         "orders": [_order_outcome_view(outcome) for outcome in outcomes],
-        "account": _account_view(
-            account, settings=settings, quotes=quotes, repository=storage
-        ),
+        "account": _account_view(account, settings=settings, quotes=quotes, repository=storage),
     }
 
 
@@ -1145,9 +1099,7 @@ def cancel_pending_account_order(
         _save_account(storage, account, quotes, settings=settings)
         return {
             "order": _order_outcome_view(outcome),
-            "account": _account_view(
-                account, settings=settings, quotes=quotes, repository=storage
-            ),
+            "account": _account_view(account, settings=settings, quotes=quotes, repository=storage),
         }
 
 
@@ -1226,14 +1178,9 @@ def rebalance_account(
                 "aborted": outcome.aborted,
                 "target_weights": outcome.target_weights,
                 "note": outcome.note,
-                "orders": [
-                    _order_outcome_view(order)
-                    for order in outcome.orders
-                ],
+                "orders": [_order_outcome_view(order) for order in outcome.orders],
             },
-            "account": _account_view(
-                account, settings=settings, quotes=quotes, repository=storage
-            ),
+            "account": _account_view(account, settings=settings, quotes=quotes, repository=storage),
         }
 
 
@@ -1274,10 +1221,7 @@ def create_strategy_config(
 def list_strategy_configs(api_runs_dir: ApiRunsDirDep) -> dict:
     storage = _strategy_sleeve_storage(api_runs_dir)
     return {
-        "configs": [
-            config.model_dump(mode="json")
-            for config in storage.list_strategy_configs()
-        ]
+        "configs": [config.model_dump(mode="json") for config in storage.list_strategy_configs()]
     }
 
 
@@ -1393,7 +1337,8 @@ def create_strategy_sleeve(
                         "strategy_sleeve_storage_pending",
                         (
                             "strategy sleeve allocation was saved to the account; "
-                            "pending sleeve journal will be reconciled on next access"
+                            "run 'paper strategies recover-pending' or wait for "
+                            "the next explicit strategy mutation"
                         ),
                     ),
                 ) from exc
@@ -1424,26 +1369,10 @@ def create_strategy_sleeve(
     "/paper/strategy-sleeves",
     response_model=StrategySleevesResponse,
 )
-def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
-    account_storage = _account_repository(api_runs_dir, settings)
+def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep) -> dict:
     storage = _strategy_sleeve_storage(api_runs_dir)
-    with (
-        _account_lock(account_storage.account_id),
-        account_storage.mutation_lock(),
-        storage.mutation_lock(),
-    ):
-        _reconcile_pending_strategy_sleeves(
-            account_storage=account_storage,
-            sleeve_storage=storage,
-            settings=settings,
-        )
-        sleeves = storage.list_sleeves()
-    return {
-        "sleeves": [
-            sleeve.model_dump(mode="json")
-            for sleeve in sleeves
-        ]
-    }
+    sleeves = storage.list_sleeves()
+    return {"sleeves": [sleeve.model_dump(mode="json") for sleeve in sleeves]}
 
 
 @router.get(
@@ -1452,22 +1381,16 @@ def list_strategy_sleeves(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) ->
 )
 def get_strategy_sleeve_ops_status(
     api_runs_dir: ApiRunsDirDep,
-    settings: SettingsDep,
     target_date: date | None = None,
     execution_window: Literal["next_open"] = "next_open",
 ) -> dict:
-    account_storage = _account_repository(api_runs_dir, settings)
     sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
-    runner = PaperStrategyOperationsRunner(
-        account_storage=account_storage,
+    status = PaperStrategyOpsObserver(
         sleeve_storage=sleeve_storage,
-        settings=settings,
+    ).observe(
+        target_date=target_date,
+        execution_window=execution_window,
     )
-    with _account_lock(account_storage.account_id):
-        status = runner.ops_status(
-            target_date=target_date,
-            execution_window=execution_window,
-        )
     return {"status": status.to_dict()}
 
 
@@ -1478,36 +1401,20 @@ def get_strategy_sleeve_ops_status(
 def get_strategy_sleeve(
     sleeve_id: str,
     api_runs_dir: ApiRunsDirDep,
-    settings: SettingsDep,
 ) -> dict:
-    account_storage = _account_repository(api_runs_dir, settings)
     storage = _strategy_sleeve_storage(api_runs_dir)
-    with (
-        _account_lock(account_storage.account_id),
-        account_storage.mutation_lock(),
-        storage.mutation_lock(),
-    ):
-        _reconcile_pending_strategy_sleeves(
-            account_storage=account_storage,
-            sleeve_storage=storage,
-            settings=settings,
-        )
-        try:
-            sleeve = storage.load_sleeve(sleeve_id)
-        except FileNotFoundError as exc:
-            raise not_found_404("strategy_sleeve", sleeve_id) from exc
-        lots = storage.load_sleeve_lots(sleeve_id)
-        signals = storage.load_signals(sleeve_id)
-        executions = storage.load_executions(sleeve_id)
+    try:
+        sleeve = storage.load_sleeve(sleeve_id)
+    except FileNotFoundError as exc:
+        raise not_found_404("strategy_sleeve", sleeve_id) from exc
+    lots = storage.load_sleeve_lots(sleeve_id)
+    signals = storage.load_signals(sleeve_id)
+    executions = storage.load_executions(sleeve_id)
     return {
         "sleeve": sleeve.model_dump(mode="json"),
         "lots": [lot.model_dump(mode="json") for lot in lots],
-        "signals": [
-            signal.model_dump(mode="json") for signal in signals
-        ],
-        "executions": [
-            execution.model_dump(mode="json") for execution in executions
-        ],
+        "signals": [signal.model_dump(mode="json") for signal in signals],
+        "executions": [execution.model_dump(mode="json") for execution in executions],
     }
 
 
@@ -1610,9 +1517,7 @@ def process_strategy_sleeve_executions(
         "processed_count": result.processed_count,
         "filled_count": result.filled_count,
         "blocked_count": result.blocked_count,
-        "executions": [
-            execution.model_dump(mode="json") for execution in result.executions
-        ],
+        "executions": [execution.model_dump(mode="json") for execution in result.executions],
         "account": account_view,
     }
 
@@ -1777,9 +1682,7 @@ def _account_rebalance_strategy_id(strategy_id: str) -> str:
         metadata = registry.get(normalized)
     except KeyError as exc:
         supported = [
-            item.id
-            for item in registry.list_metadata()
-            if item.supports_account_rebalance
+            item.id for item in registry.list_metadata() if item.supports_account_rebalance
         ]
         raise HTTPException(
             status_code=400,

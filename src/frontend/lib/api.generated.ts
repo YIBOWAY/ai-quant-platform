@@ -191,6 +191,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/brief/issues/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Brief Issue */
+        post: operations["generate_brief_issue_api_brief_issues_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/brief/issues/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Latest Brief Issue */
+        get: operations["get_latest_brief_issue_api_brief_issues_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/brief/issues/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Brief Issue */
+        get: operations["get_brief_issue_api_brief_issues__public_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments": {
         parameters: {
             query?: never;
@@ -344,6 +395,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hermes/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hermes Artifacts */
+        get: operations["hermes_artifacts_api_hermes_artifacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market-data/history": {
         parameters: {
             query?: never;
@@ -353,6 +421,74 @@ export interface paths {
         };
         /** Market Data History */
         get: operations["market_data_history_api_market_data_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/aihot/dailies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Aihot Dailies */
+        get: operations["aihot_dailies_api_news_aihot_dailies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/aihot/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Aihot Daily */
+        get: operations["aihot_daily_api_news_aihot_daily_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/aihot/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Aihot Items */
+        get: operations["aihot_items_api_news_aihot_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/aihot/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Aihot Status */
+        get: operations["aihot_status_api_news_aihot_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -957,6 +1093,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/paper/account/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Account Activity */
+        get: operations["get_account_activity_api_paper_account_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/account/equity-curve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Account Equity Curve */
+        get: operations["get_account_equity_curve_api_paper_account_equity_curve_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/paper/account/kill-switch": {
         parameters: {
             query?: never;
@@ -1076,6 +1246,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/paper/account/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Account Snapshot */
+        get: operations["get_account_snapshot_api_paper_account_snapshot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/paper/run": {
         parameters: {
             query?: never;
@@ -1087,6 +1274,195 @@ export interface paths {
         put?: never;
         /** Run Paper */
         post: operations["run_paper_api_paper_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Strategy Configs */
+        get: operations["list_strategy_configs_api_paper_strategy_configs_get"];
+        put?: never;
+        /** Create Strategy Config */
+        post: operations["create_strategy_config_api_paper_strategy_configs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-configs/{strategy_config_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Strategy Config Version */
+        post: operations["create_strategy_config_version_api_paper_strategy_configs__strategy_config_id__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-sleeves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Strategy Sleeves */
+        get: operations["list_strategy_sleeves_api_paper_strategy_sleeves_get"];
+        put?: never;
+        /** Create Strategy Sleeve */
+        post: operations["create_strategy_sleeve_api_paper_strategy_sleeves_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-sleeves/executions/process": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Process Strategy Sleeve Executions */
+        post: operations["process_strategy_sleeve_executions_api_paper_strategy_sleeves_executions_process_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-sleeves/ops/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Strategy Sleeve Ops Status */
+        get: operations["get_strategy_sleeve_ops_status_api_paper_strategy_sleeves_ops_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-sleeves/{sleeve_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Strategy Sleeve */
+        get: operations["get_strategy_sleeve_api_paper_strategy_sleeves__sleeve_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-sleeves/{sleeve_id}/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Strategy Sleeve Execution */
+        post: operations["create_strategy_sleeve_execution_api_paper_strategy_sleeves__sleeve_id__executions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-sleeves/{sleeve_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Strategy Sleeve */
+        post: operations["pause_strategy_sleeve_api_paper_strategy_sleeves__sleeve_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-sleeves/{sleeve_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Strategy Sleeve */
+        post: operations["resume_strategy_sleeve_api_paper_strategy_sleeves__sleeve_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-sleeves/{sleeve_id}/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Strategy Sleeve Signal */
+        post: operations["generate_strategy_sleeve_signal_api_paper_strategy_sleeves__sleeve_id__signals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/strategy-sleeves/{sleeve_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop Strategy Sleeve */
+        post: operations["stop_strategy_sleeve_api_paper_strategy_sleeves__sleeve_id__stop_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1531,6 +1907,163 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** AiHotDailiesResponse */
+        AiHotDailiesResponse: {
+            /** Count */
+            count: number;
+            /** Fetched At */
+            fetched_at: string;
+            /** Items */
+            items: components["schemas"]["AiHotDailyIndexResponse"][];
+            /** Provider */
+            provider: string;
+            /** Provider Beta */
+            provider_beta: boolean;
+            research_safety?: components["schemas"]["AiHotResearchSafety"];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** AiHotDailyIndexResponse */
+        AiHotDailyIndexResponse: {
+            /** Date */
+            date: string;
+            /** Generated At */
+            generated_at?: string | null;
+            /** Lead Title */
+            lead_title?: string | null;
+            /** Raw */
+            raw?: {
+                [key: string]: unknown;
+            };
+        };
+        /** AiHotDailyResponse */
+        AiHotDailyResponse: {
+            /** Date */
+            date: string;
+            /** Fetched At */
+            fetched_at: string;
+            /** Flashes */
+            flashes?: {
+                [key: string]: unknown;
+            }[];
+            /** Generated At */
+            generated_at?: string | null;
+            /** Lead */
+            lead?: {
+                [key: string]: unknown;
+            } | null;
+            /** Provider */
+            provider: string;
+            /** Provider Beta */
+            provider_beta: boolean;
+            /** Raw */
+            raw?: {
+                [key: string]: unknown;
+            };
+            research_safety?: components["schemas"]["AiHotResearchSafety"];
+            /** Sections */
+            sections?: {
+                [key: string]: unknown;
+            }[];
+            /** Warnings */
+            warnings?: string[];
+            /** Window End */
+            window_end?: string | null;
+            /** Window Start */
+            window_start?: string | null;
+        };
+        /** AiHotItemResponse */
+        AiHotItemResponse: {
+            /** Category */
+            category?: string | null;
+            /** Id */
+            id: string;
+            /** Published At */
+            published_at?: string | null;
+            /** Raw */
+            raw?: {
+                [key: string]: unknown;
+            };
+            /** Score */
+            score?: number | null;
+            /** Selected */
+            selected?: boolean | null;
+            /** Source */
+            source: string;
+            /** Summary */
+            summary?: string | null;
+            /** Title */
+            title: string;
+            /** Title En */
+            title_en?: string | null;
+            /** Url */
+            url: string;
+        };
+        /** AiHotItemsResponse */
+        AiHotItemsResponse: {
+            /** Count */
+            count: number;
+            /** Fetched At */
+            fetched_at: string;
+            /** Has Next */
+            has_next: boolean;
+            /** Items */
+            items: components["schemas"]["AiHotItemResponse"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Provider */
+            provider: string;
+            /** Provider Beta */
+            provider_beta: boolean;
+            research_safety?: components["schemas"]["AiHotResearchSafety"];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** AiHotResearchSafety */
+        AiHotResearchSafety: {
+            /**
+             * Does Not Trigger Trading
+             * @default true
+             */
+            does_not_trigger_trading: boolean;
+            /**
+             * Not Investment Advice
+             * @default true
+             */
+            not_investment_advice: boolean;
+            /**
+             * Research Only
+             * @default true
+             */
+            research_only: boolean;
+            /**
+             * Verify Original Source
+             * @default true
+             */
+            verify_original_source: boolean;
+        };
+        /** AiHotStatusResponse */
+        AiHotStatusResponse: {
+            /** Base Url */
+            base_url: string;
+            /** Cache Ttl Seconds */
+            cache_ttl_seconds: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Last Error */
+            last_error?: {
+                [key: string]: unknown;
+            } | null;
+            /** Provider */
+            provider: string;
+            /** Provider Beta */
+            provider_beta: boolean;
+            research_safety?: components["schemas"]["AiHotResearchSafety"];
+            /** Timeout Seconds */
+            timeout_seconds: number;
+            /** Warnings */
+            warnings?: string[];
+        };
         /** BacktestBenchmarkSnapshot */
         BacktestBenchmarkSnapshot: {
             /** Equity Curve */
@@ -1874,6 +2407,57 @@ export interface components {
             source: string;
             /** Symbol */
             symbol: string;
+        };
+        /** BriefGenerateRequest */
+        BriefGenerateRequest: {
+            /** Issue Date */
+            issue_date?: string | null;
+            /**
+             * Locale
+             * @default zh
+             */
+            locale: string;
+        };
+        /** BriefIssueEnvelopeResponse */
+        BriefIssueEnvelopeResponse: {
+            issue: components["schemas"]["BriefIssueResponse"];
+            snapshot: components["schemas"]["BriefSnapshotResponse"];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** BriefIssueResponse */
+        BriefIssueResponse: {
+            /**
+             * Issue Date
+             * Format: date
+             */
+            issue_date: string;
+            /** Issue Id */
+            issue_id: string;
+            /** Locale */
+            locale: string;
+            /** Public Id */
+            public_id: string;
+            /**
+             * Status
+             * @default published
+             */
+            status: string;
+        };
+        /** BriefSnapshotResponse */
+        BriefSnapshotResponse: {
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+            /** Snapshot Id */
+            snapshot_id: string;
+            /** Source Watermark */
+            source_watermark?: {
+                [key: string]: unknown;
+            };
+            /** Version */
+            version: number;
         };
         /**
          * BuySideAssistantRequest
@@ -2369,10 +2953,41 @@ export interface components {
             /** Experiments */
             experiments: components["schemas"]["ExperimentSummary"][];
         };
+        /**
+         * FactorCatalogItem
+         * @description Factor metadata plus catalog provenance.
+         *
+         *     ``origin`` is additive and always present: ``builtin`` for example factors,
+         *     ``promoted`` for code-reviewed promoted-library factors, ``candidate`` for
+         *     human-approved agent candidates surfaced only when
+         *     ``GET /factors?include_candidates=true``.
+         */
+        FactorCatalogItem: {
+            /** Description */
+            description: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "higher_is_better" | "lower_is_better" | "neutral";
+            /** Factor Id */
+            factor_id: string;
+            /** Factor Name */
+            factor_name: string;
+            /** Factor Version */
+            factor_version: string;
+            /** Lookback */
+            lookback: number;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "builtin" | "promoted" | "candidate";
+        };
         /** FactorCatalogResponse */
         FactorCatalogResponse: {
             /** Factors */
-            factors: components["schemas"]["FactorMetadata"][];
+            factors: components["schemas"]["FactorCatalogItem"][];
         };
         /** FactorLabCacheKeyResponse */
         FactorLabCacheKeyResponse: {
@@ -2643,6 +3258,250 @@ export interface components {
             };
             /** Status */
             status: string;
+        };
+        /** HermesArtifactFeedResponse */
+        HermesArtifactFeedResponse: {
+            /** As Of */
+            as_of: string | null;
+            /** Items */
+            items: components["schemas"]["HermesArtifactItemResponse"][];
+            /**
+             * Read Status
+             * @enum {string}
+             */
+            read_status: "empty" | "available" | "degraded" | "unavailable";
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "1.0";
+            /** Sources */
+            sources: components["schemas"]["HermesArtifactSourceResponse"][];
+            /** Warnings */
+            warnings: components["schemas"]["HermesArtifactWarningResponse"][];
+        };
+        /** HermesArtifactItemResponse */
+        HermesArtifactItemResponse: components["schemas"]["HermesPortfolioRiskItem"] | components["schemas"]["HermesPredictionItem"] | components["schemas"]["HermesMarketForesightItem"];
+        /** HermesArtifactSourceResponse */
+        HermesArtifactSourceResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "portfolio_risk" | "prediction" | "market_foresight";
+            /** Latest At */
+            latest_at: string | null;
+            /** Reason Code */
+            reason_code: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "empty" | "degraded" | "unavailable";
+        };
+        /** HermesArtifactWarningResponse */
+        HermesArtifactWarningResponse: {
+            /** Code */
+            code: string;
+            /** Source */
+            source: string;
+        };
+        /** HermesForesightCandidate */
+        HermesForesightCandidate: {
+            /**
+             * Adjustment
+             * @constant
+             */
+            adjustment: "qfq";
+            /** Confidence */
+            confidence: number;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "up" | "down" | "flat";
+            /** Entry Close */
+            entry_close: number;
+            /**
+             * Entry Session Date
+             * Format: date
+             */
+            entry_session_date: string;
+            /** Falsifier */
+            falsifier: string;
+            /**
+             * Horizon Date
+             * Format: date
+             */
+            horizon_date: string;
+            /** Id */
+            id: string;
+            /**
+             * Proposal Only
+             * @constant
+             */
+            proposal_only: true;
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "futu";
+            /** Rationale */
+            rationale: string;
+            /**
+             * Requires Human Confirmation
+             * @constant
+             */
+            requires_human_confirmation: true;
+            /** Symbol */
+            symbol: string;
+            /**
+             * Trading Allowed
+             * @constant
+             */
+            trading_allowed: false;
+        };
+        /** HermesMarketForesightData */
+        HermesMarketForesightData: {
+            /** Candidate Count */
+            candidate_count: number;
+            /** Candidates */
+            candidates: components["schemas"]["HermesForesightCandidate"][];
+            /** Run Id */
+            run_id: string;
+            /** Summary */
+            summary: string;
+        };
+        /** HermesMarketForesightItem */
+        HermesMarketForesightItem: {
+            data: components["schemas"]["HermesMarketForesightData"];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "market_foresight";
+            /** Occurred At */
+            occurred_at: string;
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "available" | "degraded" | "not_applicable" | "unavailable";
+            /** Status */
+            status: string;
+        };
+        /** HermesPortfolioRiskData */
+        HermesPortfolioRiskData: {
+            /** Account Id */
+            account_id: string | null;
+            /** Benchmark */
+            benchmark: string | null;
+            /** Betas */
+            betas: components["schemas"]["HermesRiskBeta"][];
+            /** Currency */
+            currency: string | null;
+            /** Gross Pct Equity */
+            gross_pct_equity: number | null;
+            /** Gross Value */
+            gross_value: number | null;
+            /** Historical Status */
+            historical_status: string | null;
+            /** Largest Symbol */
+            largest_symbol: string | null;
+            /** Limitations */
+            limitations: string[];
+            /** Reason Codes */
+            reason_codes: string[];
+            /** Top1 Gross Pct */
+            top1_gross_pct: number | null;
+        };
+        /** HermesPortfolioRiskItem */
+        HermesPortfolioRiskItem: {
+            data: components["schemas"]["HermesPortfolioRiskData"];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "portfolio_risk";
+            /** Occurred At */
+            occurred_at: string;
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "available" | "degraded" | "not_applicable" | "unavailable";
+            /** Status */
+            status: string;
+        };
+        /** HermesPredictionData */
+        HermesPredictionData: {
+            /** Confidence */
+            confidence: number;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "up" | "down" | "flat";
+            /** Direction Brier */
+            direction_brier: number | null;
+            /**
+             * Horizon Date
+             * Format: date
+             */
+            horizon_date: string;
+            /** Outcome Return */
+            outcome_return: number | null;
+            /** Prediction Id */
+            prediction_id: string;
+            /** Rationale */
+            rationale: string;
+            /** State */
+            state: string;
+            /** Symbol */
+            symbol: string;
+        };
+        /** HermesPredictionItem */
+        HermesPredictionItem: {
+            data: components["schemas"]["HermesPredictionData"];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "prediction";
+            /** Occurred At */
+            occurred_at: string;
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "available" | "degraded" | "not_applicable" | "unavailable";
+            /** Status */
+            status: string;
+        };
+        /** HermesRiskBeta */
+        HermesRiskBeta: {
+            /** Aligned Return Count */
+            aligned_return_count: number;
+            /** Benchmark */
+            benchmark: string;
+            /** First Return Date */
+            first_return_date: string | null;
+            /** Last Return Date */
+            last_return_date: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Status */
+            status: string;
+            /** Symbol */
+            symbol: string;
+            /** Value */
+            value: number | null;
         };
         /** KillSwitchRequest */
         KillSwitchRequest: {
@@ -3623,6 +4482,134 @@ export interface components {
             /** Token Id */
             token_id: string;
         };
+        /** PaperAccountActivityResponse */
+        PaperAccountActivityResponse: {
+            account: components["schemas"]["PaperAccountResponse"];
+            /** Balance History */
+            balance_history: components["schemas"]["PaperAccountBalanceHistoryRowResponse"][];
+            /** Balance History Total */
+            balance_history_total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Order History */
+            order_history: components["schemas"]["PaperAccountOrderHistoryRowResponse"][];
+            /** Order History Total */
+            order_history_total: number;
+            /** Pending Order Total */
+            pending_order_total: number;
+            /** Pending Orders */
+            pending_orders: components["schemas"]["PendingAccountOrderResponse"][];
+            /** Trade Log */
+            trade_log: components["schemas"]["LedgerEntryResponse"][];
+            /** Trade Log Total */
+            trade_log_total: number;
+        };
+        /** PaperAccountBalanceHistoryRowResponse */
+        PaperAccountBalanceHistoryRowResponse: {
+            /** Cash After */
+            cash_after: number;
+            /** Cash Delta */
+            cash_delta: number;
+            /** Event Id */
+            event_id: string;
+            /** Kind */
+            kind: string;
+            /** Note */
+            note?: string | null;
+            /** Source */
+            source: string;
+            /** Timestamp */
+            timestamp: string;
+        };
+        /** PaperAccountEquityCurvePointResponse */
+        PaperAccountEquityCurvePointResponse: {
+            /** Cash */
+            cash: number;
+            /** Equity */
+            equity: number;
+            /** Event Id */
+            event_id?: string | null;
+            /** Event Kind */
+            event_kind?: string | null;
+            /** Market Value */
+            market_value: number;
+            /** Price */
+            price?: number | null;
+            price_source: components["schemas"]["PaperAccountPriceSourceResponse"];
+            /** Quantity */
+            quantity?: number | null;
+            /** Realized Pnl */
+            realized_pnl: number;
+            /** Side */
+            side?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "ledger" | "current_quote";
+            /** Symbol */
+            symbol?: string | null;
+            /** Timestamp */
+            timestamp: string;
+        };
+        /** PaperAccountEquityCurveResponse */
+        PaperAccountEquityCurveResponse: {
+            /** Account Exists */
+            account_exists: boolean;
+            /** Account Id */
+            account_id: string;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Points */
+            points: components["schemas"]["PaperAccountEquityCurvePointResponse"][];
+            /** Total */
+            total: number;
+        };
+        /** PaperAccountOrderHistoryRowResponse */
+        PaperAccountOrderHistoryRowResponse: {
+            /** Cash After */
+            cash_after?: number | null;
+            /**
+             * Commission
+             * @default 0
+             */
+            commission: number;
+            /** Event Id */
+            event_id: string;
+            /** Gross Value */
+            gross_value?: number | null;
+            /** Kind */
+            kind: string;
+            /** Note */
+            note?: string | null;
+            /** Order Id */
+            order_id?: string | null;
+            /** Price */
+            price?: number | null;
+            /** Price Kind */
+            price_kind?: string | null;
+            /** Quantity */
+            quantity?: number | null;
+            /**
+             * Realized Pnl Delta
+             * @default 0
+             */
+            realized_pnl_delta: number;
+            /** Side */
+            side?: string | null;
+            /** Source */
+            source: string;
+            /** Status */
+            status: string;
+            /** Symbol */
+            symbol?: string | null;
+            /** Timestamp */
+            timestamp: string;
+        };
         /** PaperAccountOrderOutcomeResponse */
         PaperAccountOrderOutcomeResponse: {
             /** Filled Quantity */
@@ -3684,6 +4671,41 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** PaperAccountReconciliationDifferenceResponse */
+        PaperAccountReconciliationDifferenceResponse: {
+            /** Actual */
+            actual?: unknown;
+            /** Expected */
+            expected?: unknown;
+            /** Field */
+            field: string;
+        };
+        /** PaperAccountReconciliationResponse */
+        PaperAccountReconciliationResponse: {
+            /** Account Id */
+            account_id: string;
+            /** Actual Summary */
+            actual_summary?: {
+                [key: string]: unknown;
+            };
+            /** Checked At */
+            checked_at: string;
+            /** Differences */
+            differences?: components["schemas"]["PaperAccountReconciliationDifferenceResponse"][];
+            /** Expected Summary */
+            expected_summary?: {
+                [key: string]: unknown;
+            };
+            /** Source */
+            source: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "in_sync" | "different" | "unavailable" | "not_applicable";
+            /** Target */
+            target?: string | null;
+        };
         /** PaperAccountResponse */
         PaperAccountResponse: {
             /** Account Id */
@@ -3715,15 +4737,33 @@ export interface components {
             price_source: components["schemas"]["PaperAccountPriceSourceResponse"];
             /** Realized Pnl */
             realized_pnl: number;
+            reconciliation?: components["schemas"]["PaperAccountReconciliationResponse"] | null;
             /**
              * Reserved Cash
              * @default 0
              */
             reserved_cash: number;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Storage Mode */
+            storage_mode?: ("file" | "mirror" | "canonical") | null;
             /** Unrealized Pnl */
             unrealized_pnl: number;
             /** Updated At */
             updated_at: string;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** PaperAccountSnapshotResponse */
+        PaperAccountSnapshotResponse: {
+            account?: components["schemas"]["PaperAccountResponse"] | null;
+            /** Account Exists */
+            account_exists: boolean;
+            /** Account Id */
+            account_id: string;
         };
         /** PaperLedgerResponse */
         PaperLedgerResponse: {
@@ -4497,10 +5537,300 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** SleeveLotResponse */
+        SleeveLotResponse: {
+            /** Account Id */
+            account_id: string;
+            /** Avg Cost */
+            avg_cost: number;
+            /** Lot Id */
+            lot_id: string;
+            /** Opened At */
+            opened_at: string;
+            /** Quantity */
+            quantity: number;
+            /** Sleeve Id */
+            sleeve_id: string;
+            /** Source */
+            source: string;
+            /** Symbol */
+            symbol: string;
+            /** Updated At */
+            updated_at: string;
+        };
         /** StrategyCatalogResponse */
         StrategyCatalogResponse: {
             /** Strategies */
             strategies: components["schemas"]["StrategyMetadata"][];
+        };
+        /** StrategyConfigCreateRequest */
+        StrategyConfigCreateRequest: {
+            /**
+             * Data Provider
+             * @default futu
+             * @enum {string}
+             */
+            data_provider: "futu" | "tiingo";
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Execution Timing
+             * @default next_open
+             */
+            execution_timing: string;
+            /** Factor Ids */
+            factor_ids?: string[];
+            /**
+             * Lookback
+             * @default 20
+             */
+            lookback: number;
+            /**
+             * Max Weight Per Symbol
+             * @default 1
+             */
+            max_weight_per_symbol: number;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Min Order Value
+             * @default 0
+             */
+            min_order_value: number;
+            /** Name */
+            name: string;
+            /**
+             * Rebalance Frequency
+             * @default daily
+             */
+            rebalance_frequency: string;
+            /** Strategy Id */
+            strategy_id: string;
+            /** Symbols */
+            symbols?: string[];
+            /** Tags */
+            tags?: string[];
+            /**
+             * Top N
+             * @default 3
+             */
+            top_n: number;
+            /** Universe Id */
+            universe_id?: string | null;
+            /** Weights */
+            weights?: {
+                [key: string]: number;
+            };
+        };
+        /** StrategyConfigMutationResponse */
+        StrategyConfigMutationResponse: {
+            config: components["schemas"]["StrategyConfigResponse"];
+        };
+        /** StrategyConfigResponse */
+        StrategyConfigResponse: {
+            /**
+             * Archived
+             * @default false
+             */
+            archived: boolean;
+            /** Created At */
+            created_at: string;
+            /** Data Provider */
+            data_provider: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Execution Timing */
+            execution_timing: string;
+            /** Factor Ids */
+            factor_ids?: string[];
+            /** Lookback */
+            lookback: number;
+            /** Max Weight Per Symbol */
+            max_weight_per_symbol: number;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Min Order Value */
+            min_order_value: number;
+            /** Name */
+            name: string;
+            /** Rebalance Frequency */
+            rebalance_frequency: string;
+            /** Strategy Config Id */
+            strategy_config_id: string;
+            /** Strategy Id */
+            strategy_id: string;
+            /** Symbols */
+            symbols?: string[];
+            /** Tags */
+            tags?: string[];
+            /** Top N */
+            top_n: number;
+            /** Universe Id */
+            universe_id?: string | null;
+            /** Updated At */
+            updated_at: string;
+            /** Version */
+            version: number;
+            /** Weights */
+            weights?: {
+                [key: string]: number;
+            };
+        };
+        /** StrategyConfigsResponse */
+        StrategyConfigsResponse: {
+            /** Configs */
+            configs: components["schemas"]["StrategyConfigResponse"][];
+        };
+        /** StrategyExecutionCreateRequest */
+        StrategyExecutionCreateRequest: {
+            /**
+             * Execution Window
+             * @default next_open
+             * @constant
+             */
+            execution_window: "next_open";
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Signal Id */
+            signal_id: string;
+            /** Target Date */
+            target_date?: string | null;
+        };
+        /** StrategyExecutionFillResponse */
+        StrategyExecutionFillResponse: {
+            /** Fill Id */
+            fill_id: string;
+            /** Filled At */
+            filled_at: string;
+            /** Gross Value */
+            gross_value: number;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Price */
+            price: number;
+            /** Price Kind */
+            price_kind: string;
+            /** Quantity */
+            quantity: number;
+            /** Side */
+            side: string;
+            /** Symbol */
+            symbol: string;
+        };
+        /** StrategyExecutionMutationResponse */
+        StrategyExecutionMutationResponse: {
+            execution: components["schemas"]["StrategyExecutionPlanResponse"];
+        };
+        /** StrategyExecutionOrderResponse */
+        StrategyExecutionOrderResponse: {
+            /** Account Id */
+            account_id?: string | null;
+            /** Current Value */
+            current_value?: number | null;
+            /** Estimated Quantity */
+            estimated_quantity?: number | null;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Notional Delta */
+            notional_delta?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Reference Price */
+            reference_price?: number | null;
+            /** Side */
+            side: string;
+            /** Symbol */
+            symbol: string;
+            /** Target Value */
+            target_value?: number | null;
+            /** Target Weight */
+            target_weight?: number | null;
+        };
+        /** StrategyExecutionPlanResponse */
+        StrategyExecutionPlanResponse: {
+            /** Account Id */
+            account_id: string;
+            /** Blocked Reason */
+            blocked_reason?: string | null;
+            /** Created At */
+            created_at: string;
+            /** Execution Id */
+            execution_id: string;
+            /** Execution Window */
+            execution_window: string;
+            /** Fills */
+            fills?: components["schemas"]["StrategyExecutionFillResponse"][];
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Orders */
+            orders?: components["schemas"]["StrategyExecutionOrderResponse"][];
+            /** Signal Id */
+            signal_id: string;
+            /** Sleeve Id */
+            sleeve_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "filled" | "partially_filled" | "skipped" | "blocked" | "missed_window" | "failed" | "cancelled";
+            /** Strategy Config Id */
+            strategy_config_id: string;
+            /** Strategy Config Version */
+            strategy_config_version: number;
+            /** Target Date */
+            target_date?: string | null;
+            /** Updated At */
+            updated_at: string;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** StrategyExecutionProcessRequest */
+        StrategyExecutionProcessRequest: {
+            /**
+             * Execution Window
+             * @default next_open
+             * @constant
+             */
+            execution_window: "next_open";
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /** Sleeve Id */
+            sleeve_id?: string | null;
+            /** Target Date */
+            target_date?: string | null;
+        };
+        /** StrategyExecutionProcessResponse */
+        StrategyExecutionProcessResponse: {
+            account: components["schemas"]["PaperAccountResponse"];
+            /** Blocked Count */
+            blocked_count: number;
+            /** Executions */
+            executions: components["schemas"]["StrategyExecutionPlanResponse"][];
+            /** Filled Count */
+            filled_count: number;
+            /** Processed Count */
+            processed_count: number;
         };
         /** StrategyMetadata */
         StrategyMetadata: {
@@ -4529,6 +5859,174 @@ export interface components {
              * @default false
              */
             supports_account_rebalance: boolean;
+        };
+        /** StrategyOpsStatusPayload */
+        StrategyOpsStatusPayload: {
+            /** Blocked Count */
+            blocked_count: number;
+            /** Corrupt Journal Count */
+            corrupt_journal_count: number;
+            /** Filled Count */
+            filled_count: number;
+            /** Pending Due Count */
+            pending_due_count: number;
+            /** Pending Execution Count */
+            pending_execution_count: number;
+            /** Pending Journal Count */
+            pending_journal_count: number;
+            /** Pending Sleeve Count */
+            pending_sleeve_count: number;
+            /** Recovery Required Count */
+            recovery_required_count: number;
+            /** Running Sleeve Count */
+            running_sleeve_count: number;
+            /** Sleeve Count */
+            sleeve_count: number;
+            /** Target Date */
+            target_date: string;
+        };
+        /** StrategyOpsStatusResponse */
+        StrategyOpsStatusResponse: {
+            status: components["schemas"]["StrategyOpsStatusPayload"];
+        };
+        /** StrategySignalGenerateRequest */
+        StrategySignalGenerateRequest: {
+            /**
+             * History Days
+             * @default 180
+             */
+            history_days: number;
+            /** Signal Date */
+            signal_date?: string | null;
+        };
+        /** StrategySignalMutationResponse */
+        StrategySignalMutationResponse: {
+            signal: components["schemas"]["StrategySignalResponse"];
+        };
+        /** StrategySignalResponse */
+        StrategySignalResponse: {
+            /** Data As Of */
+            data_as_of?: string | null;
+            /** Data Provider */
+            data_provider: string;
+            /** Execution Blocked Reason */
+            execution_blocked_reason?: string | null;
+            /** Generated At */
+            generated_at: string;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Proposed Orders */
+            proposed_orders?: {
+                [key: string]: unknown;
+            }[];
+            /** Signal Date */
+            signal_date: string;
+            /** Signal Id */
+            signal_id: string;
+            /** Sleeve Id */
+            sleeve_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "generated" | "data_unavailable" | "invalid";
+            /** Strategy Config Id */
+            strategy_config_id: string;
+            /** Strategy Config Version */
+            strategy_config_version: number;
+            /** Target Weights */
+            target_weights?: {
+                [key: string]: number;
+            };
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** StrategySleeveCreateRequest */
+        StrategySleeveCreateRequest: {
+            /**
+             * Allocated Cash
+             * @default 0
+             */
+            allocated_cash: number;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "signal_only" | "allocated";
+            /** Strategy Config Id */
+            strategy_config_id: string;
+            /** Strategy Config Version */
+            strategy_config_version?: number | null;
+        };
+        /** StrategySleeveDetailResponse */
+        StrategySleeveDetailResponse: {
+            /** Executions */
+            executions?: components["schemas"]["StrategyExecutionPlanResponse"][];
+            /** Lots */
+            lots: components["schemas"]["SleeveLotResponse"][];
+            /** Signals */
+            signals: components["schemas"]["StrategySignalResponse"][];
+            sleeve: components["schemas"]["StrategySleeveResponse"];
+        };
+        /** StrategySleeveMutationResponse */
+        StrategySleeveMutationResponse: {
+            account: components["schemas"]["PaperAccountResponse"];
+            sleeve: components["schemas"]["StrategySleeveResponse"];
+        };
+        /** StrategySleeveResponse */
+        StrategySleeveResponse: {
+            /** Account Id */
+            account_id: string;
+            /** Cash */
+            cash: number;
+            /** Created At */
+            created_at: string;
+            /** Initial Allocated Cash */
+            initial_allocated_cash: number;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "signal_only" | "allocated";
+            /** Paused At */
+            paused_at?: string | null;
+            /** Sleeve Id */
+            sleeve_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "paused" | "stopped";
+            /** Stop Reason */
+            stop_reason?: string | null;
+            /** Stopped At */
+            stopped_at?: string | null;
+            /** Strategy Config Id */
+            strategy_config_id: string;
+            /** Strategy Config Version */
+            strategy_config_version: number;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** StrategySleeveStopRequest */
+        StrategySleeveStopRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /** StrategySleevesResponse */
+        StrategySleevesResponse: {
+            /** Sleeves */
+            sleeves: components["schemas"]["StrategySleeveResponse"][];
         };
         /** SymbolsResponse */
         SymbolsResponse: {
@@ -4942,6 +6440,102 @@ export interface operations {
             };
         };
     };
+    generate_brief_issue_api_brief_issues_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BriefGenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefIssueEnvelopeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_latest_brief_issue_api_brief_issues_latest_get: {
+        parameters: {
+            query?: {
+                locale?: string;
+                issue_date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefIssueEnvelopeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_brief_issue_api_brief_issues__public_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefIssueEnvelopeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_experiments_api_experiments_get: {
         parameters: {
             query?: never;
@@ -5028,7 +6622,9 @@ export interface operations {
     };
     list_factors_api_factors_get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_candidates?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5042,6 +6638,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FactorCatalogResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5188,6 +6793,37 @@ export interface operations {
             };
         };
     };
+    hermes_artifacts_api_hermes_artifacts_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HermesArtifactFeedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     market_data_history_api_market_data_history_get: {
         parameters: {
             query: {
@@ -5219,6 +6855,124 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    aihot_dailies_api_news_aihot_dailies_get: {
+        parameters: {
+            query?: {
+                take?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiHotDailiesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    aihot_daily_api_news_aihot_daily_get: {
+        parameters: {
+            query?: {
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiHotDailyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    aihot_items_api_news_aihot_items_get: {
+        parameters: {
+            query?: {
+                mode?: "selected" | "all";
+                category?: ("ai-models" | "ai-products" | "industry" | "paper" | "tip") | null;
+                q?: string | null;
+                since?: string | null;
+                cursor?: string | null;
+                take?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiHotItemsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    aihot_status_api_news_aihot_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiHotStatusResponse"];
                 };
             };
         };
@@ -6405,6 +8159,71 @@ export interface operations {
             };
         };
     };
+    get_account_activity_api_paper_account_activity_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperAccountActivityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_account_equity_curve_api_paper_account_equity_curve_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperAccountEquityCurveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     set_account_kill_switch_api_paper_account_kill_switch_post: {
         parameters: {
             query?: never;
@@ -6620,6 +8439,40 @@ export interface operations {
             };
         };
     };
+    get_account_snapshot_api_paper_account_snapshot_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperAccountSnapshotResponse"];
+                };
+            };
+            /** @description Canonical paper account requires explicit bootstrap. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Paper account storage or canonical database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     run_paper_api_paper_run_post: {
         parameters: {
             query?: never;
@@ -6640,6 +8493,410 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaperRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_strategy_configs_api_paper_strategy_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyConfigsResponse"];
+                };
+            };
+        };
+    };
+    create_strategy_config_api_paper_strategy_configs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrategyConfigCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyConfigMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_strategy_config_version_api_paper_strategy_configs__strategy_config_id__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                strategy_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrategyConfigCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyConfigMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_strategy_sleeves_api_paper_strategy_sleeves_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategySleevesResponse"];
+                };
+            };
+        };
+    };
+    create_strategy_sleeve_api_paper_strategy_sleeves_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrategySleeveCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategySleeveMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    process_strategy_sleeve_executions_api_paper_strategy_sleeves_executions_process_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StrategyExecutionProcessRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyExecutionProcessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_strategy_sleeve_ops_status_api_paper_strategy_sleeves_ops_status_get: {
+        parameters: {
+            query?: {
+                target_date?: string | null;
+                execution_window?: "next_open";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyOpsStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_strategy_sleeve_api_paper_strategy_sleeves__sleeve_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sleeve_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategySleeveDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_strategy_sleeve_execution_api_paper_strategy_sleeves__sleeve_id__executions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sleeve_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrategyExecutionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyExecutionMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_strategy_sleeve_api_paper_strategy_sleeves__sleeve_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sleeve_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategySleeveMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_strategy_sleeve_api_paper_strategy_sleeves__sleeve_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sleeve_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategySleeveMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_strategy_sleeve_signal_api_paper_strategy_sleeves__sleeve_id__signals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sleeve_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StrategySignalGenerateRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategySignalMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_strategy_sleeve_api_paper_strategy_sleeves__sleeve_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sleeve_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StrategySleeveStopRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategySleeveMutationResponse"];
                 };
             };
             /** @description Validation Error */

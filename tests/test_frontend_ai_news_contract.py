@@ -3,10 +3,15 @@ from pathlib import Path
 
 def test_sidebar_links_to_ai_news_page() -> None:
     sidebar = Path("src/frontend/components/Sidebar.tsx").read_text(encoding="utf-8")
+    nav_config = Path("src/frontend/lib/navConfig.ts").read_text(encoding="utf-8")
 
-    assert "Newspaper" in sidebar
+    assert "@/lib/navConfig" in sidebar
+    assert "navSections" in sidebar
+    assert "isVisibleOnSurface" in sidebar
+    assert "Newspaper" in nav_config
+    assert "aiNews" in nav_config
+    assert 'href: "/ai-news"' in nav_config
     assert "aiNews" in sidebar
-    assert 'href: "/ai-news"' in sidebar
 
 
 def test_ai_news_page_uses_dedicated_view_component() -> None:

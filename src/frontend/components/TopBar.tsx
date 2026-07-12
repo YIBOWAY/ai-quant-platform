@@ -8,6 +8,11 @@ import { Menu, Search, Settings, Terminal, X } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { LocaleToggle } from "@/components/LocaleToggle";
 import { localizePath, splitLocalePath } from "@/lib/locale";
+import {
+  isVisibleOnSurface,
+  navSections as configNavSections,
+  type NavItemId,
+} from "@/lib/navConfig";
 
 const copy = {
   en: {
@@ -20,6 +25,9 @@ const copy = {
     aiNews: "AI News",
     positionMap: "Position Map",
     dashboard: "Dashboard",
+    hermes: "Hermes",
+    openHermes: "Open Hermes workbench",
+    openSettings: "Open settings",
     dataExplorer: "Data Explorer",
     factorLab: "Factor Lab",
     backtester: "Backtester",
@@ -52,6 +60,9 @@ const copy = {
     aiNews: "AI 新闻",
     positionMap: "持仓地图",
     dashboard: "仪表盘",
+    hermes: "Hermes 工作台",
+    openHermes: "打开 Hermes 工作台",
+    openSettings: "打开设置",
     dataExplorer: "行情浏览",
     factorLab: "因子实验室",
     backtester: "回测器",
@@ -76,6 +87,13 @@ const copy = {
   },
 };
 
+type FlatCopy = (typeof copy)["en"] | (typeof copy)["zh"];
+
+function labelFor(text: FlatCopy, id: NavItemId): string {
+  const value = text[id as keyof FlatCopy];
+  return typeof value === "string" ? value : id;
+}
+
 export function TopBar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -85,51 +103,15 @@ export function TopBar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
-  const mobileNavSections = [
-    {
-      name: text.groups.research,
-      items: [
-        { name: text.dashboard, href: "/" },
-        { name: text.dataExplorer, href: "/data-explorer" },
-        { name: text.factorLab, href: "/factor-lab" },
-        { name: text.backtester, href: "/backtest" },
-        { name: text.replications, href: "/strategies" },
-        { name: text.experiments, href: "/experiments" },
-      ],
-    },
-    {
-      name: text.groups.paper,
-      items: [
-        { name: text.paperTrading, href: "/paper-trading" },
-        { name: text.positionMap, href: "/position-map" },
-      ],
-    },
-    {
-      name: text.groups.options,
-      items: [
-        { name: text.optionsScreener, href: "/options-screener" },
-        { name: text.optionsRadar, href: "/options-radar" },
-        { name: text.optionsTools, href: "/options-tools" },
-        { name: text.buySide, href: "/options-buyside" },
-      ],
-    },
-    {
-      name: text.groups.markets,
-      items: [
-        { name: text.aiNews, href: "/ai-news" },
-        { name: text.orderBook, href: "/polymarket" },
-        { name: text.agentStudio, href: "/agent-studio" },
-      ],
-    },
-    {
-      name: text.groups.system,
-      items: [
-        { name: text.settings, href: "/settings" },
-        { name: text.docs, href: "/docs/reversal-momentum" },
-        { name: text.support, href: "/settings" },
-      ],
-    },
-  ];
+  const mobileNavSections = configNavSections.map((section) => ({
+    name: text.groups[section.id],
+    items: section.items
+      .filter((item) => isVisibleOnSurface(item, "mobile"))
+      .map((item) => ({
+        name: labelFor(text, item.id),
+        href: item.href,
+      })),
+  }));
   const activePath = splitLocalePath(pathname).pathname;
 
   useEffect(() => {
@@ -187,14 +169,14 @@ export function TopBar() {
         <LocaleToggle />
         <div className="hidden items-center gap-2 border-l border-border-subtle pl-4 text-text-secondary lg:flex">
           <Link
-            aria-label="Open agent console"
+            aria-label={text.openHermes}
             className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
-            href={localizePath("/agent-studio", locale)}
+            href={localizePath("/hermes", locale)}
           >
             <Terminal size={18} />
           </Link>
           <Link
-            aria-label="Open settings"
+            aria-label={text.openSettings}
             className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
             href={localizePath("/settings", locale)}
           >

@@ -476,6 +476,27 @@ class BacktestJobSettings(BaseSettings):
     shutdown_timeout_seconds: float = Field(default=5.0, ge=0.0, le=300.0)
 
 
+class HermesArtifactSettings(BaseSettings):
+    """Read-only access to the HQA materialized artifact feed."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_HERMES_ARTIFACT_",
+        extra="ignore",
+    )
+
+    feed_path: Path = (
+        Path(__file__).resolve().parents[4]
+        / "Hermes-quant-agent"
+        / "artifacts"
+        / "hermes-feed"
+        / "manifest.v1.json"
+    )
+    freshness_budget_seconds: int = Field(default=86_400, gt=0)
+    max_future_clock_skew_seconds: int = Field(default=300, ge=0, le=86_400)
+    max_manifest_bytes: int = Field(default=4 * 1024 * 1024, gt=0)
+
+
 class Settings(BaseSettings):
     """Application-level settings."""
 
@@ -509,6 +530,7 @@ class Settings(BaseSettings):
         default_factory=PredictionMarketSettings
     )
     backtest_jobs: BacktestJobSettings = Field(default_factory=BacktestJobSettings)
+    hermes_artifacts: HermesArtifactSettings = Field(default_factory=HermesArtifactSettings)
 
 
 # Note on env loading:

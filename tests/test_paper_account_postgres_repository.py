@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 import re
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from quant_system.config.settings import DatabaseSettings, Settings
 from quant_system.execution.account import PaperAccount, PendingAccountOrder
+from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.models import ExecutionFill, OrderSide
 from quant_system.storage import database as db
 
@@ -156,8 +158,7 @@ def _ensure_test_database(url: str) -> None:
     dbname = params.get("dbname")
     if not dbname or not (dbname.endswith("_tmp") or "test" in dbname):
         pytest.fail(
-            "QS_TEST_DATABASE_URL must point at a throwaway test database "
-            f"(got {dbname!r})"
+            f"QS_TEST_DATABASE_URL must point at a throwaway test database (got {dbname!r})"
         )
 
     maintenance_params = dict(params)
@@ -169,9 +170,7 @@ def _ensure_test_database(url: str) -> None:
             (dbname,),
         ).fetchone()
         if exists is None:
-            conn.execute(
-                pg_sql.SQL("CREATE DATABASE {}").format(pg_sql.Identifier(dbname))
-            )
+            conn.execute(pg_sql.SQL("CREATE DATABASE {}").format(pg_sql.Identifier(dbname)))
 
 
 def _postgres_settings() -> Settings:
@@ -235,12 +234,12 @@ def test_paper_account_migration_is_idempotent() -> None:
     compact = _compact(MIGRATION_PATH.read_text(encoding="utf-8"))
 
     assert "CREATE TABLE IF NOT EXISTS" in compact
-    assert "CREATE INDEX IF NOT EXISTS idx_paper_ledger_account_seq" in compact
+    assert "DROP INDEX IF EXISTS quant_system.idx_paper_ledger_account_seq" in compact
+    assert "CREATE INDEX IF NOT EXISTS idx_paper_ledger_account_seq" not in compact
     assert "CREATE INDEX IF NOT EXISTS idx_paper_snapshots_account_time" in compact
     assert "REFERENCES quant_system.paper_accounts(account_id) ON DELETE CASCADE" in compact
     assert (
-        "REFERENCES quant_system.paper_position_snapshots(snapshot_id) "
-        "ON DELETE CASCADE"
+        "REFERENCES quant_system.paper_position_snapshots(snapshot_id) ON DELETE CASCADE"
     ) in compact
 
 
@@ -256,14 +255,15 @@ def test_backfill_requires_enabled_optional_database(tmp_path: Path) -> None:
 def test_postgres_repository_save_reuses_backfill_writer_and_returns_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
 
-    repository = module.PostgresPaperAccountRepository(settings=_enabled_settings())
     account = _account_with_position(account_id="acct-pg-repo")
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id=account.account_id,
+    )
 
     result = repository.save(account)
 
@@ -282,13 +282,391 @@ def test_postgres_repository_save_reuses_backfill_writer_and_returns_counts(
     assert "api_dual_write" in str(fake_database.connection.calls)
 
 
+def test_postgres_repository_mutation_lock_sets_session_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-lock-timeout",
+        source="api_canonical",
+    )
+
+    with repository.mutation_lock(timeout_seconds=1.25):
+        pass
+
+    timeout_call = next(
+        call for call in fake_database.connection.calls if "set_config('lock_timeout'" in call.sql
+    )
+    lock_call = next(
+        call for call in fake_database.connection.calls if "pg_advisory_lock" in call.sql
+    )
+    assert timeout_call.params == ("1250ms",)
+    assert fake_database.connection.calls.index(timeout_call) < (
+        fake_database.connection.calls.index(lock_call)
+    )
+
+
+def test_postgres_repository_mutation_lock_preserves_business_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-lock-business-error",
+        source="api_canonical",
+    )
+
+    with (
+        pytest.raises(ValueError, match="domain validation failed"),
+        repository.mutation_lock(),
+    ):
+        raise ValueError("domain validation failed")
+
+    assert any("pg_advisory_unlock" in call.sql for call in fake_database.connection.calls)
+
+
+@pytest.mark.pg
+def test_postgres_repository_mutation_lock_timeout_is_enforced() -> None:
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    first = PostgresPaperAccountRepository(
+        settings=settings,
+        account_id="acct-pg-lock-timeout",
+        source="api_canonical",
+    )
+    second = PostgresPaperAccountRepository(
+        settings=settings,
+        account_id="acct-pg-lock-timeout",
+        source="api_canonical",
+    )
+
+    try:
+        with first.mutation_lock(timeout_seconds=1):
+            started_at = time.monotonic()
+            with (
+                pytest.raises(RuntimeError, match="canonical lock"),
+                second.mutation_lock(timeout_seconds=0.1),
+            ):
+                pytest.fail("a contending advisory lock must not be acquired")
+            assert time.monotonic() - started_at < 2
+    finally:
+        db.reset_database_cache()
+
+
+def test_file_repository_reconciliation_is_structured_and_read_only(
+    tmp_path: Path,
+) -> None:
+    repository = PaperAccountStorage(tmp_path, account_id="acct-file-reconcile")
+
+    result = repository.reconciliation()
+
+    assert result["status"] == "not_applicable"
+    assert result["account_id"] == "acct-file-reconcile"
+    assert result["source"] == "file"
+    assert result["target"] is None
+    assert result["differences"] == []
+    assert not repository.account_dir.exists()
+
+
+def test_postgres_repository_reconciliation_reports_structured_differences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    expected = _account_with_position(account_id="acct-reconcile-diff")
+    fake_database.connection.queue_fetchone(
+        (
+            expected.model_dump(mode="json"),
+            module._account_materialized_state(expected),
+            [{"entry_id": expected.ledger[0].entry_id, "seq": 1}],
+            {},
+            [],
+            None,
+        )
+    )
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-reconcile-diff",
+    )
+
+    result = repository.reconciliation(expected_account=expected)
+
+    assert result["status"] == "different"
+    assert result["source"] == "file"
+    assert result["target"] == "postgres"
+    assert {
+        "ledger",
+        "positions",
+        "pending_orders",
+    } <= {item["field"] for item in result["differences"]}
+    assert result["expected_summary"]["ledger_entries"] == 2
+    assert result["actual_summary"]["ledger_entries"] == 1
+
+
+def test_reconciliation_hash_normalizes_equivalent_iso_timestamps() -> None:
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
+
+    with_trailing_zero = {
+        "timestamp": "2026-07-02T20:31:34.769820+00:00",
+        "raw": {"timestamp": "2026-07-02T20:31:34.769820+00:00"},
+    }
+    postgres_rendering = {
+        "timestamp": "2026-07-02T20:31:34.76982+00:00",
+        "raw": {"timestamp": "2026-07-02T20:31:34.76982+00:00"},
+    }
+
+    assert module._json_hash(with_trailing_zero) == module._json_hash(postgres_rendering)
+
+
+@pytest.mark.pg
+def test_postgres_repository_reconciliation_detects_materialized_drift() -> None:
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    account_id = "acct-pg-reconcile-live"
+    account = _account_with_position(account_id=account_id)
+
+    try:
+        db.run_migrations(database)
+        repository = PostgresPaperAccountRepository(
+            settings=settings,
+            account_id=account_id,
+        )
+        repository.save(account)
+
+        in_sync = repository.reconciliation(expected_account=account)
+        assert in_sync["differences"] == []
+        assert in_sync["status"] == "in_sync"
+
+        with database.connect() as conn:
+            conn.execute(
+                """
+                UPDATE quant_system.paper_positions_current
+                SET quantity = quantity + 1
+                WHERE account_id = %s AND symbol = 'AAPL'
+                """,
+                (account_id,),
+            )
+            conn.execute(
+                """
+                UPDATE quant_system.paper_account_ledger
+                SET note = note || ' materialized-drift'
+                WHERE account_id = %s AND seq = 1
+                """,
+                (account_id,),
+            )
+            conn.execute(
+                """
+                UPDATE quant_system.paper_accounts
+                SET cash = cash + 1
+                WHERE account_id = %s
+                """,
+                (account_id,),
+            )
+            conn.execute(
+                """
+                UPDATE quant_system.paper_position_snapshot_rows AS rows
+                SET market_value = rows.market_value + 1
+                FROM quant_system.paper_position_snapshots AS snapshots
+                WHERE rows.snapshot_id = snapshots.snapshot_id
+                  AND snapshots.account_id = %s
+                """,
+                (account_id,),
+            )
+
+        fresh_repository = PostgresPaperAccountRepository(
+            settings=settings,
+            account_id=account_id,
+        )
+        different = fresh_repository.reconciliation(expected_account=account)
+        assert different["status"] == "different"
+        assert {"account_materialized", "ledger", "positions", "snapshot"} <= {
+            item["field"] for item in different["differences"]
+        }
+    finally:
+        try:
+            with database.connect() as conn:
+                conn.execute(
+                    "DELETE FROM quant_system.paper_accounts WHERE account_id = %s",
+                    (account_id,),
+                )
+        finally:
+            db.reset_database_cache()
+
+
+@pytest.mark.pg
+def test_postgres_canonical_missing_account_requires_backfill_without_insert() -> None:
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+    from quant_system.execution.account_repository import (
+        PaperAccountBootstrapRequired,
+    )
+
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    account_id = "acct-pg-canonical-bootstrap-required"
+
+    try:
+        db.run_migrations(database)
+        with database.connect() as conn:
+            conn.execute(
+                "DELETE FROM quant_system.paper_accounts WHERE account_id = %s",
+                (account_id,),
+            )
+        repository = PostgresPaperAccountRepository(
+            settings=settings,
+            account_id=account_id,
+            source="api_canonical",
+        )
+
+        with pytest.raises(PaperAccountBootstrapRequired, match="backfill"):
+            repository.load_or_open()
+
+        with database.connect() as conn:
+            count = conn.execute(
+                "SELECT count(*) FROM quant_system.paper_accounts WHERE account_id = %s",
+                (account_id,),
+            ).fetchone()[0]
+        assert count == 0
+    finally:
+        try:
+            with database.connect() as conn:
+                conn.execute(
+                    "DELETE FROM quant_system.paper_accounts WHERE account_id = %s",
+                    (account_id,),
+                )
+        finally:
+            db.reset_database_cache()
+
+
+@pytest.mark.pg
+def test_reconciliation_detects_snapshot_source_and_metadata_drift() -> None:
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    account_id = "acct-pg-snapshot-provenance"
+    account = _account_with_position(account_id=account_id)
+
+    try:
+        db.run_migrations(database)
+        repository = PostgresPaperAccountRepository(
+            settings=settings,
+            account_id=account_id,
+            source="api_dual_write",
+        )
+        repository.save(account)
+        assert repository.reconciliation(expected_account=account)["status"] == "in_sync"
+
+        with database.connect() as conn:
+            conn.execute(
+                """
+                UPDATE quant_system.paper_position_snapshots
+                SET source = 'tampered-source'
+                WHERE account_id = %s
+                """,
+                (account_id,),
+            )
+        source_drift = PostgresPaperAccountRepository(
+            settings=settings,
+            account_id=account_id,
+            source="api_dual_write",
+        ).reconciliation(expected_account=account)
+        assert "snapshot" in {item["field"] for item in source_drift["differences"]}
+
+        repository.save(account)
+        with database.connect() as conn:
+            conn.execute(
+                """
+                UPDATE quant_system.paper_position_snapshots
+                SET metadata = jsonb_set(metadata, '{position_count}', '999'::jsonb)
+                WHERE account_id = %s
+                  AND snapshot_at = (
+                      SELECT max(snapshot_at)
+                      FROM quant_system.paper_position_snapshots
+                      WHERE account_id = %s
+                  )
+                """,
+                (account_id, account_id),
+            )
+        metadata_drift = PostgresPaperAccountRepository(
+            settings=settings,
+            account_id=account_id,
+            source="api_dual_write",
+        ).reconciliation(expected_account=account)
+        assert "snapshot" in {item["field"] for item in metadata_drift["differences"]}
+    finally:
+        try:
+            with database.connect() as conn:
+                conn.execute(
+                    "DELETE FROM quant_system.paper_accounts WHERE account_id = %s",
+                    (account_id,),
+                )
+        finally:
+            db.reset_database_cache()
+
+
+def test_dual_write_repository_reconciliation_compares_file_to_postgres(
+    tmp_path: Path,
+) -> None:
+    module = importlib.import_module("quant_system.execution.account_dual_write_repository")
+    file_repo = PaperAccountStorage(tmp_path, account_id="acct-mirror-reconcile")
+    account = _account_with_position(account_id="acct-mirror-reconcile")
+    file_repo.save(account)
+    compared: list[PaperAccount | None] = []
+
+    class RecordingPostgresRepository:
+        def reconciliation(self, *, expected_account):
+            compared.append(expected_account)
+            return {
+                "status": "in_sync",
+                "account_id": "acct-mirror-reconcile",
+                "source": "file",
+                "target": "postgres",
+                "checked_at": "2026-07-10T00:00:00+00:00",
+                "expected_summary": {},
+                "actual_summary": {},
+                "differences": [],
+            }
+
+    repository = module.DualWritePaperAccountRepository(
+        file_repo=file_repo,
+        postgres_repo=RecordingPostgresRepository(),
+    )
+
+    result = repository.reconciliation()
+
+    assert result["status"] == "in_sync"
+    assert compared == [account]
+
+
 def test_dual_write_repository_save_keeps_file_result_when_postgres_fails(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_dual_write_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_dual_write_repository")
     from quant_system.execution.account_storage import PaperAccountStorage
 
     class FailingPostgresRepository:
@@ -315,13 +693,14 @@ def test_dual_write_repository_save_keeps_file_result_when_postgres_fails(
 def test_postgres_repository_save_uses_supplied_snapshot_prices(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
-    repository = module.PostgresPaperAccountRepository(settings=_enabled_settings())
     account = _account_with_position(account_id="acct-pg-priced-snapshot")
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id=account.account_id,
+    )
 
     repository.save(account, prices={"AAPL": 222.0})
 
@@ -340,9 +719,7 @@ def test_postgres_repository_save_uses_supplied_snapshot_prices(
     assert snapshot_call.params[3] == pytest.approx(account.equity({"AAPL": 222.0}))
     assert row_call.params[4] == pytest.approx(222.0)
     assert row_call.params[5] == pytest.approx(2220.0)
-    assert row_call.params[6] == pytest.approx(
-        account.positions["AAPL"].unrealized_pnl(222.0)
-    )
+    assert row_call.params[6] == pytest.approx(account.positions["AAPL"].unrealized_pnl(222.0))
 
 
 def test_backfill_uses_parameterized_upserts_and_returns_counts(
@@ -383,9 +760,7 @@ def test_backfill_uses_parameterized_upserts_and_returns_counts(
     ):
         assert f"quant_system.{table}" in written_sql
 
-    account_insert = next(
-        call for call in inserts if "quant_system.paper_accounts" in call.sql
-    )
+    account_insert = next(call for call in inserts if "quant_system.paper_accounts" in call.sql)
     assert ROOT_USER_ID in account_insert.params
     assert any("ON CONFLICT" in call.sql for call in inserts)
 
@@ -441,8 +816,7 @@ def test_backfill_replaces_ledger_entries_for_same_account(
     delete_missing_calls = [
         call
         for call in fake_database.connection.calls
-        if "DELETE FROM quant_system.paper_account_ledger" in call.sql
-        and "ANY" in call.sql
+        if "DELETE FROM quant_system.paper_account_ledger" in call.sql and "ANY" in call.sql
     ]
     assert delete_missing_calls == []
 
@@ -526,12 +900,16 @@ def test_backfill_inserts_idempotent_rows_in_postgres(tmp_path: Path) -> None:
                 ),
             ).fetchone()
 
-        assert first == second == {
-            "accounts": 1,
-            "ledger_entries": 2,
-            "positions": 1,
-            "pending_orders": 1,
-        }
+        assert (
+            first
+            == second
+            == {
+                "accounts": 1,
+                "ledger_entries": 2,
+                "positions": 1,
+                "pending_orders": 1,
+            }
+        )
         assert representative is not None
         assert representative[:6] == (2, "fill", "manual", "fill", "AAPL", 10.0)
         assert representative[6] == pytest.approx(150.125)
@@ -683,12 +1061,11 @@ def test_backfill_replaces_ledger_when_retained_entry_moves_to_lower_seq(
         finally:
             db.reset_database_cache()
 
+
 def test_postgres_repository_load_reads_raw_jsonb(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
 
@@ -717,12 +1094,105 @@ def test_postgres_repository_load_reads_raw_jsonb(
     assert select_calls[0].params == ("acct-pg-load",)
 
 
+def test_postgres_repository_load_classifies_invalid_raw_as_storage_corrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
+    from quant_system.execution.account_repository import (
+        PaperAccountStorageCorrupt,
+    )
+
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    fake_database.connection.queue_fetchone(("{invalid-json",))
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="acct-corrupt-raw",
+        source="api_canonical",
+    )
+
+    with pytest.raises(PaperAccountStorageCorrupt) as excinfo:
+        repository.load()
+
+    assert excinfo.value.code == "paper_account_storage_corrupt"
+    assert "invalid-json" not in str(excinfo.value)
+
+
+def test_postgres_repository_load_rejects_raw_account_id_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
+    from quant_system.execution.account_repository import PaperAccountStorageCorrupt
+
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    foreign = PaperAccount.open_new(account_id="foreign-account")
+    fake_database.connection.queue_fetchone((foreign.model_dump(mode="json"),))
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="expected-account",
+        source="api_canonical",
+    )
+
+    with pytest.raises(PaperAccountStorageCorrupt):
+        repository.load()
+
+
+def test_postgres_repository_reconciliation_decode_failure_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    account = PaperAccount.open_new(account_id="acct-reconcile-corrupt")
+    fake_database.connection.queue_fetchone(
+        (account.model_dump(mode="json"),),
+        ("{invalid-reconciliation-raw", {}, [], {}, [], None),
+    )
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id=account.account_id,
+        source="api_canonical",
+    )
+
+    loaded = repository.load()
+    result = repository.reconciliation()
+
+    assert loaded == account
+    assert result["status"] == "unavailable"
+    assert result["source"] == "postgres_raw"
+    assert result["differences"] == [
+        {
+            "field": "database",
+            "expected": "available",
+            "actual": "unavailable",
+        }
+    ]
+
+
+def test_postgres_repository_save_rejects_account_id_mismatch_before_db_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
+    fake_database = _FakeDatabase()
+    monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
+    repository = module.PostgresPaperAccountRepository(
+        settings=_enabled_settings(),
+        account_id="expected-account",
+        source="api_canonical",
+    )
+    foreign = PaperAccount.open_new(account_id="foreign-account")
+
+    with pytest.raises(ValueError, match="account id mismatch"):
+        repository.save(foreign)
+
+    assert fake_database.connection.calls == []
+
+
 def test_postgres_repository_load_returns_none_when_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
     fake_database.connection.queue_fetchone(None)
@@ -734,12 +1204,10 @@ def test_postgres_repository_load_returns_none_when_missing(
     assert repository.load() is None
 
 
-def test_postgres_repository_load_or_open_creates_and_saves_when_missing(
+def test_postgres_repository_canonical_load_or_open_requires_explicit_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
     fake_database.connection.queue_fetchone(None)
@@ -749,23 +1217,18 @@ def test_postgres_repository_load_or_open_creates_and_saves_when_missing(
         account_id="acct-open-new",
         source="api_canonical",
     )
-    account = repository.load_or_open(initial_cash=25_000.0)
+    with pytest.raises(module.PaperAccountBootstrapRequired, match="backfill"):
+        repository.load_or_open(initial_cash=25_000.0)
 
-    assert account.account_id == "acct-open-new"
-    assert account.initial_cash == pytest.approx(25_000.0)
-    assert account.ledger
-    assert account.ledger[0].kind == "deposit"
     written_sql = " ".join(call.sql for call in fake_database.connection.calls)
     assert "SELECT raw FROM quant_system.paper_accounts" in written_sql
-    assert "INSERT INTO quant_system.paper_accounts" in written_sql
+    assert "INSERT INTO quant_system.paper_accounts" not in written_sql
 
 
 def test_postgres_repository_load_or_open_returns_existing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
 
@@ -790,9 +1253,7 @@ def test_postgres_repository_load_or_open_returns_existing(
 def test_postgres_repository_reset_writes_fresh_account_with_reset_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
 
@@ -815,9 +1276,7 @@ def test_postgres_repository_reset_writes_fresh_account_with_reset_event(
 def test_postgres_repository_available_for_mutation_false_when_db_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     monkeypatch.setattr(module, "get_database", lambda settings: None)
     repository = module.PostgresPaperAccountRepository(
         settings=Settings(database=DatabaseSettings(enabled=False, url=None)),
@@ -829,9 +1288,7 @@ def test_postgres_repository_available_for_mutation_false_when_db_disabled(
 def test_postgres_repository_available_for_mutation_uses_can_attempt_connect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
     repository = module.PostgresPaperAccountRepository(
@@ -848,9 +1305,7 @@ def test_postgres_repository_available_for_mutation_uses_can_attempt_connect(
 def test_postgres_repository_load_wraps_connect_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     fake_database.connection.raise_on_execute(OSError("connection refused"))
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)
@@ -863,13 +1318,10 @@ def test_postgres_repository_load_wraps_connect_failures(
         repository.load()
 
 
-
 def test_postgres_repository_canonical_save_error_message_avoids_mirror_wording(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     monkeypatch.setattr(module, "get_database", lambda settings: None)
     repository = module.PostgresPaperAccountRepository(
         settings=_enabled_settings(),
@@ -884,9 +1336,7 @@ def test_postgres_repository_canonical_save_error_message_avoids_mirror_wording(
 def test_postgres_repository_load_error_omits_raw_exception_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module(
-        "quant_system.execution.account_postgres_repository"
-    )
+    module = importlib.import_module("quant_system.execution.account_postgres_repository")
     fake_database = _FakeDatabase()
     fake_database.connection.raise_on_execute(OSError("password=supersecret connection refused"))
     monkeypatch.setattr(module, "get_database", lambda settings: fake_database)

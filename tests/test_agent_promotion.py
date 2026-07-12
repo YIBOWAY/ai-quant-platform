@@ -318,7 +318,10 @@ def test_legitimate_numpy_pandas_math_still_loads(tmp_path):
         "import numpy as np\nimport pandas as pd\nfrom quant_system.factors.base import BaseFactor",
     ).replace(
         "        return frame[\"close\"] * 0.0",
-        "        return frame[\"close\"].pct_change().rolling(self.lookback).mean() * np.float64(1.0)",
+        (
+            "        return frame[\"close\"].pct_change()"
+            ".rolling(self.lookback).mean() * np.float64(1.0)"
+        ),
     )
     _approved(tmp_path, "cand-legitmath", src)
     loaded = load_approved_factor_candidates(

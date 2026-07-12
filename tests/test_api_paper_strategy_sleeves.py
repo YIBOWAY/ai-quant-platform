@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
+from quant_system.config.settings import reload_settings
+from quant_system.execution.account import PaperAccount
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionService,
@@ -14,6 +17,7 @@ from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
 from quant_system.execution.paper_strategy_sleeves import (
+    PaperStrategySleeveService,
     SignalStatus,
     StrategySignal,
     StrategySleeveMode,
@@ -105,6 +109,30 @@ def _create_config(client: TestClient) -> dict:
     response = client.post("/api/paper/strategy-configs", json=_config_payload())
     assert response.status_code == 200
     return response.json()["config"]
+
+
+def _file_tree_snapshot(root: Path) -> dict[str, tuple[object, ...]]:
+    return {
+        str(path.relative_to(root)): (
+            ("file", path.read_bytes(), path.stat().st_mtime_ns)
+            if path.is_file()
+            else ("dir", path.stat().st_mtime_ns)
+        )
+        for path in sorted(root.rglob("*"))
+    }
+
+
+def _save_orphaned_pending_sleeve(storage: PaperStrategySleeveStorage):
+    config = make_config()
+    storage.save_strategy_config(config)
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    pending_sleeve = PaperStrategySleeveService(storage).create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    return pending_sleeve, storage.save_pending_sleeve(pending_sleeve)
 
 
 def test_strategy_config_api_creates_lists_and_versions(tmp_path) -> None:
@@ -244,7 +272,7 @@ def test_strategy_sleeve_api_does_not_save_sleeve_when_account_save_fails(
     assert account.sleeve_cash == {"manual": 1_000_000.0}
 
 
-def test_strategy_sleeve_api_recovers_pending_sleeve_after_finalize_failure(
+def test_strategy_sleeve_processor_recovers_pending_sleeve_after_finalize_failure(
     tmp_path, monkeypatch
 ) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
@@ -271,6 +299,8 @@ def test_strategy_sleeve_api_recovers_pending_sleeve_after_finalize_failure(
 
     assert response.status_code == 500
     assert response.json()["detail"]["code"] == "strategy_sleeve_storage_pending"
+    assert "explicit strategy mutation" in response.json()["detail"]["message"]
+    assert "paper strategies recover-pending" in response.json()["detail"]["message"]
     storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
     pending = storage.list_pending_sleeves()
     assert len(pending) == 1
@@ -284,6 +314,16 @@ def test_strategy_sleeve_api_recovers_pending_sleeve_after_finalize_failure(
         "finalize_pending_sleeve",
         original_finalize,
     )
+    observed = client.get("/api/paper/strategy-sleeves").json()["sleeves"]
+    assert observed == []
+    assert len(storage.list_pending_sleeves()) == 1
+
+    recovered = client.post(
+        "/api/paper/strategy-sleeves/executions/process",
+        json={"limit": 1},
+    )
+
+    assert recovered.status_code == 200
     listed = client.get("/api/paper/strategy-sleeves").json()["sleeves"]
     assert [sleeve["sleeve_id"] for sleeve in listed] == [pending[0].sleeve_id]
     assert storage.list_pending_sleeves() == []
@@ -523,7 +563,7 @@ def test_strategy_sleeve_execution_api_processes_pending_plan(
     ).exists()
 
 
-def test_strategy_sleeve_detail_recovers_interrupted_execution_journal(
+def test_strategy_sleeve_detail_is_observational_before_explicit_journal_recovery(
     tmp_path,
     stub_prices,
 ) -> None:
@@ -586,11 +626,32 @@ def test_strategy_sleeve_detail_recovers_interrupted_execution_journal(
         plan=storage.load_executions(sleeve["sleeve_id"])[0],
     )
     assert account_storage.load().positions == {}
+    before = _file_tree_snapshot(tmp_path)
 
     detail = client.get(f"/api/paper/strategy-sleeves/{sleeve['sleeve_id']}")
 
     assert detail.status_code == 200
     assert detail.json()["executions"][0]["status"] == "filled"
+    assert _file_tree_snapshot(tmp_path) == before
+    assert storage.execution_journal_pending_path(
+        sleeve["sleeve_id"],
+        pending["execution_id"],
+    ).exists()
+    assert not storage.execution_journal_committed_path(
+        sleeve["sleeve_id"],
+        pending["execution_id"],
+    ).exists()
+    stale_after_detail = account_storage.load()
+    assert stale_after_detail is not None
+    assert stale_after_detail.cash == pytest.approx(1_000_000.0)
+    assert stale_after_detail.positions == {}
+
+    recovered = client.post(
+        "/api/paper/strategy-sleeves/executions/process",
+        json={"limit": 1},
+    )
+
+    assert recovered.status_code == 200
     reloaded_account = account_storage.load()
     assert reloaded_account is not None
     assert reloaded_account.cash == pytest.approx(950_000.0)
@@ -740,6 +801,138 @@ def test_strategy_sleeve_ops_status_reports_due_pending_executions(tmp_path) -> 
     assert status["blocked_count"] == 0
     assert status["recovery_required_count"] == 0
     assert status["pending_journal_count"] == 0
+
+
+def test_strategy_sleeve_ops_status_does_not_reconcile_or_write_pending_state(
+    tmp_path,
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    _pending_sleeve, pending_path = _save_orphaned_pending_sleeve(storage)
+    before = _file_tree_snapshot(tmp_path)
+
+    response = client.get("/api/paper/strategy-sleeves/ops/status")
+
+    assert response.status_code == 200
+    assert response.json()["status"]["pending_sleeve_count"] == 1
+    assert pending_path.exists()
+    assert _file_tree_snapshot(tmp_path) == before
+
+
+def test_strategy_sleeve_list_does_not_reconcile_or_write_pending_state(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    _pending_sleeve, pending_path = _save_orphaned_pending_sleeve(storage)
+    before = _file_tree_snapshot(tmp_path)
+
+    response = client.get("/api/paper/strategy-sleeves")
+
+    assert response.status_code == 200
+    assert response.json()["sleeves"] == []
+    assert pending_path.exists()
+    assert _file_tree_snapshot(tmp_path) == before
+
+
+def test_strategy_sleeve_detail_does_not_reconcile_or_write_pending_state(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    pending_sleeve, pending_path = _save_orphaned_pending_sleeve(storage)
+    before = _file_tree_snapshot(tmp_path)
+
+    response = client.get(
+        f"/api/paper/strategy-sleeves/{pending_sleeve.sleeve_id}"
+    )
+
+    assert response.status_code == 404
+    assert pending_path.exists()
+    assert _file_tree_snapshot(tmp_path) == before
+
+
+def test_strategy_sleeve_ops_status_counts_corrupt_journal_without_renaming_it(
+    tmp_path,
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    journal_path = storage.execution_journal_pending_path(
+        "sleeve-corrupt",
+        "exec-corrupt",
+    )
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    journal_path.write_bytes(b"{not-json")
+    before = _file_tree_snapshot(tmp_path)
+
+    response = client.get("/api/paper/strategy-sleeves/ops/status")
+
+    assert response.status_code == 200
+    assert response.json()["status"]["pending_journal_count"] == 1
+    assert journal_path.read_bytes() == b"{not-json"
+    assert _file_tree_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("db_mode", ["file", "mirror", "canonical"])
+@pytest.mark.parametrize("surface", ["list", "detail", "ops-status"])
+def test_strategy_sleeve_gets_do_not_open_account_repository(
+    tmp_path,
+    monkeypatch,
+    db_mode,
+    surface,
+) -> None:
+    monkeypatch.setenv("QS_PAPER_ACCOUNT_DB_MODE", db_mode)
+    reload_settings()
+
+    def fail_postgres_repository(*_args, **_kwargs):
+        raise AssertionError("read-only strategy GET opened the account repository")
+
+    monkeypatch.setattr(
+        "quant_system.execution.account_repository_factory.PostgresPaperAccountRepository",
+        fail_postgres_repository,
+    )
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    config = make_config()
+    storage.save_strategy_config(config)
+    sleeve = PaperStrategySleeveService(storage).create_sleeve(
+        PaperAccount.open_new(initial_cash=100_000.0),
+        config=config,
+        mode=StrategySleeveMode.SIGNAL_ONLY,
+    )
+    storage.save_sleeve(sleeve)
+    client = TestClient(create_app(output_dir=tmp_path))
+    before = _file_tree_snapshot(tmp_path)
+    path = {
+        "list": "/api/paper/strategy-sleeves",
+        "detail": f"/api/paper/strategy-sleeves/{sleeve.sleeve_id}",
+        "ops-status": "/api/paper/strategy-sleeves/ops/status",
+    }[surface]
+
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert _file_tree_snapshot(tmp_path) == before
+    monkeypatch.setenv("QS_PAPER_ACCOUNT_DB_MODE", "file")
+    reload_settings()
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_status"),
+    [
+        ("/api/paper/strategy-configs", 200),
+        ("/api/paper/strategy-sleeves", 200),
+        ("/api/paper/strategy-sleeves/ops/status", 200),
+        ("/api/paper/strategy-sleeves/missing-sleeve", 404),
+    ],
+)
+def test_strategy_read_surfaces_do_not_materialize_missing_storage(
+    tmp_path,
+    path,
+    expected_status,
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get(path)
+
+    assert response.status_code == expected_status
+    assert not (tmp_path / "api_runs" / "paper_account").exists()
+    assert not (tmp_path / "api_runs" / "paper_strategy_sleeves").exists()
 
 
 def test_strategy_sleeve_ops_status_rejects_invalid_target_date(tmp_path) -> None:

@@ -3,29 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BadgeDollarSign,
-  BriefcaseBusiness,
-  LayoutDashboard,
-  Zap,
-  LineChart,
-  FlaskConical,
-  Settings,
-  Database,
-  BookOpen,
-  Map,
-  Newspaper,
   FileText,
   HelpCircle,
   Plus,
-  ListFilter,
-  Radar,
   ShieldCheck,
-  Wrench,
-  ScrollText,
-  Beaker
 } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { localizePath, splitLocalePath } from "@/lib/locale";
+import {
+  isVisibleOnSurface,
+  navSections as configNavSections,
+  type NavItemId,
+} from "@/lib/navConfig";
 
 const copy = {
   en: {
@@ -44,6 +33,7 @@ const copy = {
     },
     nav: {
       dashboard: "Dashboard",
+      hermes: "Hermes",
       dataExplorer: "Data Explorer",
       optionsScreener: "Options Screener",
       optionsRadar: "Options Radar",
@@ -59,6 +49,8 @@ const copy = {
       orderBook: "Polymarket Markets",
       positionMap: "Position Map",
       settings: "Settings",
+      docs: "Docs",
+      support: "Help",
     },
   },
   zh: {
@@ -77,6 +69,7 @@ const copy = {
     },
     nav: {
       dashboard: "仪表盘",
+      hermes: "Hermes 工作台",
       dataExplorer: "行情浏览",
       optionsScreener: "期权筛选器",
       optionsRadar: "期权雷达",
@@ -92,9 +85,19 @@ const copy = {
       orderBook: "Polymarket 市场",
       positionMap: "持仓地图",
       settings: "设置",
+      docs: "文档",
+      support: "帮助",
     },
   },
 };
+
+function labelFor(
+  nav: (typeof copy)["en"]["nav"] | (typeof copy)["zh"]["nav"],
+  id: NavItemId,
+): string {
+  const value = nav[id as keyof typeof nav];
+  return typeof value === "string" ? value : id;
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -102,49 +105,16 @@ export function Sidebar() {
   const text = copy[locale];
   const activePath = splitLocalePath(pathname).pathname;
 
-  const navSections = [
-    {
-      name: text.groups.research,
-      items: [
-        { name: text.nav.dashboard, href: "/", icon: LayoutDashboard },
-        { name: text.nav.dataExplorer, href: "/data-explorer", icon: Database },
-        { name: text.nav.factorLab, href: "/factor-lab", icon: FlaskConical },
-        { name: text.nav.backtester, href: "/backtest", icon: LineChart },
-        { name: text.nav.replications, href: "/strategies", icon: ScrollText },
-        { name: text.nav.experiments, href: "/experiments", icon: Beaker },
-      ],
-    },
-    {
-      name: text.groups.paper,
-      items: [
-        { name: text.nav.paperTrading, href: "/paper-trading", icon: BriefcaseBusiness },
-        { name: text.nav.positionMap, href: "/position-map", icon: Map },
-      ],
-    },
-    {
-      name: text.groups.options,
-      items: [
-        { name: text.nav.optionsScreener, href: "/options-screener", icon: ListFilter },
-        { name: text.nav.optionsRadar, href: "/options-radar", icon: Radar },
-        { name: text.nav.optionsTools, href: "/options-tools", icon: Wrench },
-        { name: text.nav.buySide, href: "/options-buyside", icon: BadgeDollarSign },
-      ],
-    },
-    {
-      name: text.groups.markets,
-      items: [
-        { name: text.nav.aiNews, href: "/ai-news", icon: Newspaper },
-        { name: text.nav.orderBook, href: "/polymarket", icon: BookOpen },
-        { name: text.nav.agentStudio, href: "/agent-studio", icon: Zap },
-      ],
-    },
-    {
-      name: text.groups.system,
-      items: [
-        { name: text.nav.settings, href: "/settings", icon: Settings },
-      ],
-    },
-  ];
+  const navSections = configNavSections.map((section) => ({
+    name: text.groups[section.id],
+    items: section.items
+      .filter((item) => isVisibleOnSurface(item, "sidebar"))
+      .map((item) => ({
+        name: labelFor(text.nav, item.id),
+        href: item.href,
+        icon: item.icon,
+      })),
+  }));
 
   return (
     <nav
@@ -183,6 +153,7 @@ export function Sidebar() {
                   return (
                     <li key={item.href}>
                       <Link
+                        aria-current={isActive ? "page" : undefined}
                         href={localizePath(item.href, locale)}
                         className={`flex items-center gap-3 rounded-lg px-3 py-2 font-sans text-xs tracking-tight transition-colors ${
                           isActive

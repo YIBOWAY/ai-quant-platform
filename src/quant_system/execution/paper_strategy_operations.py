@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from quant_system.config.settings import Settings
 from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
+from quant_system.execution.account_repository import PaperAccountBootstrapRequired
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionError,
@@ -23,6 +24,7 @@ from quant_system.execution.paper_strategy_sleeves import (
     StrategyExecutionPlan,
     StrategyExecutionStatus,
     StrategySignal,
+    StrategySleeve,
 )
 from quant_system.execution.price_source import PaperPriceSource, PricedQuote
 
@@ -56,6 +58,7 @@ class PaperStrategySignalBatchResult:
 @dataclass(frozen=True)
 class _AccountReconcileResult:
     account: PaperAccount | None
+    reconciled_sleeves: list[StrategySleeve] = field(default_factory=list)
     recovered: list[StrategyExecutionPlan] = field(default_factory=list)
 
 
@@ -63,6 +66,7 @@ class _AccountReconcileResult:
 class PaperStrategyOpsStatus:
     target_date: str
     sleeve_count: int
+    pending_sleeve_count: int
     running_sleeve_count: int
     pending_execution_count: int
     pending_due_count: int
@@ -70,11 +74,13 @@ class PaperStrategyOpsStatus:
     blocked_count: int
     recovery_required_count: int
     pending_journal_count: int
+    corrupt_journal_count: int
 
     def to_dict(self) -> dict[str, int | str]:
         return {
             "target_date": self.target_date,
             "sleeve_count": self.sleeve_count,
+            "pending_sleeve_count": self.pending_sleeve_count,
             "running_sleeve_count": self.running_sleeve_count,
             "pending_execution_count": self.pending_execution_count,
             "pending_due_count": self.pending_due_count,
@@ -82,7 +88,120 @@ class PaperStrategyOpsStatus:
             "blocked_count": self.blocked_count,
             "recovery_required_count": self.recovery_required_count,
             "pending_journal_count": self.pending_journal_count,
+            "corrupt_journal_count": self.corrupt_journal_count,
         }
+
+
+@dataclass(frozen=True)
+class PaperStrategyRecoveryResult:
+    reconciled_sleeve_count: int
+    discarded_sleeve_count: int
+    recovered_execution_count: int
+    remaining_pending_sleeve_count: int
+    remaining_pending_journal_count: int
+    corrupt_journal_count: int
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "reconciled_sleeve_count": self.reconciled_sleeve_count,
+            "discarded_sleeve_count": self.discarded_sleeve_count,
+            "recovered_execution_count": self.recovered_execution_count,
+            "remaining_pending_sleeve_count": (
+                self.remaining_pending_sleeve_count
+            ),
+            "remaining_pending_journal_count": (
+                self.remaining_pending_journal_count
+            ),
+            "corrupt_journal_count": self.corrupt_journal_count,
+        }
+
+
+class PaperStrategyOpsObserver:
+    """Build a best-effort, read-only view without acquiring mutation locks.
+
+    Storage writes are atomic, but counts read across multiple files are not a
+    transactionally consistent snapshot when a mutation runs concurrently.
+    """
+
+    def __init__(
+        self,
+        *,
+        sleeve_storage: PaperStrategySleeveStorage,
+        today: Callable[[], date] = date.today,
+    ) -> None:
+        self.sleeve_storage = sleeve_storage
+        self.today = today
+
+    def observe(
+        self,
+        *,
+        target_date: str | date | None = None,
+        execution_window: Literal["next_open"] = "next_open",
+    ) -> PaperStrategyOpsStatus:
+        if execution_window != "next_open":
+            raise ValueError("execution_window must be next_open")
+        due_target_date = self._target_date(target_date)
+        sleeves = self.sleeve_storage.list_sleeves()
+        pending_journal_count = (
+            self.sleeve_storage.count_pending_execution_journal_files()
+        )
+        executions = [
+            execution
+            for sleeve in sleeves
+            for execution in self.sleeve_storage.load_executions(sleeve.sleeve_id)
+        ]
+        pending_executions = [
+            execution
+            for execution in executions
+            if execution.status == StrategyExecutionStatus.PENDING
+        ]
+        pending_due = [
+            execution
+            for execution in pending_executions
+            if execution.execution_window == execution_window
+            and execution.target_date == due_target_date
+        ]
+        blocked = [
+            execution
+            for execution in executions
+            if execution.status == StrategyExecutionStatus.BLOCKED
+        ]
+        filled = [
+            execution
+            for execution in executions
+            if execution.status == StrategyExecutionStatus.FILLED
+        ]
+        recovery_required = [
+            execution
+            for execution in executions
+            if execution.blocked_reason == "recovery_required"
+        ]
+        return PaperStrategyOpsStatus(
+            target_date=due_target_date,
+            sleeve_count=len(sleeves),
+            pending_sleeve_count=(
+                self.sleeve_storage.count_pending_sleeve_files()
+            ),
+            running_sleeve_count=sum(
+                1 for sleeve in sleeves if sleeve.status == "running"
+            ),
+            pending_execution_count=len(pending_executions),
+            pending_due_count=len(pending_due),
+            filled_count=len(filled),
+            blocked_count=len(blocked),
+            recovery_required_count=len(recovery_required),
+            pending_journal_count=pending_journal_count,
+            corrupt_journal_count=(
+                self.sleeve_storage.count_corrupt_execution_journal_files()
+            ),
+        )
+
+    def _target_date(self, value: str | date | None) -> str:
+        if value is None:
+            return self.today().isoformat()
+        if isinstance(value, date):
+            return value.isoformat()
+        return date.fromisoformat(value).isoformat()
 
 
 class PaperStrategyOperationsRunner:
@@ -276,57 +395,43 @@ class PaperStrategyOperationsRunner:
         target_date: str | date | None = None,
         execution_window: Literal["next_open"] = "next_open",
     ) -> PaperStrategyOpsStatus:
-        due_target_date = self._target_date(target_date)
+        """Backward-compatible pure observer entry point."""
+        return PaperStrategyOpsObserver(
+            sleeve_storage=self.sleeve_storage,
+            today=self.today,
+        ).observe(
+            target_date=target_date,
+            execution_window=execution_window,
+        )
+
+    def recover_pending_once(self) -> PaperStrategyRecoveryResult:
+        """Explicitly reconcile crash journals without processing new plans."""
         with self.account_storage.mutation_lock(), self.sleeve_storage.mutation_lock():
-            account = self.account_storage.load()
-            self.sleeve_storage.reconcile_pending_sleeves(account)
-            sleeves = self.sleeve_storage.list_sleeves()
-            pending_journal_count = len(
-                self.sleeve_storage.load_pending_execution_journals()
+            pending_sleeves_before = (
+                self.sleeve_storage.count_pending_sleeve_files()
             )
-            executions = [
-                execution
-                for sleeve in sleeves
-                for execution in self.sleeve_storage.load_executions(sleeve.sleeve_id)
-            ]
-            pending_executions = [
-                execution
-                for execution in executions
-                if execution.status == StrategyExecutionStatus.PENDING
-            ]
-            pending_due = [
-                execution
-                for execution in pending_executions
-                if execution.execution_window == execution_window
-                and execution.target_date == due_target_date
-            ]
-            blocked = [
-                execution
-                for execution in executions
-                if execution.status == StrategyExecutionStatus.BLOCKED
-            ]
-            filled = [
-                execution
-                for execution in executions
-                if execution.status == StrategyExecutionStatus.FILLED
-            ]
-            recovery_required = [
-                execution
-                for execution in executions
-                if execution.blocked_reason == "recovery_required"
-            ]
-            return PaperStrategyOpsStatus(
-                target_date=due_target_date,
-                sleeve_count=len(sleeves),
-                running_sleeve_count=sum(
-                    1 for sleeve in sleeves if sleeve.status == "running"
+            load_result = self._load_account_after_reconcile(open_if_missing=False)
+            pending_sleeves_after = (
+                self.sleeve_storage.count_pending_sleeve_files()
+            )
+            reconciled_sleeve_count = len(load_result.reconciled_sleeves)
+            discarded_sleeve_count = max(
+                0,
+                pending_sleeves_before
+                - pending_sleeves_after
+                - reconciled_sleeve_count,
+            )
+            return PaperStrategyRecoveryResult(
+                reconciled_sleeve_count=reconciled_sleeve_count,
+                discarded_sleeve_count=discarded_sleeve_count,
+                recovered_execution_count=len(load_result.recovered),
+                remaining_pending_sleeve_count=pending_sleeves_after,
+                remaining_pending_journal_count=(
+                    self.sleeve_storage.count_pending_execution_journal_files()
                 ),
-                pending_execution_count=len(pending_executions),
-                pending_due_count=len(pending_due),
-                filled_count=len(filled),
-                blocked_count=len(blocked),
-                recovery_required_count=len(recovery_required),
-                pending_journal_count=pending_journal_count,
+                corrupt_journal_count=(
+                    self.sleeve_storage.count_corrupt_execution_journal_files()
+                ),
             )
 
     def _load_account_after_reconcile(
@@ -340,9 +445,14 @@ class PaperStrategyOperationsRunner:
             if open_if_missing
             else self.account_storage.load()
         )
-        self.sleeve_storage.reconcile_pending_sleeves(account)
+        if account is None and self.settings.paper_account.db_mode == "canonical":
+            raise PaperAccountBootstrapRequired(self.account_storage.account_id)
+        reconciled_sleeves = self.sleeve_storage.reconcile_pending_sleeves(account)
         if account is None:
-            return _AccountReconcileResult(account=None)
+            return _AccountReconcileResult(
+                account=None,
+                reconciled_sleeves=reconciled_sleeves,
+            )
         service = execution_service or PaperStrategyExecutionService(
             storage=self.sleeve_storage,
             price_source=self.price_source,
@@ -352,7 +462,11 @@ class PaperStrategyOperationsRunner:
             self._save_account_snapshot(account)
             for execution in recovered:
                 service.commit_execution_journal(execution)
-        return _AccountReconcileResult(account=account, recovered=recovered)
+        return _AccountReconcileResult(
+            account=account,
+            reconciled_sleeves=reconciled_sleeves,
+            recovered=recovered,
+        )
 
     def _load_signal(self, sleeve_id: str, signal_id: str) -> StrategySignal:
         for signal in self.sleeve_storage.load_signals(sleeve_id):

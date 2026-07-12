@@ -1,8 +1,8 @@
--- Optional PostgreSQL mirror for the persistent paper account.
+-- Optional PostgreSQL storage for the persistent paper account.
 --
--- The JSON account file remains the source of truth. These tables support an
--- explicit backfill/mirror path only; API reads, writes, and mutations continue
--- to use the existing file-backed account storage.
+-- Creating these tables does not change the active source of truth. Runtime
+-- configuration selects file-authoritative ``mirror`` or DB-authoritative
+-- ``canonical`` only after explicit backfill, reconciliation, and human review.
 
 CREATE SCHEMA IF NOT EXISTS quant_system;
 
@@ -83,8 +83,9 @@ CREATE TABLE IF NOT EXISTS quant_system.paper_position_snapshot_rows (
     PRIMARY KEY (snapshot_id, symbol)
 );
 
-CREATE INDEX IF NOT EXISTS idx_paper_ledger_account_seq
-    ON quant_system.paper_account_ledger (account_id, seq);
+-- UNIQUE (account_id, seq) already owns an equivalent B-tree. Remove the
+-- historical duplicate if an earlier version of this migration created it.
+DROP INDEX IF EXISTS quant_system.idx_paper_ledger_account_seq;
 
 CREATE INDEX IF NOT EXISTS idx_paper_snapshots_account_time
     ON quant_system.paper_position_snapshots (account_id, snapshot_at DESC);

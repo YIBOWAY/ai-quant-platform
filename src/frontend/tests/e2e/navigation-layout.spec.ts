@@ -13,6 +13,7 @@ test("sidebar groups the product areas instead of showing one flat list", async 
   await expect(page.getByText("Markets & AI", { exact: true })).toBeVisible();
   await expect(page.getByText("System", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Backtester" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Hermes", exact: true })).toBeVisible();
 });
 
 test("Chinese sidebar uses the same grouped information architecture", async ({ page }) => {
@@ -23,6 +24,7 @@ test("Chinese sidebar uses the same grouped information architecture", async ({ 
   await expect(page.getByText("期权研究", { exact: true })).toBeVisible();
   await expect(page.getByText("市场与 AI", { exact: true })).toBeVisible();
   await expect(page.getByText("系统", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Hermes 工作台", exact: true })).toBeVisible();
 });
 
 test("app shell keeps a fixed viewport with a scrollable page region inside", async ({ page }) => {

@@ -6,6 +6,7 @@ import pytest
 
 from quant_system.config.settings import reload_settings
 from quant_system.execution.account import PaperAccount
+from quant_system.execution.account_repository import PaperAccountBootstrapRequired
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionService,
@@ -305,6 +306,37 @@ def test_operations_runner_ops_status_reports_due_work_and_recovery_journals(
 
     assert status.target_date == "2026-06-29"
     assert status.sleeve_count == 1
+    assert status.pending_sleeve_count == 0
     assert status.pending_due_count == 1
     assert status.pending_journal_count == 1
     assert status.recovery_required_count == 0
+
+
+def test_recover_pending_fails_closed_when_canonical_account_is_missing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QS_PAPER_ACCOUNT_DB_MODE", "canonical")
+    settings = _settings_for_tmp_data(tmp_path, monkeypatch)
+    api_runs_dir = tmp_path / "api_runs"
+    account_storage = PaperAccountStorage(api_runs_dir)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    config = make_config()
+    sleeve_storage.save_strategy_config(config)
+    pending_sleeve = PaperStrategySleeveService(sleeve_storage).create_sleeve(
+        PaperAccount.open_new(initial_cash=100_000.0),
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    pending_path = sleeve_storage.save_pending_sleeve(pending_sleeve)
+    before = pending_path.read_bytes()
+
+    with pytest.raises(PaperAccountBootstrapRequired):
+        PaperStrategyOperationsRunner(
+            account_storage=account_storage,
+            sleeve_storage=sleeve_storage,
+            settings=settings,
+        ).recover_pending_once()
+
+    assert pending_path.read_bytes() == before

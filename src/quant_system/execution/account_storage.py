@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from collections.abc import Iterator, Mapping
@@ -16,6 +17,23 @@ from quant_system.execution.account import (
     DEFAULT_INITIAL_CASH,
     PaperAccount,
 )
+from quant_system.execution.account_repository import (
+    PaperAccountReconciliationResult,
+    paper_account_reconciliation_result,
+    validate_paper_account_identity,
+)
+
+_ACCOUNT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+
+
+def validate_paper_account_id(account_id: str) -> str:
+    """Reject account ids that could escape the repository namespace."""
+    if not isinstance(account_id, str) or _ACCOUNT_ID_PATTERN.fullmatch(account_id) is None:
+        raise ValueError(
+            "invalid paper account id; use 1-128 letters, numbers, dots, "
+            "underscores, or hyphens, starting with a letter or number"
+        )
+    return account_id
 
 
 class PaperAccountStorage:
@@ -32,11 +50,23 @@ class PaperAccountStorage:
     """
 
     def __init__(self, base_dir: str | Path, *, account_id: str = DEFAULT_ACCOUNT_ID) -> None:
-        self.account_id = account_id
-        self.account_dir = Path(base_dir) / "paper_account" / account_id
+        self.account_id = validate_paper_account_id(account_id)
+        self.account_dir = Path(base_dir) / "paper_account" / self.account_id
+        self.last_warning: str | None = None
 
     def available_for_mutation(self) -> bool:
         return True
+
+    def reconciliation(self) -> PaperAccountReconciliationResult:
+        return paper_account_reconciliation_result(
+            status="not_applicable",
+            account_id=self.account_id,
+            source="file",
+            target=None,
+        )
+
+    def is_stale(self) -> bool:
+        return False
 
     @property
     def account_path(self) -> Path:
@@ -110,13 +140,20 @@ class PaperAccountStorage:
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def load(self) -> PaperAccount | None:
+        """Read the primary account or a valid backup without changing disk state."""
+        self.last_warning = None
         if not self.account_path.exists():
             return None
         try:
             return self._load_account_file(self.account_path)
         except (json.JSONDecodeError, OSError, ValueError):
-            self._preserve_corrupt_account_file()
-            return self._restore_backup_account()
+            account = self._load_backup_account()
+            self.last_warning = (
+                "paper_account_primary_corrupt_using_backup"
+                if account is not None
+                else "paper_account_storage_corrupt"
+            )
+            return account
 
     def load_or_open(
         self,
@@ -125,6 +162,8 @@ class PaperAccountStorage:
     ) -> PaperAccount:
         account = self.load()
         if account is not None:
+            if self.last_warning == "paper_account_primary_corrupt_using_backup":
+                self.save(account)
             return account
         account = PaperAccount.open_new(
             account_id=self.account_id,
@@ -140,13 +179,26 @@ class PaperAccountStorage:
         prices: dict[str, float] | None = None,
         price_metadata: Mapping[str, Mapping[str, str | None]] | None = None,
     ) -> Path:
+        validate_paper_account_identity(
+            account,
+            expected_account_id=self.account_id,
+        )
         self.account_dir.mkdir(parents=True, exist_ok=True)
         payload = account.model_dump(mode="json")
         if self.account_path.exists():
-            self.account_backup_path.write_text(
-                self.account_path.read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
+            try:
+                self._load_account_file(self.account_path)
+            except FileNotFoundError:
+                pass
+            except (json.JSONDecodeError, OSError, ValueError):
+                # Mutation callers hold ``mutation_lock``. Preserve a broken
+                # primary here, rather than during a read-only ``load``.
+                self._preserve_corrupt_account_file()
+            else:
+                self.account_backup_path.write_text(
+                    self.account_path.read_text(encoding="utf-8"),
+                    encoding="utf-8",
+                )
         # Unique tmp name per write so concurrent writers don't clobber each
         # other's temp file (which on Windows raises PermissionError on rename).
         tmp_path = self.account_path.with_suffix(f".json.{uuid.uuid4().hex}.tmp")
@@ -156,6 +208,7 @@ class PaperAccountStorage:
         )
         self._atomic_replace(tmp_path, self.account_path)
         self._write_positions_snapshot(account, prices, price_metadata)
+        self.last_warning = None
         return self.account_path
 
     @staticmethod
@@ -210,23 +263,20 @@ class PaperAccountStorage:
         os.replace(self.account_path, path)
         return path
 
-    @staticmethod
-    def _load_account_file(path: Path) -> PaperAccount:
+    def _load_account_file(self, path: Path) -> PaperAccount:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return PaperAccount.model_validate(data)
+        return validate_paper_account_identity(
+            PaperAccount.model_validate(data),
+            expected_account_id=self.account_id,
+        )
 
-    def _restore_backup_account(self) -> PaperAccount | None:
+    def _load_backup_account(self) -> PaperAccount | None:
         if not self.account_backup_path.exists():
             return None
         try:
-            account = self._load_account_file(self.account_backup_path)
-            backup_text = self.account_backup_path.read_text(encoding="utf-8")
+            return self._load_account_file(self.account_backup_path)
         except (json.JSONDecodeError, OSError, ValueError):
             return None
-        tmp_path = self.account_path.with_suffix(f".json.restore-{uuid.uuid4().hex}.tmp")
-        tmp_path.write_text(backup_text, encoding="utf-8")
-        self._atomic_replace(tmp_path, self.account_path)
-        return account
 
     def _write_positions_snapshot(
         self,

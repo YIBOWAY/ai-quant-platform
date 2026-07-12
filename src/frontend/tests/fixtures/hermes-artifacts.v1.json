@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "read_status": "available",
+  "as_of": "2026-07-01T08:00:00Z",
+  "items": [
+    {
+      "id": "e2e-foresight-aapl",
+      "kind": "market_foresight",
+      "occurred_at": "2026-07-01T07:55:00Z",
+      "quality": "available",
+      "status": "candidate",
+      "data": {
+        "run_id": "e2e-foresight-run",
+        "summary": "AAPL flat through 2026-07-18",
+        "candidate_count": 1,
+        "candidates": [
+          {
+            "id": "e2e-mfp-aapl",
+            "symbol": "AAPL",
+            "direction": "flat",
+            "confidence": 0.55,
+            "horizon_date": "2026-07-18",
+            "falsifier": "The first eligible close leaves the flat band.",
+            "rationale": "Hermetic browser fixture; not investment advice.",
+            "entry_session_date": "2026-06-30",
+            "entry_close": 310.0,
+            "provider": "futu",
+            "adjustment": "qfq",
+            "proposal_only": true,
+            "requires_human_confirmation": true,
+            "trading_allowed": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "e2e-prediction-aapl",
+      "kind": "prediction",
+      "occurred_at": "2026-07-01T07:50:00Z",
+      "quality": "available",
+      "status": "scored",
+      "data": {
+        "prediction_id": "e2e-prediction-aapl",
+        "state": "scored",
+        "symbol": "AAPL",
+        "direction": "up",
+        "confidence": 0.7,
+        "horizon_date": "2026-06-30",
+        "rationale": "Hermetic scored-prediction fixture.",
+        "outcome_return": 0.02,
+        "direction_brier": 0.09
+      }
+    },
+    {
+      "id": "e2e-risk-default",
+      "kind": "portfolio_risk",
+      "occurred_at": "2026-07-01T07:45:00Z",
+      "quality": "available",
+      "status": "available",
+      "data": {
+        "account_id": "default",
+        "currency": "USD",
+        "gross_value": 310.0,
+        "gross_pct_equity": 0.00031,
+        "largest_symbol": "AAPL",
+        "top1_gross_pct": 1.0,
+        "historical_status": "available",
+        "benchmark": "SPY",
+        "betas": [],
+        "reason_codes": [],
+        "limitations": ["hermetic_e2e_fixture"]
+      }
+    }
+  ],
+  "sources": [
+    {
+      "kind": "portfolio_risk",
+      "status": "available",
+      "latest_at": "2026-07-01T07:45:00Z",
+      "reason_code": null
+    },
+    {
+      "kind": "prediction",
+      "status": "available",
+      "latest_at": "2026-07-01T07:50:00Z",
+      "reason_code": null
+    },
+    {
+      "kind": "market_foresight",
+      "status": "available",
+      "latest_at": "2026-07-01T07:55:00Z",
+      "reason_code": null
+    }
+  ],
+  "warnings": []
+}

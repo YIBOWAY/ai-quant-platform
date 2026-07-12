@@ -234,6 +234,7 @@ class StrategyExecutionProcessResponse(BaseModel):
 class StrategyOpsStatusPayload(BaseModel):
     target_date: str
     sleeve_count: int
+    pending_sleeve_count: int
     running_sleeve_count: int
     pending_execution_count: int
     pending_due_count: int
@@ -241,6 +242,7 @@ class StrategyOpsStatusPayload(BaseModel):
     blocked_count: int
     recovery_required_count: int
     pending_journal_count: int
+    corrupt_journal_count: int
 
 
 class StrategyOpsStatusResponse(BaseModel):
@@ -332,6 +334,25 @@ class PaperAccountPriceSourceResponse(BaseModel):
     as_of: str | None = None
 
 
+class PaperAccountReconciliationDifferenceResponse(BaseModel):
+    field: str
+    expected: Any = None
+    actual: Any = None
+
+
+class PaperAccountReconciliationResponse(BaseModel):
+    status: Literal["in_sync", "different", "unavailable", "not_applicable"]
+    account_id: str
+    source: str
+    target: str | None = None
+    checked_at: str
+    expected_summary: dict[str, Any] = Field(default_factory=dict)
+    actual_summary: dict[str, Any] = Field(default_factory=dict)
+    differences: list[PaperAccountReconciliationDifferenceResponse] = Field(
+        default_factory=list
+    )
+
+
 class PaperAccountResponse(BaseModel):
     account_id: str
     base_currency: str
@@ -354,6 +375,7 @@ class PaperAccountResponse(BaseModel):
     storage_mode: Literal["file", "mirror", "canonical"] | None = None
     stale: bool = False
     warnings: list[str] = Field(default_factory=list)
+    reconciliation: PaperAccountReconciliationResponse | None = None
 
 
 class PaperAccountEquityCurvePointResponse(BaseModel):

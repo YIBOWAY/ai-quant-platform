@@ -1,8 +1,11 @@
 import {
   buildBriefIssuePath,
   buildLatestBriefIssuePath,
+  type BriefIssue,
   type BriefIssueEnvelope,
+  type BriefSnapshot,
 } from "./briefArchive";
+import type { components as GeneratedApiComponents } from "./api.generated";
 
 export type SafetyFooter = {
   dry_run: boolean;
@@ -16,6 +19,10 @@ export type ApiEnvelope = {
   safety?: SafetyFooter;
   apiError?: string;
 };
+
+export type BriefIssueResponse = BriefIssue;
+export type BriefSnapshotResponse = BriefSnapshot;
+export type BriefIssueEnvelopeResponse = BriefIssueEnvelope;
 
 export type ErrorResponse = {
   detail: string;
@@ -533,6 +540,23 @@ export type PaperAccountPriceSourceResponse = {
   as_of: string | null;
 };
 
+export type PaperAccountReconciliationDifferenceResponse = {
+  field: string;
+  expected: unknown;
+  actual: unknown;
+};
+
+export type PaperAccountReconciliationResponse = {
+  status: "in_sync" | "different" | "unavailable" | "not_applicable";
+  account_id: string;
+  source: string;
+  target: string | null;
+  checked_at: string;
+  expected_summary: Record<string, unknown>;
+  actual_summary: Record<string, unknown>;
+  differences: PaperAccountReconciliationDifferenceResponse[];
+};
+
 export type PaperAccountResponse = ApiEnvelope & {
   account_id: string;
   base_currency: string;
@@ -552,6 +576,16 @@ export type PaperAccountResponse = ApiEnvelope & {
   pending_orders: PendingAccountOrderResponse[];
   created_at: string;
   updated_at: string;
+  storage_mode?: "file" | "mirror" | "canonical" | null;
+  stale?: boolean;
+  warnings?: string[];
+  reconciliation?: PaperAccountReconciliationResponse | null;
+};
+
+export type PaperAccountSnapshotResponse = ApiEnvelope & {
+  account_id: string;
+  account_exists: boolean;
+  account: PaperAccountResponse | null;
 };
 
 export type PaperAccountOrderOutcomeResponse = {
@@ -765,6 +799,7 @@ export type PaperStrategySleeveDetailResponse = ApiEnvelope & {
 export type PaperStrategyOpsStatus = {
   target_date: string;
   sleeve_count: number;
+  pending_sleeve_count: number;
   running_sleeve_count: number;
   pending_execution_count: number;
   pending_due_count: number;
@@ -772,6 +807,7 @@ export type PaperStrategyOpsStatus = {
   blocked_count: number;
   recovery_required_count: number;
   pending_journal_count: number;
+  corrupt_journal_count: number;
 };
 
 export type StrategyConfigResponse = PaperStrategyConfigResponse;
@@ -932,6 +968,26 @@ export type CandidateSummary = {
   status: string;
   goal?: string;
 };
+
+type HermesSchemas = GeneratedApiComponents["schemas"];
+
+export type HermesArtifact = HermesSchemas["HermesArtifactItemResponse"];
+export type HermesArtifactKind =
+  HermesSchemas["HermesArtifactSourceResponse"]["kind"];
+export type HermesArtifactQuality = HermesArtifact["quality"];
+export type HermesPortfolioRiskArtifactData =
+  HermesSchemas["HermesPortfolioRiskData"];
+export type HermesPredictionArtifactData = HermesSchemas["HermesPredictionData"];
+export type HermesForesightCandidateData =
+  HermesSchemas["HermesForesightCandidate"];
+export type HermesMarketForesightArtifactData =
+  HermesSchemas["HermesMarketForesightData"];
+export type HermesArtifactSource =
+  HermesSchemas["HermesArtifactSourceResponse"];
+export type HermesArtifactWarning =
+  HermesSchemas["HermesArtifactWarningResponse"];
+export type HermesArtifactShelfEnvelope = ApiEnvelope &
+  HermesSchemas["HermesArtifactFeedResponse"];
 
 export type AgentCandidatesResponse = ApiEnvelope & {
   candidates: CandidateSummary[];
@@ -1900,7 +1956,7 @@ export function getSettings() {
 }
 
 export function getBriefIssue(publicId: string) {
-  return apiGet<BriefIssueEnvelope>(buildBriefIssuePath(publicId), {
+  return apiGet<BriefIssueEnvelopeResponse>(buildBriefIssuePath(publicId), {
     issue: {
       issue_id: "",
       public_id: publicId,
@@ -1921,7 +1977,7 @@ export function getBriefIssue(publicId: string) {
 
 export function getLatestBriefIssue(query: { locale?: string } = {}) {
   const locale = query.locale ?? "zh";
-  return apiGet<BriefIssueEnvelope>(buildLatestBriefIssuePath(locale), {
+  return apiGet<BriefIssueEnvelopeResponse>(buildLatestBriefIssuePath(locale), {
     issue: {
       issue_id: "",
       public_id: "",
@@ -2419,6 +2475,19 @@ export function getExperimentDetail(experimentId: string) {
 export function getAgentCandidates() {
   return apiGet<AgentCandidatesResponse>("/api/agent/candidates", {
     candidates: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getHermesArtifacts(limit = 20) {
+  const safeLimit = Math.min(50, Math.max(1, Math.trunc(limit)));
+  return apiGet<HermesArtifactShelfEnvelope>(`/api/hermes/artifacts?limit=${safeLimit}`, {
+    schema_version: "1.0",
+    read_status: "unavailable",
+    as_of: null,
+    items: [],
+    sources: [],
+    warnings: [{ source: "artifact_feed", code: "api_unavailable" }],
     safety: FALLBACK_SAFETY,
   });
 }

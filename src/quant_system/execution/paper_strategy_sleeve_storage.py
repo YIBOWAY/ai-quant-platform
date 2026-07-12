@@ -241,6 +241,16 @@ class PaperStrategySleeveStorage:
             for path in sorted(self.sleeves_dir.glob("*/sleeve.pending.json"))
         ]
 
+    def count_pending_sleeve_files(self) -> int:
+        """Count pending sleeve files without parsing or reconciling them."""
+        if not self.sleeves_dir.exists():
+            return 0
+        return sum(
+            1
+            for path in self.sleeves_dir.glob("*/sleeve.pending.json")
+            if path.is_file()
+        )
+
     def reconcile_pending_sleeves(self, account) -> list[StrategySleeve]:
         reconciled: list[StrategySleeve] = []
         for sleeve in self.list_pending_sleeves():
@@ -386,6 +396,30 @@ class PaperStrategySleeveStorage:
                     exc,
                 )
         return [payload for _, _, payload in sorted(journal_records)]
+
+    def count_pending_execution_journal_files(self) -> int:
+        """Count pending journal files without parsing, repairing, or renaming them."""
+        if not self.sleeves_dir.exists():
+            return 0
+        return sum(
+            1
+            for path in self.sleeves_dir.glob(
+                "*/execution_journal/*.pending.json"
+            )
+            if path.is_file()
+        )
+
+    def count_corrupt_execution_journal_files(self) -> int:
+        """Count execution journals preserved after explicit recovery parsing."""
+        if not self.sleeves_dir.exists():
+            return 0
+        return sum(
+            1
+            for path in self.sleeves_dir.glob(
+                "*/execution_journal/*.corrupt-*.json"
+            )
+            if path.is_file()
+        )
 
     def commit_execution_journal(self, *, sleeve_id: str, execution_id: str) -> Path:
         pending_path = self.execution_journal_pending_path(sleeve_id, execution_id)

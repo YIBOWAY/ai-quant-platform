@@ -22,3 +22,16 @@ def test_frontend_exports_every_backend_response_schema_name() -> None:
     ]
 
     assert not missing
+
+
+def test_frontend_paper_account_contract_exposes_repository_state() -> None:
+    frontend_types = FRONTEND_API_TYPES.read_text(encoding="utf-8")
+
+    assert 'storage_mode?: "file" | "mirror" | "canonical" | null;' in frontend_types
+    assert "stale?: boolean;" in frontend_types
+    assert "warnings?: string[];" in frontend_types
+    assert "export type PaperAccountReconciliationResponse" in frontend_types
+    assert (
+        "reconciliation?: PaperAccountReconciliationResponse | null;"
+        in frontend_types
+    )

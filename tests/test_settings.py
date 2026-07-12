@@ -2,6 +2,7 @@ from pydantic import ValidationError
 
 from quant_system.config.settings import (
     ApiKeySettings,
+    HermesArtifactSettings,
     PaperAccountSettings,
     SafetySettings,
     Settings,
@@ -51,6 +52,23 @@ def test_paper_account_settings_expose_db_mode() -> None:
         assert "db_mode" in str(exc)
     else:
         raise AssertionError("paper account db_mode should reject unknown modes")
+
+
+def test_hermes_artifact_settings_accept_env_overrides(monkeypatch, tmp_path) -> None:
+    feed_path = tmp_path / "manifest.v1.json"
+    monkeypatch.setenv("QS_HERMES_ARTIFACT_FEED_PATH", str(feed_path))
+    monkeypatch.setenv("QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS", "120")
+    monkeypatch.setenv(
+        "QS_HERMES_ARTIFACT_MAX_FUTURE_CLOCK_SKEW_SECONDS", "30"
+    )
+    monkeypatch.setenv("QS_HERMES_ARTIFACT_MAX_MANIFEST_BYTES", "2048")
+
+    settings = HermesArtifactSettings()
+
+    assert settings.feed_path == feed_path
+    assert settings.freshness_budget_seconds == 120
+    assert settings.max_future_clock_skew_seconds == 30
+    assert settings.max_manifest_bytes == 2048
 
 
 def test_live_trading_requires_manual_confirmation_phrase() -> None:

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import os
+import sys
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -20,6 +23,10 @@ from quant_system.agent.runner import AgentRunner
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
 from quant_system.config.settings import load_settings, reload_settings
 from quant_system.data.pipeline import IngestionResult, run_sample_ingestion, run_tiingo_ingestion
+from quant_system.data.price_history import (
+    HistoricalPriceReadError,
+    read_historical_prices,
+)
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.execution.pipeline import PaperTradingRunResult, run_sample_paper_trading
@@ -113,13 +120,9 @@ factor_app = typer.Typer(help="Run Phase 2 factor-research commands.")
 backtest_app = typer.Typer(help="Run Phase 3 backtest commands.")
 experiment_app = typer.Typer(help="Run Phase 4 experiment-management commands.")
 paper_app = typer.Typer(help="Run Phase 5 paper-trading commands.")
-paper_strategies_app = typer.Typer(
-    help="Manage Paper Strategy Sleeves strategy workflows."
-)
+paper_strategies_app = typer.Typer(help="Manage Paper Strategy Sleeves strategy workflows.")
 agent_app = typer.Typer(help="Run Phase 7 AI research assistant commands.")
-prediction_market_app = typer.Typer(
-    help="Run Phase 8 prediction-market dry scanning commands."
-)
+prediction_market_app = typer.Typer(help="Run Phase 8 prediction-market dry scanning commands.")
 options_app = typer.Typer(help="Run read-only options research commands.")
 
 
@@ -202,6 +205,27 @@ def _emit_json(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps(payload, sort_keys=True))
 
 
+@contextmanager
+def _futu_json_stdout_guard():
+    """Keep Futu SDK lifecycle logs off a machine-readable stdout stream."""
+    futu_console_logger = logging.getLogger("FTConsoleLog")
+    was_disabled = futu_console_logger.disabled
+    for handler in futu_console_logger.handlers:
+        set_stream = getattr(handler, "setStream", None)
+        if callable(set_stream) and sys.__stderr__ is not None:
+            set_stream(sys.__stderr__)
+    futu_console_logger.disabled = True
+    try:
+        yield
+    finally:
+        # The SDK may be imported lazily while the guarded call runs.
+        for handler in futu_console_logger.handlers:
+            set_stream = getattr(handler, "setStream", None)
+            if callable(set_stream) and sys.__stderr__ is not None:
+                set_stream(sys.__stderr__)
+        futu_console_logger.disabled = was_disabled
+
+
 @app.command()
 def doctor(
     json_output: Annotated[
@@ -222,10 +246,7 @@ def doctor(
     typer.echo(f"environment={settings.environment}")
     typer.echo(f"safety.dry_run={str(settings.safety.dry_run).lower()}")
     typer.echo(f"safety.paper_trading={str(settings.safety.paper_trading).lower()}")
-    typer.echo(
-        "safety.live_trading_enabled="
-        f"{str(settings.safety.live_trading_enabled).lower()}"
-    )
+    typer.echo(f"safety.live_trading_enabled={str(settings.safety.live_trading_enabled).lower()}")
     typer.echo(f"safety.kill_switch={str(settings.safety.kill_switch).lower()}")
     typer.echo(f"data.default_provider={settings.data.default_data_provider}")
     typer.echo(f"data.data_dir={settings.data.data_dir}")
@@ -287,9 +308,7 @@ def serve_api(
         if not bind_public:
             raise typer.BadParameter("0.0.0.0 requires --bind-public")
         if os.getenv("QS_API_ALLOW_PUBLIC_BIND") != "I_UNDERSTAND":
-            raise typer.BadParameter(
-                "0.0.0.0 requires QS_API_ALLOW_PUBLIC_BIND=I_UNDERSTAND"
-            )
+            raise typer.BadParameter("0.0.0.0 requires QS_API_ALLOW_PUBLIC_BIND=I_UNDERSTAND")
         os.environ["QS_API_BIND_PUBLIC_CONFIRMED"] = "I_UNDERSTAND"
     os.environ["QS_API_BIND_ADDRESS"] = host
 
@@ -346,6 +365,101 @@ def ingest_sample(
     _emit_ingestion_summary(result)
     if not result.quality_passed and not allow_failed_quality:
         raise typer.Exit(code=1)
+
+
+@data_app.command("prices")
+def data_prices(
+    symbols: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--symbol",
+            "-s",
+            help="US ticker to read. Repeat for multiple symbols (max 25).",
+        ),
+    ] = None,
+    start: Annotated[
+        str,
+        typer.Option("--start", help="Inclusive start date, YYYY-MM-DD."),
+    ] = "",
+    end: Annotated[
+        str,
+        typer.Option("--end", help="Inclusive end date, YYYY-MM-DD."),
+    ] = "",
+    provider: Annotated[
+        str,
+        typer.Option("--provider", help="Must be explicit: futu."),
+    ] = "",
+    adjustment: Annotated[
+        str,
+        typer.Option("--adjustment", help="Must be qfq."),
+    ] = "qfq",
+    output_format: Annotated[
+        Literal["json"],
+        typer.Option("--format", help="Machine-readable output format."),
+    ] = "json",
+) -> None:
+    """Read strict multi-symbol Futu QFQ daily history without persistence."""
+    del output_format  # Literal keeps the CLI contract JSON-only.
+    try:
+        settings = load_settings()
+    except Exception as exc:
+        error = HistoricalPriceReadError(
+            code="historical_prices_configuration_error",
+            message="platform settings are invalid for historical price reads",
+            provider_code=type(exc).__name__,
+        )
+        typer.echo(
+            json.dumps(
+                {"error": error.to_dict()},
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        raise typer.Exit(code=1) from exc
+    try:
+        with _futu_json_stdout_guard():
+            snapshot = read_historical_prices(
+                settings=settings,
+                symbols=symbols or [],
+                start=start,
+                end=end,
+                provider=provider,
+                interval="1d",
+                adjustment=adjustment,
+            )
+    except HistoricalPriceReadError as exc:
+        typer.echo(
+            json.dumps(
+                {"error": exc.to_dict()},
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        raise typer.Exit(code=2 if exc.code == "historical_prices_invalid_request" else 1) from exc
+    except Exception as exc:
+        error = HistoricalPriceReadError(
+            code="historical_prices_internal_error",
+            message=f"historical price read failed: {type(exc).__name__}",
+        )
+        typer.echo(
+            json.dumps(
+                {"error": error.to_dict()},
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            snapshot.to_dict(),
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 @data_app.command("ingest-tiingo")
@@ -422,9 +536,7 @@ def register_factor_library(
     before = set(registry.factor_ids())
     if name == "alpha101":
         register_alpha101_library(registry)
-    registered_ids = [
-        factor_id for factor_id in registry.factor_ids() if factor_id not in before
-    ]
+    registered_ids = [factor_id for factor_id in registry.factor_ids() if factor_id not in before]
     typer.echo(
         f"library={name} registered_factors={len(registered_ids)} "
         f"total_factors={len(registry.factor_ids())}"
@@ -817,9 +929,7 @@ def run_sample_paper_command(
     """Run the Phase 5 sample paper-trading loop."""
     settings = load_settings()
     if settings.safety.kill_switch and kill_switch is False:
-        typer.echo(
-            "Global kill switch is enabled; CLI paper replay cannot disable the kill switch"
-        )
+        typer.echo("Global kill switch is enabled; CLI paper replay cannot disable the kill switch")
         raise typer.Exit(code=1)
 
     result = run_sample_paper_trading(
@@ -931,28 +1041,91 @@ def paper_account_show_command(
         str,
         typer.Option("--account", help="Account id to display."),
     ] = "default",
+    output_format: Annotated[
+        Literal["text", "json"],
+        typer.Option("--format", help="Output format."),
+    ] = "text",
 ) -> None:
     """Print a persistent paper account's cash and positions."""
+    from quant_system.execution.account_repository import (
+        PaperAccountBootstrapRequired,
+    )
     from quant_system.execution.account_repository_factory import (
         build_paper_account_repository,
+    )
+    from quant_system.execution.account_snapshot import (
+        PaperAccountSnapshotReader,
+        PaperAccountSnapshotReadError,
     )
 
     settings = load_settings()
     api_runs_dir = settings.data.data_dir / "api_runs"
-    storage = build_paper_account_repository(
-        api_runs_dir,
-        settings=settings,
-        account_id=account_id,
-    )
-    with storage.mutation_lock():
-        account = storage.load_or_open()
+    try:
+        storage = build_paper_account_repository(
+            api_runs_dir,
+            settings=settings,
+            account_id=account_id,
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    futu_console_logger = logging.getLogger("FTConsoleLog")
+    futu_console_was_disabled = futu_console_logger.disabled
+    if output_format == "json":
+        # Futu OpenAPI binds its own console handler to stdout. Keep a machine-
+        # readable CLI contract by moving lifecycle logs to stderr and silencing
+        # synchronous provider logs while the payload is materialised.
+        for handler in futu_console_logger.handlers:
+            set_stream = getattr(handler, "setStream", None)
+            if callable(set_stream) and sys.__stderr__ is not None:
+                set_stream(sys.__stderr__)
+        futu_console_logger.disabled = True
+    try:
+        snapshot = PaperAccountSnapshotReader(
+            repository=storage,
+            settings=settings,
+        ).read()
+    except (PaperAccountSnapshotReadError, PaperAccountBootstrapRequired) as exc:
+        if output_format == "json":
+            typer.echo(
+                json.dumps(
+                    {"error": {"code": exc.code, "message": str(exc)}},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            typer.echo(f"{exc.code}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    finally:
+        if output_format == "json":
+            # The SDK is imported lazily during the read, so its handler may
+            # only exist now. Rebind it before asynchronous disconnect logs run.
+            for handler in futu_console_logger.handlers:
+                set_stream = getattr(handler, "setStream", None)
+                if callable(set_stream) and sys.__stderr__ is not None:
+                    set_stream(sys.__stderr__)
+            futu_console_logger.disabled = futu_console_was_disabled
+    if output_format == "json":
+        typer.echo(json.dumps(snapshot.to_dict(), indent=2, sort_keys=True))
+        return
+    account = snapshot.account
+    if not snapshot.account_exists or account is None:
+        typer.echo(f"account={snapshot.account_id} status=missing")
+        return
     typer.echo(
-        f"account={account.account_id} cash={account.cash:.2f} "
-        f"realized_pnl={account.realized_pnl:.2f} positions={len(account.positions)} "
-        f"kill_switch={account.kill_switch}"
+        f"account={account['account_id']} cash={account['cash']:.2f} "
+        f"realized_pnl={account['realized_pnl']:.2f} "
+        f"positions={len(account['positions'])} "
+        f"kill_switch={account['kill_switch']}"
     )
-    for symbol, position in sorted(account.positions.items()):
-        typer.echo(f"  {symbol}: qty={position.quantity:.4f} avg_cost={position.avg_cost:.2f}")
+    for position in account["positions"]:
+        typer.echo(
+            f"  {position['symbol']}: qty={position['quantity']:.4f} "
+            f"avg_cost={position['avg_cost']:.2f}"
+        )
+    for warning in account["warnings"]:
+        typer.echo(f"warning={warning}")
 
 
 def _paper_strategy_operations_runner(settings):
@@ -974,6 +1147,20 @@ def _paper_strategy_operations_runner(settings):
         ),
         sleeve_storage=PaperStrategySleeveStorage(api_runs_dir),
         settings=settings,
+    )
+
+
+def _paper_strategy_ops_observer(settings):
+    from quant_system.execution.paper_strategy_operations import (
+        PaperStrategyOpsObserver,
+    )
+    from quant_system.execution.paper_strategy_sleeve_storage import (
+        PaperStrategySleeveStorage,
+    )
+
+    api_runs_dir = settings.data.data_dir / "api_runs"
+    return PaperStrategyOpsObserver(
+        sleeve_storage=PaperStrategySleeveStorage(api_runs_dir),
     )
 
 
@@ -1013,9 +1200,7 @@ def paper_strategy_generate_signal_command(
     with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
         persisted_account = account_storage.load()
         sleeve_storage.reconcile_pending_sleeves(persisted_account)
-        account = persisted_account or PaperAccount.open_new(
-            account_id=account_storage.account_id
-        )
+        account = persisted_account or PaperAccount.open_new(account_id=account_storage.account_id)
         try:
             sleeve = sleeve_storage.load_sleeve(sleeve_id)
             config = sleeve_storage.load_strategy_config(
@@ -1142,9 +1327,7 @@ def paper_strategy_create_execution_command(
     with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
         persisted_account = account_storage.load()
         sleeve_storage.reconcile_pending_sleeves(persisted_account)
-        account = persisted_account or PaperAccount.open_new(
-            account_id=account_storage.account_id
-        )
+        account = persisted_account or PaperAccount.open_new(account_id=account_storage.account_id)
         try:
             sleeve = sleeve_storage.load_sleeve(sleeve_id)
         except FileNotFoundError as exc:
@@ -1287,9 +1470,9 @@ def paper_strategy_ops_status_command(
 ) -> None:
     """Print Paper Strategy Sleeves local operations status."""
     settings = load_settings()
-    runner = _paper_strategy_operations_runner(settings)
+    observer = _paper_strategy_ops_observer(settings)
     try:
-        status = runner.ops_status(
+        status = observer.observe(
             target_date=target_date,
             execution_window=window.replace("-", "_"),
         )
@@ -1304,11 +1487,142 @@ def paper_strategy_ops_status_command(
             [
                 f"target_date={status.target_date}",
                 f"sleeves={status.sleeve_count}",
+                f"pending_sleeves={status.pending_sleeve_count}",
                 f"pending_due={status.pending_due_count}",
                 f"pending_executions={status.pending_execution_count}",
                 f"blocked={status.blocked_count}",
                 f"recovery_required={status.recovery_required_count}",
                 f"pending_journals={status.pending_journal_count}",
+                f"corrupt_journals={status.corrupt_journal_count}",
+            ]
+        )
+    )
+
+
+@paper_strategies_app.command("observations")
+def paper_strategy_observations_command(
+    from_date: Annotated[
+        str | None,
+        typer.Option("--from-date", help="Inclusive signal date, YYYY-MM-DD."),
+    ] = None,
+    to_date: Annotated[
+        str | None,
+        typer.Option("--to-date", help="Inclusive signal date, YYYY-MM-DD."),
+    ] = None,
+    signal_id: Annotated[
+        str | None,
+        typer.Option("--signal-id", help="Optional exact strategy signal id."),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", help="Maximum observations to return (1-500)."),
+    ] = 200,
+    output_format: Annotated[
+        Literal["json"],
+        typer.Option("--format", help="Machine-readable output format."),
+    ] = "json",
+) -> None:
+    """Read bounded strategy signal/action facts without recovery or mutation."""
+    from quant_system.execution.paper_strategy_observations import (
+        PaperStrategyObservationReader,
+    )
+    from quant_system.execution.paper_strategy_sleeve_storage import (
+        PaperStrategySleeveStorage,
+    )
+
+    del output_format
+    try:
+        settings = load_settings()
+    except Exception:
+        typer.echo(
+            json.dumps(
+                {
+                    "error": {
+                        "code": "strategy_observations_unavailable",
+                        "message": "strategy observation configuration is unavailable",
+                    }
+                },
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        raise typer.Exit(code=1) from None
+    storage = PaperStrategySleeveStorage(settings.data.data_dir / "api_runs")
+    try:
+        payload = PaperStrategyObservationReader(storage).read(
+            from_date=from_date,
+            to_date=to_date,
+            signal_id=signal_id,
+            limit=limit,
+        )
+    except ValueError as exc:
+        typer.echo(
+            json.dumps(
+                {
+                    "error": {
+                        "code": "strategy_observations_invalid_request",
+                        "message": str(exc),
+                    }
+                },
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            payload,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    if payload["read_status"] == "degraded":
+        raise typer.Exit(code=1)
+
+
+@paper_strategies_app.command("recover-pending")
+def paper_strategy_recover_pending_command(
+    output_format: Annotated[
+        Literal["text", "json"],
+        typer.Option("--format", help="Output format."),
+    ] = "text",
+) -> None:
+    """Explicitly recover Paper Strategy Sleeve crash journals only."""
+    from quant_system.execution.account_repository import (
+        PaperAccountBootstrapRequired,
+    )
+
+    settings = load_settings()
+    try:
+        result = _paper_strategy_operations_runner(settings).recover_pending_once()
+    except PaperAccountBootstrapRequired as exc:
+        if output_format == "json":
+            typer.echo(
+                json.dumps(
+                    {"error": {"code": exc.code, "message": str(exc)}},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            typer.echo(f"{exc.code}: {exc}")
+        raise typer.Exit(code=1) from exc
+    payload = result.to_dict()
+    if output_format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(
+        " ".join(
+            [
+                f"reconciled_sleeves={result.reconciled_sleeve_count}",
+                f"discarded_sleeves={result.discarded_sleeve_count}",
+                f"recovered_executions={result.recovered_execution_count}",
+                (f"remaining_pending_sleeves={result.remaining_pending_sleeve_count}"),
+                (f"remaining_pending_journals={result.remaining_pending_journal_count}"),
+                f"corrupt_journals={result.corrupt_journal_count}",
             ]
         )
     )
@@ -1849,9 +2163,7 @@ def options_daily_scan(
                 typer.echo(f"provider_check=failed reason={type(exc).__name__}: {exc}")
                 raise typer.Exit(code=3) from exc
         provider_check = (
-            "provider_check=skipped"
-            if active_provider_name == "sample"
-            else "provider_check=ok"
+            "provider_check=skipped" if active_provider_name == "sample" else "provider_check=ok"
         )
         typer.echo(provider_check)
         return
@@ -1882,7 +2194,9 @@ def options_daily_scan(
                     top_per_ticker=5,
                 ),
                 iv_history_dir=active_output_dir / "iv_history",
-                earnings_calendar=EarningsCalendar.load(settings.options_radar.earnings_calendar_path),
+                earnings_calendar=EarningsCalendar.load(
+                    settings.options_radar.earnings_calendar_path
+                ),
                 run_date=run_date,
                 market_regime=market_regime,
             )
@@ -2050,9 +2364,7 @@ def options_daily_task(
         )
     except Exception as exc:
         if not lock_acquired:
-            typer.echo(
-                f"step={current_step} status=failed reason={type(exc).__name__}: {exc}"
-            )
+            typer.echo(f"step={current_step} status=failed reason={type(exc).__name__}: {exc}")
             raise typer.Exit(code=1) from exc
         status_path = _write_options_daily_task_status(
             active_output_dir,
@@ -2260,9 +2572,7 @@ def _build_options_radar_provider(settings, provider: Literal["futu", "sample"])
         port=settings.futu.port,
         request_timeout_seconds=settings.futu.request_timeout_seconds,
         option_quotes_cache_path=(
-            settings.futu.cache_dir / "options_cache.duckdb"
-            if settings.futu.use_cache
-            else None
+            settings.futu.cache_dir / "options_cache.duckdb" if settings.futu.use_cache else None
         ),
     )
     futu_provider.snapshot_batch_size = settings.options_radar.snapshot_batch_size
@@ -2350,11 +2660,7 @@ def _buyside_expiration_window(
     view: BuySideViewType,
     as_of_date: str | None,
 ) -> tuple[str, str]:
-    start = (
-        date.fromisoformat(as_of_date)
-        if as_of_date
-        else date.today()
-    )
+    start = date.fromisoformat(as_of_date) if as_of_date else date.today()
     if view.startswith("long_term"):
         min_dte, max_dte = 180, 760
     elif view == "short_term_speculative_bullish":

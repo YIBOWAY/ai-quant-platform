@@ -6,6 +6,12 @@ const runE2E = process.env.PW_E2E === "1";
 const repoRoot = findRepoRoot(process.cwd());
 const frontendRoot = path.join(repoRoot, "src", "frontend");
 const e2eDataRoot = path.join(frontendRoot, ".tmp", "e2e-data");
+const hermesArtifactFixture = path.join(
+  frontendRoot,
+  "tests",
+  "fixtures",
+  "hermes-artifacts.v1.json",
+);
 const reuseExistingServer = process.env.PW_REUSE_SERVER === "1";
 const backendPort = readPort("PW_BACKEND_PORT", 8765);
 const frontendPort = readPort("PW_FRONTEND_PORT", 3001);
@@ -20,10 +26,15 @@ const e2eCorsOrigins = Array.from(
     frontendUrl,
   ]),
 );
-const frontendCommand =
+const frontendDevCommand =
   frontendPort === 3001
     ? "npm run dev"
     : `npx next dev --hostname 127.0.0.1 --port ${frontendPort}`;
+const frontendCommand = [
+  `node scripts/prepare-e2e-workspace.mjs ${frontendPort}`,
+  `cd ".tmp/e2e-frontend-${frontendPort}"`,
+  frontendDevCommand,
+].join(" && ");
 
 function readPort(name: string, fallback: number) {
   const raw = process.env[name];
@@ -81,6 +92,9 @@ export default defineConfig({
             QS_ENVIRONMENT: "test",
             QS_DATABASE_ENABLED: "false",
             QS_DATABASE_AUTO_MIGRATE: "false",
+            QS_AIHOT_ENABLED: "false",
+            QS_HERMES_ARTIFACT_FEED_PATH: hermesArtifactFixture,
+            QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS: "315360000",
             QS_API_CORS_ORIGINS: JSON.stringify(e2eCorsOrigins),
             QS_DATA_DIR: e2eDataRoot,
             QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet"),

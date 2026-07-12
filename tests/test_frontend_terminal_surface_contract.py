@@ -85,3 +85,36 @@ def test_split_workbench_pages_use_responsive_terminal_shell() -> None:
 def test_frontend_component_directory_contracts_exist() -> None:
     assert Path("src/frontend/components/editorial/index.ts").is_file()
     assert Path("src/frontend/components/hermes/index.ts").is_file()
+
+
+def test_hermes_workbench_is_read_only_artifact_shelf() -> None:
+    hermes_page = Path("src/frontend/app/hermes/page.tsx")
+    assert hermes_page.is_file()
+
+    source = read("src/frontend/app/hermes/page.tsx")
+    hermes_index = read("src/frontend/components/hermes/index.ts")
+    composer = read("src/frontend/components/hermes/ComposerDock.tsx")
+
+    assert "AgentTaskForm" not in source
+    assert "/api/agent/tasks" not in source
+    assert "apiPost" not in source
+    assert "getAgentLlmConfig" not in source
+    assert "ComposerDock" in source
+    assert "ArtifactShelf" in source
+    assert "getAgentCandidates" in source
+    assert "getHermesArtifacts" in source
+    assert "Promise.all" in source
+    assert "Artifact-first read-only research workbench. Submit remains disabled." in source
+    assert "以产物为先的只读研究工作台。提交仍保持禁用。" in source
+    assert "Read-only skeleton" not in source
+    assert "只读骨架" not in source
+    assert "streamPlaceholderA" not in source
+    assert "streamPlaceholderB" not in source
+    assert "export { ComposerDock }" in hermes_index
+    assert "export { ArtifactShelf }" in hermes_index
+    assert "apiPost" not in composer
+    assert "fetch(" not in composer
+
+    agent_studio = read("src/frontend/app/agent-studio/page.tsx")
+    assert "TerminalSplitShell" in agent_studio
+    assert "<TerminalSplitShell" in agent_studio

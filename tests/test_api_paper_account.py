@@ -296,12 +296,7 @@ def test_paper_account_canonical_mode_rejects_mutation_when_db_unavailable(
         json={"initial_cash": 1000.0},
     )
     assert reset_response.status_code == 503
-    assert (
-        reset_response.json()["detail"]["code"]
-        == "paper_account_database_unavailable"
-    )
-
-
+    assert reset_response.json()["detail"]["code"] == "paper_account_database_unavailable"
 
 
 def test_paper_account_canonical_mode_maps_midflight_save_failure_to_503(
@@ -362,9 +357,7 @@ def test_paper_account_canonical_get_open_maps_db_failure_to_503(
 
     class FailingLoadOpen(PostgresPaperAccountRepository):
         def load_or_open(self, *, initial_cash: float = 1_000_000.0):
-            raise RuntimeError(
-                "PostgreSQL database is unavailable for paper account load"
-            )
+            raise RuntimeError("PostgreSQL database is unavailable for paper account load")
 
     monkeypatch.setattr(
         account_repository_factory,
@@ -380,6 +373,97 @@ def test_paper_account_canonical_get_open_maps_db_failure_to_503(
     response = client.get("/api/paper/account")
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "paper_account_database_unavailable"
+
+
+def test_paper_account_canonical_get_missing_requires_explicit_bootstrap(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+    from quant_system.execution.account_repository import (
+        PaperAccountBootstrapRequired,
+    )
+
+    class MissingCanonical(PostgresPaperAccountRepository):
+        @contextlib.contextmanager
+        def mutation_lock(self, **_kwargs):
+            yield
+
+        def load_or_open(self, *, initial_cash: float = 1_000_000.0):
+            del initial_cash
+            raise PaperAccountBootstrapRequired(self.account_id)
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        MissingCanonical,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(
+            enabled=True,
+            url="postgresql://user:pass@localhost:5432/tmp",
+        ),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.get("/api/paper/account")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "paper_account_bootstrap_required"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/api/paper/account",
+        "/api/paper/account/activity",
+        "/api/paper/account/ledger",
+    ],
+)
+def test_paper_account_canonical_get_maps_corrupt_raw_to_stable_503(
+    tmp_path,
+    monkeypatch,
+    endpoint,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+    from quant_system.execution.account_repository import PaperAccountStorageCorrupt
+
+    class CorruptCanonical(PostgresPaperAccountRepository):
+        @contextlib.contextmanager
+        def mutation_lock(self, **_kwargs):
+            yield
+
+        def load_or_open(self, *, initial_cash: float = 1_000_000.0):
+            del initial_cash
+            raise PaperAccountStorageCorrupt(self.account_id)
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        CorruptCanonical,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(
+            enabled=True,
+            url="postgresql://user:pass@localhost:5432/tmp",
+        ),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "paper_account_storage_corrupt"
 
 
 def test_mirror_mode_order_response_stays_file_canonical_when_postgres_fails(
@@ -428,8 +512,12 @@ def test_mirror_mode_order_response_stays_file_canonical_when_postgres_fails(
     payload = response.json()
     assert set(payload) == {"order", "account", "safety"}
     assert payload["account"]["storage_mode"] == "mirror"
-    assert payload["account"]["stale"] is False
-    assert isinstance(payload["account"]["warnings"], list)
+    assert payload["account"]["stale"] is True
+    assert set(payload["account"]["warnings"]) >= {
+        "paper_account_db_mirror_unavailable",
+        "paper_account_reconciliation_unavailable",
+    }
+    assert payload["account"]["reconciliation"]["status"] == "unavailable"
     assert payload["account"]["positions"][0]["quantity"] == pytest.approx(2)
     assert failures == ["default", "default"]
 
@@ -723,9 +811,7 @@ def test_persistent_account_rebalance_rejects_sample_history(tmp_path, stub_pric
     assert response.status_code == 422
 
 
-def test_account_rebalance_rejects_strategy_without_account_support(
-    tmp_path, stub_prices
-) -> None:
+def test_account_rebalance_rejects_strategy_without_account_support(tmp_path, stub_prices) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 
     response = client.post(
@@ -747,12 +833,19 @@ def test_concurrent_orders_do_not_lose_updates(tmp_path, stub_prices) -> None:
     import threading
 
     client = TestClient(create_app(output_dir=tmp_path))
+    responses = []
+    errors = []
 
     def buy() -> None:
-        client.post(
-            "/api/paper/account/orders",
-            json={"symbol": "MSFT", "side": "buy", "quantity": 1},
-        )
+        try:
+            responses.append(
+                client.post(
+                    "/api/paper/account/orders",
+                    json={"symbol": "MSFT", "side": "buy", "quantity": 1},
+                )
+            )
+        except Exception as exc:
+            errors.append(exc)
 
     threads = [threading.Thread(target=buy) for _ in range(12)]
     for t in threads:
@@ -760,6 +853,9 @@ def test_concurrent_orders_do_not_lose_updates(tmp_path, stub_prices) -> None:
     for t in threads:
         t.join()
 
+    assert errors == []
+    assert len(responses) == 12
+    assert all(response.status_code == 200 for response in responses)
     account = client.get("/api/paper/account").json()
     msft = [p for p in account["positions"] if p["symbol"] == "MSFT"]
     assert msft and msft[0]["quantity"] == pytest.approx(12)
@@ -773,9 +869,7 @@ def test_rapid_resets_archive_each_account(tmp_path, stub_prices) -> None:
             json={"symbol": "AAPL", "side": "buy", "quantity": 1},
         )
         client.post("/api/paper/account/reset", json={"initial_cash": 1_000_000})
-    archive = list(
-        (tmp_path / "api_runs" / "paper_account" / "default" / "archive").glob("*.json")
-    )
+    archive = list((tmp_path / "api_runs" / "paper_account" / "default" / "archive").glob("*.json"))
     assert len(archive) == 3
 
 
@@ -856,6 +950,7 @@ def test_rebalance_aborts_without_mutation_when_a_leg_is_rejected(
         call_count["n"] += 1
         # The trial run calls _execute_single for each leg; reject the first BUY.
         from quant_system.execution.models import OrderSide
+
         if side == OrderSide.BUY and call_count["n"] <= 2:
             return OrderOutcome(
                 status="rejected",

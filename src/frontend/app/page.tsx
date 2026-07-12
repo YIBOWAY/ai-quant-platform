@@ -8,6 +8,7 @@ import {
   LineChart,
   Play,
   Settings,
+  Sparkles,
 } from "lucide-react";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
@@ -79,6 +80,7 @@ const copy = {
     quickActions: "QUICK ACTIONS",
     startBacktest: "Start New Backtest",
     runFactor: "Run Factor Analysis",
+    openHermes: "Open Hermes Workbench",
     newAgent: "New Agent Task",
     openSettings: "Open Settings",
     envState: "ENVIRONMENT STATE",
@@ -126,6 +128,7 @@ const copy = {
     quickActions: "快捷操作",
     startBacktest: "新建回测",
     runFactor: "运行因子分析",
+    openHermes: "打开 Hermes 工作台",
     newAgent: "新建智能体任务",
     openSettings: "打开设置",
     envState: "环境状态",
@@ -398,6 +401,12 @@ export default async function Dashboard() {
               className="flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-warning"
             >
               <FlaskConical size={14} className="text-warning" /> {text.runFactor}
+            </Link>
+            <Link
+              href={localizePath("/hermes", locale)}
+              className="flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-[var(--color-hermes)]"
+            >
+              <Sparkles size={14} className="text-[var(--color-hermes)]" /> {text.openHermes}
             </Link>
             <Link
               href={localizePath("/agent-studio", locale)}
