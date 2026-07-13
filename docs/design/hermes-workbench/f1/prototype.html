@@ -348,6 +348,17 @@
         }
 
         var autoEx = (auto.exceptions && auto.exceptions[0]) || null;
+        var autoMeta =
+          '<dl class="meta-grid">' +
+          "<div><dt>job</dt><dd>" +
+          escapeHtml(autoEx ? autoEx.jobId : "all") +
+          "</dd></div>" +
+          "<div><dt>health</dt><dd>" +
+          escapeHtml(String(autoLabel)) +
+          "</dd></div>" +
+          "<div><dt>status</dt><dd>" +
+          escapeHtml(autoEx ? autoEx.status : "healthy") +
+          "</dd></div></dl>";
         var autoCard =
           '<article class="card"><div class="auto-row"><div class="left"><h2>' +
           escapeHtml(auto.label || "自动化") +
@@ -365,6 +376,7 @@
               escapeHtml(autoEx.status)
             : '<span class="pill pill-ok">healthy') +
           "</span></div>" +
+          autoMeta +
           techHtml(
             autoEx
               ? [{ label: "job", value: autoEx.jobId }, { label: "status", value: autoEx.status }]
@@ -372,16 +384,25 @@
           ) +
           "</article>";
 
+        var resultMeta = recent
+          ? '<dl class="meta-grid">' +
+            "<div><dt>status</dt><dd>" +
+            escapeHtml(recent.status || "—") +
+            "</dd></div>" +
+            "<div><dt>window</dt><dd>2019-01 → 2025-12</dd></div>" +
+            "<div><dt>limit</dt><dd>no eligibility upgrade</dd></div></dl>"
+          : "";
         var resultCard =
           '<article class="card"><h2>最近结果</h2>' +
           (recent
-            ? '<p class="title" style="color:var(--text);font-weight:500;margin:0 0 8px">' +
+            ? '<p class="title" style="color:var(--text);font-weight:500;margin:0 0 6px;font-size:13px">' +
               escapeHtml(recent.title) +
               '</p><p><span class="' +
               pillClass(recent.status_text || recent.status) +
               '">' +
               escapeHtml(recent.status_text || recent.status) +
-              "</span></p>"
+              "</span></p>" +
+              resultMeta
             : "<p>" + escapeHtml(s.summary_en || "No recent result") + "</p>") +
           "</article>";
 
