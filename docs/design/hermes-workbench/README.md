@@ -14,30 +14,50 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 | --- | --- | --- |
 | F0 visual directions | **direction-a approved for polish path** | Hierarchy A (COO desk) selected for visual redesign. B/C remain comparison artifacts. |
 | F0 visual polish (A) | **superseded by v3** | 2026-07-13 Linear/Raycast craft was user-rejected (AI 味 + skinny mid column). |
-| F0 v3 finance redesign (A) | **landed 2026-07-13** | **v3 finance/crypto redesign after user craft rejection.** Binance/Revolut/xAI desk DNA; full-width stage; horizontal top nav; amber CTAs; no purple haze / no permanent 288px right rail. |
+| F0 v3 finance redesign (A) | **landed 2026-07-13** | Full-width trading desk after craft rejection; no purple haze / no permanent 288px right rail. |
+| F0/F1 platform token rebind | **landed 2026-07-13** | F0/F1 CSS tokens aligned to QUANTUM_CORE (`globals.css`): warm terminal surfaces, info-blue primary CTAs, warning yellow for safety/warn only, Hermes purple brand/focus only. |
 | F0 independent review | **completed 2026-07-13** | UX pass/fail recorded below (pre-polish). Package was Ready for user selection; user chose A for craft pass. |
-| F1 clickable prototype | **draft ready — awaiting user gate** | Full-state catalogs + walkthrough under `f1/`. Aligned to v3 finance desk shell. **Not approved.** |
-| F2 production shell | not started | Blocked on F1 written approval + candidate-integrity Task 5 types. |
+| F1 clickable prototype | **approved 2026-07-13** | Craft accepted with platform token rebind. Full-state catalogs + walkthrough under `f1/`. Density + full-width desk retained. |
+| F2 production shell | not started | Unblocked on F1 craft approval; still needs candidate-integrity Task 5 types before production shell. |
 
 ### F0 decision
 
-- status: `approved` (stem) · craft **v3 redesign after user rejection**
+- status: `approved` (stem) · craft **accepted with platform token rebind**
 - selected stem: `direction-a`
 - approver: `user`
 - date: `2026-07-13`
 - adjustments (explicit user intent):
   1. Keep direction-a COO hierarchy (safety → attention/action → status → work → result → disabled composer).
   2. Linear-purple “AI product” craft rejected; too much AI 味; middle column felt thin/uncomfortable.
-  3. Re-reference finance/crypto DNA (Binance, Coinbase, Revolut, Kraken) + non-purple AI restraint (xAI, Claude coral, Ollama mono).
+  3. Full-width trading desk density retained (no skinny mid column).
   4. Kill permanent right rail + fat side-nav combo; full-width main stage (≥1100px content at 1440).
-  5. Amber/yellow for attention/money CTAs; blue only for secondary links; Hermes purple only as flat brand mark.
+  5. **Platform token alignment (2026-07-13):** rebind F0/F1 CSS to QUANTUM_CORE SSOT in `src/frontend/app/globals.css` — see below.
+
+### Platform token alignment (2026-07-13)
+
+Prototype CSS variables now mirror QUANTUM_CORE (not Binance exchange yellow CTAs):
+
+| Role | Token | Hex |
+| --- | --- | --- |
+| Page / cards / muted | `--bg` / `--surface` / `--surface-2` | `#12110E` / `#181714` / `#23211C` |
+| Borders | `--line` | `#302C25` |
+| Text | `--text` / `--muted` / mono secondary | `#E7E0D3` / `#9B9488` / `#D8D1C4` |
+| Primary CTA + secondary outline | `--accent` / `--link` (info) | `#5EA2FF` |
+| Success / health | `--success` | `#089981` |
+| Warning (safety strip + warn pills only) | `--warning` | `#F0B90B` |
+| Danger | `--danger` | `#F23645` |
+| Hermes (brand mark + focus ring only) | `--hermes` | `#9085E9` |
+
+No purple atmosphere. Warning yellow is not used as Submit/primary fill.
 
 ### F1 decision
 
-- status: `draft` — **not approved**
+- status: `approved` — craft accepted with platform token rebind
+- approver: `user`
+- date: `2026-07-13`
 - package: [`f1/prototype.html`](./f1/prototype.html) + [`f1/prototype.css`](./f1/prototype.css) + [`f1/states/`](./f1/states/)
-- visual base: F0 `direction-a` **v3 finance/crypto trading desk** (Binance canvas `#0b0e11` / surface `#1e2329`, amber CTAs)
-- stop: written user approval required before any `src/frontend/app` / production shell work from this package
+- visual base: F0 `direction-a` full-width trading desk + QUANTUM_CORE palette
+- next: F2 production shell may proceed on craft; keep candidate-integrity types gating real wiring
 
 ---
 
@@ -82,7 +102,7 @@ Local-only clickable package (no production imports, no network beyond the stati
 | Path | Role |
 | --- | --- |
 | [`f1/prototype.html`](./f1/prototype.html) | COO desk shell + walkthrough + state matrix |
-| [`f1/prototype.css`](./f1/prototype.css) | v3 finance-desk tokens / full-width shell / mobile order |
+| [`f1/prototype.css`](./f1/prototype.css) | QUANTUM_CORE tokens / full-width shell / mobile order |
 | [`f1/states/home.json`](./f1/states/home.json) | `empty/loading/normal/degraded/hermes_offline` |
 | [`f1/states/conversation.json`](./f1/states/conversation.json) | `sending/queued/streaming/reconnecting/stopping/reconciling/failed/quota/fallback` |
 | [`f1/states/tasks.json`](./f1/states/tasks.json) | `queued/running/waiting_gate/stop_requested/reconciling/completed/partial/failed/stopped` |
@@ -108,7 +128,7 @@ Visible **prototype data** badge sits outside product chrome. Composer never sub
 - Console errors/warnings: 0 product errors (browser favicon 404 only)
 ```
 
-**Not approved.** Do not start F2 from this draft until written user approval is recorded here.
+**Approved 2026-07-13** (craft + platform token rebind). F2 production shell craft may start; keep integrity/type gates for real wiring.
 
 ---
 

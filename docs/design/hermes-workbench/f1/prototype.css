@@ -1,24 +1,24 @@
 /* Hermes Workbench F1 — full-state interaction prototype
-   Visual DNA: F0 direction-a v3 finance/crypto trading desk
-   Binance canvas · amber CTAs · no purple atmosphere · no permanent right rail
+   Visual DNA: F0 direction-a full-width trading desk
+   QUANTUM_CORE tokens (globals.css) · info-blue CTAs · no purple atmosphere
    Hermetic: no remote assets, no production imports */
 
 :root {
   color-scheme: dark;
 
-  --bg: #0b0e11;
-  --surface: #1e2329;
-  --surface-2: #2b3139;
-  --surface-3: #363c45;
-  --line: #2b3139;
-  --line-strong: #474d57;
-  --line-soft: rgba(255, 255, 255, 0.06);
+  --bg: #12110e;
+  --surface: #181714;
+  --surface-2: #23211c;
+  --surface-3: #25242a;
+  --line: #302c25;
+  --line-strong: #3a3733;
+  --line-soft: rgba(231, 224, 211, 0.06);
 
-  --text: #eaecef;
-  --text-secondary: #b7bdc6;
-  --muted: #848e9c;
-  --muted-readable: #b7bdc6;
-  --ink-tertiary: #5e6673;
+  --text: #e7e0d3;
+  --text-secondary: #d8d1c4;
+  --muted: #9b9488;
+  --muted-readable: #c4bdb0;
+  --ink-tertiary: #6b655c;
 
   --hermes: #9085e9;
   --hermes-soft: rgba(144, 133, 233, 0.08);
@@ -26,35 +26,36 @@
   --hermes-border: rgba(144, 133, 233, 0.28);
   --hermes-text: #c8c2f0;
 
-  --accent: #f0b90b;
-  --accent-bright: #fcd535;
-  --accent-soft: rgba(240, 185, 11, 0.1);
-  --accent-mid: rgba(240, 185, 11, 0.18);
-  --accent-border: rgba(240, 185, 11, 0.42);
-  --accent-ink: #0b0e11;
-  --accent-text: #fcd535;
+  /* Primary CTA ↔ platform secondary/info */
+  --accent: #5ea2ff;
+  --accent-bright: #7ab4ff;
+  --accent-soft: rgba(94, 162, 255, 0.12);
+  --accent-mid: rgba(94, 162, 255, 0.2);
+  --accent-border: rgba(94, 162, 255, 0.42);
+  --accent-ink: #0a1628;
+  --accent-text: #7ab4ff;
 
-  --link: #0052ff;
-  --link-soft: rgba(0, 82, 255, 0.12);
-  --link-border: rgba(0, 82, 255, 0.35);
-  --link-text: #6b9bff;
+  --link: #5ea2ff;
+  --link-soft: rgba(94, 162, 255, 0.12);
+  --link-border: rgba(94, 162, 255, 0.4);
+  --link-text: #5ea2ff;
 
   --warning: #f0b90b;
   --warning-soft: rgba(240, 185, 11, 0.1);
   --warning-border: rgba(240, 185, 11, 0.38);
-  --warning-text: #fcd535;
-  --danger: #f6465d;
-  --danger-soft: rgba(246, 70, 93, 0.12);
-  --success: #0ecb81;
-  --success-soft: rgba(14, 203, 129, 0.12);
-  --success-border: rgba(14, 203, 129, 0.38);
+  --warning-text: #f0b90b;
+  --danger: #f23645;
+  --danger-soft: rgba(242, 54, 69, 0.12);
+  --success: #089981;
+  --success-soft: rgba(8, 153, 129, 0.12);
+  --success-border: rgba(8, 153, 129, 0.38);
 
-  --safety-bg: #12100a;
+  --safety-bg: #16140c;
   --safety-border: #3d3420;
-  --safety-text: #e6c56e;
+  --safety-text: #f0b90b;
 
-  --review-bg: #080a0c;
-  --review-line: #2b3139;
+  --review-bg: #0c0b09;
+  --review-line: #302c25;
 
   --radius: 6px;
   --radius-sm: 4px;
@@ -135,7 +136,7 @@ textarea:disabled {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--hermes);
   outline-offset: 2px;
 }
 
@@ -315,7 +316,7 @@ textarea:disabled {
   position: absolute;
   inset: 5px;
   border-radius: 2px;
-  background: rgba(11, 14, 17, 0.4);
+  background: rgba(18, 17, 14, 0.45);
 }
 
 .brand strong {
@@ -589,7 +590,7 @@ textarea:disabled {
 
 .kpi.warn {
   border-color: var(--warning-border);
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--warning);
   background: var(--surface);
 }
 
@@ -706,7 +707,7 @@ textarea:disabled {
 
 .attention-card {
   border-color: var(--warning-border);
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--warning);
   background: var(--surface);
   padding: 12px 14px;
   width: 100%;
@@ -777,6 +778,7 @@ textarea:disabled {
   border-color: var(--line-strong);
 }
 
+/* Primary CTA = platform info blue */
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -790,16 +792,17 @@ textarea:disabled {
   color: var(--accent-ink);
 }
 
+/* Warn actions — warning yellow, not primary CTA */
 .btn-warn {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+  background: var(--warning);
+  border-color: var(--warning);
+  color: #12110e;
   font-weight: 600;
 }
 
 .btn-warn:hover:not(:disabled) {
-  background: var(--accent-bright);
-  border-color: var(--accent-bright);
+  background: #fcd535;
+  border-color: #fcd535;
 }
 
 .pill {
@@ -834,7 +837,7 @@ textarea:disabled {
 }
 
 .pill-danger {
-  border-color: rgba(246, 70, 93, 0.4);
+  border-color: rgba(242, 54, 69, 0.4);
   background: var(--danger-soft);
   color: var(--danger);
 }
@@ -1147,7 +1150,7 @@ aside.secondary-panel {
 /* Approval */
 .approval-hero {
   border: 1px solid var(--warning-border);
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--warning);
   border-radius: var(--radius-md);
   padding: 14px 16px;
   background: var(--surface);

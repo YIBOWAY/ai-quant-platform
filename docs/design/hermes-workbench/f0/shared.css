@@ -1,49 +1,50 @@
-/* Hermes Workbench F0 — finance/crypto trading-desk tokens (no remote assets)
-   DNA: Binance canvas + amber CTAs · Revolut black chrome · xAI mono restraint
+/* Hermes Workbench F0 — QUANTUM_CORE token rebind (no remote assets)
+   SSOT: src/frontend/app/globals.css — warm terminal dark palette.
    Variable names preserved for direction-b / direction-c compatibility.
-   v3: anti-AI-slop redesign — no purple atmosphere, no glass SaaS. */
+   Layout DNA: full-width trading desk · no purple atmosphere · no glass SaaS.
+   CTA = info blue; warning yellow = safety/warn only; Hermes = brand/focus. */
 
 :root {
   color-scheme: dark;
 
-  /* Surface ladder (Binance / exchange product) */
-  --bg: #0b0e11;
-  --surface: #1e2329;
-  --surface-2: #2b3139;
-  --surface-3: #363c45;
-  --line: #2b3139;
-  --line-strong: #474d57;
-  --line-soft: rgba(255, 255, 255, 0.06);
+  /* Surface ladder ↔ platform bg-base / surface / surface-muted / sidebar-muted */
+  --bg: #12110e;
+  --surface: #181714;
+  --surface-2: #23211c;
+  --surface-3: #25242a;
+  --line: #302c25;
+  --line-strong: #3a3733;
+  --line-soft: rgba(231, 224, 211, 0.06);
 
-  /* Type */
-  --text: #eaecef;
-  --text-secondary: #b7bdc6;
-  --muted: #848e9c;
+  /* Type ↔ text-primary / text-mono / text-secondary */
+  --text: #e7e0d3;
+  --text-secondary: #d8d1c4;
+  --muted: #9b9488;
   /* ≥4.5:1 on --surface / --bg for disabled reason copy */
-  --muted-readable: #b7bdc6;
-  --ink-tertiary: #5e6673;
+  --muted-readable: #c4bdb0;
+  --ink-tertiary: #6b655c;
 
-  /* Brand mark only (flat — never page atmosphere) */
+  /* Brand mark + focus ring only (flat — never page atmosphere / CTA fill) */
   --hermes: #9085e9;
   --hermes-soft: rgba(144, 133, 233, 0.08);
   --hermes-mid: rgba(144, 133, 233, 0.14);
   --hermes-border: rgba(144, 133, 233, 0.28);
   --hermes-text: #c8c2f0;
 
-  /* Money / attention CTAs — Binance amber-yellow */
-  --accent: #f0b90b;
-  --accent-bright: #fcd535;
-  --accent-soft: rgba(240, 185, 11, 0.1);
-  --accent-mid: rgba(240, 185, 11, 0.18);
-  --accent-border: rgba(240, 185, 11, 0.42);
-  --accent-ink: #0b0e11;
-  --accent-text: #fcd535;
+  /* Primary CTA fill ↔ platform secondary/info #5EA2FF (not warning yellow) */
+  --accent: #5ea2ff;
+  --accent-bright: #7ab4ff;
+  --accent-soft: rgba(94, 162, 255, 0.12);
+  --accent-mid: rgba(94, 162, 255, 0.2);
+  --accent-border: rgba(94, 162, 255, 0.42);
+  --accent-ink: #0a1628;
+  --accent-text: #7ab4ff;
 
-  /* Secondary link / info — Coinbase blue (not wallpaper) */
-  --link: #0052ff;
-  --link-soft: rgba(0, 82, 255, 0.12);
-  --link-border: rgba(0, 82, 255, 0.35);
-  --link-text: #6b9bff;
+  /* Secondary outline / link ↔ same info blue */
+  --link: #5ea2ff;
+  --link-soft: rgba(94, 162, 255, 0.12);
+  --link-border: rgba(94, 162, 255, 0.4);
+  --link-text: #5ea2ff;
 
   /* Human approval accent (Claude coral — rare, not atmosphere) */
   --approval: #cc785c;
@@ -51,21 +52,21 @@
   --approval-border: rgba(204, 120, 92, 0.4);
   --approval-text: #e8a890;
 
-  /* Semantic status — brand ≠ status */
+  /* Semantic status — brand ≠ status; warning ≠ primary CTA */
   --warning: #f0b90b;
   --warning-soft: rgba(240, 185, 11, 0.1);
   --warning-border: rgba(240, 185, 11, 0.38);
-  --warning-text: #fcd535;
-  --danger: #f6465d;
-  --danger-soft: rgba(246, 70, 93, 0.12);
-  --success: #0ecb81;
-  --success-soft: rgba(14, 203, 129, 0.12);
-  --success-border: rgba(14, 203, 129, 0.38);
+  --warning-text: #f0b90b;
+  --danger: #f23645;
+  --danger-soft: rgba(242, 54, 69, 0.12);
+  --success: #089981;
+  --success-soft: rgba(8, 153, 129, 0.12);
+  --success-border: rgba(8, 153, 129, 0.38);
 
-  /* Safety strip */
-  --safety-bg: #12100a;
+  /* Safety strip — warning yellow only */
+  --safety-bg: #16140c;
   --safety-border: #3d3420;
-  --safety-text: #e6c56e;
+  --safety-text: #f0b90b;
 
   /* Shape + type stacks (system only — no CDN fonts) */
   --radius: 6px;
@@ -181,7 +182,7 @@ textarea:disabled {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--hermes);
   outline-offset: 2px;
 }
 
@@ -193,7 +194,7 @@ textarea:disabled {
   align-items: center;
   padding: 10px 16px;
   border-bottom: 1px solid var(--line);
-  background: #0a0c0f;
+  background: #0c0b09;
   max-width: 100%;
 }
 
@@ -353,7 +354,7 @@ textarea:disabled {
   border-color: var(--line-strong);
 }
 
-/* Primary = money/attention amber (exchange CTA) */
+/* Primary CTA = platform info blue (Submit-like) */
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -367,16 +368,17 @@ textarea:disabled {
   color: var(--accent-ink);
 }
 
+/* Warn actions use warning yellow — not primary CTA fill */
 .btn-warn {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+  background: var(--warning);
+  border-color: var(--warning);
+  color: #12110e;
   font-weight: 600;
 }
 
 .btn-warn:hover:not(:disabled) {
-  background: var(--accent-bright);
-  border-color: var(--accent-bright);
+  background: #fcd535;
+  border-color: #fcd535;
 }
 
 .btn-link {
@@ -418,7 +420,7 @@ textarea:disabled {
 }
 
 .pill-danger {
-  border-color: rgba(246, 70, 93, 0.4);
+  border-color: rgba(242, 54, 69, 0.4);
   background: var(--danger-soft);
   color: var(--danger);
 }
