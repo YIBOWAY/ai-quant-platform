@@ -1,42 +1,66 @@
-/* Hermes Workbench F0 — premium dark COO tokens (no remote assets)
-   DNA: Linear canvas + hairlines · Raycast chrome density · Hermes #9085E9 sparingly
-   Variable names preserved for direction-b / direction-c compatibility. */
+/* Hermes Workbench F0 — finance/crypto trading-desk tokens (no remote assets)
+   DNA: Binance canvas + amber CTAs · Revolut black chrome · xAI mono restraint
+   Variable names preserved for direction-b / direction-c compatibility.
+   v3: anti-AI-slop redesign — no purple atmosphere, no glass SaaS. */
 
 :root {
   color-scheme: dark;
 
-  /* Surface ladder (Linear near-black) */
-  --bg: #010102;
-  --surface: #0f1011;
-  --surface-2: #141516;
-  --surface-3: #18191a;
-  --line: #23252a;
-  --line-strong: #34343a;
+  /* Surface ladder (Binance / exchange product) */
+  --bg: #0b0e11;
+  --surface: #1e2329;
+  --surface-2: #2b3139;
+  --surface-3: #363c45;
+  --line: #2b3139;
+  --line-strong: #474d57;
   --line-soft: rgba(255, 255, 255, 0.06);
 
   /* Type */
-  --text: #f7f8f8;
-  --text-secondary: #d0d6e0;
-  --muted: #8a8f98;
+  --text: #eaecef;
+  --text-secondary: #b7bdc6;
+  --muted: #848e9c;
   /* ≥4.5:1 on --surface / --bg for disabled reason copy */
-  --muted-readable: #b4b9c3;
-  --ink-tertiary: #62666d;
+  --muted-readable: #b7bdc6;
+  --ink-tertiary: #5e6673;
 
-  /* Brand + semantic (Hermes maps Linear lavender → platform purple) */
+  /* Brand mark only (flat — never page atmosphere) */
   --hermes: #9085e9;
-  --hermes-soft: rgba(144, 133, 233, 0.12);
-  --hermes-mid: rgba(144, 133, 233, 0.22);
-  --hermes-border: rgba(144, 133, 233, 0.4);
-  --hermes-text: #d4ceff;
-  --warning: #f0b429;
-  --warning-soft: rgba(240, 180, 41, 0.1);
-  --warning-border: rgba(240, 180, 41, 0.38);
-  --warning-text: #f5d78a;
-  --danger: #f06a6a;
-  --danger-soft: rgba(240, 106, 106, 0.12);
-  --success: #3dba74;
-  --success-soft: rgba(61, 186, 116, 0.12);
-  --success-border: rgba(61, 186, 116, 0.38);
+  --hermes-soft: rgba(144, 133, 233, 0.08);
+  --hermes-mid: rgba(144, 133, 233, 0.14);
+  --hermes-border: rgba(144, 133, 233, 0.28);
+  --hermes-text: #c8c2f0;
+
+  /* Money / attention CTAs — Binance amber-yellow */
+  --accent: #f0b90b;
+  --accent-bright: #fcd535;
+  --accent-soft: rgba(240, 185, 11, 0.1);
+  --accent-mid: rgba(240, 185, 11, 0.18);
+  --accent-border: rgba(240, 185, 11, 0.42);
+  --accent-ink: #0b0e11;
+  --accent-text: #fcd535;
+
+  /* Secondary link / info — Coinbase blue (not wallpaper) */
+  --link: #0052ff;
+  --link-soft: rgba(0, 82, 255, 0.12);
+  --link-border: rgba(0, 82, 255, 0.35);
+  --link-text: #6b9bff;
+
+  /* Human approval accent (Claude coral — rare, not atmosphere) */
+  --approval: #cc785c;
+  --approval-soft: rgba(204, 120, 92, 0.12);
+  --approval-border: rgba(204, 120, 92, 0.4);
+  --approval-text: #e8a890;
+
+  /* Semantic status — brand ≠ status */
+  --warning: #f0b90b;
+  --warning-soft: rgba(240, 185, 11, 0.1);
+  --warning-border: rgba(240, 185, 11, 0.38);
+  --warning-text: #fcd535;
+  --danger: #f6465d;
+  --danger-soft: rgba(246, 70, 93, 0.12);
+  --success: #0ecb81;
+  --success-soft: rgba(14, 203, 129, 0.12);
+  --success-border: rgba(14, 203, 129, 0.38);
 
   /* Safety strip */
   --safety-bg: #12100a;
@@ -44,10 +68,10 @@
   --safety-text: #e6c56e;
 
   /* Shape + type stacks (system only — no CDN fonts) */
-  --radius: 10px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
   --radius-pill: 9999px;
   --mono: ui-monospace, "SF Mono", "Menlo", "Cascadia Code", "Consolas", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
@@ -56,9 +80,9 @@
     "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
 
   --shadow-1: 0 0 0 1px var(--line);
-  --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-2: none;
 
-  --ease: 120ms ease;
+  --ease: 100ms ease;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -66,12 +90,17 @@
   --space-5: 24px;
   --space-6: 32px;
 
+  /* Desk stage padding */
+  --stage-pad-x: 28px;
+  --stage-pad-y: 20px;
+
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
 }
 
 *,
@@ -94,7 +123,7 @@ body {
 
 /* —— Global safety strip (only place for paper/live/kill/API) —— */
 .safety {
-  min-height: 36px;
+  min-height: 32px;
   height: auto;
   display: grid;
   place-items: center;
@@ -104,8 +133,8 @@ body {
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 8px 16px;
+  letter-spacing: 0.03em;
+  padding: 7px 16px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -113,8 +142,11 @@ body {
 }
 
 .prototype {
-  min-height: calc(100vh - 36px);
-  display: grid;
+  min-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100vw;
 }
 
 button,
@@ -149,7 +181,7 @@ textarea:disabled {
 }
 
 :focus-visible {
-  outline: 2px solid var(--hermes);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -161,7 +193,7 @@ textarea:disabled {
   align-items: center;
   padding: 10px 16px;
   border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  background: #0a0c0f;
   max-width: 100%;
 }
 
@@ -169,7 +201,7 @@ textarea:disabled {
   color: var(--muted);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   margin-right: 4px;
   min-height: 0;
@@ -188,15 +220,15 @@ textarea:disabled {
 }
 
 .state-bar button:hover {
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
   border-color: var(--line-strong);
 }
 
 .state-bar button[aria-pressed="true"] {
-  border-color: var(--hermes-border);
-  background: var(--hermes-soft);
-  color: var(--hermes-text);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .meta-note {
@@ -211,20 +243,21 @@ textarea:disabled {
 
 /* Shared content primitives */
 .eyebrow {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  font-family: var(--mono);
 }
 
 .lede {
   margin: 0;
   font-family: var(--display);
-  font-size: clamp(1.75rem, 1.4rem + 1.1vw, 2.125rem); /* ≥2.2× 14px body */
-  line-height: 1.15;
-  letter-spacing: -0.035em;
+  font-size: clamp(1.375rem, 1.2rem + 0.8vw, 1.75rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   font-weight: 600;
   color: var(--text);
 }
@@ -234,7 +267,6 @@ textarea:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
 }
 
 .card h2 {
@@ -259,6 +291,7 @@ textarea:disabled {
   color: var(--text-secondary);
   word-break: break-all;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 .btn {
@@ -274,7 +307,7 @@ textarea:disabled {
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   transition: background var(--ease), border-color var(--ease), color var(--ease);
 }
 
@@ -283,32 +316,48 @@ textarea:disabled {
   border-color: var(--line-strong);
 }
 
+/* Primary = money/attention amber (exchange CTA) */
 .btn-primary {
-  background: var(--hermes-soft);
-  border-color: var(--hermes-border);
-  color: var(--hermes-text);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--hermes-mid);
+  background: var(--accent-bright);
+  border-color: var(--accent-bright);
+  color: var(--accent-ink);
 }
 
 .btn-warn {
-  background: var(--warning-soft);
-  border-color: var(--warning-border);
-  color: var(--warning-text);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 .btn-warn:hover:not(:disabled) {
-  background: rgba(240, 180, 41, 0.16);
+  background: var(--accent-bright);
+  border-color: var(--accent-bright);
+}
+
+.btn-link {
+  background: transparent;
+  border-color: var(--link-border);
+  color: var(--link-text);
+}
+
+.btn-link:hover:not(:disabled) {
+  background: var(--link-soft);
 }
 
 .pill {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  padding: 0 10px;
-  border-radius: var(--radius-pill);
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: var(--surface-2);
   font-size: 11px;
@@ -316,6 +365,7 @@ textarea:disabled {
   letter-spacing: 0.01em;
   color: var(--muted-readable);
   white-space: nowrap;
+  font-family: var(--mono);
 }
 
 .pill-ok {
@@ -327,19 +377,20 @@ textarea:disabled {
 .pill-warn {
   border-color: var(--warning-border);
   background: var(--warning-soft);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .pill-danger {
-  border-color: rgba(240, 106, 106, 0.4);
+  border-color: rgba(246, 70, 93, 0.4);
   background: var(--danger-soft);
   color: var(--danger);
 }
 
+/* Neutral composition status — not brand purple */
 .pill-hermes {
-  border-color: var(--hermes-border);
-  background: var(--hermes-soft);
-  color: var(--hermes-text);
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-secondary);
 }
 
 details.tech {
@@ -377,7 +428,7 @@ details.tech summary::before {
 
 details.tech[open] summary::before {
   transform: rotate(90deg);
-  border-left-color: var(--hermes);
+  border-left-color: var(--accent);
 }
 
 details.tech code {
@@ -400,16 +451,16 @@ details.tech code {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--bg);
 }
 
 .composer textarea {
   width: 100%;
-  min-height: 88px;
+  min-height: 72px;
   resize: vertical;
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
-  background: var(--bg);
+  background: var(--surface);
   color: var(--muted-readable);
   padding: 12px 14px;
   font: inherit;
@@ -419,7 +470,7 @@ details.tech code {
 
 .composer textarea:disabled {
   color: var(--muted-readable);
-  background: var(--bg);
+  background: var(--surface);
   border-color: var(--line);
 }
 
@@ -436,8 +487,8 @@ details.tech code {
   margin: 0;
   font-size: 13px;
   line-height: 1.45;
-  color: var(--muted-readable); /* ~#b4b9c3 on #0f1011 ≥ 4.5:1 */
-  max-width: 48ch;
+  color: var(--muted-readable);
+  max-width: 56ch;
   font-weight: 500;
 }
 
@@ -472,11 +523,9 @@ body[data-view="result"] [data-show="result"] {
   display: block;
 }
 
-/* Width ≤1279: secondary panel collapses */
-@media (max-width: 1279px) {
-  .secondary-panel {
-    display: none !important;
-  }
+/* Legacy class kept so B/C do not explode; A/F1 do not use permanent rails */
+.secondary-panel {
+  display: none !important;
 }
 
 /* Width ≤767: mobile stack */
@@ -506,18 +555,25 @@ body[data-view="result"] [data-show="result"] {
     width: 100%;
     margin-left: 0;
   }
+
+  :root {
+    --stage-pad-x: 16px;
+  }
 }
 
-/* Comfortable 1280 band (tablet landscape / small laptop) */
+/* Comfortable 1280 band */
 @media (max-width: 1439px) and (min-width: 1280px) {
-  .content {
-    padding-left: 20px;
-    padding-right: 20px;
+  :root {
+    --stage-pad-x: 24px;
   }
 }
 
 /* 768–1279 tablet */
 @media (max-width: 1279px) and (min-width: 768px) {
+  :root {
+    --stage-pad-x: 20px;
+  }
+
   .content {
     padding: 20px;
   }
@@ -526,7 +582,7 @@ body[data-view="result"] [data-show="result"] {
 /* 390 phone band */
 @media (max-width: 430px) {
   .lede {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
   }
 
   .card {

@@ -13,29 +13,30 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 | Gate | Status | Notes |
 | --- | --- | --- |
 | F0 visual directions | **direction-a approved for polish path** | Hierarchy A (COO desk) selected for visual redesign. B/C remain comparison artifacts. |
-| F0 visual polish (A) | **landed 2026-07-13** | Premium dark Linear/Raycast craft on `shared.css` + `direction-a.html`. Commit message: `docs(frontend): polish Hermes F0 direction-a to premium dark COO craft`. |
+| F0 visual polish (A) | **superseded by v3** | 2026-07-13 Linear/Raycast craft was user-rejected (AI 味 + skinny mid column). |
+| F0 v3 finance redesign (A) | **landed 2026-07-13** | **v3 finance/crypto redesign after user craft rejection.** Binance/Revolut/xAI desk DNA; full-width stage; horizontal top nav; amber CTAs; no purple haze / no permanent 288px right rail. |
 | F0 independent review | **completed 2026-07-13** | UX pass/fail recorded below (pre-polish). Package was Ready for user selection; user chose A for craft pass. |
-| F1 clickable prototype | **draft ready — awaiting user gate** | Full-state catalogs + walkthrough under `f1/`. Not approved. |
+| F1 clickable prototype | **draft ready — awaiting user gate** | Full-state catalogs + walkthrough under `f1/`. Aligned to v3 finance desk shell. **Not approved.** |
 | F2 production shell | not started | Blocked on F1 written approval + candidate-integrity Task 5 types. |
 
 ### F0 decision
 
-- status: `approved`
+- status: `approved` (stem) · craft **v3 redesign after user rejection**
 - selected stem: `direction-a`
 - approver: `user`
 - date: `2026-07-13`
 - adjustments (explicit user intent):
-  1. Keep direction-a COO desk layout hierarchy (action and status first).
-  2. Visual craft was unacceptable; require substantial premium redesign.
-  3. Study excellent systems from VoltAgent/awesome-design-md (Linear, Raycast, Superhuman, Vercel, Resend, VoltAgent dark product UIs).
-  4. Professional frontend agent owns visual craft; not a minor CSS tweak.
-  5. Polish landed in commit series after approval: premium dark COO craft for `direction-a`.
+  1. Keep direction-a COO hierarchy (safety → attention/action → status → work → result → disabled composer).
+  2. Linear-purple “AI product” craft rejected; too much AI 味; middle column felt thin/uncomfortable.
+  3. Re-reference finance/crypto DNA (Binance, Coinbase, Revolut, Kraken) + non-purple AI restraint (xAI, Claude coral, Ollama mono).
+  4. Kill permanent right rail + fat side-nav combo; full-width main stage (≥1100px content at 1440).
+  5. Amber/yellow for attention/money CTAs; blue only for secondary links; Hermes purple only as flat brand mark.
 
 ### F1 decision
 
 - status: `draft` — **not approved**
 - package: [`f1/prototype.html`](./f1/prototype.html) + [`f1/prototype.css`](./f1/prototype.css) + [`f1/states/`](./f1/states/)
-- visual base: approved F0 `direction-a` premium dark COO craft (Linear DNA, Hermes `#9085E9`)
+- visual base: F0 `direction-a` **v3 finance/crypto trading desk** (Binance canvas `#0b0e11` / surface `#1e2329`, amber CTAs)
 - stop: written user approval required before any `src/frontend/app` / production shell work from this package
 
 ---
@@ -46,7 +47,7 @@ Shared tokens and breakpoints: [`f0/shared.css`](./f0/shared.css)
 
 | Stem | File | Theme | Hierarchy emphasis |
 | --- | --- | --- | --- |
-| `direction-a` | [`f0/direction-a.html`](./f0/direction-a.html) | **COO desk** | Action and status first (KPI strip, attention card, values rail) |
+| `direction-a` | [`f0/direction-a.html`](./f0/direction-a.html) | **COO trading desk (v3)** | Full-width stage · horizontal top nav · attention full width · 值守 bottom strip |
 | `direction-b` | [`f0/direction-b.html`](./f0/direction-b.html) | **Research timeline** | Change and progress first (pipeline steps + chronological stream) |
 | `direction-c` | [`f0/direction-c.html`](./f0/direction-c.html) | **Quiet split canvas** | Conversation and result first; idle still answers safety / action / current work / recent result in five seconds |
 
@@ -67,9 +68,9 @@ Identical fixed content (comparison is hierarchy, not copy):
 
 Responsive behavior uses **real CSS breakpoints** (not whole-UI `transform: scale`):
 
-- ~1440 desktop with secondary panel  
-- ~1280 laptop (secondary panel collapses at `max-width: 1279px`)  
-- ~768 tablet stack  
+- ~1440 desktop full-width stage (main content ≥1100px; no permanent 288px right rail)  
+- ~1280 laptop one strong main column  
+- ~768 tablet stack · horizontal nav → mobile tabs  
 - ~390 phone stack  
 
 ---
@@ -81,7 +82,7 @@ Local-only clickable package (no production imports, no network beyond the stati
 | Path | Role |
 | --- | --- |
 | [`f1/prototype.html`](./f1/prototype.html) | COO desk shell + walkthrough + state matrix |
-| [`f1/prototype.css`](./f1/prototype.css) | Polished F0-A tokens / breakpoints / mobile order |
+| [`f1/prototype.css`](./f1/prototype.css) | v3 finance-desk tokens / full-width shell / mobile order |
 | [`f1/states/home.json`](./f1/states/home.json) | `empty/loading/normal/degraded/hermes_offline` |
 | [`f1/states/conversation.json`](./f1/states/conversation.json) | `sending/queued/streaming/reconnecting/stopping/reconciling/failed/quota/fallback` |
 | [`f1/states/tasks.json`](./f1/states/tasks.json) | `queued/running/waiting_gate/stop_requested/reconciling/completed/partial/failed/stopped` |

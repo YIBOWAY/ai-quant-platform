@@ -3,47 +3,47 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>F0 Direction A — COO desk · Hermes Workbench</title>
+  <title>F0 Direction A — Trading desk · Hermes Workbench</title>
   <link rel="stylesheet" href="./shared.css" />
   <style>
-    /* Direction A: COO desk — action and status first · Linear/Raycast craft */
-    .proto-a {
-      grid-template-columns: 228px minmax(0, 1fr) minmax(0, 288px);
-      grid-template-rows: auto 1fr auto;
-      min-height: calc(100vh - 36px);
-      width: 100%;
-      max-width: 100vw;
-    }
+    /* Direction A v3: finance/crypto COO trading desk
+       Full-width main stage · horizontal top nav · no permanent right rail */
 
-    /* —— Nav rail —— */
-    .nav-rail {
-      grid-column: 1;
-      grid-row: 1 / -1;
-      border-right: 1px solid var(--line);
-      background: var(--surface);
-      padding: 16px 12px;
+    .proto-a {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      min-height: calc(100vh - 32px);
+      width: 100%;
+      max-width: 100vw;
+      background: var(--bg);
+    }
+
+    /* —— Top bar: brand | horizontal nav | system chips —— */
+    .top-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 20px;
+      min-height: 52px;
+      padding: 8px var(--stage-pad-x);
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
     }
 
     .brand {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 6px 10px 16px;
-      border-bottom: 1px solid var(--line);
-      margin-bottom: 12px;
+      flex-shrink: 0;
+      margin-right: 8px;
     }
 
+    /* Flat brand mark only — no glow, no haze */
     .brand-mark {
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
       background: var(--hermes);
-      box-shadow:
-        0 0 0 1px rgba(144, 133, 233, 0.35),
-        0 0 20px rgba(144, 133, 233, 0.18);
       flex-shrink: 0;
       position: relative;
     }
@@ -51,37 +51,46 @@
     .brand-mark::after {
       content: "";
       position: absolute;
-      inset: 7px;
-      border-radius: 3px;
-      background: rgba(1, 1, 2, 0.35);
+      inset: 5px;
+      border-radius: 2px;
+      background: rgba(11, 14, 17, 0.4);
     }
 
     .brand strong {
       display: block;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 600;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.01em;
       color: var(--text);
+      line-height: 1.2;
     }
 
     .brand span {
       font-size: 11px;
       color: var(--muted);
+      font-family: var(--mono);
       letter-spacing: 0.02em;
     }
 
-    .nav-item {
+    .top-nav {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 10px;
+      gap: 2px;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .nav-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       min-height: 44px;
-      padding: 0 12px;
+      padding: 0 14px;
       border-radius: var(--radius-md);
       border: 1px solid transparent;
       color: var(--muted-readable);
       background: transparent;
-      text-align: left;
-      width: 100%;
       font-size: 13px;
       font-weight: 500;
       transition: background var(--ease), color var(--ease), border-color var(--ease);
@@ -92,96 +101,101 @@
       color: var(--text);
     }
 
+    /* Selected: amber edge, not lavender soft chrome */
     .nav-item[aria-current="page"] {
-      background: var(--hermes-soft);
-      border-color: var(--hermes-border);
+      background: var(--accent-soft);
+      border-color: var(--accent-border);
       color: var(--text);
     }
 
-    .nav-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--line-strong);
-      flex-shrink: 0;
-    }
-
-    .nav-item[aria-current="page"] .nav-dot {
-      background: var(--hermes);
-      box-shadow: 0 0 0 3px rgba(144, 133, 233, 0.2);
-    }
-
     .nav-item .badge {
-      margin-left: auto;
-      min-height: 20px;
-      min-width: 20px;
+      min-height: 18px;
+      min-width: 18px;
       padding: 0 6px;
-      border-radius: var(--radius-pill);
-      background: var(--warning-soft);
-      border: 1px solid var(--warning-border);
-      color: var(--warning);
+      border-radius: var(--radius-sm);
+      background: var(--accent);
+      border: none;
+      color: var(--accent-ink);
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 700;
       font-family: var(--mono);
       display: inline-flex;
       align-items: center;
       justify-content: center;
     }
 
-    .nav-spacer {
-      flex: 1;
+    .sys-chips {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      flex-shrink: 0;
     }
 
-    .nav-foot {
-      margin-top: 8px;
-      padding: 12px 10px 4px;
-      border-top: 1px solid var(--line);
-      font-size: 11px;
-      color: var(--muted);
-      line-height: 1.4;
-    }
-
-    .nav-foot code {
+    .sys-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line);
+      background: var(--bg);
       font-family: var(--mono);
-      font-size: 10px;
-      color: var(--ink-tertiary);
+      font-size: 11px;
+      color: var(--muted-readable);
+      white-space: nowrap;
     }
 
-    /* —— Main column —— */
-    .main-col {
-      grid-column: 2;
-      grid-row: 1 / -1;
+    .sys-chip .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--success);
+      flex-shrink: 0;
+    }
+
+    .sys-chip.warn .dot {
+      background: var(--warning);
+    }
+
+    .sys-chip.danger .dot {
+      background: var(--danger);
+    }
+
+    /* —— Full-width main stage —— */
+    .main-stage {
       display: flex;
       flex-direction: column;
+      flex: 1;
       min-width: 0;
       min-height: 0;
-      max-width: 100%;
-      overflow-x: clip;
-      background: var(--bg);
+      width: 100%;
     }
 
     .ops-header {
-      padding: 22px 28px 16px;
+      padding: 18px var(--stage-pad-x) 14px;
       border-bottom: 1px solid var(--line);
-      background:
-        radial-gradient(ellipse 80% 120% at 0% 0%, rgba(144, 133, 233, 0.07), transparent 55%),
-        var(--bg);
+      background: var(--bg);
     }
 
     .status-row {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-top: 14px;
+      margin-top: 12px;
     }
 
+    /* KPI row — equal cells, full stage width */
     .kpi-strip {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
-      padding: 14px 28px;
+      padding: 14px var(--stage-pad-x);
       border-bottom: 1px solid var(--line);
       background: var(--bg);
+      width: 100%;
     }
 
     .kpi {
@@ -189,33 +203,32 @@
       border-radius: var(--radius-lg);
       background: var(--surface);
       padding: 14px 16px;
-      min-height: 84px;
-      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
-      transition: border-color var(--ease);
+      min-height: 88px;
     }
 
     .kpi .k {
       font-size: 11px;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
       color: var(--muted);
       margin: 0 0 8px;
       font-weight: 500;
+      font-family: var(--mono);
     }
 
     .kpi .v {
       margin: 0;
-      font-size: 17px;
+      font-size: 22px;
       font-weight: 600;
-      letter-spacing: -0.025em;
+      letter-spacing: -0.02em;
       color: var(--text);
-      line-height: 1.25;
+      line-height: 1.2;
+      font-variant-numeric: tabular-nums;
     }
 
-    /* Machine status/code values — mono chip density, not display type */
     .kpi .v.mono {
       font-family: var(--mono);
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 500;
       letter-spacing: -0.01em;
     }
@@ -229,9 +242,8 @@
 
     .kpi.warn {
       border-color: var(--warning-border);
-      background:
-        linear-gradient(180deg, rgba(240, 180, 41, 0.06), transparent 60%),
-        var(--surface);
+      border-left: 3px solid var(--accent);
+      background: var(--surface);
     }
 
     .kpi.warn .v {
@@ -239,28 +251,31 @@
     }
 
     .content-a {
-      padding: 20px 28px 28px;
+      padding: 16px var(--stage-pad-x) 24px;
       overflow: auto;
       flex: 1;
-    }
-
-    .desk-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
-      gap: 12px;
-      align-items: start;
-      min-width: 0;
       width: 100%;
-    }
-
-    .desk-grid > * {
       min-width: 0;
-      max-width: 100%;
     }
 
-    .stack-col {
+    /* Attention full width → two comfortable cards below */
+    .desk-stack {
       display: grid;
       gap: 12px;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .two-up {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 12px;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .two-up > * {
+      min-width: 0;
     }
 
     .card p,
@@ -270,18 +285,18 @@
       word-break: break-word;
     }
 
-    /* Attention card — single chromatic lift, no rainbow */
+    /* Attention — full width, amber left edge (exchange alert) */
     .attention-card {
       border-color: var(--warning-border);
-      background:
-        linear-gradient(165deg, rgba(240, 180, 41, 0.07) 0%, transparent 48%),
-        var(--surface);
-      padding: 18px;
+      border-left: 3px solid var(--accent);
+      background: var(--surface);
+      padding: 18px 20px;
+      width: 100%;
     }
 
     .attention-card h2 {
       font-size: 15px;
-      letter-spacing: -0.015em;
+      letter-spacing: -0.01em;
     }
 
     .attention-card .id-mono {
@@ -331,72 +346,63 @@
       letter-spacing: -0.01em;
     }
 
-    /* Composer dock */
-    .composer-dock {
-      border-top: 1px solid var(--line);
-      padding: 12px 28px 16px;
-      background: var(--surface);
+    /* 值守 as bottom strip — not a mid-width-stealing rail */
+    .watch-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 4px;
+      padding-top: 4px;
     }
 
-    /* Secondary values rail */
-    .secondary-panel {
-      grid-column: 3;
-      grid-row: 1 / -1;
-      border-left: 1px solid var(--line);
-      background: var(--surface);
-      padding: 20px 16px;
-      overflow: auto;
-    }
-
-    .secondary-panel h2 {
-      margin: 0 0 14px;
+    .watch-strip h2.watch-label {
+      grid-column: 1 / -1;
+      margin: 0 0 4px;
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       color: var(--muted);
       font-weight: 600;
+      font-family: var(--mono);
     }
 
-    .side-list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: grid;
-      gap: 8px;
-    }
-
-    .side-list li {
+    .watch-item {
       border: 1px solid var(--line);
       border-radius: var(--radius-md);
       padding: 12px 14px;
-      background: var(--bg);
-      transition: border-color var(--ease);
+      background: var(--surface);
+      min-width: 0;
     }
 
-    .side-list li:hover {
-      border-color: var(--line-strong);
-    }
-
-    .side-list strong {
+    .watch-item strong {
       display: block;
       font-size: 12px;
       font-weight: 600;
       margin-bottom: 4px;
-      letter-spacing: -0.01em;
       color: var(--text);
     }
 
-    .side-list span {
+    .watch-item span {
       font-size: 12px;
       color: var(--muted-readable);
       line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    /* Composer dock — full stage width */
+    .composer-dock {
+      border-top: 1px solid var(--line);
+      padding: 12px var(--stage-pad-x) 16px;
+      background: var(--surface);
+      width: 100%;
     }
 
     /* Conversation */
     .thread {
       display: grid;
       gap: 10px;
-      max-width: 720px;
+      width: 100%;
+      max-width: none;
     }
 
     .msg {
@@ -404,12 +410,12 @@
       border-radius: var(--radius-lg);
       padding: 14px 16px;
       background: var(--surface);
-      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
     }
 
     .msg.user {
-      background: var(--hermes-soft);
-      border-color: var(--hermes-border);
+      background: var(--surface);
+      border-color: var(--line-strong);
+      border-left: 3px solid var(--text-secondary);
     }
 
     .msg .who {
@@ -419,6 +425,7 @@
       text-transform: uppercase;
       color: var(--muted);
       margin: 0 0 8px;
+      font-family: var(--mono);
     }
 
     .msg p {
@@ -440,31 +447,31 @@
       align-items: center;
       padding: 12px 14px;
       border-radius: var(--radius-md);
-      border: 1px solid var(--hermes-border);
-      background: var(--hermes-soft);
-      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--line-strong);
+      background: var(--surface);
+      margin-top: 12px;
       font-size: 13px;
       color: var(--text-secondary);
       line-height: 1.4;
     }
 
-    /* Approval */
+    /* Approval — full stage, amber edge */
     .approval-hero {
       border: 1px solid var(--warning-border);
+      border-left: 3px solid var(--accent);
       border-radius: var(--radius-lg);
       padding: 20px;
-      background:
-        linear-gradient(180deg, rgba(240, 180, 41, 0.07), transparent 42%),
-        var(--surface);
-      max-width: 680px;
-      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
+      background: var(--surface);
+      max-width: none;
+      width: 100%;
     }
 
     .approval-hero h2 {
       margin: 10px 0 8px;
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 600;
-      letter-spacing: -0.03em;
+      letter-spacing: -0.02em;
       color: var(--text);
     }
 
@@ -477,6 +484,7 @@
 
     .field-grid {
       display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
       margin: 16px 0;
     }
@@ -486,16 +494,18 @@
       border-radius: var(--radius-md);
       padding: 12px 14px;
       background: var(--bg);
+      min-width: 0;
     }
 
     .field label {
       display: block;
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.04em;
       color: var(--muted);
       margin-bottom: 6px;
       font-weight: 500;
+      font-family: var(--mono);
     }
 
     .field .val {
@@ -504,16 +514,17 @@
       word-break: break-all;
       color: var(--text-secondary);
       line-height: 1.45;
+      font-variant-numeric: tabular-nums;
     }
 
-    /* Result sheet */
+    /* Result sheet — full stage */
     .result-sheet {
-      max-width: 800px;
+      max-width: none;
+      width: 100%;
       border: 1px solid var(--line);
       border-radius: var(--radius-lg);
       overflow: hidden;
       background: var(--surface);
-      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
     }
 
     .result-sheet > header {
@@ -529,9 +540,9 @@
 
     .result-sheet > header h2 {
       margin: 0;
-      font-size: 17px;
+      font-size: 16px;
       font-weight: 600;
-      letter-spacing: -0.025em;
+      letter-spacing: -0.015em;
     }
 
     .result-sub {
@@ -558,6 +569,7 @@
       border-radius: var(--radius-md);
       padding: 12px;
       background: var(--bg);
+      min-width: 0;
     }
 
     .metric .k {
@@ -567,6 +579,7 @@
       text-transform: uppercase;
       color: var(--muted);
       font-weight: 500;
+      font-family: var(--mono);
     }
 
     .metric .v {
@@ -576,6 +589,7 @@
       color: var(--text-secondary);
       word-break: break-all;
       line-height: 1.4;
+      font-variant-numeric: tabular-nums;
     }
 
     .result-note {
@@ -585,7 +599,7 @@
       line-height: 1.55;
     }
 
-    /* Mobile tabs — real buttons */
+    /* Mobile tabs under 768 */
     .mobile-tabs {
       display: none;
       gap: 6px;
@@ -614,7 +628,6 @@
       font-weight: 500;
       background: transparent;
       white-space: nowrap;
-      transition: background var(--ease), border-color var(--ease), color var(--ease);
     }
 
     .mobile-tabs button:hover {
@@ -624,26 +637,22 @@
 
     .mobile-tabs button[aria-current="page"] {
       color: var(--text);
-      border-color: var(--hermes-border);
-      background: var(--hermes-soft);
+      border-color: var(--accent-border);
+      background: var(--accent-soft);
     }
 
-    @media (max-width: 1279px) {
-      .proto-a {
-        grid-template-columns: 200px minmax(0, 1fr);
+    @media (max-width: 1100px) {
+      .watch-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      .ops-header,
-      .content-a,
-      .composer-dock,
-      .kpi-strip {
-        padding-left: 20px;
-        padding-right: 20px;
+      .field-grid {
+        grid-template-columns: 1fr;
       }
     }
 
-    @media (max-width: 1024px) {
-      .desk-grid {
+    @media (max-width: 900px) {
+      .two-up {
         grid-template-columns: 1fr;
       }
 
@@ -654,14 +663,15 @@
       .metric-row {
         grid-template-columns: 1fr;
       }
+
+      .sys-chips {
+        width: 100%;
+        margin-left: 0;
+      }
     }
 
     @media (max-width: 767px) {
-      .proto-a {
-        display: block;
-      }
-
-      .nav-rail {
+      .top-nav {
         display: none;
       }
 
@@ -669,16 +679,12 @@
         display: flex;
       }
 
-      .ops-header,
-      .content-a,
-      .composer-dock,
-      .kpi-strip {
-        padding-left: 16px;
-        padding-right: 16px;
+      .watch-strip {
+        grid-template-columns: 1fr;
       }
 
       .ops-header {
-        padding-top: 18px;
+        padding-top: 16px;
       }
     }
 
@@ -686,6 +692,11 @@
       .mobile-tabs {
         display: none;
       }
+    }
+
+    /* Idle stage uses contents so header/kpi/content flow as stage children */
+    body[data-view="idle"] [data-panel="idle"] {
+      display: contents;
     }
   </style>
 </head>
@@ -700,11 +711,11 @@
     <button type="button" data-set-view="conversation" aria-pressed="false">对话/执行</button>
     <button type="button" data-set-view="approval" aria-pressed="false">审批</button>
     <button type="button" data-set-view="result" aria-pressed="false">结果</button>
-    <span class="meta-note">Direction A · COO desk · action / status first</span>
+    <span class="meta-note">Direction A · v3 finance desk · full-width stage</span>
   </div>
 
   <main class="prototype proto-a">
-    <nav class="nav-rail desktop-only" aria-label="Hermes 主导航">
+    <header class="top-bar" aria-label="Hermes 交易台顶栏">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"></div>
         <div>
@@ -712,104 +723,122 @@
           <span>Research COO</span>
         </div>
       </div>
-      <button type="button" class="nav-item" aria-current="page">
-        <span class="nav-dot" aria-hidden="true"></span> 今日
-        <span class="badge" aria-label="1 项待确认">1</span>
-      </button>
-      <button type="button" class="nav-item">
-        <span class="nav-dot" aria-hidden="true"></span> 任务
-      </button>
-      <button type="button" class="nav-item">
-        <span class="nav-dot" aria-hidden="true"></span> 审批
-        <span class="badge">1</span>
-      </button>
-      <button type="button" class="nav-item">
-        <span class="nav-dot" aria-hidden="true"></span> 结果
-      </button>
-      <div class="nav-spacer" aria-hidden="true"></div>
-      <div class="nav-foot">
-        F0 prototype · read-only<br />
-        <code>paper only</code>
+      <nav class="top-nav desktop-only" aria-label="Hermes 主导航">
+        <button type="button" class="nav-item" aria-current="page">
+          今日
+          <span class="badge" aria-label="1 项待确认">1</span>
+        </button>
+        <button type="button" class="nav-item">任务</button>
+        <button type="button" class="nav-item">
+          审批
+          <span class="badge">1</span>
+        </button>
+        <button type="button" class="nav-item">结果</button>
+      </nav>
+      <div class="sys-chips" aria-label="系统状态">
+        <span class="sys-chip"><span class="dot" aria-hidden="true"></span>API OK</span>
+        <span class="sys-chip"><span class="dot" aria-hidden="true"></span>paper</span>
+        <span class="sys-chip warn"><span class="dot" aria-hidden="true"></span>kill on</span>
       </div>
-    </nav>
+    </header>
 
-    <div class="main-col">
-      <div class="mobile-tabs" role="navigation" aria-label="移动端分区">
-        <button type="button" aria-current="page">今日</button>
-        <button type="button">任务</button>
-        <button type="button">审批 · 1</button>
-        <button type="button">结果</button>
-      </div>
+    <div class="mobile-tabs" role="navigation" aria-label="移动端分区">
+      <button type="button" aria-current="page">今日</button>
+      <button type="button">任务</button>
+      <button type="button">审批 · 1</button>
+      <button type="button">结果</button>
+    </div>
 
+    <div class="main-stage">
       <!-- IDLE TODAY -->
       <div data-panel="idle">
-        <header class="ops-header">
-          <section aria-labelledby="today-title">
-            <p class="eyebrow">7 月 13 日 · 今日</p>
-            <h1 class="lede" id="today-title">1 项需要你确认，其余研究运行正常</h1>
-            <div class="status-row" aria-label="运行态势">
-              <span class="pill pill-warn">待确认 1</span>
-              <span class="pill pill-ok">自动化 3/4</span>
-              <span class="pill pill-warn">最近结果 · degraded</span>
-            </div>
-          </section>
-        </header>
-
-        <div class="kpi-strip" aria-label="关键指标">
-          <div class="kpi warn">
-            <p class="k">需要行动</p>
-            <p class="v">1 项审批</p>
-            <p class="s">研究审批项 · Gate 2 CAS</p>
-          </div>
-          <div class="kpi">
-            <p class="k">自动化健康</p>
-            <p class="v">3 / 4</p>
-            <p class="s">1 项已过期</p>
-          </div>
-          <div class="kpi">
-            <p class="k">最近结果</p>
-            <p class="v mono">completed_degraded</p>
-            <p class="s">AAPL 风险与新因子计划</p>
-          </div>
-        </div>
-
-        <div class="content content-a">
-          <div class="desk-grid">
-            <article class="card attention-card">
-              <h2>研究审批项</h2>
-              <p>需要人工 Gate 2 确认后，才可进入后续研究路径。</p>
-              <p class="id-mono">factor-momentum_20d_reversal-323b045e4b</p>
-              <div class="card-actions">
-                <button type="button" class="btn btn-warn">查看准确摘要</button>
-                <button type="button" class="btn">打开审批页</button>
+          <header class="ops-header">
+            <section aria-labelledby="today-title">
+              <p class="eyebrow">7 月 13 日 · 今日</p>
+              <h1 class="lede" id="today-title">1 项需要你确认，其余研究运行正常</h1>
+              <div class="status-row" aria-label="运行态势">
+                <span class="pill pill-warn">待确认 1</span>
+                <span class="pill pill-ok">自动化 3/4</span>
+                <span class="pill pill-warn">最近结果 · degraded</span>
               </div>
-            </article>
+            </section>
+          </header>
 
-            <div class="stack-col">
-              <article class="card">
-                <div class="auto-row">
-                  <div class="left">
-                    <h2>自动化 3/4 正常</h2>
-                    <p>weekly_review 已过期；最近成功 2026-07-05T01:00:11Z</p>
-                  </div>
-                  <span class="pill pill-warn">stale</span>
-                </div>
-                <details class="tech">
-                  <summary>技术详情</summary>
-                  <code>0 9 * * 0 · run weekly-review-2026-07-13-01</code>
-                </details>
-              </article>
-
-              <article class="card">
-                <h2>最近结果</h2>
-                <div class="result-line">
-                  <p class="title">AAPL 风险与新因子计划</p>
-                  <p><span class="pill pill-warn">completed_degraded</span></p>
-                </div>
-              </article>
+          <div class="kpi-strip" aria-label="关键指标">
+            <div class="kpi warn">
+              <p class="k">需要行动</p>
+              <p class="v">1 项审批</p>
+              <p class="s">研究审批项 · Gate 2 CAS</p>
+            </div>
+            <div class="kpi">
+              <p class="k">自动化健康</p>
+              <p class="v">3 / 4</p>
+              <p class="s">1 项已过期</p>
+            </div>
+            <div class="kpi">
+              <p class="k">最近结果</p>
+              <p class="v mono">completed_degraded</p>
+              <p class="s">AAPL 风险与新因子计划</p>
             </div>
           </div>
-        </div>
+
+          <div class="content content-a">
+            <div class="desk-stack">
+              <article class="card attention-card">
+                <h2>研究审批项</h2>
+                <p>需要人工 Gate 2 确认后，才可进入后续研究路径。</p>
+                <p class="id-mono">factor-momentum_20d_reversal-323b045e4b</p>
+                <div class="card-actions">
+                  <button type="button" class="btn btn-warn">查看准确摘要</button>
+                  <button type="button" class="btn">打开审批页</button>
+                </div>
+              </article>
+
+              <div class="two-up">
+                <article class="card">
+                  <div class="auto-row">
+                    <div class="left">
+                      <h2>自动化 3/4 正常</h2>
+                      <p>weekly_review 已过期；最近成功 2026-07-05T01:00:11Z</p>
+                    </div>
+                    <span class="pill pill-warn">stale</span>
+                  </div>
+                  <details class="tech">
+                    <summary>技术详情</summary>
+                    <code>0 9 * * 0 · run weekly-review-2026-07-13-01</code>
+                  </details>
+                </article>
+
+                <article class="card">
+                  <h2>最近结果</h2>
+                  <div class="result-line">
+                    <p class="title">AAPL 风险与新因子计划</p>
+                    <p><span class="pill pill-warn">completed_degraded</span></p>
+                  </div>
+                </article>
+              </div>
+
+              <section class="watch-strip" aria-label="值守摘要">
+                <h2 class="watch-label">值守</h2>
+                <div class="watch-item">
+                  <strong>安全</strong>
+                  <span>仅全局顶栏展示 · 此处不重复 paper/live/kill</span>
+                </div>
+                <div class="watch-item">
+                  <strong>当前工作</strong>
+                  <span>1 项研究审批 · Gate 2 待人类 CAS</span>
+                </div>
+                <div class="watch-item">
+                  <strong>异常自动化</strong>
+                  <span>weekly_review 已过期（压缩为单行）</span>
+                </div>
+                <div class="watch-item">
+                  <strong>最近结果</strong>
+                  <span>AAPL 计划 · completed_degraded</span>
+                </div>
+              </section>
+            </div>
+          </div>
       </div>
 
       <!-- CONVERSATION / EXECUTION -->
@@ -926,28 +955,6 @@
         </div>
       </section>
     </div>
-
-    <aside class="secondary-panel" aria-label="值守摘要">
-      <h2>值守面板</h2>
-      <ul class="side-list">
-        <li>
-          <strong>安全</strong>
-          <span>仅全局顶栏展示 · 此处不重复 paper/live/kill</span>
-        </li>
-        <li>
-          <strong>当前工作</strong>
-          <span>1 项研究审批 · Gate 2 待人类 CAS</span>
-        </li>
-        <li>
-          <strong>异常自动化</strong>
-          <span>weekly_review 已过期（压缩为单行，技术细节折叠）</span>
-        </li>
-        <li>
-          <strong>最近结果</strong>
-          <span>AAPL 计划 · completed_degraded</span>
-        </li>
-      </ul>
-    </aside>
   </main>
 
   <script>
