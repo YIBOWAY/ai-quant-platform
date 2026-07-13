@@ -419,7 +419,7 @@ details.tech code {
 
 .composer textarea:disabled {
   color: var(--muted-readable);
-  background: #0a0a0b;
+  background: var(--bg);
   border-color: var(--line);
 }
 

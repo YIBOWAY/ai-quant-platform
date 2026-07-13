@@ -17,6 +17,7 @@
 
     /* —— Nav rail —— */
     .nav-rail {
+      grid-column: 1;
       grid-row: 1 / -1;
       border-right: 1px solid var(--line);
       background: var(--surface);
@@ -148,6 +149,8 @@
 
     /* —— Main column —— */
     .main-col {
+      grid-column: 2;
+      grid-row: 1 / -1;
       display: flex;
       flex-direction: column;
       min-width: 0;
@@ -209,6 +212,14 @@
       line-height: 1.25;
     }
 
+    /* Machine status/code values — mono chip density, not display type */
+    .kpi .v.mono {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+
     .kpi .s {
       margin: 6px 0 0;
       font-size: 12px;
@@ -221,7 +232,6 @@
       background:
         linear-gradient(180deg, rgba(240, 180, 41, 0.06), transparent 60%),
         var(--surface);
-      box-shadow: inset 2px 0 0 var(--warning);
     }
 
     .kpi.warn .v {
@@ -330,6 +340,7 @@
 
     /* Secondary values rail */
     .secondary-panel {
+      grid-column: 3;
       grid-row: 1 / -1;
       border-left: 1px solid var(--line);
       background: var(--surface);
@@ -739,7 +750,7 @@
             <div class="status-row" aria-label="运行态势">
               <span class="pill pill-warn">待确认 1</span>
               <span class="pill pill-ok">自动化 3/4</span>
-              <span class="pill pill-hermes">最近结果 · degraded</span>
+              <span class="pill pill-warn">最近结果 · degraded</span>
             </div>
           </section>
         </header>
@@ -757,7 +768,7 @@
           </div>
           <div class="kpi">
             <p class="k">最近结果</p>
-            <p class="v">completed_degraded</p>
+            <p class="v mono">completed_degraded</p>
             <p class="s">AAPL 风险与新因子计划</p>
           </div>
         </div>

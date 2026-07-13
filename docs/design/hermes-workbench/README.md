@@ -20,15 +20,17 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 
 ### F0 decision
 
-| Field | Value |
-| --- | --- |
-| status | `approved` (hierarchy + polish path) |
-| selected | `direction-a` |
-| approver | `user` |
-| date | `2026-07-13` |
-| adjustments | Visual craft only — Linear near-black canvas, hairline panels, Hermes `#9085E9` sparingly; keep exact product facts; mobile tabs as real buttons; disabled composer contrast raised |
+- status: `approved`
+- selected stem: `direction-a`
+- approver: `user`
+- date: `2026-07-13`
+- adjustments (explicit user intent):
+  1. Keep direction-a COO desk layout hierarchy (action and status first).
+  2. Visual craft was unacceptable; require substantial premium redesign.
+  3. Study excellent systems from VoltAgent/awesome-design-md (Linear, Raycast, Superhuman, Vercel, Resend, VoltAgent dark product UIs).
+  4. Professional frontend agent owns visual craft; not a minor CSS tweak.
+  5. Polish landed in commit series after approval: premium dark COO craft for `direction-a`.
 
-F1 must not invent new product facts beyond the fixed comparison content below.
 
 ---
 
