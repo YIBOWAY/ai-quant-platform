@@ -122,11 +122,19 @@ def _git_repo(tmp_path: Path) -> Path:
     (tests / ".gitkeep").write_text("", encoding="utf-8")
     (repo / "README.md").write_text("fixture repo\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    # Pin commit timestamps so two fixture repos with identical trees share one
+    # base SHA; promotion_id is derived from base_commit and must stay stable.
+    fixed_git_env = {
+        **os.environ,
+        "GIT_AUTHOR_DATE": "1700000000 +0000",
+        "GIT_COMMITTER_DATE": "1700000000 +0000",
+    }
     subprocess.run(
         ["git", "commit", "-m", "base"],
         cwd=repo,
         check=True,
         capture_output=True,
+        env=fixed_git_env,
     )
     return repo
 
@@ -295,9 +303,16 @@ def test_prepare_is_idempotent_and_creates_no_commit(tmp_path: Path) -> None:
 def test_patch_manifest_deterministic_across_roots_and_clock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from quant_system.agent import candidate_pool as pool_mod
+    from quant_system.agent import models as models_mod
     from quant_system.agent import promotion_workspace as pw
 
+    # Candidate metadata/locks bind utc_now_iso() (datetime.now), not time.time.
+    # Freeze both so identical factor bytes yield identical digests across roots.
+    fixed_iso = "2024-01-01T00:00:00Z"
     monkeypatch.setattr(time, "time", lambda: 1_700_000_000.0)
+    monkeypatch.setattr(models_mod, "utc_now_iso", lambda: fixed_iso)
+    monkeypatch.setattr(pool_mod, "utc_now_iso", lambda: fixed_iso)
 
     results = []
     for label in ("a", "b"):

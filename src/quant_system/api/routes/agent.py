@@ -212,6 +212,8 @@ def _migration_source_preview(pool: CandidatePool, candidate_id: str) -> str | N
     """Exact-byte first-artifact preview for migration_required items only."""
     from quant_system.agent.candidate_manifest import (
         CandidateIntegrityError as _CIE,
+    )
+    from quant_system.agent.candidate_manifest import (
         build_candidate_manifest,
     )
 

@@ -1958,12 +1958,12 @@ def agent_promote_candidate(
     """Prepare an isolated Gate-3 review worktree and scoped patch; NEVER commits."""
     from quant_system.agent.promotion_workspace import (
         PromotionWorkspaceError,
+        _human_instructions,
         default_promotion_root,
         prepare_cli_payload,
         prepare_promotion_workspace,
         resolve_managed_worktree_root,
         resolve_platform_repo,
-        _human_instructions,
     )
 
     try:

@@ -88,7 +88,11 @@ def test_active_candidate_consumers_do_not_hardcode_agent_run_paths() -> None:
                     if "QS_DATA_DIR" not in line:
                         continue
                     lowered = line.lower()
-                    if "candidate" in lowered or "agent_run" in lowered or "agent_output" in lowered:
+                    if (
+                        "candidate" in lowered
+                        or "agent_run" in lowered
+                        or "agent_output" in lowered
+                    ):
                         offenders.append(
                             f"{path}:{line_no}: QS_DATA_DIR near candidate context: {line.strip()}"
                         )
