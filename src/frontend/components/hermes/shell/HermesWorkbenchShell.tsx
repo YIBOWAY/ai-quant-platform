@@ -28,7 +28,7 @@ export function HermesWorkbenchShell({
       <HermesInternalNav locale={locale} />
 
       <div
-        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
         data-page-scroll-region
       >
         <div className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-4 p-4 lg:p-6">

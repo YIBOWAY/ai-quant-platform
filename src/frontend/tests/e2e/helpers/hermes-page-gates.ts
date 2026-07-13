@@ -303,56 +303,98 @@ export async function assertNoHorizontalOverflow(page: Page, viewportWidth: numb
 }
 
 /**
- * Opening/closing a visible result <details> must not hijack page scroll.
+ * Opening/closing an already-visible result <details> must not hijack page scroll.
+ * Prefers a currently closed details (page technical feed) over pre-expanded
+ * exception rows so the gate measures toggle stability, not collapse of large
+ * open blocks. Scrolls that target into the named app scroll region first, then
+ * toggles open/closed and asserts scrollTop is stable.
  */
 export async function assertTechnicalDetailDoesNotHijackScroll(page: Page) {
-  const before = await page.evaluate(() => {
-    const details = Array.from(document.querySelectorAll("details")).find((node) => {
+  const prepared = await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll("details")).filter((node) => {
       const style = window.getComputedStyle(node);
       const rect = node.getBoundingClientRect();
       return (
         style.display !== "none" &&
         style.visibility !== "hidden" &&
         rect.width > 0 &&
-        rect.height > 0
+        rect.height > 0 &&
+        Boolean(node.querySelector("summary"))
       );
     });
-    if (!details) {
+    if (candidates.length === 0) {
       return null;
     }
+    // Prefer closed technical rows; fall back to the first layout-visible details.
+    const details =
+      candidates.find((node) => !(node as HTMLDetailsElement).open) ?? candidates[0];
+    const index = candidates.indexOf(details);
     const scrollRegion =
       details.closest<HTMLElement>("[data-page-scroll-region]") ??
       document.documentElement;
+    details.scrollIntoView({ block: "center", inline: "nearest" });
     return {
-      open: details.open,
+      index,
+      open: (details as HTMLDetailsElement).open,
       scrollTop: scrollRegion.scrollTop,
       hasRegion: Boolean(details.closest("[data-page-scroll-region]")),
     };
   });
 
-  expect(before, "expected a visible <details> element for scroll gate").not.toBeNull();
-  if (!before) {
+  expect(prepared, "expected a visible <details> element for scroll gate").not.toBeNull();
+  if (!prepared) {
     return;
   }
 
-  const detailsLocator = page.locator("details").filter({ has: page.locator("summary") }).first();
+  const detailsLocator = page
+    .locator("details")
+    .filter({ has: page.locator("summary") })
+    .nth(prepared.index);
   await expect(detailsLocator).toBeVisible();
 
   const summary = detailsLocator.locator("summary").first();
-  await summary.click();
-  await summary.click();
-
-  const after = await page.evaluate(() => {
-    const details = Array.from(document.querySelectorAll("details")).find((node) => {
+  const beforeScroll = await page.evaluate((index) => {
+    const candidates = Array.from(document.querySelectorAll("details")).filter((node) => {
       const style = window.getComputedStyle(node);
       const rect = node.getBoundingClientRect();
       return (
         style.display !== "none" &&
         style.visibility !== "hidden" &&
         rect.width > 0 &&
-        rect.height > 0
+        rect.height > 0 &&
+        Boolean(node.querySelector("summary"))
       );
     });
+    const details = candidates[index] as HTMLDetailsElement | undefined;
+    if (!details) {
+      return null;
+    }
+    const scrollRegion =
+      details.closest<HTMLElement>("[data-page-scroll-region]") ??
+      document.documentElement;
+    return { open: details.open, scrollTop: scrollRegion.scrollTop };
+  }, prepared.index);
+  expect(beforeScroll).not.toBeNull();
+  if (!beforeScroll) {
+    return;
+  }
+
+  await summary.click();
+  await summary.click();
+
+  const after = await page.evaluate((index) => {
+    const candidates = Array.from(document.querySelectorAll("details")).filter((node) => {
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        Boolean(node.querySelector("summary"))
+      );
+    });
+    const details = candidates[index] as HTMLDetailsElement | undefined;
     if (!details) {
       return null;
     }
@@ -363,17 +405,17 @@ export async function assertTechnicalDetailDoesNotHijackScroll(page: Page) {
       open: details.open,
       scrollTop: scrollRegion.scrollTop,
     };
-  });
+  }, prepared.index);
 
   expect(after).not.toBeNull();
   if (!after) {
     return;
   }
 
-  expect(Math.abs(after.scrollTop - before.scrollTop)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.scrollTop - beforeScroll.scrollTop)).toBeLessThanOrEqual(1);
 
   // Restore original open state if toggle left it flipped.
-  if (after.open !== before.open) {
+  if (after.open !== beforeScroll.open) {
     await summary.click();
   }
 }

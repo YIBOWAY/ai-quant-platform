@@ -21,6 +21,33 @@ describe("buildHermesTodayModel", () => {
       exceptions: [],
     });
     expect(model.attention).toEqual([]);
+    expect(model.state).toBe("normal");
+  });
+
+  it("keeps normal posture when the only attention is a verified research approval", () => {
+    const model = buildHermesTodayModel({
+      artifacts: healthyArtifacts,
+      candidates: {
+        candidates: [
+          candidateFixture({
+            candidate_id: "factor-healthy-approval",
+            artifact_type: "factor",
+            goal: "Evaluate a healthy pending factor",
+            universe: ["AAPL"],
+            status: "pending",
+            manifest_digest: "a".repeat(64),
+            observed_manifest_digest: null,
+            approval_binding: "pending",
+            integrity_state: "verified",
+            approval_enabled: true,
+            integrity_error_code: null,
+          }),
+        ],
+      } satisfies AgentCandidatesResponse,
+    });
+    expect(model.state).toBe("normal");
+    expect(model.attention.map((item) => item.kind)).toEqual(["approval"]);
+    expect(model.automation.exceptions).toEqual([]);
   });
 
   it("promotes only failed/stale jobs and research approvals to attention", () => {

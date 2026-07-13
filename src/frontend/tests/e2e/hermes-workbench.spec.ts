@@ -10,6 +10,30 @@ test.beforeEach(() => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
 });
 
+/**
+ * Data-agnostic smoke against the isolated real temporary platform FastAPI
+ * process. Never substitutes for combined-fixture candidate/approval assertions.
+ */
+test("@real-backend-smoke Hermes shell renders safety chrome and disabled composer", async ({
+  page,
+}) => {
+  test.skip(
+    Boolean(process.env.PW_HERMES_WORKBENCH_FIXTURE),
+    "Real temporary-backend smoke must not use combined fixtures.",
+  );
+
+  const externalRequests = await installLoopbackOnlyGuard(page);
+  await page.goto("/zh/hermes", { waitUntil: "networkidle" });
+
+  await expect(page.getByTestId("global-safety-strip")).toHaveCount(1);
+  await expect(page.getByRole("status").filter({ hasText: "仅模拟" })).toHaveCount(1);
+  await expect(page.getByRole("navigation", { name: "Hermes 工作台" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "今日" })).toBeVisible();
+  await expect(page.getByText("本交付未连接 Hermes 写入能力")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
+  expect(externalRequests).toEqual([]);
+});
+
 test("@combined-fixture Hermes workbench shell keeps a single safety strip and disabled composer", async ({
   page,
 }) => {

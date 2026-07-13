@@ -43,6 +43,8 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
       className="space-y-4"
       data-hermes-today
       data-hermes-today-state={model.state}
+      data-state={model.state}
+      data-testid="hermes-today-state"
     >
       <header className="space-y-2">
         <p className="font-label-caps uppercase text-text-secondary">

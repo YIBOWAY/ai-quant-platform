@@ -370,12 +370,15 @@ function deriveState(input: {
   if (input.attention.some((item) => item.kind === "offline")) {
     return "offline";
   }
-  if (
-    input.attention.length > 0 ||
+  // Approval-only attention is healthy desk work, not a degraded posture.
+  // System degradation comes from non-approval attention, automation exceptions,
+  // degraded feed status, or automation attention.
+  const hasSystemDegradation =
+    input.attention.some((item) => item.kind !== "approval") ||
     input.automation.exceptions.length > 0 ||
     input.artifacts.read_status === "degraded" ||
-    input.automation.status === "attention"
-  ) {
+    input.automation.status === "attention";
+  if (hasSystemDegradation) {
     return "degraded";
   }
   if (
