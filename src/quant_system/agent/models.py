@@ -57,6 +57,7 @@ class CandidateArtifact(BaseModel):
     metadata_path: Path
     status: CandidateStatus = CandidateStatus.PENDING
     created_at: str = Field(default_factory=utc_now_iso)
+    manifest_digest: str | None = None
 
 
 class ReviewRecord(BaseModel):
@@ -65,3 +66,20 @@ class ReviewRecord(BaseModel):
     note: str
     reviewer: str = "manual"
     created_at: str = Field(default_factory=utc_now_iso)
+    manifest_digest: str | None = None
+
+
+class CandidateReadItem(BaseModel):
+    candidate_id: str
+    artifact_type: str | None = None
+    goal: str | None = None
+    universe: list[str] | None = None
+    status: Literal["pending", "approved", "rejected"] | None = None
+    integrity_state: Literal["verified", "migration_required", "corrupt"]
+    manifest_digest: str | None = None
+    observed_manifest_digest: str | None = None
+    approval_binding: Literal["pending", "approved", "rejected", "legacy_unbound"] | None = (
+        None
+    )
+    approval_enabled: bool = False
+    integrity_error_code: str | None = None

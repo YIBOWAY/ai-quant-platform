@@ -26,6 +26,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from quant_system.agent.candidate_pool import CandidatePool
 from quant_system.agent.promotion import CandidateLoadError, _check_source
 from quant_system.agent.safety import SafetyGate
 
@@ -58,7 +59,7 @@ class PromotionResult(BaseModel):
 def promote_candidate(
     candidate_id: str,
     *,
-    candidates_dir: Path,
+    agent_output_dir: Path,
     library_dir: Path,
     tests_dir: Path,
     promotion_date: str | None = None,
@@ -68,23 +69,31 @@ def promote_candidate(
     All preconditions are checked before the first write, so a refusal leaves
     the working tree untouched. ``promotion_date`` is injectable so tests stay
     deterministic; it defaults to today (UTC).
+
+    Callers pass the agent-output root only (never a pre-derived candidates dir).
     """
-    candidates_dir = Path(candidates_dir)
+    agent_output_dir = Path(agent_output_dir)
     library_dir = Path(library_dir)
     tests_dir = Path(tests_dir)
 
-    # 1. Human approval gate (approved.lock present, no rejected.lock).
-    if not SafetyGate(candidates_dir).allow_promotion(candidate_id):
+    # 1. Human approval gate (digest-bound structured approved.lock).
+    if not SafetyGate(agent_output_dir).allow_promotion(candidate_id):
         raise PromotionError(
             f"candidate {candidate_id!r} is not approved for promotion "
-            "(approved.lock missing or rejected.lock present); "
+            "(digest-bound approval missing or not authorized); "
             "run `agent review --decision approve` first"
         )
 
-    source_path = candidates_dir / candidate_id / "factor.py.candidate"
-    if not source_path.exists():
+    try:
+        snapshot = CandidatePool(agent_output_dir).get(candidate_id)
+    except Exception as exc:
+        raise PromotionError(
+            f"candidate {candidate_id!r} cannot be verified for promotion: {exc}"
+        ) from exc
+    source_bytes = snapshot.artifact_bytes.get("factor.py.candidate")
+    if source_bytes is None:
         raise PromotionError(f"candidate {candidate_id!r} has no factor.py.candidate")
-    source = source_path.read_text(encoding="utf-8")
+    source = source_bytes.decode("utf-8")
 
     # 2. Static AST safety allowlist (same check as the research-time loader).
     try:
@@ -117,7 +126,7 @@ def promote_candidate(
     test_path = tests_dir / f"test_{factor_id}.py"
 
     promoted_on = promotion_date or datetime.now(UTC).date().isoformat()
-    approval_note = candidates_dir / candidate_id / "approved.lock"
+    approval_note = snapshot.candidate_dir / "approved.lock"
 
     # 5. Serialize the check -> write -> regenerate-init critical section with an
     # advisory lock (review findings F2/F3). Two concurrent promotions must not

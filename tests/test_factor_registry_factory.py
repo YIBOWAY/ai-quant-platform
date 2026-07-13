@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
+from quant_system.agent.candidate_manifest import (
+    build_candidate_manifest,
+    canonical_json_bytes,
+)
 from quant_system.api.server import create_app
 from quant_system.factors import library
 from quant_system.factors.base import BaseFactor
@@ -42,12 +49,49 @@ class _StubPromotedFactor(BaseFactor):
 
 
 def _write_candidate(root, candidate_id, source, *, approved):
-    cdir = root / candidate_id
-    cdir.mkdir(parents=True)
+    """Write verified candidate under agent root or candidates dir."""
+    root = Path(root)
+    if root.name == "candidates" and root.parent.name == "agent":
+        cdir = root / candidate_id
+    else:
+        cdir = root / "agent" / "candidates" / candidate_id
+    cdir.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "candidate_id": candidate_id,
+        "task_id": "task",
+        "artifact_type": "factor",
+        "goal": "goal",
+        "universe": ["SPY"],
+        "status": "pending",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "files": ["factor.py.candidate"],
+        "safety": {
+            "auto_promotion": False,
+            "requires_human_review": True,
+            "review_status": "pending",
+        },
+    }
+    (cdir / "metadata.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8"
+    )
     (cdir / "factor.py.candidate").write_text(source, encoding="utf-8")
-    (cdir / "metadata.json").write_text("{}", encoding="utf-8")
+    manifest, digest, _ = build_candidate_manifest(cdir)
+    (cdir / "manifest.v1.json").write_bytes(
+        canonical_json_bytes(manifest.model_dump(mode="json"))
+    )
     if approved:
-        (cdir / "approved.lock").write_text("{}", encoding="utf-8")
+        lock = {
+            "schema_version": "1.0",
+            "candidate_id": candidate_id,
+            "decision": "approve",
+            "manifest_digest": digest,
+            "note": "test approval",
+            "reviewer": "manual",
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+        (cdir / "approved.lock").write_bytes(canonical_json_bytes(lock))
+    return digest
 
 
 def test_factory_default_is_examples_plus_promoted() -> None:
@@ -76,11 +120,11 @@ def test_promoted_library_factors_are_registered(monkeypatch) -> None:
 def test_approved_candidates_only_when_requested(tmp_path) -> None:
     _write_candidate(tmp_path, "cand-approved", _CANDIDATE_SRC, approved=True)
 
-    without = build_factor_registry(candidates_dir=tmp_path)
+    without = build_factor_registry(agent_output_dir=tmp_path)
     assert "wiring_test_factor" not in without.factor_ids()
 
     with_candidates = build_factor_registry(
-        include_approved_candidates=True, candidates_dir=tmp_path
+        include_approved_candidates=True, agent_output_dir=tmp_path
     )
     assert "wiring_test_factor" in with_candidates.factor_ids()
     assert with_candidates.create("wiring_test_factor") is not None
@@ -90,7 +134,7 @@ def test_pending_candidate_is_not_loaded(tmp_path) -> None:
     _write_candidate(tmp_path, "cand-pending", _CANDIDATE_SRC, approved=False)
 
     registry = build_factor_registry(
-        include_approved_candidates=True, candidates_dir=tmp_path
+        include_approved_candidates=True, agent_output_dir=tmp_path
     )
     assert "wiring_test_factor" not in registry.factor_ids()
 
@@ -98,7 +142,7 @@ def test_pending_candidate_is_not_loaded(tmp_path) -> None:
 def test_approved_candidates_requested_without_dir_is_safe(tmp_path) -> None:
     # No candidates_dir supplied: must not raise and must not load anything.
     registry = build_factor_registry(
-        include_approved_candidates=True, candidates_dir=tmp_path / "missing"
+        include_approved_candidates=True, agent_output_dir=tmp_path / "missing"
     )
     assert set(registry.factor_ids()) == _EXAMPLE_IDS
 
@@ -113,7 +157,7 @@ def test_registry_tracks_origin_per_registration_pass(monkeypatch, tmp_path) -> 
     _write_candidate(tmp_path, "cand-approved", _CANDIDATE_SRC, approved=True)
 
     registry = build_factor_registry(
-        include_approved_candidates=True, candidates_dir=tmp_path
+        include_approved_candidates=True, agent_output_dir=tmp_path
     )
 
     origins = registry.origins()

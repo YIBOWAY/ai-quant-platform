@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 import quant_system.agent.promote as promote_module
+from quant_system.agent.candidate_manifest import (
+    build_candidate_manifest,
+    canonical_json_bytes,
+)
 from quant_system.agent.promote import PromotionError, promote_candidate
 from quant_system.cli import app
 
@@ -93,19 +98,59 @@ _UNDERSCORE_ID_SRC = _FACTOR_SRC.replace(
 ).replace("WiringTestFactor", "HiddenFactor")
 
 
-def _write_candidate(root: Path, candidate_id: str, source: str, *, approved: bool = True) -> None:
-    cdir = root / candidate_id
-    cdir.mkdir(parents=True)
+def _write_candidate(root: Path, candidate_id: str, source: str, *, approved: bool = True) -> str:
+    """Write verified candidate. root may be agent root or candidates dir.
+
+    If root already ends with agent/candidates, write there; else use agent root layout.
+    """
+    root = Path(root)
+    if root.name == "candidates" and root.parent.name == "agent":
+        cdir = root / candidate_id
+    else:
+        cdir = root / "agent" / "candidates" / candidate_id
+    cdir.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "candidate_id": candidate_id,
+        "task_id": "task",
+        "artifact_type": "factor",
+        "goal": "goal",
+        "universe": ["SPY"],
+        "status": "pending",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "files": ["factor.py.candidate"],
+        "safety": {
+            "auto_promotion": False,
+            "requires_human_review": True,
+            "review_status": "pending",
+        },
+    }
+    (cdir / "metadata.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8"
+    )
     (cdir / "factor.py.candidate").write_text(source, encoding="utf-8")
-    (cdir / "metadata.json").write_text("{}", encoding="utf-8")
+    manifest, digest, _ = build_candidate_manifest(cdir)
+    (cdir / "manifest.v1.json").write_bytes(
+        canonical_json_bytes(manifest.model_dump(mode="json"))
+    )
     if approved:
-        (cdir / "approved.lock").write_text("{}", encoding="utf-8")
+        lock = {
+            "schema_version": "1.0",
+            "candidate_id": candidate_id,
+            "decision": "approve",
+            "manifest_digest": digest,
+            "note": "test approval",
+            "reviewer": "manual",
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+        (cdir / "approved.lock").write_bytes(canonical_json_bytes(lock))
+    return digest
 
 
 @pytest.fixture()
 def dirs(tmp_path: Path) -> dict[str, Path]:
     return {
-        "candidates": tmp_path / "candidates",
+        "agent": tmp_path / "agent-output",
         "library": tmp_path / "library" / "promoted",
         "tests": tmp_path / "tests" / "factors",
     }
@@ -114,7 +159,7 @@ def dirs(tmp_path: Path) -> dict[str, Path]:
 def _promote(candidate_id: str, dirs: dict[str, Path], **kwargs):
     return promote_candidate(
         candidate_id,
-        candidates_dir=dirs["candidates"],
+        agent_output_dir=dirs["agent"],
         library_dir=dirs["library"],
         tests_dir=dirs["tests"],
         **kwargs,
@@ -122,7 +167,7 @@ def _promote(candidate_id: str, dirs: dict[str, Path], **kwargs):
 
 
 def test_happy_path_writes_module_init_and_test_scaffold(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-ok", _FACTOR_SRC)
 
     result = _promote("cand-ok", dirs, promotion_date="2026-01-02")
 
@@ -157,8 +202,8 @@ def test_happy_path_writes_module_init_and_test_scaffold(dirs) -> None:
 
 
 def test_init_regeneration_is_sorted_across_promotions(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-w", _FACTOR_SRC)
-    _write_candidate(dirs["candidates"], "cand-a", _SECOND_FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-w", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-a", _SECOND_FACTOR_SRC)
 
     _promote("cand-w", dirs)
     result = _promote("cand-a", dirs)
@@ -174,7 +219,7 @@ def test_init_regeneration_is_sorted_across_promotions(dirs) -> None:
 
 
 def test_unapproved_candidate_refused_and_nothing_written(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-pending", _FACTOR_SRC, approved=False)
+    _write_candidate(dirs["agent"], "cand-pending", _FACTOR_SRC, approved=False)
 
     with pytest.raises(PromotionError, match="approv"):
         _promote("cand-pending", dirs)
@@ -183,24 +228,51 @@ def test_unapproved_candidate_refused_and_nothing_written(dirs) -> None:
 
 
 def test_rejected_lock_refuses_even_with_approved_lock(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-rejected", _FACTOR_SRC, approved=True)
-    (dirs["candidates"] / "cand-rejected" / "rejected.lock").write_text("{}", encoding="utf-8")
+    _write_candidate(dirs["agent"], "cand-rejected", _FACTOR_SRC, approved=True)
+    cdir = dirs["agent"] / "agent" / "candidates" / "cand-rejected"
+    # Conflicting controls force legacy_unbound and never authorize.
+    (cdir / "rejected.lock").write_text("{}", encoding="utf-8")
 
     with pytest.raises(PromotionError):
         _promote("cand-rejected", dirs)
 
 
 def test_missing_candidate_source_refuses(dirs) -> None:
-    cdir = dirs["candidates"] / "cand-empty"
+    # Verified metadata/manifest without the factor artifact.
+    cdir = dirs["agent"] / "agent" / "candidates" / "cand-empty"
     cdir.mkdir(parents=True)
-    (cdir / "approved.lock").write_text("{}", encoding="utf-8")
-
-    with pytest.raises(PromotionError, match="factor.py.candidate"):
+    metadata = {
+        "candidate_id": "cand-empty",
+        "task_id": "task",
+        "artifact_type": "factor",
+        "goal": "goal",
+        "universe": ["SPY"],
+        "status": "pending",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "files": ["factor.py.candidate"],
+        "safety": {
+            "auto_promotion": False,
+            "requires_human_review": True,
+            "review_status": "pending",
+        },
+    }
+    (cdir / "metadata.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    (cdir / "factor.py.candidate").write_text("# placeholder\n", encoding="utf-8")
+    manifest, digest, _ = build_candidate_manifest(cdir)
+    (cdir / "manifest.v1.json").write_bytes(
+        canonical_json_bytes(manifest.model_dump(mode="json"))
+    )
+    (cdir / "factor.py.candidate").unlink()
+    # Without artifact, verification fails closed — promotion refuses.
+    with pytest.raises(PromotionError):
         _promote("cand-empty", dirs)
 
 
 def test_ast_violation_refuses_and_nothing_written(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-evil", _EVIL_SRC)
+    _write_candidate(dirs["agent"], "cand-evil", _EVIL_SRC)
 
     with pytest.raises(PromotionError, match="cand-evil"):
         _promote("cand-evil", dirs)
@@ -208,21 +280,21 @@ def test_ast_violation_refuses_and_nothing_written(dirs) -> None:
 
 
 def test_zero_factor_classes_refuses(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-none", _NO_CLASS_SRC)
+    _write_candidate(dirs["agent"], "cand-none", _NO_CLASS_SRC)
 
     with pytest.raises(PromotionError, match="exactly one"):
         _promote("cand-none", dirs)
 
 
 def test_multiple_factor_classes_refuses(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-two", _TWO_CLASSES_SRC)
+    _write_candidate(dirs["agent"], "cand-two", _TWO_CLASSES_SRC)
 
     with pytest.raises(PromotionError, match="exactly one"):
         _promote("cand-two", dirs)
 
 
 def test_non_string_factor_id_refuses(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-badid", _NON_STRING_ID_SRC)
+    _write_candidate(dirs["agent"], "cand-badid", _NON_STRING_ID_SRC)
 
     with pytest.raises(PromotionError, match="factor_id"):
         _promote("cand-badid", dirs)
@@ -232,7 +304,7 @@ def test_registry_collision_refuses_and_nothing_written(dirs) -> None:
     # factor_id "momentum" is a builtin example. Promoting it would make the
     # shared build_factor_registry() raise at every call site once committed
     # (review finding F4). Refuse before any write.
-    _write_candidate(dirs["candidates"], "cand-collide", _COLLIDING_ID_SRC)
+    _write_candidate(dirs["agent"], "cand-collide", _COLLIDING_ID_SRC)
 
     with pytest.raises(PromotionError, match="already exists in the registry"):
         _promote("cand-collide", dirs)
@@ -243,7 +315,7 @@ def test_registry_collision_refuses_and_nothing_written(dirs) -> None:
 def test_leading_underscore_factor_id_refuses(dirs) -> None:
     # `_regenerate_init` skips `_*.py`, so an underscore factor_id would be
     # written but never registered (review finding F5). Reject it.
-    _write_candidate(dirs["candidates"], "cand-underscore", _UNDERSCORE_ID_SRC)
+    _write_candidate(dirs["agent"], "cand-underscore", _UNDERSCORE_ID_SRC)
 
     with pytest.raises(PromotionError, match="factor_id"):
         _promote("cand-underscore", dirs)
@@ -258,7 +330,7 @@ def test_python_keyword_factor_id_refuses(dirs) -> None:
     keyword_src = _FACTOR_SRC.replace(
         'factor_id = "wiring_test_factor"', 'factor_id = "import"'
     ).replace("WiringTestFactor", "KeywordFactor")
-    _write_candidate(dirs["candidates"], "cand-keyword", keyword_src)
+    _write_candidate(dirs["agent"], "cand-keyword", keyword_src)
 
     with pytest.raises(PromotionError, match="keyword"):
         _promote("cand-keyword", dirs)
@@ -275,7 +347,7 @@ def test_alpha101_collision_refuses(dirs) -> None:
     src = _FACTOR_SRC.replace(
         'factor_id = "wiring_test_factor"', f'factor_id = "{an_alpha_id}"'
     ).replace("WiringTestFactor", "CollidesAlphaFactor")
-    _write_candidate(dirs["candidates"], "cand-alpha", src)
+    _write_candidate(dirs["agent"], "cand-alpha", src)
 
     with pytest.raises(PromotionError, match="already exists in the registry"):
         _promote("cand-alpha", dirs)
@@ -289,8 +361,8 @@ def test_init_write_is_atomic(dirs, monkeypatch) -> None:
     # re-review MAJOR). Prove the write goes through a rename, not truncate: the
     # real __init__.py path is never observed at 0 bytes mid-write. We approximate
     # by asserting no temp truncation — write once, then confirm the file parses.
-    _write_candidate(dirs["candidates"], "cand-a", _FACTOR_SRC)
-    _write_candidate(dirs["candidates"], "cand-b", _SECOND_FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-a", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-b", _SECOND_FACTOR_SRC)
 
     _promote("cand-a", dirs)
     init_path = dirs["library"] / "__init__.py"
@@ -307,7 +379,7 @@ def test_partial_failure_rolls_back_orphan_module(dirs, monkeypatch) -> None:
     # be rolled back so the working tree is left untouched (docstring contract)
     # and a corrective re-run is not blocked with a misleading "already promoted"
     # (adversarial re-review MINOR).
-    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-ok", _FACTOR_SRC)
 
     def _boom(_library_dir):
         raise RuntimeError("init regeneration failed")
@@ -323,7 +395,7 @@ def test_partial_failure_rolls_back_orphan_module(dirs, monkeypatch) -> None:
 
 
 def test_second_promotion_of_same_factor_refuses(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-ok", _FACTOR_SRC)
     _promote("cand-ok", dirs)
 
     with pytest.raises(PromotionError, match="already exists"):
@@ -331,7 +403,7 @@ def test_second_promotion_of_same_factor_refuses(dirs) -> None:
 
 
 def test_existing_target_module_refuses_before_any_write(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-ok", _FACTOR_SRC)
     dirs["library"].mkdir(parents=True)
     (dirs["library"] / "wiring_test_factor.py").write_text(_FACTOR_SRC, encoding="utf-8")
 
@@ -422,7 +494,7 @@ def test_cli_promote_candidate_refusal_exits_nonzero(dirs, tmp_path: Path) -> No
 
 
 def test_promotion_refuses_when_lock_present(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-ok", _FACTOR_SRC)
     dirs["library"].mkdir(parents=True)
     (dirs["library"] / ".promote.lock").write_text("", encoding="utf-8")
 
@@ -437,7 +509,7 @@ def test_promotion_refuses_when_lock_present(dirs) -> None:
 
 
 def test_promotion_lock_released_on_success(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-ok", _FACTOR_SRC)
     _promote("cand-ok", dirs)
     assert not (dirs["library"] / ".promote.lock").exists()
 
@@ -445,7 +517,7 @@ def test_promotion_lock_released_on_success(dirs) -> None:
 def test_promotion_lock_released_on_refusal(dirs) -> None:
     # A refusal that happens after lock acquisition (target module already there)
     # must still release the lock via the finally cleanup.
-    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-ok", _FACTOR_SRC)
     dirs["library"].mkdir(parents=True)
     (dirs["library"] / "wiring_test_factor.py").write_text(_FACTOR_SRC, encoding="utf-8")
 
@@ -459,8 +531,8 @@ def test_promotion_serializes_write_and_init(dirs, monkeypatch) -> None:
     # the lock across its write + _regenerate_init, a re-entrant promotion of
     # cand-b must be refused ("in progress"). If the critical section were not
     # locked, the re-entrant call would proceed and corrupt PROMOTED_FACTORS.
-    _write_candidate(dirs["candidates"], "cand-a", _FACTOR_SRC)
-    _write_candidate(dirs["candidates"], "cand-b", _SECOND_FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-a", _FACTOR_SRC)
+    _write_candidate(dirs["agent"], "cand-b", _SECOND_FACTOR_SRC)
 
     real_regenerate = promote_module._regenerate_init
     reentrant_error: dict[str, object] = {}

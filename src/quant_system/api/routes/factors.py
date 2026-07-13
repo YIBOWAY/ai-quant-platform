@@ -4,7 +4,6 @@ import json
 
 from fastapi import APIRouter, HTTPException
 
-from quant_system.agent.paths import resolve_candidates_dir
 from quant_system.api.dependencies import (
     AgentOutputDirDep,
     ApiRunsDirDep,
@@ -44,12 +43,9 @@ def list_factors(
     # dropped by the SafetyGate inside the loader and never appear.
     # Candidate root comes only from the injected agent output dir (create_app
     # isolation boundary) — never a process-global constant or QS_DATA_DIR.
-    candidates_dir = (
-        resolve_candidates_dir(agent_output_dir) if include_candidates else None
-    )
     registry = build_factor_registry(
         include_approved_candidates=include_candidates,
-        candidates_dir=candidates_dir,
+        agent_output_dir=agent_output_dir if include_candidates else None,
     )
     origins = registry.origins()
     return {

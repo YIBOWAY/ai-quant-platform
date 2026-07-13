@@ -69,7 +69,7 @@ def build_factor_registry(
     *,
     include_promoted: bool = True,
     include_approved_candidates: bool = False,
-    candidates_dir: str | Path | None = None,
+    agent_output_dir: str | Path | None = None,
 ) -> FactorRegistry:
     """Single construction point for the factor registry.
 
@@ -92,12 +92,14 @@ def build_factor_registry(
         for factor_cls in promoted.PROMOTED_FACTORS:
             registry.register(factor_cls, origin="promoted")
 
-    if include_approved_candidates and candidates_dir is not None:
+    if include_approved_candidates and agent_output_dir is not None:
         # Reuse the single approved-candidate loader (SafetyGate + AST check).
         # Lazy import avoids a circular import: promotion imports FactorRegistry.
         from quant_system.agent.promotion import load_approved_factor_candidates
 
-        loaded = load_approved_factor_candidates(registry, candidates_dir=candidates_dir)
+        loaded = load_approved_factor_candidates(
+            registry, agent_output_dir=agent_output_dir
+        )
         # Origin is tracked from which pass registered the id, not by re-parsing:
         # the loader reports exactly the ids it added, so retag them as candidate.
         for factor_id in loaded:

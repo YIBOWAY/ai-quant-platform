@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 
 from fastapi import APIRouter, HTTPException
 
+from quant_system.agent.candidate_manifest import (
+    CandidateIntegrityError,
+    CandidateMigrationRequiredError,
+    CandidateReviewStateStaleError,
+    CandidateStaleError,
+    _validate_candidate_id,
+)
+from quant_system.agent.candidate_pool import CandidateConflictError, CandidatePool
 from quant_system.agent.llm import build_llm_client
-from quant_system.agent.paths import resolve_candidates_dir
 from quant_system.agent.runner import AgentRunner
 from quant_system.api.dependencies import AgentOutputDirDep, OutputDirDep, SettingsDep
 from quant_system.api.errors import not_found_404
@@ -18,9 +26,20 @@ from quant_system.api.schemas.agent import (
     AgentTaskRequest,
     AgentTaskResponse,
 )
-from quant_system.api.schemas.common import resolve_run_dir
 
 router = APIRouter()
+
+
+def _conflict_409(*, code: str, message: str, candidate_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": code,
+            "message": message,
+            "resource": "agent_candidate",
+            "id": candidate_id,
+        },
+    )
 
 
 @router.get("/agent/candidates", response_model=AgentCandidatesResponse)
@@ -30,25 +49,151 @@ def list_candidates(
 ) -> dict:
     candidates = AgentRunner(agent_output_dir=agent_output_dir).list_candidates()
     if status is not None:
-        candidates = [candidate for candidate in candidates if candidate.get("status") == status]
+        candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.get("status") == status
+        ]
     return {"candidates": candidates}
 
 
 @router.get("/agent/candidates/{candidate_id}", response_model=AgentCandidateDetailResponse)
 def candidate_detail(candidate_id: str, agent_output_dir: AgentOutputDirDep) -> dict:
-    candidates_root = resolve_candidates_dir(agent_output_dir)
-    candidate_dir = resolve_run_dir(candidates_root, candidate_id)
-    metadata_path = candidate_dir / "metadata.json"
-    if not metadata_path.exists():
-        raise not_found_404("agent_candidate", candidate_id)
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    files = metadata.get("files", [])
+    try:
+        _validate_candidate_id(candidate_id)
+    except CandidateIntegrityError as exc:
+        raise not_found_404("agent_candidate", candidate_id) from exc
+
+    pool = CandidatePool(agent_output_dir)
+    items = {item.candidate_id: item for item in pool.list_for_read()}
+    item = items.get(candidate_id)
+    if item is None:
+        # Try get for verified path; list may have raced empty root.
+        try:
+            snapshot = pool.get(candidate_id)
+        except (CandidateIntegrityError, CandidateMigrationRequiredError, OSError) as exc:
+            raise not_found_404("agent_candidate", candidate_id) from exc
+        item = None
+        # Build detail from verified snapshot.
+        source_preview = ""
+        if snapshot.manifest.files:
+            first = snapshot.manifest.files[0].path
+            payload = snapshot.artifact_bytes.get(first, b"")
+            source_preview = payload.decode("utf-8", errors="replace")
+        reviews: list[str] = []
+        if snapshot.review_record is not None:
+            reviews = [snapshot.review_record.model_dump_json()]
+        audits = _audit_lines(agent_output_dir, candidate_id)
+        return {
+            "candidate_id": snapshot.candidate_id,
+            "metadata": snapshot.metadata,
+            "source_preview": source_preview,
+            "audit": audits,
+            "reviews": reviews,
+            "integrity_state": "verified",
+            "manifest_digest": snapshot.manifest_digest,
+            "observed_manifest_digest": None,
+            "approval_binding": snapshot.approval_binding,
+            "approval_enabled": snapshot.approval_binding == "pending",
+            "integrity_error_code": None,
+            "status": (
+                snapshot.approval_binding
+                if snapshot.approval_binding in {"pending", "approved", "rejected"}
+                else None
+            ),
+        }
+
+    audits = _audit_lines(agent_output_dir, candidate_id)
+
+    if item.integrity_state == "corrupt":
+        return {
+            "candidate_id": candidate_id,
+            "metadata": None,
+            "source_preview": None,
+            "audit": audits,
+            "reviews": [],
+            "integrity_state": "corrupt",
+            "manifest_digest": None,
+            "observed_manifest_digest": None,
+            "approval_binding": None,
+            "approval_enabled": False,
+            "integrity_error_code": item.integrity_error_code,
+            "status": None,
+        }
+
+    if item.integrity_state == "migration_required":
+        return {
+            "candidate_id": candidate_id,
+            "metadata": None,
+            "source_preview": None,
+            "audit": audits,
+            "reviews": [],
+            "integrity_state": "migration_required",
+            "manifest_digest": None,
+            "observed_manifest_digest": item.observed_manifest_digest,
+            "approval_binding": item.approval_binding,
+            "approval_enabled": False,
+            "integrity_error_code": None,
+            "status": item.status,
+            "artifact_type": item.artifact_type,
+            "goal": item.goal,
+        }
+
+    # verified
+    try:
+        snapshot = pool.get(candidate_id)
+    except CandidateIntegrityError:
+        return {
+            "candidate_id": candidate_id,
+            "metadata": None,
+            "source_preview": None,
+            "audit": audits,
+            "reviews": [],
+            "integrity_state": "corrupt",
+            "manifest_digest": None,
+            "observed_manifest_digest": None,
+            "approval_binding": None,
+            "approval_enabled": False,
+            "integrity_error_code": "corrupt",
+            "status": None,
+        }
+
     source_preview = ""
-    if files:
-        source_path = candidate_dir / str(files[0])
-        if source_path.exists() and source_path.is_file():
-            source_preview = source_path.read_text(encoding="utf-8")
-    audits = []
+    if snapshot.manifest.files:
+        first = snapshot.manifest.files[0].path
+        payload = snapshot.artifact_bytes.get(first, b"")
+        source_preview = payload.decode("utf-8", errors="replace")
+    reviews = []
+    if snapshot.review_record is not None:
+        reviews = [snapshot.review_record.model_dump_json()]
+    # Merge historical legacy reviews.jsonl for display only (never authoritative).
+    legacy_reviews = snapshot.candidate_dir / "reviews.jsonl"
+    if legacy_reviews.exists() and legacy_reviews.is_file():
+        with suppress(OSError):
+            reviews = reviews + [
+                line
+                for line in legacy_reviews.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+    return {
+        "candidate_id": snapshot.candidate_id,
+        "metadata": snapshot.metadata,
+        "source_preview": source_preview,
+        "audit": audits,
+        "reviews": reviews,
+        "integrity_state": "verified",
+        "manifest_digest": snapshot.manifest_digest,
+        "observed_manifest_digest": None,
+        "approval_binding": snapshot.approval_binding,
+        "approval_enabled": snapshot.approval_binding == "pending",
+        "integrity_error_code": None,
+        "status": item.status,
+    }
+
+
+def _audit_lines(agent_output_dir, candidate_id: str) -> list[str]:
+    audits: list[str] = []
     audit_dir = agent_output_dir / "agent" / "audit"
     if audit_dir.exists():
         for path in sorted(audit_dir.glob("*.jsonl")):
@@ -57,15 +202,7 @@ def candidate_detail(candidate_id: str, agent_output_dir: AgentOutputDirDep) -> 
                 for line in path.read_text(encoding="utf-8").splitlines()
                 if candidate_id in line
             )
-    reviews_path = candidate_dir / "reviews.jsonl"
-    reviews = reviews_path.read_text(encoding="utf-8").splitlines() if reviews_path.exists() else []
-    return {
-        "candidate_id": candidate_id,
-        "metadata": metadata,
-        "source_preview": source_preview,
-        "audit": audits,
-        "reviews": reviews,
-    }
+    return audits
 
 
 @router.post("/agent/tasks", response_model=AgentTaskResponse)
@@ -105,6 +242,7 @@ def run_agent_task(
         "status": artifact.status.value,
         "path": str(artifact.path),
         "metadata": metadata,
+        "manifest_digest": artifact.manifest_digest,
     }
 
 
@@ -118,17 +256,59 @@ def review_candidate(
     agent_output_dir: AgentOutputDirDep,
 ) -> dict:
     try:
+        _validate_candidate_id(candidate_id)
+    except CandidateIntegrityError as exc:
+        raise not_found_404("agent_candidate", candidate_id) from exc
+
+    try:
         record = AgentRunner(agent_output_dir=agent_output_dir).review(
             candidate_id=candidate_id,
             decision=request.decision,
             note=request.note,
+            expected_manifest_digest=request.expected_manifest_digest,
+            expected_status=request.expected_status,
         )
     except FileNotFoundError as exc:
         raise not_found_404("agent_candidate", candidate_id) from exc
+    except CandidateMigrationRequiredError as exc:
+        raise _conflict_409(
+            code="migration_required",
+            message=str(exc),
+            candidate_id=candidate_id,
+        ) from exc
+    except CandidateReviewStateStaleError as exc:
+        raise _conflict_409(
+            code="review_state_stale",
+            message=str(exc),
+            candidate_id=candidate_id,
+        ) from exc
+    except CandidateStaleError as exc:
+        raise _conflict_409(
+            code="stale_digest",
+            message=str(exc),
+            candidate_id=candidate_id,
+        ) from exc
+    except CandidateConflictError as exc:
+        raise _conflict_409(
+            code="conflict",
+            message=str(exc),
+            candidate_id=candidate_id,
+        ) from exc
+    except CandidateIntegrityError as exc:
+        # Missing/corrupt candidates surface as 404; CAS integrity as 409.
+        message = str(exc).lower()
+        if "does not exist" in message or "not a directory" in message:
+            raise not_found_404("agent_candidate", candidate_id) from exc
+        raise _conflict_409(
+            code="integrity_error",
+            message=str(exc),
+            candidate_id=candidate_id,
+        ) from exc
     return {
         "candidate_id": record.candidate_id,
         "decision": record.decision,
         "registration": "manual_required",
+        "manifest_digest": record.manifest_digest,
     }
 
 

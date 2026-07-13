@@ -127,7 +127,9 @@ class AgentRunner:
         )
 
     def list_candidates(self) -> list[dict]:
-        return self.candidates.list_candidates()
+        return [
+            item.model_dump(mode="json") for item in self.candidates.list_for_read()
+        ]
 
     def review(
         self,
@@ -135,21 +137,51 @@ class AgentRunner:
         candidate_id: str,
         decision: Literal["approve", "reject"],
         note: str,
+        expected_manifest_digest: str,
+        expected_status: Literal["pending"],
     ) -> ReviewRecord:
+        # Validate CAS inputs before any audit/root IO so invalid IDs leave
+        # zero writes (shared with CandidatePool.review preconditions).
+        from quant_system.agent.candidate_manifest import _validate_candidate_id
+        from quant_system.agent.candidate_pool import (
+            _validate_digest,
+            _validate_note,
+        )
+
+        candidate_id = _validate_candidate_id(candidate_id)
+        expected_manifest_digest = _validate_digest(expected_manifest_digest)
+        note = _validate_note(note)
+        if expected_status != "pending":
+            from quant_system.agent.candidate_fs import CandidateIntegrityError
+
+            raise CandidateIntegrityError(
+                "expected_status must be the literal 'pending'"
+            )
+        if decision not in {"approve", "reject"}:
+            from quant_system.agent.candidate_fs import CandidateIntegrityError
+
+            raise CandidateIntegrityError("decision must be approve or reject")
+
         task_id = _task_id(AgentTaskType.REVIEW, candidate_id)
         audit = AgentAuditLog(self.agent_output_dir, task_id=task_id)
+        # Record CAS values before mutation; never re-list to derive them.
         audit.record(
             "task",
             {
                 "task_id": task_id,
                 "task_type": AgentTaskType.REVIEW.value,
                 "candidate_id": candidate_id,
+                "expected_manifest_digest": expected_manifest_digest,
+                "expected_status": expected_status,
+                "decision": decision,
             },
         )
         record = self.candidates.review(
             candidate_id=candidate_id,
             decision=decision,
             note=note,
+            expected_manifest_digest=expected_manifest_digest,
+            expected_status=expected_status,
         )
         audit.record("review_recorded", record.model_dump(mode="json"))
         return record

@@ -321,21 +321,41 @@ def _attribute_chain(node: ast.Attribute) -> list[str]:
 def load_approved_factor_candidates(
     registry: FactorRegistry,
     *,
-    candidates_dir: str | Path,
+    agent_output_dir: str | Path,
 ) -> list[str]:
-    root = Path(candidates_dir)
+    """Load factors from verified, digest-bound approved candidates under agent root.
+
+    Callers pass the agent-output root only; candidates live under
+    ``agent/candidates`` via :func:`resolve_candidates_dir`. Task 4 will pass
+    verified snapshots/bytes instead of reopening artifact paths after the gate.
+    """
+    from quant_system.agent.candidate_pool import CandidatePool
+    from quant_system.agent.paths import resolve_candidates_dir
+
+    agent_root = Path(agent_output_dir)
+    root = resolve_candidates_dir(agent_root)
     if not root.exists():
         return []
-    gate = SafetyGate(root)
+    gate = SafetyGate(agent_root)
+    pool = CandidatePool(agent_root)
     loaded: list[str] = []
-    for candidate_dir in sorted(p for p in root.iterdir() if p.is_dir()):
-        source_path = candidate_dir / "factor.py.candidate"
-        if not source_path.exists():
+    for item in pool.list_for_read():
+        if item.integrity_state != "verified":
             continue
-        if not gate.allow_promotion(candidate_dir.name):
+        if item.artifact_type != "factor":
             continue
-        source = source_path.read_text(encoding="utf-8")
-        _check_source(source, candidate_dir.name)
+        if not gate.allow_promotion(item.candidate_id):
+            continue
+        try:
+            snapshot = pool.get(item.candidate_id)
+        except Exception:
+            continue
+        source_name = "factor.py.candidate"
+        source_bytes = snapshot.artifact_bytes.get(source_name)
+        if source_bytes is None:
+            continue
+        source = source_bytes.decode("utf-8")
+        _check_source(source, item.candidate_id)
         # Restricted namespace: pass an explicit __builtins__ so CPython does not
         # inject the full builtins dict (which would expose __import__/eval/exec).
         # The guarded __import__ enforces the module allowlist at runtime too.
@@ -343,9 +363,10 @@ def load_approved_factor_candidates(
         # see a conventional module name rather than NameError.
         namespace: dict[str, object] = {
             "__builtins__": _make_safe_builtins(),
-            "__name__": candidate_dir.name,
+            "__name__": item.candidate_id,
         }
-        # Human-approved candidate (approved.lock verified above); static check passed.
+        # Human-approved candidate (digest-bound approval verified above).
+        source_path = snapshot.candidate_dir / source_name
         exec(compile(source, str(source_path), "exec"), namespace)  # noqa: S102
         for value in namespace.values():
             if (

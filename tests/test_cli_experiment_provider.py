@@ -156,15 +156,17 @@ def test_run_config_candidate_loader_is_cwd_independent_and_uses_env(
 
     captured = {}
 
-    def fake_load(registry, *, candidates_dir):
-        captured["candidates_dir"] = Path(candidates_dir)
+    def fake_load(registry, *, agent_output_dir):
+        captured["agent_output_dir"] = Path(agent_output_dir)
         return []
 
     monkeypatch.setattr(cli_module, "load_approved_factor_candidates", fake_load)
     _invoke_stubbed_run_config_with_approved_candidates(monkeypatch, tmp_path)
 
-    assert captured["candidates_dir"] == resolve_candidates_dir(resolve_agent_output_dir())
-    assert captured["candidates_dir"] == agent / "agent" / "candidates"
+    assert captured["agent_output_dir"] == resolve_agent_output_dir()
+    assert resolve_candidates_dir(captured["agent_output_dir"]) == (
+        agent / "agent" / "candidates"
+    )
 
 
 def test_include_approved_candidates_accepts_agent_output_dir_override(
@@ -178,8 +180,8 @@ def test_include_approved_candidates_accepts_agent_output_dir_override(
     custom_agent_root = tmp_path / "custom-agent-root"
     captured = {}
 
-    def fake_load(registry, *, candidates_dir):
-        captured["candidates_dir"] = Path(candidates_dir)
+    def fake_load(registry, *, agent_output_dir):
+        captured["agent_output_dir"] = Path(agent_output_dir)
         return []
 
     monkeypatch.setattr(cli_module, "load_approved_factor_candidates", fake_load)
@@ -189,6 +191,7 @@ def test_include_approved_candidates_accepts_agent_output_dir_override(
         extra_args=["--agent-output-dir", str(custom_agent_root)],
     )
 
-    assert captured["candidates_dir"] == resolve_candidates_dir(
-        resolve_agent_output_dir(custom_agent_root)
+    assert captured["agent_output_dir"] == resolve_agent_output_dir(custom_agent_root)
+    assert resolve_candidates_dir(captured["agent_output_dir"]) == (
+        custom_agent_root / "agent" / "candidates"
     )

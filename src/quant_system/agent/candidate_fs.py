@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import fcntl
 import os
 import platform
 import secrets
@@ -24,9 +25,12 @@ __all__ = [
     "OpenedDirectory",
     "assert_entry_is_open_fd",
     "atomic_write_noreplace_at",
+    "locked_candidates_root",
+    "mkdir_exclusive_at",
     "open_absolute_directory",
     "open_directory_at",
     "read_regular_bytes_at",
+    "remove_entry_tree_at",
     "rename_directory_noreplace_at",
     "write_regular_exclusive_at",
 ]
@@ -378,6 +382,143 @@ def _lexical_absolute_components(path: Path) -> list[str]:
     for component in components:
         _validate_single_component(component)
     return components
+
+
+def mkdir_exclusive_at(parent_fd: int, name: str, mode: int = 0o755) -> None:
+    """Create a single-component directory exclusively under a held parent FD."""
+    _ensure_runtime_support()
+    _validate_single_component(name, what="directory name")
+    try:
+        os.mkdir(name, mode, dir_fd=parent_fd)
+    except FileExistsError as exc:
+        raise CandidateConflictError(f"directory {name!r} already exists") from exc
+    except OSError as exc:
+        if exc.errno == errno.EEXIST:
+            raise CandidateConflictError(f"directory {name!r} already exists") from exc
+        raise CandidateIntegrityError(f"cannot create directory {name!r}") from exc
+    os.fsync(parent_fd)
+
+
+def remove_entry_tree_at(parent_fd: int, name: str) -> None:
+    """Recursively remove a single-component entry relative to a held parent FD."""
+    _ensure_runtime_support()
+    _validate_single_component(name, what="entry name")
+    try:
+        entry_st = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise CandidateIntegrityError(f"cannot stat entry {name!r} for removal") from exc
+
+    if stat.S_ISLNK(entry_st.st_mode) or stat.S_ISREG(entry_st.st_mode):
+        try:
+            os.unlink(name, dir_fd=parent_fd)
+        except OSError as exc:
+            raise CandidateIntegrityError(f"cannot unlink {name!r}") from exc
+        os.fsync(parent_fd)
+        return
+
+    if not stat.S_ISDIR(entry_st.st_mode):
+        raise CandidateIntegrityError(f"cannot remove non-directory entry {name!r}")
+
+    dir_fd = open_directory_at(parent_fd, name)
+    try:
+        assert_entry_is_open_fd(parent_fd, name, dir_fd)
+        for child in os.listdir(dir_fd):
+            remove_entry_tree_at(dir_fd, child)
+        assert_entry_is_open_fd(parent_fd, name, dir_fd)
+    finally:
+        os.close(dir_fd)
+    try:
+        os.rmdir(name, dir_fd=parent_fd)
+    except OSError as exc:
+        raise CandidateIntegrityError(f"cannot rmdir {name!r}") from exc
+    os.fsync(parent_fd)
+
+
+@contextmanager
+def locked_candidates_root(
+    agent_output_dir: Path, *, create: bool
+) -> Iterator[OpenedDirectory]:
+    """Open candidates root under exclusive flock on a verified regular pool lock."""
+    from quant_system.agent.paths import resolve_candidates_dir
+
+    candidates_path = resolve_candidates_dir(Path(agent_output_dir))
+    with open_absolute_directory(candidates_path, create=create) as opened:
+        flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC
+        try:
+            lock_fd = os.open(".candidate-pool.lock", flags, 0o600, dir_fd=opened.fd)
+        except OSError as exc:
+            raise CandidateIntegrityError(
+                "cannot open candidate pool lock"
+            ) from exc
+        try:
+            lock_stat = os.fstat(lock_fd)
+            if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_nlink != 1:
+                raise CandidateIntegrityError(
+                    "candidate pool lock must be regular"
+                )
+            # Re-check the parent entry is still a single-link regular file and
+            # not a symlink/hardlink swapped after open.
+            try:
+                entry_stat = os.stat(
+                    ".candidate-pool.lock",
+                    dir_fd=opened.fd,
+                    follow_symlinks=False,
+                )
+            except OSError as exc:
+                raise CandidateIntegrityError(
+                    "candidate pool lock entry missing"
+                ) from exc
+            if stat.S_ISLNK(entry_stat.st_mode):
+                raise CandidateIntegrityError(
+                    "candidate pool lock must be regular"
+                )
+            if not stat.S_ISREG(entry_stat.st_mode) or entry_stat.st_nlink != 1:
+                raise CandidateIntegrityError(
+                    "candidate pool lock must be regular"
+                )
+            if (entry_stat.st_dev, entry_stat.st_ino) != (
+                lock_stat.st_dev,
+                lock_stat.st_ino,
+            ):
+                raise CandidateIntegrityError(
+                    "candidate pool lock identity does not match held fd"
+                )
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            assert_entry_is_open_fd(opened.parent_fd, opened.name, opened.fd)
+            # Confirm lock name still maps to the held lock fd.
+            entry_stat = os.stat(
+                ".candidate-pool.lock",
+                dir_fd=opened.fd,
+                follow_symlinks=False,
+            )
+            held = os.fstat(lock_fd)
+            if (entry_stat.st_dev, entry_stat.st_ino) != (held.st_dev, held.st_ino):
+                raise CandidateIntegrityError(
+                    "candidate pool lock identity does not match held fd"
+                )
+            if not stat.S_ISREG(held.st_mode) or held.st_nlink != 1:
+                raise CandidateIntegrityError(
+                    "candidate pool lock must be regular"
+                )
+            yield opened
+            entry_stat = os.stat(
+                ".candidate-pool.lock",
+                dir_fd=opened.fd,
+                follow_symlinks=False,
+            )
+            held = os.fstat(lock_fd)
+            if (entry_stat.st_dev, entry_stat.st_ino) != (held.st_dev, held.st_ino):
+                raise CandidateIntegrityError(
+                    "candidate pool lock identity does not match held fd"
+                )
+            assert_entry_is_open_fd(opened.parent_fd, opened.name, opened.fd)
+        finally:
+            with suppress(OSError):
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            with suppress(OSError):
+                os.close(lock_fd)
 
 
 @contextmanager

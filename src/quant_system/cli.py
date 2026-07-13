@@ -833,11 +833,10 @@ def run_config_experiment_command(
         factor_registry = build_default_factor_registry()
         # Same resolver as agent CLI: never CWD-relative and never QS_DATA_DIR.
         active_agent_root = resolve_agent_output_dir(agent_output_dir)
-        active_candidates_dir = resolve_candidates_dir(active_agent_root)
         loaded = list(
             load_approved_factor_candidates(
                 factor_registry,
-                candidates_dir=active_candidates_dir,
+                agent_output_dir=active_agent_root,
             )
         )
         typer.echo(f"approved_candidates_loaded={','.join(loaded) or '<none>'}")
@@ -1809,12 +1808,17 @@ def agent_list_candidates(
         return
     for candidate in candidates:
         path = resolve_candidates_dir(active_agent_root) / candidate["candidate_id"]
+        digest = candidate.get("manifest_digest") or candidate.get(
+            "observed_manifest_digest"
+        )
         typer.echo(
             " ".join(
                 [
                     f"candidate_id={candidate['candidate_id']}",
-                    f"type={candidate['artifact_type']}",
-                    f"status={candidate['status']}",
+                    f"type={candidate.get('artifact_type')}",
+                    f"status={candidate.get('status')}",
+                    f"integrity={candidate.get('integrity_state')}",
+                    f"digest={digest}",
                     f"path={path}",
                 ]
             )
@@ -1832,6 +1836,20 @@ def agent_review(
         typer.Option("--decision", help="Manual review decision."),
     ],
     note: Annotated[str, typer.Option("--note", help="Manual review note.")],
+    expected_manifest_digest: Annotated[
+        str,
+        typer.Option(
+            "--expected-digest",
+            help="Exact lowercase SHA-256 manifest digest from list-candidates.",
+        ),
+    ],
+    expected_status: Annotated[
+        Literal["pending"],
+        typer.Option(
+            "--expected-status",
+            help="Must be the literal status pending (CAS precondition).",
+        ),
+    ] = "pending",
     agent_output_dir: Annotated[
         str | None,
         typer.Option(
@@ -1847,14 +1865,33 @@ def agent_review(
         typer.Option("--json", help="Append a machine-readable JSON summary line."),
     ] = False,
 ) -> None:
-    """Record a manual review; approve only writes an approval lock."""
-    record = AgentRunner(
-        agent_output_dir=resolve_agent_output_dir(agent_output_dir),
-    ).review(
-        candidate_id=candidate_id,
-        decision=decision,
-        note=note,
+    """Record a digest-bound manual review; approve only writes a structured lock."""
+    from quant_system.agent.candidate_pool import (
+        CandidateIntegrityError,
+        CandidateMigrationRequiredError,
+        CandidateReviewStateStaleError,
+        CandidateStaleError,
     )
+
+    try:
+        record = AgentRunner(
+            agent_output_dir=resolve_agent_output_dir(agent_output_dir),
+        ).review(
+            candidate_id=candidate_id,
+            decision=decision,
+            note=note,
+            expected_manifest_digest=expected_manifest_digest,
+            expected_status=expected_status,
+        )
+    except (
+        CandidateIntegrityError,
+        CandidateMigrationRequiredError,
+        CandidateStaleError,
+        CandidateReviewStateStaleError,
+        FileNotFoundError,
+    ) as exc:
+        typer.echo(f"review_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
     typer.echo(
         " ".join(
             [
@@ -1870,6 +1907,7 @@ def agent_review(
                 "candidate_id": record.candidate_id,
                 "decision": record.decision,
                 "registration": "manual_required",
+                "manifest_digest": record.manifest_digest,
             }
         )
 
@@ -1903,9 +1941,7 @@ def agent_promote_candidate(
     try:
         result = promote_candidate(
             candidate_id,
-            candidates_dir=resolve_candidates_dir(
-                resolve_agent_output_dir(agent_output_dir)
-            ),
+            agent_output_dir=resolve_agent_output_dir(agent_output_dir),
             library_dir=Path(library_dir),
             tests_dir=Path(tests_dir),
         )

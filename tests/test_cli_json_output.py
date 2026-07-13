@@ -124,8 +124,11 @@ def test_propose_factor_json_emits_contract_on_last_line(tmp_path) -> None:
 
 
 def test_agent_review_legacy_line_byte_identical_without_json(tmp_path) -> None:
+    from quant_system.agent.candidate_pool import CandidatePool
+
     propose_result, output_dir = _propose_factor(tmp_path)
     candidate_id = _candidate_id(propose_result.output)
+    digest = CandidatePool(output_dir).get(candidate_id).manifest_digest
 
     result = runner.invoke(
         app,
@@ -138,6 +141,10 @@ def test_agent_review_legacy_line_byte_identical_without_json(tmp_path) -> None:
             "approve",
             "--note",
             "json contract regression",
+            "--expected-digest",
+            digest,
+            "--expected-status",
+            "pending",
             "--agent-output-dir",
             str(output_dir),
         ],
@@ -149,8 +156,11 @@ def test_agent_review_legacy_line_byte_identical_without_json(tmp_path) -> None:
 
 
 def test_agent_review_json_emits_contract_on_last_line(tmp_path) -> None:
+    from quant_system.agent.candidate_pool import CandidatePool
+
     propose_result, output_dir = _propose_factor(tmp_path)
     candidate_id = _candidate_id(propose_result.output)
+    digest = CandidatePool(output_dir).get(candidate_id).manifest_digest
 
     result = runner.invoke(
         app,
@@ -163,6 +173,10 @@ def test_agent_review_json_emits_contract_on_last_line(tmp_path) -> None:
             "approve",
             "--note",
             "json contract",
+            "--expected-digest",
+            digest,
+            "--expected-status",
+            "pending",
             "--agent-output-dir",
             str(output_dir),
             "--json",
@@ -171,10 +185,11 @@ def test_agent_review_json_emits_contract_on_last_line(tmp_path) -> None:
 
     assert result.exit_code == 0, result.output
     payload = json.loads(_last_line(result.output))
-    assert set(payload) == {"candidate_id", "decision", "registration"}
+    assert set(payload) == {"candidate_id", "decision", "registration", "manifest_digest"}
     assert payload["candidate_id"] == candidate_id
     assert payload["decision"] == "approve"
     assert payload["registration"] == "manual_required"
+    assert payload["manifest_digest"] == digest
     # Legacy line still present for the regex fallback.
     assert "registration=manual_required" in result.output.splitlines()[0]
 
@@ -245,7 +260,7 @@ def test_run_config_json_lists_loaded_approved_candidates(tmp_path, monkeypatch)
     monkeypatch.setattr(
         cli_module,
         "load_approved_factor_candidates",
-        lambda registry, *, candidates_dir: ["candidate_x"],
+        lambda registry, *, agent_output_dir: ["candidate_x"],
     )
 
     result = runner.invoke(

@@ -9,9 +9,15 @@ class CandidateSummary(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     candidate_id: str
-    artifact_type: str
-    status: str
+    artifact_type: str | None = None
+    status: str | None = None
     goal: str | None = None
+    integrity_state: str | None = None
+    manifest_digest: str | None = None
+    observed_manifest_digest: str | None = None
+    approval_binding: str | None = None
+    approval_enabled: bool | None = None
+    integrity_error_code: str | None = None
 
 
 class AgentCandidatesResponse(BaseModel):
@@ -20,10 +26,17 @@ class AgentCandidatesResponse(BaseModel):
 
 class AgentCandidateDetailResponse(BaseModel):
     candidate_id: str
-    metadata: dict[str, Any]
-    source_preview: str
-    audit: list[str]
-    reviews: list[str]
+    metadata: dict[str, Any] | None = None
+    source_preview: str | None = None
+    audit: list[str] = Field(default_factory=list)
+    reviews: list[str] = Field(default_factory=list)
+    integrity_state: str | None = None
+    manifest_digest: str | None = None
+    observed_manifest_digest: str | None = None
+    approval_binding: str | None = None
+    approval_enabled: bool | None = None
+    integrity_error_code: str | None = None
+    status: str | None = None
 
 
 class AgentTaskRequest(BaseModel):
@@ -44,17 +57,21 @@ class AgentTaskResponse(BaseModel):
     status: str
     path: str
     metadata: dict[str, Any]
+    manifest_digest: str | None = None
 
 
 class AgentReviewRequest(BaseModel):
     decision: Literal["approve", "reject"]
     note: str
+    expected_manifest_digest: str
+    expected_status: Literal["pending"] = "pending"
 
 
 class AgentReviewResponse(BaseModel):
     candidate_id: str
     decision: Literal["approve", "reject"]
     registration: Literal["manual_required"]
+    manifest_digest: str | None = None
 
 
 class AgentLLMConfigResponse(BaseModel):
