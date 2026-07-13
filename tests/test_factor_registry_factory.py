@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.agent.candidate_manifest import (
@@ -137,6 +138,36 @@ def test_pending_candidate_is_not_loaded(tmp_path) -> None:
         include_approved_candidates=True, agent_output_dir=tmp_path
     )
     assert "wiring_test_factor" not in registry.factor_ids()
+
+
+def test_factory_refuses_tampered_approved_candidate(tmp_path) -> None:
+    from quant_system.agent.candidate_manifest import CandidateIntegrityError
+    from quant_system.agent.candidate_pool import CandidatePool
+
+    pool = CandidatePool(tmp_path)
+    artifact = pool.write_candidate(
+        task_id="factory-tamper",
+        goal="factory-tamper",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content=_CANDIDATE_SRC,
+    )
+    pool.review(
+        candidate_id=artifact.candidate_id,
+        decision="approve",
+        note="approved exact bytes",
+        expected_manifest_digest=artifact.manifest_digest,
+        expected_status="pending",
+    )
+    artifact.path.write_text(
+        _CANDIDATE_SRC.replace("wiring_test_factor", "tampered_factor"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CandidateIntegrityError):
+        build_factor_registry(
+            include_approved_candidates=True, agent_output_dir=tmp_path
+        )
 
 
 def test_approved_candidates_requested_without_dir_is_safe(tmp_path) -> None:

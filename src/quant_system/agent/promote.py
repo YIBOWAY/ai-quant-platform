@@ -7,11 +7,14 @@ source files under the promoted library. It is deliberately boring:
   tree; the human ``git diff`` review + commit IS Gate 3. This module must
   never spawn a process or import process/interpreter modules, and never
   touches ``.git`` (enforced by a static test).
-* **Refuses loudly** unless every precondition holds: ``approved.lock`` present
-  and no ``rejected.lock`` (:class:`~quant_system.agent.safety.SafetyGate`),
-  the AST safety allowlist passes (:func:`~quant_system.agent.promotion._check_source`),
-  the source defines exactly one ``BaseFactor`` subclass with a literal string
-  ``factor_id``, and no promoted module of that name exists yet.
+* **No candidate filesystem I/O.** Callers re-verify immediately before
+  invoking this materializer and pass a :class:`VerifiedCandidateSnapshot`
+  plus the expected manifest digest. Only ``snapshot.artifact_bytes`` is used.
+* **Refuses loudly** unless every precondition holds: digest match,
+  ``approval_binding == "approved"``, the AST safety allowlist passes
+  (:func:`~quant_system.agent.promotion._check_source`), the source defines
+  exactly one ``BaseFactor`` subclass with a literal string ``factor_id``,
+  and no promoted module of that name exists yet.
 * **Never executes candidate code.** Discovery of the factor class and its
   ``factor_id`` is a static AST read.
 """
@@ -21,19 +24,19 @@ from __future__ import annotations
 import ast
 import keyword
 import re
-from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel
 
-from quant_system.agent.candidate_pool import CandidatePool
+from quant_system.agent.candidate_manifest import VerifiedCandidateSnapshot
+from quant_system.agent.models import ReviewRecord
 from quant_system.agent.promotion import CandidateLoadError, _check_source
-from quant_system.agent.safety import SafetyGate
 
 _PROMOTED_PACKAGE = "quant_system.factors.library.promoted"
 # Must start with a letter: `_regenerate_init` skips `_*.py` modules, so a
 # leading-underscore factor_id would be written but never registered (F5).
 _SAFE_FACTOR_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+_ISO_DATE_PREFIX = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 
 _INIT_DOCSTRING = '''"""Code-reviewed, promoted factor library (Gate-3 output of D-20).
 
@@ -57,43 +60,46 @@ class PromotionResult(BaseModel):
 
 
 def promote_candidate(
-    candidate_id: str,
+    snapshot: VerifiedCandidateSnapshot,
     *,
-    agent_output_dir: Path,
+    expected_candidate_digest: str,
     library_dir: Path,
     tests_dir: Path,
-    promotion_date: str | None = None,
 ) -> PromotionResult:
-    """Write the promotion diff for one approved candidate; never touch git.
+    """Write the promotion diff from a verified snapshot; never touch git.
 
-    All preconditions are checked before the first write, so a refusal leaves
-    the working tree untouched. ``promotion_date`` is injectable so tests stay
-    deterministic; it defaults to today (UTC).
+    Candidate filesystem verification belongs to the caller immediately before
+    this internal materializer. All preconditions are checked before the first
+    write, so a refusal leaves the working tree untouched.
 
-    Callers pass the agent-output root only (never a pre-derived candidates dir).
+    Provenance is path-free and clock-free: stable candidate ID, manifest
+    schema/digest, and the UTC approval date from ``snapshot.review_record``.
     """
-    agent_output_dir = Path(agent_output_dir)
     library_dir = Path(library_dir)
     tests_dir = Path(tests_dir)
+    candidate_id = snapshot.candidate_id
 
-    # 1. Human approval gate (digest-bound structured approved.lock).
-    if not SafetyGate(agent_output_dir).allow_promotion(candidate_id):
+    # 1. Expected-digest CAS and digest-bound approval (no FS re-open).
+    if snapshot.manifest_digest != expected_candidate_digest:
+        raise PromotionError(
+            f"candidate {candidate_id!r} manifest digest mismatch: "
+            f"expected {expected_candidate_digest}, got {snapshot.manifest_digest}"
+        )
+    if snapshot.approval_binding != "approved":
         raise PromotionError(
             f"candidate {candidate_id!r} is not approved for promotion "
-            "(digest-bound approval missing or not authorized); "
+            f"(approval_binding={snapshot.approval_binding!r}); "
             "run `agent review --decision approve` first"
         )
-
-    try:
-        snapshot = CandidatePool(agent_output_dir).get(candidate_id)
-    except Exception as exc:
+    if snapshot.review_record is None:
         raise PromotionError(
-            f"candidate {candidate_id!r} cannot be verified for promotion: {exc}"
-        ) from exc
+            f"candidate {candidate_id!r} is approved but has no structured review record"
+        )
+
     source_bytes = snapshot.artifact_bytes.get("factor.py.candidate")
     if source_bytes is None:
         raise PromotionError(f"candidate {candidate_id!r} has no factor.py.candidate")
-    source = source_bytes.decode("utf-8")
+    source = source_bytes.decode("utf-8", errors="strict")
 
     # 2. Static AST safety allowlist (same check as the research-time loader).
     try:
@@ -125,8 +131,7 @@ def promote_candidate(
     module_path = library_dir / f"{factor_id}.py"
     test_path = tests_dir / f"test_{factor_id}.py"
 
-    promoted_on = promotion_date or datetime.now(UTC).date().isoformat()
-    approval_note = snapshot.candidate_dir / "approved.lock"
+    approved_on = _approval_date_utc(snapshot.review_record)
 
     # 5. Serialize the check -> write -> regenerate-init critical section with an
     # advisory lock (review findings F2/F3). Two concurrent promotions must not
@@ -162,8 +167,9 @@ def promote_candidate(
             module_path,
             _provenance_header(
                 candidate_id=candidate_id,
-                approval_note=approval_note,
-                promoted_on=promoted_on,
+                manifest_schema=snapshot.manifest.schema_version,
+                manifest_digest=snapshot.manifest_digest,
+                approved_on=approved_on,
             )
             + source,
         )
@@ -187,6 +193,19 @@ def promote_candidate(
         test_path=test_path,
         init_path=init_path,
     )
+
+
+def _approval_date_utc(review_record: ReviewRecord) -> str:
+    """Return YYYY-MM-DD from the structured approval timestamp (never wall clock)."""
+    raw = review_record.created_at
+    if not isinstance(raw, str) or not raw:
+        raise PromotionError("approval record missing created_at")
+    match = _ISO_DATE_PREFIX.match(raw)
+    if match is None:
+        raise PromotionError(
+            f"approval record created_at is not a valid ISO timestamp: {raw!r}"
+        )
+    return match.group(1)
 
 
 def _write_new(path: Path, content: str) -> None:
@@ -256,12 +275,19 @@ def _extract_factor_id(class_def: ast.ClassDef) -> str | None:
     return None
 
 
-def _provenance_header(*, candidate_id: str, approval_note: Path, promoted_on: str) -> str:
+def _provenance_header(
+    *,
+    candidate_id: str,
+    manifest_schema: str,
+    manifest_digest: str,
+    approved_on: str,
+) -> str:
     return (
         "# Promoted factor -- generated by `agent promote-candidate` (Gate 3, D-20).\n"
         f"# candidate_id: {candidate_id}\n"
-        f"# approval_note: {approval_note}\n"
-        f"# promoted_on: {promoted_on}\n"
+        f"# manifest_schema: {manifest_schema}\n"
+        f"# manifest_digest: {manifest_digest}\n"
+        f"# approved_on: {approved_on}\n"
         "# source: verbatim copy of factor.py.candidate at promotion time.\n"
     )
 

@@ -1938,14 +1938,26 @@ def agent_promote_candidate(
     ] = "tests/factors",
 ) -> None:
     """Write the deterministic Gate-3 promotion diff; NEVER commits (D-20)."""
+    from quant_system.agent.candidate_manifest import (
+        CandidateIntegrityError,
+        load_verified_candidate_snapshot,
+    )
+
     try:
+        # Re-verify at the last responsible moment; materializer uses only
+        # snapshot bytes and never reopens the candidate path.
+        agent_root = resolve_agent_output_dir(agent_output_dir)
+        snapshot = load_verified_candidate_snapshot(
+            agent_output_dir=agent_root,
+            candidate_id=candidate_id,
+        )
         result = promote_candidate(
-            candidate_id,
-            agent_output_dir=resolve_agent_output_dir(agent_output_dir),
+            snapshot,
+            expected_candidate_digest=snapshot.manifest_digest,
             library_dir=Path(library_dir),
             tests_dir=Path(tests_dir),
         )
-    except PromotionError as exc:
+    except (PromotionError, CandidateIntegrityError) as exc:
         typer.echo(f"promotion_refused reason={exc}")
         raise typer.Exit(code=1) from exc
     typer.echo(f"factor_id={result.factor_id}")

@@ -6,9 +6,11 @@ from pathlib import Path
 import pytest
 
 from quant_system.agent.candidate_manifest import (
+    CandidateIntegrityError,
     build_candidate_manifest,
     canonical_json_bytes,
 )
+from quant_system.agent.candidate_pool import CandidatePool
 from quant_system.agent.promotion import CandidateLoadError, load_approved_factor_candidates
 from quant_system.factors.registry import build_default_factor_registry
 
@@ -23,6 +25,22 @@ class WiringTestFactor(BaseFactor):
     default_lookback = 20
     direction = "higher_is_better"
     description = "test candidate"
+
+    def _compute_values(self, frame):
+        return frame["close"] * 0.0
+'''
+
+_VALID_FACTOR_SOURCE = '''
+from quant_system.factors.base import BaseFactor
+
+
+class SafeFactor(BaseFactor):
+    factor_id = "safe_factor"
+    factor_name = "Safe Factor"
+    factor_version = "0.1.0-candidate"
+    default_lookback = 20
+    direction = "higher_is_better"
+    description = "tamper test candidate"
 
     def _compute_values(self, frame):
         return frame["close"] * 0.0
@@ -86,6 +104,70 @@ def test_loads_only_approved_candidates(tmp_path):
     assert registry.create("wiring_test_factor") is not None
     with pytest.raises(KeyError):
         registry.create("other_id")
+
+
+def test_loader_refuses_source_changed_after_digest_bound_approval(tmp_path) -> None:
+    pool = CandidatePool(tmp_path)
+    artifact = pool.write_candidate(
+        task_id="tamper-task",
+        goal="tamper",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content=_VALID_FACTOR_SOURCE,
+    )
+    pool.review(
+        candidate_id=artifact.candidate_id,
+        decision="approve",
+        note="approved exact bytes",
+        expected_manifest_digest=artifact.manifest_digest,
+        expected_status="pending",
+    )
+    artifact.path.write_text(
+        _VALID_FACTOR_SOURCE.replace("safe_factor", "changed_factor"),
+        encoding="utf-8",
+    )
+
+    registry = build_default_factor_registry()
+    with pytest.raises(CandidateIntegrityError):
+        load_approved_factor_candidates(registry, agent_output_dir=tmp_path)
+    assert "changed_factor" not in registry.factor_ids()
+    assert "safe_factor" not in registry.factor_ids()
+
+
+def test_loader_skips_legacy_unbound_approval_without_compiling(tmp_path) -> None:
+    # Legacy empty approved.lock never authorizes one-shot research load.
+    cdir = tmp_path / "agent" / "candidates" / "cand-legacy"
+    cdir.mkdir(parents=True)
+    metadata = {
+        "candidate_id": "cand-legacy",
+        "task_id": "task",
+        "artifact_type": "factor",
+        "goal": "goal",
+        "universe": ["SPY"],
+        "status": "pending",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "files": ["factor.py.candidate"],
+        "safety": {
+            "auto_promotion": False,
+            "requires_human_review": True,
+            "review_status": "pending",
+        },
+    }
+    (cdir / "metadata.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    (cdir / "factor.py.candidate").write_text(_VALID_FACTOR_SOURCE, encoding="utf-8")
+    manifest, _digest, _ = build_candidate_manifest(cdir)
+    (cdir / "manifest.v1.json").write_bytes(
+        canonical_json_bytes(manifest.model_dump(mode="json"))
+    )
+    (cdir / "approved.lock").write_text("{}", encoding="utf-8")
+
+    registry = build_default_factor_registry()
+    loaded = load_approved_factor_candidates(registry, agent_output_dir=tmp_path)
+    assert loaded == []
+    assert "safe_factor" not in registry.factor_ids()
 
 
 def test_duplicate_registration_is_skipped_idempotently(tmp_path):

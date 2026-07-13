@@ -30,7 +30,6 @@ import builtins as _builtins
 import re
 from pathlib import Path
 
-from quant_system.agent.safety import SafetyGate
 from quant_system.factors.base import BaseFactor
 from quant_system.factors.registry import FactorRegistry
 
@@ -326,9 +325,18 @@ def load_approved_factor_candidates(
     """Load factors from verified, digest-bound approved candidates under agent root.
 
     Callers pass the agent-output root only; candidates live under
-    ``agent/candidates`` via :func:`resolve_candidates_dir`. Task 4 will pass
-    verified snapshots/bytes instead of reopening artifact paths after the gate.
+    ``agent/candidates`` via :func:`resolve_candidates_dir`. Each candidate is
+    re-verified immediately before compile: only
+    ``VerifiedCandidateSnapshot.artifact_bytes`` is executed. Tampered or
+    integrity-broken candidates raise :class:`CandidateIntegrityError` (fail
+    closed). Legacy unbound locks never authorize. Resident paper/live paths
+    must not call this (one-shot research only).
     """
+    from quant_system.agent.candidate_manifest import (
+        CandidateIntegrityError,
+        CandidateMigrationRequiredError,
+        load_verified_candidate_snapshot,
+    )
     from quant_system.agent.candidate_pool import CandidatePool
     from quant_system.agent.paths import resolve_candidates_dir
 
@@ -336,26 +344,37 @@ def load_approved_factor_candidates(
     root = resolve_candidates_dir(agent_root)
     if not root.exists():
         return []
-    gate = SafetyGate(agent_root)
     pool = CandidatePool(agent_root)
     loaded: list[str] = []
     for item in pool.list_for_read():
-        if item.integrity_state != "verified":
+        # Skip junk names and migration-only objects without attempting compile.
+        if item.integrity_error_code == "invalid_id":
             continue
-        if item.artifact_type != "factor":
-            continue
-        if not gate.allow_promotion(item.candidate_id):
+        if item.integrity_state == "migration_required":
             continue
         try:
-            snapshot = pool.get(item.candidate_id)
-        except Exception:
+            # Last-responsible-moment re-verify: never trust list_for_read alone
+            # and never reopen artifact paths after this snapshot is built.
+            snapshot = load_verified_candidate_snapshot(
+                agent_output_dir=agent_root,
+                candidate_id=item.candidate_id,
+            )
+        except CandidateMigrationRequiredError:
+            continue
+        except CandidateIntegrityError:
+            # Fail closed: an approved-then-tampered candidate must not be
+            # silently skipped while other candidates still compile.
+            raise
+        if snapshot.approval_binding != "approved":
+            continue
+        if snapshot.manifest.artifact_type != "factor":
             continue
         source_name = "factor.py.candidate"
         source_bytes = snapshot.artifact_bytes.get(source_name)
         if source_bytes is None:
             continue
-        source = source_bytes.decode("utf-8")
-        _check_source(source, item.candidate_id)
+        source = source_bytes.decode("utf-8", errors="strict")
+        _check_source(source, snapshot.candidate_id)
         # Restricted namespace: pass an explicit __builtins__ so CPython does not
         # inject the full builtins dict (which would expose __import__/eval/exec).
         # The guarded __import__ enforces the module allowlist at runtime too.
@@ -363,11 +382,11 @@ def load_approved_factor_candidates(
         # see a conventional module name rather than NameError.
         namespace: dict[str, object] = {
             "__builtins__": _make_safe_builtins(),
-            "__name__": item.candidate_id,
+            "__name__": snapshot.candidate_id,
         }
-        # Human-approved candidate (digest-bound approval verified above).
-        source_path = snapshot.candidate_dir / source_name
-        exec(compile(source, str(source_path), "exec"), namespace)  # noqa: S102
+        # Synthetic compile filename: never absolute candidate/worktree path.
+        compile_name = f"<{snapshot.candidate_id}/{source_name}>"
+        exec(compile(source, compile_name, "exec"), namespace)  # noqa: S102
         for value in namespace.values():
             if (
                 isinstance(value, type)

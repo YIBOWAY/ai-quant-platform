@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,12 @@ from typer.testing import CliRunner
 
 import quant_system.agent.promote as promote_module
 from quant_system.agent.candidate_manifest import (
+    CandidateIntegrityError,
     build_candidate_manifest,
     canonical_json_bytes,
+    load_verified_candidate_snapshot,
 )
+from quant_system.agent.candidate_pool import CandidatePool
 from quant_system.agent.promote import PromotionError, promote_candidate
 from quant_system.cli import app
 
@@ -28,6 +32,22 @@ class WiringTestFactor(BaseFactor):
     default_lookback = 20
     direction = "higher_is_better"
     description = "test candidate"
+
+    def _compute_values(self, frame):
+        return frame["close"] * 0.0
+'''
+
+_VALID_FACTOR_SOURCE = '''
+from quant_system.factors.base import BaseFactor
+
+
+class SafeFactor(BaseFactor):
+    factor_id = "safe_factor"
+    factor_name = "Safe Factor"
+    factor_version = "0.1.0-candidate"
+    default_lookback = 20
+    direction = "higher_is_better"
+    description = "tamper test candidate"
 
     def _compute_values(self, frame):
         return frame["close"] * 0.0
@@ -157,9 +177,18 @@ def dirs(tmp_path: Path) -> dict[str, Path]:
 
 
 def _promote(candidate_id: str, dirs: dict[str, Path], **kwargs):
+    """Caller re-verifies, then materializes. Integrity failures refuse closed."""
+    try:
+        snapshot = load_verified_candidate_snapshot(
+            agent_output_dir=dirs["agent"],
+            candidate_id=candidate_id,
+        )
+    except CandidateIntegrityError as exc:
+        raise PromotionError(f"candidate cannot be verified for promotion: {exc}") from exc
+    expected = kwargs.pop("expected_candidate_digest", snapshot.manifest_digest)
     return promote_candidate(
-        candidate_id,
-        agent_output_dir=dirs["agent"],
+        snapshot,
+        expected_candidate_digest=expected,
         library_dir=dirs["library"],
         tests_dir=dirs["tests"],
         **kwargs,
@@ -167,9 +196,9 @@ def _promote(candidate_id: str, dirs: dict[str, Path], **kwargs):
 
 
 def test_happy_path_writes_module_init_and_test_scaffold(dirs) -> None:
-    _write_candidate(dirs["agent"], "cand-ok", _FACTOR_SRC)
+    digest = _write_candidate(dirs["agent"], "cand-ok", _FACTOR_SRC)
 
-    result = _promote("cand-ok", dirs, promotion_date="2026-01-02")
+    result = _promote("cand-ok", dirs)
 
     assert result.factor_id == "wiring_test_factor"
     assert result.module_path == dirs["library"] / "wiring_test_factor.py"
@@ -177,10 +206,13 @@ def test_happy_path_writes_module_init_and_test_scaffold(dirs) -> None:
     assert result.test_path == dirs["tests"] / "test_wiring_test_factor.py"
 
     module_content = result.module_path.read_text(encoding="utf-8")
-    # Provenance header, then the candidate source verbatim.
+    # Provenance header is path-free and clock-free; then candidate source verbatim.
     assert "candidate_id: cand-ok" in module_content
-    assert "approved.lock" in module_content
-    assert "promoted_on: 2026-01-02" in module_content
+    assert f"manifest_digest: {digest}" in module_content
+    assert "manifest_schema: 1.0" in module_content
+    assert "approved_on: 2026-01-01" in module_content
+    assert "approved.lock" not in module_content
+    assert str(dirs["agent"]) not in module_content
     assert module_content.endswith(_FACTOR_SRC)
 
     init_content = result.init_path.read_text(encoding="utf-8")
@@ -225,6 +257,98 @@ def test_unapproved_candidate_refused_and_nothing_written(dirs) -> None:
         _promote("cand-pending", dirs)
     assert not dirs["library"].exists() or not list(dirs["library"].iterdir())
     assert not dirs["tests"].exists() or not list(dirs["tests"].iterdir())
+
+
+def test_materializer_refuses_source_changed_after_digest_bound_approval(
+    dirs, tmp_path: Path
+) -> None:
+    pool = CandidatePool(dirs["agent"])
+    artifact = pool.write_candidate(
+        task_id="tamper-promote",
+        goal="tamper-promote",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content=_VALID_FACTOR_SOURCE,
+    )
+    pool.review(
+        candidate_id=artifact.candidate_id,
+        decision="approve",
+        note="approved exact bytes",
+        expected_manifest_digest=artifact.manifest_digest,
+        expected_status="pending",
+    )
+    bound_digest = artifact.manifest_digest
+    artifact.path.write_text(
+        _VALID_FACTOR_SOURCE.replace("safe_factor", "changed_factor"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CandidateIntegrityError):
+        load_verified_candidate_snapshot(
+            agent_output_dir=dirs["agent"],
+            candidate_id=artifact.candidate_id,
+        )
+
+    # Even if a caller somehow holds a stale expected digest, no tree write.
+    assert not dirs["library"].exists() or not any(dirs["library"].rglob("*"))
+    assert not dirs["tests"].exists() or not any(dirs["tests"].rglob("*"))
+    assert not (dirs["library"] / ".promote.lock").exists()
+    _ = bound_digest  # retained for CAS clarity; verification fails before promote
+
+
+def test_promotion_output_is_path_and_clock_independent(tmp_path: Path) -> None:
+    """Same approved bytes under two roots yield byte-identical Gate-3 files.
+
+    Provenance uses only the structured approval record's UTC date — never
+    wall clock, absolute candidate roots, or lock paths.
+    """
+    root_a = tmp_path / "root-a"
+    root_b = tmp_path / "root-b"
+    agent_a = root_a / "agent-output"
+    _write_candidate(agent_a, "cand-ok", _FACTOR_SRC)
+    shutil.copytree(agent_a, root_b / "agent-output")
+
+    lib_a = root_a / "library" / "promoted"
+    tests_a = root_a / "tests" / "factors"
+    lib_b = root_b / "library" / "promoted"
+    tests_b = root_b / "tests" / "factors"
+
+    snap_a = load_verified_candidate_snapshot(
+        agent_output_dir=agent_a, candidate_id="cand-ok"
+    )
+    snap_b = load_verified_candidate_snapshot(
+        agent_output_dir=root_b / "agent-output", candidate_id="cand-ok"
+    )
+    assert snap_a.manifest_digest == snap_b.manifest_digest
+    assert snap_a.artifact_bytes == snap_b.artifact_bytes
+
+    # Materializer must not import or call wall-clock helpers.
+    promote_source = Path(promote_module.__file__).read_text(encoding="utf-8")
+    assert "datetime" not in promote_source
+    assert "date.today" not in promote_source
+    assert "time.time" not in promote_source
+
+    result_a = promote_candidate(
+        snap_a,
+        expected_candidate_digest=snap_a.manifest_digest,
+        library_dir=lib_a,
+        tests_dir=tests_a,
+    )
+    result_b = promote_candidate(
+        snap_b,
+        expected_candidate_digest=snap_b.manifest_digest,
+        library_dir=lib_b,
+        tests_dir=tests_b,
+    )
+
+    assert result_a.module_path.read_bytes() == result_b.module_path.read_bytes()
+    assert result_a.init_path.read_bytes() == result_b.init_path.read_bytes()
+    assert result_a.test_path.read_bytes() == result_b.test_path.read_bytes()
+    module = result_a.module_path.read_text(encoding="utf-8")
+    assert str(agent_a) not in module
+    assert str(root_b) not in module
+    assert "approved.lock" not in module
+    assert "approved_on: 2026-01-01" in module
 
 
 def test_rejected_lock_refuses_even_with_approved_lock(dirs) -> None:

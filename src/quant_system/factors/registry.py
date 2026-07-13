@@ -93,8 +93,11 @@ def build_factor_registry(
             registry.register(factor_cls, origin="promoted")
 
     if include_approved_candidates and agent_output_dir is not None:
-        # Reuse the single approved-candidate loader (SafetyGate + AST check).
-        # Lazy import avoids a circular import: promotion imports FactorRegistry.
+        # One-shot research only: re-verifies digest-bound approved candidates
+        # immediately before compile (never a default/CWD candidates path).
+        # Resident paper/live construction must keep include_approved_candidates
+        # False. Lazy import avoids a circular import: promotion imports
+        # FactorRegistry.
         from quant_system.agent.promotion import load_approved_factor_candidates
 
         loaded = load_approved_factor_candidates(
