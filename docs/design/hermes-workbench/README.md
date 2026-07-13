@@ -12,24 +12,23 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 
 | Gate | Status | Notes |
 | --- | --- | --- |
-| F0 visual directions | **draft — awaiting user selection** | Three full-size directions A/B/C delivered. **Not approved.** |
-| F0 independent review | **completed 2026-07-13** | UX pass/fail recorded below. Package: **Ready for user selection**. No direction approved. |
-| F1 clickable prototype | not started | Blocked on written F0 approval. |
+| F0 visual directions | **direction-a approved for polish path** | Hierarchy A (COO desk) selected for visual redesign. B/C remain comparison artifacts. |
+| F0 visual polish (A) | **landed 2026-07-13** | Premium dark Linear/Raycast craft on `shared.css` + `direction-a.html`. Commit message: `docs(frontend): polish Hermes F0 direction-a to premium dark COO craft`. |
+| F0 independent review | **completed 2026-07-13** | UX pass/fail recorded below (pre-polish). Package was Ready for user selection; user chose A for craft pass. |
+| F1 clickable prototype | not started | Next after polish acceptance. |
 | F2 production shell | not started | Blocked on F1 approval + candidate-integrity Task 5 types. |
 
 ### F0 decision
 
-**No F0 decision has been recorded.**
+| Field | Value |
+| --- | --- |
+| status | `approved` (hierarchy + polish path) |
+| selected | `direction-a` |
+| approver | `user` |
+| date | `2026-07-13` |
+| adjustments | Visual craft only — Linear near-black canvas, hairline panels, Hermes `#9085E9` sparingly; keep exact product facts; mobile tabs as real buttons; disabled composer contrast raised |
 
-Do not treat any direction as selected until this section contains all of:
-
-- status: `approved`
-- exact selected filename stem under `f0/` (e.g. `direction-a`)
-- approver: `user`
-- date from `date +%F`
-- only adjustments explicitly requested by the user
-
-Until then, F1 must not start from a presumed winner.
+F1 must not invent new product facts beyond the fixed comparison content below.
 
 ---
 
