@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>F0 Direction C — quiet split canvas · Hermes Workbench</title>
+  <link rel="stylesheet" href="./shared.css" />
+  <style>
+    /* Direction C: quiet split canvas — conversation + result first;
+       idle still answers safety / action / current-work / recent-result in 5s */
+    .proto-c {
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
+      grid-template-rows: auto 1fr;
+      min-height: calc(100vh - 36px);
+      width: 100%;
+      max-width: 100vw;
+    }
+
+    .quiet-chrome {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .quiet-chrome .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      margin-right: 8px;
+    }
+
+    .quiet-chrome .brand i {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--hermes);
+      box-shadow: 0 0 0 3px rgba(139, 124, 246, 0.2);
+    }
+
+    .quiet-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .quiet-nav button {
+      min-height: 44px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+    }
+
+    .quiet-nav button[aria-current="page"] {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .pulse {
+      margin-left: auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    /* Left: conversation canvas */
+    .canvas-left {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      max-width: 100%;
+      min-height: 0;
+      border-right: 1px solid var(--line);
+      background: var(--bg);
+    }
+
+    .quiet-card p,
+    .answer-chip .v,
+    .bubble p {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .brief-strip {
+      padding: 14px 18px 10px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(139, 124, 246, 0.05), transparent);
+    }
+
+    .brief-strip h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
+    .brief-strip p {
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .idle-answers {
+      display: grid;
+      gap: 8px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .answer-chip {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      min-height: 44px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .answer-chip .k {
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding-top: 2px;
+    }
+
+    .answer-chip .v {
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--text);
+      min-width: 0;
+      word-break: break-word;
+    }
+
+    .answer-chip.action {
+      border-color: rgba(245, 185, 66, 0.4);
+      background: rgba(245, 185, 66, 0.07);
+    }
+
+    .thread-scroll {
+      flex: 1;
+      overflow: auto;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .bubble {
+      max-width: 42rem;
+      border-radius: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .bubble.user {
+      align-self: flex-end;
+      background: rgba(139, 124, 246, 0.1);
+      border-color: rgba(139, 124, 246, 0.28);
+    }
+
+    .bubble .who {
+      margin: 0 0 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .bubble p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--text);
+    }
+
+    .composer-fixed {
+      border-top: 1px solid var(--line);
+      padding: 12px 14px 14px;
+      background: var(--surface);
+    }
+
+    /* Right: results / work surface */
+    .canvas-right {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      padding: 18px 20px 24px;
+      background: var(--surface);
+    }
+
+    .surface-title {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .surface-title h2 {
+      margin: 0;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .quiet-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--bg);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .quiet-card.hero {
+      border-color: rgba(245, 185, 66, 0.4);
+      background:
+        linear-gradient(145deg, rgba(245, 185, 66, 0.08), transparent 50%),
+        var(--bg);
+    }
+
+    .quiet-card h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .quiet-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .quiet-card .id-mono {
+      display: block;
+      margin: 12px 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .quiet-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .auto-one-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .result-canvas {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .result-canvas header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .result-canvas header strong {
+      font-size: 15px;
+    }
+
+    .result-canvas .body {
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .split-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .split-metrics div {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: var(--surface);
+    }
+
+    .split-metrics .k {
+      margin: 0 0 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .split-metrics .v {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    /* Idle right column keeps overview; conversation/result re-weight */
+    body[data-view="conversation"] .idle-answers {
+      display: none;
+    }
+
+    body[data-view="approval"] .canvas-left .brief-strip h1::after {
+      content: none;
+    }
+
+    .approval-panel .field {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--surface);
+      margin: 10px 0;
+    }
+
+    .approval-panel .field label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .approval-panel .field .val {
+      font-family: var(--mono);
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    @media (max-width: 1279px) {
+      .proto-c {
+        grid-template-columns: 1fr;
+      }
+
+      .canvas-left {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        max-height: none;
+      }
+
+      /* secondary-panel rule in shared hides .secondary-panel;
+         here right canvas is primary result surface — keep it, stack below */
+      .canvas-right {
+        display: block;
+      }
+    }
+
+    @media (max-width: 767px) {
+      .proto-c {
+        display: block;
+      }
+
+      .quiet-chrome {
+        padding: 10px 16px;
+      }
+
+      .pulse {
+        margin-left: 0;
+        width: 100%;
+      }
+
+      .answer-chip {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+
+      .thread-scroll,
+      .brief-strip,
+      .idle-answers,
+      .composer-fixed,
+      .canvas-right {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .split-metrics {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* At 1280 keep split; tighten padding */
+    @media (min-width: 1280px) and (max-width: 1439px) {
+      .canvas-right {
+        padding: 16px;
+      }
+
+      .thread-scroll {
+        padding: 14px 16px;
+      }
+    }
+  </style>
+</head>
+<body data-view="idle">
+  <div class="safety" role="status">
+    仅模拟 · 实盘交易已禁用 · 熔断开关 开 · 接口 OK
+  </div>
+
+  <div class="state-bar" role="toolbar" aria-label="F0 状态切换（设计评审）">
+    <span class="label">视图</span>
+    <button type="button" data-set-view="idle" aria-pressed="true">今日 idle</button>
+    <button type="button" data-set-view="conversation" aria-pressed="false">对话/执行</button>
+    <button type="button" data-set-view="approval" aria-pressed="false">审批</button>
+    <button type="button" data-set-view="result" aria-pressed="false">结果</button>
+    <span class="meta-note">Direction C · quiet split canvas · conversation / result first</span>
+  </div>
+
+  <main class="prototype proto-c">
+    <div class="quiet-chrome">
+      <div class="brand"><i aria-hidden="true"></i> Hermes</div>
+      <nav class="quiet-nav" aria-label="Hermes 主导航">
+        <button type="button" aria-current="page">今日</button>
+        <button type="button">任务</button>
+        <button type="button">审批</button>
+        <button type="button">结果</button>
+      </nav>
+      <div class="pulse" aria-label="五秒扫描摘要">
+        <span class="pill pill-warn">待确认 1</span>
+        <span class="pill pill-ok">自动化 3/4</span>
+        <span class="pill">结果 degraded</span>
+      </div>
+    </div>
+
+    <section class="canvas-left" aria-label="Hermes conversation">
+      <div class="brief-strip">
+        <p class="eyebrow" style="margin:0 0 4px">7 月 13 日 · 今日</p>
+        <h1 id="today-title">1 项需要你确认，其余研究运行正常</h1>
+        <p>安静分栏：左侧对话边界，右侧工作结果。安全只在顶栏。</p>
+      </div>
+
+      <!-- Five-second answers stay visible in idle without burying conversation -->
+      <div class="idle-answers" data-show="idle" aria-label="五秒问答">
+        <div class="answer-chip action">
+          <span class="k">需要你</span>
+          <span class="v">研究审批项 · factor-momentum_20d_reversal-323b045e4b</span>
+        </div>
+        <div class="answer-chip">
+          <span class="k">异常</span>
+          <span class="v">自动化 3/4 正常 · weekly_review 已过期</span>
+        </div>
+        <div class="answer-chip">
+          <span class="k">当前</span>
+          <span class="v">研究运行正常 · 进度停在人工确认</span>
+        </div>
+        <div class="answer-chip">
+          <span class="k">最近</span>
+          <span class="v">AAPL 风险与新因子计划 · completed_degraded</span>
+        </div>
+      </div>
+
+      <div class="thread-scroll">
+        <div data-panel="idle">
+          <div class="bubble">
+            <p class="who">系统 · 只读摘要</p>
+            <p>今日工作台已就绪。对话写入关闭；请从右侧处理审批或阅读结果。</p>
+          </div>
+        </div>
+
+        <div data-panel="conversation">
+          <div class="bubble user">
+            <p class="who">你 · 09:12</p>
+            <p>总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。</p>
+          </div>
+          <div class="bubble">
+            <p class="who">Hermes · completed_degraded</p>
+            <p>已完成编排回放：产出最近结果，并停在 1 项研究审批项。未升级 paper/live 资格。</p>
+          </div>
+          <div class="bubble">
+            <p class="who">系统事件</p>
+            <p class="id-mono">run research-aapl-risk-plan-2026-07-13-0912</p>
+          </div>
+        </div>
+
+        <div data-panel="approval">
+          <div class="bubble">
+            <p class="who">审批上下文</p>
+            <p>右侧展示研究审批项完整摘要入口。本壳不代填 CAS 字段。</p>
+          </div>
+        </div>
+
+        <div data-panel="result">
+          <div class="bubble">
+            <p class="who">结果上下文</p>
+            <p>右侧为主结果画布。左侧保留只读对话轨迹。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer-fixed">
+        <div class="composer">
+          <textarea aria-label="和 Hermes 对话" disabled>真实 Hermes 写入能力尚未通过</textarea>
+          <div class="composer-actions">
+            <p class="composer-note">真实 Hermes 写入能力尚未通过</p>
+            <button type="button" class="btn btn-primary" disabled>发送</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="canvas-right content" aria-label="工作与结果画布">
+      <!-- IDLE right: action + automation + recent result -->
+      <div data-panel="idle">
+        <div class="surface-title">
+          <h2>工作面</h2>
+          <span class="pill pill-hermes">conversation + result</span>
+        </div>
+
+        <article class="quiet-card hero">
+          <h3>研究审批项</h3>
+          <p>需要人工确认后，研究路径才可继续。</p>
+          <span class="id-mono">factor-momentum_20d_reversal-323b045e4b</span>
+          <div class="quiet-actions">
+            <button type="button" class="btn btn-warn">查看准确摘要</button>
+          </div>
+        </article>
+
+        <article class="quiet-card">
+          <div class="auto-one-line">
+            <div>
+              <h3 style="margin:0 0 6px;font-size:15px">自动化 3/4 正常</h3>
+              <p>weekly_review 已过期；最近成功 2026-07-05T01:00:11Z</p>
+            </div>
+            <span class="pill pill-warn">stale</span>
+          </div>
+          <details class="tech">
+            <summary>技术详情</summary>
+            <code>0 9 * * 0 · run weekly-review-2026-07-13-01</code>
+          </details>
+        </article>
+
+        <article class="quiet-card">
+          <h3>最近结果</h3>
+          <p>AAPL 风险与新因子计划 · <span class="pill pill-warn">completed_degraded</span></p>
+        </article>
+      </div>
+
+      <!-- CONVERSATION: emphasize execution composition on right -->
+      <div data-panel="conversation">
+        <div class="surface-title">
+          <h2>执行合成</h2>
+          <span class="pill pill-hermes">read-only</span>
+        </div>
+        <article class="quiet-card">
+          <h3>运行中的编排（回放）</h3>
+          <p>对话在左侧；此处聚合任务步骤与产出指针，不提供写入。</p>
+          <div class="split-metrics" style="margin-top:12px">
+            <div>
+              <p class="k">状态</p>
+              <p class="v">completed_degraded</p>
+            </div>
+            <div>
+              <p class="k">门禁</p>
+              <p class="v">1 pending approval</p>
+            </div>
+          </div>
+          <details class="tech">
+            <summary>技术详情</summary>
+            <code>run research-aapl-risk-plan-2026-07-13-0912</code>
+          </details>
+        </article>
+        <article class="quiet-card">
+          <h3>关联审批</h3>
+          <p class="id-mono">factor-momentum_20d_reversal-323b045e4b</p>
+        </article>
+      </div>
+
+      <!-- APPROVAL -->
+      <div data-panel="approval">
+        <div class="surface-title">
+          <h2>审批</h2>
+          <span class="pill pill-warn">Gate 2 CAS</span>
+        </div>
+        <article class="quiet-card hero approval-panel">
+          <h3>研究审批项</h3>
+          <p>人类必须显式提供 candidate-id、expected-digest、expected-status=pending 与 note。界面不代填、不替换。</p>
+          <div class="field">
+            <label>Candidate ID</label>
+            <div class="val">factor-momentum_20d_reversal-323b045e4b</div>
+          </div>
+          <div class="field">
+            <label>状态</label>
+            <div class="val">pending · Research approval item</div>
+          </div>
+          <div class="quiet-actions">
+            <button type="button" class="btn btn-warn">查看准确摘要</button>
+            <button type="button" class="btn" disabled>在本壳批准（未开放）</button>
+          </div>
+        </article>
+      </div>
+
+      <!-- RESULT -->
+      <div data-panel="result">
+        <div class="surface-title">
+          <h2>结果画布</h2>
+          <span class="pill pill-warn">completed_degraded</span>
+        </div>
+        <article class="result-canvas" aria-labelledby="result-title">
+          <header>
+            <strong id="result-title">AAPL 风险与新因子计划</strong>
+            <span class="pill">factor / backtest / experiment</span>
+          </header>
+          <div class="body">
+            <div class="split-metrics">
+              <div>
+                <p class="k">因子</p>
+                <p class="v">momentum_20d_reversal</p>
+              </div>
+              <div>
+                <p class="k">窗口</p>
+                <p class="v">2019-01 → 2025-12</p>
+              </div>
+              <div>
+                <p class="k">限制</p>
+                <p class="v">degraded feed</p>
+              </div>
+              <div>
+                <p class="k">交易资格</p>
+                <p class="v">none granted</p>
+              </div>
+            </div>
+            <p style="margin:0;color:var(--muted);font-size:14px;line-height:1.55">
+              结果可阅读。关联
+              <span class="id-mono">factor-momentum_20d_reversal-323b045e4b</span>
+              仍为 pending。
+            </p>
+            <details class="tech">
+              <summary>技术详情</summary>
+              <code>artifact research-aapl-risk-plan-2026-07-13-0912 · source=9H feed</code>
+            </details>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var buttons = document.querySelectorAll("[data-set-view]");
+      function setView(view) {
+        document.body.setAttribute("data-view", view);
+        buttons.forEach(function (btn) {
+          var on = btn.getAttribute("data-set-view") === view;
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+      }
+      buttons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          setView(btn.getAttribute("data-set-view"));
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

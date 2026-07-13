@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>F0 Direction B — research timeline · Hermes Workbench</title>
+  <link rel="stylesheet" href="./shared.css" />
+  <style>
+    /* Direction B: research timeline — change and progress first */
+    .proto-b {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+      grid-template-rows: auto 1fr;
+      min-height: calc(100vh - 36px);
+      width: 100%;
+      max-width: 100vw;
+    }
+
+    .top-band {
+      grid-column: 1 / -1;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+      padding: 14px 28px 16px;
+    }
+
+    .top-band-inner {
+      max-width: 1100px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px 28px;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+
+    .progress-track {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0;
+      align-items: center;
+      margin-top: 14px;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+      padding-right: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .step::after {
+      content: "";
+      width: 28px;
+      height: 1px;
+      background: var(--line);
+      margin-left: 6px;
+    }
+
+    .step:last-child::after {
+      display: none;
+    }
+
+    .step .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--line);
+      flex-shrink: 0;
+    }
+
+    .step.done {
+      color: var(--success);
+    }
+
+    .step.done .dot {
+      background: var(--success);
+    }
+
+    .step.now {
+      color: var(--warning);
+      font-weight: 600;
+    }
+
+    .step.now .dot {
+      background: var(--warning);
+      box-shadow: 0 0 0 3px rgba(245, 185, 66, 0.2);
+    }
+
+    .step.next .dot {
+      border: 1px solid var(--muted);
+      background: transparent;
+    }
+
+    .stream-col {
+      min-width: 0;
+      max-width: 100%;
+      padding: 20px 28px 28px;
+      overflow: auto;
+    }
+
+    .tl-card p,
+    .mini-stat span {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .timeline {
+      position: relative;
+      max-width: 720px;
+      margin: 0;
+      padding: 0 0 0 22px;
+      list-style: none;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 6px;
+      bottom: 6px;
+      width: 2px;
+      background: linear-gradient(180deg, var(--hermes), var(--line) 70%);
+    }
+
+    .tl-item {
+      position: relative;
+      margin: 0 0 16px;
+      padding: 0;
+    }
+
+    .tl-item::before {
+      content: "";
+      position: absolute;
+      left: -20px;
+      top: 18px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--surface-2);
+      border: 2px solid var(--hermes);
+      z-index: 1;
+    }
+
+    .tl-item.action::before {
+      border-color: var(--warning);
+      background: rgba(245, 185, 66, 0.25);
+    }
+
+    .tl-item.exception::before {
+      border-color: var(--danger);
+      background: rgba(240, 106, 106, 0.2);
+    }
+
+    .tl-item.result::before {
+      border-color: var(--success);
+    }
+
+    .tl-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface);
+      padding: 14px 16px;
+    }
+
+    .tl-card.action {
+      border-color: rgba(245, 185, 66, 0.45);
+      background:
+        linear-gradient(90deg, rgba(245, 185, 66, 0.1), transparent 40%),
+        var(--surface);
+    }
+
+    .tl-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .tl-meta time {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .tl-card h2 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    .tl-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .tl-card .id-mono {
+      display: block;
+      margin: 10px 0;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+    }
+
+    .tl-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .secondary-panel {
+      border-left: 1px solid var(--line);
+      background: var(--surface);
+      padding: 18px 16px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .side-block h2 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .mini-stat {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: var(--surface-2);
+      margin-bottom: 8px;
+    }
+
+    .mini-stat strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    .mini-stat span {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .composer-side .composer {
+      margin-top: 0;
+    }
+
+    /* Conversation as annotated progress */
+    .exec-timeline .tl-card {
+      border-left: 3px solid var(--hermes);
+    }
+
+    /* Approval focus */
+    .approval-focus {
+      max-width: 720px;
+    }
+
+    .approval-focus .tl-card {
+      padding: 18px;
+    }
+
+    .approval-focus h2 {
+      font-size: 20px;
+    }
+
+    .field {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--bg);
+      margin: 10px 0;
+    }
+
+    .field label {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .field .val {
+      font-family: var(--mono);
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    /* Result composition as terminal event */
+    .result-terminal {
+      max-width: 760px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .result-terminal .bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+
+    .result-terminal .body {
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .spark {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .spark div {
+      height: 44px;
+      border-radius: 6px;
+      background: linear-gradient(180deg, rgba(139, 124, 246, 0.25), rgba(139, 124, 246, 0.05));
+      border: 1px solid rgba(139, 124, 246, 0.2);
+    }
+
+    .spark div:nth-child(2) {
+      opacity: 0.85;
+      transform: scaleY(0.7);
+      transform-origin: bottom;
+    }
+
+    .spark div:nth-child(3) {
+      opacity: 0.65;
+      transform: scaleY(0.9);
+      transform-origin: bottom;
+    }
+
+    .spark div:nth-child(4) {
+      opacity: 0.5;
+      transform: scaleY(0.55);
+      transform-origin: bottom;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .spark div {
+        transform: none !important;
+      }
+    }
+
+    @media (max-width: 1279px) {
+      .proto-b {
+        grid-template-columns: 1fr;
+      }
+
+      .stream-col {
+        padding-bottom: 12px;
+      }
+
+      .mobile-composer {
+        display: block;
+        padding: 0 20px 20px;
+        border-top: 1px solid var(--line);
+        background: var(--surface);
+      }
+    }
+
+    @media (min-width: 1280px) {
+      .mobile-composer {
+        display: none;
+      }
+    }
+
+    @media (max-width: 767px) {
+      .proto-b {
+        display: block;
+      }
+
+      .top-band,
+      .stream-col {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .progress-track {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .step::after {
+        display: none;
+      }
+
+      .spark {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .mobile-composer {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body data-view="idle">
+  <div class="safety" role="status">
+    仅模拟 · 实盘交易已禁用 · 熔断开关 开 · 接口 OK
+  </div>
+
+  <div class="state-bar" role="toolbar" aria-label="F0 状态切换（设计评审）">
+    <span class="label">视图</span>
+    <button type="button" data-set-view="idle" aria-pressed="true">今日 idle</button>
+    <button type="button" data-set-view="conversation" aria-pressed="false">对话/执行</button>
+    <button type="button" data-set-view="approval" aria-pressed="false">审批</button>
+    <button type="button" data-set-view="result" aria-pressed="false">结果</button>
+    <span class="meta-note">Direction B · research timeline · change / progress first</span>
+  </div>
+
+  <main class="prototype proto-b">
+    <header class="top-band">
+      <div class="top-band-inner">
+        <section aria-labelledby="today-title">
+          <p class="eyebrow">7 月 13 日 · 今日</p>
+          <h1 class="lede" id="today-title">1 项需要你确认，其余研究运行正常</h1>
+        </section>
+        <div class="desktop-only" aria-hidden="true">
+          <span class="pill pill-warn">进度卡在审批</span>
+        </div>
+      </div>
+      <div class="progress-track" aria-label="研究流水线进度">
+        <div class="step done"><span class="dot"></span> 研究运行</div>
+        <div class="step done"><span class="dot"></span> 结果产出</div>
+        <div class="step now"><span class="dot"></span> 人工确认</div>
+        <div class="step next"><span class="dot"></span> 后续路径</div>
+      </div>
+    </header>
+
+    <div class="stream-col content">
+      <!-- IDLE: chronological change log -->
+      <div data-panel="idle">
+        <ol class="timeline">
+          <li class="tl-item action">
+            <article class="tl-card action">
+              <div class="tl-meta">
+                <span class="pill pill-warn">需要你</span>
+                <time datetime="2026-07-13">刚刚 · 阻塞进度</time>
+              </div>
+              <h2>研究审批项</h2>
+              <p>候选已进入 pending，等待 Gate 2 CAS 后进度才能继续。</p>
+              <span class="id-mono">factor-momentum_20d_reversal-323b045e4b</span>
+              <div class="tl-actions">
+                <button type="button" class="btn btn-warn">查看准确摘要</button>
+              </div>
+            </article>
+          </li>
+
+          <li class="tl-item exception">
+            <article class="tl-card">
+              <div class="tl-meta">
+                <span class="pill pill-danger">异常</span>
+                <time datetime="2026-07-13">今日 · 自动化</time>
+              </div>
+              <h2>自动化 3/4 正常</h2>
+              <p>weekly_review 已过期；最近成功 2026-07-05T01:00:11Z</p>
+              <details class="tech">
+                <summary>技术详情</summary>
+                <code>0 9 * * 0 · run weekly-review-2026-07-13-01</code>
+              </details>
+            </article>
+          </li>
+
+          <li class="tl-item result">
+            <article class="tl-card">
+              <div class="tl-meta">
+                <span class="pill pill-hermes">结果</span>
+                <time datetime="2026-07-13T09:12:00Z">09:12Z</time>
+              </div>
+              <h2>最近结果</h2>
+              <p>AAPL 风险与新因子计划 · <span class="pill pill-warn">completed_degraded</span></p>
+            </article>
+          </li>
+
+          <li class="tl-item">
+            <article class="tl-card">
+              <div class="tl-meta">
+                <span class="pill pill-ok">背景运行</span>
+                <time>持续</time>
+              </div>
+              <h2>其余研究运行正常</h2>
+              <p>健康自动化压缩为时间线中的单条状态，不展开为多卡片。</p>
+            </article>
+          </li>
+        </ol>
+      </div>
+
+      <!-- CONVERSATION as annotated progress -->
+      <div data-panel="conversation">
+        <ol class="timeline exec-timeline">
+          <li class="tl-item">
+            <article class="tl-card">
+              <div class="tl-meta">
+                <span class="pill">你</span>
+                <time>09:12</time>
+              </div>
+              <h2>发起研究编排</h2>
+              <p>总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。</p>
+            </article>
+          </li>
+          <li class="tl-item">
+            <article class="tl-card">
+              <div class="tl-meta">
+                <span class="pill pill-hermes">Hermes</span>
+                <time>09:12 · running → completed_degraded</time>
+              </div>
+              <h2>执行进度回放</h2>
+              <p>已生成因子与回测摘要；检测到 1 项研究审批项与 1 项过期自动化。未创建交易资格。</p>
+              <details class="tech">
+                <summary>技术详情</summary>
+                <code>run research-aapl-risk-plan-2026-07-13-0912</code>
+              </details>
+            </article>
+          </li>
+          <li class="tl-item action">
+            <article class="tl-card action">
+              <div class="tl-meta">
+                <span class="pill pill-warn">门禁</span>
+              </div>
+              <h2>进度停在人工确认</h2>
+              <p class="id-mono">factor-momentum_20d_reversal-323b045e4b</p>
+            </article>
+          </li>
+        </ol>
+      </div>
+
+      <!-- APPROVAL -->
+      <div data-panel="approval">
+        <div class="approval-focus">
+          <article class="tl-card action">
+            <div class="tl-meta">
+              <span class="pill pill-warn">pending</span>
+              <span class="pill">Gate 2 CAS</span>
+            </div>
+            <h2>研究审批项</h2>
+            <p>审批是进度的硬节点。本壳只读展示摘要入口，不会代填 digest / note。</p>
+            <div class="field">
+              <label>Candidate ID</label>
+              <div class="val">factor-momentum_20d_reversal-323b045e4b</div>
+            </div>
+            <div class="tl-actions">
+              <button type="button" class="btn btn-warn">查看准确摘要</button>
+              <button type="button" class="btn" disabled>在本壳批准（未开放）</button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <!-- RESULT -->
+      <div data-panel="result">
+        <article class="result-terminal" aria-labelledby="result-title">
+          <div class="bar">
+            <div>
+              <strong id="result-title">AAPL 风险与新因子计划</strong>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">factor · backtest · experiment</div>
+            </div>
+            <span class="pill pill-warn">completed_degraded</span>
+          </div>
+          <div class="body">
+            <div class="spark" aria-hidden="true">
+              <div></div><div></div><div></div><div></div>
+            </div>
+            <p style="margin:0;color:var(--muted);font-size:14px;line-height:1.55">
+              结果事件已写入时间线。状态 degraded 表示源有限制，不表示可交易。
+              关联审批仍为
+              <span class="id-mono">factor-momentum_20d_reversal-323b045e4b</span>。
+            </p>
+            <details class="tech">
+              <summary>技术详情</summary>
+              <code>artifact research-aapl-risk-plan-2026-07-13-0912 · source=9H feed</code>
+            </details>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <aside class="secondary-panel" aria-label="上下文与对话">
+      <div class="side-block">
+        <h2>当前进度摘要</h2>
+        <div class="mini-stat">
+          <strong>阻塞：研究审批项</strong>
+          <span>factor-momentum_20d_reversal-323b045e4b</span>
+        </div>
+        <div class="mini-stat">
+          <strong>异常：自动化 3/4</strong>
+          <span>weekly_review 已过期；最近成功 2026-07-05T01:00:11Z</span>
+        </div>
+        <div class="mini-stat">
+          <strong>最近结果</strong>
+          <span>AAPL 风险与新因子计划 · completed_degraded</span>
+        </div>
+      </div>
+
+      <div class="side-block composer-side" aria-label="Hermes conversation">
+        <h2>对话边界</h2>
+        <div class="composer">
+          <textarea aria-label="和 Hermes 对话" disabled>真实 Hermes 写入能力尚未通过</textarea>
+          <div class="composer-actions">
+            <p class="composer-note">真实 Hermes 写入能力尚未通过 · 时间线只读。</p>
+            <button type="button" class="btn btn-primary" disabled>发送</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="mobile-composer" aria-label="Hermes conversation">
+      <div class="composer">
+        <textarea aria-label="和 Hermes 对话" disabled>真实 Hermes 写入能力尚未通过</textarea>
+        <div class="composer-actions">
+          <p class="composer-note">真实 Hermes 写入能力尚未通过</p>
+          <button type="button" class="btn btn-primary" disabled>发送</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var buttons = document.querySelectorAll("[data-set-view]");
+      function setView(view) {
+        document.body.setAttribute("data-view", view);
+        buttons.forEach(function (btn) {
+          var on = btn.getAttribute("data-set-view") === view;
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+      }
+      buttons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          setView(btn.getAttribute("data-set-view"));
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
