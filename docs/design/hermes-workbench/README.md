@@ -18,7 +18,7 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 | F0/F1 platform token rebind | **landed 2026-07-13** | F0/F1 CSS tokens aligned to QUANTUM_CORE (`globals.css`): warm terminal surfaces, info-blue primary CTAs, warning yellow for safety/warn only, Hermes purple brand/focus only. |
 | F0 independent review | **completed 2026-07-13** | UX pass/fail recorded below (pre-polish). Package was Ready for user selection; user chose A for craft pass. |
 | F1 clickable prototype | **approved 2026-07-13** | Craft accepted with platform token rebind. Full-state catalogs + walkthrough under `f1/`. Density + full-width desk retained. |
-| F2 production shell | not started | Unblocked on F1 craft approval; still needs candidate-integrity Task 5 types before production shell. |
+| F2 production shell | **code-delivered 2026-07-14** | Read-only Hermes shell, Today hierarchy, Tasks/Approvals/Results, reversible root→Hermes cutover, hard-off chat/execution/unifiedResults/legacyRedirects, static `blocked_in_this_slice`. Chat/approve UI still closed. |
 
 ### F0 decision
 
@@ -57,7 +57,16 @@ No purple atmosphere. Warning yellow is not used as Submit/primary fill.
 - date: `2026-07-13`
 - package: [`f1/prototype.html`](./f1/prototype.html) + [`f1/prototype.css`](./f1/prototype.css) + [`f1/states/`](./f1/states/)
 - visual base: F0 `direction-a` full-width trading desk + QUANTUM_CORE palette
-- next: F2 production shell may proceed on craft; keep candidate-integrity types gating real wiring
+- next: F2 production shell proceeded on craft; candidate-integrity types gate real candidate wiring
+
+### F2 decision / delivery (2026-07-14)
+
+- status: `code-delivered` (read-only shell; not chat/execution)
+- production base: F0 `direction-a` full-width trading desk + QUANTUM_CORE tokens
+- enabled root/navigation: Hermes; `QS_HERMES_SHELL_ENABLED=false` returns root/home nav to Dashboard while direct `/hermes` stays read-only
+- hard-off: `chat` / `execution` / `unifiedResults` / `legacyRedirects` are literal `false` (env=true ineffective)
+- capability notice: static `blocked_in_this_slice` (no platform capability-contract getter/route in this wave)
+- old four research pages retained pending later parity; no mutation path under Hermes F2 surfaces
 
 ---
 

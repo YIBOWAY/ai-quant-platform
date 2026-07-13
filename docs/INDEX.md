@@ -3,7 +3,7 @@
 这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
 指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-## 当前工作（2026-07-13）
+## 当前工作（2026-07-14）
 
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
@@ -11,7 +11,8 @@
 | 已交付跨仓计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | Slice 9A-9G + mini 9H 已完成。 |
 | 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
 | 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、Gate 2 digest CAS、dry-run migration、隔离 Gate 3 worktree 已代码交付；真实 `--apply` 与 Hermes 新审批 UI 仍未授权/未开放。 |
-| 当前实现选择 | D-31 其余 wave | Gateway capability 合同已冻结且 chat 仍 fail-closed；professional frontend/read-only shell 待执行。 |
+| 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 只读 Hermes 壳、可回滚默认首页与 hard-off chat/execution 已代码交付；chat/approve UI 与旧页 redirect 仍未开放。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
+| 当前实现选择 | D-31 其余 wave | Gateway capability 合同已冻结且 chat 仍 fail-closed；candidate integrity/Gate 3 与 professional frontend/read-only shell 均已代码交付；bridge/chat 与真实 migration apply 仍关闭。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
 | 被替代计划 | HQA `2026-07-07-phase-1a-4-research-employees.md` | 目标保留，旧 implementation 模板不得原样执行。 |
 | 历史路线 | [Phase 15 素材档案](phases/phase_15_iteration_roadmap.md) | 仅作素材，不是独立 roadmap。 |
@@ -68,6 +69,16 @@ scheduler、outbound worker、POST route 或数据库 migration。
   `294bbe7b846ae86384e56deae8ba8df2576ac6ffa8a5937e4f82a2352fdd8558`）。
   真实数据迁移需单独授权 `--apply` + `--backup-dir`。
 - 新 Hermes 审批 UI 在 professional frontend/bridge gates 完成前保持关闭。
+
+### Hermes 专业前端 / 只读壳（2026-07-14 代码交付）
+
+- F0：用户书面批准 `direction-a`（COO full-width trading desk）；craft 路径经 finance-crypto 重设计后与 QUANTUM_CORE 调色板对齐。
+- F1：用户书面批准可点击全状态原型（含 token rebind）。
+- F2 生产只读壳：单一全局 `SafetyStrip`；Today 以行动/异常/结论为先并压缩健康自动化；Tasks / Approvals / Results 只读且无批准/拒绝控件；composer 硬禁用；能力提示为静态 `blocked_in_this_slice`。
+- 默认可回滚首页：`QS_HERMES_SHELL_ENABLED≠false` 时 `/` 与 locale root 进入 Hermes；`=false` 时 root/导航回到 Dashboard，直接 `/hermes` 仍只读。
+- hard-off：`chat` / `execution` / `unifiedResults` / `legacyRedirects` 在源码中为字面 `false`，同名 env=true 无效。
+- 旧四页（factor-lab / backtest / experiments / agent-studio）保留；无旧页兼容 redirect；无 Hermes chat mutation。
+- 2026-07-14 验证快照：frontend unit `113 passed`；fixture-api `7 passed`；type-check/lint/build 通过；Playwright 非 fixture `55 passed`；combined-fixture workbench `6` + visual `24`；rollback/nav/locale `11`（含与上重叠项）；hard-off / hermes mutation greps 均为 0。本地 smoke：`http://127.0.0.1:3001` 对 `/zh/hermes` 及子路由 200，`/`→`/en/hermes`、`/zh`→`/zh/hermes` 307。
 
 ## 0. 界面操作指南（新，建议先读）
 
