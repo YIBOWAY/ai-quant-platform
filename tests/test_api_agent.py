@@ -142,6 +142,8 @@ def test_agent_review_missing_expected_status_and_stale_second_decision(tmp_path
         },
     )
     assert first.status_code == 200
+    lock_path = Path(agent, "agent", "candidates", artifact.candidate_id, "approved.lock")
+    first_lock_bytes = lock_path.read_bytes()
     second = client.post(
         f"/api/agent/candidates/{artifact.candidate_id}/review",
         json={
@@ -152,29 +154,38 @@ def test_agent_review_missing_expected_status_and_stale_second_decision(tmp_path
         },
     )
     assert second.status_code == 409
-    assert second.json()["detail"]["code"] == "review_state_stale"
+    detail = second.json()["detail"]
+    assert detail["code"] == "candidate_review_state_stale"
+    assert detail["resource"] == "agent_candidate"
+    assert detail["id"] == artifact.candidate_id
+    assert lock_path.read_bytes() == first_lock_bytes
+    assert not (
+        Path(agent, "agent", "candidates", artifact.candidate_id, "rejected.lock")
+    ).exists()
 
 
-def test_agent_review_stale_digest_is_409(tmp_path) -> None:
-    agent, client = _agent_app(tmp_path)
-    artifact = CandidatePool(agent).write_candidate(
-        task_id="task-stale",
+def test_candidate_review_returns_409_for_stale_digest(tmp_path) -> None:
+    pool = CandidatePool(tmp_path)
+    artifact = pool.write_candidate(
+        task_id="api-stale",
         goal="stale",
         artifact_type="factor",
         filename="factor.py.candidate",
-        content="# stale\n",
+        content="# candidate\n",
     )
+    client = TestClient(create_app(agent_output_dir=tmp_path))
     response = client.post(
         f"/api/agent/candidates/{artifact.candidate_id}/review",
         json={
             "decision": "approve",
-            "note": "wrong digest",
+            "note": "reviewed",
             "expected_manifest_digest": "0" * 64,
             "expected_status": "pending",
         },
     )
     assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "stale_digest"
+    assert response.json()["detail"]["code"] == "candidate_revision_stale"
+    assert not (artifact.path.parent / "approved.lock").exists()
 
 
 def test_agent_list_isolates_corrupt_and_migration_required(tmp_path) -> None:
@@ -237,7 +248,23 @@ def test_agent_list_isolates_corrupt_and_migration_required(tmp_path) -> None:
         },
     )
     assert mig.status_code == 409
-    assert mig.json()["detail"]["code"] == "migration_required"
+    assert mig.json()["detail"]["code"] == "candidate_migration_required"
+
+    # Migration detail remains readable with observed digest + source preview;
+    # approval stays disabled. Corrupt has no source/digest.
+    legacy_detail = client.get("/api/agent/candidates/legacy-pending").json()
+    assert legacy_detail["integrity_state"] == "migration_required"
+    assert legacy_detail["manifest_digest"] is None
+    assert len(legacy_detail["observed_manifest_digest"]) == 64
+    assert legacy_detail["approval_enabled"] is False
+    assert "# legacy" in (legacy_detail.get("source_preview") or "")
+
+    broken_detail = client.get("/api/agent/candidates/broken").json()
+    assert broken_detail["integrity_state"] == "corrupt"
+    assert broken_detail["source_preview"] is None
+    assert broken_detail["manifest_digest"] is None
+    assert broken_detail["observed_manifest_digest"] is None
+    assert broken_detail["approval_enabled"] is False
 
 
 def test_agent_tasks_propose_factor(tmp_path) -> None:
@@ -295,6 +322,89 @@ def test_agent_candidate_review_404_uses_standard_detail(tmp_path) -> None:
     assert detail["code"] == "not_found"
     assert detail["resource"] == "agent_candidate"
     assert detail["id"] == "missing-candidate"
+
+
+def test_unversioned_candidate_is_readable_but_review_is_disabled(tmp_path) -> None:
+    import json
+
+    candidates = tmp_path / "agent" / "candidates"
+    candidates.mkdir(parents=True)
+    legacy = candidates / "legacy-pending"
+    legacy.mkdir()
+    (legacy / "metadata.json").write_text(
+        json.dumps(
+            {
+                "candidate_id": "legacy-pending",
+                "task_id": "t",
+                "artifact_type": "factor",
+                "goal": "legacy",
+                "universe": ["SPY"],
+                "status": "pending",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+                "files": ["factor.py.candidate"],
+                "safety": {
+                    "auto_promotion": False,
+                    "requires_human_review": True,
+                    "review_status": "pending",
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (legacy / "factor.py.candidate").write_text("# candidate\n", encoding="utf-8")
+    client = TestClient(create_app(agent_output_dir=tmp_path))
+
+    item = client.get("/api/agent/candidates").json()["candidates"][0]
+
+    assert item["integrity_state"] == "migration_required"
+    assert item["manifest_digest"] is None
+    assert len(item["observed_manifest_digest"]) == 64
+    assert item["approval_enabled"] is False
+    response = client.post(
+        "/api/agent/candidates/legacy-pending/review",
+        json={
+            "decision": "approve",
+            "note": "must migrate first",
+            "expected_manifest_digest": item["observed_manifest_digest"],
+            "expected_status": "pending",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "candidate_migration_required"
+
+
+def test_agent_review_corrupt_candidate_is_409_integrity_failed(tmp_path) -> None:
+    agent, client = _agent_app(tmp_path)
+    broken = Path(agent) / "agent" / "candidates" / "broken-id"
+    broken.mkdir(parents=True)
+    (broken / "metadata.json").write_text("{not-json", encoding="utf-8")
+    before = {
+        p: p.read_bytes()
+        for p in broken.rglob("*")
+        if p.is_file()
+    }
+
+    response = client.post(
+        "/api/agent/candidates/broken-id/review",
+        json={
+            "decision": "approve",
+            "note": "corrupt target",
+            "expected_manifest_digest": "0" * 64,
+            "expected_status": "pending",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "candidate_integrity_failed"
+    after = {
+        p: p.read_bytes()
+        for p in broken.rglob("*")
+        if p.is_file()
+    }
+    assert after == before
+    assert not (broken / "approved.lock").exists()
 
 
 def test_agent_candidates_list_returns_latest_first(tmp_path) -> None:

@@ -544,7 +544,12 @@ function buildBriefLogEntries({
   locale,
 }: {
   runs: RecentRun[];
-  candidates: { candidate_id: string; artifact_type: string; status: string; goal?: string }[];
+  candidates: {
+    candidate_id: string;
+    artifact_type?: string | null;
+    status?: string | null;
+    goal?: string | null;
+  }[];
   optionsStatus: OptionsDailyScanStatusResponse;
   locale: "en" | "zh";
 }) {
@@ -563,14 +568,15 @@ function buildBriefLogEntries({
     });
   }
   for (const candidate of candidates.slice(0, 2)) {
+    const artifactType = candidate.artifact_type ?? "unknown";
     entries.push({
       timestamp: null,
       status: candidate.status === "pending" ? "warn" : "ok",
       text:
         locale === "zh"
-          ? `Hermes 产出候选 ${candidate.artifact_type} · ${candidate.candidate_id}`
-          : `Hermes produced candidate ${candidate.artifact_type} · ${candidate.candidate_id}`,
-      summary: candidate.goal ?? `status=${candidate.status}`,
+          ? `Hermes 产出候选 ${artifactType} · ${candidate.candidate_id}`
+          : `Hermes produced candidate ${artifactType} · ${candidate.candidate_id}`,
+      summary: candidate.goal ?? `status=${candidate.status ?? "unknown"}`,
     });
   }
   entries.push({

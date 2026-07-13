@@ -94,8 +94,8 @@ const copy = {
 
 type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 
-function statusTone(status: string): Tone {
-  const normalized = status.toLowerCase();
+function statusTone(status: string | null | undefined): Tone {
+  const normalized = (status ?? "").toLowerCase();
   if (normalized === "approved") return "success";
   if (normalized === "rejected") return "danger";
   if (normalized === "pending") return "warning";
@@ -153,10 +153,14 @@ export default async function AgentStudio() {
                       </span>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <StatusPill label={text.type} value={candidate.artifact_type} tone="neutral" />
+                      <StatusPill
+                        label={text.type}
+                        value={candidate.artifact_type ?? "—"}
+                        tone="neutral"
+                      />
                       <StatusPill
                         label={text.status}
-                        value={candidate.status}
+                        value={candidate.status ?? "—"}
                         tone={statusTone(candidate.status)}
                       />
                     </div>

@@ -1676,7 +1676,12 @@ def agent_propose_factor(
         universe=_parse_universe(universe),
         metadata_extra=metadata_extra,
     )
-    _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
+    _emit_agent_artifact(
+        artifact.candidate_id,
+        artifact.path,
+        artifact.metadata_path,
+        manifest_digest=artifact.manifest_digest,
+    )
     if json_output:
         _emit_json(
             {
@@ -1684,6 +1689,7 @@ def agent_propose_factor(
                 "status": "pending",
                 "path": str(artifact.path),
                 "metadata_path": str(artifact.metadata_path),
+                "manifest_digest": artifact.manifest_digest,
             }
         )
 
@@ -1808,21 +1814,34 @@ def agent_list_candidates(
         return
     for candidate in candidates:
         path = resolve_candidates_dir(active_agent_root) / candidate["candidate_id"]
-        digest = candidate.get("manifest_digest") or candidate.get(
-            "observed_manifest_digest"
-        )
-        typer.echo(
-            " ".join(
-                [
-                    f"candidate_id={candidate['candidate_id']}",
-                    f"type={candidate.get('artifact_type')}",
-                    f"status={candidate.get('status')}",
-                    f"integrity={candidate.get('integrity_state')}",
-                    f"digest={digest}",
-                    f"path={path}",
-                ]
-            )
-        )
+        integrity = candidate.get("integrity_state")
+        parts = [
+            f"candidate_id={candidate['candidate_id']}",
+            f"type={candidate.get('artifact_type')}",
+            f"status={candidate.get('status')}",
+            f"integrity={integrity}",
+            f"approval_enabled={candidate.get('approval_enabled')}",
+        ]
+        # Never substitute observed digest for the authoritative approval digest.
+        if integrity == "verified" and candidate.get("manifest_digest"):
+            parts.append(f"manifest_digest={candidate['manifest_digest']}")
+            if candidate.get("status") == "pending" and candidate.get(
+                "approval_enabled"
+            ):
+                parts.append(
+                    "approve_cmd="
+                    f"agent review --candidate-id {candidate['candidate_id']} "
+                    f"--decision approve --expected-digest {candidate['manifest_digest']} "
+                    f"--expected-status pending --note \"<note>\""
+                )
+        elif integrity == "migration_required":
+            observed = candidate.get("observed_manifest_digest")
+            if observed:
+                parts.append(f"observed_manifest_digest={observed}")
+            parts.append("note=migration_evidence_approval_disabled")
+        # corrupt: intentionally no digest/source fields
+        parts.append(f"path={path}")
+        typer.echo(" ".join(parts))
 
 
 @agent_app.command("review")
@@ -2872,17 +2891,28 @@ def _emit_paper_summary(result: PaperTradingRunResult) -> None:
     )
 
 
-def _emit_agent_artifact(candidate_id: str, path: Any, metadata_path: Any) -> None:
-    typer.echo(
-        " ".join(
-            [
-                f"candidate_id={candidate_id}",
-                "status=pending",
-                f"path={path}",
-                f"metadata={metadata_path}",
-            ]
+def _emit_agent_artifact(
+    candidate_id: str,
+    path: Any,
+    metadata_path: Any,
+    *,
+    manifest_digest: str | None = None,
+) -> None:
+    parts = [
+        f"candidate_id={candidate_id}",
+        "status=pending",
+        f"path={path}",
+        f"metadata={metadata_path}",
+    ]
+    if manifest_digest:
+        parts.append(f"manifest_digest={manifest_digest}")
+        parts.append(
+            "approve_cmd="
+            f"agent review --candidate-id {candidate_id} "
+            f"--decision approve --expected-digest {manifest_digest} "
+            f'--expected-status pending --note "<note>"'
         )
-    )
+    typer.echo(" ".join(parts))
 
 
 if __name__ == "__main__":

@@ -91,31 +91,41 @@ def _patch_experiment(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_propose_factor_legacy_line_byte_identical_without_json(tmp_path) -> None:
+    from quant_system.agent.candidate_pool import CandidatePool
+
     result, output_dir = _propose_factor(tmp_path)
 
     candidate_id = _candidate_id(result.output)
     candidate_dir = Path(output_dir, "agent", "candidates", candidate_id)
-    expected = " ".join(
-        [
-            f"candidate_id={candidate_id}",
-            "status=pending",
-            f"path={candidate_dir / 'factor.py.candidate'}",
-            f"metadata={candidate_dir / 'metadata.json'}",
-        ]
-    )
-    assert _last_line(result.output) == expected
+    digest = CandidatePool(output_dir).get(candidate_id).manifest_digest
+    line = _last_line(result.output)
+    assert f"candidate_id={candidate_id}" in line
+    assert "status=pending" in line
+    assert f"path={candidate_dir / 'factor.py.candidate'}" in line
+    assert f"metadata={candidate_dir / 'metadata.json'}" in line
+    assert f"manifest_digest={digest}" in line
+    assert f"--expected-digest {digest}" in line
+    assert "--expected-status pending" in line
 
 
 def test_propose_factor_json_emits_contract_on_last_line(tmp_path) -> None:
     result, output_dir = _propose_factor(tmp_path, "--json")
 
     payload = json.loads(_last_line(result.output))
-    assert set(payload) == {"candidate_id", "status", "path", "metadata_path"}
+    assert set(payload) == {
+        "candidate_id",
+        "status",
+        "path",
+        "metadata_path",
+        "manifest_digest",
+    }
     assert payload["status"] == "pending"
     assert payload["candidate_id"] == _candidate_id(result.output)
     candidate_dir = Path(output_dir, "agent", "candidates", payload["candidate_id"])
     assert payload["path"] == str(candidate_dir / "factor.py.candidate")
     assert payload["metadata_path"] == str(candidate_dir / "metadata.json")
+    assert isinstance(payload["manifest_digest"], str)
+    assert len(payload["manifest_digest"]) == 64
     # Legacy key=value line still precedes the JSON line (regex fallback safe).
     assert "status=pending" in result.output
 
@@ -123,7 +133,7 @@ def test_propose_factor_json_emits_contract_on_last_line(tmp_path) -> None:
 # --- agent review -----------------------------------------------------------
 
 
-def test_agent_review_missing_expected_status_exits_nonzero(tmp_path) -> None:
+def test_agent_review_missing_expected_status_exits_2(tmp_path) -> None:
     from quant_system.agent.candidate_pool import CandidatePool
 
     propose_result, output_dir = _propose_factor(tmp_path)
@@ -147,10 +157,97 @@ def test_agent_review_missing_expected_status_exits_nonzero(tmp_path) -> None:
             str(output_dir),
         ],
     )
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert not (
         Path(output_dir) / "agent" / "candidates" / candidate_id / "approved.lock"
     ).exists()
+
+
+def test_agent_review_missing_expected_digest_exits_2(tmp_path) -> None:
+    propose_result, output_dir = _propose_factor(tmp_path)
+    candidate_id = _candidate_id(propose_result.output)
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "review",
+            "--candidate-id",
+            candidate_id,
+            "--decision",
+            "approve",
+            "--note",
+            "missing digest CAS field",
+            "--expected-status",
+            "pending",
+            "--agent-output-dir",
+            str(output_dir),
+        ],
+    )
+    assert result.exit_code == 2
+    assert not (
+        Path(output_dir) / "agent" / "candidates" / candidate_id / "approved.lock"
+    ).exists()
+
+
+def test_agent_list_candidates_isolates_corrupt_and_verified(tmp_path) -> None:
+    import json
+
+    from quant_system.agent.candidate_pool import CandidatePool
+
+    propose_result, output_dir = _propose_factor(tmp_path)
+    good_id = _candidate_id(propose_result.output)
+    digest = CandidatePool(output_dir).get(good_id).manifest_digest
+
+    legacy = Path(output_dir) / "agent" / "candidates" / "legacy-pending"
+    legacy.mkdir(parents=True)
+    (legacy / "metadata.json").write_text(
+        json.dumps(
+            {
+                "candidate_id": "legacy-pending",
+                "task_id": "t",
+                "artifact_type": "factor",
+                "goal": "legacy",
+                "universe": ["SPY"],
+                "status": "pending",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+                "files": ["factor.py.candidate"],
+                "safety": {
+                    "auto_promotion": False,
+                    "requires_human_review": True,
+                    "review_status": "pending",
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (legacy / "factor.py.candidate").write_text("# legacy\n", encoding="utf-8")
+    broken = Path(output_dir) / "agent" / "candidates" / "broken"
+    broken.mkdir()
+    (broken / "metadata.json").write_text("{not-json", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["agent", "list-candidates", "--agent-output-dir", str(output_dir)],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"candidate_id={good_id}" in result.output
+    assert f"manifest_digest={digest}" in result.output
+    assert "integrity=migration_required" in result.output
+    assert "observed_manifest_digest=" in result.output
+    assert "migration_evidence_approval_disabled" in result.output
+    assert "integrity=corrupt" in result.output
+    # Authoritative approve digest never appears for migration/corrupt.
+    for line in result.output.splitlines():
+        if "integrity=migration_required" in line or "integrity=corrupt" in line:
+            assert " manifest_digest=" not in f" {line}"
+            # observed_manifest_digest is allowed for migration; reject bare key.
+            tokens = line.split()
+            assert not any(token.startswith("manifest_digest=") for token in tokens)
+            assert "approve_cmd=" not in line
 
 
 def test_agent_review_legacy_line_byte_identical_without_json(tmp_path) -> None:

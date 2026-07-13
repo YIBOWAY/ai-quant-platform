@@ -237,6 +237,35 @@ def test_agent_post_routes_publish_response_models(tmp_path) -> None:
     components = openapi["components"]["schemas"]
     assert "metadata" in components["AgentTaskResponse"]["properties"]
     assert "registration" in components["AgentReviewResponse"]["properties"]
+    review_req = components["AgentReviewRequest"]["properties"]
+    assert "expected_manifest_digest" in review_req
+    assert "expected_status" in review_req
+    assert components["AgentReviewRequest"]["required"] == [
+        "decision",
+        "note",
+        "expected_manifest_digest",
+        "expected_status",
+    ]
+    candidate_summary = components["CandidateSummary"]["properties"]
+    for field in (
+        "integrity_state",
+        "manifest_digest",
+        "observed_manifest_digest",
+        "approval_binding",
+        "approval_enabled",
+        "integrity_error_code",
+    ):
+        assert field in candidate_summary
+    detail = components["AgentCandidateDetailResponse"]["properties"]
+    for field in (
+        "integrity_state",
+        "manifest_digest",
+        "observed_manifest_digest",
+        "approval_binding",
+        "approval_enabled",
+        "integrity_error_code",
+    ):
+        assert field in detail
 
 
 def test_brief_archive_routes_publish_response_models(tmp_path) -> None:

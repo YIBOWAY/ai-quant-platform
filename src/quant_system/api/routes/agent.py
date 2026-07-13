@@ -30,12 +30,12 @@ from quant_system.api.schemas.agent import (
 router = APIRouter()
 
 
-def _conflict_409(*, code: str, message: str, candidate_id: str) -> HTTPException:
+def _candidate_conflict(candidate_id: str, code: str) -> HTTPException:
+    """Always HTTP 409 with stable CAS conflict codes (message-free contract)."""
     return HTTPException(
         status_code=409,
         detail={
             "code": code,
-            "message": message,
             "resource": "agent_candidate",
             "id": candidate_id,
         },
@@ -122,10 +122,13 @@ def candidate_detail(candidate_id: str, agent_output_dir: AgentOutputDirDep) -> 
         }
 
     if item.integrity_state == "migration_required":
+        # Migration preview uses the same no-symlink exact-byte reader that
+        # produces observed_manifest_digest; it is diagnostic only.
+        source_preview = _migration_source_preview(pool, candidate_id)
         return {
             "candidate_id": candidate_id,
             "metadata": None,
-            "source_preview": None,
+            "source_preview": source_preview,
             "audit": audits,
             "reviews": [],
             "integrity_state": "migration_required",
@@ -205,6 +208,25 @@ def _audit_lines(agent_output_dir, candidate_id: str) -> list[str]:
     return audits
 
 
+def _migration_source_preview(pool: CandidatePool, candidate_id: str) -> str | None:
+    """Exact-byte first-artifact preview for migration_required items only."""
+    from quant_system.agent.candidate_manifest import (
+        CandidateIntegrityError as _CIE,
+        build_candidate_manifest,
+    )
+
+    try:
+        _manifest, _digest, artifact_bytes = build_candidate_manifest(
+            pool.candidates_dir / candidate_id
+        )
+    except (CandidateIntegrityError, OSError, _CIE):
+        return None
+    if not artifact_bytes:
+        return None
+    first = next(iter(artifact_bytes))
+    return artifact_bytes[first].decode("utf-8", errors="replace")
+
+
 @router.post("/agent/tasks", response_model=AgentTaskResponse)
 def run_agent_task(
     request: AgentTaskRequest,
@@ -270,40 +292,29 @@ def review_candidate(
         )
     except FileNotFoundError as exc:
         raise not_found_404("agent_candidate", candidate_id) from exc
-    except CandidateMigrationRequiredError as exc:
-        raise _conflict_409(
-            code="migration_required",
-            message=str(exc),
-            candidate_id=candidate_id,
-        ) from exc
+    # Most-specific first so subclasses never collapse into a coarser code.
     except CandidateReviewStateStaleError as exc:
-        raise _conflict_409(
-            code="review_state_stale",
-            message=str(exc),
-            candidate_id=candidate_id,
+        raise _candidate_conflict(
+            candidate_id, "candidate_review_state_stale"
         ) from exc
-    except CandidateStaleError as exc:
-        raise _conflict_409(
-            code="stale_digest",
-            message=str(exc),
-            candidate_id=candidate_id,
-        ) from exc
-    except CandidateConflictError as exc:
-        raise _conflict_409(
-            code="conflict",
-            message=str(exc),
-            candidate_id=candidate_id,
+    except CandidateMigrationRequiredError as exc:
+        raise _candidate_conflict(
+            candidate_id, "candidate_migration_required"
         ) from exc
     except CandidateIntegrityError as exc:
-        # Missing/corrupt candidates surface as 404; CAS integrity as 409.
+        # Missing candidates surface as 404; corrupt/integrity CAS as 409.
         message = str(exc).lower()
         if "does not exist" in message or "not a directory" in message:
             raise not_found_404("agent_candidate", candidate_id) from exc
-        raise _conflict_409(
-            code="integrity_error",
-            message=str(exc),
-            candidate_id=candidate_id,
+        raise _candidate_conflict(
+            candidate_id, "candidate_integrity_failed"
         ) from exc
+    except CandidateStaleError as exc:
+        raise _candidate_conflict(
+            candidate_id, "candidate_revision_stale"
+        ) from exc
+    except CandidateConflictError as exc:
+        raise _candidate_conflict(candidate_id, "candidate_conflict") from exc
     return {
         "candidate_id": record.candidate_id,
         "decision": record.decision,

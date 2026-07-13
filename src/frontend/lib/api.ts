@@ -964,9 +964,15 @@ export type ExperimentDetailResponse = ApiEnvelope & {
 
 export type CandidateSummary = {
   candidate_id: string;
-  artifact_type: string;
-  status: string;
-  goal?: string;
+  artifact_type?: string | null;
+  status?: string | null;
+  goal?: string | null;
+  integrity_state?: string | null;
+  manifest_digest?: string | null;
+  observed_manifest_digest?: string | null;
+  approval_binding?: string | null;
+  approval_enabled?: boolean | null;
+  integrity_error_code?: string | null;
 };
 
 type HermesSchemas = GeneratedApiComponents["schemas"];
@@ -1001,10 +1007,17 @@ export type AgentCandidatesResponse = ApiEnvelope & {
 
 export type AgentCandidateDetailResponse = ApiEnvelope & {
   candidate_id: string;
-  metadata: Record<string, unknown>;
-  source_preview: string;
+  metadata: Record<string, unknown> | null;
+  source_preview: string | null;
   audit: string[];
   reviews: string[];
+  integrity_state?: string | null;
+  manifest_digest?: string | null;
+  observed_manifest_digest?: string | null;
+  approval_binding?: string | null;
+  approval_enabled?: boolean | null;
+  integrity_error_code?: string | null;
+  status?: string | null;
 };
 
 export type AgentTaskResponse = ApiEnvelope & {
@@ -1012,12 +1025,21 @@ export type AgentTaskResponse = ApiEnvelope & {
   status: string;
   path: string;
   metadata: Record<string, unknown>;
+  manifest_digest?: string | null;
 };
 
 export type AgentReviewResponse = ApiEnvelope & {
   candidate_id: string;
   decision: "approve" | "reject";
   registration: "manual_required";
+  manifest_digest?: string | null;
+};
+
+export type AgentReviewRequest = {
+  decision: "approve" | "reject";
+  note: string;
+  expected_manifest_digest: string;
+  expected_status: "pending";
 };
 
 export type AgentLLMConfigResponse = ApiEnvelope & {
@@ -2505,6 +2527,13 @@ export function getAgentCandidateDetail(candidateId: string) {
     source_preview: "",
     audit: [],
     reviews: [],
+    integrity_state: null,
+    manifest_digest: null,
+    observed_manifest_digest: null,
+    approval_binding: null,
+    approval_enabled: false,
+    integrity_error_code: null,
+    status: null,
     safety: FALLBACK_SAFETY,
   });
 }

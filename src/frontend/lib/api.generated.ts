@@ -1819,18 +1819,32 @@ export interface components {
         };
         /** AgentCandidateDetailResponse */
         AgentCandidateDetailResponse: {
+            /** Approval Binding */
+            approval_binding?: string | null;
+            /** Approval Enabled */
+            approval_enabled?: boolean | null;
             /** Audit */
-            audit: string[];
+            audit?: string[];
             /** Candidate Id */
             candidate_id: string;
+            /** Integrity Error Code */
+            integrity_error_code?: string | null;
+            /** Integrity State */
+            integrity_state?: string | null;
+            /** Manifest Digest */
+            manifest_digest?: string | null;
             /** Metadata */
-            metadata: {
+            metadata?: {
                 [key: string]: unknown;
-            };
+            } | null;
+            /** Observed Manifest Digest */
+            observed_manifest_digest?: string | null;
             /** Reviews */
-            reviews: string[];
+            reviews?: string[];
             /** Source Preview */
-            source_preview: string;
+            source_preview?: string | null;
+            /** Status */
+            status?: string | null;
         };
         /** AgentCandidatesResponse */
         AgentCandidatesResponse: {
@@ -1857,6 +1871,13 @@ export interface components {
              * @enum {string}
              */
             decision: "approve" | "reject";
+            /** Expected Manifest Digest */
+            expected_manifest_digest: string;
+            /**
+             * Expected Status
+             * @constant
+             */
+            expected_status: "pending";
             /** Note */
             note: string;
         };
@@ -1869,6 +1890,8 @@ export interface components {
              * @enum {string}
              */
             decision: "approve" | "reject";
+            /** Manifest Digest */
+            manifest_digest?: string | null;
             /**
              * Registration
              * @constant
@@ -1898,6 +1921,8 @@ export interface components {
         AgentTaskResponse: {
             /** Candidate Id */
             candidate_id: string;
+            /** Manifest Digest */
+            manifest_digest?: string | null;
             /** Metadata */
             metadata: {
                 [key: string]: unknown;
@@ -2818,14 +2843,26 @@ export interface components {
         };
         /** CandidateSummary */
         CandidateSummary: {
+            /** Approval Binding */
+            approval_binding?: string | null;
+            /** Approval Enabled */
+            approval_enabled?: boolean | null;
             /** Artifact Type */
-            artifact_type: string;
+            artifact_type?: string | null;
             /** Candidate Id */
             candidate_id: string;
             /** Goal */
             goal?: string | null;
+            /** Integrity Error Code */
+            integrity_error_code?: string | null;
+            /** Integrity State */
+            integrity_state?: string | null;
+            /** Manifest Digest */
+            manifest_digest?: string | null;
+            /** Observed Manifest Digest */
+            observed_manifest_digest?: string | null;
             /** Status */
-            status: string;
+            status?: string | null;
         } & {
             [key: string]: unknown;
         };

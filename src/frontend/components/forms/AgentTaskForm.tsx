@@ -1,13 +1,19 @@
 'use client';
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import type { AgentReviewResponse, AgentTaskResponse, CandidateSummary } from "@/lib/api";
+import type {
+  AgentCandidateDetailResponse,
+  AgentReviewResponse,
+  AgentTaskResponse,
+  CandidateSummary,
+} from "@/lib/api";
+import { getAgentCandidateDetail } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
@@ -43,12 +49,18 @@ const copy = {
     running: "Running...",
     runTask: "Run task",
     manualReview: "Manual Review",
-    manualReviewNote: "Review writes lock files only. It never registers a factor.",
+    manualReviewNote:
+      "Review writes lock files only after reading the selected candidate detail and binding both digest and pending status. It never registers a factor.",
     noCandidate: "No candidate available.",
     candidateCreatedToast: "Agent candidate created:",
     runTaskHint: "Generates an inert candidate file. Nothing is registered or executed.",
     status: "status",
     pendingReview: "pending review",
+    loadingDetail: "Loading candidate detail…",
+    reviewDisabled:
+      "Approve/reject disabled until a verified pending detail with an authoritative digest is available.",
+    migrationEvidence: "Migration evidence only — cannot approve.",
+    digestLabel: "manifest digest",
   },
   zh: {
     approve: "批准",
@@ -73,12 +85,17 @@ const copy = {
     running: "运行中……",
     runTask: "运行任务",
     manualReview: "人工复核",
-    manualReviewNote: "复核仅写入锁文件，绝不会注册因子。",
+    manualReviewNote:
+      "复核会先读取候选详情并同时绑定 digest 与 pending 状态后才写入锁文件，绝不会注册因子。",
     noCandidate: "暂无可用候选。",
     candidateCreatedToast: "已创建智能体候选：",
     runTaskHint: "生成一个惰性候选文件，不会注册或执行任何内容。",
     status: "状态",
     pendingReview: "待复核",
+    loadingDetail: "正在加载候选详情……",
+    reviewDisabled: "在获得已验证、pending 且带权威 digest 的详情之前，批准/拒绝不可用。",
+    migrationEvidence: "迁移证据，不能审批",
+    digestLabel: "manifest digest",
   },
 } as const;
 
@@ -91,7 +108,7 @@ const taskSchema = z.object({
 });
 
 const reviewSchema = z.object({
-  note: z.string().min(1, "Review note is required"),
+  note: z.string().min(1, "Review note is required").max(2000),
 });
 
 type Tone = "neutral" | "success" | "warning" | "danger" | "info";
@@ -99,8 +116,8 @@ type TaskValues = z.infer<typeof taskSchema>;
 type ReviewValues = z.infer<typeof reviewSchema>;
 type ReviewDecision = "approve" | "reject";
 
-function statusTone(status: string): Tone {
-  const normalized = status.toLowerCase();
+function statusTone(status: string | null | undefined): Tone {
+  const normalized = (status ?? "").toLowerCase();
   if (normalized === "approved") return "success";
   if (normalized === "rejected") return "danger";
   if (normalized === "pending") return "warning";
@@ -108,6 +125,17 @@ function statusTone(status: string): Tone {
 }
 
 const fieldClass = terminalInputClass;
+
+function canReview(detail: AgentCandidateDetailResponse | undefined): detail is AgentCandidateDetailResponse & {
+  manifest_digest: string;
+} {
+  if (!detail) return false;
+  if (detail.approval_enabled !== true) return false;
+  if (detail.status !== "pending") return false;
+  if (detail.integrity_state && detail.integrity_state !== "verified") return false;
+  const digest = detail.manifest_digest;
+  return typeof digest === "string" && /^[0-9a-f]{64}$/.test(digest);
+}
 
 function ReviewDialog({
   candidate,
@@ -126,26 +154,58 @@ function ReviewDialog({
     resolver: zodResolver(reviewSchema),
     defaultValues: { note: "" },
   });
+
+  const detailQuery = useQuery({
+    queryKey: ["agent-candidate-detail", candidate.candidate_id],
+    queryFn: () => getAgentCandidateDetail(candidate.candidate_id),
+    enabled: open && isHydrated,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
+  const detail = detailQuery.data;
+  const reviewReady = canReview(detail);
+
   const mutation = useMutation({
-    mutationFn: (values: ReviewValues) =>
-      apiPost<AgentReviewResponse>(`/api/agent/candidates/${candidate.candidate_id}/review`, {
-        decision,
-        note: values.note,
-      }),
+    mutationFn: (values: ReviewValues) => {
+      if (!canReview(detail)) {
+        throw new Error("candidate detail is not reviewable");
+      }
+      return apiPost<AgentReviewResponse>(
+        `/api/agent/candidates/${candidate.candidate_id}/review`,
+        {
+          decision,
+          note: values.note,
+          expected_manifest_digest: detail.manifest_digest,
+          expected_status: "pending" as const,
+        },
+      );
+    },
     onSuccess: () => {
-      toast.success(`${decision === "approve" ? text.approvedToast : text.rejectedToast} ${candidate.candidate_id}`);
+      toast.success(
+        `${decision === "approve" ? text.approvedToast : text.rejectedToast} ${candidate.candidate_id}`,
+      );
       setOpen(false);
       router.refresh();
     },
   });
-  const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
+  const error =
+    mutation.error instanceof ApiClientError
+      ? mutation.error.message
+      : mutation.error instanceof Error
+        ? mutation.error.message
+        : detailQuery.error instanceof Error
+          ? detailQuery.error.message
+          : undefined;
   const writeReview = form.handleSubmit((values) => mutation.mutate(values));
+  const controlsDisabled =
+    !isHydrated || !reviewReady || mutation.isPending || detailQuery.isLoading || detailQuery.isFetching;
 
   return (
     <>
       <TerminalToolbarButton
         className="h-9 flex-1"
-        disabled={!isHydrated}
+        disabled={!isHydrated || candidate.approval_enabled === false}
         onClick={() => setOpen(true)}
         tone={decision === "approve" ? "info" : "danger"}
       >
@@ -153,7 +213,11 @@ function ReviewDialog({
       </TerminalToolbarButton>
       {open ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-lg rounded-lg border border-warning/40 bg-bg-surface p-5" role="alertdialog" aria-modal="true">
+          <div
+            className="w-full max-w-lg rounded-lg border border-warning/40 bg-bg-surface p-5"
+            role="alertdialog"
+            aria-modal="true"
+          >
             <h3 className="font-headline-lg text-text-primary">
               {decision === "approve" ? text.approveTitle : text.rejectTitle}
             </h3>
@@ -169,17 +233,43 @@ function ReviewDialog({
                 {text.rejectNote}
               </p>
             )}
+            {detailQuery.isLoading || detailQuery.isFetching ? (
+              <p className="mt-3 font-body-sm text-text-secondary">{text.loadingDetail}</p>
+            ) : null}
+            {detail && !reviewReady ? (
+              <p className="mt-3 rounded-lg border border-danger/40 bg-danger/5 p-3 font-body-sm text-danger">
+                {detail.integrity_state === "migration_required"
+                  ? text.migrationEvidence
+                  : text.reviewDisabled}
+                {detail.observed_manifest_digest
+                  ? ` observed=${detail.observed_manifest_digest}`
+                  : ""}
+              </p>
+            ) : null}
+            {reviewReady ? (
+              <p className="mt-3 break-all font-data-mono text-[10px] text-text-secondary">
+                {text.digestLabel}: {detail.manifest_digest}
+              </p>
+            ) : null}
             <form className="mt-4 flex flex-col gap-3" onSubmit={(event) => event.preventDefault()}>
               <label className="flex flex-col gap-1 font-body-sm text-text-primary">
                 {text.reviewNote}
-                <textarea className={`min-h-24 ${fieldClass}`} {...form.register("note")} />
+                <textarea
+                  className={`min-h-24 ${fieldClass}`}
+                  disabled={!reviewReady}
+                  {...form.register("note")}
+                />
               </label>
               {error ? <p className="font-body-sm text-danger">{error}</p> : null}
               <div className="flex justify-end gap-2">
                 <TerminalToolbarButton onClick={() => setOpen(false)} tone="neutral">
                   {text.cancel}
                 </TerminalToolbarButton>
-                <TerminalToolbarButton disabled={!isHydrated || mutation.isPending} onClick={() => void writeReview()} tone="warning">
+                <TerminalToolbarButton
+                  disabled={controlsDisabled}
+                  onClick={() => void writeReview()}
+                  tone="warning"
+                >
                   {mutation.isPending ? text.writingLock : text.confirm}
                 </TerminalToolbarButton>
               </div>
@@ -228,8 +318,22 @@ export function AgentTaskForm({ candidates, locale = "en" }: { candidates: Candi
     },
   });
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
-  const firstPending = candidates.find((candidate) => candidate.status === "pending") ?? candidates[0];
+  // Prefer a verified pending candidate with approval enabled.
+  const firstPending =
+    candidates.find(
+      (candidate) =>
+        candidate.status === "pending" &&
+        candidate.approval_enabled !== false &&
+        (candidate.integrity_state == null || candidate.integrity_state === "verified"),
+    ) ??
+    candidates.find((candidate) => candidate.status === "pending") ??
+    candidates[0];
   const runTask = form.handleSubmit((values) => mutation.mutate(values));
+  const reviewAllowed =
+    Boolean(firstPending) &&
+    firstPending.approval_enabled !== false &&
+    firstPending.status === "pending" &&
+    (firstPending.integrity_state == null || firstPending.integrity_state === "verified");
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
@@ -284,18 +388,46 @@ export function AgentTaskForm({ candidates, locale = "en" }: { candidates: Candi
                 <p className="truncate font-data-mono text-xs text-text-primary">
                   {firstPending.candidate_id}
                 </p>
-                <div className="mt-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   <StatusPill
                     label={text.status}
-                    value={firstPending.status}
+                    value={firstPending.status ?? "unknown"}
                     tone={statusTone(firstPending.status)}
                   />
+                  {firstPending.integrity_state ? (
+                    <StatusPill
+                      label="integrity"
+                      value={firstPending.integrity_state}
+                      tone={
+                        firstPending.integrity_state === "verified"
+                          ? "success"
+                          : firstPending.integrity_state === "migration_required"
+                            ? "warning"
+                            : "danger"
+                      }
+                    />
+                  ) : null}
                 </div>
+                {firstPending.manifest_digest ? (
+                  <p className="mt-2 break-all font-data-mono text-[10px] text-text-secondary">
+                    {text.digestLabel}: {firstPending.manifest_digest}
+                  </p>
+                ) : null}
+                {firstPending.integrity_state === "migration_required" &&
+                firstPending.observed_manifest_digest ? (
+                  <p className="mt-2 break-all font-data-mono text-[10px] text-warning">
+                    {text.migrationEvidence}: {firstPending.observed_manifest_digest}
+                  </p>
+                ) : null}
               </div>
-              <div className="flex gap-2">
-                <ApproveDialog candidate={firstPending} locale={locale} />
-                <RejectDialog candidate={firstPending} locale={locale} />
-              </div>
+              {reviewAllowed ? (
+                <div className="flex gap-2">
+                  <ApproveDialog candidate={firstPending} locale={locale} />
+                  <RejectDialog candidate={firstPending} locale={locale} />
+                </div>
+              ) : (
+                <p className="font-body-sm text-text-secondary">{text.reviewDisabled}</p>
+              )}
             </div>
           ) : (
             <p className="font-body-sm text-text-secondary">{text.noCandidate}</p>

@@ -62,8 +62,8 @@ class AgentTaskResponse(BaseModel):
 
 class AgentReviewRequest(BaseModel):
     decision: Literal["approve", "reject"]
-    note: str
-    expected_manifest_digest: str
+    note: str = Field(min_length=1, max_length=2000)
+    expected_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_status: Literal["pending"]
 
 
