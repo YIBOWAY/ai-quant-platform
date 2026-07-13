@@ -1,0 +1,253 @@
+{
+  "schema_version": "1.0",
+  "health": {
+    "status": "ok",
+    "app_name": "AI Quant Research Platform",
+    "environment": "test",
+    "data_provider": {
+      "configured_default": "sample",
+      "tiingo_token_present": false
+    },
+    "futu_opend": {
+      "enabled": false,
+      "reachable": false,
+      "host": "127.0.0.1",
+      "port": 11111,
+      "error": null
+    },
+    "database": {
+      "enabled": false,
+      "reachable": false,
+      "error": null
+    },
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "artifacts": {
+    "schema_version": "1.1",
+    "read_status": "degraded",
+    "as_of": "2026-07-13T09:12:00Z",
+    "items": [
+      {
+        "id": "weekly-long-content",
+        "kind": "weekly_review",
+        "occurred_at": "2026-07-13T09:10:00Z",
+        "quality": "degraded",
+        "status": "completed_degraded",
+        "data": {
+          "week_id": "2026-W28-long",
+          "period_start": "2026-07-05T00:00:00Z",
+          "period_end": "2026-07-12T00:00:00Z",
+          "safety_alert_count": 1,
+          "unique_signal_count": 3,
+          "review_draft_count": 2,
+          "review_confirmed_count": 1,
+          "prediction_created_count": 1,
+          "prediction_scored_count": 1,
+          "prediction_hit_count": 0,
+          "mean_direction_brier": 0.12,
+          "opportunity_observed_count": 4,
+          "opportunity_missed_count": 1,
+          "opportunity_coverage_unknown_count": 1,
+          "limitations": [
+            "HOME_LONG_CONTENT_DETAIL: job=weekly schedule=\"0 9 * * 0\" last_success=2026-07-05T01:00:11Z expected_next=2026-07-12T01:00:00Z observed_at=2026-07-13T09:12:00Z staleness_seconds=707520; exception compressed to one row; technical detail remains collapsed; no action eligibility upgraded; promotion_eligibility=false paper_path=blocked live_path=blocked kill_switch=true.",
+            "长错误详情：周报复盘任务超时未刷新；最近成功时间为 2026-07-05T01:00:11Z；观测时间为 2026-07-13T09:12:00Z；已超过保鲜预算；结果仍可读但不授予 paper/live 资格；研究审批项与自动化摘要保持只读；禁止任何写路径与重定向绕过。",
+            "completed_degraded",
+            "no_trading_eligibility"
+          ],
+          "proposal_only": true,
+          "trading_allowed": false
+        }
+      },
+      {
+        "id": "automation-latest",
+        "kind": "automation_status",
+        "occurred_at": "2026-07-12T00:57:00Z",
+        "quality": "degraded",
+        "status": "degraded",
+        "data": {
+          "checked_at": "2026-07-12T00:57:00Z",
+          "overall_status": "degraded",
+          "jobs": [
+            {
+              "job_id": "daily_close",
+              "expected_schedule": "15 8 * * 2-6",
+              "timezone": "Asia/Shanghai",
+              "freshness_budget_seconds": 108000,
+              "last_attempt_at": "2026-07-12T00:50:00Z",
+              "last_success_at": "2026-07-12T00:50:00Z",
+              "fresh_until": "2026-07-13T06:50:00Z",
+              "status": "fresh",
+              "reason_code": null,
+              "last_run_id": "run-daily_close-healthy",
+              "notification_status": "delivered"
+            },
+            {
+              "job_id": "freshness",
+              "expected_schedule": "17 */2 * * *",
+              "timezone": "Asia/Shanghai",
+              "freshness_budget_seconds": 10800,
+              "last_attempt_at": "2026-07-12T00:50:00Z",
+              "last_success_at": "2026-07-12T00:50:00Z",
+              "fresh_until": "2026-07-13T06:50:00Z",
+              "status": "fresh",
+              "reason_code": null,
+              "last_run_id": "run-freshness-healthy",
+              "notification_status": "delivered"
+            },
+            {
+              "job_id": "weekly",
+              "expected_schedule": "0 9 * * 0",
+              "timezone": "Asia/Shanghai",
+              "freshness_budget_seconds": 691200,
+              "last_attempt_at": "2026-07-12T00:50:00Z",
+              "last_success_at": "2026-07-05T01:00:11Z",
+              "fresh_until": "2026-07-13T06:50:00Z",
+              "status": "failed",
+              "reason_code": "runner_nonzero_exit",
+              "last_run_id": "research-aapl-risk-plan-2026-07-13-0912-aaaa-bbbb-cccc-ddddeeee0001-extra-long-run-identifier-for-overflow-checks",
+              "notification_status": "fallback_persisted"
+            },
+            {
+              "job_id": "notification_drain",
+              "expected_schedule": "*/15 * * * *",
+              "timezone": "Asia/Shanghai",
+              "freshness_budget_seconds": 1800,
+              "last_attempt_at": "2026-07-12T00:50:00Z",
+              "last_success_at": "2026-07-12T00:50:00Z",
+              "fresh_until": "2026-07-13T06:50:00Z",
+              "status": "fresh",
+              "reason_code": null,
+              "last_run_id": "run-notification_drain-healthy",
+              "notification_status": "delivered"
+            }
+          ],
+          "proposal_only": true,
+          "trading_allowed": false
+        }
+      },
+      {
+        "id": "risk:2026-07-12T00:50:00Z",
+        "kind": "portfolio_risk",
+        "occurred_at": "2026-07-12T00:50:00Z",
+        "quality": "available",
+        "status": "available",
+        "data": {
+          "account_id": "default",
+          "currency": "USD",
+          "gross_value": 315.32,
+          "gross_pct_equity": 0.000315,
+          "largest_symbol": "AAPL",
+          "top1_gross_pct": 1,
+          "historical_status": "available",
+          "benchmark": "SPY",
+          "betas": [
+            {
+              "aligned_return_count": 274,
+              "benchmark": "SPY",
+              "first_return_date": "2025-06-06",
+              "last_return_date": "2026-07-10",
+              "reason": null,
+              "status": "available",
+              "symbol": "AAPL",
+              "value": 0.858
+            }
+          ],
+          "reason_codes": [],
+          "limitations": [
+            "HOME_LONG_CONTENT_DETAIL: job=weekly schedule=\"0 9 * * 0\" last_success=2026-07-05T01:00:11Z expected_next=2026-07-12T01:00:00Z observed_at=2026-07-13T09:12:00Z staleness_seconds=707520; exception compressed to one row; technical detail remains collapsed; no action eligibility upgraded; promotion_eligibility=false paper_path=blocked live_path=blocked kill_switch=true.",
+            "长错误详情：周报复盘任务超时未刷新；最近成功时间为 2026-07-05T01:00:11Z；观测时间为 2026-07-13T09:12:00Z；已超过保鲜预算；结果仍可读但不授予 paper/live 资格；研究审批项与自动化摘要保持只读；禁止任何写路径与重定向绕过。"
+          ]
+        }
+      }
+    ],
+    "sources": [
+      {
+        "kind": "portfolio_risk",
+        "status": "available",
+        "latest_at": "2026-07-12T00:50:00Z",
+        "reason_code": null
+      },
+      {
+        "kind": "prediction",
+        "status": "available",
+        "latest_at": "2026-07-12T00:40:00Z",
+        "reason_code": null
+      },
+      {
+        "kind": "market_foresight",
+        "status": "available",
+        "latest_at": "2026-07-12T00:30:00Z",
+        "reason_code": null
+      },
+      {
+        "kind": "weekly_review",
+        "status": "degraded",
+        "latest_at": "2026-07-13T09:10:00Z",
+        "reason_code": "completed_degraded"
+      },
+      {
+        "kind": "opportunity_summary",
+        "status": "available",
+        "latest_at": "2026-07-12T00:58:00Z",
+        "reason_code": null
+      },
+      {
+        "kind": "automation_status",
+        "status": "degraded",
+        "latest_at": "2026-07-12T00:57:00Z",
+        "reason_code": "completed_degraded"
+      }
+    ],
+    "warnings": [
+      {
+        "source": "weekly_review",
+        "code": "completed_degraded"
+      },
+      {
+        "source": "automation_status",
+        "code": "runner_nonzero_exit"
+      }
+    ],
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "candidates": {
+    "candidates": [
+      {
+        "candidate_id": "factor-long-approval-id-with-extended-suffix-for-layout",
+        "artifact_type": "factor",
+        "goal": "长错误详情：周报复盘任务超时未刷新；最近成功时间为 2026-07-05T01:00:11Z；观测时间为 2026-07-13T09:12:00Z；已超过保鲜预算；结果仍可读但不授予 paper/live 资格；研究审批项与自动化摘要保持只读；禁止任何写路径与重定向绕过。",
+        "universe": [
+          "AAPL",
+          "MSFT",
+          "NVDA"
+        ],
+        "status": "pending",
+        "integrity_state": "verified",
+        "manifest_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "observed_manifest_digest": null,
+        "approval_binding": "pending",
+        "approval_enabled": true,
+        "integrity_error_code": null
+      }
+    ],
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  }
+}

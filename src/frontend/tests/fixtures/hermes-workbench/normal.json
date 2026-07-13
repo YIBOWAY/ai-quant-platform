@@ -1,0 +1,316 @@
+{
+  "schema_version": "1.0",
+  "health": {
+    "status": "ok",
+    "app_name": "AI Quant Research Platform",
+    "environment": "test",
+    "data_provider": {
+      "configured_default": "sample",
+      "tiingo_token_present": false
+    },
+    "futu_opend": {
+      "enabled": false,
+      "reachable": false,
+      "host": "127.0.0.1",
+      "port": 11111,
+      "error": null
+    },
+    "database": {
+      "enabled": false,
+      "reachable": false,
+      "error": null
+    },
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "artifacts": {
+    "schema_version": "1.1",
+    "read_status": "available",
+    "as_of": "2026-07-12T01:00:00Z",
+    "items": [
+      {
+        "id": "weekly-2026-W28",
+        "kind": "weekly_review",
+        "occurred_at": "2026-07-12T00:59:00Z",
+        "quality": "available",
+        "status": "available",
+        "data": {
+          "week_id": "2026-W28",
+          "period_start": "2026-07-05T00:00:00Z",
+          "period_end": "2026-07-12T00:00:00Z",
+          "safety_alert_count": 1,
+          "unique_signal_count": 3,
+          "review_draft_count": 2,
+          "review_confirmed_count": 1,
+          "prediction_created_count": 1,
+          "prediction_scored_count": 1,
+          "prediction_hit_count": 0,
+          "mean_direction_brier": 0.12,
+          "opportunity_observed_count": 4,
+          "opportunity_missed_count": 1,
+          "opportunity_coverage_unknown_count": 1,
+          "limitations": [
+            "read_only_research_summary"
+          ],
+          "proposal_only": true,
+          "trading_allowed": false
+        }
+      },
+      {
+        "id": "opportunities-2026-W28",
+        "kind": "opportunity_summary",
+        "occurred_at": "2026-07-12T00:58:00Z",
+        "quality": "available",
+        "status": "available",
+        "data": {
+          "window_start": "2026-07-05T00:00:00Z",
+          "window_end": "2026-07-12T00:00:00Z",
+          "total_count": 4,
+          "resolution_counts": {
+            "open": 1,
+            "deferred": 0,
+            "acted": 1,
+            "action_failed": 0,
+            "declined": 0,
+            "missed": 1,
+            "expired_coverage_unknown": 1,
+            "not_actionable": 0,
+            "unknown": 0
+          },
+          "miss_reason_counts": {
+            "no_decision": 1,
+            "act_without_action": 0,
+            "defer_expired": 0
+          },
+          "proposal_only": true,
+          "trading_allowed": false
+        }
+      },
+      {
+        "id": "automation-latest",
+        "kind": "automation_status",
+        "occurred_at": "2026-07-12T00:57:00Z",
+        "quality": "available",
+        "status": "fresh",
+        "data": {
+          "checked_at": "2026-07-12T00:57:00Z",
+          "overall_status": "fresh",
+          "jobs": [
+            {
+              "job_id": "daily_close",
+              "expected_schedule": "15 8 * * 2-6",
+              "timezone": "Asia/Shanghai",
+              "freshness_budget_seconds": 108000,
+              "last_attempt_at": "2026-07-12T00:50:00Z",
+              "last_success_at": "2026-07-12T00:50:00Z",
+              "fresh_until": "2026-07-13T06:50:00Z",
+              "status": "fresh",
+              "reason_code": null,
+              "last_run_id": "run-daily_close-healthy",
+              "notification_status": "delivered"
+            },
+            {
+              "job_id": "freshness",
+              "expected_schedule": "17 */2 * * *",
+              "timezone": "Asia/Shanghai",
+              "freshness_budget_seconds": 10800,
+              "last_attempt_at": "2026-07-12T00:50:00Z",
+              "last_success_at": "2026-07-12T00:50:00Z",
+              "fresh_until": "2026-07-13T06:50:00Z",
+              "status": "fresh",
+              "reason_code": null,
+              "last_run_id": "run-freshness-healthy",
+              "notification_status": "delivered"
+            },
+            {
+              "job_id": "weekly",
+              "expected_schedule": "0 9 * * 0",
+              "timezone": "Asia/Shanghai",
+              "freshness_budget_seconds": 691200,
+              "last_attempt_at": "2026-07-12T00:50:00Z",
+              "last_success_at": "2026-07-12T00:50:00Z",
+              "fresh_until": "2026-07-13T06:50:00Z",
+              "status": "fresh",
+              "reason_code": null,
+              "last_run_id": "run-weekly-healthy",
+              "notification_status": "delivered"
+            },
+            {
+              "job_id": "notification_drain",
+              "expected_schedule": "*/15 * * * *",
+              "timezone": "Asia/Shanghai",
+              "freshness_budget_seconds": 1800,
+              "last_attempt_at": "2026-07-12T00:50:00Z",
+              "last_success_at": "2026-07-12T00:50:00Z",
+              "fresh_until": "2026-07-13T06:50:00Z",
+              "status": "fresh",
+              "reason_code": null,
+              "last_run_id": "run-notification_drain-healthy",
+              "notification_status": "delivered"
+            }
+          ],
+          "proposal_only": true,
+          "trading_allowed": false
+        }
+      },
+      {
+        "id": "risk:2026-07-12T00:50:00Z",
+        "kind": "portfolio_risk",
+        "occurred_at": "2026-07-12T00:50:00Z",
+        "quality": "available",
+        "status": "available",
+        "data": {
+          "account_id": "default",
+          "currency": "USD",
+          "gross_value": 315.32,
+          "gross_pct_equity": 0.000315,
+          "largest_symbol": "AAPL",
+          "top1_gross_pct": 1,
+          "historical_status": "available",
+          "benchmark": "SPY",
+          "betas": [
+            {
+              "aligned_return_count": 274,
+              "benchmark": "SPY",
+              "first_return_date": "2025-06-06",
+              "last_return_date": "2026-07-10",
+              "reason": null,
+              "status": "available",
+              "symbol": "AAPL",
+              "value": 0.858
+            }
+          ],
+          "reason_codes": [],
+          "limitations": [
+            "historical_relationship_not_forecast"
+          ]
+        }
+      },
+      {
+        "id": "prediction:pred-20260712-0001",
+        "kind": "prediction",
+        "occurred_at": "2026-07-12T00:40:00Z",
+        "quality": "available",
+        "status": "scored",
+        "data": {
+          "prediction_id": "pred-20260712-0001",
+          "state": "scored",
+          "symbol": "AAPL",
+          "direction": "up",
+          "confidence": 0.7,
+          "horizon_date": "2026-07-19",
+          "rationale": "Momentum remains positive within the research band.",
+          "outcome_return": 0.02,
+          "direction_brier": 0.09
+        }
+      },
+      {
+        "id": "foresight:mf-20260712-0001",
+        "kind": "market_foresight",
+        "occurred_at": "2026-07-12T00:30:00Z",
+        "quality": "available",
+        "status": "available",
+        "data": {
+          "run_id": "mf-20260712-0001",
+          "summary": "One candidate prediction is ready for human review.",
+          "candidate_count": 1,
+          "candidates": [
+            {
+              "id": "mfp_candidate_001",
+              "symbol": "MSFT",
+              "direction": "flat",
+              "confidence": 0.58,
+              "horizon_date": "2026-07-19",
+              "falsifier": "The first eligible close leaves the flat band.",
+              "rationale": "A bounded validation candidate.",
+              "entry_session_date": "2026-07-11",
+              "entry_close": 510.05,
+              "provider": "futu",
+              "adjustment": "qfq",
+              "proposal_only": true,
+              "requires_human_confirmation": true,
+              "trading_allowed": false
+            }
+          ]
+        }
+      }
+    ],
+    "sources": [
+      {
+        "kind": "portfolio_risk",
+        "status": "available",
+        "latest_at": "2026-07-12T00:50:00Z",
+        "reason_code": null
+      },
+      {
+        "kind": "prediction",
+        "status": "available",
+        "latest_at": "2026-07-12T00:40:00Z",
+        "reason_code": null
+      },
+      {
+        "kind": "market_foresight",
+        "status": "available",
+        "latest_at": "2026-07-12T00:30:00Z",
+        "reason_code": null
+      },
+      {
+        "kind": "weekly_review",
+        "status": "available",
+        "latest_at": "2026-07-12T00:59:00Z",
+        "reason_code": null
+      },
+      {
+        "kind": "opportunity_summary",
+        "status": "available",
+        "latest_at": "2026-07-12T00:58:00Z",
+        "reason_code": null
+      },
+      {
+        "kind": "automation_status",
+        "status": "available",
+        "latest_at": "2026-07-12T00:57:00Z",
+        "reason_code": null
+      }
+    ],
+    "warnings": [],
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "candidates": {
+    "candidates": [
+      {
+        "candidate_id": "factor-momentum_20d_reversal-323b045e4b",
+        "artifact_type": "factor",
+        "goal": "Evaluate a deterministic reversal factor on AAPL",
+        "universe": [
+          "AAPL"
+        ],
+        "status": "pending",
+        "integrity_state": "verified",
+        "manifest_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "observed_manifest_digest": null,
+        "approval_binding": "pending",
+        "approval_enabled": true,
+        "integrity_error_code": null
+      }
+    ],
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  }
+}
