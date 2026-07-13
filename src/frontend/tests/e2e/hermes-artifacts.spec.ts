@@ -30,12 +30,14 @@ test("Hermes renders all read-only artifact kinds and keeps Composer disabled", 
   await expect(page.getByRole("heading", { name: "机会复盘" })).toBeVisible();
   await expect(page.getByText("错过机会", { exact: true }).first()).toBeVisible();
 
-  await expect(page.getByRole("heading", { name: "自动化状态" })).toBeVisible();
+  // F2 compresses automation into AutomationSummary (not a full "自动化状态" card).
+  await expect(page.locator("[data-hermes-automation-summary]")).toBeVisible();
+  await expect(page.getByText("自动化 0/4 正常", { exact: true })).toBeVisible();
   await expect(page.getByText("已降级 · 需要检查", { exact: true })).toBeVisible();
   await expect(page.getByText("从未运行", { exact: true }).first()).toBeVisible();
 
   await expect(
-    page.getByRole("textbox", { name: "Hermes 撰写区" }),
+    page.getByRole("textbox", { name: "和 Hermes 对话" }),
   ).toBeDisabled();
   await expect(page.getByRole("button", { name: /发送/ })).toBeDisabled();
 });
