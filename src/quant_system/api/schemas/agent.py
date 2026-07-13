@@ -64,7 +64,7 @@ class AgentReviewRequest(BaseModel):
     decision: Literal["approve", "reject"]
     note: str
     expected_manifest_digest: str
-    expected_status: Literal["pending"] = "pending"
+    expected_status: Literal["pending"]
 
 
 class AgentReviewResponse(BaseModel):

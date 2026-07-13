@@ -446,14 +446,7 @@ class CandidatePool:
                 f"candidate {candidate_id!r} does not exist"
             )
 
-        try:
-            root_cm = locked_candidates_root(self.output_dir, create=False)
-            root = root_cm.__enter__()
-        except CandidateIntegrityError as exc:
-            raise CandidateIntegrityError(
-                f"candidate {candidate_id!r} does not exist"
-            ) from exc
-        try:
+        with locked_candidates_root(self.output_dir, create=False) as root:
             assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
             try:
                 candidate_fd = open_directory_at(root.fd, candidate_id)
@@ -471,15 +464,10 @@ class CandidatePool:
                     st_dev=st.st_dev,
                     st_ino=st.st_ino,
                 )
-                try:
-                    snapshot = _verify_from_opened(
-                        opened,
-                        candidate_dir=self.candidates_dir / candidate_id,
-                    )
-                except CandidateMigrationRequiredError:
-                    raise
-                except CandidateIntegrityError:
-                    raise
+                snapshot = _verify_from_opened(
+                    opened,
+                    candidate_dir=self.candidates_dir / candidate_id,
+                )
 
                 if _any_decision_control(candidate_fd):
                     raise CandidateReviewStateStaleError(
@@ -536,8 +524,6 @@ class CandidatePool:
                 return record
             finally:
                 os.close(candidate_fd)
-        finally:
-            root_cm.__exit__(None, None, None)
 
     def _entry_is_dir(self, parent_fd: int, name: str) -> bool:
         try:

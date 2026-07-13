@@ -123,6 +123,36 @@ def test_propose_factor_json_emits_contract_on_last_line(tmp_path) -> None:
 # --- agent review -----------------------------------------------------------
 
 
+def test_agent_review_missing_expected_status_exits_nonzero(tmp_path) -> None:
+    from quant_system.agent.candidate_pool import CandidatePool
+
+    propose_result, output_dir = _propose_factor(tmp_path)
+    candidate_id = _candidate_id(propose_result.output)
+    digest = CandidatePool(output_dir).get(candidate_id).manifest_digest
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "review",
+            "--candidate-id",
+            candidate_id,
+            "--decision",
+            "approve",
+            "--note",
+            "missing status CAS field",
+            "--expected-digest",
+            digest,
+            "--agent-output-dir",
+            str(output_dir),
+        ],
+    )
+    assert result.exit_code != 0
+    assert not (
+        Path(output_dir) / "agent" / "candidates" / candidate_id / "approved.lock"
+    ).exists()
+
+
 def test_agent_review_legacy_line_byte_identical_without_json(tmp_path) -> None:
     from quant_system.agent.candidate_pool import CandidatePool
 

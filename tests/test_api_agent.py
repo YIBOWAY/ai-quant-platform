@@ -111,11 +111,26 @@ def test_agent_review_missing_expected_status_and_stale_second_decision(tmp_path
         content="# cas\n",
     )
     # Missing expected_manifest_digest is validation error.
-    missing = client.post(
+    missing_digest = client.post(
         f"/api/agent/candidates/{artifact.candidate_id}/review",
-        json={"decision": "approve", "note": "no digest"},
+        json={
+            "decision": "approve",
+            "note": "no digest",
+            "expected_status": "pending",
+        },
     )
-    assert missing.status_code == 422
+    assert missing_digest.status_code == 422
+
+    # Missing expected_status is validation error (no default to pending).
+    missing_status = client.post(
+        f"/api/agent/candidates/{artifact.candidate_id}/review",
+        json={
+            "decision": "approve",
+            "note": "no status",
+            "expected_manifest_digest": artifact.manifest_digest,
+        },
+    )
+    assert missing_status.status_code == 422
 
     first = client.post(
         f"/api/agent/candidates/{artifact.candidate_id}/review",

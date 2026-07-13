@@ -1849,7 +1849,7 @@ def agent_review(
             "--expected-status",
             help="Must be the literal status pending (CAS precondition).",
         ),
-    ] = "pending",
+    ],
     agent_output_dir: Annotated[
         str | None,
         typer.Option(
