@@ -15,8 +15,8 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 | F0 visual directions | **direction-a approved for polish path** | Hierarchy A (COO desk) selected for visual redesign. B/C remain comparison artifacts. |
 | F0 visual polish (A) | **landed 2026-07-13** | Premium dark Linear/Raycast craft on `shared.css` + `direction-a.html`. Commit message: `docs(frontend): polish Hermes F0 direction-a to premium dark COO craft`. |
 | F0 independent review | **completed 2026-07-13** | UX pass/fail recorded below (pre-polish). Package was Ready for user selection; user chose A for craft pass. |
-| F1 clickable prototype | not started | Next after polish acceptance. |
-| F2 production shell | not started | Blocked on F1 approval + candidate-integrity Task 5 types. |
+| F1 clickable prototype | **draft ready — awaiting user gate** | Full-state catalogs + walkthrough under `f1/`. Not approved. |
+| F2 production shell | not started | Blocked on F1 written approval + candidate-integrity Task 5 types. |
 
 ### F0 decision
 
@@ -31,6 +31,12 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
   4. Professional frontend agent owns visual craft; not a minor CSS tweak.
   5. Polish landed in commit series after approval: premium dark COO craft for `direction-a`.
 
+### F1 decision
+
+- status: `draft` — **not approved**
+- package: [`f1/prototype.html`](./f1/prototype.html) + [`f1/prototype.css`](./f1/prototype.css) + [`f1/states/`](./f1/states/)
+- visual base: approved F0 `direction-a` premium dark COO craft (Linear DNA, Hermes `#9085E9`)
+- stop: written user approval required before any `src/frontend/app` / production shell work from this package
 
 ---
 
@@ -68,6 +74,43 @@ Responsive behavior uses **real CSS breakpoints** (not whole-UI `transform: scal
 
 ---
 
+## F1 full-state prototype (draft)
+
+Local-only clickable package (no production imports, no network beyond the static server):
+
+| Path | Role |
+| --- | --- |
+| [`f1/prototype.html`](./f1/prototype.html) | COO desk shell + walkthrough + state matrix |
+| [`f1/prototype.css`](./f1/prototype.css) | Polished F0-A tokens / breakpoints / mobile order |
+| [`f1/states/home.json`](./f1/states/home.json) | `empty/loading/normal/degraded/hermes_offline` |
+| [`f1/states/conversation.json`](./f1/states/conversation.json) | `sending/queued/streaming/reconnecting/stopping/reconciling/failed/quota/fallback` |
+| [`f1/states/tasks.json`](./f1/states/tasks.json) | `queued/running/waiting_gate/stop_requested/reconciling/completed/partial/failed/stopped` |
+| [`f1/states/approvals.json`](./f1/states/approvals.json) | `available/approved/rejected/expired/stale/digest_mismatch` |
+| [`f1/states/results.json`](./f1/states/results.json) | `loading/partial/no_data/audit_warning/source_missing` |
+
+Walkthrough (review chrome):  
+`提出目标 → 结构化计划 → Gate 1 → streaming → completed_degraded → Gate 2 → Gate 3`
+
+Visible **prototype data** badge sits outside product chrome. Composer never submits. Catalogs load only via `fetch("./states/*.json")`.
+
+### F1 review (implementer self-check — independent reviewer TBD)
+
+```markdown
+## F1 review
+
+- Full lifecycle: pass (implementer)
+- State catalog: pass (exact IDs)
+- 1440/1280/768/390: pass (implementer; overflow none)
+- Keyboard-only: pass (aria-pressed, modal focus restore, Escape)
+- Reduced motion: pass (CSS kill-switch)
+- Horizontal overflow: none
+- Console errors/warnings: 0 product errors (browser favicon 404 only)
+```
+
+**Not approved.** Do not start F2 from this draft until written user approval is recorded here.
+
+---
+
 ## How to open locally
 
 ```bash
@@ -77,6 +120,7 @@ python3 -m http.server 4173 --directory docs/design/hermes-workbench
 
 Then open:
 
+- http://localhost:4173/f1/prototype.html  
 - http://localhost:4173/f0/direction-a.html  
 - http://localhost:4173/f0/direction-b.html  
 - http://localhost:4173/f0/direction-c.html  

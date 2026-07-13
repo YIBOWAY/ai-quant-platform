@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "surface": "approvals",
+  "default_state": "available",
+  "states": [
+    {
+      "id": "available",
+      "title": "研究审批项待确认",
+      "title_en": "Research approval item awaiting confirmation",
+      "status": "available",
+      "status_text": "available · pending · 研究审批项 / Research approval item",
+      "summary": "仅展示平台绑定摘要。批准需要人类提供 candidate-id + expected-digest + expected-status=pending + note；本壳不会代填。",
+      "summary_en": "Platform-bound summary only. Approval requires human-supplied candidate-id + expected-digest + expected-status=pending + note; this shell never pre-fills CAS fields.",
+      "announcements": ["审批状态 available：Gate 2 CAS 待人类确认。"],
+      "actions": [
+        { "id": "view-summary", "label": "查看准确摘要", "label_en": "View exact summary" },
+        { "id": "approve-disabled", "label": "在本壳批准（未开放）", "label_en": "Approve in shell (not open)", "disabled": true }
+      ],
+      "approval": {
+        "gate": "gate2",
+        "candidate_id": "factor-momentum_20d_reversal-323b045e4b",
+        "expected_status": "pending",
+        "manifest_digest": "323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+        "integrity_state": "verified",
+        "label_zh": "研究审批项",
+        "label_en": "Research approval item"
+      },
+      "long_error": "APPROVAL_AVAILABLE_CAS_CONTRACT: authorize only with exact tuple candidate_id=factor-momentum_20d_reversal-323b045e4b expected_digest=323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c expected_status=pending note=<human>; HQA and installed skill must never list/refetch/substitute those values while approving; shell buttons that claim approve remain disabled until frontend/bridge gates land.",
+      "technical": [
+        { "label": "gate", "value": "2" },
+        { "label": "candidate_id", "value": "factor-momentum_20d_reversal-323b045e4b" },
+        { "label": "expected_status", "value": "pending" },
+        { "label": "integrity_state", "value": "verified" }
+      ]
+    },
+    {
+      "id": "approved",
+      "title": "研究审批项已批准",
+      "title_en": "Research approval item approved",
+      "status": "approved",
+      "status_text": "approved · 已批准 / CAS approved",
+      "summary": "Gate 2 CAS 已通过。可进入一次性研究回测或 Gate 3 晋升审阅，仍不授予 live。",
+      "summary_en": "Gate 2 CAS passed. May enter one-shot research backtest or Gate 3 promotion review; still no live eligibility.",
+      "announcements": ["审批状态 approved：Gate 2 已通过。"],
+      "actions": [
+        { "id": "open-gate3", "label": "查看 Gate 3 范围 diff", "label_en": "View Gate 3 scoped diff" }
+      ],
+      "approval": {
+        "gate": "gate2",
+        "candidate_id": "factor-momentum_20d_reversal-323b045e4b",
+        "expected_status": "approved",
+        "manifest_digest": "323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+        "integrity_state": "verified",
+        "label_zh": "研究审批项",
+        "label_en": "Research approval item",
+        "note": "human note recorded · paper path only"
+      },
+      "long_error": "APPROVAL_APPROVED_BOUNDARIES: approved at 2026-07-13T10:02:11Z via CAS; paper_trading remains the only path; live_trading_enabled=false kill_switch=true; Gate 3 promote-candidate prepares isolated worktree payload only and never commits; human git diff review + commit completes Gate 3.",
+      "technical": [
+        { "label": "gate", "value": "2" },
+        { "label": "status", "value": "approved" },
+        { "label": "live_trading_enabled", "value": "false" }
+      ]
+    },
+    {
+      "id": "rejected",
+      "title": "研究审批项已拒绝",
+      "title_en": "Research approval item rejected",
+      "status": "rejected",
+      "status_text": "rejected · 已拒绝 / Human rejected",
+      "summary": "人类拒绝该 candidate。不会进入研究回测或晋升路径。",
+      "summary_en": "Human rejected this candidate. No research backtest or promotion path opens.",
+      "announcements": ["审批状态 rejected。"],
+      "actions": [
+        { "id": "view-summary", "label": "查看准确摘要", "label_en": "View exact summary" }
+      ],
+      "approval": {
+        "gate": "gate2",
+        "candidate_id": "factor-momentum_20d_reversal-323b045e4b",
+        "expected_status": "rejected",
+        "manifest_digest": "323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+        "integrity_state": "verified",
+        "label_zh": "研究审批项",
+        "label_en": "Research approval item",
+        "note": "rejected: risk overlay incomplete"
+      },
+      "long_error": "APPROVAL_REJECTED_DETAIL: candidate_id=factor-momentum_20d_reversal-323b045e4b rejected_by=human note=\"risk overlay incomplete\" at 2026-07-13T10:05:00Z; re-open requires a new candidate identity or a newly authorized proposal path — historical rejected rows are not silently flipped to pending.",
+      "technical": [
+        { "label": "status", "value": "rejected" },
+        { "label": "note", "value": "risk overlay incomplete" }
+      ]
+    },
+    {
+      "id": "expired",
+      "title": "审批窗口已过期",
+      "title_en": "Approval window expired",
+      "status": "expired",
+      "status_text": "expired · 已过期 / Approval window elapsed",
+      "summary": "CAS 窗口过期。需要重新核对 digest 与 pending 状态后再次审批。",
+      "summary_en": "CAS window elapsed. Re-verify digest and pending status before approving again.",
+      "announcements": ["审批状态 expired。"],
+      "actions": [
+        { "id": "recheck", "label": "重新核对摘要", "label_en": "Recheck summary" }
+      ],
+      "approval": {
+        "gate": "gate2",
+        "candidate_id": "factor-momentum_20d_reversal-323b045e4b",
+        "expected_status": "pending",
+        "manifest_digest": "323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+        "integrity_state": "verified",
+        "label_zh": "研究审批项",
+        "label_en": "Research approval item"
+      },
+      "long_error": "APPROVAL_EXPIRED_DETAIL: approval_window_started=2026-07-12T09:00:00Z expired_at=2026-07-13T09:00:00Z reason=ttl_24h; presenting an expired card as still approvable is forbidden; operator must reload bound summary and confirm expected-status remains pending before any new CAS attempt.",
+      "technical": [
+        { "label": "status", "value": "expired" },
+        { "label": "ttl", "value": "24h" }
+      ]
+    },
+    {
+      "id": "stale",
+      "title": "审批摘要已过时",
+      "title_en": "Approval summary is stale",
+      "status": "stale",
+      "status_text": "stale · 摘要过时 / Bound summary stale",
+      "summary": "候选或源数据在展示后发生变化。禁止使用旧 digest 批准。",
+      "summary_en": "Candidate or source data changed after presentation. Approving with the old digest is forbidden.",
+      "announcements": ["审批状态 stale：禁止使用旧 digest。"],
+      "actions": [
+        { "id": "refresh-summary", "label": "刷新绑定摘要", "label_en": "Refresh bound summary" }
+      ],
+      "approval": {
+        "gate": "gate2",
+        "candidate_id": "factor-momentum_20d_reversal-323b045e4b",
+        "expected_status": "pending",
+        "manifest_digest": "323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+        "observed_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "integrity_state": "verified",
+        "label_zh": "研究审批项",
+        "label_en": "Research approval item"
+      },
+      "long_error": "APPROVAL_STALE_DETAIL: presented_digest=323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c observed_digest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa mismatch_class=stale_presentation; UI must block approve CTAs and force a fresh exact summary view before any CAS fields are considered.",
+      "technical": [
+        { "label": "status", "value": "stale" },
+        { "label": "presented_digest", "value": "323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c" },
+        { "label": "observed_digest", "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ]
+    },
+    {
+      "id": "digest_mismatch",
+      "title": "Digest 不匹配，CAS 拒绝",
+      "title_en": "Digest mismatch; CAS rejected",
+      "status": "digest_mismatch",
+      "status_text": "digest_mismatch · CAS 拒绝 / Integrity mismatch",
+      "summary": "expected-digest 与平台绑定摘要不一致。批准失败，需人工重新核对。",
+      "summary_en": "expected-digest does not match the platform-bound summary. Approval failed; human recheck required.",
+      "announcements": ["审批状态 digest_mismatch：CAS 已拒绝。"],
+      "actions": [
+        { "id": "view-summary", "label": "查看准确摘要", "label_en": "View exact summary" }
+      ],
+      "approval": {
+        "gate": "gate2",
+        "candidate_id": "factor-momentum_20d_reversal-323b045e4b",
+        "expected_status": "pending",
+        "manifest_digest": "323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+        "provided_digest": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        "integrity_state": "verified",
+        "label_zh": "研究审批项",
+        "label_en": "Research approval item"
+      },
+      "long_error": "APPROVAL_DIGEST_MISMATCH_DETAIL: CAS rejected because provided expected-digest=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef != bound manifest_digest=323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c for candidate_id=factor-momentum_20d_reversal-323b045e4b expected_status=pending; no status mutation applied; integrity_state remains verified for the bound object; human must copy the exact digest from the summary panel, never from chat paraphrases.",
+      "technical": [
+        { "label": "status", "value": "digest_mismatch" },
+        { "label": "bound_digest", "value": "323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c" },
+        { "label": "provided_digest", "value": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" }
+      ]
+    }
+  ]
+}

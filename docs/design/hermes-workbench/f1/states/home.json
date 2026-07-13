@@ -1,0 +1,228 @@
+{
+  "schema_version": "1.0",
+  "surface": "home",
+  "default_state": "normal",
+  "states": [
+    {
+      "id": "empty",
+      "title": "今日尚无研究活动",
+      "title_en": "No research activity today",
+      "status": "empty",
+      "status_text": "empty · 无待办 / No attention items",
+      "summary": "安全边界正常。尚未出现自动化异常、研究审批项或可展示结果。",
+      "summary_en": "Safety boundary is healthy. No automation exceptions, research approvals, or displayable results yet.",
+      "announcements": ["首页状态 empty：无待确认项，无最近结果。"],
+      "actions": [
+        { "id": "start-goal", "label": "提出研究目标", "label_en": "Propose a research goal" }
+      ],
+      "attention": [],
+      "automation": {
+        "healthy": 4,
+        "total": 4,
+        "label": "自动化 4/4 正常",
+        "label_en": "Automation 4/4 healthy",
+        "exceptions": []
+      },
+      "recent_result": null,
+      "composer": {
+        "enabled": false,
+        "placeholder": "真实 Hermes 写入能力尚未通过",
+        "note": "本原型使用本地 catalog 数据 · 不向 Hermes / tasks 提交。"
+      },
+      "long_error": "HOME_EMPTY_FEED_DETAIL: Hermes Today model resolved zero attention items, zero recent results, and four healthy automation jobs for window 2026-07-13T00:00:00Z/2026-07-13T23:59:59Z; sources=automation_status+agent_candidates+artifact_shelf; integrity=verified; no migration_required rows; this is an honest empty desk, not a transport failure.",
+      "technical": [
+        { "label": "source", "value": "automation_status" },
+        { "label": "candidates", "value": "0" },
+        { "label": "artifact_shelf", "value": "empty" }
+      ]
+    },
+    {
+      "id": "loading",
+      "title": "正在同步今日研究态势…",
+      "title_en": "Syncing today’s research posture…",
+      "status": "loading",
+      "status_text": "loading · 同步中 / Syncing feeds",
+      "summary": "正在读取 automation_status、研究审批项与最近结果投影。请稍候。",
+      "summary_en": "Reading automation_status, research approval items, and recent result projections. Please wait.",
+      "announcements": ["首页状态 loading：正在同步 feeds。"],
+      "actions": [],
+      "attention": [],
+      "automation": {
+        "healthy": null,
+        "total": null,
+        "label": "自动化 · 加载中",
+        "label_en": "Automation · loading",
+        "exceptions": []
+      },
+      "recent_result": null,
+      "composer": {
+        "enabled": false,
+        "placeholder": "同步完成前不可编辑",
+        "note": "加载中 · composer 保持禁用。"
+      },
+      "long_error": "HOME_LOADING_TIMEOUT_HINT: if this state exceeds 12s without first paint, check BFF loopback GET /api/agent/candidates and /api/hermes/artifacts for stall; last_request_id=home-sync-2026-07-13-0912-aaaa-bbbb-cccc-ddddeeee0001; no mutation attempted; no paper/live path invoked.",
+      "technical": [
+        { "label": "source", "value": "pending_multi_feed" },
+        { "label": "phase", "value": "initial_hydration" }
+      ]
+    },
+    {
+      "id": "normal",
+      "title": "1 项需要你确认，其余研究运行正常",
+      "title_en": "1 item needs your confirmation; remaining research is healthy",
+      "status": "available",
+      "status_text": "normal · 待确认 1 / Attention required",
+      "summary": "研究审批项等待 Gate 2 CAS；自动化 3/4 正常；最近结果 completed_degraded。",
+      "summary_en": "Research approval awaits Gate 2 CAS; automation 3/4 healthy; latest result completed_degraded.",
+      "announcements": ["首页状态 normal：1 项研究审批待确认。"],
+      "actions": [
+        { "id": "approval-1", "label": "查看准确摘要", "label_en": "View exact summary" },
+        { "id": "open-approvals", "label": "打开审批页", "label_en": "Open approvals" }
+      ],
+      "attention": [
+        {
+          "kind": "approval",
+          "title": "研究审批项",
+          "title_en": "Research approval item",
+          "id": "factor-momentum_20d_reversal-323b045e4b",
+          "detail": "需要人工 Gate 2 确认后，才可进入后续研究路径。"
+        }
+      ],
+      "automation": {
+        "healthy": 3,
+        "total": 4,
+        "label": "自动化 3/4 正常",
+        "label_en": "Automation 3/4 healthy",
+        "exceptions": [
+          {
+            "jobId": "weekly_review",
+            "status": "stale",
+            "reason": "weekly_review 已过期；最近成功 2026-07-05T01:00:11Z"
+          }
+        ]
+      },
+      "recent_result": {
+        "title": "AAPL 风险与新因子计划",
+        "status": "completed_degraded",
+        "status_text": "completed_degraded · 结果可阅读但不授予交易资格"
+      },
+      "composer": {
+        "enabled": false,
+        "placeholder": "真实 Hermes 写入能力尚未通过",
+        "note": "真实 Hermes 写入能力尚未通过 · 本切片不向 Hermes / tasks / provider 提交。"
+      },
+      "long_error": "HOME_NORMAL_STALE_JOB_DETAIL: job=weekly_review schedule=\"0 9 * * 0\" last_success=2026-07-05T01:00:11Z expected_next=2026-07-12T01:00:00Z observed_at=2026-07-13T09:12:00Z staleness_seconds=707520; exception compressed to one row; technical detail remains collapsed; no action eligibility upgraded.",
+      "technical": [
+        { "label": "source", "value": "automation_status" },
+        { "label": "candidate", "value": "factor-momentum_20d_reversal-323b045e4b" },
+        { "label": "run", "value": "research-aapl-risk-plan-2026-07-13-0912" }
+      ]
+    },
+    {
+      "id": "degraded",
+      "title": "研究态势可用，但部分数据降级",
+      "title_en": "Research posture available with partial data degradation",
+      "status": "degraded",
+      "status_text": "degraded · 部分源降级 / Partial source degradation",
+      "summary": "artifact shelf 降级 feed 仍可读；审批与自动化摘要可用，但图表与部分指标受限。",
+      "summary_en": "Degraded artifact shelf remains readable; approvals and automation summary available, charts and some metrics limited.",
+      "announcements": ["首页状态 degraded：部分源降级，结果仍可读。"],
+      "actions": [
+        { "id": "approval-1", "label": "查看准确摘要", "label_en": "View exact summary" },
+        { "id": "open-result", "label": "查看降级结果", "label_en": "Open degraded result" }
+      ],
+      "attention": [
+        {
+          "kind": "degraded",
+          "title": "最近结果降级",
+          "title_en": "Latest result degraded",
+          "id": "research-aapl-risk-plan-2026-07-13-0912",
+          "detail": "completed_degraded · degraded feed · 不授予 paper/live 资格"
+        },
+        {
+          "kind": "approval",
+          "title": "研究审批项",
+          "title_en": "Research approval item",
+          "id": "factor-momentum_20d_reversal-323b045e4b",
+          "detail": "Gate 2 CAS 仍待人类确认"
+        }
+      ],
+      "automation": {
+        "healthy": 3,
+        "total": 4,
+        "label": "自动化 3/4 正常",
+        "label_en": "Automation 3/4 healthy",
+        "exceptions": [
+          {
+            "jobId": "weekly_review",
+            "status": "stale",
+            "reason": "weekly_review 已过期"
+          }
+        ]
+      },
+      "recent_result": {
+        "title": "AAPL 风险与新因子计划",
+        "status": "completed_degraded",
+        "status_text": "completed_degraded · degraded feed"
+      },
+      "composer": {
+        "enabled": false,
+        "placeholder": "真实 Hermes 写入能力尚未通过",
+        "note": "降级不影响安全边界 · composer 仍禁用。"
+      },
+      "long_error": "HOME_DEGRADED_FEED_DETAIL: artifact_shelf source=9H feed status=degraded reason=partial_series_gap symbols=[AAPL] missing_windows=[2024-03-12/2024-03-14,2025-11-01/2025-11-02] chart_series_truncated=true metrics_available=[sharpe_partial,max_dd_partial] promotion_eligibility=false paper_path=blocked live_path=blocked kill_switch=true.",
+      "technical": [
+        { "label": "source", "value": "artifact_shelf_degraded" },
+        { "label": "limitation", "value": "degraded feed" },
+        { "label": "eligibility", "value": "none" }
+      ]
+    },
+    {
+      "id": "hermes_offline",
+      "title": "Hermes 不可用，研究写入与编排暂停",
+      "title_en": "Hermes unavailable; research write and orchestration paused",
+      "status": "offline",
+      "status_text": "hermes_offline · Hermes 离线 / Gateway unavailable",
+      "summary": "本地 gateway 探测失败。平台只读投影可能仍可见，但对话、执行与新审批路径不可用。",
+      "summary_en": "Local gateway probe failed. Platform read-only projections may remain visible, but chat, execution, and new approval paths are unavailable.",
+      "announcements": ["首页状态 hermes_offline：gateway 不可用。"],
+      "actions": [
+        { "id": "retry-status", "label": "重新检查状态", "label_en": "Recheck status" }
+      ],
+      "attention": [
+        {
+          "kind": "offline",
+          "title": "Hermes gateway offline",
+          "title_en": "Hermes gateway offline",
+          "id": "gateway-capability-contract",
+          "detail": "chat fail-closed · execution blocked_in_this_slice"
+        }
+      ],
+      "automation": {
+        "healthy": null,
+        "total": null,
+        "label": "自动化 · 源不可用",
+        "label_en": "Automation · source unavailable",
+        "exceptions": [
+          {
+            "jobId": "hermes_gateway",
+            "status": "unavailable",
+            "reason": "capability contract: chat fail-closed"
+          }
+        ]
+      },
+      "recent_result": null,
+      "composer": {
+        "enabled": false,
+        "placeholder": "Hermes 离线 · 无法发送",
+        "note": "gateway offline · 不伪造进度，不静默降级到旧 /api/agent/tasks。"
+      },
+      "long_error": "HOME_HERMES_OFFLINE_DETAIL: capability_probe exit=3 contract_review_blocked=true blockers=[chat_not_ready,execution_hard_false] upstream_commit=b03c94db server_digest=2a05d8979ee3e4edb0e534f4db1c421d2064f36c8290234c3cf1496365ba7d17 loopback_only=true; UI must remain fail-closed and must not invent streaming progress.",
+      "technical": [
+        { "label": "source", "value": "hermes_capability_contract" },
+        { "label": "chat", "value": "false" },
+        { "label": "delivery_state", "value": "blocked_in_this_slice" }
+      ]
+    }
+  ]
+}
