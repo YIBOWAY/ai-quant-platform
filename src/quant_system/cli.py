@@ -17,7 +17,11 @@ from quant_system import __version__
 from quant_system.agent.llm.base import LLMClient
 from quant_system.agent.llm.fixed import FixedContentLLMClient
 from quant_system.agent.llm.stub import StubLLMClient
-from quant_system.agent.paths import resolve_agent_output_dir, resolve_candidates_dir
+from quant_system.agent.paths import (
+    resolve_agent_output_dir,
+    resolve_candidates_dir,
+    resolve_legacy_candidates_dir,
+)
 from quant_system.agent.promote import PromotionError, promote_candidate
 from quant_system.agent.promotion import load_approved_factor_candidates
 from quant_system.agent.runner import AgentRunner
@@ -1987,6 +1991,68 @@ def agent_promote_candidate(
         "GATE 3 — review the diff and commit yourself: "
         f"git diff -- {result.module_path} {result.init_path} {result.test_path}"
     )
+
+
+@agent_app.command("migrate-candidates")
+def agent_migrate_candidates(
+    legacy_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--legacy-dir",
+            help=(
+                "Legacy candidates root to audit/copy from. Defaults to the "
+                "repo-anchored data/agent/candidates path."
+            ),
+        ),
+    ] = None,
+    agent_output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--agent-output-dir",
+            help=(
+                "Agent artifact output root. Canonical candidates are always "
+                "agent/candidates under this root via resolve_candidates_dir."
+            ),
+        ),
+    ] = None,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Apply migration writes. Requires --backup-dir. Default is dry-run.",
+        ),
+    ] = False,
+    backup_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--backup-dir",
+            help="Backup root required with --apply; never overlaps legacy/canonical.",
+        ),
+    ] = None,
+) -> None:
+    """Audit (default) or apply conflict-safe legacy→canonical candidate migration."""
+    from quant_system.agent.candidate_migration import (
+        CandidateMigrationConflict,
+        apply_candidate_migration,
+        audit_candidate_roots,
+    )
+    from quant_system.agent.candidate_pool import CandidateIntegrityError
+
+    resolved_legacy = resolve_legacy_candidates_dir(legacy_dir)
+    resolved_agent_output = resolve_agent_output_dir(agent_output_dir)
+    try:
+        report = audit_candidate_roots(
+            legacy_dir=resolved_legacy,
+            agent_output_dir=resolved_agent_output,
+        )
+        if apply:
+            if backup_dir is None:
+                raise typer.BadParameter("--backup-dir is required with --apply")
+            report = apply_candidate_migration(report, backup_dir=backup_dir)
+    except (CandidateIntegrityError, CandidateMigrationConflict) as exc:
+        typer.echo(f"migration_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(report.model_dump_json())
 
 
 @prediction_market_app.command("scan-sample")
