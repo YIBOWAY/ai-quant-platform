@@ -75,9 +75,35 @@ data/                     Local cache, fixtures, generated research outputs.
 - Candidate factors must not reach resident paper/live paths from `.candidate`
   files. One-shot research backtests may explicitly load approved candidates;
   paper sleeve allocation requires promoted, registered, tested factor code.
+- Canonical candidate root is `resolve_candidates_dir(resolve_agent_output_dir())`.
+  Default agent output is the repo-anchored absolute path
+  `<repo>/data/agent_run`; candidates live under
+  `<repo>/data/agent_run/agent/candidates`. Override only via
+  `QS_AGENT_OUTPUT_DIR` (or explicit injectable/CLI agent-output root). Process
+  CWD and `QS_DATA_DIR` never relocate the candidate pool. API, CLI, one-shot
+  loader, migration, and Gate 3 all share that resolver.
+- Candidate reads surface mutually exclusive integrity states: `verified`,
+  `migration_required`, and `corrupt`. `legacy_unbound` is non-authority:
+  it never authorizes one-shot load, approval, or promotion. Until a separate
+  human authorizes `agent migrate-candidates --apply` with an explicit
+  `--backup-dir`, real candidate trees stay dry-run-only; live dry-run on this
+  machine reports one canonical-unversioned pending candidate and
+  `applied=false`.
+- Gate 2 review is expected-digest plus `expected_status=pending` CAS with a
+  non-empty note. HQA must pass human-supplied
+  `candidate-id + expected-digest + expected-status=pending + note` and must
+  never refetch/substitute observed values during approve.
+- Gate 3 public prepare requires `--candidate-id`, `--expected-digest`, and
+  `--base-commit`; stdout is the four-field
+  `{promotion_id, worktree, patch, manifest}` payload. Status/cleanup locate
+  state only by `--promotion-id`; destructive cleanup needs durable reviewed-
+  commit evidence or explicit `--abandon`. Prepare materializes only into an
+  isolated managed review worktree and never commits, merges, pushes, or
+  mutates unrelated main-worktree dirt.
 - Future frontend convergence should fold `/factor-lab` and `/agent-studio`
   into the Hermes workbench while preserving approval UI and removing platform
-  LLM/task-running affordances.
+  LLM/task-running affordances. New Hermes workbench approval UI stays disabled
+  until the professional frontend/bridge gates land.
 
 
 ## Core Engineering Rules
@@ -90,10 +116,13 @@ data/                     Local cache, fixtures, generated research outputs.
   free-form frontend expression builder.
 - A runnable backtest strategy needs both registry metadata and a pipeline
   builder. Paper-account rebalance support is a separate, explicit capability.
-- Candidate files may be loaded only for explicit one-shot research. Resident
-  paper/live paths use promoted, registered, tested factors only.
+- Candidate files may be loaded only for explicit one-shot research after
+  digest-bound approval re-verification. Resident paper/live paths use
+  promoted, registered, tested factors only.
 - Hermes generates source artifacts. The platform may ingest/review/promote
   them deterministically, but must not revive a platform-side LLM runner.
+  Candidate publication is immutable after atomic publish; same-ID retries are
+  idempotent only for the same manifest digest.
 
 ### Storage and PostgreSQL
 

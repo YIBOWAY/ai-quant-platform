@@ -36,7 +36,8 @@ domain backend, not an independent Phase 15 product track.
   strategy/universe
   registries, backtests, experiments, and paper-trading simulation.
 - Local FastAPI backend and Next.js frontend.
-- AI research assistant with candidate pool and human review gates.
+- AI research assistant with a digest-bound candidate pool and human review
+  gates (Gate 2 CAS + isolated Gate 3 review worktree; never auto-commits).
 - Read-only Polymarket research, snapshots, replay, and reports.
 - Futu read-only US stock and options data.
 - Options Income Screener, Options Radar, and Buy-Side Options Assistant.
@@ -157,7 +158,7 @@ database-index settings, and the runtime log path.
 | `/options-buyside` | Buy-side options strategy assistant. |
 | `/ai-news` | Read-only AI HOT news feed with selected/all items, category/keyword/time-window filters, daily reports, original-source links, and no strategy/backtest/paper-account mutations. |
 | `/polymarket` | Read-only prediction-market research page. |
-| `/agent-studio` | Current candidate review surface; planned to keep approval UI under the Hermes workbench and remove platform-side LLM/task-running affordances. |
+| `/agent-studio` | Current candidate review surface with detail-first digest CAS. Canonical candidates live under repo-anchored `data/agent_run/agent/candidates` (override only via `QS_AGENT_OUTPUT_DIR`; `QS_DATA_DIR`/CWD do not relocate them). New Hermes workbench approval UI stays disabled until frontend/bridge gates land. |
 | `/settings` | Masked local settings. |
 
 Equity data endpoints only accept explicit `provider=sample|futu|tiingo`.

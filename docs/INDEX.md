@@ -3,14 +3,15 @@
 这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
 指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-## 当前工作（2026-07-12）
+## 当前工作（2026-07-13）
 
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
 | 跨仓产品路线 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md` | Hermes 是 COO/编排层；本仓库是领域后端。 |
 | 已交付跨仓计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | Slice 9A-9G + mini 9H 已完成。 |
 | 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
-| 当前实现选择 | 尚未选定 | 若恢复前端 backlog，先做新的产品决定并另立独立 bite-sized plan。 |
+| 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、Gate 2 digest CAS、dry-run migration、隔离 Gate 3 worktree 已代码交付；真实 `--apply` 与 Hermes 新审批 UI 仍未授权/未开放。 |
+| 当前实现选择 | D-31 其余 wave | Gateway capability 合同已冻结且 chat 仍 fail-closed；professional frontend/read-only shell 待执行。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
 | 被替代计划 | HQA `2026-07-07-phase-1a-4-research-employees.md` | 目标保留，旧 implementation 模板不得原样执行。 |
 | 历史路线 | [Phase 15 素材档案](phases/phase_15_iteration_roadmap.md) | 仅作素材，不是独立 roadmap。 |
@@ -41,7 +42,32 @@ Composer 继续禁用。Slice 9G 新增 HQA 本地 opportunity ledger，并通�
 对账、周报聚合、job freshness 与通知投递。平台现在兼容 feed schema 1.0 的精确三来源
 合同和 schema 1.1 的精确六来源合同；`/hermes` 展示风险、预测、推演、周报、机会与
 自动化状态，whole-feed freshness budget 为 10800 秒。平台没有为完整 9H 新增
-scheduler、outbound worker、POST route 或数据库 migration。目前没有选定下一切片。
+scheduler、outbound worker、POST route 或数据库 migration。
+
+### 候选完整性与 Gate 3（2026-07-13 代码交付）
+
+- 唯一 canonical candidate root 由 `resolve_agent_output_dir()` 决定：默认
+  仓库锚定绝对路径 `<repo>/data/agent_run`，候选目录为
+  `<repo>/data/agent_run/agent/candidates`。仅 `QS_AGENT_OUTPUT_DIR`（或显式
+  injectable/CLI agent-output root）可改写；进程 CWD 与 `QS_DATA_DIR` 不迁移
+  候选池。API/CLI/one-shot loader/migration/promotion 共用同一 resolver。
+- 读路径互斥完整性状态：`verified` / `migration_required` / `corrupt`。
+  `legacy_unbound` 无执行/批准/晋级权威。
+- Gate 2：显式 `expected_manifest_digest` + `expected_status=pending` CAS；
+  终态决策不可翻转。
+- Gate 3：`agent promote-candidate` 需要 `--candidate-id`、`--expected-digest`、
+  `--base-commit`；stdout 仅
+  `{promotion_id, worktree, patch, manifest}`。status/cleanup 只认
+  `--promotion-id`；破坏性 cleanup 需已审查 commit 证据或显式 `--abandon`。
+  仅在隔离 managed review worktree 物化 scoped patch，永不自动 commit。
+- 真实 legacy/canonical migration 命令默认 dry-run。本机最新 dry-run
+  （`applied=false`，未 `--apply`）：legacy root 不存在；canonical 存在且含
+  一个 pending `canonical_unversioned` 项
+  `factor-momentum_20d_reversal-323b045e4b`（`integrity_state=migration_required`，
+  observed digest
+  `294bbe7b846ae86384e56deae8ba8df2576ac6ffa8a5937e4f82a2352fdd8558`）。
+  真实数据迁移需单独授权 `--apply` + `--backup-dir`。
+- 新 Hermes 审批 UI 在 professional frontend/bridge gates 完成前保持关闭。
 
 ## 0. 界面操作指南（新，建议先读）
 
