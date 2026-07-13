@@ -68,3 +68,33 @@ test("@combined-fixture Hermes Today hierarchy matches the active combined fixtu
 
   expect(externalRequests).toEqual([]);
 });
+
+test("@combined-fixture F2 subroutes are truthful and mutation-free", async ({
+  page,
+}) => {
+  const externalRequests = await installLoopbackOnlyGuard(page);
+
+  await page.goto("/zh/hermes/tasks");
+  await expect(page.getByRole("heading", { name: "任务" })).toBeVisible();
+  await expect(page.getByText("研究任务账本尚未接入")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
+
+  await page.goto("/zh/hermes/approvals");
+  await expect(page.getByRole("heading", { name: "待我确认" })).toBeVisible();
+  await expect(page.getByText("研究审批项")).toBeVisible();
+  await expect(page.getByRole("button", { name: /批准|拒绝/ })).toHaveCount(0);
+  await expect(
+    page.locator(
+      '[data-hermes-approval-id="factor-momentum_20d_reversal-323b045e4b"]',
+    ),
+  ).toBeVisible();
+  await expect(page.locator("code").filter({ hasText: "a".repeat(64) })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
+
+  await page.goto("/zh/hermes/results");
+  await expect(page.getByRole("heading", { name: "结果" })).toBeVisible();
+  await expect(page.getByText("只读结果索引")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
+
+  expect(externalRequests).toEqual([]);
+});
