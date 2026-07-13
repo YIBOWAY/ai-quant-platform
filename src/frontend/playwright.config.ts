@@ -34,8 +34,24 @@ if (
 }
 const backendPort = readPort("PW_BACKEND_PORT", 8765);
 const frontendPort = readPort("PW_FRONTEND_PORT", 3001);
+const rollbackE2E = process.env.PW_HERMES_ROLLBACK_E2E === "1";
+const rollbackPort = rollbackE2E
+  ? readRequiredPort("PW_HERMES_ROLLBACK_PORT")
+  : null;
+if (rollbackPort !== null && rollbackPort === frontendPort) {
+  throw new Error(
+    "PW_HERMES_ROLLBACK_PORT must differ from PW_FRONTEND_PORT",
+  );
+}
+if (rollbackPort !== null && rollbackPort === backendPort) {
+  throw new Error(
+    "PW_HERMES_ROLLBACK_PORT must differ from PW_BACKEND_PORT",
+  );
+}
 const backendUrl = `http://127.0.0.1:${backendPort}`;
 const frontendUrl = `http://127.0.0.1:${frontendPort}`;
+const rollbackFrontendUrl =
+  rollbackPort !== null ? `http://127.0.0.1:${rollbackPort}` : null;
 const e2eCorsOrigins = Array.from(
   new Set([
     "http://127.0.0.1:3000",
@@ -43,23 +59,30 @@ const e2eCorsOrigins = Array.from(
     "http://localhost:3000",
     "http://localhost:3001",
     frontendUrl,
+    ...(rollbackFrontendUrl ? [rollbackFrontendUrl] : []),
   ]),
 );
-const frontendDevCommand =
-  frontendPort === 3001
-    ? "npm run dev"
-    : `npx next dev --hostname 127.0.0.1 --port ${frontendPort}`;
-const frontendCommand = [
-  `node scripts/prepare-e2e-workspace.mjs ${frontendPort}`,
-  `cd ".tmp/e2e-frontend-${frontendPort}"`,
-  frontendDevCommand,
-].join(" && ");
+const frontendCommand = buildFrontendCommand(frontendPort);
+const rollbackFrontendCommand =
+  rollbackPort !== null ? buildFrontendCommand(rollbackPort) : null;
 const backendCommand = fixtureMode
   ? `node src/frontend/tests/support/hermes-fixture-api.mjs ${backendPort} ${hermesWorkbenchFixture}`
   : (process.env.QUANT_API_COMMAND ??
     `python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port ${backendPort}`);
 const backendReuse = fixtureMode ? false : reuseExistingServer;
-const frontendReuse = fixtureMode ? false : reuseExistingServer;
+const frontendReuse = fixtureMode || rollbackE2E ? false : reuseExistingServer;
+
+function buildFrontendCommand(port: number): string {
+  const frontendDevCommand =
+    port === 3001
+      ? "npm run dev"
+      : `npx next dev --hostname 127.0.0.1 --port ${port}`;
+  return [
+    `node scripts/prepare-e2e-workspace.mjs ${port}`,
+    `cd ".tmp/e2e-frontend-${port}"`,
+    frontendDevCommand,
+  ].join(" && ");
+}
 
 function readHermesWorkbenchFixture(
   raw: string | undefined,
@@ -87,6 +110,18 @@ function readPort(name: string, fallback: number) {
   return port;
 }
 
+function readRequiredPort(name: string) {
+  const raw = process.env[name];
+  if (!raw) {
+    throw new Error(`${name} is required when PW_HERMES_ROLLBACK_E2E=1`);
+  }
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`${name} must be an integer TCP port between 1 and 65535.`);
+  }
+  return port;
+}
+
 function findRepoRoot(start: string) {
   let current = path.resolve(start);
   while (true) {
@@ -102,6 +137,101 @@ function findRepoRoot(start: string) {
     }
     current = parent;
   }
+}
+
+type WebServerConfig = {
+  command: string;
+  cwd: string;
+  url: string;
+  reuseExistingServer: boolean;
+  timeout: number;
+  env?: { [key: string]: string };
+};
+
+function buildWebServers(): WebServerConfig[] | undefined {
+  if (!runE2E) {
+    return undefined;
+  }
+
+  const servers: WebServerConfig[] = [
+    {
+      command: backendCommand,
+      cwd: repoRoot,
+      url: `${backendUrl}/api/health`,
+      reuseExistingServer: backendReuse,
+      timeout: 60_000,
+      // Fixture server is pure Node and ignores QS_* settings.
+      // Only real-smoke mode injects hermetic platform env. Never forward
+      // the fixture name into this process environment.
+      ...(fixtureMode
+        ? {}
+        : {
+            env: {
+              QS_ENVIRONMENT: "test",
+              QS_DATABASE_ENABLED: "false",
+              QS_DATABASE_AUTO_MIGRATE: "false",
+              QS_AIHOT_ENABLED: "false",
+              QS_HERMES_ARTIFACT_FEED_PATH: hermesArtifactFixture,
+              QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS: "315360000",
+              QS_API_CORS_ORIGINS: JSON.stringify(e2eCorsOrigins),
+              QS_DATA_DIR: e2eDataRoot,
+              QS_AGENT_OUTPUT_DIR: path.join(e2eDataRoot, "agent-output"),
+              QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet"),
+              QS_DUCKDB_PATH: path.join(e2eDataRoot, "quant_system.duckdb"),
+              QS_OPTIONS_RADAR_OUTPUT_DIR: path.join(
+                e2eDataRoot,
+                "options_scans",
+              ),
+              QS_OPTIONS_RADAR_UNIVERSE_PATH: path.join(
+                e2eDataRoot,
+                "options_universe",
+                "universe.csv",
+              ),
+              QS_OPTIONS_RADAR_EARNINGS_CALENDAR_PATH: path.join(
+                e2eDataRoot,
+                "options_universe",
+                "earnings_calendar.csv",
+              ),
+              QS_OPTIONS_RADAR_VIX_HISTORY_PATH: path.join(
+                e2eDataRoot,
+                "options_universe",
+                "vix_history.csv",
+              ),
+            },
+          }),
+    },
+    {
+      command: frontendCommand,
+      cwd: frontendRoot,
+      url: frontendUrl,
+      reuseExistingServer: frontendReuse,
+      timeout: 120_000,
+      env: {
+        // Pin the API base for hermetic E2E runs: shell env beats .env.local
+        // in Next.js, so this overrides any local override (e.g. 8800/8700).
+        // Never inject PW_HERMES_WORKBENCH_FIXTURE or fixture name here.
+        // Never expose shell flag as NEXT_PUBLIC_*.
+        NEXT_PUBLIC_QUANT_API_BASE_URL: backendUrl,
+        QS_HERMES_SHELL_ENABLED: "true",
+      },
+    },
+  ];
+
+  if (rollbackPort !== null && rollbackFrontendCommand && rollbackFrontendUrl) {
+    servers.push({
+      command: rollbackFrontendCommand,
+      cwd: frontendRoot,
+      url: rollbackFrontendUrl,
+      reuseExistingServer: false,
+      timeout: 120_000,
+      env: {
+        NEXT_PUBLIC_QUANT_API_BASE_URL: backendUrl,
+        QS_HERMES_SHELL_ENABLED: "false",
+      },
+    });
+  }
+
+  return servers;
 }
 
 export default defineConfig({
@@ -121,67 +251,5 @@ export default defineConfig({
   metadata: fixtureMode
     ? { hermesWorkbenchFixture }
     : undefined,
-  webServer: runE2E
-    ? [
-        {
-          command: backendCommand,
-          cwd: repoRoot,
-          url: `${backendUrl}/api/health`,
-          reuseExistingServer: backendReuse,
-          timeout: 60_000,
-          // Fixture server is pure Node and ignores QS_* settings.
-          // Only real-smoke mode injects hermetic platform env. Never forward
-          // the fixture name into this process environment.
-          ...(fixtureMode
-            ? {}
-            : {
-                env: {
-                  QS_ENVIRONMENT: "test",
-                  QS_DATABASE_ENABLED: "false",
-                  QS_DATABASE_AUTO_MIGRATE: "false",
-                  QS_AIHOT_ENABLED: "false",
-                  QS_HERMES_ARTIFACT_FEED_PATH: hermesArtifactFixture,
-                  QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS: "315360000",
-                  QS_API_CORS_ORIGINS: JSON.stringify(e2eCorsOrigins),
-                  QS_DATA_DIR: e2eDataRoot,
-                  QS_AGENT_OUTPUT_DIR: path.join(e2eDataRoot, "agent-output"),
-                  QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet"),
-                  QS_DUCKDB_PATH: path.join(e2eDataRoot, "quant_system.duckdb"),
-                  QS_OPTIONS_RADAR_OUTPUT_DIR: path.join(
-                    e2eDataRoot,
-                    "options_scans",
-                  ),
-                  QS_OPTIONS_RADAR_UNIVERSE_PATH: path.join(
-                    e2eDataRoot,
-                    "options_universe",
-                    "universe.csv",
-                  ),
-                  QS_OPTIONS_RADAR_EARNINGS_CALENDAR_PATH: path.join(
-                    e2eDataRoot,
-                    "options_universe",
-                    "earnings_calendar.csv",
-                  ),
-                  QS_OPTIONS_RADAR_VIX_HISTORY_PATH: path.join(
-                    e2eDataRoot,
-                    "options_universe",
-                    "vix_history.csv",
-                  ),
-                },
-              }),
-        },
-        {
-          command: frontendCommand,
-          cwd: frontendRoot,
-          url: frontendUrl,
-          reuseExistingServer: frontendReuse,
-          timeout: 120_000,
-          env: {
-            // Pin the API base for hermetic E2E runs: shell env beats .env.local
-            // in Next.js, so this overrides any local override (e.g. 8800/8700).
-            // Never inject PW_HERMES_WORKBENCH_FIXTURE or fixture name here.
-            NEXT_PUBLIC_QUANT_API_BASE_URL: backendUrl,
-          },
-        },
-      ]
-    : undefined,
+  webServer: buildWebServers(),
 });

@@ -4,27 +4,45 @@ test.beforeEach(() => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
 });
 
+test("enabled locale roots redirect to Hermes preserving repeated query and hash", async ({
+  page,
+}) => {
+  await page.goto("/zh");
+  await expect(page).toHaveURL(/\/zh\/hermes$/);
+
+  await page.goto("/en?source=bookmark&tag=a&tag=b#root-marker");
+  await expect(page).toHaveURL(
+    /\/en\/hermes\?source=bookmark&tag=a&tag=b#root-marker$/,
+  );
+});
+
 test("sidebar groups the product areas instead of showing one flat list", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
+  await expect(page).toHaveURL(/\/en\/hermes$/);
   await expect(page.getByText("Research Pipeline", { exact: true })).toBeVisible();
   await expect(page.getByText("Options Research", { exact: true })).toBeVisible();
   await expect(page.getByText("Markets & AI", { exact: true })).toBeVisible();
   await expect(page.getByText("System", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Backtester" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Hermes", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Factor Lab", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Dashboard", exact: true })).toHaveCount(0);
 });
 
 test("Chinese sidebar uses the same grouped information architecture", async ({ page }) => {
   await page.goto("/zh");
   await page.waitForLoadState("networkidle");
 
+  await expect(page).toHaveURL(/\/zh\/hermes$/);
   await expect(page.getByText("研究流水线", { exact: true })).toBeVisible();
   await expect(page.getByText("期权研究", { exact: true })).toBeVisible();
   await expect(page.getByText("市场与 AI", { exact: true })).toBeVisible();
   await expect(page.getByText("系统", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Hermes 工作台", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "因子实验室", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "仪表盘", exact: true })).toHaveCount(0);
 });
 
 test("app shell keeps a fixed viewport with a scrollable page region inside", async ({ page }) => {
@@ -65,6 +83,8 @@ test("mobile shell gives the page full width and exposes navigation", async ({ p
 
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByRole("link", { name: "Paper Trading", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Hermes", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Dashboard", exact: true })).toHaveCount(0);
 });
 
 test("backtest defaults are a useful first research run", async ({ page }) => {

@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Menu, Search, Settings, Terminal, X } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
-import { LocaleToggle } from "@/components/LocaleToggle";
+import { LocaleToggle, LocaleToggleFallback } from "@/components/LocaleToggle";
 import { localizePath, splitLocalePath } from "@/lib/locale";
 import {
+  buildNavSections,
   isVisibleOnSurface,
-  navSections as configNavSections,
   type NavItemId,
 } from "@/lib/navConfig";
 
@@ -94,7 +94,7 @@ function labelFor(text: FlatCopy, id: NavItemId): string {
   return typeof value === "string" ? value : id;
 }
 
-export function TopBar() {
+export function TopBar({ shellEnabled }: { shellEnabled: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const locale = useLocale();
@@ -103,7 +103,7 @@ export function TopBar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
-  const mobileNavSections = configNavSections.map((section) => ({
+  const mobileNavSections = buildNavSections({ shellEnabled }).map((section) => ({
     name: text.groups[section.id],
     items: section.items
       .filter((item) => isVisibleOnSurface(item, "mobile"))
@@ -166,7 +166,9 @@ export function TopBar() {
       </div>
 
       <div className="flex shrink-0 items-center gap-2 lg:gap-4">
-        <LocaleToggle />
+        <Suspense fallback={<LocaleToggleFallback />}>
+          <LocaleToggle />
+        </Suspense>
         <div className="hidden items-center gap-2 border-l border-border-subtle pl-4 text-text-secondary lg:flex">
           <Link
             aria-label={text.openHermes}

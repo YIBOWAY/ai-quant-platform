@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildNavSections,
   isVisibleOnSurface,
   navSections,
   type NavItem,
@@ -9,7 +10,28 @@ import {
   type NavSurface,
 } from "./navConfig";
 
-const expectedItemIds: NavItemId[] = [
+const expectedEnabledItemIds: NavItemId[] = [
+  "hermes",
+  "dataExplorer",
+  "factorLab",
+  "backtester",
+  "replications",
+  "experiments",
+  "paperTrading",
+  "positionMap",
+  "optionsScreener",
+  "optionsRadar",
+  "optionsTools",
+  "buySide",
+  "aiNews",
+  "orderBook",
+  "agentStudio",
+  "settings",
+  "docs",
+  "support",
+];
+
+const expectedRolledBackItemIds: NavItemId[] = [
   "dashboard",
   "hermes",
   "dataExplorer",
@@ -31,32 +53,73 @@ const expectedItemIds: NavItemId[] = [
   "support",
 ];
 
-function itemRoutesFor(sectionId: NavSection["id"]) {
-  return navSections
+function itemRoutesFor(
+  sections: NavSection[],
+  sectionId: NavSection["id"],
+) {
+  return sections
     .find((section) => section.id === sectionId)
     ?.items.map(({ id, href }) => ({ id, href }));
 }
 
-function routesForSurface(surface: NavSurface) {
-  return navSections
+function routesForSurface(sections: NavSection[], surface: NavSurface) {
+  return sections
     .flatMap((section) => section.items)
     .filter((item) => isVisibleOnSurface(item, surface))
     .map((item) => item.href);
 }
 
-describe("navSections", () => {
+describe("buildNavSections", () => {
   it("keeps the five top-level navigation groups in product order", () => {
-    expect(navSections.map((section) => section.id)).toEqual([
-      "research",
-      "paper",
-      "options",
-      "markets",
-      "system",
-    ]);
+    expect(
+      buildNavSections({ shellEnabled: true }).map((section) => section.id),
+    ).toEqual(["research", "paper", "options", "markets", "system"]);
+    expect(
+      buildNavSections({ shellEnabled: false }).map((section) => section.id),
+    ).toEqual(["research", "paper", "options", "markets", "system"]);
   });
 
-  it("keeps exact item routes for every navigation group", () => {
-    expect(itemRoutesFor("research")).toEqual([
+  it("switches only the home entry while retaining Hermes and legacy research", () => {
+    const enabled = buildNavSections({ shellEnabled: true }).flatMap(
+      (section) => section.items,
+    );
+    expect(enabled[0]).toMatchObject({ id: "hermes", href: "/hermes" });
+    expect(enabled.some((item) => item.id === "dashboard")).toBe(false);
+
+    const rolledBack = buildNavSections({ shellEnabled: false }).flatMap(
+      (section) => section.items,
+    );
+    expect(rolledBack[0]).toMatchObject({ id: "dashboard", href: "/" });
+    expect(rolledBack).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "hermes", href: "/hermes" }),
+      ]),
+    );
+    for (const items of [enabled, rolledBack]) {
+      expect(items.map((item) => item.id)).toEqual(
+        expect.arrayContaining([
+          "factorLab",
+          "backtester",
+          "experiments",
+          "agentStudio",
+        ]),
+      );
+    }
+  });
+
+  it("keeps exact item routes for every navigation group in both modes", () => {
+    const enabled = buildNavSections({ shellEnabled: true });
+    expect(itemRoutesFor(enabled, "research")).toEqual([
+      { id: "hermes", href: "/hermes" },
+      { id: "dataExplorer", href: "/data-explorer" },
+      { id: "factorLab", href: "/factor-lab" },
+      { id: "backtester", href: "/backtest" },
+      { id: "replications", href: "/strategies" },
+      { id: "experiments", href: "/experiments" },
+    ]);
+
+    const rolledBack = buildNavSections({ shellEnabled: false });
+    expect(itemRoutesFor(rolledBack, "research")).toEqual([
       { id: "dashboard", href: "/" },
       { id: "hermes", href: "/hermes" },
       { id: "dataExplorer", href: "/data-explorer" },
@@ -65,44 +128,58 @@ describe("navSections", () => {
       { id: "replications", href: "/strategies" },
       { id: "experiments", href: "/experiments" },
     ]);
-    expect(itemRoutesFor("paper")).toEqual([
-      { id: "paperTrading", href: "/paper-trading" },
-      { id: "positionMap", href: "/position-map" },
-    ]);
-    expect(itemRoutesFor("options")).toEqual([
-      { id: "optionsScreener", href: "/options-screener" },
-      { id: "optionsRadar", href: "/options-radar" },
-      { id: "optionsTools", href: "/options-tools" },
-      { id: "buySide", href: "/options-buyside" },
-    ]);
-    expect(itemRoutesFor("markets")).toEqual([
-      { id: "aiNews", href: "/ai-news" },
-      { id: "orderBook", href: "/polymarket" },
-      { id: "agentStudio", href: "/agent-studio" },
-    ]);
-    expect(itemRoutesFor("system")).toEqual([
-      { id: "settings", href: "/settings" },
-      { id: "docs", href: "/docs/reversal-momentum" },
-      { id: "support", href: "/settings" },
-    ]);
+
+    for (const sections of [enabled, rolledBack]) {
+      expect(itemRoutesFor(sections, "paper")).toEqual([
+        { id: "paperTrading", href: "/paper-trading" },
+        { id: "positionMap", href: "/position-map" },
+      ]);
+      expect(itemRoutesFor(sections, "options")).toEqual([
+        { id: "optionsScreener", href: "/options-screener" },
+        { id: "optionsRadar", href: "/options-radar" },
+        { id: "optionsTools", href: "/options-tools" },
+        { id: "buySide", href: "/options-buyside" },
+      ]);
+      expect(itemRoutesFor(sections, "markets")).toEqual([
+        { id: "aiNews", href: "/ai-news" },
+        { id: "orderBook", href: "/polymarket" },
+        { id: "agentStudio", href: "/agent-studio" },
+      ]);
+      expect(itemRoutesFor(sections, "system")).toEqual([
+        { id: "settings", href: "/settings" },
+        { id: "docs", href: "/docs/reversal-momentum" },
+        { id: "support", href: "/settings" },
+      ]);
+    }
   });
 
   it("keeps Factor Lab and Agent Studio until Hermes parity is reached", () => {
-    const itemIds = navSections.flatMap((section) => section.items.map((item) => item.id));
-
-    expect(itemIds).toContain("factorLab");
-    expect(itemIds).toContain("agentStudio");
+    for (const shellEnabled of [true, false]) {
+      const itemIds = buildNavSections({ shellEnabled }).flatMap((section) =>
+        section.items.map((item) => item.id),
+      );
+      expect(itemIds).toContain("factorLab");
+      expect(itemIds).toContain("agentStudio");
+    }
   });
 
-  it("keeps the item id set aligned with NavItemId", () => {
-    const itemIds = navSections.flatMap((section) => section.items.map((item) => item.id));
-
-    expect(itemIds).toEqual(expectedItemIds);
+  it("keeps the item id set aligned with each shell mode", () => {
+    expect(
+      buildNavSections({ shellEnabled: true }).flatMap((section) =>
+        section.items.map((item) => item.id),
+      ),
+    ).toEqual(expectedEnabledItemIds);
+    expect(
+      buildNavSections({ shellEnabled: false }).flatMap((section) =>
+        section.items.map((item) => item.id),
+      ),
+    ).toEqual(expectedRolledBackItemIds);
   });
 
   it("computes full route lists by navigation surface", () => {
-    const sidebarRoutes = routesForSurface("sidebar");
-    const mobileRoutes = routesForSurface("mobile");
+    const sections = buildNavSections({ shellEnabled: true });
+    const sidebarRoutes = routesForSurface(sections, "sidebar");
+    const mobileRoutes = routesForSurface(sections, "mobile");
 
     expect(sidebarRoutes).not.toContain("/docs/reversal-momentum");
     expect(sidebarRoutes.filter((href) => href === "/settings")).toHaveLength(1);
@@ -111,7 +188,9 @@ describe("navSections", () => {
   });
 
   it("marks docs and support as mobile-only", () => {
-    const system = navSections.find((section) => section.id === "system");
+    const system = buildNavSections({ shellEnabled: true }).find(
+      (section) => section.id === "system",
+    );
     const docs = system?.items.find((item) => item.id === "docs");
     const support = system?.items.find((item) => item.id === "support");
 
@@ -124,11 +203,21 @@ describe("navSections", () => {
   });
 
   it("provides id, href, and icon for every navigation item", () => {
-    for (const item of navSections.flatMap((section) => section.items)) {
-      expect(item.id).toEqual(expect.any(String));
-      expect(item.href).toMatch(/^\/.*/);
-      expect(item.icon).toBeTruthy();
+    for (const shellEnabled of [true, false]) {
+      for (const item of buildNavSections({ shellEnabled }).flatMap(
+        (section) => section.items,
+      )) {
+        expect(item.id).toEqual(expect.any(String));
+        expect(item.href).toMatch(/^\/.*/);
+        expect(item.icon).toBeTruthy();
+      }
     }
+  });
+});
+
+describe("navSections default export", () => {
+  it("matches shell-enabled product navigation", () => {
+    expect(navSections).toEqual(buildNavSections({ shellEnabled: true }));
   });
 });
 
@@ -137,7 +226,7 @@ describe("isVisibleOnSurface", () => {
     const item: NavItem = {
       id: "dashboard",
       href: "/default",
-      icon: navSections[0].items[0].icon,
+      icon: buildNavSections({ shellEnabled: false })[0].items[0].icon,
     };
 
     expect(isVisibleOnSurface(item, "sidebar")).toBe(true);

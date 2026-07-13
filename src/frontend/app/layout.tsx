@@ -6,6 +6,7 @@ import { TopBar } from '@/components/TopBar';
 import { SafetyStrip } from '@/components/SafetyStrip';
 import { Providers } from '@/components/Providers';
 import { LocaleProvider } from '@/components/LocaleProvider';
+import { hermesFeatureFlags } from '@/lib/hermes/featureFlags';
 import { getServerLocale } from '@/lib/serverLocale';
 
 const inter = Inter({
@@ -42,6 +43,7 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getServerLocale();
+  const shellEnabled = hermesFeatureFlags().shell;
   return (
     <html
       lang={locale === 'zh' ? 'zh' : 'en'}
@@ -50,8 +52,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-bg-base antialiased selection:bg-info selection:text-bg-base">
         <LocaleProvider locale={locale}>
           <Providers>
-            <Sidebar />
-            <TopBar />
+            <Sidebar shellEnabled={shellEnabled} />
+            <TopBar shellEnabled={shellEnabled} />
             <SafetyStrip />
             {/* h-screen + pt makes the content area a *fixed* height box (viewport
                 minus the 100px topbar+safety strip), so child pages using h-full /

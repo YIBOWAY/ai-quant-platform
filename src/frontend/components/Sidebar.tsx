@@ -10,8 +10,8 @@ import {
 import { useLocale } from "@/components/LocaleProvider";
 import { localizePath, splitLocalePath } from "@/lib/locale";
 import {
+  buildNavSections,
   isVisibleOnSurface,
-  navSections as configNavSections,
   type NavItemId,
 } from "@/lib/navConfig";
 
@@ -94,13 +94,13 @@ function labelFor(
   return typeof value === "string" ? value : id;
 }
 
-export function Sidebar() {
+export function Sidebar({ shellEnabled }: { shellEnabled: boolean }) {
   const pathname = usePathname();
   const locale = useLocale();
   const text = copy[locale];
   const activePath = splitLocalePath(pathname).pathname;
 
-  const navSections = configNavSections.map((section) => ({
+  const navSections = buildNavSections({ shellEnabled }).map((section) => ({
     name: text.groups[section.id],
     items: section.items
       .filter((item) => isVisibleOnSurface(item, "sidebar"))

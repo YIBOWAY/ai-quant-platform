@@ -8,7 +8,6 @@ const screenshotOptions = {
 } as const;
 
 const desktopRoutes = [
-  { path: "/", snapshot: "home-desktop.png", title: "home" },
   {
     path: "/data-explorer?provider=sample&symbol=SPY&start=2024-01-02&end=2024-02-15",
     snapshot: "data-explorer-desktop.png",
@@ -39,15 +38,6 @@ test.describe("desktop visual baselines", () => {
       await expect(page).toHaveScreenshot(route.snapshot, screenshotOptions);
     });
   }
-});
-
-test.describe("mobile shell visual baseline", () => {
-  test.use({ viewport: { width: 390, height: 844 } });
-
-  test("home mobile", async ({ page }) => {
-    await preparePage(page, "/");
-    await expect(page).toHaveScreenshot("home-mobile.png", screenshotOptions);
-  });
 });
 
 test.describe("brief trial smoke", () => {
