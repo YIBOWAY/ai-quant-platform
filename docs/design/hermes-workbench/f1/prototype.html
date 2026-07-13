@@ -13,7 +13,7 @@
       <span class="proto-badge" id="proto-data-label">prototype data</span>
       <p>
         本地 F1 全状态交互原型 · 仅 <code>fetch("./states/*.json")</code> + DOM ·
-        不提交表单 · 不访问生产 API / Hermes / tasks。视觉基线：F0 direction-a premium dark COO craft。
+        不提交表单 · 不访问生产 API / Hermes / tasks。视觉基线：F0 direction-a v3 finance/crypto trading desk。
       </p>
     </div>
 
@@ -26,7 +26,7 @@
       <button type="button" data-walk="4">5 completed_degraded</button>
       <button type="button" data-walk="5">6 Gate 2</button>
       <button type="button" data-walk="6">7 Gate 3</button>
-      <button type="button" id="walk-next" class="btn-primary" style="border:1px solid var(--hermes-border);background:var(--hermes-soft);color:var(--hermes-text);border-radius:8px;padding:0 14px;">下一步 →</button>
+      <button type="button" id="walk-next" class="btn-primary">下一步 →</button>
       <span class="walk-meta" id="walk-meta">step 1/7 · goal</span>
     </div>
 
@@ -52,7 +52,7 @@
   <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
   <main class="prototype" id="workbench">
-    <nav class="nav-rail desktop-only" aria-label="Hermes 主导航">
+    <header class="top-bar" aria-label="Hermes 交易台顶栏">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"></div>
         <div>
@@ -60,31 +60,27 @@
           <span>Research COO</span>
         </div>
       </div>
-      <button type="button" class="nav-item" data-nav="home" aria-current="page">
-        <span class="nav-dot" aria-hidden="true"></span> 今日
-        <span class="badge" id="nav-badge-home" hidden>0</span>
-      </button>
-      <button type="button" class="nav-item" data-nav="conversation">
-        <span class="nav-dot" aria-hidden="true"></span> 对话
-      </button>
-      <button type="button" class="nav-item" data-nav="tasks">
-        <span class="nav-dot" aria-hidden="true"></span> 任务
-      </button>
-      <button type="button" class="nav-item" data-nav="approvals">
-        <span class="nav-dot" aria-hidden="true"></span> 审批
-        <span class="badge" id="nav-badge-approvals" hidden>0</span>
-      </button>
-      <button type="button" class="nav-item" data-nav="results">
-        <span class="nav-dot" aria-hidden="true"></span> 结果
-      </button>
-      <div class="nav-spacer" aria-hidden="true"></div>
-      <div class="nav-foot">
-        F1 prototype · read-only catalogs<br />
-        <code>paper only · prototype data</code>
+      <nav class="top-nav desktop-only" aria-label="Hermes 主导航">
+        <button type="button" class="nav-item" data-nav="home" aria-current="page">
+          今日
+          <span class="badge" id="nav-badge-home" hidden>0</span>
+        </button>
+        <button type="button" class="nav-item" data-nav="conversation">对话</button>
+        <button type="button" class="nav-item" data-nav="tasks">任务</button>
+        <button type="button" class="nav-item" data-nav="approvals">
+          审批
+          <span class="badge" id="nav-badge-approvals" hidden>0</span>
+        </button>
+        <button type="button" class="nav-item" data-nav="results">结果</button>
+      </nav>
+      <div class="sys-chips" aria-label="系统状态">
+        <span class="sys-chip"><span class="dot" aria-hidden="true"></span>API OK</span>
+        <span class="sys-chip"><span class="dot" aria-hidden="true"></span>paper</span>
+        <span class="sys-chip warn"><span class="dot" aria-hidden="true"></span>kill on</span>
       </div>
-    </nav>
+    </header>
 
-    <div class="main-col">
+    <div class="main-col main-stage">
       <div class="mobile-tabs" role="navigation" aria-label="移动端分区">
         <button type="button" data-nav="home" aria-current="page">今日</button>
         <button type="button" data-nav="conversation">对话</button>
@@ -108,20 +104,6 @@
         </div>
       </section>
     </div>
-
-    <aside class="secondary-panel" aria-label="值守摘要" id="side-panel">
-      <h2>值守面板</h2>
-      <ul class="side-list" id="side-list">
-        <li>
-          <strong>安全</strong>
-          <span>仅全局顶栏展示 · 此处不重复 paper/live/kill</span>
-        </li>
-        <li>
-          <strong>原型</strong>
-          <span>prototype data · local JSON catalogs only</span>
-        </li>
-      </ul>
-    </aside>
   </main>
 
   <!-- Modal: approval exact summary -->
@@ -403,6 +385,26 @@
             : "<p>" + escapeHtml(s.summary_en || "No recent result") + "</p>") +
           "</article>";
 
+        var watchStrip =
+          '<section class="watch-strip" aria-label="值守摘要" id="side-panel">' +
+          '<h2 class="watch-label">值守</h2>' +
+          '<div class="watch-item"><strong>安全</strong><span>仅全局顶栏展示 · 此处不重复 paper/live/kill</span></div>' +
+          '<div class="watch-item"><strong>原型</strong><span>prototype data · ' +
+          escapeHtml(state.surface) +
+          "/" +
+          escapeHtml(state.stateId) +
+          "</span></div>" +
+          '<div class="watch-item"><strong>当前状态</strong><span>' +
+          escapeHtml(s.status_text || "—") +
+          "</span></div>" +
+          '<div class="watch-item"><strong>Walkthrough</strong><span>' +
+          escapeHtml(
+            WALKTHROUGH[state.walkIndex]
+              ? WALKTHROUGH[state.walkIndex].label
+              : "—"
+          ) +
+          "</span></div></section>";
+
         return (
           '<div class="mobile-order-status">' +
           '<header class="ops-header">' +
@@ -432,15 +434,17 @@
           escapeHtml(recentS) +
           "</p></div></div></div>" +
           '<div class="content content-a mobile-order-plan">' +
-          '<div class="desk-grid">' +
+          '<div class="desk-stack">' +
           attCard +
-          '<div class="stack-col">' +
+          '<div class="two-up">' +
           autoCard +
           resultCard +
+          "</div>" +
           (attention
             ? '<p class="long-error">' + escapeHtml(s.long_error || "") + "</p>"
             : "") +
-          "</div></div></div>"
+          watchStrip +
+          "</div></div>"
         );
       }
 
@@ -789,33 +793,18 @@
       }
 
       function updateSide(s) {
-        var list = byId("side-list");
-        if (!list) return;
-        var items = [
-          { t: "安全", d: "仅全局顶栏展示 · 此处不重复 paper/live/kill" },
-          { t: "原型", d: "prototype data · " + state.surface + "/" + state.stateId },
-          {
-            t: "当前状态",
-            d: (s && s.status_text) || "—"
-          },
-          {
-            t: "Walkthrough",
-            d: WALKTHROUGH[state.walkIndex]
-              ? WALKTHROUGH[state.walkIndex].label
-              : "—"
-          }
-        ];
-        list.innerHTML = items
-          .map(function (it) {
-            return (
-              "<li><strong>" +
-              escapeHtml(it.t) +
-              "</strong><span>" +
-              escapeHtml(it.d) +
-              "</span></li>"
-            );
-          })
-          .join("");
+        /* 值守 is rendered inside home desk-stack; other surfaces skip permanent rail */
+        var panel = byId("side-panel");
+        if (!panel || !s) return;
+        var items = panel.querySelectorAll(".watch-item span");
+        if (items.length >= 4) {
+          items[1].textContent =
+            "prototype data · " + state.surface + "/" + state.stateId;
+          items[2].textContent = s.status_text || "—";
+          items[3].textContent = WALKTHROUGH[state.walkIndex]
+            ? WALKTHROUGH[state.walkIndex].label
+            : "—";
+        }
       }
 
       function updateNav() {
