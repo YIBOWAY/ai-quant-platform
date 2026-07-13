@@ -13,7 +13,7 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 | Gate | Status | Notes |
 | --- | --- | --- |
 | F0 visual directions | **draft — awaiting user selection** | Three full-size directions A/B/C delivered. **Not approved.** |
-| F0 independent review | **placeholder — not completed** | Review table below is empty pending independent frontend/UX reviewer. |
+| F0 independent review | **completed 2026-07-13** | UX pass/fail recorded below. Package: **Ready for user selection**. No direction approved. |
 | F1 clickable prototype | not started | Blocked on written F0 approval. |
 | F2 production shell | not started | Blocked on F1 approval + candidate-integrity Task 5 types. |
 
@@ -92,29 +92,31 @@ normal automation not expanded into four equal cards
 
 ---
 
-## Independent review (placeholder)
+## Independent review (completed)
 
-Reviewer: _TBD_  
-Date: _TBD_  
-Method: full-size browser at four viewports + state toggles; checklist reference may include HQA `.superpowers/sdd/frontend-task-1-ux-checklist.md` if present.
+Reviewer: frontend/UX (independent of design author)  
+Date: 2026-07-13  
+Method: full-size headless Chrome at 1440×900, 1280×800, 768×1024, 390×844; idle + state toggles; overflow / 44px / safety probes.  
+Full write-up: Hermes-quant-agent `.superpowers/sdd/frontend-task-1-ux-review.md` (checklist-aligned).
 
 | Criterion | A | B | C | Notes |
 | --- | --- | --- | --- | --- |
-| Hierarchy (action / exception / work / result) | | | | |
-| Five-second scan (idle Today) | | | | |
-| Safety uniqueness (strip only) | | | | |
-| Long Chinese + long IDs | | | | |
-| Reduced motion | | | | |
-| Contrast | | | | |
-| Viewport 1440 | | | | |
-| Viewport 1280 | | | | |
-| Viewport 768 | | | | |
-| Viewport 390 | | | | |
-| 44px targets + focus order | | | | |
-| Automation compression | | | | |
-| Direction identity (A/B/C distinct) | | | | |
+| Hierarchy (action / exception / work / result) | Pass | Pass | Pass | Distinct A desk / B timeline / C split; automation one-row |
+| Five-second scan (idle Today) | Pass | Fail@390 S5 | Pass | B: `completed_degraded` below fold on phone |
+| Safety uniqueness (strip only) | Pass | Pass | Pass | Single top `role="status"`; no body paper/live/kill/API |
+| Long Chinese + long IDs | Pass | Pass | Pass | wrap/break-all; no horizontal overflow |
+| Reduced motion | Pass | Pass | Pass | shared kill-switch; B spark neutralized |
+| Contrast | Pass* | Pass* | Pass* | *disabled composer copy ~3.95:1 (medium) |
+| Viewport 1440 | Pass | Pass | Pass | no overflow |
+| Viewport 1280 | Pass | Pass | Pass | secondary collapses; primary content kept |
+| Viewport 768 | Pass | Pass | Pass | honest stack |
+| Viewport 390 | Pass | Fail S5 | Pass | no overflow; B progress chrome tall |
+| 44px targets + focus order | Pass | Pass | Pass | 0 sub-44 interactive targets measured |
+| Automation compression | Pass | Pass | Pass | never four equal healthy cards |
+| Direction identity (A/B/C distinct) | Pass | Pass | Pass | action-status / change-progress / conversation-result |
 
-**Outcome:** _pending_ — pass/fail per direction not yet recorded.
+**Outcome:** **Ready for user selection** — A Pass · B Pass with mobile S5 caveat · C Pass.  
+**Not approved.** No direction selected. F0 decision section stays empty until written user choice.
 
 ---
 
