@@ -68,6 +68,8 @@
   --color-editorial-down: #C84A52;
   --color-hermes: #9085E9;
   --color-hermes-glow: rgba(144, 133, 233, 0.4);
+  --color-hermes-attention: #F0B90B;
+  --color-hermes-canvas: #17171C;
   --color-stream-bg: #17171C;
   --color-stream-surface: #1F1F27;
   --color-stream-surface-2: #262631;
@@ -75,6 +77,8 @@
   --spacing-right-panel: 340px;
   --spacing-stream-max: 720px;
   --spacing-editorial-column: 1120px;
+  --spacing-hermes-composer-min: 64px;
+  --spacing-hermes-content-max: 1180px;
   --radius-editorial: 2px;
 
   /* ---- Layout spacings ---- */
@@ -183,5 +187,25 @@ select option {
     font-size: 11px;
     line-height: 16px;
     letter-spacing: 0.05em;
+  }
+}
+
+/* Global shell / Hermes a11y contracts: 44px targets, focus ring, reduced motion */
+.app-touch-target {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+:where(a[href], button, input, select, textarea, summary, [role="button"]):focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

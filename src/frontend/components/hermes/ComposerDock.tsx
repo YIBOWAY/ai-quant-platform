@@ -22,7 +22,7 @@ export type ComposerDockProps = {
 
 /**
  * Visual composer affordance for the Hermes workbench.
- * Slice 8 keeps submit disabled and never posts jobs/network requests.
+ * F2 keeps submit disabled and never posts jobs/network requests.
  * Textarea can be marked disabled; submit remains forced-off unless a future
  * slice passes allowSubmit={true} with disabled={false}.
  */
@@ -41,7 +41,7 @@ export function ComposerDock({
   return (
     <div className="border-t border-border-subtle bg-[var(--color-stream-surface)] p-3">
       <form
-        className="mx-auto flex w-full max-w-[var(--spacing-stream-max)] flex-col gap-2"
+        className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-2"
         onSubmit={(event) => {
           event.preventDefault();
         }}
@@ -53,7 +53,8 @@ export function ComposerDock({
           <textarea
             id="hermes-composer-draft"
             aria-disabled={disabled || undefined}
-            className="min-h-[44px] max-h-32 flex-1 resize-y rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-primary placeholder:text-text-secondary focus:border-[var(--color-hermes)] focus:outline-none focus:ring-1 focus:ring-[var(--color-hermes)] disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
+            aria-label={label}
+            className="app-touch-target min-h-[44px] max-h-32 flex-1 resize-y rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-primary placeholder:text-text-secondary disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
             disabled={disabled}
             onChange={(event) => setDraft(event.target.value)}
             placeholder={placeholder}
@@ -63,7 +64,7 @@ export function ComposerDock({
           />
           <button
             aria-label={sendLabel}
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-surface-muted text-text-secondary transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-touch-target inline-flex shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-info/10 text-info transition-colors disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-bg-surface-muted disabled:text-text-secondary disabled:opacity-50"
             disabled={!submitEnabled}
             type="submit"
           >

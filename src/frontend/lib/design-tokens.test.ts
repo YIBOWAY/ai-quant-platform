@@ -43,3 +43,16 @@ describe("editorial design tokens", () => {
     expect(globalsCss).toContain("var(--font-serif-sc)");
   });
 });
+
+describe("Hermes shell accessibility and layout tokens", () => {
+  it("defines Hermes content/composer spacing, attention/canvas colors, and a11y contracts", () => {
+    const css = globalsCss;
+    expect(css).toContain("--spacing-hermes-composer-min: 64px");
+    expect(css).toContain("--spacing-hermes-content-max: 1180px");
+    expect(css).toContain("--color-hermes-attention:");
+    expect(css).toContain("--color-hermes-canvas:");
+    expect(css).toContain(".app-touch-target");
+    expect(css).toContain(":focus-visible");
+    expect(css).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+});

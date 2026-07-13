@@ -6,7 +6,6 @@ import {
   FileText,
   HelpCircle,
   Plus,
-  ShieldCheck,
 } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { localizePath, splitLocalePath } from "@/lib/locale";
@@ -22,8 +21,6 @@ const copy = {
     runBacktest: "Run Backtest",
     docs: "Docs",
     support: "Help",
-    paperOnly: "Paper-only",
-    paperOnlyHint: "Research & simulation. No live trading paths exist.",
     groups: {
       research: "Research Pipeline",
       paper: "Paper Trading",
@@ -58,8 +55,6 @@ const copy = {
     runBacktest: "运行回测",
     docs: "文档",
     support: "帮助",
-    paperOnly: "仅模拟",
-    paperOnlyHint: "研究与模拟用途，不存在任何实盘交易路径。",
     groups: {
       research: "研究流水线",
       paper: "模拟交易",
@@ -132,7 +127,7 @@ export function Sidebar() {
 
       <div className="border-b border-border-subtle p-4">
         <Link
-          className="font-label-caps flex w-full items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/5 py-2 text-info transition-colors hover:bg-bg-sidebar-muted"
+          className="app-touch-target font-label-caps flex w-full items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/5 text-info transition-colors hover:bg-bg-sidebar-muted"
           href={localizePath("/backtest", locale)}
         >
           <Plus size={16} />
@@ -155,7 +150,7 @@ export function Sidebar() {
                       <Link
                         aria-current={isActive ? "page" : undefined}
                         href={localizePath(item.href, locale)}
-                        className={`flex items-center gap-3 rounded-lg px-3 py-2 font-sans text-xs tracking-tight transition-colors ${
+                        className={`app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight transition-colors ${
                           isActive
                             ? "border-l-2 border-text-primary bg-bg-sidebar-muted font-semibold text-text-primary"
                             : "border-l-2 border-transparent text-text-secondary hover:bg-bg-sidebar-muted hover:text-text-primary"
@@ -178,7 +173,7 @@ export function Sidebar() {
           <li>
             <Link
               href={localizePath("/docs/reversal-momentum", locale)}
-              className="flex items-center gap-3 rounded-lg px-3 py-1.5 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
+              className="app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
             >
               <FileText size={16} />
               <span>{text.docs}</span>
@@ -187,27 +182,13 @@ export function Sidebar() {
           <li>
             <Link
               href={localizePath("/settings", locale)}
-              className="flex items-center gap-3 rounded-lg px-3 py-1.5 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
+              className="app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
             >
               <HelpCircle size={16} />
               <span>{text.support}</span>
             </Link>
           </li>
         </ul>
-      </div>
-
-      <div className="flex items-center gap-3 border-t border-border-subtle p-4" title={text.paperOnlyHint}>
-        <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-info/30 bg-info/5">
-          <ShieldCheck size={16} className="text-info" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate font-sans text-xs font-medium text-text-primary">
-            {text.paperOnly}
-          </div>
-          <div className="truncate font-sans text-[10px] text-text-secondary">
-            {text.paperOnlyHint}
-          </div>
-        </div>
       </div>
     </nav>
   );

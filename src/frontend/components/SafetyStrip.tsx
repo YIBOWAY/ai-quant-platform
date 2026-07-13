@@ -40,7 +40,13 @@ export async function SafetyStrip() {
   } · ${text.api} ${health.status}`;
 
   return (
-    <div className="fixed top-16 left-0 right-0 z-30 flex h-[36px] items-center justify-start overflow-hidden border-b border-amber-900/50 bg-amber-950/20 px-3 sm:justify-center lg:left-[240px]">
+    <div
+      aria-label={desktopStatus}
+      className="fixed top-16 left-0 right-0 z-30 flex h-[36px] items-center justify-start overflow-hidden border-b border-amber-900/50 bg-amber-950/20 px-3 sm:justify-center lg:left-[240px]"
+      data-global-safety-strip
+      data-testid="global-safety-strip"
+      role="status"
+    >
       <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-widest text-amber-500">
         <ShieldAlert size={14} className="text-amber-500" />
         <span className="min-w-0 truncate sm:hidden">{mobileStatus}</span>

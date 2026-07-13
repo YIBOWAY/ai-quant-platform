@@ -145,7 +145,7 @@ export function TopBar() {
           aria-controls="mobile-navigation"
           aria-expanded={menuOpen}
           aria-label={text.mobileMenu}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info lg:hidden"
+          className="app-touch-target flex shrink-0 items-center justify-center rounded-lg border border-border-subtle text-text-primary lg:hidden"
           onClick={() => setMenuOpen((value) => !value)}
           ref={menuButtonRef}
           type="button"
@@ -156,7 +156,7 @@ export function TopBar() {
           <Search className="absolute left-3 text-text-secondary" size={16} />
           <input
             aria-label={text.search}
-            className="w-64 rounded-lg border border-border-subtle bg-bg-surface py-1.5 pl-9 pr-4 font-sans text-sm text-text-primary placeholder-text-secondary focus:border-info focus:outline-none focus:ring-1 focus:ring-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+            className="app-touch-target w-64 rounded-lg border border-border-subtle bg-bg-surface py-2 pl-9 pr-4 font-sans text-sm text-text-primary placeholder-text-secondary focus:border-info focus:outline-none focus:ring-1 focus:ring-info"
             onChange={(event) => setQuery(event.target.value)}
             placeholder={text.search}
             type="text"
@@ -170,14 +170,14 @@ export function TopBar() {
         <div className="hidden items-center gap-2 border-l border-border-subtle pl-4 text-text-secondary lg:flex">
           <Link
             aria-label={text.openHermes}
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+            className="app-touch-target flex cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info"
             href={localizePath("/hermes", locale)}
           >
             <Terminal size={18} />
           </Link>
           <Link
             aria-label={text.openSettings}
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+            className="app-touch-target flex cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info"
             href={localizePath("/settings", locale)}
           >
             <Settings size={18} />
@@ -197,7 +197,7 @@ export function TopBar() {
                 {section.items.map((item) => (
                   <Link
                     aria-current={activePath === item.href ? "page" : undefined}
-                    className={`rounded-lg border px-3 py-2 font-body-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info ${
+                    className={`app-touch-target flex items-center rounded-lg border px-3 font-body-sm ${
                       activePath === item.href
                         ? "border-border-subtle bg-bg-sidebar-muted text-text-primary"
                         : "border-border-subtle text-text-primary hover:bg-bg-sidebar-muted"
