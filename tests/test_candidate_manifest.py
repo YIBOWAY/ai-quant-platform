@@ -380,6 +380,78 @@ def test_legacy_unbound_lock_is_readable_but_not_approved(tmp_path: Path) -> Non
     assert snapshot.approval_binding == "legacy_unbound"
 
 
+def test_approved_lock_requires_matching_id_and_digest(tmp_path: Path) -> None:
+    """Structured locks with wrong ID or unbound digest must not authorize."""
+    candidate = tmp_path / "factor-safe-1"
+    _candidate(candidate)
+    _manifest, digest = _write_stored_manifest(candidate)
+
+    # Wrong candidate_id + zero digest must not report approved.
+    (candidate / "approved.lock").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "candidate_id": "factor-other-2",
+                "manifest_digest": "0" * 64,
+                "note": "unbound",
+            }
+        ),
+        encoding="utf-8",
+    )
+    snapshot = verify_candidate_directory(candidate)
+    assert snapshot.approval_binding == "legacy_unbound"
+    assert snapshot.review_record is None
+    assert snapshot.manifest_digest == digest
+
+    # Correct ID but wrong digest still unbound.
+    (candidate / "approved.lock").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "candidate_id": "factor-safe-1",
+                "manifest_digest": "a" * 64,
+                "note": "stale",
+            }
+        ),
+        encoding="utf-8",
+    )
+    snapshot = verify_candidate_directory(candidate)
+    assert snapshot.approval_binding == "legacy_unbound"
+
+    # Non-hex / uppercase digest is not a bound lock.
+    (candidate / "approved.lock").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "candidate_id": "factor-safe-1",
+                "manifest_digest": "A" * 64,
+                "note": "bad-hex",
+            }
+        ),
+        encoding="utf-8",
+    )
+    snapshot = verify_candidate_directory(candidate)
+    assert snapshot.approval_binding == "legacy_unbound"
+
+    # Matching ID + exact current digest authorizes.
+    (candidate / "approved.lock").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "candidate_id": "factor-safe-1",
+                "manifest_digest": digest,
+                "note": "ok",
+            }
+        ),
+        encoding="utf-8",
+    )
+    snapshot = verify_candidate_directory(candidate)
+    assert snapshot.approval_binding == "approved"
+    assert snapshot.review_record is not None
+    assert snapshot.review_record.candidate_id == "factor-safe-1"
+    assert snapshot.review_record.decision == "approve"
+
+
 def test_candidates_root_rename_after_open_never_reads_replacement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -545,6 +617,92 @@ def test_barrier_candidate_swap_never_returns_replacement_bytes(tmp_path: Path) 
     assert result.get("bytes") != b"EVIL-BARRIER"
     # After the swap the parent entry no longer matches the held original inode.
     assert "identity" in error or "exit_identity" in error
+
+
+def test_barrier_candidates_root_swap_never_returns_replacement_bytes(
+    tmp_path: Path,
+) -> None:
+    """Concurrent candidates-root rename must not leak replacement bytes via held FDs."""
+    agent_output = tmp_path / "agent-output"
+    candidates = agent_output / "agent" / "candidates"
+    candidates.mkdir(parents=True)
+    original_cand = candidates / "factor-safe-1"
+    _candidate(original_cand)
+    _write_stored_manifest(original_cand)
+    original = (original_cand / "z.py.candidate").read_bytes()
+
+    replacement_root = tmp_path / "replacement-candidates"
+    replacement_root.mkdir()
+    evil = replacement_root / "factor-safe-1"
+    _candidate(evil)
+    (evil / "z.py.candidate").write_bytes(b"EVIL-ROOT-BARRIER")
+    (evil / "a.json").write_bytes(b"EVIL-ROOT-BARRIER")
+    meta = json.loads((evil / "metadata.json").read_text(encoding="utf-8"))
+    (evil / "metadata.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    _write_stored_manifest(evil)
+
+    barrier = threading.Barrier(2)
+    result: dict[str, object] = {}
+    error: dict[str, BaseException] = {}
+
+    def reader() -> None:
+        try:
+            with open_absolute_directory(agent_output, create=False) as agent_opened:
+                agent_fd = open_directory_at(agent_opened.fd, "agent")
+                try:
+                    assert_entry_is_open_fd(agent_opened.fd, "agent", agent_fd)
+                    candidates_fd = open_directory_at(agent_fd, "candidates")
+                    try:
+                        assert_entry_is_open_fd(agent_fd, "candidates", candidates_fd)
+                        barrier.wait(timeout=5)
+                        barrier.wait(timeout=5)
+                        # After the swap agent/"candidates" must not match held inode.
+                        try:
+                            assert_entry_is_open_fd(
+                                agent_fd, "candidates", candidates_fd
+                            )
+                        except CandidateIntegrityError as exc:
+                            error["identity"] = exc
+                        # Reads relative to the held candidates FD stay original.
+                        candidate_fd = open_directory_at(
+                            candidates_fd, "factor-safe-1"
+                        )
+                        try:
+                            result["bytes"] = read_regular_bytes_at(
+                                candidate_fd, "z.py.candidate"
+                            )
+                        finally:
+                            os.close(candidate_fd)
+                    finally:
+                        os.close(candidates_fd)
+                finally:
+                    os.close(agent_fd)
+        except CandidateIntegrityError as exc:
+            error["exit_identity"] = exc
+        except BaseException as exc:  # pragma: no cover - unexpected
+            error["reader"] = exc
+
+    def swapper() -> None:
+        barrier.wait(timeout=5)
+        os.rename(candidates, tmp_path / "candidates-moved")
+        os.rename(replacement_root, candidates)
+        barrier.wait(timeout=5)
+
+    t1 = threading.Thread(target=reader)
+    t2 = threading.Thread(target=swapper)
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert "reader" not in error
+    assert result.get("bytes") == original
+    assert result.get("bytes") != b"EVIL-ROOT-BARRIER"
+    assert "identity" in error or "exit_identity" in error
+    # Path-visible replacement exists; held-FD path never returned its bytes.
+    assert (candidates / "factor-safe-1" / "z.py.candidate").read_bytes() == (
+        b"EVIL-ROOT-BARRIER"
+    )
 
 
 def test_valid_candidate_id_accepted() -> None:

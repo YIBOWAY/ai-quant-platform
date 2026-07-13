@@ -266,7 +266,13 @@ def _try_read_control(parent_fd: int, name: str) -> bytes | None:
     return read_regular_bytes_at(parent_fd, name)
 
 
-def _parse_bound_review(payload: bytes, *, decision: str) -> ReviewRecord | None:
+_HEX_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _parse_bound_review(
+    payload: bytes, *, decision: str
+) -> tuple[ReviewRecord, str] | None:
+    """Parse a structured review lock; return (record, lowercase hex digest) or None."""
     try:
         data = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -278,7 +284,7 @@ def _parse_bound_review(payload: bytes, *, decision: str) -> ReviewRecord | None
     digest = data.get("manifest_digest")
     candidate_id = data.get("candidate_id")
     note = data.get("note")
-    if not isinstance(digest, str) or len(digest) != 64:
+    if not isinstance(digest, str) or _HEX_DIGEST.fullmatch(digest) is None:
         return None
     if not isinstance(candidate_id, str) or not isinstance(note, str):
         return None
@@ -294,14 +300,18 @@ def _parse_bound_review(payload: bytes, *, decision: str) -> ReviewRecord | None
     if isinstance(created_at, str):
         record_kwargs["created_at"] = created_at
     try:
-        return ReviewRecord(**record_kwargs)
+        return ReviewRecord(**record_kwargs), digest
     except Exception:
         return None
 
 
 def _approval_binding_at(
     parent_fd: int,
+    *,
+    candidate_id: str,
+    manifest_digest: str,
 ) -> tuple[Literal["pending", "approved", "rejected", "legacy_unbound"], ReviewRecord | None]:
+    """Read approval controls; authorize only when ID + digest bind to this candidate."""
     approved = _try_read_control(parent_fd, _APPROVED_LOCK)
     rejected = _try_read_control(parent_fd, _REJECTED_LOCK)
     legacy_approved = _try_read_control(parent_fd, _LEGACY_APPROVED_LOCK)
@@ -324,14 +334,23 @@ def _approval_binding_at(
         return "legacy_unbound", None
 
     if approved is not None:
-        record = _parse_bound_review(approved, decision="approve")
-        if record is not None:
-            return "approved", record
+        parsed = _parse_bound_review(approved, decision="approve")
+        if (
+            parsed is not None
+            and parsed[0].candidate_id == candidate_id
+            and parsed[1] == manifest_digest
+        ):
+            return "approved", parsed[0]
+        # Structured-but-unbound / wrong-id / wrong-digest never authorize.
         return "legacy_unbound", None
     if rejected is not None:
-        record = _parse_bound_review(rejected, decision="reject")
-        if record is not None:
-            return "rejected", record
+        parsed = _parse_bound_review(rejected, decision="reject")
+        if (
+            parsed is not None
+            and parsed[0].candidate_id == candidate_id
+            and parsed[1] == manifest_digest
+        ):
+            return "rejected", parsed[0]
         return "legacy_unbound", None
     # legacy-* locks never authorize.
     return "legacy_unbound", None
@@ -382,7 +401,11 @@ def _verify_from_opened(
     if _sha256_hex(rebuilt_bytes) != digest:
         raise CandidateIntegrityError("manifest digest mismatch")
 
-    binding, review_record = _approval_binding_at(opened.fd)
+    binding, review_record = _approval_binding_at(
+        opened.fd,
+        candidate_id=manifest.candidate_id,
+        manifest_digest=digest,
+    )
     assert_entry_is_open_fd(opened.parent_fd, opened.name, opened.fd)
 
     return VerifiedCandidateSnapshot(

@@ -406,7 +406,14 @@ def open_absolute_directory(path: Path, *, create: bool) -> Iterator[OpenedDirec
                 next_fd = open_directory_at(parent_fd, name)
             except CandidateIntegrityError:
                 raise
-            assert_entry_is_open_fd(parent_fd, name, next_fd)
+            # Track/close immediately on identity failure so a rename race
+            # cannot leak FDs on the hot integrity path.
+            try:
+                assert_entry_is_open_fd(parent_fd, name, next_fd)
+            except Exception:
+                with suppress(OSError):
+                    os.close(next_fd)
+                raise
             if is_last:
                 child_fd = next_fd
                 st = os.fstat(child_fd)
