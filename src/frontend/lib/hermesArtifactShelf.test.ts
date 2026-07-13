@@ -2,8 +2,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ArtifactShelf } from "@/components/hermes";
+import { ArtifactShelf, HermesTodayView } from "@/components/hermes";
 import type { HermesArtifactShelfEnvelope } from "./api";
+import { buildHermesTodayModel } from "./hermes/viewModel";
+import {
+  candidateFixture,
+  healthyArtifacts,
+} from "./hermes/viewModelFixtures";
 
 const availableShelf = {
   schema_version: "1.0",
@@ -112,6 +117,47 @@ const availableShelf = {
   ],
   warnings: [],
 } satisfies HermesArtifactShelfEnvelope;
+
+describe("Hermes Today hierarchy", () => {
+  it("prioritizes action, exceptions, and conclusions over equal-weight shelf cards", () => {
+    const candidates = {
+      candidates: [
+        candidateFixture({
+          candidate_id: "factor-momentum_20d_reversal-323b045e4b",
+          artifact_type: "factor",
+          goal: "Evaluate a deterministic reversal factor on AAPL",
+          universe: ["AAPL"],
+          status: "pending",
+          integrity_state: "verified",
+          manifest_digest: "a".repeat(64),
+          observed_manifest_digest: null,
+          approval_binding: "pending",
+          approval_enabled: true,
+          integrity_error_code: null,
+        }),
+      ],
+    };
+    const model = buildHermesTodayModel({
+      artifacts: healthyArtifacts,
+      candidates,
+    });
+    const html = renderToStaticMarkup(
+      createElement(HermesTodayView, {
+        model,
+        artifacts: healthyArtifacts,
+        locale: "zh",
+      }),
+    );
+
+    expect(html).toContain("自动化 4/4 正常");
+    expect(html).not.toContain("0 9 * * 0</");
+    expect(html).toContain("<details");
+    expect(html).toContain("研究审批项");
+    expect(html).not.toContain("候选</h");
+    expect(html).toContain('data-hermes-automation-summary');
+    expect(html).not.toContain("data-hermes-automation-exception");
+  });
+});
 
 describe("Hermes artifact shelf", () => {
   it("renders schema 1.1 weekly, opportunity, and degraded automation cards explicitly", () => {
@@ -249,6 +295,8 @@ describe("Hermes artifact shelf", () => {
     expect(english).toContain("Freshness budget");
     expect(english).toContain("Fresh until");
     expect(english).toContain("Queued");
+    expect(english).toContain("<details");
+    expect(english).toContain('data-hermes-automation-exception="weekly"');
     expect(english).not.toContain(">Market foresight</h3>");
     expect(english.match(/<article/g)).toHaveLength(3);
 

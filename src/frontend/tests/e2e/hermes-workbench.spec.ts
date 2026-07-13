@@ -35,3 +35,36 @@ test("@combined-fixture Hermes workbench shell keeps a single safety strip and d
   await assertNoHorizontalOverflow(page, page.viewportSize()!.width);
   expect(externalRequests).toEqual([]);
 });
+
+test("@combined-fixture Hermes Today hierarchy matches the active combined fixture", async ({
+  page,
+}) => {
+  const fixture = process.env.PW_HERMES_WORKBENCH_FIXTURE ?? "normal";
+  const externalRequests = await installLoopbackOnlyGuard(page);
+  await page.goto("/zh/hermes");
+
+  await expect(page.locator("[data-hermes-today]")).toBeVisible();
+  await expect(page.locator("[data-hermes-automation-summary]")).toHaveCount(1);
+  await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
+  await expect(page.getByTestId("global-safety-strip")).toHaveCount(1);
+
+  if (fixture === "normal") {
+    await expect(page.getByText("自动化 4/4 正常")).toBeVisible();
+    await expect(page.getByText("研究审批项")).toBeVisible();
+    await expect(
+      page.locator(
+        '[data-hermes-attention-id="factor-momentum_20d_reversal-323b045e4b"]',
+      ),
+    ).toBeVisible();
+    await expect(page.locator("[data-hermes-automation-exception]")).toHaveCount(0);
+  } else if (fixture === "degraded") {
+    await expect(page.getByText("自动化 3/4 正常")).toBeVisible();
+    await expect(page.locator("[data-hermes-automation-exception]")).toHaveCount(1);
+    await expect(page.locator('[data-hermes-automation-exception="weekly"]')).toBeVisible();
+    await expect(
+      page.locator('[data-hermes-automation-exception="weekly"] details[open]'),
+    ).toHaveCount(1);
+  }
+
+  expect(externalRequests).toEqual([]);
+});
