@@ -423,6 +423,112 @@ def test_apply_detects_canonical_candidate_identity_drift(tmp_path) -> None:
     assert not (cdir / "manifest.v1.json").exists()
 
 
+def test_apply_detects_canonical_root_identity_drift(tmp_path) -> None:
+    agent_output = tmp_path / "agent-output"
+    canonical = agent_output / "agent" / "candidates"
+    _write_legacy_candidate(canonical, "candidate-1", b"pending\n")
+    report = audit_candidate_roots(
+        legacy_dir=tmp_path / "missing-legacy",
+        agent_output_dir=agent_output,
+    )
+    assert report.canonical_unversioned == ["candidate-1"]
+    assert report.canonical_present
+
+    # Replace entire canonical candidates root after audit (new inode).
+    outside = tmp_path / "replacement-canonical-root"
+    _write_legacy_candidate(outside, "candidate-1", b"pending\n")
+    shutil.rmtree(canonical)
+    outside.rename(canonical)
+    before_repl = _tree_fingerprint(canonical)
+
+    with pytest.raises((CandidateIntegrityError, CandidateMigrationConflict)):
+        apply_candidate_migration(report, backup_dir=tmp_path / "backup")
+
+    assert _tree_fingerprint(canonical) == before_repl
+    assert not (canonical / "candidate-1" / "manifest.v1.json").exists()
+
+
+def test_apply_detects_pool_lock_swap_after_audit(tmp_path) -> None:
+    agent_output = tmp_path / "agent-output"
+    canonical = agent_output / "agent" / "candidates"
+    _write_legacy_candidate(canonical, "candidate-1", b"pending\n")
+    # Plant a regular pool lock so apply re-opens an existing entry.
+    lock_path = canonical / ".candidate-pool.lock"
+    lock_path.write_bytes(b"lock-v1\n")
+    report = audit_candidate_roots(
+        legacy_dir=tmp_path / "missing-legacy",
+        agent_output_dir=agent_output,
+    )
+    assert report.canonical_unversioned == ["candidate-1"]
+
+    # Swap the pool lock for a symlink after audit (identity / type drift).
+    outside_target = tmp_path / "outside-lock-target"
+    outside_target.write_bytes(b"evil\n")
+    lock_path.unlink()
+    lock_path.symlink_to(outside_target)
+    before_canonical = _tree_fingerprint(canonical)
+
+    with pytest.raises((CandidateIntegrityError, CandidateMigrationConflict)):
+        apply_candidate_migration(report, backup_dir=tmp_path / "backup")
+
+    assert _tree_fingerprint(canonical) == before_canonical
+    assert not (canonical / "candidate-1" / "manifest.v1.json").exists()
+    assert lock_path.is_symlink()
+
+
+def test_incomplete_backup_is_not_treated_as_complete(tmp_path) -> None:
+    """A partial backup left by a mid-copy crash must not skip re-backup/publish."""
+    legacy = tmp_path / "legacy"
+    agent_output = tmp_path / "agent-output"
+    backup = tmp_path / "backup"
+    _write_legacy_candidate(legacy, "candidate-1", b"full-payload\n", approved=True)
+    report = audit_candidate_roots(legacy_dir=legacy, agent_output_dir=agent_output)
+    assert report.copyable == ["candidate-1"]
+
+    # Plant an incomplete backup tree that would previously short-circuit.
+    incomplete = backup / "legacy" / "candidate-1"
+    incomplete.mkdir(parents=True)
+    (incomplete / "metadata.json").write_text('{"partial": true}', encoding="utf-8")
+    # Missing factor.py.candidate and approved.lock — incomplete vs source.
+    before_legacy = _tree_fingerprint(legacy)
+
+    apply_candidate_migration(report, backup_dir=backup)
+
+    assert _tree_fingerprint(legacy) == before_legacy
+    # Backup must be completed to match all source regular files.
+    complete_backup = backup / "legacy" / "candidate-1"
+    assert (complete_backup / "factor.py.candidate").read_bytes() == b"full-payload\n"
+    assert (complete_backup / "metadata.json").is_file()
+    assert (complete_backup / "approved.lock").is_file()
+    # And publish must still occur after verified complete backup.
+    snap = CandidatePool(agent_output).get("candidate-1")
+    assert snap.artifact_bytes["factor.py.candidate"] == b"full-payload\n"
+    assert snap.approval_binding == "legacy_unbound"
+
+
+def test_complete_matching_backup_is_idempotent_noop_for_backup(tmp_path) -> None:
+    """A complete, byte-matching backup may be reused without rewrite."""
+    legacy = tmp_path / "legacy"
+    agent_output = tmp_path / "agent-output"
+    backup = tmp_path / "backup"
+    _write_legacy_candidate(legacy, "candidate-1", b"payload\n")
+    report = audit_candidate_roots(legacy_dir=legacy, agent_output_dir=agent_output)
+
+    # Plant a complete backup that matches source bytes exactly.
+    complete = backup / "legacy" / "candidate-1"
+    complete.mkdir(parents=True)
+    for name in ("metadata.json", "factor.py.candidate"):
+        (complete / name).write_bytes((legacy / "candidate-1" / name).read_bytes())
+    before_backup = _tree_fingerprint(complete)
+
+    apply_candidate_migration(report, backup_dir=backup)
+
+    assert _tree_fingerprint(complete) == before_backup
+    assert CandidatePool(agent_output).get("candidate-1").artifact_bytes[
+        "factor.py.candidate"
+    ] == b"payload\n"
+
+
 def test_apply_is_noop_on_identical_rerun(tmp_path) -> None:
     legacy = tmp_path / "legacy"
     agent_output = tmp_path / "agent-output"

@@ -499,6 +499,99 @@ def _copy_regular_entries(
         write_regular_exclusive_at(dest_fd, dest_name, payload)
 
 
+def _list_regular_payloads(source_fd: int) -> dict[str, bytes]:
+    """Return name→bytes for every regular, non-symlink entry under source_fd."""
+    payloads: dict[str, bytes] = {}
+    for name in sorted(os.listdir(source_fd)):
+        if name in _SKIP_NAMES:
+            continue
+        try:
+            st = os.stat(name, dir_fd=source_fd, follow_symlinks=False)
+        except OSError as exc:
+            raise CandidateIntegrityError(f"cannot stat source entry {name!r}") from exc
+        if stat.S_ISLNK(st.st_mode):
+            raise CandidateIntegrityError(f"source entry {name!r} is a symlink")
+        if not stat.S_ISREG(st.st_mode):
+            continue
+        payloads[name] = read_regular_bytes_at(source_fd, name)
+    return payloads
+
+
+def _backup_matches_source(
+    backup_fd: int, source_payloads: dict[str, bytes]
+) -> bool:
+    """True only when backup has exactly the same regular-file set and bytes."""
+    seen: set[str] = set()
+    for name in os.listdir(backup_fd):
+        if name in _SKIP_NAMES:
+            continue
+        try:
+            st = os.stat(name, dir_fd=backup_fd, follow_symlinks=False)
+        except OSError:
+            return False
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+            return False
+        if name not in source_payloads:
+            return False
+        try:
+            if read_regular_bytes_at(backup_fd, name) != source_payloads[name]:
+                return False
+        except CandidateIntegrityError:
+            return False
+        seen.add(name)
+    return seen == set(source_payloads)
+
+
+def _stage_verified_backup(
+    bucket_fd: int,
+    *,
+    candidate_id: str,
+    source_fd: int,
+    source_payloads: dict[str, bytes],
+) -> None:
+    """Exclusive-stage a complete backup, verify bytes, then noreplace-publish."""
+    staging_name = f".staging-backup-{secrets.token_hex(16)}"
+    mkdir_exclusive_at(bucket_fd, staging_name)
+    staging_fd: int | None = None
+    published = False
+    try:
+        staging_fd = open_directory_at(bucket_fd, staging_name)
+        assert_entry_is_open_fd(bucket_fd, staging_name, staging_fd)
+        _copy_regular_entries(source_fd, staging_fd, rename_decisions=False)
+        os.fsync(staging_fd)
+        if not _backup_matches_source(staging_fd, source_payloads):
+            raise CandidateIntegrityError(
+                f"staged backup for {candidate_id!r} does not match source"
+            )
+        assert_entry_is_open_fd(bucket_fd, staging_name, staging_fd)
+        rename_directory_noreplace_at(
+            bucket_fd, staging_name, bucket_fd, candidate_id
+        )
+        os.fsync(bucket_fd)
+        published = True
+    except Exception:
+        if not published:
+            with suppress(Exception):
+                remove_entry_tree_at(bucket_fd, staging_name)
+        raise
+    finally:
+        if staging_fd is not None:
+            with suppress(OSError):
+                os.close(staging_fd)
+
+    # Final held-fd verify of the published backup before callers may mutate source trees.
+    final_fd = open_directory_at(bucket_fd, candidate_id)
+    try:
+        assert_entry_is_open_fd(bucket_fd, candidate_id, final_fd)
+        if not _backup_matches_source(final_fd, source_payloads):
+            raise CandidateIntegrityError(
+                f"published backup for {candidate_id!r} incomplete or drifted"
+            )
+        os.fsync(final_fd)
+    finally:
+        os.close(final_fd)
+
+
 def _backup_candidate_tree(
     backup_root: OpenedDirectory,
     *,
@@ -506,8 +599,16 @@ def _backup_candidate_tree(
     candidate_id: str,
     source_fd: int,
 ) -> None:
-    """Copy all regular files from source candidate into backup/bucket/id."""
+    """Copy all regular files from source into backup/bucket/id after verify.
+
+    Never trusts a pre-existing backup directory by name alone. A complete,
+    byte-matching tree is an idempotent no-op; an incomplete/mismatched tree is
+    removed and replaced via exclusive staging + noreplace rename only after
+    the staged copy verifies against the held source FD.
+    """
     _validate_candidate_id(candidate_id)
+    source_payloads = _list_regular_payloads(source_fd)
+
     if not _entry_is_dir(backup_root.fd, bucket):
         with suppress(CandidateConflictError):
             mkdir_exclusive_at(backup_root.fd, bucket)
@@ -515,16 +616,23 @@ def _backup_candidate_tree(
     try:
         assert_entry_is_open_fd(backup_root.fd, bucket, bucket_fd)
         if _entry_is_dir(bucket_fd, candidate_id):
-            # Idempotent: if backup already present, leave it.
-            return
-        mkdir_exclusive_at(bucket_fd, candidate_id)
-        dest_fd = open_directory_at(bucket_fd, candidate_id)
-        try:
-            assert_entry_is_open_fd(bucket_fd, candidate_id, dest_fd)
-            _copy_regular_entries(source_fd, dest_fd, rename_decisions=False)
-            os.fsync(dest_fd)
-        finally:
-            os.close(dest_fd)
+            existing_fd = open_directory_at(bucket_fd, candidate_id)
+            try:
+                assert_entry_is_open_fd(bucket_fd, candidate_id, existing_fd)
+                if _backup_matches_source(existing_fd, source_payloads):
+                    # Complete, fsynced-matching backup: idempotent no-op.
+                    return
+            finally:
+                os.close(existing_fd)
+            # Incomplete or drifted backup must not authorize publish; restage.
+            remove_entry_tree_at(bucket_fd, candidate_id)
+
+        _stage_verified_backup(
+            bucket_fd,
+            candidate_id=candidate_id,
+            source_fd=source_fd,
+            source_payloads=source_payloads,
+        )
         os.fsync(bucket_fd)
     finally:
         os.close(bucket_fd)
@@ -853,8 +961,37 @@ def apply_candidate_migration(
                     raise
 
         try:
-            # Canonical under pool lock; create if publishing copyable or versioning.
-            with locked_candidates_root(agent_path, create=True) as canonical_root:
+            # Probe canonical root identity *before* pool-lock acquisition so a
+            # replaced root fails closed without creating .candidate-pool.lock.
+            create_canonical = expected_canonical is None
+            if expected_canonical is not None:
+                if not _path_is_dir_nofollow(canonical_path):
+                    raise CandidateIntegrityError(
+                        "canonical root missing after audit observed it"
+                    )
+                with open_absolute_directory(canonical_path, create=False) as probe:
+                    assert_entry_is_open_fd(
+                        probe.parent_fd, probe.name, probe.fd
+                    )
+                    if _identity_tuple(probe) != expected_canonical:
+                        raise CandidateIntegrityError(
+                            "canonical root identity drift"
+                        )
+                    if _identity_tuple(probe) == backup_ident:
+                        raise CandidateMigrationConflict(
+                            "backup root identity collides with canonical"
+                        )
+                    if legacy_root is not None and _identity_tuple(probe) == (
+                        _identity_tuple(legacy_root)
+                    ):
+                        raise CandidateMigrationConflict(
+                            "canonical root identity collides with legacy"
+                        )
+
+            # Canonical under pool lock; create only when audit saw it absent.
+            with locked_candidates_root(
+                agent_path, create=create_canonical
+            ) as canonical_root:
                 assert_entry_is_open_fd(
                     canonical_root.parent_fd, canonical_root.name, canonical_root.fd
                 )
