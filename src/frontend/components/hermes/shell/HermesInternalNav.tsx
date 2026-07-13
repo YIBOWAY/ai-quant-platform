@@ -74,7 +74,7 @@ export function HermesInternalNav({ locale }: HermesInternalNavProps) {
             return (
               <li key={entry.id}>
                 <span
-                  aria-disabled="true"
+                  aria-label={`${entry.label}. ${entry.unavailableLabel}`}
                   className="app-touch-target inline-flex items-center justify-center rounded-lg border border-border-subtle px-3 font-body-sm text-text-secondary opacity-60"
                   title={entry.unavailableLabel}
                 >

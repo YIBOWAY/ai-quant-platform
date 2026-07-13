@@ -23,7 +23,7 @@ export function HermesCapabilityNotice({
       data-delivery-state={deliveryState}
       data-testid="hermes-capability-notice"
     >
-      <h2 className="font-body-md font-semibold text-text-primary">{copy.title}</h2>
+      <p className="font-body-md font-semibold text-text-primary">{copy.title}</p>
       <p className="mt-1 font-body-sm text-text-secondary">{copy.body}</p>
     </section>
   );

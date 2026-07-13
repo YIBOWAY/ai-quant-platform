@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from "react";
 import { Send } from "lucide-react";
 
 export type ComposerDockProps = {
@@ -34,7 +33,6 @@ export function ComposerDock({
   sendLabel = "Send (disabled)",
   unavailableHint = "Submit unavailable in this slice",
 }: ComposerDockProps) {
-  const [draft, setDraft] = useState("");
   // Slice 8 safety: submit never fires network; both flags must allow it.
   const submitEnabled = !disabled && allowSubmit;
 
@@ -56,11 +54,10 @@ export function ComposerDock({
             aria-label={label}
             className="app-touch-target min-h-[44px] max-h-32 flex-1 resize-y rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-primary placeholder:text-text-secondary disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
             disabled={disabled}
-            onChange={(event) => setDraft(event.target.value)}
             placeholder={placeholder}
             readOnly={disabled}
             rows={2}
-            value={draft}
+            value=""
           />
           <button
             aria-label={sendLabel}
@@ -72,9 +69,7 @@ export function ComposerDock({
           </button>
         </div>
         {!submitEnabled ? (
-          <p className="font-body-sm text-text-secondary" role="status">
-            {unavailableHint}
-          </p>
+          <p className="font-body-sm text-text-secondary">{unavailableHint}</p>
         ) : null}
       </form>
     </div>
