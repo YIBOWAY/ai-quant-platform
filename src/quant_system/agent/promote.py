@@ -1,12 +1,14 @@
-"""Deterministic Gate-3 promotion: approved candidate -> working-tree diff (D-20).
+"""Internal Gate-3 materializer: verified snapshot -> three scoped files (D-20).
 
-``promote_candidate`` turns a human-approved candidate factor into reviewable
-source files under the promoted library. It is deliberately boring:
+``promote_candidate`` is **not** a public CLI entry point. The public Gate 3
+command is ``agent promote-candidate``, which delegates to
+:mod:`quant_system.agent.promotion_workspace` and materializes only inside an
+isolated detached review worktree. This module stays deliberately boring:
 
-* **No LLM, no network, no git.** The output is plain files in the working
-  tree; the human ``git diff`` review + commit IS Gate 3. This module must
-  never spawn a process or import process/interpreter modules, and never
-  touches ``.git`` (enforced by a static test).
+* **No LLM, no network, no git.** The output is plain files under caller-chosen
+  library/tests roots; the human ``git diff`` review + commit IS Gate 3. This
+  module must never spawn a process or import process/interpreter modules, and
+  never touches ``.git`` (enforced by a static test).
 * **No candidate filesystem I/O.** Callers re-verify immediately before
   invoking this materializer and pass a :class:`VerifiedCandidateSnapshot`
   plus the expected manifest digest. Only ``snapshot.artifact_bytes`` is used.

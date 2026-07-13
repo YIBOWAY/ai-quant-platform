@@ -22,7 +22,6 @@ from quant_system.agent.paths import (
     resolve_candidates_dir,
     resolve_legacy_candidates_dir,
 )
-from quant_system.agent.promote import PromotionError, promote_candidate
 from quant_system.agent.promotion import load_approved_factor_candidates
 from quant_system.agent.runner import AgentRunner
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
@@ -1941,56 +1940,122 @@ def agent_promote_candidate(
         str,
         typer.Option("--candidate-id", help="Approved candidate id from list-candidates."),
     ],
-    agent_output_dir: Annotated[
-        str | None,
+    expected_digest: Annotated[
+        str,
         typer.Option(
-            "--agent-output-dir",
-            help=(
-                "Agent artifact output root. Candidates are loaded from "
-                "agent/candidates under this root via resolve_candidates_dir."
-            ),
+            "--expected-digest",
+            help="Exact manifest SHA-256 bound by Gate 2 approval (CAS).",
         ),
-    ] = None,
-    library_dir: Annotated[
+    ],
+    base_commit: Annotated[
         str,
-        typer.Option("--library-dir", help="Promoted factor library package directory."),
-    ] = "src/quant_system/factors/library/promoted",
-    tests_dir: Annotated[
-        str,
-        typer.Option("--tests-dir", help="Directory for generated factor test scaffolds."),
-    ] = "tests/factors",
+        typer.Option(
+            "--base-commit",
+            help="Main-worktree HEAD commit the isolated review worktree must match.",
+        ),
+    ],
 ) -> None:
-    """Write the deterministic Gate-3 promotion diff; NEVER commits (D-20)."""
-    from quant_system.agent.candidate_manifest import (
-        CandidateIntegrityError,
-        load_verified_candidate_snapshot,
+    """Prepare an isolated Gate-3 review worktree and scoped patch; NEVER commits."""
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        default_promotion_root,
+        prepare_cli_payload,
+        prepare_promotion_workspace,
+        resolve_managed_worktree_root,
+        resolve_platform_repo,
+        _human_instructions,
     )
 
     try:
-        # Re-verify at the last responsible moment; materializer uses only
-        # snapshot bytes and never reopens the candidate path.
-        agent_root = resolve_agent_output_dir(agent_output_dir)
-        snapshot = load_verified_candidate_snapshot(
+        agent_root = resolve_agent_output_dir()
+        result = prepare_promotion_workspace(
+            repo_dir=resolve_platform_repo(),
             agent_output_dir=agent_root,
             candidate_id=candidate_id,
+            expected_candidate_digest=expected_digest,
+            base_commit=base_commit,
+            promotion_root=default_promotion_root(agent_root),
+            worktree_root=resolve_managed_worktree_root(),
         )
-        result = promote_candidate(
-            snapshot,
-            expected_candidate_digest=snapshot.manifest_digest,
-            library_dir=Path(library_dir),
-            tests_dir=Path(tests_dir),
-        )
-    except (PromotionError, CandidateIntegrityError) as exc:
-        typer.echo(f"promotion_refused reason={exc}")
+    except PromotionWorkspaceError as exc:
+        typer.echo(f"promotion_refused reason={exc}", err=True)
         raise typer.Exit(code=1) from exc
-    typer.echo(f"factor_id={result.factor_id}")
-    typer.echo(f"module={result.module_path}")
-    typer.echo(f"init={result.init_path}")
-    typer.echo(f"test={result.test_path}")
+
+    typer.echo(json.dumps(prepare_cli_payload(result), sort_keys=True))
     typer.echo(
-        "GATE 3 — review the diff and commit yourself: "
-        f"git diff -- {result.module_path} {result.init_path} {result.test_path}"
+        _human_instructions(result.promotion_id, result.scoped_paths),
+        err=True,
     )
+
+
+@agent_app.command("promotion-status")
+def agent_promotion_status(
+    promotion_id: Annotated[
+        str,
+        typer.Option("--promotion-id", help="Immutable Gate 3 promotion id."),
+    ],
+) -> None:
+    """Report whether the human review commit matches the prepared scoped patch."""
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        default_promotion_root,
+        promotion_status,
+        resolve_managed_worktree_root,
+        resolve_platform_repo,
+    )
+
+    try:
+        agent_root = resolve_agent_output_dir()
+        payload = promotion_status(
+            promotion_id=promotion_id,
+            agent_output_dir=agent_root,
+            promotion_root=default_promotion_root(agent_root),
+            worktree_root=resolve_managed_worktree_root(),
+            repo_dir=resolve_platform_repo(),
+        )
+    except PromotionWorkspaceError as exc:
+        typer.echo(f"promotion_status_refused reason={exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(payload, sort_keys=True))
+
+
+@agent_app.command("cleanup-promotion")
+def agent_cleanup_promotion(
+    promotion_id: Annotated[
+        str,
+        typer.Option("--promotion-id", help="Immutable Gate 3 promotion id."),
+    ],
+    abandon: Annotated[
+        bool,
+        typer.Option(
+            "--abandon",
+            help="Force-remove an unreviewed workspace and mark state abandoned.",
+        ),
+    ] = False,
+) -> None:
+    """Remove the managed review worktree after durable review evidence or --abandon."""
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        cleanup_promotion_workspace,
+        default_promotion_root,
+        resolve_managed_worktree_root,
+        resolve_platform_repo,
+    )
+
+    try:
+        agent_root = resolve_agent_output_dir()
+        payload = cleanup_promotion_workspace(
+            promotion_id=promotion_id,
+            agent_output_dir=agent_root,
+            promotion_root=default_promotion_root(agent_root),
+            worktree_root=resolve_managed_worktree_root(),
+            repo_dir=resolve_platform_repo(),
+            abandon=abandon,
+        )
+    except PromotionWorkspaceError as exc:
+        typer.echo(f"promotion_cleanup_refused reason={exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(payload, sort_keys=True))
 
 
 @agent_app.command("migrate-candidates")

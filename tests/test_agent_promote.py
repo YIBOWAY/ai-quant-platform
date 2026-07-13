@@ -553,60 +553,24 @@ def test_promote_module_never_touches_git_or_spawns_processes() -> None:
     assert roots.isdisjoint({"subprocess", "git", "os", "sys"})
 
 
-def test_cli_promote_candidate_prints_files_and_gate3_line(dirs, tmp_path: Path) -> None:
-    agent_root = tmp_path / "agent-output"
-    candidates_dir = agent_root / "agent" / "candidates"
-    _write_candidate(candidates_dir, "cand-ok", _FACTOR_SRC)
+def test_cli_promote_candidate_delegates_to_workspace_not_direct_paths() -> None:
+    """Public promote-candidate is workspace prepare only (Task 7).
 
-    result = runner.invoke(
-        app,
-        [
-            "agent",
-            "promote-candidate",
-            "--candidate-id",
-            "cand-ok",
-            "--agent-output-dir",
-            str(agent_root),
-            "--library-dir",
-            str(dirs["library"]),
-            "--tests-dir",
-            str(dirs["tests"]),
-        ],
-    )
+    Full CLI success/refusal paths live in tests/test_promotion_workspace.py.
+    This keeps the pure materializer suite free of git worktree side effects
+    while locking the removed direct library/tests path options.
+    """
+    help_result = runner.invoke(app, ["agent", "promote-candidate", "--help"])
+    assert help_result.exit_code == 0
+    assert "--expected-digest" in help_result.output
+    assert "--base-commit" in help_result.output
+    assert "--library-dir" not in help_result.output
+    assert "--tests-dir" not in help_result.output
+    assert "--agent-output-dir" not in help_result.output
 
-    assert result.exit_code == 0, result.output
-    assert "factor_id=wiring_test_factor" in result.output
-    assert str(dirs["library"] / "wiring_test_factor.py") in result.output
-    assert str(dirs["library"] / "__init__.py") in result.output
-    assert str(dirs["tests"] / "test_wiring_test_factor.py") in result.output
-    gate_lines = [line for line in result.output.splitlines() if line.startswith("GATE 3")]
-    assert len(gate_lines) == 1
-    assert "git diff --" in gate_lines[0]
-
-
-def test_cli_promote_candidate_refusal_exits_nonzero(dirs, tmp_path: Path) -> None:
-    agent_root = tmp_path / "agent-output"
-    candidates_dir = agent_root / "agent" / "candidates"
-    _write_candidate(candidates_dir, "cand-pending", _FACTOR_SRC, approved=False)
-
-    result = runner.invoke(
-        app,
-        [
-            "agent",
-            "promote-candidate",
-            "--candidate-id",
-            "cand-pending",
-            "--agent-output-dir",
-            str(agent_root),
-            "--library-dir",
-            str(dirs["library"]),
-            "--tests-dir",
-            str(dirs["tests"]),
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert "promotion_refused" in result.output
+    # Missing required options must exit usage error before any materialization.
+    missing = runner.invoke(app, ["agent", "promote-candidate", "--candidate-id", "x"])
+    assert missing.exit_code == 2
 
 
 # --- Concurrency: promotion lockfile (review findings F2 BLOCKER / F3 MAJOR) ---
