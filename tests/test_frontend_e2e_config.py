@@ -25,6 +25,7 @@ def test_playwright_backend_uses_isolated_test_environment() -> None:
     assert "frontendUrl" in backend_block
     assert 'const e2eDataRoot = path.join(frontendRoot, ".tmp", "e2e-data")' in config
     assert "QS_DATA_DIR: e2eDataRoot" in backend_block
+    assert 'QS_AGENT_OUTPUT_DIR: path.join(e2eDataRoot, "agent-output")' in backend_block
     assert 'QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet")' in backend_block
     assert 'QS_DUCKDB_PATH: path.join(e2eDataRoot, "quant_system.duckdb")' in backend_block
     assert (

@@ -30,10 +30,23 @@ def _task_id(task_type: AgentTaskType, subject: str) -> str:
 
 
 class AgentRunner:
-    def __init__(self, *, output_dir: str | Path, llm: LLMClient | None = None) -> None:
-        self.output_dir = Path(output_dir)
+    def __init__(
+        self,
+        *,
+        agent_output_dir: str | Path,
+        result_output_dir: str | Path | None = None,
+        llm: LLMClient | None = None,
+    ) -> None:
+        self.agent_output_dir = Path(agent_output_dir)
+        # Experiment/result reads are a separately named root. Never fall back
+        # from general data into the candidate root, or the reverse.
+        self.result_output_dir = (
+            Path(result_output_dir)
+            if result_output_dir is not None
+            else self.agent_output_dir
+        )
         self.llm = llm or StubLLMClient()
-        self.candidates = CandidatePool(self.output_dir)
+        self.candidates = CandidatePool(self.agent_output_dir)
 
     def propose_factor(
         self,
@@ -48,7 +61,7 @@ class AgentRunner:
             goal=goal,
             universe=universe,
         )
-        audit = AgentAuditLog(self.output_dir, task_id=task.task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task.task_id)
         audit.record("task", task.model_dump(mode="json"))
         return factor_proposal.run(
             llm=self.llm,
@@ -67,7 +80,7 @@ class AgentRunner:
             goal=goal,
             universe=universe,
         )
-        audit = AgentAuditLog(self.output_dir, task_id=task.task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task.task_id)
         audit.record("task", task.model_dump(mode="json"))
         return experiment_design.run(
             llm=self.llm,
@@ -85,14 +98,14 @@ class AgentRunner:
             goal=f"summarize {experiment_id}",
             experiment_id=experiment_id,
         )
-        audit = AgentAuditLog(self.output_dir, task_id=task.task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task.task_id)
         audit.record("task", task.model_dump(mode="json"))
         return result_summary.run(
             llm=self.llm,
             audit=audit,
             candidates=self.candidates,
             task=task,
-            output_dir=self.output_dir,
+            output_dir=self.result_output_dir,
             experiment_id=experiment_id,
         )
 
@@ -103,7 +116,7 @@ class AgentRunner:
             goal=f"leakage audit {factor_id}",
             factor_id=factor_id,
         )
-        audit = AgentAuditLog(self.output_dir, task_id=task.task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task.task_id)
         audit.record("task", task.model_dump(mode="json"))
         return leakage_audit.run(
             llm=self.llm,
@@ -124,7 +137,7 @@ class AgentRunner:
         note: str,
     ) -> ReviewRecord:
         task_id = _task_id(AgentTaskType.REVIEW, candidate_id)
-        audit = AgentAuditLog(self.output_dir, task_id=task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task_id)
         audit.record(
             "task",
             {

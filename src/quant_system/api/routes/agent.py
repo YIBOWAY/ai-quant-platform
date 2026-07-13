@@ -5,8 +5,9 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from quant_system.agent.llm import build_llm_client
+from quant_system.agent.paths import resolve_candidates_dir
 from quant_system.agent.runner import AgentRunner
-from quant_system.api.dependencies import OutputDirDep, SettingsDep
+from quant_system.api.dependencies import AgentOutputDirDep, OutputDirDep, SettingsDep
 from quant_system.api.errors import not_found_404
 from quant_system.api.schemas.agent import (
     AgentCandidateDetailResponse,
@@ -24,18 +25,19 @@ router = APIRouter()
 
 @router.get("/agent/candidates", response_model=AgentCandidatesResponse)
 def list_candidates(
-    output_dir: OutputDirDep,
+    agent_output_dir: AgentOutputDirDep,
     status: str | None = None,
 ) -> dict:
-    candidates = AgentRunner(output_dir=output_dir).list_candidates()
+    candidates = AgentRunner(agent_output_dir=agent_output_dir).list_candidates()
     if status is not None:
         candidates = [candidate for candidate in candidates if candidate.get("status") == status]
     return {"candidates": candidates}
 
 
 @router.get("/agent/candidates/{candidate_id}", response_model=AgentCandidateDetailResponse)
-def candidate_detail(candidate_id: str, output_dir: OutputDirDep) -> dict:
-    candidate_dir = resolve_run_dir(output_dir / "agent" / "candidates", candidate_id)
+def candidate_detail(candidate_id: str, agent_output_dir: AgentOutputDirDep) -> dict:
+    candidates_root = resolve_candidates_dir(agent_output_dir)
+    candidate_dir = resolve_run_dir(candidates_root, candidate_id)
     metadata_path = candidate_dir / "metadata.json"
     if not metadata_path.exists():
         raise not_found_404("agent_candidate", candidate_id)
@@ -47,7 +49,7 @@ def candidate_detail(candidate_id: str, output_dir: OutputDirDep) -> dict:
         if source_path.exists() and source_path.is_file():
             source_preview = source_path.read_text(encoding="utf-8")
     audits = []
-    audit_dir = output_dir / "agent" / "audit"
+    audit_dir = agent_output_dir / "agent" / "audit"
     if audit_dir.exists():
         for path in sorted(audit_dir.glob("*.jsonl")):
             audits.extend(
@@ -70,13 +72,18 @@ def candidate_detail(candidate_id: str, output_dir: OutputDirDep) -> dict:
 def run_agent_task(
     request: AgentTaskRequest,
     output_dir: OutputDirDep,
+    agent_output_dir: AgentOutputDirDep,
     settings: SettingsDep,
 ) -> dict:
     try:
         llm = build_llm_client(settings)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    runner = AgentRunner(output_dir=output_dir, llm=llm)
+    runner = AgentRunner(
+        agent_output_dir=agent_output_dir,
+        result_output_dir=output_dir,
+        llm=llm,
+    )
     if request.task_type == "propose-factor":
         artifact = runner.propose_factor(goal=request.goal, universe=request.universe)
     elif request.task_type == "propose-experiment":
@@ -108,10 +115,10 @@ def run_agent_task(
 def review_candidate(
     candidate_id: str,
     request: AgentReviewRequest,
-    output_dir: OutputDirDep,
+    agent_output_dir: AgentOutputDirDep,
 ) -> dict:
     try:
-        record = AgentRunner(output_dir=output_dir).review(
+        record = AgentRunner(agent_output_dir=agent_output_dir).review(
             candidate_id=candidate_id,
             decision=request.decision,
             note=request.note,

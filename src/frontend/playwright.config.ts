@@ -97,6 +97,7 @@ export default defineConfig({
             QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS: "315360000",
             QS_API_CORS_ORIGINS: JSON.stringify(e2eCorsOrigins),
             QS_DATA_DIR: e2eDataRoot,
+            QS_AGENT_OUTPUT_DIR: path.join(e2eDataRoot, "agent-output"),
             QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet"),
             QS_DUCKDB_PATH: path.join(e2eDataRoot, "quant_system.duckdb"),
             QS_OPTIONS_RADAR_OUTPUT_DIR: path.join(e2eDataRoot, "options_scans"),

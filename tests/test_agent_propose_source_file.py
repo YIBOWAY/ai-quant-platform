@@ -56,7 +56,7 @@ def test_agent_propose_factor_accepts_source_file_and_keeps_candidate_pending(tm
             "external source factor",
             "--source-file",
             str(source_file),
-            "--output-dir",
+            "--agent-output-dir",
             str(output_dir),
         ],
     )

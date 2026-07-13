@@ -103,24 +103,7 @@ def test_run_config_defaults_to_sample(tmp_path, monkeypatch):
     assert captured["data_source"] == "sample"
 
 
-def test_include_approved_candidates_reads_same_dir_agent_cli_writes_to(tmp_path, monkeypatch):
-    # Finding #3: --include-approved-candidates must read from the directory the
-    # agent CLI (propose-factor / agent review) actually writes approved.lock to,
-    # i.e. CandidatePool(output_dir).candidates_dir with output_dir defaulting to
-    # "data/agent_run". A mismatch silently loads zero candidates.
-    from quant_system.agent.candidate_pool import CandidatePool
-
-    captured = {}
-
-    def fake_load(registry, *, candidates_dir):
-        captured["candidates_dir"] = candidates_dir
-        return []
-
-    monkeypatch.setattr(cli_module, "load_approved_factor_candidates", fake_load)
-    monkeypatch.setattr(
-        cli_module, "build_ohlcv_provider", lambda settings, *, requested: (object(), requested)
-    )
-
+def _stub_run_experiment_result(tmp_path):
     class _R:
         experiment_id = "e-1"
         run_count = 1
@@ -131,65 +114,81 @@ def test_include_approved_candidates_reads_same_dir_agent_cli_writes_to(tmp_path
         agent_summary_path = tmp_path / "a.json"
         report_path = tmp_path / "rep.md"
 
-    monkeypatch.setattr(cli_module, "run_experiment", lambda *a, **k: _R())
+    return _R()
 
-    result = runner.invoke(
-        app,
-        [
-            "experiment",
-            "run-config",
-            "--config",
-            str(_write_config(tmp_path)),
-            "--include-approved-candidates",
-        ],
+
+def _invoke_stubbed_run_config_with_approved_candidates(
+    monkeypatch, tmp_path, extra_args: list[str] | None = None
+):
+    monkeypatch.setattr(
+        cli_module, "build_ohlcv_provider", lambda settings, *, requested: (object(), requested)
     )
+    monkeypatch.setattr(
+        cli_module, "run_experiment", lambda *a, **k: _stub_run_experiment_result(tmp_path)
+    )
+    args = [
+        "experiment",
+        "run-config",
+        "--config",
+        str(_write_config(tmp_path)),
+        "--include-approved-candidates",
+    ]
+    if extra_args:
+        args.extend(extra_args)
+    result = runner.invoke(app, args)
     assert result.exit_code == 0, result.output
-    expected = str(CandidatePool("data/agent_run").candidates_dir)
-    assert str(captured["candidates_dir"]) == expected, (
-        f"loader reads {captured['candidates_dir']!r}, but agent CLI writes to {expected!r}"
-    )
+    return result
 
 
-def test_include_approved_candidates_accepts_candidates_dir_override(
+def test_run_config_candidate_loader_is_cwd_independent_and_uses_env(
+    monkeypatch, tmp_path
+) -> None:
+    from pathlib import Path
+
+    from quant_system.agent.paths import resolve_agent_output_dir, resolve_candidates_dir
+
+    agent = tmp_path / "agent-output"
+    outside = tmp_path / "outside-platform-repo"
+    outside.mkdir()
+    monkeypatch.setenv("QS_AGENT_OUTPUT_DIR", str(agent))
+    monkeypatch.setenv("QS_DATA_DIR", str(tmp_path / "general-data"))
+    monkeypatch.chdir(outside)
+
+    captured = {}
+
+    def fake_load(registry, *, candidates_dir):
+        captured["candidates_dir"] = Path(candidates_dir)
+        return []
+
+    monkeypatch.setattr(cli_module, "load_approved_factor_candidates", fake_load)
+    _invoke_stubbed_run_config_with_approved_candidates(monkeypatch, tmp_path)
+
+    assert captured["candidates_dir"] == resolve_candidates_dir(resolve_agent_output_dir())
+    assert captured["candidates_dir"] == agent / "agent" / "candidates"
+
+
+def test_include_approved_candidates_accepts_agent_output_dir_override(
     tmp_path,
     monkeypatch,
-):
-    custom_candidates_dir = tmp_path / "custom" / "agent" / "candidates"
+) -> None:
+    from pathlib import Path
+
+    from quant_system.agent.paths import resolve_agent_output_dir, resolve_candidates_dir
+
+    custom_agent_root = tmp_path / "custom-agent-root"
     captured = {}
 
     def fake_load(registry, *, candidates_dir):
-        captured["candidates_dir"] = candidates_dir
+        captured["candidates_dir"] = Path(candidates_dir)
         return []
 
     monkeypatch.setattr(cli_module, "load_approved_factor_candidates", fake_load)
-    monkeypatch.setattr(
-        cli_module, "build_ohlcv_provider", lambda settings, *, requested: (object(), requested)
+    _invoke_stubbed_run_config_with_approved_candidates(
+        monkeypatch,
+        tmp_path,
+        extra_args=["--agent-output-dir", str(custom_agent_root)],
     )
 
-    class _R:
-        experiment_id = "e-1"
-        run_count = 1
-        best_run_id = None
-        config_path = tmp_path / "c"
-        runs_path = tmp_path / "r"
-        folds_path = tmp_path / "f"
-        agent_summary_path = tmp_path / "a.json"
-        report_path = tmp_path / "rep.md"
-
-    monkeypatch.setattr(cli_module, "run_experiment", lambda *a, **k: _R())
-
-    result = runner.invoke(
-        app,
-        [
-            "experiment",
-            "run-config",
-            "--config",
-            str(_write_config(tmp_path)),
-            "--include-approved-candidates",
-            "--candidates-dir",
-            str(custom_candidates_dir),
-        ],
+    assert captured["candidates_dir"] == resolve_candidates_dir(
+        resolve_agent_output_dir(custom_agent_root)
     )
-
-    assert result.exit_code == 0, result.output
-    assert captured["candidates_dir"] == custom_candidates_dir

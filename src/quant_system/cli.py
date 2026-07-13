@@ -17,6 +17,7 @@ from quant_system import __version__
 from quant_system.agent.llm.base import LLMClient
 from quant_system.agent.llm.fixed import FixedContentLLMClient
 from quant_system.agent.llm.stub import StubLLMClient
+from quant_system.agent.paths import resolve_agent_output_dir, resolve_candidates_dir
 from quant_system.agent.promote import PromotionError, promote_candidate
 from quant_system.agent.promotion import load_approved_factor_candidates
 from quant_system.agent.runner import AgentRunner
@@ -805,13 +806,15 @@ def run_config_experiment_command(
             help="Load human-approved agent candidate factors into the registry.",
         ),
     ] = False,
-    candidates_dir: Annotated[
+    agent_output_dir: Annotated[
         str | None,
         typer.Option(
-            "--candidates-dir",
+            "--agent-output-dir",
             help=(
-                "Candidate directory to load when --include-approved-candidates is set. "
-                "Defaults to data/agent_run/agent/candidates."
+                "Agent output root used when --include-approved-candidates is set. "
+                "Normalized by resolve_agent_output_dir; candidates live under "
+                "agent/candidates. Defaults to QS_AGENT_OUTPUT_DIR or the repo "
+                "canonical agent_run root."
             ),
         ),
     ] = None,
@@ -828,15 +831,9 @@ def run_config_experiment_command(
     loaded: list[str] = []
     if include_approved_candidates:
         factor_registry = build_default_factor_registry()
-        # Mirror the agent CLI's candidate output dir: propose-factor / agent
-        # review default output_dir to "data/agent_run" and CandidatePool writes
-        # approved.lock under <output_dir>/agent/candidates/<id>. Reading from
-        # settings.data.data_dir/"agent"/"candidates" would miss the real path.
-        active_candidates_dir = (
-            Path(candidates_dir)
-            if candidates_dir is not None
-            else Path("data/agent_run") / "agent" / "candidates"
-        )
+        # Same resolver as agent CLI: never CWD-relative and never QS_DATA_DIR.
+        active_agent_root = resolve_agent_output_dir(agent_output_dir)
+        active_candidates_dir = resolve_candidates_dir(active_agent_root)
         loaded = list(
             load_approved_factor_candidates(
                 factor_registry,
@@ -1635,10 +1632,16 @@ def agent_propose_factor(
         str,
         typer.Option("--universe", help="Comma-separated symbols, for example SPY,QQQ."),
     ] = "SPY,QQQ",
-    output_dir: Annotated[
-        str,
-        typer.Option("--output-dir", help="Agent artifact output directory."),
-    ] = "data/agent_run",
+    agent_output_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-output-dir",
+            help=(
+                "Agent artifact output root. Defaults to QS_AGENT_OUTPUT_DIR or "
+                "the repo-anchored canonical agent_run root."
+            ),
+        ),
+    ] = None,
     llm_name: Annotated[
         Literal["stub", "openai"],
         typer.Option("--llm", help="LLM backend. Defaults to deterministic stub."),
@@ -1667,7 +1670,7 @@ def agent_propose_factor(
     else:
         llm = _build_agent_llm(llm_name)
     artifact = AgentRunner(
-        output_dir=output_dir,
+        agent_output_dir=resolve_agent_output_dir(agent_output_dir),
         llm=llm,
     ).propose_factor(
         goal=goal,
@@ -1693,10 +1696,16 @@ def agent_propose_experiment(
         str,
         typer.Option("--universe", help="Comma-separated symbols, for example SPY,QQQ."),
     ] = "SPY,QQQ",
-    output_dir: Annotated[
-        str,
-        typer.Option("--output-dir", help="Agent artifact output directory."),
-    ] = "data/agent_run",
+    agent_output_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-output-dir",
+            help=(
+                "Agent artifact output root. Defaults to QS_AGENT_OUTPUT_DIR or "
+                "the repo-anchored canonical agent_run root."
+            ),
+        ),
+    ] = None,
     llm_name: Annotated[
         Literal["stub", "openai"],
         typer.Option("--llm", help="LLM backend. Defaults to deterministic stub."),
@@ -1704,7 +1713,7 @@ def agent_propose_experiment(
 ) -> None:
     """Create an experiment config candidate for human review."""
     artifact = AgentRunner(
-        output_dir=output_dir,
+        agent_output_dir=resolve_agent_output_dir(agent_output_dir),
         llm=_build_agent_llm(llm_name),
     ).propose_experiment(goal=goal, universe=_parse_universe(universe))
     _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
@@ -1716,18 +1725,38 @@ def agent_summarize(
         str,
         typer.Option("--experiment-id", help="Experiment id to summarize."),
     ],
-    output_dir: Annotated[
-        str,
-        typer.Option("--output-dir", help="Agent artifact output directory."),
-    ] = "data/agent_run",
+    agent_output_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-output-dir",
+            help=(
+                "Agent artifact output root for candidates/audit. Defaults to "
+                "QS_AGENT_OUTPUT_DIR or the repo-anchored canonical agent_run root."
+            ),
+        ),
+    ] = None,
+    result_output_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--result-output-dir",
+            help=(
+                "Experiment result root to read when summarizing. Defaults to the "
+                "resolved agent output root when omitted."
+            ),
+        ),
+    ] = None,
     llm_name: Annotated[
         Literal["stub", "openai"],
         typer.Option("--llm", help="LLM backend. Defaults to deterministic stub."),
     ] = "stub",
 ) -> None:
     """Summarize a local experiment for human review only."""
+    active_agent_root = resolve_agent_output_dir(agent_output_dir)
     artifact = AgentRunner(
-        output_dir=output_dir,
+        agent_output_dir=active_agent_root,
+        result_output_dir=(
+            Path(result_output_dir) if result_output_dir is not None else active_agent_root
+        ),
         llm=_build_agent_llm(llm_name),
     ).summarize(experiment_id=experiment_id)
     _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
@@ -1736,10 +1765,16 @@ def agent_summarize(
 @agent_app.command("audit-leakage")
 def agent_audit_leakage(
     factor_id: Annotated[str, typer.Option("--factor-id", help="Factor id to inspect.")],
-    output_dir: Annotated[
-        str,
-        typer.Option("--output-dir", help="Agent artifact output directory."),
-    ] = "data/agent_run",
+    agent_output_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-output-dir",
+            help=(
+                "Agent artifact output root. Defaults to QS_AGENT_OUTPUT_DIR or "
+                "the repo-anchored canonical agent_run root."
+            ),
+        ),
+    ] = None,
     llm_name: Annotated[
         Literal["stub", "openai"],
         typer.Option("--llm", help="LLM backend. Defaults to deterministic stub."),
@@ -1747,7 +1782,7 @@ def agent_audit_leakage(
 ) -> None:
     """Write a point-in-time and look-ahead checklist candidate."""
     artifact = AgentRunner(
-        output_dir=output_dir,
+        agent_output_dir=resolve_agent_output_dir(agent_output_dir),
         llm=_build_agent_llm(llm_name),
     ).audit_leakage(factor_id=factor_id)
     _emit_agent_artifact(artifact.candidate_id, artifact.path, artifact.metadata_path)
@@ -1755,18 +1790,25 @@ def agent_audit_leakage(
 
 @agent_app.command("list-candidates")
 def agent_list_candidates(
-    output_dir: Annotated[
-        str,
-        typer.Option("--output-dir", help="Agent artifact output directory."),
-    ] = "data/agent_run",
+    agent_output_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-output-dir",
+            help=(
+                "Agent artifact output root. Defaults to QS_AGENT_OUTPUT_DIR or "
+                "the repo-anchored canonical agent_run root."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """List candidate artifacts and their review status."""
-    candidates = AgentRunner(output_dir=output_dir).list_candidates()
+    active_agent_root = resolve_agent_output_dir(agent_output_dir)
+    candidates = AgentRunner(agent_output_dir=active_agent_root).list_candidates()
     if not candidates:
         typer.echo("no_candidates=true")
         return
     for candidate in candidates:
-        path = Path(output_dir, "agent", "candidates", candidate["candidate_id"])
+        path = resolve_candidates_dir(active_agent_root) / candidate["candidate_id"]
         typer.echo(
             " ".join(
                 [
@@ -1790,17 +1832,25 @@ def agent_review(
         typer.Option("--decision", help="Manual review decision."),
     ],
     note: Annotated[str, typer.Option("--note", help="Manual review note.")],
-    output_dir: Annotated[
-        str,
-        typer.Option("--output-dir", help="Agent artifact output directory."),
-    ] = "data/agent_run",
+    agent_output_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-output-dir",
+            help=(
+                "Agent artifact output root. Defaults to QS_AGENT_OUTPUT_DIR or "
+                "the repo-anchored canonical agent_run root."
+            ),
+        ),
+    ] = None,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Append a machine-readable JSON summary line."),
     ] = False,
 ) -> None:
     """Record a manual review; approve only writes an approval lock."""
-    record = AgentRunner(output_dir=output_dir).review(
+    record = AgentRunner(
+        agent_output_dir=resolve_agent_output_dir(agent_output_dir),
+    ).review(
         candidate_id=candidate_id,
         decision=decision,
         note=note,
@@ -1830,13 +1880,16 @@ def agent_promote_candidate(
         str,
         typer.Option("--candidate-id", help="Approved candidate id from list-candidates."),
     ],
-    candidates_dir: Annotated[
-        str,
+    agent_output_dir: Annotated[
+        str | None,
         typer.Option(
-            "--candidates-dir",
-            help="Candidate directory (defaults to data/agent_run/agent/candidates).",
+            "--agent-output-dir",
+            help=(
+                "Agent artifact output root. Candidates are loaded from "
+                "agent/candidates under this root via resolve_candidates_dir."
+            ),
         ),
-    ] = "data/agent_run/agent/candidates",
+    ] = None,
     library_dir: Annotated[
         str,
         typer.Option("--library-dir", help="Promoted factor library package directory."),
@@ -1850,7 +1903,9 @@ def agent_promote_candidate(
     try:
         result = promote_candidate(
             candidate_id,
-            candidates_dir=Path(candidates_dir),
+            candidates_dir=resolve_candidates_dir(
+                resolve_agent_output_dir(agent_output_dir)
+            ),
             library_dir=Path(library_dir),
             tests_dir=Path(tests_dir),
         )

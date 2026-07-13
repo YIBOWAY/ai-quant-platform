@@ -21,6 +21,10 @@ def get_output_dir(request: Request) -> Path:
     return request.app.state.services["output_dir"]
 
 
+def get_agent_output_dir(request: Request) -> Path:
+    return request.app.state.services["agent_output_dir"]
+
+
 def get_api_runs_dir(request: Request) -> Path:
     return request.app.state.services["api_runs_dir"]
 
@@ -35,6 +39,7 @@ def get_bind_address(request: Request) -> str:
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 OutputDirDep = Annotated[Path, Depends(get_output_dir)]
+AgentOutputDirDep = Annotated[Path, Depends(get_agent_output_dir)]
 ApiRunsDirDep = Annotated[Path, Depends(get_api_runs_dir)]
 BacktestJobRunnerDep = Annotated[BacktestJobRunner, Depends(get_backtest_job_runner)]
 BindAddressDep = Annotated[str, Depends(get_bind_address)]

@@ -53,7 +53,7 @@ def test_safety_gate_rejects_path_traversal_candidate_id(tmp_path) -> None:
 
 
 def test_audit_log_records_all_steps(tmp_path) -> None:
-    result = AgentRunner(output_dir=tmp_path, llm=StubLLMClient()).propose_factor(
+    result = AgentRunner(agent_output_dir=tmp_path, llm=StubLLMClient()).propose_factor(
         goal="low-vol momentum",
         universe=["SPY", "QQQ"],
     )
@@ -74,7 +74,7 @@ def test_factor_proposal_does_not_exec_generated_code(tmp_path, monkeypatch) -> 
 
     monkeypatch.setattr(os, "system", fail_if_called)
 
-    artifact = AgentRunner(output_dir=tmp_path, llm=MaliciousLLM()).propose_factor(
+    artifact = AgentRunner(agent_output_dir=tmp_path, llm=MaliciousLLM()).propose_factor(
         goal="try to execute shell",
         universe=["SPY"],
     )
@@ -84,7 +84,7 @@ def test_factor_proposal_does_not_exec_generated_code(tmp_path, monkeypatch) -> 
 
 
 def test_candidate_metadata_safety_block(tmp_path) -> None:
-    artifact = AgentRunner(output_dir=tmp_path, llm=StubLLMClient()).propose_factor(
+    artifact = AgentRunner(agent_output_dir=tmp_path, llm=StubLLMClient()).propose_factor(
         goal="low-vol momentum",
         universe=["SPY", "QQQ"],
     )
@@ -108,7 +108,7 @@ def test_review_approve_creates_lock_only(tmp_path) -> None:
             "low-vol momentum",
             "--universe",
             "SPY,QQQ",
-            "--output-dir",
+            "--agent-output-dir",
             str(tmp_path),
         ],
     )
@@ -128,7 +128,7 @@ def test_review_approve_creates_lock_only(tmp_path) -> None:
             "approve",
             "--note",
             "manual review passed",
-            "--output-dir",
+            "--agent-output-dir",
             str(tmp_path),
         ],
     )
@@ -181,7 +181,7 @@ def test_stub_llm_is_deterministic() -> None:
 
 
 def test_propose_experiment_outputs_valid_experiment_config(tmp_path) -> None:
-    artifact = AgentRunner(output_dir=tmp_path, llm=StubLLMClient()).propose_experiment(
+    artifact = AgentRunner(agent_output_dir=tmp_path, llm=StubLLMClient()).propose_experiment(
         goal="test a momentum and volatility blend",
         universe=["SPY", "QQQ"],
     )

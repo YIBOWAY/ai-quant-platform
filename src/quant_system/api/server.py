@@ -361,6 +361,7 @@ def create_app(
     *,
     settings: Settings | None = None,
     output_dir: str | Path | None = None,
+    agent_output_dir: str | Path | None = None,
     bind_address: str | None = None,
     bind_public_confirmed: bool | None = None,
 ) -> FastAPI:
@@ -377,6 +378,7 @@ def create_app(
     services = build_services(
         settings=settings,
         output_dir=output_dir,
+        agent_output_dir=agent_output_dir,
         bind_address=active_bind_address,
     )
     active_settings: Settings = services["settings"]

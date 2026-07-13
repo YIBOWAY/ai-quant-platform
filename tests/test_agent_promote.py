@@ -358,7 +358,9 @@ def test_promote_module_never_touches_git_or_spawns_processes() -> None:
 
 
 def test_cli_promote_candidate_prints_files_and_gate3_line(dirs, tmp_path: Path) -> None:
-    _write_candidate(dirs["candidates"], "cand-ok", _FACTOR_SRC)
+    agent_root = tmp_path / "agent-output"
+    candidates_dir = agent_root / "agent" / "candidates"
+    _write_candidate(candidates_dir, "cand-ok", _FACTOR_SRC)
 
     result = runner.invoke(
         app,
@@ -367,8 +369,8 @@ def test_cli_promote_candidate_prints_files_and_gate3_line(dirs, tmp_path: Path)
             "promote-candidate",
             "--candidate-id",
             "cand-ok",
-            "--candidates-dir",
-            str(dirs["candidates"]),
+            "--agent-output-dir",
+            str(agent_root),
             "--library-dir",
             str(dirs["library"]),
             "--tests-dir",
@@ -386,8 +388,10 @@ def test_cli_promote_candidate_prints_files_and_gate3_line(dirs, tmp_path: Path)
     assert "git diff --" in gate_lines[0]
 
 
-def test_cli_promote_candidate_refusal_exits_nonzero(dirs) -> None:
-    _write_candidate(dirs["candidates"], "cand-pending", _FACTOR_SRC, approved=False)
+def test_cli_promote_candidate_refusal_exits_nonzero(dirs, tmp_path: Path) -> None:
+    agent_root = tmp_path / "agent-output"
+    candidates_dir = agent_root / "agent" / "candidates"
+    _write_candidate(candidates_dir, "cand-pending", _FACTOR_SRC, approved=False)
 
     result = runner.invoke(
         app,
@@ -396,8 +400,8 @@ def test_cli_promote_candidate_refusal_exits_nonzero(dirs) -> None:
             "promote-candidate",
             "--candidate-id",
             "cand-pending",
-            "--candidates-dir",
-            str(dirs["candidates"]),
+            "--agent-output-dir",
+            str(agent_root),
             "--library-dir",
             str(dirs["library"]),
             "--tests-dir",

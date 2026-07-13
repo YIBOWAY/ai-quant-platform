@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-import quant_system.api.routes.factors as factors_route
 from quant_system.api.server import create_app
 from quant_system.factors import library
 from quant_system.factors.base import BaseFactor
@@ -132,20 +131,23 @@ def test_default_registry_has_no_candidate_origins() -> None:
 # --- API /factors provenance (Task P2) -----------------------------------
 
 
-def _api_client(tmp_path, monkeypatch, candidates_dir):
-    # Point the route's candidate lookup at an isolated tmp dir instead of the
-    # on-disk data/agent_run/agent/candidates default.
-    monkeypatch.setattr(
-        factors_route, "AGENT_CANDIDATES_DIR", candidates_dir, raising=True
+def _api_client(tmp_path, agent_output_dir):
+    # Inject the agent root through create_app; QS_DATA_DIR/output_dir must not
+    # relocate the candidate pool.
+    return TestClient(
+        create_app(
+            output_dir=tmp_path / "api",
+            agent_output_dir=agent_output_dir,
+        )
     )
-    return TestClient(create_app(output_dir=tmp_path / "api"))
 
 
-def test_factors_default_call_has_no_candidate_origin(tmp_path, monkeypatch) -> None:
-    candidates_dir = tmp_path / "candidates"
-    candidates_dir.mkdir()
+def test_factors_default_call_has_no_candidate_origin(tmp_path) -> None:
+    agent = tmp_path / "agent-output"
+    candidates_dir = agent / "agent" / "candidates"
+    candidates_dir.mkdir(parents=True)
     _write_candidate(candidates_dir, "cand-approved", _CANDIDATE_SRC, approved=True)
-    client = _api_client(tmp_path, monkeypatch, candidates_dir)
+    client = _api_client(tmp_path, agent)
 
     response = client.get("/api/factors")
 
@@ -157,13 +159,12 @@ def test_factors_default_call_has_no_candidate_origin(tmp_path, monkeypatch) -> 
     assert "wiring_test_factor" not in origins
 
 
-def test_factors_include_candidates_lists_approved_candidate(
-    tmp_path, monkeypatch
-) -> None:
-    candidates_dir = tmp_path / "candidates"
-    candidates_dir.mkdir()
+def test_factors_include_candidates_lists_approved_candidate(tmp_path) -> None:
+    agent = tmp_path / "agent-output"
+    candidates_dir = agent / "agent" / "candidates"
+    candidates_dir.mkdir(parents=True)
     _write_candidate(candidates_dir, "cand-approved", _CANDIDATE_SRC, approved=True)
-    client = _api_client(tmp_path, monkeypatch, candidates_dir)
+    client = _api_client(tmp_path, agent)
 
     response = client.get("/api/factors", params={"include_candidates": "true"})
 
@@ -174,13 +175,12 @@ def test_factors_include_candidates_lists_approved_candidate(
         assert origins[example_id] == "builtin"
 
 
-def test_factors_include_candidates_excludes_pending_candidate(
-    tmp_path, monkeypatch
-) -> None:
-    candidates_dir = tmp_path / "candidates"
-    candidates_dir.mkdir()
+def test_factors_include_candidates_excludes_pending_candidate(tmp_path) -> None:
+    agent = tmp_path / "agent-output"
+    candidates_dir = agent / "agent" / "candidates"
+    candidates_dir.mkdir(parents=True)
     _write_candidate(candidates_dir, "cand-pending", _CANDIDATE_SRC, approved=False)
-    client = _api_client(tmp_path, monkeypatch, candidates_dir)
+    client = _api_client(tmp_path, agent)
 
     response = client.get("/api/factors", params={"include_candidates": "true"})
 
@@ -190,17 +190,23 @@ def test_factors_include_candidates_excludes_pending_candidate(
     assert factor_ids == _EXAMPLE_IDS
 
 
-# --- Candidate dir path resolution (review finding F6) --------------------
-
-
-def test_agent_candidates_dir_is_absolute_and_cwd_independent() -> None:
-    # A relative AGENT_CANDIDATES_DIR silently resolves against the process CWD;
-    # under any CWD other than the repo root the approved-candidate catalog view
-    # fails closed (empty), which reads as "no candidates" rather than an error.
-    # Pin it to an absolute, CWD-independent path anchored on the repo layout.
-    assert factors_route.AGENT_CANDIDATES_DIR.is_absolute()
-    assert factors_route.AGENT_CANDIDATES_DIR.parts[-3:] == (
-        "agent_run",
-        "agent",
-        "candidates",
+def test_factors_candidate_catalog_uses_create_app_agent_root(tmp_path) -> None:
+    general = tmp_path / "general"
+    agent = tmp_path / "agent-output"
+    candidates_dir = agent / "agent" / "candidates"
+    candidates_dir.mkdir(parents=True)
+    _write_candidate(
+        candidates_dir,
+        "cand-approved",
+        _CANDIDATE_SRC,
+        approved=True,
     )
+
+    client = TestClient(create_app(output_dir=general, agent_output_dir=agent))
+    payload = client.get("/api/factors?include_candidates=true").json()
+
+    assert "wiring_test_factor" in {
+        item["factor_id"] for item in payload["factors"]
+    }
+    assert not (general / "agent").exists()
+

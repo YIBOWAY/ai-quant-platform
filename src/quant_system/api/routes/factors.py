@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from quant_system.api.dependencies import ApiRunsDirDep, OutputDirDep, SettingsDep
+from quant_system.agent.paths import resolve_candidates_dir
+from quant_system.api.dependencies import (
+    AgentOutputDirDep,
+    ApiRunsDirDep,
+    OutputDirDep,
+    SettingsDep,
+)
 from quant_system.api.errors import not_found_404, provider_unavailable_400
 from quant_system.api.schemas.common import (
     make_run_id,
@@ -28,25 +33,23 @@ from quant_system.storage.runs_repository import list_run_metadatas, persist_run
 
 router = APIRouter()
 
-# Human-approved candidates live at the CLI's canonical output path (mirror of
-# cli.py's --candidates-dir default). It is a fixed on-disk location, not the
-# API output_dir, because HQA drives propose/approve through the CLI. Loading
-# from here execs approved candidate source (SafetyGate + AST gated) and is
-# reserved for this opt-in catalog view — never the resident trading path.
-# Anchored on the repo root (this file: src/quant_system/api/routes/factors.py)
-# so it does not silently fail closed under a non-repo-root CWD (F6).
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-AGENT_CANDIDATES_DIR = _REPO_ROOT / "data" / "agent_run" / "agent" / "candidates"
-
 
 @router.get("/factors", response_model=FactorCatalogResponse)
-def list_factors(include_candidates: bool = False) -> dict:
+def list_factors(
+    agent_output_dir: AgentOutputDirDep,
+    include_candidates: bool = False,
+) -> dict:
     # Default: examples + promoted only (no candidate exec). Opt-in surfaces
     # human-approved candidates with origin="candidate"; pending candidates are
     # dropped by the SafetyGate inside the loader and never appear.
+    # Candidate root comes only from the injected agent output dir (create_app
+    # isolation boundary) — never a process-global constant or QS_DATA_DIR.
+    candidates_dir = (
+        resolve_candidates_dir(agent_output_dir) if include_candidates else None
+    )
     registry = build_factor_registry(
         include_approved_candidates=include_candidates,
-        candidates_dir=AGENT_CANDIDATES_DIR if include_candidates else None,
+        candidates_dir=candidates_dir,
     )
     origins = registry.origins()
     return {
