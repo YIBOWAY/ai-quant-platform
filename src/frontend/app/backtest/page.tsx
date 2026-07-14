@@ -5,6 +5,7 @@ import { SyntheticMetricsWarning } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { EquityComparisonChart } from "@/components/EquityComparisonChart";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { HermesParityBanner } from "@/components/HermesParityBanner";
 import { BacktestForm, type BacktestFormInitialValues } from "@/components/forms/BacktestForm";
 import {
   Card,
@@ -187,6 +188,7 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
       }
       sidebarClassName="lg:w-[320px]"
     >
+      <HermesParityBanner locale={locale} />
       <PageHeader eyebrow={text.eyebrow} title={text.title} subtitle={text.subtitle} />
         <ErrorBanner
           messages={[

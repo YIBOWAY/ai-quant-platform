@@ -2,6 +2,7 @@ import { Bot, Cpu, Network, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { HermesParityBanner } from "@/components/HermesParityBanner";
 import {
   Card,
   SectionTitle,
@@ -183,6 +184,9 @@ export default async function AgentStudio() {
     >
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <div className="border-b border-border-subtle px-4 py-3">
+          <HermesParityBanner locale={locale} />
+        </div>
         <div className="flex items-center justify-between gap-3 border-b border-border-subtle bg-bg-surface px-4 py-3">
           <div className="flex min-w-0 items-center gap-2 font-data-mono text-sm text-text-primary">
             <span className="font-label-caps text-text-secondary">{text.selected}</span>

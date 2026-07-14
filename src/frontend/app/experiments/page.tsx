@@ -2,6 +2,7 @@ import { Beaker } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { HermesParityBanner } from "@/components/HermesParityBanner";
 import { ExperimentRunForm } from "@/components/forms/ExperimentRunForm";
 import { ExperimentTabs } from "@/components/forms/ExperimentTabs";
 import {
@@ -129,6 +130,9 @@ export default async function Experiments({
       sidebarClassName="lg:w-[320px]"
       mainClassName="gap-0 p-0"
     >
+        <div className="border-b border-border-subtle px-6 py-3">
+          <HermesParityBanner locale={locale} />
+        </div>
 
         <div className="border-b border-border-subtle bg-surface-dim px-6 py-5">
           <PageHeader
