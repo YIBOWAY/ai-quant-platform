@@ -10,9 +10,9 @@
 | 跨仓产品路线 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md` | Hermes 是 COO/编排层；本仓库是领域后端。 |
 | 已交付跨仓计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | Slice 9A-9G + mini 9H 已完成。 |
 | 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
-| 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、HQA Scene-B Gate 1 精确源绑定、Gate 2 digest CAS、dry-run migration、隔离且可恢复的 Gate 3 worktree 已交付并完成对抗性加固；真实 `--apply`、真实 promotion 与 Hermes 审批 mutation 均未执行。 |
-| 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 只读 Hermes 壳、可回滚默认首页与 hard-off chat/execution 已代码交付；chat/approve UI 与旧页 redirect 仍未开放。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
-| 当前实现选择 | D-31 其余 wave | Gateway capability 合同已冻结且 chat 仍 fail-closed；candidate integrity/Gate 3 与 professional frontend/read-only shell 均已代码交付；bridge/chat 与真实 migration apply 仍关闭。 |
+| 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、HQA Scene-B Gate 1 精确源绑定、Gate 2 digest CAS、迁移工具、隔离且可恢复的 Gate 3 worktree 已交付并完成对抗性加固。Wave 2 已对真实候选执行一次 `--apply`（见下）；真实 promotion/Gate 3 human commit 与完整 Scene-B final 仍未收口。 |
+| 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 Hermes 壳、可回滚默认首页与 hard-off chat/execution 已代码交付。Wave 2 另交付 Gate 2 CAS Approvals UI、Tasks 证据读模型与旧页 soft parity banners；chat write 与旧页 redirect/删除仍未开放。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
+| 当前实现选择 | D-31 Wave 2（部分完成） | 计划见 HQA `2026-07-14-d31-wave2-bridge-approvals-parity.md`。已交付：migration apply、Hermes Gate 2 CAS Approvals、Tasks 证据读模型、capability re-audit + 只读 bridge scaffold、旧页 soft banners。仍关闭：chat write（`verify-chat` exit 3）、legacy delete/redirect、完整 Scene-B final→Gate3。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
 | 被替代计划 | HQA `2026-07-07-phase-1a-4-research-employees.md` | 目标保留，旧 implementation 模板不得原样执行。 |
 | 历史路线 | [Phase 15 素材档案](phases/phase_15_iteration_roadmap.md) | 仅作素材，不是独立 roadmap。 |
@@ -72,25 +72,34 @@ scheduler、outbound worker、POST route 或数据库 migration。
 - Scene-B 最终回测证据只接受 Futu/Tiingo。每次 experiment 使用微秒时间戳 + 12-hex
   随机量生成 ID，并原子预留 experiment/report 双目录；碰撞会重试，既有实验永不覆盖。
   HQA 将 persisted config、agent summary 和完整生成报告绑定到该唯一 namespace。
-- 真实 legacy/canonical migration 命令默认 dry-run。本机最新 dry-run
-  （`applied=false`，未 `--apply`）：legacy root 不存在；canonical 存在且含
-  一个 pending `canonical_unversioned` 项
-  `factor-momentum_20d_reversal-323b045e4b`（`integrity_state=migration_required`，
-  observed digest
-  `294bbe7b846ae86384e56deae8ba8df2576ac6ffa8a5937e4f82a2352fdd8558`）。
-  真实数据迁移需单独授权 `--apply` + `--backup-dir`。
-- 新 Hermes Approvals 已只读交付；审批 mutation 在 bridge/approval gate 前保持关闭。
+- 真实 legacy/canonical migration 命令默认 dry-run。Wave 2 已单独授权并执行一次
+  `--apply`：`factor-momentum_20d_reversal-323b045e4b` 现为
+  `integrity_state=verified`、`approval_enabled=True`，digest
+  `294bbe7b846ae86384e56deae8ba8df2576ac6ffa8a5937e4f82a2352fdd8558`。后续新
+  migration 冲突仍需单独授权 `--apply` + `--backup-dir`。
+- Hermes Approvals：**Wave 2 已交付 Gate 2 CAS 批准/拒绝 UI**（平台 `8052fe6`），
+  仅在 list 声明 `approval_enabled` + `verified` + `pending` 时出现；确认时 re-fetch
+  detail digest，必填 note，POST CAS 字段。migration/corrupt 仍证据只读。这不是
+  Hermes chat mutation，也不替代 HQA Scene-B Gate 1/3。
 
-### Hermes 专业前端 / 只读壳（2026-07-14 代码交付）
+### Hermes 专业前端 / 只读壳 + Wave 2 增量（2026-07-14）
 
 - F0：用户书面批准 `direction-a`（COO full-width trading desk）；craft 路径经 finance-crypto 重设计后与 QUANTUM_CORE 调色板对齐。
 - F1：用户书面批准可点击全状态原型（含 token rebind）。
-- F2 生产只读壳：单一全局 `SafetyStrip`；Today 以行动/异常/结论为先并压缩健康自动化；Tasks / Approvals / Results 只读且无批准/拒绝控件；composer 硬禁用；能力提示为静态 `blocked_in_this_slice`。
-- 默认可回滚首页：`QS_HERMES_SHELL_ENABLED≠false` 时 `/` 与 locale root 进入 Hermes；`=false` 时 root/导航回到 Dashboard，直接 `/hermes` 仍只读。
-- hard-off：`chat` / `execution` / `unifiedResults` / `legacyRedirects` 在源码中为字面 `false`，同名 env=true 无效。
-- 旧四条 deep link（factor-lab / backtest / experiments / agent-studio）保留；其中
-  `/agent-studio` 已收紧为只读候选检查，不挂载 task/approve/reject 控件；无旧页兼容
-  redirect；无 Hermes chat mutation。
+- F2 生产壳：单一全局 `SafetyStrip`；Today 以行动/异常/结论为先并压缩健康自动化；
+  composer **仍硬禁用**；`chat` / `execution` / `unifiedResults` / `legacyRedirects`
+  在源码中为字面 `false`，同名 env=true 无效。
+- Wave 2 Approvals：verified CAS 路径可提交平台 `POST .../review`；非 chat。
+- Wave 2 Tasks：只读绑定 automation / weekly_review / opportunity_summary 证据；
+  **无** research task 写账本。
+- Wave 2 Results：仍为 9H artifact 索引 + 链到既有平台面（factor-lab / backtest /
+  experiments / agent-studio / paper-trading）；无 `/hermes/results/*` 统一详情。
+- 默认可回滚首页：`QS_HERMES_SHELL_ENABLED≠false` 时 `/` 与 locale root 进入 Hermes；`=false` 时 root/导航回到 Dashboard，直接 `/hermes` 仍可用。
+- 旧四条 deep link（factor-lab / backtest / experiments / agent-studio）**仍完整保留**；
+  Wave 2 仅加 soft `HermesParityBanner`（`3400659`），**无** delete / hard redirect。
+  `/agent-studio` 保持只读候选检查，不挂载 task 控件；Gate 2 审批在 `/hermes/approvals`。
+- HQA 侧只读 bridge scaffold（`hermes_read_bridge.py`）与 capability re-audit 存在；
+  `verify-chat` exit 3，`chat_write` 仍 false。
 - `/brief` 由官方本地 UI 聚合 factual v1 payload 与逐源 watermark；paper-account 权威源不可用时
   不显示虚构金额且禁用保存。后端严格校验完整 schema、日期、locale 与水位，但不会重新抓取每个
   上游来源来证明客户端 payload；因此它是本地单用户可信 UI 的事实快照，不是密码学来源证明。
@@ -253,7 +262,7 @@ scheduler、outbound worker、POST route 或数据库 migration。
 | `/data-explorer` | 股票数据查看器。 |
 | `/brief` | 当日动态晨报预览；归档入口读取 PostgreSQL 中不可变 brief snapshot。 |
 | `/brief/[publicId]` | 已归档晨报的只读快照页。 |
-| `/hermes` | 只读产物架：展示风险、预测、推演、周报、机会与自动化状态；不提交 agent task 或交易动作。 |
+| `/hermes` | 默认研究工作台：Today 六源产物 + SafetyStrip；`/hermes/tasks` 证据读模型；`/hermes/approvals` 可对 verified CAS 候选提交平台 Gate 2 review；`/hermes/results` 为 artifact 索引并链到旧页。chat composer 仍禁用；不提交 agent task 或交易动作。 |
 | `/factor-lab` | 现有只读因子健康度与单标的择时仪表盘；HQA 工作台落地后应从一级入口降级为 run/detail 分析面。 |
 | `/factor-lab/[runId]` | 因子运行详情。 |
 | `/backtest` | 策略、universe 与因子权重回测运行。 |
@@ -380,9 +389,11 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 - paper account 当前默认仍是 `file`，不能把 canonical 能力误写成已切换状态。
 - `quant-system data prices` 现为只读 Futu/QFQ/1d JSON seam；不读取 local cache，也不
   回退到 sample、Tiingo 或 Longbridge。
-- HQA 9A-9G、mini/full 9H 与 D-31 第一批三份计划均已交付到各自明确边界。
-- 下一实现需在 local-Hermes bridge/chat 合同补齐后另立计划，或先为旧四页的
-  approval/result parity 另立小计划；不能从历史 checkbox 自动续做。
+- HQA 9A-9G、mini/full 9H 与 D-31 第一批三份计划（Wave 1）均已交付到各自明确边界。
+- D-31 Wave 2 部分完成：migration apply、Hermes Gate 2 CAS、Tasks 证据读模型、
+  旧页 soft banners、HQA read-bridge scaffold。剩余：chat write（`verify-chat`≠0）、
+  完整 Scene-B final→Gate3 证据、旧四页 hard parity cutover/retirement。不能从历史
+  checkbox 自动续做。
 - 剩余的 PostgreSQL 目标：雷达运行、请求日志，以及更丰富的
   API 可见快照。
 - 对大型 OHLCV 与分析型时间序列数据集采用 Parquet / DuckDB。
