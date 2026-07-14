@@ -129,6 +129,31 @@ def test_same_id_same_manifest_is_noop_but_different_bytes_conflict(tmp_path) ->
     assert first.path.read_text(encoding="utf-8") == "# exact\n"
 
 
+def test_same_id_retry_rejects_metadata_extra_drift(tmp_path) -> None:
+    pool = CandidatePool(tmp_path)
+    first = pool.write_candidate(
+        task_id="metadata-stable-task",
+        goal="metadata stable goal",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content="# exact\n",
+        metadata_extra={"source_file_name": "first.py"},
+    )
+
+    with pytest.raises(CandidateConflictError):
+        pool.write_candidate(
+            task_id="metadata-stable-task",
+            goal="metadata stable goal",
+            artifact_type="factor",
+            filename="factor.py.candidate",
+            content="# exact\n",
+            metadata_extra={"source_file_name": "second.py"},
+        )
+
+    metadata = json.loads(first.metadata_path.read_text(encoding="utf-8"))
+    assert metadata["source_file_name"] == "first.py"
+
+
 def test_review_requires_current_digest_and_legacy_lock_never_allows(tmp_path) -> None:
     pool = CandidatePool(tmp_path)
     artifact = pool.write_candidate(
@@ -214,6 +239,31 @@ def test_unversioned_and_corrupt_items_remain_visible_but_never_authorize(
             expected_manifest_digest=legacy.observed_manifest_digest or "",
             expected_status="pending",
         )
+
+
+def test_list_refuses_unsafe_candidate_root_instead_of_reporting_empty(
+    tmp_path: Path,
+) -> None:
+    agent_output = tmp_path / "agent-output"
+    pool = CandidatePool(agent_output)
+    pool.candidates_dir.parent.mkdir(parents=True)
+    external = tmp_path / "external-candidates"
+    external.mkdir()
+    pool.candidates_dir.symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(CandidateIntegrityError, match="symlink|unsafe|directory"):
+        pool.list_for_read()
+
+
+def test_list_refuses_dangling_candidate_root_symlink_instead_of_empty(
+    tmp_path: Path,
+) -> None:
+    pool = CandidatePool(tmp_path / "agent-output")
+    pool.candidates_dir.parent.mkdir(parents=True)
+    pool.candidates_dir.symlink_to(tmp_path / "missing-target", target_is_directory=True)
+
+    with pytest.raises(CandidateIntegrityError, match="symlink|unsafe|directory"):
+        pool.list_for_read()
 
 
 @pytest.mark.parametrize(

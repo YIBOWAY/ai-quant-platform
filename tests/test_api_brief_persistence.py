@@ -18,8 +18,127 @@ MIGRATION_PATH = Path("scripts/sql/003_app_users_brief_ai_reports.sql")
 ROOT_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
+def _brief_generate_request(issue_date: str, locale: str) -> dict[str, object]:
+    title = "每日晨报" if locale == "zh" else "Daily Morning Brief"
+    lede = "平台当日事实快照。" if locale == "zh" else "Snapshot of today's platform facts."
+    return {
+        "issue_date": issue_date,
+        "locale": locale,
+        "payload": {
+            "schema_version": "brief_snapshot_v1",
+            "title": title,
+            "issue_date": issue_date,
+            "locale": locale,
+            "generated_at": f"{issue_date}T08:30:00Z",
+            "lede": lede,
+            "account": {
+                "account_id": "default",
+                "base_currency": "USD",
+                "equity": 100_100,
+                "cash": 60_000,
+                "pnl_abs": 100,
+                "pnl_pct": 0.001,
+                "invested_pct": 0.4,
+                "price_source": {"kind": "sample", "as_of": f"{issue_date}T08:29:00Z"},
+                "positions": [],
+            },
+            "paper_equity": [
+                {
+                    "timestamp": f"{issue_date}T08:29:00Z",
+                    "equity": 100_100,
+                    "cash": 60_000,
+                    "market_value": 40_100,
+                    "source": "current_quote",
+                }
+            ],
+            "markets": [
+                {
+                    "symbol": "SPY",
+                    "last": 620.2,
+                    "change_pct": 0.004,
+                    "source": "sample",
+                    "as_of": f"{issue_date}T00:00:00Z",
+                }
+            ],
+            "market_note": "SPY +0.40%",
+            "ai_news": [
+                {
+                    "id": "news-1",
+                    "title": "Archived AI item",
+                    "url": "https://example.com/news-1",
+                    "source": "example",
+                    "published_at": f"{issue_date}T01:00:00Z",
+                    "summary": "Persisted AI summary",
+                    "category": "models",
+                    "score": 8.5,
+                }
+            ],
+            "hermes_log": [
+                {
+                    "timestamp": f"{issue_date}T02:00:00Z",
+                    "status": "ok",
+                    "text": "Hermes completed a read-only research run",
+                    "href": "/hermes/results/run-1",
+                    "summary": "run-1",
+                }
+            ],
+            "warnings": [],
+        },
+        "source_watermark": {
+            "captured_at": f"{issue_date}T08:30:00Z",
+            "sources": [
+                {
+                    "name": "paper_account",
+                    "status": "available",
+                    "as_of": f"{issue_date}T08:29:00Z",
+                    "detail": "sample",
+                },
+                {
+                    "name": "ai_news",
+                    "status": "available",
+                    "as_of": f"{issue_date}T08:30:00Z",
+                    "detail": "example",
+                },
+            ],
+        },
+    }
+
+
 def _compact(sql: str) -> str:
     return re.sub(r"\s+", " ", sql).strip()
+
+
+def test_generate_rejects_unavailable_paper_account_facts_before_database() -> None:
+    request = _brief_generate_request("2026-07-14", "zh")
+    request["source_watermark"]["sources"][0]["status"] = "unavailable"
+    request["source_watermark"]["sources"][0]["detail"] = "503 backend down"
+    client = TestClient(create_app())
+
+    response = client.post("/api/brief/issues/generate", json=request)
+
+    assert response.status_code == 422
+    assert "paper_account must be available or stale" in response.text
+
+
+def test_generate_rejects_unknown_envelope_fields_and_duplicate_sources() -> None:
+    client = TestClient(create_app())
+    request = _brief_generate_request("2026-07-14", "zh")
+    request["pretend_success"] = True
+
+    unknown = client.post("/api/brief/issues/generate", json=request)
+
+    assert unknown.status_code == 422
+    assert "extra_forbidden" in unknown.text
+
+    request = _brief_generate_request("2026-07-14", "zh")
+    request["source_watermark"]["sources"].append(
+        dict(request["source_watermark"]["sources"][0])
+    )
+
+    duplicate = client.post("/api/brief/issues/generate", json=request)
+
+    assert duplicate.status_code == 422
+    assert "source watermark names must be unique" in duplicate.text
 
 
 def _ensure_test_database(url: str) -> None:
@@ -217,11 +336,23 @@ def test_generate_brief_issue_requires_database_when_disabled(tmp_path) -> None:
 
     response = client.post(
         "/api/brief/issues/generate",
-        json={"issue_date": "2026-07-08", "locale": "zh"},
+        json=_brief_generate_request("2026-07-08", "zh"),
     )
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "brief_database_unavailable"
+
+
+def test_generate_brief_issue_rejects_empty_placeholder_request(tmp_path) -> None:
+    db.reset_database_cache()
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post(
+        "/api/brief/issues/generate",
+        json={"issue_date": "2026-07-08", "locale": "zh"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_get_brief_issue_requires_database_when_disabled(tmp_path) -> None:
@@ -297,11 +428,11 @@ def test_get_latest_brief_issue_returns_newest_for_locale(tmp_path) -> None:
         client = TestClient(create_app(settings=settings, output_dir=tmp_path))
         older = client.post(
             "/api/brief/issues/generate",
-            json={"issue_date": "2026-07-07", "locale": "zh"},
+            json=_brief_generate_request("2026-07-07", "zh"),
         )
         newer = client.post(
             "/api/brief/issues/generate",
-            json={"issue_date": "2026-07-08", "locale": "zh"},
+            json=_brief_generate_request("2026-07-08", "zh"),
         )
         assert older.status_code == 200
         assert newer.status_code == 200
@@ -318,7 +449,7 @@ def test_get_latest_brief_issue_returns_newest_for_locale(tmp_path) -> None:
 
         second = client.post(
             "/api/brief/issues/generate",
-            json={"issue_date": "2026-07-08", "locale": "zh"},
+            json=_brief_generate_request("2026-07-08", "zh"),
         )
         assert second.status_code == 200
         second_body = second.json()
@@ -333,7 +464,7 @@ def test_get_latest_brief_issue_returns_newest_for_locale(tmp_path) -> None:
 
         en_only = client.post(
             "/api/brief/issues/generate",
-            json={"issue_date": "2026-07-08", "locale": "en"},
+            json=_brief_generate_request("2026-07-08", "en"),
         )
         assert en_only.status_code == 200
         en_public_id = en_only.json()["issue"]["public_id"]
@@ -383,7 +514,7 @@ def test_generate_brief_issue_persists_postgres_snapshot_versions(tmp_path) -> N
         client = TestClient(create_app(settings=settings, output_dir=tmp_path))
         first = client.post(
             "/api/brief/issues/generate",
-            json={"issue_date": "2026-07-08", "locale": "zh"},
+            json=_brief_generate_request("2026-07-08", "zh"),
         )
         assert first.status_code == 200
         first_body = first.json()
@@ -392,16 +523,12 @@ def test_generate_brief_issue_persists_postgres_snapshot_versions(tmp_path) -> N
         assert first_body["issue"]["issue_date"] == "2026-07-08"
         assert first_body["issue"]["locale"] == "zh"
         assert first_body["snapshot"]["version"] == 1
-        assert first_body["snapshot"]["payload"] == {
-            "title": "每日晨报",
-            "issue_date": "2026-07-08",
-            "sections": {
-                "market": [],
-                "ai_news": [],
-                "paper_equity": [],
-                "hermes_log": [],
-            },
-        }
+        assert first_body["snapshot"]["payload"] == _brief_generate_request(
+            "2026-07-08", "zh"
+        )["payload"]
+        assert first_body["snapshot"]["source_watermark"] == _brief_generate_request(
+            "2026-07-08", "zh"
+        )["source_watermark"]
 
         fetched = client.get(f"/api/brief/issues/{public_id}")
         assert fetched.status_code == 200
@@ -409,9 +536,29 @@ def test_generate_brief_issue_persists_postgres_snapshot_versions(tmp_path) -> N
         assert fetched_body["issue"] == first_body["issue"]
         assert fetched_body["snapshot"] == first_body["snapshot"]
 
+        with database.connect() as conn:
+            source_rows = conn.execute(
+                """
+                SELECT source_type, payload
+                FROM quant_system.brief_snapshot_sources
+                WHERE snapshot_id = %s
+                ORDER BY source_type
+                """,
+                (first_body["snapshot"]["snapshot_id"],),
+            ).fetchall()
+        assert [row[0] for row in source_rows] == ["ai_news", "paper_account"]
+        assert [dict(row[1]) for row in source_rows] == [
+            _brief_generate_request("2026-07-08", "zh")["source_watermark"][
+                "sources"
+            ][1],
+            _brief_generate_request("2026-07-08", "zh")["source_watermark"][
+                "sources"
+            ][0],
+        ]
+
         second = client.post(
             "/api/brief/issues/generate",
-            json={"issue_date": "2026-07-08", "locale": "zh"},
+            json=_brief_generate_request("2026-07-08", "zh"),
         )
         assert second.status_code == 200
         second_body = second.json()

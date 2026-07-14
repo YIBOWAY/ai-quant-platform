@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { BriefArchiveControl } from "@/components/brief/BriefArchiveControl";
+import {
+  PaperEquityFigureState,
+  resolvePaperEquityAvailability,
+} from "@/components/brief/PaperEquityFigureState";
 import {
   formatMoney,
   formatPercent,
@@ -30,6 +35,8 @@ import {
   formatCount,
 } from "@/lib/dashboardRuns";
 import { localizePath } from "@/lib/locale";
+import type { BriefArchivePayload, BriefSourceWatermark } from "@/lib/briefArchive";
+import { briefDateKey } from "@/lib/briefDate";
 import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
@@ -42,7 +49,7 @@ const copy = {
     edition: "U.S. research edition",
     title: "Daily Morning Brief",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
-    author: "Editor Hermes · arranged by the local agent overnight",
+    author: "Platform factual desk · deterministic template",
     subscriber: "subscriber one · private use",
     safetyLine: "paper-only journal · dry-run rehearsal · live trading never implied active",
     archiveCta: "Open archived issue",
@@ -61,6 +68,9 @@ const copy = {
     weight: "Weight",
     emptyPositions: "No current positions",
     accountSource: "source: local paper account engine",
+    accountUnavailable: "Paper account unavailable; factual archive is blocked.",
+    equityCurveUnavailable:
+      "Paper account equity curve unavailable; factual archive is blocked.",
     backtest: "Paper Return",
     backtestEn: "ONE-WEEK PAPER RETURN",
     figureTitle: "Figure 1 · paper account one-week return from account ledger",
@@ -71,13 +81,14 @@ const copy = {
     maxDrawdown: "latest equity",
     chartNote: "Historical points are replayed from the paper-account ledger; the final mark uses the latest paper quote.",
     noChart: "No paper account equity curve has been written yet.",
+    chartUnavailable: "Paper account equity data unavailable.",
     market: "Market",
     marketEn: "THE MARKET",
     marketSummary: "Market summary",
     marketUnavailable: "market move unavailable",
     quote:
-      "Market data is incomplete; Hermes is holding the daily read to paper evidence until SPY, QQQ, SOXX, and IGV all publish fresh bars.",
-    quoteSig: "Hermes note · editor's margin",
+      "Market data is incomplete; the platform template is holding the daily read until SPY, QQQ, SOXX, and IGV all publish fresh bars.",
+    quoteSig: "Platform market note · deterministic template",
     digest: "AI Intelligence Digest",
     digestEn: "INTELLIGENCE DIGEST",
     noDigest: "No AI intelligence items are available from the local feed.",
@@ -97,7 +108,7 @@ const copy = {
     edition: "美股研究版",
     title: "每日晨报",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
-    author: "主笔 Hermes · 由本地代理彻夜整理",
+    author: "平台事实台 · 确定性模板排印",
     subscriber: "订户一人 · 自用",
     safetyLine: "本刊为模拟盘刊物 · DRY-RUN 演练 · live trading never implied active",
     archiveCta: "查看归档版",
@@ -116,6 +127,8 @@ const copy = {
     weight: "权重",
     emptyPositions: "当前空仓",
     accountSource: "资料来源：本地模拟盘引擎",
+    accountUnavailable: "模拟账户不可用，已禁止保存事实归档。",
+    equityCurveUnavailable: "模拟盘权益曲线不可用，已禁止保存事实归档。",
     backtest: "模拟盘收益",
     backtestEn: "ONE-WEEK PAPER RETURN",
     figureTitle: "图一 · 模拟盘近 7 日权益曲线",
@@ -126,13 +139,14 @@ const copy = {
     maxDrawdown: "最新权益",
     chartNote: "历史点由模拟账户账本回放，最后一点使用最新纸面报价。",
     noChart: "尚未写入模拟盘权益曲线。",
+    chartUnavailable: "模拟盘权益数据不可用。",
     market: "市场",
     marketEn: "THE MARKET",
     marketSummary: "市场概括",
     marketUnavailable: "市场涨跌数据不足",
-    quoteSig: "Hermes 市场手记",
+    quoteSig: "平台市场手记 · 确定性模板",
     quote:
-      "市场涨跌数据暂不完整；Hermes 先把每日判断压回纸面证据，等待 SPY、QQQ、SOXX、IGV 四组日线全部刷新。",
+      "市场涨跌数据暂不完整；平台模板等待 SPY、QQQ、SOXX、IGV 四组日线全部刷新后再形成完整判断。",
     digest: "AI 情报摘要",
     digestEn: "INTELLIGENCE DIGEST",
     noDigest: "本地 AI 情报源暂无条目。",
@@ -202,10 +216,6 @@ function formatLogTime(value: string | null | undefined, locale: "en" | "zh") {
     minute: "2-digit",
     hour12: false,
   }).format(date);
-}
-
-function ymd(value: Date) {
-  return value.toISOString().slice(0, 10);
 }
 
 function normalizePaperEquityCurve(curve: PaperAccountEquityCurveResponse): ChartPoint[] {
@@ -296,9 +306,9 @@ function buildMarketNote(markets: MarketSnapshot[], text: BriefCopy) {
   const weakest = [...complete].sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0))[0];
   const positiveCount = complete.filter((item) => (item.changePct ?? 0) >= 0).length;
   if (text === copy.zh) {
-    return `今日四个观察指数中 ${positiveCount}/4 收涨，${strongest.symbol} 最强（${formatMarketChange(strongest.changePct)}），${weakest.symbol} 最弱（${formatMarketChange(weakest.changePct)}）；Hermes 建议先看半导体与软件的相对强弱，再决定是否扩大风险敞口。`;
+    return `今日四个观察指数中 ${positiveCount}/4 收涨，${strongest.symbol} 最强（${formatMarketChange(strongest.changePct)}），${weakest.symbol} 最弱（${formatMarketChange(weakest.changePct)}）；平台模板提示先比较半导体与软件的相对强弱。`;
   }
-  return `${positiveCount}/4 watched ETFs are up today; ${strongest.symbol} leads (${formatMarketChange(strongest.changePct)}) while ${weakest.symbol} lags (${formatMarketChange(weakest.changePct)}). Hermes would read semis versus software before expanding risk.`;
+  return `${positiveCount}/4 watched ETFs are up today; ${strongest.symbol} leads (${formatMarketChange(strongest.changePct)}) while ${weakest.symbol} lags (${formatMarketChange(weakest.changePct)}). The deterministic template flags semis versus software for review.`;
 }
 
 function buildLede({
@@ -318,7 +328,7 @@ function buildLede({
     return (
       <>
         今晨，模拟盘权益报 <strong>{equity}</strong>，近 7 日权益收益{" "}
-        <strong>{paperWeekReturn}</strong>；Hermes 手记：{marketNote} 另整理{" "}
+        <strong>{paperWeekReturn}</strong>；平台市场手记：{marketNote} 另整理{" "}
         <strong>{formatCount(digestCount)}</strong> 条 AI 业内情报。
       </>
     );
@@ -326,10 +336,59 @@ function buildLede({
   return (
     <>
       This morning, paper equity prints at <strong>{equity}</strong> with a{" "}
-      <strong>{paperWeekReturn}</strong> seven-day paper return; Hermes note: {marketNote} It has set{" "}
+      <strong>{paperWeekReturn}</strong> seven-day paper return; platform market note: {marketNote} It has set{" "}
       <strong>{formatCount(digestCount)}</strong> AI intelligence items in type.
     </>
   );
+}
+
+function buildArchivedLede({
+  locale,
+  equity,
+  paperWeekReturn,
+  marketNote,
+  digestCount,
+}: {
+  locale: "en" | "zh";
+  equity: string;
+  paperWeekReturn: string;
+  marketNote: string;
+  digestCount: number;
+}) {
+  if (locale === "zh") {
+    return `今晨，模拟盘权益报 ${equity}，近 7 日权益收益 ${paperWeekReturn}；平台市场手记：${marketNote} 另整理 ${formatCount(digestCount)} 条 AI 业内情报。`;
+  }
+  return `This morning, paper equity prints at ${equity} with a ${paperWeekReturn} seven-day paper return. Platform market note: ${marketNote} It has set ${formatCount(digestCount)} AI intelligence items in type.`;
+}
+
+function finiteNumber(value: number, fallback = 0) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function nullableNumber(value: number | undefined) {
+  return value !== undefined && Number.isFinite(value) ? value : null;
+}
+
+function isoTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function sourceStatus(
+  apiError: string | undefined,
+  stale = false,
+): "available" | "stale" | "unavailable" {
+  if (apiError) {
+    return "unavailable";
+  }
+  return stale ? "stale" : "available";
+}
+
+function uniqueWarnings(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value?.trim()))));
 }
 
 function SectionHeader({ title, en }: { title: string; en: string }) {
@@ -511,22 +570,22 @@ function buildRunAction(run: RecentRun, locale: "en" | "zh"): BriefLogEntry {
   let text = `${kindLabel} · ${run.run_id}`;
   if (locale === "zh") {
     if (run.kind === "backtest") {
-      text = `Hermes 完成回测 · ${inlineSummary}`;
+      text = `平台记录回测 · ${inlineSummary}`;
     } else if (run.kind === "factor") {
-      text = `Hermes 完成因子分析 · ${inlineSummary}`;
+      text = `平台记录因子分析 · ${inlineSummary}`;
     } else if (run.kind === "replication") {
-      text = `Hermes 添加/复现策略 · ${inlineSummary}`;
+      text = `平台记录策略复现 · ${inlineSummary}`;
     } else {
-      text = `Hermes 完成模拟盘运行 · ${inlineSummary}`;
+      text = `平台记录模拟盘运行 · ${inlineSummary}`;
     }
   } else if (run.kind === "backtest") {
-    text = `Hermes completed backtest · ${inlineSummary}`;
+    text = `Platform recorded backtest · ${inlineSummary}`;
   } else if (run.kind === "factor") {
-    text = `Hermes completed factor analysis · ${inlineSummary}`;
+    text = `Platform recorded factor analysis · ${inlineSummary}`;
   } else if (run.kind === "replication") {
-    text = `Hermes added/replicated strategy · ${inlineSummary}`;
+    text = `Platform recorded strategy replication · ${inlineSummary}`;
   } else {
-    text = `Hermes completed paper run · ${inlineSummary}`;
+    text = `Platform recorded paper run · ${inlineSummary}`;
   }
   return {
     timestamp: run.created_at,
@@ -574,15 +633,15 @@ function buildBriefLogEntries({
       status: candidate.status === "pending" ? "warn" : "ok",
       text:
         locale === "zh"
-          ? `Hermes 产出候选 ${artifactType} · ${candidate.candidate_id}`
-          : `Hermes produced candidate ${artifactType} · ${candidate.candidate_id}`,
+          ? `研究候选可见 ${artifactType} · ${candidate.candidate_id}`
+          : `Research candidate visible ${artifactType} · ${candidate.candidate_id}`,
       summary: candidate.goal ?? `status=${candidate.status ?? "unknown"}`,
     });
   }
   entries.push({
     timestamp: new Date().toISOString(),
     status: "warn",
-    text: locale === "zh" ? "晨报已排印 · 导语由主笔撰写" : "Morning brief printed · lede prepared by Hermes",
+    text: locale === "zh" ? "晨报已排印 · 确定性事实模板" : "Morning brief printed · deterministic fact template",
   });
   return entries.slice(0, 8);
 }
@@ -667,8 +726,7 @@ function DigestArticle({
 
 export default async function BriefPage() {
   const today = new Date();
-  const marketStart = new Date(today);
-  marketStart.setDate(today.getDate() - 14);
+  const marketStart = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
   const locale = await getServerLocale();
   const [
     health,
@@ -699,19 +757,24 @@ export default async function BriefPage() {
     getAgentCandidates(),
     getAiHotItems({ take: 6 }),
     getOptionsDailyScanStatus(),
-    getMarketDataHistory("SPY", ymd(marketStart), ymd(today), "1d"),
-    getMarketDataHistory("QQQ", ymd(marketStart), ymd(today), "1d"),
-    getMarketDataHistory("SOXX", ymd(marketStart), ymd(today), "1d"),
-    getMarketDataHistory("IGV", ymd(marketStart), ymd(today), "1d"),
+    getMarketDataHistory("SPY", briefDateKey(marketStart), briefDateKey(today), "1d"),
+    getMarketDataHistory("QQQ", briefDateKey(marketStart), briefDateKey(today), "1d"),
+    getMarketDataHistory("SOXX", briefDateKey(marketStart), briefDateKey(today), "1d"),
+    getMarketDataHistory("IGV", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getLatestBriefIssue({ locale }),
   ]);
   const text = copy[locale];
-  const archivedIssuePublicId =
-    archivedEnvelope.issue.status !== "unavailable" &&
-    archivedEnvelope.issue.public_id.trim().length > 0
-      ? archivedEnvelope.issue.public_id
-      : null;
-  const paperCurve = normalizePaperEquityCurve(paperEquityCurve);
+  const issueDate = briefDateKey(today);
+  const capturedAt = new Date().toISOString();
+  const paperEquityAvailability = resolvePaperEquityAvailability({
+    accountApiError: paperAccount.apiError,
+    curveApiError: paperEquityCurve.apiError,
+    accountBlockedLabel: text.accountUnavailable,
+    curveBlockedLabel: text.equityCurveUnavailable,
+  });
+  const paperCurve = paperEquityAvailability.unavailableReason
+    ? []
+    : normalizePaperEquityCurve(paperEquityCurve);
   const marketSnapshots = [
     marketSnapshot("SPY", spyHistory),
     marketSnapshot("QQQ", qqqHistory),
@@ -727,6 +790,169 @@ export default async function BriefPage() {
   });
   const paperWeekReturn = paperCurve.at(-1)?.y;
   const digestItems = digest.items.slice(0, 6);
+  const archivedIssuePublicId =
+    archivedEnvelope.issue.status !== "unavailable" &&
+    archivedEnvelope.issue.issue_date === issueDate &&
+    archivedEnvelope.issue.locale === locale &&
+    archivedEnvelope.issue.public_id.trim().length > 0
+      ? archivedEnvelope.issue.public_id
+      : null;
+  const archiveWarnings = uniqueWarnings([
+    health.apiError,
+    symbols.apiError,
+    factors.apiError,
+    backtests.apiError,
+    paperRuns.apiError,
+    paperAccount.apiError,
+    paperEquityCurve.apiError,
+    recentRuns.apiError,
+    candidates.apiError,
+    digest.apiError,
+    optionsStatus.apiError,
+    spyHistory.apiError,
+    qqqHistory.apiError,
+    soxxHistory.apiError,
+    igvHistory.apiError,
+    ...(paperAccount.warnings ?? []),
+    ...digest.warnings,
+  ]);
+  const archiveBlockedReason = paperEquityAvailability.blockedReason;
+  const archivePayload: BriefArchivePayload = {
+    schema_version: "brief_snapshot_v1",
+    title: text.title,
+    issue_date: issueDate,
+    locale,
+    generated_at: capturedAt,
+    lede: buildArchivedLede({
+      locale,
+      equity: paperAccount.apiError ? "--" : formatMoney(paperAccount.equity),
+      paperWeekReturn: formatSignedPointReturn(paperWeekReturn),
+      marketNote,
+      digestCount: digestItems.length,
+    }),
+    account: {
+      account_id: paperAccount.account_id || "unavailable",
+      base_currency: paperAccount.base_currency || "USD",
+      equity: finiteNumber(paperAccount.equity),
+      cash: finiteNumber(paperAccount.cash),
+      pnl_abs: finiteNumber(paperAccount.pnl_abs),
+      pnl_pct: finiteNumber(paperAccount.pnl_pct),
+      invested_pct: finiteNumber(paperAccount.invested_pct),
+      price_source: {
+        kind: paperAccount.price_source?.kind || "unavailable",
+        as_of: isoTimestamp(paperAccount.price_source?.as_of),
+      },
+      positions: paperAccount.positions
+        .filter((position) => position.symbol.trim().length > 0)
+        .map((position) => ({
+          symbol: position.symbol,
+          quantity: finiteNumber(position.quantity),
+          avg_cost: finiteNumber(position.avg_cost),
+          last_price: finiteNumber(position.last_price),
+          market_value: finiteNumber(position.market_value),
+          weight: finiteNumber(position.weight),
+          unrealized_pnl: finiteNumber(position.unrealized_pnl),
+          price_kind: position.price_kind || "unavailable",
+          price_as_of: isoTimestamp(position.price_as_of),
+        })),
+    },
+    paper_equity: paperEquityCurve.points
+      .filter(
+        (point) =>
+          isoTimestamp(point.timestamp) !== null &&
+          Number.isFinite(point.equity) &&
+          Number.isFinite(point.cash) &&
+          Number.isFinite(point.market_value),
+      )
+      .slice(-24)
+      .map((point) => ({
+        timestamp: isoTimestamp(point.timestamp) ?? capturedAt,
+        equity: point.equity,
+        cash: point.cash,
+        market_value: point.market_value,
+        source: point.source,
+      })),
+    markets: marketSnapshots.map((snapshot) => ({
+      symbol: snapshot.symbol,
+      last: nullableNumber(snapshot.last),
+      change_pct: nullableNumber(snapshot.changePct),
+      source: snapshot.source ?? null,
+      as_of: isoTimestamp(snapshot.asOf),
+    })),
+    market_note: marketNote,
+    ai_news: digestItems
+      .filter(
+        (item) =>
+          item.id.trim().length > 0 &&
+          item.title.trim().length > 0 &&
+          item.url.trim().length > 0 &&
+          item.source.trim().length > 0,
+      )
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        url: item.url,
+        source: item.source,
+        published_at: isoTimestamp(item.published_at),
+        summary: item.summary ?? null,
+        category: item.category ?? null,
+        score: nullableNumber(item.score ?? undefined),
+      })),
+    hermes_log: logEntries.map((entry) => ({
+      timestamp: isoTimestamp(entry.timestamp),
+      status: entry.status,
+      text: entry.text,
+      href: entry.href ?? null,
+      summary: entry.summary ?? null,
+    })),
+    warnings: archiveWarnings,
+  };
+  const sourceWatermark: BriefSourceWatermark = {
+    captured_at: capturedAt,
+    sources: [
+      {
+        name: "paper_account",
+        status: sourceStatus(paperAccount.apiError, Boolean(paperAccount.stale)),
+        as_of: isoTimestamp(paperAccount.price_source?.as_of),
+        detail: paperAccount.apiError ?? paperAccount.price_source?.kind ?? null,
+      },
+      {
+        name: "paper_equity",
+        status: sourceStatus(paperEquityCurve.apiError),
+        as_of: isoTimestamp(paperEquityCurve.points.at(-1)?.timestamp),
+        detail: paperEquityCurve.apiError ?? `${paperEquityCurve.points.length} points`,
+      },
+      {
+        name: "research_activity",
+        status: sourceStatus(recentRuns.apiError || candidates.apiError || optionsStatus.apiError),
+        as_of: isoTimestamp(recentRuns.generated_at),
+        detail: recentRuns.apiError ?? candidates.apiError ?? optionsStatus.apiError ?? `${logEntries.length} entries`,
+      },
+      {
+        name: "ai_news",
+        status: sourceStatus(
+          digest.apiError,
+          digest.warnings.some((warning) => /cache|stale/i.test(warning)),
+        ),
+        as_of: isoTimestamp(digest.fetched_at),
+        detail: digest.apiError ?? digest.provider,
+      },
+      ...[
+        ["SPY", spyHistory],
+        ["QQQ", qqqHistory],
+        ["SOXX", soxxHistory],
+        ["IGV", igvHistory],
+      ].map(([symbol, history]) => {
+        const typedHistory = history as MarketDataHistoryResponse;
+        return {
+          name: `market_${symbol}`,
+          status: sourceStatus(typedHistory.apiError),
+          as_of: isoTimestamp(typedHistory.rows.at(-1)?.timestamp),
+          detail: typedHistory.apiError ?? typedHistory.source,
+        } as const;
+      }),
+    ],
+  };
 
   return (
     <div className="h-full overflow-y-auto bg-paper-ink text-ink">
@@ -774,16 +1000,13 @@ export default async function BriefPage() {
             <span>{text.author}</span>
             <span>{text.subscriber}</span>
           </div>
-          {archivedIssuePublicId ? (
-            <div className="mt-3">
-              <Link
-                href={localizePath(`/brief/${archivedIssuePublicId}`, locale)}
-                className="text-ink-secondary underline decoration-editorial-rule underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-editorial-accent"
-              >
-                {text.archiveCta}
-              </Link>
-            </div>
-          ) : null}
+          <BriefArchiveControl
+            disabledReason={archiveBlockedReason}
+            initialPublicId={archivedIssuePublicId}
+            locale={locale}
+            payload={archivePayload}
+            sourceWatermark={sourceWatermark}
+          />
         </header>
 
         <div className="border-b border-editorial-rule py-2 text-center font-data-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary">
@@ -794,7 +1017,7 @@ export default async function BriefPage() {
           <p className="font-editorial-body text-xl leading-9 text-ink">
             {buildLede({
               text,
-              equity: formatMoney(paperAccount.equity),
+              equity: paperAccount.apiError ? "--" : formatMoney(paperAccount.equity),
               paperWeekReturn: formatSignedPointReturn(paperWeekReturn),
               marketNote,
               digestCount: digestItems.length,
@@ -813,21 +1036,25 @@ export default async function BriefPage() {
                 {text.equity}
               </div>
               <div className="mt-1 font-editorial-display text-5xl leading-tight text-ink">
-                {formatMoney(paperAccount.equity)}
+                {paperAccount.apiError ? "--" : formatMoney(paperAccount.equity)}
               </div>
-              <div className={paperAccount.pnl_abs >= 0 ? "font-data-mono text-sm text-editorial-up" : "font-data-mono text-sm text-editorial-down"}>
-                {paperAccount.pnl_abs >= 0 ? "▲ " : "▼ "}
-                {formatMoney(Math.abs(paperAccount.pnl_abs))} ({formatPercent(paperAccount.pnl_pct)})
-              </div>
+              {paperAccount.apiError ? (
+                <div className="font-data-mono text-sm text-warning">{text.accountUnavailable}</div>
+              ) : (
+                <div className={paperAccount.pnl_abs >= 0 ? "font-data-mono text-sm text-editorial-up" : "font-data-mono text-sm text-editorial-down"}>
+                  {paperAccount.pnl_abs >= 0 ? "▲ " : "▼ "}
+                  {formatMoney(Math.abs(paperAccount.pnl_abs))} ({formatPercent(paperAccount.pnl_pct)})
+                </div>
+              )}
               <dl className="mt-4 space-y-1 font-data-mono text-xs text-ink-secondary">
                 <div>
-                  {text.cash} <span className="text-ink">{formatMoney(paperAccount.cash)}</span>
+                  {text.cash} <span className="text-ink">{paperAccount.apiError ? "--" : formatMoney(paperAccount.cash)}</span>
                 </div>
                 <div>
-                  {text.invested} <span className="text-ink">{formatPercent(paperAccount.invested_pct)}</span>
+                  {text.invested} <span className="text-ink">{paperAccount.apiError ? "--" : formatPercent(paperAccount.invested_pct)}</span>
                 </div>
                 <div>
-                  {text.priceSource} <span className="text-ink">{paperAccount.price_source?.kind ?? "--"}</span>
+                  {text.priceSource} <span className="text-ink">{paperAccount.apiError ? "--" : paperAccount.price_source?.kind ?? "--"}</span>
                 </div>
               </dl>
             </div>
@@ -840,16 +1067,25 @@ export default async function BriefPage() {
           <figure>
             <div className="mb-2 flex justify-between gap-3 font-data-mono text-[11px] text-ink-secondary">
               <span>{text.figureTitle}</span>
-              <span>{text.chartSource}</span>
+              <span>
+                {paperEquityAvailability.unavailableReason
+                  ? text.chartUnavailable
+                  : text.chartSource}
+              </span>
             </div>
-            <EditorialChart series={paperCurve} benchmark={[]} text={text} />
-            <figcaption className="mt-2 text-center font-editorial-caps text-sm text-ink-secondary">
-              {text.latestRun} <strong className="text-ink">{paperAccount.account_id}</strong> ·{" "}
-              {text.cumulativeReturn} <strong className="text-ink">{formatSignedPointReturn(paperWeekReturn)}</strong> ·{" "}
-              {text.sharpe} <strong className="text-ink">{formatCount(paperCurve.length)}</strong> · {text.maxDrawdown}{" "}
-              <strong className="text-ink">{formatMoney(paperAccount.equity)}</strong>
-            </figcaption>
-            <p className="mt-2 text-center font-data-mono text-[11px] text-ink-secondary">{text.chartNote}</p>
+            <PaperEquityFigureState
+              unavailableLabel={text.chartUnavailable}
+              unavailableReason={paperEquityAvailability.unavailableReason}
+            >
+              <EditorialChart series={paperCurve} benchmark={[]} text={text} />
+              <figcaption className="mt-2 text-center font-editorial-caps text-sm text-ink-secondary">
+                {text.latestRun} <strong className="text-ink">{paperAccount.account_id}</strong> ·{" "}
+                {text.cumulativeReturn} <strong className="text-ink">{formatSignedPointReturn(paperWeekReturn)}</strong> ·{" "}
+                {text.sharpe} <strong className="text-ink">{formatCount(paperCurve.length)}</strong> · {text.maxDrawdown}{" "}
+                <strong className="text-ink">{formatMoney(paperAccount.equity)}</strong>
+              </figcaption>
+              <p className="mt-2 text-center font-data-mono text-[11px] text-ink-secondary">{text.chartNote}</p>
+            </PaperEquityFigureState>
           </figure>
         </section>
 

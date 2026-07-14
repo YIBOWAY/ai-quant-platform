@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import logging
 import os
+import re
 import sys
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
@@ -22,7 +24,11 @@ from quant_system.agent.paths import (
     resolve_candidates_dir,
     resolve_legacy_candidates_dir,
 )
-from quant_system.agent.promotion import load_approved_factor_candidates
+from quant_system.agent.promotion import (
+    CandidateLoadError,
+    inspect_factor_candidate,
+    load_approved_factor_candidate,
+)
 from quant_system.agent.runner import AgentRunner
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
 from quant_system.config.settings import load_settings, reload_settings
@@ -35,6 +41,11 @@ from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.execution.pipeline import PaperTradingRunResult, run_sample_paper_trading
 from quant_system.experiments.config import load_experiment_config
+from quant_system.experiments.models import (
+    CandidateResearchBinding,
+    FactorBlendConfig,
+    FactorWeight,
+)
 from quant_system.experiments.runner import (
     ExperimentResult,
     run_experiment,
@@ -802,19 +813,26 @@ def run_config_experiment_command(
         Literal["sample", "futu", "tiingo"],
         typer.Option("--provider", help="OHLCV data provider for the experiment."),
     ] = "sample",
-    include_approved_candidates: Annotated[
-        bool,
+    candidate_id: Annotated[
+        str | None,
         typer.Option(
-            "--include-approved-candidates",
-            help="Load human-approved agent candidate factors into the registry.",
+            "--candidate-id",
+            help="Exact approved candidate to load for one-shot research.",
         ),
-    ] = False,
+    ] = None,
+    expected_candidate_digest: Annotated[
+        str | None,
+        typer.Option(
+            "--expected-digest",
+            help="Exact manifest digest of --candidate-id.",
+        ),
+    ] = None,
     agent_output_dir: Annotated[
         str | None,
         typer.Option(
             "--agent-output-dir",
             help=(
-                "Agent output root used when --include-approved-candidates is set. "
+                "Agent output root used with the exact candidate selector. "
                 "Normalized by resolve_agent_output_dir; candidates live under "
                 "agent/candidates. Defaults to QS_AGENT_OUTPUT_DIR or the repo "
                 "canonical agent_run root."
@@ -827,22 +845,68 @@ def run_config_experiment_command(
     ] = False,
 ) -> None:
     """Run a Phase 4 experiment from a JSON config file."""
+    if (
+        expected_candidate_digest is not None
+        and re.fullmatch(r"[0-9a-f]{64}", expected_candidate_digest) is None
+    ):
+        raise typer.BadParameter(
+            "--expected-digest must be a lowercase 64-character SHA-256 digest"
+        )
+    if (candidate_id is None) != (expected_candidate_digest is None):
+        raise typer.BadParameter(
+            "--candidate-id and --expected-digest must be supplied together"
+        )
     config = load_experiment_config(config_path)
+    if config.candidate_binding is not None and candidate_id is None:
+        raise typer.BadParameter(
+            "candidate_binding is derived evidence; supply --candidate-id and "
+            "--expected-digest instead of declaring it in an ordinary config"
+        )
     settings = reload_settings()
     provider_instance, data_source = build_ohlcv_provider(settings, requested=provider)
     factor_registry = None
     loaded: list[str] = []
-    if include_approved_candidates:
+    candidate_binding: CandidateResearchBinding | None = None
+    if candidate_id is not None and expected_candidate_digest is not None:
+        from quant_system.agent.candidate_manifest import (
+            CandidateIntegrityError,
+            CandidateStaleError,
+        )
+
         factor_registry = build_default_factor_registry()
-        # Same resolver as agent CLI: never CWD-relative and never QS_DATA_DIR.
         active_agent_root = resolve_agent_output_dir(agent_output_dir)
-        loaded = list(
-            load_approved_factor_candidates(
+        try:
+            binding = load_approved_factor_candidate(
                 factor_registry,
                 agent_output_dir=active_agent_root,
+                candidate_id=candidate_id,
+                expected_manifest_digest=expected_candidate_digest,
             )
+        except (
+            CandidateIntegrityError,
+            CandidateLoadError,
+            CandidateStaleError,
+            OSError,
+            UnicodeDecodeError,
+        ) as exc:
+            typer.echo(f"candidate_load_refused reason={exc}")
+            raise typer.Exit(code=1) from exc
+        candidate_binding = CandidateResearchBinding(
+            candidate_id=binding.candidate_id,
+            manifest_digest=binding.manifest_digest,
+            factor_id=binding.factor_id,
         )
-        typer.echo(f"approved_candidates_loaded={','.join(loaded) or '<none>'}")
+        config = config.model_copy(
+            update={
+                "factor_blend": FactorBlendConfig(
+                    factors=[FactorWeight(factor_id=binding.factor_id)],
+                    rebalance_every_n_bars=config.factor_blend.rebalance_every_n_bars,
+                ),
+                "candidate_binding": candidate_binding,
+            }
+        )
+        loaded = [binding.factor_id]
+        typer.echo(f"approved_candidate_loaded={binding.factor_id}")
     result = run_experiment(
         config,
         output_dir=output_dir,
@@ -852,14 +916,29 @@ def run_config_experiment_command(
     )
     _emit_experiment_summary(result)
     if json_output:
+        config_bytes = result.config_path.read_bytes()
+        agent_summary_bytes = result.agent_summary_path.read_bytes()
+        report_bytes = result.report_path.read_bytes()
         _emit_json(
             {
                 "experiment_id": result.experiment_id,
                 "run_count": result.run_count,
                 "best_run_id": result.best_run_id,
+                "data_source": result.data_source,
+                "config": str(result.config_path),
+                "config_sha256": hashlib.sha256(config_bytes).hexdigest(),
                 "agent_summary": str(result.agent_summary_path),
+                "agent_summary_sha256": hashlib.sha256(
+                    agent_summary_bytes
+                ).hexdigest(),
                 "report": str(result.report_path),
+                "report_sha256": hashlib.sha256(report_bytes).hexdigest(),
                 "approved_candidates_loaded": loaded,
+                "candidate_binding": (
+                    candidate_binding.model_dump(mode="json")
+                    if candidate_binding is not None
+                    else None
+                ),
             }
         )
 
@@ -1662,23 +1741,43 @@ def agent_propose_factor(
 ) -> None:
     """Create an inert candidate factor file for human review."""
     metadata_extra = None
+    external_source_sha256: str | None = None
     if source_file is not None:
         path = Path(source_file)
-        llm = FixedContentLLMClient(path.read_text(encoding="utf-8"))
+        # Read once in binary mode so universal-newline translation cannot
+        # silently change the exact bytes that a human reviewed at HQA Gate 1.
+        source_bytes = path.read_bytes()
+        source_text = source_bytes.decode("utf-8", errors="strict")
+        external_source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        llm = FixedContentLLMClient(source_text)
         metadata_extra = {
             "generator": "external-source",
             "source_file_name": path.name,
+            "source_sha256": external_source_sha256,
         }
     else:
         llm = _build_agent_llm(llm_name)
-    artifact = AgentRunner(
+    runner = AgentRunner(
         agent_output_dir=resolve_agent_output_dir(agent_output_dir),
         llm=llm,
-    ).propose_factor(
+    )
+    artifact = runner.propose_factor(
         goal=goal,
         universe=_parse_universe(universe),
         metadata_extra=metadata_extra,
     )
+    snapshot = runner.candidates.get(artifact.candidate_id)
+    candidate_source = snapshot.artifact_bytes.get("factor.py.candidate")
+    if candidate_source is None:
+        raise typer.BadParameter("verified candidate is missing factor.py.candidate")
+    candidate_source_sha256 = hashlib.sha256(candidate_source).hexdigest()
+    if (
+        external_source_sha256 is not None
+        and candidate_source_sha256 != external_source_sha256
+    ):
+        raise typer.BadParameter(
+            "candidate source bytes differ from the external source bytes"
+        )
     _emit_agent_artifact(
         artifact.candidate_id,
         artifact.path,
@@ -1693,6 +1792,7 @@ def agent_propose_factor(
                 "path": str(artifact.path),
                 "metadata_path": str(artifact.metadata_path),
                 "manifest_digest": artifact.manifest_digest,
+                "source_sha256": candidate_source_sha256,
             }
         )
 
@@ -1809,7 +1909,7 @@ def agent_list_candidates(
         ),
     ] = None,
 ) -> None:
-    """List candidate artifacts and their review status."""
+    """List diagnostic candidate evidence without emitting review authority."""
     active_agent_root = resolve_agent_output_dir(agent_output_dir)
     candidates = AgentRunner(agent_output_dir=active_agent_root).list_candidates()
     if not candidates:
@@ -1831,12 +1931,9 @@ def agent_list_candidates(
             if candidate.get("status") == "pending" and candidate.get(
                 "approval_enabled"
             ):
-                parts.append(
-                    "approve_cmd="
-                    f"agent review --candidate-id {candidate['candidate_id']} "
-                    f"--decision approve --expected-digest {candidate['manifest_digest']} "
-                    f"--expected-status pending --note \"<note>\""
-                )
+                # Listing is evidence only. In particular, do not create a
+                # copyable raw Gate-2 command that bypasses HQA Scene-B Gate 1.
+                parts.append("review_authority=withheld_use_exact_detail")
         elif integrity == "migration_required":
             observed = candidate.get("observed_manifest_digest")
             if observed:
@@ -1845,6 +1942,76 @@ def agent_list_candidates(
         # corrupt: intentionally no digest/source fields
         parts.append(f"path={path}")
         typer.echo(" ".join(parts))
+
+
+@agent_app.command("inspect-factor-candidate")
+def agent_inspect_factor_candidate(
+    candidate_id: Annotated[
+        str,
+        typer.Option("--candidate-id", help="Verified candidate id to inspect."),
+    ],
+    expected_manifest_digest: Annotated[
+        str | None,
+        typer.Option(
+            "--expected-digest",
+            help="Optional exact digest to compare before returning the bundle.",
+        ),
+    ] = None,
+    agent_output_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-output-dir",
+            help="Agent artifact output root containing the candidate pool.",
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Append a machine-readable JSON bundle."),
+    ] = False,
+) -> None:
+    """Inspect source and identity from one verified snapshot without compiling it."""
+    from quant_system.agent.candidate_manifest import (
+        CandidateIntegrityError,
+        CandidateStaleError,
+    )
+
+    try:
+        bundle = inspect_factor_candidate(
+            agent_output_dir=resolve_agent_output_dir(agent_output_dir),
+            candidate_id=candidate_id,
+            expected_manifest_digest=expected_manifest_digest,
+        )
+    except (
+        CandidateIntegrityError,
+        CandidateLoadError,
+        CandidateStaleError,
+        OSError,
+        UnicodeDecodeError,
+    ) as exc:
+        typer.echo(f"candidate_inspect_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        " ".join(
+            [
+                f"candidate_id={bundle.candidate_id}",
+                f"manifest_digest={bundle.manifest_digest}",
+                f"factor_id={bundle.factor_id}",
+                f"approval_binding={bundle.approval_binding}",
+                f"source_path={bundle.source_path}",
+            ]
+        )
+    )
+    if json_output:
+        _emit_json(
+            {
+                "candidate_id": bundle.candidate_id,
+                "manifest_digest": bundle.manifest_digest,
+                "factor_id": bundle.factor_id,
+                "approval_binding": bundle.approval_binding,
+                "source_path": str(bundle.source_path),
+                "source": bundle.source,
+            }
+        )
 
 
 @agent_app.command("review")
@@ -3039,7 +3206,7 @@ def _emit_agent_artifact(
         parts.append(f"manifest_digest={manifest_digest}")
         parts.append(
             "approve_cmd="
-            f"agent review --candidate-id {candidate_id} "
+            f"quant-system agent review --candidate-id {candidate_id} "
             f"--decision approve --expected-digest {manifest_digest} "
             f'--expected-status pending --note "<note>"'
         )

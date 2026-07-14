@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentCandidatesResponse } from "@/lib/api";
-import { buildHermesTodayModel } from "./viewModel";
+import { buildHermesTodayModel, pickLatestAutomation } from "./viewModel";
 import {
   candidateFixture,
   degradedArtifacts,
@@ -9,6 +9,46 @@ import {
 } from "./viewModelFixtures";
 
 describe("buildHermesTodayModel", () => {
+  it("orders mixed-offset artifact timestamps by their actual instant", () => {
+    const automation = healthyArtifacts.items.find(
+      (item) => item.kind === "automation_status",
+    );
+    const weekly = healthyArtifacts.items.find(
+      (item) => item.kind === "weekly_review",
+    );
+    if (!automation || !weekly) throw new Error("fixture is incomplete");
+
+    const olderAutomation = {
+      ...automation,
+      id: "automation-older-offset",
+      occurred_at: "2026-07-14T10:00:00+08:00",
+    };
+    const newerAutomation = {
+      ...automation,
+      id: "automation-newer-z",
+      occurred_at: "2026-07-14T03:00:00Z",
+    };
+    expect(
+      pickLatestAutomation([olderAutomation, newerAutomation])?.id,
+    ).toBe("automation-newer-z");
+
+    const model = buildHermesTodayModel({
+      artifacts: {
+        ...healthyArtifacts,
+        items: [
+          { ...weekly, id: "result-older-offset", occurred_at: "2026-07-14T10:00:00+08:00" },
+          { ...weekly, id: "result-newer-z", occurred_at: "2026-07-14T03:00:00Z" },
+          newerAutomation,
+        ],
+      },
+      candidates: { candidates: [] },
+    });
+    expect(model.recentResults.map((item) => item.id)).toEqual([
+      "result-newer-z",
+      "result-older-offset",
+    ]);
+  });
+
   it("compresses healthy automation to one summary and emits no normal job cards", () => {
     const model = buildHermesTodayModel({
       artifacts: healthyArtifacts,
@@ -22,6 +62,24 @@ describe("buildHermesTodayModel", () => {
     });
     expect(model.attention).toEqual([]);
     expect(model.state).toBe("normal");
+  });
+
+  it("degrades Today when the candidate endpoint fails independently", () => {
+    const model = buildHermesTodayModel({
+      artifacts: healthyArtifacts,
+      candidates: {
+        candidates: [],
+        apiError: "503: candidate repository unavailable",
+      },
+    });
+
+    expect(model.state).toBe("degraded");
+    expect(model.attention).toContainEqual({
+      id: "candidate-feed",
+      kind: "degraded",
+      title: "Candidate source unavailable",
+      summary: "503: candidate repository unavailable",
+    });
   });
 
   it("keeps normal posture when the only attention is a verified research approval", () => {
@@ -80,18 +138,38 @@ describe("buildHermesTodayModel", () => {
   });
 
   it("distinguishes empty feed from unavailable Hermes sources", () => {
-    expect(
-      buildHermesTodayModel({
-        artifacts: noArtifacts("empty"),
-        candidates: { candidates: [] },
-      }).state,
-    ).toBe("empty");
+    const empty = buildHermesTodayModel({
+      artifacts: noArtifacts("empty"),
+      candidates: { candidates: [] },
+    });
+    expect(empty.state).toBe("empty");
+    expect(empty.automation).toMatchObject({
+      healthy: 0,
+      total: 4,
+      status: "unavailable",
+    });
     expect(
       buildHermesTodayModel({
         artifacts: noArtifacts("unavailable"),
         candidates: { candidates: [] },
       }).state,
     ).toBe("offline");
+  });
+
+  it("degrades an available feed that is missing its automation artifact", () => {
+    const artifacts = {
+      ...healthyArtifacts,
+      items: healthyArtifacts.items.filter(
+        (item) => item.kind !== "automation_status",
+      ),
+    };
+    const model = buildHermesTodayModel({
+      artifacts,
+      candidates: { candidates: [] },
+    });
+
+    expect(model.automation.status).toBe("unavailable");
+    expect(model.state).toBe("degraded");
   });
 
   it("shows unversioned candidates as migration attention, never approval", () => {
@@ -118,5 +196,35 @@ describe("buildHermesTodayModel", () => {
     expect(model.attention).toEqual([
       expect.objectContaining({ kind: "degraded", id: "legacy-pending" }),
     ]);
+  });
+
+  it("surfaces a corrupt candidate's stable integrity reason", () => {
+    const model = buildHermesTodayModel({
+      artifacts: healthyArtifacts,
+      candidates: {
+        candidates: [
+          candidateFixture({
+            candidate_id: "corrupt-candidate",
+            artifact_type: null,
+            goal: null,
+            universe: null,
+            status: null,
+            integrity_state: "corrupt",
+            manifest_digest: null,
+            observed_manifest_digest: null,
+            approval_binding: null,
+            approval_enabled: false,
+            integrity_error_code: "manifest_digest_mismatch",
+          }),
+        ],
+      } satisfies AgentCandidatesResponse,
+    });
+
+    expect(model.attention).toContainEqual({
+      id: "corrupt-candidate",
+      kind: "degraded",
+      title: "Candidate integrity failed",
+      summary: "manifest_digest_mismatch",
+    });
   });
 });

@@ -50,6 +50,22 @@ def _write_stored_manifest(candidate: Path) -> tuple[object, str]:
     return manifest, digest
 
 
+def _review_lock(
+    *, candidate_id: str, manifest_digest: str, decision: str = "approve"
+) -> bytes:
+    return canonical_json_bytes(
+        {
+            "schema_version": "1.0",
+            "candidate_id": candidate_id,
+            "decision": decision,
+            "manifest_digest": manifest_digest,
+            "note": "reviewed",
+            "reviewer": "manual",
+            "created_at": "2026-07-14T00:00:00Z",
+        }
+    )
+
+
 @pytest.mark.parametrize(
     "bad_id",
     [
@@ -217,6 +233,19 @@ def test_verify_accepts_matching_stored_manifest(tmp_path: Path) -> None:
     assert snapshot.manifest_digest == digest
     assert snapshot.artifact_bytes["z.py.candidate"] == b"Z\r\n"
     assert snapshot.approval_binding == "pending"
+
+
+def test_verify_rejects_noncanonical_stored_manifest_bytes(tmp_path: Path) -> None:
+    candidate = tmp_path / "factor-safe-1"
+    _candidate(candidate)
+    manifest, _digest = _write_stored_manifest(candidate)
+    (candidate / "manifest.v1.json").write_text(
+        json.dumps(manifest.model_dump(mode="json"), indent=2),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CandidateIntegrityError, match="canonical"):
+        verify_candidate_directory(candidate)
 
 
 def test_symlinked_candidate_directory_rejected(tmp_path: Path) -> None:
@@ -434,22 +463,32 @@ def test_approved_lock_requires_matching_id_and_digest(tmp_path: Path) -> None:
     assert snapshot.approval_binding == "legacy_unbound"
 
     # Matching ID + exact current digest authorizes.
-    (candidate / "approved.lock").write_text(
-        json.dumps(
-            {
-                "schema_version": "1.0",
-                "candidate_id": "factor-safe-1",
-                "manifest_digest": digest,
-                "note": "ok",
-            }
-        ),
-        encoding="utf-8",
+    (candidate / "approved.lock").write_bytes(
+        _review_lock(candidate_id="factor-safe-1", manifest_digest=digest)
     )
     snapshot = verify_candidate_directory(candidate)
     assert snapshot.approval_binding == "approved"
     assert snapshot.review_record is not None
     assert snapshot.review_record.candidate_id == "factor-safe-1"
     assert snapshot.review_record.decision == "approve"
+
+
+def test_approved_lock_rejects_mismatched_embedded_decision(tmp_path: Path) -> None:
+    candidate = tmp_path / "factor-safe-1"
+    _candidate(candidate)
+    _manifest, digest = _write_stored_manifest(candidate)
+    (candidate / "approved.lock").write_bytes(
+        _review_lock(
+            candidate_id="factor-safe-1",
+            manifest_digest=digest,
+            decision="reject",
+        )
+    )
+
+    snapshot = verify_candidate_directory(candidate)
+
+    assert snapshot.approval_binding == "legacy_unbound"
+    assert snapshot.review_record is None
 
 
 def test_candidates_root_rename_after_open_never_reads_replacement(

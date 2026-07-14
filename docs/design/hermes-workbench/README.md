@@ -18,7 +18,7 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 | F0/F1 platform token rebind | **landed 2026-07-13** | F0/F1 CSS tokens aligned to QUANTUM_CORE (`globals.css`): warm terminal surfaces, info-blue primary CTAs, warning yellow for safety/warn only, Hermes purple brand/focus only. |
 | F0 independent review | **completed 2026-07-13** | UX pass/fail recorded below (pre-polish). Package was Ready for user selection; user chose A for craft pass. |
 | F1 clickable prototype | **approved 2026-07-13** | Craft accepted with platform token rebind. Full-state catalogs + walkthrough under `f1/`. Density + full-width desk retained. |
-| F2 production shell | **code-delivered 2026-07-14** | Read-only Hermes shell, Today hierarchy, Tasks/Approvals/Results, reversible root→Hermes cutover, hard-off chat/execution/unifiedResults/legacyRedirects, static `blocked_in_this_slice`. Chat/approve UI still closed. |
+| F2 production shell | **code-delivered 2026-07-14** | Read-only Hermes shell, Today hierarchy, Tasks/Approvals/Results, reversible root→Hermes cutover, hard-off chat/execution/unifiedResults/legacyRedirects, static `blocked_in_this_slice`. Tasks/Results distinguish unavailable/degraded/corrupt from a genuine empty feed. Chat/approve UI still closed. |
 
 ### F0 decision
 
@@ -67,6 +67,7 @@ No purple atmosphere. Warning yellow is not used as Submit/primary fill.
 - hard-off: `chat` / `execution` / `unifiedResults` / `legacyRedirects` are literal `false` (env=true ineffective)
 - capability notice: static `blocked_in_this_slice` (no platform capability-contract getter/route in this wave)
 - old four research pages retained pending later parity; no mutation path under Hermes F2 surfaces
+- Tasks/Results never translate an unavailable, degraded, corrupt, or API-error artifact feed into a healthy empty state; they expose the source reason and reserve empty copy for a verified empty feed
 
 ---
 
@@ -104,7 +105,7 @@ Responsive behavior uses **real CSS breakpoints** (not whole-UI `transform: scal
 
 ---
 
-## F1 full-state prototype (draft)
+## F1 full-state prototype (approved reference)
 
 Local-only clickable package (no production imports, no network beyond the static server):
 
@@ -123,7 +124,7 @@ Walkthrough (review chrome):
 
 Visible **prototype data** badge sits outside product chrome. Composer never submits. Catalogs load only via `fetch("./states/*.json")`.
 
-### F1 review (implementer self-check — independent reviewer TBD)
+### F1 review (implementer self-check; independent review recorded below)
 
 ```markdown
 ## F1 review
@@ -190,8 +191,11 @@ Full write-up: Hermes-quant-agent `.superpowers/sdd/frontend-task-1-ux-review.md
 | Automation compression | Pass | Pass | Pass | never four equal healthy cards |
 | Direction identity (A/B/C distinct) | Pass | Pass | Pass | action-status / change-progress / conversation-result |
 
-**Outcome:** **Ready for user selection** — A Pass · B Pass with mobile S5 caveat · C Pass.  
-**Not approved.** No direction selected. F0 decision section stays empty until written user choice.
+**Historical pre-selection outcome:** **Ready for user selection** — A Pass · B
+Pass with mobile S5 caveat · C Pass. The later written decision selected
+direction A and approved F1 after the platform-token rebind; see the Status,
+F0 decision, and F1 decision sections above. This table remains the independent
+review evidence, not the current approval state.
 
 ---
 

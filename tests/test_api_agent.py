@@ -37,6 +37,37 @@ def test_agent_api_uses_injected_agent_output_dir_not_general_data_dir(tmp_path)
     assert not (general / "agent" / "candidates").exists()
 
 
+def test_agent_candidate_repository_root_failure_is_503_not_empty(tmp_path) -> None:
+    agent = tmp_path / "agent-output"
+    pool = CandidatePool(agent)
+    pool.candidates_dir.parent.mkdir(parents=True)
+    external = tmp_path / "external-candidates"
+    external.mkdir()
+    pool.candidates_dir.symlink_to(external, target_is_directory=True)
+    client = TestClient(create_app(agent_output_dir=agent))
+
+    response = client.get("/api/agent/candidates")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == {
+        "code": "candidate_repository_unavailable",
+        "resource": "agent_candidates",
+    }
+
+
+def test_agent_dangling_candidate_root_is_503_not_empty(tmp_path) -> None:
+    agent = tmp_path / "agent-output"
+    pool = CandidatePool(agent)
+    pool.candidates_dir.parent.mkdir(parents=True)
+    pool.candidates_dir.symlink_to(tmp_path / "missing-target", target_is_directory=True)
+    client = TestClient(create_app(agent_output_dir=agent))
+
+    response = client.get("/api/agent/candidates")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "candidate_repository_unavailable"
+
+
 def test_agent_task_writes_candidate_and_audit_only_to_injected_agent_root(
     tmp_path, monkeypatch
 ) -> None:

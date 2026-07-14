@@ -55,9 +55,12 @@ data/                     Local cache, fixtures, generated research outputs.
 - The active cross-repo roadmap lives in
   `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`.
 - HQA Slices 9A-9G, the read-only mini 9H artifact shelf, and full 9H
-  automation/notifications are delivered. There is no selected next slice;
-  future frontend backlog work needs a new product decision and an independent
-  bite-sized plan. Slice 9E lives in HQA and reuses Slice 9D's price seam. Slice 9D's
+  automation/notifications are delivered. The first D-31 wave is also delivered:
+  a fail-closed Hermes gateway capability contract, candidate integrity/scoped
+  Gate 3, and a professional read-only Hermes default shell. Real Hermes chat
+  and provider evidence, Hermes approval mutations, unified-results parity, and
+  legacy-page retirement remain blocked and require later independent plans.
+  Slice 9E lives in HQA and reuses Slice 9D's price seam. Slice 9D's
   `data prices` seam is strictly read-only Futu/QFQ/1d JSON, capped at 25
   symbols and 500 calendar days, with no sample/local/Tiingo/Longbridge
   fallback. The platform 2026-07-08 frontend plan is the Slice 0-8 record and
@@ -93,17 +96,33 @@ data/                     Local cache, fixtures, generated research outputs.
   non-empty note. HQA must pass human-supplied
   `candidate-id + expected-digest + expected-status=pending + note` and must
   never refetch/substitute observed values during approve.
+- Scene-B Gate 1 is enforced in HQA, not inferred from a platform review: HQA
+  persists the exact reviewed source digest/confirmation and binds it to the
+  returned candidate ID plus manifest digest before its Gate 2 caller can
+  approve. External source ingestion reads binary bytes, round-trips them
+  unchanged into the candidate, and returns a verified `source_sha256` that HQA
+  must match before binding. The raw platform review API is a Gate 2 primitive
+  only; `agent list-candidates` is diagnostic and emits no approval command.
 - Gate 3 public prepare requires `--candidate-id`, `--expected-digest`, and
   `--base-commit`; stdout is the four-field
   `{promotion_id, worktree, patch, manifest}` payload. Status/cleanup locate
   state only by `--promotion-id`; destructive cleanup needs durable reviewed-
   commit evidence or explicit `--abandon`. Prepare materializes only into an
   isolated managed review worktree and never commits, merges, pushes, or
-  mutates unrelated main-worktree dirt.
-- Future frontend convergence should fold `/factor-lab` and `/agent-studio`
-  into the Hermes workbench while preserving approval UI and removing platform
-  LLM/task-running affordances. New Hermes workbench approval UI stays disabled
-  until the professional frontend/bridge gates land.
+  mutates unrelated main-worktree dirt. Active status must safe-read and hash
+  the prepared patch, re-attest the exact three-file bytes/modes/dirty set/Git
+  diff, and return manifest/patch/candidate/base/path provenance. A drifted
+  prepared workspace is never reported as awaiting human commit.
+- Experiment runs allocate `<name>-<UTC microseconds>-<12hex>` identities and
+  atomically reserve both experiment and report directories. Collision means
+  retry, never reuse or overwrite. Scene-B receipts must bind persisted config,
+  summary and report to that unique namespace and reject synthetic providers.
+- Later frontend convergence should fold `/factor-lab`, `/backtest`,
+  `/experiments`, and `/agent-studio` into the Hermes workbench only after
+  approval and result-evidence parity. The delivered Hermes Approvals surface
+  is read-only; mutations stay disabled until a bridge/approval plan lands.
+  The retained `/agent-studio` route is also read-only candidate inspection:
+  it must not mount `AgentTaskForm` or expose task/review controls.
 
 
 ## Core Engineering Rules
@@ -167,12 +186,19 @@ data/                     Local cache, fixtures, generated research outputs.
   archived inputs, not executable instructions.
 - `lib/navConfig.ts` is the navigation route/order source of truth. Keep copy
   localized in the rendering components unless the active plan changes it.
-- `/hermes` is a read-only artifact shelf backed by `GET /api/hermes/artifacts`.
-  It renders risk, prediction, foresight, weekly, opportunity, and automation
-  artifacts; there is no `POST /api/agent/tasks`, fake async job, or enabled
-  composer.
-- Keep `/factor-lab` and `/agent-studio` until approval and evidence parity is
-  proven; do not add early redirects or delete deep links.
+- `/hermes` is the reversible default read-only COO workbench backed by
+  `GET /api/hermes/artifacts` and the candidate read API. It renders Today,
+  Tasks, Approvals, Results, risk, prediction, foresight, weekly, opportunity,
+  and automation facts; there is no `POST /api/agent/tasks`, fake async job,
+  approval mutation, or enabled composer.
+- “Read-only AI news” means no research/trading/account mutation; successful
+  AI HOT GETs intentionally best-effort update the optional news item/fetch
+  cache. `/brief` live rendering may therefore contact AI HOT and write cache
+  rows even though it never creates a brief snapshot without the explicit save
+  action.
+- Keep `/factor-lab` and the read-only `/agent-studio` inspection route until
+  approval and evidence parity is proven; do not add early redirects or delete
+  deep links, and do not restore legacy Agent Studio mutations.
 - Server reads use the existing `lib/api.ts` pattern; client mutations use
   `lib/apiClient.ts` / TanStack Query. Preserve additive API compatibility.
 

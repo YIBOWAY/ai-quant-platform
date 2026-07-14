@@ -132,7 +132,8 @@ function canReview(detail: AgentCandidateDetailResponse | undefined): detail is 
   if (!detail) return false;
   if (detail.approval_enabled !== true) return false;
   if (detail.status !== "pending") return false;
-  if (detail.integrity_state && detail.integrity_state !== "verified") return false;
+  if (detail.integrity_state !== "verified") return false;
+  if (detail.approval_binding !== "pending") return false;
   const digest = detail.manifest_digest;
   return typeof digest === "string" && /^[0-9a-f]{64}$/.test(digest);
 }
@@ -205,7 +206,7 @@ function ReviewDialog({
     <>
       <TerminalToolbarButton
         className="h-9 flex-1"
-        disabled={!isHydrated || candidate.approval_enabled === false}
+        disabled={!isHydrated || candidate.approval_enabled !== true}
         onClick={() => setOpen(true)}
         tone={decision === "approve" ? "info" : "danger"}
       >
@@ -323,17 +324,17 @@ export function AgentTaskForm({ candidates, locale = "en" }: { candidates: Candi
     candidates.find(
       (candidate) =>
         candidate.status === "pending" &&
-        candidate.approval_enabled !== false &&
-        (candidate.integrity_state == null || candidate.integrity_state === "verified"),
+        candidate.approval_enabled === true &&
+        candidate.integrity_state === "verified",
     ) ??
     candidates.find((candidate) => candidate.status === "pending") ??
     candidates[0];
   const runTask = form.handleSubmit((values) => mutation.mutate(values));
   const reviewAllowed =
     Boolean(firstPending) &&
-    firstPending.approval_enabled !== false &&
+    firstPending.approval_enabled === true &&
     firstPending.status === "pending" &&
-    (firstPending.integrity_state == null || firstPending.integrity_state === "verified");
+    firstPending.integrity_state === "verified";
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">

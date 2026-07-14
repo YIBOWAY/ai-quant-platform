@@ -36,6 +36,14 @@ class WalkForwardConfig(BaseModel):
     step_bars: int = Field(default=20, gt=0)
 
 
+class CandidateResearchBinding(BaseModel):
+    """Exact candidate snapshot executed by a one-shot research experiment."""
+
+    candidate_id: str
+    manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    factor_id: str
+
+
 class ExperimentConfig(BaseModel):
     experiment_name: str = "phase4-experiment"
     symbols: list[str]
@@ -46,6 +54,7 @@ class ExperimentConfig(BaseModel):
     slippage_bps: float = Field(default=5.0, ge=0)
     target_gross_exposure: float = Field(default=1.0, ge=0)
     factor_blend: FactorBlendConfig
+    candidate_binding: CandidateResearchBinding | None = None
     sweep: dict[str, list[int | float | str]] = Field(default_factory=dict)
     walk_forward: WalkForwardConfig = Field(default_factory=WalkForwardConfig)
 

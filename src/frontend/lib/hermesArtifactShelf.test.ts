@@ -3,6 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ArtifactShelf, HermesTodayView } from "@/components/hermes";
+import {
+  ArtifactFeed,
+  artifactFeedReadState,
+} from "@/components/hermes/artifacts/ArtifactFeed";
 import type { HermesArtifactShelfEnvelope } from "./api";
 import { buildHermesTodayModel } from "./hermes/viewModel";
 import {
@@ -160,6 +164,67 @@ describe("Hermes Today hierarchy", () => {
 });
 
 describe("Hermes artifact shelf", () => {
+  it("treats api errors and corrupt runtime status as unavailable truth states", () => {
+    const apiFailedShelf = {
+      ...availableShelf,
+      read_status: "empty",
+      items: [],
+      sources: [],
+      warnings: [],
+      apiError: "503: artifact feed unavailable",
+    } satisfies HermesArtifactShelfEnvelope;
+    const corruptShelf = {
+      ...availableShelf,
+      read_status: "corrupt",
+      items: [],
+      warnings: [{ source: "prediction", code: "ledger_corrupt" }],
+    } as unknown as HermesArtifactShelfEnvelope;
+
+    expect(artifactFeedReadState(apiFailedShelf)).toBe("unavailable");
+    expect(artifactFeedReadState(corruptShelf)).toBe("unavailable");
+
+    const apiFailedMarkup = renderToStaticMarkup(
+      createElement(ArtifactFeed, { envelope: apiFailedShelf, locale: "en" }),
+    );
+    const corruptMarkup = renderToStaticMarkup(
+      createElement(ArtifactFeed, { envelope: corruptShelf, locale: "en" }),
+    );
+
+    expect(apiFailedMarkup).toContain("Artifacts unavailable");
+    expect(apiFailedMarkup).toContain("503: artifact feed unavailable");
+    expect(apiFailedMarkup).not.toContain("No research artifacts yet");
+    expect(corruptMarkup).toContain("Artifacts unavailable");
+    expect(corruptMarkup).toContain("prediction · ledger_corrupt");
+    expect(corruptMarkup).not.toContain("No research artifacts yet");
+  });
+
+  it("fails closed when read_status is unknown or missing at runtime", () => {
+    const unknownShelf = {
+      ...availableShelf,
+      read_status: "failed",
+      items: [],
+      warnings: [],
+    } as unknown as HermesArtifactShelfEnvelope;
+    const missingShelf = {
+      ...availableShelf,
+      items: [],
+      warnings: [],
+    } as unknown as HermesArtifactShelfEnvelope;
+    delete (missingShelf as { read_status?: string }).read_status;
+
+    expect(artifactFeedReadState(unknownShelf)).toBe("unavailable");
+    expect(artifactFeedReadState(missingShelf)).toBe("unavailable");
+
+    for (const envelope of [unknownShelf, missingShelf]) {
+      const markup = renderToStaticMarkup(
+        createElement(ArtifactFeed, { envelope, locale: "en" }),
+      );
+      expect(markup).toContain("Artifacts unavailable");
+      expect(markup).toContain("artifact_feed · read_status_invalid");
+      expect(markup).not.toContain("No research artifacts yet");
+    }
+  });
+
   it("renders schema 1.1 weekly, opportunity, and degraded automation cards explicitly", () => {
     const automationShelf = {
       schema_version: "1.1",

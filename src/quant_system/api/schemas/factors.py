@@ -11,13 +11,13 @@ from quant_system.universe.registry import UniverseDefinition
 class FactorCatalogItem(FactorMetadata):
     """Factor metadata plus catalog provenance.
 
-    ``origin`` is additive and always present: ``builtin`` for example factors,
-    ``promoted`` for code-reviewed promoted-library factors, ``candidate`` for
-    human-approved agent candidates surfaced only when
-    ``GET /factors?include_candidates=true``.
+    ``origin`` is additive and always present: ``builtin`` for example factors
+    and ``promoted`` for code-reviewed promoted-library factors. Candidate
+    source is never imported by the catalog GET; exact candidate research is a
+    separate CLI-only flow bound to candidate ID plus manifest digest.
     """
 
-    origin: Literal["builtin", "promoted", "candidate"]
+    origin: Literal["builtin", "promoted"]
 
 
 class FactorCatalogResponse(BaseModel):

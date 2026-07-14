@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
 from quant_system.api.routes import news as news_routes
@@ -70,6 +72,15 @@ class FakeAiHotClient:
             ],
             warnings=[],
         )
+
+
+def test_default_daily_cache_date_uses_asia_shanghai_boundary() -> None:
+    assert news_routes._current_brief_date(
+        datetime(2026, 7, 13, 15, 59, 59, tzinfo=UTC)
+    ) == "2026-07-13"
+    assert news_routes._current_brief_date(
+        datetime(2026, 7, 13, 16, 0, 0, tzinfo=UTC)
+    ) == "2026-07-14"
 
 
 def test_aihot_items_route_returns_research_only_payload(tmp_path, monkeypatch) -> None:

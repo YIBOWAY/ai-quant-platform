@@ -35,11 +35,11 @@ python -m quant_system.cli experiment run-sample --symbol SPY --symbol AAPL --sy
 
 成功后会生成：
 
-- `data/phase4_sample/experiments/experiment_config.json`
-- `data/phase4_sample/experiments/experiment_runs.parquet`
-- `data/phase4_sample/experiments/walk_forward_folds.parquet`
-- `data/phase4_sample/experiments/agent_summary.json`
-- `data/phase4_sample/reports/experiment_comparison_report.md`
+- `data/phase4_sample/experiments/<sanitized-experiment-id>/experiment_config.json`
+- `data/phase4_sample/experiments/<sanitized-experiment-id>/experiment_runs.parquet`
+- `data/phase4_sample/experiments/<sanitized-experiment-id>/walk_forward_folds.parquet`
+- `data/phase4_sample/experiments/<sanitized-experiment-id>/agent_summary.json`
+- `data/phase4_sample/reports/<sanitized-experiment-id>/experiment_comparison_report.md`
 - `data/phase4_sample/quant_system.duckdb`
 
 ## JSON 配置示例
@@ -82,18 +82,22 @@ python -m quant_system.cli experiment run-sample --symbol SPY --symbol AAPL --sy
 python -m quant_system.cli experiment run-config --config configs/phase4_experiment.json --output-dir data/phase4_config_run
 ```
 
-若需要把人工批准的 Agent 候选因子纳入实验注册表，显式开启候选加载：
+若需要把一个人工批准的 Agent 候选因子用于一次性研究，必须显式绑定 exact ID 与
+manifest digest（不会批量加载候选）：
 
 ```powershell
-python -m quant_system.cli experiment run-config --config configs/phase4_experiment.json --include-approved-candidates
+python -m quant_system.cli experiment run-config --config configs/phase4_experiment.json --provider futu --candidate-id <candidate-id> --expected-digest <64-char-sha256>
 ```
 
-默认候选目录为 `data/agent_run/agent/candidates`。如果候选由非默认
-Agent 输出目录生成，可传入：
+默认候选目录为 repo-anchored `data/agent_run/agent/candidates`。如果候选由非默认
+Agent output root 生成，只能传 root（系统仍规范化到其 `agent/candidates`）：
 
 ```powershell
-python -m quant_system.cli experiment run-config --config configs/phase4_experiment.json --include-approved-candidates --candidates-dir data/custom_agent/agent/candidates
+python -m quant_system.cli experiment run-config --config configs/phase4_experiment.json --provider futu --candidate-id <candidate-id> --expected-digest <64-char-sha256> --agent-output-dir data/custom_agent
 ```
+
+每次调用会创建带微秒 UTC 时间戳和 12 位随机后缀的唯一实验 ID，并原子预留
+experiment/report 两个目录；ID 碰撞会重试，不会覆盖已有实验。
 
 ## 测试步骤
 

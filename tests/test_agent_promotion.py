@@ -11,7 +11,10 @@ from quant_system.agent.candidate_manifest import (
     canonical_json_bytes,
 )
 from quant_system.agent.candidate_pool import CandidatePool
-from quant_system.agent.promotion import CandidateLoadError, load_approved_factor_candidates
+from quant_system.agent.promotion import (
+    CandidateLoadError,
+    load_approved_factor_candidate,
+)
 from quant_system.factors.registry import build_default_factor_registry
 
 _FACTOR_SRC = '''
@@ -90,20 +93,195 @@ def _write_candidate(agent_root, candidate_id, source, approved):
     return digest
 
 
-def test_loads_only_approved_candidates(tmp_path):
-    _write_candidate(tmp_path, "cand-approved", _FACTOR_SRC, approved=True)
+def _load_exact_for_test(registry, *, agent_output_dir, candidate_id, digest):
+    """Exercise the production exact-ID/digest loader in safety-focused tests."""
+    return load_approved_factor_candidate(
+        registry,
+        agent_output_dir=agent_output_dir,
+        candidate_id=candidate_id,
+        expected_manifest_digest=digest,
+    )
+
+
+def test_exact_loader_refuses_pending_candidate(tmp_path):
+    digest = _write_candidate(tmp_path, "cand-pending", _FACTOR_SRC, approved=False)
+    registry = build_default_factor_registry()
+
+    with pytest.raises(CandidateLoadError, match="not approved"):
+        _load_exact_for_test(
+            registry,
+            agent_output_dir=tmp_path,
+            candidate_id="cand-pending",
+            digest=digest,
+        )
+
+    assert "wiring_test_factor" not in registry.factor_ids()
+
+
+def test_exact_loader_uses_only_the_requested_approved_snapshot(tmp_path) -> None:
+    from quant_system.agent import promotion
+
+    digest = _write_candidate(
+        tmp_path,
+        "cand-requested",
+        _FACTOR_SRC,
+        approved=True,
+    )
     _write_candidate(
         tmp_path,
-        "cand-pending",
-        _FACTOR_SRC.replace("wiring_test_factor", "other_id"),
-        approved=False,
+        "cand-unrelated",
+        "import subprocess\n" + _FACTOR_SRC.replace(
+            "wiring_test_factor", "unrelated_factor"
+        ),
+        approved=True,
     )
     registry = build_default_factor_registry()
-    loaded = load_approved_factor_candidates(registry, agent_output_dir=tmp_path)
-    assert loaded == ["wiring_test_factor"]
-    assert registry.create("wiring_test_factor") is not None
-    with pytest.raises(KeyError):
-        registry.create("other_id")
+
+    binding = promotion.load_approved_factor_candidate(
+        registry,
+        agent_output_dir=tmp_path,
+        candidate_id="cand-requested",
+        expected_manifest_digest=digest,
+    )
+
+    assert binding.candidate_id == "cand-requested"
+    assert binding.manifest_digest == digest
+    assert binding.factor_id == "wiring_test_factor"
+    assert "wiring_test_factor" in registry.factor_ids()
+    assert "unrelated_factor" not in registry.factor_ids()
+
+
+def test_exact_loader_refuses_a_stale_expected_digest_before_registration(
+    tmp_path,
+) -> None:
+    from quant_system.agent import promotion
+    from quant_system.agent.candidate_manifest import CandidateStaleError
+
+    _write_candidate(tmp_path, "cand-stale", _FACTOR_SRC, approved=True)
+    registry = build_default_factor_registry()
+
+    with pytest.raises(CandidateStaleError, match="digest"):
+        promotion.load_approved_factor_candidate(
+            registry,
+            agent_output_dir=tmp_path,
+            candidate_id="cand-stale",
+            expected_manifest_digest="0" * 64,
+        )
+
+    assert "wiring_test_factor" not in registry.factor_ids()
+
+
+def test_exact_loader_rejects_builtin_factor_id_collision(tmp_path) -> None:
+    from quant_system.agent import promotion
+
+    digest = _write_candidate(
+        tmp_path,
+        "cand-builtin-collision",
+        _FACTOR_SRC.replace("wiring_test_factor", "momentum"),
+        approved=True,
+    )
+    registry = build_default_factor_registry()
+
+    with pytest.raises(
+        CandidateLoadError,
+        match="factor_id 'momentum'.*builtin",
+    ):
+        promotion.load_approved_factor_candidate(
+            registry,
+            agent_output_dir=tmp_path,
+            candidate_id="cand-builtin-collision",
+            expected_manifest_digest=digest,
+        )
+
+    assert registry.origins()["momentum"] == "builtin"
+
+
+def test_exact_loader_rejects_collision_before_executing_candidate_source(
+    tmp_path, capsys
+) -> None:
+    from quant_system.agent import promotion
+
+    source = (
+        'print("candidate-source-executed")\n'
+        + _FACTOR_SRC.replace("wiring_test_factor", "momentum")
+    )
+    digest = _write_candidate(
+        tmp_path,
+        "cand-pre-exec-collision",
+        source,
+        approved=True,
+    )
+
+    with pytest.raises(CandidateLoadError, match="factor_id 'momentum'.*builtin"):
+        promotion.load_approved_factor_candidate(
+            build_default_factor_registry(),
+            agent_output_dir=tmp_path,
+            candidate_id="cand-pre-exec-collision",
+            expected_manifest_digest=digest,
+        )
+
+    assert "candidate-source-executed" not in capsys.readouterr().out
+
+
+def test_exact_loader_rejects_factor_id_owned_by_another_candidate(tmp_path) -> None:
+    from quant_system.agent import promotion
+
+    requested_digest = _write_candidate(
+        tmp_path,
+        "cand-requested-owner",
+        _FACTOR_SRC,
+        approved=True,
+    )
+    _write_candidate(
+        tmp_path,
+        "cand-other-owner",
+        _FACTOR_SRC.replace("WiringTestFactor", "OtherCandidateFactor"),
+        approved=True,
+    )
+    registry = build_default_factor_registry()
+
+    with pytest.raises(
+        CandidateLoadError,
+        match="wiring_test_factor.*cand-other-owner",
+    ):
+        promotion.load_approved_factor_candidate(
+            registry,
+            agent_output_dir=tmp_path,
+            candidate_id="cand-requested-owner",
+            expected_manifest_digest=requested_digest,
+        )
+
+    assert "wiring_test_factor" not in registry.factor_ids()
+
+
+def test_review_bundle_comes_from_one_verified_candidate_snapshot(tmp_path) -> None:
+    from quant_system.agent import promotion
+
+    digest = _write_candidate(
+        tmp_path,
+        "cand-review-bundle",
+        _FACTOR_SRC,
+        approved=False,
+    )
+
+    bundle = promotion.inspect_factor_candidate(
+        agent_output_dir=tmp_path,
+        candidate_id="cand-review-bundle",
+        expected_manifest_digest=digest,
+    )
+
+    assert bundle.candidate_id == "cand-review-bundle"
+    assert bundle.manifest_digest == digest
+    assert bundle.factor_id == "wiring_test_factor"
+    assert bundle.source == _FACTOR_SRC
+    assert bundle.source_path == (
+        tmp_path
+        / "agent"
+        / "candidates"
+        / "cand-review-bundle"
+        / "factor.py.candidate"
+    )
+    assert bundle.approval_binding == "pending"
 
 
 def test_loader_refuses_source_changed_after_digest_bound_approval(tmp_path) -> None:
@@ -129,7 +307,12 @@ def test_loader_refuses_source_changed_after_digest_bound_approval(tmp_path) -> 
 
     registry = build_default_factor_registry()
     with pytest.raises(CandidateIntegrityError):
-        load_approved_factor_candidates(registry, agent_output_dir=tmp_path)
+        _load_exact_for_test(
+            registry,
+            agent_output_dir=tmp_path,
+            candidate_id=artifact.candidate_id,
+            digest=artifact.manifest_digest,
+        )
     assert "changed_factor" not in registry.factor_ids()
     assert "safe_factor" not in registry.factor_ids()
 
@@ -158,33 +341,34 @@ def test_loader_skips_legacy_unbound_approval_without_compiling(tmp_path) -> Non
         json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8"
     )
     (cdir / "factor.py.candidate").write_text(_VALID_FACTOR_SOURCE, encoding="utf-8")
-    manifest, _digest, _ = build_candidate_manifest(cdir)
+    manifest, digest, _ = build_candidate_manifest(cdir)
     (cdir / "manifest.v1.json").write_bytes(
         canonical_json_bytes(manifest.model_dump(mode="json"))
     )
     (cdir / "approved.lock").write_text("{}", encoding="utf-8")
 
     registry = build_default_factor_registry()
-    loaded = load_approved_factor_candidates(registry, agent_output_dir=tmp_path)
-    assert loaded == []
+    with pytest.raises(CandidateLoadError, match="not approved"):
+        _load_exact_for_test(
+            registry,
+            agent_output_dir=tmp_path,
+            candidate_id="cand-legacy",
+            digest=digest,
+        )
     assert "safe_factor" not in registry.factor_ids()
-
-
-def test_duplicate_registration_is_skipped_idempotently(tmp_path):
-    _write_candidate(tmp_path, "cand-a", _FACTOR_SRC, approved=True)
-    registry = build_default_factor_registry()
-    assert load_approved_factor_candidates(registry, agent_output_dir=tmp_path) == [
-        "wiring_test_factor"
-    ]
-    assert load_approved_factor_candidates(registry, agent_output_dir=tmp_path) == []
 
 
 def test_forbidden_import_raises(tmp_path):
     bad = "import subprocess\n" + _FACTOR_SRC
-    _write_candidate(tmp_path, "cand-bad", bad, approved=True)
+    digest = _write_candidate(tmp_path, "cand-bad", bad, approved=True)
     registry = build_default_factor_registry()
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(registry, agent_output_dir=tmp_path)
+        _load_exact_for_test(
+            registry,
+            agent_output_dir=tmp_path,
+            candidate_id="cand-bad",
+            digest=digest,
+        )
 
 
 # --- Static-check robustness (adversarial review findings #1/#2/#4) ---
@@ -195,14 +379,23 @@ def test_forbidden_import_raises(tmp_path):
 # longer exposes __import__ via builtins.
 
 def _approved(tmp_path, cid, src):
-    _write_candidate(tmp_path, cid, src, approved=True)
+    return _write_candidate(tmp_path, cid, src, approved=True)
+
+
+def _load_approved_source(tmp_path, candidate_id, source, *, registry=None):
+    digest = _approved(tmp_path, candidate_id, source)
+    return _load_exact_for_test(
+        registry or build_default_factor_registry(),
+        agent_output_dir=tmp_path,
+        candidate_id=candidate_id,
+        digest=digest,
+    )
 
 
 def test_importlib_bypass_is_blocked(tmp_path):
     bad = "import importlib\n" + _FACTOR_SRC
-    _approved(tmp_path, "cand-importlib", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-importlib", bad)
 
 
 def test_dunder_import_bypass_is_blocked(tmp_path):
@@ -211,9 +404,8 @@ def test_dunder_import_bypass_is_blocked(tmp_path):
         "    def _compute_values(self, frame):",
         "    _proof = __import__('subprocess')\n    def _compute_values(self, frame):",
     )
-    _approved(tmp_path, "cand-dunder", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-dunder", bad)
 
 
 def test_eval_exec_compile_bypass_is_blocked(tmp_path):
@@ -221,17 +413,15 @@ def test_eval_exec_compile_bypass_is_blocked(tmp_path):
         "    def _compute_values(self, frame):",
         "    _x = eval('1+1')\n    def _compute_values(self, frame):",
     )
-    _approved(tmp_path, "cand-eval", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-eval", bad)
 
 
 def test_string_concat_import_is_blocked(tmp_path):
     # whitespace obfuscation: double-space between import and module
     bad = "import  subprocess\n" + _FACTOR_SRC
-    _approved(tmp_path, "cand-ws", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-ws", bad)
 
 
 def test_builtins_access_is_blocked(tmp_path):
@@ -239,9 +429,8 @@ def test_builtins_access_is_blocked(tmp_path):
         "    def _compute_values(self, frame):",
         "    _b = __builtins__\n    def _compute_values(self, frame):",
     )
-    _approved(tmp_path, "cand-builtins", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-builtins", bad)
 
 
 def test_legitimate_httpx_import_not_false_positive(tmp_path):
@@ -251,28 +440,22 @@ def test_legitimate_httpx_import_not_false_positive(tmp_path):
         "from quant_system.factors.base import BaseFactor",
         "import numpy as np\nfrom quant_system.factors.base import BaseFactor",
     )
-    _approved(tmp_path, "cand-numpy", src)
-    loaded = load_approved_factor_candidates(
-        build_default_factor_registry(),
-        agent_output_dir=tmp_path,
-    )
-    assert loaded == ["wiring_test_factor"]
+    binding = _load_approved_source(tmp_path, "cand-numpy", src)
+    assert binding.factor_id == "wiring_test_factor"
 
 
 def test_disallowed_module_import_is_blocked(tmp_path):
     # a non-allowlisted module (e.g. 'requests') is rejected even though it is
     # a clean, non-obfuscated import statement.
     bad = "import requests\n" + _FACTOR_SRC
-    _approved(tmp_path, "cand-requests", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-requests", bad)
 
 
 def test_quant_system_reexport_import_is_blocked(tmp_path):
     bad = "from quant_system.cli import os\n" + _FACTOR_SRC
-    _approved(tmp_path, "cand-reexport", bad)
     with pytest.raises(CandidateLoadError, match="quant_system.cli"):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-reexport", bad)
 
 
 # --- Dunder-gadget hardening (review finding F1 BLOCKER) ---
@@ -292,9 +475,8 @@ def test_dunder_getattribute_gadget_is_blocked(tmp_path):
         '    _p = type(BaseFactor).__getattribute__(BaseFactor, "__class__")\n'
         "    def _compute_values(self, frame):",
     )
-    _approved(tmp_path, "cand-gadget", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-gadget", bad)
 
 
 def test_dunder_attribute_access_is_blocked(tmp_path):
@@ -304,9 +486,8 @@ def test_dunder_attribute_access_is_blocked(tmp_path):
         "    def _compute_values(self, frame):",
         "    _g = (lambda: 0).__globals__\n    def _compute_values(self, frame):",
     )
-    _approved(tmp_path, "cand-globals", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-globals", bad)
 
 
 def test_dunder_string_constant_is_blocked(tmp_path):
@@ -316,9 +497,8 @@ def test_dunder_string_constant_is_blocked(tmp_path):
         "    def _compute_values(self, frame):",
         '    _name = "__subclasses__"\n    def _compute_values(self, frame):',
     )
-    _approved(tmp_path, "cand-dunderstr", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-dunderstr", bad)
 
 
 def test_super_init_still_allowed(tmp_path):
@@ -330,11 +510,8 @@ def test_super_init_still_allowed(tmp_path):
         "        super().__init__(lookback=lookback)\n"
         "    def _compute_values(self, frame):",
     )
-    _approved(tmp_path, "cand-superinit", src)
-    loaded = load_approved_factor_candidates(
-        build_default_factor_registry(), agent_output_dir=tmp_path
-    )
-    assert loaded == ["wiring_test_factor"]
+    binding = _load_approved_source(tmp_path, "cand-superinit", src)
+    assert binding.factor_id == "wiring_test_factor"
 
 
 def test_attrgetter_string_indirection_is_blocked(tmp_path):
@@ -350,9 +527,8 @@ def test_attrgetter_string_indirection_is_blocked(tmp_path):
         '    _g = operator.attrgetter("__glob" + "als__")\n'
         "    def _compute_values(self, frame):",
     )
-    _approved(tmp_path, "cand-attrgetter", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-attrgetter", bad)
 
 
 def test_methodcaller_string_indirection_is_blocked(tmp_path):
@@ -364,9 +540,8 @@ def test_methodcaller_string_indirection_is_blocked(tmp_path):
         '    _m = methodcaller("__reduce" + "__")\n'
         "    def _compute_values(self, frame):",
     )
-    _approved(tmp_path, "cand-methodcaller", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-methodcaller", bad)
 
 
 # --- Re-export RCE class (adversarial re-review: BLOCKER + MAJOR) ---
@@ -387,9 +562,8 @@ def test_numpy_os_reexport_chain_is_blocked(tmp_path):
         "    def _compute_values(self, frame):",
         '    _x = np.ctypeslib.os\n    def _compute_values(self, frame):',
     )
-    _approved(tmp_path, "cand-npos", bad)
     with pytest.raises(CandidateLoadError, match="os"):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-npos", bad)
 
 
 def test_pandas_subprocess_reexport_chain_is_blocked(tmp_path):
@@ -400,9 +574,8 @@ def test_pandas_subprocess_reexport_chain_is_blocked(tmp_path):
         "    def _compute_values(self, frame):",
         "    _x = pd.compat.os\n    def _compute_values(self, frame):",
     )
-    _approved(tmp_path, "cand-pdos", bad)
     with pytest.raises(CandidateLoadError):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-pdos", bad)
 
 
 def test_pandas_read_pickle_is_blocked(tmp_path):
@@ -415,9 +588,8 @@ def test_pandas_read_pickle_is_blocked(tmp_path):
         "    def _compute_values(self, frame):",
         '    _x = pd.read_pickle("/etc/passwd")\n    def _compute_values(self, frame):',
     )
-    _approved(tmp_path, "cand-readpickle", bad)
     with pytest.raises(CandidateLoadError, match="read_pickle"):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-readpickle", bad)
 
 
 def test_pandas_read_csv_is_blocked(tmp_path):
@@ -428,9 +600,8 @@ def test_pandas_read_csv_is_blocked(tmp_path):
         "    def _compute_values(self, frame):",
         '    _x = pd.read_csv("/etc/passwd")\n    def _compute_values(self, frame):',
     )
-    _approved(tmp_path, "cand-readcsv", bad)
     with pytest.raises(CandidateLoadError, match="read_csv"):
-        load_approved_factor_candidates(build_default_factor_registry(), agent_output_dir=tmp_path)
+        _load_approved_source(tmp_path, "cand-readcsv", bad)
 
 
 def test_legitimate_numpy_pandas_math_still_loads(tmp_path):
@@ -446,16 +617,8 @@ def test_legitimate_numpy_pandas_math_still_loads(tmp_path):
             ".rolling(self.lookback).mean() * np.float64(1.0)"
         ),
     )
-    _approved(tmp_path, "cand-legitmath", src)
-    loaded = load_approved_factor_candidates(
-        build_default_factor_registry(), agent_output_dir=tmp_path
-    )
-    assert loaded == ["wiring_test_factor"]
-
-
-def test_missing_dir_returns_empty(tmp_path):
-    registry = build_default_factor_registry()
-    assert load_approved_factor_candidates(registry, agent_output_dir=tmp_path / "nope") == []
+    binding = _load_approved_source(tmp_path, "cand-legitmath", src)
+    assert binding.factor_id == "wiring_test_factor"
 
 
 def test_run_experiment_accepts_candidate_factor_registry(tmp_path):
@@ -464,9 +627,16 @@ def test_run_experiment_accepts_candidate_factor_registry(tmp_path):
     from quant_system.experiments.config import load_experiment_config
     from quant_system.experiments.runner import run_experiment
 
-    _write_candidate(tmp_path / "cands", "cand-a", _FACTOR_SRC, approved=True)
+    digest = _write_candidate(
+        tmp_path / "cands", "cand-a", _FACTOR_SRC, approved=True
+    )
     registry = build_default_factor_registry()
-    load_approved_factor_candidates(registry, agent_output_dir=tmp_path / "cands")
+    _load_exact_for_test(
+        registry,
+        agent_output_dir=tmp_path / "cands",
+        candidate_id="cand-a",
+        digest=digest,
+    )
 
     config_payload = {
         "experiment_name": "candidate-e2e",
@@ -501,9 +671,16 @@ def test_run_experiment_threads_candidate_registry_through_walk_forward(tmp_path
     from quant_system.experiments.config import load_experiment_config
     from quant_system.experiments.runner import run_experiment
 
-    _write_candidate(tmp_path / "cands", "cand-a", _FACTOR_SRC, approved=True)
+    digest = _write_candidate(
+        tmp_path / "cands", "cand-a", _FACTOR_SRC, approved=True
+    )
     registry = build_default_factor_registry()
-    load_approved_factor_candidates(registry, agent_output_dir=tmp_path / "cands")
+    _load_exact_for_test(
+        registry,
+        agent_output_dir=tmp_path / "cands",
+        candidate_id="cand-a",
+        digest=digest,
+    )
 
     config_payload = {
         "experiment_name": "candidate-walkforward",

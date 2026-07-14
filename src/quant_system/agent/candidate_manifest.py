@@ -83,12 +83,16 @@ class CandidateReviewStateStaleError(CandidateStaleError):
 
 
 class CandidateFileDigest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     path: str
     size_bytes: int
     sha256: str
 
 
 class CandidateManifestV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     schema_version: Literal["1.0"] = "1.0"
     candidate_id: str
     artifact_type: str
@@ -96,6 +100,18 @@ class CandidateManifestV1(BaseModel):
     universe: list[str]
     metadata_sha256: str
     files: list[CandidateFileDigest]
+
+
+class CandidateReviewLockV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    schema_version: Literal["1.0"]
+    candidate_id: str = Field(min_length=1)
+    decision: Literal["approve", "reject"]
+    manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    note: str = Field(min_length=1)
+    reviewer: str = Field(min_length=1)
+    created_at: str = Field(min_length=1)
 
 
 class VerifiedCandidateSnapshot(BaseModel):
@@ -266,41 +282,31 @@ def _try_read_control(parent_fd: int, name: str) -> bytes | None:
     return read_regular_bytes_at(parent_fd, name)
 
 
-_HEX_DIGEST = re.compile(r"^[0-9a-f]{64}$")
-
-
 def _parse_bound_review(
-    payload: bytes, *, decision: str
+    payload: bytes, *, decision: Literal["approve", "reject"]
 ) -> tuple[ReviewRecord, str] | None:
     """Parse a structured review lock; return (record, lowercase hex digest) or None."""
     try:
         data = json.loads(payload.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        lock = CandidateReviewLockV1.model_validate(data)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
         return None
-    if not isinstance(data, dict):
+    if lock.decision != decision:
         return None
-    if data.get("schema_version") != "1.0":
+    if payload != canonical_json_bytes(lock.model_dump(mode="json")):
         return None
-    digest = data.get("manifest_digest")
-    candidate_id = data.get("candidate_id")
-    note = data.get("note")
-    if not isinstance(digest, str) or _HEX_DIGEST.fullmatch(digest) is None:
-        return None
-    if not isinstance(candidate_id, str) or not isinstance(note, str):
-        return None
-    reviewer = data.get("reviewer", "manual")
-    created_at = data.get("created_at")
-    record_kwargs: dict[str, Any] = {
-        "candidate_id": candidate_id,
-        "decision": "approve" if decision == "approve" else "reject",
-        "note": note,
-    }
-    if isinstance(reviewer, str):
-        record_kwargs["reviewer"] = reviewer
-    if isinstance(created_at, str):
-        record_kwargs["created_at"] = created_at
     try:
-        return ReviewRecord(**record_kwargs), digest
+        return (
+            ReviewRecord(
+                candidate_id=lock.candidate_id,
+                decision=lock.decision,
+                note=lock.note,
+                reviewer=lock.reviewer,
+                created_at=lock.created_at,
+                manifest_digest=lock.manifest_digest,
+            ),
+            lock.manifest_digest,
+        )
     except Exception:
         return None
 
@@ -397,6 +403,10 @@ def _verify_from_opened(
     if stored_canonical != rebuilt_bytes:
         raise CandidateIntegrityError(
             "stored manifest does not match exact current candidate bytes"
+        )
+    if stored_bytes != rebuilt_bytes:
+        raise CandidateIntegrityError(
+            "stored manifest bytes are not canonical JSON"
         )
     if _sha256_hex(rebuilt_bytes) != digest:
         raise CandidateIntegrityError("manifest digest mismatch")

@@ -962,21 +962,9 @@ export type ExperimentDetailResponse = ApiEnvelope & {
   folds: PreviewRecord[];
 };
 
-export type CandidateSummary = {
-  candidate_id: string;
-  artifact_type?: string | null;
-  status?: string | null;
-  goal?: string | null;
-  integrity_state?: string | null;
-  manifest_digest?: string | null;
-  observed_manifest_digest?: string | null;
-  approval_binding?: string | null;
-  approval_enabled?: boolean | null;
-  integrity_error_code?: string | null;
-};
-
 type HermesSchemas = GeneratedApiComponents["schemas"];
 
+export type CandidateSummary = HermesSchemas["CandidateSummary"];
 export type HermesArtifact = HermesSchemas["HermesArtifactItemResponse"];
 export type HermesArtifactKind =
   HermesSchemas["HermesArtifactSourceResponse"]["kind"];
@@ -1001,24 +989,11 @@ export type HermesArtifactWarning =
 export type HermesArtifactShelfEnvelope = ApiEnvelope &
   HermesSchemas["HermesArtifactFeedResponse"];
 
-export type AgentCandidatesResponse = ApiEnvelope & {
-  candidates: CandidateSummary[];
-};
+export type AgentCandidatesResponse = ApiEnvelope &
+  HermesSchemas["AgentCandidatesResponse"];
 
-export type AgentCandidateDetailResponse = ApiEnvelope & {
-  candidate_id: string;
-  metadata: Record<string, unknown> | null;
-  source_preview: string | null;
-  audit: string[];
-  reviews: string[];
-  integrity_state?: string | null;
-  manifest_digest?: string | null;
-  observed_manifest_digest?: string | null;
-  approval_binding?: string | null;
-  approval_enabled?: boolean | null;
-  integrity_error_code?: string | null;
-  status?: string | null;
-};
+export type AgentCandidateDetailResponse = ApiEnvelope &
+  HermesSchemas["AgentCandidateDetailResponse"];
 
 export type AgentTaskResponse = ApiEnvelope & {
   candidate_id: string;
@@ -2523,16 +2498,16 @@ export function getHermesArtifacts(limit = 20) {
 export function getAgentCandidateDetail(candidateId: string) {
   return apiGet<AgentCandidateDetailResponse>(`/api/agent/candidates/${candidateId}`, {
     candidate_id: candidateId,
-    metadata: {},
-    source_preview: "",
+    metadata: null,
+    source_preview: null,
     audit: [],
     reviews: [],
-    integrity_state: null,
+    integrity_state: "corrupt",
     manifest_digest: null,
     observed_manifest_digest: null,
     approval_binding: null,
     approval_enabled: false,
-    integrity_error_code: null,
+    integrity_error_code: "api_unavailable",
     status: null,
     safety: FALLBACK_SAFETY,
   });

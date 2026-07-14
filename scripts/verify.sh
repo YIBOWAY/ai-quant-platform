@@ -4,7 +4,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-PYTHON_BIN="${PYTHON_BIN:-python}"
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  PYTHON_BIN="$PYTHON_BIN"
+elif [[ -x "$ROOT/ai-quant/bin/python" ]]; then
+  PYTHON_BIN="$ROOT/ai-quant/bin/python"
+elif [[ -x "$ROOT/.venv/bin/python" ]]; then
+  PYTHON_BIN="$ROOT/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3)"
+else
+  echo "No usable Python interpreter found. Create ai-quant or .venv, or set PYTHON_BIN." >&2
+  exit 1
+fi
 
 run_step() {
   local name="$1"

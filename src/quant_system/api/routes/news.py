@@ -4,6 +4,7 @@ import threading
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -119,7 +120,7 @@ def aihot_daily(
     except AiHotProviderError as exc:
         _remember_error(exc)
         cached_daily = _load_cached_daily_report(
-            date=date or _current_utc_date(),
+            date=date or _current_brief_date(),
             settings=settings,
         )
         if cached_daily is not None:
@@ -223,8 +224,11 @@ def _load_cached_daily_report(
     return load_cached_aihot_daily_report(date, settings=settings)
 
 
-def _current_utc_date() -> str:
-    return datetime.now(UTC).date().isoformat()
+def _current_brief_date(now: datetime | None = None) -> str:
+    instant = now or datetime.now(UTC)
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=UTC)
+    return instant.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
 def _items_payload(page: AiHotItemsPage) -> dict:

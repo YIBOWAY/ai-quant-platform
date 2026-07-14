@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -91,7 +92,6 @@ def run_experiment(
 ) -> ExperimentResult:
     now_utc = datetime.now(UTC)
     created_at = now_utc.isoformat()
-    experiment_id = f"{config.experiment_name}-{now_utc.strftime('%Y%m%dT%H%M%SZ')}"
     active_provider = provider or SampleOHLCVProvider()
     ohlcv = active_provider.fetch_ohlcv(config.symbols, start=config.start, end=config.end)
     combinations = expand_parameter_grid(config.sweep)
@@ -109,7 +109,11 @@ def run_experiment(
         runs.append(run)
         fold_records.extend(folds)
 
-    storage = _build_storage(output_dir, experiment_id=experiment_id)
+    experiment_id, storage = _reserve_experiment_storage(
+        output_dir=output_dir,
+        experiment_name=config.experiment_name,
+        now_utc=now_utc,
+    )
     config_path = storage.save_config(config)
     runs_frame = pd.DataFrame([run.flat_record() for run in runs])
     runs_path = storage.save_frame(
@@ -167,6 +171,27 @@ def run_experiment(
         best_run_id=best_run.run_id if best_run else None,
         data_source=data_source,
     )
+
+
+def _new_experiment_id(experiment_name: str, now_utc: datetime) -> str:
+    """Allocate a per-invocation artifact identity, including concurrent calls."""
+    timestamp = now_utc.strftime("%Y%m%dT%H%M%S%fZ")
+    return f"{experiment_name}-{timestamp}-{secrets.token_hex(6)}"
+
+
+def _reserve_experiment_storage(
+    *,
+    output_dir: str | Path | None,
+    experiment_name: str,
+    now_utc: datetime,
+) -> tuple[str, LocalExperimentStorage]:
+    """Reserve a unique artifact namespace; never reuse or overwrite one."""
+    for _attempt in range(32):
+        experiment_id = _new_experiment_id(experiment_name, now_utc)
+        storage = _build_storage(output_dir, experiment_id=experiment_id)
+        if storage.reserve_namespace():
+            return experiment_id, storage
+    raise RuntimeError("could not reserve a unique experiment artifact namespace")
 
 
 def _run_combination(
@@ -390,6 +415,11 @@ def _build_agent_summary(
             "end": config.end,
         },
         "walk_forward": config.walk_forward.model_dump(mode="json"),
+        "candidate_binding": (
+            config.candidate_binding.model_dump(mode="json")
+            if config.candidate_binding is not None
+            else None
+        ),
         "best_run_id": best_run.run_id if best_run else None,
         "runs": [run.model_dump(mode="json") for run in runs],
         "notes": [

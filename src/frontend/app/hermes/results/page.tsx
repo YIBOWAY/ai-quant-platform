@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { FocusedArtifactCard } from "@/components/hermes/artifacts";
+import {
+  ArtifactFeed,
+  FocusedArtifactCard,
+  artifactFeedReadState,
+} from "@/components/hermes/artifacts";
 import { Card } from "@/components/ui/primitives";
 import { getHermesArtifacts } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
@@ -25,6 +29,9 @@ export default async function HermesResultsPage() {
   const conclusions = artifacts.items.filter(
     (item) => item.kind !== "automation_status",
   );
+  const feedReadState = artifactFeedReadState(artifacts);
+  const feedHasIssue =
+    feedReadState === "degraded" || feedReadState === "unavailable";
 
   return (
     <section
@@ -82,7 +89,12 @@ export default async function HermesResultsPage() {
         <h2 className="font-label-caps text-text-secondary" id="hermes-results-feed-title">
           {isZh ? "9H 研究产物" : "9H research artifacts"}
         </h2>
-        {conclusions.length === 0 ? (
+        {feedHasIssue ? (
+          <div data-hermes-results-feed-issue={feedReadState}>
+            <ArtifactFeed envelope={artifacts} locale={locale} />
+          </div>
+        ) : null}
+        {conclusions.length === 0 ? feedHasIssue ? null : (
           <Card className="bg-[var(--color-stream-surface)]">
             <p className="font-body-sm text-text-secondary">
               {isZh ? "当前没有可展示的研究结论产物。" : "No research conclusion artifacts."}

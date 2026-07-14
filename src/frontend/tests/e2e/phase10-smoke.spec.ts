@@ -121,14 +121,17 @@ test("paper replay safety lock disables submit and shows safety copy", async ({ 
   await expect(page.getByRole("button", { name: "Run Paper Trading" })).toBeDisabled();
 });
 
-test("agent task workflow submits and renders candidate details", async ({ page }) => {
-  test.setTimeout(90_000);
+test("legacy agent studio is read-only and points to Hermes", async ({ page }) => {
   await page.goto("/agent-studio");
-  const agentResponse = await clickAndWaitForPost(page, "Run task", "/api/agent/tasks");
-  expect(agentResponse.status()).toBe(200);
-  const agentPayload = (await agentResponse.json()) as { candidate_id: string };
-  await expectRunIdVisible(page, agentPayload.candidate_id);
-  await expect(page.getByRole("heading", { name: "Source Preview" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent Studio · Read-only" })).toBeVisible();
+  await expect(page.getByText(/Task submission and approve\/reject controls are intentionally unavailable/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run task" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open Hermes workbench" })).toHaveAttribute(
+    "href",
+    "/en/hermes",
+  );
 });
 
 test("prediction market workflow buttons submit", async ({ page }) => {

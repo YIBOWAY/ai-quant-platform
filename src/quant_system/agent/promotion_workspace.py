@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import stat
 import subprocess
 import tempfile
@@ -108,6 +109,9 @@ class PromotionStateV1(BaseModel):
     status: Literal[
         "awaiting_human_commit",
         "reviewed",
+        "review_invalidated",
+        "cleanup_pending",
+        "abandon_pending",
         "cleaned",
         "abandoned",
     ]
@@ -130,8 +134,25 @@ def resolve_platform_repo() -> Path:
     return PLATFORM_REPO_ROOT
 
 
+def _normalize_trusted_root_alias(path: Path) -> Path:
+    """Normalize only root-owned macOS /tmp and /var compatibility aliases."""
+    absolute = Path(os.path.abspath(path))
+    parts = absolute.parts
+    if len(parts) >= 2:
+        alias_targets = {
+            "tmp": Path("/private/tmp"),
+            "var": Path("/private/var"),
+        }
+        expected_target = alias_targets.get(parts[1])
+        if expected_target is not None:
+            alias = Path(os.sep) / parts[1]
+            if Path(os.path.realpath(alias)) == expected_target:
+                return expected_target.joinpath(*parts[2:])
+    return absolute
+
+
 def resolve_managed_worktree_root() -> Path:
-    return DEFAULT_MANAGED_WORKTREE_ROOT
+    return _normalize_trusted_root_alias(DEFAULT_MANAGED_WORKTREE_ROOT)
 
 
 def validate_promotion_id(value: str) -> str:
@@ -346,12 +367,7 @@ def _worktree_remove(repo: Path, worktree: Path, *, force: bool = False) -> None
         args.append("--force")
     args.append(os.fspath(worktree))
     completed = _git_text(repo, *args, check=False)
-    if completed.returncode != 0:
-        # Last resort force.
-        completed = _git_text(
-            repo, "worktree", "remove", "--force", os.fspath(worktree), check=False
-        )
-        _require_git_ok(completed, context="git worktree remove")
+    _require_git_ok(completed, context="git worktree remove")
     _git_text(repo, "worktree", "prune", check=False)
 
 
@@ -475,9 +491,15 @@ def _file_entries(worktree: Path, scoped: list[str]) -> list[PromotionFileEntry]
     entries: list[PromotionFileEntry] = []
     for rel in scoped:
         path = worktree / rel
-        if not path.is_file() or path.is_symlink():
+        try:
+            observed = path.lstat()
+        except OSError as exc:
+            raise PromotionWorkspaceError(f"expected regular file at {rel}") from exc
+        if not stat.S_ISREG(observed.st_mode) or stat.S_ISLNK(observed.st_mode):
             raise PromotionWorkspaceError(f"expected regular file at {rel}")
-        payload = path.read_bytes()
+        if stat.S_IMODE(observed.st_mode) & 0o111:
+            raise PromotionWorkspaceError(f"unexpected executable mode at {rel}")
+        payload = _read_nofollow_regular(path)
         entries.append(
             PromotionFileEntry(
                 path=rel,
@@ -564,6 +586,46 @@ def _derive_promotion_id(
     return validate_promotion_id(f"promo-{digest[:32]}")
 
 
+def _select_prepare_promotion_id(
+    *,
+    base_promotion_id: str,
+    promotion_root: Path,
+    worktree_root: Path,
+    repo_dir: Path,
+) -> str:
+    """Reuse active prepares; allocate a new audit identity after abandon."""
+    attempt = 1
+    while True:
+        promotion_id = (
+            base_promotion_id
+            if attempt == 1
+            else validate_promotion_id(f"{base_promotion_id}-r{attempt}")
+        )
+        promotion_dir = promotion_root / promotion_id
+        if not promotion_dir.exists() and not promotion_dir.is_symlink():
+            return promotion_id
+        _manifest, state, _manifest_path, _state_path, _patch_path = (
+            _load_validated_promotion(
+                promotion_id=promotion_id,
+                promotion_root=promotion_root,
+                worktree_root=worktree_root,
+                repo_dir=repo_dir,
+            )
+        )
+        if state.status == "abandoned":
+            attempt += 1
+            continue
+        if state.status in {"abandon_pending", "cleanup_pending"}:
+            raise PromotionWorkspaceError(
+                f"promotion {promotion_id} has pending cleanup; rerun cleanup-promotion"
+            )
+        if state.status == "cleaned":
+            raise PromotionWorkspaceError(
+                f"promotion {promotion_id} is already reviewed and cleaned"
+            )
+        return promotion_id
+
+
 def _write_bytes_exclusive(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
@@ -591,19 +653,25 @@ def _write_bytes_replace(path: Path, payload: bytes) -> None:
 
 
 def _human_instructions(promotion_id: str, scoped: list[str]) -> str:
-    paths = " ".join(scoped)
+    paths = " ".join(shlex.quote(path) for path in scoped)
     branch = f"codex/promotion-{promotion_id}"
+    worktree = resolve_managed_worktree_root() / promotion_id
     return (
         "GATE 3 — human-only next steps (system will not commit):\n"
-        f"  1. cd into the review worktree\n"
+        f"  1. cd -- {shlex.quote(str(worktree))}\n"
         f"  2. inspect: git diff --binary --full-index -- {paths}\n"
         f"  3. create named branch: git switch -c {branch}\n"
         f"  4. stage only scoped paths: git add -- {paths}\n"
         f"  5. review staged diff: git diff --cached --binary --full-index -- {paths}\n"
-        f"  6. commit on the named branch, then run: agent promotion-status "
+        f"  6. commit on the named branch, then run: quant-system agent promotion-status "
         f"--promotion-id {promotion_id}\n"
-        f"  7. after reviewed status, run: agent cleanup-promotion "
+        f"  7. after reviewed status, run: quant-system agent cleanup-promotion "
         f"--promotion-id {promotion_id}\n"
+        "  8. To discard this worktree and re-prepare, explicitly run: "
+        f"quant-system agent cleanup-promotion --promotion-id {promotion_id} "
+        "--abandon; then re-run the original quant-system agent promote-candidate "
+        "command with the exact original candidate-id, expected-digest, and "
+        "base-commit. --abandon is destructive.\n"
     )
 
 
@@ -620,8 +688,8 @@ def prepare_promotion_workspace(
     """Prepare an isolated Gate 3 review worktree and immutable scoped patch."""
     repo_dir = Path(repo_dir)
     agent_output_dir = Path(agent_output_dir)
-    promotion_root = Path(promotion_root)
-    worktree_root = Path(worktree_root)
+    promotion_root = _normalize_trusted_root_alias(Path(promotion_root))
+    worktree_root = _normalize_trusted_root_alias(Path(worktree_root))
 
     if not repo_dir.is_dir():
         raise PromotionWorkspaceError(f"repo_dir does not exist: {repo_dir}")
@@ -641,6 +709,8 @@ def prepare_promotion_workspace(
 
     staging: Path | None = None
     final_worktree: Path | None = None
+    final_worktree_moved = False
+    records_published = False
 
     with _promotion_root_lock(promotion_root):
         _require_head_equals_base(repo_dir, base)
@@ -677,13 +747,19 @@ def prepare_promotion_workspace(
                 raise PromotionWorkspaceError("candidate digest drifted before publish")
 
             patch_sha = _sha256_hex(patch)
-            promotion_id = _derive_promotion_id(
+            base_promotion_id = _derive_promotion_id(
                 candidate_id=candidate_id,
                 candidate_digest=expected_candidate_digest,
                 base_commit=base,
                 scoped_paths=scoped,
                 files=entries,
                 patch_sha256=patch_sha,
+            )
+            promotion_id = _select_prepare_promotion_id(
+                base_promotion_id=base_promotion_id,
+                promotion_root=promotion_root,
+                worktree_root=worktree_root,
+                repo_dir=repo_dir,
             )
             promotion_dir = promotion_root / promotion_id
             patch_path = promotion_dir / _PATCH_NAME
@@ -704,12 +780,12 @@ def prepare_promotion_workspace(
             manifest_sha = _sha256_hex(manifest_bytes)
 
             if promotion_dir.exists():
-                existing_manifest = manifest_path.read_bytes()
+                existing_manifest = _read_nofollow_regular(manifest_path)
                 if existing_manifest != manifest_bytes:
                     raise PromotionWorkspaceError(
                         f"promotion_id {promotion_id} exists with different manifest"
                     )
-                existing_patch = patch_path.read_bytes()
+                existing_patch = _read_nofollow_regular(patch_path)
                 if existing_patch != patch:
                     raise PromotionWorkspaceError(
                         f"promotion_id {promotion_id} exists with different patch"
@@ -736,6 +812,7 @@ def prepare_promotion_workspace(
             # Publish worktree under promotion_id, then immutable records.
             _worktree_move(repo_dir, staging, final_worktree)
             staging = None
+            final_worktree_moved = True
 
             repo_dev, repo_ino = _dir_identity(repo_dir)
             managed_dev, managed_ino = _dir_identity(worktree_root)
@@ -758,6 +835,7 @@ def prepare_promotion_workspace(
                 _write_bytes_exclusive(
                     state_path, canonical_json_bytes(state.model_dump(mode="json"))
                 )
+                records_published = True
             except Exception:
                 # Best-effort rollback of partial promotion dir + worktree.
                 for path in (patch_path, manifest_path, state_path):
@@ -765,8 +843,6 @@ def prepare_promotion_workspace(
                         path.unlink()
                 if promotion_dir.exists():
                     promotion_dir.rmdir()
-                if final_worktree is not None:
-                    _worktree_remove(repo_dir, final_worktree, force=True)
                 raise
 
             return PromotionWorkspaceResult(
@@ -781,6 +857,12 @@ def prepare_promotion_workspace(
         except Exception:
             if staging is not None and (staging.exists() or staging.is_symlink()):
                 _worktree_remove(repo_dir, staging, force=True)
+            if (
+                final_worktree_moved
+                and not records_published
+                and final_worktree is not None
+            ):
+                _worktree_remove(repo_dir, final_worktree, force=True)
             raise
 
 
@@ -841,8 +923,8 @@ def _load_validated_promotion(
     repo_dir: Path,
 ) -> tuple[PromotionManifestV1, PromotionStateV1, Path, Path, Path]:
     promotion_id = validate_promotion_id(promotion_id)
-    promotion_root = Path(promotion_root)
-    worktree_root = Path(worktree_root)
+    promotion_root = _normalize_trusted_root_alias(Path(promotion_root))
+    worktree_root = _normalize_trusted_root_alias(Path(worktree_root))
     repo_dir = Path(repo_dir)
 
     promotion_dir = promotion_root / promotion_id
@@ -859,8 +941,9 @@ def _load_validated_promotion(
             raise PromotionWorkspaceError(f"missing or unsafe promotion file: {path.name}")
 
     try:
+        manifest_bytes = _read_nofollow_regular(manifest_path)
         manifest = PromotionManifestV1.model_validate(
-            json.loads(_read_nofollow_regular(manifest_path).decode("utf-8"))
+            json.loads(manifest_bytes.decode("utf-8"))
         )
     except PromotionWorkspaceError:
         raise
@@ -880,7 +963,7 @@ def _load_validated_promotion(
 
     if state.promotion_id != promotion_id:
         raise PromotionWorkspaceError("state promotion_id mismatch")
-    manifest_sha = _sha256_hex(manifest_path.read_bytes())
+    manifest_sha = _sha256_hex(manifest_bytes)
     if state.manifest_sha256 != manifest_sha:
         raise PromotionWorkspaceError("state manifest digest mismatch")
 
@@ -901,12 +984,17 @@ def _load_validated_promotion(
     if expected_worktree.parent.resolve() != worktree_root.resolve():
         raise PromotionWorkspaceError("worktree is not a direct child of managed root")
 
-    if state.status not in {"awaiting_human_commit", "reviewed"}:
+    active_states = {"awaiting_human_commit", "reviewed", "review_invalidated"}
+    transition_states = {"cleanup_pending", "abandon_pending"}
+    if state.status not in active_states:
         # cleaned/abandoned still allow status read of records, but not worktree ops
         # unless still present. Require registration when worktree is expected.
         pass
 
-    if state.status in {"awaiting_human_commit", "reviewed"}:
+    validate_worktree = state.status in active_states or (
+        state.status in transition_states and expected_worktree.exists()
+    )
+    if validate_worktree:
         if not expected_worktree.is_dir():
             raise PromotionWorkspaceError("managed worktree is missing")
         registered = _parse_worktree_list(repo_dir)
@@ -951,6 +1039,29 @@ def _committed_patch_bytes(
     )
     _require_git_ok(completed, context="committed patch")
     return completed.stdout
+
+
+def _verify_prepared_workspace(
+    *,
+    worktree: Path,
+    manifest: PromotionManifestV1,
+    prepared_patch: bytes,
+) -> None:
+    """Re-attest the uncommitted review workspace at status time."""
+    if _sha256_hex(prepared_patch) != manifest.patch_sha256:
+        raise PromotionWorkspaceError("prepared patch digest mismatch")
+    _verify_post_materialization(
+        worktree,
+        manifest.base_commit,
+        manifest.scoped_paths,
+        prepared_patch,
+    )
+    observed_patch = _capture_scoped_patch(worktree, manifest.scoped_paths)
+    if observed_patch != prepared_patch:
+        raise PromotionWorkspaceError("prepared worktree differs from scoped patch")
+    observed_files = _file_entries(worktree, manifest.scoped_paths)
+    if observed_files != manifest.files:
+        raise PromotionWorkspaceError("prepared worktree file evidence mismatch")
 
 
 def _evaluate_reviewed_commit(
@@ -1044,7 +1155,7 @@ def _evaluate_reviewed_commit(
     )
     if _sha256_hex(committed_patch) != manifest.patch_sha256:
         return False, None, "committed patch differs from reviewed patch"
-    prepared = patch_path.read_bytes()
+    prepared = _read_nofollow_regular(patch_path)
     if committed_patch != prepared:
         return False, None, "committed patch bytes are not the prepared patch"
 
@@ -1060,7 +1171,30 @@ def promotion_status(
     repo_dir: Path,
 ) -> dict[str, Any]:
     """Inspect promotion lifecycle; never removes the persistent worktree."""
+    promotion_id = validate_promotion_id(promotion_id)
+    promotion_root = _normalize_trusted_root_alias(Path(promotion_root))
+    worktree_root = _normalize_trusted_root_alias(Path(worktree_root))
+    with _promotion_root_lock(promotion_root):
+        return _promotion_status_locked(
+            promotion_id=promotion_id,
+            agent_output_dir=agent_output_dir,
+            promotion_root=promotion_root,
+            worktree_root=worktree_root,
+            repo_dir=repo_dir,
+        )
+
+
+def _promotion_status_locked(
+    *,
+    promotion_id: str,
+    agent_output_dir: Path | str,
+    promotion_root: Path,
+    worktree_root: Path,
+    repo_dir: Path,
+) -> dict[str, Any]:
     agent_output_dir = Path(agent_output_dir)
+    promotion_root = _normalize_trusted_root_alias(Path(promotion_root))
+    worktree_root = _normalize_trusted_root_alias(Path(worktree_root))
     manifest, state, _manifest_path, state_path, patch_path = _load_validated_promotion(
         promotion_id=promotion_id,
         promotion_root=promotion_root,
@@ -1069,13 +1203,49 @@ def promotion_status(
     )
     worktree = worktree_root / promotion_id
 
-    if state.status in {"abandoned", "cleaned"}:
+    def payload(*, status: str, reviewed_commit: str | None, reason: str) -> dict[str, Any]:
         return {
             "promotion_id": promotion_id,
-            "status": state.status,
-            "reviewed_commit": state.reviewed_commit,
-            "reason": f"terminal state {state.status}",
+            "status": status,
+            "reviewed_commit": reviewed_commit,
+            "reason": reason,
+            "manifest_sha256": state.manifest_sha256,
+            "patch_sha256": manifest.patch_sha256,
+            "candidate_id": manifest.candidate_id,
+            "candidate_digest": manifest.candidate_digest,
+            "base_commit": manifest.base_commit,
+            "scoped_paths": manifest.scoped_paths,
         }
+
+    if state.status in {"abandoned", "cleaned"}:
+        return payload(
+            status=state.status,
+            reviewed_commit=state.reviewed_commit,
+            reason=f"terminal state {state.status}",
+        )
+    if state.status in {"cleanup_pending", "abandon_pending"}:
+        return payload(
+            status=state.status,
+            reviewed_commit=state.reviewed_commit,
+            reason="cleanup transition is recoverable; rerun cleanup-promotion",
+        )
+
+    if state.status == "awaiting_human_commit" and state.reviewed_commit is None:
+        prepared_patch = _read_nofollow_regular(patch_path)
+        porcelain = _git_text(
+            worktree,
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            check=False,
+        )
+        _require_git_ok(porcelain, context="worktree status")
+        if porcelain.stdout.strip():
+            _verify_prepared_workspace(
+                worktree=worktree,
+                manifest=manifest,
+                prepared_patch=prepared_patch,
+            )
 
     ok, reviewed_commit, reason = _evaluate_reviewed_commit(
         repo_dir=repo_dir,
@@ -1091,18 +1261,26 @@ def promotion_status(
         _write_bytes_replace(
             state_path, canonical_json_bytes(state.model_dump(mode="json"))
         )
-        return {
-            "promotion_id": promotion_id,
-            "status": "reviewed",
-            "reviewed_commit": reviewed_commit,
-            "reason": reason,
-        }
-    return {
-        "promotion_id": promotion_id,
-        "status": state.status,
-        "reviewed_commit": state.reviewed_commit,
-        "reason": reason,
-    }
+        return payload(
+            status="reviewed",
+            reviewed_commit=reviewed_commit,
+            reason=reason,
+        )
+    if state.reviewed_commit is not None:
+        state = state.model_copy(update={"status": "review_invalidated"})
+        _write_bytes_replace(
+            state_path, canonical_json_bytes(state.model_dump(mode="json"))
+        )
+        return payload(
+            status="review_invalidated",
+            reviewed_commit=state.reviewed_commit,
+            reason=reason,
+        )
+    return payload(
+        status=state.status,
+        reviewed_commit=state.reviewed_commit,
+        reason=reason,
+    )
 
 
 def cleanup_promotion_workspace(
@@ -1115,7 +1293,32 @@ def cleanup_promotion_workspace(
     abandon: bool = False,
 ) -> dict[str, Any]:
     """Remove the managed review worktree only with reviewed evidence or --abandon."""
+    promotion_id = validate_promotion_id(promotion_id)
+    promotion_root = _normalize_trusted_root_alias(Path(promotion_root))
+    worktree_root = _normalize_trusted_root_alias(Path(worktree_root))
+    with _promotion_root_lock(promotion_root):
+        return _cleanup_promotion_workspace_locked(
+            promotion_id=promotion_id,
+            agent_output_dir=agent_output_dir,
+            promotion_root=promotion_root,
+            worktree_root=worktree_root,
+            repo_dir=repo_dir,
+            abandon=abandon,
+        )
+
+
+def _cleanup_promotion_workspace_locked(
+    *,
+    promotion_id: str,
+    agent_output_dir: Path | str,
+    promotion_root: Path,
+    worktree_root: Path,
+    repo_dir: Path,
+    abandon: bool,
+) -> dict[str, Any]:
     agent_output_dir = Path(agent_output_dir)
+    promotion_root = _normalize_trusted_root_alias(Path(promotion_root))
+    worktree_root = _normalize_trusted_root_alias(Path(worktree_root))
     manifest, state, _manifest_path, state_path, patch_path = _load_validated_promotion(
         promotion_id=promotion_id,
         promotion_root=promotion_root,
@@ -1137,7 +1340,39 @@ def cleanup_promotion_workspace(
             "reviewed_commit": None,
         }
 
+    if state.status == "abandon_pending":
+        if worktree.exists() or worktree.is_symlink():
+            _worktree_remove(repo_dir, worktree, force=True)
+        state = state.model_copy(
+            update={"status": "abandoned", "reviewed_commit": None}
+        )
+        _write_bytes_replace(
+            state_path, canonical_json_bytes(state.model_dump(mode="json"))
+        )
+        return {
+            "promotion_id": promotion_id,
+            "status": "abandoned",
+            "reviewed_commit": None,
+        }
+
+    if state.status == "cleanup_pending" and not worktree.exists():
+        state = state.model_copy(update={"status": "cleaned"})
+        _write_bytes_replace(
+            state_path, canonical_json_bytes(state.model_dump(mode="json"))
+        )
+        return {
+            "promotion_id": promotion_id,
+            "status": "cleaned",
+            "reviewed_commit": state.reviewed_commit,
+        }
+
     if abandon:
+        state = state.model_copy(
+            update={"status": "abandon_pending", "reviewed_commit": None}
+        )
+        _write_bytes_replace(
+            state_path, canonical_json_bytes(state.model_dump(mode="json"))
+        )
         if worktree.exists() or worktree.is_symlink():
             _worktree_remove(repo_dir, worktree, force=True)
         state = state.model_copy(
@@ -1164,6 +1399,17 @@ def cleanup_promotion_workspace(
             f"cleanup refused without durable reviewed commit: {reason}"
         )
 
+    if state.status == "cleanup_pending" and state.reviewed_commit != reviewed_commit:
+        raise PromotionWorkspaceError(
+            "cleanup refused because reviewed commit changed during recovery"
+        )
+
+    state = state.model_copy(
+        update={"status": "cleanup_pending", "reviewed_commit": reviewed_commit}
+    )
+    _write_bytes_replace(
+        state_path, canonical_json_bytes(state.model_dump(mode="json"))
+    )
     _worktree_remove(repo_dir, worktree, force=False)
     state = state.model_copy(
         update={"status": "cleaned", "reviewed_commit": reviewed_commit}

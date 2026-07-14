@@ -27,6 +27,7 @@ describe("/brief route contract", () => {
       "getMarketDataHistory",
       "getServerLocale",
       "getLatestBriefIssue",
+      "BriefArchiveControl",
     ]) {
       expect(source).toContain(getter);
     }
@@ -62,8 +63,8 @@ describe("/brief route contract", () => {
     expect(source).toContain("ONE-WEEK PAPER RETURN");
     expect(source).toContain("/api/paper/account/equity-curve");
     expect(source).toContain("account ledger");
-    expect(source).toContain("Hermes 市场手记");
-    expect(source).toContain("Hermes completed backtest");
+    expect(source).toContain("平台市场手记");
+    expect(source).toContain("Platform recorded backtest");
     expect(source).toContain("Options daily scan");
     expect(source).toContain("safeExternalUrl(item.url)");
     expect(source).toContain("target=\"_blank\"");
@@ -72,13 +73,20 @@ describe("/brief route contract", () => {
     expect(source).toContain("template");
     expect(source).toContain("live trading");
     expect(source).toContain("never implied active");
+    expect(source).toContain("payload={archivePayload}");
+    expect(source).toContain("sourceWatermark={sourceWatermark}");
+    expect(source).toContain("archiveBlockedReason");
+
+    expect(source).not.toContain("Hermes completed backtest");
+    expect(source).not.toContain("lede prepared by Hermes");
 
     expect(source).not.toContain("navConfig");
     expect(source).not.toContain("apiRequest");
     expect(source).not.toContain("fetch(");
     expect(source).not.toContain("POST");
     expect(source).not.toContain("balance history proxy");
-    expect(source).not.toContain("generate");
+    expect(source).not.toContain("generateCopy");
+    expect(source).not.toContain("generateWithLlm");
     expect(source).not.toContain("llm");
     expect(source).not.toContain("getBacktestDetail");
     expect(source).not.toContain("strategy={strategyCurve}");

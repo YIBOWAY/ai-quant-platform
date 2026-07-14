@@ -95,6 +95,45 @@ def test_migration_never_overwrites_conflicting_canonical_candidate(tmp_path) ->
     assert (canonical / "candidate-1" / "factor.py.candidate").read_bytes() == before
 
 
+def test_valid_legacy_and_corrupt_canonical_same_id_is_a_conflict(tmp_path) -> None:
+    legacy = tmp_path / "legacy"
+    agent_output = tmp_path / "agent-output"
+    canonical = agent_output / "agent" / "candidates"
+    _write_legacy_candidate(legacy, "candidate-1", b"legacy\n")
+    corrupt = canonical / "candidate-1"
+    corrupt.mkdir(parents=True)
+    (corrupt / "metadata.json").write_text("{not-json", encoding="utf-8")
+    before = _tree_fingerprint(canonical)
+
+    report = audit_candidate_roots(
+        legacy_dir=legacy,
+        agent_output_dir=agent_output,
+    )
+
+    assert report.conflicts == ["candidate-1"]
+    assert report.copyable == []
+    with pytest.raises(CandidateMigrationConflict):
+        apply_candidate_migration(report, backup_dir=tmp_path / "backup")
+    assert _tree_fingerprint(canonical) == before
+
+
+def test_apply_refuses_dual_root_corrupt_item_even_if_conflict_list_is_tampered(
+    tmp_path,
+) -> None:
+    legacy = tmp_path / "legacy"
+    agent_output = tmp_path / "agent-output"
+    canonical = agent_output / "agent" / "candidates"
+    _write_legacy_candidate(legacy, "candidate-1", b"legacy\n")
+    corrupt = canonical / "candidate-1"
+    corrupt.mkdir(parents=True)
+    (corrupt / "metadata.json").write_text("{not-json", encoding="utf-8")
+    report = audit_candidate_roots(legacy_dir=legacy, agent_output_dir=agent_output)
+    tampered = report.model_copy(update={"conflicts": []})
+
+    with pytest.raises(CandidateMigrationConflict):
+        apply_candidate_migration(tampered, backup_dir=tmp_path / "backup")
+
+
 def test_migration_never_mutates_legacy_source_tree(tmp_path) -> None:
     legacy = tmp_path / "legacy"
     agent_output = tmp_path / "agent-output"
@@ -162,6 +201,41 @@ def test_dry_run_against_absent_roots_leaves_tmp_empty(tmp_path) -> None:
     assert report.identical == []
     assert _tree_fingerprint(tmp_path) == before
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("root_name", ["legacy", "canonical"])
+def test_audit_refuses_symlink_candidate_roots(tmp_path, root_name) -> None:
+    legacy = tmp_path / "legacy"
+    agent_output = tmp_path / "agent-output"
+    canonical = resolve_candidates_dir(agent_output)
+    target = tmp_path / "outside"
+    target.mkdir()
+    root = legacy if root_name == "legacy" else canonical
+    root.parent.mkdir(parents=True, exist_ok=True)
+    root.symlink_to(target, target_is_directory=True)
+
+    with pytest.raises(CandidateIntegrityError, match="root|symlink|directory"):
+        audit_candidate_roots(legacy_dir=legacy, agent_output_dir=agent_output)
+
+
+@pytest.mark.parametrize("appeared_root", ["legacy", "canonical"])
+def test_empty_report_apply_refuses_root_that_appeared_after_audit(
+    tmp_path, appeared_root
+) -> None:
+    legacy = tmp_path / "legacy"
+    agent_output = tmp_path / "agent-output"
+    canonical = resolve_candidates_dir(agent_output)
+    report = audit_candidate_roots(legacy_dir=legacy, agent_output_dir=agent_output)
+    root = legacy if appeared_root == "legacy" else canonical
+    _write_legacy_candidate(root, "candidate-new", b"appeared\n")
+    before = _tree_fingerprint(root)
+    backup = tmp_path / "backup"
+
+    with pytest.raises(CandidateIntegrityError, match="appeared|drift"):
+        apply_candidate_migration(report, backup_dir=backup)
+
+    assert _tree_fingerprint(root) == before
+    assert not backup.exists()
 
 
 @pytest.mark.parametrize(

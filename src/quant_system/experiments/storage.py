@@ -54,6 +54,26 @@ class LocalExperimentStorage:
         self._table_suffix = f"_{sanitized}" if sanitized else ""
         self.write_duckdb = write_duckdb
 
+    def reserve_namespace(self) -> bool:
+        """Atomically reserve both artifact directories without overwriting."""
+        self.experiments_dir.parent.mkdir(parents=True, exist_ok=True)
+        self.reports_dir.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.experiments_dir.mkdir(exist_ok=False)
+        except FileExistsError:
+            return False
+        if self.reports_dir == self.experiments_dir:
+            return True
+        try:
+            self.reports_dir.mkdir(exist_ok=False)
+        except FileExistsError:
+            self.experiments_dir.rmdir()
+            return False
+        except Exception:
+            self.experiments_dir.rmdir()
+            raise
+        return True
+
     def save_config(self, config: ExperimentConfig) -> Path:
         return self.save_json(
             config.model_dump(mode="json"),

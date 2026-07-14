@@ -46,21 +46,12 @@ export function candidateBindingTone(
 }
 
 /**
- * Narrow optional API string fields to the digest-aware union.
- * Unknown / undefined values collapse to null (neutral).
+ * Preserve the locked digest-aware API member without widening the contract.
  */
 export function asCandidateApprovalBinding(
   value: AgentCandidatesResponse["candidates"][number]["approval_binding"],
 ): CandidateApprovalBinding {
-  if (
-    value === "pending" ||
-    value === "approved" ||
-    value === "rejected" ||
-    value === "legacy_unbound"
-  ) {
-    return value;
-  }
-  return null;
+  return value;
 }
 
 /**
@@ -70,12 +61,12 @@ export function asCandidateApprovalBinding(
  * - corrupt → stable error code, no digest preview
  */
 export function candidateDigestPresentation(candidate: {
-  integrity_state?: string | null;
-  manifest_digest?: string | null;
-  observed_manifest_digest?: string | null;
-  integrity_error_code?: string | null;
+  integrity_state: AgentCandidatesResponse["candidates"][number]["integrity_state"];
+  manifest_digest: string | null;
+  observed_manifest_digest: string | null;
+  integrity_error_code: string | null;
 }): CandidateDigestPresentation {
-  const integrity = candidate.integrity_state ?? null;
+  const integrity = candidate.integrity_state;
 
   if (integrity === "verified") {
     const digest = candidate.manifest_digest;

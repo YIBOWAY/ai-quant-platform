@@ -104,6 +104,22 @@ class BriefRepository:
                     raise BriefDatabaseUnavailable("brief snapshot insert failed")
 
                 snapshot = _snapshot_from_row(snapshot_row)
+                for source in _watermark_sources(source_watermark):
+                    conn.execute(
+                        f"""
+                        INSERT INTO {SCHEMA}.brief_snapshot_sources (
+                            snapshot_id,
+                            source_type,
+                            payload
+                        )
+                        VALUES (%s, %s, %s)
+                        """,
+                        (
+                            snapshot.snapshot_id,
+                            source["name"],
+                            Jsonb(source),
+                        ),
+                    )
                 conn.execute(
                     f"""
                     UPDATE {SCHEMA}.brief_issues
@@ -227,3 +243,20 @@ def _snapshot_from_row(row: tuple[Any, ...]) -> BriefSnapshot:
         payload=dict(row[2]),
         source_watermark=dict(row[3] or {}),
     )
+
+
+def _watermark_sources(
+    source_watermark: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not source_watermark:
+        return []
+    sources = source_watermark.get("sources")
+    if not isinstance(sources, list):
+        return []
+    return [
+        dict(source)
+        for source in sources
+        if isinstance(source, dict)
+        and isinstance(source.get("name"), str)
+        and bool(source["name"].strip())
+    ]

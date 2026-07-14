@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from quant_system.api.dependencies import (
-    AgentOutputDirDep,
     ApiRunsDirDep,
     OutputDirDep,
     SettingsDep,
@@ -35,18 +34,22 @@ router = APIRouter()
 
 @router.get("/factors", response_model=FactorCatalogResponse)
 def list_factors(
-    agent_output_dir: AgentOutputDirDep,
-    include_candidates: bool = False,
+    request: Request,
 ) -> dict:
-    # Default: examples + promoted only (no candidate exec). Opt-in surfaces
-    # human-approved candidates with origin="candidate"; pending candidates are
-    # dropped by the SafetyGate inside the loader and never appear.
-    # Candidate root comes only from the injected agent output dir (create_app
-    # isolation boundary) — never a process-global constant or QS_DATA_DIR.
-    registry = build_factor_registry(
-        include_approved_candidates=include_candidates,
-        agent_output_dir=agent_output_dir if include_candidates else None,
-    )
+    if "include_candidates" in request.query_params:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "candidate_bulk_loading_disabled",
+                "message": (
+                    "Use an exact candidate ID and expected digest in the "
+                    "one-shot research CLI."
+                ),
+            },
+        )
+    # Catalog GETs execute only built-in/promoted registry code. Candidate
+    # source is never imported by a read endpoint.
+    registry = build_factor_registry()
     origins = registry.origins()
     return {
         "factors": [

@@ -29,8 +29,8 @@ def test_playwright_backend_uses_isolated_test_environment() -> None:
     assert 'QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet")' in backend_block
     assert 'QS_DUCKDB_PATH: path.join(e2eDataRoot, "quant_system.duckdb")' in backend_block
     assert (
-        'QS_OPTIONS_RADAR_OUTPUT_DIR: path.join(e2eDataRoot, "options_scans")'
-        in backend_block
+        'QS_OPTIONS_RADAR_OUTPUT_DIR: path.join( e2eDataRoot, "options_scans", )'
+        in compact_backend_block
     )
     assert "QS_OPTIONS_RADAR_UNIVERSE_PATH" in compact_backend_block
     assert "QS_OPTIONS_RADAR_EARNINGS_CALENDAR_PATH" in compact_backend_block
@@ -96,9 +96,10 @@ def test_frontend_dev_defaults_to_project_ports() -> None:
     assert 'const frontendPort = readPort("PW_FRONTEND_PORT", 3001)' in playwright_config
     assert "baseURL: frontendUrl" in playwright_config
     assert "const e2eCorsOrigins = Array.from(" in playwright_config
-    assert "frontendPort === 3001" in playwright_config
+    assert "const frontendCommand = buildFrontendCommand(frontendPort)" in playwright_config
+    assert "port === 3001" in playwright_config
     assert '? "npm run dev"' in playwright_config
-    assert ': `npx next dev --hostname 127.0.0.1 --port ${frontendPort}`' in playwright_config
+    assert ': `npx next dev --hostname 127.0.0.1 --port ${port}`' in playwright_config
     assert 'url: `${backendUrl}/api/health`' in playwright_config
     assert "url: frontendUrl" in playwright_config
     assert "NEXT_PUBLIC_QUANT_API_BASE_URL: backendUrl" in playwright_config
@@ -108,8 +109,9 @@ def test_frontend_dev_defaults_to_project_ports() -> None:
 def test_playwright_frontend_uses_an_isolated_workspace() -> None:
     config = Path("src/frontend/playwright.config.ts").read_text(encoding="utf-8")
 
-    assert "node scripts/prepare-e2e-workspace.mjs ${frontendPort}" in config
-    assert 'cd ".tmp/e2e-frontend-${frontendPort}"' in config
+    assert "const frontendCommand = buildFrontendCommand(frontendPort)" in config
+    assert "node scripts/prepare-e2e-workspace.mjs ${port}" in config
+    assert 'cd ".tmp/e2e-frontend-${port}"' in config
     assert "cwd: frontendRoot" in config
     assert "cwd: e2eFrontendRoot" not in config
     assert "prepareE2EFrontend" not in config

@@ -28,6 +28,7 @@ from __future__ import annotations
 import ast
 import builtins as _builtins
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from quant_system.factors.base import BaseFactor
@@ -194,6 +195,27 @@ class CandidateLoadError(RuntimeError):
     """A candidate factor source failed the static safety check."""
 
 
+@dataclass(frozen=True)
+class CandidateFactorBinding:
+    """Exact identity of one digest-bound candidate factor loaded for research."""
+
+    candidate_id: str
+    manifest_digest: str
+    factor_id: str
+
+
+@dataclass(frozen=True)
+class CandidateFactorReviewBundle:
+    """Human-reviewable identity and source from one verified snapshot."""
+
+    candidate_id: str
+    manifest_digest: str
+    factor_id: str
+    approval_binding: str
+    source_path: Path
+    source: str
+
+
 def _is_allowed_import(module_name: str) -> bool:
     root = module_name.split(".")[0]
     if root in _ALLOWED_IMPORT_ROOTS:
@@ -317,85 +339,196 @@ def _attribute_chain(node: ast.Attribute) -> list[str]:
     return parts
 
 
-def load_approved_factor_candidates(
+def _declared_factor_id(source: str, candidate_id: str) -> str:
+    """Return the one literal factor_id declared by a BaseFactor subclass."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} is not valid Python: {exc}"
+        ) from exc
+    factor_classes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+        and any(
+            (isinstance(base, ast.Name) and base.id == "BaseFactor")
+            or (isinstance(base, ast.Attribute) and base.attr == "BaseFactor")
+            for base in node.bases
+        )
+    ]
+    if len(factor_classes) != 1:
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} must define exactly one BaseFactor subclass"
+        )
+    values: list[str] = []
+    for statement in factor_classes[0].body:
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(statement, ast.Assign):
+            targets = list(statement.targets)
+            value = statement.value
+        elif isinstance(statement, ast.AnnAssign):
+            targets = [statement.target]
+            value = statement.value
+        if any(
+            isinstance(target, ast.Name) and target.id == "factor_id"
+            for target in targets
+        ):
+            if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+                raise CandidateLoadError(
+                    f"candidate {candidate_id!r} factor_id must be a literal string"
+                )
+            values.append(value.value)
+    if len(values) != 1:
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} must declare exactly one literal factor_id"
+        )
+    return values[0]
+
+
+def inspect_factor_candidate(
+    *,
+    agent_output_dir: str | Path,
+    candidate_id: str,
+    expected_manifest_digest: str | None = None,
+) -> CandidateFactorReviewBundle:
+    """Return a static review bundle without compiling candidate source."""
+    from quant_system.agent.candidate_manifest import (
+        CandidateStaleError,
+        load_verified_candidate_snapshot,
+    )
+
+    snapshot = load_verified_candidate_snapshot(
+        agent_output_dir=Path(agent_output_dir),
+        candidate_id=candidate_id,
+    )
+    if (
+        expected_manifest_digest is not None
+        and snapshot.manifest_digest != expected_manifest_digest
+    ):
+        raise CandidateStaleError("candidate manifest digest no longer matches")
+    source_name = "factor.py.candidate"
+    source_bytes = snapshot.artifact_bytes.get(source_name)
+    if source_bytes is None:
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} has no {source_name!r} artifact"
+        )
+    source = source_bytes.decode("utf-8", errors="strict")
+    return CandidateFactorReviewBundle(
+        candidate_id=snapshot.candidate_id,
+        manifest_digest=snapshot.manifest_digest,
+        factor_id=_declared_factor_id(source, snapshot.candidate_id),
+        approval_binding=snapshot.approval_binding,
+        source_path=snapshot.candidate_dir / source_name,
+        source=source,
+    )
+
+
+def load_approved_factor_candidate(
     registry: FactorRegistry,
     *,
     agent_output_dir: str | Path,
-) -> list[str]:
-    """Load factors from verified, digest-bound approved candidates under agent root.
-
-    Callers pass the agent-output root only; candidates live under
-    ``agent/candidates`` via :func:`resolve_candidates_dir`. Each candidate is
-    re-verified immediately before compile: only
-    ``VerifiedCandidateSnapshot.artifact_bytes`` is executed. Tampered or
-    integrity-broken candidates raise :class:`CandidateIntegrityError` (fail
-    closed). Legacy unbound locks never authorize. Resident paper/live paths
-    must not call this (one-shot research only).
-    """
+    candidate_id: str,
+    expected_manifest_digest: str,
+) -> CandidateFactorBinding:
+    """Load one exact approved candidate snapshot for one-shot research."""
     from quant_system.agent.candidate_manifest import (
-        CandidateIntegrityError,
-        CandidateMigrationRequiredError,
+        CandidateStaleError,
         load_verified_candidate_snapshot,
     )
-    from quant_system.agent.candidate_pool import CandidatePool
-    from quant_system.agent.paths import resolve_candidates_dir
 
-    agent_root = Path(agent_output_dir)
-    root = resolve_candidates_dir(agent_root)
-    if not root.exists():
-        return []
-    pool = CandidatePool(agent_root)
-    loaded: list[str] = []
+    snapshot = load_verified_candidate_snapshot(
+        agent_output_dir=Path(agent_output_dir),
+        candidate_id=candidate_id,
+    )
+    if snapshot.manifest_digest != expected_manifest_digest:
+        raise CandidateStaleError("candidate manifest digest no longer matches")
+    if snapshot.approval_binding != "approved":
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} is not approved for one-shot research"
+        )
+    if snapshot.manifest.artifact_type != "factor":
+        raise CandidateLoadError(f"candidate {candidate_id!r} is not a factor")
+    source_name = "factor.py.candidate"
+    source_bytes = snapshot.artifact_bytes.get(source_name)
+    if source_bytes is None:
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} has no {source_name!r} artifact"
+        )
+    source = source_bytes.decode("utf-8", errors="strict")
+    _check_source(source, snapshot.candidate_id)
+    declared_factor_id = _declared_factor_id(source, candidate_id)
+    existing_origin = registry.origins().get(declared_factor_id)
+    if existing_origin is not None:
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} factor_id {declared_factor_id!r} "
+            f"collides with registered {existing_origin} factor"
+        )
+
+    # A factor_id must identify one candidate snapshot, not whichever approved
+    # directory happened to be visited first. Inspect other verified factor
+    # snapshots statically; never compile or execute their source.
+    from quant_system.agent.candidate_manifest import CandidateIntegrityError
+    from quant_system.agent.candidate_pool import CandidatePool
+
+    pool = CandidatePool(Path(agent_output_dir))
     for item in pool.list_for_read():
-        # Skip junk names and migration-only objects without attempting compile.
-        if item.integrity_error_code == "invalid_id":
-            continue
-        if item.integrity_state == "migration_required":
+        if item.candidate_id == snapshot.candidate_id or item.integrity_state != "verified":
             continue
         try:
-            # Last-responsible-moment re-verify: never trust list_for_read alone
-            # and never reopen artifact paths after this snapshot is built.
-            snapshot = load_verified_candidate_snapshot(
-                agent_output_dir=agent_root,
+            other = load_verified_candidate_snapshot(
+                agent_output_dir=Path(agent_output_dir),
                 candidate_id=item.candidate_id,
             )
-        except CandidateMigrationRequiredError:
-            continue
         except CandidateIntegrityError:
-            # Fail closed: an approved-then-tampered candidate must not be
-            # silently skipped while other candidates still compile.
             raise
-        if snapshot.approval_binding != "approved":
+        if (
+            other.manifest.artifact_type != "factor"
+            or other.approval_binding == "rejected"
+        ):
             continue
-        if snapshot.manifest.artifact_type != "factor":
+        other_bytes = other.artifact_bytes.get(source_name)
+        if other_bytes is None:
             continue
-        source_name = "factor.py.candidate"
-        source_bytes = snapshot.artifact_bytes.get(source_name)
-        if source_bytes is None:
-            continue
-        source = source_bytes.decode("utf-8", errors="strict")
-        _check_source(source, snapshot.candidate_id)
-        # Restricted namespace: pass an explicit __builtins__ so CPython does not
-        # inject the full builtins dict (which would expose __import__/eval/exec).
-        # The guarded __import__ enforces the module allowlist at runtime too.
-        # __name__ is seeded so `class` statements (and any module-introspection)
-        # see a conventional module name rather than NameError.
-        namespace: dict[str, object] = {
-            "__builtins__": _make_safe_builtins(),
-            "__name__": snapshot.candidate_id,
-        }
-        # Synthetic compile filename: never absolute candidate/worktree path.
-        compile_name = f"<{snapshot.candidate_id}/{source_name}>"
-        exec(compile(source, compile_name, "exec"), namespace)  # noqa: S102
-        for value in namespace.values():
-            if (
-                isinstance(value, type)
-                and issubclass(value, BaseFactor)
-                and value is not BaseFactor
-            ):
-                try:
-                    registry.register(value)
-                except ValueError:
-                    continue  # already registered -- idempotent reload
-                loaded.append(value.factor_id)
-    return loaded
+        other_factor_id = _declared_factor_id(
+            other_bytes.decode("utf-8", errors="strict"),
+            other.candidate_id,
+        )
+        if other_factor_id == declared_factor_id:
+            raise CandidateLoadError(
+                f"factor_id {declared_factor_id!r} is also declared by candidate "
+                f"{other.candidate_id!r}"
+            )
+
+    # Only execute after every identity/collision check that can be performed
+    # statically. A candidate rejected for an existing factor_id must not get a
+    # top-level execution opportunity merely to discover that collision.
+    namespace: dict[str, object] = {
+        "__builtins__": _make_safe_builtins(),
+        "__name__": snapshot.candidate_id,
+    }
+    compile_name = f"<{snapshot.candidate_id}/{source_name}>"
+    exec(compile(source, compile_name, "exec"), namespace)  # noqa: S102
+    factor_classes = [
+        value
+        for value in namespace.values()
+        if isinstance(value, type)
+        and issubclass(value, BaseFactor)
+        and value is not BaseFactor
+    ]
+    if len(factor_classes) != 1:
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} must define exactly one factor class"
+        )
+    factor_cls = factor_classes[0]
+    if factor_cls.factor_id != declared_factor_id:
+        raise CandidateLoadError(
+            f"candidate {candidate_id!r} runtime factor_id differs from its declaration"
+        )
+    registry.register(factor_cls, origin="candidate")
+    return CandidateFactorBinding(
+        candidate_id=snapshot.candidate_id,
+        manifest_digest=snapshot.manifest_digest,
+        factor_id=factor_cls.factor_id,
+    )

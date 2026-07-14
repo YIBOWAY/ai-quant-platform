@@ -18,7 +18,7 @@ from quant_system.brief.repository import (
     BriefNotFound,
     BriefRepository,
 )
-from quant_system.brief.service import BriefService
+from quant_system.brief.service import BriefService, BriefSnapshotMismatch
 
 router = APIRouter()
 
@@ -36,9 +36,13 @@ def generate_brief_issue(
         envelope = service.generate_issue(
             issue_date=request.issue_date,
             locale=request.locale,
+            payload=request.payload,
+            source_watermark=request.source_watermark,
         )
     except BriefDatabaseUnavailable as exc:
         raise _database_unavailable_503() from exc
+    except BriefSnapshotMismatch as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _to_response(envelope)
 
 

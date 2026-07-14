@@ -185,11 +185,10 @@ class PaperStrategySignalService:
         if builder is None:
             raise ValueError(f"unsupported strategy_id {config.strategy_id!r}")
 
-        # D-20 resident-path purity: the resident trading path must only ever see
-        # the default (examples + promoted, code-reviewed) registry. Never load
-        # approved candidates here — that path exec's candidate source and is
-        # confined to one-shot research backtests.
-        registry = build_factor_registry(include_approved_candidates=False)
+        # D-20 resident-path purity: the registry factory can only construct the
+        # default examples + promoted, code-reviewed set. Candidate execution is
+        # confined to the exact-ID/digest one-shot research loader.
+        registry = build_factor_registry()
         factor_ids = config.factor_ids or registry.factor_ids()
         factors = [
             registry.create(factor_id, lookback=config.lookback)

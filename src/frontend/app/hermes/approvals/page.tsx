@@ -1,4 +1,5 @@
-import { Card, StatusPill } from "@/components/ui/primitives";
+import { CandidateApprovalListState } from "@/components/hermes/approvals/CandidateApprovalListState";
+import { StatusPill } from "@/components/ui/primitives";
 import { getAgentCandidates } from "@/lib/api";
 import {
   asCandidateApprovalBinding,
@@ -25,10 +26,6 @@ export default async function HermesApprovalsPage() {
     migrationEvidence: isZh ? "迁移证据，不能审批" : "Migration evidence only — cannot approve",
     corrupt: isZh ? "完整性失败" : "Integrity failed",
     noPreview: isZh ? "无源码预览" : "No source preview",
-    empty: isZh ? "暂无研究审批项" : "No research approval items",
-    emptyHint: isZh
-      ? "候选列表来自平台只读候选 API。本页不提供批准或拒绝。"
-      : "Candidates come from the platform read-only candidate API. This page cannot approve or reject.",
     f2Note: isZh
       ? "F2 只读：不提供批准/拒绝控件。Gate 2 审批仍走既有人工 CAS 路径。"
       : "F2 read-only: no approve/reject controls. Gate 2 still uses the existing human CAS path.",
@@ -54,11 +51,8 @@ export default async function HermesApprovalsPage() {
         {workbench.labels.researchApproval}
       </h2>
 
-      {candidates.candidates.length === 0 ? (
-        <Card className="bg-[var(--color-stream-surface)]">
-          <p className="font-body-sm font-semibold text-text-primary">{text.empty}</p>
-          <p className="mt-1 font-body-sm text-text-secondary">{text.emptyHint}</p>
-        </Card>
+      {candidates.apiError || candidates.candidates.length === 0 ? (
+        <CandidateApprovalListState candidates={candidates} locale={locale} />
       ) : (
         <ul className="space-y-3">
           {candidates.candidates.map((candidate) => {

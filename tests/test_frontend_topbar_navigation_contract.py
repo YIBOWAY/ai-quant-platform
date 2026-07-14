@@ -25,7 +25,7 @@ def test_topbar_mobile_menu_exposes_ai_news() -> None:
 
     assert "aiNews" in topbar
     assert 'href: "/ai-news"' in nav_config
-    assert "navSections" in topbar
+    assert "buildNavSections" in topbar
     assert "isVisibleOnSurface" in topbar
 
 
@@ -57,7 +57,7 @@ def test_topbar_mobile_menu_exposes_sidebar_primary_routes() -> None:
         assert route in nav_config
 
     assert "@/lib/navConfig" in topbar
-    assert "navSections" in topbar
+    assert "buildNavSections" in topbar
     assert "isVisibleOnSurface" in topbar
     assert "mobileNavSections" in topbar
     assert "max-h-[calc(100dvh-4rem)] overflow-y-auto" in topbar

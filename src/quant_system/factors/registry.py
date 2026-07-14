@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from pathlib import Path
 
 from quant_system.factors.base import BaseFactor, FactorMetadata
 from quant_system.factors.examples import (
@@ -34,12 +33,7 @@ class FactorRegistry:
         self._origins[factor.factor_id] = origin
 
     def set_origin(self, factor_id: str, origin: str) -> None:
-        """Retag a registered factor's provenance.
-
-        Lets :func:`build_factor_registry` label factors by the registration
-        pass that loaded them (e.g. the approved-candidate loader, which does not
-        know its own provenance) without re-parsing sources.
-        """
+        """Retag the provenance of an already registered factor."""
         if factor_id not in self._factor_classes:
             raise KeyError(f"unknown factor_id {factor_id!r}")
         self._origins[factor_id] = origin
@@ -68,17 +62,15 @@ class FactorRegistry:
 def build_factor_registry(
     *,
     include_promoted: bool = True,
-    include_approved_candidates: bool = False,
-    agent_output_dir: str | Path | None = None,
 ) -> FactorRegistry:
     """Single construction point for the factor registry.
 
     Examples are always registered. Promoted, code-reviewed factors
-    (``library.promoted.PROMOTED_FACTORS``) are registered by default. Approved
-    agent candidates are loaded only when ``include_approved_candidates`` is set
-    — that path ``exec``'s candidate source and is reserved for one-shot research
-    (``run-config --include-approved-candidates``), NEVER the resident trading
-    path (D-20 resident-path purity).
+    (``library.promoted.PROMOTED_FACTORS``) are registered by default. Candidate
+    source is deliberately outside this factory: one-shot research must call
+    ``load_approved_factor_candidate`` with one exact candidate ID and expected
+    manifest digest. This keeps every resident caller examples+promoted only
+    (D-20 resident-path purity).
     """
     registry = FactorRegistry()
     for factor_cls in _EXAMPLE_FACTORS:
@@ -91,22 +83,6 @@ def build_factor_registry(
 
         for factor_cls in promoted.PROMOTED_FACTORS:
             registry.register(factor_cls, origin="promoted")
-
-    if include_approved_candidates and agent_output_dir is not None:
-        # One-shot research only: re-verifies digest-bound approved candidates
-        # immediately before compile (never a default/CWD candidates path).
-        # Resident paper/live construction must keep include_approved_candidates
-        # False. Lazy import avoids a circular import: promotion imports
-        # FactorRegistry.
-        from quant_system.agent.promotion import load_approved_factor_candidates
-
-        loaded = load_approved_factor_candidates(
-            registry, agent_output_dir=agent_output_dir
-        )
-        # Origin is tracked from which pass registered the id, not by re-parsing:
-        # the loader reports exactly the ids it added, so retag them as candidate.
-        for factor_id in loaded:
-            registry.set_origin(factor_id, "candidate")
 
     return registry
 

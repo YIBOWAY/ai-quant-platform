@@ -148,6 +148,7 @@ def _stable_inputs_match(
     filename: str,
     content: str,
     universe: list[str],
+    metadata_extra: dict[str, Any],
 ) -> bool:
     meta = snapshot.metadata
     if meta.get("task_id") != task_id:
@@ -159,6 +160,11 @@ def _stable_inputs_match(
     if list(meta.get("universe") or []) != list(universe):
         return False
     if list(meta.get("files") or []) != [filename]:
+        return False
+    existing_extra = {
+        key: value for key, value in meta.items() if key not in _PROTECTED_METADATA_KEYS
+    }
+    if existing_extra != metadata_extra:
         return False
     expected = content.encode("utf-8")
     actual = snapshot.artifact_bytes.get(filename)
@@ -268,6 +274,7 @@ class CandidatePool:
                     filename=safe_filename,
                     content=content,
                     universe=universe_list,
+                    metadata_extra=extra,
                 ):
                     assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
                     return _artifact_from_snapshot(existing, task_id=task_id)
@@ -387,7 +394,10 @@ class CandidatePool:
         return items
 
     def list_for_read(self) -> list[CandidateReadItem]:
-        if not self.candidates_dir.exists():
+        # Path.exists() follows symlinks and reports a dangling symlink as
+        # absent. lexists keeps that unsafe directory entry visible so the
+        # no-follow opener can reject it instead of reporting an empty pool.
+        if not os.path.lexists(self.candidates_dir):
             return []
         results: list[CandidateReadItem] = []
         try:
@@ -403,9 +413,10 @@ class CandidatePool:
                     results.append(self._read_item_at(root, name))
                 assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
         except CandidateIntegrityError:
-            # If the candidates root itself is unsafe, surface empty rather than
-            # crashing list consumers; individual corrupt items are isolated.
-            return results
+            # A corrupt individual candidate is represented by _read_item_at(),
+            # but an unsafe root invalidates the whole repository.  Propagate it
+            # so API/CLI consumers cannot confuse repository failure with empty.
+            raise
         # Newest-first by path mtime when available, else stable name order reverse.
         def _sort_key(item: CandidateReadItem) -> tuple[int, str]:
             path = self.candidates_dir / item.candidate_id
@@ -656,5 +667,3 @@ class CandidatePool:
             approval_enabled=False,
             integrity_error_code=None,
         )
-
-

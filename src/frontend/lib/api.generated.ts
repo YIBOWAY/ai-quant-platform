@@ -1820,31 +1820,34 @@ export interface components {
         /** AgentCandidateDetailResponse */
         AgentCandidateDetailResponse: {
             /** Approval Binding */
-            approval_binding?: string | null;
+            approval_binding: ("pending" | "approved" | "rejected" | "legacy_unbound") | null;
             /** Approval Enabled */
-            approval_enabled?: boolean | null;
+            approval_enabled: boolean;
             /** Audit */
-            audit?: string[];
+            audit: string[];
             /** Candidate Id */
             candidate_id: string;
             /** Integrity Error Code */
-            integrity_error_code?: string | null;
-            /** Integrity State */
-            integrity_state?: string | null;
+            integrity_error_code: string | null;
+            /**
+             * Integrity State
+             * @enum {string}
+             */
+            integrity_state: "verified" | "migration_required" | "corrupt";
             /** Manifest Digest */
-            manifest_digest?: string | null;
+            manifest_digest: string | null;
             /** Metadata */
-            metadata?: {
+            metadata: {
                 [key: string]: unknown;
             } | null;
             /** Observed Manifest Digest */
-            observed_manifest_digest?: string | null;
+            observed_manifest_digest: string | null;
             /** Reviews */
-            reviews?: string[];
+            reviews: string[];
             /** Source Preview */
-            source_preview?: string | null;
+            source_preview: string | null;
             /** Status */
-            status?: string | null;
+            status: ("pending" | "approved" | "rejected") | null;
         };
         /** AgentCandidatesResponse */
         AgentCandidatesResponse: {
@@ -2433,6 +2436,122 @@ export interface components {
             /** Symbol */
             symbol: string;
         };
+        /** BriefAccountPosition */
+        BriefAccountPosition: {
+            /** Avg Cost */
+            avg_cost: number;
+            /** Last Price */
+            last_price: number;
+            /** Market Value */
+            market_value: number;
+            /** Price As Of */
+            price_as_of: string | null;
+            /** Price Kind */
+            price_kind: string;
+            /** Quantity */
+            quantity: number;
+            /** Symbol */
+            symbol: string;
+            /** Unrealized Pnl */
+            unrealized_pnl: number;
+            /** Weight */
+            weight: number;
+        };
+        /** BriefAccountSnapshot */
+        BriefAccountSnapshot: {
+            /** Account Id */
+            account_id: string;
+            /** Base Currency */
+            base_currency: string;
+            /** Cash */
+            cash: number;
+            /** Equity */
+            equity: number;
+            /** Invested Pct */
+            invested_pct: number;
+            /** Pnl Abs */
+            pnl_abs: number;
+            /** Pnl Pct */
+            pnl_pct: number;
+            /** Positions */
+            positions: components["schemas"]["BriefAccountPosition"][];
+            price_source: components["schemas"]["BriefPriceSource"];
+        };
+        /** BriefAiNewsItem */
+        BriefAiNewsItem: {
+            /** Category */
+            category: string | null;
+            /** Id */
+            id: string;
+            /** Published At */
+            published_at: string | null;
+            /** Score */
+            score: number | null;
+            /** Source */
+            source: string;
+            /** Summary */
+            summary: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /** BriefArchivePayload */
+        BriefArchivePayload: {
+            account: components["schemas"]["BriefAccountSnapshot"];
+            /** Ai News */
+            ai_news: components["schemas"]["BriefAiNewsItem"][];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Hermes Log */
+            hermes_log: components["schemas"]["BriefHermesLogEntry"][];
+            /**
+             * Issue Date
+             * Format: date
+             */
+            issue_date: string;
+            /** Lede */
+            lede: string;
+            /**
+             * Locale
+             * @enum {string}
+             */
+            locale: "en" | "zh";
+            /** Market Note */
+            market_note: string;
+            /** Markets */
+            markets: components["schemas"]["BriefMarketSnapshot"][];
+            /** Paper Equity */
+            paper_equity: components["schemas"]["BriefEquityPoint"][];
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "brief_snapshot_v1";
+            /** Title */
+            title: string;
+            /** Warnings */
+            warnings: string[];
+        };
+        /** BriefEquityPoint */
+        BriefEquityPoint: {
+            /** Cash */
+            cash: number;
+            /** Equity */
+            equity: number;
+            /** Market Value */
+            market_value: number;
+            /** Source */
+            source: string;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+        };
         /** BriefGenerateRequest */
         BriefGenerateRequest: {
             /** Issue Date */
@@ -2442,6 +2561,24 @@ export interface components {
              * @default zh
              */
             locale: string;
+            payload: components["schemas"]["BriefArchivePayload"];
+            source_watermark: components["schemas"]["BriefSourceWatermark"];
+        };
+        /** BriefHermesLogEntry */
+        BriefHermesLogEntry: {
+            /** Href */
+            href: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "warn";
+            /** Summary */
+            summary: string | null;
+            /** Text */
+            text: string;
+            /** Timestamp */
+            timestamp: string | null;
         };
         /** BriefIssueEnvelopeResponse */
         BriefIssueEnvelopeResponse: {
@@ -2469,6 +2606,26 @@ export interface components {
              */
             status: string;
         };
+        /** BriefMarketSnapshot */
+        BriefMarketSnapshot: {
+            /** As Of */
+            as_of: string | null;
+            /** Change Pct */
+            change_pct: number | null;
+            /** Last */
+            last: number | null;
+            /** Source */
+            source: string | null;
+            /** Symbol */
+            symbol: string;
+        };
+        /** BriefPriceSource */
+        BriefPriceSource: {
+            /** As Of */
+            as_of: string | null;
+            /** Kind */
+            kind: string;
+        };
         /** BriefSnapshotResponse */
         BriefSnapshotResponse: {
             /** Payload */
@@ -2483,6 +2640,30 @@ export interface components {
             };
             /** Version */
             version: number;
+        };
+        /** BriefSourceState */
+        BriefSourceState: {
+            /** As Of */
+            as_of: string | null;
+            /** Detail */
+            detail: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "stale" | "unavailable";
+        };
+        /** BriefSourceWatermark */
+        BriefSourceWatermark: {
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Sources */
+            sources: components["schemas"]["BriefSourceState"][];
         };
         /**
          * BuySideAssistantRequest
@@ -2844,27 +3025,30 @@ export interface components {
         /** CandidateSummary */
         CandidateSummary: {
             /** Approval Binding */
-            approval_binding?: string | null;
+            approval_binding: ("pending" | "approved" | "rejected" | "legacy_unbound") | null;
             /** Approval Enabled */
-            approval_enabled?: boolean | null;
+            approval_enabled: boolean;
             /** Artifact Type */
-            artifact_type?: string | null;
+            artifact_type: string | null;
             /** Candidate Id */
             candidate_id: string;
             /** Goal */
-            goal?: string | null;
+            goal: string | null;
             /** Integrity Error Code */
-            integrity_error_code?: string | null;
-            /** Integrity State */
-            integrity_state?: string | null;
+            integrity_error_code: string | null;
+            /**
+             * Integrity State
+             * @enum {string}
+             */
+            integrity_state: "verified" | "migration_required" | "corrupt";
             /** Manifest Digest */
-            manifest_digest?: string | null;
+            manifest_digest: string | null;
             /** Observed Manifest Digest */
-            observed_manifest_digest?: string | null;
+            observed_manifest_digest: string | null;
             /** Status */
-            status?: string | null;
-        } & {
-            [key: string]: unknown;
+            status: ("pending" | "approved" | "rejected") | null;
+            /** Universe */
+            universe: string[] | null;
         };
         /** ExperimentDetailResponse */
         ExperimentDetailResponse: {
@@ -2994,10 +3178,10 @@ export interface components {
          * FactorCatalogItem
          * @description Factor metadata plus catalog provenance.
          *
-         *     ``origin`` is additive and always present: ``builtin`` for example factors,
-         *     ``promoted`` for code-reviewed promoted-library factors, ``candidate`` for
-         *     human-approved agent candidates surfaced only when
-         *     ``GET /factors?include_candidates=true``.
+         *     ``origin`` is additive and always present: ``builtin`` for example factors
+         *     and ``promoted`` for code-reviewed promoted-library factors. Candidate
+         *     source is never imported by the catalog GET; exact candidate research is a
+         *     separate CLI-only flow bound to candidate ID plus manifest digest.
          */
         FactorCatalogItem: {
             /** Description */
@@ -3019,7 +3203,7 @@ export interface components {
              * Origin
              * @enum {string}
              */
-            origin: "builtin" | "promoted" | "candidate";
+            origin: "builtin" | "promoted";
         };
         /** FactorCatalogResponse */
         FactorCatalogResponse: {
@@ -6887,9 +7071,7 @@ export interface operations {
     };
     list_factors_api_factors_get: {
         parameters: {
-            query?: {
-                include_candidates?: boolean;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -6903,15 +7085,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FactorCatalogResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

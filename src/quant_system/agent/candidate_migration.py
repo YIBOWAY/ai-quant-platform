@@ -329,8 +329,18 @@ def _merge_items(
 def _scan_root(
     root_path: Path, *, location: Literal["legacy", "canonical"]
 ) -> tuple[OpenedDirectory | None, dict[str, CandidateMigrationItem], tuple[int, int] | None]:
-    if not _path_is_dir_nofollow(root_path):
+    try:
+        root_stat = os.lstat(root_path)
+    except FileNotFoundError:
         return None, {}, None
+    except OSError as exc:
+        raise CandidateIntegrityError(
+            f"cannot inspect {location} candidate root"
+        ) from exc
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise CandidateIntegrityError(
+            f"{location} candidate root is not a safe directory"
+        )
 
     # open_absolute_directory is a context manager; for audit we need to scan
     # inside the with-block and return plain data only.
@@ -344,6 +354,39 @@ def _scan_root(
             items[observed.candidate_id] = observed
         assert_entry_is_open_fd(opened.parent_fd, opened.name, opened.fd)
     return None, items, identity
+
+
+def _current_root_identity(path: Path, *, label: str) -> tuple[int, int] | None:
+    try:
+        root_stat = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise CandidateIntegrityError(f"cannot inspect {label} root") from exc
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise CandidateIntegrityError(f"{label} root is not a safe directory")
+    with open_absolute_directory(path, create=False) as opened:
+        assert_entry_is_open_fd(opened.parent_fd, opened.name, opened.fd)
+        return _identity_tuple(opened)
+
+
+def _validate_reported_root_state(
+    path: Path,
+    *,
+    label: str,
+    expected_present: bool,
+    expected_dev: int | None,
+    expected_ino: int | None,
+) -> None:
+    if expected_present != (expected_dev is not None and expected_ino is not None):
+        raise CandidateIntegrityError(f"invalid {label} root identity in report")
+    current = _current_root_identity(path, label=label)
+    if not expected_present:
+        if current is not None:
+            raise CandidateIntegrityError(f"{label} root appeared after audit")
+        return
+    if current != (expected_dev, expected_ino):
+        raise CandidateIntegrityError(f"{label} root identity drift")
 
 
 def audit_candidate_roots(
@@ -396,6 +439,8 @@ def audit_candidate_roots(
         in_canonical = "canonical" in item.locations
 
         if item.integrity_state == "corrupt":
+            if in_legacy and in_canonical:
+                conflicts.append(cid)
             continue
 
         if in_legacy and not in_canonical:
@@ -900,9 +945,38 @@ def apply_candidate_migration(
 
     _assert_planned_roots_distinct(legacy_path, canonical_path, backup_path)
 
-    if report.conflicts:
+    # Validate even a no-op report. Otherwise an empty audit can be replayed
+    # after a root appears (or becomes a symlink) and falsely return applied.
+    _validate_reported_root_state(
+        legacy_path,
+        label="legacy",
+        expected_present=report.legacy_present,
+        expected_dev=report.legacy_root_st_dev,
+        expected_ino=report.legacy_root_st_ino,
+    )
+    _validate_reported_root_state(
+        canonical_path,
+        label="canonical",
+        expected_present=report.canonical_present,
+        expected_dev=report.canonical_root_st_dev,
+        expected_ino=report.canonical_root_st_ino,
+    )
+
+    intrinsic_conflicts = sorted(
+        item.candidate_id
+        for item in report.items
+        if {"legacy", "canonical"}.issubset(item.locations)
+        and (
+            item.integrity_state == "corrupt"
+            or item.source_manifest_digest is None
+            or item.canonical_manifest_digest is None
+            or item.source_manifest_digest != item.canonical_manifest_digest
+        )
+    )
+    conflicts = sorted(set(report.conflicts) | set(intrinsic_conflicts))
+    if conflicts:
         raise CandidateMigrationConflict(
-            f"refusing apply with conflicts: {report.conflicts}"
+            f"refusing apply with conflicts: {conflicts}"
         )
 
     # Nothing to write: pure no-op without creating backup/canonical roots.

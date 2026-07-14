@@ -1,6 +1,6 @@
 # 数据库缓存方案
 
-状态（2026-07-10）：本地存储分为五类能力：
+状态（2026-07-14）：本地存储分为五类能力：
 
 1. DuckDB 富途期权报价缓存。
 2. 可选 PostgreSQL run index；研究 artifact 仍以文件为事实源。
@@ -12,10 +12,18 @@
 
 数据库功能在代码中已实现，但不能把“实现 canonical”写成“运行环境已经切到
 canonical”。截至本快照，live `quantplatform` 的四份 migration 共 14 张表全部存在
-（003/004 为 11 张业务表）；当前 8765 以 `QS_DATABASE_AUTO_MIGRATE=false` 运行并确认
-数据库可达。现有账户已显式 backfill，并在 mirror/canonical 临时进程中得到
+（003/004 为 11 张业务表）；当前 8765 以 `QS_DATABASE_AUTO_MIGRATE=true` 启动并幂等
+重放 migration，health 确认数据库可达。现有账户已显式 backfill，并在 mirror/canonical 临时进程中得到
 `in_sync` reconciliation。默认 8765 仍是 `file` 模式，这是一项尚未执行的运营切换，
 不是代码缺失。迁移器不维护 `schema_migrations` 表，而是按词法序幂等重放 SQL。
+
+2026-07-14 最终运行验收快照：Docker `quantplatform-db` 正在运行且可接受 SQL 查询
+（容器未配置 Docker healthcheck），8765 health 报 database reachable；库内
+`brief_issues=2`、`brief_snapshots=3`、
+`brief_snapshot_sources=16`、`ai_news_items=240`、`ai_news_fetches=166`、
+`ai_news_daily_reports=4`（latest `2026-07-14`）、`paper_accounts=1`。其中
+`brf_20260714_kxsm9b` 已由真实浏览器更新为 v2，保存 payload 含 1 个账户权益点、4 个
+市场、6 条 AI 新闻、8 条研究活动与 8 个独立来源水位；这些是验收时点证据，不是永久计数。
 
 Slice 9G 本身没有新增 SQL migration 或数据库表。HQA opportunity ledger 是 HQA
 仓库内的本地 JSONL 事实源；平台 `paper strategies observations` 只读取现有
@@ -97,12 +105,15 @@ AI News 的事实来源仍是 AI HOT public API。PostgreSQL 只作为本地只�
 - API 行为：
   - `GET /api/news/aihot/items` 先调用 AI HOT 实时接口。
   - 实时成功后 best-effort upsert 到 `ai_news_items`，缓存失败不影响响应。
+    因此 `/brief` 的 live server render 虽然只发 GET，仍可能外联 AI HOT，并写入这两张
+    可选缓存/审计表；它不是“数据库字节完全不变”的观察操作，但不会写 brief 历史、
+    paper account、审批、回测或交易事实。
   - 实时失败时尝试按 mode/category/q/since/take 读取缓存；命中则返回 `200`、
     `warnings` 中标注本地缓存和上游错误；未命中则保留原 `502/503`。
   - cursor 请求不使用缓存兜底，避免把不透明上游 cursor 伪装成本地分页。
   - `GET /api/news/aihot/daily` 实时成功后 best-effort upsert 到
     `ai_news_daily_reports`;缓存失败不影响响应。上游失败时按 requested date
-    或 UTC 当天读取缓存;命中则返回 `200`,并在 `warnings` 中标注 cache 来源和上游错误。
+    或 `Asia/Shanghai` 当天读取缓存;命中则返回 `200`,并在 `warnings` 中标注 cache 来源和上游错误。
 - 测试要求：默认测试不得连接真实 AI HOT 或真实 Postgres；API 测试 monkeypatch
   provider/repository，repository 测试使用 fake database。
 
@@ -134,8 +145,14 @@ AI News 的事实来源仍是 AI HOT public API。PostgreSQL 只作为本地只�
 
 当前实现边界：schema、brief repository、`POST /api/brief/issues/generate`、
 `GET /api/brief/issues/latest`、`GET /api/brief/issues/{public_id}`、
-`/brief/{public_id}` 前端归档页和 contract tests 已存在。数据库关闭/不可达时
-归档路径明确失败，不用当日 live 数据伪造历史快照。
+`/brief/{public_id}` 前端归档页和 contract tests 已存在。生成接口只接受 factual v1
+聚合 payload（paper account、equity curve、markets、AI news、research activity）与逐源
+watermark；嵌套结构拒绝未知字段。paper-account watermark 必须明确 available/stale，
+权威账户源不可用时前端显示 `--` 并禁用保存，后端也拒绝占位 payload。数据库关闭/
+不可达时归档路径明确失败；历史页只渲染保存的 snapshot，不用当日 live 数据覆盖历史。
+当前 payload 由仓库内官方 `/brief` UI 聚合，后端验证 schema、日期、locale 和来源水位，
+但不会独立重抓每个上游来源；这是本地单用户可信客户端边界。若未来开放多客户端或远程写入，
+应把聚合移到后端，或增加可验证的 source receipt，不能把现状表述成服务端来源证明。
 
 ## PostgreSQL Paper Account Repositories（已实现，运行切换未完成）
 

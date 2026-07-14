@@ -92,6 +92,12 @@ def test_hermes_workbench_is_read_only_artifact_shelf() -> None:
     assert hermes_page.is_file()
 
     source = read("src/frontend/app/hermes/page.tsx")
+    shell = read(
+        "src/frontend/components/hermes/shell/HermesWorkbenchShell.tsx"
+    )
+    today = read(
+        "src/frontend/components/hermes/today/HermesTodayView.tsx"
+    )
     hermes_index = read("src/frontend/components/hermes/index.ts")
     composer = read("src/frontend/components/hermes/ComposerDock.tsx")
 
@@ -99,13 +105,19 @@ def test_hermes_workbench_is_read_only_artifact_shelf() -> None:
     assert "/api/agent/tasks" not in source
     assert "apiPost" not in source
     assert "getAgentLlmConfig" not in source
-    assert "ComposerDock" in source
-    assert "ArtifactShelf" in source
+    assert "HermesTodayView" in source
+    assert "ComposerDock" in shell
+    assert "allowSubmit={false}" in shell
+    assert "disabled" in shell
+    assert "ArtifactFeed" in today
     assert "getAgentCandidates" in source
     assert "getHermesArtifacts" in source
     assert "Promise.all" in source
-    assert "Artifact-first read-only research workbench. Submit remains disabled." in source
-    assert "以产物为先的只读研究工作台。提交仍保持禁用。" in source
+    assert (
+        "Read-only research desk prioritizing action, exceptions, and conclusions. "
+        "Submit remains disabled."
+    ) in today
+    assert "以行动、异常与结论为先的只读研究工作台。提交仍保持禁用。" in today
     assert "Read-only skeleton" not in source
     assert "只读骨架" not in source
     assert "streamPlaceholderA" not in source
@@ -118,3 +130,27 @@ def test_hermes_workbench_is_read_only_artifact_shelf() -> None:
     agent_studio = read("src/frontend/app/agent-studio/page.tsx")
     assert "TerminalSplitShell" in agent_studio
     assert "<TerminalSplitShell" in agent_studio
+    assert "AgentTaskForm" not in agent_studio
+    assert "getAgentLlmConfig" not in agent_studio
+    assert (
+        "Task submission and approve/reject controls are intentionally unavailable"
+        in agent_studio
+    )
+    assert "任务提交与批准/拒绝控件已明确关闭" in agent_studio
+    assert 'href={`/${locale}/hermes`}' in agent_studio
+
+
+def test_agent_candidate_surfaces_fail_closed_on_missing_contract_or_repository() -> None:
+    task_form = read("src/frontend/components/forms/AgentTaskForm.tsx")
+    agent_studio = read("src/frontend/app/agent-studio/page.tsx")
+
+    assert 'detail.integrity_state !== "verified"' in task_form
+    assert 'detail.approval_binding !== "pending"' in task_form
+    assert "candidate.approval_enabled === true" in task_form
+    assert "candidate.integrity_state === \"verified\"" in task_form
+    assert "candidates.apiError ? (" in agent_studio
+    assert "data-agent-candidates-unavailable" in agent_studio
+    assert "candidateUnavailableTitle" in agent_studio
+    assert "candidateUnavailableDesc" in agent_studio
+    assert "AgentTaskForm" not in agent_studio
+    assert "/api/agent/tasks" not in agent_studio

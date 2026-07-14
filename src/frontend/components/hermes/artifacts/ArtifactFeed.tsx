@@ -12,11 +12,66 @@ export type ArtifactFeedProps = {
   sourcesOnly?: boolean;
 };
 
+export type ArtifactFeedReadState =
+  | "available"
+  | "empty"
+  | "degraded"
+  | "unavailable";
+
+/** Normalize transport failures and forward-compatible corrupt states first. */
+export function artifactFeedReadState(
+  envelope: HermesArtifactShelfEnvelope,
+): ArtifactFeedReadState {
+  const runtimeStatus = String(envelope.read_status);
+  if (
+    envelope.apiError ||
+    runtimeStatus === "unavailable" ||
+    runtimeStatus === "corrupt"
+  ) {
+    return "unavailable";
+  }
+  if (runtimeStatus === "degraded") return "degraded";
+  if (runtimeStatus === "empty") return "empty";
+  if (runtimeStatus === "available") return "available";
+  return "unavailable";
+}
+
+function artifactFeedReasons(envelope: HermesArtifactShelfEnvelope): string[] {
+  const runtimeStatus = String(envelope.read_status);
+  const knownReadStatuses = new Set([
+    "available",
+    "empty",
+    "degraded",
+    "unavailable",
+    "corrupt",
+  ]);
+  return Array.from(
+    new Set([
+      ...(envelope.apiError ? [envelope.apiError] : []),
+      ...(!knownReadStatuses.has(runtimeStatus)
+        ? ["artifact_feed · read_status_invalid"]
+        : []),
+      ...envelope.warnings.map(
+        (warning) => `${warning.source} · ${warning.code}`,
+      ),
+      ...envelope.sources.flatMap((source) =>
+        source.reason_code
+          ? [`${source.kind} · ${source.reason_code}`]
+          : source.status === "degraded" || source.status === "unavailable"
+            ? [`${source.kind} · ${source.status}`]
+            : [],
+      ),
+    ]),
+  );
+}
+
 /**
  * Feed/source-level status exactly once. Does not re-render per-item source badges.
  */
 export function ArtifactFeed({ envelope, locale, sourcesOnly = false }: ArtifactFeedProps) {
   const text = artifactCopy(locale);
+  const readState = artifactFeedReadState(envelope);
+  const reasons = artifactFeedReasons(envelope);
 
   return (
     <div className="space-y-3" data-hermes-artifact-feed>
@@ -34,19 +89,17 @@ export function ArtifactFeed({ envelope, locale, sourcesOnly = false }: Artifact
         </ul>
       ) : null}
 
-      {sourcesOnly ? null : envelope.read_status === "degraded" ? (
+      {sourcesOnly ? null : readState === "degraded" ? (
         <div role="status">
           <Card tone="warning">
             <p className="font-body-sm font-semibold text-warning">{text.degradedTitle}</p>
             <p className="mt-1 font-body-sm text-text-secondary">
               {envelope.items.length ? text.degradedDescription : text.degradedEmptyDescription}
             </p>
-            {envelope.warnings.length ? (
+            {reasons.length ? (
               <ul className="mt-2 space-y-1 font-data-mono text-xs text-text-secondary">
-                {envelope.warnings.map((warning) => (
-                  <li key={`${warning.source}:${warning.code}`}>
-                    {warning.source} · {warning.code}
-                  </li>
+                {reasons.map((reason) => (
+                  <li key={reason}>{reason}</li>
                 ))}
               </ul>
             ) : null}
@@ -54,17 +107,15 @@ export function ArtifactFeed({ envelope, locale, sourcesOnly = false }: Artifact
         </div>
       ) : null}
 
-      {sourcesOnly ? null : envelope.read_status === "unavailable" ? (
+      {sourcesOnly ? null : readState === "unavailable" ? (
         <div role="alert">
           <Card tone="danger">
             <p className="font-body-sm font-semibold text-danger">{text.unavailableTitle}</p>
             <p className="mt-1 font-body-sm text-text-secondary">{text.unavailableDescription}</p>
-            {envelope.warnings.length ? (
+            {reasons.length ? (
               <ul className="mt-2 space-y-1 font-data-mono text-xs text-text-secondary">
-                {envelope.warnings.map((warning) => (
-                  <li key={`${warning.source}:${warning.code}`}>
-                    {warning.source} · {warning.code}
-                  </li>
+                {reasons.map((reason) => (
+                  <li key={reason}>{reason}</li>
                 ))}
               </ul>
             ) : null}
@@ -72,7 +123,7 @@ export function ArtifactFeed({ envelope, locale, sourcesOnly = false }: Artifact
         </div>
       ) : null}
 
-      {sourcesOnly ? null : envelope.read_status === "empty" ? (
+      {sourcesOnly ? null : readState === "empty" ? (
         <div role="status">
           <EmptyState title={text.emptyTitle} description={text.emptyDescription} />
         </div>
@@ -80,8 +131,8 @@ export function ArtifactFeed({ envelope, locale, sourcesOnly = false }: Artifact
 
       {sourcesOnly
         ? null
-        : envelope.read_status !== "unavailable" &&
-            envelope.read_status !== "empty" &&
+        : readState !== "unavailable" &&
+            readState !== "empty" &&
             envelope.items.length === 0 ? (
             <div role="status">
               <EmptyState title={text.noUsableTitle} description={text.noUsableDescription} />

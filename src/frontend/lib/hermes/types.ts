@@ -66,6 +66,5 @@ export type HermesFeatureFlags = {
 };
 
 /** Backend CandidateReadItem keys required on every list payload (nullable ≠ optional). */
-export type HermesCandidateReadItem = AgentCandidatesResponse["candidates"][number] & {
-  universe?: string[] | null;
-};
+export type HermesCandidateReadItem =
+  AgentCandidatesResponse["candidates"][number];

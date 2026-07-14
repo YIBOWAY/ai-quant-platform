@@ -9,7 +9,6 @@ import { hermesRoutes } from "./routes";
 import type {
   HermesAttentionItem,
   HermesAutomationSummary,
-  HermesCandidateReadItem,
   HermesResultSummary,
   HermesTechnicalSource,
   HermesTodayModel,
@@ -49,14 +48,23 @@ function isAutomationItem(
   return item.kind === "automation_status";
 }
 
-function pickLatestAutomation(
+function occurredAtMillis(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+function newestArtifactFirst(a: HermesArtifact, b: HermesArtifact): number {
+  const timeDelta = occurredAtMillis(b.occurred_at) - occurredAtMillis(a.occurred_at);
+  if (timeDelta !== 0) return timeDelta;
+  return b.id.localeCompare(a.id);
+}
+
+export function pickLatestAutomation(
   items: HermesArtifact[],
 ): Extract<HermesArtifact, { kind: "automation_status" }> | null {
   const automationItems = items.filter(isAutomationItem);
   if (automationItems.length === 0) return null;
-  return automationItems.reduce((latest, item) =>
-    item.occurred_at > latest.occurred_at ? item : latest,
-  );
+  return automationItems.slice().sort(newestArtifactFirst)[0] ?? null;
 }
 
 function jobIsException(
@@ -97,7 +105,7 @@ function buildAutomation(
     return {
       healthy: 0,
       total: KNOWN_JOB_IDS.length,
-      status: artifacts.read_status === "empty" ? "healthy" : "unavailable",
+      status: "unavailable",
       exceptions: [],
     };
   }
@@ -157,8 +165,16 @@ function candidateAttention(
   candidates: AgentCandidatesResponse,
 ): HermesAttentionItem[] {
   const items: HermesAttentionItem[] = [];
+  if (candidates.apiError) {
+    items.push({
+      id: "candidate-feed",
+      kind: "degraded",
+      title: "Candidate source unavailable",
+      summary: candidates.apiError,
+    });
+  }
   for (const raw of candidates.candidates) {
-    const candidate = raw as HermesCandidateReadItem;
+    const candidate = raw;
     const id = candidate.candidate_id;
     const integrity = candidate.integrity_state ?? null;
     const approvalEnabled = candidate.approval_enabled === true;
@@ -196,7 +212,10 @@ function candidateAttention(
             : integrity === "corrupt"
               ? "Candidate integrity failed"
               : "Legacy unbound candidate",
-        summary: candidate.goal ?? id,
+        summary:
+          integrity === "corrupt"
+            ? candidate.integrity_error_code ?? id
+            : candidate.goal ?? id,
       });
     }
   }
@@ -281,10 +300,7 @@ function buildRecentResults(
   return artifacts.items
     .filter((item) => item.kind !== "automation_status")
     .slice()
-    .sort((a, b) => {
-      if (a.occurred_at === b.occurred_at) return a.id.localeCompare(b.id);
-      return a.occurred_at < b.occurred_at ? 1 : -1;
-    })
+    .sort(newestArtifactFirst)
     .map((item) => ({
       id: item.id,
       kind: item.kind,
@@ -377,7 +393,9 @@ function deriveState(input: {
     input.attention.some((item) => item.kind !== "approval") ||
     input.automation.exceptions.length > 0 ||
     input.artifacts.read_status === "degraded" ||
-    input.automation.status === "attention";
+    input.automation.status === "attention" ||
+    (input.automation.status === "unavailable" &&
+      input.artifacts.read_status !== "empty");
   if (hasSystemDegradation) {
     return "degraded";
   }

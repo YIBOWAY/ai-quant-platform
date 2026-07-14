@@ -1,6 +1,7 @@
-import type { HermesArtifact, HermesArtifactShelfEnvelope } from "@/lib/api";
+import type { HermesArtifactShelfEnvelope } from "@/lib/api";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
 import type { HermesTodayModel } from "@/lib/hermes/types";
+import { pickLatestAutomation } from "@/lib/hermes/viewModel";
 import type { Locale } from "@/lib/locale";
 import { ArtifactFeed } from "@/components/hermes/artifacts";
 import { TechnicalDetails } from "@/components/hermes/artifacts/TechnicalDetails";
@@ -14,19 +15,6 @@ export type HermesTodayViewProps = {
   artifacts: HermesArtifactShelfEnvelope;
   locale: Locale;
 };
-
-function pickLatestAutomation(
-  items: HermesArtifact[],
-): Extract<HermesArtifact, { kind: "automation_status" }> | null {
-  const automationItems = items.filter(
-    (item): item is Extract<HermesArtifact, { kind: "automation_status" }> =>
-      item.kind === "automation_status",
-  );
-  if (automationItems.length === 0) return null;
-  return automationItems.reduce((latest, item) =>
-    item.occurred_at > latest.occurred_at ? item : latest,
-  );
-}
 
 /**
  * Hermes Today hierarchy: attention → automation (exceptions only) → recent

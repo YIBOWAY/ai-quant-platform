@@ -36,14 +36,12 @@ describe("candidateBindingTone", () => {
 });
 
 describe("asCandidateApprovalBinding", () => {
-  it("preserves known members and collapses unknown/undefined to null", () => {
+  it("preserves every locked API member", () => {
     expect(asCandidateApprovalBinding("pending")).toBe("pending");
     expect(asCandidateApprovalBinding("approved")).toBe("approved");
     expect(asCandidateApprovalBinding("rejected")).toBe("rejected");
     expect(asCandidateApprovalBinding("legacy_unbound")).toBe("legacy_unbound");
     expect(asCandidateApprovalBinding(null)).toBe(null);
-    expect(asCandidateApprovalBinding(undefined)).toBe(null);
-    expect(asCandidateApprovalBinding("other")).toBe(null);
   });
 });
 

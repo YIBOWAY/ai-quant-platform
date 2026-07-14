@@ -247,25 +247,72 @@ def test_agent_post_routes_publish_response_models(tmp_path) -> None:
         "expected_status",
     ]
     candidate_summary = components["CandidateSummary"]["properties"]
-    for field in (
+    candidate_fields = (
+        "candidate_id",
+        "artifact_type",
+        "goal",
+        "universe",
+        "status",
         "integrity_state",
         "manifest_digest",
         "observed_manifest_digest",
         "approval_binding",
         "approval_enabled",
         "integrity_error_code",
-    ):
+    )
+    for field in candidate_fields:
         assert field in candidate_summary
+    assert components["CandidateSummary"]["required"] == list(candidate_fields)
+    assert candidate_summary["status"]["anyOf"][0]["enum"] == [
+        "pending",
+        "approved",
+        "rejected",
+    ]
+    assert candidate_summary["integrity_state"]["enum"] == [
+        "verified",
+        "migration_required",
+        "corrupt",
+    ]
+    assert candidate_summary["approval_binding"]["anyOf"][0]["enum"] == [
+        "pending",
+        "approved",
+        "rejected",
+        "legacy_unbound",
+    ]
     detail = components["AgentCandidateDetailResponse"]["properties"]
-    for field in (
+    detail_fields = (
+        "candidate_id",
+        "metadata",
+        "source_preview",
+        "audit",
+        "reviews",
         "integrity_state",
         "manifest_digest",
         "observed_manifest_digest",
         "approval_binding",
         "approval_enabled",
         "integrity_error_code",
-    ):
+        "status",
+    )
+    for field in detail_fields:
         assert field in detail
+    assert components["AgentCandidateDetailResponse"]["required"] == list(detail_fields)
+    assert detail["integrity_state"]["enum"] == [
+        "verified",
+        "migration_required",
+        "corrupt",
+    ]
+    assert detail["approval_binding"]["anyOf"][0]["enum"] == [
+        "pending",
+        "approved",
+        "rejected",
+        "legacy_unbound",
+    ]
+    assert detail["status"]["anyOf"][0]["enum"] == [
+        "pending",
+        "approved",
+        "rejected",
+    ]
 
 
 def test_brief_archive_routes_publish_response_models(tmp_path) -> None:

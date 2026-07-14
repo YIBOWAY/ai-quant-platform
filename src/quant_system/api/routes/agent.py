@@ -42,12 +42,25 @@ def _candidate_conflict(candidate_id: str, code: str) -> HTTPException:
     )
 
 
+def _candidate_repository_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": "candidate_repository_unavailable",
+            "resource": "agent_candidates",
+        },
+    )
+
+
 @router.get("/agent/candidates", response_model=AgentCandidatesResponse)
 def list_candidates(
     agent_output_dir: AgentOutputDirDep,
     status: str | None = None,
 ) -> dict:
-    candidates = AgentRunner(agent_output_dir=agent_output_dir).list_candidates()
+    try:
+        candidates = AgentRunner(agent_output_dir=agent_output_dir).list_candidates()
+    except (CandidateIntegrityError, OSError) as exc:
+        raise _candidate_repository_unavailable() from exc
     if status is not None:
         candidates = [
             candidate
@@ -65,7 +78,10 @@ def candidate_detail(candidate_id: str, agent_output_dir: AgentOutputDirDep) -> 
         raise not_found_404("agent_candidate", candidate_id) from exc
 
     pool = CandidatePool(agent_output_dir)
-    items = {item.candidate_id: item for item in pool.list_for_read()}
+    try:
+        items = {item.candidate_id: item for item in pool.list_for_read()}
+    except (CandidateIntegrityError, OSError) as exc:
+        raise _candidate_repository_unavailable() from exc
     item = items.get(candidate_id)
     if item is None:
         # Try get for verified path; list may have raced empty root.
@@ -138,8 +154,6 @@ def candidate_detail(candidate_id: str, agent_output_dir: AgentOutputDirDep) -> 
             "approval_enabled": False,
             "integrity_error_code": None,
             "status": item.status,
-            "artifact_type": item.artifact_type,
-            "goal": item.goal,
         }
 
     # verified

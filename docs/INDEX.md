@@ -10,7 +10,7 @@
 | 跨仓产品路线 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md` | Hermes 是 COO/编排层；本仓库是领域后端。 |
 | 已交付跨仓计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | Slice 9A-9G + mini 9H 已完成。 |
 | 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
-| 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、Gate 2 digest CAS、dry-run migration、隔离 Gate 3 worktree 已代码交付；真实 `--apply` 与 Hermes 新审批 UI 仍未授权/未开放。 |
+| 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、HQA Scene-B Gate 1 精确源绑定、Gate 2 digest CAS、dry-run migration、隔离且可恢复的 Gate 3 worktree 已交付并完成对抗性加固；真实 `--apply`、真实 promotion 与 Hermes 审批 mutation 均未执行。 |
 | 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 只读 Hermes 壳、可回滚默认首页与 hard-off chat/execution 已代码交付；chat/approve UI 与旧页 redirect 仍未开放。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
 | 当前实现选择 | D-31 其余 wave | Gateway capability 合同已冻结且 chat 仍 fail-closed；candidate integrity/Gate 3 与 professional frontend/read-only shell 均已代码交付；bridge/chat 与真实 migration apply 仍关闭。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
@@ -56,11 +56,22 @@ scheduler、outbound worker、POST route 或数据库 migration。
   `legacy_unbound` 无执行/批准/晋级权威。
 - Gate 2：显式 `expected_manifest_digest` + `expected_status=pending` CAS；
   终态决策不可翻转。
+- HQA Scene-B Gate 1：人类确认 exact source SHA-256 + note 后，HQA 才持久化
+  confirmation 与 exact candidate/manifest binding；缺 binding 时 HQA list/detail 不提供
+  approve command，approve 也拒绝。平台 external source 以二进制读取并原样落入
+  candidate，JSON receipt 返回 verified `source_sha256` 供 HQA 强制匹配；raw
+  `list-candidates` 不再输出审批命令，raw review 仅是 Gate 2 primitive。
 - Gate 3：`agent promote-candidate` 需要 `--candidate-id`、`--expected-digest`、
   `--base-commit`；stdout 仅
   `{promotion_id, worktree, patch, manifest}`。status/cleanup 只认
   `--promotion-id`；破坏性 cleanup 需已审查 commit 证据或显式 `--abandon`。
-  仅在隔离 managed review worktree 物化 scoped patch，永不自动 commit。
+  仅在隔离 managed review worktree 物化 scoped patch，永不自动 commit。active prepare 的
+  `promotion-status` 会安全重读 patch，复核 manifest digest、actual 三文件 bytes/mode、
+  exact dirty set 和实际 Git diff，并返回 manifest/patch/candidate/base/path provenance；
+  patch 或工作区在 prepare 与 status 之间漂移会 fail closed。
+- Scene-B 最终回测证据只接受 Futu/Tiingo。每次 experiment 使用微秒时间戳 + 12-hex
+  随机量生成 ID，并原子预留 experiment/report 双目录；碰撞会重试，既有实验永不覆盖。
+  HQA 将 persisted config、agent summary 和完整生成报告绑定到该唯一 namespace。
 - 真实 legacy/canonical migration 命令默认 dry-run。本机最新 dry-run
   （`applied=false`，未 `--apply`）：legacy root 不存在；canonical 存在且含
   一个 pending `canonical_unversioned` 项
@@ -68,7 +79,7 @@ scheduler、outbound worker、POST route 或数据库 migration。
   observed digest
   `294bbe7b846ae86384e56deae8ba8df2576ac6ffa8a5937e4f82a2352fdd8558`）。
   真实数据迁移需单独授权 `--apply` + `--backup-dir`。
-- 新 Hermes 审批 UI 在 professional frontend/bridge gates 完成前保持关闭。
+- 新 Hermes Approvals 已只读交付；审批 mutation 在 bridge/approval gate 前保持关闭。
 
 ### Hermes 专业前端 / 只读壳（2026-07-14 代码交付）
 
@@ -77,8 +88,20 @@ scheduler、outbound worker、POST route 或数据库 migration。
 - F2 生产只读壳：单一全局 `SafetyStrip`；Today 以行动/异常/结论为先并压缩健康自动化；Tasks / Approvals / Results 只读且无批准/拒绝控件；composer 硬禁用；能力提示为静态 `blocked_in_this_slice`。
 - 默认可回滚首页：`QS_HERMES_SHELL_ENABLED≠false` 时 `/` 与 locale root 进入 Hermes；`=false` 时 root/导航回到 Dashboard，直接 `/hermes` 仍只读。
 - hard-off：`chat` / `execution` / `unifiedResults` / `legacyRedirects` 在源码中为字面 `false`，同名 env=true 无效。
-- 旧四页（factor-lab / backtest / experiments / agent-studio）保留；无旧页兼容 redirect；无 Hermes chat mutation。
-- 2026-07-14 验证快照：frontend unit `113 passed`；fixture-api `7 passed`；type-check/lint/build 通过；Playwright 非 fixture `55 passed`；combined-fixture workbench `6` + visual `24`；rollback/nav/locale `11`（含与上重叠项）；hard-off / hermes mutation greps 均为 0。本地 smoke：`http://127.0.0.1:3001` 对 `/zh/hermes` 及子路由 200，`/`→`/en/hermes`、`/zh`→`/zh/hermes` 307。
+- 旧四条 deep link（factor-lab / backtest / experiments / agent-studio）保留；其中
+  `/agent-studio` 已收紧为只读候选检查，不挂载 task/approve/reject 控件；无旧页兼容
+  redirect；无 Hermes chat mutation。
+- `/brief` 由官方本地 UI 聚合 factual v1 payload 与逐源 watermark；paper-account 权威源不可用时
+  不显示虚构金额且禁用保存。后端严格校验完整 schema、日期、locale 与水位，但不会重新抓取每个
+  上游来源来证明客户端 payload；因此它是本地单用户可信 UI 的事实快照，不是密码学来源证明。
+  `/brief/[publicId]` 只渲染数据库快照，不以当前 live 数据覆盖历史。
+- 2026-07-14 对抗修复后验证快照：平台 canonical Python gate 绿色
+  （`1377 passed, 15 skipped`）；
+  PostgreSQL throwaway 集成 `13 passed, 1 skipped`；frontend unit `35 files / 133 tests`；
+  Ruff、lint、type-check、production build 均通过。
+  真实 Chromium 对 `/zh/hermes` 及三个子路由、`/zh/brief/<publicId>` 和 locale root
+  验证为 200/正确跳转，console/page/request errors 均为 0，桌面与 390px 无横向溢出；
+  Hermes 视觉上只有一个“仅模拟”，composer textarea/send 均 disabled。
 
 ## 0. 界面操作指南（新，建议先读）
 
@@ -249,7 +272,7 @@ scheduler、outbound worker、POST route 或数据库 migration。
 | `/options-buyside` | 买方期权策略助手。 |
 | `/ai-news` | AI HOT 只读新闻研究流，含精选动态、关键词/分类/时间窗筛选、日报和原文链接。 |
 | `/polymarket` | 只读预测市场研究。 |
-| `/agent-studio` | 现有候选池与人工审批 UI；HQA 工作台落地后保留审批能力，移除平台侧 LLM/task-running 表象。 |
+| `/agent-studio` | 过渡期只读候选池检查；展示源码与审计证据，不再提供平台 LLM task 或批准/拒绝控件，并引导返回 Hermes。 |
 | `/settings` | 脱敏后的本地设置。 |
 
 前端文档：
@@ -357,8 +380,9 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 - paper account 当前默认仍是 `file`，不能把 canonical 能力误写成已切换状态。
 - `quant-system data prices` 现为只读 Futu/QFQ/1d JSON seam；不读取 local cache，也不
   回退到 sample、Tiingo 或 Longbridge。
-- HQA 9A-9G、mini 9H 与完整 9H 均已完成；目前没有选定下一实现切片。
-- 未来前端 backlog 需要新的产品决定，并按最新源码另立独立 bite-sized plan。
+- HQA 9A-9G、mini/full 9H 与 D-31 第一批三份计划均已交付到各自明确边界。
+- 下一实现需在 local-Hermes bridge/chat 合同补齐后另立计划，或先为旧四页的
+  approval/result parity 另立小计划；不能从历史 checkbox 自动续做。
 - 剩余的 PostgreSQL 目标：雷达运行、请求日志，以及更丰富的
   API 可见快照。
 - 对大型 OHLCV 与分析型时间序列数据集采用 Parquet / DuckDB。

@@ -1,4 +1,5 @@
 import json
+import stat
 from pathlib import Path
 
 
@@ -21,7 +22,12 @@ def test_verify_scripts_run_core_checks_without_frontend_build_by_default() -> N
     assert '$env:PYTHONPATH = (Join-Path $Root "src")' in powershell
     assert powershell.index('"Pytest"') < powershell.index('"Frontend lint"')
 
-    assert 'PYTHON_BIN="${PYTHON_BIN:-python}"' in shell
+    assert Path("scripts/verify.sh").stat().st_mode & stat.S_IXUSR
+    assert 'if [[ -n "${PYTHON_BIN:-}" ]]' in shell
+    assert 'elif [[ -x "$ROOT/ai-quant/bin/python" ]]' in shell
+    assert 'PYTHON_BIN="$ROOT/ai-quant/bin/python"' in shell
+    assert 'elif [[ -x "$ROOT/.venv/bin/python" ]]' in shell
+    assert 'PYTHON_BIN="$ROOT/.venv/bin/python"' in shell
     assert '"$PYTHON_BIN" -m pytest -q' in shell
     assert 'export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"' in shell
     assert '"$PYTHON_BIN" -m ruff check src/quant_system tests' in shell

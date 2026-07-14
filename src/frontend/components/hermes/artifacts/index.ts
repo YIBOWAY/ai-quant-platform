@@ -1,5 +1,8 @@
-export { ArtifactFeed } from "./ArtifactFeed";
-export type { ArtifactFeedProps } from "./ArtifactFeed";
+export { ArtifactFeed, artifactFeedReadState } from "./ArtifactFeed";
+export type {
+  ArtifactFeedProps,
+  ArtifactFeedReadState,
+} from "./ArtifactFeed";
 export { AutomationDetails } from "./AutomationDetails";
 export type { AutomationDetailsProps, AutomationJob } from "./AutomationDetails";
 export { FocusedArtifactCard, automationLineFromModel } from "./FocusedArtifactCard";

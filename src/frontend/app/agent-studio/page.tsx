@@ -1,7 +1,7 @@
 import { Bot, Cpu, Network, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
-import { AgentTaskForm } from "@/components/forms/AgentTaskForm";
 import {
   Card,
   SectionTitle,
@@ -11,29 +11,32 @@ import {
 import {
   getAgentCandidateDetail,
   getAgentCandidates,
-  getAgentLlmConfig,
   getFactors,
 } from "@/lib/api";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
   en: {
-    eyebrow: "Research Agents",
-    title: "Agent Studio",
-    inertNote: "Candidates are inert files until manual review.",
-    safetyTitle: "Plain-text by default · explicit CLI load only",
+    eyebrow: "Legacy Research Surface",
+    title: "Agent Studio · Read-only",
+    inertNote: "Transitional candidate inspection only. This page cannot create or review candidates.",
+    safetyTitle: "Inspection only · no Scene-B authority",
     safetyBody:
-      "Agent candidates are written to disk as plain text. Approval only records manual review; candidate factor code is loaded only by the explicit CLI flag and still passes backend safety checks before registration.",
+      "Candidate source and audit records are displayed as text. Task submission and approve/reject controls are intentionally unavailable; the supported Scene-B workflow must pass HQA Gate 1–3.",
+    openHermes: "Open Hermes workbench",
     candidatePool: "Candidate Pool",
     candidatePoolHint: "Pending files awaiting manual review.",
     noCandidatesTitle: "No candidates",
-    noCandidatesDesc: "Run an agent task to create a pending candidate.",
+    noCandidatesDesc: "No candidate artifacts are available for read-only inspection.",
+    candidateUnavailableTitle: "Candidate repository unavailable",
+    candidateUnavailableDesc:
+      "The candidate repository could not be read. This is not an empty candidate pool; restore repository access and retry.",
     registryContext: "Registry Context",
     registeredFactors: "Registered factors",
     selected: "Selected",
     noCandidateSelected: "No candidate selected",
     sourcePreviewNote: "Source preview is read as text only; the frontend never imports or executes it.",
-    manualReviewRequired: "manual review required",
+    manualReviewRequired: "review outside this page",
     sourcePreview: "Source Preview",
     sourcePreviewSub: "Latest candidate file read from disk as plain text only.",
     sourceNotLoadedTitle: "Source preview not loaded",
@@ -45,32 +48,30 @@ const copy = {
     noReviewRecords: "No review records yet.",
     auditPendingTitle: "Audit timeline pending",
     auditPendingDesc: "This candidate has no audit or review rows yet.",
-    llm: "LLM",
-    model: "Model",
-    apiKey: "API key",
-    keySet: "set",
-    keyUnset: "unset",
-    none: "none",
     status: "status",
     type: "type",
   },
   zh: {
-    eyebrow: "研究智能体",
-    title: "智能体工作室",
-    inertNote: "候选在人工复核前仅为惰性文件。",
-    safetyTitle: "默认纯文本 · 仅显式 CLI 加载",
+    eyebrow: "旧研究界面",
+    title: "智能体工作室 · 只读",
+    inertNote: "这里只保留过渡期候选检查，不能创建或审批候选。",
+    safetyTitle: "仅供检查 · 不构成 Scene-B 权威",
     safetyBody:
-      "智能体候选以纯文本写入磁盘。批准只记录人工复核；候选因子代码只有在显式 CLI 参数开启时才会加载，并且注册前仍会通过后端安全检查。",
+      "这里只以文本展示候选源码和审计记录。任务提交与批准/拒绝控件已明确关闭；受支持的 Scene-B 流程必须经过 HQA Gate 1–3。",
+    openHermes: "打开 Hermes 工作台",
     candidatePool: "候选池",
     candidatePoolHint: "等待人工复核的待处理文件。",
     noCandidatesTitle: "暂无候选",
-    noCandidatesDesc: "运行一个智能体任务以创建待处理的候选。",
+    noCandidatesDesc: "当前没有可供只读检查的候选产物。",
+    candidateUnavailableTitle: "候选仓库不可用",
+    candidateUnavailableDesc:
+      "当前无法读取候选仓库。这并不代表候选池为空；请恢复仓库访问后重试。",
     registryContext: "注册表上下文",
     registeredFactors: "已注册因子",
     selected: "已选择",
     noCandidateSelected: "未选择候选",
     sourcePreviewNote: "源码预览仅以文本方式读取，不会由前端导入或执行。",
-    manualReviewRequired: "需人工复核",
+    manualReviewRequired: "请在本页之外复核",
     sourcePreview: "源码预览",
     sourcePreviewSub: "最新候选文件仅以纯文本方式从磁盘读取。",
     sourceNotLoadedTitle: "源码预览未加载",
@@ -81,12 +82,6 @@ const copy = {
     noReviewRecords: "暂无复核记录。",
     auditPendingTitle: "审计时间线待生成",
     auditPendingDesc: "该候选尚无审计或复核记录。",
-    llm: "LLM",
-    model: "模型",
-    apiKey: "API 密钥",
-    keySet: "已设置",
-    keyUnset: "未设置",
-    none: "无",
     status: "状态",
     type: "类型",
   },
@@ -105,10 +100,9 @@ function statusTone(status: string | null | undefined): Tone {
 export default async function AgentStudio() {
   const locale = await getServerLocale();
   const text = copy[locale];
-  const [candidates, factors, llmConfig] = await Promise.all([
+  const [candidates, factors] = await Promise.all([
     getAgentCandidates(),
     getFactors(),
-    getAgentLlmConfig(),
   ]);
   const latestCandidate = candidates.candidates[0];
   const latestDetail = latestCandidate
@@ -126,20 +120,18 @@ export default async function AgentStudio() {
             <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
           </div>
           <p className="mt-2 font-body-sm text-text-secondary">{text.inertNote}</p>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            <StatusPill label={text.llm} value={llmConfig.provider} tone="info" />
-            <StatusPill label={text.model} value={llmConfig.model ?? text.none} tone="neutral" />
-            <StatusPill
-              label={text.apiKey}
-              value={llmConfig.has_api_key ? text.keySet : text.keyUnset}
-              tone={llmConfig.has_api_key ? "success" : "neutral"}
-            />
-          </div>
         </div>
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           <section>
             <SectionTitle title={text.candidatePool} hint={text.candidatePoolHint} />
-            {candidates.candidates.length ? (
+            {candidates.apiError ? (
+              <div data-agent-candidates-unavailable>
+                <EmptyState
+                  title={text.candidateUnavailableTitle}
+                  description={text.candidateUnavailableDesc}
+                />
+              </div>
+            ) : candidates.candidates.length ? (
               <ul className="space-y-2">
                 {candidates.candidates.map((candidate) => (
                   <li
@@ -208,7 +200,6 @@ export default async function AgentStudio() {
             messages={[
               candidates.apiError,
               factors.apiError,
-              llmConfig.apiError,
               latestDetail?.apiError,
             ]}
           />
@@ -218,10 +209,14 @@ export default async function AgentStudio() {
             <div>
               <h2 className="font-label-caps text-warning">{text.safetyTitle}</h2>
               <p className="mt-1 font-body-sm text-text-secondary">{text.safetyBody}</p>
+              <Link
+                href={`/${locale}/hermes`}
+                className="mt-3 inline-flex rounded-lg border border-info/40 bg-info/10 px-3 py-2 font-data-mono text-xs text-info transition-colors hover:bg-info/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+              >
+                {text.openHermes}
+              </Link>
             </div>
           </Card>
-
-          <AgentTaskForm candidates={candidates.candidates} locale={locale} />
 
           {latestDetail?.source_preview ? (
             <Card>

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -176,6 +177,32 @@ def _prepare_kwargs(tmp_path: Path, repo: Path, agent_output: Path, candidate_id
     }
 
 
+def test_managed_root_normalizes_only_macos_system_alias_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from quant_system.agent import promotion_workspace as pw
+
+    real_realpath = pw.os.path.realpath
+
+    def simulated_realpath(path: str | os.PathLike[str]) -> str:
+        if os.fspath(path) == "/var":
+            return "/private/var"
+        return real_realpath(path)
+
+    monkeypatch.setattr(pw.os.path, "realpath", simulated_realpath)
+    assert pw._normalize_trusted_root_alias(
+        Path("/var/folders/example/gate3")
+    ) == Path("/private/var/folders/example/gate3")
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    user_alias = tmp_path / "user-alias"
+    user_alias.symlink_to(outside, target_is_directory=True)
+    normalized = pw._normalize_trusted_root_alias(user_alias / "gate3")
+    assert normalized == user_alias / "gate3"
+    assert normalized != outside / "gate3"
+
+
 def test_promotion_uses_detached_worktree_and_ignores_unrelated_main_dirty(
     tmp_path: Path,
 ) -> None:
@@ -300,6 +327,33 @@ def test_prepare_is_idempotent_and_creates_no_commit(tmp_path: Path) -> None:
     assert "codex/promotion-" not in branches
 
 
+def test_prepare_rolls_back_final_worktree_if_record_publication_fails_after_move(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from quant_system.agent import promotion_workspace as pw
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+
+    def fail_record_identity(_path: Path) -> tuple[int, int]:
+        raise RuntimeError("injected record publication failure")
+
+    monkeypatch.setattr(pw, "_dir_identity", fail_record_identity)
+
+    with pytest.raises(RuntimeError, match="record publication"):
+        pw.prepare_promotion_workspace(**kwargs)
+
+    managed_children = list(kwargs["worktree_root"].iterdir())
+    assert managed_children == []
+    registered = _git(repo, "worktree", "list", "--porcelain")
+    assert registered.count("worktree ") == 1
+    promotion_dirs = [
+        path for path in kwargs["promotion_root"].iterdir() if path.is_dir()
+    ]
+    assert promotion_dirs == []
+
+
 def test_patch_manifest_deterministic_across_roots_and_clock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -403,6 +457,26 @@ def test_cleanup_refuses_uncommitted_and_detached_until_named_branch(
     result = prepare_promotion_workspace(**kwargs)
     worktree = result.worktree_path
     promotion_id = result.promotion_id
+    prepared_status = promotion_status(
+        promotion_id=promotion_id,
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+    )
+    prepared_manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert prepared_status == {
+        "promotion_id": promotion_id,
+        "status": "awaiting_human_commit",
+        "reviewed_commit": None,
+        "reason": "worktree is not clean",
+        "manifest_sha256": hashlib.sha256(result.manifest_path.read_bytes()).hexdigest(),
+        "patch_sha256": prepared_manifest["patch_sha256"],
+        "candidate_id": candidate_id,
+        "candidate_digest": digest,
+        "base_commit": prepared_manifest["base_commit"],
+        "scoped_paths": prepared_manifest["scoped_paths"],
+    }
 
     with pytest.raises(PromotionWorkspaceError, match="uncommitted|reviewed|awaiting"):
         cleanup_promotion_workspace(
@@ -464,6 +538,64 @@ def test_cleanup_refuses_uncommitted_and_detached_until_named_branch(
     assert state["status"] in {"cleaned", "reviewed_cleaned", "complete"}
 
 
+def test_cleanup_without_abandon_never_falls_back_to_force_remove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from quant_system.agent import promotion_workspace as pw
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    result = pw.prepare_promotion_workspace(**kwargs)
+    scoped = json.loads(result.manifest_path.read_text(encoding="utf-8"))[
+        "scoped_paths"
+    ]
+    _git(result.worktree_path, "add", "--", *scoped)
+    _git(result.worktree_path, "commit", "-m", "human promotion")
+    _git(
+        result.worktree_path,
+        "branch",
+        f"codex/promotion-{result.promotion_id}",
+        "HEAD",
+    )
+
+    original_git_text = pw._git_text
+    remove_attempts: list[tuple[str, ...]] = []
+
+    def fail_normal_remove(
+        git_repo: Path, *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        if args[:2] == ("worktree", "remove") and str(result.worktree_path) in args:
+            remove_attempts.append(args)
+            if "--force" in args:
+                return subprocess.CompletedProcess(
+                    ["git", *args], returncode=0, stdout="", stderr=""
+                )
+            return subprocess.CompletedProcess(
+                ["git", *args],
+                returncode=1,
+                stdout="",
+                stderr="injected normal removal failure",
+            )
+        return original_git_text(git_repo, *args, check=check)
+
+    monkeypatch.setattr(pw, "_git_text", fail_normal_remove)
+
+    with pytest.raises(pw.PromotionWorkspaceError, match="remov"):
+        pw.cleanup_promotion_workspace(
+            promotion_id=result.promotion_id,
+            agent_output_dir=agent_output,
+            promotion_root=kwargs["promotion_root"],
+            worktree_root=kwargs["worktree_root"],
+            repo_dir=repo,
+            abandon=False,
+        )
+
+    assert result.worktree_path.exists()
+    assert remove_attempts
+    assert all("--force" not in attempt for attempt in remove_attempts)
+
+
 def test_abandon_cleanup_force_removes_but_keeps_audit(tmp_path: Path) -> None:
     from quant_system.agent.promotion_workspace import (
         cleanup_promotion_workspace,
@@ -493,6 +625,105 @@ def test_abandon_cleanup_force_removes_but_keeps_audit(tmp_path: Path) -> None:
         )
     )
     assert state["status"] == "abandoned"
+
+
+def test_abandoned_promotion_can_reprepare_with_new_audit_id(tmp_path: Path) -> None:
+    from quant_system.agent.promotion_workspace import (
+        cleanup_promotion_workspace,
+        prepare_promotion_workspace,
+    )
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    first = prepare_promotion_workspace(**kwargs)
+    first_manifest = first.manifest_path.read_bytes()
+    first_patch = first.patch_path.read_bytes()
+    cleanup_promotion_workspace(
+        promotion_id=first.promotion_id,
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+        abandon=True,
+    )
+
+    second = prepare_promotion_workspace(**kwargs)
+
+    assert second.promotion_id != first.promotion_id
+    assert second.promotion_id.startswith(first.promotion_id + "-r")
+    assert second.worktree_path.is_dir()
+    first_state = json.loads(first.state_path.read_text(encoding="utf-8"))
+    assert first_state["status"] == "abandoned"
+    assert first.manifest_path.read_bytes() == first_manifest
+    assert first.patch_path.read_bytes() == first_patch
+    second_state = json.loads(second.state_path.read_text(encoding="utf-8"))
+    assert second_state["status"] == "awaiting_human_commit"
+
+
+@pytest.mark.parametrize("abandon", [False, True])
+def test_cleanup_recovers_when_terminal_state_write_fails_after_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, abandon: bool
+) -> None:
+    from quant_system.agent import promotion_workspace as pw
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    result = pw.prepare_promotion_workspace(**kwargs)
+    if not abandon:
+        scoped = json.loads(result.manifest_path.read_text(encoding="utf-8"))[
+            "scoped_paths"
+        ]
+        _git(result.worktree_path, "add", "--", *scoped)
+        _git(result.worktree_path, "commit", "-m", "human promotion")
+        _git(
+            result.worktree_path,
+            "branch",
+            f"codex/promotion-{result.promotion_id}",
+            "HEAD",
+        )
+
+    original_write = pw._write_bytes_replace
+    terminal = "abandoned" if abandon else "cleaned"
+    failed_once = False
+
+    def fail_first_terminal_write(path: Path, payload: bytes) -> None:
+        nonlocal failed_once
+        decoded = json.loads(payload)
+        if decoded.get("status") == terminal and not failed_once:
+            failed_once = True
+            raise OSError("injected terminal state write failure")
+        original_write(path, payload)
+
+    monkeypatch.setattr(pw, "_write_bytes_replace", fail_first_terminal_write)
+
+    with pytest.raises(OSError, match="terminal state write failure"):
+        pw.cleanup_promotion_workspace(
+            promotion_id=result.promotion_id,
+            agent_output_dir=agent_output,
+            promotion_root=kwargs["promotion_root"],
+            worktree_root=kwargs["worktree_root"],
+            repo_dir=repo,
+            abandon=abandon,
+        )
+
+    assert not result.worktree_path.exists()
+    pending = json.loads(result.state_path.read_text(encoding="utf-8"))
+    assert pending["status"] == ("abandon_pending" if abandon else "cleanup_pending")
+
+    recovered = pw.cleanup_promotion_workspace(
+        promotion_id=result.promotion_id,
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+        abandon=abandon,
+    )
+
+    assert recovered["status"] == terminal
+    persisted = json.loads(result.state_path.read_text(encoding="utf-8"))
+    assert persisted["status"] == terminal
 
 
 def test_status_rejects_tampered_worktree_commit(tmp_path: Path) -> None:
@@ -528,6 +759,59 @@ def test_status_rejects_tampered_worktree_commit(tmp_path: Path) -> None:
     }
 
 
+def test_status_rejects_tampered_uncommitted_prepared_patch(tmp_path: Path) -> None:
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        prepare_promotion_workspace,
+        promotion_status,
+    )
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    result = prepare_promotion_workspace(**kwargs)
+    result.patch_path.write_bytes(result.patch_path.read_bytes() + b"# tamper\n")
+
+    with pytest.raises(PromotionWorkspaceError, match="patch digest"):
+        promotion_status(
+            promotion_id=result.promotion_id,
+            agent_output_dir=agent_output,
+            promotion_root=kwargs["promotion_root"],
+            worktree_root=kwargs["worktree_root"],
+            repo_dir=repo,
+        )
+
+
+def test_status_rejects_tampered_uncommitted_prepared_file(tmp_path: Path) -> None:
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        prepare_promotion_workspace,
+        promotion_status,
+    )
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    result = prepare_promotion_workspace(**kwargs)
+    factor = (
+        result.worktree_path
+        / "src/quant_system/factors/library/promoted/workspace_test_factor.py"
+    )
+    factor.write_text(
+        factor.read_text(encoding="utf-8") + "\n# uncommitted tamper\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PromotionWorkspaceError, match="differs from scoped patch"):
+        promotion_status(
+            promotion_id=result.promotion_id,
+            agent_output_dir=agent_output,
+            promotion_root=kwargs["promotion_root"],
+            worktree_root=kwargs["worktree_root"],
+            repo_dir=repo,
+        )
+
+
 def test_status_uses_commit_range_patch_not_empty_worktree_diff(tmp_path: Path) -> None:
     from quant_system.agent.promotion_workspace import (
         prepare_promotion_workspace,
@@ -553,6 +837,146 @@ def test_status_uses_commit_range_patch_not_empty_worktree_diff(tmp_path: Path) 
         repo_dir=repo,
     )
     assert status["status"] == "reviewed"
+
+
+def test_status_marks_a_previously_reviewed_promotion_invalidated_on_recheck_failure(
+    tmp_path: Path,
+) -> None:
+    from quant_system.agent.promotion_workspace import (
+        prepare_promotion_workspace,
+        promotion_status,
+    )
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    result = prepare_promotion_workspace(**kwargs)
+    scoped = json.loads(result.manifest_path.read_text(encoding="utf-8"))[
+        "scoped_paths"
+    ]
+    _git(result.worktree_path, "add", "--", *scoped)
+    _git(result.worktree_path, "commit", "-m", "human promotion")
+    _git(
+        result.worktree_path,
+        "branch",
+        f"codex/promotion-{result.promotion_id}",
+        "HEAD",
+    )
+    reviewed = promotion_status(
+        promotion_id=result.promotion_id,
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+    )
+    reviewed_commit = reviewed["reviewed_commit"]
+    assert reviewed["status"] == "reviewed"
+
+    (result.worktree_path / "post-review.txt").write_text(
+        "new unreviewed content\n", encoding="utf-8"
+    )
+    invalidated = promotion_status(
+        promotion_id=result.promotion_id,
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+    )
+
+    assert invalidated["status"] == "review_invalidated"
+    assert invalidated["reviewed_commit"] == reviewed_commit
+    assert "clean" in invalidated["reason"]
+    persisted = json.loads(result.state_path.read_text(encoding="utf-8"))
+    assert persisted["status"] == "review_invalidated"
+    assert persisted["reviewed_commit"] == reviewed_commit
+
+
+def test_status_and_cleanup_serialize_the_full_promotion_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from quant_system.agent import promotion_workspace as pw
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    result = pw.prepare_promotion_workspace(**kwargs)
+    scoped = json.loads(result.manifest_path.read_text(encoding="utf-8"))[
+        "scoped_paths"
+    ]
+    _git(result.worktree_path, "add", "--", *scoped)
+    _git(result.worktree_path, "commit", "-m", "human promotion")
+    _git(
+        result.worktree_path,
+        "branch",
+        f"codex/promotion-{result.promotion_id}",
+        "HEAD",
+    )
+
+    first_review_ready = threading.Event()
+    release_first_review = threading.Event()
+    cleanup_done = threading.Event()
+    call_lock = threading.Lock()
+    calls = 0
+    original_evaluate = pw._evaluate_reviewed_commit
+
+    def pause_first_review(**review_kwargs):
+        nonlocal calls
+        evaluated = original_evaluate(**review_kwargs)
+        with call_lock:
+            calls += 1
+            call_number = calls
+        if call_number == 1:
+            first_review_ready.set()
+            release_first_review.wait(timeout=5)
+        return evaluated
+
+    monkeypatch.setattr(pw, "_evaluate_reviewed_commit", pause_first_review)
+    failures: list[BaseException] = []
+
+    def read_status() -> None:
+        try:
+            pw.promotion_status(
+                promotion_id=result.promotion_id,
+                agent_output_dir=agent_output,
+                promotion_root=kwargs["promotion_root"],
+                worktree_root=kwargs["worktree_root"],
+                repo_dir=repo,
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            failures.append(exc)
+
+    def cleanup() -> None:
+        try:
+            pw.cleanup_promotion_workspace(
+                promotion_id=result.promotion_id,
+                agent_output_dir=agent_output,
+                promotion_root=kwargs["promotion_root"],
+                worktree_root=kwargs["worktree_root"],
+                repo_dir=repo,
+                abandon=False,
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            failures.append(exc)
+        finally:
+            cleanup_done.set()
+
+    status_thread = threading.Thread(target=read_status)
+    cleanup_thread = threading.Thread(target=cleanup)
+    status_thread.start()
+    assert first_review_ready.wait(timeout=5)
+    cleanup_thread.start()
+    cleanup_finished_before_status_write = cleanup_done.wait(timeout=0.5)
+    release_first_review.set()
+    status_thread.join(timeout=5)
+    cleanup_thread.join(timeout=5)
+
+    assert not cleanup_finished_before_status_write
+    assert not status_thread.is_alive()
+    assert not cleanup_thread.is_alive()
+    assert failures == []
+    state = json.loads(result.state_path.read_text(encoding="utf-8"))
+    assert state["status"] == "cleaned"
+    assert not result.worktree_path.exists()
 
 
 @pytest.mark.parametrize(
@@ -798,6 +1222,54 @@ def test_cli_prepare_success_stdout_json(
     assert Path(payload["patch"]).read_bytes() == direct.patch_path.read_bytes()
     assert Path(payload["manifest"]).read_bytes() == direct.manifest_path.read_bytes()
     assert "codex/promotion-" in result.stderr or "git diff" in result.stderr
+
+
+def test_cli_human_instructions_name_actual_worktree_and_safe_quant_system_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from quant_system.agent import promotion_workspace as pw
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    worktree_root = tmp_path / "worktrees"
+    base = _git(repo, "rev-parse", "HEAD").strip()
+    monkeypatch.setattr(pw, "resolve_platform_repo", lambda: repo)
+    monkeypatch.setattr(pw, "resolve_managed_worktree_root", lambda: worktree_root)
+    monkeypatch.setenv("QS_AGENT_OUTPUT_DIR", str(agent_output))
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "promote-candidate",
+            "--candidate-id",
+            candidate_id,
+            "--expected-digest",
+            digest,
+            "--base-commit",
+            base,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    promotion_id = payload["promotion_id"]
+    assert payload["worktree"] in result.stderr
+    assert (
+        f"quant-system agent promotion-status --promotion-id {promotion_id}"
+        in result.stderr
+    )
+    assert (
+        f"quant-system agent cleanup-promotion --promotion-id {promotion_id}"
+        in result.stderr
+    )
+    assert (
+        f"quant-system agent cleanup-promotion --promotion-id {promotion_id} --abandon"
+        in result.stderr
+    )
+    assert "quant-system agent promote-candidate" in result.stderr
+    assert "re-prepare" in result.stderr.lower()
+    assert "then run: agent " not in result.stderr
 
 
 def test_cli_source_calls_only_prepare_not_materializer() -> None:

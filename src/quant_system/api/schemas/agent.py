@@ -6,18 +6,21 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CandidateSummary(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     candidate_id: str
-    artifact_type: str | None = None
-    status: str | None = None
-    goal: str | None = None
-    integrity_state: str | None = None
-    manifest_digest: str | None = None
-    observed_manifest_digest: str | None = None
-    approval_binding: str | None = None
-    approval_enabled: bool | None = None
-    integrity_error_code: str | None = None
+    artifact_type: str | None
+    goal: str | None
+    universe: list[str] | None
+    status: Literal["pending", "approved", "rejected"] | None
+    integrity_state: Literal["verified", "migration_required", "corrupt"]
+    manifest_digest: str | None
+    observed_manifest_digest: str | None
+    approval_binding: Literal[
+        "pending", "approved", "rejected", "legacy_unbound"
+    ] | None
+    approval_enabled: bool
+    integrity_error_code: str | None
 
 
 class AgentCandidatesResponse(BaseModel):
@@ -25,18 +28,22 @@ class AgentCandidatesResponse(BaseModel):
 
 
 class AgentCandidateDetailResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     candidate_id: str
-    metadata: dict[str, Any] | None = None
-    source_preview: str | None = None
-    audit: list[str] = Field(default_factory=list)
-    reviews: list[str] = Field(default_factory=list)
-    integrity_state: str | None = None
-    manifest_digest: str | None = None
-    observed_manifest_digest: str | None = None
-    approval_binding: str | None = None
-    approval_enabled: bool | None = None
-    integrity_error_code: str | None = None
-    status: str | None = None
+    metadata: dict[str, Any] | None
+    source_preview: str | None
+    audit: list[str]
+    reviews: list[str]
+    integrity_state: Literal["verified", "migration_required", "corrupt"]
+    manifest_digest: str | None
+    observed_manifest_digest: str | None
+    approval_binding: Literal[
+        "pending", "approved", "rejected", "legacy_unbound"
+    ] | None
+    approval_enabled: bool
+    integrity_error_code: str | None
+    status: Literal["pending", "approved", "rejected"] | None
 
 
 class AgentTaskRequest(BaseModel):

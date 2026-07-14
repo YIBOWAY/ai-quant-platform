@@ -2,7 +2,7 @@
 
 Each module under this package holds exactly one human-reviewed, git-committed
 factor promoted from an approved candidate. ``PROMOTED_FACTORS`` is regenerated
-deterministically by ``agent promote-candidate`` (sorted imports) and is the
+deterministically by ``quant-system agent promote-candidate`` (sorted imports) and is the
 single source the registry factory reads. It starts empty; promotions append.
 """
 

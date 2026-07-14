@@ -1,23 +1,13 @@
 import {
+  ArtifactFeed,
   AutomationDetails,
   FocusedArtifactCard,
+  artifactFeedReadState,
 } from "@/components/hermes/artifacts";
 import { Card } from "@/components/ui/primitives";
-import { getHermesArtifacts, type HermesArtifact } from "@/lib/api";
+import { getHermesArtifacts } from "@/lib/api";
+import { pickLatestAutomation } from "@/lib/hermes/viewModel";
 import { getServerLocale } from "@/lib/serverLocale";
-
-function pickLatestAutomation(
-  items: HermesArtifact[],
-): Extract<HermesArtifact, { kind: "automation_status" }> | null {
-  const automationItems = items.filter(
-    (item): item is Extract<HermesArtifact, { kind: "automation_status" }> =>
-      item.kind === "automation_status",
-  );
-  if (automationItems.length === 0) return null;
-  return automationItems.reduce((latest, item) =>
-    item.occurred_at > latest.occurred_at ? item : latest,
-  );
-}
 
 /**
  * F2 Tasks: current automation artifacts only.
@@ -28,6 +18,9 @@ export default async function HermesTasksPage() {
   const artifacts = await getHermesArtifacts();
   const automation = pickLatestAutomation(artifacts.items);
   const isZh = locale === "zh";
+  const feedReadState = artifactFeedReadState(artifacts);
+  const feedHasIssue =
+    feedReadState === "degraded" || feedReadState === "unavailable";
 
   return (
     <section aria-labelledby="hermes-tasks-title" className="space-y-4" data-hermes-tasks>
@@ -56,6 +49,12 @@ export default async function HermesTasksPage() {
         </p>
       </Card>
 
+      {feedHasIssue ? (
+        <div data-hermes-tasks-feed-issue={feedReadState}>
+          <ArtifactFeed envelope={artifacts} locale={locale} />
+        </div>
+      ) : null}
+
       {automation ? (
         <div className="space-y-3" data-hermes-tasks-automation>
           <FocusedArtifactCard artifact={automation} locale={locale} />
@@ -83,7 +82,7 @@ export default async function HermesTasksPage() {
             </ul>
           </Card>
         </div>
-      ) : (
+      ) : feedHasIssue ? null : (
         <Card className="bg-[var(--color-stream-surface)]">
           <p className="font-body-sm text-text-secondary">
             {isZh

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
+from quant_system.agent import promotion
 from quant_system.agent.candidate_manifest import (
     build_candidate_manifest,
     canonical_json_bytes,
@@ -118,84 +119,28 @@ def test_promoted_library_factors_are_registered(monkeypatch) -> None:
     assert set(registry_without.factor_ids()) == _EXAMPLE_IDS
 
 
-def test_approved_candidates_only_when_requested(tmp_path) -> None:
-    _write_candidate(tmp_path, "cand-approved", _CANDIDATE_SRC, approved=True)
+def test_registry_factory_has_no_candidate_execution_switch() -> None:
+    parameters = inspect.signature(build_factor_registry).parameters
 
-    without = build_factor_registry(agent_output_dir=tmp_path)
-    assert "wiring_test_factor" not in without.factor_ids()
-
-    with_candidates = build_factor_registry(
-        include_approved_candidates=True, agent_output_dir=tmp_path
-    )
-    assert "wiring_test_factor" in with_candidates.factor_ids()
-    assert with_candidates.create("wiring_test_factor") is not None
-
-
-def test_pending_candidate_is_not_loaded(tmp_path) -> None:
-    _write_candidate(tmp_path, "cand-pending", _CANDIDATE_SRC, approved=False)
-
-    registry = build_factor_registry(
-        include_approved_candidates=True, agent_output_dir=tmp_path
-    )
-    assert "wiring_test_factor" not in registry.factor_ids()
-
-
-def test_factory_refuses_tampered_approved_candidate(tmp_path) -> None:
-    from quant_system.agent.candidate_manifest import CandidateIntegrityError
-    from quant_system.agent.candidate_pool import CandidatePool
-
-    pool = CandidatePool(tmp_path)
-    artifact = pool.write_candidate(
-        task_id="factory-tamper",
-        goal="factory-tamper",
-        artifact_type="factor",
-        filename="factor.py.candidate",
-        content=_CANDIDATE_SRC,
-    )
-    pool.review(
-        candidate_id=artifact.candidate_id,
-        decision="approve",
-        note="approved exact bytes",
-        expected_manifest_digest=artifact.manifest_digest,
-        expected_status="pending",
-    )
-    artifact.path.write_text(
-        _CANDIDATE_SRC.replace("wiring_test_factor", "tampered_factor"),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(CandidateIntegrityError):
-        build_factor_registry(
-            include_approved_candidates=True, agent_output_dir=tmp_path
-        )
-
-
-def test_approved_candidates_requested_without_dir_is_safe(tmp_path) -> None:
-    # No candidates_dir supplied: must not raise and must not load anything.
-    registry = build_factor_registry(
-        include_approved_candidates=True, agent_output_dir=tmp_path / "missing"
-    )
-    assert set(registry.factor_ids()) == _EXAMPLE_IDS
+    assert "include_approved_candidates" not in parameters
+    assert "agent_output_dir" not in parameters
+    assert not hasattr(promotion, "load_approved_factor_candidates")
 
 
 # --- origin provenance metadata (Task P2) --------------------------------
 
 
-def test_registry_tracks_origin_per_registration_pass(monkeypatch, tmp_path) -> None:
+def test_registry_tracks_origin_per_registration_pass(monkeypatch) -> None:
     monkeypatch.setattr(
         library.promoted, "PROMOTED_FACTORS", (_StubPromotedFactor,), raising=True
     )
-    _write_candidate(tmp_path, "cand-approved", _CANDIDATE_SRC, approved=True)
-
-    registry = build_factor_registry(
-        include_approved_candidates=True, agent_output_dir=tmp_path
-    )
+    registry = build_factor_registry()
 
     origins = registry.origins()
     for example_id in _EXAMPLE_IDS:
         assert origins[example_id] == "builtin"
     assert origins["stub_promoted"] == "promoted"
-    assert origins["wiring_test_factor"] == "candidate"
+    assert set(origins.values()) == {"builtin", "promoted"}
 
 
 def test_default_registry_has_no_candidate_origins() -> None:
@@ -234,7 +179,7 @@ def test_factors_default_call_has_no_candidate_origin(tmp_path) -> None:
     assert "wiring_test_factor" not in origins
 
 
-def test_factors_include_candidates_lists_approved_candidate(tmp_path) -> None:
+def test_factors_rejects_bulk_candidate_loading_even_when_approved(tmp_path) -> None:
     agent = tmp_path / "agent-output"
     candidates_dir = agent / "agent" / "candidates"
     candidates_dir.mkdir(parents=True)
@@ -243,14 +188,14 @@ def test_factors_include_candidates_lists_approved_candidate(tmp_path) -> None:
 
     response = client.get("/api/factors", params={"include_candidates": "true"})
 
-    assert response.status_code == 200
-    origins = {item["factor_id"]: item["origin"] for item in response.json()["factors"]}
-    assert origins["wiring_test_factor"] == "candidate"
-    for example_id in _EXAMPLE_IDS:
-        assert origins[example_id] == "builtin"
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "candidate_bulk_loading_disabled",
+        "message": "Use an exact candidate ID and expected digest in the one-shot research CLI.",
+    }
 
 
-def test_factors_include_candidates_excludes_pending_candidate(tmp_path) -> None:
+def test_factors_rejects_bulk_candidate_loading_for_pending_candidate(tmp_path) -> None:
     agent = tmp_path / "agent-output"
     candidates_dir = agent / "agent" / "candidates"
     candidates_dir.mkdir(parents=True)
@@ -259,13 +204,11 @@ def test_factors_include_candidates_excludes_pending_candidate(tmp_path) -> None
 
     response = client.get("/api/factors", params={"include_candidates": "true"})
 
-    assert response.status_code == 200
-    factor_ids = {item["factor_id"] for item in response.json()["factors"]}
-    assert "wiring_test_factor" not in factor_ids
-    assert factor_ids == _EXAMPLE_IDS
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "candidate_bulk_loading_disabled"
 
 
-def test_factors_candidate_catalog_uses_create_app_agent_root(tmp_path) -> None:
+def test_factors_bulk_candidate_query_never_executes_injected_candidate(tmp_path) -> None:
     general = tmp_path / "general"
     agent = tmp_path / "agent-output"
     candidates_dir = agent / "agent" / "candidates"
@@ -278,10 +221,7 @@ def test_factors_candidate_catalog_uses_create_app_agent_root(tmp_path) -> None:
     )
 
     client = TestClient(create_app(output_dir=general, agent_output_dir=agent))
-    payload = client.get("/api/factors?include_candidates=true").json()
+    response = client.get("/api/factors?include_candidates=true")
 
-    assert "wiring_test_factor" in {
-        item["factor_id"] for item in payload["factors"]
-    }
+    assert response.status_code == 400
     assert not (general / "agent").exists()
-
