@@ -178,6 +178,36 @@ export function createFixtureServer(fixture) {
     ["/api/agent/candidates", validated.candidates],
   ]);
 
+  const candidateById = new Map(
+    validated.candidates.candidates.map((candidate) => [
+      candidate.candidate_id,
+      candidate,
+    ]),
+  );
+
+  /** Detail read model synthesized from list rows (GET-only, no mutations). */
+  function candidateDetailResponse(candidate) {
+    return {
+      candidate_id: candidate.candidate_id,
+      metadata: {
+        goal: candidate.goal ?? null,
+        artifact_type: candidate.artifact_type ?? null,
+        universe: candidate.universe ?? [],
+      },
+      source_preview: null,
+      audit: [],
+      reviews: [],
+      integrity_state: candidate.integrity_state,
+      manifest_digest: candidate.manifest_digest,
+      observed_manifest_digest: candidate.observed_manifest_digest,
+      approval_binding: candidate.approval_binding,
+      approval_enabled: candidate.approval_enabled,
+      integrity_error_code: candidate.integrity_error_code,
+      status: candidate.status,
+      safety: validated.candidates.safety ?? validated.health.safety ?? null,
+    };
+  }
+
   const server = http.createServer((req, res) => {
     const method = req.method ?? "GET";
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -192,6 +222,10 @@ export function createFixtureServer(fixture) {
             : JSON.stringify(body);
       res.statusCode = status;
       res.setHeader("Cache-Control", "no-store");
+      // Browser client components (Gate 2 detail re-fetch) need CORS on loopback.
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "accept, content-type");
       if (payload) {
         res.setHeader("Content-Type", "application/json; charset=utf-8");
       }
@@ -199,8 +233,29 @@ export function createFixtureServer(fixture) {
       console.log(`${method} ${pathname} ${status}`);
     };
 
+    // Preflight for browser GET from the Next origin.
+    if (method === "OPTIONS") {
+      finish(204, null);
+      return;
+    }
+
+    // GET-only fixture surface — review POST remains intentionally unavailable.
     if (method !== "GET") {
       finish(405, { detail: "method_not_allowed" });
+      return;
+    }
+
+    const detailMatch = pathname.match(
+      /^\/api\/agent\/candidates\/([^/]+)$/,
+    );
+    if (detailMatch) {
+      const candidateId = decodeURIComponent(detailMatch[1]);
+      const candidate = candidateById.get(candidateId);
+      if (!candidate) {
+        finish(404, { detail: "candidate_not_found" });
+        return;
+      }
+      finish(200, candidateDetailResponse(candidate));
       return;
     }
 

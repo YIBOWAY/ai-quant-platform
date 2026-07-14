@@ -101,13 +101,21 @@ test("@combined-fixture F2 subroutes are truthful and mutation-free", async ({
 
   await page.goto("/zh/hermes/tasks");
   await expect(page.getByRole("heading", { name: "任务" })).toBeVisible();
-  await expect(page.getByText("研究任务账本尚未接入")).toBeVisible();
+  await expect(page.getByText(/研究任务.*账本尚未接入|write ledger is not connected/i)).toBeVisible();
+  await expect(page.locator("[data-hermes-tasks-write-ledger-banner]")).toBeVisible();
+  // Platform evidence sections — still no research-task write mutation.
+  if (fixture === "normal") {
+    await expect(page.locator("[data-hermes-tasks-automation]")).toBeVisible();
+    await expect(page.locator("[data-hermes-automation-summary]")).toBeVisible();
+    await expect(page.locator("[data-hermes-tasks-weekly-review]")).toBeVisible();
+    await expect(page.locator("[data-hermes-tasks-opportunity-summary]")).toBeVisible();
+  }
+  await expect(page.getByRole("button", { name: /创建|提交|Create|Submit/i })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
 
   await page.goto("/zh/hermes/approvals");
   await expect(page.getByRole("heading", { name: "待我确认" })).toBeVisible();
   await expect(page.getByText("研究审批项")).toBeVisible();
-  await expect(page.getByRole("button", { name: /批准|拒绝/ })).toHaveCount(0);
   // Digest-aware cards follow each combined fixture's candidate row (not a fixed id).
   if (fixture === "normal") {
     await expect(
@@ -116,12 +124,41 @@ test("@combined-fixture F2 subroutes are truthful and mutation-free", async ({
       ),
     ).toBeVisible();
     await expect(page.locator("code").filter({ hasText: "a".repeat(64) })).toBeVisible();
+    // Gate 2 controls only when list advertises approval_enabled + verified pending.
+    await expect(page.locator("[data-hermes-gate2-controls]")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "批准" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "拒绝" })).toBeVisible();
+
+    // Confirm stays disabled without a human note (detail re-fetch required).
+    await page.getByRole("button", { name: "批准" }).click();
+    await expect(page.locator('[data-hermes-gate2-dialog="approve"]')).toBeVisible();
+    await expect(page.locator("[data-hermes-gate2-detail-digest]")).toBeVisible();
+    const confirm = page
+      .locator('[data-hermes-gate2-dialog="approve"]')
+      .getByRole("button", { name: "确认" });
+    await expect(confirm).toBeDisabled();
+    await page
+      .locator('[data-hermes-gate2-dialog="approve"]')
+      .getByRole("button", { name: "取消" })
+      .click();
   } else if (fixture === "degraded") {
     await expect(
       page.locator('[data-hermes-approval-id="legacy-pending-migration"]'),
     ).toBeVisible();
     await expect(page.getByText("迁移证据，不能审批")).toBeVisible();
     await expect(page.locator("code").filter({ hasText: "b".repeat(64) })).toBeVisible();
+    // migration_required: evidence only — no Gate 2 mutation controls.
+    await expect(page.locator("[data-hermes-gate2-controls]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /批准|拒绝/ })).toHaveCount(0);
+  } else {
+    // empty / offline / long-content: never invent approve controls for non-verified rows
+    const gate2 = page.locator("[data-hermes-gate2-controls]");
+    if (fixture === "long-content") {
+      // long-content may include an approval_enabled verified row
+      await expect(gate2.or(page.locator("[data-hermes-approvals]"))).toBeVisible();
+    } else {
+      await expect(page.getByRole("button", { name: /批准|拒绝/ })).toHaveCount(0);
+    }
   }
   await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
 

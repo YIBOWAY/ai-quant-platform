@@ -67,6 +67,18 @@ export function pickLatestAutomation(
   return automationItems.slice().sort(newestArtifactFirst)[0] ?? null;
 }
 
+/** Newest artifact of a given kind (occurred_at desc, then id). */
+export function pickLatestArtifactByKind<K extends HermesArtifact["kind"]>(
+  items: HermesArtifact[],
+  kind: K,
+): Extract<HermesArtifact, { kind: K }> | null {
+  const matched = items.filter(
+    (item): item is Extract<HermesArtifact, { kind: K }> => item.kind === kind,
+  );
+  if (matched.length === 0) return null;
+  return matched.slice().sort(newestArtifactFirst)[0] ?? null;
+}
+
 function jobIsException(
   job: HermesAutomationStatusArtifactData["jobs"][number],
 ): boolean {

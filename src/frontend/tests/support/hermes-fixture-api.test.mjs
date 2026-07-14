@@ -136,6 +136,36 @@ describe("hermes-fixture-api", () => {
     }
   });
 
+  it("serves GET candidate detail synthesized from list rows (still no review POST)", async () => {
+    const fixture = loadFixture("normal");
+    const server = createFixtureServer(fixture);
+    const port = await listenEphemeral(server);
+    try {
+      const id = fixture.candidates.candidates[0].candidate_id;
+      const detail = await request(port, "GET", `/api/agent/candidates/${id}`);
+      assert.equal(detail.status, 200);
+      assert.equal(detail.headers["cache-control"], "no-store");
+      const body = JSON.parse(detail.body.toString("utf8"));
+      assert.equal(body.candidate_id, id);
+      assert.equal(body.approval_enabled, true);
+      assert.equal(body.integrity_state, "verified");
+      assert.equal(body.manifest_digest, fixture.candidates.candidates[0].manifest_digest);
+      assert.equal(body.status, "pending");
+
+      const missing = await request(port, "GET", "/api/agent/candidates/no-such-id");
+      assert.equal(missing.status, 404);
+
+      const reviewPost = await request(
+        port,
+        "POST",
+        `/api/agent/candidates/${id}/review`,
+      );
+      assert.equal(reviewPost.status, 405);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it("returns 404 for unknown GET and 405 for non-GET without mutating fixtures", async () => {
     const fixture = loadFixture("degraded");
     const before = JSON.stringify(fixture);

@@ -1,4 +1,5 @@
 import { CandidateApprovalListState } from "@/components/hermes/approvals/CandidateApprovalListState";
+import { HermesGate2ReviewControls } from "@/components/hermes/approvals/HermesGate2ReviewControls";
 import { StatusPill } from "@/components/ui/primitives";
 import { getAgentCandidates } from "@/lib/api";
 import {
@@ -7,11 +8,13 @@ import {
   candidateDigestPresentation,
 } from "@/lib/hermes/candidatePresentation";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
+import { listRowShowsGate2Controls } from "@/lib/hermes/gate2Review";
 import { getServerLocale } from "@/lib/serverLocale";
 
 /**
- * F2 Approvals: digest-aware candidate summaries, mutation-free.
- * No approve/reject controls in any integrity state.
+ * Hermes Approvals: digest-aware candidate summaries + Gate 2 CAS controls
+ * when list rows advertise approval_enabled + verified pending.
+ * migration_required / corrupt remain evidence-only (no mutation controls).
  */
 export default async function HermesApprovalsPage() {
   const locale = await getServerLocale();
@@ -26,9 +29,9 @@ export default async function HermesApprovalsPage() {
     migrationEvidence: isZh ? "迁移证据，不能审批" : "Migration evidence only — cannot approve",
     corrupt: isZh ? "完整性失败" : "Integrity failed",
     noPreview: isZh ? "无源码预览" : "No source preview",
-    f2Note: isZh
-      ? "F2 只读：不提供批准/拒绝控件。Gate 2 审批仍走既有人工 CAS 路径。"
-      : "F2 read-only: no approve/reject controls. Gate 2 still uses the existing human CAS path.",
+    gate2Note: isZh
+      ? "Gate 2 CAS：仅对 approval_enabled 且 verified/pending 的候选显示批准/拒绝。确认时会重新拉取详情 digest，备注必填；迁移/损坏仅展示证据。"
+      : "Gate 2 CAS: Approve/Reject only when the list advertises approval_enabled + verified pending. Confirm re-fetches the detail digest; note is required. Migration/corrupt rows stay evidence-only.",
   };
 
   return (
@@ -44,7 +47,7 @@ export default async function HermesApprovalsPage() {
         <h1 className="font-headline-lg text-text-primary" id="hermes-approvals-title">
           {isZh ? "待我确认" : "Approvals"}
         </h1>
-        <p className="font-body-sm text-text-secondary">{text.f2Note}</p>
+        <p className="font-body-sm text-text-secondary">{text.gate2Note}</p>
       </header>
 
       <h2 className="font-label-caps text-text-secondary">
@@ -58,6 +61,7 @@ export default async function HermesApprovalsPage() {
           {candidates.candidates.map((candidate) => {
             const binding = asCandidateApprovalBinding(candidate.approval_binding);
             const digest = candidateDigestPresentation(candidate);
+            const showControls = listRowShowsGate2Controls(candidate);
 
             return (
               <li key={candidate.candidate_id}>
@@ -66,6 +70,9 @@ export default async function HermesApprovalsPage() {
                   data-hermes-approval-id={candidate.candidate_id}
                   data-hermes-approval-binding={binding ?? "null"}
                   data-hermes-integrity={candidate.integrity_state ?? "unknown"}
+                  data-hermes-approval-enabled={
+                    candidate.approval_enabled === true ? "true" : "false"
+                  }
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -145,6 +152,10 @@ export default async function HermesApprovalsPage() {
                         {text.noPreview}
                       </p>
                     </div>
+                  ) : null}
+
+                  {showControls ? (
+                    <HermesGate2ReviewControls candidate={candidate} locale={locale} />
                   ) : null}
                 </article>
               </li>
