@@ -702,3 +702,46 @@ def test_run_experiment_threads_candidate_registry_through_walk_forward(tmp_path
     )
     assert result.run_count >= 1
     assert result.folds_path.exists()
+
+
+def test_load_approved_factor_with_property_metadata_override(tmp_path) -> None:
+    """Stub/propose sources use @property; safe builtins must expose property."""
+    from quant_system.agent import promotion
+
+    src = """from quant_system.factors.base import BaseFactor, FactorMetadata
+
+
+class PropertyFactor(BaseFactor):
+    factor_id = "property_override_factor"
+    factor_name = "Property Override Factor"
+    factor_version = "0.1.0-candidate"
+    default_lookback = 20
+    direction = "higher_is_better"
+    description = "uses property decorator"
+
+    @property
+    def metadata(self) -> FactorMetadata:
+        return FactorMetadata(
+            factor_id=self.factor_id,
+            factor_name=self.factor_name,
+            factor_version=self.factor_version,
+            description=self.description,
+            lookback=self.lookback,
+            direction=self.direction,
+        )
+
+    def _compute_values(self, frame):
+        return frame["close"] * 0.0
+"""
+    digest = _write_candidate(tmp_path, "cand-property", src, approved=True)
+    registry = build_default_factor_registry()
+    binding = promotion.load_approved_factor_candidate(
+        registry,
+        agent_output_dir=tmp_path,
+        candidate_id="cand-property",
+        expected_manifest_digest=digest,
+    )
+    assert binding.factor_id == "property_override_factor"
+    assert "property_override_factor" in registry.factor_ids()
+    assert "property" in promotion._make_safe_builtins()
+

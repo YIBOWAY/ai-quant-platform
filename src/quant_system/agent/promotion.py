@@ -174,7 +174,8 @@ _SAFE_BUILTIN_NAMES: frozenset[str] = frozenset(
         "abs", "min", "max", "sum", "round", "len", "range", "enumerate", "zip",
         "sorted", "reversed", "map", "filter", "any", "all", "int", "float",
         "str", "bool", "list", "tuple", "dict", "set", "frozenset", "print",
-        "isinstance", "issubclass", "type", "super", "None", "True", "False",
+        "isinstance", "issubclass", "type", "super", "property",
+        "None", "True", "False",
     }
 )
 
