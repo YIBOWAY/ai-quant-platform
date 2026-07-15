@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -645,7 +646,10 @@ def test_claim_next_uses_lease_token_and_consumes_matching_outbox_wakeup() -> No
         assert claimed.lease_owner == "worker-a"
         assert claimed.lease_token is not None
         assert claimed.lease_until is not None
-        assert claimed.lease_until - claimed.updated_at == timedelta(seconds=30)
+        assert (claimed.lease_until - claimed.updated_at).total_seconds() == pytest.approx(
+            30,
+            abs=0.01,
+        )
         assert claimed.dispatch_started_at is None
 
         with database.connect() as conn:
@@ -770,7 +774,9 @@ def test_heartbeat_requires_current_version_and_lease_token() -> None:
         assert heartbeat.state == "leased"
         assert heartbeat.lease_token == claimed.lease_token
         assert heartbeat.lease_until is not None
-        assert heartbeat.lease_until - heartbeat.updated_at == timedelta(seconds=30)
+        assert (
+            heartbeat.lease_until - heartbeat.updated_at
+        ).total_seconds() == pytest.approx(30, abs=0.01)
     finally:
         _reset_hermes_ledger(database)
         db.reset_database_cache()
@@ -825,6 +831,85 @@ def test_database_clock_owns_lease_and_caller_time_cannot_bypass_expiry() -> Non
                 lease_token=claimed.lease_token,
                 now=datetime(1999, 1, 1, tzinfo=UTC),
             )
+    finally:
+        _reset_hermes_ledger(database)
+        db.reset_database_cache()
+
+
+def test_blocked_heartbeat_cannot_cross_the_real_lease_deadline() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+    _reset_hermes_ledger(database)
+    ledger = HermesCommandLedger(settings)
+
+    try:
+        ledger.create_command(
+            platform_session_id="platform-session-lock-fencing",
+            client_request_id="req-ledger-lock-fencing-001",
+            kind="research_chat",
+            canonical_request_digest="9" * 64,
+            payload_ref="platform-payload://research/lock-fencing-001",
+        )
+        claimed = ledger.claim_next_command(
+            worker_id="worker-lock-fencing",
+            now=datetime(2099, 1, 1, tzinfo=UTC),
+            lease_duration=timedelta(seconds=1),
+        )
+        assert claimed is not None
+        assert claimed.lease_token is not None
+        assert claimed.lease_until is not None
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with database.connect() as lock_conn, lock_conn.transaction():
+                lock_conn.execute(
+                    "SELECT 1 FROM quant_system.hermes_commands "
+                    "WHERE command_id = %s FOR UPDATE",
+                    (claimed.command_id,),
+                )
+                heartbeat = pool.submit(
+                    ledger.heartbeat_lease,
+                    command_id=claimed.command_id,
+                    expected_version=claimed.version,
+                    lease_token=claimed.lease_token,
+                    now=datetime(1999, 1, 1, tzinfo=UTC),
+                    lease_duration=timedelta(seconds=30),
+                )
+
+                deadline = time.monotonic() + 1.0
+                blocked = False
+                while time.monotonic() < deadline:
+                    with database.connect() as observer:
+                        blocked = bool(
+                            observer.execute(
+                                """
+                                SELECT 1
+                                FROM pg_stat_activity
+                                WHERE datname = current_database()
+                                  AND wait_event_type = 'Lock'
+                                  AND query LIKE '%%quant_system.hermes_commands%%'
+                                  AND query LIKE '%%FOR UPDATE%%'
+                                """
+                            ).fetchone()
+                        )
+                    if blocked:
+                        break
+                    time.sleep(0.01)
+                assert blocked, "heartbeat UPDATE did not block on the held command row"
+
+                with database.connect() as observer:
+                    server_now = observer.execute("SELECT clock_timestamp()").fetchone()[0]
+                remaining = (claimed.lease_until - server_now).total_seconds()
+                if remaining > 0:
+                    time.sleep(remaining + 0.15)
+
+                # Exiting the transaction releases the row lock only after the
+                # real server-side lease deadline has passed.
+
+            with pytest.raises(HermesCommandLeaseConflict):
+                heartbeat.result(timeout=2)
     finally:
         _reset_hermes_ledger(database)
         db.reset_database_cache()

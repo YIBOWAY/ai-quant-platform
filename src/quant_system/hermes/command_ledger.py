@@ -476,7 +476,7 @@ class HermesCommandLedger:
                       AND state = 'queued'
                       AND (
                           next_attempt_at IS NULL
-                          OR next_attempt_at <= statement_timestamp()
+                          OR next_attempt_at <= clock_timestamp()
                       )
                     ORDER BY next_attempt_at NULLS FIRST, created_at, command_id
                     FOR UPDATE SKIP LOCKED
@@ -496,9 +496,9 @@ class HermesCommandLedger:
                         next_attempt_at = NULL,
                         lease_owner = %s,
                         lease_token = %s,
-                        lease_until = statement_timestamp()
+                        lease_until = clock_timestamp()
                             + (%s * interval '1 second'),
-                        updated_at = statement_timestamp()
+                        updated_at = clock_timestamp()
                     WHERE command_id = %s
                       AND owner_user_id = %s
                       AND version = %s
@@ -522,7 +522,7 @@ class HermesCommandLedger:
                     f"""
                     UPDATE {SCHEMA}.hermes_outbox
                     SET consumed_by = %s,
-                        consumed_at = statement_timestamp()
+                        consumed_at = clock_timestamp()
                     WHERE command_id = %s
                       AND command_version = %s
                       AND topic = 'hermes.command.queued'
@@ -565,19 +565,26 @@ class HermesCommandLedger:
         lease_seconds = lease_duration.total_seconds()
         try:
             with database.connect() as conn, conn.transaction():
+                self._lock_active_lease(
+                    conn,
+                    command_id=command_id,
+                    expected_version=expected_version,
+                    lease_token=lease_token,
+                    dispatch_requirement="any",
+                )
                 row = conn.execute(
                     f"""
                     UPDATE {SCHEMA}.hermes_commands
                     SET version = version + 1,
-                        lease_until = statement_timestamp()
+                        lease_until = clock_timestamp()
                             + (%s * interval '1 second'),
-                        updated_at = statement_timestamp()
+                        updated_at = clock_timestamp()
                     WHERE command_id = %s
                       AND owner_user_id = %s
                       AND state = 'leased'
                       AND version = %s
                       AND lease_token = %s
-                      AND lease_until > statement_timestamp()
+                      AND lease_until > clock_timestamp()
                     RETURNING {_COMMAND_COLUMNS}
                     """,
                     (
@@ -631,19 +638,26 @@ class HermesCommandLedger:
         database = self._require_ready_database()
         try:
             with database.connect() as conn, conn.transaction():
+                self._lock_active_lease(
+                    conn,
+                    command_id=command_id,
+                    expected_version=expected_version,
+                    lease_token=lease_token,
+                    dispatch_requirement="not_started",
+                )
                 row = conn.execute(
                     f"""
                     UPDATE {SCHEMA}.hermes_commands
                     SET version = version + 1,
                         attempt_count = attempt_count + 1,
-                        dispatch_started_at = statement_timestamp(),
-                        updated_at = statement_timestamp()
+                        dispatch_started_at = clock_timestamp(),
+                        updated_at = clock_timestamp()
                     WHERE command_id = %s
                       AND owner_user_id = %s
                       AND state = 'leased'
                       AND version = %s
                       AND lease_token = %s
-                      AND lease_until > statement_timestamp()
+                      AND lease_until > clock_timestamp()
                       AND dispatch_started_at IS NULL
                     RETURNING {_COMMAND_COLUMNS}
                     """,
@@ -703,6 +717,13 @@ class HermesCommandLedger:
         database = self._require_ready_database()
         try:
             with database.connect() as conn, conn.transaction():
+                self._lock_active_lease(
+                    conn,
+                    command_id=command_id,
+                    expected_version=expected_version,
+                    lease_token=lease_token,
+                    dispatch_requirement="started",
+                )
                 row = conn.execute(
                     f"""
                     UPDATE {SCHEMA}.hermes_commands
@@ -715,13 +736,13 @@ class HermesCommandLedger:
                         hermes_session_id = %s,
                         hermes_run_id = %s,
                         last_error_code = NULL,
-                        updated_at = statement_timestamp()
+                        updated_at = clock_timestamp()
                     WHERE command_id = %s
                       AND owner_user_id = %s
                       AND state = 'leased'
                       AND version = %s
                       AND lease_token = %s
-                      AND lease_until > statement_timestamp()
+                      AND lease_until > clock_timestamp()
                       AND dispatch_started_at IS NOT NULL
                     RETURNING {_COMMAND_COLUMNS}
                     """,
@@ -780,6 +801,13 @@ class HermesCommandLedger:
         database = self._require_ready_database()
         try:
             with database.connect() as conn, conn.transaction():
+                self._lock_active_lease(
+                    conn,
+                    command_id=command_id,
+                    expected_version=expected_version,
+                    lease_token=lease_token,
+                    dispatch_requirement="started",
+                )
                 row = conn.execute(
                     f"""
                     UPDATE {SCHEMA}.hermes_commands
@@ -790,13 +818,13 @@ class HermesCommandLedger:
                         lease_token = NULL,
                         lease_until = NULL,
                         last_error_code = %s,
-                        updated_at = statement_timestamp()
+                        updated_at = clock_timestamp()
                     WHERE command_id = %s
                       AND owner_user_id = %s
                       AND state = 'leased'
                       AND version = %s
                       AND lease_token = %s
-                      AND lease_until > statement_timestamp()
+                      AND lease_until > clock_timestamp()
                       AND dispatch_started_at IS NOT NULL
                     RETURNING {_COMMAND_COLUMNS}
                     """,
@@ -837,7 +865,7 @@ class HermesCommandLedger:
                         %s,
                         %s,
                         'hermes.command.reconcile',
-                        statement_timestamp()
+                        clock_timestamp()
                     )
                     """,
                     (command.command_id, command.version),
@@ -874,6 +902,13 @@ class HermesCommandLedger:
         database = self._require_ready_database()
         try:
             with database.connect() as conn, conn.transaction():
+                self._lock_active_lease(
+                    conn,
+                    command_id=command_id,
+                    expected_version=expected_version,
+                    lease_token=lease_token,
+                    dispatch_requirement="started",
+                )
                 row = conn.execute(
                     f"""
                     UPDATE {SCHEMA}.hermes_commands
@@ -884,13 +919,13 @@ class HermesCommandLedger:
                         lease_token = NULL,
                         lease_until = NULL,
                         last_error_code = %s,
-                        updated_at = statement_timestamp()
+                        updated_at = clock_timestamp()
                     WHERE command_id = %s
                       AND owner_user_id = %s
                       AND state = 'leased'
                       AND version = %s
                       AND lease_token = %s
-                      AND lease_until > statement_timestamp()
+                      AND lease_until > clock_timestamp()
                       AND dispatch_started_at IS NOT NULL
                     RETURNING {_COMMAND_COLUMNS}
                     """,
@@ -1007,7 +1042,7 @@ class HermesCommandLedger:
                         hermes_session_id = %s,
                         hermes_run_id = %s,
                         last_error_code = NULL,
-                        updated_at = statement_timestamp()
+                        updated_at = clock_timestamp()
                     WHERE command_id = %s
                       AND owner_user_id = %s
                       AND version = %s
@@ -1128,7 +1163,7 @@ class HermesCommandLedger:
                         hermes_session_id = %s,
                         hermes_run_id = %s,
                         last_error_code = %s,
-                        updated_at = statement_timestamp()
+                        updated_at = clock_timestamp()
                     WHERE command_id = %s
                       AND owner_user_id = %s
                       AND version = %s
@@ -1199,7 +1234,7 @@ class HermesCommandLedger:
                         FROM {SCHEMA}.hermes_commands
                         WHERE owner_user_id = %s
                           AND state = 'leased'
-                          AND lease_until <= statement_timestamp()
+                          AND lease_until <= clock_timestamp()
                         ORDER BY lease_until, command_id
                         FOR UPDATE SKIP LOCKED
                         LIMIT 1
@@ -1217,13 +1252,13 @@ class HermesCommandLedger:
                             UPDATE {SCHEMA}.hermes_commands
                             SET state = 'queued',
                                 version = version + 1,
-                                next_attempt_at = statement_timestamp(),
+                                next_attempt_at = clock_timestamp(),
                                 lease_owner = NULL,
                                 lease_token = NULL,
                                 lease_until = NULL,
                                 dispatch_started_at = NULL,
                                 last_error_code = NULL,
-                                updated_at = statement_timestamp()
+                                updated_at = clock_timestamp()
                             WHERE command_id = %s
                               AND version = %s
                               AND state = 'leased'
@@ -1244,7 +1279,7 @@ class HermesCommandLedger:
                                 lease_token = NULL,
                                 lease_until = NULL,
                                 last_error_code = 'lease_expired_after_dispatch',
-                                updated_at = statement_timestamp()
+                                updated_at = clock_timestamp()
                             WHERE command_id = %s
                               AND version = %s
                               AND state = 'leased'
@@ -1274,7 +1309,7 @@ class HermesCommandLedger:
                             topic,
                             available_at
                         )
-                        VALUES (%s, %s, %s, statement_timestamp())
+                        VALUES (%s, %s, %s, clock_timestamp())
                         """,
                         (command.command_id, command.version, topic),
                     )
@@ -1542,6 +1577,52 @@ class HermesCommandLedger:
                 f"command state {row[1]!s} does not allow this transition"
             )
         raise HermesCommandStateConflict("command transition lost a concurrent race")
+
+    @staticmethod
+    def _lock_active_lease(
+        conn: psycopg.Connection,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        lease_token: UUID,
+        dispatch_requirement: Literal["any", "started", "not_started"],
+    ) -> HermesCommand:
+        """Fence a lease only after the command row lock is actually acquired."""
+        row = conn.execute(
+            f"""
+            SELECT {_COMMAND_COLUMNS}
+            FROM {SCHEMA}.hermes_commands
+            WHERE command_id = %s
+              AND owner_user_id = %s
+            FOR UPDATE
+            """,
+            (command_id, ROOT_USER_ID),
+        ).fetchone()
+        if row is None:
+            raise HermesCommandNotFound(str(command_id))
+        command = _command_from_row(row)
+        if command.version != expected_version:
+            raise HermesCommandVersionConflict(
+                f"expected command version {expected_version}, found {command.version}"
+            )
+        if command.state != "leased":
+            raise HermesCommandStateConflict(
+                f"command state {command.state} does not hold an active lease"
+            )
+        if command.lease_token != lease_token:
+            raise HermesCommandLeaseConflict("lease token is stale")
+        server_now_row = conn.execute("SELECT clock_timestamp()").fetchone()
+        if server_now_row is None:
+            raise HermesCommandLedgerUnavailable("database clock returned no value")
+        if command.lease_until is None or command.lease_until <= server_now_row[0]:
+            raise HermesCommandLeaseConflict("lease has expired")
+        if dispatch_requirement == "started" and command.dispatch_started_at is None:
+            raise HermesCommandStateConflict(
+                "command cannot be delivered before dispatch is durably recorded"
+            )
+        if dispatch_requirement == "not_started" and command.dispatch_started_at is not None:
+            raise HermesCommandStateConflict("command dispatch is already recorded")
+        return command
 
     @staticmethod
     def _raise_lease_conflict(
@@ -2214,7 +2295,7 @@ def _consume_pending_outbox(
         f"""
         UPDATE {SCHEMA}.hermes_outbox
         SET consumed_by = %s,
-            consumed_at = statement_timestamp()
+            consumed_at = clock_timestamp()
         WHERE command_id = %s
           AND topic = %s
           AND consumed_at IS NULL
