@@ -73,8 +73,53 @@ test("@live-hermes-sessions reads real persisted sessions without opening chat w
   await expect(
     page.locator("[data-hermes-session-messages], [data-hermes-session-empty]"),
   ).toHaveCount(1);
+  const sessionScrollRegion = page.locator("[data-page-scroll-region]");
+  const latestMessageAnchor = page.locator("[data-hermes-session-latest-anchor]");
+  await expect(latestMessageAnchor).toBeInViewport();
+  await expect
+    .poll(() => sessionScrollRegion.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
   await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "发送（已禁用）" })).toBeDisabled();
+  expect(externalRequests).toEqual([]);
+});
+
+test("@live-hermes-sessions keeps session context pinned while reading the latest messages", async ({
+  page,
+}) => {
+  test.skip(
+    process.env.PW_HERMES_LIVE_SESSIONS !== "1",
+    "Set PW_HERMES_LIVE_SESSIONS=1 with the local Hermes API Server and BFF enabled.",
+  );
+  const externalRequests = await installLoopbackOnlyGuard(page);
+
+  await page.goto("/zh/hermes/sessions", { waitUntil: "networkidle" });
+  const sessionLinks = page.locator("[data-hermes-session-list] a");
+  expect(await sessionLinks.count()).toBeGreaterThan(0);
+  await sessionLinks.first().click();
+  await expect(page.locator("[data-hermes-session-latest-anchor]")).toBeInViewport();
+
+  const scrollRegion = page.locator("[data-page-scroll-region]");
+  const sessionContext = page.locator("[data-hermes-session-context]");
+  await expect(sessionContext).toBeVisible();
+  await expect(page.getByRole("link", { name: "← 返回会话记录" })).toBeVisible();
+
+  const regionBox = await scrollRegion.boundingBox();
+  const pinnedBox = await sessionContext.boundingBox();
+  expect(regionBox).not.toBeNull();
+  expect(pinnedBox).not.toBeNull();
+  expect(Math.abs(pinnedBox!.y - regionBox!.y)).toBeLessThanOrEqual(1);
+
+  await scrollRegion.evaluate((element) => {
+    element.scrollTop = Math.max(1, element.scrollTop - 400);
+  });
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  const pinnedAfterScroll = await sessionContext.boundingBox();
+  expect(pinnedAfterScroll).not.toBeNull();
+  expect(Math.abs(pinnedAfterScroll!.y - regionBox!.y)).toBeLessThanOrEqual(1);
+
+  await page.getByRole("link", { name: "← 返回会话记录" }).click();
+  await expect(page).toHaveURL(/\/zh\/hermes\/sessions$/);
   expect(externalRequests).toEqual([]);
 });
 

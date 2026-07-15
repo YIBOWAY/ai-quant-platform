@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HermesSessionLatestAnchor } from "@/components/hermes/sessions/HermesSessionLatestAnchor";
 import { Card } from "@/components/ui/primitives";
 import { getHermesSessionDetail, getHermesSessionMessages } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
@@ -29,7 +30,10 @@ export default async function HermesSessionDetailPage({
       data-hermes-session-detail={sessionId}
       aria-labelledby="hermes-session-detail-title"
     >
-      <header className="space-y-2">
+      <header
+        className="sticky top-0 z-20 -mx-2 space-y-2 border-b border-border-subtle bg-[var(--color-hermes-canvas)] px-2 pb-3 pt-1 shadow-[0_8px_16px_rgba(0,0,0,0.18)]"
+        data-hermes-session-context
+      >
         <Link
           className="font-body-sm text-info underline-offset-2 hover:underline"
           href={localizePath("/hermes/sessions", locale)}
@@ -60,32 +64,35 @@ export default async function HermesSessionDetailPage({
           </p>
         </Card>
       ) : (
-        <ol className="space-y-3" data-hermes-session-messages>
-          {history.messages.map((message, index) => (
-            <li
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-              key={`${message.id}:${index}`}
-            >
-              <Card
-                className={`max-w-[88%] ${
-                  message.role === "user" ? "border-info/30 bg-info/10" : "bg-bg-surface"
-                }`}
+        <>
+          <ol className="space-y-3" data-hermes-session-messages>
+            {history.messages.map((message, index) => (
+              <li
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                key={`${message.id}:${index}`}
               >
-                <p className="font-label-caps text-text-secondary">
-                  {message.role === "user" ? (isZh ? "你" : "You") : "Hermes"}
-                </p>
-                <p className="mt-2 whitespace-pre-wrap break-words font-body-sm text-text-primary">
-                  {message.content}
-                </p>
-                {message.timestamp ? (
-                  <p className="mt-2 font-data-mono text-[11px] text-text-secondary">
-                    {message.timestamp}
+                <Card
+                  className={`max-w-[88%] ${
+                    message.role === "user" ? "border-info/30 bg-info/10" : "bg-bg-surface"
+                  }`}
+                >
+                  <p className="font-label-caps text-text-secondary">
+                    {message.role === "user" ? (isZh ? "你" : "You") : "Hermes"}
                   </p>
-                ) : null}
-              </Card>
-            </li>
-          ))}
-        </ol>
+                  <p className="mt-2 whitespace-pre-wrap break-words font-body-sm text-text-primary">
+                    {message.content}
+                  </p>
+                  {message.timestamp ? (
+                    <p className="mt-2 font-data-mono text-[11px] text-text-secondary">
+                      {message.timestamp}
+                    </p>
+                  ) : null}
+                </Card>
+              </li>
+            ))}
+          </ol>
+          <HermesSessionLatestAnchor />
+        </>
       )}
 
       {history.omitted_message_count > 0 ? (
