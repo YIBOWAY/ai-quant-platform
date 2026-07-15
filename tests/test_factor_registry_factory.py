@@ -20,6 +20,8 @@ from quant_system.factors.registry import (
 )
 
 _EXAMPLE_IDS = {"momentum", "volatility", "liquidity", "rsi", "macd"}
+_PROMOTED_IDS = {"agent_candidate_wave2_sceneb_mom20_v3"}
+_RESIDENT_IDS = _EXAMPLE_IDS | _PROMOTED_IDS
 
 _CANDIDATE_SRC = '''
 from quant_system.factors.base import BaseFactor
@@ -98,7 +100,7 @@ def _write_candidate(root, candidate_id, source, *, approved):
 
 def test_factory_default_is_examples_plus_promoted() -> None:
     registry = build_factor_registry()
-    assert set(registry.factor_ids()) == _EXAMPLE_IDS
+    assert set(registry.factor_ids()) == _RESIDENT_IDS
 
 
 def test_build_default_is_thin_alias() -> None:
@@ -174,8 +176,9 @@ def test_factors_default_call_has_no_candidate_origin(tmp_path) -> None:
     assert response.status_code == 200
     factors = response.json()["factors"]
     origins = {item["factor_id"]: item["origin"] for item in factors}
-    assert set(origins) == _EXAMPLE_IDS
-    assert all(origin == "builtin" for origin in origins.values())
+    assert set(origins) == _RESIDENT_IDS
+    assert all(origins[factor_id] == "builtin" for factor_id in _EXAMPLE_IDS)
+    assert all(origins[factor_id] == "promoted" for factor_id in _PROMOTED_IDS)
     assert "wiring_test_factor" not in origins
 
 

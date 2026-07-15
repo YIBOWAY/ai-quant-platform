@@ -54,12 +54,14 @@ data/                     Local cache, fixtures, generated research outputs.
   `/Users/sunyibo/programs/Hermes-quant-agent`.
 - The active cross-repo roadmap lives in
   `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`.
-- HQA Slices 9A-9G, the read-only mini 9H artifact shelf, and full 9H
-  automation/notifications are delivered. The first D-31 wave is also delivered:
-  a fail-closed Hermes gateway capability contract, candidate integrity/scoped
-  Gate 3, and a professional read-only Hermes default shell. Real Hermes chat
-  and provider evidence, Hermes approval mutations, unified-results parity, and
-  legacy-page retirement remain blocked and require later independent plans.
+- HQA Slices 9A-9G, the read-only mini 9H artifact shelf, full 9H
+  automation/notifications, and D-31 Wave 2 Scene-B are delivered. The real
+  Scene-B flow completed final receipt -> Gate 3 prepare -> human diff/commit ->
+  reviewed/cleanup, and promoted commit `524e791` is merged. The professional
+  Hermes default shell now includes an official-API persisted-session read
+  surface (`sessionRead=true`) through a server-side GET-only BFF. Real Hermes
+  chat/provider evidence, Hermes approval mutations, unified-results parity,
+  and legacy-page retirement remain blocked and require later independent plans.
   Slice 9E lives in HQA and reuses Slice 9D's price seam. Slice 9D's
   `data prices` seam is strictly read-only Futu/QFQ/1d JSON, capped at 25
   symbols and 500 calendar days, with no sample/local/Tiingo/Longbridge
@@ -89,9 +91,9 @@ data/                     Local cache, fixtures, generated research outputs.
   `migration_required`, and `corrupt`. `legacy_unbound` is non-authority:
   it never authorizes one-shot load, approval, or promotion. Until a separate
   human authorizes `agent migrate-candidates --apply` with an explicit
-  `--backup-dir`, real candidate trees stay dry-run-only; live dry-run on this
-  machine reports one canonical-unversioned pending candidate and
-  `applied=false`.
+  `--backup-dir`, each new real migration stays dry-run-only. One bounded Wave 2
+  migration was explicitly authorized and applied; that authorization does not
+  carry forward to future candidates or conflicts.
 - Gate 2 review is expected-digest plus `expected_status=pending` CAS with a
   non-empty note. HQA must pass human-supplied
   `candidate-id + expected-digest + expected-status=pending + note` and must
@@ -120,9 +122,22 @@ data/                     Local cache, fixtures, generated research outputs.
 - Later frontend convergence should fold `/factor-lab`, `/backtest`,
   `/experiments`, and `/agent-studio` into the Hermes workbench only after
   approval and result-evidence parity. The delivered Hermes Approvals surface
-  is read-only; mutations stay disabled until a bridge/approval plan lands.
+  is read-only (`approvalMutations=false`); mutations stay disabled until a
+  bridge/approval plan lands.
   The retained `/agent-studio` route is also read-only candidate inspection:
   it must not mount `AgentTaskForm` or expose task/review controls.
+- The current Hermes transport is the official API Server on explicit HTTP
+  loopback (default `127.0.0.1:8642`), not the drifted old TUI contract. The
+  session pages read through the platform API/BFF and must never receive the
+  full-authority Hermes Bearer key. The key is loaded server-side from an
+  owner-only regular file. Loopback is a network boundary, not OS-user auth;
+  while this local platform has no user authentication, bind it only to
+  `127.0.0.1`/`::1`. Health/capability/session reads do not call a provider.
+- The session-read slice added no PostgreSQL migration. A later write bridge
+  must use a durable command/outbox/event ledger plus a deterministic connector
+  worker. Prefer `LISTEN/NOTIFY` wakeup with periodic scan recovery; polling,
+  claim, lease, and heartbeat must not invoke an LLM when no queued command
+  exists. Do not implement Hermes cron prompt polling as a queue.
 
 
 ## Core Engineering Rules
@@ -189,8 +204,14 @@ data/                     Local cache, fixtures, generated research outputs.
 - `/hermes` is the reversible default read-only COO workbench backed by
   `GET /api/hermes/artifacts` and the candidate read API. It renders Today,
   Tasks, Approvals, Results, risk, prediction, foresight, weekly, opportunity,
-  and automation facts; there is no `POST /api/agent/tasks`, fake async job,
-  approval mutation, or enabled composer.
+  and automation facts. `/hermes/sessions` additionally reads persisted Hermes
+  sessions through the official-API GET-only BFF. There is no
+  `POST /api/agent/tasks`, fake async job, approval mutation, or enabled
+  composer.
+- Keep `sessionRead=true` observational and `chat`, `execution`,
+  `approvalMutations`, `unifiedResults`, and `legacyRedirects` hard false until
+  their independent evidence gates land. Read
+  `docs/guides/hermes-sessions.md` before touching the bridge or deployment.
 - “Read-only AI news” means no research/trading/account mutation; successful
   AI HOT GETs intentionally best-effort update the optional news item/fetch
   cache. `/brief` live rendering may therefore contact AI HOT and write cache

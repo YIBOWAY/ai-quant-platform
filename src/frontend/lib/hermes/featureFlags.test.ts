@@ -5,6 +5,7 @@ const attemptedCapabilityOverrides = {
   QS_HERMES_SHELL_ENABLED: "true",
   QS_HERMES_CHAT_ENABLED: "true",
   QS_HERMES_EXECUTION_ENABLED: "true",
+  QS_HERMES_APPROVAL_MUTATIONS_ENABLED: "true",
   QS_HERMES_UNIFIED_RESULTS_ENABLED: "true",
   QS_HERMES_LEGACY_REDIRECTS_ENABLED: "true",
 };
@@ -13,8 +14,10 @@ describe("hermesFeatureFlags", () => {
   it("allows only the shell flag to vary in this slice", () => {
     expect(hermesFeatureFlags(attemptedCapabilityOverrides)).toEqual({
       shell: true,
+      sessionRead: true,
       chat: false,
       execution: false,
+      approvalMutations: false,
       unifiedResults: false,
       legacyRedirects: false,
       deliveryState: "blocked_in_this_slice",
@@ -26,8 +29,10 @@ describe("hermesFeatureFlags", () => {
       }),
     ).toEqual({
       shell: false,
+      sessionRead: true,
       chat: false,
       execution: false,
+      approvalMutations: false,
       unifiedResults: false,
       legacyRedirects: false,
       deliveryState: "blocked_in_this_slice",

@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { hermesHomeHref, hermesRouteHref, hermesRoutes } from "./routes";
 
 describe("hermesRoutes", () => {
-  it("exports the four internal workbench paths without conversation", () => {
+  it("exports the read-only session route without opening conversation write", () => {
     expect(hermesRoutes).toEqual({
       today: "/hermes",
+      sessions: "/hermes/sessions",
       tasks: "/hermes/tasks",
       approvals: "/hermes/approvals",
       results: "/hermes/results",
@@ -49,5 +50,6 @@ describe("hermesRouteHref", () => {
     expect(hermesRouteHref("approvals", "zh", { b: "2", a: "1" })).toBe(
       "/zh/hermes/approvals?a=1&b=2",
     );
+    expect(hermesRouteHref("sessions", "en")).toBe("/en/hermes/sessions");
   });
 });

@@ -65,10 +65,11 @@ const e2eCorsOrigins = Array.from(
 const frontendCommand = buildFrontendCommand(frontendPort);
 const rollbackFrontendCommand =
   rollbackPort !== null ? buildFrontendCommand(rollbackPort) : null;
+const backendPython = resolveBackendPython();
 const backendCommand = fixtureMode
   ? `node src/frontend/tests/support/hermes-fixture-api.mjs ${backendPort} ${hermesWorkbenchFixture}`
   : (process.env.QUANT_API_COMMAND ??
-    `python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port ${backendPort}`);
+    `${JSON.stringify(backendPython)} -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port ${backendPort}`);
 const backendReuse = fixtureMode ? false : reuseExistingServer;
 const frontendReuse = fixtureMode || rollbackE2E ? false : reuseExistingServer;
 
@@ -82,6 +83,20 @@ function buildFrontendCommand(port: number): string {
     `cd ".tmp/e2e-frontend-${port}"`,
     frontendDevCommand,
   ].join(" && ");
+}
+
+function resolveBackendPython(): string {
+  const candidates = [
+    process.env.PW_PYTHON,
+    path.join(repoRoot, "ai-quant", "bin", "python"),
+    path.join(repoRoot, ".venv", "bin", "python"),
+  ];
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return "python";
 }
 
 function readHermesWorkbenchFixture(
@@ -170,6 +185,8 @@ function buildWebServers(): WebServerConfig[] | undefined {
               QS_ENVIRONMENT: "test",
               QS_DATABASE_ENABLED: "false",
               QS_DATABASE_AUTO_MIGRATE: "false",
+              QS_API_BIND_ADDRESS: "127.0.0.1",
+              QS_HERMES_GATEWAY_ENABLED: "false",
               QS_AIHOT_ENABLED: "false",
               QS_HERMES_ARTIFACT_FEED_PATH: hermesArtifactFixture,
               QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS: "315360000",

@@ -11,19 +11,12 @@ export type HermesInternalNavProps = {
   locale: Locale;
 };
 
-type NavEntry =
-  | {
-      id: "today" | "tasks" | "approvals" | "results";
-      kind: "link";
-      label: string;
-      href: string;
-    }
-  | {
-      id: "conversation";
-      kind: "unavailable";
-      label: string;
-      unavailableLabel: string;
-    };
+type NavEntry = {
+  id: "today" | "sessions" | "tasks" | "approvals" | "results";
+  kind: "link";
+  label: string;
+  href: string;
+};
 
 export function HermesInternalNav({ locale }: HermesInternalNavProps) {
   const pathname = usePathname();
@@ -38,10 +31,10 @@ export function HermesInternalNav({ locale }: HermesInternalNavProps) {
       href: hermesRouteHref("today", locale),
     },
     {
-      id: "conversation",
-      kind: "unavailable",
-      label: text.nav.conversation,
-      unavailableLabel: text.nav.conversationUnavailable,
+      id: "sessions",
+      kind: "link",
+      label: text.nav.sessions,
+      href: hermesRouteHref("sessions", locale),
     },
     {
       id: "tasks",
@@ -70,20 +63,6 @@ export function HermesInternalNav({ locale }: HermesInternalNavProps) {
     >
       <ul className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-wrap gap-2">
         {entries.map((entry) => {
-          if (entry.kind === "unavailable") {
-            return (
-              <li key={entry.id}>
-                <span
-                  aria-label={`${entry.label}. ${entry.unavailableLabel}`}
-                  className="app-touch-target inline-flex items-center justify-center rounded-lg border border-border-subtle px-3 font-body-sm text-text-secondary opacity-60"
-                  title={entry.unavailableLabel}
-                >
-                  {entry.label}
-                </span>
-              </li>
-            );
-          }
-
           const barePath = splitLocalePath(entry.href).pathname;
           const isActive =
             barePath === "/hermes"

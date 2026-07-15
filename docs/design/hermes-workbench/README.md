@@ -18,7 +18,8 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 | F0/F1 platform token rebind | **landed 2026-07-13** | F0/F1 CSS tokens aligned to QUANTUM_CORE (`globals.css`): warm terminal surfaces, info-blue primary CTAs, warning yellow for safety/warn only, Hermes purple brand/focus only. |
 | F0 independent review | **completed 2026-07-13** | UX pass/fail recorded below (pre-polish). Package was Ready for user selection; user chose A for craft pass. |
 | F1 clickable prototype | **approved 2026-07-13** | Craft accepted with platform token rebind. Full-state catalogs + walkthrough under `f1/`. Density + full-width desk retained. |
-| F2 production shell | **code-delivered 2026-07-14** | Read-only Hermes shell, Today hierarchy, Tasks/Approvals/Results, reversible root→Hermes cutover, hard-off chat/execution/unifiedResults/legacyRedirects, static `blocked_in_this_slice`. Tasks/Results distinguish unavailable/degraded/corrupt from a genuine empty feed. Chat/approve UI still closed. |
+| F2 production shell | **code-delivered 2026-07-14** | Read-only Hermes shell, Today hierarchy, Tasks/Approvals/Results and reversible root→Hermes cutover. Chat/execution/approval mutation/unifiedResults/legacyRedirects remain hard-off; Tasks/Results distinguish unavailable/degraded/corrupt from a genuine empty feed. |
+| F2.1 official session read | **code-delivered 2026-07-15** | `sessionRead=true`: platform GET-only BFF reads official Hermes API Server persisted sessions and exposes list/detail views. Browser never receives the Hermes key. `approvalMutations=false`; composer remains disabled. |
 
 ### F0 decision
 
@@ -64,10 +65,39 @@ No purple atmosphere. Warning yellow is not used as Submit/primary fill.
 - status: `code-delivered` (read-only shell; not chat/execution)
 - production base: F0 `direction-a` full-width trading desk + QUANTUM_CORE tokens
 - enabled root/navigation: Hermes; `QS_HERMES_SHELL_ENABLED=false` returns root/home nav to Dashboard while direct `/hermes` stays read-only
-- hard-off: `chat` / `execution` / `unifiedResults` / `legacyRedirects` are literal `false` (env=true ineffective)
-- capability notice: static `blocked_in_this_slice` (no platform capability-contract getter/route in this wave)
+- hard-off at delivery: `chat` / `execution` / `unifiedResults` / `legacyRedirects` are literal `false` (env=true ineffective)
+- capability notice at delivery: static `blocked_in_this_slice`; the later F2.1 increment adds a read-only gateway status route without enabling chat
 - old four research pages retained pending later parity; no mutation path under Hermes F2 surfaces
 - Tasks/Results never translate an unavailable, degraded, corrupt, or API-error artifact feed into a healthy empty state; they expose the source reason and reserve empty copy for a verified empty feed
+
+### F2.1 official Hermes session read (2026-07-15)
+
+- status: `code-delivered` (persisted-session observation only)
+- feature contract: `sessionRead=true`; `chat=false`, `execution=false`,
+  `approvalMutations=false`, `unifiedResults=false`, `legacyRedirects=false`
+- platform BFF: `GET /api/hermes/gateway`, `GET /api/hermes/sessions`,
+  `GET /api/hermes/sessions/{session_id}` and
+  `GET /api/hermes/sessions/{session_id}/messages`
+- production views: `/hermes/sessions` list + `/hermes/sessions/{session_id}` detail;
+  composer remains disabled on the transcript view
+- upstream: official Hermes API Server on explicit HTTP loopback (default
+  `127.0.0.1:8642`); the older TUI gateway contract drifted and is no longer the
+  platform's primary connection
+- credential boundary: full-authority Hermes Bearer key is read server-side from
+  an owner-only regular file and never serialized into frontend props/responses
+- data/quota boundary: health, capabilities and persisted-session GETs submit no
+  prompt, call no provider and consume no Hermes provider quota; no PostgreSQL
+  migration was added and sessions are not copied into the platform database
+- deployment boundary: loopback is a network boundary, not OS-user authentication;
+  the unauthenticated local platform must itself bind `127.0.0.1`/`::1`
+- operations and threat model: [`../../guides/hermes-sessions.md`](../../guides/hermes-sessions.md)
+
+The next approved write-side design is not “enable the composer against `/v1/runs`”.
+It requires a durable command/outbox/event ledger plus a deterministic connector
+worker. `LISTEN/NOTIFY` may wake the worker and a periodic scan may recover missed
+notifications; neither path invokes an LLM when no queued command exists. Chat
+remains blocked until idempotency, request recovery, event replay, provider lock/
+evidence, approval exact binding and stop reconciliation are independently proven.
 
 ---
 

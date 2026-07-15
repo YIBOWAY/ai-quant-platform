@@ -1,6 +1,5 @@
 import { CandidateApprovalListState } from "@/components/hermes/approvals/CandidateApprovalListState";
-import { HermesGate2ReviewControls } from "@/components/hermes/approvals/HermesGate2ReviewControls";
-import { StatusPill } from "@/components/ui/primitives";
+import { Card, StatusPill } from "@/components/ui/primitives";
 import { getAgentCandidates } from "@/lib/api";
 import {
   asCandidateApprovalBinding,
@@ -8,13 +7,14 @@ import {
   candidateDigestPresentation,
 } from "@/lib/hermes/candidatePresentation";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
-import { listRowShowsGate2Controls } from "@/lib/hermes/gate2Review";
 import { getServerLocale } from "@/lib/serverLocale";
 
 /**
- * Hermes Approvals: digest-aware candidate summaries + Gate 2 CAS controls
- * when list rows advertise approval_enabled + verified pending.
- * migration_required / corrupt remain evidence-only (no mutation controls).
+ * Hermes Approvals: digest-aware candidate evidence only.
+ *
+ * The generic platform review endpoint is not the supported Scene-B entry
+ * point. Browser mutations stay hard-disabled until an HQA Gate 1 exact
+ * binding and a same-origin authenticated/CSRF-protected BFF exist.
  */
 export default async function HermesApprovalsPage() {
   const locale = await getServerLocale();
@@ -30,8 +30,14 @@ export default async function HermesApprovalsPage() {
     corrupt: isZh ? "完整性失败" : "Integrity failed",
     noPreview: isZh ? "无源码预览" : "No source preview",
     gate2Note: isZh
-      ? "Gate 2 CAS：仅对 approval_enabled 且 verified/pending 的候选显示批准/拒绝。确认时会重新拉取详情 digest，备注必填；迁移/损坏仅展示证据。"
-      : "Gate 2 CAS: Approve/Reject only when the list advertises approval_enabled + verified pending. Confirm re-fetches the detail digest; note is required. Migration/corrupt rows stay evidence-only.",
+      ? "本页只展示研究审批项的完整性、状态与摘要；不会从网页提交 Gate 2。"
+      : "This page shows research-approval integrity, state, and digest evidence only; it does not submit Gate 2 from the browser.",
+    writeClosedTitle: isZh
+      ? "网页审批写端已安全关闭"
+      : "Browser approval mutations are safely disabled",
+    writeClosedBody: isZh
+      ? "当前网页无法证明 HQA Gate 1 exact binding，也尚未具备同源会话与 CSRF 边界。请继续通过受支持的 HQA Scene-B CLI 完成人工 CAS；平台通用 review API 不能单独代表 Scene-B Gate 2。"
+      : "The browser cannot yet prove the HQA Gate 1 exact binding and does not have the required same-origin session and CSRF boundary. Use the supported HQA Scene-B CLI for human CAS; the generic platform review API alone is not Scene-B Gate 2.",
   };
 
   return (
@@ -50,6 +56,15 @@ export default async function HermesApprovalsPage() {
         <p className="font-body-sm text-text-secondary">{text.gate2Note}</p>
       </header>
 
+      <Card className="border-warning/30 bg-warning/5" tone="warning">
+        <p className="font-body-sm font-semibold text-text-primary">
+          {text.writeClosedTitle}
+        </p>
+        <p className="mt-1 font-body-sm text-text-secondary">
+          {text.writeClosedBody}
+        </p>
+      </Card>
+
       <h2 className="font-label-caps text-text-secondary">
         {workbench.labels.researchApproval}
       </h2>
@@ -61,8 +76,6 @@ export default async function HermesApprovalsPage() {
           {candidates.candidates.map((candidate) => {
             const binding = asCandidateApprovalBinding(candidate.approval_binding);
             const digest = candidateDigestPresentation(candidate);
-            const showControls = listRowShowsGate2Controls(candidate);
-
             return (
               <li key={candidate.candidate_id}>
                 <article
@@ -152,10 +165,6 @@ export default async function HermesApprovalsPage() {
                         {text.noPreview}
                       </p>
                     </div>
-                  ) : null}
-
-                  {showControls ? (
-                    <HermesGate2ReviewControls candidate={candidate} locale={locale} />
                   ) : null}
                 </article>
               </li>

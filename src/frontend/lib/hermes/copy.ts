@@ -5,8 +5,7 @@ export type HermesWorkbenchCopy = {
   nav: {
     landmark: string;
     today: string;
-    conversation: string;
-    conversationUnavailable: string;
+    sessions: string;
     tasks: string;
     approvals: string;
     results: string;
@@ -45,8 +44,7 @@ const en: HermesWorkbenchCopy = {
   nav: {
     landmark: "Hermes workbench",
     today: "Today",
-    conversation: "Conversation",
-    conversationUnavailable: "Conversation unavailable in this delivery",
+    sessions: "Sessions",
     tasks: "Tasks",
     approvals: "Approvals",
     results: "Results",
@@ -85,8 +83,7 @@ const zh: HermesWorkbenchCopy = {
   nav: {
     landmark: "Hermes 工作台",
     today: "今日",
-    conversation: "对话",
-    conversationUnavailable: "本交付未开放对话",
+    sessions: "会话记录",
     tasks: "任务",
     approvals: "审批",
     results: "结果",

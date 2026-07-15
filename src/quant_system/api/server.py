@@ -39,6 +39,7 @@ from quant_system.api.routes import (
 )
 from quant_system.api.safety.middleware import attach_safety_footer, validate_bind_address
 from quant_system.config.settings import Settings
+from quant_system.hermes.gateway_client import HermesApiReadClient, HermesApiReadError
 from quant_system.logging.setup import configure_logging
 from quant_system.options.data_refresh import (
     refresh_earnings_calendar,
@@ -115,11 +116,7 @@ def _nth_weekday(year: int, month: int, weekday: int, occurrence: int) -> date:
 
 
 def _last_weekday(year: int, month: int, weekday: int) -> date:
-    active = (
-        date(year, 12, 31)
-        if month == 12
-        else date(year, month + 1, 1) - timedelta(days=1)
-    )
+    active = date(year, 12, 31) if month == 12 else date(year, month + 1, 1) - timedelta(days=1)
     while active.weekday() != weekday:
         active -= timedelta(days=1)
     return active
@@ -295,7 +292,7 @@ def _run_options_radar_startup_catchup(active_settings: Settings, run_date: str)
                             "candidate_count": result["candidate_count"],
                             "data_path": result["data_path"],
                             "meta_path": result["meta_path"],
-                        }
+                        },
                     },
                 },
             )
@@ -357,6 +354,26 @@ def _run_paper_account_pending_order_processor(
             break
 
 
+def _validate_hermes_gateway_startup(
+    *,
+    settings: Settings,
+    bind_address: str,
+    bind_address_explicit: bool,
+) -> None:
+    if not settings.hermes_gateway.enabled:
+        return
+    if not bind_address_explicit:
+        raise ValueError(
+            "Hermes gateway read integration requires an explicit loopback bind declaration"
+        )
+    if bind_address not in {"127.0.0.1", "::1"}:
+        raise ValueError("Hermes gateway read integration requires a loopback platform bind")
+    try:
+        HermesApiReadClient(settings.hermes_gateway)
+    except HermesApiReadError as exc:
+        raise ValueError(f"Invalid Hermes gateway configuration: {exc.code}") from exc
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -365,7 +382,9 @@ def create_app(
     bind_address: str | None = None,
     bind_public_confirmed: bool | None = None,
 ) -> FastAPI:
-    active_bind_address = bind_address or os.getenv("QS_API_BIND_ADDRESS", "127.0.0.1")
+    env_bind_address = os.getenv("QS_API_BIND_ADDRESS")
+    bind_address_explicit = bind_address is not None or bool(env_bind_address)
+    active_bind_address = bind_address or env_bind_address or "127.0.0.1"
     active_bind_public_confirmed = (
         bind_public_confirmed
         if bind_public_confirmed is not None
@@ -382,6 +401,11 @@ def create_app(
         bind_address=active_bind_address,
     )
     active_settings: Settings = services["settings"]
+    _validate_hermes_gateway_startup(
+        settings=active_settings,
+        bind_address=active_bind_address,
+        bind_address_explicit=bind_address_explicit,
+    )
     configure_logging(
         active_settings.log_level,
         log_dir=services["output_dir"] / "_runtime" / "logs",
@@ -393,9 +417,7 @@ def create_app(
         app.state.services = services
         services["api_runs_dir"].mkdir(parents=True, exist_ok=True)
         backtest_job_runner = services["backtest_job_runner"]
-        backtest_reconcile_thread = _start_backtest_job_reconciliation(
-            backtest_job_runner
-        )
+        backtest_reconcile_thread = _start_backtest_job_reconciliation(backtest_job_runner)
         _start_run_index_init(active_settings, services["api_runs_dir"])
         _start_options_radar_startup_catchup(active_settings)
         pending_order_processor = _start_paper_account_pending_order_processor(

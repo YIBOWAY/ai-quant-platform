@@ -412,6 +412,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hermes/gateway": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hermes Gateway Status */
+        get: operations["hermes_gateway_status_api_hermes_gateway_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hermes Sessions */
+        get: operations["hermes_sessions_api_hermes_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hermes Session Detail */
+        get: operations["hermes_session_detail_api_hermes_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/sessions/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hermes Session Messages */
+        get: operations["hermes_session_messages_api_hermes_sessions__session_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market-data/history": {
         parameters: {
             query?: never;
@@ -3664,6 +3732,40 @@ export interface components {
              */
             trading_allowed: false;
         };
+        /** HermesGatewayStatusResponse */
+        HermesGatewayStatusResponse: {
+            /** Blockers */
+            blockers: string[];
+            /**
+             * Chat Write Ready
+             * @constant
+             */
+            chat_write_ready: false;
+            /** Connected */
+            connected: boolean;
+            /** Features */
+            features: {
+                [key: string]: boolean;
+            };
+            /** Model */
+            model?: string | null;
+            /**
+             * Read Status
+             * @enum {string}
+             */
+            read_status: "available" | "degraded" | "unavailable";
+            /** Session Api Available */
+            session_api_available: boolean;
+            /** Warnings */
+            warnings: components["schemas"]["HermesGatewayWarningResponse"][];
+        };
+        /** HermesGatewayWarningResponse */
+        HermesGatewayWarningResponse: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
         /** HermesMarketForesightData */
         HermesMarketForesightData: {
             /** Candidate Count */
@@ -3694,6 +3796,20 @@ export interface components {
             quality: "available" | "degraded" | "not_applicable" | "unavailable";
             /** Status */
             status: string;
+        };
+        /** HermesMessageResponse */
+        HermesMessageResponse: {
+            /** Content */
+            content: string;
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Timestamp */
+            timestamp?: string | null;
         };
         /** HermesOpportunityMissReasonCounts */
         HermesOpportunityMissReasonCounts: {
@@ -3882,6 +3998,72 @@ export interface components {
             symbol: string;
             /** Value */
             value: number | null;
+        };
+        /** HermesSessionDetailResponse */
+        HermesSessionDetailResponse: {
+            /**
+             * Read Status
+             * @enum {string}
+             */
+            read_status: "available" | "unavailable";
+            session: components["schemas"]["HermesSessionSummaryResponse"] | null;
+            /** Warnings */
+            warnings: components["schemas"]["HermesGatewayWarningResponse"][];
+        };
+        /** HermesSessionMessagesResponse */
+        HermesSessionMessagesResponse: {
+            /** Messages */
+            messages: components["schemas"]["HermesMessageResponse"][];
+            /** Omitted Message Count */
+            omitted_message_count: number;
+            /**
+             * Read Status
+             * @enum {string}
+             */
+            read_status: "available" | "unavailable";
+            /** Session Id */
+            session_id: string;
+            /** Warnings */
+            warnings: components["schemas"]["HermesGatewayWarningResponse"][];
+        };
+        /** HermesSessionSummaryResponse */
+        HermesSessionSummaryResponse: {
+            /** Ended At */
+            ended_at?: string | null;
+            /** Id */
+            id: string;
+            /** Last Active */
+            last_active?: string | null;
+            /** Message Count */
+            message_count?: number | null;
+            /** Model */
+            model?: string | null;
+            /** Parent Session Id */
+            parent_session_id?: string | null;
+            /** Preview */
+            preview?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** HermesSessionsResponse */
+        HermesSessionsResponse: {
+            /** Has More */
+            has_more: boolean;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /**
+             * Read Status
+             * @enum {string}
+             */
+            read_status: "available" | "unavailable";
+            /** Sessions */
+            sessions: components["schemas"]["HermesSessionSummaryResponse"][];
+            /** Warnings */
+            warnings: components["schemas"]["HermesGatewayWarningResponse"][];
         };
         /** HermesWeeklyReviewData */
         HermesWeeklyReviewData: {
@@ -7249,6 +7431,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HermesArtifactFeedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hermes_gateway_status_api_hermes_gateway_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HermesGatewayStatusResponse"];
+                };
+            };
+        };
+    };
+    hermes_sessions_api_hermes_sessions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HermesSessionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hermes_session_detail_api_hermes_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HermesSessionDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hermes_session_messages_api_hermes_sessions__session_id__messages_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HermesSessionMessagesResponse"];
                 };
             };
             /** @description Validation Error */

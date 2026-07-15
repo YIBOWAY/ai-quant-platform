@@ -154,3 +154,41 @@ def test_agent_candidate_surfaces_fail_closed_on_missing_contract_or_repository(
     assert "candidateUnavailableDesc" in agent_studio
     assert "AgentTaskForm" not in agent_studio
     assert "/api/agent/tasks" not in agent_studio
+
+
+def test_hermes_approvals_remain_read_only_until_hqa_binding_and_bff_security_land() -> None:
+    approvals = read("src/frontend/app/hermes/approvals/page.tsx")
+    feature_flags = read("src/frontend/lib/hermes/featureFlags.ts")
+    feature_types = read("src/frontend/lib/hermes/types.ts")
+
+    assert "HermesGate2ReviewControls" not in approvals
+    assert "listRowShowsGate2Controls" not in approvals
+    assert "/api/agent/candidates/" not in approvals
+    assert "apiPost" not in approvals
+    assert "approvalMutations: false" in feature_flags
+    assert "approvalMutations: false" in feature_types
+    assert "网页审批写端已安全关闭" in approvals
+    assert "HQA Gate 1 exact binding" in approvals
+
+
+def test_hermes_sessions_are_read_only_through_the_platform_bff() -> None:
+    routes = read("src/frontend/lib/hermes/routes.ts")
+    api = read("src/frontend/lib/api.ts")
+    nav = read("src/frontend/components/hermes/shell/HermesInternalNav.tsx")
+    sessions_page = Path("src/frontend/app/hermes/sessions/page.tsx")
+    detail_page = Path("src/frontend/app/hermes/sessions/[sessionId]/page.tsx")
+
+    assert sessions_page.is_file()
+    assert detail_page.is_file()
+    assert 'sessions: "/hermes/sessions"' in routes
+    assert "getHermesGatewayStatus" in api
+    assert "getHermesSessions" in api
+    assert "getHermesSessionMessages" in api
+    assert 'id: "sessions"' in nav
+    combined = sessions_page.read_text(encoding="utf-8") + detail_page.read_text(
+        encoding="utf-8"
+    )
+    assert "Authorization" not in combined
+    assert "API_SERVER_KEY" not in combined
+    assert "fetch(" not in combined
+    assert "getHermesSessionMessages" in combined

@@ -34,6 +34,50 @@ test("@real-backend-smoke Hermes shell renders safety chrome and disabled compos
   expect(externalRequests).toEqual([]);
 });
 
+test("@real-backend-smoke Hermes sessions fail closed when the gateway is disabled", async ({
+  page,
+}) => {
+  test.skip(
+    Boolean(process.env.PW_HERMES_WORKBENCH_FIXTURE),
+    "The temporary real backend owns this disabled-gateway contract.",
+  );
+  const externalRequests = await installLoopbackOnlyGuard(page);
+
+  await page.goto("/zh/hermes/sessions", { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("heading", { name: "真实会话记录" })).toBeVisible();
+  await expect(page.locator("[data-hermes-sessions-unavailable]")).toBeVisible();
+  await expect(page.getByRole("link", { name: "会话记录" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "发送（已禁用）" })).toBeDisabled();
+  expect(externalRequests).toEqual([]);
+});
+
+test("@live-hermes-sessions reads real persisted sessions without opening chat writes", async ({
+  page,
+}) => {
+  test.skip(
+    process.env.PW_HERMES_LIVE_SESSIONS !== "1",
+    "Set PW_HERMES_LIVE_SESSIONS=1 with the local Hermes API Server and BFF enabled.",
+  );
+  const externalRequests = await installLoopbackOnlyGuard(page);
+
+  await page.goto("/zh/hermes/sessions", { waitUntil: "networkidle" });
+
+  await expect(page.locator("[data-hermes-sessions-unavailable]")).toHaveCount(0);
+  await expect(page.getByText("只读已连接")).toBeVisible();
+  const sessionLinks = page.locator("[data-hermes-session-list] a");
+  expect(await sessionLinks.count()).toBeGreaterThan(0);
+  await sessionLinks.first().click();
+  await expect(page).toHaveURL(/\/zh\/hermes\/sessions\/[^/?#]+$/);
+  await expect(
+    page.locator("[data-hermes-session-messages], [data-hermes-session-empty]"),
+  ).toHaveCount(1);
+  await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "发送（已禁用）" })).toBeDisabled();
+  expect(externalRequests).toEqual([]);
+});
+
 test("@combined-fixture Hermes workbench shell keeps a single safety strip and disabled composer", async ({
   page,
 }) => {
@@ -124,42 +168,18 @@ test("@combined-fixture F2 subroutes are truthful and mutation-free", async ({
       ),
     ).toBeVisible();
     await expect(page.locator("code").filter({ hasText: "a".repeat(64) })).toBeVisible();
-    // Gate 2 controls only when list advertises approval_enabled + verified pending.
-    await expect(page.locator("[data-hermes-gate2-controls]")).toHaveCount(1);
-    await expect(page.getByRole("button", { name: "批准" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "拒绝" })).toBeVisible();
-
-    // Confirm stays disabled without a human note (detail re-fetch required).
-    await page.getByRole("button", { name: "批准" }).click();
-    await expect(page.locator('[data-hermes-gate2-dialog="approve"]')).toBeVisible();
-    await expect(page.locator("[data-hermes-gate2-detail-digest]")).toBeVisible();
-    const confirm = page
-      .locator('[data-hermes-gate2-dialog="approve"]')
-      .getByRole("button", { name: "确认" });
-    await expect(confirm).toBeDisabled();
-    await page
-      .locator('[data-hermes-gate2-dialog="approve"]')
-      .getByRole("button", { name: "取消" })
-      .click();
   } else if (fixture === "degraded") {
     await expect(
       page.locator('[data-hermes-approval-id="legacy-pending-migration"]'),
     ).toBeVisible();
     await expect(page.getByText("迁移证据，不能审批")).toBeVisible();
     await expect(page.locator("code").filter({ hasText: "b".repeat(64) })).toBeVisible();
-    // migration_required: evidence only — no Gate 2 mutation controls.
-    await expect(page.locator("[data-hermes-gate2-controls]")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /批准|拒绝/ })).toHaveCount(0);
-  } else {
-    // empty / offline / long-content: never invent approve controls for non-verified rows
-    const gate2 = page.locator("[data-hermes-gate2-controls]");
-    if (fixture === "long-content") {
-      // long-content may include an approval_enabled verified row
-      await expect(gate2.or(page.locator("[data-hermes-approvals]"))).toBeVisible();
-    } else {
-      await expect(page.getByRole("button", { name: /批准|拒绝/ })).toHaveCount(0);
-    }
   }
+  // Browser Gate 2 stays hard-off for every fixture until HQA Gate 1 binding
+  // and the same-origin session/CSRF BFF are delivered.
+  await expect(page.getByText("网页审批写端已安全关闭")).toBeVisible();
+  await expect(page.locator("[data-hermes-gate2-controls]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /批准|拒绝/ })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
 
   await page.goto("/zh/hermes/results");

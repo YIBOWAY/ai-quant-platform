@@ -497,6 +497,28 @@ class HermesArtifactSettings(BaseSettings):
     max_manifest_bytes: int = Field(default=4 * 1024 * 1024, gt=0)
 
 
+class HermesGatewaySettings(BaseSettings):
+    """Fail-closed, server-side access to the local Hermes API Server.
+
+    This credential authorizes the full upstream API, so browser code must
+    never receive it.  The current platform integration uses only the three
+    persisted-session GET endpoints through a fixed allowlist.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_HERMES_GATEWAY_",
+        extra="ignore",
+    )
+
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:8642"
+    api_key_file: Path | None = None
+    timeout_seconds: float = Field(default=2.0, gt=0, le=30, allow_inf_nan=False)
+    max_response_bytes: int = Field(default=4 * 1024 * 1024, ge=4096, le=16 * 1024 * 1024)
+    max_messages: int = Field(default=200, ge=1, le=1000)
+
+
 class Settings(BaseSettings):
     """Application-level settings."""
 
@@ -531,6 +553,7 @@ class Settings(BaseSettings):
     )
     backtest_jobs: BacktestJobSettings = Field(default_factory=BacktestJobSettings)
     hermes_artifacts: HermesArtifactSettings = Field(default_factory=HermesArtifactSettings)
+    hermes_gateway: HermesGatewaySettings = Field(default_factory=HermesGatewaySettings)
 
 
 # Note on env loading:

@@ -1872,6 +1872,23 @@ export type SettingsResponse = ApiEnvelope & {
   settings?: Record<string, unknown>;
 };
 
+export type HermesGatewayWarningResponse =
+  HermesSchemas["HermesGatewayWarningResponse"];
+export type HermesGatewayWarning = HermesGatewayWarningResponse;
+export type HermesGatewayStatusResponse = ApiEnvelope &
+  HermesSchemas["HermesGatewayStatusResponse"];
+export type HermesSessionSummaryResponse =
+  HermesSchemas["HermesSessionSummaryResponse"];
+export type HermesSessionSummary = HermesSessionSummaryResponse;
+export type HermesSessionsResponse = ApiEnvelope &
+  HermesSchemas["HermesSessionsResponse"];
+export type HermesSessionDetailResponse = ApiEnvelope &
+  HermesSchemas["HermesSessionDetailResponse"];
+export type HermesMessageResponse = HermesSchemas["HermesMessageResponse"];
+export type HermesSessionMessage = HermesMessageResponse;
+export type HermesSessionMessagesResponse = ApiEnvelope &
+  HermesSchemas["HermesSessionMessagesResponse"];
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 
 const FALLBACK_SAFETY: SafetyFooter = {
@@ -2493,6 +2510,62 @@ export function getHermesArtifacts(limit = 20) {
     warnings: [{ source: "artifact_feed", code: "api_unavailable" }],
     safety: FALLBACK_SAFETY,
   });
+}
+
+export function getHermesGatewayStatus() {
+  return apiGet<HermesGatewayStatusResponse>("/api/hermes/gateway", {
+    read_status: "unavailable",
+    connected: false,
+    model: null,
+    session_api_available: false,
+    chat_write_ready: false,
+    features: {},
+    blockers: ["api_unavailable"],
+    warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getHermesSessions(limit = 50, offset = 0) {
+  const safeLimit = Math.min(200, Math.max(1, Math.trunc(limit)));
+  const safeOffset = Math.min(1_000_000, Math.max(0, Math.trunc(offset)));
+  return apiGet<HermesSessionsResponse>(
+    `/api/hermes/sessions?limit=${safeLimit}&offset=${safeOffset}`,
+    {
+      read_status: "unavailable",
+      sessions: [],
+      limit: safeLimit,
+      offset: safeOffset,
+      has_more: false,
+      warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+}
+
+export function getHermesSessionDetail(sessionId: string) {
+  const encodedId = encodeURIComponent(sessionId);
+  return apiGet<HermesSessionDetailResponse>(`/api/hermes/sessions/${encodedId}`, {
+    read_status: "unavailable",
+    session: null,
+    warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getHermesSessionMessages(sessionId: string) {
+  const encodedId = encodeURIComponent(sessionId);
+  return apiGet<HermesSessionMessagesResponse>(
+    `/api/hermes/sessions/${encodedId}/messages`,
+    {
+      read_status: "unavailable",
+      session_id: sessionId,
+      messages: [],
+      omitted_message_count: 0,
+      warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
+      safety: FALLBACK_SAFETY,
+    },
+  );
 }
 
 export function getAgentCandidateDetail(candidateId: string) {

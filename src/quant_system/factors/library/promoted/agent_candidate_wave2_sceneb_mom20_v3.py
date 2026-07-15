@@ -17,4 +17,7 @@ class AgentCandidateFactor(BaseFactor):
 
     def _compute_values(self, frame):
         # wave2_sceneb_smoke_v3=2026-07-14
-        return frame.groupby("symbol", sort=False)["close"].pct_change(self.lookback)
+        return frame.groupby("symbol", sort=False)["close"].pct_change(
+            self.lookback,
+            fill_method=None,
+        )

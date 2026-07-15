@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 /**
  * Shared UI primitives for the quant platform frontend.
@@ -53,19 +53,22 @@ export const terminalFilterInputClass =
   "h-8 rounded-lg border border-border-subtle bg-bg-base px-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50";
 
 /** A bordered surface. The base building block for every panel. */
+type CardProps = Omit<ComponentPropsWithoutRef<"div">, "children"> & {
+  children: ReactNode;
+  tone?: Tone;
+  padded?: boolean;
+};
+
 export function Card({
   children,
   tone = "neutral",
   className = "",
   padded = true,
-}: {
-  children: ReactNode;
-  tone?: Tone;
-  className?: string;
-  padded?: boolean;
-}) {
+  ...divProps
+}: CardProps) {
   return (
     <div
+      {...divProps}
       className={`rounded-lg border ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${
         padded ? "p-4" : ""
       } ${className}`}

@@ -58,8 +58,10 @@ export type HermesDeliveryState = "blocked_in_this_slice";
 
 export type HermesFeatureFlags = {
   shell: boolean;
+  sessionRead: true;
   chat: false;
   execution: false;
+  approvalMutations: false;
   unifiedResults: false;
   legacyRedirects: false;
   deliveryState: HermesDeliveryState;

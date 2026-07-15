@@ -3,7 +3,9 @@
 本仓库是一个**本地优先**的 AI 量化研究与模拟交易平台。它面向研究、测试、报告与只读行情分析而构建，**不是实盘交易平台**。
 
 Phase 0-14 是已交付的历史能力层，不是当前开发路线。HQA Slice 9A-9G、只读
-mini 9H 与完整 9H 自动化/通知均已完成；目前没有选定下一实现切片。
+mini 9H、完整 9H 自动化/通知与 D-31 Wave 2 的 Scene-B 三道 Gate 均已完成；
+promotion commit `524e791` 已合入。平台随后交付了 official Hermes API 的只读
+session list/detail/messages BFF 与 `/hermes/sessions` 观察面，但没有开放 chat write。
 [前端渐进改造与 Hermes 集成计划](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
 保留 Slice 0-8 记录与未来 UI backlog；恢复该 backlog 前必须先做新的产品决定并另立
 独立 bite-sized plan。9E 位于 HQA；它复用 9D 的 `data prices`
@@ -50,6 +52,10 @@ Hermes 与 AI 研究工作流：
   一次性研究回测和 promote diff。
 - `/brief` 提供动态晨报和不可变归档；`/hermes` 通过只读
   `GET /api/hermes/artifacts` 展示风险、预测、推演、周报、机会与自动化状态。
+- `/hermes/sessions` 通过平台 API/BFF 读取 official Hermes API Server 上已保存的
+  本机会话；session list/detail/messages 均为 server-side GET-only。Hermes Bearer key
+  留在 owner-only 文件中，不进入浏览器。health、capabilities 和 session reads 不执行
+  prompt、不调用 provider，也不消耗 Hermes 配置的 provider 额度。
 - 平台兼容 schema 1.0 的精确三来源合同与 schema 1.1 的精确六来源合同；whole-feed
   freshness budget 是 10800 秒。
 - 9G 由 HQA 本地 JSONL opportunity ledger 负责；平台只提供 CLI-only、file-backed 的
@@ -57,7 +63,12 @@ Hermes 与 AI 研究工作流：
   `/hermes` 卡片或调度器。
 - 完整 9H 的 scheduler 与 outbound delivery 位于 HQA；平台没有为此新增 scheduler、
   outbound worker、POST route 或数据库 migration。
+- Hermes session-read 增量同样没有新增数据库 migration，也没有把上游会话复制到
+  PostgreSQL。旧 TUI gateway contract 已漂移并 fail closed；official API Server 是当前
+  主读取链路。
 - 平台不复活 LLM runner，不把 disabled composer 伪装成可执行任务面。
+- `chat_write`、Hermes approval mutation、统一动态 Results 和旧研究页 redirects 仍为
+  hard-off。Approvals 页面只展示证据，`approvalMutations=false`。
 - 任何候选晋级前都必须经过人工评审；常驻 paper/live 路径不加载 candidate 文件。
 
 AI 行业资讯：
@@ -124,6 +135,7 @@ http://127.0.0.1:3001
 - [模拟交易 Paper Trading](guides/paper-trading.md)
 - [持仓地图 Position Map](guides/position-map.md)
 - [AI 新闻研究流 AI News](guides/ai-news.md)
+- [Hermes 会话读取、密钥边界与故障排查](guides/hermes-sessions.md)
 
 模拟交易与持仓地图的设计与实现记录（单一 100 万模拟账户、策略一键再平衡 + 手动美股下单、统一持仓地图，**阶段 1-5 已实现**）：
 
@@ -156,6 +168,13 @@ http://127.0.0.1:3001
 
 ## 当前交接
 
-HQA 9A-9G、mini 9H 与完整 9H 已完成，目前没有选定下一实现切片。未来前端 backlog
-需要新的产品决定，并按最新源码另立独立 bite-sized plan；平台继续只读消费 HQA
-产物，不承担调度或外发投递。
+HQA 9A-9G、mini/full 9H、Scene-B final→Gate 3 与平台 official Hermes session-read
+观察面已完成。当前不是“完整 Hermes 已接通”：chat write、approval mutation、统一动态
+Results 与旧页 retirement 仍关闭。
+
+下一连接切片应先建设 PostgreSQL durable command/outbox/event ledger 和 deterministic
+connector worker：`LISTEN/NOTIFY` 负责低延迟唤醒，periodic scan 负责丢通知后的补偿，
+worker 以 claim/lease/heartbeat/backoff 恢复任务。空队列检查不调用 LLM；只有存在已授权
+queued command 才向 Hermes 提交 run。不要用 Hermes cron 反复询问“有没有新任务”。
+写端还必须另行解决认证/CSRF、幂等、request recovery、event replay、provider 锁定与
+实际 provider 证据、审批精确绑定及 stop reconciliation 后，才可启用 composer。

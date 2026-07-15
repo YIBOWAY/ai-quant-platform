@@ -1,0 +1,393 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+import httpx
+import pytest
+
+from quant_system.config.settings import HermesGatewaySettings
+from quant_system.hermes.gateway_client import (
+    HermesApiReadClient,
+    HermesApiReadError,
+)
+
+
+def _token_file(tmp_path: Path, value: str = "test-only-token") -> Path:
+    path = tmp_path / "hermes-api.key"
+    path.write_text(value + "\n", encoding="utf-8")
+    os.chmod(path, 0o600)
+    return path
+
+
+def _settings(tmp_path: Path, **overrides: object) -> HermesGatewaySettings:
+    values: dict[str, object] = {
+        "enabled": True,
+        "base_url": "http://127.0.0.1:8642",
+        "timeout_seconds": 1.0,
+        "max_response_bytes": 64 * 1024,
+        "max_messages": 2,
+    }
+    values.update(overrides)
+    if "api_key_file" not in values:
+        values["api_key_file"] = _token_file(tmp_path)
+    return HermesGatewaySettings(**values)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:8642",
+        "http://192.168.1.4:8642",
+        "https://127.0.0.1:8642",
+        "http://127.0.0.1:8642/v1",
+        "http://user:pass@127.0.0.1:8642",
+        "http://127.0.0.1",
+    ],
+)
+def test_client_rejects_non_loopback_or_ambiguous_base_url(
+    tmp_path: Path,
+    base_url: str,
+) -> None:
+    with pytest.raises(HermesApiReadError) as exc:
+        HermesApiReadClient(_settings(tmp_path, base_url=base_url))
+    assert exc.value.code == "invalid_endpoint"
+
+
+def test_client_requires_owner_only_regular_token_file(tmp_path: Path) -> None:
+    token_file = _token_file(tmp_path)
+    os.chmod(token_file, 0o644)
+    client = HermesApiReadClient(_settings(tmp_path, api_key_file=token_file))
+    with pytest.raises(HermesApiReadError) as exc:
+        client.capabilities()
+    assert exc.value.code == "api_key_file_permissions"
+
+    os.chmod(token_file, 0o600)
+    symlink = tmp_path / "linked.key"
+    symlink.symlink_to(token_file)
+    client = HermesApiReadClient(_settings(tmp_path, api_key_file=symlink))
+    with pytest.raises(HermesApiReadError) as exc:
+        client.capabilities()
+    assert exc.value.code == "api_key_file_invalid"
+
+
+def test_client_reads_the_same_key_file_object_it_validates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token_file = _token_file(tmp_path, "original-token")
+    replacement = tmp_path / "replacement.key"
+    replacement.write_text("replacement-token\n", encoding="utf-8")
+    os.chmod(replacement, 0o600)
+    real_open = os.open
+    real_stat = Path.stat
+    stat_calls = 0
+    open_called = False
+
+    def swap_path() -> None:
+        token_file.unlink(missing_ok=True)
+        token_file.symlink_to(replacement)
+
+    def swapping_open(path: object, flags: int, *args: object) -> int:
+        nonlocal open_called
+        fd = real_open(path, flags, *args)
+        if Path(path) == token_file:
+            open_called = True
+            swap_path()
+        return fd
+
+    def swapping_stat(path: Path, *args: object, **kwargs: object) -> os.stat_result:
+        nonlocal stat_calls
+        result = real_stat(path, *args, **kwargs)
+        if path == token_file and not open_called:
+            stat_calls += 1
+            if stat_calls == 2:
+                swap_path()
+        return result
+
+    monkeypatch.setattr("quant_system.hermes.gateway_client.os.open", swapping_open)
+    monkeypatch.setattr(Path, "stat", swapping_stat)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer original-token"
+        return httpx.Response(
+            200,
+            json={
+                "object": "hermes.api_server.capabilities",
+                "model": "codex-local",
+                "features": {"session_resources": True},
+            },
+        )
+
+    client = HermesApiReadClient(
+        _settings(tmp_path, api_key_file=token_file),
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.capabilities()
+
+    assert open_called is True
+
+
+@pytest.mark.parametrize(
+    "session_id",
+    [".", "..", "parent..child", "nested/session", r"nested\session", "C:drive"],
+)
+def test_client_rejects_path_unsafe_session_ids(
+    tmp_path: Path,
+    session_id: str,
+) -> None:
+    client = HermesApiReadClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(
+            lambda request: pytest.fail(f"unexpected upstream request: {request.url}")
+        ),
+    )
+
+    with pytest.raises(HermesApiReadError) as exc:
+        client.session_detail(session_id)
+
+    assert exc.value.code == "invalid_session_id"
+
+
+def test_client_calls_only_allowlisted_gets_and_keeps_bearer_server_side(
+    tmp_path: Path,
+) -> None:
+    seen: list[tuple[str, str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (
+                request.method,
+                request.url.raw_path.decode(),
+                request.headers.get("authorization"),
+            )
+        )
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "hermes.api_server.capabilities",
+                    "platform": "hermes-agent",
+                    "model": "codex-local",
+                    "features": {
+                        "session_resources": True,
+                        "run_submission": True,
+                        "run_events_sse": True,
+                        "run_status": True,
+                        "run_approval_response": True,
+                        "run_stop": True,
+                    },
+                },
+            )
+        if request.url.path == "/api/sessions":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": "session-1",
+                            "title": "Risk review",
+                            "source": "api_server",
+                            "model": "codex-local",
+                            "message_count": 4,
+                            "last_active": 1_720_000_000.0,
+                            "preview": "Review AAPL",
+                            "system_prompt": "must not escape",
+                        }
+                    ],
+                    "limit": 5,
+                    "offset": 0,
+                    "has_more": False,
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    client = HermesApiReadClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+    capabilities = client.capabilities()
+    sessions = client.list_sessions(limit=5, offset=0)
+
+    assert capabilities["model"] == "codex-local"
+    assert capabilities["features"]["session_resources"] is True
+    assert sessions["data"] == [
+        {
+            "id": "session-1",
+            "title": "Risk review",
+            "source": "api_server",
+            "model": "codex-local",
+            "message_count": 4,
+            "last_active": "2024-07-03T09:46:40Z",
+            "preview": "Review AAPL",
+            "parent_session_id": None,
+            "ended_at": None,
+        }
+    ]
+    assert seen == [
+        ("GET", "/v1/capabilities", "Bearer test-only-token"),
+        ("GET", "/api/sessions?limit=5&offset=0", "Bearer test-only-token"),
+    ]
+
+
+def test_client_never_inherits_environment_proxy_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_client = httpx.Client
+    seen_kwargs: dict[str, object] = {}
+
+    def client_factory(*args: object, **kwargs: object) -> httpx.Client:
+        seen_kwargs.update(kwargs)
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "quant_system.hermes.gateway_client.httpx.Client",
+        client_factory,
+    )
+    client = HermesApiReadClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={
+                    "object": "hermes.api_server.capabilities",
+                    "model": "codex-local",
+                    "features": {"session_resources": True},
+                },
+            )
+        ),
+    )
+
+    client.capabilities()
+
+    assert seen_kwargs["trust_env"] is False
+
+
+def test_message_history_is_bounded_and_drops_tool_and_reasoning_payloads(
+    tmp_path: Path,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.raw_path.decode() == "/api/sessions/session%3Aencoded/messages"
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "session_id": "session:encoded",
+                "data": [
+                    {"id": 1, "role": "system", "content": "secret system prompt"},
+                    {"id": 2, "role": "user", "content": "first"},
+                    {
+                        "id": 3,
+                        "role": "tool",
+                        "content": "TOKEN=secret",
+                        "tool_calls": [{"arguments": "secret"}],
+                    },
+                    {
+                        "id": 4,
+                        "role": "assistant",
+                        "content": "second",
+                        "timestamp": 1_720_000_000.0,
+                        "reasoning": "private chain",
+                    },
+                    {"id": 5, "role": "user", "content": "third"},
+                ],
+            },
+        )
+
+    client = HermesApiReadClient(
+        _settings(tmp_path, max_messages=2),
+        transport=httpx.MockTransport(handler),
+    )
+    result = client.session_messages("session:encoded")
+
+    assert result == {
+        "session_id": "session:encoded",
+        "data": [
+            {
+                "id": "4",
+                "role": "assistant",
+                "content": "second",
+                "timestamp": "2024-07-03T09:46:40Z",
+            },
+            {"id": "5", "role": "user", "content": "third", "timestamp": None},
+        ],
+        "omitted_message_count": 3,
+    }
+    assert "secret" not in json.dumps(result)
+    assert "reasoning" not in json.dumps(result)
+
+
+def test_client_rejects_oversized_or_malformed_upstream_response(tmp_path: Path) -> None:
+    for response, expected in (
+        (httpx.Response(200, content=b"x" * 4097), "response_too_large"),
+        (httpx.Response(200, content=b"not-json"), "invalid_upstream_response"),
+    ):
+        client = HermesApiReadClient(
+            _settings(tmp_path, max_response_bytes=4096),
+            transport=httpx.MockTransport(lambda _request, response=response: response),
+        )
+        with pytest.raises(HermesApiReadError) as exc:
+            client.capabilities()
+        assert exc.value.code == expected
+
+
+def test_client_does_not_coerce_malformed_upstream_capabilities_or_ids(
+    tmp_path: Path,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "hermes.api_server.capabilities",
+                    "model": "codex-local",
+                    "features": {"session_resources": "false"},
+                },
+            )
+        if request.url.path == "/api/sessions":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "list",
+                    "data": [
+                        {"id": "x" * 257, "message_count": 1},
+                        {"id": "valid-session", "message_count": True},
+                    ],
+                    "has_more": False,
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    client = HermesApiReadClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+
+    capabilities = client.capabilities()
+    sessions = client.list_sessions()
+
+    assert capabilities["features"]["session_resources"] is False
+    assert [row["id"] for row in sessions["data"]] == ["valid-session"]
+    assert sessions["data"][0]["message_count"] is None
+
+
+def test_not_found_error_distinguishes_missing_endpoint_from_missing_session(
+    tmp_path: Path,
+) -> None:
+    client = HermesApiReadClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(lambda _request: httpx.Response(404)),
+    )
+
+    with pytest.raises(HermesApiReadError) as capability_error:
+        client.capabilities()
+    with pytest.raises(HermesApiReadError) as session_error:
+        client.session_detail("session-1")
+
+    assert capability_error.value.code == "upstream_endpoint_unavailable"
+    assert session_error.value.code == "session_not_found"
