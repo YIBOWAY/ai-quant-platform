@@ -17,6 +17,12 @@ def test_health_returns_safety_snapshot(tmp_path) -> None:
     assert payload["safety"]["live_trading_enabled"] is False
     assert payload["safety"]["kill_switch"] is True
     assert payload["safety"]["bind_address"] == "127.0.0.1"
+    assert payload["hermes_command_ledger"] == {
+        "database_configured": False,
+        "schema_ready": False,
+        "schema_version": None,
+        "mutation_enabled": False,
+    }
 
 
 def test_create_app_writes_runtime_log_file(tmp_path) -> None:

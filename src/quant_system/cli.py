@@ -54,6 +54,7 @@ from quant_system.experiments.runner import (
 from quant_system.factors.lab import build_factor_lab_dashboard
 from quant_system.factors.pipeline import FactorResearchResult, run_sample_factor_research
 from quant_system.factors.registry import build_default_factor_registry, register_alpha101_library
+from quant_system.hermes.connector_cli import hermes_app
 from quant_system.logging.setup import configure_logging
 from quant_system.options.buy_side_decision import (
     BuySideDecisionRequest,
@@ -3103,6 +3104,7 @@ app.add_typer(paper_app, name="paper")
 app.add_typer(agent_app, name="agent")
 app.add_typer(prediction_market_app, name="prediction-market")
 app.add_typer(options_app, name="options")
+app.add_typer(hermes_app, name="hermes")
 
 
 def _emit_ingestion_summary(result: IngestionResult) -> None:

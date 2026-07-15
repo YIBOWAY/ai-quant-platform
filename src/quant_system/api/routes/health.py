@@ -7,6 +7,7 @@ from fastapi import APIRouter
 
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.health import HealthResponse
+from quant_system.hermes.command_ledger import command_ledger_schema_version
 
 router = APIRouter()
 
@@ -41,6 +42,7 @@ def health(settings: SettingsDep) -> dict[str, Any]:
         },
         "futu_opend": futu_status,
         "database": _database_status(settings),
+        "hermes_command_ledger": _hermes_command_ledger_status(settings),
     }
 
 
@@ -63,3 +65,14 @@ def _database_status(settings: SettingsDep) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - health must not raise
         status.update(reachable=False, error=f"{exc.__class__.__name__}: {exc}")
     return status
+
+
+def _hermes_command_ledger_status(settings: SettingsDep) -> dict[str, Any]:
+    version = command_ledger_schema_version(settings)
+    return {
+        "database_configured": settings.database.enabled and settings.database.url is not None,
+        "schema_ready": version is not None,
+        "schema_version": version,
+        # No authenticated same-origin + CSRF BFF mutation exists in Slice 3B.
+        "mutation_enabled": False,
+    }

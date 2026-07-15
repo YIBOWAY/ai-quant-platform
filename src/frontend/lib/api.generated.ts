@@ -3545,6 +3545,10 @@ export interface components {
             futu_opend: {
                 [key: string]: unknown;
             };
+            /** Hermes Command Ledger */
+            hermes_command_ledger: {
+                [key: string]: unknown;
+            };
             /** Status */
             status: string;
         };
