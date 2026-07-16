@@ -243,7 +243,10 @@ export function loadFixture(name) {
  * Create a GET-only HTTP server bound by the caller.
  * Accepts only a validated combined fixture object.
  */
-export function createFixtureServer(fixture) {
+export function createFixtureServer(
+  fixture,
+  { includePersistedSession = false } = {},
+) {
   const validated = validateCombinedFixture(
     typeof structuredClone === "function"
       ? structuredClone(fixture)
@@ -262,6 +265,47 @@ export function createFixtureServer(fixture) {
       candidate,
     ]),
   );
+
+  const persistedSession = {
+    id: "fixture-long-session",
+    title: "Fixture long session",
+    source: "fixture",
+    model: "fixture-model",
+    message_count: 48,
+    last_active: "2026-07-16T00:47:00Z",
+    preview: "Deterministic long transcript for session navigation testing.",
+    parent_session_id: null,
+    ended_at: null,
+  };
+  const persistedMessages = Array.from({ length: 48 }, (_, index) => ({
+    id: `fixture-message-${String(index + 1).padStart(2, "0")}`,
+    role: index % 2 === 0 ? "user" : "assistant",
+    content:
+      index === 47
+        ? "Latest fixture message"
+        : `Fixture transcript message ${index + 1}: ${"bounded research context ".repeat(4)}`,
+    timestamp: `2026-07-16T00:${String(index).padStart(2, "0")}:00Z`,
+  }));
+  const gatewayStatus = {
+    read_status: "available",
+    connected: true,
+    model: "fixture-model",
+    session_api_available: true,
+    chat_write_ready: false,
+    features: { session_resources: true },
+    upstream_blockers: ["fixture_write_disabled"],
+    platform_delivery_blockers: ["fixture_write_disabled"],
+    blockers: ["fixture_write_disabled"],
+    warnings: [],
+  };
+  const sessionsResponse = {
+    read_status: "available",
+    sessions: [persistedSession],
+    limit: 50,
+    offset: 0,
+    has_more: false,
+    warnings: [],
+  };
 
   /** Detail read model synthesized from list rows (GET-only, no mutations). */
   function candidateDetailResponse(candidate) {
@@ -339,6 +383,52 @@ export function createFixtureServer(fixture) {
       return;
     }
 
+    if (includePersistedSession && pathname === "/api/hermes/gateway") {
+      finish(200, gatewayStatus);
+      return;
+    }
+
+    if (includePersistedSession && pathname === "/api/hermes/sessions") {
+      finish(200, sessionsResponse);
+      return;
+    }
+
+    const sessionMessagesMatch = pathname.match(
+      /^\/api\/hermes\/sessions\/([^/]+)\/messages$/,
+    );
+    if (includePersistedSession && sessionMessagesMatch) {
+      const sessionId = decodeURIComponent(sessionMessagesMatch[1]);
+      if (sessionId !== persistedSession.id) {
+        finish(404, { detail: "session_not_found" });
+        return;
+      }
+      finish(200, {
+        read_status: "available",
+        session_id: sessionId,
+        messages: persistedMessages,
+        omitted_message_count: 0,
+        warnings: [],
+      });
+      return;
+    }
+
+    const sessionDetailMatch = pathname.match(
+      /^\/api\/hermes\/sessions\/([^/]+)$/,
+    );
+    if (includePersistedSession && sessionDetailMatch) {
+      const sessionId = decodeURIComponent(sessionDetailMatch[1]);
+      if (sessionId !== persistedSession.id) {
+        finish(404, { detail: "session_not_found" });
+        return;
+      }
+      finish(200, {
+        read_status: "available",
+        session: persistedSession,
+        warnings: [],
+      });
+      return;
+    }
+
     const detailMatch = pathname.match(
       /^\/api\/agent\/candidates\/([^/]+)$/,
     );
@@ -371,7 +461,9 @@ export function createFixtureServer(fixture) {
 
 export function startFixtureServer(port, fixtureName) {
   const fixture = loadFixture(fixtureName);
-  const server = createFixtureServer(fixture);
+  const server = createFixtureServer(fixture, {
+    includePersistedSession: fixtureName === "normal",
+  });
   return new Promise((resolve, reject) => {
     const onError = (error) => {
       server.off("error", onError);
@@ -405,7 +497,9 @@ function main(argv) {
     process.exit(2);
   }
 
-  const server = createFixtureServer(fixture);
+  const server = createFixtureServer(fixture, {
+    includePersistedSession: fixtureName === "normal",
+  });
   server.on("error", (error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

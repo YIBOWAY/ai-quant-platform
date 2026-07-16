@@ -35,7 +35,7 @@ export default async function HermesSessionDetailPage({
         data-hermes-session-context
       >
         <Link
-          className="font-body-sm text-info underline-offset-2 hover:underline"
+          className="app-touch-target inline-flex items-center font-body-sm text-info underline-offset-2 hover:underline"
           href={localizePath("/hermes/sessions", locale)}
         >
           {isZh ? "← 返回会话记录" : "← Back to sessions"}

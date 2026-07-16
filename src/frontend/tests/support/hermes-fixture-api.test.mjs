@@ -138,6 +138,65 @@ describe("hermes-fixture-api", () => {
     }
   });
 
+  it("serves one deterministic long persisted session through the public read interface", async () => {
+    const fixture = loadFixture("normal");
+    const server = createFixtureServer(fixture, { includePersistedSession: true });
+    const port = await listenEphemeral(server);
+    try {
+      const gateway = await request(port, "GET", "/api/hermes/gateway");
+      const sessions = await request(
+        port,
+        "GET",
+        "/api/hermes/sessions?limit=50&offset=0",
+      );
+      const detail = await request(
+        port,
+        "GET",
+        "/api/hermes/sessions/fixture-long-session",
+      );
+      const messages = await request(
+        port,
+        "GET",
+        "/api/hermes/sessions/fixture-long-session/messages",
+      );
+
+      assert.equal(gateway.status, 200);
+      assert.equal(sessions.status, 200);
+      assert.equal(detail.status, 200);
+      assert.equal(messages.status, 200);
+      assert.equal(gateway.headers["cache-control"], "no-store");
+
+      const gatewayBody = JSON.parse(gateway.body.toString("utf8"));
+      const sessionsBody = JSON.parse(sessions.body.toString("utf8"));
+      const detailBody = JSON.parse(detail.body.toString("utf8"));
+      const messagesBody = JSON.parse(messages.body.toString("utf8"));
+      assert.equal(gatewayBody.read_status, "available");
+      assert.equal(gatewayBody.chat_write_ready, false);
+      assert.deepEqual(gatewayBody.features, { session_resources: true });
+      assert.equal(sessionsBody.sessions.length, 1);
+      assert.equal(sessionsBody.sessions[0].id, "fixture-long-session");
+      assert.equal(detailBody.session.id, "fixture-long-session");
+      assert.ok(messagesBody.messages.length >= 40);
+      assert.equal(messagesBody.messages.at(-1).content, "Latest fixture message");
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("does not let non-session fixtures masquerade as a connected Hermes gateway", async () => {
+    const fixture = loadFixture("offline");
+    const server = createFixtureServer(fixture);
+    const port = await listenEphemeral(server);
+    try {
+      const gateway = await request(port, "GET", "/api/hermes/gateway");
+      const sessions = await request(port, "GET", "/api/hermes/sessions");
+      assert.equal(gateway.status, 404);
+      assert.equal(sessions.status, 404);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it("serves a promoted factor catalog normally and a truthful registry outage when degraded", async () => {
     for (const [fixtureName, expectedStatus] of [
       ["normal", 200],

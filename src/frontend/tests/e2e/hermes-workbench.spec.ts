@@ -123,6 +123,66 @@ test("@live-hermes-sessions keeps session context pinned while reading the lates
   expect(externalRequests).toEqual([]);
 });
 
+test("@combined-fixture opens a persisted transcript at its latest message with pinned context", async ({
+  page,
+}) => {
+  test.skip(
+    process.env.PW_HERMES_WORKBENCH_FIXTURE !== "normal",
+    "The deterministic long session belongs to the normal combined fixture.",
+  );
+  const externalRequests = await installLoopbackOnlyGuard(page);
+
+  await page.goto("/zh/hermes/sessions", { waitUntil: "networkidle" });
+  await page.getByRole("link", { name: "Fixture long session" }).click();
+  await expect(page).toHaveURL(/\/zh\/hermes\/sessions\/fixture-long-session$/);
+  await expect(page.getByText("Latest fixture message")).toBeInViewport();
+
+  const scrollRegion = page.locator("[data-page-scroll-region]");
+  const sessionContext = page.locator("[data-hermes-session-context]");
+  await expect(page.locator("[data-hermes-session-latest-anchor]")).toBeInViewport();
+  await expect
+    .poll(() => scrollRegion.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+
+  const regionBox = await scrollRegion.boundingBox();
+  const pinnedBox = await sessionContext.boundingBox();
+  expect(regionBox).not.toBeNull();
+  expect(pinnedBox).not.toBeNull();
+  expect(Math.abs(pinnedBox!.y - regionBox!.y)).toBeLessThanOrEqual(1);
+
+  await scrollRegion.evaluate((element) => {
+    element.scrollTop = Math.max(1, element.scrollTop - 400);
+  });
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  const pinnedAfterScroll = await sessionContext.boundingBox();
+  expect(pinnedAfterScroll).not.toBeNull();
+  expect(Math.abs(pinnedAfterScroll!.y - regionBox!.y)).toBeLessThanOrEqual(1);
+
+  await page.getByRole("link", { name: "← 返回会话记录" }).click();
+  await expect(page).toHaveURL(/\/zh\/hermes\/sessions$/);
+  expect(externalRequests).toEqual([]);
+});
+
+test("@combined-fixture exposes a 44px return target on persisted transcripts", async ({
+  page,
+}) => {
+  test.skip(
+    process.env.PW_HERMES_WORKBENCH_FIXTURE !== "normal",
+    "The deterministic persisted session belongs to the normal combined fixture.",
+  );
+  const externalRequests = await installLoopbackOnlyGuard(page);
+
+  await page.goto("/zh/hermes/sessions/fixture-long-session", {
+    waitUntil: "networkidle",
+  });
+  const backLink = page.getByRole("link", { name: "← 返回会话记录" });
+  await expect(backLink).toBeVisible();
+  const backLinkBox = await backLink.boundingBox();
+  expect(backLinkBox).not.toBeNull();
+  expect(backLinkBox!.height).toBeGreaterThanOrEqual(44);
+  expect(externalRequests).toEqual([]);
+});
+
 test("@combined-fixture Hermes workbench shell keeps a single safety strip and disabled composer", async ({
   page,
 }) => {

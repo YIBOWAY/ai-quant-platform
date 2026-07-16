@@ -83,6 +83,12 @@ No purple atmosphere. Warning yellow is not used as Submit/primary fill.
   `GET /api/hermes/sessions/{session_id}/messages`
 - production views: `/hermes/sessions` list + `/hermes/sessions/{session_id}` detail;
   composer remains disabled on the transcript view
+- transcript navigation: a persisted transcript opens at its latest message; the
+  return link, title and exact session ID remain pinned while scrolling, and the
+  return link keeps a minimum 44px pointer target
+- regression evidence: the combined fixture exposes a deterministic 48-message
+  persisted session so latest-message positioning and pinned-context behavior do
+  not depend on whatever sessions happen to exist in the local Hermes instance
 - upstream: official Hermes API Server on explicit HTTP loopback (default
   `127.0.0.1:8642`); the older TUI gateway contract drifted and is no longer the
   platform's primary connection
