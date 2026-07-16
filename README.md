@@ -12,7 +12,10 @@ automation/notifications are delivered. D-31 Waves 1-3 have delivered the
 fail-closed gateway contract, candidate integrity/scoped Gate 3, the
 professional read-only Hermes shell, official-API persisted-session reads,
 migration 005's durable transport ledger, a reconcile-only connector-worker
-framework, and a read-only Unified Results catalog/detail UI. This is not a
+framework, and a read-only Unified Results catalog/detail UI. Slice 3C.1 now has
+code-accepted exact workflow-binding/inventory primitives for HQA Task/Attempt and
+immutable payload metadata, but migration 006 is not applied to the live database
+and no browser or worker path consumes it. This is not a
 write bridge: real local-Hermes chat/provider use, approval mutations, exact
 Hermes-run links, full results cutover, and legacy-page retirement remain
 unfinished and require later independent evidence gates. Slice 9E is an HQA-local locked
@@ -336,7 +339,11 @@ AI daily reports, and six paper-account tables for account, ledger, pending
 orders, current positions, and position snapshots. Migration 005 adds five
 Hermes transport-ledger tables for schema metadata, commands, events, outbox,
 and exact run links. Together with migration 001's run index and migration
-002's two AI-news cache tables, all five files define 19 `quant_system` tables.
+002's two AI-news cache tables, migrations 001–005 define 19 `quant_system` tables.
+Migration 006 source adds an independent workflow-binding schema-meta table and an
+append-only exact command-to-HQA binding table, making the source target 21 tables;
+it is **code accepted but not live applied**, so the current live database remains at
+migration 005 / 19 tables until separately authorized.
 There is no general `schema_migrations` ledger; the SQL
 files are idempotently replayed in lexical order. Startup also backfills the
 file-based run index and prunes index rows whose files were removed. If
@@ -699,7 +706,9 @@ Start here:
 historical design/evidence sources, not the current work queue.
 
 Current handoff: D-31 Wave 3A/3B and read-only 3E-A are delivered and locally
-accepted; 3C is a reconcile-only framework, not command dispatch. Wave 3D chat
+accepted; 3C is a reconcile-only framework, not command dispatch. 3C.1's
+Task/Attempt/payload exact-binding foundation is code accepted, while migration 006
+is still pending live authorization/application. Wave 3D chat
 remains fail-closed, and 3F provides only a default-off Agent Studio redirect
 mechanism. The next implementation must close the explicit upstream/platform
 write gates or prove parity before any legacy-page cutover; neither is silently

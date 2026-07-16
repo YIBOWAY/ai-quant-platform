@@ -4,18 +4,24 @@ from __future__ import annotations
 
 import json
 import signal
+import sys
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Annotated
+from uuid import UUID
 
 import typer
 
 from quant_system.config.settings import load_settings
 from quant_system.hermes.command_ledger import (
+    HermesCommandConflict,
     HermesCommandLedger,
     HermesCommandLedgerUnavailable,
+    HermesCommandNotFound,
+    HermesCommandValidationError,
 )
 from quant_system.hermes.connector_worker import (
     CommandWakeupWaiter,
@@ -23,11 +29,22 @@ from quant_system.hermes.connector_worker import (
     HermesConnectorWorker,
     PostgresCommandWakeupWaiter,
 )
+from quant_system.hermes.workflow_binding import (
+    PreparedWorkflowCommand,
+    ensure_bound_command,
+    get_workflow_binding_by_saga,
+    iter_workflow_binding_inventory,
+    workflow_binding_to_dict,
+)
 from quant_system.storage.database import DatabaseUnavailable, get_database
 
 
 class ConnectorRuntimeUnavailable(RuntimeError):
     """Raised when the durable command authority cannot host the worker."""
+
+
+class WorkflowBindingInputError(ValueError):
+    """Raised for a malformed metadata-only receipt without echoing its body."""
 
 
 @dataclass(frozen=True)
@@ -92,6 +109,218 @@ hermes_app = typer.Typer(
     help="Operate the deterministic Hermes command connector.",
     no_args_is_help=True,
 )
+
+workflow_binding_app = typer.Typer(
+    help="Persist or inspect the exact metadata-only HQA workflow binding.",
+    no_args_is_help=True,
+)
+hermes_app.add_typer(workflow_binding_app, name="workflow-binding")
+
+_WORKFLOW_BINDING_STDIN_LIMIT = 16 * 1024
+_PG_BIGINT_MAX = 9_223_372_036_854_775_807
+_PG_INTEGER_MAX = 2_147_483_647
+_PREPARED_STRING_FIELDS = frozenset(
+    {
+        "schema_version",
+        "workflow_saga_id",
+        "owner_user_id",
+        "platform_session_id",
+        "client_request_id",
+        "command_kind",
+        "canonical_request_digest",
+        "payload_ref",
+        "payload_digest",
+        "payload_expires_at",
+        "provider_policy_digest",
+        "task_id",
+        "attempt_id",
+        "prepared_event_id",
+        "prepared_event_digest",
+        "plan_digest",
+        "workflow_preparation_digest",
+    }
+)
+_PREPARED_INTEGER_FIELDS = frozenset(
+    {
+        "task_version",
+        "attempt_number",
+        "plan_schema_version",
+        "plan_version",
+    }
+)
+_PREPARED_FIELDS = _PREPARED_STRING_FIELDS | _PREPARED_INTEGER_FIELDS
+
+
+def _reject_json_constant(_value: str) -> object:
+    raise WorkflowBindingInputError("non-finite JSON number")
+
+
+def _bounded_json_integer(value: str) -> int:
+    digits = value[1:] if value.startswith("-") else value
+    if len(digits) > 19:
+        raise WorkflowBindingInputError("JSON integer exceeds the receipt bound")
+    return int(value)
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise WorkflowBindingInputError("duplicate JSON field")
+        result[key] = value
+    return result
+
+
+def _read_prepared_workflow_command() -> PreparedWorkflowCommand:
+    stream = getattr(sys.stdin, "buffer", sys.stdin)
+    raw = stream.read(_WORKFLOW_BINDING_STDIN_LIMIT + 1)
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8")
+    if not raw or len(raw) > _WORKFLOW_BINDING_STDIN_LIMIT:
+        raise WorkflowBindingInputError("empty or oversized receipt")
+    try:
+        text = raw.decode("utf-8", errors="strict")
+        payload = json.loads(
+            text,
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_json_constant,
+            parse_int=_bounded_json_integer,
+        )
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+        raise WorkflowBindingInputError("invalid receipt JSON") from exc
+    if not isinstance(payload, dict) or set(payload) != _PREPARED_FIELDS:
+        raise WorkflowBindingInputError("receipt fields do not match the contract")
+    if any(type(payload[field]) is not str for field in _PREPARED_STRING_FIELDS):
+        raise WorkflowBindingInputError("receipt string field has the wrong type")
+    if any(type(payload[field]) is not int for field in _PREPARED_INTEGER_FIELDS):
+        raise WorkflowBindingInputError("receipt integer field has the wrong type")
+    if not 1 <= int(payload["task_version"]) <= _PG_BIGINT_MAX:
+        raise WorkflowBindingInputError("task_version is outside PostgreSQL bigint")
+    if not 1 <= int(payload["attempt_number"]) <= _PG_INTEGER_MAX:
+        raise WorkflowBindingInputError("attempt_number is outside PostgreSQL integer")
+    if int(payload["plan_schema_version"]) != 1:
+        raise WorkflowBindingInputError("plan_schema_version is unsupported")
+    if not 1 <= int(payload["plan_version"]) <= _PG_BIGINT_MAX:
+        raise WorkflowBindingInputError("plan_version is outside PostgreSQL bigint")
+
+    owner_text = str(payload["owner_user_id"])
+    timestamp_text = str(payload["payload_expires_at"])
+    try:
+        owner_user_id = UUID(owner_text)
+        if str(owner_user_id) != owner_text:
+            raise ValueError("owner UUID is not canonical")
+        payload_expires_at = datetime.strptime(
+            timestamp_text,
+            "%Y-%m-%dT%H:%M:%S.%fZ",
+        ).replace(tzinfo=UTC)
+        canonical_timestamp = payload_expires_at.isoformat(timespec="microseconds").replace(
+            "+00:00", "Z"
+        )
+        if canonical_timestamp != timestamp_text:
+            raise ValueError("expiry timestamp is not canonical")
+    except ValueError as exc:
+        raise WorkflowBindingInputError("invalid UUID or timestamp") from exc
+
+    return PreparedWorkflowCommand(
+        schema_version=str(payload["schema_version"]),
+        workflow_saga_id=str(payload["workflow_saga_id"]),
+        owner_user_id=owner_user_id,
+        platform_session_id=str(payload["platform_session_id"]),
+        client_request_id=str(payload["client_request_id"]),
+        command_kind=str(payload["command_kind"]),
+        canonical_request_digest=str(payload["canonical_request_digest"]),
+        payload_ref=str(payload["payload_ref"]),
+        payload_digest=str(payload["payload_digest"]),
+        payload_expires_at=payload_expires_at,
+        provider_policy_digest=str(payload["provider_policy_digest"]),
+        task_id=str(payload["task_id"]),
+        task_version=int(payload["task_version"]),
+        attempt_id=str(payload["attempt_id"]),
+        attempt_number=int(payload["attempt_number"]),
+        prepared_event_id=str(payload["prepared_event_id"]),
+        prepared_event_digest=str(payload["prepared_event_digest"]),
+        plan_schema_version=int(payload["plan_schema_version"]),
+        plan_version=int(payload["plan_version"]),
+        plan_digest=str(payload["plan_digest"]),
+        workflow_preparation_digest=str(payload["workflow_preparation_digest"]),
+    )
+
+
+def _emit_json(payload: dict[str, object]) -> None:
+    typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+
+
+def _workflow_binding_error(error_code: str, *, exit_code: int) -> None:
+    _emit_json({"error_code": error_code})
+    raise typer.Exit(code=exit_code)
+
+
+@workflow_binding_app.command("ensure")
+def workflow_binding_ensure_command() -> None:
+    """Atomically persist one exact HQA receipt and queued platform command."""
+
+    try:
+        prepared = _read_prepared_workflow_command()
+        result = ensure_bound_command(load_settings(), prepared)
+    except (WorkflowBindingInputError, HermesCommandValidationError):
+        _workflow_binding_error("workflow_binding_validation_failed", exit_code=2)
+    except HermesCommandConflict:
+        _workflow_binding_error("workflow_binding_conflict", exit_code=1)
+    except (HermesCommandLedgerUnavailable, DatabaseUnavailable):
+        _workflow_binding_error("workflow_binding_unavailable", exit_code=1)
+    else:
+        _emit_json(
+            {
+                "binding": workflow_binding_to_dict(result.binding),
+                "command_id": str(result.command_id),
+                "command_state": result.command_state,
+                "command_version": result.command_version,
+                "created": result.created,
+            }
+        )
+
+
+@workflow_binding_app.command("show")
+def workflow_binding_show_command(
+    workflow_saga_id: Annotated[
+        str,
+        typer.Option(
+            "--workflow-saga-id",
+            help="Exact HQA saga identifier (hqs_<24 lowercase hex>).",
+        ),
+    ],
+) -> None:
+    """Read one immutable binding by its exact HQA saga identifier."""
+
+    try:
+        binding = get_workflow_binding_by_saga(load_settings(), workflow_saga_id)
+    except HermesCommandValidationError:
+        _workflow_binding_error("workflow_binding_validation_failed", exit_code=2)
+    except HermesCommandNotFound:
+        _workflow_binding_error("workflow_binding_not_found", exit_code=1)
+    except (HermesCommandLedgerUnavailable, DatabaseUnavailable):
+        _workflow_binding_error("workflow_binding_unavailable", exit_code=1)
+    else:
+        _emit_json({"binding": workflow_binding_to_dict(binding)})
+
+
+@workflow_binding_app.command("inventory")
+def workflow_binding_inventory_command() -> None:
+    """Stream the complete immutable binding inventory as strict NDJSON."""
+
+    try:
+        for record in iter_workflow_binding_inventory(load_settings()):
+            _emit_json(record)
+    except Exception:  # noqa: BLE001 - CLI boundary must never leak DB or secret details
+        typer.echo(
+            json.dumps(
+                {"error_code": "workflow_binding_inventory_unavailable"},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            err=True,
+        )
+        raise typer.Exit(code=1) from None
 
 
 @hermes_app.command("connector-worker")

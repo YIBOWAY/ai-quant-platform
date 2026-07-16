@@ -139,6 +139,10 @@ data/                     Local cache, fixtures, generated research outputs.
   `127.0.0.1`/`::1`. Health/capability/session reads do not call a provider.
 - Migration 005 now provides the PostgreSQL command/event/outbox/run-link
   ledger and schema metadata, including tested claim/lease/heartbeat primitives.
+  Migration 006 is a separate exact workflow-binding schema; until its live
+  readiness and the HQA authority binding are verified, every claim path must
+  fail closed. Its presence in source never authorizes the runnable worker to
+  claim or dispatch.
   The currently runnable connector worker only provides `LISTEN/NOTIFY`, periodic
   scan and expired-lease reconciliation; it does not claim queued commands or
   heartbeat a worker lease. It is intentionally reconcile-only: there is no dispatch

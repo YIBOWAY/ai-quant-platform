@@ -472,12 +472,51 @@ class HermesCommandLedger:
         lease_token = uuid4()
         try:
             with database.connect() as conn, conn.transaction():
+                # Imported lazily to avoid the workflow module's dependency on
+                # this ledger module while keeping claim validation on the same
+                # PostgreSQL transaction snapshot as the lease mutation.
+                from quant_system.hermes.workflow_binding import (
+                    workflow_binding_schema_is_ready_on_connection,
+                )
+
+                if not command_ledger_schema_is_ready_on_connection(conn):
+                    raise HermesCommandLedgerUnavailable(
+                        "Hermes command ledger schema version is not ready"
+                    )
+                if not workflow_binding_schema_is_ready_on_connection(conn):
+                    raise HermesCommandLedgerUnavailable(
+                        "Hermes workflow binding schema version is not ready"
+                    )
                 candidate = conn.execute(
                     f"""
                     SELECT command_id, version
                     FROM {SCHEMA}.hermes_commands
                     WHERE owner_user_id = %s
                       AND state = 'queued'
+                      AND EXISTS (
+                          SELECT 1
+                          FROM {SCHEMA}.hermes_workflow_binding_meta AS binding_meta
+                          WHERE binding_meta.singleton IS TRUE
+                            AND binding_meta.schema_version = 1
+                      )
+                      AND EXISTS (
+                          SELECT 1
+                          FROM {SCHEMA}.hermes_command_workflow_bindings AS binding
+                          WHERE binding.command_id = hermes_commands.command_id
+                            AND binding.command_version = 1
+                            AND binding.preparation_schema_version = '1.0'
+                            AND binding.binding_schema_version = 1
+                            AND binding.owner_user_id = hermes_commands.owner_user_id
+                            AND binding.platform_session_id = hermes_commands.platform_session_id
+                            AND binding.client_request_id = hermes_commands.client_request_id
+                            AND binding.command_kind = hermes_commands.kind
+                            AND binding.canonical_request_digest =
+                                hermes_commands.canonical_request_digest
+                            AND binding.payload_ref = hermes_commands.payload_ref
+                            AND binding.provider_policy_digest =
+                                hermes_commands.provider_policy_digest
+                            AND binding.payload_expires_at > clock_timestamp()
+                      )
                       AND (
                           next_attempt_at IS NULL
                           OR next_attempt_at <= clock_timestamp()
@@ -507,6 +546,24 @@ class HermesCommandLedger:
                       AND owner_user_id = %s
                       AND version = %s
                       AND state = 'queued'
+                      AND EXISTS (
+                          SELECT 1
+                          FROM {SCHEMA}.hermes_command_workflow_bindings AS binding
+                          WHERE binding.command_id = hermes_commands.command_id
+                            AND binding.command_version = 1
+                            AND binding.preparation_schema_version = '1.0'
+                            AND binding.binding_schema_version = 1
+                            AND binding.owner_user_id = hermes_commands.owner_user_id
+                            AND binding.platform_session_id = hermes_commands.platform_session_id
+                            AND binding.client_request_id = hermes_commands.client_request_id
+                            AND binding.command_kind = hermes_commands.kind
+                            AND binding.canonical_request_digest =
+                                hermes_commands.canonical_request_digest
+                            AND binding.payload_ref = hermes_commands.payload_ref
+                            AND binding.provider_policy_digest =
+                                hermes_commands.provider_policy_digest
+                            AND binding.payload_expires_at > clock_timestamp()
+                      )
                     RETURNING {_COMMAND_COLUMNS}
                     """,
                     (
@@ -519,9 +576,10 @@ class HermesCommandLedger:
                     ),
                 ).fetchone()
                 if row is None:
-                    raise HermesCommandLedgerUnavailable(
-                        "locked command changed before lease projection update"
-                    )
+                    # Eligibility may expire after candidate selection. Do not
+                    # retry blindly inside this call; release the lock and leave
+                    # the durable command queued for explicit reconciliation.
+                    return None
                 consumed = conn.execute(
                     f"""
                     UPDATE {SCHEMA}.hermes_outbox
@@ -548,6 +606,10 @@ class HermesCommandLedger:
                     from_state="queued",
                 )
                 return command
+        except psycopg.errors.CheckViolation as exc:
+            if exc.diag.constraint_name == "ck_hermes_claim_binding_eligible":
+                return None
+            raise HermesCommandLedgerUnavailable(str(exc)) from exc
         except DatabaseUnavailable as exc:
             raise HermesCommandLedgerUnavailable(str(exc)) from exc
         except psycopg.Error as exc:
@@ -1748,20 +1810,13 @@ class HermesCommandLedger:
                 "Hermes command ledger requires PostgreSQL; no filesystem fallback exists"
             )
         try:
-            with database.connect() as conn:
-                row = conn.execute(
-                    f"""
-                    SELECT schema_version
-                    FROM {SCHEMA}.hermes_ledger_meta
-                    WHERE singleton IS TRUE
-                    """
-                ).fetchone()
-                signature_ready = _ledger_schema_signature_is_ready(conn)
+            with database.connect() as conn, conn.transaction():
+                ready = command_ledger_schema_is_ready_on_connection(conn)
         except (DatabaseUnavailable, psycopg.Error) as exc:
             raise HermesCommandLedgerUnavailable(
                 "Hermes command ledger schema is unavailable"
             ) from exc
-        if row is None or int(row[0]) != LEDGER_SCHEMA_VERSION or not signature_ready:
+        if not ready:
             raise HermesCommandLedgerUnavailable(
                 "Hermes command ledger schema version is not ready"
             )
@@ -2206,8 +2261,7 @@ _REQUIRED_LEDGER_CONSTRAINT_SIGNATURES = frozenset(
             "ck_hermes_commands_client_request_id",
             "c",
             True,
-            "CHECK (char_length(client_request_id) >= 1 AND "
-            "char_length(client_request_id) <= 200)",
+            "CHECK (char_length(client_request_id) >= 1 AND char_length(client_request_id) <= 200)",
         ),
         (
             "hermes_commands",
@@ -2397,8 +2451,7 @@ _REQUIRED_LEDGER_CONSTRAINT_SIGNATURES = frozenset(
             "ck_hermes_run_links_session_id",
             "c",
             True,
-            "CHECK (char_length(hermes_session_id) >= 1 AND "
-            "char_length(hermes_session_id) <= 256)",
+            "CHECK (char_length(hermes_session_id) >= 1 AND char_length(hermes_session_id) <= 256)",
         ),
         (
             "hermes_run_links",
@@ -2519,24 +2572,67 @@ _REQUIRED_LEDGER_TRIGGERS = frozenset(
             "trg_hermes_command_events_append_only",
             27,  # BEFORE UPDATE OR DELETE, FOR EACH ROW
             "reject_hermes_command_event_mutation",
+            "enabled",
+            "CREATE TRIGGER trg_hermes_command_events_append_only BEFORE DELETE OR "
+            "UPDATE ON quant_system.hermes_command_events FOR EACH ROW EXECUTE "
+            "FUNCTION quant_system.reject_hermes_command_event_mutation()",
+            None,
+            "",
         ),
         (
             "hermes_command_events",
             "trg_hermes_command_events_append_only_truncate",
             34,  # BEFORE TRUNCATE, FOR EACH STATEMENT
             "reject_hermes_command_event_mutation",
+            "enabled",
+            "CREATE TRIGGER trg_hermes_command_events_append_only_truncate BEFORE "
+            "TRUNCATE ON quant_system.hermes_command_events FOR EACH STATEMENT "
+            "EXECUTE FUNCTION quant_system.reject_hermes_command_event_mutation()",
+            None,
+            "",
         ),
         (
             "hermes_run_links",
             "trg_hermes_run_links_append_only",
             27,  # BEFORE UPDATE OR DELETE, FOR EACH ROW
             "reject_hermes_run_link_mutation",
+            "enabled",
+            "CREATE TRIGGER trg_hermes_run_links_append_only BEFORE DELETE OR UPDATE "
+            "ON quant_system.hermes_run_links FOR EACH ROW EXECUTE FUNCTION "
+            "quant_system.reject_hermes_run_link_mutation()",
+            None,
+            "",
         ),
         (
             "hermes_run_links",
             "trg_hermes_run_links_append_only_truncate",
             34,  # BEFORE TRUNCATE, FOR EACH STATEMENT
             "reject_hermes_run_link_mutation",
+            "enabled",
+            "CREATE TRIGGER trg_hermes_run_links_append_only_truncate BEFORE TRUNCATE "
+            "ON quant_system.hermes_run_links FOR EACH STATEMENT EXECUTE FUNCTION "
+            "quant_system.reject_hermes_run_link_mutation()",
+            None,
+            "",
+        ),
+    }
+)
+
+_REQUIRED_LEDGER_FUNCTIONS = frozenset(
+    {
+        (
+            "reject_hermes_command_event_mutation",
+            "plpgsql",
+            False,
+            "v",
+            "2c8ad64c0031bfca43e583be88629227b09d00fbce37c70523c34a4e40cb9a00",
+        ),
+        (
+            "reject_hermes_run_link_mutation",
+            "plpgsql",
+            False,
+            "v",
+            "e6682ea768846d7f7419b9522a1dedfc5733c7efc087baf40e582a798141da8b",
         ),
     }
 )
@@ -2686,13 +2782,46 @@ def _ledger_schema_signature_is_ready(conn: psycopg.Connection) -> bool:
     ):
         return False
 
+    function_rows = conn.execute(
+        """
+        SELECT procedure.proname,
+               language.lanname,
+               procedure.prosecdef,
+               procedure.provolatile,
+               procedure.prosrc
+        FROM pg_proc AS procedure
+        JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+        JOIN pg_language AS language ON language.oid = procedure.prolang
+        WHERE namespace.nspname = %s
+          AND procedure.proname = ANY(%s)
+          AND procedure.pronargs = 0
+          AND procedure.prorettype = 'trigger'::regtype
+        """,
+        (SCHEMA, [signature[0] for signature in _REQUIRED_LEDGER_FUNCTIONS]),
+    ).fetchall()
+    actual_functions = {
+        (
+            str(name),
+            str(language),
+            bool(security_definer),
+            str(volatility),
+            hashlib.sha256(" ".join(str(source).split()).encode()).hexdigest(),
+        )
+        for name, language, security_definer, volatility, source in function_rows
+    }
+    if not _REQUIRED_LEDGER_FUNCTIONS.issubset(actual_functions):
+        return False
+
     trigger_rows = conn.execute(
         """
         SELECT relation.relname,
                trigger.tgname,
                trigger.tgtype,
                procedure.proname,
-               trigger.tgenabled
+               trigger.tgenabled,
+               pg_get_triggerdef(trigger.oid, true),
+               pg_get_expr(trigger.tgqual, trigger.tgrelid, true),
+               encode(trigger.tgargs, 'escape')
         FROM pg_trigger AS trigger
         JOIN pg_class AS relation ON relation.oid = trigger.tgrelid
         JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
@@ -2701,14 +2830,33 @@ def _ledger_schema_signature_is_ready(conn: psycopg.Connection) -> bool:
           ON procedure_namespace.oid = procedure.pronamespace
         WHERE namespace.nspname = %s
           AND procedure_namespace.nspname = %s
+          AND trigger.tgname = ANY(%s)
           AND NOT trigger.tgisinternal
         """,
-        (SCHEMA, SCHEMA),
+        (SCHEMA, SCHEMA, [signature[1] for signature in _REQUIRED_LEDGER_TRIGGERS]),
     ).fetchall()
     return _REQUIRED_LEDGER_TRIGGERS.issubset(
         {
-            (str(table), str(name), int(trigger_type), str(procedure_name))
-            for table, name, trigger_type, procedure_name, enabled_mode in trigger_rows
+            (
+                str(table),
+                str(name),
+                int(trigger_type),
+                str(procedure_name),
+                "enabled",
+                str(definition),
+                str(qualifier) if qualifier is not None else None,
+                str(arguments),
+            )
+            for (
+                table,
+                name,
+                trigger_type,
+                procedure_name,
+                enabled_mode,
+                definition,
+                qualifier,
+                arguments,
+            ) in trigger_rows
             if str(enabled_mode) in {"O", "A"}
         }
     )
@@ -3063,21 +3211,37 @@ def command_ledger_schema_version(settings: Settings) -> int | None:
     if database is None:
         return None
     try:
-        with database.connect() as conn:
-            row = conn.execute(
-                f"""
-                SELECT schema_version
-                FROM {SCHEMA}.hermes_ledger_meta
-                WHERE singleton IS TRUE
-                """
-            ).fetchone()
-            signature_ready = _ledger_schema_signature_is_ready(conn)
+        with database.connect() as conn, conn.transaction():
+            ready = command_ledger_schema_is_ready_on_connection(conn)
     except (DatabaseUnavailable, psycopg.Error):
         return None
-    if row is None or not signature_ready:
-        return None
-    version = int(row[0])
-    return version if version == LEDGER_SCHEMA_VERSION else None
+    return LEDGER_SCHEMA_VERSION if ready else None
+
+
+def command_ledger_schema_is_ready_on_connection(
+    conn: psycopg.Connection,
+    *,
+    lock_meta_row: bool = True,
+) -> bool:
+    """Lock and verify ledger v1 on the caller's active transaction."""
+
+    conn.execute(
+        "SELECT pg_advisory_xact_lock_shared(hashtextextended(%s, 0))",
+        ("quant_system:hermes_schema_runtime_gate",),
+    )
+    meta_query = f"""
+        SELECT schema_version
+        FROM {SCHEMA}.hermes_ledger_meta
+        WHERE singleton IS TRUE
+    """
+    if lock_meta_row:
+        meta_query += " FOR SHARE"
+    row = conn.execute(meta_query).fetchone()
+    return (
+        row is not None
+        and int(row[0]) == LEDGER_SCHEMA_VERSION
+        and _ledger_schema_signature_is_ready(conn)
+    )
 
 
 def _notify_command_wakeup(conn: psycopg.Connection, command_id: UUID) -> None:
@@ -3106,5 +3270,6 @@ __all__ = [
     "HermesRunLinkPage",
     "RecordHermesRunLinkResult",
     "command_ledger_schema_version",
+    "command_ledger_schema_is_ready_on_connection",
     "hermes_run_link_digest",
 ]

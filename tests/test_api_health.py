@@ -21,6 +21,8 @@ def test_health_returns_safety_snapshot(tmp_path) -> None:
         "database_configured": False,
         "schema_ready": False,
         "schema_version": None,
+        "workflow_binding_schema_ready": False,
+        "workflow_binding_schema_version": None,
         "mutation_enabled": False,
     }
 

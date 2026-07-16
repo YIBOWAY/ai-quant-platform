@@ -69,6 +69,8 @@ export type HealthResponse = ApiEnvelope & {
     database_configured: boolean;
     schema_ready: boolean;
     schema_version: number | null;
+    workflow_binding_schema_ready: boolean;
+    workflow_binding_schema_version: number | null;
     mutation_enabled: boolean;
   };
 };
@@ -1995,6 +1997,8 @@ export function getHealth() {
       database_configured: false,
       schema_ready: false,
       schema_version: null,
+      workflow_binding_schema_ready: false,
+      workflow_binding_schema_version: null,
       mutation_enabled: false,
     },
     safety: FALLBACK_SAFETY,

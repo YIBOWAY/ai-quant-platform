@@ -1,6 +1,6 @@
 # Hermes 会话读取：运行手册与威胁模型
 
-## 当前结论（2026-07-15）
+## 当前结论（2026-07-16）
 
 平台已经能通过 **official Hermes API Server** 读取本机已保存的 Hermes 会话：
 
@@ -183,9 +183,10 @@ ID。当前会话页只经平台 API/BFF 读取，从不接触上游 URL 或 Bea
 
 ## Wave 3 底座与下一阶段：成熟写端连接，而不是空轮询
 
-下图是目标链路。Wave 3 当前只交付 PostgreSQL transport ledger、GET-only session BFF 与
-deterministic worker 的 **notify/scan/expired-lease reconcile 底座**；authenticated mutation、
-Task/payload binding、claim/dispatch 和 HTTP/SSE 写边均未准入：
+下图是目标链路。Wave 3 的当前运行态只启用了 PostgreSQL migration 005 transport ledger、
+GET-only session BFF 与 deterministic worker 的 **notify/scan/expired-lease reconcile 底座**。
+3C.1 的 Task/payload/exact-binding foundation 已完成代码与隔离 PostgreSQL 验收，但 migration
+006 尚未在 live 数据库 apply；authenticated mutation、claim/dispatch 和 HTTP/SSE 写边均未准入：
 
 ```text
 Browser
@@ -201,9 +202,17 @@ repository 已实现并测试 claim/lease/heartbeat primitives。当前可运行
 当前也没有 command dispatch adapter、Hermes mutation、provider call、SSE replay 或常驻
 worker 进程，因此不能把它称为平台已把请求交给 Hermes。
 
+3C.1 source 另提供独立 workflow-binding schema meta、append-only exact binding、原子 bound
+command/event/outbox/NOTIFY primitive、binding-aware claim、read-only repeatable-read inventory，
+以及 HQA append-only Task/Attempt/payload authority 与 reverse audit。它们目前是
+**CODE ACCEPTED / LIVE APPLY PENDING**：在 migration 006 获得单独授权、完成 apply/幂等/
+readiness 与 HQA authority backup/restore drill 前，不得由 browser 或 worker 消费。006 激活
+本身也不会开放 claim/dispatch。
+
 最终 worker 的职责仍是确定性的队列与恢复，不是让模型担任消息队列：
 
-1. BFF 先以 client idempotency key 写入 durable command；同一请求只能产生一个逻辑 run。
+1. HQA 先以稳定 request/saga 准备 Task/Attempt 与 immutable payload；平台只在一个事务中
+   创建 exact-bound durable command/event/outbox，且同一请求只能产生一个逻辑 run。
 2. 未来 dispatch worker 才会用短事务和 `FOR UPDATE SKIP LOCKED` claim，记录 lease、
    attempt、heartbeat 和 recovery evidence；这些目前只是 ledger primitives，不在现有
    reconcile-only `run_once` 中调用。

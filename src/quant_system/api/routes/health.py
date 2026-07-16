@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.health import HealthResponse
 from quant_system.hermes.command_ledger import command_ledger_schema_version
+from quant_system.hermes.workflow_binding import workflow_binding_schema_version
 
 router = APIRouter()
 
@@ -69,10 +70,13 @@ def _database_status(settings: SettingsDep) -> dict[str, Any]:
 
 def _hermes_command_ledger_status(settings: SettingsDep) -> dict[str, Any]:
     version = command_ledger_schema_version(settings)
+    binding_version = workflow_binding_schema_version(settings)
     return {
         "database_configured": settings.database.enabled and settings.database.url is not None,
         "schema_ready": version is not None,
         "schema_version": version,
+        "workflow_binding_schema_ready": binding_version is not None,
+        "workflow_binding_schema_version": binding_version,
         # No authenticated same-origin + CSRF BFF mutation exists in Slice 3B.
         "mutation_enabled": False,
     }

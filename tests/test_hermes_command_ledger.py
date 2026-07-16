@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
@@ -22,6 +24,11 @@ from quant_system.hermes.command_ledger import (
     HermesCommandVersionConflict,
     command_ledger_schema_version,
     hermes_run_link_digest,
+)
+from quant_system.hermes.workflow_binding import (
+    PreparedWorkflowCommand,
+    ensure_bound_command,
+    workflow_preparation_digest,
 )
 from quant_system.storage import database as db
 
@@ -63,16 +70,61 @@ def _postgres_settings() -> Settings:
     )
 
 
+def _create_bound_test_command(
+    *,
+    settings: Settings,
+    ledger: HermesCommandLedger,
+    platform_session_id: str,
+    client_request_id: str,
+    canonical_request_digest: str,
+):
+    seed = hashlib.sha256(f"{platform_session_id}\0{client_request_id}".encode()).hexdigest()
+    payload_digest = hashlib.sha256(f"payload:{seed}".encode()).hexdigest()
+    draft = PreparedWorkflowCommand(
+        schema_version="1.0",
+        workflow_saga_id=f"hqs_{seed[:24]}",
+        owner_user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        platform_session_id=platform_session_id,
+        client_request_id=client_request_id,
+        command_kind="research_chat",
+        canonical_request_digest=canonical_request_digest,
+        payload_ref=f"hqa-payload:sha256:{payload_digest}",
+        payload_digest=payload_digest,
+        payload_expires_at=datetime(2099, 1, 1, tzinfo=UTC),
+        provider_policy_digest=hashlib.sha256(f"provider:{seed}".encode()).hexdigest(),
+        task_id=f"hqt_{seed[:24]}",
+        task_version=1,
+        attempt_id=f"hqa_{seed[:24]}",
+        attempt_number=1,
+        prepared_event_id=f"hqe_{seed[:24]}",
+        prepared_event_digest=hashlib.sha256(f"event:{seed}".encode()).hexdigest(),
+        plan_schema_version=1,
+        plan_version=1,
+        plan_digest=hashlib.sha256(f"plan:{seed}".encode()).hexdigest(),
+        workflow_preparation_digest="0" * 64,
+    )
+    prepared = replace(
+        draft,
+        workflow_preparation_digest=workflow_preparation_digest(draft),
+    )
+    result = ensure_bound_command(settings, prepared)
+    return ledger.get_command(result.command_id)
+
+
 def _reset_hermes_ledger(database: db.Database) -> None:
     with database.connect() as conn, conn.transaction():
         # Production roles must never truncate append-only evidence. Tests use
         # the table owner and disable only user triggers inside one rollback-safe
         # transaction to isolate cases.
+        conn.execute(
+            "ALTER TABLE quant_system.hermes_command_workflow_bindings DISABLE TRIGGER USER"
+        )
         conn.execute("ALTER TABLE quant_system.hermes_command_events DISABLE TRIGGER USER")
         conn.execute("ALTER TABLE quant_system.hermes_run_links DISABLE TRIGGER USER")
         conn.execute(
             """
             TRUNCATE TABLE
+                quant_system.hermes_command_workflow_bindings,
                 quant_system.hermes_run_links,
                 quant_system.hermes_outbox,
                 quant_system.hermes_command_events,
@@ -80,6 +132,15 @@ def _reset_hermes_ledger(database: db.Database) -> None:
             RESTART IDENTITY
             """
         )
+        for trigger_name in (
+            "trg_hermes_workflow_binding_validate",
+            "trg_hermes_workflow_binding_append_only",
+            "trg_hermes_workflow_binding_append_only_truncate",
+        ):
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_command_workflow_bindings "
+                f"ENABLE ALWAYS TRIGGER {trigger_name}"
+            )
         conn.execute("ALTER TABLE quant_system.hermes_command_events ENABLE TRIGGER USER")
         conn.execute("ALTER TABLE quant_system.hermes_run_links ENABLE TRIGGER USER")
 
@@ -829,7 +890,10 @@ def test_command_events_reject_update_and_delete() -> None:
                 (command.command_id,),
             )
         with pytest.raises(psycopg.errors.RaiseException), database.connect() as conn:
-            conn.execute("TRUNCATE quant_system.hermes_command_events")
+            conn.execute(
+                "TRUNCATE quant_system.hermes_command_workflow_bindings, "
+                "quant_system.hermes_command_events"
+            )
         with pytest.raises(psycopg.errors.RaiseException), database.connect() as conn:
             conn.execute("TRUNCATE quant_system.hermes_run_links")
     finally:
@@ -846,12 +910,16 @@ def test_manual_rollback_and_reapply_preserve_preexisting_platform_schema() -> N
     rollback_sql = Path("scripts/sql/rollback/005_hermes_command_ledger.down.sql").read_text(
         encoding="utf-8"
     )
+    binding_rollback_sql = Path(
+        "scripts/sql/rollback/006_hermes_workflow_binding.down.sql"
+    ).read_text(encoding="utf-8")
 
     try:
         with database.connect() as conn:
             root_before = conn.execute(
                 "SELECT username FROM quant_system.app_users WHERE username = 'root'"
             ).fetchone()
+            conn.execute(binding_rollback_sql)
             conn.execute(rollback_sql)
             ledger_table_after_rollback = conn.execute(
                 "SELECT to_regclass('quant_system.hermes_commands')"
@@ -888,13 +956,13 @@ def test_claim_next_uses_lease_token_and_consumes_matching_outbox_wakeup() -> No
     now = datetime(2026, 7, 15, 9, 30, tzinfo=UTC)
 
     try:
-        created = ledger.create_command(
+        created = _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-claim",
             client_request_id="req-ledger-claim-001",
-            kind="research_chat",
             canonical_request_digest="1" * 64,
-            payload_ref="platform-payload://research/claim-001",
-        ).command
+        )
 
         claimed = ledger.claim_next_command(
             worker_id="worker-a",
@@ -959,13 +1027,13 @@ def test_concurrent_workers_claim_distinct_commands() -> None:
 
     try:
         created_ids = {
-            ledger.create_command(
+            _create_bound_test_command(
+                settings=settings,
+                ledger=ledger,
                 platform_session_id="platform-session-multi-claim",
                 client_request_id=f"req-ledger-multi-claim-{index}",
-                kind="research_chat",
                 canonical_request_digest=str(index) * 64,
-                payload_ref=f"platform-payload://research/multi-claim-{index}",
-            ).command.command_id
+            ).command_id
             for index in (2, 3)
         }
 
@@ -1001,12 +1069,12 @@ def test_heartbeat_requires_current_version_and_lease_token() -> None:
     now = datetime(2026, 7, 15, 9, 50, tzinfo=UTC)
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-heartbeat",
             client_request_id="req-ledger-heartbeat-001",
-            kind="research_chat",
             canonical_request_digest="4" * 64,
-            payload_ref="platform-payload://research/heartbeat-001",
         )
         claimed = ledger.claim_next_command(
             worker_id="worker-heartbeat",
@@ -1055,12 +1123,12 @@ def test_database_clock_owns_lease_and_caller_time_cannot_bypass_expiry() -> Non
     ledger = HermesCommandLedger(settings)
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-db-clock",
             client_request_id="req-ledger-db-clock-001",
-            kind="research_chat",
             canonical_request_digest="0" * 64,
-            payload_ref="platform-payload://research/db-clock-001",
         )
         with database.connect() as conn:
             before = conn.execute("SELECT clock_timestamp()").fetchone()[0]
@@ -1109,12 +1177,12 @@ def test_blocked_heartbeat_cannot_cross_the_real_lease_deadline() -> None:
     ledger = HermesCommandLedger(settings)
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-lock-fencing",
             client_request_id="req-ledger-lock-fencing-001",
-            kind="research_chat",
             canonical_request_digest="9" * 64,
-            payload_ref="platform-payload://research/lock-fencing-001",
         )
         claimed = ledger.claim_next_command(
             worker_id="worker-lock-fencing",
@@ -1189,12 +1257,12 @@ def test_expired_lease_requeues_only_before_dispatch_and_reconciles_after_dispat
 
     try:
         for index in (5, 6):
-            ledger.create_command(
+            _create_bound_test_command(
+                settings=settings,
+                ledger=ledger,
                 platform_session_id="platform-session-expiry",
                 client_request_id=f"req-ledger-expiry-{index}",
-                kind="research_chat",
                 canonical_request_digest=str(index) * 64,
-                payload_ref=f"platform-payload://research/expiry-{index}",
             )
 
         dispatched_claim = ledger.claim_next_command(
@@ -1309,12 +1377,12 @@ def test_delivered_transition_requires_dispatch_and_fences_the_worker_lease() ->
     now = datetime(2026, 7, 15, 10, 10, tzinfo=UTC)
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-delivered",
             client_request_id="req-ledger-delivered-001",
-            kind="research_chat",
             canonical_request_digest="8" * 64,
-            payload_ref="platform-payload://research/delivered-001",
         )
         claimed = ledger.claim_next_command(
             worker_id="worker-delivered",
@@ -1402,12 +1470,12 @@ def test_dispatch_timeout_becomes_outcome_unknown_and_cannot_be_blindly_reclaime
     now = datetime(2026, 7, 15, 10, 20, tzinfo=UTC)
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-timeout",
             client_request_id="req-ledger-timeout-001",
-            kind="research_chat",
             canonical_request_digest="9" * 64,
-            payload_ref="platform-payload://research/timeout-001",
         )
         claimed = ledger.claim_next_command(
             worker_id="worker-timeout",
@@ -1485,12 +1553,12 @@ def test_delivered_run_can_reach_succeeded_terminal_state_with_evidence() -> Non
     now = datetime(2026, 7, 15, 10, 30, tzinfo=UTC)
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-success",
             client_request_id="req-ledger-success-001",
-            kind="research_chat",
             canonical_request_digest="a" * 64,
-            payload_ref="platform-payload://research/success-001",
         )
         claimed = ledger.claim_next_command(
             worker_id="worker-success",
@@ -1567,12 +1635,12 @@ def test_reconciler_can_resolve_outcome_unknown_as_failed_without_requeue() -> N
     now = datetime(2026, 7, 15, 10, 40, tzinfo=UTC)
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-failure",
             client_request_id="req-ledger-failure-001",
-            kind="research_chat",
             canonical_request_digest="c" * 64,
-            payload_ref="platform-payload://research/failure-001",
         )
         claimed = ledger.claim_next_command(
             worker_id="worker-failure",
@@ -1655,12 +1723,12 @@ def test_authoritative_dispatch_rejection_is_terminal_and_lease_fenced() -> None
     now = datetime(2026, 7, 15, 10, 50, tzinfo=UTC)
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-rejected",
             client_request_id="req-ledger-rejected-001",
-            kind="research_chat",
             canonical_request_digest="e" * 64,
-            payload_ref="platform-payload://research/rejected-001",
         )
         claimed = ledger.claim_next_command(
             worker_id="worker-rejected",
@@ -1726,12 +1794,12 @@ def test_exact_run_link_is_digest_bound_idempotent_and_queryable_by_both_sides()
     other_command_id = UUID("00000000-0000-0000-0000-000000000102")
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-link",
             client_request_id="req-ledger-link-001",
-            kind="research_chat",
             canonical_request_digest="1" * 64,
-            payload_ref="platform-payload://research/link-001",
         )
         claimed = ledger.claim_next_command(
             worker_id="worker-link",
@@ -1944,13 +2012,13 @@ def test_command_event_and_outbox_projections_are_readable_in_durable_order() ->
     now = datetime(2026, 7, 15, 11, 10, tzinfo=UTC)
 
     try:
-        created = ledger.create_command(
+        created = _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-projection",
             client_request_id="req-ledger-projection-001",
-            kind="research_chat",
             canonical_request_digest="2" * 64,
-            payload_ref="platform-payload://research/projection-001",
-        ).command
+        )
         claimed = ledger.claim_next_command(
             worker_id="worker-projection",
             now=now,
@@ -2009,12 +2077,12 @@ def test_reconciliation_can_bind_a_recovered_active_run_without_retrying_dispatc
     now = datetime(2026, 7, 15, 11, 20, tzinfo=UTC)
 
     try:
-        ledger.create_command(
+        _create_bound_test_command(
+            settings=settings,
+            ledger=ledger,
             platform_session_id="platform-session-recovered",
             client_request_id="req-ledger-recovered-001",
-            kind="research_chat",
             canonical_request_digest="3" * 64,
-            payload_ref="platform-payload://research/recovered-001",
         )
         claimed = ledger.claim_next_command(
             worker_id="worker-recovered",

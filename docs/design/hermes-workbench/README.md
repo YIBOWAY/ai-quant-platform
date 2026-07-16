@@ -21,6 +21,7 @@ imported from `app/`, `components/`, `lib/`, or `public/`.
 | F2 production shell | **code-delivered 2026-07-14** | Read-only Hermes shell, Today hierarchy, Tasks/Approvals/Results and reversible root→Hermes cutover. Chat/execution/approval mutation/unifiedResults/legacyRedirects remain hard-off; Tasks/Results distinguish unavailable/degraded/corrupt from a genuine empty feed. |
 | F2.1 official session read | **code-delivered 2026-07-15** | `sessionRead=true`: platform GET-only BFF reads official Hermes API Server persisted sessions and exposes list/detail views. Browser never receives the Hermes key. `approvalMutations=false`; composer remains disabled. |
 | F2.2 / D-31 3E-A Unified Results | **delivered + live accepted 2026-07-15** | Read-only catalog/detail over platform runs, experiments, candidates, HQA artifacts and exact run links. Preview is visible; `unifiedResultsCutoverAccepted=false`, exact Hermes Run links may legitimately be empty, and no write capability is implied. |
+| D-31 3C.1 backend foundation | **code accepted; live 006 pending** | HQA Task/Attempt/payload authority, exact workflow binding/inventory and reverse audit passed code/isolated-PostgreSQL acceptance. Migration 006 is not live applied; browser POST, worker claim and Hermes/provider mutation remain off. |
 | D-31 3F Agent Studio gate | **mechanism delivered, default-off** | Page-scoped, reversible redirect exists behind `QS_HERMES_AGENT_STUDIO_REDIRECT_ENABLED=true`; default remains the read-only legacy page. Audit parity and user cutover approval are still missing. |
 
 ### F0 decision
@@ -94,7 +95,7 @@ No purple atmosphere. Warning yellow is not used as Submit/primary fill.
   the unauthenticated local platform must itself bind `127.0.0.1`/`::1`
 - operations and threat model: [`../../guides/hermes-sessions.md`](../../guides/hermes-sessions.md)
 
-### D-31 Wave 3 current state (2026-07-15)
+### D-31 Wave 3 current state (2026-07-16)
 
 - migration 005 delivers schema metadata plus durable commands, events, outbox and
   exact run links; live PostgreSQL readiness validates the complete schema signature
@@ -102,6 +103,9 @@ No purple atmosphere. Warning yellow is not used as Submit/primary fill.
   connector-worker currently implements only deterministic wake/scan and expired-lease
   reconciliation. It does not claim queued commands, has no dispatch/provider/SSE adapter,
   and performs zero Hermes mutations
+- 3C.1 has code-accepted HQA Task/Attempt/immutable-payload authority plus platform exact
+  workflow binding/inventory and reverse audit; migration 006 is not live applied, so no
+  browser or worker runtime consumes this foundation
 - 3E-A exposes `/hermes/results` plus bounded dynamic detail routes; malformed,
   missing, corrupt, degraded and unknown-total sources stay explicit
 - the read-only preview is visible while `unifiedResultsCutoverAccepted=false`
@@ -110,7 +114,8 @@ No purple atmosphere. Warning yellow is not used as Submit/primary fill.
 
 The approved write-side design is not “enable the composer against `/v1/runs`”.
 The durable ledger and reconcile-only worker base now exist, but chat remains blocked
-until authenticated mutation BFF/CSRF/retention/task binding plus upstream idempotency,
+until authenticated mutation BFF/CSRF/retention/live-applied workflow-binding readiness
+plus upstream idempotency,
 request recovery, event replay, provider lock/evidence, approval exact binding and
 stop reconciliation are independently proven. `LISTEN/NOTIFY` is only a wakeup;
 periodic scan recovers missed notifications, and neither path invokes an LLM when no

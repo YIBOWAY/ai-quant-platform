@@ -3,7 +3,7 @@
 这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
 指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-## 当前工作（2026-07-15）
+## 当前工作（2026-07-16）
 
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
@@ -12,7 +12,7 @@
 | 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
 | 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、HQA Scene-B Gate 1 精确源绑定、Gate 2 digest CAS、迁移工具、隔离且可恢复的 Gate 3 worktree 已交付并完成对抗性加固。Scene-B 已完成 final receipt → prepare → 人工 diff/commit → reviewed → cleanup，并以 `524e791` 合入当前分支（见下）。 |
 | 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 Hermes 壳与可回滚默认首页已交付。Approvals 保持证据只读（`approvalMutations=false`）；official Hermes API 会话读取已接入（`sessionRead=true`）。3E-A 又交付只读 Unified Results 目录/详情，但完整切流仍关闭。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
-| 当前实现选择 | D-31 Wave 3：3A/3B/3E-A DONE；3C reconcile-only；3D BLOCKED | official API 会话读取、migration 005 transport ledger 与 Unified Results 只读目录/详情已完成本机验收。ledger 已提供 claim/lease/heartbeat primitives；当前 worker runtime 只有 LISTEN/scan + expired-lease reconcile，不 claim queued command，也不具备 dispatch/provider/SSE。17 个写端 blocker 仍在，composer 正确 fail closed。Agent Studio 只有默认关闭的页面级 redirect gate。 |
+| 当前实现选择 | D-31 Wave 3：3A/3B/3E-A DONE；3C reconcile-only；3C.1 code accepted/live 006 pending；3D BLOCKED | official API 会话读取、migration 005 transport ledger 与 Unified Results 只读目录/详情已完成本机验收。3C.1 的 HQA Task/Attempt/payload exact-binding、平台 migration 006/inventory 已通过代码和隔离 PostgreSQL 验收，但 006 尚未 live apply。ledger 已提供 claim/lease/heartbeat primitives；当前 worker runtime 只有 LISTEN/scan + expired-lease reconcile，不 claim queued command，也不具备 dispatch/provider/SSE。17 个写端 blocker 仍在，composer 正确 fail closed。Agent Studio 只有默认关闭的页面级 redirect gate。 |
 | 本机 Hermes 连接决策 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-15-local-hermes-integration-decision.md` | 采用 PostgreSQL durable command/event/outbox + deterministic worker；`LISTEN/NOTIFY` 唤醒、periodic scan 兜底，不让 Hermes/LLM cron 空轮询。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
 | 被替代计划 | HQA `2026-07-07-phase-1a-4-research-employees.md` | 目标保留，旧 implementation 模板不得原样执行。 |
@@ -43,7 +43,7 @@ Composer 继续禁用。Slice 9G 新增 HQA 本地 opportunity ledger，并通�
 `not_actionable`，零虚假 missed。完整 9H 随后在 HQA 完成调度、prediction/opportunity
 对账、周报聚合、job freshness 与通知投递。平台现在兼容 feed schema 1.0 的精确三来源
 合同和 schema 1.1 的精确六来源合同；`/hermes` 展示风险、预测、推演、周报、机会与
-自动化状态，whole-feed freshness budget 为 10800 秒。平台没有为完整 9H 新增
+自动化状态，whole-feed freshness budget 为 10800 秒。完整 9H 本身没有为平台新增
 scheduler、outbound worker、POST route 或数据库 migration。
 
 ### 候选完整性与 Gate 3（2026-07-13 代码交付）
@@ -100,8 +100,9 @@ scheduler、outbound worker、POST route 或数据库 migration。
   Results 只读 preview/catalog 可见，但完整切流门
   `unifiedResultsCutoverAccepted=false`。
 - Wave 2 Approvals：页面恢复为证据只读，不提交平台 `POST .../review`。
-- Wave 2 Tasks：只读绑定 automation / weekly_review / opportunity_summary 证据；
-  **无** research task 写账本。
+- Wave 2 Tasks：浏览器页面只读绑定 automation / weekly_review / opportunity_summary 证据，
+  **无** research task create/submit 控件；这不否认 3C.1 已代码交付的 HQA 内部
+  Task/Attempt/payload authority。
 - Wave 3 3E-A Results：`/hermes/results` 与 `/hermes/results/{kind}/{resource_id}`
   只读汇总平台 runs/experiments/candidates、HQA manifest 产物与 exact run links；
   缺失、损坏、降级和未知总数都显式呈现，绝不从名称/标的相似性推断 Hermes Run。
@@ -113,6 +114,10 @@ scheduler、outbound worker、POST route 或数据库 migration。
 - Session-read 本身不复制会话进平台数据库；Wave 3 migration 005 另行新增五张
   transport-ledger 表（schema meta、commands、events、outbox、run links）。当前 live
   业务表均为 0 行，不能伪称已提交真实命令。
+- 3C.1 另以 additive migration 006 source 定义独立 workflow-binding meta 与 append-only exact
+  binding 表，并交付 bound-command 原子 primitive、binding-aware claim、read-only
+  repeatable-read inventory 及 HQA reverse authority audit。代码/隔离 PostgreSQL 已验收，但
+  migration 006 **尚未在 live `quantplatform` apply**；worker/BFF 均未消费，不能视为写端激活。
   旧 TUI gateway capability contract 已因上游代码漂移而 fail closed，不再作为主连接。
   loopback 只构成网络暴露边界，不是 OS 用户认证；启用本地会话读取时，平台后端必须
   绑定 `127.0.0.1` 或 `::1`。运行与威胁模型见
@@ -424,7 +429,8 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 - D-31 Wave 2 已在安全边界内收口：migration apply、Scene-B final→三道 Gate→promotion
   `524e791`、Tasks 证据读模型与旧页 soft banners 均已完成；Approvals 当前按设计恢复为
   只读。Wave 3 进一步交付 official API session reads、migration 005 ledger、reconcile-only
-  worker framework 与 3E-A Unified Results read model/UI。完整 chat write、approval
+  worker framework 与 3E-A Unified Results read model/UI；3C.1 的 HQA authority/exact binding
+  foundation 已代码验收而 live migration 006 待授权。完整 chat write、approval
   mutation、exact Hermes Run link、完整结果切流和旧四页 retirement 仍未完成。
 - 后续写端继续采用 PostgreSQL durable command/outbox/event ledger + deterministic
   connector worker；`LISTEN/NOTIFY` 只作唤醒、periodic scan 补偿。当前没有 dispatch

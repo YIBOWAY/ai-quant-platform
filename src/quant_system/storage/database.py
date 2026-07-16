@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import psycopg
+from psycopg.pq import TransactionStatus
 
 if TYPE_CHECKING:
     from quant_system.config.settings import Settings
@@ -29,6 +30,7 @@ log = logging.getLogger(__name__)
 SCHEMA = "quant_system"
 DEFAULT_FAILURE_COOLDOWN_SECONDS = 30.0
 MAX_OPTIONAL_CONNECT_TIMEOUT_SECONDS = 1
+HERMES_SCHEMA_RUNTIME_GATE = "quant_system:hermes_schema_runtime_gate"
 
 
 class DatabaseUnavailable(RuntimeError):
@@ -57,9 +59,7 @@ class Database:
         with self._lock:
             if now < self._failure_until:
                 remaining = max(self._failure_until - now, 0.0)
-                raise DatabaseUnavailable(
-                    f"database recently failed; retry in {remaining:.1f}s"
-                )
+                raise DatabaseUnavailable(f"database recently failed; retry in {remaining:.1f}s")
 
     def _finish_connect(self) -> None:
         with self._lock:
@@ -155,9 +155,53 @@ def run_migrations(database: Database) -> None:
         log.warning("no SQL migration files found under %s", sql_dir)
         return
     with database.connect() as conn:
-        for path in files:
-            sql = path.read_text(encoding="utf-8")
-            # psycopg3 runs multiple statements via the simple query protocol
-            # when no parameters are supplied.
-            conn.execute(sql)
+        runtime_gate_acquired = False
+        primary_error: BaseException | None = None
+        try:
+            conn.execute(
+                "SELECT pg_advisory_lock(hashtextextended(%s, 0))",
+                (HERMES_SCHEMA_RUNTIME_GATE,),
+            )
+            runtime_gate_acquired = True
+            for path in files:
+                sql = path.read_text(encoding="utf-8")
+                # psycopg3 runs multiple statements via the simple query protocol
+                # when no parameters are supplied.
+                conn.execute(sql)
+        except BaseException as exc:
+            primary_error = exc
+            raise
+        finally:
+            cleanup_error: BaseException | None = None
+            try:
+                transaction_left_open = conn.info.transaction_status != TransactionStatus.IDLE
+                if transaction_left_open:
+                    conn.rollback()
+                    if primary_error is None:
+                        cleanup_error = RuntimeError("migration left a database transaction open")
+            except BaseException as exc:
+                cleanup_error = exc
+            if runtime_gate_acquired:
+                try:
+                    unlocked = conn.execute(
+                        "SELECT pg_advisory_unlock(hashtextextended(%s, 0))",
+                        (HERMES_SCHEMA_RUNTIME_GATE,),
+                    ).fetchone()
+                    if unlocked != (True,):
+                        raise RuntimeError("migration runtime gate was not held during release")
+                except BaseException as exc:
+                    if cleanup_error is None:
+                        cleanup_error = exc
+                    else:
+                        log.warning(
+                            "also failed to release migration runtime gate: %s",
+                            exc,
+                        )
+            if cleanup_error is not None:
+                if primary_error is None:
+                    raise cleanup_error
+                log.warning(
+                    "migration cleanup failed while preserving the primary error: %s",
+                    cleanup_error,
+                )
     log.info("applied %d SQL migration file(s)", len(files))
