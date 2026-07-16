@@ -79,7 +79,7 @@ class HermesArtifactCatalog:
         self._max_future_clock_skew_seconds = max_future_clock_skew_seconds
         self._max_manifest_bytes = max_manifest_bytes
 
-    def latest(self, *, limit: int) -> dict[str, Any]:
+    def latest(self, *, limit: int | None) -> dict[str, Any]:
         if not self._feed_path.is_file():
             return {
                 "schema_version": "1.0",
@@ -251,11 +251,12 @@ class HermesArtifactCatalog:
             return _unavailable("feed_clock_skew")
         if causality_invalid:
             return _unavailable("feed_corrupt")
-        payload["items"] = sorted(
+        ordered_items = sorted(
             payload["items"],
             key=lambda item: (item_times[item["id"]], item["id"]),
             reverse=True,
-        )[:limit]
+        )
+        payload["items"] = ordered_items if limit is None else ordered_items[:limit]
         if (
             as_of is not None
             and (now - as_of).total_seconds()

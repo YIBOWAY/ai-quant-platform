@@ -168,13 +168,15 @@ http://127.0.0.1:3001
 
 ## 当前交接
 
-HQA 9A-9G、mini/full 9H、Scene-B final→Gate 3 与平台 official Hermes session-read
-观察面已完成。当前不是“完整 Hermes 已接通”：chat write、approval mutation、统一动态
-Results 与旧页 retirement 仍关闭。
+HQA 9A-9G、mini/full 9H、Scene-B final→Gate 3、official Hermes session-read、
+PostgreSQL transport ledger 与只读 Unified Results 已完成。当前不是“完整 Hermes 已接通”：
+chat write、approval mutation、独立 Hermes Run 结果、完整 Results cutover 与旧页 retirement
+仍关闭。
 
-下一连接切片应先建设 PostgreSQL durable command/outbox/event ledger 和 deterministic
-connector worker：`LISTEN/NOTIFY` 负责低延迟唤醒，periodic scan 负责丢通知后的补偿，
-worker 以 claim/lease/heartbeat/backoff 恢复任务。空队列检查不调用 LLM；只有存在已授权
-queued command 才向 Hermes 提交 run。不要用 Hermes cron 反复询问“有没有新任务”。
+Migration 005 的 ledger 已提供 claim/lease/heartbeat primitives；当前 deterministic
+connector worker runtime 只做 `LISTEN/NOTIFY` 唤醒、periodic scan 与 expired-lease
+reconcile，不 claim queued command，也不会向 Hermes 提交 run。未来 dispatch adapter
+验收后才会消费明确授权的 queued command。空队列检查不调用 LLM；不要用 Hermes cron
+反复询问“有没有新任务”。
 写端还必须另行解决认证/CSRF、幂等、request recovery、event replay、provider 锁定与
 实际 provider 证据、审批精确绑定及 stop reconciliation 后，才可启用 composer。

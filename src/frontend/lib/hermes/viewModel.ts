@@ -4,14 +4,17 @@ import type {
   HermesArtifactShelfEnvelope,
   HermesAutomationStatusArtifactData,
   HermesArtifactSource,
+  HermesResultsResponse,
 } from "@/lib/api";
 import { hermesRoutes } from "./routes";
 import type {
   HermesAttentionItem,
   HermesAutomationSummary,
-  HermesResultSummary,
+  HermesHqaConclusionSummary,
   HermesTechnicalSource,
   HermesTodayModel,
+  HermesTodayModelInput,
+  HermesUnifiedResultsPreview,
 } from "./types";
 
 const KNOWN_JOB_IDS = [
@@ -306,9 +309,9 @@ function resultSummary(item: HermesArtifact): string {
   return item.status;
 }
 
-function buildRecentResults(
+function buildHqaConclusions(
   artifacts: HermesArtifactShelfEnvelope,
-): HermesResultSummary[] {
+): HermesHqaConclusionSummary[] {
   return artifacts.items
     .filter((item) => item.kind !== "automation_status")
     .slice()
@@ -325,6 +328,47 @@ function buildRecentResults(
         item.data as unknown as Record<string, unknown>,
       ),
     }));
+}
+
+function boundedProjectionText(
+  value: unknown,
+  maximum: number,
+): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > maximum) return null;
+  return trimmed;
+}
+
+function buildUnifiedResultsPreview(
+  results: HermesResultsResponse,
+): HermesUnifiedResultsPreview {
+  const items = results.items.slice(0, 5).map((item) => {
+    const projection = item as typeof item & Record<string, unknown>;
+    return {
+      kind: item.kind,
+      resourceId: item.resource_id,
+      displayTitle:
+        boundedProjectionText(projection.display_title, 256) ??
+        `${item.kind} · ${item.resource_id}`,
+      summary: boundedProjectionText(projection.summary, 1_000),
+      status: item.status,
+      occurredAt: item.occurred_at,
+      source: item.source,
+    };
+  });
+  const warningCode = boundedProjectionText(results.warnings[0]?.code, 128);
+  return {
+    readStatus: results.read_status,
+    total:
+      results.read_status === "unavailable" ||
+      results.read_status === "degraded" ||
+      !results.total_is_exact
+        ? null
+        : (results.total ?? null),
+    items,
+    ...(warningCode ? { warningCode } : {}),
+  };
 }
 
 function mapSourceStatus(
@@ -390,7 +434,8 @@ function deriveState(input: {
   artifacts: HermesArtifactShelfEnvelope;
   attention: HermesAttentionItem[];
   automation: HermesAutomationSummary;
-  recentResults: HermesResultSummary[];
+  hqaConclusions: HermesHqaConclusionSummary[];
+  unifiedResults: HermesUnifiedResultsPreview;
 }): HermesTodayModel["state"] {
   if (input.artifacts.read_status === "unavailable") {
     return "offline";
@@ -404,6 +449,8 @@ function deriveState(input: {
   const hasSystemDegradation =
     input.attention.some((item) => item.kind !== "approval") ||
     input.automation.exceptions.length > 0 ||
+    input.unifiedResults.readStatus === "unavailable" ||
+    input.unifiedResults.readStatus === "degraded" ||
     input.artifacts.read_status === "degraded" ||
     input.automation.status === "attention" ||
     (input.automation.status === "unavailable" &&
@@ -413,11 +460,12 @@ function deriveState(input: {
   }
   if (
     input.artifacts.read_status === "empty" ||
-    (input.recentResults.length === 0 &&
+    (input.hqaConclusions.length === 0 &&
       input.attention.length === 0 &&
-      input.artifacts.items.length === 0)
+      input.artifacts.items.length === 0 &&
+      input.unifiedResults.items.length === 0)
   ) {
-    return "empty";
+    if (input.unifiedResults.items.length === 0) return "empty";
   }
   return "normal";
 }
@@ -426,30 +474,30 @@ function deriveState(input: {
  * Pure derivation of the read-only Hermes Today workbench model.
  * No timers, network, or capability probes.
  */
-export function buildHermesTodayModel(input: {
-  artifacts: HermesArtifactShelfEnvelope;
-  candidates: AgentCandidatesResponse;
-}): HermesTodayModel {
+export function buildHermesTodayModel(input: HermesTodayModelInput): HermesTodayModel {
   const automation = buildAutomation(input.artifacts);
   const attention = sortAttention([
     ...candidateAttention(input.candidates),
     ...automationAttention(input.artifacts, automation),
     ...offlineAttention(input.artifacts),
   ]);
-  const recentResults = buildRecentResults(input.artifacts);
+  const hqaConclusions = buildHqaConclusions(input.artifacts);
+  const unifiedResults = buildUnifiedResultsPreview(input.results);
   const technical = buildTechnical(input.artifacts);
   const state = deriveState({
     artifacts: input.artifacts,
     attention,
     automation,
-    recentResults,
+    hqaConclusions,
+    unifiedResults,
   });
 
   return {
     state,
     attention,
     automation,
-    recentResults,
+    hqaConclusions,
+    unifiedResults,
     technical,
   };
 }

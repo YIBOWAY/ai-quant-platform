@@ -58,12 +58,16 @@ _RESERVED_CANDIDATE_COMPONENTS = frozenset(
         ".candidate-pool.lock",
     }
 )
-_RESERVED_CASEFOLD = frozenset(
-    name.casefold() for name in _RESERVED_CANDIDATE_COMPONENTS
-)
+_RESERVED_CASEFOLD = frozenset(name.casefold() for name in _RESERVED_CANDIDATE_COMPONENTS)
 
 _METADATA_NAME = "metadata.json"
 _MANIFEST_NAME = "manifest.v1.json"
+MAX_CANDIDATE_METADATA_BYTES = 1024 * 1024
+MAX_CANDIDATE_MANIFEST_BYTES = 1024 * 1024
+MAX_CANDIDATE_ARTIFACT_BYTES = 1024 * 1024
+MAX_CANDIDATE_TOTAL_ARTIFACT_BYTES = 4 * 1024 * 1024
+MAX_CANDIDATE_FILES = 64
+MAX_CANDIDATE_CONTROL_BYTES = 64 * 1024
 _APPROVED_LOCK = "approved.lock"
 _REJECTED_LOCK = "rejected.lock"
 _LEGACY_APPROVED_LOCK = "legacy-approved.lock"
@@ -194,14 +198,16 @@ def _build_manifest_from_opened(
     candidate_id = _validate_candidate_id(opened.name)
     assert_entry_is_open_fd(opened.parent_fd, opened.name, opened.fd)
 
-    metadata_bytes = read_regular_bytes_at(opened.fd, _METADATA_NAME)
+    metadata_bytes = read_regular_bytes_at(
+        opened.fd,
+        _METADATA_NAME,
+        max_bytes=MAX_CANDIDATE_METADATA_BYTES,
+    )
     metadata = _parse_metadata(metadata_bytes)
 
     meta_id = metadata.get("candidate_id")
     if not isinstance(meta_id, str) or meta_id != candidate_id:
-        raise CandidateIntegrityError(
-            "candidate_id mismatch between directory and metadata"
-        )
+        raise CandidateIntegrityError("candidate_id mismatch between directory and metadata")
 
     artifact_type = metadata.get("artifact_type")
     goal = metadata.get("goal")
@@ -211,10 +217,10 @@ def _build_manifest_from_opened(
         raise CandidateIntegrityError("metadata.goal is required")
     universe = _coerce_str_list(metadata.get("universe", []), field="universe")
     files_value = metadata.get("files")
-    if not isinstance(files_value, list) or not all(
-        isinstance(item, str) for item in files_value
-    ):
+    if not isinstance(files_value, list) or not all(isinstance(item, str) for item in files_value):
         raise CandidateIntegrityError("metadata.files must be a list of strings")
+    if len(files_value) > MAX_CANDIDATE_FILES:
+        raise CandidateIntegrityError("candidate file count exceeds the safe limit")
 
     seen_casefold: set[str] = set()
     normalized_names: list[str] = []
@@ -223,16 +229,22 @@ def _build_manifest_from_opened(
         name = path.name
         folded = name.casefold()
         if folded in seen_casefold:
-            raise CandidateIntegrityError(
-                f"duplicate candidate file path (casefold): {name!r}"
-            )
+            raise CandidateIntegrityError(f"duplicate candidate file path (casefold): {name!r}")
         seen_casefold.add(folded)
         normalized_names.append(name)
 
     artifact_bytes: dict[str, bytes] = {}
     digests: list[CandidateFileDigest] = []
+    total_artifact_bytes = 0
     for name in normalized_names:
-        payload = read_regular_bytes_at(opened.fd, name)
+        payload = read_regular_bytes_at(
+            opened.fd,
+            name,
+            max_bytes=MAX_CANDIDATE_ARTIFACT_BYTES,
+        )
+        total_artifact_bytes += len(payload)
+        if total_artifact_bytes > MAX_CANDIDATE_TOTAL_ARTIFACT_BYTES:
+            raise CandidateIntegrityError("candidate artifacts exceed the total byte limit")
         artifact_bytes[name] = payload
         digests.append(
             CandidateFileDigest(
@@ -265,9 +277,7 @@ def build_candidate_manifest(
 ) -> tuple[CandidateManifestV1, str, dict[str, bytes]]:
     """Build an exact-byte manifest from metadata.json and listed artifacts."""
     with open_absolute_directory(Path(candidate_dir), create=False) as opened:
-        manifest, digest, artifact_bytes, _metadata, _raw = _build_manifest_from_opened(
-            opened
-        )
+        manifest, digest, artifact_bytes, _metadata, _raw = _build_manifest_from_opened(opened)
         return manifest, digest, artifact_bytes
 
 
@@ -279,7 +289,11 @@ def _try_read_control(parent_fd: int, name: str) -> bytes | None:
     except OSError as exc:
         raise CandidateIntegrityError(f"cannot stat control {name!r}") from exc
     # Present: must be a safe single-link regular file (hardlinks/symlinks corrupt).
-    return read_regular_bytes_at(parent_fd, name)
+    return read_regular_bytes_at(
+        parent_fd,
+        name,
+        max_bytes=MAX_CANDIDATE_CONTROL_BYTES,
+    )
 
 
 def _parse_bound_review(
@@ -365,9 +379,7 @@ def _approval_binding_at(
 def _verify_from_opened(
     opened: OpenedDirectory, *, candidate_dir: Path
 ) -> VerifiedCandidateSnapshot:
-    manifest, digest, artifact_bytes, metadata, _raw = _build_manifest_from_opened(
-        opened
-    )
+    manifest, digest, artifact_bytes, metadata, _raw = _build_manifest_from_opened(opened)
 
     # Stored manifest is required for verified authority.
     try:
@@ -379,7 +391,11 @@ def _verify_from_opened(
     except OSError as exc:
         raise CandidateIntegrityError("cannot stat manifest.v1.json") from exc
 
-    stored_bytes = read_regular_bytes_at(opened.fd, _MANIFEST_NAME)
+    stored_bytes = read_regular_bytes_at(
+        opened.fd,
+        _MANIFEST_NAME,
+        max_bytes=MAX_CANDIDATE_MANIFEST_BYTES,
+    )
     try:
         stored_obj = json.loads(stored_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -405,9 +421,7 @@ def _verify_from_opened(
             "stored manifest does not match exact current candidate bytes"
         )
     if stored_bytes != rebuilt_bytes:
-        raise CandidateIntegrityError(
-            "stored manifest bytes are not canonical JSON"
-        )
+        raise CandidateIntegrityError("stored manifest bytes are not canonical JSON")
     if _sha256_hex(rebuilt_bytes) != digest:
         raise CandidateIntegrityError("manifest digest mismatch")
 
@@ -447,9 +461,7 @@ def load_verified_candidate_snapshot(
 
     # Walk agent_output → agent → candidates → candidate_id holding FDs.
     with open_absolute_directory(agent_root, create=False) as agent_opened:
-        assert_entry_is_open_fd(
-            agent_opened.parent_fd, agent_opened.name, agent_opened.fd
-        )
+        assert_entry_is_open_fd(agent_opened.parent_fd, agent_opened.name, agent_opened.fd)
         agent_fd = open_directory_at(agent_opened.fd, "agent")
         try:
             assert_entry_is_open_fd(agent_opened.fd, "agent", agent_fd)
@@ -468,9 +480,7 @@ def load_verified_candidate_snapshot(
                         st_ino=st.st_ino,
                     )
                     candidate_path = Path(candidates_dir) / candidate_id
-                    snapshot = _verify_from_opened(
-                        opened, candidate_dir=candidate_path
-                    )
+                    snapshot = _verify_from_opened(opened, candidate_dir=candidate_path)
                     assert_entry_is_open_fd(candidates_fd, candidate_id, candidate_fd)
                     assert_entry_is_open_fd(agent_fd, "candidates", candidates_fd)
                     assert_entry_is_open_fd(agent_opened.fd, "agent", agent_fd)

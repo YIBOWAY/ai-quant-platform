@@ -71,6 +71,7 @@ class ReviewRecord(BaseModel):
 
 class CandidateReadItem(BaseModel):
     candidate_id: str
+    created_at: str | None = None
     artifact_type: str | None = None
     goal: str | None = None
     universe: list[str] | None = None
@@ -78,8 +79,6 @@ class CandidateReadItem(BaseModel):
     integrity_state: Literal["verified", "migration_required", "corrupt"]
     manifest_digest: str | None = None
     observed_manifest_digest: str | None = None
-    approval_binding: Literal["pending", "approved", "rejected", "legacy_unbound"] | None = (
-        None
-    )
+    approval_binding: Literal["pending", "approved", "rejected", "legacy_unbound"] | None = None
     approval_enabled: bool = False
     integrity_error_code: str | None = None

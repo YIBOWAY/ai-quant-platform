@@ -7,7 +7,10 @@ import {
   ArtifactFeed,
   artifactFeedReadState,
 } from "@/components/hermes/artifacts/ArtifactFeed";
-import type { HermesArtifactShelfEnvelope } from "./api";
+import type {
+  HermesArtifactShelfEnvelope,
+  HermesResultsResponse,
+} from "./api";
 import { buildHermesTodayModel } from "./hermes/viewModel";
 import {
   candidateFixture,
@@ -122,6 +125,72 @@ const availableShelf = {
   warnings: [],
 } satisfies HermesArtifactShelfEnvelope;
 
+const emptyUnifiedResults = {
+  read_status: "empty",
+  total: 0,
+  total_is_exact: true,
+  limit: 5,
+  offset: 0,
+  has_more: false,
+  items: [],
+  sources: [],
+  warnings: [],
+} satisfies HermesResultsResponse;
+
+const availableUnifiedResults = {
+  read_status: "available",
+  total: 1,
+  total_is_exact: true,
+  limit: 5,
+  offset: 0,
+  has_more: false,
+  items: [
+    {
+      kind: "backtest",
+      resource_id: "backtest-wave3-001",
+      display_title: "AAPL momentum backtest",
+      summary: "2026-01-01 → 2026-06-30 · provider futu",
+      status: "completed",
+      occurred_at: "2026-07-15T08:00:00Z",
+      source: "platform_runs",
+      authority: "platform_run_artifact",
+      freshness: "fresh",
+      read_status: "available",
+      detail_href: "/api/hermes/results/backtest/backtest-wave3-001",
+      original_href: "/api/backtest/runs/backtest-wave3-001",
+      run_links: [],
+    },
+  ],
+  sources: [
+    {
+      source: "platform_runs",
+      read_status: "available",
+      item_count: 1,
+    },
+  ],
+  warnings: [],
+} as unknown as HermesResultsResponse;
+
+const unavailableUnifiedResults = {
+  read_status: "unavailable",
+  total: null,
+  total_is_exact: false,
+  limit: 5,
+  offset: 0,
+  has_more: false,
+  items: [],
+  sources: [],
+  warnings: [
+    {
+      source: "results_catalog",
+      code: "api_unavailable",
+      kind: null,
+      resource_id: null,
+    },
+  ],
+  apiError: "api_unavailable",
+} satisfies HermesResultsResponse;
+
 describe("Hermes Today hierarchy", () => {
   it("prioritizes action, exceptions, and conclusions over equal-weight shelf cards", () => {
     const candidates = {
@@ -144,6 +213,7 @@ describe("Hermes Today hierarchy", () => {
     const model = buildHermesTodayModel({
       artifacts: healthyArtifacts,
       candidates,
+      results: emptyUnifiedResults,
     });
     const html = renderToStaticMarkup(
       createElement(HermesTodayView, {
@@ -157,9 +227,85 @@ describe("Hermes Today hierarchy", () => {
     expect(html).not.toContain("0 9 * * 0</");
     expect(html).toContain("<details");
     expect(html).toContain("研究审批项");
+    expect(html).toContain('href="/zh/hermes/approvals"');
+    expect(html).not.toContain('href="/hermes/approvals"');
     expect(html).not.toContain("候选</h");
     expect(html).toContain('data-hermes-automation-summary');
     expect(html).not.toContain("data-hermes-automation-exception");
+  });
+
+  it("separates unified platform results from HQA conclusion artifacts", () => {
+    const model = buildHermesTodayModel({
+      artifacts: healthyArtifacts,
+      candidates: { candidates: [] },
+      results: availableUnifiedResults,
+    });
+    const html = renderToStaticMarkup(
+      createElement(HermesTodayView, {
+        model,
+        artifacts: healthyArtifacts,
+        locale: "zh",
+      }),
+    );
+
+    expect(html).toContain("最近平台 / 统一结果");
+    expect(html).toContain("AAPL momentum backtest");
+    expect(html).toContain("backtest-wave3-001");
+    expect(html).toContain("HQA 结论产物");
+    expect(html).not.toContain(">最近结果<");
+  });
+
+  it("shows an unknown catalog state without hiding independent HQA conclusions", () => {
+    const model = buildHermesTodayModel({
+      artifacts: healthyArtifacts,
+      candidates: { candidates: [] },
+      results: unavailableUnifiedResults,
+    });
+    const html = renderToStaticMarkup(
+      createElement(HermesTodayView, {
+        model,
+        artifacts: healthyArtifacts,
+        locale: "zh",
+      }),
+    );
+
+    expect(model.state).toBe("degraded");
+    expect(model.unifiedResults.total).toBeNull();
+    expect(html).toContain("统一结果状态未知");
+    expect(html).toContain("下方 HQA 结论产物仍以独立只读源为准");
+    expect(html).toContain("HQA 结论产物");
+    expect(html).not.toContain("尚未记录平台或统一结果");
+  });
+
+  it("does not present a degraded zero-item catalog as known empty", () => {
+    const model = buildHermesTodayModel({
+      artifacts: healthyArtifacts,
+      candidates: { candidates: [] },
+      results: {
+        ...emptyUnifiedResults,
+        read_status: "degraded",
+        warnings: [
+          {
+            source: "platform_runs",
+            code: "source_scan_incomplete",
+            kind: null,
+            resource_id: null,
+          },
+        ],
+      },
+    });
+    const html = renderToStaticMarkup(
+      createElement(HermesTodayView, {
+        model,
+        artifacts: healthyArtifacts,
+        locale: "zh",
+      }),
+    );
+
+    expect(model.unifiedResults.total).toBeNull();
+    expect(html).toContain("统一结果目录已降级");
+    expect(html).toContain("source_scan_incomplete");
+    expect(html).not.toContain("尚未记录平台或统一结果");
   });
 });
 

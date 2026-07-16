@@ -8,6 +8,7 @@ import { TechnicalDetails } from "@/components/hermes/artifacts/TechnicalDetails
 import { AttentionSummary } from "./AttentionSummary";
 import { AutomationSummary } from "./AutomationSummary";
 import { RecentResults } from "./RecentResults";
+import { UnifiedResultsPreview } from "./UnifiedResultsPreview";
 
 export type HermesTodayViewProps = {
   model: HermesTodayModel;
@@ -17,8 +18,8 @@ export type HermesTodayViewProps = {
 };
 
 /**
- * Hermes Today hierarchy: attention → automation (exceptions only) → recent
- * conclusions → collapsed feed/source technical detail.
+ * Hermes Today hierarchy: attention → automation (exceptions only) → unified
+ * platform-result preview → HQA conclusions → collapsed source detail.
  * Consumes only HermesTodayModel, locale, and read-only artifacts.
  */
 export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewProps) {
@@ -56,7 +57,13 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
         summary={model.automation}
       />
 
-      <RecentResults artifacts={artifacts} locale={locale} results={model.recentResults} />
+      <UnifiedResultsPreview locale={locale} preview={model.unifiedResults} />
+
+      <RecentResults
+        artifacts={artifacts}
+        locale={locale}
+        results={model.hqaConclusions}
+      />
 
       <TechnicalDetails locale={locale} summary={copy.labels.technicalDetails}>
         <ArtifactFeed envelope={artifacts} locale={locale} sourcesOnly />

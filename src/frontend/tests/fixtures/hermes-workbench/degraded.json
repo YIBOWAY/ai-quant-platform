@@ -276,7 +276,7 @@
         "integrity_state": "migration_required",
         "manifest_digest": null,
         "observed_manifest_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "approval_binding": "pending",
+        "approval_binding": "legacy_unbound",
         "approval_enabled": false,
         "integrity_error_code": null
       }
@@ -287,6 +287,12 @@
       "live_trading_enabled": false,
       "kill_switch": true,
       "bind_address": "127.0.0.1"
+    }
+  },
+  "factors": {
+    "status": 503,
+    "body": {
+      "detail": "fixture_factor_registry_unavailable"
     }
   }
 }

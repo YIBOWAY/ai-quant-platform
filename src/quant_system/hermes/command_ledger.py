@@ -136,6 +136,12 @@ class HermesRunLink:
 
 
 @dataclass(frozen=True)
+class HermesRunLinkPage:
+    links: tuple[HermesRunLink, ...]
+    has_more: bool
+
+
+@dataclass(frozen=True)
 class RecordHermesRunLinkResult:
     link: HermesRunLink
     created: bool
@@ -461,9 +467,7 @@ class HermesCommandLedger:
             raise HermesCommandValidationError("now must be timezone-aware")
         lease_seconds = lease_duration.total_seconds()
         if not 1 <= lease_seconds <= 300:
-            raise HermesCommandValidationError(
-                "lease_duration must be between 1 and 300 seconds"
-            )
+            raise HermesCommandValidationError("lease_duration must be between 1 and 300 seconds")
         database = self._require_ready_database()
         lease_token = uuid4()
         try:
@@ -1134,8 +1138,7 @@ class HermesCommandLedger:
                 current = _command_from_row(current_row)
                 if current.version != expected_version:
                     raise HermesCommandVersionConflict(
-                        f"expected command version {expected_version}, "
-                        f"found {current.version}"
+                        f"expected command version {expected_version}, found {current.version}"
                     )
                 if current.state not in {"delivered", "outcome_unknown"}:
                     raise HermesCommandStateConflict(
@@ -1144,10 +1147,7 @@ class HermesCommandLedger:
                 if (
                     current.hermes_session_id is not None
                     and current.hermes_session_id != hermes_session_id
-                ) or (
-                    current.hermes_run_id is not None
-                    and current.hermes_run_id != hermes_run_id
-                ):
+                ) or (current.hermes_run_id is not None and current.hermes_run_id != hermes_run_id):
                     raise HermesCommandConflict(
                         "terminal evidence names a different Hermes Session/Run"
                     )
@@ -1384,8 +1384,7 @@ class HermesCommandLedger:
                 command = _command_from_row(command_row)
                 if command.version != expected_version:
                     raise HermesCommandVersionConflict(
-                        f"expected command version {expected_version}, "
-                        f"found {command.version}"
+                        f"expected command version {expected_version}, found {command.version}"
                     )
                 if command.state not in {"delivered", "succeeded", "failed"}:
                     raise HermesCommandStateConflict(
@@ -1493,14 +1492,17 @@ class HermesCommandLedger:
         database = self._require_ready_database()
         try:
             with database.connect() as conn:
-                if conn.execute(
-                    f"""
+                if (
+                    conn.execute(
+                        f"""
                     SELECT 1
                     FROM {SCHEMA}.hermes_commands
                     WHERE command_id = %s AND owner_user_id = %s
                     """,
-                    (command_id, ROOT_USER_ID),
-                ).fetchone() is None:
+                        (command_id, ROOT_USER_ID),
+                    ).fetchone()
+                    is None
+                ):
                     raise HermesCommandNotFound(str(command_id))
                 rows = conn.execute(
                     f"""
@@ -1526,28 +1528,99 @@ class HermesCommandLedger:
         limit: int = 100,
     ) -> tuple[HermesRunLink, ...]:
         """Read exact Hermes Run links for a stable platform resource ID."""
-        _validate_platform_resource(
-            platform_resource_type=platform_resource_type,
-            platform_resource_id=platform_resource_id,
-        )
-        _validate_limit(limit)
+        resource = (platform_resource_type, platform_resource_id)
+        return self.list_run_links_for_resources(
+            resources=(resource,),
+            limit_per_resource=limit,
+        )[resource].links
+
+    def list_run_links_for_resources(
+        self,
+        *,
+        resources: tuple[tuple[str, str], ...],
+        limit_per_resource: int = 100,
+    ) -> dict[tuple[str, str], HermesRunLinkPage]:
+        """Batch-read owner-scoped exact links for distinct platform resources."""
+        _validate_run_link_resources(resources)
+        _validate_limit(limit_per_resource)
         database = self._require_ready_database()
+        pages: dict[tuple[str, str], list[HermesRunLink]] = {resource: [] for resource in resources}
         try:
             with database.connect() as conn:
                 rows = conn.execute(
                     f"""
-                    SELECT {_RUN_LINK_COLUMNS}
-                    FROM {SCHEMA}.hermes_run_links
-                    WHERE platform_resource_type = %s
-                      AND platform_resource_id = %s
-                    ORDER BY created_at, link_id
-                    LIMIT %s
+                    WITH requested AS (
+                        SELECT platform_resource_type,
+                               platform_resource_id,
+                               input_order
+                        FROM unnest(%s::text[], %s::text[])
+                            WITH ORDINALITY AS requested(
+                                platform_resource_type,
+                                platform_resource_id,
+                                input_order
+                            )
+                    ), ranked AS (
+                        SELECT requested.input_order,
+                               links.link_id,
+                               links.command_id,
+                               links.platform_resource_type,
+                               links.platform_resource_id,
+                               links.relation,
+                               links.hermes_session_id,
+                               links.hermes_run_id,
+                               links.link_digest,
+                               links.source_event_id,
+                               links.observed_at,
+                               links.created_at,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY requested.input_order
+                                   ORDER BY links.created_at, links.link_id
+                               ) AS resource_row_number
+                        FROM requested
+                        JOIN {SCHEMA}.hermes_run_links AS links
+                          ON links.platform_resource_type =
+                             requested.platform_resource_type
+                         AND links.platform_resource_id =
+                             requested.platform_resource_id
+                        JOIN {SCHEMA}.hermes_commands AS commands
+                          ON commands.command_id = links.command_id
+                         AND commands.owner_user_id = %s
+                    )
+                    SELECT link_id,
+                           command_id,
+                           platform_resource_type,
+                           platform_resource_id,
+                           relation,
+                           hermes_session_id,
+                           hermes_run_id,
+                           link_digest,
+                           source_event_id,
+                           observed_at,
+                           created_at,
+                           resource_row_number
+                    FROM ranked
+                    WHERE resource_row_number <= %s
+                    ORDER BY input_order, resource_row_number
                     """,
-                    (platform_resource_type, platform_resource_id, limit),
+                    (
+                        [resource[0] for resource in resources],
+                        [resource[1] for resource in resources],
+                        ROOT_USER_ID,
+                        limit_per_resource + 1,
+                    ),
                 ).fetchall()
         except (DatabaseUnavailable, psycopg.Error) as exc:
             raise HermesCommandLedgerUnavailable(str(exc)) from exc
-        return tuple(_run_link_from_row(row) for row in rows)
+        for row in rows:
+            link = _run_link_from_row(row[:11])
+            pages[(link.platform_resource_type, link.platform_resource_id)].append(link)
+        return {
+            resource: HermesRunLinkPage(
+                links=tuple(links[:limit_per_resource]),
+                has_more=len(links) > limit_per_resource,
+            )
+            for resource, links in pages.items()
+        }
 
     @staticmethod
     def _raise_transition_conflict(
@@ -1688,11 +1761,7 @@ class HermesCommandLedger:
             raise HermesCommandLedgerUnavailable(
                 "Hermes command ledger schema is unavailable"
             ) from exc
-        if (
-            row is None
-            or int(row[0]) != LEDGER_SCHEMA_VERSION
-            or not signature_ready
-        ):
+        if row is None or int(row[0]) != LEDGER_SCHEMA_VERSION or not signature_ready:
             raise HermesCommandLedgerUnavailable(
                 "Hermes command ledger schema version is not ready"
             )
@@ -1772,95 +1841,674 @@ _OUTBOX_COLUMNS = """
 """
 
 
-_REQUIRED_LEDGER_COLUMNS: dict[str, frozenset[str]] = {
-    "hermes_ledger_meta": frozenset({"singleton", "schema_version"}),
-    "hermes_commands": frozenset(
-        {
-            "command_id",
-            "owner_user_id",
-            "platform_session_id",
-            "client_request_id",
-            "canonical_request_digest",
-            "payload_ref",
-            "state",
-            "version",
-            "lease_token",
-            "lease_until",
-            "dispatch_started_at",
-            "hermes_session_id",
-            "hermes_run_id",
-        }
-    ),
-    "hermes_command_events": frozenset(
-        {
-            "event_id",
-            "command_id",
-            "command_version",
-            "from_state",
-            "to_state",
-            "canonical_request_digest",
-            "lease_token",
-            "hermes_run_id",
-            "event_data",
-        }
-    ),
-    "hermes_outbox": frozenset(
-        {
-            "outbox_id",
-            "command_id",
-            "command_version",
-            "topic",
-            "available_at",
-            "consumed_by",
-            "consumed_at",
-        }
-    ),
-    "hermes_run_links": frozenset(
-        {
-            "link_id",
-            "command_id",
-            "platform_resource_type",
-            "platform_resource_id",
-            "relation",
-            "hermes_session_id",
-            "hermes_run_id",
-            "link_digest",
-        }
-    ),
-}
-
-_REQUIRED_LEDGER_CONSTRAINTS = frozenset(
+_REQUIRED_LEDGER_COLUMN_SIGNATURES = frozenset(
     {
-        ("hermes_commands", "hermes_commands_pkey"),
-        ("hermes_commands", "hermes_commands_owner_user_id_fkey"),
+        ("hermes_ledger_meta", "singleton", "boolean", True, "true"),
+        ("hermes_ledger_meta", "schema_version", "integer", True, None),
+        (
+            "hermes_ledger_meta",
+            "updated_at",
+            "timestamp with time zone",
+            True,
+            "now()",
+        ),
+        ("hermes_commands", "command_id", "uuid", True, None),
+        ("hermes_commands", "owner_user_id", "uuid", True, None),
+        ("hermes_commands", "platform_session_id", "text", True, None),
+        ("hermes_commands", "client_request_id", "text", True, None),
+        ("hermes_commands", "kind", "text", True, None),
+        ("hermes_commands", "intent_schema_version", "integer", True, "1"),
         (
             "hermes_commands",
-            "hermes_commands_owner_user_id_platform_session_id_client_re_key",
+            "canonical_request_digest",
+            "character(64)",
+            True,
+            None,
         ),
-        ("hermes_commands", "ck_hermes_commands_state"),
-        ("hermes_commands", "ck_hermes_commands_lease_triplet"),
-        ("hermes_commands", "ck_hermes_commands_dispatch_state"),
-        ("hermes_command_events", "hermes_command_events_command_id_fkey"),
+        ("hermes_commands", "payload_ref", "text", True, None),
+        (
+            "hermes_commands",
+            "provider_policy_digest",
+            "character(64)",
+            False,
+            None,
+        ),
+        ("hermes_commands", "state", "text", True, "'queued'::text"),
+        ("hermes_commands", "version", "bigint", True, "1"),
+        ("hermes_commands", "attempt_count", "integer", True, "0"),
+        (
+            "hermes_commands",
+            "next_attempt_at",
+            "timestamp with time zone",
+            False,
+            None,
+        ),
+        ("hermes_commands", "lease_owner", "text", False, None),
+        ("hermes_commands", "lease_token", "uuid", False, None),
+        (
+            "hermes_commands",
+            "lease_until",
+            "timestamp with time zone",
+            False,
+            None,
+        ),
+        (
+            "hermes_commands",
+            "dispatch_started_at",
+            "timestamp with time zone",
+            False,
+            None,
+        ),
+        ("hermes_commands", "hermes_session_id", "text", False, None),
+        ("hermes_commands", "hermes_run_id", "text", False, None),
+        ("hermes_commands", "last_error_code", "text", False, None),
+        (
+            "hermes_commands",
+            "created_at",
+            "timestamp with time zone",
+            True,
+            "now()",
+        ),
+        (
+            "hermes_commands",
+            "updated_at",
+            "timestamp with time zone",
+            True,
+            "now()",
+        ),
         (
             "hermes_command_events",
-            "hermes_command_events_command_id_command_version_key",
+            "event_id",
+            "bigint",
+            True,
+            "nextval('quant_system.hermes_command_events_event_id_seq'::regclass)",
         ),
-        ("hermes_command_events", "ck_hermes_command_events_states"),
-        ("hermes_outbox", "hermes_outbox_command_id_fkey"),
+        ("hermes_command_events", "command_id", "uuid", True, None),
+        ("hermes_command_events", "command_version", "bigint", True, None),
+        ("hermes_command_events", "event_type", "text", True, None),
+        ("hermes_command_events", "actor", "text", True, None),
+        ("hermes_command_events", "from_state", "text", False, None),
+        ("hermes_command_events", "to_state", "text", True, None),
+        (
+            "hermes_command_events",
+            "canonical_request_digest",
+            "character(64)",
+            True,
+            None,
+        ),
+        ("hermes_command_events", "attempt_count", "integer", True, None),
+        (
+            "hermes_command_events",
+            "next_attempt_at",
+            "timestamp with time zone",
+            False,
+            None,
+        ),
+        ("hermes_command_events", "lease_owner", "text", False, None),
+        ("hermes_command_events", "lease_token", "uuid", False, None),
+        (
+            "hermes_command_events",
+            "lease_until",
+            "timestamp with time zone",
+            False,
+            None,
+        ),
+        (
+            "hermes_command_events",
+            "dispatch_started_at",
+            "timestamp with time zone",
+            False,
+            None,
+        ),
+        ("hermes_command_events", "hermes_session_id", "text", False, None),
+        ("hermes_command_events", "hermes_run_id", "text", False, None),
+        ("hermes_command_events", "error_code", "text", False, None),
+        (
+            "hermes_command_events",
+            "event_data",
+            "jsonb",
+            True,
+            "'{}'::jsonb",
+        ),
+        (
+            "hermes_command_events",
+            "occurred_at",
+            "timestamp with time zone",
+            True,
+            "now()",
+        ),
         (
             "hermes_outbox",
-            "hermes_outbox_command_id_command_version_topic_key",
+            "outbox_id",
+            "bigint",
+            True,
+            "nextval('quant_system.hermes_outbox_outbox_id_seq'::regclass)",
         ),
-        ("hermes_outbox", "ck_hermes_outbox_consumed_pair"),
-        ("hermes_run_links", "hermes_run_links_command_id_fkey"),
-        ("hermes_run_links", "ck_hermes_run_links_relation"),
+        ("hermes_outbox", "command_id", "uuid", True, None),
+        ("hermes_outbox", "command_version", "bigint", True, None),
+        (
+            "hermes_outbox",
+            "topic",
+            "text",
+            True,
+            "'hermes.command.queued'::text",
+        ),
+        (
+            "hermes_outbox",
+            "available_at",
+            "timestamp with time zone",
+            True,
+            "now()",
+        ),
+        ("hermes_outbox", "consumed_by", "text", False, None),
+        (
+            "hermes_outbox",
+            "consumed_at",
+            "timestamp with time zone",
+            False,
+            None,
+        ),
+        (
+            "hermes_outbox",
+            "created_at",
+            "timestamp with time zone",
+            True,
+            "now()",
+        ),
+        ("hermes_run_links", "link_id", "uuid", True, None),
+        ("hermes_run_links", "command_id", "uuid", True, None),
+        ("hermes_run_links", "platform_resource_type", "text", True, None),
+        ("hermes_run_links", "platform_resource_id", "text", True, None),
+        ("hermes_run_links", "relation", "text", True, None),
+        ("hermes_run_links", "hermes_session_id", "text", True, None),
+        ("hermes_run_links", "hermes_run_id", "text", True, None),
+        (
+            "hermes_run_links",
+            "link_digest",
+            "character(64)",
+            True,
+            None,
+        ),
+        ("hermes_run_links", "source_event_id", "text", False, None),
+        (
+            "hermes_run_links",
+            "observed_at",
+            "timestamp with time zone",
+            True,
+            None,
+        ),
+        (
+            "hermes_run_links",
+            "created_at",
+            "timestamp with time zone",
+            True,
+            "now()",
+        ),
     }
 )
 
-_REQUIRED_LEDGER_INDEXES = frozenset(
+_REQUIRED_LEDGER_COLUMNS: dict[str, frozenset[str]] = {
+    table_name: frozenset(
+        column_name
+        for signature_table, column_name, *_signature in _REQUIRED_LEDGER_COLUMN_SIGNATURES
+        if signature_table == table_name
+    )
+    for table_name in {signature[0] for signature in _REQUIRED_LEDGER_COLUMN_SIGNATURES}
+}
+
+_REQUIRED_LEDGER_CONSTRAINT_SIGNATURES = frozenset(
     {
-        "uq_hermes_commands_upstream_run",
-        "uq_hermes_run_links_command_resource",
+        (
+            "hermes_commands",
+            "hermes_commands_pkey",
+            "p",
+            True,
+            "PRIMARY KEY (command_id)",
+        ),
+        (
+            "hermes_commands",
+            "hermes_commands_owner_user_id_fkey",
+            "f",
+            True,
+            "FOREIGN KEY (owner_user_id) REFERENCES quant_system.app_users(id)",
+        ),
+        (
+            "hermes_commands",
+            "hermes_commands_owner_user_id_platform_session_id_client_re_key",
+            "u",
+            True,
+            "UNIQUE (owner_user_id, platform_session_id, client_request_id)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_state",
+            "c",
+            True,
+            "CHECK (state = ANY (ARRAY['queued'::text, 'leased'::text, "
+            "'delivered'::text, 'outcome_unknown'::text, 'succeeded'::text, "
+            "'failed'::text, 'cancelled'::text]))",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_lease_triplet",
+            "c",
+            True,
+            "CHECK (lease_owner IS NULL AND lease_token IS NULL AND lease_until IS NULL "
+            "OR lease_owner IS NOT NULL AND lease_token IS NOT NULL "
+            "AND lease_until IS NOT NULL)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_dispatch_state",
+            "c",
+            True,
+            "CHECK (dispatch_started_at IS NULL OR state <> 'queued'::text)",
+        ),
+        (
+            "hermes_command_events",
+            "hermes_command_events_command_id_fkey",
+            "f",
+            True,
+            "FOREIGN KEY (command_id) REFERENCES quant_system.hermes_commands(command_id)",
+        ),
+        (
+            "hermes_command_events",
+            "hermes_command_events_command_id_command_version_key",
+            "u",
+            True,
+            "UNIQUE (command_id, command_version)",
+        ),
+        (
+            "hermes_command_events",
+            "ck_hermes_command_events_states",
+            "c",
+            True,
+            "CHECK ((from_state IS NULL OR (from_state = ANY "
+            "(ARRAY['queued'::text, 'leased'::text, 'delivered'::text, "
+            "'outcome_unknown'::text, 'succeeded'::text, 'failed'::text, "
+            "'cancelled'::text]))) AND (to_state = ANY (ARRAY['queued'::text, "
+            "'leased'::text, 'delivered'::text, 'outcome_unknown'::text, "
+            "'succeeded'::text, 'failed'::text, 'cancelled'::text])))",
+        ),
+        (
+            "hermes_outbox",
+            "hermes_outbox_command_id_fkey",
+            "f",
+            True,
+            "FOREIGN KEY (command_id) REFERENCES quant_system.hermes_commands(command_id)",
+        ),
+        (
+            "hermes_outbox",
+            "hermes_outbox_command_id_command_version_topic_key",
+            "u",
+            True,
+            "UNIQUE (command_id, command_version, topic)",
+        ),
+        (
+            "hermes_outbox",
+            "ck_hermes_outbox_consumed_pair",
+            "c",
+            True,
+            "CHECK ((consumed_by IS NULL) = (consumed_at IS NULL))",
+        ),
+        (
+            "hermes_run_links",
+            "hermes_run_links_command_id_fkey",
+            "f",
+            True,
+            "FOREIGN KEY (command_id) REFERENCES quant_system.hermes_commands(command_id)",
+        ),
+        (
+            "hermes_run_links",
+            "ck_hermes_run_links_relation",
+            "c",
+            True,
+            "CHECK (relation = ANY (ARRAY['input'::text, 'output'::text, 'context'::text]))",
+        ),
+        (
+            "hermes_ledger_meta",
+            "hermes_ledger_meta_pkey",
+            "p",
+            True,
+            "PRIMARY KEY (singleton)",
+        ),
+        (
+            "hermes_ledger_meta",
+            "hermes_ledger_meta_schema_version_check",
+            "c",
+            True,
+            "CHECK (schema_version > 0)",
+        ),
+        (
+            "hermes_ledger_meta",
+            "hermes_ledger_meta_singleton_check",
+            "c",
+            True,
+            "CHECK (singleton)",
+        ),
+        (
+            "hermes_commands",
+            "hermes_commands_command_id_version_key",
+            "u",
+            True,
+            "UNIQUE (command_id, version)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_platform_session_id",
+            "c",
+            True,
+            "CHECK (char_length(platform_session_id) >= 1 AND "
+            "char_length(platform_session_id) <= 200)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_client_request_id",
+            "c",
+            True,
+            "CHECK (char_length(client_request_id) >= 1 AND "
+            "char_length(client_request_id) <= 200)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_kind",
+            "c",
+            True,
+            "CHECK (char_length(kind) >= 1 AND char_length(kind) <= 64)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_intent_schema_version",
+            "c",
+            True,
+            "CHECK (intent_schema_version > 0)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_request_digest",
+            "c",
+            True,
+            "CHECK (canonical_request_digest ~ '^[0-9a-f]{64}$'::text)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_payload_ref",
+            "c",
+            True,
+            "CHECK (char_length(payload_ref) >= 1 AND char_length(payload_ref) <= 1000)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_provider_digest",
+            "c",
+            True,
+            "CHECK (provider_policy_digest IS NULL OR provider_policy_digest ~ "
+            "'^[0-9a-f]{64}$'::text)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_version",
+            "c",
+            True,
+            "CHECK (version > 0)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_attempt_count",
+            "c",
+            True,
+            "CHECK (attempt_count >= 0)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_leased_state",
+            "c",
+            True,
+            "CHECK (state <> 'leased'::text OR lease_token IS NOT NULL)",
+        ),
+        (
+            "hermes_commands",
+            "ck_hermes_commands_run_requires_session",
+            "c",
+            True,
+            "CHECK (hermes_run_id IS NULL OR hermes_session_id IS NOT NULL)",
+        ),
+        (
+            "hermes_command_events",
+            "hermes_command_events_pkey",
+            "p",
+            True,
+            "PRIMARY KEY (event_id)",
+        ),
+        (
+            "hermes_command_events",
+            "ck_hermes_command_events_version",
+            "c",
+            True,
+            "CHECK (command_version > 0)",
+        ),
+        (
+            "hermes_command_events",
+            "ck_hermes_command_events_event_type",
+            "c",
+            True,
+            "CHECK (char_length(event_type) >= 1 AND char_length(event_type) <= 64)",
+        ),
+        (
+            "hermes_command_events",
+            "ck_hermes_command_events_actor",
+            "c",
+            True,
+            "CHECK (actor = ANY (ARRAY['bff'::text, 'worker'::text, "
+            "'reconciler'::text, 'system'::text]))",
+        ),
+        (
+            "hermes_command_events",
+            "ck_hermes_command_events_request_digest",
+            "c",
+            True,
+            "CHECK (canonical_request_digest ~ '^[0-9a-f]{64}$'::text)",
+        ),
+        (
+            "hermes_command_events",
+            "ck_hermes_command_events_attempt_count",
+            "c",
+            True,
+            "CHECK (attempt_count >= 0)",
+        ),
+        (
+            "hermes_command_events",
+            "ck_hermes_command_events_lease_triplet",
+            "c",
+            True,
+            "CHECK (lease_owner IS NULL AND lease_token IS NULL AND lease_until IS NULL "
+            "OR lease_owner IS NOT NULL AND lease_token IS NOT NULL "
+            "AND lease_until IS NOT NULL)",
+        ),
+        (
+            "hermes_command_events",
+            "ck_hermes_command_events_run_requires_session",
+            "c",
+            True,
+            "CHECK (hermes_run_id IS NULL OR hermes_session_id IS NOT NULL)",
+        ),
+        (
+            "hermes_command_events",
+            "ck_hermes_command_events_data_object",
+            "c",
+            True,
+            "CHECK (jsonb_typeof(event_data) = 'object'::text)",
+        ),
+        (
+            "hermes_outbox",
+            "hermes_outbox_pkey",
+            "p",
+            True,
+            "PRIMARY KEY (outbox_id)",
+        ),
+        (
+            "hermes_outbox",
+            "ck_hermes_outbox_version",
+            "c",
+            True,
+            "CHECK (command_version > 0)",
+        ),
+        (
+            "hermes_outbox",
+            "ck_hermes_outbox_topic",
+            "c",
+            True,
+            "CHECK (topic = ANY (ARRAY['hermes.command.queued'::text, "
+            "'hermes.command.reconcile'::text]))",
+        ),
+        (
+            "hermes_run_links",
+            "hermes_run_links_pkey",
+            "p",
+            True,
+            "PRIMARY KEY (link_id)",
+        ),
+        (
+            "hermes_run_links",
+            "hermes_run_links_hermes_session_id_hermes_run_id_platform_r_key",
+            "u",
+            True,
+            "UNIQUE (hermes_session_id, hermes_run_id, platform_resource_type, "
+            "platform_resource_id, relation)",
+        ),
+        (
+            "hermes_run_links",
+            "ck_hermes_run_links_resource_type",
+            "c",
+            True,
+            "CHECK (char_length(platform_resource_type) >= 1 AND "
+            "char_length(platform_resource_type) <= 64)",
+        ),
+        (
+            "hermes_run_links",
+            "ck_hermes_run_links_resource_id",
+            "c",
+            True,
+            "CHECK (char_length(platform_resource_id) >= 1 AND "
+            "char_length(platform_resource_id) <= 500)",
+        ),
+        (
+            "hermes_run_links",
+            "ck_hermes_run_links_session_id",
+            "c",
+            True,
+            "CHECK (char_length(hermes_session_id) >= 1 AND "
+            "char_length(hermes_session_id) <= 256)",
+        ),
+        (
+            "hermes_run_links",
+            "ck_hermes_run_links_run_id",
+            "c",
+            True,
+            "CHECK (char_length(hermes_run_id) >= 1 AND char_length(hermes_run_id) <= 256)",
+        ),
+        (
+            "hermes_run_links",
+            "ck_hermes_run_links_digest",
+            "c",
+            True,
+            "CHECK (link_digest ~ '^[0-9a-f]{64}$'::text)",
+        ),
+    }
+)
+
+_REQUIRED_LEDGER_INDEX_SIGNATURES = frozenset(
+    {
+        (
+            "hermes_commands",
+            "idx_hermes_commands_state_due",
+            "btree",
+            True,
+            True,
+            False,
+            ("state", "next_attempt_at", "created_at"),
+            None,
+        ),
+        (
+            "hermes_commands",
+            "uq_hermes_commands_upstream_run",
+            "btree",
+            True,
+            True,
+            True,
+            ("hermes_session_id", "hermes_run_id"),
+            "hermes_run_id IS NOT NULL",
+        ),
+        (
+            "hermes_command_events",
+            "idx_hermes_command_events_command",
+            "btree",
+            True,
+            True,
+            False,
+            ("command_id", "command_version"),
+            None,
+        ),
+        (
+            "hermes_outbox",
+            "idx_hermes_outbox_available",
+            "btree",
+            True,
+            True,
+            False,
+            ("consumed_at", "available_at", "outbox_id"),
+            None,
+        ),
+        (
+            "hermes_run_links",
+            "idx_hermes_run_links_command",
+            "btree",
+            True,
+            True,
+            False,
+            ("command_id", "created_at"),
+            None,
+        ),
+        (
+            "hermes_run_links",
+            "uq_hermes_run_links_command_resource",
+            "btree",
+            True,
+            True,
+            True,
+            (
+                "command_id",
+                "platform_resource_type",
+                "platform_resource_id",
+                "relation",
+            ),
+            None,
+        ),
+        (
+            "hermes_run_links",
+            "idx_hermes_run_links_resource_created",
+            "btree",
+            True,
+            True,
+            False,
+            (
+                "platform_resource_type",
+                "platform_resource_id",
+                "created_at",
+                "link_id",
+            ),
+            None,
+        ),
+        (
+            "hermes_run_links",
+            "idx_hermes_run_links_hermes_run",
+            "btree",
+            True,
+            True,
+            False,
+            ("hermes_session_id", "hermes_run_id"),
+            None,
+        ),
     }
 )
 
@@ -1897,46 +2545,145 @@ _REQUIRED_LEDGER_TRIGGERS = frozenset(
 def _ledger_schema_signature_is_ready(conn: psycopg.Connection) -> bool:
     column_rows = conn.execute(
         """
-        SELECT table_name, column_name
-        FROM information_schema.columns
-        WHERE table_schema = %s
-          AND table_name = ANY(%s)
+        SELECT relation.relname,
+               attribute.attname,
+               format_type(attribute.atttypid, attribute.atttypmod),
+               attribute.attnotnull,
+               pg_get_expr(default_value.adbin, default_value.adrelid, true)
+        FROM pg_attribute AS attribute
+        JOIN pg_class AS relation ON relation.oid = attribute.attrelid
+        JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+        LEFT JOIN pg_attrdef AS default_value
+          ON default_value.adrelid = attribute.attrelid
+         AND default_value.adnum = attribute.attnum
+        WHERE namespace.nspname = %s
+          AND relation.relname = ANY(%s)
+          AND attribute.attnum > 0
+          AND NOT attribute.attisdropped
         """,
         (SCHEMA, list(_REQUIRED_LEDGER_COLUMNS)),
     ).fetchall()
     actual_columns: dict[str, set[str]] = {}
-    for table_name, column_name in column_rows:
+    actual_column_signatures: set[tuple[str, str, str, bool, str | None]] = set()
+    for table_name, column_name, data_type, not_null, default_expression in column_rows:
         actual_columns.setdefault(str(table_name), set()).add(str(column_name))
+        actual_column_signatures.add(
+            (
+                str(table_name),
+                str(column_name),
+                str(data_type),
+                bool(not_null),
+                str(default_expression) if default_expression is not None else None,
+            )
+        )
     if any(
         not required.issubset(actual_columns.get(table_name, set()))
         for table_name, required in _REQUIRED_LEDGER_COLUMNS.items()
     ):
         return False
+    if not _REQUIRED_LEDGER_COLUMN_SIGNATURES.issubset(actual_column_signatures):
+        return False
 
     constraint_rows = conn.execute(
         """
-        SELECT table_name, constraint_name
-        FROM information_schema.table_constraints
-        WHERE table_schema = %s
-          AND table_name = ANY(%s)
+        SELECT relation.relname,
+               constraint_object.conname,
+               constraint_object.contype,
+               constraint_object.convalidated,
+               pg_get_constraintdef(constraint_object.oid, true)
+        FROM pg_constraint AS constraint_object
+        JOIN pg_class AS relation ON relation.oid = constraint_object.conrelid
+        JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = %s
+          AND relation.relname = ANY(%s)
         """,
         (SCHEMA, list(_REQUIRED_LEDGER_COLUMNS)),
     ).fetchall()
-    if not _REQUIRED_LEDGER_CONSTRAINTS.issubset(
-        {(str(table), str(name)) for table, name in constraint_rows}
+    if not _REQUIRED_LEDGER_CONSTRAINT_SIGNATURES.issubset(
+        {
+            (
+                str(table),
+                str(name),
+                str(constraint_type),
+                bool(validated),
+                str(definition),
+            )
+            for table, name, constraint_type, validated, definition in constraint_rows
+        }
     ):
         return False
 
     index_rows = conn.execute(
         """
-        SELECT indexname
-        FROM pg_indexes
-        WHERE schemaname = %s
-          AND indexname = ANY(%s)
+        SELECT table_relation.relname,
+               index_relation.relname,
+               access_method.amname,
+               index_object.indisvalid,
+               index_object.indisready,
+               index_object.indisunique,
+               ARRAY(
+                   SELECT COALESCE(
+                       attribute.attname,
+                       pg_get_indexdef(
+                           index_object.indexrelid,
+                           index_key.ordinality::integer,
+                           true
+                       )
+                   )
+                   FROM unnest(index_object.indkey)
+                       WITH ORDINALITY AS index_key(attnum, ordinality)
+                   LEFT JOIN pg_attribute AS attribute
+                     ON attribute.attrelid = index_object.indrelid
+                    AND attribute.attnum = index_key.attnum
+                   WHERE index_key.ordinality <= index_object.indnkeyatts
+                   ORDER BY index_key.ordinality
+               ),
+               pg_get_expr(
+                   index_object.indpred,
+                   index_object.indrelid,
+                   true
+               )
+        FROM pg_index AS index_object
+        JOIN pg_class AS index_relation
+          ON index_relation.oid = index_object.indexrelid
+        JOIN pg_class AS table_relation
+          ON table_relation.oid = index_object.indrelid
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = index_relation.relnamespace
+        JOIN pg_am AS access_method
+          ON access_method.oid = index_relation.relam
+        WHERE namespace.nspname = %s
+          AND index_relation.relname = ANY(%s)
         """,
-        (SCHEMA, list(_REQUIRED_LEDGER_INDEXES)),
+        (
+            SCHEMA,
+            [signature[1] for signature in _REQUIRED_LEDGER_INDEX_SIGNATURES],
+        ),
     ).fetchall()
-    if {str(row[0]) for row in index_rows} != set(_REQUIRED_LEDGER_INDEXES):
+    if not _REQUIRED_LEDGER_INDEX_SIGNATURES.issubset(
+        {
+            (
+                str(table_name),
+                str(index_name),
+                str(access_method),
+                bool(valid),
+                bool(ready),
+                bool(unique),
+                tuple(str(key) for key in keys),
+                str(predicate) if predicate is not None else None,
+            )
+            for (
+                table_name,
+                index_name,
+                access_method,
+                valid,
+                ready,
+                unique,
+                keys,
+                predicate,
+            ) in index_rows
+        }
+    ):
         return False
 
     trigger_rows = conn.execute(
@@ -1944,7 +2691,8 @@ def _ledger_schema_signature_is_ready(conn: psycopg.Connection) -> bool:
         SELECT relation.relname,
                trigger.tgname,
                trigger.tgtype,
-               procedure.proname
+               procedure.proname,
+               trigger.tgenabled
         FROM pg_trigger AS trigger
         JOIN pg_class AS relation ON relation.oid = trigger.tgrelid
         JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
@@ -1953,7 +2701,6 @@ def _ledger_schema_signature_is_ready(conn: psycopg.Connection) -> bool:
           ON procedure_namespace.oid = procedure.pronamespace
         WHERE namespace.nspname = %s
           AND procedure_namespace.nspname = %s
-          AND trigger.tgenabled <> 'D'
           AND NOT trigger.tgisinternal
         """,
         (SCHEMA, SCHEMA),
@@ -1961,7 +2708,8 @@ def _ledger_schema_signature_is_ready(conn: psycopg.Connection) -> bool:
     return _REQUIRED_LEDGER_TRIGGERS.issubset(
         {
             (str(table), str(name), int(trigger_type), str(procedure_name))
-            for table, name, trigger_type, procedure_name in trigger_rows
+            for table, name, trigger_type, procedure_name, enabled_mode in trigger_rows
+            if str(enabled_mode) in {"O", "A"}
         }
     )
 
@@ -1982,15 +2730,9 @@ def _validate_create_fields(
     if _KIND_RE.fullmatch(kind) is None:
         raise HermesCommandValidationError("invalid command kind")
     if _DIGEST_RE.fullmatch(canonical_request_digest) is None:
-        raise HermesCommandValidationError(
-            "canonical_request_digest must be lowercase SHA-256"
-        )
-    if provider_policy_digest is not None and _DIGEST_RE.fullmatch(
-        provider_policy_digest
-    ) is None:
-        raise HermesCommandValidationError(
-            "provider_policy_digest must be lowercase SHA-256"
-        )
+        raise HermesCommandValidationError("canonical_request_digest must be lowercase SHA-256")
+    if provider_policy_digest is not None and _DIGEST_RE.fullmatch(provider_policy_digest) is None:
+        raise HermesCommandValidationError("provider_policy_digest must be lowercase SHA-256")
     if _PAYLOAD_REF_RE.fullmatch(payload_ref) is None:
         raise HermesCommandValidationError(
             "payload_ref must be a bounded platform-payload reference, not raw prompt text"
@@ -2011,9 +2753,7 @@ def _validate_lease_timing(*, now: datetime, lease_duration: timedelta) -> None:
     _validate_aware_datetime(now, field="now")
     lease_seconds = lease_duration.total_seconds()
     if not 1 <= lease_seconds <= 300:
-        raise HermesCommandValidationError(
-            "lease_duration must be between 1 and 300 seconds"
-        )
+        raise HermesCommandValidationError("lease_duration must be between 1 and 300 seconds")
 
 
 def _validate_aware_datetime(value: datetime, *, field: str) -> None:
@@ -2047,6 +2787,18 @@ def _validate_platform_resource(
         raise HermesCommandValidationError("invalid platform_resource_type")
     if _RESOURCE_ID_RE.fullmatch(platform_resource_id) is None:
         raise HermesCommandValidationError("invalid platform_resource_id")
+
+
+def _validate_run_link_resources(resources: tuple[tuple[str, str], ...]) -> None:
+    if not 1 <= len(resources) <= 100:
+        raise HermesCommandValidationError("resources must contain between 1 and 100 items")
+    if len(set(resources)) != len(resources):
+        raise HermesCommandValidationError("resources must be unique")
+    for platform_resource_type, platform_resource_id in resources:
+        _validate_platform_resource(
+            platform_resource_type=platform_resource_type,
+            platform_resource_id=platform_resource_id,
+        )
 
 
 def _validate_run_link_fields(
@@ -2089,9 +2841,7 @@ def _validate_run_link_identity(
         hermes_session_id=hermes_session_id,
         hermes_run_id=hermes_run_id,
     )
-    if source_event_id is not None and _SOURCE_EVENT_ID_RE.fullmatch(
-        source_event_id
-    ) is None:
+    if source_event_id is not None and _SOURCE_EVENT_ID_RE.fullmatch(source_event_id) is None:
         raise HermesCommandValidationError("invalid source_event_id")
 
 
@@ -2163,14 +2913,17 @@ def _require_owned_command_row(
     conn: psycopg.Connection,
     command_id: UUID,
 ) -> None:
-    if conn.execute(
-        f"""
+    if (
+        conn.execute(
+            f"""
         SELECT 1
         FROM {SCHEMA}.hermes_commands
         WHERE command_id = %s AND owner_user_id = %s
         """,
-        (command_id, ROOT_USER_ID),
-    ).fetchone() is None:
+            (command_id, ROOT_USER_ID),
+        ).fetchone()
+        is None
+    ):
         raise HermesCommandNotFound(str(command_id))
 
 
@@ -2350,6 +3103,7 @@ __all__ = [
     "HermesCommandValidationError",
     "HermesCommandVersionConflict",
     "HermesRunLink",
+    "HermesRunLinkPage",
     "RecordHermesRunLinkResult",
     "command_ledger_schema_version",
     "hermes_run_link_digest",

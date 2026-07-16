@@ -33,6 +33,9 @@ from quant_system.agent.candidate_fs import (
     write_regular_exclusive_at,
 )
 from quant_system.agent.candidate_manifest import (
+    MAX_CANDIDATE_ARTIFACT_BYTES,
+    MAX_CANDIDATE_MANIFEST_BYTES,
+    MAX_CANDIDATE_METADATA_BYTES,
     CandidateMigrationRequiredError,
     CandidateReviewStateStaleError,
     CandidateStaleError,
@@ -58,6 +61,7 @@ __all__ = [
     "CandidateIntegrityError",
     "CandidateMigrationRequiredError",
     "CandidatePool",
+    "CandidatePoolScanLimitExceeded",
     "CandidateReviewStateStaleError",
     "CandidateStaleError",
 ]
@@ -91,6 +95,11 @@ _CONTROL_NAMES = (
     _LEGACY_REJECTED_LOCK,
 )
 _SKIP_LIST_NAMES = frozenset({".candidate-pool.lock", ".", ".."})
+_MAX_BOUNDED_SCAN_CONTROL_HEADROOM = 32
+
+
+class CandidatePoolScanLimitExceeded(CandidateIntegrityError):
+    """Raised before per-candidate verification when a bounded read would be partial."""
 
 
 def _slug(value: str, *, fallback: str = "candidate", max_length: int = 40) -> str:
@@ -100,9 +109,7 @@ def _slug(value: str, *, fallback: str = "candidate", max_length: int = 40) -> s
 
 def _candidate_id(*, task_id: str, artifact_type: str, goal: str) -> str:
     digest = hashlib.sha256(f"{task_id}|{artifact_type}|{goal}".encode()).hexdigest()[:10]
-    return _validate_candidate_id(
-        f"{_slug(artifact_type)}-{_slug(goal)}-{digest}"
-    )
+    return _validate_candidate_id(f"{_slug(artifact_type)}-{_slug(goal)}-{digest}")
 
 
 def _validate_filename(filename: str) -> str:
@@ -178,8 +185,8 @@ def _artifact_from_snapshot(
 ) -> CandidateArtifact:
     filename = snapshot.manifest.files[0].path if snapshot.manifest.files else ""
     meta_task = snapshot.metadata.get("task_id")
-    resolved_task = task_id if task_id is not None else (
-        meta_task if isinstance(meta_task, str) else ""
+    resolved_task = (
+        task_id if task_id is not None else (meta_task if isinstance(meta_task, str) else "")
     )
     created = snapshot.metadata.get("created_at")
     kwargs: dict[str, Any] = {
@@ -249,13 +256,13 @@ class CandidatePool:
         if not isinstance(content, str):
             raise CandidateIntegrityError("candidate content must be a string")
         content_bytes = content.encode("utf-8")
+        if len(content_bytes) > MAX_CANDIDATE_ARTIFACT_BYTES:
+            raise CandidateIntegrityError("candidate artifact exceeds the safe byte limit")
 
         with locked_candidates_root(self.output_dir, create=True) as root:
             assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
 
-            if _control_present(root.fd, candidate_id) or self._entry_is_dir(
-                root.fd, candidate_id
-            ):
+            if _control_present(root.fd, candidate_id) or self._entry_is_dir(root.fd, candidate_id):
                 try:
                     existing = self._verify_under_root(root, candidate_id)
                 except CandidateMigrationRequiredError as exc:
@@ -319,12 +326,12 @@ class CandidatePool:
                     metadata_bytes = json.dumps(
                         metadata, indent=2, sort_keys=True, ensure_ascii=False
                     ).encode("utf-8")
-                    write_regular_exclusive_at(
-                        candidate_fd, _METADATA_NAME, metadata_bytes
-                    )
-                    write_regular_exclusive_at(
-                        candidate_fd, safe_filename, content_bytes
-                    )
+                    if len(metadata_bytes) > MAX_CANDIDATE_METADATA_BYTES:
+                        raise CandidateIntegrityError(
+                            "candidate metadata exceeds the safe byte limit"
+                        )
+                    write_regular_exclusive_at(candidate_fd, _METADATA_NAME, metadata_bytes)
+                    write_regular_exclusive_at(candidate_fd, safe_filename, content_bytes)
 
                     st = os.fstat(candidate_fd)
                     staged = OpenedDirectory(
@@ -334,15 +341,15 @@ class CandidatePool:
                         st_dev=st.st_dev,
                         st_ino=st.st_ino,
                     )
-                    manifest, digest, _artifact_bytes, _meta, _raw = (
-                        _build_manifest_from_opened(staged)
+                    manifest, digest, _artifact_bytes, _meta, _raw = _build_manifest_from_opened(
+                        staged
                     )
-                    manifest_bytes = canonical_json_bytes(
-                        manifest.model_dump(mode="json")
-                    )
-                    write_regular_exclusive_at(
-                        candidate_fd, _MANIFEST_NAME, manifest_bytes
-                    )
+                    manifest_bytes = canonical_json_bytes(manifest.model_dump(mode="json"))
+                    if len(manifest_bytes) > MAX_CANDIDATE_MANIFEST_BYTES:
+                        raise CandidateIntegrityError(
+                            "candidate manifest exceeds the safe byte limit"
+                        )
+                    write_regular_exclusive_at(candidate_fd, _MANIFEST_NAME, manifest_bytes)
                     # Verify staged candidate fully before publication.
                     snapshot = _verify_from_opened(
                         staged,
@@ -354,9 +361,7 @@ class CandidatePool:
                     assert_entry_is_open_fd(root.fd, staging_name, staging_fd)
                     assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
 
-                    rename_directory_noreplace_at(
-                        staging_fd, candidate_id, root.fd, candidate_id
-                    )
+                    rename_directory_noreplace_at(staging_fd, candidate_id, root.fd, candidate_id)
                     os.fsync(root.fd)
                     published = True
                     assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
@@ -385,6 +390,21 @@ class CandidatePool:
             agent_output_dir=self.output_dir, candidate_id=candidate_id
         )
 
+    def read_for_read(self, candidate_id: str) -> CandidateReadItem | None:
+        """Read one candidate through the same no-follow integrity projection as list."""
+        candidate_id = _validate_candidate_id(candidate_id)
+        if not os.path.lexists(self.candidates_dir):
+            return None
+        with open_absolute_directory(self.candidates_dir, create=False) as root:
+            assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
+            try:
+                os.stat(candidate_id, dir_fd=root.fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return None
+            item = self._read_item_at(root, candidate_id)
+            assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
+            return item
+
     def list_candidates(self) -> list[dict[str, Any]]:
         """Legacy-shaped listing; prefer list_for_read for integrity-aware reads."""
         items: list[dict[str, Any]] = []
@@ -393,38 +413,78 @@ class CandidatePool:
             items.append(payload)
         return items
 
-    def list_for_read(self) -> list[CandidateReadItem]:
+    def list_for_read(self, *, max_entries: int | None = None) -> list[CandidateReadItem]:
+        if max_entries is not None and (
+            isinstance(max_entries, bool) or not isinstance(max_entries, int) or max_entries < 1
+        ):
+            raise CandidateIntegrityError("max_entries must be a positive integer")
         # Path.exists() follows symlinks and reports a dangling symlink as
         # absent. lexists keeps that unsafe directory entry visible so the
         # no-follow opener can reject it instead of reporting an empty pool.
         if not os.path.lexists(self.candidates_dir):
             return []
         results: list[CandidateReadItem] = []
+        sort_mtimes: dict[str, int] = {}
         try:
             with open_absolute_directory(self.candidates_dir, create=False) as root:
                 assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
-                names = sorted(os.listdir(root.fd))
+                if max_entries is None:
+                    names = [
+                        name
+                        for name in sorted(os.listdir(root.fd))
+                        if name not in _SKIP_LIST_NAMES
+                        and not name.startswith(".staging-")
+                        and not name.startswith(".")
+                    ]
+                else:
+                    names = []
+                    scanned_entries = 0
+                    scan_limit = max_entries + _MAX_BOUNDED_SCAN_CONTROL_HEADROOM
+                    with os.scandir(root.fd) as entries:
+                        for entry in entries:
+                            scanned_entries += 1
+                            if scanned_entries > scan_limit:
+                                raise CandidatePoolScanLimitExceeded(
+                                    "candidate repository contains too many control entries "
+                                    "for a bounded read"
+                                )
+                            name = entry.name
+                            if (
+                                name in _SKIP_LIST_NAMES
+                                or name.startswith(".staging-")
+                                or name.startswith(".")
+                            ):
+                                continue
+                            names.append(name)
+                            if len(names) > max_entries:
+                                break
+                    names = sorted(names)
+                if max_entries is not None and len(names) > max_entries:
+                    raise CandidatePoolScanLimitExceeded(
+                        f"candidate repository exceeds bounded read limit {max_entries}"
+                    )
                 for name in names:
-                    if name in _SKIP_LIST_NAMES or name.startswith(".staging-"):
-                        continue
-                    if name.startswith("."):
-                        # Hidden control/lock files are not candidates.
-                        continue
                     results.append(self._read_item_at(root, name))
+                    try:
+                        sort_mtimes[name] = os.stat(
+                            name,
+                            dir_fd=root.fd,
+                            follow_symlinks=False,
+                        ).st_mtime_ns
+                    except OSError:
+                        sort_mtimes[name] = 0
                 assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
         except CandidateIntegrityError:
             # A corrupt individual candidate is represented by _read_item_at(),
             # but an unsafe root invalidates the whole repository.  Propagate it
             # so API/CLI consumers cannot confuse repository failure with empty.
             raise
-        # Newest-first by path mtime when available, else stable name order reverse.
+
+        # Newest-first by the no-follow directory-entry mtime captured while the
+        # verified root FD was held. Never let a corrupt symlink influence
+        # ordering through its external target metadata.
         def _sort_key(item: CandidateReadItem) -> tuple[int, str]:
-            path = self.candidates_dir / item.candidate_id
-            try:
-                mtime = path.stat().st_mtime_ns
-            except OSError:
-                mtime = 0
-            return (mtime, item.candidate_id)
+            return (sort_mtimes.get(item.candidate_id, 0), item.candidate_id)
 
         results.sort(key=_sort_key, reverse=True)
         return results
@@ -445,17 +505,13 @@ class CandidatePool:
         if decision not in {"approve", "reject"}:
             raise CandidateIntegrityError("decision must be approve or reject")
         if expected_status != "pending":
-            raise CandidateIntegrityError(
-                "expected_status must be the literal 'pending'"
-            )
+            raise CandidateIntegrityError("expected_status must be the literal 'pending'")
 
         lock_name = _APPROVED_LOCK if decision == "approve" else _REJECTED_LOCK
         opposite = _REJECTED_LOCK if decision == "approve" else _APPROVED_LOCK
 
         if not self.candidates_dir.exists():
-            raise CandidateIntegrityError(
-                f"candidate {candidate_id!r} does not exist"
-            )
+            raise CandidateIntegrityError(f"candidate {candidate_id!r} does not exist")
 
         with locked_candidates_root(self.output_dir, create=False) as root:
             assert_entry_is_open_fd(root.parent_fd, root.name, root.fd)
@@ -529,9 +585,7 @@ class CandidatePool:
                 if written != lock_payload:
                     raise CandidateIntegrityError("decision lock bytes changed")
                 if _control_present(candidate_fd, opposite):
-                    raise CandidateIntegrityError(
-                        "opposite decision lock appeared during review"
-                    )
+                    raise CandidateIntegrityError("opposite decision lock appeared during review")
                 return record
             finally:
                 os.close(candidate_fd)
@@ -559,9 +613,7 @@ class CandidatePool:
                 st_dev=st.st_dev,
                 st_ino=st.st_ino,
             )
-            return _verify_from_opened(
-                opened, candidate_dir=self.candidates_dir / candidate_id
-            )
+            return _verify_from_opened(opened, candidate_dir=self.candidates_dir / candidate_id)
         finally:
             os.close(candidate_fd)
 
@@ -610,6 +662,11 @@ class CandidatePool:
             status = _status_from_binding(snapshot.approval_binding)
             return CandidateReadItem(
                 candidate_id=snapshot.candidate_id,
+                created_at=(
+                    snapshot.metadata.get("created_at")
+                    if isinstance(snapshot.metadata.get("created_at"), str)
+                    else None
+                ),
                 artifact_type=snapshot.manifest.artifact_type,
                 goal=snapshot.manifest.goal,
                 universe=list(snapshot.manifest.universe),
@@ -624,13 +681,9 @@ class CandidatePool:
         finally:
             os.close(candidate_fd)
 
-    def _migration_item(
-        self, opened: OpenedDirectory, candidate_id: str
-    ) -> CandidateReadItem:
+    def _migration_item(self, opened: OpenedDirectory, candidate_id: str) -> CandidateReadItem:
         try:
-            manifest, digest, _artifact_bytes, metadata, _raw = (
-                _build_manifest_from_opened(opened)
-            )
+            manifest, digest, _artifact_bytes, metadata, _raw = _build_manifest_from_opened(opened)
         except CandidateIntegrityError as exc:
             return CandidateReadItem(
                 candidate_id=candidate_id,
@@ -656,6 +709,9 @@ class CandidatePool:
         )
         return CandidateReadItem(
             candidate_id=candidate_id,
+            created_at=(
+                metadata.get("created_at") if isinstance(metadata.get("created_at"), str) else None
+            ),
             artifact_type=artifact_type,
             goal=goal,
             universe=list(manifest.universe),

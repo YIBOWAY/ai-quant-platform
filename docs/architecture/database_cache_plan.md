@@ -1,6 +1,6 @@
 # 数据库缓存方案
 
-状态（2026-07-14）：本地存储分为五类能力：
+状态（2026-07-15）：本地存储分为六类能力：
 
 1. DuckDB 富途期权报价缓存。
 2. 可选 PostgreSQL run index；研究 artifact 仍以文件为事实源。
@@ -9,10 +9,14 @@
    AI daily report 业务事实。
 5. paper account repository：`file`、file-authoritative `mirror`、
    PostgreSQL-authoritative `canonical` 三种显式模式，并提供结构化 reconciliation。
+6. Hermes transport ledger：schema metadata、command、append-only event、outbox 与 exact
+   run link；它只保存平台拥有的耐久传输事实，不保存 provider secret，也不代表 Hermes
+   已接收或执行命令。
 
 数据库功能在代码中已实现，但不能把“实现 canonical”写成“运行环境已经切到
-canonical”。截至本快照，live `quantplatform` 的四份 migration 共 14 张表全部存在
-（003/004 为 11 张业务表）；当前 8765 以 `QS_DATABASE_AUTO_MIGRATE=true` 启动并幂等
+canonical”。截至本快照，live `quantplatform` 的五份 migration 共 19 张表全部存在
+（003/004 为 11 张业务表，005 为五张 Hermes transport-ledger 表）；当前 8765 以
+`QS_DATABASE_AUTO_MIGRATE=true` 启动并幂等
 重放 migration，health 确认数据库可达。现有账户已显式 backfill，并在 mirror/canonical 临时进程中得到
 `in_sync` reconciliation。默认 8765 仍是 `file` 模式，这是一项尚未执行的运营切换，
 不是代码缺失。迁移器不维护 `schema_migrations` 表，而是按词法序幂等重放 SQL。
@@ -27,9 +31,8 @@ canonical”。截至本快照，live `quantplatform` 的四份 migration 共 14
 
 Slice 9G 本身没有新增 SQL migration 或数据库表。HQA opportunity ledger 是 HQA
 仓库内的本地 JSONL 事实源；平台 `paper strategies observations` 只读取现有
-file-backed strategy-sleeve 事实。既有四份 migration / 14 张表的状态不因 9G 改变；
-本工作树中的 `004_paper_account_tables.sql` 调整属于前序 paper-account 交付，不能归因
-为 9G 数据库迁移。
+file-backed strategy-sleeve 事实。9G 验收时仍是四份 migration / 14 张表；之后 D-31
+Wave 3B 才独立增加 migration 005 与五张 transport-ledger 表，不能倒算为 9G 交付。
 
 DuckDB 期权缓存位于 `src/quant_system/storage/options_cache.py`，
 在 `QS_FUTU_USE_CACHE=true`（默认值）时，会将富途期权报价窗口持久化到
@@ -230,9 +233,10 @@ snapshot source 还必须属于当前 repository/backfill 的已知 provenance �
 完整事件流替换，current-state 表清理已不存在的行；position snapshots append-only。
 结构化 reconciliation 是切换证据，不会自动把模式从 file/mirror 改成 canonical。
 
-迁移验证已在 throwaway `quantplatform_codex_tmp` 跑过 13 个 PostgreSQL tests，
-并确认四份 migration 的 14 张表全部存在。live `quantplatform` 另行完成备份、
-重启/auto-migrate、表核对、现有账户 backfill 和 API smoke；两组证据没有混用。
+paper-account 迁移验证曾在 throwaway `quantplatform_codex_tmp` 跑过 13 个 PostgreSQL
+tests；D-31 migration 005 另在 throwaway 库完成完整 schema-signature 与状态机测试。
+live `quantplatform` 已确认五份 migration 的 19 张表存在；live 备份/auto-migrate/API
+smoke 与 throwaway 破坏性 drift 测试没有混用。
 
 ## 为何需要它
 

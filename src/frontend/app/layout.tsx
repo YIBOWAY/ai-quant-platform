@@ -43,7 +43,8 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getServerLocale();
-  const shellEnabled = hermesFeatureFlags().shell;
+  const flags = hermesFeatureFlags();
+  const shellEnabled = flags.shell;
   return (
     <html
       lang={locale === 'zh' ? 'zh' : 'en'}
@@ -52,8 +53,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-bg-base antialiased selection:bg-info selection:text-bg-base">
         <LocaleProvider locale={locale}>
           <Providers>
-            <Sidebar shellEnabled={shellEnabled} />
-            <TopBar shellEnabled={shellEnabled} />
+            <Sidebar
+              agentStudioRedirect={flags.agentStudioRedirect}
+              shellEnabled={shellEnabled}
+            />
+            <TopBar
+              agentStudioRedirect={flags.agentStudioRedirect}
+              shellEnabled={shellEnabled}
+            />
             <SafetyStrip />
             {/* h-screen + pt makes the content area a *fixed* height box (viewport
                 minus the 100px topbar+safety strip), so child pages using h-full /

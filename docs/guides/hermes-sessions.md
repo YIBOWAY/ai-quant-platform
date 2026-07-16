@@ -16,10 +16,11 @@
 这是会话观察面，不是完整 chat bridge：
 
 - 已开放：gateway/capability 状态、session list、session detail、经过过滤的 messages。
-- 未开放：run/chat submission、SSE 执行流、approval mutation、stop、统一动态 Results、
-  旧研究页 redirect/删除。
+- 未开放：run/chat submission、SSE 执行流、approval mutation、stop、完整 Unified
+  Results cutover、旧研究页 redirect/删除。
 - 前端能力位：`sessionRead=true`；`chat=false`、`execution=false`、
-  `approvalMutations=false`、`unifiedResults=false`、`legacyRedirects=false`。
+  `approvalMutations=false`、`legacyRedirects=false`。Unified Results 只读
+  preview/catalog 已可见，但 `unifiedResultsCutoverAccepted=false`。
 - health、capabilities 与 session GET 不提交 prompt、不调用 Hermes provider，因而不消耗
   Hermes 当前配置的 Codex、Grok 或其他 provider 额度。
 - 本切片没有新增 PostgreSQL migration，也没有把 Hermes 会话复制进平台数据库；
@@ -180,9 +181,11 @@ ID。当前会话页只经平台 API/BFF 读取，从不接触上游 URL 或 Bea
 | `session_resources_unavailable` | 当前 Hermes capability 没有明确声明 persisted session resources；保持 fail closed。 |
 | 页面“读取不可用” | 先看 `/api/hermes/gateway` warning，再看后端日志；不要通过启用 composer 绕过。 |
 
-## 下一阶段：成熟写端连接，而不是空轮询
+## Wave 3 底座与下一阶段：成熟写端连接，而不是空轮询
 
-推荐的下一阶段链路是：
+下图是目标链路。Wave 3 当前只交付 PostgreSQL transport ledger、GET-only session BFF 与
+deterministic worker 的 **notify/scan/expired-lease reconcile 底座**；authenticated mutation、
+Task/payload binding、claim/dispatch 和 HTTP/SSE 写边均未准入：
 
 ```text
 Browser
@@ -192,13 +195,20 @@ Browser
         -> official Hermes API HTTP + SSE
 ```
 
-worker 的职责是确定性的队列与恢复，不是让模型担任消息队列：
+当前已具备 schema v1 五张表、48 项约束签名、append-only 事件/run-link 保护；ledger
+repository 已实现并测试 claim/lease/heartbeat primitives。当前可运行 worker 只执行
+`LISTEN/NOTIFY`、periodic scan 与 expired-lease reconcile，**不会 claim queued command**。
+当前也没有 command dispatch adapter、Hermes mutation、provider call、SSE replay 或常驻
+worker 进程，因此不能把它称为平台已把请求交给 Hermes。
+
+最终 worker 的职责仍是确定性的队列与恢复，不是让模型担任消息队列：
 
 1. BFF 先以 client idempotency key 写入 durable command；同一请求只能产生一个逻辑 run。
-2. worker 用短事务和 `FOR UPDATE SKIP LOCKED` claim，记录 lease、attempt、heartbeat 和
-   recovery evidence。
+2. 未来 dispatch worker 才会用短事务和 `FOR UPDATE SKIP LOCKED` claim，记录 lease、
+   attempt、heartbeat 和 recovery evidence；这些目前只是 ledger primitives，不在现有
+   reconcile-only `run_once` 中调用。
 3. PostgreSQL `LISTEN/NOTIFY` 只作低延迟唤醒；通知可能丢失，因此必须有 periodic scan
-   fallback。scan/claim/lease/heartbeat 本身都不调用 LLM。
+   fallback。scan 与 ledger 的 claim/lease/heartbeat primitives 本身都不调用 LLM。
 4. 只有 claim 到明确、已授权的 queued command 后，worker 才向 Hermes 提交 run；
    无任务时零 provider 请求、零 provider 额度。
 5. upstream events 写入带稳定 event identity/cursor 的 durable ledger；重连时 replay/

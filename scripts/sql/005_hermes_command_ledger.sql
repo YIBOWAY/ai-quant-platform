@@ -240,6 +240,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_hermes_run_links_command_resource
         relation
     );
 
+CREATE INDEX IF NOT EXISTS idx_hermes_run_links_resource_created
+    ON quant_system.hermes_run_links (
+        platform_resource_type,
+        platform_resource_id,
+        created_at,
+        link_id
+    );
+
 CREATE INDEX IF NOT EXISTS idx_hermes_run_links_hermes_run
     ON quant_system.hermes_run_links (hermes_session_id, hermes_run_id);
 

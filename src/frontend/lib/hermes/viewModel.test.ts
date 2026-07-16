@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentCandidatesResponse } from "@/lib/api";
+import type { AgentCandidatesResponse, HermesResultsResponse } from "@/lib/api";
 import { buildHermesTodayModel, pickLatestAutomation } from "./viewModel";
 import {
   candidateFixture,
@@ -8,7 +8,70 @@ import {
   noArtifacts,
 } from "./viewModelFixtures";
 
+const emptyResults = {
+  read_status: "empty",
+  total: 0,
+  total_is_exact: true,
+  limit: 5,
+  offset: 0,
+  has_more: false,
+  items: [],
+  sources: [],
+  warnings: [],
+} satisfies HermesResultsResponse;
+
 describe("buildHermesTodayModel", () => {
+  it("does not report an empty desk when the unified catalog contains a platform result", () => {
+    const results = {
+      read_status: "available",
+      total: 1,
+      total_is_exact: true,
+      limit: 5,
+      offset: 0,
+      has_more: false,
+      items: [
+        {
+          kind: "backtest",
+          resource_id: "backtest-wave3-001",
+          display_title: "AAPL momentum backtest",
+          summary: "2026-01-01 → 2026-06-30 · provider futu",
+          status: "completed",
+          occurred_at: "2026-07-15T08:00:00Z",
+          source: "platform_runs",
+          authority: "platform_run_artifact",
+          freshness: "fresh",
+          read_status: "available",
+          detail_href: "/api/hermes/results/backtest/backtest-wave3-001",
+          original_href: "/api/backtest/runs/backtest-wave3-001",
+          run_links: [],
+        },
+      ],
+      sources: [
+        {
+          source: "platform_runs",
+          read_status: "available",
+          item_count: 1,
+        },
+      ],
+      warnings: [],
+    } as unknown as HermesResultsResponse;
+
+    const model = buildHermesTodayModel({
+      artifacts: noArtifacts("empty"),
+      candidates: { candidates: [] },
+      results,
+    });
+
+    expect(model.state).toBe("normal");
+    expect(model.unifiedResults.items).toEqual([
+      expect.objectContaining({
+        kind: "backtest",
+        resourceId: "backtest-wave3-001",
+        displayTitle: "AAPL momentum backtest",
+      }),
+    ]);
+  });
+
   it("orders mixed-offset artifact timestamps by their actual instant", () => {
     const automation = healthyArtifacts.items.find(
       (item) => item.kind === "automation_status",
@@ -42,8 +105,9 @@ describe("buildHermesTodayModel", () => {
         ],
       },
       candidates: { candidates: [] },
+      results: emptyResults,
     });
-    expect(model.recentResults.map((item) => item.id)).toEqual([
+    expect(model.hqaConclusions.map((item) => item.id)).toEqual([
       "result-newer-z",
       "result-older-offset",
     ]);
@@ -53,6 +117,7 @@ describe("buildHermesTodayModel", () => {
     const model = buildHermesTodayModel({
       artifacts: healthyArtifacts,
       candidates: { candidates: [] },
+      results: emptyResults,
     });
     expect(model.automation).toMatchObject({
       healthy: 4,
@@ -71,6 +136,7 @@ describe("buildHermesTodayModel", () => {
         candidates: [],
         apiError: "503: candidate repository unavailable",
       },
+      results: emptyResults,
     });
 
     expect(model.state).toBe("degraded");
@@ -102,6 +168,7 @@ describe("buildHermesTodayModel", () => {
           }),
         ],
       } satisfies AgentCandidatesResponse,
+      results: emptyResults,
     });
     expect(model.state).toBe("normal");
     expect(model.attention.map((item) => item.kind)).toEqual(["approval"]);
@@ -128,6 +195,7 @@ describe("buildHermesTodayModel", () => {
           }),
         ],
       } satisfies AgentCandidatesResponse,
+      results: emptyResults,
     });
     expect(model.state).toBe("degraded");
     expect(model.attention.map((item) => item.kind)).toEqual([
@@ -141,6 +209,7 @@ describe("buildHermesTodayModel", () => {
     const empty = buildHermesTodayModel({
       artifacts: noArtifacts("empty"),
       candidates: { candidates: [] },
+      results: emptyResults,
     });
     expect(empty.state).toBe("empty");
     expect(empty.automation).toMatchObject({
@@ -152,8 +221,34 @@ describe("buildHermesTodayModel", () => {
       buildHermesTodayModel({
         artifacts: noArtifacts("unavailable"),
         candidates: { candidates: [] },
+        results: emptyResults,
       }).state,
     ).toBe("offline");
+  });
+
+  it("keeps HQA source outage authoritative when the unified catalog is also unavailable", () => {
+    const model = buildHermesTodayModel({
+      artifacts: noArtifacts("unavailable"),
+      candidates: { candidates: [] },
+      results: {
+        ...emptyResults,
+        read_status: "unavailable",
+        warnings: [
+          {
+            source: "results_catalog",
+            code: "api_unavailable",
+            kind: null,
+            resource_id: null,
+          },
+        ],
+      },
+    });
+
+    expect(model.state).toBe("offline");
+    expect(model.unifiedResults).toMatchObject({
+      readStatus: "unavailable",
+      total: null,
+    });
   });
 
   it("degrades an available feed that is missing its automation artifact", () => {
@@ -166,6 +261,7 @@ describe("buildHermesTodayModel", () => {
     const model = buildHermesTodayModel({
       artifacts,
       candidates: { candidates: [] },
+      results: emptyResults,
     });
 
     expect(model.automation.status).toBe("unavailable");
@@ -192,6 +288,7 @@ describe("buildHermesTodayModel", () => {
           }),
         ],
       } satisfies AgentCandidatesResponse,
+      results: emptyResults,
     });
     expect(model.attention).toEqual([
       expect.objectContaining({ kind: "degraded", id: "legacy-pending" }),
@@ -218,6 +315,7 @@ describe("buildHermesTodayModel", () => {
           }),
         ],
       } satisfies AgentCandidatesResponse,
+      results: emptyResults,
     });
 
     expect(model.attention).toContainEqual({

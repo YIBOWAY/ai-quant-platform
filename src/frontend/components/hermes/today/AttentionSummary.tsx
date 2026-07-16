@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/primitives";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
 import { hermesRouteHref } from "@/lib/hermes/routes";
 import type { HermesAttentionItem } from "@/lib/hermes/types";
-import type { Locale } from "@/lib/locale";
+import { localizePath, type Locale } from "@/lib/locale";
 
 export type AttentionSummaryProps = {
   items: HermesAttentionItem[];
@@ -51,7 +51,7 @@ export function AttentionSummary({ items, locale }: AttentionSummaryProps) {
         {primary.map((item) => {
           const title = localizedTitle(item, locale);
           const href =
-            item.href ??
+            (item.href ? localizePath(item.href, locale) : undefined) ??
             (item.kind === "approval"
               ? hermesRouteHref("approvals", locale)
               : item.kind === "failure" || item.kind === "stale"

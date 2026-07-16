@@ -120,18 +120,24 @@ const systemSection: NavSection = {
  */
 export function buildNavSections({
   shellEnabled,
+  agentStudioRedirect = false,
 }: {
   shellEnabled: boolean;
+  agentStudioRedirect?: boolean;
 }): NavSection[] {
   const researchItems: NavItem[] = shellEnabled
     ? [hermesItem, ...researchTail]
     : [dashboardItem, hermesItem, ...researchTail];
 
+  const visibleMarkets = agentStudioRedirect
+    ? { ...marketsSection, items: marketsSection.items.filter((item) => item.id !== "agentStudio") }
+    : marketsSection;
+
   return [
     { id: "research", items: researchItems },
     paperSection,
     optionsSection,
-    marketsSection,
+    visibleMarkets,
     systemSection,
   ];
 }

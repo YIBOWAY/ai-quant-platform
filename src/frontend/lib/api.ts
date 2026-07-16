@@ -6,6 +6,22 @@ import {
   type BriefSnapshot,
 } from "./briefArchive";
 import type { components as GeneratedApiComponents } from "./api.generated";
+import {
+  normalizeCandidateDetailResponse,
+  normalizeCandidateListResponse,
+} from "./hermes/candidateReadModel";
+import {
+  isHermesResultKind,
+  isHermesResultResourceId,
+} from "./hermes/resultsTypes";
+import {
+  normalizeHermesResultDetailResponse,
+  normalizeHermesResultsResponse,
+} from "./hermes/resultsReadModel";
+import type {
+  HermesResultKind,
+  HermesResultsQuery,
+} from "./hermes/resultsTypes";
 
 export type SafetyFooter = {
   dry_run: boolean;
@@ -48,6 +64,12 @@ export type HealthResponse = ApiEnvelope & {
     enabled: boolean;
     reachable?: boolean;
     error?: string | null;
+  };
+  hermes_command_ledger: {
+    database_configured: boolean;
+    schema_ready: boolean;
+    schema_version: number | null;
+    mutation_enabled: boolean;
   };
 };
 
@@ -1888,6 +1910,10 @@ export type HermesMessageResponse = HermesSchemas["HermesMessageResponse"];
 export type HermesSessionMessage = HermesMessageResponse;
 export type HermesSessionMessagesResponse = ApiEnvelope &
   HermesSchemas["HermesSessionMessagesResponse"];
+export type HermesResultsResponse = ApiEnvelope &
+  HermesSchemas["HermesResultsResponse"];
+export type HermesResultDetailResponse = ApiEnvelope &
+  HermesSchemas["HermesResultDetailResponse"];
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 
@@ -1964,6 +1990,12 @@ export function getHealth() {
     data_provider: {
       configured_default: "unknown",
       tiingo_token_present: false,
+    },
+    hermes_command_ledger: {
+      database_configured: false,
+      schema_ready: false,
+      schema_version: null,
+      mutation_enabled: false,
     },
     safety: FALLBACK_SAFETY,
   });
@@ -2492,11 +2524,12 @@ export function getExperimentDetail(experimentId: string) {
   });
 }
 
-export function getAgentCandidates() {
-  return apiGet<AgentCandidatesResponse>("/api/agent/candidates", {
+export async function getAgentCandidates() {
+  const response = await apiGet<AgentCandidatesResponse>("/api/agent/candidates", {
     candidates: [],
     safety: FALLBACK_SAFETY,
   });
+  return normalizeCandidateListResponse(response);
 }
 
 export function getHermesArtifacts(limit = 20) {
@@ -2512,6 +2545,90 @@ export function getHermesArtifacts(limit = 20) {
   });
 }
 
+export async function getHermesResults(query: HermesResultsQuery = {}) {
+  const limit = Number.isFinite(query.limit)
+    ? Math.min(100, Math.max(1, Math.trunc(query.limit as number)))
+    : 20;
+  const offset = Number.isFinite(query.offset)
+    ? Math.min(10_000, Math.max(0, Math.trunc(query.offset as number)))
+    : 0;
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (query.kind) params.set("kind", query.kind);
+  const status = query.status?.trim();
+  if (status && status.length <= 128) params.set("status", status);
+  if (query.source) params.set("source", query.source);
+  const search = query.search?.trim();
+  if (search && search.length <= 256) params.set("search", search);
+
+  const response = await apiGet<HermesResultsResponse>(
+    `/api/hermes/results?${params.toString()}`,
+    {
+      read_status: "unavailable",
+      total: null,
+      total_is_exact: false,
+      limit,
+      offset,
+      has_more: false,
+      items: [],
+      sources: [],
+      warnings: [
+        {
+          source: "results_catalog",
+          code: "api_unavailable",
+          kind: null,
+          resource_id: null,
+        },
+      ],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+  return normalizeHermesResultsResponse(response, { limit, offset });
+}
+
+export async function getHermesResultDetail(
+  kind: HermesResultKind,
+  resourceId: string,
+) {
+  if (!isHermesResultKind(kind) || !isHermesResultResourceId(resourceId)) {
+    return {
+      read_status: "unavailable",
+      item: null,
+      resource: null,
+      warnings: [
+        {
+          source: "results_catalog",
+          code: "invalid_result_identity",
+          kind: null,
+          resource_id: null,
+        },
+      ],
+      safety: FALLBACK_SAFETY,
+      apiError: "invalid_result_identity",
+    } satisfies HermesResultDetailResponse;
+  }
+  const response = await apiGet<HermesResultDetailResponse>(
+    `/api/hermes/results/${encodeURIComponent(kind)}/${encodeURIComponent(resourceId)}`,
+    {
+      read_status: "unavailable",
+      item: null,
+      resource: null,
+      warnings: [
+        {
+          source: "results_catalog",
+          code: "api_unavailable",
+          kind,
+          resource_id: resourceId,
+        },
+      ],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+  return normalizeHermesResultDetailResponse(response, { kind, resourceId });
+}
+
 export function getHermesGatewayStatus() {
   return apiGet<HermesGatewayStatusResponse>("/api/hermes/gateway", {
     read_status: "unavailable",
@@ -2520,6 +2637,8 @@ export function getHermesGatewayStatus() {
     session_api_available: false,
     chat_write_ready: false,
     features: {},
+    upstream_blockers: ["api_unavailable"],
+    platform_delivery_blockers: ["api_unavailable"],
     blockers: ["api_unavailable"],
     warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
     safety: FALLBACK_SAFETY,
@@ -2568,22 +2687,28 @@ export function getHermesSessionMessages(sessionId: string) {
   );
 }
 
-export function getAgentCandidateDetail(candidateId: string) {
-  return apiGet<AgentCandidateDetailResponse>(`/api/agent/candidates/${candidateId}`, {
-    candidate_id: candidateId,
-    metadata: null,
-    source_preview: null,
-    audit: [],
-    reviews: [],
-    integrity_state: "corrupt",
-    manifest_digest: null,
-    observed_manifest_digest: null,
-    approval_binding: null,
-    approval_enabled: false,
-    integrity_error_code: "api_unavailable",
-    status: null,
-    safety: FALLBACK_SAFETY,
-  });
+export async function getAgentCandidateDetail(candidateId: string) {
+  const encodedCandidateId = encodeURIComponent(candidateId);
+  const response = await apiGet<AgentCandidateDetailResponse>(
+    `/api/agent/candidates/${encodedCandidateId}`,
+    {
+      candidate_id: candidateId,
+      metadata: null,
+      source_preview: null,
+      audit: [],
+      reviews: [],
+      evidence_truncated: false,
+      integrity_state: "corrupt",
+      manifest_digest: null,
+      observed_manifest_digest: null,
+      approval_binding: null,
+      approval_enabled: false,
+      integrity_error_code: "api_unavailable",
+      status: null,
+      safety: FALLBACK_SAFETY,
+    },
+  );
+  return normalizeCandidateDetailResponse(response, candidateId);
 }
 
 export function getAgentLlmConfig() {

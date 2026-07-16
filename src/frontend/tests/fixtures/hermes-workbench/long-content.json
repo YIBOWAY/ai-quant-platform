@@ -249,5 +249,21 @@
       "kill_switch": true,
       "bind_address": "127.0.0.1"
     }
+  },
+  "factors": {
+    "status": 200,
+    "body": {
+      "factors": [
+        {
+          "factor_id": "agent_candidate_long_layout_promoted_factor_v1",
+          "factor_name": "Long-layout promoted factor fixture",
+          "factor_version": "1.0.0",
+          "lookback": 20,
+          "direction": "higher_is_better",
+          "description": "A bounded promoted factor entry used to verify registry layout under long content.",
+          "origin": "promoted"
+        }
+      ]
+    }
   }
 }

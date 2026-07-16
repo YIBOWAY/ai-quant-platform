@@ -33,8 +33,7 @@ def _ensure_test_database(url: str) -> None:
     dbname = params.get("dbname")
     if not dbname or not (dbname.endswith("_tmp") or "test" in dbname):
         pytest.fail(
-            "QS_TEST_DATABASE_URL must point at a throwaway test database "
-            f"(got {dbname!r})"
+            f"QS_TEST_DATABASE_URL must point at a throwaway test database (got {dbname!r})"
         )
 
     maintenance_params = dict(params)
@@ -69,12 +68,8 @@ def _reset_hermes_ledger(database: db.Database) -> None:
         # Production roles must never truncate append-only evidence. Tests use
         # the table owner and disable only user triggers inside one rollback-safe
         # transaction to isolate cases.
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events DISABLE TRIGGER USER"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links DISABLE TRIGGER USER"
-        )
+        conn.execute("ALTER TABLE quant_system.hermes_command_events DISABLE TRIGGER USER")
+        conn.execute("ALTER TABLE quant_system.hermes_run_links DISABLE TRIGGER USER")
         conn.execute(
             """
             TRUNCATE TABLE
@@ -85,12 +80,8 @@ def _reset_hermes_ledger(database: db.Database) -> None:
             RESTART IDENTITY
             """
         )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events ENABLE TRIGGER USER"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links ENABLE TRIGGER USER"
-        )
+        conn.execute("ALTER TABLE quant_system.hermes_command_events ENABLE TRIGGER USER")
+        conn.execute("ALTER TABLE quant_system.hermes_run_links ENABLE TRIGGER USER")
 
 
 def test_hermes_command_ledger_migration_is_repeatable() -> None:
@@ -141,9 +132,7 @@ def test_old_migration_never_downgrades_a_future_ledger_schema_version() -> None
 
     try:
         with database.connect() as conn:
-            conn.execute(
-                "UPDATE quant_system.hermes_ledger_meta SET schema_version = 2"
-            )
+            conn.execute("UPDATE quant_system.hermes_ledger_meta SET schema_version = 2")
 
         with pytest.raises(psycopg.Error, match="newer than this binary"):
             db.run_migrations(database)
@@ -164,9 +153,7 @@ def test_old_migration_never_downgrades_a_future_ledger_schema_version() -> None
             )
     finally:
         with database.connect() as conn:
-            conn.execute(
-                "UPDATE quant_system.hermes_ledger_meta SET schema_version = 1"
-            )
+            conn.execute("UPDATE quant_system.hermes_ledger_meta SET schema_version = 1")
         db.reset_database_cache()
 
 
@@ -186,9 +173,7 @@ def test_schema_readiness_rejects_column_and_trigger_drift() -> None:
             )
         assert command_ledger_schema_version(settings) is None
         with pytest.raises(HermesCommandLedgerUnavailable):
-            HermesCommandLedger(settings).get_command(
-                UUID("00000000-0000-0000-0000-000000000123")
-            )
+            HermesCommandLedger(settings).get_command(UUID("00000000-0000-0000-0000-000000000123"))
 
         with database.connect() as conn:
             conn.execute(
@@ -235,6 +220,289 @@ def test_schema_readiness_rejects_column_and_trigger_drift() -> None:
                     "ALTER TABLE quant_system.hermes_commands "
                     "RENAME COLUMN payload_ref_drifted TO payload_ref"
                 )
+        db.run_migrations(database)
+        db.reset_database_cache()
+
+
+def test_schema_readiness_rejects_same_name_column_type_drift() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+
+    try:
+        assert command_ledger_schema_version(settings) == 1
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands "
+                "ALTER COLUMN provider_policy_digest TYPE TEXT"
+            )
+
+        assert command_ledger_schema_version(settings) is None
+    finally:
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands "
+                "ALTER COLUMN provider_policy_digest TYPE CHAR(64)"
+            )
+        db.run_migrations(database)
+        db.reset_database_cache()
+
+
+def test_schema_readiness_rejects_same_name_column_nullability_drift() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+
+    try:
+        assert command_ledger_schema_version(settings) == 1
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands ALTER COLUMN payload_ref DROP NOT NULL"
+            )
+
+        assert command_ledger_schema_version(settings) is None
+    finally:
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands ALTER COLUMN payload_ref SET NOT NULL"
+            )
+        db.run_migrations(database)
+        db.reset_database_cache()
+
+
+def test_schema_readiness_rejects_same_name_column_default_drift() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+
+    try:
+        assert command_ledger_schema_version(settings) == 1
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands ALTER COLUMN state SET DEFAULT 'failed'"
+            )
+
+        assert command_ledger_schema_version(settings) is None
+    finally:
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands ALTER COLUMN state SET DEFAULT 'queued'"
+            )
+        db.run_migrations(database)
+        db.reset_database_cache()
+
+
+def test_schema_readiness_rejects_same_name_constraint_definition_drift() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+
+    try:
+        assert command_ledger_schema_version(settings) == 1
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands DROP CONSTRAINT ck_hermes_commands_state"
+            )
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands "
+                "ADD CONSTRAINT ck_hermes_commands_state CHECK (state IS NOT NULL)"
+            )
+
+        assert command_ledger_schema_version(settings) is None
+    finally:
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands "
+                "DROP CONSTRAINT IF EXISTS ck_hermes_commands_state"
+            )
+            conn.execute(
+                """
+                ALTER TABLE quant_system.hermes_commands
+                ADD CONSTRAINT ck_hermes_commands_state
+                CHECK (state IN (
+                    'queued',
+                    'leased',
+                    'delivered',
+                    'outcome_unknown',
+                    'succeeded',
+                    'failed',
+                    'cancelled'
+                ))
+                """
+            )
+        db.run_migrations(database)
+        db.reset_database_cache()
+
+
+def test_schema_readiness_requires_a_non_state_migration_check() -> None:
+    """A table created by an older partial 005 must never be reported ready."""
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+
+    try:
+        assert command_ledger_schema_version(settings) == 1
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands "
+                "DROP CONSTRAINT ck_hermes_commands_request_digest"
+            )
+
+        # CREATE TABLE IF NOT EXISTS cannot repair the missing check, so the
+        # signature must remain fail-closed even after a migration rerun.
+        db.run_migrations(database)
+        assert command_ledger_schema_version(settings) is None
+    finally:
+        with database.connect() as conn:
+            conn.execute(
+                """
+                ALTER TABLE quant_system.hermes_commands
+                ADD CONSTRAINT ck_hermes_commands_request_digest
+                CHECK (canonical_request_digest ~ '^[0-9a-f]{64}$')
+                """
+            )
+        db.run_migrations(database)
+        db.reset_database_cache()
+
+
+def test_schema_readiness_rejects_unvalidated_same_name_constraint() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+
+    state_check = """
+        CHECK (state IN (
+            'queued',
+            'leased',
+            'delivered',
+            'outcome_unknown',
+            'succeeded',
+            'failed',
+            'cancelled'
+        ))
+    """
+    try:
+        assert command_ledger_schema_version(settings) == 1
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands DROP CONSTRAINT ck_hermes_commands_state"
+            )
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands "
+                f"ADD CONSTRAINT ck_hermes_commands_state {state_check} NOT VALID"
+            )
+
+        assert command_ledger_schema_version(settings) is None
+    finally:
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands "
+                "DROP CONSTRAINT IF EXISTS ck_hermes_commands_state"
+            )
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_commands "
+                f"ADD CONSTRAINT ck_hermes_commands_state {state_check}"
+            )
+        db.run_migrations(database)
+        db.reset_database_cache()
+
+
+def test_schema_readiness_rejects_same_name_index_definition_drift() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+
+    try:
+        assert command_ledger_schema_version(settings) == 1
+        with database.connect() as conn:
+            conn.execute("DROP INDEX quant_system.uq_hermes_commands_upstream_run")
+            conn.execute(
+                "CREATE INDEX uq_hermes_commands_upstream_run "
+                "ON quant_system.hermes_commands (hermes_run_id, hermes_session_id)"
+            )
+
+        # IF NOT EXISTS keeps reruns non-destructive: the migration does not
+        # silently replace a same-name object whose semantics are unknown.
+        db.run_migrations(database)
+        assert command_ledger_schema_version(settings) is None
+    finally:
+        with database.connect() as conn:
+            conn.execute("DROP INDEX IF EXISTS quant_system.uq_hermes_commands_upstream_run")
+        db.run_migrations(database)
+        db.reset_database_cache()
+
+
+def test_schema_readiness_rejects_invalid_same_name_index() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+
+    try:
+        assert command_ledger_schema_version(settings) == 1
+        with database.connect() as conn:
+            conn.execute(
+                """
+                UPDATE pg_index
+                SET indisvalid = FALSE
+                WHERE indexrelid =
+                    'quant_system.idx_hermes_outbox_available'::regclass
+                """
+            )
+
+        assert command_ledger_schema_version(settings) is None
+    finally:
+        with database.connect() as conn:
+            conn.execute("DROP INDEX IF EXISTS quant_system.idx_hermes_outbox_available")
+        db.run_migrations(database)
+        db.reset_database_cache()
+
+
+def test_schema_readiness_rejects_replica_only_append_only_trigger() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+
+    try:
+        assert command_ledger_schema_version(settings) == 1
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_command_events "
+                "ENABLE REPLICA TRIGGER trg_hermes_command_events_append_only"
+            )
+
+        assert command_ledger_schema_version(settings) is None
+
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_command_events "
+                "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only"
+            )
+
+        assert command_ledger_schema_version(settings) == 1
+    finally:
+        with database.connect() as conn:
+            conn.execute(
+                "ALTER TABLE quant_system.hermes_command_events "
+                "ENABLE TRIGGER trg_hermes_command_events_append_only"
+            )
         db.run_migrations(database)
         db.reset_database_cache()
 
@@ -299,9 +567,7 @@ def test_create_command_is_idempotent_and_commits_event_with_outbox() -> None:
             ).fetchall()
 
         assert command_count == 1
-        assert event_rows == [
-            (1, "command_created", "system", None, "queued", "a" * 64)
-        ]
+        assert event_rows == [(1, "command_created", "system", None, "queued", "a" * 64)]
         assert outbox_rows == [(1, "hermes.command.queued", None)]
     finally:
         _reset_hermes_ledger(database)
@@ -446,12 +712,9 @@ def test_outbox_insert_failure_rolls_back_command_and_event() -> None:
     finally:
         with database.connect() as conn:
             conn.execute(
-                "DROP TRIGGER IF EXISTS trg_test_fail_hermes_outbox "
-                "ON quant_system.hermes_outbox"
+                "DROP TRIGGER IF EXISTS trg_test_fail_hermes_outbox ON quant_system.hermes_outbox"
             )
-            conn.execute(
-                "DROP FUNCTION IF EXISTS quant_system.test_fail_hermes_outbox()"
-            )
+            conn.execute("DROP FUNCTION IF EXISTS quant_system.test_fail_hermes_outbox()")
         _reset_hermes_ledger(database)
         db.reset_database_cache()
 
@@ -580,9 +843,9 @@ def test_manual_rollback_and_reapply_preserve_preexisting_platform_schema() -> N
     database = db.get_database(settings)
     assert database is not None
     db.run_migrations(database)
-    rollback_sql = Path(
-        "scripts/sql/rollback/005_hermes_command_ledger.down.sql"
-    ).read_text(encoding="utf-8")
+    rollback_sql = Path("scripts/sql/rollback/005_hermes_command_ledger.down.sql").read_text(
+        encoding="utf-8"
+    )
 
     try:
         with database.connect() as conn:
@@ -774,9 +1037,9 @@ def test_heartbeat_requires_current_version_and_lease_token() -> None:
         assert heartbeat.state == "leased"
         assert heartbeat.lease_token == claimed.lease_token
         assert heartbeat.lease_until is not None
-        assert (
-            heartbeat.lease_until - heartbeat.updated_at
-        ).total_seconds() == pytest.approx(30, abs=0.01)
+        assert (heartbeat.lease_until - heartbeat.updated_at).total_seconds() == pytest.approx(
+            30, abs=0.01
+        )
     finally:
         _reset_hermes_ledger(database)
         db.reset_database_cache()
@@ -865,8 +1128,7 @@ def test_blocked_heartbeat_cannot_cross_the_real_lease_deadline() -> None:
         with ThreadPoolExecutor(max_workers=1) as pool:
             with database.connect() as lock_conn, lock_conn.transaction():
                 lock_conn.execute(
-                    "SELECT 1 FROM quant_system.hermes_commands "
-                    "WHERE command_id = %s FOR UPDATE",
+                    "SELECT 1 FROM quant_system.hermes_commands WHERE command_id = %s FOR UPDATE",
                     (claimed.command_id,),
                 )
                 heartbeat = pool.submit(
@@ -1460,6 +1722,8 @@ def test_exact_run_link_is_digest_bound_idempotent_and_queryable_by_both_sides()
     _reset_hermes_ledger(database)
     ledger = HermesCommandLedger(settings)
     now = datetime(2026, 7, 15, 11, 0, tzinfo=UTC)
+    other_user_id = UUID("00000000-0000-0000-0000-000000000002")
+    other_command_id = UUID("00000000-0000-0000-0000-000000000102")
 
     try:
         ledger.create_command(
@@ -1535,6 +1799,116 @@ def test_exact_run_link_is_digest_bound_idempotent_and_queryable_by_both_sides()
             platform_resource_id="experiment-20260715-001",
         ) == (first.link,)
 
+        second_digest = hermes_run_link_digest(
+            command_id=delivered.command_id,
+            platform_resource_type="experiment",
+            platform_resource_id="experiment-20260715-001",
+            relation="context",
+            hermes_session_id="hermes-session-link",
+            hermes_run_id="hermes-run-link",
+            source_event_id="event-terminal-002",
+        )
+        context_link = ledger.record_run_link(
+            command_id=delivered.command_id,
+            expected_version=delivered.version,
+            platform_resource_type="experiment",
+            platform_resource_id="experiment-20260715-001",
+            relation="context",
+            hermes_session_id="hermes-session-link",
+            hermes_run_id="hermes-run-link",
+            link_digest=second_digest,
+            source_event_id="event-terminal-002",
+            observed_at=now + timedelta(seconds=5),
+        ).link
+
+        with database.connect() as conn, conn.transaction():
+            conn.execute(
+                """
+                INSERT INTO quant_system.app_users (id, username, role, is_active)
+                VALUES (%s, 'run-link-isolation-user', 'user', TRUE)
+                ON CONFLICT (id) DO UPDATE
+                SET username = EXCLUDED.username,
+                    role = EXCLUDED.role,
+                    is_active = TRUE
+                """,
+                (other_user_id,),
+            )
+            conn.execute(
+                """
+                INSERT INTO quant_system.hermes_commands (
+                    command_id,
+                    owner_user_id,
+                    platform_session_id,
+                    client_request_id,
+                    kind,
+                    canonical_request_digest,
+                    payload_ref,
+                    state,
+                    version,
+                    hermes_session_id,
+                    hermes_run_id
+                )
+                VALUES (
+                    %s, %s, 'other-platform-session', 'other-request-001',
+                    'research_chat', %s, 'platform-payload://other/link-001',
+                    'delivered', 1, 'other-hermes-session', 'other-hermes-run'
+                )
+                """,
+                (other_command_id, other_user_id, "e" * 64),
+            )
+            conn.execute(
+                """
+                INSERT INTO quant_system.hermes_run_links (
+                    link_id,
+                    command_id,
+                    platform_resource_type,
+                    platform_resource_id,
+                    relation,
+                    hermes_session_id,
+                    hermes_run_id,
+                    link_digest,
+                    source_event_id,
+                    observed_at
+                )
+                VALUES (
+                    %s, %s, 'experiment', 'experiment-20260715-001',
+                    'input', 'other-hermes-session', 'other-hermes-run',
+                    %s, 'other-event-001', %s
+                )
+                """,
+                (
+                    UUID("00000000-0000-0000-0000-000000000202"),
+                    other_command_id,
+                    "f" * 64,
+                    now + timedelta(seconds=6),
+                ),
+            )
+
+        batch = ledger.list_run_links_for_resources(
+            resources=(
+                ("experiment", "experiment-20260715-001"),
+                ("experiment", "experiment-with-no-links"),
+            ),
+            limit_per_resource=1,
+        )
+        assert batch[("experiment", "experiment-20260715-001")].links == (first.link,)
+        assert batch[("experiment", "experiment-20260715-001")].has_more is True
+        assert batch[("experiment", "experiment-with-no-links")].links == ()
+        assert batch[("experiment", "experiment-with-no-links")].has_more is False
+        complete_owner_batch = ledger.list_run_links_for_resources(
+            resources=(("experiment", "experiment-20260715-001"),),
+            limit_per_resource=100,
+        )
+        assert complete_owner_batch[("experiment", "experiment-20260715-001")].links == (
+            first.link,
+            context_link,
+        )
+        assert complete_owner_batch[("experiment", "experiment-20260715-001")].has_more is False
+        assert ledger.list_run_links_for_resource(
+            platform_resource_type="experiment",
+            platform_resource_id="experiment-20260715-001",
+        ) == (first.link, context_link)
+
         with pytest.raises(psycopg.errors.RaiseException), database.connect() as conn:
             conn.execute(
                 """
@@ -1551,6 +1925,11 @@ def test_exact_run_link_is_digest_bound_idempotent_and_queryable_by_both_sides()
             )
     finally:
         _reset_hermes_ledger(database)
+        with database.connect() as conn:
+            conn.execute(
+                "DELETE FROM quant_system.app_users WHERE id = %s",
+                (other_user_id,),
+            )
         db.reset_database_cache()
 
 
@@ -1595,13 +1974,14 @@ def test_command_event_and_outbox_projections_are_readable_in_durable_order() ->
         assert ledger.get_command(created.command_id) == unknown
         events = ledger.list_command_events(created.command_id)
         assert [event.command_version for event in events] == [1, 2, 3, 4]
-        assert [event.event_id for event in events] == sorted(
-            event.event_id for event in events
+        assert [event.event_id for event in events] == sorted(event.event_id for event in events)
+        assert (
+            ledger.list_command_events(
+                created.command_id,
+                after_event_id=events[1].event_id,
+            )
+            == events[2:]
         )
-        assert ledger.list_command_events(
-            created.command_id,
-            after_event_id=events[1].event_id,
-        ) == events[2:]
 
         outbox = ledger.list_command_outbox(created.command_id)
         assert [(entry.command_version, entry.topic) for entry in outbox] == [

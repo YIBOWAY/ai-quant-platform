@@ -94,5 +94,11 @@
       "kill_switch": true,
       "bind_address": "127.0.0.1"
     }
+  },
+  "factors": {
+    "status": 503,
+    "body": {
+      "detail": "fixture_factor_registry_offline"
+    }
   }
 }

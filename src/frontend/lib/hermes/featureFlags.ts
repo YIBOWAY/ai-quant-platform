@@ -1,9 +1,11 @@
 import type { HermesFeatureFlags } from "./types";
 
 /**
- * Shell is the only env-configurable capability in this slice.
- * chat / execution / approvalMutations / unifiedResults / legacyRedirects are hard false and
- * must not be read from environment variables.
+ * Shell and the page-scoped Agent Studio cutover are the only env-configurable
+ * flags. The cutover defaults off and never enables a mutation capability.
+ * chat / execution / approvalMutations / unifiedResultsCutoverAccepted / legacyRedirects are hard false and
+ * must not be read from environment variables. Unified Results stays false until
+ * live real-data acceptance verifies the catalog and exact run-link boundary.
  * deliveryState is a versioned delivery fact, never a live probe.
  */
 export function hermesFeatureFlags(
@@ -15,8 +17,12 @@ export function hermesFeatureFlags(
     chat: false,
     execution: false,
     approvalMutations: false,
-    unifiedResults: false,
+    // The read-only preview is intentionally visible for acceptance. This flag
+    // records cutover acceptance; it is not a visibility switch.
+    unifiedResultsCutoverAccepted: false,
     legacyRedirects: false,
+    agentStudioRedirect:
+      env.QS_HERMES_AGENT_STUDIO_REDIRECT_ENABLED === "true",
     deliveryState: "blocked_in_this_slice",
   } as const;
 }

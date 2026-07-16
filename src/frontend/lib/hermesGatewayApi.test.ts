@@ -21,6 +21,8 @@ describe("Hermes persisted-session API reads", () => {
         session_api_available: true,
         chat_write_ready: false,
         features: { session_resources: true },
+        upstream_blockers: ["run_submission_not_idempotent"],
+        platform_delivery_blockers: ["authenticated_mutation_bff_unavailable"],
         blockers: ["run_submission_not_idempotent"],
         warnings: [],
       },
@@ -80,6 +82,8 @@ describe("Hermes persisted-session API reads", () => {
       read_status: "unavailable",
       connected: false,
       chat_write_ready: false,
+      upstream_blockers: ["api_unavailable"],
+      platform_delivery_blockers: ["api_unavailable"],
     });
     expect(sessions).toMatchObject({ read_status: "unavailable", sessions: [] });
   });

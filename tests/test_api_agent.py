@@ -12,9 +12,7 @@ from quant_system.api.server import create_app
 def _agent_app(tmp_path, *, agent=None, general=None):
     agent_root = agent if agent is not None else tmp_path / "agent-output"
     general_root = general if general is not None else tmp_path / "general"
-    return agent_root, TestClient(
-        create_app(output_dir=general_root, agent_output_dir=agent_root)
-    )
+    return agent_root, TestClient(create_app(output_dir=general_root, agent_output_dir=agent_root))
 
 
 def test_agent_api_uses_injected_agent_output_dir_not_general_data_dir(tmp_path) -> None:
@@ -31,9 +29,7 @@ def test_agent_api_uses_injected_agent_output_dir_not_general_data_dir(tmp_path)
     client = TestClient(create_app(output_dir=general, agent_output_dir=agent))
     payload = client.get("/api/agent/candidates").json()
 
-    assert [item["candidate_id"] for item in payload["candidates"]] == [
-        artifact.candidate_id
-    ]
+    assert [item["candidate_id"] for item in payload["candidates"]] == [artifact.candidate_id]
     assert not (general / "agent" / "candidates").exists()
 
 
@@ -132,6 +128,75 @@ def test_agent_candidate_list_detail_and_review_do_not_import_source(tmp_path) -
     assert set(sys.modules) == before_modules
 
 
+def test_agent_candidate_detail_excludes_unbound_legacy_symlink_evidence(
+    tmp_path,
+) -> None:
+    agent, client = _agent_app(tmp_path)
+    pool = CandidatePool(agent)
+    artifact = pool.write_candidate(
+        task_id="task-safe-detail",
+        goal="safe evidence only",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content="# safe\n",
+    )
+    outside_review = tmp_path / "outside-review.jsonl"
+    outside_review.write_text("LOCAL_SECRET_PROOF\n", encoding="utf-8")
+    (artifact.path.parent / "reviews.jsonl").symlink_to(outside_review)
+
+    outside_audit = tmp_path / "outside-audit.jsonl"
+    outside_audit.write_text(
+        f'{{"candidate_id":"{artifact.candidate_id}","secret":"AUDIT_SECRET"}}\n',
+        encoding="utf-8",
+    )
+    audit_dir = agent / "agent" / "audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    (audit_dir / "linked.jsonl").symlink_to(outside_audit)
+
+    response = client.get(f"/api/agent/candidates/{artifact.candidate_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["audit"] == []
+    assert payload["reviews"] == []
+    assert "LOCAL_SECRET_PROOF" not in response.text
+    assert "AUDIT_SECRET" not in response.text
+
+
+def test_agent_candidate_detail_bounds_source_preview_on_the_server(tmp_path) -> None:
+    agent, client = _agent_app(tmp_path)
+    artifact = CandidatePool(agent).write_candidate(
+        task_id="task-bounded-preview",
+        goal="bounded preview",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content="x" * 65_537,
+    )
+
+    response = client.get(f"/api/agent/candidates/{artifact.candidate_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["source_preview"]) == 65_536
+    assert payload["evidence_truncated"] is True
+
+
+def test_agent_candidate_list_uses_a_bounded_repository_scan(tmp_path, monkeypatch) -> None:
+    seen: list[int | None] = []
+
+    def bounded_list(_self, *, max_entries=None):
+        seen.append(max_entries)
+        return []
+
+    monkeypatch.setattr(CandidatePool, "list_for_read", bounded_list)
+    _, client = _agent_app(tmp_path)
+
+    response = client.get("/api/agent/candidates")
+
+    assert response.status_code == 200
+    assert seen == [200]
+
+
 def test_agent_review_missing_expected_status_and_stale_second_decision(tmp_path) -> None:
     agent, client = _agent_app(tmp_path)
     artifact = CandidatePool(agent).write_candidate(
@@ -190,9 +255,7 @@ def test_agent_review_missing_expected_status_and_stale_second_decision(tmp_path
     assert detail["resource"] == "agent_candidate"
     assert detail["id"] == artifact.candidate_id
     assert lock_path.read_bytes() == first_lock_bytes
-    assert not (
-        Path(agent, "agent", "candidates", artifact.candidate_id, "rejected.lock")
-    ).exists()
+    assert not (Path(agent, "agent", "candidates", artifact.candidate_id, "rejected.lock")).exists()
 
 
 def test_candidate_review_returns_409_for_stale_digest(tmp_path) -> None:
@@ -412,11 +475,7 @@ def test_agent_review_corrupt_candidate_is_409_integrity_failed(tmp_path) -> Non
     broken = Path(agent) / "agent" / "candidates" / "broken-id"
     broken.mkdir(parents=True)
     (broken / "metadata.json").write_text("{not-json", encoding="utf-8")
-    before = {
-        p: p.read_bytes()
-        for p in broken.rglob("*")
-        if p.is_file()
-    }
+    before = {p: p.read_bytes() for p in broken.rglob("*") if p.is_file()}
 
     response = client.post(
         "/api/agent/candidates/broken-id/review",
@@ -429,11 +488,7 @@ def test_agent_review_corrupt_candidate_is_409_integrity_failed(tmp_path) -> Non
     )
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "candidate_integrity_failed"
-    after = {
-        p: p.read_bytes()
-        for p in broken.rglob("*")
-        if p.is_file()
-    }
+    after = {p: p.read_bytes() for p in broken.rglob("*") if p.is_file()}
     assert after == before
     assert not (broken / "approved.lock").exists()
 

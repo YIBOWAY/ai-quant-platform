@@ -1,5 +1,6 @@
 import { Bot, Cpu, Network, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { HermesParityBanner } from "@/components/HermesParityBanner";
@@ -15,6 +16,8 @@ import {
   getFactors,
 } from "@/lib/api";
 import { getServerLocale } from "@/lib/serverLocale";
+import { agentStudioCutoverHref } from "@/lib/hermes/agentStudioCutover";
+import { hermesFeatureFlags } from "@/lib/hermes/featureFlags";
 
 const copy = {
   en: {
@@ -100,6 +103,14 @@ function statusTone(status: string | null | undefined): Tone {
 
 export default async function AgentStudio() {
   const locale = await getServerLocale();
+  const cutoverHref = agentStudioCutoverHref(
+    hermesFeatureFlags().agentStudioRedirect,
+    locale,
+  );
+  if (cutoverHref) {
+    // This happens before any legacy candidate/factor API read.
+    redirect(cutoverHref);
+  }
   const text = copy[locale];
   const [candidates, factors] = await Promise.all([
     getAgentCandidates(),

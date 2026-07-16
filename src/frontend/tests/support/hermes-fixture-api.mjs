@@ -29,7 +29,21 @@ const ROOT_KEYS = Object.freeze([
   "health",
   "artifacts",
   "candidates",
+  "factors",
 ]);
+
+const FACTOR_REQUIRED_KEYS = Object.freeze([
+  "factor_id",
+  "factor_name",
+  "factor_version",
+  "lookback",
+  "direction",
+  "description",
+  "origin",
+]);
+const FACTOR_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
+const MAX_FACTOR_ROWS = 2_000;
+const MAX_FACTOR_TEXT_CHARS = 1_024;
 
 /** Eleven required CandidateReadItem keys (nullable ≠ omitted). */
 export const CANDIDATE_REQUIRED_KEYS = Object.freeze([
@@ -136,6 +150,70 @@ export function validateCombinedFixture(payload) {
     );
   }
 
+  assert(isPlainObject(payload.factors), "factors must be an object");
+  assert(
+    payload.factors.status === 200 || payload.factors.status === 503,
+    "factors.status must be 200 or 503",
+  );
+  assert(isPlainObject(payload.factors.body), "factors.body must be an object");
+  if (payload.factors.status === 503) {
+    assert(
+      typeof payload.factors.body.detail === "string" &&
+        payload.factors.body.detail.length > 0 &&
+        payload.factors.body.detail.length <= MAX_FACTOR_TEXT_CHARS,
+      "degraded factors.body.detail must be a bounded non-empty string",
+    );
+    assert(
+      !Object.hasOwn(payload.factors.body, "factors"),
+      "degraded factors response must not masquerade as a factor catalog",
+    );
+  } else {
+    assert(
+      Array.isArray(payload.factors.body.factors),
+      "normal factors.body.factors must be an array",
+    );
+    assert(
+      payload.factors.body.factors.length <= MAX_FACTOR_ROWS,
+      `normal factor catalog exceeds ${MAX_FACTOR_ROWS} rows`,
+    );
+    const factorIds = new Set();
+    for (const [index, factor] of payload.factors.body.factors.entries()) {
+      assert(isPlainObject(factor), `factors.body.factors[${index}] must be an object`);
+      for (const key of FACTOR_REQUIRED_KEYS) {
+        assert(
+          Object.hasOwn(factor, key),
+          `factors.body.factors[${index}] missing required key: ${key}`,
+        );
+      }
+      assert(
+        typeof factor.factor_id === "string" && FACTOR_ID_PATTERN.test(factor.factor_id),
+        `factors.body.factors[${index}].factor_id is invalid`,
+      );
+      assert(!factorIds.has(factor.factor_id), `duplicate factor_id: ${factor.factor_id}`);
+      factorIds.add(factor.factor_id);
+      for (const key of ["factor_name", "factor_version", "description"]) {
+        assert(
+          typeof factor[key] === "string" &&
+            factor[key].length > 0 &&
+            factor[key].length <= MAX_FACTOR_TEXT_CHARS,
+          `factors.body.factors[${index}].${key} must be a bounded non-empty string`,
+        );
+      }
+      assert(
+        Number.isInteger(factor.lookback) && factor.lookback >= 1 && factor.lookback <= 100_000,
+        `factors.body.factors[${index}].lookback is invalid`,
+      );
+      assert(
+        ["higher_is_better", "lower_is_better", "neutral"].includes(factor.direction),
+        `factors.body.factors[${index}].direction is invalid`,
+      );
+      assert(
+        factor.origin === "builtin" || factor.origin === "promoted",
+        `factors.body.factors[${index}].origin is invalid`,
+      );
+    }
+  }
+
   return payload;
 }
 
@@ -194,9 +272,25 @@ export function createFixtureServer(fixture) {
         artifact_type: candidate.artifact_type ?? null,
         universe: candidate.universe ?? [],
       },
-      source_preview: null,
+      source_preview:
+        candidate.integrity_state === "verified"
+          ? `def fixture_factor(frame):\n    return frame["close"].pct_change()`
+          : null,
+      // Production excludes global/legacy audit rows that are not bound to the
+      // exact candidate digest. The fixture must preserve that authority rule.
       audit: [],
-      reviews: [],
+      reviews:
+        candidate.status === "approved"
+          ? [
+              JSON.stringify({
+                candidate_id: candidate.candidate_id,
+                decision: "approve",
+                note: "fixture review",
+                manifest_digest: candidate.manifest_digest,
+              }),
+            ]
+          : [],
+      evidence_truncated: false,
       integrity_state: candidate.integrity_state,
       manifest_digest: candidate.manifest_digest,
       observed_manifest_digest: candidate.observed_manifest_digest,
@@ -256,6 +350,11 @@ export function createFixtureServer(fixture) {
         return;
       }
       finish(200, candidateDetailResponse(candidate));
+      return;
+    }
+
+    if (pathname === "/api/factors") {
+      finish(validated.factors.status, validated.factors.body);
       return;
     }
 

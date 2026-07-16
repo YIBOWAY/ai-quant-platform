@@ -59,9 +59,13 @@ data/                     Local cache, fixtures, generated research outputs.
   Scene-B flow completed final receipt -> Gate 3 prepare -> human diff/commit ->
   reviewed/cleanup, and promoted commit `524e791` is merged. The professional
   Hermes default shell now includes an official-API persisted-session read
-  surface (`sessionRead=true`) through a server-side GET-only BFF. Real Hermes
-  chat/provider evidence, Hermes approval mutations, unified-results parity,
-  and legacy-page retirement remain blocked and require later independent plans.
+  surface (`sessionRead=true`) through a server-side GET-only BFF. D-31 Wave 3
+  has also delivered migration 005's durable command/event/outbox/run-link
+  ledger, a deterministic **reconcile-only** connector-worker framework, and
+  the read-only Unified Results catalog/detail UI. This does not prove command
+  dispatch: real Hermes chat/provider evidence, Hermes approval mutations,
+  exact Hermes-run links, full results cutover, and legacy-page retirement
+  remain blocked behind independent evidence gates.
   Slice 9E lives in HQA and reuses Slice 9D's price seam. Slice 9D's
   `data prices` seam is strictly read-only Futu/QFQ/1d JSON, capped at 25
   symbols and 500 calendar days, with no sample/local/Tiingo/Longbridge
@@ -133,11 +137,14 @@ data/                     Local cache, fixtures, generated research outputs.
   owner-only regular file. Loopback is a network boundary, not OS-user auth;
   while this local platform has no user authentication, bind it only to
   `127.0.0.1`/`::1`. Health/capability/session reads do not call a provider.
-- The session-read slice added no PostgreSQL migration. A later write bridge
-  must use a durable command/outbox/event ledger plus a deterministic connector
-  worker. Prefer `LISTEN/NOTIFY` wakeup with periodic scan recovery; polling,
-  claim, lease, and heartbeat must not invoke an LLM when no queued command
-  exists. Do not implement Hermes cron prompt polling as a queue.
+- Migration 005 now provides the PostgreSQL command/event/outbox/run-link
+  ledger and schema metadata, including tested claim/lease/heartbeat primitives.
+  The currently runnable connector worker only provides `LISTEN/NOTIFY`, periodic
+  scan and expired-lease reconciliation; it does not claim queued commands or
+  heartbeat a worker lease. It is intentionally reconcile-only: there is no dispatch
+  adapter, prompt submission, provider call, SSE replay or approval mutation.
+  These deterministic lifecycle operations must never invoke an LLM when no
+  queued command exists. Do not implement Hermes cron prompt polling as a queue.
 
 
 ## Core Engineering Rules
@@ -208,9 +215,10 @@ data/                     Local cache, fixtures, generated research outputs.
   sessions through the official-API GET-only BFF. There is no
   `POST /api/agent/tasks`, fake async job, approval mutation, or enabled
   composer.
-- Keep `sessionRead=true` observational and `chat`, `execution`,
-  `approvalMutations`, `unifiedResults`, and `legacyRedirects` hard false until
-  their independent evidence gates land. Read
+- Keep `sessionRead=true` observational. The read-only Unified Results
+  preview/catalog is visible, while `unifiedResultsCutoverAccepted=false`;
+  `chat`, `execution`, `approvalMutations`, and `legacyRedirects` remain hard
+  false until their independent evidence gates land. Read
   `docs/guides/hermes-sessions.md` before touching the bridge or deployment.
 - “Read-only AI news” means no research/trading/account mutation; successful
   AI HOT GETs intentionally best-effort update the optional news item/fetch
@@ -218,8 +226,11 @@ data/                     Local cache, fixtures, generated research outputs.
   rows even though it never creates a brief snapshot without the explicit save
   action.
 - Keep `/factor-lab` and the read-only `/agent-studio` inspection route until
-  approval and evidence parity is proven; do not add early redirects or delete
-  deep links, and do not restore legacy Agent Studio mutations.
+  approval and evidence parity is proven; do not delete deep links or restore
+  legacy Agent Studio mutations. A page-scoped Agent Studio redirect may exist
+  only as an independently reversible, default-off gate
+  (`QS_HERMES_AGENT_STUDIO_REDIRECT_ENABLED=true`); do not enable it or any
+  global legacy redirect without exact parity evidence and user approval.
 - Server reads use the existing `lib/api.ts` pattern; client mutations use
   `lib/apiClient.ts` / TanStack Query. Preserve additive API compatibility.
 

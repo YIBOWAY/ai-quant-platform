@@ -94,7 +94,13 @@ function labelFor(text: FlatCopy, id: NavItemId): string {
   return typeof value === "string" ? value : id;
 }
 
-export function TopBar({ shellEnabled }: { shellEnabled: boolean }) {
+export function TopBar({
+  shellEnabled,
+  agentStudioRedirect = false,
+}: {
+  shellEnabled: boolean;
+  agentStudioRedirect?: boolean;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const locale = useLocale();
@@ -103,7 +109,7 @@ export function TopBar({ shellEnabled }: { shellEnabled: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
-  const mobileNavSections = buildNavSections({ shellEnabled }).map((section) => ({
+  const mobileNavSections = buildNavSections({ shellEnabled, agentStudioRedirect }).map((section) => ({
     name: text.groups[section.id],
     items: section.items
       .filter((item) => isVisibleOnSurface(item, "mobile"))

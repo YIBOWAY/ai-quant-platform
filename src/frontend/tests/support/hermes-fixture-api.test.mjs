@@ -97,6 +97,7 @@ describe("hermes-fixture-api", () => {
       assert.deepEqual(Object.keys(fixture).sort(), [
         "artifacts",
         "candidates",
+        "factors",
         "health",
         "schema_version",
       ]);
@@ -104,6 +105,7 @@ describe("hermes-fixture-api", () => {
       assert.ok(fixture.health);
       assert.ok(fixture.artifacts);
       assert.ok(fixture.candidates);
+      assert.ok(fixture.factors);
     }
   });
 
@@ -133,6 +135,37 @@ describe("hermes-fixture-api", () => {
       );
     } finally {
       await closeServer(server);
+    }
+  });
+
+  it("serves a promoted factor catalog normally and a truthful registry outage when degraded", async () => {
+    for (const [fixtureName, expectedStatus] of [
+      ["normal", 200],
+      ["degraded", 503],
+    ]) {
+      const fixture = loadFixture(fixtureName);
+      const server = createFixtureServer(fixture);
+      const port = await listenEphemeral(server);
+      try {
+        const response = await request(port, "GET", "/api/factors");
+        assert.equal(response.status, expectedStatus, fixtureName);
+        assert.equal(response.headers["cache-control"], "no-store");
+        const body = JSON.parse(response.body.toString("utf8"));
+        if (fixtureName === "normal") {
+          assert.ok(
+            body.factors.some(
+              (factor) =>
+                factor.factor_id === "agent_candidate_wave2_sceneb_mom20_v3" &&
+                factor.origin === "promoted",
+            ),
+          );
+        } else {
+          assert.equal(body.detail, "fixture_factor_registry_unavailable");
+          assert.equal(Object.hasOwn(body, "factors"), false);
+        }
+      } finally {
+        await closeServer(server);
+      }
     }
   });
 
@@ -221,6 +254,30 @@ describe("hermes-fixture-api", () => {
       delete clone.candidates.candidates[0][key];
       assert.throws(() => validateCombinedFixture(clone), /missing required key/);
     }
+  });
+
+  it("rejects an oversized normal factor catalog at the fixture boundary", () => {
+    const clone = structuredClone(loadFixture("normal"));
+    const sample = clone.factors.body.factors[0];
+    clone.factors.body.factors = Array.from({ length: 2_001 }, (_, index) => ({
+      ...sample,
+      factor_id: `fixture_factor_${index}`,
+    }));
+
+    assert.throws(
+      () => validateCombinedFixture(clone),
+      /normal factor catalog exceeds 2000 rows/,
+    );
+  });
+
+  it("rejects a degraded factor fixture that masquerades as an empty catalog", () => {
+    const clone = structuredClone(loadFixture("degraded"));
+    clone.factors.body.factors = [];
+
+    assert.throws(
+      () => validateCombinedFixture(clone),
+      /must not masquerade as a factor catalog/,
+    );
   });
 
   it("rejects unknown fixture names from createFixtureServer path via loadFixture only", () => {

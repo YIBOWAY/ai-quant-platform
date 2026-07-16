@@ -429,6 +429,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hermes/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hermes Results */
+        get: operations["hermes_results_api_hermes_results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/results/{kind}/{resource_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hermes Result Detail */
+        get: operations["hermes_result_detail_api_hermes_results__kind___resource_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hermes/sessions": {
         parameters: {
             query?: never;
@@ -1895,6 +1929,11 @@ export interface components {
             audit: string[];
             /** Candidate Id */
             candidate_id: string;
+            /**
+             * Evidence Truncated
+             * @default false
+             */
+            evidence_truncated: boolean;
             /** Integrity Error Code */
             integrity_error_code: string | null;
             /**
@@ -3100,6 +3139,8 @@ export interface components {
             artifact_type: string | null;
             /** Candidate Id */
             candidate_id: string;
+            /** Created At */
+            created_at?: string | null;
             /** Goal */
             goal: string | null;
             /** Integrity Error Code */
@@ -3753,6 +3794,8 @@ export interface components {
             };
             /** Model */
             model?: string | null;
+            /** Platform Delivery Blockers */
+            platform_delivery_blockers: string[];
             /**
              * Read Status
              * @enum {string}
@@ -3760,6 +3803,8 @@ export interface components {
             read_status: "available" | "degraded" | "unavailable";
             /** Session Api Available */
             session_api_available: boolean;
+            /** Upstream Blockers */
+            upstream_blockers: string[];
             /** Warnings */
             warnings: components["schemas"]["HermesGatewayWarningResponse"][];
         };
@@ -3983,6 +4028,132 @@ export interface components {
             quality: "available" | "degraded" | "not_applicable" | "unavailable";
             /** Status */
             status: string;
+        };
+        /** HermesResultDetailResponse */
+        HermesResultDetailResponse: {
+            item: components["schemas"]["HermesResultItem"] | null;
+            /**
+             * Read Status
+             * @enum {string}
+             */
+            read_status: "available" | "degraded" | "missing" | "corrupt" | "unavailable";
+            /** Resource */
+            resource: {
+                [key: string]: unknown;
+            } | null;
+            /** Warnings */
+            warnings: components["schemas"]["HermesResultWarning"][];
+        };
+        /** HermesResultItem */
+        HermesResultItem: {
+            /**
+             * Authority
+             * @enum {string}
+             */
+            authority: "platform_run_artifact" | "platform_experiment_artifact" | "platform_candidate_repository" | "hqa_artifact_manifest";
+            /** Detail Href */
+            detail_href: string;
+            /** Display Title */
+            display_title: string;
+            /**
+             * Freshness
+             * @enum {string}
+             */
+            freshness: "fresh" | "stale" | "not_applicable" | "unknown";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "backtest" | "factor" | "paper" | "replication" | "experiment" | "factor_candidate" | "portfolio_risk" | "prediction" | "market_foresight" | "weekly_review" | "opportunity_summary" | "automation_status";
+            /** Occurred At */
+            occurred_at: string;
+            /** Original Href */
+            original_href: string;
+            /**
+             * Read Status
+             * @enum {string}
+             */
+            read_status: "available" | "degraded" | "missing" | "corrupt" | "unavailable";
+            /** Resource Id */
+            resource_id: string;
+            /** Run Links */
+            run_links?: components["schemas"]["HermesResultRunLink"][] | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "platform_runs" | "platform_experiments" | "platform_candidates" | "hqa_artifact_feed";
+            /** Status */
+            status: string;
+            /** Summary */
+            summary?: string | null;
+        };
+        /** HermesResultRunLink */
+        HermesResultRunLink: {
+            /** Command Id */
+            command_id: string;
+            /** Hermes Run Id */
+            hermes_run_id: string;
+            /** Hermes Session Id */
+            hermes_session_id: string;
+            /** Link Digest */
+            link_digest: string;
+            /** Observed At */
+            observed_at: string;
+            /**
+             * Relation
+             * @enum {string}
+             */
+            relation: "input" | "output" | "context";
+            /** Source Event Id */
+            source_event_id?: string | null;
+        };
+        /** HermesResultSourceState */
+        HermesResultSourceState: {
+            /** Item Count */
+            item_count: number;
+            /**
+             * Read Status
+             * @enum {string}
+             */
+            read_status: "available" | "degraded" | "empty" | "unavailable";
+            /** Source */
+            source: string;
+        };
+        /** HermesResultWarning */
+        HermesResultWarning: {
+            /** Code */
+            code: string;
+            /** Kind */
+            kind?: ("backtest" | "factor" | "paper" | "replication" | "experiment" | "factor_candidate" | "portfolio_risk" | "prediction" | "market_foresight" | "weekly_review" | "opportunity_summary" | "automation_status") | null;
+            /** Resource Id */
+            resource_id?: string | null;
+            /** Source */
+            source: string;
+        };
+        /** HermesResultsResponse */
+        HermesResultsResponse: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["HermesResultItem"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /**
+             * Read Status
+             * @enum {string}
+             */
+            read_status: "available" | "degraded" | "empty" | "unavailable";
+            /** Sources */
+            sources: components["schemas"]["HermesResultSourceState"][];
+            /** Total */
+            total?: number | null;
+            /** Total Is Exact */
+            total_is_exact: boolean;
+            /** Warnings */
+            warnings: components["schemas"]["HermesResultWarning"][];
         };
         /** HermesRiskBeta */
         HermesRiskBeta: {
@@ -7464,6 +7635,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HermesGatewayStatusResponse"];
+                };
+            };
+        };
+    };
+    hermes_results_api_hermes_results_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                kind?: ("backtest" | "factor" | "paper" | "replication" | "experiment" | "factor_candidate" | "portfolio_risk" | "prediction" | "market_foresight" | "weekly_review" | "opportunity_summary" | "automation_status") | null;
+                status?: string | null;
+                source?: ("platform_runs" | "platform_experiments" | "platform_candidates" | "hqa_artifact_feed") | null;
+                search?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HermesResultsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hermes_result_detail_api_hermes_results__kind___resource_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "backtest" | "factor" | "paper" | "replication" | "experiment" | "factor_candidate" | "portfolio_risk" | "prediction" | "market_foresight" | "weekly_review" | "opportunity_summary" | "automation_status";
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HermesResultDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

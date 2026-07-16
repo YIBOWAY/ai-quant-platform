@@ -8,11 +8,14 @@ and options research platform.
 The Phase 0-14 documents describe delivered historical capability layers, not
 the current implementation queue. Start with [docs/INDEX.md](docs/INDEX.md).
 HQA Slices 9A-9G, the read-only mini 9H Hermes artifact shelf, and full 9H
-automation/notifications are delivered. The first D-31 wave has also delivered
-the fail-closed Hermes gateway contract, candidate integrity/scoped Gate 3, and
-the professional read-only Hermes default shell. Real local-Hermes chat/provider
-use, Hermes approval mutations, unified-results parity, and legacy-page
-retirement remain unfinished and require later independent plans. Slice 9E is an HQA-local locked
+automation/notifications are delivered. D-31 Waves 1-3 have delivered the
+fail-closed gateway contract, candidate integrity/scoped Gate 3, the
+professional read-only Hermes shell, official-API persisted-session reads,
+migration 005's durable transport ledger, a reconcile-only connector-worker
+framework, and a read-only Unified Results catalog/detail UI. This is not a
+write bridge: real local-Hermes chat/provider use, approval mutations, exact
+Hermes-run links, full results cutover, and legacy-page retirement remain
+unfinished and require later independent evidence gates. Slice 9E is an HQA-local locked
 prediction event ledger that reuses, but does not modify, the platform. Slice 9D adds a strict read-only
 `data prices` JSON seam: explicit Futu, QFQ, and 1d only; at most 25 symbols
 and 500 inclusive calendar dates; no sample/local/Tiingo/Longbridge fallback.
@@ -147,7 +150,9 @@ database-index settings, and the runtime log path.
 
 | Page | Purpose |
 |---|---|
-| `/hermes` | Reversible default, read-only COO workbench with Today, Tasks, Approvals, Results, one safety strip, and a disabled composer. It does not yet talk to local Hermes or consume Hermes providers. |
+| `/hermes` | Reversible default, read-only COO workbench with Today, Tasks, Approvals, Unified Results preview, one safety strip, and a disabled composer. It reads local Hermes health/capabilities and saved sessions through a server-side official-API adapter, but submits no prompt and consumes no Hermes provider quota. |
+| `/hermes/sessions` | GET-only list/detail view over real saved local-Hermes sessions; the bearer key remains server-side and the transcript composer stays disabled. |
+| `/hermes/results` | Read-only unified catalog/detail projection over authoritative platform runs, experiments, candidate records, HQA artifacts, and exact run links. Preview is visible while `unifiedResultsCutoverAccepted=false`; no Hermes run is inferred from symbol/name similarity. |
 | `/brief` | Live UI-assembled factual daily-brief preview and PostgreSQL archive control; saving is disabled if the authoritative paper-account source is unavailable. Its AI HOT GET may contact that upstream and best-effort mirror news/cache-audit rows to PostgreSQL; merely viewing the live preview does not create a brief snapshot. The server validates the complete factual-v1 schema and watermarks, but does not independently refetch every upstream source. |
 | `/brief/[publicId]` | Immutable historical brief snapshot rendered from its stored payload and source watermarks. |
 | `/data-explorer` | US equity historical data viewer. |
@@ -166,7 +171,7 @@ database-index settings, and the runtime log path.
 | `/options-buyside` | Buy-side options strategy assistant. |
 | `/ai-news` | Read-only AI HOT news feed with selected/all items, category/keyword/time-window filters, daily reports, original-source links, and no strategy/backtest/paper-account mutations. |
 | `/polymarket` | Read-only prediction-market research page. |
-| `/agent-studio` | Transitional **read-only** candidate inspection surface. It shows source/audit evidence but no task submission or approve/reject controls, and links back to Hermes. Repository-unavailable is distinct from an empty pool. Canonical candidates live under repo-anchored `data/agent_run/agent/candidates` (override only via `QS_AGENT_OUTPUT_DIR`; `QS_DATA_DIR`/CWD do not relocate them). |
+| `/agent-studio` | Transitional **read-only** candidate inspection surface. It shows source plus exact digest-bound review evidence (legacy/global unbound audit is excluded), has no task submission or approve/reject controls, and links back to Hermes. A page-scoped redirect gate exists but is default-off. Repository-unavailable is distinct from an empty pool. Canonical candidates live under repo-anchored `data/agent_run/agent/candidates` (override only via `QS_AGENT_OUTPUT_DIR`; `QS_DATA_DIR`/CWD do not relocate them). |
 | `/settings` | Masked local settings. |
 
 Equity data endpoints only accept explicit `provider=sample|futu|tiingo`.
@@ -328,9 +333,11 @@ QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 On startup the backend applies `scripts/sql/*.sql` in lexical order. Migrations
 003/004 create 11 business tables: root user, brief issue/snapshot/source,
 AI daily reports, and six paper-account tables for account, ledger, pending
-orders, current positions, and position snapshots. Together with migration
-001's run index and migration 002's two AI-news cache tables, all four files
-define 14 `quant_system` tables. There is no `schema_migrations` ledger; the SQL
+orders, current positions, and position snapshots. Migration 005 adds five
+Hermes transport-ledger tables for schema metadata, commands, events, outbox,
+and exact run links. Together with migration 001's run index and migration
+002's two AI-news cache tables, all five files define 19 `quant_system` tables.
+There is no general `schema_migrations` ledger; the SQL
 files are idempotently replayed in lexical order. Startup also backfills the
 file-based run index and prunes index rows whose files were removed. If
 PostgreSQL is down, the first probe is short and later failed requests use a
@@ -691,11 +698,12 @@ Start here:
 `docs/SYSTEM_DESIGN_RESEARCH.md`, phase delivery records, and audits are
 historical design/evidence sources, not the current work queue.
 
-Current handoff: HQA 9A-9G, mini/full 9H, and D-31's gateway-contract,
-candidate-integrity/Gate 3, and professional read-only frontend waves are
-delivered. The next implementation must be separately planned around the still
-blocked local-Hermes bridge/chat contract or around parity-first legacy-page
-convergence; neither is silently implied by an older backlog.
+Current handoff: D-31 Wave 3A/3B and read-only 3E-A are delivered and locally
+accepted; 3C is a reconcile-only framework, not command dispatch. Wave 3D chat
+remains fail-closed, and 3F provides only a default-off Agent Studio redirect
+mechanism. The next implementation must close the explicit upstream/platform
+write gates or prove parity before any legacy-page cutover; neither is silently
+implied by an older backlog.
 
 Current options docs:
 

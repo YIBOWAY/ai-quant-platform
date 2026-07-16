@@ -7,16 +7,22 @@ function readPage(name: "tasks" | "results") {
 }
 
 describe("Hermes secondary-page artifact truth states", () => {
-  it.each(["tasks", "results"] as const)(
-    "%s prioritizes degraded and unavailable feed facts over a healthy empty state",
-    (name) => {
-      const source = readPage(name);
+  it("tasks prioritizes degraded and unavailable feed facts over a healthy empty state", () => {
+    const source = readPage("tasks");
 
-      expect(source).toContain("artifactFeedReadState");
-      expect(source).toContain("feedHasIssue");
-      expect(source).toContain("<ArtifactFeed");
-      expect(source).toContain(`data-hermes-${name}-feed-issue`);
-      expect(source).toContain("feedHasIssue ? null");
-    },
-  );
+    expect(source).toContain("artifactFeedReadState");
+    expect(source).toContain("feedHasIssue");
+    expect(source).toContain("<ArtifactFeed");
+    expect(source).toContain("data-hermes-tasks-feed-issue");
+    expect(source).toContain("feedHasIssue ? null");
+  });
+
+  it("results delegates truth states to the unified catalog read model", () => {
+    const source = readPage("results");
+
+    expect(source).toContain("getHermesResults");
+    expect(source).toContain("buildHermesResultsPageModel");
+    expect(source).toContain("<UnifiedResultsIndex");
+    expect(source).not.toContain("getHermesArtifacts");
+  });
 });

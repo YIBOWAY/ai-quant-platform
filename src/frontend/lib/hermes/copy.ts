@@ -24,7 +24,13 @@ export type HermesWorkbenchCopy = {
     automationUnavailable: string;
     technicalDetails: string;
     attention: string;
-    recentResults: string;
+    hqaConclusions: string;
+    unifiedResults: string;
+    unifiedResultsEmpty: string;
+    unifiedResultsUnavailable: string;
+    unifiedResultsDegraded: string;
+    unifiedResultsIndependentTruth: string;
+    viewUnifiedResults: string;
   };
   states: {
     empty: string;
@@ -52,7 +58,7 @@ const en: HermesWorkbenchCopy = {
   capability: {
     blocked_in_this_slice: {
       title: "Hermes write capabilities are not connected in this delivery",
-      body: "Chat, execution, unified dynamic results, and legacy redirects stay off. This is a fixed delivery fact for this slice, not a live gateway probe.",
+      body: "Chat, execution, full unified-results cutover, and legacy redirects stay off. This is a fixed delivery fact for this slice, not a live gateway probe.",
     },
   },
   labels: {
@@ -63,7 +69,14 @@ const en: HermesWorkbenchCopy = {
     automationUnavailable: "Automation source unavailable",
     technicalDetails: "Technical details",
     attention: "Needs attention",
-    recentResults: "Recent results",
+    hqaConclusions: "HQA conclusion artifacts",
+    unifiedResults: "Recent platform / unified results",
+    unifiedResultsEmpty: "No platform or unified results have been recorded yet.",
+    unifiedResultsUnavailable: "Unified result status is unknown",
+    unifiedResultsDegraded: "The unified result catalog is degraded; shown items remain read-only.",
+    unifiedResultsIndependentTruth:
+      "HQA conclusion artifacts below remain available from their independent read-only feed.",
+    viewUnifiedResults: "View unified results",
   },
   states: {
     empty: "No research activity yet",
@@ -91,7 +104,7 @@ const zh: HermesWorkbenchCopy = {
   capability: {
     blocked_in_this_slice: {
       title: "本交付未连接 Hermes 写入能力",
-      body: "对话、执行、统一动态结果与旧重定向保持关闭。这是本切片的固定交付事实，不是实时网关探测结果。",
+      body: "对话、执行、完整统一结果切换与旧重定向保持关闭。这是本切片的固定交付事实，不是实时网关探测结果。",
     },
   },
   labels: {
@@ -102,7 +115,13 @@ const zh: HermesWorkbenchCopy = {
     automationUnavailable: "自动化源不可用",
     technicalDetails: "技术细节",
     attention: "需要关注",
-    recentResults: "最近结果",
+    hqaConclusions: "HQA 结论产物",
+    unifiedResults: "最近平台 / 统一结果",
+    unifiedResultsEmpty: "尚未记录平台或统一结果。",
+    unifiedResultsUnavailable: "统一结果状态未知",
+    unifiedResultsDegraded: "统一结果目录已降级；当前条目仍为只读。",
+    unifiedResultsIndependentTruth: "下方 HQA 结论产物仍以独立只读源为准。",
+    viewUnifiedResults: "查看统一结果",
   },
   states: {
     empty: "今日尚无研究活动",

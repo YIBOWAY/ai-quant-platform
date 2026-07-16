@@ -94,13 +94,19 @@ function labelFor(
   return typeof value === "string" ? value : id;
 }
 
-export function Sidebar({ shellEnabled }: { shellEnabled: boolean }) {
+export function Sidebar({
+  shellEnabled,
+  agentStudioRedirect = false,
+}: {
+  shellEnabled: boolean;
+  agentStudioRedirect?: boolean;
+}) {
   const pathname = usePathname();
   const locale = useLocale();
   const text = copy[locale];
   const activePath = splitLocalePath(pathname).pathname;
 
-  const navSections = buildNavSections({ shellEnabled }).map((section) => ({
+  const navSections = buildNavSections({ shellEnabled, agentStudioRedirect }).map((section) => ({
     name: text.groups[section.id],
     items: section.items
       .filter((item) => isVisibleOnSurface(item, "sidebar"))

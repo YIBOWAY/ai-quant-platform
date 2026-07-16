@@ -229,6 +229,12 @@ function buildWebServers(): WebServerConfig[] | undefined {
         // Never inject PW_HERMES_WORKBENCH_FIXTURE or fixture name here.
         // Never expose shell flag as NEXT_PUBLIC_*.
         NEXT_PUBLIC_QUANT_API_BASE_URL: backendUrl,
+        NEXT_FONT_GOOGLE_MOCKED_RESPONSES: path.join(
+          frontendRoot,
+          "tests",
+          "support",
+          "next-font-mock.cjs",
+        ),
         QS_HERMES_SHELL_ENABLED: "true",
       },
     },
@@ -243,6 +249,12 @@ function buildWebServers(): WebServerConfig[] | undefined {
       timeout: 120_000,
       env: {
         NEXT_PUBLIC_QUANT_API_BASE_URL: backendUrl,
+        NEXT_FONT_GOOGLE_MOCKED_RESPONSES: path.join(
+          frontendRoot,
+          "tests",
+          "support",
+          "next-font-mock.cjs",
+        ),
         QS_HERMES_SHELL_ENABLED: "false",
       },
     });

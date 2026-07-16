@@ -303,6 +303,21 @@
         "approval_binding": "pending",
         "approval_enabled": true,
         "integrity_error_code": null
+      },
+      {
+        "candidate_id": "factor-quality-approved-7d34f0a12c",
+        "artifact_type": "factor",
+        "goal": "Inspect a previously approved quality factor",
+        "universe": [
+          "MSFT"
+        ],
+        "status": "approved",
+        "integrity_state": "verified",
+        "manifest_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "observed_manifest_digest": null,
+        "approval_binding": "approved",
+        "approval_enabled": false,
+        "integrity_error_code": null
       }
     ],
     "safety": {
@@ -311,6 +326,31 @@
       "live_trading_enabled": false,
       "kill_switch": true,
       "bind_address": "127.0.0.1"
+    }
+  },
+  "factors": {
+    "status": 200,
+    "body": {
+      "factors": [
+        {
+          "factor_id": "momentum_20d",
+          "factor_name": "Momentum 20D",
+          "factor_version": "1.0.0",
+          "lookback": 20,
+          "direction": "higher_is_better",
+          "description": "Built-in deterministic momentum reference factor.",
+          "origin": "builtin"
+        },
+        {
+          "factor_id": "agent_candidate_wave2_sceneb_mom20_v3",
+          "factor_name": "Scene-B promoted momentum factor",
+          "factor_version": "1.0.0",
+          "lookback": 20,
+          "direction": "higher_is_better",
+          "description": "Human-reviewed and promoted Scene-B factor fixture.",
+          "origin": "promoted"
+        }
+      ]
     }
   }
 }

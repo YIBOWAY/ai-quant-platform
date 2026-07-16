@@ -4,13 +4,13 @@ import { FocusedArtifactCard } from "@/components/hermes/artifacts";
 import type { HermesArtifact, HermesArtifactShelfEnvelope } from "@/lib/api";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
 import { hermesRouteHref } from "@/lib/hermes/routes";
-import type { HermesResultSummary } from "@/lib/hermes/types";
+import type { HermesHqaConclusionSummary } from "@/lib/hermes/types";
 import type { Locale } from "@/lib/locale";
 import { artifactCopy } from "@/components/hermes/artifacts/copy";
 import { qualityTone } from "@/components/hermes/artifacts/formatters";
 
 export type RecentResultsProps = {
-  results: HermesResultSummary[];
+  results: HermesHqaConclusionSummary[];
   artifacts: HermesArtifactShelfEnvelope;
   locale: Locale;
   /** Prefer focused conclusion cards when matching artifacts exist. */
@@ -25,8 +25,9 @@ function findArtifact(
 }
 
 /**
- * Latest meaningful results — conclusions and key evidence, not raw source dumps.
- * Skips automation_status (owned by AutomationSummary).
+ * Latest HQA conclusion artifacts, not the complete platform result catalog.
+ * Skips automation_status (owned by AutomationSummary) and stays visibly
+ * separate from UnifiedResultsPreview.
  */
 export function RecentResults({
   results,
@@ -43,19 +44,22 @@ export function RecentResults({
   }
 
   return (
-    <section aria-labelledby="hermes-recent-results-title" data-hermes-recent-results>
+    <section
+      aria-labelledby="hermes-hqa-conclusions-title"
+      data-hermes-hqa-conclusions
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2
           className="font-label-caps text-text-secondary"
-          id="hermes-recent-results-title"
+          id="hermes-hqa-conclusions-title"
         >
-          {workbench.labels.recentResults}
+          {workbench.labels.hqaConclusions}
         </h2>
         <Link
           className="app-touch-target inline-flex items-center font-body-sm text-info underline-offset-2 hover:underline"
           href={hermesRouteHref("results", locale)}
         >
-          {locale === "zh" ? "查看全部结果" : "View all results"}
+          {workbench.labels.viewUnifiedResults}
         </Link>
       </div>
 

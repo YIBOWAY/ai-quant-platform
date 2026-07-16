@@ -4,8 +4,10 @@
 
 Phase 0-14 文档描述已经交付的历史能力层，不是当前实现队列。先读
 [docs/INDEX.md](docs/INDEX.md)。HQA Slice 9A-9G、只读 mini 9H Hermes 产物架与
-完整 9H 自动化/通知均已完成。目前没有选定下一实现切片；若回到本仓库的前端
-backlog，必须先有新的产品决定并另立独立的 bite-sized plan。9E 是 HQA 本地带锁的
+完整 9H 自动化/通知均已完成。D-31 Wave 3 也已交付 official API 会话读取、
+PostgreSQL transport ledger、仅对账的 connector-worker 框架，以及只读 Unified
+Results 目录/详情。这里没有真实 chat 写桥：prompt/provider、审批 mutation、精确
+Hermes Run 关联、完整结果切流和旧页退休仍受独立证据门阻断。9E 是 HQA 本地带锁的
 prediction event ledger，复用但
 不修改平台代码或 schema。9D 新增严格只读的 `data prices` JSON seam：只接受
 显式 Futu、QFQ、1d，最多 25 个标的和 500 个含首尾日历日期，不回退到
@@ -104,6 +106,9 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 
 | 页面 | 用途 |
 |---|---|
+| `/hermes` | 可回滚默认首页；展示 Today、任务、只读审批与 Unified Results 预览，只有一个安全条，composer 始终禁用。 |
+| `/hermes/sessions` | 通过服务端 official API adapter GET-only 读取本机 Hermes 已保存会话；key 不下发浏览器，也不消耗 provider 额度。 |
+| `/hermes/results` | 汇总平台运行、实验、候选、HQA 产物及 exact run-link 的只读目录/详情；预览可见但 `unifiedResultsCutoverAccepted=false`。 |
 | `/data-explorer` | 美股历史数据查看器。 |
 | `/factor-lab` | 当前因子诊断面；HQA 工作台落地后应降级为 run/detail 分析面。 |
 | `/backtest` | 运行策略、股票池、因子加权及基准回测。 |
@@ -120,7 +125,7 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 | `/options-buyside` | 买方期权策略助手。 |
 | `/ai-news` | AI HOT 只读新闻研究流，含精选/全部动态、分类/关键词/时间窗筛选、日报和原文链接，不触发策略、回测或模拟账户。 |
 | `/polymarket` | 只读预测市场研究页面。 |
-| `/agent-studio` | 当前候选审批面；HQA 工作台落地后保留审批 UI，移除平台侧 LLM/task-running 表象。 |
+| `/agent-studio` | 过渡期只读候选检查面；仅展示源码与 exact digest-bound review，不提供 task/审批 mutation。页面级 redirect gate 存在但默认关闭。 |
 | `/settings` | 脱敏后的本地设置。 |
 
 股票数据端点只接受显式 `provider=sample|futu|tiingo`。未知 provider，
@@ -256,8 +261,9 @@ QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 
 后端启动时按文件名字典序应用 `scripts/sql/*.sql`。003/004 migration 会创建 11 张
 业务表：root 用户、brief issue/snapshot/source、AI 日报，以及 paper account 的账户、
-账本、挂单、当前持仓和持仓快照六张表。加上 001 的 run index 与 002 的两张 AI 新闻
-缓存表，四份 migration 共定义 14 张 `quant_system` 表。系统不维护
+账本、挂单、当前持仓和持仓快照六张表。005 新增 Hermes transport ledger 的 schema
+元数据、command、event、outbox 与 exact run link 五张表。加上 001 的 run index 与 002
+的两张 AI 新闻缓存表，五份 migration 共定义 19 张 `quant_system` 表。系统不维护通用
 `schema_migrations` 台账，而是按文件名幂等重放 SQL。启动流程还会回填运行索引，并清理对应文件
 已删除的索引行。如果 PostgreSQL 不可用，
 首次探测很短，后续失败请求在短暂的冷却窗口内继续从本地文件或实时上游读取；健康的 PostgreSQL
@@ -509,8 +515,10 @@ npx playwright test --config playwright.config.ts --workers=1
 `docs/SYSTEM_DESIGN_RESEARCH.md`、phase 交付记录和 audits 是历史设计/证据，不是
 当前待办队列。
 
-当前交接：HQA 9A-9G、mini 9H 与完整 9H 已完成，目前没有选定下一实现切片。
-未来前端 backlog 只有在新的产品决定后，才能按独立 bite-sized plan 启动。
+当前交接：D-31 3A/3B 与只读 3E-A 已交付并通过本机验收；3C 只是
+reconcile-only 框架，不是 command dispatch。3D chat 正确 fail closed；3F 只有默认关闭的
+Agent Studio redirect 机制。后续必须逐项关闭显式写端 blocker，或在旧页切流前证明
+完整 parity，不能从历史 backlog 自动续做。
 
 当前期权相关文档：
 

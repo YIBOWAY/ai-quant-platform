@@ -30,6 +30,10 @@ class HermesGatewayStatusResponse(_HermesGatewayReadModel):
     session_api_available: bool
     chat_write_ready: Literal[False]
     features: dict[str, bool]
+    # Upstream capability gaps are necessary-but-not-sufficient chat blockers.
+    # Platform delivery/security gaps must independently reach zero as well.
+    upstream_blockers: list[str] = Field(max_length=32)
+    platform_delivery_blockers: list[str] = Field(max_length=32)
     blockers: list[str] = Field(max_length=32)
     warnings: list[HermesGatewayWarningResponse] = Field(max_length=20)
 
@@ -74,6 +78,7 @@ class HermesSessionMessagesResponse(_HermesGatewayReadModel):
     messages: list[HermesMessageResponse] = Field(max_length=1000)
     omitted_message_count: int = Field(ge=0)
     warnings: list[HermesGatewayWarningResponse] = Field(max_length=20)
+
 
 __all__ = [
     "HermesArtifactFeedResponse",

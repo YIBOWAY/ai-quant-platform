@@ -94,9 +94,7 @@ def _ensure_runtime_support() -> None:
 
     _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
     _FILE_READ_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
-    _FILE_CREATE_FLAGS = (
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
-    )
+    _FILE_CREATE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
     _RUNTIME_OK = True
 
 
@@ -129,9 +127,7 @@ def open_directory_at(parent_fd: int, name: str) -> int:
     try:
         fd = os.open(name, _DIR_FLAGS, dir_fd=parent_fd)
     except OSError as exc:
-        raise CandidateIntegrityError(
-            f"cannot open directory component {name!r}"
-        ) from exc
+        raise CandidateIntegrityError(f"cannot open directory component {name!r}") from exc
     try:
         st = os.fstat(fd)
         if not stat.S_ISDIR(st.st_mode):
@@ -159,17 +155,24 @@ def assert_entry_is_open_fd(parent_fd: int, name: str, opened_fd: int) -> None:
     except OSError as exc:
         raise CandidateIntegrityError("opened directory fd is invalid") from exc
     if (entry_st.st_dev, entry_st.st_ino) != (opened_st.st_dev, opened_st.st_ino):
-        raise CandidateIntegrityError(
-            f"directory entry {name!r} identity does not match held fd"
-        )
+        raise CandidateIntegrityError(f"directory entry {name!r} identity does not match held fd")
     if not stat.S_ISDIR(opened_st.st_mode):
         raise CandidateIntegrityError(f"held fd for {name!r} is not a directory")
 
 
-def read_regular_bytes_at(parent_fd: int, name: str) -> bytes:
+def read_regular_bytes_at(
+    parent_fd: int,
+    name: str,
+    *,
+    max_bytes: int | None = None,
+) -> bytes:
     """Read a single-link regular file via O_NOFOLLOW; never follow symlinks."""
     _ensure_runtime_support()
     _validate_single_component(name, what="file name")
+    if max_bytes is not None and (
+        isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 0
+    ):
+        raise CandidateIntegrityError("max_bytes must be a non-negative integer")
     try:
         entry_st = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
     except OSError as exc:
@@ -191,18 +194,24 @@ def read_regular_bytes_at(parent_fd: int, name: str) -> bytes:
             raise CandidateIntegrityError(f"{name!r} is not a regular file")
         if opened_st.st_nlink != 1:
             raise CandidateIntegrityError(f"{name!r} must have exactly one hard link")
+        if max_bytes is not None and opened_st.st_size > max_bytes:
+            raise CandidateIntegrityError(f"{name!r} exceeds the safe byte limit")
         if (opened_st.st_dev, opened_st.st_ino) != (entry_st.st_dev, entry_st.st_ino):
             raise CandidateIntegrityError(f"{name!r} identity changed during open")
         chunks: list[bytes] = []
         remaining = opened_st.st_size
+        read_size = 0
         while True:
             chunk = os.read(fd, 1024 * 1024)
             if not chunk:
                 break
             chunks.append(chunk)
+            read_size += len(chunk)
             remaining -= len(chunk)
             if remaining < 0:
                 raise CandidateIntegrityError(f"{name!r} grew during read")
+            if max_bytes is not None and read_size > max_bytes:
+                raise CandidateIntegrityError(f"{name!r} exceeds the safe byte limit")
         payload = b"".join(chunks)
         final_st = os.fstat(fd)
         if final_st.st_size != opened_st.st_size or len(payload) != opened_st.st_size:
@@ -241,17 +250,13 @@ def _rename_noreplace_at(
         renameatx_np.restype = ctypes.c_int
         RENAME_EXCL = 0x00000004
         ctypes.set_errno(0)
-        rc = renameatx_np(
-            source_parent_fd, src, destination_parent_fd, dst, RENAME_EXCL
-        )
+        rc = renameatx_np(source_parent_fd, src, destination_parent_fd, dst, RENAME_EXCL)
         if rc == 0:
             return
         err = ctypes.get_errno()
         if err in {errno.EEXIST, errno.EAGAIN}:
             # macOS may surface EAGAIN for exclusive rename collisions on some versions.
-            raise CandidateConflictError(
-                f"destination {destination_name!r} already exists"
-            )
+            raise CandidateConflictError(f"destination {destination_name!r} already exists")
         raise OSError(err, os.strerror(err))
 
     if system == "Linux":
@@ -269,21 +274,15 @@ def _rename_noreplace_at(
         renameat2.restype = ctypes.c_int
         RENAME_NOREPLACE = 1
         ctypes.set_errno(0)
-        rc = renameat2(
-            source_parent_fd, src, destination_parent_fd, dst, RENAME_NOREPLACE
-        )
+        rc = renameat2(source_parent_fd, src, destination_parent_fd, dst, RENAME_NOREPLACE)
         if rc == 0:
             return
         err = ctypes.get_errno()
         if err == errno.EEXIST:
-            raise CandidateConflictError(
-                f"destination {destination_name!r} already exists"
-            )
+            raise CandidateConflictError(f"destination {destination_name!r} already exists")
         raise OSError(err, os.strerror(err))
 
-    raise CandidateIntegrityError(
-        f"no-replace rename is unsupported on platform {system!r}"
-    )
+    raise CandidateIntegrityError(f"no-replace rename is unsupported on platform {system!r}")
 
 
 def write_regular_exclusive_at(parent_fd: int, name: str, payload: bytes) -> None:
@@ -339,9 +338,7 @@ def atomic_write_noreplace_at(parent_fd: int, name: str, payload: bytes) -> None
     except CandidateConflictError:
         raise
     except OSError as exc:
-        raise CandidateIntegrityError(
-            f"atomic write failed for {name!r}"
-        ) from exc
+        raise CandidateIntegrityError(f"atomic write failed for {name!r}") from exc
 
 
 def rename_directory_noreplace_at(
@@ -363,22 +360,16 @@ def rename_directory_noreplace_at(
     except CandidateConflictError:
         raise
     except OSError as exc:
-        raise CandidateIntegrityError(
-            f"cannot publish directory {destination_name!r}"
-        ) from exc
+        raise CandidateIntegrityError(f"cannot publish directory {destination_name!r}") from exc
 
 
 def _lexical_absolute_components(path: Path) -> list[str]:
     abs_path = Path(os.path.abspath(os.fspath(path)))
-    if not abs_path.is_absolute() or (
-        os.name == "posix" and not str(abs_path).startswith("/")
-    ):
+    if not abs_path.is_absolute() or (os.name == "posix" and not str(abs_path).startswith("/")):
         raise CandidateIntegrityError("path must be absolute after normalization")
     components = list(abs_path.parts[1:])
     if not components:
-        raise CandidateIntegrityError(
-            "refusing to use filesystem root as candidate path"
-        )
+        raise CandidateIntegrityError("refusing to use filesystem root as candidate path")
     for component in components:
         _validate_single_component(component)
     return components
@@ -437,9 +428,7 @@ def remove_entry_tree_at(parent_fd: int, name: str) -> None:
 
 
 @contextmanager
-def locked_candidates_root(
-    agent_output_dir: Path, *, create: bool
-) -> Iterator[OpenedDirectory]:
+def locked_candidates_root(agent_output_dir: Path, *, create: bool) -> Iterator[OpenedDirectory]:
     """Open candidates root under exclusive flock on a verified regular pool lock."""
     from quant_system.agent.paths import resolve_candidates_dir
 
@@ -449,15 +438,11 @@ def locked_candidates_root(
         try:
             lock_fd = os.open(".candidate-pool.lock", flags, 0o600, dir_fd=opened.fd)
         except OSError as exc:
-            raise CandidateIntegrityError(
-                "cannot open candidate pool lock"
-            ) from exc
+            raise CandidateIntegrityError("cannot open candidate pool lock") from exc
         try:
             lock_stat = os.fstat(lock_fd)
             if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_nlink != 1:
-                raise CandidateIntegrityError(
-                    "candidate pool lock must be regular"
-                )
+                raise CandidateIntegrityError("candidate pool lock must be regular")
             # Re-check the parent entry is still a single-link regular file and
             # not a symlink/hardlink swapped after open.
             try:
@@ -467,24 +452,16 @@ def locked_candidates_root(
                     follow_symlinks=False,
                 )
             except OSError as exc:
-                raise CandidateIntegrityError(
-                    "candidate pool lock entry missing"
-                ) from exc
+                raise CandidateIntegrityError("candidate pool lock entry missing") from exc
             if stat.S_ISLNK(entry_stat.st_mode):
-                raise CandidateIntegrityError(
-                    "candidate pool lock must be regular"
-                )
+                raise CandidateIntegrityError("candidate pool lock must be regular")
             if not stat.S_ISREG(entry_stat.st_mode) or entry_stat.st_nlink != 1:
-                raise CandidateIntegrityError(
-                    "candidate pool lock must be regular"
-                )
+                raise CandidateIntegrityError("candidate pool lock must be regular")
             if (entry_stat.st_dev, entry_stat.st_ino) != (
                 lock_stat.st_dev,
                 lock_stat.st_ino,
             ):
-                raise CandidateIntegrityError(
-                    "candidate pool lock identity does not match held fd"
-                )
+                raise CandidateIntegrityError("candidate pool lock identity does not match held fd")
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
             assert_entry_is_open_fd(opened.parent_fd, opened.name, opened.fd)
             # Confirm lock name still maps to the held lock fd.
@@ -495,13 +472,9 @@ def locked_candidates_root(
             )
             held = os.fstat(lock_fd)
             if (entry_stat.st_dev, entry_stat.st_ino) != (held.st_dev, held.st_ino):
-                raise CandidateIntegrityError(
-                    "candidate pool lock identity does not match held fd"
-                )
+                raise CandidateIntegrityError("candidate pool lock identity does not match held fd")
             if not stat.S_ISREG(held.st_mode) or held.st_nlink != 1:
-                raise CandidateIntegrityError(
-                    "candidate pool lock must be regular"
-                )
+                raise CandidateIntegrityError("candidate pool lock must be regular")
             yield opened
             entry_stat = os.stat(
                 ".candidate-pool.lock",
@@ -510,9 +483,7 @@ def locked_candidates_root(
             )
             held = os.fstat(lock_fd)
             if (entry_stat.st_dev, entry_stat.st_ino) != (held.st_dev, held.st_ino):
-                raise CandidateIntegrityError(
-                    "candidate pool lock identity does not match held fd"
-                )
+                raise CandidateIntegrityError("candidate pool lock identity does not match held fd")
             assert_entry_is_open_fd(opened.parent_fd, opened.name, opened.fd)
         finally:
             with suppress(OSError):

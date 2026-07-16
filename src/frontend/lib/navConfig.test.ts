@@ -163,6 +163,19 @@ describe("buildNavSections", () => {
     }
   });
 
+  it("removes only Agent Studio when its independent cutover is enabled", () => {
+    for (const shellEnabled of [true, false]) {
+      const itemIds = buildNavSections({
+        shellEnabled,
+        agentStudioRedirect: true,
+      }).flatMap((section) => section.items.map((item) => item.id));
+      expect(itemIds).not.toContain("agentStudio");
+      expect(itemIds).toEqual(
+        expect.arrayContaining(["factorLab", "backtester", "experiments"]),
+      );
+    }
+  });
+
   it("keeps the item id set aligned with each shell mode", () => {
     expect(
       buildNavSections({ shellEnabled: true }).flatMap((section) =>

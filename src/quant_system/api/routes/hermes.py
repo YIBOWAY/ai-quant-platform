@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 
 from quant_system.api.dependencies import (
+    AgentOutputDirDep,
+    ApiRunsDirDep,
     HermesApiReadClientDep,
     HermesLoopbackRequestDep,
+    OutputDirDep,
     SettingsDep,
 )
 from quant_system.api.schemas.hermes import (
@@ -16,14 +20,79 @@ from quant_system.api.schemas.hermes import (
     HermesSessionMessagesResponse,
     HermesSessionsResponse,
 )
+from quant_system.api.schemas.hermes_results import (
+    HermesResultDetailResponse,
+    HermesResultKind,
+    HermesResultSource,
+    HermesResultsResponse,
+)
 from quant_system.hermes.artifact_catalog import HermesArtifactCatalog
 from quant_system.hermes.gateway_client import (
     HermesApiReadClient,
     HermesApiReadError,
     validate_hermes_session_id,
 )
+from quant_system.hermes.results_catalog import HermesResultsCatalog
 
 router = APIRouter()
+
+
+@router.get("/hermes/results", response_model=HermesResultsResponse)
+def hermes_results(
+    api_runs_dir: ApiRunsDirDep,
+    output_dir: OutputDirDep,
+    agent_output_dir: AgentOutputDirDep,
+    settings: SettingsDep,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10_000),
+    kind: HermesResultKind | None = None,
+    status: str | None = Query(default=None, min_length=1, max_length=128),
+    source: HermesResultSource | None = None,
+    search: str | None = Query(default=None, min_length=1, max_length=256),
+) -> dict:
+    return HermesResultsCatalog(
+        api_runs_dir=api_runs_dir,
+        output_dir=output_dir,
+        agent_output_dir=agent_output_dir,
+        settings=settings,
+    ).list(
+        limit=limit,
+        offset=offset,
+        kind=kind,
+        status=status,
+        source=source,
+        search=search,
+    )
+
+
+@router.get(
+    "/hermes/results/{kind}/{resource_id}",
+    response_model=HermesResultDetailResponse,
+)
+def hermes_result_detail(
+    kind: HermesResultKind,
+    resource_id: Annotated[
+        str,
+        Path(
+            min_length=1,
+            max_length=256,
+            pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$",
+        ),
+    ],
+    api_runs_dir: ApiRunsDirDep,
+    output_dir: OutputDirDep,
+    agent_output_dir: AgentOutputDirDep,
+    settings: SettingsDep,
+) -> dict:
+    return HermesResultsCatalog(
+        api_runs_dir=api_runs_dir,
+        output_dir=output_dir,
+        agent_output_dir=agent_output_dir,
+        settings=settings,
+    ).detail(
+        kind=kind,
+        resource_id=resource_id,
+    )
 
 
 @router.get("/hermes/artifacts", response_model=HermesArtifactFeedResponse)
@@ -40,7 +109,7 @@ def hermes_artifacts(
     return catalog.latest(limit=limit)
 
 
-_CHAT_WRITE_BLOCKERS = [
+_UPSTREAM_CHAT_WRITE_BLOCKERS = [
     "run_submission_not_idempotent",
     "request_recovery_unavailable",
     "event_id_unavailable",
@@ -51,6 +120,27 @@ _CHAT_WRITE_BLOCKERS = [
     "approval_exact_binding_unavailable",
     "stop_reconciliation_unavailable",
 ]
+
+_PLATFORM_CHAT_DELIVERY_BLOCKERS = [
+    "authenticated_mutation_bff_unavailable",
+    "csrf_protection_unavailable",
+    "prompt_retention_boundary_unavailable",
+    "command_dispatch_adapter_unavailable",
+    "hqa_task_attempt_binding_unavailable",
+    "composer_resume_stop_unavailable",
+    "independent_security_review_unavailable",
+    "user_chat_cutover_approval_required",
+]
+
+
+def _chat_blockers(*operational: str) -> dict[str, list[str]]:
+    upstream = list(_UPSTREAM_CHAT_WRITE_BLOCKERS)
+    platform = list(_PLATFORM_CHAT_DELIVERY_BLOCKERS)
+    return {
+        "upstream_blockers": upstream,
+        "platform_delivery_blockers": platform,
+        "blockers": [*operational, *upstream, *platform],
+    }
 
 
 def _warning(exc: HermesApiReadError) -> list[dict[str, str]]:
@@ -91,7 +181,7 @@ def hermes_gateway_status(
             "session_api_available": False,
             "chat_write_ready": False,
             "features": {},
-            "blockers": ["integration_disabled", *_CHAT_WRITE_BLOCKERS],
+            **_chat_blockers("integration_disabled"),
             "warnings": [],
         }
     if gateway is None:
@@ -102,7 +192,7 @@ def hermes_gateway_status(
             "session_api_available": False,
             "chat_write_ready": False,
             "features": {},
-            "blockers": ["gateway_client_unavailable", *_CHAT_WRITE_BLOCKERS],
+            **_chat_blockers("gateway_client_unavailable"),
             "warnings": [
                 {
                     "code": "gateway_client_unavailable",
@@ -120,7 +210,7 @@ def hermes_gateway_status(
             "session_api_available": False,
             "chat_write_ready": False,
             "features": {},
-            "blockers": ["gateway_unavailable", *_CHAT_WRITE_BLOCKERS],
+            **_chat_blockers("gateway_unavailable"),
             "warnings": _warning(exc),
         }
     features = capabilities["features"]
@@ -132,7 +222,7 @@ def hermes_gateway_status(
         "session_api_available": session_api_available,
         "chat_write_ready": False,
         "features": features,
-        "blockers": list(_CHAT_WRITE_BLOCKERS),
+        **_chat_blockers(),
         "warnings": (
             []
             if session_api_available

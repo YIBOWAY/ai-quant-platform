@@ -1,6 +1,7 @@
 import type {
   AgentCandidatesResponse,
   HermesArtifactShelfEnvelope,
+  HermesResultsResponse,
 } from "@/lib/api";
 
 export type HermesAttentionItem = {
@@ -11,7 +12,7 @@ export type HermesAttentionItem = {
   href?: string;
 };
 
-export type HermesResultSummary = {
+export type HermesHqaConclusionSummary = {
   id: string;
   kind: string;
   title: string;
@@ -41,17 +42,37 @@ export type HermesAutomationSummary = {
   }>;
 };
 
+export type HermesUnifiedResultSummary = {
+  kind: HermesResultsResponse["items"][number]["kind"];
+  resourceId: string;
+  displayTitle: string;
+  summary: string | null;
+  status: string;
+  occurredAt: string;
+  source: HermesResultsResponse["items"][number]["source"];
+};
+
+export type HermesUnifiedResultsPreview = {
+  readStatus: HermesResultsResponse["read_status"];
+  /** Null means the catalog could not establish a total; zero is a known empty result. */
+  total: number | null;
+  items: HermesUnifiedResultSummary[];
+  warningCode?: string;
+};
+
 export type HermesTodayModel = {
   state: "empty" | "normal" | "degraded" | "offline";
   attention: HermesAttentionItem[];
   automation: HermesAutomationSummary;
-  recentResults: HermesResultSummary[];
+  hqaConclusions: HermesHqaConclusionSummary[];
+  unifiedResults: HermesUnifiedResultsPreview;
   technical: HermesTechnicalSource[];
 };
 
 export type HermesTodayModelInput = {
   artifacts: HermesArtifactShelfEnvelope;
   candidates: AgentCandidatesResponse;
+  results: HermesResultsResponse;
 };
 
 export type HermesDeliveryState = "blocked_in_this_slice";
@@ -62,8 +83,9 @@ export type HermesFeatureFlags = {
   chat: false;
   execution: false;
   approvalMutations: false;
-  unifiedResults: false;
+  unifiedResultsCutoverAccepted: false;
   legacyRedirects: false;
+  agentStudioRedirect: boolean;
   deliveryState: HermesDeliveryState;
 };
 

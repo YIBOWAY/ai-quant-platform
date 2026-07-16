@@ -15,6 +15,7 @@ from quant_system.agent.candidate_pool import (
     CandidateIntegrityError,
     CandidateMigrationRequiredError,
     CandidatePool,
+    CandidatePoolScanLimitExceeded,
     CandidateReviewStateStaleError,
     CandidateStaleError,
 )
@@ -129,6 +130,23 @@ def test_same_id_same_manifest_is_noop_but_different_bytes_conflict(tmp_path) ->
     assert first.path.read_text(encoding="utf-8") == "# exact\n"
 
 
+def test_candidate_write_rejects_oversized_source_before_filesystem_side_effects(
+    tmp_path,
+) -> None:
+    pool = CandidatePool(tmp_path / "output")
+
+    with pytest.raises(CandidateIntegrityError, match="candidate artifact exceeds"):
+        pool.write_candidate(
+            task_id="oversized-task",
+            goal="oversized",
+            artifact_type="factor",
+            filename="factor.py.candidate",
+            content="x" * (1024 * 1024 + 1),
+        )
+
+    assert not pool.candidates_dir.exists()
+
+
 def test_same_id_retry_rejects_metadata_extra_drift(tmp_path) -> None:
     pool = CandidatePool(tmp_path)
     first = pool.write_candidate(
@@ -191,9 +209,7 @@ def test_review_requires_current_digest_and_legacy_lock_never_allows(tmp_path) -
         "nested/metadata.json",
     ],
 )
-def test_write_rejects_unsafe_or_reserved_filename_before_any_side_effect(
-    tmp_path, case
-) -> None:
+def test_write_rejects_unsafe_or_reserved_filename_before_any_side_effect(tmp_path, case) -> None:
     filename = {
         "parent": "../escaped.py",
         "absolute": str(tmp_path / "absolute-escaped.py"),
@@ -239,6 +255,33 @@ def test_unversioned_and_corrupt_items_remain_visible_but_never_authorize(
             expected_manifest_digest=legacy.observed_manifest_digest or "",
             expected_status="pending",
         )
+
+
+def test_candidate_sort_never_follows_a_corrupt_symlink_mtime(tmp_path) -> None:
+    pool = CandidatePool(tmp_path / "output")
+    artifact = pool.write_candidate(
+        task_id="sort-safe-task",
+        goal="sort without following corrupt entries",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content="# safe\n",
+    )
+    external = tmp_path / "external-target"
+    external.mkdir()
+    corrupt_link = pool.candidates_dir / "evil-link"
+    corrupt_link.symlink_to(external, target_is_directory=True)
+    now = time.time_ns()
+    os.utime(artifact.path, ns=(now, now))
+    os.utime(corrupt_link, ns=(now - 2_000_000_000, now - 2_000_000_000), follow_symlinks=False)
+    os.utime(external, ns=(now + 2_000_000_000, now + 2_000_000_000))
+
+    items = pool.list_for_read()
+
+    assert [item.candidate_id for item in items[:2]] == [
+        artifact.candidate_id,
+        "evil-link",
+    ]
+    assert items[1].integrity_state == "corrupt"
 
 
 def test_list_refuses_unsafe_candidate_root_instead_of_reporting_empty(
@@ -553,9 +596,7 @@ def test_structured_approve_authorizes_and_metadata_stays_immutable(tmp_path) ->
         expected_status="pending",
     )
     assert record.manifest_digest == artifact.manifest_digest
-    lock = json.loads(
-        (artifact.path.parent / "approved.lock").read_text(encoding="utf-8")
-    )
+    lock = json.loads((artifact.path.parent / "approved.lock").read_text(encoding="utf-8"))
     assert lock["schema_version"] == "1.0"
     assert lock["manifest_digest"] == artifact.manifest_digest
     assert lock["decision"] == "approve"
@@ -564,6 +605,93 @@ def test_structured_approve_authorizes_and_metadata_stays_immutable(tmp_path) ->
     items = pool.list_for_read()
     assert items[0].status == "approved"
     assert items[0].manifest_digest == artifact.manifest_digest
+
+
+def test_candidate_read_limit_rejects_partial_repository_before_verification(tmp_path) -> None:
+    pool = CandidatePool(tmp_path)
+    for index in range(2):
+        pool.write_candidate(
+            task_id=f"bounded-read-{index}",
+            goal=f"bounded read {index}",
+            artifact_type="factor",
+            filename=f"factor_{index}.py.candidate",
+            content=f"# bounded {index}\n",
+        )
+
+    assert len(pool.list_for_read(max_entries=2)) == 2
+    with pytest.raises(CandidatePoolScanLimitExceeded):
+        pool.list_for_read(max_entries=1)
+    with pytest.raises(CandidateIntegrityError, match="positive integer"):
+        pool.list_for_read(max_entries=0)
+
+
+def test_candidate_read_limit_bounds_dirfd_scan_before_sorting(
+    tmp_path, monkeypatch
+) -> None:
+    pool = CandidatePool(tmp_path)
+    for index in range(4):
+        pool.write_candidate(
+            task_id=f"bounded-scan-{index}",
+            goal=f"bounded scan {index}",
+            artifact_type="factor",
+            filename=f"factor_{index}.py.candidate",
+            content=f"# bounded scan {index}\n",
+        )
+
+    from quant_system.agent import candidate_pool as pool_mod
+
+    real_scandir = os.scandir
+    real_sorted = sorted
+    visible_seen: list[str] = []
+    sorted_sizes: list[int] = []
+
+    class CountingScandir:
+        def __init__(self, path) -> None:
+            self._entries = real_scandir(path)
+
+        def __enter__(self):
+            self._entries.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self._entries.__exit__(*args)
+
+        def __iter__(self):
+            for entry in self._entries:
+                name = entry.name
+                if not name.startswith("."):
+                    visible_seen.append(name)
+                    assert len(visible_seen) <= 2
+                yield entry
+
+    def reject_unbounded_listdir(_path):
+        raise AssertionError("bounded candidate reads must not materialize os.listdir")
+
+    def assert_bounded_sort(values, *args, **kwargs):
+        materialized = list(values)
+        sorted_sizes.append(len(materialized))
+        assert len(materialized) <= 2
+        return real_sorted(materialized, *args, **kwargs)
+
+    monkeypatch.setattr(pool_mod.os, "listdir", reject_unbounded_listdir)
+    monkeypatch.setattr(pool_mod.os, "scandir", CountingScandir)
+    monkeypatch.setattr(pool_mod, "sorted", assert_bounded_sort, raising=False)
+
+    with pytest.raises(CandidatePoolScanLimitExceeded):
+        pool.list_for_read(max_entries=1)
+
+    assert len(visible_seen) == 2
+    assert sorted_sizes == [2]
+
+
+def test_candidate_read_limit_bounds_hidden_and_staging_dirents(tmp_path) -> None:
+    pool = CandidatePool(tmp_path)
+    pool.candidates_dir.mkdir(parents=True)
+    for index in range(40):
+        (pool.candidates_dir / f".staging-stale-{index:02d}").mkdir()
+
+    with pytest.raises(CandidatePoolScanLimitExceeded):
+        pool.list_for_read(max_entries=1)
 
 
 def test_metadata_extra_cannot_override_protected_keys(tmp_path) -> None:
