@@ -26,6 +26,7 @@ import {
   getStrategies,
 } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
+import { resolvePaperAccountAvailableCash } from "@/lib/paperAccountState";
 import { isSampleSource } from "@/components/DataSourceBadge";
 import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
 import { getCachedHealth } from "@/lib/serverApi";
@@ -293,7 +294,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
         />
         <PaperStrategyOpsPanel accountDown={accountDown} locale={locale} />
         <PaperStrategySleevesPanel
-          accountAvailableCash={account.available_cash}
+          accountAvailableCash={resolvePaperAccountAvailableCash(account)}
           accountDown={accountDown}
           configs={strategyConfigs.configs}
           locale={locale}

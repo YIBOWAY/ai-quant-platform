@@ -194,12 +194,16 @@ export function PaperStrategySleevesPanel({
   sleeves: PaperStrategySleeveResponse[];
   sleeveDetails: PaperStrategySleeveDetailResponse[];
   strategies: StrategyMetadata[];
-  accountAvailableCash: number;
+  accountAvailableCash: number | null;
   accountDown: boolean;
 }) {
   const text = copy[locale];
   const router = useRouter();
   const isHydrated = useIsHydrated();
+  // Fail-closed: a null available-cash (paper account API errored and returned
+  // the $1M fallback) is treated exactly like accountDown — show "--" and block
+  // cash-mode sleeve creation rather than trusting the synthetic figure.
+  const cashUnavailable = accountDown || accountAvailableCash === null;
   const strategyOptions = strategies.filter((strategy) => strategy.result_type === "backtest");
   const defaultStrategyId = strategyOptions[0]?.id ?? "cross_sectional_top_n";
   const [strategyId, setStrategyId] = useState(defaultStrategyId);
@@ -345,7 +349,7 @@ export function PaperStrategySleevesPanel({
     isHydrated &&
     effectiveSelectedConfigId.length > 0 &&
     !createSleeveMutation.isPending &&
-    (mode === "signal_only" || (!accountDown && allocatedCash > 0));
+    (mode === "signal_only" || (!cashUnavailable && allocatedCash > 0));
 
   return (
     <Card padded>
@@ -367,8 +371,8 @@ export function PaperStrategySleevesPanel({
         <MetricStat label={text.allocated} value={formatMoney(allocatedTotal)} />
         <MetricStat
           label={text.manualCash}
-          value={accountDown ? "--" : formatMoney(accountAvailableCash)}
-          tone={accountDown ? "warning" : "neutral"}
+          value={cashUnavailable ? "--" : formatMoney(accountAvailableCash)}
+          tone={cashUnavailable ? "warning" : "neutral"}
         />
         <MetricStat label={text.configs} value={configs.length} />
         <MetricStat
