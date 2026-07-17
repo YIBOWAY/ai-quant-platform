@@ -22,6 +22,7 @@ import type {
 } from "@/lib/api";
 import { getOptionsRadarDates } from "@/lib/api";
 import { apiPost, apiRequest } from "@/lib/apiClient";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
@@ -804,7 +805,11 @@ function ScheduledTaskStatusCard({
         </div>
         {response?.exists && status ? (
           <div className="flex flex-wrap items-center gap-2 font-data-mono text-xs text-text-secondary">
-            {status.provider ? <span>{text.taskProvider}: {status.provider}</span> : null}
+            {status.provider ? (
+              <span className="flex items-center gap-1.5">
+                {text.taskProvider}: <DataSourceBadge source={status.provider} />
+              </span>
+            ) : null}
             {candidateCount !== null ? (
               <span>{text.taskCandidateCount}: {candidateCount}</span>
             ) : null}

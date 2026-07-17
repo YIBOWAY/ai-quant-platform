@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import type { OptionsScreenerResult } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
@@ -553,6 +554,9 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <DataSourceBadge source={result.provider} />
+            </div>
             <RegimeStatusBar result={result} text={text} locale={locale} />
             <CompactMetrics result={result} text={text} locale={locale} />
             {result.candidates.length === 0 ? (
