@@ -2857,7 +2857,10 @@ def _ledger_schema_signature_is_ready(conn: psycopg.Connection) -> bool:
                 qualifier,
                 arguments,
             ) in trigger_rows
-            if str(enabled_mode) in {"O", "A"}
+            # V1.2A: writer readiness accepts only ENABLE ALWAYS ('A') triggers.
+            # Origin-only ('O') triggers are bypassable via
+            # session_replication_role=replica and must not count as ready.
+            if str(enabled_mode) in {"A"}
         }
     )
 

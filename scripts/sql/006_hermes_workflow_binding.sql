@@ -455,4 +455,18 @@ ALTER TABLE quant_system.hermes_commands
 ALTER TABLE quant_system.hermes_commands
     ENABLE ALWAYS TRIGGER trg_hermes_command_claim_binding_guard;
 
+-- V1.2A hardening: the migration-005 append-only triggers on the command
+-- events / run links evidence tables are origin-only by default and can be
+-- bypassed with session_replication_role=replica. Pin them ENABLE ALWAYS so
+-- the append-only guarantee holds regardless of role or replication mode.
+-- These statements are idempotent and safe under the replay-every-run model.
+ALTER TABLE quant_system.hermes_command_events
+    ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only;
+ALTER TABLE quant_system.hermes_command_events
+    ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only_truncate;
+ALTER TABLE quant_system.hermes_run_links
+    ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only;
+ALTER TABLE quant_system.hermes_run_links
+    ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only_truncate;
+
 COMMIT;

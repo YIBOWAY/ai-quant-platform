@@ -138,8 +138,25 @@ def _reset_workflow_ledger(database: db.Database) -> None:
                 "ALTER TABLE quant_system.hermes_command_workflow_bindings "
                 f"ENABLE ALWAYS TRIGGER {trigger_name}"
             )
-        conn.execute("ALTER TABLE quant_system.hermes_command_events ENABLE TRIGGER USER")
-        conn.execute("ALTER TABLE quant_system.hermes_run_links ENABLE TRIGGER USER")
+        # V1.2A: writer readiness now requires ENABLE ALWAYS ('A') on the
+        # migration-005 append-only triggers, so re-enable them in ALWAYS mode
+        # (not ENABLE TRIGGER USER, which would leave them origin-only/'O').
+        conn.execute(
+            "ALTER TABLE quant_system.hermes_command_events "
+            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only"
+        )
+        conn.execute(
+            "ALTER TABLE quant_system.hermes_command_events "
+            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only_truncate"
+        )
+        conn.execute(
+            "ALTER TABLE quant_system.hermes_run_links "
+            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only"
+        )
+        conn.execute(
+            "ALTER TABLE quant_system.hermes_run_links "
+            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only_truncate"
+        )
 
 
 def _workflow_business_counts(database: db.Database) -> tuple[int, int, int, int]:
