@@ -391,3 +391,89 @@ def test_not_found_error_distinguishes_missing_endpoint_from_missing_session(
 
     assert capability_error.value.code == "upstream_endpoint_unavailable"
     assert session_error.value.code == "session_not_found"
+
+
+# --- V1.5: transcript empty-message / compaction drop + DLP redaction ---
+
+
+def _messages_client(tmp_path: Path, rows: list[dict], max_messages: int = 50):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"object": "list", "session_id": "s1", "data": rows},
+        )
+
+    return HermesApiReadClient(
+        _settings(tmp_path, max_messages=max_messages),
+        transport=httpx.MockTransport(handler),
+    )
+
+
+def test_message_history_drops_empty_and_whitespace_only_messages(
+    tmp_path: Path,
+) -> None:
+    client = _messages_client(
+        tmp_path,
+        [
+            {"id": 1, "role": "user", "content": ""},
+            {"id": 2, "role": "assistant", "content": "   \n\t  "},
+            {"id": 3, "role": "user", "content": "real question"},
+            {"id": 4, "role": "assistant", "content": "real answer"},
+        ],
+    )
+    result = client.session_messages("s1")
+
+    contents = [m["content"] for m in result["data"]]
+    assert contents == ["real question", "real answer"]
+    # Empty/whitespace rows are omitted from the rendered transcript.
+    assert all(c.strip() != "" for c in contents)
+
+
+def test_message_history_drops_internal_compaction_entries(tmp_path: Path) -> None:
+    client = _messages_client(
+        tmp_path,
+        [
+            {"id": 1, "role": "user", "content": "before"},
+            {"id": 2, "role": "assistant", "content": ""},  # compaction stub
+            {"id": 3, "role": "assistant", "content": "  "},  # compaction stub
+            {"id": 4, "role": "user", "content": "after"},
+        ],
+    )
+    result = client.session_messages("s1")
+
+    assert [m["content"] for m in result["data"]] == ["before", "after"]
+    assert [m["id"] for m in result["data"]] == ["1", "4"]
+
+
+def test_message_history_redacts_secrets_in_kept_messages(tmp_path: Path) -> None:
+    client = _messages_client(
+        tmp_path,
+        [
+            {"id": 1, "role": "user", "content": "use Bearer abc.def~+-_ghi please"},
+            {"id": 2, "role": "assistant", "content": "set token=abc123 now"},
+            {"id": 3, "role": "user", "content": "aws key AKIAIOSFODNN7EXAMPLE here"},
+            {"id": 4, "role": "assistant", "content": "-----BEGIN PRIVATE KEY----- x"},
+            {"id": 5, "role": "user", "content": "the api_key=secret-value leaked"},
+            {"id": 6, "role": "user", "content": "this message has no secrets"},
+        ],
+    )
+    result = client.session_messages("s1")
+    blob = json.dumps(result)
+
+    # No secret literal survives serialization.
+    for secret in (
+        "abc.def~+-_ghi",
+        "abc123",
+        "AKIAIOSFODNN7EXAMPLE",
+        "BEGIN PRIVATE KEY",
+        "secret-value",
+    ):
+        assert secret not in blob
+    assert "***" in blob
+    # Non-secret text is preserved; the no-secret message is untouched.
+    assert "this message has no secrets" in blob
+    by_id = {m["id"]: m["content"] for m in result["data"]}
+    assert by_id["6"] == "this message has no secrets"
+    assert by_id["1"] == "use *** please"
+    assert by_id["2"] == "set *** now"
+    assert by_id["3"] == "aws key *** here"

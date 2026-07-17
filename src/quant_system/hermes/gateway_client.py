@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import stat
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -47,6 +48,27 @@ _CAPABILITY_FEATURES = (
 _MESSAGE_ROLES = frozenset({"user", "assistant"})
 _MAX_TOKEN_BYTES = 4096
 _MAX_TEXT_CHARS = 100_000
+
+# V1.5 DLP: conservative secret patterns redacted from *retained* transcript
+# messages before they are served to the browser. Redaction (``***``), not
+# dropping, so a message that mentions a secret still renders with the secret
+# removed. Applied before bounding so a truncated secret can never leak.
+_SECRET_PATTERNS = (
+    re.compile(r"Bearer\s+[A-Za-z0-9._~+-]+"),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    re.compile(
+        r"(?i)\b(?:api[_-]?key|api[_-]?secret|secret|token|password|passwd"
+        r"|access[_-]?key)\b\s*[:=]\s*[^\s,;]+"
+    ),
+)
+
+
+def _redact_secrets(text: str) -> str:
+    redacted = text
+    for pattern in _SECRET_PATTERNS:
+        redacted = pattern.sub("***", redacted)
+    return redacted
 
 
 def _validated_loopback_origin(value: str) -> str:
@@ -406,6 +428,14 @@ class HermesApiReadClient:
             content = _bounded_text(row.get("content"))
             if content is None:
                 continue
+            # V1.5: drop empty / whitespace-only messages and internal
+            # compaction stubs (which surface as blank user/assistant rows) so
+            # the transcript never renders an empty bubble. Then redact secrets
+            # from the retained text (redact, not drop) before it is served.
+            stripped = content.strip()
+            if stripped == "":
+                continue
+            content = _redact_secrets(stripped)
             message_id = str(row.get("id") if row.get("id") is not None else index)
             if not message_id or len(message_id) > 256:
                 message_id = str(index)
