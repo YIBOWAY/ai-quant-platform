@@ -4,7 +4,7 @@ import pandas as pd
 
 from quant_system.data.schema import normalize_ohlcv_dataframe
 from quant_system.options.models import OptionsScreenerConfig
-from quant_system.options.screener import run_options_screener
+from quant_system.options.screener import _candidate_notes, run_options_screener
 
 
 class _FakeProvider:
@@ -598,3 +598,49 @@ def test_options_screener_reports_hv_iv_summary_for_top_status() -> None:
     assert result.hv_iv_pass_count == 1
     assert result.hv_iv_min is not None
     assert result.hv_iv_max == result.hv_iv_min
+
+
+def _apr_notes(config: OptionsScreenerConfig, annualized_yield: float) -> list[str]:
+    """Drive the min_apr branch (screener._candidate_notes) in isolation.
+
+    All other filters are made to pass so the only possible note is the APR
+    one. ``annualized_yield`` is a FRACTION (0.12 = 12%); ``config.min_apr`` is
+    a whole-number PERCENT (15 = 15%).
+    """
+    return _candidate_notes(
+        config=config,
+        bid=2.0,
+        ask=2.2,
+        mid=2.1,
+        spread_pct=0.1,
+        iv=0.45,
+        delta=-0.25,
+        annualized_yield=annualized_yield,
+        days_to_expiry=30,
+        open_interest=500.0,
+        trend_pass=True,
+        underlying_price=260.0,
+        ema_21=250.0,
+        sma_50=240.0,
+        hv_iv_pass=True,
+    )
+
+
+def test_min_apr_is_percent_semantics() -> None:
+    # min_apr=15 means 15% (a whole-number percent), so a 12% APR
+    # (annualized_yield=0.12) is rejected and an 18% APR (0.18) is accepted.
+    # This pins the contract in screener.py: annualized_yield * 100 < min_apr.
+    config = OptionsScreenerConfig(min_apr=15.0)
+
+    rejected = _apr_notes(config, 0.12)  # 12% APR
+    accepted = _apr_notes(config, 0.18)  # 18% APR
+
+    assert "APR below minimum" in rejected
+    assert "APR below minimum" not in accepted
+
+
+def test_min_apr_zero_disables_filter() -> None:
+    # Default min_apr=0 accepts any non-negative APR (filter disabled).
+    config = OptionsScreenerConfig(min_apr=0.0)
+    assert "APR below minimum" not in _apr_notes(config, 0.0)
+    assert "APR below minimum" not in _apr_notes(config, 0.05)

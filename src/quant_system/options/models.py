@@ -90,7 +90,17 @@ class OptionsScreenerConfig(BaseModel):
     min_iv: float = Field(default=0.0, ge=0)
     max_delta: float = Field(default=0.35, ge=0, le=1)
     min_premium: float = Field(default=0.10, ge=0)
-    min_apr: float = Field(default=0.0, ge=0)
+    min_apr: float = Field(
+        default=0.0,
+        ge=0,
+        description=(
+            "Minimum annualized premium yield (APR) as a whole-number PERCENT: "
+            "15 means 15%. Unlike max_spread_pct (a fraction, 0.35 = 35%), this "
+            "is a percent, matching the screener check "
+            "`annualized_yield * 100 < min_apr` where annualized_yield is a "
+            "fraction."
+        ),
+    )
     min_dte: int = Field(default=0, ge=0)
     max_dte: int = Field(default=365, ge=0)
     max_spread_pct: float = Field(default=0.35, ge=0)
