@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, JetBrains_Mono, Noto_Serif_SC, Source_Serif_4 } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { Sidebar } from '@/components/Sidebar';
 import { TopBar } from '@/components/TopBar';
@@ -9,28 +9,43 @@ import { LocaleProvider } from '@/components/LocaleProvider';
 import { hermesFeatureFlags } from '@/lib/hermes/featureFlags';
 import { getServerLocale } from '@/lib/serverLocale';
 
-const inter = Inter({
-  subsets: ['latin'],
+// V1.4: fonts are vendored under ./fonts and loaded via next/font/local so the
+// production build is fully offline (next/font/google downloads at build time).
+// The four CSS variables (--font-sans/mono/serif/serif-sc) are unchanged, so
+// globals.css and every consumer keep working untouched.
+const inter = localFont({
+  src: './fonts/inter-var.woff2',
   variable: '--font-sans',
+  display: 'swap',
+  fallback: ['system-ui', 'sans-serif'],
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
+const jetbrainsMono = localFont({
+  src: './fonts/jetbrains-mono-var.woff2',
   variable: '--font-mono',
+  display: 'swap',
+  fallback: ['ui-monospace', 'monospace'],
 });
 
-const sourceSerif = Source_Serif_4({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  style: ['normal', 'italic'],
+const sourceSerif = localFont({
+  src: [
+    { path: './fonts/source-serif-4-400-normal.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/source-serif-4-400-italic.woff2', weight: '400', style: 'italic' },
+    { path: './fonts/source-serif-4-600-normal.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/source-serif-4-600-italic.woff2', weight: '600', style: 'italic' },
+    { path: './fonts/source-serif-4-700-normal.woff2', weight: '700', style: 'normal' },
+    { path: './fonts/source-serif-4-700-italic.woff2', weight: '700', style: 'italic' },
+  ],
   variable: '--font-serif',
   display: 'swap',
   fallback: ['Georgia', 'serif'],
 });
 
-const notoSerifSC = Noto_Serif_SC({
-  subsets: ['latin'],
-  weight: ['400', '700'],
+const notoSerifSC = localFont({
+  src: [
+    { path: './fonts/noto-serif-sc-400.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/noto-serif-sc-700.woff2', weight: '700', style: 'normal' },
+  ],
   variable: '--font-serif-sc',
   display: 'swap',
   fallback: ['Songti SC', 'serif'],
