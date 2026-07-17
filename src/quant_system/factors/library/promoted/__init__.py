@@ -10,11 +10,12 @@ reads. It starts empty; promotions append.
 from __future__ import annotations
 
 from quant_system.factors.base import BaseFactor
-
-from quant_system.factors.library.promoted.agent_candidate_wave2_sceneb_mom20_v3 import AgentCandidateFactor as agent_candidate_wave2_sceneb_mom20_v3_factor
+from quant_system.factors.library.promoted import (
+    agent_candidate_wave2_sceneb_mom20_v3 as agent_candidate_wave2_sceneb_mom20_v3_module,
+)
 
 PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = (
-    agent_candidate_wave2_sceneb_mom20_v3_factor,
+    agent_candidate_wave2_sceneb_mom20_v3_module.AgentCandidateFactor,
 )
 
 __all__ = ["PROMOTED_FACTORS"]

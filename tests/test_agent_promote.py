@@ -16,7 +16,11 @@ from quant_system.agent.candidate_manifest import (
     load_verified_candidate_snapshot,
 )
 from quant_system.agent.candidate_pool import CandidatePool
-from quant_system.agent.promote import PromotionError, promote_candidate
+from quant_system.agent.promote import (
+    PromotionError,
+    _render_promoted_init,
+    promote_candidate,
+)
 from quant_system.cli import app
 
 runner = CliRunner()
@@ -217,11 +221,11 @@ def test_happy_path_writes_module_init_and_test_scaffold(dirs) -> None:
 
     init_content = result.init_path.read_text(encoding="utf-8")
     assert (
-        "from quant_system.factors.library.promoted.wiring_test_factor "
-        "import WiringTestFactor as wiring_test_factor_factor"
+        "from quant_system.factors.library.promoted "
+        "import wiring_test_factor as wiring_test_factor_module"
     ) in init_content
     assert "PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = (" in init_content
-    assert "wiring_test_factor_factor," in init_content
+    assert "wiring_test_factor_module.WiringTestFactor," in init_content
     ast.parse(init_content)
 
     test_content = result.test_path.read_text(encoding="utf-8")
@@ -241,12 +245,14 @@ def test_init_regeneration_is_sorted_across_promotions(dirs) -> None:
     result = _promote("cand-a", dirs)
 
     init_content = result.init_path.read_text(encoding="utf-8")
-    alpha_import = init_content.index("promoted.alpha_scaffold_factor import")
-    wiring_import = init_content.index("promoted.wiring_test_factor import")
+    # Long module names wrap into a parenthesized import; assert on the stable
+    # alias token that appears whether the import is single-line or wrapped.
+    alpha_import = init_content.index("alpha_scaffold_factor as")
+    wiring_import = init_content.index("wiring_test_factor as")
     assert alpha_import < wiring_import
-    assert init_content.index("alpha_scaffold_factor_factor,") < init_content.index(
-        "wiring_test_factor_factor,"
-    )
+    assert init_content.index(
+        "alpha_scaffold_factor_module.AlphaScaffoldFactor,"
+    ) < init_content.index("wiring_test_factor_module.WiringTestFactor,")
     ast.parse(init_content)
 
 
@@ -642,3 +648,143 @@ def test_promotion_serializes_write_and_init(dirs, monkeypatch) -> None:
     # cand-a landed; cand-b was blocked and wrote nothing.
     assert (dirs["library"] / "wiring_test_factor.py").exists()
     assert not (dirs["library"] / "alpha_scaffold_factor.py").exists()
+
+
+# --- V1.3: deterministic, ruff-clean promoted __init__.py generation ---
+# The Gate-3 generator must emit a byte-stable __init__.py that external
+# `ruff check` (isort I001 + E501) accepts WITHOUT the generator ever spawning
+# ruff (promote.py is forbidden from importing subprocess/os/sys/git by
+# test_promote_module_never_touches_git_or_spawns_processes). These tests pin
+# the pure renderer's contract; only the *tests* may invoke ruff.
+
+
+def test_render_promoted_init_empty_registry() -> None:
+    content = _render_promoted_init([])
+    assert "PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = ()" in content
+    assert content.endswith('\n__all__ = ["PROMOTED_FACTORS"]\n')
+    ast.parse(content)
+
+
+def test_render_promoted_init_single_short_module_is_single_line() -> None:
+    content = _render_promoted_init([("short_mod", "ShortFactor")])
+    assert (
+        "from quant_system.factors.library.promoted "
+        "import short_mod as short_mod_module\n"
+    ) in content
+    assert "    short_mod_module.ShortFactor," in content
+    # No blank line between the BaseFactor import and the promoted imports:
+    # ruff/isort treats them as one continuous first-party section.
+    assert (
+        "from quant_system.factors.base import BaseFactor\n"
+        "from quant_system.factors.library.promoted import short_mod"
+    ) in content
+    ast.parse(content)
+
+
+def test_render_promoted_init_sorts_and_is_byte_identical() -> None:
+    entries = [
+        ("zeta_mod", "ZetaFactor"),
+        ("alpha_mod", "AlphaFactor"),
+        ("mid_mod", "MidFactor"),
+    ]
+    shuffled = [
+        ("mid_mod", "MidFactor"),
+        ("zeta_mod", "ZetaFactor"),
+        ("alpha_mod", "AlphaFactor"),
+    ]
+    a = _render_promoted_init(entries)
+    b = _render_promoted_init(shuffled)
+    c = _render_promoted_init(list(entries))
+    # Order-insensitive (sorted by module name) and repeatable byte-identical.
+    assert a == b == c
+    assert a.index("import alpha_mod as") < a.index("import mid_mod as")
+    assert a.index("import mid_mod as") < a.index("import zeta_mod as")
+    assert (
+        a.index("alpha_mod_module.AlphaFactor,")
+        < a.index("mid_mod_module.MidFactor,")
+        < a.index("zeta_mod_module.ZetaFactor,")
+    )
+    ast.parse(a)
+
+
+def test_render_promoted_init_wraps_long_identifiers_within_100_cols() -> None:
+    # Mirrors the checked-in 40-char factor_id whose old single-line form was
+    # 156 chars (the repo's E501/I001 red line). The new form must wrap only the
+    # over-long import into a parenthesized block and keep every line <= 100.
+    long_id = "agent_candidate_wave2_sceneb_mom20_v3"
+    content = _render_promoted_init([(long_id, "AgentCandidateFactor")])
+    for line in content.splitlines():
+        assert len(line) <= 100, f"over-length line ({len(line)}): {line!r}"
+    assert (
+        "from quant_system.factors.library.promoted import (\n"
+        f"    {long_id} as {long_id}_module,\n"
+        ")\n"
+    ) in content
+    assert f"    {long_id}_module.AgentCandidateFactor," in content
+    ast.parse(content)
+
+
+def test_rendered_init_references_real_promoted_classes(tmp_path: Path) -> None:
+    # Structural end-to-end: write two real promoted modules, regenerate, then
+    # confirm the rendered PROMOTED_FACTORS tuple references exactly the classes
+    # those modules define (via module_alias.ClassName), parseable as AST.
+    library = tmp_path / "promoted"
+    library.mkdir(parents=True)
+    (library / "alpha_scaffold_factor.py").write_text(
+        _SECOND_FACTOR_SRC, encoding="utf-8"
+    )
+    (library / "wiring_test_factor.py").write_text(_FACTOR_SRC, encoding="utf-8")
+
+    init_path = promote_module._regenerate_init(library)
+    content = init_path.read_text(encoding="utf-8")
+    tree = ast.parse(content)
+
+    tuple_elts = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == (
+            "PROMOTED_FACTORS"
+        ):
+            value = node.value
+            # Non-empty registry annotates a Tuple; empty annotates a Name ().
+            tuple_elts = list(value.elts) if isinstance(value, ast.Tuple) else []
+    assert tuple_elts is not None
+    # Each elt is module_alias.ClassName -> Attribute(value=Name(alias), attr=Class).
+    referenced = sorted(
+        f"{e.value.id}.{e.attr}"  # type: ignore[attr-defined]
+        for e in tuple_elts
+    )
+    assert referenced == [
+        "alpha_scaffold_factor_module.AlphaScaffoldFactor",
+        "wiring_test_factor_module.WiringTestFactor",
+    ]
+
+
+def test_rendered_init_passes_external_ruff(tmp_path: Path) -> None:
+    # Only the *test* may spawn ruff; promote.py never does. Verify the rendered
+    # output is clean under an isolated ruff config for a long-id case.
+    import shutil as _shutil
+    import subprocess
+
+    ruff = _shutil.which("ruff")
+    if ruff is None:
+        # Fall back to the project venv ruff (bare `ruff` is not on PATH here).
+        candidate = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "ruff"
+        ruff = str(candidate) if candidate.exists() else None
+    if ruff is None:
+        pytest.skip("ruff executable not available")
+
+    long_id = "agent_candidate_wave2_sceneb_mom20_v3"
+    content = _render_promoted_init(
+        [(long_id, "AgentCandidateFactor"), ("short_mod", "ShortFactor")]
+    )
+    init_file = tmp_path / "__init__.py"
+    init_file.write_text(content, encoding="utf-8")
+
+    proc = subprocess.run(
+        [ruff, "check", "--no-cache", "--isolated", str(init_file)],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, (
+        f"ruff rejected generated init:\n{proc.stdout}\n{proc.stderr}"
+    )

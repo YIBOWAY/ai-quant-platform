@@ -165,6 +165,17 @@ def promote_candidate(
         # even if a check above were bypassed. If any step after the module write
         # fails, roll the module back so a refusal leaves the working tree
         # untouched (docstring contract) and a re-run is not falsely blocked.
+        #
+        # Capture the prior __init__.py bytes *before* regeneration so a failure
+        # in the scaffold write (after _regenerate_init already swapped the new
+        # registry in) restores the old registry atomically. Otherwise the tree
+        # would keep an __init__.py that imports a module we just rolled back --
+        # a registry referencing a deleted module (breaks every cold
+        # build_factor_registry()).
+        init_path = library_dir / "__init__.py"
+        prior_init_bytes: bytes | None = (
+            init_path.read_bytes() if init_path.exists() else None
+        )
         _write_new(
             module_path,
             _provenance_header(
@@ -185,6 +196,15 @@ def promote_candidate(
             )
         except BaseException:
             module_path.unlink(missing_ok=True)
+            # Restore the prior registry (atomic rename) so no __init__.py
+            # references the just-rolled-back module. If there was no prior
+            # __init__.py, remove the one _regenerate_init may have written.
+            if prior_init_bytes is not None:
+                tmp_restore = library_dir / "__init__.py.restore.tmp"
+                tmp_restore.write_bytes(prior_init_bytes)
+                tmp_restore.replace(init_path)
+            else:
+                init_path.unlink(missing_ok=True)
             raise
     finally:
         lock_path.unlink(missing_ok=True)
@@ -295,6 +315,53 @@ def _provenance_header(
     )
 
 
+def _render_promoted_init(entries: list[tuple[str, str]]) -> str:
+    """Render the promoted ``__init__.py`` source deterministically.
+
+    ``entries`` is a list of ``(module_name, class_name)`` pairs. The output is
+    a pure function of the sorted entry list: no clock, no path, no glob. Each
+    factor is exposed through a module-level import (``from ... import module
+    as module_module``) and referenced in ``PROMOTED_FACTORS`` as
+    ``module_module.ClassName``. Imports form one continuous first-party block
+    after ``BaseFactor`` (no blank line) and wrap only when a single import
+    would exceed the 100-column limit -- this is exactly the layout external
+    ``ruff check`` (isort I001 + E501) accepts, so the generated file is lint
+    clean without the generator ever spawning ruff (which is forbidden here).
+    """
+    entries = sorted(entries, key=lambda entry: entry[0])
+
+    lines: list[str] = [
+        _INIT_DOCSTRING,
+        "",
+        "from __future__ import annotations",
+        "",
+        "from quant_system.factors.base import BaseFactor",
+    ]
+    for module_name, _class_name in entries:
+        alias = f"{module_name}_module"
+        single = f"from {_PROMOTED_PACKAGE} import {module_name} as {alias}"
+        if len(single) <= 100:
+            lines.append(single)
+        else:
+            lines.extend(
+                [
+                    f"from {_PROMOTED_PACKAGE} import (",
+                    f"    {module_name} as {alias},",
+                    ")",
+                ]
+            )
+    if entries:
+        lines.extend(["", "PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = ("])
+        lines.extend(
+            f"    {module_name}_module.{class_name}," for module_name, class_name in entries
+        )
+        lines.append(")")
+    else:
+        lines.extend(["", "PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = ()"])
+    lines.extend(["", '__all__ = ["PROMOTED_FACTORS"]', ""])
+    return "\n".join(lines)
+
+
 def _regenerate_init(library_dir: Path) -> Path:
     """Rewrite ``__init__.py`` from the on-disk promoted modules, sorted."""
     entries: list[tuple[str, str]] = []  # (module_name, class_name)
@@ -311,26 +378,7 @@ def _regenerate_init(library_dir: Path) -> Path:
             )
         entries.append((path.stem, class_name))
 
-    lines: list[str] = [
-        _INIT_DOCSTRING,
-        "",
-        "from __future__ import annotations",
-        "",
-        "from quant_system.factors.base import BaseFactor",
-    ]
-    if entries:
-        lines.append("")
-        for module_name, class_name in entries:
-            lines.append(
-                f"from {_PROMOTED_PACKAGE}.{module_name} "
-                f"import {class_name} as {module_name}_factor"
-            )
-        lines.extend(["", "PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = ("])
-        lines.extend(f"    {module_name}_factor," for module_name, _ in entries)
-        lines.append(")")
-    else:
-        lines.extend(["", "PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = ()"])
-    lines.extend(["", '__all__ = ["PROMOTED_FACTORS"]', ""])
+    content = _render_promoted_init(entries)
 
     init_path = library_dir / "__init__.py"
     # Atomic write: a concurrent cold import of the promoted package (any
@@ -340,7 +388,7 @@ def _regenerate_init(library_dir: Path) -> Path:
     # so readers always see the complete old or complete new file (adversarial
     # re-review). Path.replace keeps this module dependency-free (pathlib only).
     tmp_path = library_dir / "__init__.py.tmp"
-    tmp_path.write_text("\n".join(lines), encoding="utf-8")
+    tmp_path.write_text(content, encoding="utf-8")
     tmp_path.replace(init_path)
     return init_path
 
