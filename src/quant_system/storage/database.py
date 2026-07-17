@@ -10,10 +10,11 @@ is configured, and every caller must treat ``None`` as "use files/live upstreams
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -147,10 +148,22 @@ def _sql_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "scripts" / "sql"
 
 
-def run_migrations(database: Database) -> None:
-    """Apply every ``scripts/sql/*.sql`` file in lexical order (idempotent)."""
+def run_migrations(database: Database, *, only: Collection[str] | None = None) -> None:
+    """Apply ``scripts/sql/*.sql`` files in lexical order (idempotent).
+
+    By default every migration file is applied. When ``only`` is given it is an
+    explicit allowlist of file *names* (used by the fail-closed ``migrate``
+    command); the runner applies just those files and raises ``ValueError`` if
+    the allowlist matches nothing, so an authorized apply can never silently
+    no-op or widen beyond its allowlist.
+    """
     sql_dir = _sql_dir()
     files = sorted(sql_dir.glob("*.sql"))
+    if only is not None:
+        allowed = set(only)
+        files = [path for path in files if path.name in allowed]
+        if not files:
+            raise ValueError("no allowlisted migration files matched")
     if not files:
         log.warning("no SQL migration files found under %s", sql_dir)
         return
@@ -205,3 +218,48 @@ def run_migrations(database: Database) -> None:
                     cleanup_error,
                 )
     log.info("applied %d SQL migration file(s)", len(files))
+
+
+def list_migration_files(*, only: Collection[str] | None = None) -> list[str]:
+    """Return the sorted migration file names, optionally intersected with ``only``.
+
+    This is the dry-run view used by the ``migrate`` command: it names exactly
+    which files an apply *would* touch without connecting anywhere.
+    """
+    names = sorted(path.name for path in _sql_dir().glob("*.sql"))
+    if only is None:
+        return names
+    allowed = set(only)
+    return [name for name in names if name in allowed]
+
+
+def schema_fingerprint(database: Database | None) -> str:
+    """Read-only SHA-256 fingerprint of the ``quant_system`` schema contents.
+
+    Used by the ``migrate`` command to prove an authorized apply changed only
+    what it claimed (and that a dry-run / startup changed nothing). Returns a
+    stable placeholder when the database is unavailable rather than raising.
+    """
+    if database is None:
+        return "<db-disabled>"
+    try:
+        with database.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.relname
+                FROM pg_class AS c
+                JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                WHERE n.nspname = %s
+                  AND c.relkind IN ('r', 'v', 'm', 'S', 'i')
+                ORDER BY c.relname
+                """,
+                (SCHEMA,),
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 - fingerprint is best-effort/observational
+        log.warning("schema fingerprint unavailable: %s", exc)
+        return "<unavailable>"
+    digest = hashlib.sha256()
+    for (name,) in rows:
+        digest.update(str(name).encode("utf-8"))
+        digest.update(b"\x00")
+    return digest.hexdigest()

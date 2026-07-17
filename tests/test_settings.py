@@ -2,6 +2,7 @@ from pydantic import ValidationError
 
 from quant_system.config.settings import (
     ApiKeySettings,
+    DatabaseSettings,
     HermesArtifactSettings,
     PaperAccountSettings,
     SafetySettings,
@@ -40,6 +41,12 @@ def test_paper_account_auto_processor_defaults_to_enabled(monkeypatch) -> None:
     assert settings.auto_process_pending_orders_enabled is True
     assert settings.auto_process_interval_seconds == 30.0
     assert settings.db_mode == "file"
+
+
+def test_database_auto_migrate_defaults_to_false_fail_closed(monkeypatch) -> None:
+    # V1.1 stop-the-line: startup must never auto-apply migrations by default.
+    monkeypatch.delenv("QS_DATABASE_AUTO_MIGRATE", raising=False)
+    assert DatabaseSettings().auto_migrate is False
 
 
 def test_paper_account_settings_expose_db_mode() -> None:

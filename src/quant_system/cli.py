@@ -108,6 +108,14 @@ from quant_system.prediction_market.timeseries_backtest import (
     PredictionMarketTimeseriesBacktestConfig,
     run_prediction_market_timeseries_backtest,
 )
+from quant_system.storage.database import (
+    get_database as _migrate_get_database,
+)
+from quant_system.storage.database import (
+    list_migration_files,
+    run_migrations,
+    schema_fingerprint,
+)
 from quant_system.storage.options_cache import OptionQuotesCache
 
 _API_SECRET_FIELDS: frozenset[str] = frozenset(
@@ -292,6 +300,85 @@ def doctor(
                 "ok": True,
             }
         )
+
+
+@app.command("migrate")
+def migrate(
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Actually apply the allowlisted migrations (default is a dry-run plan).",
+        ),
+    ] = False,
+    allow: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--allow",
+            help="Migration file name to apply (repeatable). Required for --apply.",
+        ),
+    ] = None,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            help="Confirm a non-interactive apply. Required for --apply when stdin is not a TTY.",
+        ),
+    ] = False,
+) -> None:
+    """Plan or apply database migrations explicitly (fail-closed; V1.1).
+
+    Startup never auto-applies migrations (``QS_DATABASE_AUTO_MIGRATE`` defaults
+    to false). By default this command is a **dry-run**: it lists the migration
+    files an apply would touch and prints the current schema fingerprint without
+    changing anything. Applying requires ``--apply`` plus an explicit ``--allow``
+    allowlist, and a non-interactive apply additionally requires ``--yes``. The
+    schema fingerprint is printed before and after so an authorized apply can be
+    audited against exactly what changed.
+    """
+    settings = load_settings()
+    database = _migrate_get_database(settings)
+
+    candidates = list_migration_files(only=allow if allow else None)
+    fingerprint_before = schema_fingerprint(database)
+
+    if not apply:
+        typer.echo("migrate: dry-run (no changes applied)")
+        typer.echo(f"database.enabled={str(settings.database.enabled).lower()}")
+        typer.echo(f"schema_fingerprint_before={fingerprint_before}")
+        if allow:
+            typer.echo("allowlist=" + ",".join(allow))
+        if not candidates:
+            typer.echo("no migration files matched")
+        for name in candidates:
+            typer.echo(f"would_apply={name}")
+        typer.echo("re-run with --apply --allow <file> [--yes] to apply an allowlist")
+        return
+
+    # Fail-closed apply path.
+    if not allow:
+        typer.echo("error: --apply requires at least one --allow <file> allowlist entry")
+        raise typer.Exit(code=2)
+    if not sys.stdin.isatty() and not yes:
+        typer.echo("error: non-interactive --apply requires --yes")
+        raise typer.Exit(code=2)
+
+    matched = set(candidates)
+    unknown = [name for name in allow if name not in matched]
+    if unknown:
+        typer.echo(
+            "error: allowlist entries did not match any migration file: "
+            + ", ".join(sorted(unknown))
+        )
+        raise typer.Exit(code=2)
+
+    typer.echo(f"schema_fingerprint_before={fingerprint_before}")
+    for name in candidates:
+        typer.echo(f"applying={name}")
+    run_migrations(database, only=set(allow))
+    fingerprint_after = schema_fingerprint(database)
+    typer.echo(f"schema_fingerprint_after={fingerprint_after}")
+    typer.echo("migrate: applied allowlisted migration(s)")
 
 
 @app.command("serve")

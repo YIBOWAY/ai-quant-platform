@@ -329,12 +329,17 @@ docker start quantplatform-db
 QS_DATABASE_ENABLED=true
 QS_DATABASE_URL="postgresql://quant:quantpass@127.0.0.1:5432/quantplatform"
 QS_DATABASE_CONNECT_TIMEOUT_SECONDS=1
-QS_DATABASE_AUTO_MIGRATE=true
+QS_DATABASE_AUTO_MIGRATE=false  # fail-closed: startup never auto-applies
 QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 ```
 
-On startup the backend applies `scripts/sql/*.sql` in lexical order. Migrations
-003/004 create 11 business tables: root user, brief issue/snapshot/source,
+Startup does **not** auto-apply migrations. `QS_DATABASE_AUTO_MIGRATE` defaults
+to `false`; the schema is applied explicitly via
+`quant-system migrate --apply --allow <file>` under a separate authorization
+(`quant-system migrate` alone is a dry-run that lists candidate files and the
+schema fingerprint). The migrations themselves:
+
+- Migrations 003/004 create 11 business tables: root user, brief issue/snapshot/source,
 AI daily reports, and six paper-account tables for account, ledger, pending
 orders, current positions, and position snapshots. Migration 005 adds five
 Hermes transport-ledger tables for schema metadata, commands, events, outbox,

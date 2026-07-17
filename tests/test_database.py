@@ -29,6 +29,59 @@ def _postgres_test_url() -> str:
     return url
 
 
+def test_run_migrations_only_filters_to_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # V1.1: the explicit migrate command selects files via ``only``; the runner
+    # must apply just those files and reject an allowlist that matches nothing.
+    (tmp_path / "001_alpha.sql").write_text("SELECT 'alpha';", encoding="utf-8")
+    (tmp_path / "002_beta.sql").write_text("SELECT 'beta';", encoding="utf-8")
+    (tmp_path / "003_gamma.sql").write_text("SELECT 'gamma';", encoding="utf-8")
+    monkeypatch.setattr(db, "_sql_dir", lambda: tmp_path)
+
+    executed: list[str] = []
+
+    class Connection:
+        def __init__(self) -> None:
+            self.info = SimpleNamespace(transaction_status=psycopg.pq.TransactionStatus.IDLE)
+            self.last_query = ""
+
+        def execute(self, query: str, _params=None):
+            self.last_query = query
+            if "pg_advisory_lock" not in query and "pg_advisory_unlock" not in query:
+                executed.append(query)
+            return self
+
+        def fetchone(self) -> tuple[bool]:
+            return (True,)
+
+    class Database:
+        @contextmanager
+        def connect(self):
+            yield Connection()
+
+    db.run_migrations(Database(), only={"002_beta.sql"})  # type: ignore[arg-type]
+    assert executed == ["SELECT 'beta';"]
+
+
+def test_run_migrations_only_rejects_unmatched_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "001_alpha.sql").write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr(db, "_sql_dir", lambda: tmp_path)
+
+    class Database:  # pragma: no cover - connect must not be reached
+        @contextmanager
+        def connect(self):
+            raise AssertionError("connect must not run when the allowlist matches nothing")
+            yield
+
+    with pytest.raises(ValueError, match="no allowlisted migration files matched"):
+        db.run_migrations(Database(), only={"999_missing.sql"})  # type: ignore[arg-type]
+
+
 class _ObservedDatabase(db.Database):
     def __init__(self, url: str) -> None:
         super().__init__(url, connect_timeout=1, failure_cooldown_seconds=0)

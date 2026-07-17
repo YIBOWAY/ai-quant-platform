@@ -90,7 +90,10 @@ class DatabaseSettings(BaseSettings):
     enabled: bool = False
     url: SecretStr | None = None
     connect_timeout_seconds: int = Field(default=1, gt=0)
-    auto_migrate: bool = True
+    # V1.1 fail-closed: startup never auto-applies migrations. New migrations are
+    # applied only via the explicit `quant-system migrate --apply --allow <file>`
+    # command under a separate authorization (never implicitly at boot).
+    auto_migrate: bool = False
 
     @field_serializer("url", when_used="json")
     def serialize_database_url(self, value: SecretStr | None) -> str | None:
