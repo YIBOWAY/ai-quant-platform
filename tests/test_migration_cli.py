@@ -109,3 +109,53 @@ def test_migrate_apply_unknown_allow_file_fails_closed(
 
     assert result.exit_code != 0
     assert "999_missing.sql" in result.output
+
+
+@pytest.mark.parametrize("unavailable", ["<unavailable>", "<db-disabled>"])
+def test_migrate_apply_refuses_unavailable_pre_apply_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+    unavailable: str,
+) -> None:
+    applied: list[object] = []
+    monkeypatch.setattr(
+        "quant_system.cli.schema_fingerprint", lambda _db: unavailable
+    )
+    monkeypatch.setattr(
+        "quant_system.cli.run_migrations",
+        lambda *args, **_kwargs: applied.append(args),
+    )
+
+    result = runner.invoke(
+        app,
+        ["migrate", "--apply", "--yes", "--allow", "001_alpha.sql"],
+    )
+
+    assert result.exit_code != 0
+    assert "fingerprint" in result.output.lower()
+    assert applied == []
+
+
+@pytest.mark.parametrize("unavailable", ["<unavailable>", "<db-disabled>"])
+def test_migrate_apply_reports_failure_when_post_apply_fingerprint_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    unavailable: str,
+) -> None:
+    fingerprints = iter(["available-before", unavailable])
+    applied: list[set[str] | None] = []
+    monkeypatch.setattr(
+        "quant_system.cli.schema_fingerprint", lambda _db: next(fingerprints)
+    )
+    monkeypatch.setattr(
+        "quant_system.cli.run_migrations",
+        lambda _db, *, only=None: applied.append(only),
+    )
+
+    result = runner.invoke(
+        app,
+        ["migrate", "--apply", "--yes", "--allow", "001_alpha.sql"],
+    )
+
+    assert result.exit_code != 0
+    assert applied == [{"001_alpha.sql"}]
+    assert f"schema_fingerprint_after={unavailable}" in result.output
+    assert "applied allowlisted migration(s)" not in result.output

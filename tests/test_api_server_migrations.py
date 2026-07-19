@@ -1,9 +1,9 @@
-"""V1.1 stop-the-line: startup must not auto-apply migrations unless explicitly on.
+"""V1.1 stop-the-line: startup must never auto-apply migrations.
 
 ``_init_run_index`` runs in a daemon thread at API startup. These tests call it
 synchronously (not the thread wrapper) and monkeypatch the migration/DB seams to
-assert the fail-closed default: with ``auto_migrate=False`` startup never calls
-``run_migrations``.
+assert the fail-closed contract: migration apply is an explicit operator action,
+not a startup responsibility, regardless of the legacy configuration value.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def test_startup_does_not_run_migrations_when_auto_migrate_false(
     assert calls == ["synced"]
 
 
-def test_startup_runs_migrations_when_auto_migrate_true(
+def test_startup_does_not_run_migrations_when_legacy_auto_migrate_true(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -69,7 +69,7 @@ def test_startup_runs_migrations_when_auto_migrate_true(
 
     server._init_run_index(_db_enabled_settings(auto_migrate=True), tmp_path)
 
-    assert calls == ["migrated", "synced"]
+    assert calls == ["synced"]
 
 
 def test_startup_skips_db_work_when_database_disabled(

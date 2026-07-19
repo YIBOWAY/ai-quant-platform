@@ -54,7 +54,14 @@ _MAX_TEXT_CHARS = 100_000
 # dropping, so a message that mentions a secret still renders with the secret
 # removed. Applied before bounding so a truncated secret can never leak.
 _SECRET_PATTERNS = (
-    re.compile(r"Bearer\s+[A-Za-z0-9._~+-]+"),
+    re.compile(
+        r"(?<!\w)Bearer\b[ \t]+"
+        r"(?:"
+        r"\.(?:[A-Za-z0-9._~+/=-]*[A-Za-z0-9_~+/=-])?"
+        r"|[A-Za-z0-9_~+/=-](?:[A-Za-z0-9._~+/=-]*[A-Za-z0-9_~+/=-])?"
+        r")",
+        re.IGNORECASE,
+    ),
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(
@@ -63,12 +70,27 @@ _SECRET_PATTERNS = (
     ),
 )
 
+# Hermes prepends this Discord-only routing instruction to the model-facing
+# user turn. It is transport/control metadata, not user-authored transcript
+# content, and must never be rendered in the Web session reader.
+_DISCORD_TRIGGER_PREFIX = re.compile(
+    r"\A\[Triggering message id: `\d{1,32}`\s+(?:—|-)\s+use as "
+    r"`message_id` for reply/react/pin via the discord tools\.\]\s*",
+    re.IGNORECASE,
+)
+
 
 def _redact_secrets(text: str) -> str:
     redacted = text
     for pattern in _SECRET_PATTERNS:
         redacted = pattern.sub("***", redacted)
     return redacted
+
+
+def _strip_internal_transport_prefix(text: str, *, role: str) -> str:
+    if role != "user":
+        return text
+    return _DISCORD_TRIGGER_PREFIX.sub("", text, count=1).lstrip()
 
 
 def _validated_loopback_origin(value: str) -> str:
@@ -432,7 +454,9 @@ class HermesApiReadClient:
             # compaction stubs (which surface as blank user/assistant rows) so
             # the transcript never renders an empty bubble. Then redact secrets
             # from the retained text (redact, not drop) before it is served.
-            stripped = content.strip()
+            stripped = _strip_internal_transport_prefix(
+                content.strip(), role=str(row["role"])
+            )
             if stripped == "":
                 continue
             content = _redact_secrets(stripped)

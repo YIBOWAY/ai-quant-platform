@@ -372,12 +372,27 @@ def migrate(
         )
         raise typer.Exit(code=2)
 
+    unavailable_fingerprints = {"<db-disabled>", "<unavailable>"}
+    if fingerprint_before in unavailable_fingerprints:
+        typer.echo(f"schema_fingerprint_before={fingerprint_before}")
+        typer.echo(
+            "error: schema fingerprint unavailable before apply; "
+            "no migrations were applied"
+        )
+        raise typer.Exit(code=2)
+
     typer.echo(f"schema_fingerprint_before={fingerprint_before}")
     for name in candidates:
         typer.echo(f"applying={name}")
     run_migrations(database, only=set(allow))
     fingerprint_after = schema_fingerprint(database)
     typer.echo(f"schema_fingerprint_after={fingerprint_after}")
+    if fingerprint_after in unavailable_fingerprints:
+        typer.echo(
+            "error: schema fingerprint unavailable after apply; "
+            "migration outcome requires operator review"
+        )
+        raise typer.Exit(code=1)
     typer.echo("migrate: applied allowlisted migration(s)")
 
 

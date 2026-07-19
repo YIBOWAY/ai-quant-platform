@@ -445,11 +445,54 @@ def test_message_history_drops_internal_compaction_entries(tmp_path: Path) -> No
     assert [m["id"] for m in result["data"]] == ["1", "4"]
 
 
+def test_message_history_strips_discord_trigger_transport_metadata(
+    tmp_path: Path,
+) -> None:
+    client = _messages_client(
+        tmp_path,
+        [
+            {
+                "id": 1,
+                "role": "user",
+                "content": (
+                    "[Triggering message id: `1524779911535923341` — use as "
+                    "`message_id` for reply/react/pin via the discord tools.]\n\n"
+                    "推荐一个这两周的 NVDA sell put"
+                ),
+            },
+            {
+                "id": 2,
+                "role": "user",
+                "content": (
+                    "[Triggering message id: `1524779911535923342` — use as "
+                    "`message_id` for reply/react/pin via the discord tools.]"
+                ),
+            },
+            {
+                "id": 3,
+                "role": "assistant",
+                "content": "Explain the phrase Triggering message id normally",
+            },
+        ],
+    )
+
+    result = client.session_messages("s1")
+
+    assert [message["id"] for message in result["data"]] == ["1", "3"]
+    assert result["data"][0]["content"] == "推荐一个这两周的 NVDA sell put"
+    assert result["data"][1]["content"] == (
+        "Explain the phrase Triggering message id normally"
+    )
+    assert "152477991153592334" not in json.dumps(result, ensure_ascii=False)
+
+
 def test_message_history_redacts_secrets_in_kept_messages(tmp_path: Path) -> None:
     client = _messages_client(
         tmp_path,
         [
             {"id": 1, "role": "user", "content": "use Bearer abc.def~+-_ghi please"},
+            {"id": 7, "role": "user", "content": "use bearer lower.case-token please"},
+            {"id": 8, "role": "user", "content": "use BEARER UPPER.CASE-TOKEN please"},
             {"id": 2, "role": "assistant", "content": "set token=abc123 now"},
             {"id": 3, "role": "user", "content": "aws key AKIAIOSFODNN7EXAMPLE here"},
             {"id": 4, "role": "assistant", "content": "-----BEGIN PRIVATE KEY----- x"},
@@ -463,6 +506,8 @@ def test_message_history_redacts_secrets_in_kept_messages(tmp_path: Path) -> Non
     # No secret literal survives serialization.
     for secret in (
         "abc.def~+-_ghi",
+        "lower.case-token",
+        "UPPER.CASE-TOKEN",
         "abc123",
         "AKIAIOSFODNN7EXAMPLE",
         "BEGIN PRIVATE KEY",
@@ -477,3 +522,51 @@ def test_message_history_redacts_secrets_in_kept_messages(tmp_path: Path) -> Non
     assert by_id["1"] == "use *** please"
     assert by_id["2"] == "set *** now"
     assert by_id["3"] == "aws key *** here"
+
+
+def test_bearer_redaction_covers_base64_without_overmatching_boundaries(
+    tmp_path: Path,
+) -> None:
+    client = _messages_client(
+        tmp_path,
+        [
+            {
+                "id": 1,
+                "role": "user",
+                "content": "authorization: bearer abc/def==, continue normally.",
+            },
+            {
+                "id": 2,
+                "role": "assistant",
+                "content": "prebearer innocent text must remain",
+            },
+            {
+                "id": 3,
+                "role": "user",
+                "content": "BEARER jwt.header/signature=. Next sentence",
+            },
+            {
+                "id": 4,
+                "role": "user",
+                "content": "bearer .abc/def==; keep semicolon",
+            },
+            {"id": 5, "role": "assistant", "content": "bearer .==, keep comma"},
+            {"id": 6, "role": "user", "content": "bearer ."},
+            {
+                "id": 7,
+                "role": "assistant",
+                "content": "bearer .abc. Next sentence",
+            },
+        ],
+    )
+
+    result = client.session_messages("s1")
+    by_id = {message["id"]: message["content"] for message in result["data"]}
+
+    assert by_id["1"] == "authorization: ***, continue normally."
+    assert by_id["2"] == "prebearer innocent text must remain"
+    assert by_id["3"] == "***. Next sentence"
+    assert by_id["4"] == "***; keep semicolon"
+    assert by_id["5"] == "***, keep comma"
+    assert by_id["6"] == "***"
+    assert by_id["7"] == "***. Next sentence"

@@ -53,23 +53,23 @@ logger = logging.getLogger(__name__)
 
 
 def _init_run_index(active_settings: Settings, api_runs_dir: Path) -> None:
-    """Best-effort PostgreSQL run-index init: migrate + backfill existing files.
+    """Best-effort PostgreSQL run-index backfill for an already-ready schema.
 
     Never raises: a database failure must not block API startup. With the DB
     disabled or unreachable this is a no-op and every endpoint uses the
-    filesystem as before.
+    filesystem as before. Schema changes are an explicit operator action;
+    startup never applies migrations, including when the legacy
+    ``auto_migrate`` setting is true.
     """
     if not active_settings.database.enabled:
         return
     try:
-        from quant_system.storage.database import get_database, run_migrations
+        from quant_system.storage.database import get_database
         from quant_system.storage.runs_repository import sync_filesystem_to_index
 
         database = get_database(active_settings)
         if database is None:
             return
-        if active_settings.database.auto_migrate:
-            run_migrations(database)
         sync_filesystem_to_index(api_runs_dir, active_settings)
     except Exception as exc:  # noqa: BLE001 - startup must survive DB problems
         logger.warning("run-index init skipped (filesystem fallback active): %s", exc)

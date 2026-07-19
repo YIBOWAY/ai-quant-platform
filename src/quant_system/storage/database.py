@@ -11,6 +11,7 @@ is configured, and every caller must treat ``None`` as "use files/live upstreams
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import threading
 import time
@@ -233,6 +234,361 @@ def list_migration_files(*, only: Collection[str] | None = None) -> list[str]:
     return [name for name in names if name in allowed]
 
 
+_SCHEMA_FINGERPRINT_SQL = """
+WITH target_schema AS (
+    SELECT oid, nspname, nspowner, nspacl
+    FROM pg_namespace
+    WHERE nspname = %s
+),
+fingerprint_rows(kind, identity, definition) AS (
+    SELECT
+        'schema',
+        quote_ident(s.nspname),
+        jsonb_build_object(
+            'owner', pg_get_userbyid(s.nspowner),
+            'acl', COALESCE(
+                (
+                    SELECT jsonb_agg(item.acl::text ORDER BY item.acl::text)
+                    FROM unnest(COALESCE(s.nspacl, acldefault('n', s.nspowner))) AS item(acl)
+                ),
+                '[]'::jsonb
+            )
+        )::text
+    FROM target_schema AS s
+
+    UNION ALL
+
+    SELECT
+        'relation',
+        format('%%I.%%I', s.nspname, c.relname),
+        jsonb_build_object(
+            'kind', c.relkind,
+            'owner', pg_get_userbyid(c.relowner),
+            'persistence', c.relpersistence,
+            'row_security', c.relrowsecurity,
+            'force_row_security', c.relforcerowsecurity,
+            'replica_identity', c.relreplident,
+            'is_partition', c.relispartition,
+            'partition_key', CASE WHEN c.relkind = 'p' THEN pg_get_partkeydef(c.oid) END,
+            'partition_bound', CASE
+                WHEN c.relispartition THEN pg_get_expr(c.relpartbound, c.oid, true)
+            END,
+            'access_method', am.amname,
+            'tablespace', tablespace.spcname,
+            'options', COALESCE(
+                (
+                    SELECT jsonb_agg(option.value ORDER BY option.value)
+                    FROM unnest(c.reloptions) AS option(value)
+                ),
+                '[]'::jsonb
+            ),
+            'acl', COALESCE(
+                (
+                    SELECT jsonb_agg(item.acl::text ORDER BY item.acl::text)
+                    FROM unnest(
+                        COALESCE(
+                            c.relacl,
+                            acldefault(
+                                (CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END)::"char",
+                                c.relowner
+                            )
+                        )
+                    ) AS item(acl)
+                ),
+                '[]'::jsonb
+            )
+        )::text
+    FROM pg_class AS c
+    JOIN target_schema AS s ON s.oid = c.relnamespace
+    LEFT JOIN pg_am AS am ON am.oid = c.relam
+    LEFT JOIN pg_tablespace AS tablespace ON tablespace.oid = c.reltablespace
+    WHERE c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+
+    UNION ALL
+
+    SELECT
+        'column',
+        format('%%I.%%I.%%s:%%I', s.nspname, c.relname, a.attnum, a.attname),
+        jsonb_build_object(
+            'type', format_type(a.atttypid, a.atttypmod),
+            'not_null', a.attnotnull,
+            'identity', a.attidentity,
+            'generated', a.attgenerated,
+            'storage', a.attstorage,
+            'compression', a.attcompression,
+            'statistics_target', a.attstattarget,
+            'collation', CASE
+                WHEN collation_row.oid IS NOT NULL
+                THEN format('%%I.%%I', collation_schema.nspname, collation_row.collname)
+            END,
+            'default', pg_get_expr(default_value.adbin, default_value.adrelid, true),
+            'acl', COALESCE(
+                (
+                    SELECT jsonb_agg(item.acl::text ORDER BY item.acl::text)
+                    FROM unnest(COALESCE(a.attacl, '{}'::aclitem[])) AS item(acl)
+                ),
+                '[]'::jsonb
+            )
+        )::text
+    FROM pg_attribute AS a
+    JOIN pg_class AS c ON c.oid = a.attrelid
+    JOIN target_schema AS s ON s.oid = c.relnamespace
+    LEFT JOIN pg_attrdef AS default_value
+        ON default_value.adrelid = a.attrelid AND default_value.adnum = a.attnum
+    LEFT JOIN pg_collation AS collation_row ON collation_row.oid = a.attcollation
+    LEFT JOIN pg_namespace AS collation_schema
+        ON collation_schema.oid = collation_row.collnamespace
+    WHERE a.attnum > 0
+      AND NOT a.attisdropped
+      AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+
+    UNION ALL
+
+    SELECT
+        'constraint',
+        CASE
+            WHEN constraint_row.conrelid <> 0
+            THEN format('%%I.%%I.%%I', s.nspname, relation.relname, constraint_row.conname)
+            ELSE format('%%I.%%I.%%I', s.nspname, domain_type.typname, constraint_row.conname)
+        END,
+        jsonb_build_object(
+            'type', constraint_row.contype,
+            'definition', pg_get_constraintdef(constraint_row.oid, true),
+            'deferrable', constraint_row.condeferrable,
+            'initially_deferred', constraint_row.condeferred,
+            'validated', constraint_row.convalidated,
+            'no_inherit', constraint_row.connoinherit
+        )::text
+    FROM pg_constraint AS constraint_row
+    JOIN target_schema AS s ON s.oid = constraint_row.connamespace
+    LEFT JOIN pg_class AS relation ON relation.oid = constraint_row.conrelid
+    LEFT JOIN pg_type AS domain_type ON domain_type.oid = constraint_row.contypid
+
+    UNION ALL
+
+    SELECT
+        'index',
+        format('%%I.%%I', s.nspname, index_relation.relname),
+        jsonb_build_object(
+            'definition', pg_get_indexdef(index_row.indexrelid, 0, true),
+            'unique', index_row.indisunique,
+            'primary', index_row.indisprimary,
+            'exclusion', index_row.indisexclusion,
+            'immediate', index_row.indimmediate,
+            'valid', index_row.indisvalid,
+            'ready', index_row.indisready,
+            'replica_identity', index_row.indisreplident,
+            'clustered', index_row.indisclustered,
+            'options', COALESCE(
+                (
+                    SELECT jsonb_agg(option.value ORDER BY option.value)
+                    FROM unnest(index_relation.reloptions) AS option(value)
+                ),
+                '[]'::jsonb
+            )
+        )::text
+    FROM pg_index AS index_row
+    JOIN pg_class AS index_relation ON index_relation.oid = index_row.indexrelid
+    JOIN pg_class AS table_relation ON table_relation.oid = index_row.indrelid
+    JOIN target_schema AS s ON s.oid = table_relation.relnamespace
+
+    UNION ALL
+
+    SELECT
+        'view',
+        format('%%I.%%I', s.nspname, c.relname),
+        pg_get_viewdef(c.oid, true)
+    FROM pg_class AS c
+    JOIN target_schema AS s ON s.oid = c.relnamespace
+    WHERE c.relkind IN ('v', 'm')
+
+    UNION ALL
+
+    SELECT
+        'sequence',
+        format('%%I.%%I', s.nspname, c.relname),
+        jsonb_build_object(
+            'type', format_type(sequence_row.seqtypid, NULL),
+            'start', sequence_row.seqstart,
+            'increment', sequence_row.seqincrement,
+            'maximum', sequence_row.seqmax,
+            'minimum', sequence_row.seqmin,
+            'cache', sequence_row.seqcache,
+            'cycle', sequence_row.seqcycle
+        )::text
+    FROM pg_sequence AS sequence_row
+    JOIN pg_class AS c ON c.oid = sequence_row.seqrelid
+    JOIN target_schema AS s ON s.oid = c.relnamespace
+
+    UNION ALL
+
+    SELECT
+        'trigger',
+        format('%%I.%%I.%%I', s.nspname, c.relname, trigger_row.tgname),
+        jsonb_build_object(
+            'definition', pg_get_triggerdef(trigger_row.oid, true),
+            'enabled', trigger_row.tgenabled,
+            'internal', trigger_row.tgisinternal
+        )::text
+    FROM pg_trigger AS trigger_row
+    JOIN pg_class AS c ON c.oid = trigger_row.tgrelid
+    JOIN target_schema AS s ON s.oid = c.relnamespace
+
+    UNION ALL
+
+    SELECT
+        'rule',
+        format('%%I.%%I.%%I', s.nspname, c.relname, rule_row.rulename),
+        jsonb_build_object(
+            'definition', pg_get_ruledef(rule_row.oid, true),
+            'enabled', rule_row.ev_enabled
+        )::text
+    FROM pg_rewrite AS rule_row
+    JOIN pg_class AS c ON c.oid = rule_row.ev_class
+    JOIN target_schema AS s ON s.oid = c.relnamespace
+
+    UNION ALL
+
+    SELECT
+        'function',
+        format(
+            '%%I.%%I(%%s)',
+            s.nspname,
+            function_row.proname,
+            pg_get_function_identity_arguments(function_row.oid)
+        ),
+        jsonb_build_object(
+            'kind', function_row.prokind,
+            'definition', CASE
+                WHEN function_row.prokind IN ('f', 'p')
+                THEN pg_get_functiondef(function_row.oid)
+            END,
+            'result', pg_get_function_result(function_row.oid),
+            'arguments', pg_get_function_arguments(function_row.oid),
+            'source', function_row.prosrc,
+            'binary', function_row.probin,
+            'owner', pg_get_userbyid(function_row.proowner),
+            'security_definer', function_row.prosecdef,
+            'leakproof', function_row.proleakproof,
+            'volatility', function_row.provolatile,
+            'parallel', function_row.proparallel,
+            'configuration', COALESCE(
+                (
+                    SELECT jsonb_agg(setting.value ORDER BY setting.value)
+                    FROM unnest(function_row.proconfig) AS setting(value)
+                ),
+                '[]'::jsonb
+            ),
+            'acl', COALESCE(
+                (
+                    SELECT jsonb_agg(item.acl::text ORDER BY item.acl::text)
+                    FROM unnest(
+                        COALESCE(
+                            function_row.proacl,
+                            acldefault('f', function_row.proowner)
+                        )
+                    ) AS item(acl)
+                ),
+                '[]'::jsonb
+            )
+        )::text
+    FROM pg_proc AS function_row
+    JOIN target_schema AS s ON s.oid = function_row.pronamespace
+
+    UNION ALL
+
+    SELECT
+        'policy',
+        format('%%I.%%I.%%I', s.nspname, c.relname, policy_row.polname),
+        jsonb_build_object(
+            'permissive', policy_row.polpermissive,
+            'command', policy_row.polcmd,
+            'roles', COALESCE(
+                (
+                    SELECT jsonb_agg(
+                        CASE
+                            WHEN role_row.role_oid = 0 THEN 'PUBLIC'
+                            ELSE pg_get_userbyid(role_row.role_oid)
+                        END
+                        ORDER BY CASE
+                            WHEN role_row.role_oid = 0 THEN 'PUBLIC'
+                            ELSE pg_get_userbyid(role_row.role_oid)
+                        END
+                    )
+                    FROM unnest(policy_row.polroles) AS role_row(role_oid)
+                ),
+                '[]'::jsonb
+            ),
+            'using', pg_get_expr(policy_row.polqual, policy_row.polrelid, true),
+            'with_check', pg_get_expr(policy_row.polwithcheck, policy_row.polrelid, true)
+        )::text
+    FROM pg_policy AS policy_row
+    JOIN pg_class AS c ON c.oid = policy_row.polrelid
+    JOIN target_schema AS s ON s.oid = c.relnamespace
+
+    UNION ALL
+
+    SELECT
+        'type',
+        format('%%I.%%I', s.nspname, type_row.typname),
+        jsonb_build_object(
+            'kind', type_row.typtype,
+            'category', type_row.typcategory,
+            'preferred', type_row.typispreferred,
+            'defined', type_row.typisdefined,
+            'not_null', type_row.typnotnull,
+            'default', type_row.typdefault,
+            'delimiter', type_row.typdelim,
+            'owner', pg_get_userbyid(type_row.typowner),
+            'acl', COALESCE(
+                (
+                    SELECT jsonb_agg(item.acl::text ORDER BY item.acl::text)
+                    FROM unnest(
+                        COALESCE(type_row.typacl, acldefault('T', type_row.typowner))
+                    ) AS item(acl)
+                ),
+                '[]'::jsonb
+            )
+        )::text
+    FROM pg_type AS type_row
+    JOIN target_schema AS s ON s.oid = type_row.typnamespace
+
+    UNION ALL
+
+    SELECT
+        'enum_label',
+        format('%%I.%%I.%%s', s.nspname, type_row.typname, enum_row.enumsortorder),
+        enum_row.enumlabel
+    FROM pg_enum AS enum_row
+    JOIN pg_type AS type_row ON type_row.oid = enum_row.enumtypid
+    JOIN target_schema AS s ON s.oid = type_row.typnamespace
+
+    UNION ALL
+
+    SELECT
+        'default_acl',
+        format(
+            '%%I.%%s.%%s',
+            s.nspname,
+            pg_get_userbyid(default_acl.defaclrole),
+            default_acl.defaclobjtype
+        ),
+        COALESCE(
+            (
+                SELECT jsonb_agg(item.acl::text ORDER BY item.acl::text)::text
+                FROM unnest(default_acl.defaclacl) AS item(acl)
+            ),
+            '[]'
+        )
+    FROM pg_default_acl AS default_acl
+    JOIN target_schema AS s ON s.oid = default_acl.defaclnamespace
+)
+SELECT kind, identity, definition
+FROM fingerprint_rows
+ORDER BY kind, identity, definition
+"""
+
+
 def schema_fingerprint(database: Database | None) -> str:
     """Read-only SHA-256 fingerprint of the ``quant_system`` schema contents.
 
@@ -244,22 +600,17 @@ def schema_fingerprint(database: Database | None) -> str:
         return "<db-disabled>"
     try:
         with database.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT c.relname
-                FROM pg_class AS c
-                JOIN pg_namespace AS n ON n.oid = c.relnamespace
-                WHERE n.nspname = %s
-                  AND c.relkind IN ('r', 'v', 'm', 'S', 'i')
-                ORDER BY c.relname
-                """,
-                (SCHEMA,),
-            ).fetchall()
+            rows = conn.execute(_SCHEMA_FINGERPRINT_SQL, (SCHEMA,)).fetchall()
     except Exception as exc:  # noqa: BLE001 - fingerprint is best-effort/observational
         log.warning("schema fingerprint unavailable: %s", exc)
         return "<unavailable>"
     digest = hashlib.sha256()
-    for (name,) in rows:
-        digest.update(str(name).encode("utf-8"))
-        digest.update(b"\x00")
+    canonical_rows = sorted(
+        tuple("" if value is None else str(value) for value in row) for row in rows
+    )
+    for row in canonical_rows:
+        digest.update(
+            json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        )
+        digest.update(b"\n")
     return digest.hexdigest()

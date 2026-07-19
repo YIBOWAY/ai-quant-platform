@@ -334,10 +334,16 @@ QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 ```
 
 Startup does **not** auto-apply migrations. `QS_DATABASE_AUTO_MIGRATE` defaults
-to `false`; the schema is applied explicitly via
+to `false`, and startup ignores the legacy setting even if it is explicitly set
+to `true`; the schema is applied explicitly via
 `quant-system migrate --apply --allow <file>` under a separate authorization
 (`quant-system migrate` alone is a dry-run that lists candidate files and the
-schema fingerprint). The migrations themselves:
+schema fingerprint). That fingerprint covers schema/relation ownership and ACLs,
+columns/defaults, constraints, indexes, views, sequences, triggers/rules,
+functions, types/enums, RLS policy and row-security flags—not only object names.
+An apply refuses to start when the pre-fingerprint is unavailable, and treats an
+unavailable post-fingerprint as an operator-review outcome rather than success.
+The migrations themselves:
 
 - Migrations 003/004 create 11 business tables: root user, brief issue/snapshot/source,
 AI daily reports, and six paper-account tables for account, ledger, pending
