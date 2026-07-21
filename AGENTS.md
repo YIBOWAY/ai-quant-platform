@@ -143,12 +143,28 @@ data/                     Local cache, fixtures, generated research outputs.
   readiness and the HQA authority binding are verified, every claim path must
   fail closed. Its presence in source never authorizes the runnable worker to
   claim or dispatch.
+  **Live 006/007 applied 2026-07-21** on `quantplatform` after explicit authorization
+  (backup + idempotent replay + readiness evidence in
+  `docs/audits/2026-07-21-v4-live-migrate-006-007.md`). Do **not** treat schema
+  readiness as write authorization. V4 006 is Scheme A:
+  `UNIQUE(attempt_id)` + `UNIQUE(task_id, attempt_number)`; readiness refuses the
+  obsolete `UNIQUE(task_id)`-only shape. Additive 007 is the session registry.
+  `hermes/composer_readiness.py` is the single blocker/readiness surface;
+  `chat_write_ready`/`mutation_enabled`/`composer_open` stay false. Typed
+  `research.*` actions exist but browser submission stays
+  `research_workflow_submission_unavailable` with zero research PG writes.
+  Cross-repo status: V0 formal DONE (`release_authorized=false`), V1 code DONE /
+  V1.2A live role+RLS PARTIAL, V2 source accepted / live durable OFF, V3 HQA dark
+  install DONE, **V4 code + isolated + live schema ACCEPT**; **next default slice
+  is V5** supervised claim/dispatch (dark; no public composer; no provider smoke
+  without separate auth). See HQA `docs/README.md` and
+  `docs/superpowers/plans/2026-07-16-agent-v0-2-full-hermes-web-chat.md`.
   The currently runnable connector worker only provides `LISTEN/NOTIFY`, periodic
   scan and expired-lease reconciliation; it does not claim queued commands or
-  heartbeat a worker lease. It is intentionally reconcile-only: there is no dispatch
-  adapter, prompt submission, provider call, SSE replay or approval mutation.
-  These deterministic lifecycle operations must never invoke an LLM when no
-  queued command exists. Do not implement Hermes cron prompt polling as a queue.
+  heartbeat a worker lease. It is intentionally reconcile-only until V5: there is
+  no dispatch adapter, prompt submission, provider call, SSE replay or approval
+  mutation. These deterministic lifecycle operations must never invoke an LLM when
+  no queued command exists. Do not implement Hermes cron prompt polling as a queue.
 
 
 ## Core Engineering Rules

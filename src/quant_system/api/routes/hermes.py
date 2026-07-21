@@ -109,38 +109,7 @@ def hermes_artifacts(
     return catalog.latest(limit=limit)
 
 
-_UPSTREAM_CHAT_WRITE_BLOCKERS = [
-    "run_submission_not_idempotent",
-    "request_recovery_unavailable",
-    "event_id_unavailable",
-    "event_replay_unavailable",
-    "run_status_not_persistent",
-    "provider_policy_not_immutable",
-    "actual_provider_evidence_unavailable",
-    "approval_exact_binding_unavailable",
-    "stop_reconciliation_unavailable",
-]
-
-_PLATFORM_CHAT_DELIVERY_BLOCKERS = [
-    "authenticated_mutation_bff_unavailable",
-    "csrf_protection_unavailable",
-    "prompt_retention_boundary_unavailable",
-    "command_dispatch_adapter_unavailable",
-    "hqa_task_attempt_binding_unavailable",
-    "composer_resume_stop_unavailable",
-    "independent_security_review_unavailable",
-    "user_chat_cutover_approval_required",
-]
-
-
-def _chat_blockers(*operational: str) -> dict[str, list[str]]:
-    upstream = list(_UPSTREAM_CHAT_WRITE_BLOCKERS)
-    platform = list(_PLATFORM_CHAT_DELIVERY_BLOCKERS)
-    return {
-        "upstream_blockers": upstream,
-        "platform_delivery_blockers": platform,
-        "blockers": [*operational, *upstream, *platform],
-    }
+from quant_system.hermes.composer_readiness import chat_write_blockers as _chat_blockers
 
 
 def _warning(exc: HermesApiReadError) -> list[dict[str, str]]:
@@ -181,7 +150,7 @@ def hermes_gateway_status(
             "session_api_available": False,
             "chat_write_ready": False,
             "features": {},
-            **_chat_blockers("integration_disabled"),
+            **_chat_blockers(settings, "integration_disabled"),
             "warnings": [],
         }
     if gateway is None:
@@ -192,7 +161,7 @@ def hermes_gateway_status(
             "session_api_available": False,
             "chat_write_ready": False,
             "features": {},
-            **_chat_blockers("gateway_client_unavailable"),
+            **_chat_blockers(settings, "gateway_client_unavailable"),
             "warnings": [
                 {
                     "code": "gateway_client_unavailable",
@@ -210,7 +179,7 @@ def hermes_gateway_status(
             "session_api_available": False,
             "chat_write_ready": False,
             "features": {},
-            **_chat_blockers("gateway_unavailable"),
+            **_chat_blockers(settings, "gateway_unavailable"),
             "warnings": _warning(exc),
         }
     features = capabilities["features"]
@@ -222,7 +191,7 @@ def hermes_gateway_status(
         "session_api_available": session_api_available,
         "chat_write_ready": False,
         "features": features,
-        **_chat_blockers(),
+        **_chat_blockers(settings),
         "warnings": (
             []
             if session_api_available

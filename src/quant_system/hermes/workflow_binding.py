@@ -1102,9 +1102,9 @@ _REQUIRED_CONSTRAINTS = frozenset(
         ),
         (
             "hermes_command_workflow_bindings",
-            "uq_hermes_workflow_binding_task",
+            "uq_hermes_workflow_binding_task_attempt_number",
             "u",
-            "UNIQUE (task_id)",
+            "UNIQUE (task_id, attempt_number)",
         ),
         (
             "hermes_command_workflow_bindings",
@@ -1299,9 +1299,9 @@ _REQUIRED_INDEXES = frozenset(
         ),
         (
             "hermes_command_workflow_bindings",
-            "uq_hermes_workflow_binding_task",
+            "uq_hermes_workflow_binding_task_attempt_number",
             True,
-            ("task_id",),
+            ("task_id", "attempt_number"),
         ),
         (
             "hermes_command_workflow_bindings",
@@ -1489,6 +1489,19 @@ def _workflow_binding_schema_signature_is_ready(conn: psycopg.Connection) -> boo
         if bool(validated)
     }
     if not _REQUIRED_CONSTRAINTS.issubset(actual_constraints):
+        return False
+    # Refuse the pre-revision UNIQUE(task_id)-only shape even if the required
+    # multi-Attempt constraint is also present. Subset matching alone would
+    # otherwise accept a table that still forbids Research Task 1:N Attempt.
+    if any(
+        name == "uq_hermes_workflow_binding_task"
+        or (
+            kind == "u"
+            and table == "hermes_command_workflow_bindings"
+            and definition.replace(" ", "").lower() == "unique(task_id)"
+        )
+        for table, name, kind, definition in actual_constraints
+    ):
         return False
 
     index_rows = conn.execute(

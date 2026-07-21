@@ -624,15 +624,26 @@ def test_workflow_binding_rollback_is_reentrant_from_partial_relation_state(
 
 
 @pytest.mark.parametrize(
-    ("duplicate_field", "constraint_name"),
+    ("duplicate_fields", "constraint_name", "expected_distinct"),
     [
-        ("task_id", "uq_hermes_workflow_binding_task"),
-        ("attempt_id", "uq_hermes_workflow_binding_attempt"),
+        (
+            ("task_id", "attempt_number"),
+            "uq_hermes_workflow_binding_task_attempt_number",
+            # after forcing second row onto first's (task_id, attempt_number):
+            # 2 rows, 1 distinct task_id, 2 distinct attempt_id, 1 distinct pair
+            (2, 1, 2, 1),
+        ),
+        (
+            ("attempt_id",),
+            "uq_hermes_workflow_binding_attempt",
+            (2, 2, 1, 2),
+        ),
     ],
 )
 def test_workflow_binding_migration_rejects_duplicate_legacy_identity_data(
-    duplicate_field: str,
+    duplicate_fields: tuple[str, ...],
     constraint_name: str,
+    expected_distinct: tuple[int, int, int, int],
 ) -> None:
     settings = _postgres_settings()
     db.reset_database_cache()
@@ -652,6 +663,7 @@ def test_workflow_binding_migration_rejects_duplicate_legacy_identity_data(
                 client_request_id="req-legacy-duplicate-002",
                 task_id="hqt_222222222222222222222222",
                 attempt_id="hqa_222222222222222222222222",
+                attempt_number=2,
                 prepared_event_id="hqe_222222222222222222222222",
             ),
         )
@@ -665,15 +677,16 @@ def test_workflow_binding_migration_rejects_duplicate_legacy_identity_data(
                     "ALTER TABLE quant_system.hermes_command_workflow_bindings DROP CONSTRAINT {}"
                 ).format(sql.Identifier(constraint_name))
             )
+            assignments = sql.SQL(", ").join(
+                sql.SQL("{} = %s").format(sql.Identifier(field)) for field in duplicate_fields
+            )
+            values = [getattr(first.binding, field) for field in duplicate_fields]
             conn.execute(
                 sql.SQL(
                     "UPDATE quant_system.hermes_command_workflow_bindings "
-                    "SET {} = %s WHERE command_id = %s"
-                ).format(sql.Identifier(duplicate_field)),
-                (
-                    getattr(first.binding, duplicate_field),
-                    second.command_id,
-                ),
+                    "SET {} WHERE command_id = %s"
+                ).format(assignments),
+                (*values, second.command_id),
             )
             conn.execute(
                 "ALTER TABLE quant_system.hermes_command_workflow_bindings "
@@ -687,14 +700,13 @@ def test_workflow_binding_migration_rejects_duplicate_legacy_identity_data(
         with database.connect() as conn:
             assert conn.execute(
                 """
-                SELECT count(*), count(DISTINCT task_id), count(DISTINCT attempt_id)
+                SELECT count(*),
+                       count(DISTINCT task_id),
+                       count(DISTINCT attempt_id),
+                       count(DISTINCT (task_id, attempt_number))
                 FROM quant_system.hermes_command_workflow_bindings
                 """
-            ).fetchone() == (
-                2,
-                1 if duplicate_field == "task_id" else 2,
-                1 if duplicate_field == "attempt_id" else 2,
-            )
+            ).fetchone() == expected_distinct
     finally:
         _reset_workflow_ledger(database)
         db.run_migrations(database)
@@ -705,8 +717,9 @@ def test_workflow_binding_migration_rejects_duplicate_legacy_identity_data(
     "drift",
     [
         "missing_attempt_constraint",
-        "tampered_task_constraint",
-        "invalid_task_index",
+        "tampered_task_attempt_number_constraint",
+        "invalid_task_attempt_number_index",
+        "obsolete_task_only_constraint",
     ],
 )
 def test_task_attempt_uniqueness_drift_blocks_read_and_inventory_parity(
@@ -727,15 +740,23 @@ def test_task_attempt_uniqueness_drift_blocks_read_and_inventory_parity(
                     "ALTER TABLE quant_system.hermes_command_workflow_bindings "
                     "DROP CONSTRAINT uq_hermes_workflow_binding_attempt"
                 )
-            elif drift == "tampered_task_constraint":
+            elif drift == "tampered_task_attempt_number_constraint":
                 conn.execute(
                     "ALTER TABLE quant_system.hermes_command_workflow_bindings "
-                    "DROP CONSTRAINT uq_hermes_workflow_binding_task"
+                    "DROP CONSTRAINT uq_hermes_workflow_binding_task_attempt_number"
                 )
                 conn.execute(
                     "ALTER TABLE quant_system.hermes_command_workflow_bindings "
+                    "ADD CONSTRAINT uq_hermes_workflow_binding_task_attempt_number "
+                    "UNIQUE (task_id)"
+                )
+            elif drift == "obsolete_task_only_constraint":
+                # Pre-revision UNIQUE(task_id) shape must fail readiness even if
+                # the multi-Attempt constraint remains installed.
+                conn.execute(
+                    "ALTER TABLE quant_system.hermes_command_workflow_bindings "
                     "ADD CONSTRAINT uq_hermes_workflow_binding_task "
-                    "UNIQUE (task_id, attempt_id)"
+                    "UNIQUE (task_id)"
                 )
             else:
                 conn.execute(
@@ -743,7 +764,7 @@ def test_task_attempt_uniqueness_drift_blocks_read_and_inventory_parity(
                     UPDATE pg_index
                     SET indisvalid = FALSE
                     WHERE indexrelid =
-                        'quant_system.uq_hermes_workflow_binding_task'::regclass
+                        'quant_system.uq_hermes_workflow_binding_task_attempt_number'::regclass
                     """
                 )
 
@@ -757,7 +778,15 @@ def test_task_attempt_uniqueness_drift_blocks_read_and_inventory_parity(
             )
     finally:
         with database.connect() as conn:
-            if drift in {"tampered_task_constraint", "invalid_task_index"}:
+            if drift in {
+                "tampered_task_attempt_number_constraint",
+                "invalid_task_attempt_number_index",
+                "obsolete_task_only_constraint",
+            }:
+                conn.execute(
+                    "ALTER TABLE quant_system.hermes_command_workflow_bindings "
+                    "DROP CONSTRAINT IF EXISTS uq_hermes_workflow_binding_task_attempt_number"
+                )
                 conn.execute(
                     "ALTER TABLE quant_system.hermes_command_workflow_bindings "
                     "DROP CONSTRAINT IF EXISTS uq_hermes_workflow_binding_task"
@@ -1362,7 +1391,13 @@ def test_legacy_event_append_only_function_drift_fails_closed_and_006_restores_i
             "schema_version": None,
             "workflow_binding_schema_ready": False,
             "workflow_binding_schema_version": None,
+            "session_registry_schema_ready": True,
+            "session_registry_schema_version": 1,
+            "agent_workspace_authorities_ready": False,
+            "research_binding_ready": False,
             "mutation_enabled": False,
+            "composer_write_ready": False,
+            "chat_write_ready": False,
         }
         with pytest.raises(
             HermesCommandLedgerUnavailable,
@@ -1573,7 +1608,42 @@ def test_same_idempotency_key_saga_or_prepared_event_with_different_facts_confli
         db.reset_database_cache()
 
 
-def test_distinct_binding_cannot_reuse_task_identity() -> None:
+def test_distinct_binding_can_reuse_task_identity_with_new_attempt_number() -> None:
+    """Research Task 1:N Attempt: same task_id + new attempt_number is allowed."""
+
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+    _reset_workflow_ledger(database)
+
+    try:
+        first = ensure_bound_command(settings, _prepared())
+        second = ensure_bound_command(
+            settings,
+            _prepared(
+                workflow_saga_id="hqs_222222222222222222222222",
+                platform_session_id="platform-session-task-reuse",
+                client_request_id="req-task-reuse-002",
+                attempt_id="hqa_222222222222222222222222",
+                attempt_number=2,
+                prepared_event_id="hqe_222222222222222222222222",
+            ),
+        )
+
+        assert first.created is True
+        assert second.created is True
+        assert first.binding.task_id == second.binding.task_id
+        assert first.binding.attempt_number != second.binding.attempt_number
+        assert first.command_id != second.command_id
+        assert _workflow_business_counts(database) == (2, 2, 2, 2)
+    finally:
+        _reset_workflow_ledger(database)
+        db.reset_database_cache()
+
+
+def test_distinct_binding_cannot_reuse_task_attempt_number_pair() -> None:
     settings = _postgres_settings()
     db.reset_database_cache()
     database = db.get_database(settings)
@@ -1589,9 +1659,10 @@ def test_distinct_binding_cannot_reuse_task_identity() -> None:
                 settings,
                 _prepared(
                     workflow_saga_id="hqs_222222222222222222222222",
-                    platform_session_id="platform-session-task-reuse",
-                    client_request_id="req-task-reuse-002",
+                    platform_session_id="platform-session-task-attempt-reuse",
+                    client_request_id="req-task-attempt-reuse-002",
                     attempt_id="hqa_222222222222222222222222",
+                    attempt_number=1,
                     prepared_event_id="hqe_222222222222222222222222",
                 ),
             )

@@ -4,6 +4,12 @@
 -- 005 is an already-applied transport-ledger contract and is replayed before this
 -- file on every idempotent migration run. No prompt, provider credential, Hermes
 -- mutation, or trading instruction is stored here.
+--
+-- Cardinality (Agent v0.2 / D-32 Scheme A, revised before any live apply):
+--   UNIQUE(attempt_id)                 — one Attempt maps to at most one binding
+--   UNIQUE(task_id, attempt_number)    — multi-Attempt Research Task support
+-- Never reintroduce UNIQUE(task_id) alone; under the replay-all runner a later
+-- 007 cannot safely patch that mistake. Live apply still needs separate auth.
 
 BEGIN;
 
@@ -126,7 +132,8 @@ CREATE TABLE IF NOT EXISTS quant_system.hermes_command_workflow_bindings (
             canonical_request_digest
         ),
     CONSTRAINT uq_hermes_workflow_binding_saga UNIQUE (workflow_saga_id),
-    CONSTRAINT uq_hermes_workflow_binding_task UNIQUE (task_id),
+    CONSTRAINT uq_hermes_workflow_binding_task_attempt_number
+        UNIQUE (task_id, attempt_number),
     CONSTRAINT uq_hermes_workflow_binding_attempt UNIQUE (attempt_id),
     CONSTRAINT uq_hermes_workflow_binding_prepared_event
         UNIQUE (task_id, prepared_event_id),
@@ -178,20 +185,34 @@ CREATE TABLE IF NOT EXISTS quant_system.hermes_command_workflow_bindings (
 );
 
 -- CREATE TABLE IF NOT EXISTS does not reconcile constraints on an already
--- installed table. Re-assert the v1 Task/Attempt identity cardinality on every
--- migration run. ALTER TABLE deliberately fails (and rolls back this whole
--- migration) if legacy rows violate either invariant.
+-- installed table. Re-assert the multi-Attempt Task identity cardinality on
+-- every migration run. ALTER TABLE deliberately fails (and rolls back this
+-- whole migration) if legacy rows violate either invariant.
+-- Refuse the pre-revision UNIQUE(task_id)-only shape if it is still present.
 DO $$
 BEGIN
-    IF NOT EXISTS (
+    IF EXISTS (
         SELECT 1
         FROM pg_constraint
         WHERE conname = 'uq_hermes_workflow_binding_task'
           AND conrelid =
               'quant_system.hermes_command_workflow_bindings'::regclass
     ) THEN
+        RAISE EXCEPTION
+            'refusing obsolete uq_hermes_workflow_binding_task UNIQUE(task_id); '
+            'revise never-live 006 to UNIQUE(task_id, attempt_number) before apply';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'uq_hermes_workflow_binding_task_attempt_number'
+          AND conrelid =
+              'quant_system.hermes_command_workflow_bindings'::regclass
+    ) THEN
         ALTER TABLE quant_system.hermes_command_workflow_bindings
-            ADD CONSTRAINT uq_hermes_workflow_binding_task UNIQUE (task_id);
+            ADD CONSTRAINT uq_hermes_workflow_binding_task_attempt_number
+            UNIQUE (task_id, attempt_number);
     END IF;
 
     IF NOT EXISTS (

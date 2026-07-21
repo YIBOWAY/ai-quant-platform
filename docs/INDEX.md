@@ -117,7 +117,9 @@ scheduler、outbound worker、POST route 或数据库 migration。
 - 3C.1 另以 additive migration 006 source 定义独立 workflow-binding meta 与 append-only exact
   binding 表，并交付 bound-command 原子 primitive、binding-aware claim、read-only
   repeatable-read inventory 及 HQA reverse authority audit。代码/隔离 PostgreSQL 已验收，但
-  migration 006 **尚未在 live `quantplatform` apply**；worker/BFF 均未消费，不能视为写端激活。
+  migration 006/007 **已于 2026-07-21 live apply**（证据
+  [audits/2026-07-21-v4-live-migrate-006-007.md](audits/2026-07-21-v4-live-migrate-006-007.md)）；
+  worker 仍 reconcile-only，BFF mutation/composer 仍 OFF，不能视为写端激活。
   旧 TUI gateway capability contract 已因上游代码漂移而 fail closed，不再作为主连接。
   loopback 只构成网络暴露边界，不是 OS 用户认证；启用本地会话读取时，平台后端必须
   绑定 `127.0.0.1` 或 `::1`。运行与威胁模型见
@@ -133,7 +135,11 @@ scheduler、outbound worker、POST route 或数据库 migration。
 - 3B ledger 已交付 claim/lease/heartbeat primitives；3C connector worker runtime 仅交付
   `LISTEN/NOTIFY` + periodic scan 与 expired-lease reconcile，不 claim queued command，
   也没有 dispatch adapter；Hermes/provider mutation 计数固定为 0。
-  `chat_write` 仍 false，live gateway 明确报告 9 个 upstream + 8 个 platform blocker。
+  `chat_write` 仍 false。V4 后 platform blockers 由 `composer_readiness` 统一生成：
+  permanent cutover/security 码（含 `research_workflow_submission_unavailable`、
+  `independent_security_review_unavailable`、`user_chat_cutover_approval_required`）
+  + 缺 schema 时的动态码；`csrf_protection_unavailable` 已移除。live gateway 仍报告
+  9 个 upstream blocker + 上述 platform blockers；`composer_open` 恒 false。
 - `/brief` 由官方本地 UI 聚合 factual v1 payload 与逐源 watermark；paper-account 权威源不可用时
   不显示虚构金额且禁用保存。后端严格校验完整 schema、日期、locale 与水位，但不会重新抓取每个
   上游来源来证明客户端 payload；因此它是本地单用户可信 UI 的事实快照，不是密码学来源证明。

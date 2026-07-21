@@ -7,6 +7,18 @@ from typing import Annotated, Any
 from fastapi import Depends, HTTPException, Request
 
 from quant_system.api.jobs.backtest_jobs import BacktestJobRunner
+from quant_system.api.safety.local_session import (
+    CSRF_HEADER_NAME,
+    SESSION_COOKIE_NAME,
+    LocalSessionAuthError,
+    LocalSessionForbidden,
+    LocalSessionValidationError,
+    OwnerSession,
+    enforce_browser_request_gates,
+    policy_from_settings,
+    require_mutation_precheck,
+    verify_session_cookie,
+)
 from quant_system.config.settings import Settings
 from quant_system.hermes.gateway_client import HermesApiReadClient
 
@@ -67,6 +79,60 @@ def require_hermes_loopback_request(request: Request) -> None:
         )
 
 
+def _local_session_policy(request: Request):
+    settings = get_settings(request)
+    return policy_from_settings(
+        cors_origins=list(settings.api_cors_origins),
+        bind_address=get_bind_address(request),
+    )
+
+
+def _security_http_error(exc: Exception) -> HTTPException:
+    code = getattr(exc, "code", "validation")
+    message = getattr(exc, "message", "workspace_validation_failed")
+    status = 401 if code == "auth" else 403 if code == "forbidden" else 422
+    return HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
+def require_owner_session(request: Request) -> OwnerSession:
+    """Require signed owner session + api_read browser gates."""
+    try:
+        policy = _local_session_policy(request)
+        enforce_browser_request_gates(
+            policy=policy,
+            request_kind="api_read",
+            host_header=request.headers.get("host"),
+            origin_header=request.headers.get("origin"),
+            sec_fetch_site=request.headers.get("sec-fetch-site"),
+        )
+        return verify_session_cookie(
+            get_output_dir(request),
+            request.cookies.get(SESSION_COOKIE_NAME),
+        )
+    except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
+        raise _security_http_error(exc) from exc
+
+
+def require_mutation_security(request: Request) -> OwnerSession:
+    """Session + CSRF + origin gates. Still refuses until mutation_enabled is true.
+
+    No public mutation route should call this until the V4/V8 write gate opens.
+    """
+    try:
+        return require_mutation_precheck(
+            output_dir=get_output_dir(request),
+            policy=_local_session_policy(request),
+            cookie_value=request.cookies.get(SESSION_COOKIE_NAME),
+            csrf_header=request.headers.get(CSRF_HEADER_NAME),
+            host_header=request.headers.get("host"),
+            origin_header=request.headers.get("origin"),
+            sec_fetch_site=request.headers.get("sec-fetch-site"),
+            mutation_enabled=False,
+        )
+    except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
+        raise _security_http_error(exc) from exc
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 OutputDirDep = Annotated[Path, Depends(get_output_dir)]
 AgentOutputDirDep = Annotated[Path, Depends(get_agent_output_dir)]
@@ -78,3 +144,4 @@ HermesApiReadClientDep = Annotated[
     Depends(get_hermes_api_read_client),
 ]
 HermesLoopbackRequestDep = Annotated[None, Depends(require_hermes_loopback_request)]
+OwnerSessionDep = Annotated[OwnerSession, Depends(require_owner_session)]

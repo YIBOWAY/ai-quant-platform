@@ -106,7 +106,11 @@ gateway 正常时应看到：
 - `session_api_available=true`
 - `read_status=available`
 - `chat_write_ready=false`
-- `blockers` 仍列出写端可靠性与审计缺口
+- `platform_delivery_blockers` 含 permanent cutover/security 码（如
+  `authenticated_mutation_bff_unavailable`、`research_workflow_submission_unavailable`、
+  `independent_security_review_unavailable`、`user_chat_cutover_approval_required`）以及
+  schema 未就绪时的动态码；**不含**已实现的 `csrf_protection_unavailable`
+- `blockers` 仍合并 upstream 写端可靠性缺口与 platform blockers
 
 从 sessions 响应选择一个真实 `id` 后，可以验证：
 
@@ -186,7 +190,7 @@ ID。当前会话页只经平台 API/BFF 读取，从不接触上游 URL 或 Bea
 下图是目标链路。Wave 3 的当前运行态只启用了 PostgreSQL migration 005 transport ledger、
 GET-only session BFF 与 deterministic worker 的 **notify/scan/expired-lease reconcile 底座**。
 3C.1 的 Task/payload/exact-binding foundation 已完成代码与隔离 PostgreSQL 验收，但 migration
-006 尚未在 live 数据库 apply；authenticated mutation、claim/dispatch 和 HTTP/SSE 写边均未准入：
+006/007 已于 2026-07-21 live apply，但 authenticated mutation、claim/dispatch 和 HTTP/SSE 写边均未准入：
 
 ```text
 Browser

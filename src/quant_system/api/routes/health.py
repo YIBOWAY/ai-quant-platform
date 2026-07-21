@@ -7,8 +7,7 @@ from fastapi import APIRouter
 
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.health import HealthResponse
-from quant_system.hermes.command_ledger import command_ledger_schema_version
-from quant_system.hermes.workflow_binding import workflow_binding_schema_version
+from quant_system.hermes.composer_readiness import authority_readiness
 
 router = APIRouter()
 
@@ -69,14 +68,21 @@ def _database_status(settings: SettingsDep) -> dict[str, Any]:
 
 
 def _hermes_command_ledger_status(settings: SettingsDep) -> dict[str, Any]:
-    version = command_ledger_schema_version(settings)
-    binding_version = workflow_binding_schema_version(settings)
+    ready = authority_readiness(settings)
     return {
         "database_configured": settings.database.enabled and settings.database.url is not None,
-        "schema_ready": version is not None,
-        "schema_version": version,
-        "workflow_binding_schema_ready": binding_version is not None,
-        "workflow_binding_schema_version": binding_version,
-        # No authenticated same-origin + CSRF BFF mutation exists in Slice 3B.
+        "schema_ready": bool(ready["command_ledger_schema_ready"]),
+        "schema_version": ready["command_ledger_schema_version"],
+        "workflow_binding_schema_ready": bool(ready["workflow_binding_schema_ready"]),
+        "workflow_binding_schema_version": ready["workflow_binding_schema_version"],
+        "session_registry_schema_ready": bool(ready["session_registry_schema_ready"]),
+        "session_registry_schema_version": ready["session_registry_schema_version"],
+        # Ordinary create/fork/turn authorities (ledger + session registry).
+        "agent_workspace_authorities_ready": bool(ready["ready"]),
+        # Research prepare binding (ledger + session + 006 workflow binding).
+        "research_binding_ready": bool(ready["research_binding_ready"]),
+        # Owner session + CSRF exist; public mutation / composer stay hard OFF.
         "mutation_enabled": False,
+        "composer_write_ready": False,
+        "chat_write_ready": False,
     }
