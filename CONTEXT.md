@@ -87,7 +87,7 @@ Shared durable workspace follow spine for command lifecycle only. BFF `GET …/f
 _Avoid_: assistant token stream, message bodies in follow, inventing Task authority, public write, dual private poll loops
 
 **L5a-Hermes-Approval-Observe**:
-Honest empty Hermes **command-approval** observe slot + Composer dual-poll hygiene. Snapshot emits `approvals=[]` and `authority_health.command_approval="unavailable"` (no invented challenges; ≠ Gate 1/2/3, ≠ `/hermes/approvals` candidate page). FE spine carries `approvals`; `waitForCommandTerminalOnSpine` replaces Composer private `pollCommandUntilTerminal`. Read-only workbench panel `WorkbenchCommandApprovalsPanel` (`data-hermes-approval-observe=l5a-m1`) mounts when chat open. **No allow/deny write**. **M1 ACCEPT@2026-07-22**.
+Honest empty Hermes **command-approval** observe slot + Composer dual-poll hygiene. Originally emitted `approvals=[]` with observe-only panel (`data-hermes-approval-observe=l5a-m1`). FE spine carries `approvals`; Composer waits on spine. As of **V7a**, health is `command_approval="ready"` when the hermetic authority is mounted (empty list still honest); decide controls are a separate term. **M1 ACCEPT@2026-07-22**.
 _Avoid_: inventing approval rows, Gate mutation, conflating with candidate approvals page, assistant bodies on follow, public write
 
 **L5b-Authority-Projection**:
@@ -96,10 +96,14 @@ _Avoid_: inventing HQA Task/Attempt from commands, stop/gate writes, research Ta
 
 **L5c-Workbench-A11y**:
 FE-only workbench shell a11y contracts. Marker `data-hermes-workbench-a11y=l5c-m1`; `data-hermes-workbench-main` region landmark (not nested main; root layout owns document main); responsive content pad (p-3/sm:p-4/lg:p-6); shared `COLLAPSE_TOGGLE_CLASS` (44px + focus-visible) + `LONG_ID_CLASS`/`displayId` on Activity/Approvals/Authority + transcript session chip; Composer focus-visible + aria-busy/invalid; breakpoints 1440/1280/768/390; globals keep reduced-motion + focus ring. **No mutation routes**. **M1 ACCEPT@2026-07-22**.
-_Avoid_: approval decision mutation, inventing Task/Attempt, assistant bodies on follow, public write, selling visual e2e as full screen-reader certification
+_Avoid_: inventing Task/Attempt, assistant bodies on follow, public write, selling visual e2e as full screen-reader certification
+
+**V7a-Hermes-Approval-Decide**:
+Exact single-use Hermes **command-approval** decision: `allow_once` | `deny` only. CAS binds `approval_ref` + `run_ref` + `command_digest` + `expected_status=pending` + `expected_expires_at`. Platform hermetic `CommandApprovalAuthority` + typed `hermes.command_approval.decide` on `POST …/act` (owner cookie + CSRF); mutation OFF → unavailable; fail-closed on stale/expired/wrong digest/run/replay; same `client_action_id`+digest is idempotent. Snapshot projects pending rows and `authority_health.command_approval="ready"` (empty still honest). FE panel marker `data-hermes-approval-decide=v7a-m1` shows controls only when `mutation_enabled` and CAS-complete pending. **No always-allow**. **≠** Gate 1/2/3, **≠** `/hermes/approvals` candidate page, **≠** live Hermes durable projector (later). **M1 ACCEPT@2026-07-22**.
+_Avoid_: always-allow, Gate mutation, inventing challenges, stop/token stream, public write
 
 **Observe Spine**:
-Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; L4b-M1 is the shared SSE/poll transport; L5a-M1 adds empty-honest approvals + Composer on spine; L5b-M1 carries empty-honest Task/Attempt/Run/result slots + health on spine; L5c-M1 hardens shell a11y around that spine (no new observe fields).
+Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; L4b-M1 is the shared SSE/poll transport; L5a-M1 adds empty-honest approvals + Composer on spine; L5b-M1 carries empty-honest Task/Attempt/Run/result slots + health on spine; L5c-M1 hardens shell a11y around that spine; V7a-M1 may project real pending command-approval challenges from the hermetic authority (empty remains honest).
 _Avoid_: empty follow poll, commands-only Activity sold as complete Task/Attempt observe spine, private dual poll after L4b/L5a
 
 **Action Receipt**:

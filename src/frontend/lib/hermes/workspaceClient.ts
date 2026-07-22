@@ -392,6 +392,92 @@ export async function sendComposerTurn(options: {
   });
 }
 
+/**
+ * V7a-Hermes-Approval-Decide-M1: exact single-use allow_once|deny via /act.
+ * Binds approval_ref + run_ref + command_digest + expected_status=pending +
+ * expected_expires_at. No always-allow. Owner gate + CSRF required.
+ * ≠ Gate 1/2/3, ≠ /hermes/approvals candidate page.
+ */
+export type DecideHermesCommandApprovalInput = {
+  approvalId: string;
+  runId: string;
+  commandDigest: string;
+  expectedExpiresAt: string;
+  decision: "allow_once" | "deny";
+  clientActionId?: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+};
+
+export function buildDecideApprovalAction(input: {
+  approvalId: string;
+  runId: string;
+  commandDigest: string;
+  expectedExpiresAt: string;
+  decision: "allow_once" | "deny";
+  clientActionId: string;
+  workspaceId: string;
+}): Record<string, unknown> {
+  const approvalId = input.approvalId.startsWith("approval:")
+    ? input.approvalId.slice("approval:".length)
+    : input.approvalId;
+  const runId = input.runId.startsWith("run:")
+    ? input.runId.slice("run:".length)
+    : input.runId;
+  if (!/^[0-9a-f]{64}$/.test(input.commandDigest)) {
+    throw new WorkspaceClientError(
+      "command_digest must be lowercase SHA-256",
+      400,
+      "validation",
+    );
+  }
+  if (input.decision !== "allow_once" && input.decision !== "deny") {
+    throw new WorkspaceClientError(
+      "decision must be allow_once or deny",
+      400,
+      "validation",
+    );
+  }
+  return {
+    schema_version: 1,
+    kind: "hermes.command_approval.decide",
+    client_action_id: input.clientActionId,
+    workspace: { workspace_id: input.workspaceId },
+    approval_ref: `approval:${approvalId}`,
+    run_ref: `run:${runId}`,
+    command_digest: input.commandDigest,
+    expected_status: "pending",
+    expected_expires_at: input.expectedExpiresAt,
+    decision: input.decision,
+  };
+}
+
+export async function decideHermesCommandApproval(
+  options: DecideHermesCommandApprovalInput,
+): Promise<WorkspaceActionReceipt> {
+  await ensureOwnerSession(options.signal);
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  const clientActionId = options.clientActionId ?? crypto.randomUUID();
+  const action = buildDecideApprovalAction({
+    approvalId: options.approvalId,
+    runId: options.runId,
+    commandDigest: options.commandDigest,
+    expectedExpiresAt: options.expectedExpiresAt,
+    decision: options.decision,
+    clientActionId,
+    workspaceId,
+  });
+  return sameOriginJson<WorkspaceActionReceipt>(
+    `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
+    {
+      method: "POST",
+      csrf: true,
+      signal: options.signal,
+      body: { action },
+    },
+  );
+}
+
 export type WorkspaceCommandProjection = {
   command_id: string;
   kind: string;
@@ -408,7 +494,7 @@ export type WorkspaceCommandProjection = {
   created_at?: string | null;
 };
 
-/** L5a: Hermes command-approval challenge projection (observe-only). */
+/** L5a/V7a: Hermes command-approval challenge projection. */
 export type WorkspaceApprovalProjection = {
   approval_id: string;
   run_id?: string | null;
@@ -435,7 +521,7 @@ export type WorkspaceSnapshot = {
   runs?: string[];
   /** L5b: result-ref ids/objects; empty until projector. */
   results?: string[];
-  /** L5a: Hermes command-approval challenges; empty until durable projector. */
+  /** L5a/V7a: Hermes command-approval challenges; empty when none pending. */
   approvals?: WorkspaceApprovalProjection[];
   authority_health?: Record<string, string>;
   mutation_enabled?: boolean;

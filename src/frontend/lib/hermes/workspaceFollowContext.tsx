@@ -52,6 +52,7 @@ export function WorkspaceFollowProvider({
     runs: [],
     results: [],
     authorityHealth: { ...EMPTY_AUTHORITY_HEALTH },
+    mutationEnabled: false,
     lastEvents: [],
     transport: "idle",
     resyncCount: 0,

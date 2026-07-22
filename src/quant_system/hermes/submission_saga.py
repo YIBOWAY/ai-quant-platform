@@ -35,6 +35,7 @@ from quant_system.hermes.agent_workspace_actions import (
     ContinueResearch,
     ConversationTurn,
     CreateManagedSession,
+    DecideHermesCommandApproval,
     ForkIntoManagedSession,
     StartResearch,
     UnsupportedWorkspaceAction,
@@ -46,6 +47,10 @@ from quant_system.hermes.agent_workspace_actions import (
     parse_user_action_v1,
     session_ref,
     strip_session_ref,
+)
+from quant_system.hermes.command_approval_authority import (
+    CommandApprovalAuthorityError,
+    default_command_approval_authority,
 )
 from quant_system.hermes.command_ledger import (
     ROOT_USER_ID,
@@ -176,6 +181,7 @@ def _receipt(
     action: UserActionV1,
     digest: str,
     command_id: str | None = None,
+    run_id: str | None = None,
     platform_session_id: str | None = None,
     hermes_session_id: str | None = None,
     reason_code: str | None = None,
@@ -187,6 +193,7 @@ def _receipt(
         action_digest=digest,
         workspace_id=action.workspace.workspace_id,
         command_id=command_id,
+        run_id=run_id,
         platform_session_id=platform_session_id,
         hermes_session_id=hermes_session_id,
         reason_code=reason_code,
@@ -612,6 +619,105 @@ def submit_conversation_turn(
 )
 
 
+def submit_decide_hermes_command_approval(
+    settings: Settings,
+    action: DecideHermesCommandApproval,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V7a: exact single-use allow_once|deny against hermetic approval authority.
+
+    Ledger row is optional audit (control-plane session); the challenge CAS is
+    owned by ``CommandApprovalAuthority``. No Hermes network call; no Gate
+    1/2/3; no always-allow.
+    """
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+
+    authority = default_command_approval_authority()
+    try:
+        decided = authority.decide(
+            workspace_id=action.workspace.workspace_id,
+            approval_ref=action.approval_ref,
+            run_ref=action.run_ref,
+            command_digest=action.command_digest,
+            expected_status=action.expected_status,
+            expected_expires_at=action.expected_expires_at,
+            decision=action.decision,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+        )
+    except CommandApprovalAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message or "command_approval_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+
+    # Best-effort durable audit row on the control-plane session. Challenge CAS
+    # already committed above; ledger outage must not undo the decision, but
+    # still surfaces as reconciling so the client follows workspace state.
+    command_id: str | None = None
+    if _ensure_ready(settings):
+        control_session = control_plane_session_id(action.workspace.workspace_id)
+        try:
+            cmd = _create_idempotent_command(
+                settings,
+                platform_session_id=control_session,
+                client_request_id=action.client_action_id,
+                kind="hermes_command_approval_decide",
+                action_digest=digest,
+                payload_ref=action_payload_ref_for_digest(digest),
+                provider_policy_digest=None,
+            )
+            command_id = str(cmd.command.command_id)
+        except SubmissionSagaError as exc:
+            if exc.code == "conflict":
+                # Same client_action_id / different digest is a true conflict on
+                # the audit rail; challenge already matches action_digest so
+                # treat as accepted with no new command id.
+                if exc.message and "digest" in exc.message.lower():
+                    return _receipt(
+                        status="conflict",
+                        action=action,
+                        digest=digest,
+                        reason_code="idempotency_digest_conflict",
+                        mutation_enabled=mutation_enabled,
+                    )
+            # Authority already decided; return accepted without command_id.
+            command_id = None
+
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        run_id=decided.run_id,
+        mutation_enabled=mutation_enabled,
+    )
+
+
 def submit_action(
     settings: Settings,
     action: UserActionV1 | dict[str, object],
@@ -649,6 +755,13 @@ def submit_action(
         )
     if type(parsed) is ConversationTurn:
         return submit_conversation_turn(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
+    if type(parsed) is DecideHermesCommandApproval:
+        return submit_decide_hermes_command_approval(
             settings,
             parsed,
             mutation_enabled=mutation_enabled,
@@ -697,5 +810,6 @@ __all__ = [
     "submit_action",
     "submit_conversation_turn",
     "submit_create_managed_session",
+    "submit_decide_hermes_command_approval",
     "submit_fork_into_managed_session",
 ]

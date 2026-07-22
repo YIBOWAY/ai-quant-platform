@@ -21,7 +21,7 @@ export type FollowTransport = "sse" | "poll" | "idle";
 export type FollowSpineState = {
   cursor: number;
   commands: WorkspaceCommandProjection[];
-  /** L5a: Hermes command-approval challenges from snapshot (empty until projector). */
+  /** L5a/V7a: Hermes command-approval challenges from snapshot. */
   approvals: WorkspaceApprovalProjection[];
   /** L5b: authority id slots from snapshot (honest empty until projectors). */
   tasks: string[];
@@ -30,6 +30,8 @@ export type FollowSpineState = {
   results: string[];
   /** L5b: snapshot authority_health carry-through (optional keys). */
   authorityHealth: Record<string, string>;
+  /** V7a: snapshot mutation_enabled — gates approval decide controls. */
+  mutationEnabled: boolean;
   lastEvents: WorkspaceFollowEvent[];
   transport: FollowTransport;
   resyncCount: number;
@@ -75,6 +77,7 @@ function emptyState(): FollowSpineState {
     runs: [],
     results: [],
     authorityHealth: { ...EMPTY_AUTHORITY_HEALTH },
+    mutationEnabled: false,
     lastEvents: [],
     transport: "idle",
     resyncCount: 0,
@@ -215,6 +218,7 @@ export function createWorkspaceFollowSpine(
       runs,
       results,
       authorityHealth,
+      mutationEnabled: snap.mutation_enabled === true,
       cursor: Math.max(state.cursor, cursor),
       observedAt: snap.observed_at,
       snapshotCursor: snap.snapshot_workspace_cursor,

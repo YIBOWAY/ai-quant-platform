@@ -174,7 +174,7 @@ data/                     Local cache, fixtures, generated research outputs.
   **L5c-Workbench-A11y M1 ACCEPT** (FE-only shell a11y: workbench region landmark,
   responsive pad, collapse/long-id contracts, composer focus-visible;
   marker `data-hermes-workbench-a11y=l5c-m1`; no mutation routes).
-  Next: V7 verticals (exact command approval + Gates + stop — not inside L5c);
+  **V7a-Hermes-Approval-Decide M1 ACCEPT** (exact allow_once|deny CAS; hermetic authority; no always-allow; ≠ Gate). Next: V7b+ (stop/Gates/durable projector);
   public V8 still closed. See HQA `docs/README.md`, L2a ADR, and platform audits
   `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
   `docs/audits/2026-07-21-v6-local-off-to-on.md`.

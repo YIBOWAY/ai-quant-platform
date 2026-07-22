@@ -75,8 +75,8 @@ describe("workbenchA11y (L5c)", () => {
     expect(src).toContain('aria-label={isZh ? "Hermes 工作台主区"');
     // Root layout already owns document <main>; workbench must not nest another JSX main.
     expect(src).not.toMatch(/<\s*main[\s>]/);
-    // No new mutation surfaces in the a11y slice.
-    expect(src).not.toMatch(/allow\/deny|decideApproval|stop_command/i);
+    // Boundary stays free of decide/stop wiring (V7a lives in Approvals panel).
+    expect(src).not.toMatch(/decideHermesCommandApproval|stop_command/i);
   });
 
   it("shell root carries a11y marker for open+closed chat; region not nested main", () => {
@@ -105,9 +105,40 @@ describe("workbenchA11y (L5c)", () => {
       expect(src).toContain("LONG_ID_CLASS");
       expect(src).toContain("displayId");
       expect(src).not.toMatch(/\bshortId\b/);
-      // No decision/stop mutation handlers (copy may still say "no allow/deny").
-      expect(src).not.toMatch(/\bdecideApproval\b|\bstop_command\b|\bonAllow\b|\bonDeny\b/);
+      // Stop stays out of these panels. Activity/Authority never decide.
+      expect(src).not.toMatch(/\bstop_command\b/);
     }
+    const activity = readFileSync(
+      path.join(process.cwd(), "components/hermes/activity/WorkbenchCommandActivityPanel.tsx"),
+      "utf8",
+    );
+    const authority = readFileSync(
+      path.join(
+        process.cwd(),
+        "components/hermes/authority/WorkbenchAuthorityProjectionPanel.tsx",
+      ),
+      "utf8",
+    );
+    expect(activity).not.toMatch(
+      /\bdecideHermesCommandApproval\b|\bdata-hermes-approval-allow-once\b/,
+    );
+    expect(authority).not.toMatch(
+      /\bdecideHermesCommandApproval\b|\bdata-hermes-approval-allow-once\b/,
+    );
+    // V7a: Approvals panel owns allow_once|deny only (marker present).
+    const approvals = readFileSync(
+      path.join(
+        process.cwd(),
+        "components/hermes/approvals/WorkbenchCommandApprovalsPanel.tsx",
+      ),
+      "utf8",
+    );
+    expect(approvals).toContain('data-hermes-approval-decide="v7a-m1"');
+    expect(approvals).toContain("decideHermesCommandApproval");
+    // Ban real always-allow decision wiring (not "no always-allow" copy).
+    expect(approvals).not.toMatch(/["']allow_permanently["']/i);
+    expect(approvals).not.toMatch(/["']allow_always["']/i);
+    expect(approvals).not.toMatch(/decision:\s*["']always/i);
   });
 
   it("composer and transcript copy chip keep focus-visible + 44px targets", () => {

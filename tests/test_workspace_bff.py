@@ -133,9 +133,10 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     assert body["owner_user_id"] == str(ROOT_USER_ID)
     assert body["mutation_enabled"] is False
     assert body["authority_health"]["mutation"] == "disabled"
-    # L5a: approvals slot is present and honestly empty (no invented challenges).
+    # L5a/V7a: approvals slot is present and honestly empty (no invented challenges).
+    # V7a hermetic authority is reachable → health ready even when empty.
     assert body.get("approvals") == []
-    assert body["authority_health"].get("command_approval") == "unavailable"
+    assert body["authority_health"].get("command_approval") == "ready"
     # L5b: Task/Attempt/Run/result authority slots stay empty; health unavailable.
     assert body.get("tasks") == []
     assert body.get("attempts") == []

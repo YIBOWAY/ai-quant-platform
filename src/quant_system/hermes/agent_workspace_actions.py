@@ -12,6 +12,7 @@ import json
 import math
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Mapping, Union
 
 _ACTION_KINDS = frozenset(
@@ -176,6 +177,30 @@ def _validate_payload_binding(payload_ref: Any, payload_digest: Any) -> None:
         raise AgentWorkspaceActionError("payload_ref must exactly match payload_digest")
 
 
+def _normalize_timestamp(value: Any) -> str:
+    """Normalize RFC3339 timestamps to canonical UTC microsecond Z form.
+
+    Matches HQA ``hqa.agent_workspace_actions._normalize_timestamp`` so
+    ``hermes.command_approval.decide`` digests stay cross-repo stable.
+    """
+    if type(value) is not str or _RFC3339_RE.fullmatch(value) is None:
+        raise AgentWorkspaceActionError(
+            "expected_expires_at must be a canonical timezone-aware timestamp"
+        )
+    parsed_value = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(parsed_value)
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise AgentWorkspaceActionError(
+                "expected_expires_at must be timezone-aware"
+            )
+        return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    except (ValueError, OverflowError, OSError) as exc:
+        raise AgentWorkspaceActionError(
+            "expected_expires_at must be a canonical timezone-aware timestamp"
+        ) from exc
+
+
 def _validate_note(value: Any, field: str) -> None:
     if (
         type(value) is not str
@@ -334,6 +359,45 @@ class ConfirmResearchPlan:
 
 
 @dataclass(frozen=True)
+class DecideHermesCommandApproval:
+    """V7a: exact single-use Hermes command-approval decision (allow_once|deny).
+
+    Not Gate 1/2/3. Not always-allow. CAS binds approval_ref + run_ref +
+    command_digest + expected_status=pending + expected_expires_at.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    approval_ref: str
+    run_ref: str
+    command_digest: str
+    expected_status: str
+    expected_expires_at: str
+    decision: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_ref(self.approval_ref, "approval_ref", "approval:")
+        _validate_ref(self.run_ref, "run_ref", "run:")
+        _validate_digest(self.command_digest, "command_digest")
+        if (
+            type(self.expected_status) is not str
+            or self.expected_status != "pending"
+        ):
+            raise AgentWorkspaceActionError("expected_status must be pending")
+        if type(self.decision) is not str or self.decision not in (
+            "allow_once",
+            "deny",
+        ):
+            raise AgentWorkspaceActionError("decision must be allow_once or deny")
+        object.__setattr__(
+            self,
+            "expected_expires_at",
+            _normalize_timestamp(self.expected_expires_at),
+        )
+
+
+@dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
 
@@ -355,6 +419,7 @@ UserActionV1 = Union[
     StartResearch,
     ContinueResearch,
     ConfirmResearchPlan,
+    DecideHermesCommandApproval,
     UnsupportedWorkspaceAction,
 ]
 
@@ -363,6 +428,7 @@ _IMPLEMENTED_TYPES = (
     CreateManagedSession,
     ForkIntoManagedSession,
     ConversationTurn,
+    DecideHermesCommandApproval,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -444,6 +510,19 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
                 "plan_version": action.plan_version,
                 "plan_digest": action.plan_digest,
                 "confirmation_note": action.confirmation_note,
+            }
+        )
+        return _strict_json_document(document)
+    if type(action) is DecideHermesCommandApproval:
+        document.update(
+            {
+                "kind": "hermes.command_approval.decide",
+                "approval_ref": action.approval_ref,
+                "run_ref": action.run_ref,
+                "command_digest": action.command_digest,
+                "expected_status": action.expected_status,
+                "expected_expires_at": action.expected_expires_at,
+                "decision": action.decision,
             }
         )
         return _strict_json_document(document)
@@ -531,6 +610,16 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             plan_digest=document["plan_digest"],
             confirmation_note=document["confirmation_note"],
         )
+    if kind == "hermes.command_approval.decide":
+        return DecideHermesCommandApproval(
+            **common,
+            approval_ref=document["approval_ref"],
+            run_ref=document["run_ref"],
+            command_digest=document["command_digest"],
+            expected_status=document["expected_status"],
+            expected_expires_at=document["expected_expires_at"],
+            decision=document["decision"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -571,6 +660,7 @@ __all__ = [
     "ContinueResearch",
     "ConversationTurn",
     "CreateManagedSession",
+    "DecideHermesCommandApproval",
     "ForkIntoManagedSession",
     "StartResearch",
     "UnsupportedWorkspaceAction",

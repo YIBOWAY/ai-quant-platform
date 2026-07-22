@@ -72,8 +72,8 @@ class WorkspaceSnapshot:
     commands: tuple[dict[str, object], ...]
     runs: tuple[str, ...]
     results: tuple[str, ...]
-    # L5a-M1: Hermes command-approval challenges. Empty until a durable projector
-    # lands; never invent Gate 1/2/3 or candidate approvals here.
+    # L5a/V7a: Hermes command-approval challenges from hermetic authority.
+    # Empty is honest when none pending; never invent Gate 1/2/3 rows.
     approvals: tuple[dict[str, object], ...]
     authority_health: Mapping[str, str]
     mutation_enabled: bool
@@ -221,8 +221,9 @@ class PlatformAgentWorkspace:
             "provider": "dark",
             "mutation": "enabled" if mutation_on else "disabled",
             "composer": "enabled" if composer_on else "disabled",
-            # L5a: no durable Hermes command-approval projector yet.
-            "command_approval": "unavailable",
+            # V7a: hermetic in-process command-approval authority may hold
+            # pending challenges. Empty is still honest when none are seeded.
+            "command_approval": "ready",
             # L5b: Task/Attempt/Run/result authority projectors not wired —
             # empty tuples stay empty; never invent HQA rows from commands.
             "task": "unavailable",
@@ -240,6 +241,18 @@ class PlatformAgentWorkspace:
                 workspace_id
             )
 
+        # V7a: project pending command-approval challenges from hermetic
+        # authority. Never invent Gate 1/2/3 or candidate approvals.
+        from quant_system.hermes.command_approval_authority import (
+            default_command_approval_authority,
+        )
+
+        # Empty approvals[] is honest; health stays "ready" because the
+        # hermetic in-process authority is mounted (not a live Hermes projector).
+        approvals = tuple(
+            default_command_approval_authority().list_pending(workspace_id)
+        )
+
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
             owner_user_id=str(owner),
@@ -250,7 +263,7 @@ class PlatformAgentWorkspace:
             commands=tuple(commands),
             runs=(),
             results=(),
-            approvals=(),
+            approvals=approvals,
             authority_health=health,
             mutation_enabled=mutation_on,
             observed_at=observed_at,
