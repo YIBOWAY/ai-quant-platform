@@ -1348,7 +1348,7 @@ def test_security_function_body_drift_blocks_read_write_and_claim(
         db.reset_database_cache()
 
 
-def test_legacy_event_append_only_function_drift_fails_closed_and_006_restores_it() -> None:
+def test_legacy_event_append_only_function_drift_fails_closed_and_replay_restores_it() -> None:
     """Binding readiness includes the immutable event evidence it anchors."""
 
     settings = _postgres_settings()
@@ -1359,8 +1359,6 @@ def test_legacy_event_append_only_function_drift_fails_closed_and_006_restores_i
     _reset_workflow_ledger(database)
     ledger = HermesCommandLedger(settings)
     existing = ensure_bound_command(settings, _prepared())
-    migration_006 = Path("scripts/sql/006_hermes_workflow_binding.sql").read_text(encoding="utf-8")
-
     try:
         with database.connect() as conn:
             conn.execute(
@@ -1392,7 +1390,7 @@ def test_legacy_event_append_only_function_drift_fails_closed_and_006_restores_i
             "workflow_binding_schema_ready": False,
             "workflow_binding_schema_version": None,
             "session_registry_schema_ready": True,
-            "session_registry_schema_version": 1,
+            "session_registry_schema_version": 2,
             "agent_workspace_authorities_ready": False,
             "runtime_security_ready": False,
             "write_authority_ready": False,
@@ -1440,7 +1438,11 @@ def test_legacy_event_append_only_function_drift_fails_closed_and_006_restores_i
                 "SELECT state FROM quant_system.hermes_commands WHERE command_id = %s",
                 (existing.command_id,),
             ).fetchone() == ("queued",)
-            conn.execute(migration_006)
+
+        # The supported runner replays the whole ordered chain. Replaying only
+        # an older migration can legitimately overwrite later claim/security
+        # definitions until 008-010 repair them again.
+        db.run_migrations(database)
 
         assert command_ledger_schema_version(settings) == 1
         assert workflow_binding_schema_version(settings) == 1

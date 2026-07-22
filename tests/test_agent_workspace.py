@@ -295,19 +295,19 @@ def test_mutation_enabled_create_is_idempotent_by_digest() -> None:
     first = workspace.act(actor, action)
     assert first.status == "accepted"
     assert first.action_digest == digest
-    assert first.command_id is not None
+    assert first.command_id is None
     assert first.platform_session_id == derive_managed_platform_session_id(digest)
     assert first.hermes_session_id == derive_managed_hermes_session_id(digest)
     assert first.recovery_action is None
 
     second = workspace.act(actor, action)
     assert second.status == "accepted"
-    assert second.command_id == first.command_id
+    assert second.command_id is None
     assert second.platform_session_id == first.platform_session_id
     assert second.hermes_session_id == first.hermes_session_id
 
     commands, sessions = _count_rows(database)
-    assert commands == 1
+    assert commands == 0
     assert sessions == 1
 
     # Browser cannot manufacture a second valid create digest by selecting TTL.
@@ -321,7 +321,7 @@ def test_mutation_enabled_create_is_idempotent_by_digest() -> None:
     assert rejected.status == "unavailable"
     assert rejected.reason_code == "server_managed_session_policy_required"
     commands2, sessions2 = _count_rows(database)
-    assert (commands2, sessions2) == (1, 1)
+    assert (commands2, sessions2) == (0, 1)
 
     record = get_workspace_session(
         settings, platform_session_id=first.platform_session_id  # type: ignore[arg-type]
@@ -329,6 +329,8 @@ def test_mutation_enabled_create_is_idempotent_by_digest() -> None:
     assert record.kind == "web_managed_session"
     assert record.provider_policy_digest == PROVIDER_POLICY_DIGEST
     assert record.payload_ttl_days == 7
+    assert record.creation_client_action_id == action.client_action_id
+    assert record.creation_action_digest == digest
     assert record.web_writable is True
 
 
@@ -363,6 +365,7 @@ def test_fork_creates_managed_without_mutating_external() -> None:
     )
     receipt = workspace.act(actor, fork)
     assert receipt.status == "accepted"
+    assert receipt.command_id is None
     assert receipt.platform_session_id is not None
     assert receipt.platform_session_id != external.platform_session_id
 
@@ -387,10 +390,24 @@ def test_fork_creates_managed_without_mutating_external() -> None:
     # Idempotent fork retry
     again = workspace.act(actor, fork)
     assert again.status == "accepted"
-    assert again.command_id == receipt.command_id
+    assert again.command_id is None
     assert again.platform_session_id == receipt.platform_session_id
+
+    conflicting_fork = ForkIntoManagedSession(
+        client_action_id=fork.client_action_id,
+        workspace=fork.workspace,
+        source_session_ref=fork.source_session_ref,
+        source_channel=fork.source_channel,
+        fork_point="cursor:43",
+        new_provider_policy_digest=fork.new_provider_policy_digest,
+        payload_ttl_days=fork.payload_ttl_days,
+    )
+    conflict = workspace.act(actor, conflicting_fork)
+    assert conflict.status == "conflict"
+    assert conflict.reason_code == "idempotency_digest_conflict"
+    assert conflict.command_id is None
     commands, sessions = _count_rows(database)
-    assert commands == 1
+    assert commands == 0
     assert sessions == 2
 
 
@@ -465,8 +482,8 @@ def test_external_turn_conflicts_managed_turn_idempotent_and_conflict() -> None:
     assert conflict.reason_code == "idempotency_digest_conflict"
 
     commands, sessions = _count_rows(database)
-    # 1 create command + 1 turn command; external + managed sessions
-    assert commands == 2
+    # Session creation is registry-only; only the conversation turn is work.
+    assert commands == 1
     assert sessions == 2
 
 
@@ -484,6 +501,17 @@ def test_snapshot_lists_sessions_and_follow_lifecycle() -> None:
 
     create = workspace.act(actor, _create_action("act-snap-create"))
     assert create.status == "accepted"
+
+    turn = ConversationTurn(
+        client_action_id="act-snap-turn",
+        workspace=WorkspaceRef(workspace_id=WORKSPACE_ID),
+        managed_session_ref=session_ref(create.platform_session_id),  # type: ignore[arg-type]
+        payload_ref=f"payload:sha256:{DIGEST_C}",
+        payload_digest=DIGEST_C,
+    )
+    turn_receipt = workspace.act(actor, turn)
+    assert turn_receipt.status == "accepted"
+    assert turn_receipt.command_id is not None
 
     snap = workspace.snapshot(actor, WorkspaceRef(workspace_id=WORKSPACE_ID))
     assert snap.mutation_enabled is True
@@ -508,7 +536,7 @@ def test_snapshot_lists_sessions_and_follow_lifecycle() -> None:
     assert snap.commands
     assert isinstance(snap.commands[0], dict)
     assert "command_id" in snap.commands[0]
-    assert snap.commands[0]["command_id"] == create.command_id
+    assert snap.commands[0]["command_id"] == turn_receipt.command_id
     assert snap.commands[0]["state"] == "queued"
     assert snap.snapshot_workspace_cursor >= 1
 

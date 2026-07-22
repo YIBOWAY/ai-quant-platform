@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from unittest.mock import patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -11,8 +11,10 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from quant_system.config.settings import DatabaseSettings, Settings
 from quant_system.hermes.agent_workspace_actions import CreateManagedSession, WorkspaceRef
+from quant_system.hermes.command_ledger import HermesCommandLedger
 from quant_system.hermes.dark_identity_profile import PROVIDER_POLICY_DIGEST
 from quant_system.hermes.session_registry import (
+    HermesSessionActionConflict,
     HermesSessionNotWritable,
     HermesSessionRegistryConflict,
     HermesSessionRegistryUnavailable,
@@ -30,6 +32,8 @@ pytestmark = pytest.mark.pg
 
 ROOT_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 DIGEST_B = "b" * 64
+ACTION_DIGEST_A = "a" * 64
+ACTION_DIGEST_C = "c" * 64
 
 
 def test_managed_session_policy_is_server_owned_before_database_access() -> None:
@@ -44,6 +48,8 @@ def test_managed_session_policy_is_server_owned_before_database_access() -> None
                 kind="web_managed_session",
                 provider_policy_digest=DIGEST_B,
                 payload_ttl_days=7,
+                creation_client_action_id="policy-rejected",
+                creation_action_digest=ACTION_DIGEST_A,
             ),
         )
 
@@ -58,6 +64,8 @@ def test_managed_session_policy_is_server_owned_before_database_access() -> None
                 kind="web_managed_session",
                 provider_policy_digest=PROVIDER_POLICY_DIGEST,
                 payload_ttl_days=7,
+                creation_client_action_id="policy-canonical",
+                creation_action_digest=ACTION_DIGEST_A,
             ),
         )
 
@@ -150,9 +158,68 @@ def test_session_registry_migration_is_ready_and_repeatable() -> None:
     database = db.get_database(settings)
     assert database is not None
     db.run_migrations(database)
-    assert session_registry_schema_version(settings) == 1
+    assert session_registry_schema_version(settings) == 2
     db.run_migrations(database)
-    assert session_registry_schema_version(settings) == 1
+    assert session_registry_schema_version(settings) == 2
+
+
+def test_migration_retires_only_legacy_queued_session_control_commands() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+    ledger = HermesCommandLedger(settings)
+    created = ledger.create_command(
+        platform_session_id="awctl_workspace-root",
+        client_request_id=f"legacy-session-control-{uuid4().hex}",
+        kind="managed_session_create",
+        canonical_request_digest=ACTION_DIGEST_A,
+        payload_ref=f"platform-payload://sha256/{ACTION_DIGEST_A}",
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
+    ).command
+    assert created.state == "queued"
+
+    db.run_migrations(database, only={"010_hermes_session_action_idempotency.sql"})
+    retired = ledger.get_command(created.command_id)
+    assert retired.state == "cancelled"
+    assert retired.last_error_code == "legacy_control_command_retired"
+    with database.connect() as conn:
+        events = conn.execute(
+            """
+            SELECT event_type, from_state, to_state
+            FROM quant_system.hermes_command_events
+            WHERE command_id = %s
+            ORDER BY command_version
+            """,
+            (created.command_id,),
+        ).fetchall()
+        assert events == [
+            ("command_created", None, "queued"),
+            ("legacy_control_retired", "queued", "cancelled"),
+        ]
+        assert conn.execute(
+            """
+            SELECT consumed_by IS NOT NULL, consumed_at IS NOT NULL
+            FROM quant_system.hermes_outbox
+            WHERE command_id = %s
+            """,
+            (created.command_id,),
+        ).fetchone() == (True, True)
+
+    # Replay is a no-op for the already terminal row and emits no duplicate.
+    db.run_migrations(database, only={"010_hermes_session_action_idempotency.sql"})
+    with database.connect() as conn:
+        assert conn.execute(
+            """
+            SELECT count(*)
+            FROM quant_system.hermes_command_events
+            WHERE command_id = %s
+            """,
+            (created.command_id,),
+        ).fetchone() == (2,)
+    db.run_migrations(database)
+    assert session_registry_schema_version(settings) == 2
 
 
 def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> None:
@@ -198,6 +265,8 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
                 kind="web_managed_session",
                 provider_policy_digest=PROVIDER_POLICY_DIGEST,
                 payload_ttl_days=7,
+                creation_client_action_id="registry-managed-root",
+                creation_action_digest=ACTION_DIGEST_A,
             ),
         )
         assert managed_created is True
@@ -215,6 +284,8 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
                 fork_point="msg:discord:abc123",
                 provider_policy_digest=PROVIDER_POLICY_DIGEST,
                 payload_ttl_days=7,
+                creation_client_action_id="registry-managed-fork",
+                creation_action_digest=ACTION_DIGEST_C,
             ),
         )
         assert fork_created is True
@@ -289,9 +360,11 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                 kind="web_managed_session",
                 provider_policy_digest=PROVIDER_POLICY_DIGEST,
                 payload_ttl_days=7,
+                creation_client_action_id="registry-conflict",
+                creation_action_digest=ACTION_DIGEST_A,
             ),
         )
-        with pytest.raises(HermesSessionRegistryConflict):
+        with pytest.raises(HermesSessionActionConflict):
             register_workspace_session(
                 settings,
                 RegisterWorkspaceSession(
@@ -301,6 +374,8 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                     kind="web_managed_session",
                     provider_policy_digest=PROVIDER_POLICY_DIGEST,
                     payload_ttl_days=7,
+                    creation_client_action_id="registry-conflict",
+                    creation_action_digest=ACTION_DIGEST_C,
                 ),
             )
         with pytest.raises(HermesSessionRegistryConflict):
@@ -313,6 +388,8 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                     kind="web_managed_session",
                     provider_policy_digest=PROVIDER_POLICY_DIGEST,
                     payload_ttl_days=7,
+                    creation_client_action_id="registry-other",
+                    creation_action_digest=ACTION_DIGEST_C,
                 ),
             )
         with pytest.raises(HermesSessionRegistryValidationError):
@@ -342,6 +419,17 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
         )
         assert record.provider_policy_digest == PROVIDER_POLICY_DIGEST
         assert record.payload_ttl_days == 7
+        assert record.creation_client_action_id == "registry-conflict"
+        assert record.creation_action_digest == ACTION_DIGEST_A
+        with pytest.raises(psycopg.errors.RaiseException), database.connect() as conn:
+            conn.execute(
+                """
+                UPDATE quant_system.hermes_workspace_sessions
+                SET creation_action_digest = %s
+                WHERE platform_session_id = %s
+                """,
+                (ACTION_DIGEST_C, "web-session-conflict"),
+            )
         with database.connect() as conn:
             assert conn.execute(
                 "SELECT count(*) FROM quant_system.hermes_workspace_sessions"
