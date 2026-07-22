@@ -79,12 +79,16 @@ FE polish on the L3a canvas only: keep-last-ready no-flicker refresh, soft stick
 _Avoid_: Plan-V6 complete, SSE done, inventing assistant text, binding on accept instead of deliver
 
 **L4a-Task-Drawer (Command Activity)**:
-Read-only workbench **Activity** panel from snapshot `commands[]` (conversation_turn lifecycle). Task/Attempt authority rows still empty tuples — M1 does **not** invent HQA Task UI. Collapsible; ~8s poll; markers `data-hermes-command-activity` + `data-hermes-task-drawer=l4a-m1`. Mounted in `HermesLocalChatBoundary` when chat open. **≠** `/hermes/tasks` artifacts page. **M1 ACCEPT@2026-07-22**. No SSE / mutation / approvals.
-_Avoid_: filled Task/Attempt authority, SSE, stop/gate actions, conflating with research Tasks page, public write
+Read-only workbench **Activity** panel from workspace `commands[]` (conversation_turn lifecycle). Task/Attempt authority rows still empty tuples — M1 does **not** invent HQA Task UI. Collapsible; markers `data-hermes-command-activity` + `data-hermes-task-drawer=l4a-m1`. Mounted in `HermesLocalChatBoundary` when chat open. **≠** `/hermes/tasks` artifacts page. **M1 ACCEPT@2026-07-22**. As of L4b, Activity consumes the shared follow spine (no private 8s snapshot loop). No mutation / approvals / public write.
+_Avoid_: filled Task/Attempt authority, stop/gate actions, conflating with research Tasks page, public write
+
+**L4b-SSE-Follow**:
+Shared durable workspace follow spine for command lifecycle only. BFF `GET …/follow/stream` SSE over the same follow projector (`ready`/`command`/`cursor`/`resync`/`heartbeat`/`reconnect`/`error`); FE `createWorkspaceFollowSpine` prefers EventSource, falls back to GET follow poll after soft SSE failures, bootstrap + periodic snapshot reconcile, resync → snapshot + restart. `WorkspaceFollowProvider` mounts under chat boundary (`data-hermes-workspace-follow=l4b-m1`); Activity + delivered-bind/bump consume one spine. **No assistant bodies** on follow/SSE. Test knobs: `max_ticks` / `poll_seconds` query. **M1 ACCEPT@2026-07-22**.
+_Avoid_: assistant token stream, message bodies in follow, inventing Task authority, public write, dual private poll loops
 
 **Observe Spine**:
-Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; richer Task/Attempt/Run projections remain Plan-V6 remainder.
-_Avoid_: empty follow poll, commands-only Activity sold as complete Task/Attempt observe spine
+Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; L4b-M1 is the shared SSE/poll transport; richer Task/Attempt/Run projections remain Plan-V6 remainder.
+_Avoid_: empty follow poll, commands-only Activity sold as complete Task/Attempt observe spine, private dual poll after L4b
 
 **Action Receipt**:
 The durable acknowledgment of one user action, carrying status, digests, recovery guidance, and optional command or session identities.

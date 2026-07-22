@@ -163,9 +163,12 @@ data/                     Local cache, fixtures, generated research outputs.
   claim/dispatch ACCEPT**, **V6 local dark enablement ACCEPT**, **L2a-Send
   M1+M2 ACCEPT**, **L2b-Observe M1+M2 ACCEPT**, **L3a-Transcript M1 ACCEPT**,
   **L3b-Transcript-Polish M1 ACCEPT**, **L4a-Task-Drawer M1 ACCEPT** (command
-  Activity panel from snapshot `commands[]`; Task/Attempt authority still empty).
-  Next: remaining Plan-V6 UI (SSE / approvals / a11y / richer projections) + V7;
-  public V8 still closed. See HQA `docs/README.md`, L2a ADR, and platform audits
+  Activity from workspace `commands[]`; Task/Attempt authority still empty),
+  **L4b-SSE-Follow M1 ACCEPT** (BFF `GET …/follow/stream` + shared FE follow
+  spine; SSE preferred / poll fallback; Activity consumes spine; no assistant
+  bodies on follow). Next: remaining Plan-V6 UI (approvals / a11y / richer
+  Task·Attempt projections) + V7; public V8 still closed. See HQA
+  `docs/README.md`, L2a ADR, and platform audits
   `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
   `docs/audits/2026-07-21-v6-local-off-to-on.md`.
   Connector worker CLI **defaults to `reconcile_only`** (LISTEN/NOTIFY + scan +

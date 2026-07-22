@@ -7,6 +7,7 @@ import { ComposerSubmitController } from "@/components/hermes/ComposerSubmitCont
 import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { WorkbenchTranscriptPanel } from "@/components/hermes/transcript/WorkbenchTranscriptPanel";
 import { ActiveHermesSessionProvider } from "@/lib/hermes/activeSession";
+import { WorkspaceFollowProvider } from "@/lib/hermes/workspaceFollowContext";
 import type { HermesDeliveryState } from "@/lib/hermes/types";
 import type { Locale } from "@/lib/locale";
 
@@ -27,8 +28,8 @@ export type HermesLocalChatBoundaryProps = {
 };
 
 /**
- * Client island: active Hermes session + transcript + command activity + composer.
- * Keeps server shell free of cookie/fetch; L3a transcript + L4a activity above Today.
+ * Client island: active Hermes session + shared L4b follow spine + transcript
+ * + command activity + composer. Keeps server shell free of cookie/fetch.
  */
 export function HermesLocalChatBoundary({
   locale,
@@ -39,35 +40,42 @@ export function HermesLocalChatBoundary({
 }: HermesLocalChatBoundaryProps) {
   return (
     <ActiveHermesSessionProvider>
-      <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <WorkspaceFollowProvider enabled={chatOpen}>
         <div
-          className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
-          data-page-scroll-region
+          className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
+          data-hermes-workspace-follow="l4b-m1"
         >
-          <div className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-4 p-4 lg:p-6">
-            <HermesCapabilityNotice
-              deliveryState={deliveryState}
-              locale={locale}
+          <div
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
+            data-page-scroll-region
+          >
+            <div className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-4 p-4 lg:p-6">
+              <HermesCapabilityNotice
+                deliveryState={deliveryState}
+                locale={locale}
+              />
+              {chatOpen ? <WorkbenchTranscriptPanel locale={locale} /> : null}
+              {chatOpen ? (
+                <WorkbenchCommandActivityPanel locale={locale} />
+              ) : null}
+              {children}
+            </div>
+          </div>
+          <div className="min-h-[var(--spacing-hermes-composer-min)] shrink-0">
+            <ComposerSubmitController
+              allowSubmit={chatOpen}
+              disabled={!chatOpen}
+              label={composer.label}
+              networkSubmit={chatOpen}
+              placeholder={
+                chatOpen ? composer.placeholderOpen : composer.placeholder
+              }
+              sendLabel={chatOpen ? composer.sendEnabled : composer.sendDisabled}
+              unavailableHint={composer.unavailable}
             />
-            {chatOpen ? <WorkbenchTranscriptPanel locale={locale} /> : null}
-            {chatOpen ? <WorkbenchCommandActivityPanel locale={locale} /> : null}
-            {children}
           </div>
         </div>
-        <div className="min-h-[var(--spacing-hermes-composer-min)] shrink-0">
-          <ComposerSubmitController
-            allowSubmit={chatOpen}
-            disabled={!chatOpen}
-            label={composer.label}
-            networkSubmit={chatOpen}
-            placeholder={
-              chatOpen ? composer.placeholderOpen : composer.placeholder
-            }
-            sendLabel={chatOpen ? composer.sendEnabled : composer.sendDisabled}
-            unavailableHint={composer.unavailable}
-          />
-        </div>
-      </div>
+      </WorkspaceFollowProvider>
     </ActiveHermesSessionProvider>
   );
 }

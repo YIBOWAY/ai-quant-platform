@@ -161,6 +161,33 @@ def test_workspace_cross_origin_snapshot_fails(tmp_path: Path) -> None:
     assert cross.status_code == 403
 
 
+def test_workspace_follow_stream_requires_owner_and_emits_sse(tmp_path: Path) -> None:
+    """L4b: SSE follow is owner-gated; ready frame is command-lifecycle only."""
+    client = _client(tmp_path)
+    denied = client.get(
+        f"/api/workspace/{WORKSPACE_ID}/follow/stream?after_cursor=0&max_ticks=1&poll_seconds=0",
+        headers=_browser_headers(),
+    )
+    assert denied.status_code == 401
+
+    _bootstrap(client, tmp_path)
+    # Bound the generator so TestClient cannot hang on the long-lived stream.
+    response = client.get(
+        f"/api/workspace/{WORKSPACE_ID}/follow/stream"
+        f"?after_cursor=0&max_ticks=1&poll_seconds=0",
+        headers=_browser_headers(),
+    )
+    assert response.status_code == 200, response.text
+    assert "text/event-stream" in response.headers.get("content-type", "")
+    body = response.text
+    assert "event: ready" in body
+    assert "command_lifecycle" in body
+    assert "event: reconnect" in body
+    # No assistant token / message body channel in this stream.
+    assert "assistant_token" not in body
+    assert "message_body" not in body
+
+
 def test_health_still_mutation_false_with_workspace_module(tmp_path: Path) -> None:
     client = _client(tmp_path)
     response = client.get("/api/health")

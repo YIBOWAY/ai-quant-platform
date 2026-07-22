@@ -11,9 +11,13 @@ Mutation defaults OFF. Local installs open POST /act and submit-turn via
 
 from __future__ import annotations
 
+import json
+import time
+from collections.abc import Iterator
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from quant_system.api.dependencies import (
@@ -138,6 +142,144 @@ def workspace_follow(
             detail={"code": "validation", "message": str(exc) or "validation"},
         ) from exc
     return page.to_public_dict()
+
+
+# L4b-SSE-Follow-M1: long-poll style SSE over the same durable follow page.
+# Not assistant token stream; no message bodies; owner cookie required.
+_SSE_POLL_SECONDS = 1.0
+_SSE_HEARTBEAT_EVERY = 3
+_SSE_MAX_TICKS = 600  # ~10 min then client reconnects
+_SSE_MAX_TICKS_CEILING = 600
+
+
+@router.get("/workspace/{workspace_id}/follow/stream")
+def workspace_follow_stream(
+    workspace_id: str,
+    settings: SettingsDep,
+    owner: OwnerSessionDep,
+    after_cursor: int | None = Query(default=0, ge=0, le=2**63 - 1),
+    max_ticks: int | None = Query(default=None, ge=1, le=_SSE_MAX_TICKS_CEILING),
+    poll_seconds: float | None = Query(default=None, ge=0.0, le=5.0),
+) -> StreamingResponse:
+    """Server-Sent Events over workspace follow pages (command lifecycle only)."""
+    mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
+    workspace = _workspace(settings)
+    actor = _actor(owner.owner_user_id)
+    start_cursor = 0 if after_cursor is None else int(after_cursor)
+    tick_limit = int(max_ticks) if max_ticks is not None else _SSE_MAX_TICKS
+    sleep_s = float(poll_seconds) if poll_seconds is not None else _SSE_POLL_SECONDS
+
+    def _sse_pack(event: str, data: dict[str, object]) -> str:
+        payload = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+        return f"event: {event}\ndata: {payload}\n\n"
+
+    def event_iter() -> Iterator[str]:
+        cursor = start_cursor
+        idle = 0
+        yield _sse_pack(
+            "ready",
+            {
+                "workspace_id": workspace_id,
+                "after_cursor": cursor,
+                "mutation_enabled": mutation_enabled,
+                "transport": "sse",
+                # Honest scope marker for FE/docs.
+                "scope": "command_lifecycle",
+            },
+        )
+        for _tick in range(tick_limit):
+            try:
+                page = workspace.follow(
+                    actor,
+                    WorkspaceRef(workspace_id=workspace_id),
+                    after=cursor,
+                )
+            except (SubmissionSagaError, AgentWorkspaceActionError, ValueError, TypeError) as exc:
+                code = getattr(exc, "code", "validation")
+                message = str(getattr(exc, "message", "") or exc)
+                yield _sse_pack(
+                    "error",
+                    {
+                        "code": str(code),
+                        "message": message,
+                        "mutation_enabled": mutation_enabled,
+                    },
+                )
+                return
+            except Exception as exc:  # noqa: BLE001 — stream must not 500 mid-body
+                yield _sse_pack(
+                    "error",
+                    {
+                        "code": "unavailable",
+                        "message": str(exc) or "follow_stream_failed",
+                        "mutation_enabled": mutation_enabled,
+                    },
+                )
+                return
+
+            public = page.to_public_dict()
+            if public.get("resync_required"):
+                yield _sse_pack(
+                    "resync",
+                    {
+                        "after_cursor": public.get("after_cursor"),
+                        "recovery_action": public.get("recovery_action"),
+                        "mutation_enabled": public.get("mutation_enabled"),
+                    },
+                )
+                # Client must snapshot; keep cursor until they reconnect with new head.
+                idle = 0
+                if sleep_s > 0:
+                    time.sleep(sleep_s)
+                continue
+
+            events = public.get("events") or []
+            if isinstance(events, list) and events:
+                for item in events:
+                    if isinstance(item, dict):
+                        yield _sse_pack("command", dict(item))
+                next_cursor = public.get("next_cursor")
+                if isinstance(next_cursor, int):
+                    cursor = next_cursor
+                yield _sse_pack(
+                    "cursor",
+                    {
+                        "next_cursor": cursor,
+                        "mutation_enabled": public.get("mutation_enabled"),
+                    },
+                )
+                idle = 0
+            else:
+                idle += 1
+                if idle % _SSE_HEARTBEAT_EVERY == 0:
+                    yield _sse_pack(
+                        "heartbeat",
+                        {
+                            "cursor": cursor,
+                            "mutation_enabled": public.get("mutation_enabled"),
+                        },
+                    )
+            if sleep_s > 0:
+                time.sleep(sleep_s)
+
+        yield _sse_pack(
+            "reconnect",
+            {
+                "next_cursor": cursor,
+                "reason": "max_ticks",
+            },
+        )
+
+    headers = {
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(
+        event_iter(),
+        media_type="text/event-stream",
+        headers=headers,
+    )
 
 
 @router.get("/workspace/authorities")

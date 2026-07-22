@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   commandStateLabel,
@@ -8,98 +8,50 @@ import {
   shortId,
   sortCommandsNewestFirst,
 } from "@/lib/hermes/commandActivity";
-import {
-  fetchWorkspaceSnapshot,
-  type WorkspaceCommandProjection,
-} from "@/lib/hermes/workspaceClient";
+import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
 import type { Locale } from "@/lib/locale";
 
 export type WorkbenchCommandActivityPanelProps = {
   locale: Locale;
-  /** Soft refresh interval while mounted (ms). 0 = snapshot once. */
+  /**
+   * @deprecated L4b: refresh is driven by shared follow spine (SSE/poll).
+   * Kept for call-site compatibility; ignored.
+   */
   pollMs?: number;
 };
 
-type LoadState =
-  | { kind: "loading" }
-  | { kind: "ready"; commands: WorkspaceCommandProjection[]; observedAt?: string }
-  | { kind: "error"; detail: string; prior?: WorkspaceCommandProjection[] };
-
-const DEFAULT_POLL_MS = 8_000;
 const MAX_ROWS = 12;
 
 /**
- * L4a-Task-Drawer-M1: read-only command activity from workspace snapshot.
- * Task/Attempt authority rows are still empty in snapshot; this surfaces the
- * live ledger commands[] projection (conversation_turn lifecycle) without SSE
- * or mutation. Not the /hermes/tasks artifacts page.
+ * L4a Activity + L4b follow spine consumer.
+ * Read-only command lifecycle from shared workspace follow (SSE preferred,
+ * poll fallback). Task/Attempt authority rows still empty — not /hermes/tasks.
  */
 export function WorkbenchCommandActivityPanel({
   locale,
-  pollMs = DEFAULT_POLL_MS,
 }: WorkbenchCommandActivityPanelProps) {
   const isZh = locale === "zh";
   const [open, setOpen] = useState(true);
-  const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const { state: follow } = useWorkspaceFollow();
 
-  useEffect(() => {
-    let cancelled = false;
-    let tickAc: AbortController | null = null;
-    let gen = 0;
-
-    const run = async () => {
-      tickAc?.abort();
-      const ac = new AbortController();
-      tickAc = ac;
-      const myGen = ++gen;
-      try {
-        const snap = await fetchWorkspaceSnapshot(undefined, ac.signal);
-        if (cancelled || ac.signal.aborted || myGen !== gen) return;
-        const commands = sortCommandsNewestFirst(snap.commands).slice(0, MAX_ROWS);
-        setState({
-          kind: "ready",
-          commands,
-          observedAt: snap.observed_at,
-        });
-      } catch (error) {
-        if (cancelled || ac.signal.aborted || myGen !== gen) return;
-        setState((prev) => ({
-          kind: "error",
-          detail: error instanceof Error ? error.message : "snapshot failed",
-          prior:
-            prev.kind === "ready"
-              ? prev.commands
-              : prev.kind === "error"
-                ? prev.prior
-                : undefined,
-        }));
-      }
-    };
-
-    void run();
-    if (!pollMs || pollMs <= 0) {
-      return () => {
-        cancelled = true;
-        tickAc?.abort();
-      };
-    }
-    const timer = window.setInterval(() => {
-      void run();
-    }, pollMs);
-    return () => {
-      cancelled = true;
-      tickAc?.abort();
-      window.clearInterval(timer);
-    };
-  }, [pollMs]);
-
-  const commands =
-    state.kind === "ready"
-      ? state.commands
-      : state.kind === "error" && state.prior
-        ? state.prior
-        : [];
+  const commands = useMemo(
+    () => sortCommandsNewestFirst(follow.commands).slice(0, MAX_ROWS),
+    [follow.commands],
+  );
   const activeCount = commands.filter((c) => isActiveCommandState(c.state)).length;
+  const loading = follow.transport === "idle" && !commands.length && !follow.error;
+  const transportLabel =
+    follow.transport === "sse"
+      ? isZh
+        ? "SSE"
+        : "SSE"
+      : follow.transport === "poll"
+        ? isZh
+          ? "轮询"
+          : "poll"
+        : isZh
+          ? "空闲"
+          : "idle";
 
   return (
     <section
@@ -107,6 +59,7 @@ export function WorkbenchCommandActivityPanel({
       className="space-y-2"
       data-hermes-command-activity
       data-hermes-task-drawer="l4a-m1"
+      data-hermes-follow-transport={follow.transport}
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
@@ -114,15 +67,15 @@ export function WorkbenchCommandActivityPanel({
             {isZh ? "活动" : "Activity"}
           </h2>
           <p className="font-body-sm text-text-secondary" data-hermes-activity-count>
-            {state.kind === "loading" && !commands.length
+            {loading
               ? isZh
                 ? "加载中…"
                 : "Loading…"
               : isZh
-                ? `${commands.length} 条命令${activeCount ? ` · ${activeCount} 进行中` : ""}`
+                ? `${commands.length} 条命令${activeCount ? ` · ${activeCount} 进行中` : ""} · ${transportLabel}`
                 : `${commands.length} command${commands.length === 1 ? "" : "s"}${
                     activeCount ? ` · ${activeCount} active` : ""
-                  }`}
+                  } · ${transportLabel}`}
           </p>
         </div>
         <button
@@ -145,22 +98,22 @@ export function WorkbenchCommandActivityPanel({
         >
           <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary">
             {isZh
-              ? "只读：workspace snapshot 的 ledger commands（conversation_turn 生命周期）。Task/Attempt 权威投影仍空；≠ 研究任务写入，≠ SSE。"
-              : "Read-only: ledger commands from workspace snapshot (conversation_turn lifecycle). Task/Attempt authority rows still empty; not research-task write, not SSE."}
+              ? "只读：共享 follow spine（SSE 优先 / poll 回退）的 ledger commands。Task/Attempt 权威仍空；≠ 研究任务写入；无 assistant 正文。"
+              : "Read-only: ledger commands via shared follow spine (SSE preferred, poll fallback). Task/Attempt authority still empty; not research-task write; no assistant bodies."}
           </p>
 
-          {state.kind === "error" ? (
+          {follow.error ? (
             <p
               className="px-3 py-2 font-body-sm text-warning"
               data-hermes-activity-error
             >
               {isZh
-                ? `刷新失败${state.prior ? "，仍显示上一份" : ""}：${state.detail}`
-                : `Refresh failed${state.prior ? "; showing last list" : ""}: ${state.detail}`}
+                ? `观察失败${commands.length ? "，仍显示上一份" : ""}：${follow.error}`
+                : `Observe failed${commands.length ? "; showing last list" : ""}: ${follow.error}`}
             </p>
           ) : null}
 
-          {!commands.length && state.kind !== "loading" ? (
+          {!commands.length && !loading ? (
             <p
               className="px-3 py-4 font-body-sm text-text-secondary"
               data-hermes-activity-empty
