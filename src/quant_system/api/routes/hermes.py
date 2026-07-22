@@ -27,7 +27,12 @@ from quant_system.api.schemas.hermes_results import (
     HermesResultsResponse,
 )
 from quant_system.hermes.artifact_catalog import HermesArtifactCatalog
-from quant_system.hermes.composer_readiness import authority_readiness
+from quant_system.hermes.composer_readiness import (
+    authority_readiness,
+)
+from quant_system.hermes.composer_readiness import (
+    chat_write_blockers as _chat_blockers,
+)
 from quant_system.hermes.gateway_client import (
     HermesApiReadClient,
     HermesApiReadError,
@@ -112,9 +117,6 @@ def hermes_artifacts(
         max_manifest_bytes=settings.hermes_artifacts.max_manifest_bytes,
     )
     return catalog.latest(limit=limit)
-
-
-from quant_system.hermes.composer_readiness import chat_write_blockers as _chat_blockers
 
 
 def _warning(exc: HermesApiReadError) -> list[dict[str, str]]:

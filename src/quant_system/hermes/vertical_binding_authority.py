@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from threading import Lock
 from typing import Literal
 
@@ -38,7 +38,7 @@ class VerticalBindingAuthorityError(Exception):
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _dt_public(value: datetime | str | None = None) -> str:
@@ -46,8 +46,8 @@ def _dt_public(value: datetime | str | None = None) -> str:
         return value
     dt = value if isinstance(value, datetime) else _utc_now()
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _validate_id(value: str, field: str) -> str:
@@ -86,7 +86,7 @@ def _optional_number(value: object, field: str) -> float | int:
 
 
 def _stable_id(prefix: str, digest: str, salt: str) -> str:
-    h = hashlib.sha256(f"{digest}:{salt}".encode("utf-8")).hexdigest()[:20]
+    h = hashlib.sha256(f"{digest}:{salt}".encode()).hexdigest()[:20]
     return f"{prefix}-{h}"
 
 

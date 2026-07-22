@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from quant_system.factors.library.promoted.paper_short_term_reversal_proxy_v1 import PaperShortTermReversalProxy
+from quant_system.factors.library.promoted.paper_short_term_reversal_proxy_v1 import (
+    PaperShortTermReversalProxy,
+)
 
 
 def _synthetic_ohlcv(rows: int = 80) -> pd.DataFrame:

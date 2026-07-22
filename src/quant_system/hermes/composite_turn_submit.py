@@ -7,8 +7,9 @@ hand it to the Intent Payload CLI Port.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 from uuid import UUID
 
 from quant_system.config.settings import Settings
@@ -327,7 +328,7 @@ def submit_composite_turn(
             payload_ref=payload_ref,
             payload_digest=payload_digest,
         )
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError):
         unknown = _outcome_unknown_receipt(
             request=request,
             payload_digest=payload_digest,

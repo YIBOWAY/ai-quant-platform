@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
@@ -213,10 +215,8 @@ def test_conversation_turn_does_not_invent_task() -> None:
         "prompt": "hello without vertical bind",
     }
     # May be unavailable without session registry; either way zero tasks.
-    try:
+    with suppress(Exception):
         submit_action(_settings(), doc, mutation_enabled=True)
-    except Exception:
-        pass
     assert project_workspace_tasks(WS) == []
     assert vertical_authority_health() == {
         "task": "ready",

@@ -6,8 +6,9 @@ dicts. No I/O, no HQA import, no prompt/payload bodies.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Mapping
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 # Terminal / lifecycle states the browser poller cares about.
@@ -47,8 +48,8 @@ def _dt_public(value: datetime | None) -> str | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _uuid_text(value: object) -> str:
@@ -64,7 +65,7 @@ def public_event_type(*, event_type: str, to_state: str | None) -> str:
         return mapped
     if type(to_state) is str and to_state:
         return f"command.{to_state}"
-    return f"command.event"
+    return "command.event"
 
 
 def project_command_public(row: Mapping[str, Any]) -> dict[str, object]:

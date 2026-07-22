@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -47,13 +47,13 @@ def _reset_authority() -> None:
 
 
 def _future_expiry(hours: int = 2) -> str:
-    return (datetime.now(timezone.utc) + timedelta(hours=hours)).strftime(
+    return (datetime.now(UTC) + timedelta(hours=hours)).strftime(
         "%Y-%m-%dT%H:%M:%S.%fZ"
     )
 
 
 def _past_expiry() -> str:
-    return (datetime.now(timezone.utc) - timedelta(hours=1)).strftime(
+    return (datetime.now(UTC) - timedelta(hours=1)).strftime(
         "%Y-%m-%dT%H:%M:%S.%fZ"
     )
 
@@ -309,7 +309,6 @@ def test_submit_action_decide_mutation_gate_and_accept(tmp_path=None) -> None:
 
 
 def test_canonical_digest_stable_for_decide() -> None:
-    exp = "2026-07-16T12:30:40.000000Z"
     a = DecideHermesCommandApproval(
         client_action_id="action:test-1",
         workspace=WorkspaceRef(workspace_id="workspace:alpha"),

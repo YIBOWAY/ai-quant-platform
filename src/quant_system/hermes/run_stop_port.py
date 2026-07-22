@@ -11,11 +11,12 @@ state from a single run, **not** Gate mutation, and **not** a public write path.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from threading import Lock
-from typing import Literal, Mapping
 import re
 import time
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from threading import Lock
+from typing import Literal
 
 RunStatus = Literal[
     "accepted",

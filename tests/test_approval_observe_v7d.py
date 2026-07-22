@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -53,7 +53,7 @@ def _settings() -> Settings:
 
 def _future_expiry(hours: int = 1) -> str:
     return (
-        datetime.now(timezone.utc) + timedelta(hours=hours)
+        datetime.now(UTC) + timedelta(hours=hours)
     ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
@@ -247,11 +247,6 @@ def test_follow_page_carries_approvals_projection() -> None:
         command_digest=DIGEST,
         expires_at=exp,
     )
-    ws = PlatformAgentWorkspace(
-        _settings(),
-        mutation_enabled=False,
-        hermetic_authorities=True,
-    )
     # Database disabled → follow fail-closed resync, but when ready path is
     # exercised via direct EventPage construction after authorities_ready false.
     # Still: when we force the successful return path by mocking readiness is hard.
@@ -309,7 +304,6 @@ def test_never_invents_when_empty_snapshot() -> None:
 
 
 def test_decide_removes_pending_and_surfaces_decided_on_snapshot() -> None:
-    exp = _future_expiry()
     row = project_pending_challenge(
         workspace_id=WS,
         run_id=RUN_ID,

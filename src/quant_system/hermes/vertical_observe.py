@@ -11,7 +11,6 @@ Task/Attempt/Run id list emissions (event: vertical) without inventing rows.
 from __future__ import annotations
 
 from threading import Lock
-from typing import Any
 
 from quant_system.hermes.vertical_binding_authority import (
     VerticalBindingAuthority,

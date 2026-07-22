@@ -13,10 +13,11 @@ Separate namespaces:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Lock
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from quant_system.hermes.result_surface_authority import (
     ResultSurfaceAuthority,
@@ -34,7 +35,7 @@ _PUBLIC_READ = frozenset(
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _dt_public(value: datetime | str | None) -> str | None:
@@ -43,8 +44,8 @@ def _dt_public(value: datetime | str | None) -> str | None:
     if isinstance(value, datetime):
         dt = value
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     if type(value) is str and value:
         return value
     return None

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -58,7 +58,7 @@ def _settings() -> Settings:
 
 def _future_expiry(hours: int = 1) -> str:
     return (
-        datetime.now(timezone.utc) + timedelta(hours=hours)
+        datetime.now(UTC) + timedelta(hours=hours)
     ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
