@@ -145,7 +145,13 @@ describe("V7f typed results helpers", () => {
     expect(isReal({ result_id: "a", kind: "generic", display_title: "a", sample_or_real: "live" })).toBe(false);
     expect(isSample({ result_id: "a", kind: "generic", display_title: "a", sample_or_real: "real" })).toBe(false);
     expect(isReal({ result_id: "a", kind: "generic", display_title: "a", sample_or_real: "real" })).toBe(true);
-    expect(isSample({ result_id: "a", kind: "generic", display_title: "a" })).toBe(true);
+    expect(
+      isSample({
+        result_id: "a",
+        kind: "generic",
+        display_title: "a",
+      } as WorkspaceResultProjection),
+    ).toBe(true);
   });
 
   it("resultIdsFromProjection never invents task rows", () => {

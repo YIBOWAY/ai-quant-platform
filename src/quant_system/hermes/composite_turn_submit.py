@@ -163,7 +163,7 @@ def _map_port_error(exc: IntentPayloadPortError) -> CompositeTurnSubmitError:
         "unavailable",
         exc.message,
         http_status=503,
-        retryable=exc.retryable or True,
+        retryable=exc.retryable,
     )
 
 

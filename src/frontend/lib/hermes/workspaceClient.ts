@@ -17,6 +17,8 @@ import {
 } from "./darkIdentity";
 import { isUsableHermesApiSessionId } from "./transcriptHelpers";
 
+export { PLATFORM_WORKSPACE_ID };
+
 export type ActionReceiptStatus =
   | "accepted"
   | "reconciling"
@@ -273,6 +275,21 @@ export function saveManagedSessionRef(
   store.setItem(`${MANAGED_SESSION_STORAGE_KEY}:${workspaceId}`, sessionRef);
 }
 
+export function latestManagedSessionRef(
+  snapshot: Pick<WorkspaceSnapshot, "sessions">,
+): string | null {
+  const sessions = Array.isArray(snapshot.sessions) ? snapshot.sessions : [];
+  for (let index = sessions.length - 1; index >= 0; index -= 1) {
+    const id = sessions[index];
+    // Server-created managed platform identities are deterministically wm_*.
+    // web_* is the corresponding Hermes identity and is never a session_ref.
+    if (typeof id === "string" && id.startsWith("wm_") && id.length > 3) {
+      return `session:${id}`;
+    }
+  }
+  return null;
+}
+
 export async function createManagedSession(options?: {
   workspaceId?: string;
   clientActionId?: string;
@@ -309,7 +326,7 @@ export async function createManagedSession(options?: {
   return receipt;
 }
 
-/** Ensure a managed session exists; create via /act when storage is empty. */
+/** Restore server authority first; create only after a healthy empty snapshot. */
 export async function ensureManagedSession(options?: {
   workspaceId?: string;
   signal?: AbortSignal;
@@ -318,6 +335,19 @@ export async function ensureManagedSession(options?: {
   const existing = loadManagedSessionRef(workspaceId);
   if (existing) {
     return existing;
+  }
+  const snapshot = await fetchWorkspaceSnapshot(workspaceId, options?.signal);
+  const recovered = latestManagedSessionRef(snapshot);
+  if (recovered) {
+    saveManagedSessionRef(recovered, workspaceId);
+    return recovered;
+  }
+  if (snapshot.authority_health?.session_registry !== "ready") {
+    throw new WorkspaceClientError(
+      "managed session registry is unavailable; refusing duplicate create",
+      503,
+      "unavailable",
+    );
   }
   const receipt = await createManagedSession({
     workspaceId,
@@ -954,12 +984,11 @@ export async function fetchWorkspaceFollow(options?: {
 }
 
 const TERMINAL_COMMAND_STATES = new Set([
-  "delivered",
+  "succeeded",
   "cancelled",
   "failed",
   "rejected",
   "timed_out",
-  "outcome_unknown",
 ]);
 
 export function isTerminalCommandState(state: string | null | undefined): boolean {
@@ -1153,7 +1182,7 @@ export async function fetchHermesSessionMessages(
 ): Promise<HermesSessionMessagesView> {
   if (!isUsableHermesApiSessionId(sessionId)) {
     throw new WorkspaceClientError(
-      "hermes session id required (reject web_/wm_/empty)",
+      "hermes session id required (reject platform wm_/empty)",
       400,
       "validation",
     );
@@ -1165,7 +1194,7 @@ export async function fetchHermesSessionMessages(
 }
 
 /**
- * After deliver: resolve latest assistant text for a Hermes session.
+ * After terminal success: resolve latest assistant text for a Hermes session.
  * Returns null on unavailable / empty / network blip (caller keeps lifecycle status).
  */
 export async function fetchLatestAssistantText(options: {

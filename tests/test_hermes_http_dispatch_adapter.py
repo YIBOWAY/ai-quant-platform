@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from quant_system.config.settings import HermesGatewaySettings
 from quant_system.hermes.dispatch_adapter import (
     HermesDispatchRequest,
     HttpHermesDispatchAdapter,
@@ -68,7 +69,9 @@ def test_accepts_ephemeral_run_when_durable_absent(tmp_path: Path) -> None:
             )
         assert request.url.path == "/v1/runs"
         assert request.headers.get("authorization") == "Bearer test-key-value"
-        assert request.headers.get("idempotency-key") == "client-req-smoke-0001"
+        assert request.headers.get("idempotency-key") == (
+            "platform-command:00000000-0000-4000-8000-000000000001"
+        )
         body = json.loads(request.content.decode("utf-8"))
         assert body["input"] == "Reply with exactly: pong"
         assert "metadata" in body
@@ -96,6 +99,64 @@ def test_accepts_ephemeral_run_when_durable_absent(tmp_path: Path) -> None:
     assert result.evidence_digest
 
 
+def test_dispatches_into_exact_managed_hermes_session(tmp_path: Path) -> None:
+    """A platform ``wm_*`` registry id must resolve to and preserve ``web_*``."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(
+                200,
+                json={"features": {"run_submission": True}},
+            )
+        assert request.url.path == "/v1/runs"
+        body = json.loads(request.content.decode("utf-8"))
+        assert body["session_id"] == "web_managed_deadbeef"
+        assert request.headers.get("x-hermes-session-id") is None
+        return httpx.Response(
+            202,
+            json={
+                "run_id": "run_managed_1",
+                "session_id": "web_managed_deadbeef",
+                "status": "accepted",
+                "created": True,
+            },
+        )
+
+    adapter = HttpHermesDispatchAdapter(
+        settings=_settings(tmp_path),
+        input_resolver=fixed_input_resolver("first turn"),
+        allow_ephemeral_runs=True,
+        transport=_mock_transport(handler),
+    )
+    result = adapter.submit_or_recover(
+        _request(hermes_session_id="web_managed_deadbeef")
+    )
+
+    assert result.kind == "accepted"
+    assert result.hermes_session_id == "web_managed_deadbeef"
+
+
+def test_platform_registry_session_id_never_reaches_hermes(tmp_path: Path) -> None:
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("no Hermes request expected")
+
+    adapter = HttpHermesDispatchAdapter(
+        settings=_settings(tmp_path),
+        input_resolver=fixed_input_resolver("must not send"),
+        transport=_mock_transport(handler),
+    )
+
+    result = adapter.submit_or_recover(_request(hermes_session_id="wm_registry_only"))
+
+    assert result.kind == "rejected"
+    assert result.error_code == "managed_session_required"
+    assert calls == 0
+
+
 def test_recover_by_idempotency_key_without_second_provider_call(tmp_path: Path) -> None:
     calls = {"runs": 0}
 
@@ -114,6 +175,7 @@ def test_recover_by_idempotency_key_without_second_provider_call(tmp_path: Path)
     adapter = HttpHermesDispatchAdapter(
         settings=_settings(tmp_path),
         input_resolver=fixed_input_resolver("ping"),
+        allow_ephemeral_runs=True,
         transport=_mock_transport(handler),
     )
     req = _request()
@@ -168,6 +230,7 @@ def test_timeout_maps_to_timeout_kind(tmp_path: Path) -> None:
     adapter = HttpHermesDispatchAdapter(
         settings=_settings(tmp_path),
         input_resolver=fixed_input_resolver("x"),
+        allow_ephemeral_runs=True,
         transport=_mock_transport(handler),
     )
     result = adapter.submit_or_recover(_request())
@@ -184,6 +247,7 @@ def test_upstream_400_is_rejected(tmp_path: Path) -> None:
     adapter = HttpHermesDispatchAdapter(
         settings=_settings(tmp_path),
         input_resolver=fixed_input_resolver("x"),
+        allow_ephemeral_runs=True,
         transport=_mock_transport(handler),
     )
     result = adapter.submit_or_recover(_request())
@@ -207,6 +271,16 @@ def test_build_http_dispatch_adapter_requires_enabled(tmp_path: Path) -> None:
             SimpleNamespace(hermes_gateway=_settings(tmp_path, enabled=False))
         )
     assert exc.value.code == "integration_disabled"
+
+
+def test_ephemeral_direct_dispatch_defaults_fail_closed(tmp_path: Path) -> None:
+    assert HermesGatewaySettings().allow_ephemeral_runs is False
+
+    gateway = _settings(tmp_path)
+    del gateway.allow_ephemeral_runs
+    adapter = build_http_dispatch_adapter(SimpleNamespace(hermes_gateway=gateway))
+
+    assert adapter.allow_ephemeral_runs is False
 
 
 def test_build_http_dispatch_adapter_fixed_input(tmp_path: Path) -> None:

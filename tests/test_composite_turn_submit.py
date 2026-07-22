@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -263,6 +263,33 @@ def test_put_conflict_maps_to_http_conflict() -> None:
         )
     assert exc.value.http_status == 409
     assert exc.value.code == "conflict"
+
+
+def test_nonretryable_payload_port_failure_stays_nonretryable() -> None:
+    def boom(_req):  # type: ignore[no-untyped-def]
+        raise IntentPayloadPortError(
+            "intent_key_policy_invalid",
+            "operator repair required",
+            retryable=False,
+        )
+
+    session = _managed_session()
+    with (
+        patch(
+            "quant_system.hermes.composite_turn_submit.require_web_writable_session",
+            return_value=session,
+        ),
+        pytest.raises(CompositeTurnSubmitError) as exc,
+    ):
+        submit_composite_turn(
+            SimpleNamespace(),
+            _request(),
+            mutation_enabled=True,
+            port=FakeIntentPayloadPort(put_handler=boom),
+        )
+
+    assert exc.value.http_status == 503
+    assert exc.value.retryable is False
 
 
 def test_put_ok_turn_raise_yields_outcome_unknown() -> None:
