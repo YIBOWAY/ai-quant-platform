@@ -92,7 +92,7 @@ _Avoid_: inventing approval rows, Gate mutation, conflating with candidate appro
 
 **L5b-Authority-Projection**:
 Honest empty **Task / Attempt / Run / result-ref** slots on snapshot + shared spine, plus `authority_health.task|attempt|run|result="unavailable"`. FE spine carries `tasks/attempts/runs/results` + `authorityHealth`. Read-only `WorkbenchAuthorityProjectionPanel` (`data-hermes-authority-observe=l5b-m1`). Ordinary `conversation_turn` never invents Attempt. **≠** `/hermes/tasks`. **No stop/gate/mutation**. **M1 ACCEPT@2026-07-22**.
-_Avoid_: inventing HQA Task/Attempt from commands, stop/gate writes, research Task creation UI, public write
+_Avoid_: inventing HQA Task/Attempt from commands, stop writes as Task authority, stuffing Domain Gates into Task/Attempt rows, research Task creation UI, public write
 
 **L5c-Workbench-A11y**:
 FE-only workbench shell a11y contracts. Marker `data-hermes-workbench-a11y=l5c-m1`; `data-hermes-workbench-main` region landmark (not nested main; root layout owns document main); responsive content pad (p-3/sm:p-4/lg:p-6); shared `COLLAPSE_TOGGLE_CLASS` (44px + focus-visible) + `LONG_ID_CLASS`/`displayId` on Activity/Approvals/Authority + transcript session chip; Composer focus-visible + aria-busy/invalid; breakpoints 1440/1280/768/390; globals keep reduced-motion + focus ring. **No mutation routes**. **M1 ACCEPT@2026-07-22**.
@@ -113,9 +113,14 @@ _Avoid_: inventing Task stopped from run alone, coerce succeeded→stopped, publ
 
 **V7d-Durable-Approval-Projector**:
 Hermetic projector of real Hermes command-approval challenges (pending + recent decided facts) into durable workspace `snapshot`/`follow`/`authority_health` from V7a/V7b authorities. `list_observed` + `EventPage.approvals` on L4b spine/SSE (`event: approvals`); empty remains honest; no Gate; no always-allow; no dual private FE poll; no Task/Attempt invention; no live HTTP product path. **M1 ACCEPT@2026-07-22**.
+
+**V7e-Gate-Surfaces**:
+Hermetic Domain Gate 1/2/3 **observe + typed act** surfaces on the shared spine, fully separate from Hermes command-approval. Snapshot/follow carry `gates[]` + `authority_health.gate_1|gate_2|gate_3`; SSE emits fingerprint-gated `event: gates` (never stuffs into `event: approvals`). Typed acts via `/act`: `gate1.formula_source.confirm` (task_ref + reviewed_source_sha256 + nonempty human note), `gate2.candidate.review` (candidate + digest + pending + note, no-refetch), `gate3.promotion_review.prepare` (prepare-only; note stamps `human_git_commit_required`; web never Git-commits). FE `WorkbenchGateSurfacesPanel` markers `data-hermes-gate-*=v7e-m1`; Gate1/2 Confirm disabled until note typed; post-CAS ledger conflict still returns accepted. Mutation OFF fail-closed. Empty honest. Hermetic stand-in ≠ live HQA/domain final authority; no `promotion_id` yet (V7g). **No** always-allow, public write, dual private poll, Task invention, `import hqa`, live Hermes HTTP. **M1 ACCEPT@2026-07-23**.
+_Avoid_: stuffing gates into approvals, Gate-as-command-approval, silent default notes, web Git commit, public write, claiming production Gate authority
+
 **Observe Spine**:
-Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; L4b-M1 is the shared SSE/poll transport; L5a-M1 adds empty-honest approvals + Composer on spine; L5b-M1 carries empty-honest Task/Attempt/Run/result slots + health on spine; L5c-M1 hardens shell a11y around that spine; V7a/V7b may project and release real pending command-approval challenges from the hermetic authority (empty remains honest); V7c may attach layered stop receipts on act (does not invent Task/Attempt authority rows).
-_Avoid_: empty follow poll, commands-only Activity sold as complete Task/Attempt observe spine, private dual poll after L4b/L5a
+Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, gates, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; L4b-M1 is the shared SSE/poll transport; L5a-M1 adds empty-honest approvals + Composer on spine; L5b-M1 carries empty-honest Task/Attempt/Run/result slots + health on spine; L5c-M1 hardens shell a11y around that spine; V7a/V7b may project and release real pending command-approval challenges from the hermetic authority (empty remains honest); V7c may attach layered stop receipts on act (does not invent Task/Attempt authority rows); V7d projects pending+decided approvals on spine; V7e projects Domain gates on a separate namespace.
+_Avoid_: empty follow poll, commands-only Activity sold as complete Task/Attempt observe spine, private dual poll after L4b/L5a, stuffing gates into approvals
 
 **Action Receipt**:
 The durable acknowledgment of one user action, carrying status, digests, recovery guidance, and optional command or session identities.

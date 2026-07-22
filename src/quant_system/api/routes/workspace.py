@@ -177,10 +177,14 @@ def workspace_follow_stream(
         from quant_system.hermes.approval_observe import (
             default_approval_observe_journal,
         )
+        from quant_system.hermes.gate_observe import (
+            default_gate_observe_journal,
+        )
 
         cursor = start_cursor
         idle = 0
         journal = default_approval_observe_journal()
+        gate_journal = default_gate_observe_journal()
         yield _sse_pack(
             "ready",
             {
@@ -188,8 +192,8 @@ def workspace_follow_stream(
                 "after_cursor": cursor,
                 "mutation_enabled": mutation_enabled,
                 "transport": "sse",
-                # Honest scope marker for FE/docs (V7d adds approvals on spine).
-                "scope": "command_lifecycle+approvals",
+                # Honest scope marker for FE/docs (V7d approvals + V7e gates).
+                "scope": "command_lifecycle+approvals+gates",
             },
         )
         for _tick in range(tick_limit):
@@ -270,6 +274,34 @@ def workspace_follow_stream(
                             "approvals": changed,
                             "authority_health": public.get("authority_health")
                             or {"command_approval": "ready"},
+                            "mutation_enabled": public.get("mutation_enabled"),
+                        },
+                    )
+                    emitted = True
+            # V7e: Domain Gate 1/2/3 projection — separate event namespace from
+            # approvals. Never stuff gates into event:approvals.
+            gates = public.get("gates")
+            if isinstance(gates, list):
+                g_changed = gate_journal.take_gates_if_changed(
+                    workspace_id, list(gates)
+                )
+                if g_changed is not None:
+                    health = public.get("authority_health") or {}
+                    yield _sse_pack(
+                        "gates",
+                        {
+                            "gates": g_changed,
+                            "authority_health": {
+                                "gate_1": health.get("gate_1", "ready")
+                                if isinstance(health, dict)
+                                else "ready",
+                                "gate_2": health.get("gate_2", "ready")
+                                if isinstance(health, dict)
+                                else "ready",
+                                "gate_3": health.get("gate_3", "ready")
+                                if isinstance(health, dict)
+                                else "ready",
+                            },
                             "mutation_enabled": public.get("mutation_enabled"),
                         },
                     )

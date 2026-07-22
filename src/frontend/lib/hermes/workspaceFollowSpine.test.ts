@@ -465,3 +465,92 @@ describe("V7d durable approval projector on spine", () => {
     }
   });
 });
+
+describe("V7e Domain Gate surfaces on spine", () => {
+  beforeEach(() => {
+    fetchWorkspaceSnapshot.mockReset();
+    fetchWorkspaceFollow.mockReset();
+    fetchWorkspaceFollow.mockResolvedValue({
+      events: [],
+      next_cursor: 0,
+      resync_required: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("emptyState carries honest empty gates", () => {
+    const s = emptyState();
+    expect(s.gates).toEqual([]);
+    expect(s.authorityHealth.gate_1).toBe("unavailable");
+    expect(s.authorityHealth.gate_2).toBe("unavailable");
+    expect(s.authorityHealth.gate_3).toBe("unavailable");
+  });
+
+  it("snapshot reconcile carries gates separate from approvals", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({
+        snapshot_workspace_cursor: 3,
+        approvals: [],
+        gates: [
+          {
+            gate_id: "g1-pend",
+            gate_kind: "gate1",
+            status: "pending",
+            task_id: "t1",
+            reviewed_source_sha256: "a".repeat(64),
+            kind: "gate1.formula_source",
+          },
+          {
+            gate_id: "g2-done",
+            gate_kind: "gate2",
+            status: "reviewed",
+            candidate_id: "c1",
+            expected_digest: "b".repeat(64),
+            note: "ok",
+            kind: "gate2.candidate",
+          },
+        ],
+        authority_health: {
+          ...EMPTY_AUTHORITY_HEALTH,
+          command_approval: "ready",
+          gate_1: "ready",
+          gate_2: "ready",
+          gate_3: "ready",
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {}
+        addEventListener() {}
+        removeEventListener() {}
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: false,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      await spine.resyncNow();
+      const s = spine.getState();
+      expect(s.gates.length).toBe(2);
+      expect(s.gates[0].gate_id).toBe("g1-pend");
+      expect(s.gates[1].status).toBe("reviewed");
+      expect(s.approvals).toEqual([]);
+      expect(s.authorityHealth.gate_1).toBe("ready");
+      expect(s.authorityHealth.gate_2).toBe("ready");
+      expect(s.authorityHealth.gate_3).toBe("ready");
+      // No Task invention
+      expect(s.tasks).toEqual([]);
+    } finally {
+      spine.stop();
+    }
+  });
+});

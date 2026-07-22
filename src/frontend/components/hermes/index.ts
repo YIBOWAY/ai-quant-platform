@@ -21,6 +21,8 @@ export { WorkbenchCommandApprovalsPanel } from "./approvals/WorkbenchCommandAppr
 export type { WorkbenchCommandApprovalsPanelProps } from "./approvals/WorkbenchCommandApprovalsPanel";
 export { WorkbenchAuthorityProjectionPanel } from "./authority/WorkbenchAuthorityProjectionPanel";
 export type { WorkbenchAuthorityProjectionPanelProps } from "./authority/WorkbenchAuthorityProjectionPanel";
+export { WorkbenchGateSurfacesPanel } from "./gates/WorkbenchGateSurfacesPanel";
+export type { WorkbenchGateSurfacesPanelProps } from "./gates/WorkbenchGateSurfacesPanel";
 export {
   HermesTodayView,
   AttentionSummary,

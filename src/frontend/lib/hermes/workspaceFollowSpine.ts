@@ -2,7 +2,7 @@
  * L4b-SSE-Follow-M1: shared durable workspace follow spine.
  *
  * Prefer EventSource on GET …/follow/stream; fall back to GET …/follow poll.
- * Command lifecycle + V7d approvals projection — no assistant bodies.
+ * Command lifecycle + V7d approvals + V7e gates projection — no assistant bodies.
  * On resync: snapshot then continue. No dual private approval poll.
  */
 
@@ -13,6 +13,7 @@ import {
   type WorkspaceApprovalProjection,
   type WorkspaceCommandProjection,
   type WorkspaceFollowEvent,
+  type WorkspaceGateProjection,
   type WorkspaceSnapshot,
 } from "@/lib/hermes/workspaceClient";
 import { PLATFORM_WORKSPACE_ID } from "@/lib/hermes/darkIdentity";
@@ -24,6 +25,8 @@ export type FollowSpineState = {
   commands: WorkspaceCommandProjection[];
   /** L5a/V7a: Hermes command-approval challenges from snapshot. */
   approvals: WorkspaceApprovalProjection[];
+  /** V7e: Domain Gate 1/2/3 surfaces from snapshot (never in approvals[]). */
+  gates: WorkspaceGateProjection[];
   /** L5b: authority id slots from snapshot (honest empty until projectors). */
   tasks: string[];
   attempts: string[];
@@ -66,6 +69,9 @@ export const EMPTY_AUTHORITY_HEALTH: Record<string, string> = {
   run: "unavailable",
   result: "unavailable",
   command_approval: "unavailable",
+  gate_1: "unavailable",
+  gate_2: "unavailable",
+  gate_3: "unavailable",
 };
 
 function emptyState(): FollowSpineState {
@@ -73,6 +79,7 @@ function emptyState(): FollowSpineState {
     cursor: 0,
     commands: [],
     approvals: [],
+    gates: [],
     tasks: [],
     attempts: [],
     runs: [],
@@ -218,10 +225,39 @@ export function createWorkspaceFollowSpine(
     setState(patch);
   };
 
+  const applyGatesProjection = (
+    gates: WorkspaceGateProjection[] | undefined,
+    authorityHealth?: Record<string, string> | undefined,
+  ) => {
+    if (!Array.isArray(gates)) return;
+    const patch: Partial<FollowSpineState> = {
+      gates: [...gates],
+      error: null,
+    };
+    if (authorityHealth && typeof authorityHealth === "object") {
+      patch.authorityHealth = {
+        ...state.authorityHealth,
+        ...authorityHealth,
+      };
+    } else {
+      const nextHealth = { ...state.authorityHealth };
+      let touched = false;
+      for (const key of ["gate_1", "gate_2", "gate_3"] as const) {
+        if (!nextHealth[key] || nextHealth[key] === "unavailable") {
+          nextHealth[key] = "ready";
+          touched = true;
+        }
+      }
+      if (touched) patch.authorityHealth = nextHealth;
+    }
+    setState(patch);
+  };
+
   const snapshotReconcile = async (signal?: AbortSignal) => {
     const snap = await fetchWorkspaceSnapshot(workspaceId, signal);
     const commands = mergeSnapshotCommands(snap);
     const approvals = Array.isArray(snap.approvals) ? [...snap.approvals] : [];
+    const gates = Array.isArray(snap.gates) ? [...snap.gates] : [];
     const tasks = asIdList(snap.tasks);
     const attempts = asIdList(snap.attempts);
     const runs = asIdList(snap.runs);
@@ -237,6 +273,7 @@ export function createWorkspaceFollowSpine(
     setState({
       commands,
       approvals,
+      gates,
       tasks,
       attempts,
       runs,
@@ -286,8 +323,9 @@ export function createWorkspaceFollowSpine(
       if (events.length) {
         applyEvents(events);
       }
-      // V7d: follow pages may carry approvals projection (same spine).
+      // V7d/V7e: follow pages may carry approvals + gates (same spine).
       applyApprovalsProjection(page.approvals, page.authority_health);
+      applyGatesProjection(page.gates, page.authority_health);
       if (typeof page.next_cursor === "number") {
         setState({
           cursor: Math.max(state.cursor, page.next_cursor),
@@ -389,6 +427,17 @@ export function createWorkspaceFollowSpine(
         /* ignore malformed */
       }
     };
+    const onGates = (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(String(ev.data)) as {
+          gates?: WorkspaceGateProjection[];
+          authority_health?: Record<string, string>;
+        };
+        applyGatesProjection(data.gates, data.authority_health);
+      } catch {
+        /* ignore malformed */
+      }
+    };
     const onCursor = (ev: MessageEvent) => {
       try {
         const data = JSON.parse(String(ev.data)) as { next_cursor?: number };
@@ -438,6 +487,7 @@ export function createWorkspaceFollowSpine(
     es.addEventListener("ready", onReady);
     es.addEventListener("command", onCommand);
     es.addEventListener("approvals", onApprovals);
+    es.addEventListener("gates", onGates);
     es.addEventListener("cursor", onCursor);
     es.addEventListener("resync", onResync);
     es.addEventListener("reconnect", onReconnect);

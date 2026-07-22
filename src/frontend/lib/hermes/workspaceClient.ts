@@ -478,6 +478,223 @@ export async function decideHermesCommandApproval(
   );
 }
 
+/** V7e: Domain Gate 1/2/3 projection — never shares command-approval shape. */
+export type WorkspaceGateProjection = {
+  gate_id: string;
+  gate_kind: "gate1" | "gate2" | "gate3" | string;
+  kind?: string | null;
+  status?: string | null;
+  expected_status?: string | null;
+  task_id?: string | null;
+  task_ref?: string | null;
+  reviewed_source_sha256?: string | null;
+  candidate_id?: string | null;
+  candidate_ref?: string | null;
+  expected_digest?: string | null;
+  final_backtest_receipt_id?: string | null;
+  final_backtest_receipt_ref?: string | null;
+  base_commit?: string | null;
+  expires_at?: string | null;
+  note?: string | null;
+  decided_at?: string | null;
+};
+
+export function buildConfirmFormulaSourceAction(input: {
+  taskId: string;
+  reviewedSourceSha256: string;
+  confirmationNote: string;
+  clientActionId: string;
+  workspaceId: string;
+}): Record<string, unknown> {
+  const taskId = input.taskId.startsWith("task:")
+    ? input.taskId.slice("task:".length)
+    : input.taskId;
+  if (!/^[0-9a-f]{64}$/.test(input.reviewedSourceSha256)) {
+    throw new WorkspaceClientError(
+      "reviewed_source_sha256 must be lowercase SHA-256",
+      400,
+      "validation",
+    );
+  }
+  if (!input.confirmationNote.trim()) {
+    throw new WorkspaceClientError(
+      "confirmation_note must be nonempty",
+      400,
+      "validation",
+    );
+  }
+  return {
+    schema_version: 1,
+    kind: "gate1.formula_source.confirm",
+    client_action_id: input.clientActionId,
+    workspace: { workspace_id: input.workspaceId },
+    task_ref: `task:${taskId}`,
+    reviewed_source_sha256: input.reviewedSourceSha256,
+    confirmation_note: input.confirmationNote,
+  };
+}
+
+export function buildReviewCandidateCASAction(input: {
+  candidateId: string;
+  expectedDigest: string;
+  note: string;
+  clientActionId: string;
+  workspaceId: string;
+}): Record<string, unknown> {
+  const candidateId = input.candidateId.startsWith("candidate:")
+    ? input.candidateId.slice("candidate:".length)
+    : input.candidateId;
+  if (!/^[0-9a-f]{64}$/.test(input.expectedDigest)) {
+    throw new WorkspaceClientError(
+      "expected_digest must be lowercase SHA-256",
+      400,
+      "validation",
+    );
+  }
+  if (!input.note.trim()) {
+    throw new WorkspaceClientError("note must be nonempty", 400, "validation");
+  }
+  return {
+    schema_version: 1,
+    kind: "gate2.candidate.review",
+    client_action_id: input.clientActionId,
+    workspace: { workspace_id: input.workspaceId },
+    candidate_ref: `candidate:${candidateId}`,
+    expected_digest: input.expectedDigest,
+    expected_status: "pending",
+    note: input.note,
+  };
+}
+
+export function buildPreparePromotionReviewAction(input: {
+  candidateId: string;
+  expectedDigest: string;
+  finalBacktestReceiptId: string;
+  baseCommit: string;
+  clientActionId: string;
+  workspaceId: string;
+}): Record<string, unknown> {
+  const candidateId = input.candidateId.startsWith("candidate:")
+    ? input.candidateId.slice("candidate:".length)
+    : input.candidateId;
+  const receiptId = input.finalBacktestReceiptId.startsWith("receipt:")
+    ? input.finalBacktestReceiptId.slice("receipt:".length)
+    : input.finalBacktestReceiptId;
+  if (!/^[0-9a-f]{64}$/.test(input.expectedDigest)) {
+    throw new WorkspaceClientError(
+      "expected_digest must be lowercase SHA-256",
+      400,
+      "validation",
+    );
+  }
+  if (!/^[0-9a-f]{40}$/.test(input.baseCommit)) {
+    throw new WorkspaceClientError(
+      "base_commit must be lowercase 40-hex",
+      400,
+      "validation",
+    );
+  }
+  return {
+    schema_version: 1,
+    kind: "gate3.promotion_review.prepare",
+    client_action_id: input.clientActionId,
+    workspace: { workspace_id: input.workspaceId },
+    candidate_ref: `candidate:${candidateId}`,
+    expected_digest: input.expectedDigest,
+    final_backtest_receipt_ref: `receipt:${receiptId}`,
+    base_commit: input.baseCommit,
+  };
+}
+
+export async function confirmFormulaSource(options: {
+  taskId: string;
+  reviewedSourceSha256: string;
+  confirmationNote: string;
+  clientActionId?: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+}): Promise<WorkspaceActionReceipt> {
+  await ensureOwnerSession(options.signal);
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  const clientActionId = options.clientActionId ?? crypto.randomUUID();
+  const action = buildConfirmFormulaSourceAction({
+    taskId: options.taskId,
+    reviewedSourceSha256: options.reviewedSourceSha256,
+    confirmationNote: options.confirmationNote,
+    clientActionId,
+    workspaceId,
+  });
+  return sameOriginJson<WorkspaceActionReceipt>(
+    `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
+    {
+      method: "POST",
+      csrf: true,
+      signal: options.signal,
+      body: { action },
+    },
+  );
+}
+
+export async function reviewCandidateCAS(options: {
+  candidateId: string;
+  expectedDigest: string;
+  note: string;
+  clientActionId?: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+}): Promise<WorkspaceActionReceipt> {
+  await ensureOwnerSession(options.signal);
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  const clientActionId = options.clientActionId ?? crypto.randomUUID();
+  const action = buildReviewCandidateCASAction({
+    candidateId: options.candidateId,
+    expectedDigest: options.expectedDigest,
+    note: options.note,
+    clientActionId,
+    workspaceId,
+  });
+  return sameOriginJson<WorkspaceActionReceipt>(
+    `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
+    {
+      method: "POST",
+      csrf: true,
+      signal: options.signal,
+      body: { action },
+    },
+  );
+}
+
+export async function preparePromotionReview(options: {
+  candidateId: string;
+  expectedDigest: string;
+  finalBacktestReceiptId: string;
+  baseCommit: string;
+  clientActionId?: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+}): Promise<WorkspaceActionReceipt> {
+  await ensureOwnerSession(options.signal);
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  const clientActionId = options.clientActionId ?? crypto.randomUUID();
+  const action = buildPreparePromotionReviewAction({
+    candidateId: options.candidateId,
+    expectedDigest: options.expectedDigest,
+    finalBacktestReceiptId: options.finalBacktestReceiptId,
+    baseCommit: options.baseCommit,
+    clientActionId,
+    workspaceId,
+  });
+  return sameOriginJson<WorkspaceActionReceipt>(
+    `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
+    {
+      method: "POST",
+      csrf: true,
+      signal: options.signal,
+      body: { action },
+    },
+  );
+}
+
 export type WorkspaceCommandProjection = {
   command_id: string;
   kind: string;
@@ -526,6 +743,8 @@ export type WorkspaceSnapshot = {
   results?: string[];
   /** L5a/V7a: Hermes command-approval challenges; empty when none pending. */
   approvals?: WorkspaceApprovalProjection[];
+  /** V7e: Domain Gate 1/2/3 surfaces; never mixed into approvals[]. */
+  gates?: WorkspaceGateProjection[];
   authority_health?: Record<string, string>;
   mutation_enabled?: boolean;
   observed_at?: string;
@@ -558,6 +777,8 @@ export type WorkspaceEventPage = {
   mutation_enabled?: boolean;
   /** V7d: approvals projection on follow pages (pending + recent decided). */
   approvals?: WorkspaceApprovalProjection[];
+  /** V7e: gates projection on follow pages (separate from approvals). */
+  gates?: WorkspaceGateProjection[];
   authority_health?: Record<string, string>;
 };
 

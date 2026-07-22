@@ -423,6 +423,79 @@ class RequestStop:
         )
 
 
+
+@dataclass(frozen=True)
+class ConfirmFormulaSource:
+    """V7e Gate 1: exact reviewed source SHA-256 + nonempty note.
+
+    ConfirmResearchPlan is **not** Gate 1. Not command-approval.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    task_ref: str
+    reviewed_source_sha256: str
+    confirmation_note: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_ref(self.task_ref, "task_ref", "task:")
+        _validate_digest(self.reviewed_source_sha256, "reviewed_source_sha256")
+        _validate_note(self.confirmation_note, "confirmation_note")
+
+
+@dataclass(frozen=True)
+class ReviewCandidateCAS:
+    """V7e Gate 2: exact candidate/digest/pending/note CAS (no-refetch)."""
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    candidate_ref: str
+    expected_digest: str
+    expected_status: str
+    note: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_ref(self.candidate_ref, "candidate_ref", "candidate:")
+        _validate_digest(self.expected_digest, "expected_digest")
+        if (
+            type(self.expected_status) is not str
+            or self.expected_status != "pending"
+        ):
+            raise AgentWorkspaceActionError("expected_status must be pending")
+        _validate_note(self.note, "note")
+
+
+@dataclass(frozen=True)
+class PreparePromotionReview:
+    """V7e Gate 3: prepare promotion review only — web never Git-commits."""
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    candidate_ref: str
+    expected_digest: str
+    final_backtest_receipt_ref: str
+    base_commit: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_ref(self.candidate_ref, "candidate_ref", "candidate:")
+        _validate_digest(self.expected_digest, "expected_digest")
+        _validate_ref(
+            self.final_backtest_receipt_ref,
+            "final_backtest_receipt_ref",
+            "receipt:",
+        )
+        if (
+            type(self.base_commit) is not str
+            or _HEX40_RE.fullmatch(self.base_commit) is None
+        ):
+            raise AgentWorkspaceActionError(
+                "base_commit must be a lowercase 40-hex commit"
+            )
+
+
 @dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
@@ -447,6 +520,9 @@ UserActionV1 = Union[
     ConfirmResearchPlan,
     DecideHermesCommandApproval,
     RequestStop,
+    ConfirmFormulaSource,
+    ReviewCandidateCAS,
+    PreparePromotionReview,
     UnsupportedWorkspaceAction,
 ]
 
@@ -457,6 +533,9 @@ _IMPLEMENTED_TYPES = (
     ConversationTurn,
     DecideHermesCommandApproval,
     RequestStop,
+    ConfirmFormulaSource,
+    ReviewCandidateCAS,
+    PreparePromotionReview,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -565,6 +644,38 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is ConfirmFormulaSource:
+        document.update(
+            {
+                "kind": "gate1.formula_source.confirm",
+                "task_ref": action.task_ref,
+                "reviewed_source_sha256": action.reviewed_source_sha256,
+                "confirmation_note": action.confirmation_note,
+            }
+        )
+        return _strict_json_document(document)
+    if type(action) is ReviewCandidateCAS:
+        document.update(
+            {
+                "kind": "gate2.candidate.review",
+                "candidate_ref": action.candidate_ref,
+                "expected_digest": action.expected_digest,
+                "expected_status": action.expected_status,
+                "note": action.note,
+            }
+        )
+        return _strict_json_document(document)
+    if type(action) is PreparePromotionReview:
+        document.update(
+            {
+                "kind": "gate3.promotion_review.prepare",
+                "candidate_ref": action.candidate_ref,
+                "expected_digest": action.expected_digest,
+                "final_backtest_receipt_ref": action.final_backtest_receipt_ref,
+                "base_commit": action.base_commit,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -667,6 +778,29 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             attempt_ref=document["attempt_ref"],
             platform_job_ref=document["platform_job_ref"],
         )
+    if kind == "gate1.formula_source.confirm":
+        return ConfirmFormulaSource(
+            **common,
+            task_ref=document["task_ref"],
+            reviewed_source_sha256=document["reviewed_source_sha256"],
+            confirmation_note=document["confirmation_note"],
+        )
+    if kind == "gate2.candidate.review":
+        return ReviewCandidateCAS(
+            **common,
+            candidate_ref=document["candidate_ref"],
+            expected_digest=document["expected_digest"],
+            expected_status=document["expected_status"],
+            note=document["note"],
+        )
+    if kind == "gate3.promotion_review.prepare":
+        return PreparePromotionReview(
+            **common,
+            candidate_ref=document["candidate_ref"],
+            expected_digest=document["expected_digest"],
+            final_backtest_receipt_ref=document["final_backtest_receipt_ref"],
+            base_commit=document["base_commit"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -703,13 +837,16 @@ def action_payload_ref_for_digest(action_digest: str) -> str:
 
 __all__ = [
     "AgentWorkspaceActionError",
+    "ConfirmFormulaSource",
     "ConfirmResearchPlan",
     "ContinueResearch",
     "ConversationTurn",
     "CreateManagedSession",
     "DecideHermesCommandApproval",
     "ForkIntoManagedSession",
+    "PreparePromotionReview",
     "RequestStop",
+    "ReviewCandidateCAS",
     "StartResearch",
     "UnsupportedWorkspaceAction",
     "UserActionV1",

@@ -75,6 +75,8 @@ class WorkspaceSnapshot:
     # L5a/V7a/V7d: Hermes command-approval challenges from hermetic authority
     # (pending + recent decided). Empty is honest; never invent Gate 1/2/3 rows.
     approvals: tuple[dict[str, object], ...]
+    # V7e: Domain Gate 1/2/3 surfaces — separate from command-approval.
+    gates: tuple[dict[str, object], ...]
     authority_health: Mapping[str, str]
     mutation_enabled: bool
     observed_at: str
@@ -91,6 +93,7 @@ class WorkspaceSnapshot:
             "runs": list(self.runs),
             "results": list(self.results),
             "approvals": [dict(item) for item in self.approvals],
+            "gates": [dict(item) for item in self.gates],
             "authority_health": dict(self.authority_health),
             "mutation_enabled": self.mutation_enabled,
             "observed_at": self.observed_at,
@@ -109,6 +112,8 @@ class EventPage:
     # refresh without inventing a private poll. None → omit from public dict
     # (BC for callers that only care about command events).
     approvals: tuple[dict[str, object], ...] | None = None
+    # V7e: optional gates projection (separate namespace from approvals).
+    gates: tuple[dict[str, object], ...] | None = None
     authority_health: Mapping[str, str] | None = None
 
     def to_public_dict(self) -> dict[str, object]:
@@ -122,6 +127,8 @@ class EventPage:
         }
         if self.approvals is not None:
             payload["approvals"] = [dict(item) for item in self.approvals]
+        if self.gates is not None:
+            payload["gates"] = [dict(item) for item in self.gates]
         if self.authority_health is not None:
             payload["authority_health"] = dict(self.authority_health)
         return payload
@@ -234,6 +241,10 @@ class PlatformAgentWorkspace:
             # V7a: hermetic in-process command-approval authority may hold
             # pending challenges. Empty is still honest when none are seeded.
             "command_approval": "ready",
+            # V7e: hermetic Domain Gate 1/2/3 surfaces (empty honest until seeded).
+            "gate_1": "ready",
+            "gate_2": "ready",
+            "gate_3": "ready",
             # L5b: Task/Attempt/Run/result authority projectors not wired —
             # empty tuples stay empty; never invent HQA rows from commands.
             "task": "unavailable",
@@ -252,12 +263,14 @@ class PlatformAgentWorkspace:
             )
 
         # V7a/V7d: project pending + recent decided command-approval challenges
-        # from hermetic authority. Never invent Gate 1/2/3 or candidate approvals.
+        # from hermetic authority. Never invent Gate 1/2/3 into approvals[].
         from quant_system.hermes.approval_observe import project_workspace_approvals
+        from quant_system.hermes.gate_observe import project_workspace_gates
 
-        # Empty approvals[] is honest; health stays "ready" because the
-        # hermetic in-process authority is mounted (not a live Hermes HTTP path).
+        # Empty approvals[] / gates[] is honest; health stays "ready" because the
+        # hermetic in-process authorities are mounted (not live Hermes HTTP).
         approvals = tuple(project_workspace_approvals(workspace_id))
+        gates = tuple(project_workspace_gates(workspace_id))
 
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
@@ -270,6 +283,7 @@ class PlatformAgentWorkspace:
             runs=(),
             results=(),
             approvals=approvals,
+            gates=gates,
             authority_health=health,
             mutation_enabled=mutation_on,
             observed_at=observed_at,
@@ -339,11 +353,18 @@ class PlatformAgentWorkspace:
                 recovery_action=_RECOVERY_RESNAPSHOT,
                 mutation_enabled=mutation_on,
             )
-        # V7d: attach current approvals projection so follow/SSE spine stays
-        # honest without a dual private poll. Empty remains honest.
+        # V7d/V7e: attach approvals + gates projections so follow/SSE spine stays
+        # honest without a dual private poll. Empty remains honest. Gates never
+        # land in approvals[].
         from quant_system.hermes.approval_observe import project_workspace_approvals
+        from quant_system.hermes.gate_observe import (
+            gate_authority_health,
+            project_workspace_gates,
+        )
 
         approvals = tuple(project_workspace_approvals(workspace_id))
+        gates = tuple(project_workspace_gates(workspace_id))
+        health = {"command_approval": "ready", **gate_authority_health()}
         return EventPage(
             events=tuple(events),
             after_cursor=after_value,
@@ -352,7 +373,8 @@ class PlatformAgentWorkspace:
             recovery_action=None,
             mutation_enabled=mutation_on,
             approvals=approvals,
-            authority_health={"command_approval": "ready"},
+            gates=gates,
+            authority_health=health,
         )
 
     def _workspace_session_ids(self, conn: Any, workspace_id: str) -> list[str]:

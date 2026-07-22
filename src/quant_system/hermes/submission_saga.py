@@ -31,13 +31,16 @@ from uuid import UUID
 from quant_system.config.settings import Settings
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
+    ConfirmFormulaSource,
     ConfirmResearchPlan,
     ContinueResearch,
     ConversationTurn,
     CreateManagedSession,
     DecideHermesCommandApproval,
     ForkIntoManagedSession,
+    PreparePromotionReview,
     RequestStop,
+    ReviewCandidateCAS,
     StartResearch,
     UnsupportedWorkspaceAction,
     UserActionV1,
@@ -64,6 +67,11 @@ from quant_system.hermes.command_approval_authority import (
     CommandApprovalAuthorityError,
     default_command_approval_authority,
 )
+from quant_system.hermes.gate_surface_authority import (
+    GateSurfaceAuthorityError,
+    default_gate_surface_authority,
+)
+from quant_system.hermes.gate_observe import note_gate_decided
 from quant_system.hermes.command_ledger import (
     ROOT_USER_ID,
     CreateHermesCommandResult,
@@ -920,6 +928,253 @@ def submit_stop_run_request(
     )
 
 
+
+def submit_confirm_formula_source(
+    settings: Settings,
+    action: ConfirmFormulaSource,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V7e Gate 1: hermetic formula-source confirm CAS (not command-approval)."""
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+    authority = default_gate_surface_authority()
+    try:
+        decided = authority.confirm_formula_source(
+            workspace_id=action.workspace.workspace_id,
+            task_ref=action.task_ref,
+            reviewed_source_sha256=action.reviewed_source_sha256,
+            confirmation_note=action.confirmation_note,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+        )
+    except GateSurfaceAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message or "gate_surface_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        note_gate_decided(
+            workspace_id=action.workspace.workspace_id,
+            gate=decided,
+        )
+    except Exception:
+        pass
+    command_id: str | None = None
+    if _ensure_ready(settings):
+        control_session = control_plane_session_id(action.workspace.workspace_id)
+        try:
+            cmd = _create_idempotent_command(
+                settings,
+                platform_session_id=control_session,
+                client_request_id=action.client_action_id,
+                kind="gate1_formula_source_confirm",
+                action_digest=digest,
+                payload_ref=action_payload_ref_for_digest(digest),
+                provider_policy_digest=None,
+            )
+            command_id = str(cmd.command.command_id)
+        except SubmissionSagaError:
+            # CAS already committed; audit-rail problems must not look like Gate failure.
+            command_id = None
+        except Exception:
+            command_id = None
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        mutation_enabled=mutation_enabled,
+    )
+
+
+def submit_review_candidate_cas(
+    settings: Settings,
+    action: ReviewCandidateCAS,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V7e Gate 2: hermetic candidate review CAS (no-refetch)."""
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+    authority = default_gate_surface_authority()
+    try:
+        decided = authority.review_candidate(
+            workspace_id=action.workspace.workspace_id,
+            candidate_ref=action.candidate_ref,
+            expected_digest=action.expected_digest,
+            expected_status=action.expected_status,
+            note=action.note,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+        )
+    except GateSurfaceAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message or "gate_surface_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        note_gate_decided(
+            workspace_id=action.workspace.workspace_id,
+            gate=decided,
+        )
+    except Exception:
+        pass
+    command_id: str | None = None
+    if _ensure_ready(settings):
+        control_session = control_plane_session_id(action.workspace.workspace_id)
+        try:
+            cmd = _create_idempotent_command(
+                settings,
+                platform_session_id=control_session,
+                client_request_id=action.client_action_id,
+                kind="gate2_candidate_review",
+                action_digest=digest,
+                payload_ref=action_payload_ref_for_digest(digest),
+                provider_policy_digest=None,
+            )
+            command_id = str(cmd.command.command_id)
+        except SubmissionSagaError:
+            # CAS already committed; audit-rail problems must not look like Gate failure.
+            command_id = None
+        except Exception:
+            command_id = None
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        mutation_enabled=mutation_enabled,
+    )
+
+
+def submit_prepare_promotion_review(
+    settings: Settings,
+    action: PreparePromotionReview,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V7e Gate 3: hermetic prepare only — never performs a Git commit."""
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+    authority = default_gate_surface_authority()
+    try:
+        decided = authority.prepare_promotion_review(
+            workspace_id=action.workspace.workspace_id,
+            candidate_ref=action.candidate_ref,
+            expected_digest=action.expected_digest,
+            final_backtest_receipt_ref=action.final_backtest_receipt_ref,
+            base_commit=action.base_commit,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+        )
+    except GateSurfaceAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message or "gate_surface_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        note_gate_decided(
+            workspace_id=action.workspace.workspace_id,
+            gate=decided,
+        )
+    except Exception:
+        pass
+    command_id: str | None = None
+    if _ensure_ready(settings):
+        control_session = control_plane_session_id(action.workspace.workspace_id)
+        try:
+            cmd = _create_idempotent_command(
+                settings,
+                platform_session_id=control_session,
+                client_request_id=action.client_action_id,
+                kind="gate3_promotion_review_prepare",
+                action_digest=digest,
+                payload_ref=action_payload_ref_for_digest(digest),
+                provider_policy_digest=None,
+            )
+            command_id = str(cmd.command.command_id)
+        except SubmissionSagaError:
+            # CAS already committed; audit-rail problems must not look like Gate failure.
+            command_id = None
+        except Exception:
+            command_id = None
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        mutation_enabled=mutation_enabled,
+    )
+
+
+
 def submit_action(
     settings: Settings,
     action: UserActionV1 | dict[str, object],
@@ -971,6 +1226,27 @@ def submit_action(
         )
     if type(parsed) is RequestStop:
         return submit_stop_run_request(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
+    if type(parsed) is ConfirmFormulaSource:
+        return submit_confirm_formula_source(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
+    if type(parsed) is ReviewCandidateCAS:
+        return submit_review_candidate_cas(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
+    if type(parsed) is PreparePromotionReview:
+        return submit_prepare_promotion_review(
             settings,
             parsed,
             mutation_enabled=mutation_enabled,
