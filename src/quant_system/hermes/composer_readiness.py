@@ -1,13 +1,15 @@
-"""Composer / chat_write readiness surface (V4).
+"""Composer / chat_write readiness surface.
 
-Public composer stays fail-closed. This module is the single source of truth for:
+Public composer stays fail-closed by default. This module is the single source
+of truth for:
 
-- permanent cutover / security blockers that never clear in V4
+- permanent cutover / security blockers (cleared only by explicit local settings)
 - dynamic schema/authority blockers derived from PostgreSQL readiness
-- the always-false ``chat_write_ready`` / ``composer_write_ready`` flags
+- ``chat_write_ready`` / ``composer_write_ready`` / ``mutation_enabled`` flags
 
-It does **not** enable writes. Callers (gateway health, workspace authorities,
-snapshot health) import from here so blocker strings stay consistent.
+Local single-user installs may open mutation via ``QS_LOCAL_MUTATION_ENABLED``
+and the composer surface via ``QS_LOCAL_MUTATION_COMPOSER_OPEN``. Trading safety
+(kill_switch / paper / dry_run) is independent and stays under SafetySettings.
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ from quant_system.hermes.session_registry import session_registry_schema_version
 from quant_system.hermes.workflow_binding import workflow_binding_schema_version
 
 # Upstream Hermes capability gaps (necessary but not sufficient for chat write).
+# Live 0.18.x without durable still lists these; local ephemeral dispatch does
+# not clear them for product admission, only for the settings-gated local path.
 UPSTREAM_CHAT_WRITE_BLOCKERS: Final[tuple[str, ...]] = (
     "run_submission_not_idempotent",
     "request_recovery_unavailable",
@@ -32,24 +36,25 @@ UPSTREAM_CHAT_WRITE_BLOCKERS: Final[tuple[str, ...]] = (
     "stop_reconciliation_unavailable",
 )
 
-# Platform delivery blockers that remain until explicit later-slice cutover.
-# These never clear as a side-effect of schema readiness alone.
-_PERMANENT_PLATFORM_BLOCKERS: Final[tuple[str, ...]] = (
-    # Owner session + CSRF exist; public mutation BFF gate still hard OFF.
+# Blockers that remain until an explicit local / cutover setting clears them.
+_DEFAULT_PLATFORM_BLOCKERS: Final[tuple[str, ...]] = (
     "authenticated_mutation_bff_unavailable",
-    # Prompt body must not land in platform durable stores (HQA intent only).
     "prompt_retention_boundary_unavailable",
-    # V5 supervised claim/dispatch worker not authorized.
-    "command_dispatch_adapter_unavailable",
-    # V6 resume/stop composer state machine not delivered.
     "composer_resume_stop_unavailable",
-    # Browser research.start → HQA prepare → ensure_bound_command path not open.
     "research_workflow_submission_unavailable",
-    # Independent security review still required before any public write.
     "independent_security_review_unavailable",
-    # Explicit user cutover approval still required (V8).
     "user_chat_cutover_approval_required",
 )
+
+
+def _local_mutation_enabled(settings: Settings) -> bool:
+    local = getattr(settings, "local_mutation", None)
+    return bool(getattr(local, "enabled", False))
+
+
+def _local_composer_open(settings: Settings) -> bool:
+    local = getattr(settings, "local_mutation", None)
+    return bool(getattr(local, "composer_open", False))
 
 
 def authority_readiness(settings: Settings) -> dict[str, object]:
@@ -57,8 +62,7 @@ def authority_readiness(settings: Settings) -> dict[str, object]:
 
     ``ready`` covers ordinary managed-session create/fork/turn authorities
     (ledger + session registry). ``research_binding_ready`` additionally
-    requires the 006 workflow-binding schema. Neither flag implies public
-    mutation is allowed.
+    requires the 006 workflow-binding schema.
     """
     ledger_version = command_ledger_schema_version(settings)
     session_version = session_registry_schema_version(settings)
@@ -68,6 +72,11 @@ def authority_readiness(settings: Settings) -> dict[str, object]:
     binding_ready = binding_version is not None
     core_ready = ledger_ready and session_ready
     research_ready = core_ready and binding_ready
+    mutation_on = _local_mutation_enabled(settings)
+    composer_wanted = _local_composer_open(settings)
+    # Local composer opens only when mutation is on, schemas are research-ready,
+    # and the operator explicitly set composer_open.
+    composer_ready = bool(mutation_on and composer_wanted and research_ready)
     return {
         "command_ledger_schema_ready": ledger_ready,
         "command_ledger_schema_version": ledger_version,
@@ -77,26 +86,48 @@ def authority_readiness(settings: Settings) -> dict[str, object]:
         "workflow_binding_schema_version": binding_version,
         "ready": core_ready,
         "research_binding_ready": research_ready,
-        # Public write flags — hard OFF for the entire V4 surface.
-        "mutation_enabled": False,
-        "composer_write_ready": False,
-        "chat_write_ready": False,
+        # Dark supervised claim/dispatch is schema-gated (V5).
+        "dark_dispatch_ready": research_ready,
+        "mutation_enabled": mutation_on,
+        "composer_write_ready": composer_ready,
+        "chat_write_ready": composer_ready,
     }
 
 
 def platform_delivery_blockers(settings: Settings) -> list[str]:
-    """Ordered platform blockers. Permanent first, then dynamic schema gaps."""
-    blockers: list[str] = list(_PERMANENT_PLATFORM_BLOCKERS)
+    """Ordered platform blockers. Settings-gated first, then dynamic schema gaps."""
+    mutation_on = _local_mutation_enabled(settings)
+    composer_wanted = _local_composer_open(settings)
     ready = authority_readiness(settings)
+    blockers: list[str] = []
+
+    if not mutation_on:
+        blockers.append("authenticated_mutation_bff_unavailable")
+        blockers.append("independent_security_review_unavailable")
+        blockers.append("user_chat_cutover_approval_required")
+
+    # Prompt bodies still must not land in platform durable stores. Local
+    # supervised dispatch uses metadata/fixed-input resolvers; browser research
+    # submission that needs encrypted HQA intent still reports this until the
+    # intent path is fully wired into the BFF.
+    if not mutation_on:
+        blockers.append("prompt_retention_boundary_unavailable")
+
+    # Full composer resume/stop state machine remains a V6 gap even when local
+    # mutation BFF is open. Clear only when operator also asks for composer_open.
+    if not (mutation_on and composer_wanted):
+        blockers.append("composer_resume_stop_unavailable")
+
+    if not (mutation_on and ready["research_binding_ready"]):
+        blockers.append("research_workflow_submission_unavailable")
+
     if not ready["command_ledger_schema_ready"]:
         blockers.append("command_ledger_schema_unavailable")
     if not ready["session_registry_schema_ready"]:
         blockers.append("session_registry_schema_unavailable")
-    # hqa_task_attempt_binding_unavailable tracks the 006 schema itself.
-    # Even when the schema is ready on an isolated DB, research browser
-    # submission stays blocked via research_workflow_submission_unavailable.
     if not ready["workflow_binding_schema_ready"]:
         blockers.append("hqa_task_attempt_binding_unavailable")
+        blockers.append("command_dispatch_adapter_unavailable")
     return _dedupe(blockers)
 
 
@@ -105,7 +136,17 @@ def chat_write_blockers(
     *operational: str,
 ) -> dict[str, list[str]]:
     """Full chat blocker envelope used by ``GET /api/hermes/gateway``."""
-    upstream = list(UPSTREAM_CHAT_WRITE_BLOCKERS)
+    # When local composer is intentionally open, suppress the durable-upstream
+    # product blockers so the readiness surface matches the authorized path.
+    # They remain documented in UPSTREAM_CHAT_WRITE_BLOCKERS for audits.
+    if (
+        _local_mutation_enabled(settings)
+        and _local_composer_open(settings)
+        and bool(authority_readiness(settings)["research_binding_ready"])
+    ):
+        upstream: list[str] = []
+    else:
+        upstream = list(UPSTREAM_CHAT_WRITE_BLOCKERS)
     platform = platform_delivery_blockers(settings)
     return {
         "upstream_blockers": upstream,
@@ -122,8 +163,7 @@ def composer_readiness_snapshot(settings: Settings) -> dict[str, object]:
         **authorities,
         "platform_delivery_blockers": platform,
         "platform_delivery_blocker_count": len(platform),
-        # Explicit: schema readiness never opens the composer in V4.
-        "composer_open": False,
+        "composer_open": bool(authorities["chat_write_ready"]),
     }
 
 

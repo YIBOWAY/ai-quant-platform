@@ -435,7 +435,13 @@ def test_external_turn_conflicts_managed_turn_idempotent_and_conflict() -> None:
     assert sessions == 2
 
 
-def test_snapshot_lists_sessions_and_keeps_mutation_false() -> None:
+def test_snapshot_lists_sessions_and_follow_lifecycle() -> None:
+    """L2b-M1: snapshot command objects + follow event page.
+
+    Hermetic gate is ON for act; snapshot/follow report the effective gate
+    (constructor OR settings.local_mutation). Constructor default remains
+    False; effective ON only when operator settings open local mutation.
+    """
     settings = _postgres_settings()
     _prepare(settings)
     workspace = build_platform_agent_workspace(settings, mutation_enabled=True)
@@ -445,21 +451,45 @@ def test_snapshot_lists_sessions_and_keeps_mutation_false() -> None:
     assert create.status == "accepted"
 
     snap = workspace.snapshot(actor, WorkspaceRef(workspace_id=WORKSPACE_ID))
-    assert snap.mutation_enabled is False
+    assert snap.mutation_enabled is True
     assert snap.workspace_id == WORKSPACE_ID
     assert snap.owner_user_id == str(ROOT_USER_ID)
     assert create.platform_session_id in snap.sessions
-    assert snap.authority_health["mutation"] == "disabled"
+    assert snap.authority_health["mutation"] == "enabled"
     assert snap.authority_health["command_ledger"] == "ready"
     assert snap.authority_health["session_registry"] == "ready"
     public = snap.to_public_dict()
-    assert public["mutation_enabled"] is False
+    assert public["mutation_enabled"] is True
 
     page = workspace.follow(actor, WORKSPACE_ID, after=0)
     assert page.resync_required is False
-    assert page.events == ()
-    assert page.next_cursor == 0
-    assert page.mutation_enabled is False
+    # L2b-M1: follow projects durable command_created events (not empty skeleton).
+    assert page.events
+    assert page.next_cursor is not None and page.next_cursor >= 1
+    assert all(isinstance(event.get("event_id"), int) for event in page.events)
+    assert any(event.get("type") == "command.queued" for event in page.events)
+    assert page.mutation_enabled is True
+    # Snapshot commands are public objects (not bare UUID strings).
+    assert snap.commands
+    assert isinstance(snap.commands[0], dict)
+    assert "command_id" in snap.commands[0]
+    assert snap.commands[0]["command_id"] == create.command_id
+    assert snap.commands[0]["state"] == "queued"
+    assert snap.snapshot_workspace_cursor >= 1
+
+    # Constructor default is OFF; snapshot reports *effective* gate
+    # (constructor OR settings.local_mutation). When the operator has
+    # QS_LOCAL_MUTATION_ENABLED on this machine, effective stays ON —
+    # that is intentional V6 local behavior, not a public cutover.
+    closed = build_platform_agent_workspace(settings)
+    closed_snap = closed.snapshot(actor, WorkspaceRef(workspace_id=WORKSPACE_ID))
+    assert closed.mutation_enabled is False
+    ready = authorities_ready(settings)
+    effective = bool(ready.get("mutation_enabled"))
+    assert closed_snap.mutation_enabled is effective
+    assert closed_snap.authority_health["mutation"] == (
+        "enabled" if effective else "disabled"
+    )
 
 
 def test_submit_action_document_path_and_unsupported_kind() -> None:

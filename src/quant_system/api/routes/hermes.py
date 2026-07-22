@@ -27,6 +27,7 @@ from quant_system.api.schemas.hermes_results import (
     HermesResultsResponse,
 )
 from quant_system.hermes.artifact_catalog import HermesArtifactCatalog
+from quant_system.hermes.composer_readiness import authority_readiness
 from quant_system.hermes.gateway_client import (
     HermesApiReadClient,
     HermesApiReadError,
@@ -35,6 +36,10 @@ from quant_system.hermes.gateway_client import (
 from quant_system.hermes.results_catalog import HermesResultsCatalog
 
 router = APIRouter()
+
+
+def _chat_write_ready(settings: SettingsDep) -> bool:
+    return bool(authority_readiness(settings)["chat_write_ready"])
 
 
 @router.get("/hermes/results", response_model=HermesResultsResponse)
@@ -142,13 +147,14 @@ def hermes_gateway_status(
     gateway: HermesApiReadClientDep,
     _loopback: HermesLoopbackRequestDep,
 ) -> dict:
+    chat_ready = _chat_write_ready(settings)
     if not settings.hermes_gateway.enabled:
         return {
             "read_status": "unavailable",
             "connected": False,
             "model": None,
             "session_api_available": False,
-            "chat_write_ready": False,
+            "chat_write_ready": chat_ready,
             "features": {},
             **_chat_blockers(settings, "integration_disabled"),
             "warnings": [],
@@ -159,7 +165,7 @@ def hermes_gateway_status(
             "connected": False,
             "model": None,
             "session_api_available": False,
-            "chat_write_ready": False,
+            "chat_write_ready": chat_ready,
             "features": {},
             **_chat_blockers(settings, "gateway_client_unavailable"),
             "warnings": [
@@ -177,7 +183,7 @@ def hermes_gateway_status(
             "connected": False,
             "model": None,
             "session_api_available": False,
-            "chat_write_ready": False,
+            "chat_write_ready": chat_ready,
             "features": {},
             **_chat_blockers(settings, "gateway_unavailable"),
             "warnings": _warning(exc),
@@ -189,7 +195,7 @@ def hermes_gateway_status(
         "connected": True,
         "model": capabilities.get("model"),
         "session_api_available": session_api_available,
-        "chat_write_ready": False,
+        "chat_write_ready": chat_ready,
         "features": features,
         **_chat_blockers(settings),
         "warnings": (

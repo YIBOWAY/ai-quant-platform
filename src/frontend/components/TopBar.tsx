@@ -26,6 +26,7 @@ const copy = {
     positionMap: "Position Map",
     dashboard: "Dashboard",
     hermes: "Hermes",
+    brief: "Morning Brief",
     openHermes: "Open Hermes workbench",
     openSettings: "Open settings",
     dataExplorer: "Data Explorer",
@@ -61,6 +62,7 @@ const copy = {
     positionMap: "持仓地图",
     dashboard: "仪表盘",
     hermes: "Hermes 工作台",
+    brief: "每日晨报",
     openHermes: "打开 Hermes 工作台",
     openSettings: "打开设置",
     dataExplorer: "行情浏览",
@@ -202,11 +204,15 @@ export function TopBar({
                 {section.name}
               </h2>
               <div className="grid grid-cols-2 gap-2">
-                {section.items.map((item) => (
+                {section.items.map((item) => {
+                  const isActive =
+                    activePath === item.href ||
+                    (item.href !== "/" && activePath.startsWith(`${item.href}/`));
+                  return (
                   <Link
-                    aria-current={activePath === item.href ? "page" : undefined}
+                    aria-current={isActive ? "page" : undefined}
                     className={`app-touch-target flex items-center rounded-lg border px-3 font-body-sm ${
-                      activePath === item.href
+                      isActive
                         ? "border-border-subtle bg-bg-sidebar-muted text-text-primary"
                         : "border-border-subtle text-text-primary hover:bg-bg-sidebar-muted"
                     }`}
@@ -216,7 +222,8 @@ export function TopBar({
                   >
                     {item.name}
                   </Link>
-                ))}
+                  );
+                })}
               </div>
             </section>
           ))}

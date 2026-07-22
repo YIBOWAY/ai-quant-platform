@@ -487,6 +487,12 @@ class HermesCommandLedger:
                     raise HermesCommandLedgerUnavailable(
                         "Hermes workflow binding schema version is not ready"
                     )
+                # Claim eligibility (must stay aligned with
+                # quant_system.enforce_hermes_claim_binding_eligibility):
+                #   1) research path — exact non-expired workflow binding row
+                #   2) L2a chat path — conversation_turn with store-mapped
+                #      platform-payload://sha256/<digest> and a policy digest
+                #      (Intent Payload Store is body authority; no binding row)
                 candidate = conn.execute(
                     f"""
                     SELECT command_id, version
@@ -499,23 +505,35 @@ class HermesCommandLedger:
                           WHERE binding_meta.singleton IS TRUE
                             AND binding_meta.schema_version = 1
                       )
-                      AND EXISTS (
-                          SELECT 1
-                          FROM {SCHEMA}.hermes_command_workflow_bindings AS binding
-                          WHERE binding.command_id = hermes_commands.command_id
-                            AND binding.command_version = 1
-                            AND binding.preparation_schema_version = '1.0'
-                            AND binding.binding_schema_version = 1
-                            AND binding.owner_user_id = hermes_commands.owner_user_id
-                            AND binding.platform_session_id = hermes_commands.platform_session_id
-                            AND binding.client_request_id = hermes_commands.client_request_id
-                            AND binding.command_kind = hermes_commands.kind
-                            AND binding.canonical_request_digest =
-                                hermes_commands.canonical_request_digest
-                            AND binding.payload_ref = hermes_commands.payload_ref
-                            AND binding.provider_policy_digest =
-                                hermes_commands.provider_policy_digest
-                            AND binding.payload_expires_at > clock_timestamp()
+                      AND (
+                          EXISTS (
+                              SELECT 1
+                              FROM {SCHEMA}.hermes_command_workflow_bindings AS binding
+                              WHERE binding.command_id = hermes_commands.command_id
+                                AND binding.command_version = 1
+                                AND binding.preparation_schema_version = '1.0'
+                                AND binding.binding_schema_version = 1
+                                AND binding.owner_user_id = hermes_commands.owner_user_id
+                                AND binding.platform_session_id =
+                                    hermes_commands.platform_session_id
+                                AND binding.client_request_id =
+                                    hermes_commands.client_request_id
+                                AND binding.command_kind = hermes_commands.kind
+                                AND binding.canonical_request_digest =
+                                    hermes_commands.canonical_request_digest
+                                AND binding.payload_ref = hermes_commands.payload_ref
+                                AND binding.provider_policy_digest =
+                                    hermes_commands.provider_policy_digest
+                                AND binding.payload_expires_at > clock_timestamp()
+                          )
+                          OR (
+                              hermes_commands.kind = 'conversation_turn'
+                              AND hermes_commands.payload_ref ~
+                                  '^platform-payload://sha256/[0-9a-f]{{64}}$'
+                              AND hermes_commands.provider_policy_digest IS NOT NULL
+                              AND hermes_commands.provider_policy_digest ~
+                                  '^[0-9a-f]{{64}}$'
+                          )
                       )
                       AND (
                           next_attempt_at IS NULL
@@ -546,23 +564,35 @@ class HermesCommandLedger:
                       AND owner_user_id = %s
                       AND version = %s
                       AND state = 'queued'
-                      AND EXISTS (
-                          SELECT 1
-                          FROM {SCHEMA}.hermes_command_workflow_bindings AS binding
-                          WHERE binding.command_id = hermes_commands.command_id
-                            AND binding.command_version = 1
-                            AND binding.preparation_schema_version = '1.0'
-                            AND binding.binding_schema_version = 1
-                            AND binding.owner_user_id = hermes_commands.owner_user_id
-                            AND binding.platform_session_id = hermes_commands.platform_session_id
-                            AND binding.client_request_id = hermes_commands.client_request_id
-                            AND binding.command_kind = hermes_commands.kind
-                            AND binding.canonical_request_digest =
-                                hermes_commands.canonical_request_digest
-                            AND binding.payload_ref = hermes_commands.payload_ref
-                            AND binding.provider_policy_digest =
-                                hermes_commands.provider_policy_digest
-                            AND binding.payload_expires_at > clock_timestamp()
+                      AND (
+                          EXISTS (
+                              SELECT 1
+                              FROM {SCHEMA}.hermes_command_workflow_bindings AS binding
+                              WHERE binding.command_id = hermes_commands.command_id
+                                AND binding.command_version = 1
+                                AND binding.preparation_schema_version = '1.0'
+                                AND binding.binding_schema_version = 1
+                                AND binding.owner_user_id = hermes_commands.owner_user_id
+                                AND binding.platform_session_id =
+                                    hermes_commands.platform_session_id
+                                AND binding.client_request_id =
+                                    hermes_commands.client_request_id
+                                AND binding.command_kind = hermes_commands.kind
+                                AND binding.canonical_request_digest =
+                                    hermes_commands.canonical_request_digest
+                                AND binding.payload_ref = hermes_commands.payload_ref
+                                AND binding.provider_policy_digest =
+                                    hermes_commands.provider_policy_digest
+                                AND binding.payload_expires_at > clock_timestamp()
+                          )
+                          OR (
+                              hermes_commands.kind = 'conversation_turn'
+                              AND hermes_commands.payload_ref ~
+                                  '^platform-payload://sha256/[0-9a-f]{{64}}$'
+                              AND hermes_commands.provider_policy_digest IS NOT NULL
+                              AND hermes_commands.provider_policy_digest ~
+                                  '^[0-9a-f]{{64}}$'
+                          )
                       )
                     RETURNING {_COMMAND_COLUMNS}
                     """,

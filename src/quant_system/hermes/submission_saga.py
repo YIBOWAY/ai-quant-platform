@@ -98,6 +98,7 @@ class ActionReceipt:
     hermes_session_id: str | None = None
     recovery_action: str | None = None
     reason_code: str | None = None
+    mutation_enabled: bool = False
 
     def __post_init__(self) -> None:
         expected = _RECOVERY[self.status]
@@ -111,7 +112,7 @@ class ActionReceipt:
             "action_digest": self.action_digest,
             "workspace": {"workspace_id": self.workspace_id},
             "recovery_action": self.recovery_action,
-            "mutation_enabled": False,
+            "mutation_enabled": bool(self.mutation_enabled),
         }
         if self.command_id is not None:
             payload["command_id"] = self.command_id
@@ -178,6 +179,7 @@ def _receipt(
     platform_session_id: str | None = None,
     hermes_session_id: str | None = None,
     reason_code: str | None = None,
+    mutation_enabled: bool = False,
 ) -> ActionReceipt:
     return ActionReceipt(
         status=status,
@@ -188,6 +190,7 @@ def _receipt(
         platform_session_id=platform_session_id,
         hermes_session_id=hermes_session_id,
         reason_code=reason_code,
+        mutation_enabled=bool(mutation_enabled),
     )
 
 
@@ -250,7 +253,8 @@ def submit_create_managed_session(
             action=action,
             digest=digest,
             reason_code="authenticated_mutation_bff_unavailable",
-        )
+            mutation_enabled=mutation_enabled,
+)
     _require_root_actor(actor_owner_user_id)
     if not _ensure_ready(settings):
         return _receipt(
@@ -258,7 +262,8 @@ def submit_create_managed_session(
             action=action,
             digest=digest,
             reason_code="workspace_authority_unavailable",
-        )
+            mutation_enabled=mutation_enabled,
+)
 
     control_session = control_plane_session_id(action.workspace.workspace_id)
     try:
@@ -278,14 +283,16 @@ def submit_create_managed_session(
                 action=action,
                 digest=digest,
                 reason_code="idempotency_digest_conflict",
-            )
+                mutation_enabled=mutation_enabled,
+)
         if exc.code == "unavailable":
             return _receipt(
                 status="unavailable",
                 action=action,
                 digest=digest,
                 reason_code="authority_unavailable",
-            )
+                mutation_enabled=mutation_enabled,
+)
         raise
 
     platform_session_id = derive_managed_platform_session_id(digest)
@@ -308,7 +315,8 @@ def submit_create_managed_session(
             digest=digest,
             command_id=str(cmd.command.command_id),
             reason_code="session_identity_conflict",
-        )
+            mutation_enabled=mutation_enabled,
+)
     except HermesSessionRegistryUnavailable:
         # Command durable; session not yet — caller should retry same action.
         return _receipt(
@@ -319,7 +327,8 @@ def submit_create_managed_session(
             platform_session_id=platform_session_id,
             hermes_session_id=hermes_session_id,
             reason_code="session_registry_pending",
-        )
+            mutation_enabled=mutation_enabled,
+)
     except HermesSessionRegistryValidationError:
         return _receipt(
             status="unavailable",
@@ -327,7 +336,8 @@ def submit_create_managed_session(
             digest=digest,
             command_id=str(cmd.command.command_id),
             reason_code="session_registry_validation",
-        )
+            mutation_enabled=mutation_enabled,
+)
 
     return _receipt(
         status="accepted",
@@ -336,7 +346,8 @@ def submit_create_managed_session(
         command_id=str(cmd.command.command_id),
         platform_session_id=record.platform_session_id,
         hermes_session_id=record.hermes_session_id,
-    )
+        mutation_enabled=mutation_enabled,
+)
 
 
 def submit_fork_into_managed_session(
@@ -353,7 +364,8 @@ def submit_fork_into_managed_session(
             action=action,
             digest=digest,
             reason_code="authenticated_mutation_bff_unavailable",
-        )
+            mutation_enabled=mutation_enabled,
+)
     _require_root_actor(actor_owner_user_id)
     if not _ensure_ready(settings):
         return _receipt(
@@ -361,7 +373,8 @@ def submit_fork_into_managed_session(
             action=action,
             digest=digest,
             reason_code="workspace_authority_unavailable",
-        )
+            mutation_enabled=mutation_enabled,
+)
 
     source_platform_session_id = strip_session_ref(action.source_session_ref)
     try:
@@ -374,7 +387,8 @@ def submit_fork_into_managed_session(
             action=action,
             digest=digest,
             reason_code="source_session_missing",
-        )
+            mutation_enabled=mutation_enabled,
+)
     except (
         HermesSessionRegistryUnavailable,
         HermesSessionRegistryValidationError,
@@ -384,7 +398,8 @@ def submit_fork_into_managed_session(
             action=action,
             digest=digest,
             reason_code="session_registry_unavailable",
-        )
+            mutation_enabled=mutation_enabled,
+)
 
     if source.workspace_id != action.workspace.workspace_id:
         return _receipt(
@@ -392,7 +407,8 @@ def submit_fork_into_managed_session(
             action=action,
             digest=digest,
             reason_code="source_workspace_mismatch",
-        )
+            mutation_enabled=mutation_enabled,
+)
 
     control_session = control_plane_session_id(action.workspace.workspace_id)
     try:
@@ -412,14 +428,16 @@ def submit_fork_into_managed_session(
                 action=action,
                 digest=digest,
                 reason_code="idempotency_digest_conflict",
-            )
+                mutation_enabled=mutation_enabled,
+)
         if exc.code == "unavailable":
             return _receipt(
                 status="unavailable",
                 action=action,
                 digest=digest,
                 reason_code="authority_unavailable",
-            )
+                mutation_enabled=mutation_enabled,
+)
         raise
 
     platform_session_id = derive_managed_platform_session_id(digest)
@@ -445,7 +463,8 @@ def submit_fork_into_managed_session(
             digest=digest,
             command_id=str(cmd.command.command_id),
             reason_code="session_identity_conflict",
-        )
+            mutation_enabled=mutation_enabled,
+)
     except HermesSessionRegistryUnavailable:
         return _receipt(
             status="reconciling",
@@ -455,7 +474,8 @@ def submit_fork_into_managed_session(
             platform_session_id=platform_session_id,
             hermes_session_id=hermes_session_id,
             reason_code="session_registry_pending",
-        )
+            mutation_enabled=mutation_enabled,
+)
     except HermesSessionRegistryValidationError:
         return _receipt(
             status="unavailable",
@@ -463,7 +483,8 @@ def submit_fork_into_managed_session(
             digest=digest,
             command_id=str(cmd.command.command_id),
             reason_code="session_registry_validation",
-        )
+            mutation_enabled=mutation_enabled,
+)
 
     # Source external/managed row must remain unchanged (fork is additive).
     return _receipt(
@@ -473,7 +494,8 @@ def submit_fork_into_managed_session(
         command_id=str(cmd.command.command_id),
         platform_session_id=record.platform_session_id,
         hermes_session_id=record.hermes_session_id,
-    )
+        mutation_enabled=mutation_enabled,
+)
 
 
 def submit_conversation_turn(
@@ -490,7 +512,8 @@ def submit_conversation_turn(
             action=action,
             digest=digest,
             reason_code="authenticated_mutation_bff_unavailable",
-        )
+            mutation_enabled=mutation_enabled,
+)
     _require_root_actor(actor_owner_user_id)
     if not _ensure_ready(settings):
         return _receipt(
@@ -498,7 +521,8 @@ def submit_conversation_turn(
             action=action,
             digest=digest,
             reason_code="workspace_authority_unavailable",
-        )
+            mutation_enabled=mutation_enabled,
+)
 
     platform_session_id = strip_session_ref(action.managed_session_ref)
     try:
@@ -512,14 +536,16 @@ def submit_conversation_turn(
             digest=digest,
             platform_session_id=platform_session_id,
             reason_code="external_session_not_writable",
-        )
+            mutation_enabled=mutation_enabled,
+)
     except LookupError:
         return _receipt(
             status="conflict",
             action=action,
             digest=digest,
             reason_code="managed_session_missing",
-        )
+            mutation_enabled=mutation_enabled,
+)
     except (
         HermesSessionRegistryUnavailable,
         HermesSessionRegistryValidationError,
@@ -529,7 +555,8 @@ def submit_conversation_turn(
             action=action,
             digest=digest,
             reason_code="session_registry_unavailable",
-        )
+            mutation_enabled=mutation_enabled,
+)
 
     if session.workspace_id != action.workspace.workspace_id:
         return _receipt(
@@ -538,7 +565,8 @@ def submit_conversation_turn(
             digest=digest,
             platform_session_id=platform_session_id,
             reason_code="session_workspace_mismatch",
-        )
+            mutation_enabled=mutation_enabled,
+)
 
     platform_payload_ref = hqa_payload_to_platform_payload_ref(action.payload_digest)
     try:
@@ -560,7 +588,8 @@ def submit_conversation_turn(
                 platform_session_id=platform_session_id,
                 hermes_session_id=session.hermes_session_id,
                 reason_code="idempotency_digest_conflict",
-            )
+                mutation_enabled=mutation_enabled,
+)
         if exc.code == "unavailable":
             return _receipt(
                 status="unavailable",
@@ -568,7 +597,8 @@ def submit_conversation_turn(
                 digest=digest,
                 platform_session_id=platform_session_id,
                 reason_code="authority_unavailable",
-            )
+                mutation_enabled=mutation_enabled,
+)
         raise
 
     return _receipt(
@@ -578,7 +608,8 @@ def submit_conversation_turn(
         command_id=str(cmd.command.command_id),
         platform_session_id=session.platform_session_id,
         hermes_session_id=session.hermes_session_id,
-    )
+        mutation_enabled=mutation_enabled,
+)
 
 
 def submit_action(
@@ -635,13 +666,15 @@ def submit_action(
                 action=parsed,
                 digest=digest,
                 reason_code="authenticated_mutation_bff_unavailable",
-            )
+                mutation_enabled=mutation_enabled,
+)
         return _receipt(
             status="unavailable",
             action=parsed,
             digest=digest,
             reason_code="research_workflow_submission_unavailable",
-        )
+            mutation_enabled=mutation_enabled,
+)
     if type(parsed) is UnsupportedWorkspaceAction:
         digest = canonical_action_digest(parsed)
         return _receipt(
@@ -649,7 +682,8 @@ def submit_action(
             action=parsed,
             digest=digest,
             reason_code="action_kind_not_implemented",
-        )
+            mutation_enabled=mutation_enabled,
+)
     raise SubmissionSagaError("validation", "unknown action type")
 
 

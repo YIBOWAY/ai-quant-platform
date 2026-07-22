@@ -64,10 +64,12 @@ class WorkspaceSnapshot:
     workspace_id: str
     owner_user_id: str
     snapshot_workspace_cursor: int
+    # L2b-M1: sessions remain id strings; commands are public objects.
+    # Older clients that only need ids can read command_id from each object.
     sessions: tuple[str, ...]
     tasks: tuple[str, ...]
     attempts: tuple[str, ...]
-    commands: tuple[str, ...]
+    commands: tuple[dict[str, object], ...]
     runs: tuple[str, ...]
     results: tuple[str, ...]
     authority_health: Mapping[str, str]
@@ -82,7 +84,7 @@ class WorkspaceSnapshot:
             "sessions": list(self.sessions),
             "tasks": list(self.tasks),
             "attempts": list(self.attempts),
-            "commands": list(self.commands),
+            "commands": [dict(item) for item in self.commands],
             "runs": list(self.runs),
             "results": list(self.results),
             "authority_health": dict(self.authority_health),
@@ -130,10 +132,13 @@ class PlatformAgentWorkspace:
 
     def authorities(self) -> dict[str, object]:
         payload = authorities_ready(self._settings)
-        # Always advertise public mutation OFF even when hermetic tests enable
-        # the in-process write gate for saga coverage.
         payload = dict(payload)
-        payload["mutation_enabled"] = False
+        # Settings-driven public flag (LocalMutationSettings) is authoritative.
+        # in_process_mutation_gate mirrors the workspace constructor override used
+        # by hermetic saga tests / BFF injection.
+        payload["mutation_enabled"] = bool(
+            payload.get("mutation_enabled") or self._mutation_enabled
+        )
         payload["in_process_mutation_gate"] = self._mutation_enabled
         return payload
 
@@ -164,6 +169,7 @@ class PlatformAgentWorkspace:
                 action_digest=canonical_action_digest(parsed),
                 workspace_id=parsed.workspace.workspace_id,
                 reason_code="workspace_forbidden",
+                mutation_enabled=self._mutation_enabled,
             )
 
         try:
@@ -190,6 +196,8 @@ class PlatformAgentWorkspace:
         observed_at = (
             datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         )
+        mutation_on = bool(self._mutation_enabled or ready.get("mutation_enabled"))
+        composer_on = bool(ready.get("composer_write_ready") or ready.get("chat_write_ready"))
         health: dict[str, str] = {
             "command_ledger": (
                 "ready" if ready["command_ledger_schema_ready"] else "unavailable"
@@ -207,12 +215,12 @@ class PlatformAgentWorkspace:
             ),
             "hermes_gateway": "dark",
             "provider": "dark",
-            "mutation": "disabled",
-            "composer": "disabled",
+            "mutation": "enabled" if mutation_on else "disabled",
+            "composer": "enabled" if composer_on else "disabled",
         }
 
         sessions: list[str] = []
-        commands: list[str] = []
+        commands: list[dict[str, object]] = []
         cursor = 0
 
         if ready["ready"]:
@@ -231,7 +239,7 @@ class PlatformAgentWorkspace:
             runs=(),
             results=(),
             authority_health=health,
-            mutation_enabled=False,
+            mutation_enabled=mutation_on,
             observed_at=observed_at,
         )
 
@@ -240,9 +248,11 @@ class PlatformAgentWorkspace:
         actor: ActorRef | Mapping[str, Any] | str,
         workspace: WorkspaceRef | Mapping[str, Any] | str,
         after: WorkspaceCursor | int | None = None,
+        *,
+        limit: int = 100,
     ) -> EventPage:
         owner = self._resolve_actor(actor)
-        _ = self._resolve_workspace_id(workspace)
+        workspace_id = self._resolve_workspace_id(workspace)
         if owner != ROOT_USER_ID:
             raise SubmissionSagaError("forbidden", "workspace_forbidden")
 
@@ -257,6 +267,7 @@ class PlatformAgentWorkspace:
             raise SubmissionSagaError("validation", "invalid after cursor")
 
         ready = authorities_ready(self._settings)
+        mutation_on = bool(self._mutation_enabled or ready.get("mutation_enabled"))
         if not ready["ready"]:
             # Fail closed: client must resnapshot rather than invent events.
             return EventPage(
@@ -265,56 +276,100 @@ class PlatformAgentWorkspace:
                 next_cursor=None,
                 resync_required=True,
                 recovery_action=_RECOVERY_RESNAPSHOT,
-                mutation_enabled=False,
+                mutation_enabled=mutation_on,
             )
 
-        # V4 skeleton: no durable workspace observation stream yet (V6).
-        # Empty ordinary page keeps the cursor stable so clients can poll.
+        # L2b-M1: poll page over workspace-scoped hermes_command_events.
+        # Cursor is the global event_id sequence (monotonic, durable).
+        page_limit = limit if type(limit) is int and 1 <= limit <= 200 else 100
+        after_cursor = 0 if after_value is None else after_value
+        try:
+            events, next_cursor, resync = self._collect_workspace_events(
+                workspace_id,
+                after_cursor=after_cursor,
+                limit=page_limit,
+            )
+        except (DatabaseUnavailable, Exception):
+            return EventPage(
+                events=(),
+                after_cursor=after_value,
+                next_cursor=None,
+                resync_required=True,
+                recovery_action=_RECOVERY_RESNAPSHOT,
+                mutation_enabled=mutation_on,
+            )
+        if resync:
+            return EventPage(
+                events=(),
+                after_cursor=after_value,
+                next_cursor=None,
+                resync_required=True,
+                recovery_action=_RECOVERY_RESNAPSHOT,
+                mutation_enabled=mutation_on,
+            )
         return EventPage(
-            events=(),
+            events=tuple(events),
             after_cursor=after_value,
-            next_cursor=after_value,
+            next_cursor=next_cursor,
             resync_required=False,
             recovery_action=None,
-            mutation_enabled=False,
+            mutation_enabled=mutation_on,
         )
+
+    def _workspace_session_ids(self, conn: Any, workspace_id: str) -> list[str]:
+        from quant_system.storage.database import SCHEMA
+
+        rows = conn.execute(
+            f"""
+            SELECT platform_session_id
+            FROM {SCHEMA}.hermes_workspace_sessions
+            WHERE workspace_id = %s
+              AND owner_user_id = %s
+            ORDER BY created_at ASC
+            """,
+            (workspace_id, ROOT_USER_ID),
+        ).fetchall()
+        return [str(row[0]) for row in rows]
 
     def _collect_workspace_projection(
         self, workspace_id: str
-    ) -> tuple[list[str], list[str], int]:
-        """Best-effort read of sessions + control-plane commands for snapshot.
+    ) -> tuple[list[str], list[dict[str, object]], int]:
+        """Best-effort read of sessions + command objects + durable event cursor.
 
         Never raises for missing rows; authority outage surfaces as empty
         projection with health already marked unavailable by the caller when
         readiness is false. Here readiness is true.
         """
         from quant_system.hermes.submission_saga import control_plane_session_id
+        from quant_system.hermes.workspace_observe import project_command_public
         from quant_system.storage.database import SCHEMA
 
         sessions: list[str] = []
-        commands: list[str] = []
+        commands: list[dict[str, object]] = []
         cursor = 0
         database = get_database(self._settings)
         if database is None:
             return sessions, commands, cursor
         try:
             with database.connect() as conn:
-                rows = conn.execute(
-                    f"""
-                    SELECT platform_session_id
-                    FROM {SCHEMA}.hermes_workspace_sessions
-                    WHERE workspace_id = %s
-                      AND owner_user_id = %s
-                    ORDER BY created_at ASC
-                    """,
-                    (workspace_id, ROOT_USER_ID),
-                ).fetchall()
-                sessions = [str(row[0]) for row in rows]
-
+                sessions = self._workspace_session_ids(conn, workspace_id)
                 control = control_plane_session_id(workspace_id)
+                session_filter = list(sessions) if sessions else []
                 cmd_rows = conn.execute(
                     f"""
-                    SELECT command_id::text
+                    SELECT
+                        command_id,
+                        kind,
+                        state,
+                        version,
+                        client_request_id,
+                        platform_session_id,
+                        hermes_session_id,
+                        hermes_run_id,
+                        last_error_code,
+                        attempt_count,
+                        updated_at,
+                        created_at
                     FROM {SCHEMA}.hermes_commands
                     WHERE owner_user_id = %s
                       AND (
@@ -324,14 +379,156 @@ class PlatformAgentWorkspace:
                     ORDER BY created_at ASC
                     LIMIT 200
                     """,
-                    (ROOT_USER_ID, control, sessions or [""]),
+                    (ROOT_USER_ID, control, session_filter or [""]),
                 ).fetchall()
-                commands = [str(row[0]) for row in cmd_rows]
-                cursor = len(sessions) + len(commands)
+                for row in cmd_rows:
+                    commands.append(
+                        project_command_public(
+                            {
+                                "command_id": row[0],
+                                "kind": row[1],
+                                "state": row[2],
+                                "version": row[3],
+                                "client_request_id": row[4],
+                                "platform_session_id": row[5],
+                                "hermes_session_id": row[6],
+                                "hermes_run_id": row[7],
+                                "last_error_code": row[8],
+                                "attempt_count": row[9],
+                                "updated_at": row[10],
+                                "created_at": row[11],
+                            }
+                        )
+                    )
+                # Durable cursor = max event_id among workspace-scoped commands
+                # (control-plane session + registered workspace sessions).
+                head = conn.execute(
+                    f"""
+                    SELECT COALESCE(MAX(e.event_id), 0)
+                    FROM {SCHEMA}.hermes_command_events AS e
+                    INNER JOIN {SCHEMA}.hermes_commands AS c
+                      ON c.command_id = e.command_id
+                    WHERE c.owner_user_id = %s
+                      AND (
+                        c.platform_session_id = %s
+                        OR c.platform_session_id = ANY(%s)
+                      )
+                    """,
+                    (ROOT_USER_ID, control, session_filter or [""]),
+                ).fetchone()
+                cursor = int(head[0]) if head is not None else 0
         except (DatabaseUnavailable, Exception):
             # Snapshot stays available with empty projection; health already set.
             return [], [], 0
         return sessions, commands, cursor
+
+    def _collect_workspace_events(
+        self,
+        workspace_id: str,
+        *,
+        after_cursor: int,
+        limit: int,
+    ) -> tuple[list[dict[str, object]], int | None, bool]:
+        """Return (events, next_cursor, resync_required)."""
+        from quant_system.hermes.submission_saga import control_plane_session_id
+        from quant_system.hermes.workspace_observe import (
+            follow_resync_required,
+            project_event_public,
+        )
+        from quant_system.storage.database import SCHEMA
+
+        database = get_database(self._settings)
+        if database is None:
+            return [], None, True
+        with database.connect() as conn:
+            sessions = self._workspace_session_ids(conn, workspace_id)
+            control = control_plane_session_id(workspace_id)
+            session_filter = list(sessions) if sessions else []
+            head_row = conn.execute(
+                f"""
+                SELECT COALESCE(MAX(e.event_id), 0)
+                FROM {SCHEMA}.hermes_command_events AS e
+                INNER JOIN {SCHEMA}.hermes_commands AS c
+                  ON c.command_id = e.command_id
+                WHERE c.owner_user_id = %s
+                  AND (
+                    c.platform_session_id = %s
+                    OR c.platform_session_id = ANY(%s)
+                  )
+                """,
+                (ROOT_USER_ID, control, session_filter or [""]),
+            ).fetchone()
+            head_event_id = int(head_row[0]) if head_row is not None else 0
+            if follow_resync_required(
+                after_cursor=after_cursor, head_event_id=head_event_id
+            ):
+                return [], None, True
+            rows = conn.execute(
+                f"""
+                SELECT
+                    e.event_id,
+                    e.command_id,
+                    e.command_version,
+                    e.event_type,
+                    e.from_state,
+                    e.to_state,
+                    e.hermes_session_id,
+                    e.hermes_run_id,
+                    e.error_code,
+                    e.occurred_at,
+                    c.client_request_id,
+                    c.kind,
+                    c.platform_session_id
+                FROM {SCHEMA}.hermes_command_events AS e
+                INNER JOIN {SCHEMA}.hermes_commands AS c
+                  ON c.command_id = e.command_id
+                WHERE c.owner_user_id = %s
+                  AND (
+                    c.platform_session_id = %s
+                    OR c.platform_session_id = ANY(%s)
+                  )
+                  AND e.event_id > %s
+                ORDER BY e.event_id ASC
+                LIMIT %s
+                """,
+                (
+                    ROOT_USER_ID,
+                    control,
+                    session_filter or [""],
+                    after_cursor,
+                    limit,
+                ),
+            ).fetchall()
+        events: list[dict[str, object]] = []
+        next_cursor = after_cursor
+        for row in rows:
+            event_id = int(row[0])
+            next_cursor = event_id
+            events.append(
+                project_event_public(
+                    {
+                        "event_id": event_id,
+                        "command_id": row[1],
+                        "command_version": row[2],
+                        "event_type": row[3],
+                        "from_state": row[4],
+                        "to_state": row[5],
+                        "hermes_session_id": row[6],
+                        "hermes_run_id": row[7],
+                        "error_code": row[8],
+                        "occurred_at": row[9],
+                    },
+                    command={
+                        "client_request_id": row[10],
+                        "kind": row[11],
+                        "platform_session_id": row[12],
+                    },
+                )
+            )
+        # Idle poll: keep cursor at after when no new events.
+        if not events:
+            next_cursor = after_cursor
+        return events, next_cursor, False
 
     @staticmethod
     def _resolve_actor(actor: ActorRef | Mapping[str, Any] | str) -> UUID:

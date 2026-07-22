@@ -17,6 +17,7 @@ import {
   ScrollText,
   Settings,
   Sparkles,
+  Sunrise,
   Wrench,
   Zap,
 } from "lucide-react";
@@ -26,6 +27,7 @@ export type NavSurface = "sidebar" | "mobile";
 export type NavItemId =
   | "dashboard"
   | "hermes"
+  | "brief"
   | "dataExplorer"
   | "factorLab"
   | "backtester"
@@ -66,6 +68,12 @@ const hermesItem: NavItem = {
   id: "hermes",
   href: "/hermes",
   icon: Sparkles,
+};
+
+const briefItem: NavItem = {
+  id: "brief",
+  href: "/brief",
+  icon: Sunrise,
 };
 
 const researchTail: NavItem[] = [
@@ -126,8 +134,8 @@ export function buildNavSections({
   agentStudioRedirect?: boolean;
 }): NavSection[] {
   const researchItems: NavItem[] = shellEnabled
-    ? [hermesItem, ...researchTail]
-    : [dashboardItem, hermesItem, ...researchTail];
+    ? [hermesItem, briefItem, ...researchTail]
+    : [dashboardItem, hermesItem, briefItem, ...researchTail];
 
   const visibleMarkets = agentStudioRedirect
     ? { ...marketsSection, items: marketsSection.items.filter((item) => item.id !== "agentStudio") }

@@ -11,7 +11,11 @@ from quant_system.api.safety.local_session import (
     issue_bootstrap_token,
 )
 from quant_system.api.server import create_app
-from quant_system.config.settings import HermesGatewaySettings, Settings
+from quant_system.config.settings import (
+    HermesGatewaySettings,
+    LocalMutationSettings,
+    Settings,
+)
 from quant_system.hermes.command_ledger import ROOT_USER_ID
 
 ORIGIN = "http://127.0.0.1:3001"
@@ -19,8 +23,11 @@ WORKSPACE_ID = "ws-bff-v4"
 
 
 def _settings() -> Settings:
+    # Pin mutation OFF so hermetic transport tests ignore the operator's local
+    # QS_LOCAL_MUTATION_* env (Local Dark Enablement must not leak into CI).
     return Settings(
         hermes_gateway=HermesGatewaySettings(enabled=False),
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
         api_cors_origins=[
             ORIGIN,
             "http://127.0.0.1:3000",

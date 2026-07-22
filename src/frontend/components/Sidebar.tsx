@@ -31,6 +31,7 @@ const copy = {
     nav: {
       dashboard: "Dashboard",
       hermes: "Hermes",
+      brief: "Morning Brief",
       dataExplorer: "Data Explorer",
       optionsScreener: "Options Screener",
       optionsRadar: "Options Radar",
@@ -65,6 +66,7 @@ const copy = {
     nav: {
       dashboard: "仪表盘",
       hermes: "Hermes 工作台",
+      brief: "每日晨报",
       dataExplorer: "行情浏览",
       optionsScreener: "期权筛选器",
       optionsRadar: "期权雷达",
@@ -150,7 +152,9 @@ export function Sidebar({
               </h2>
               <ul className="space-y-1">
                 {section.items.map((item) => {
-                  const isActive = activePath === item.href;
+                  const isActive =
+                    activePath === item.href ||
+                    (item.href !== "/" && activePath.startsWith(`${item.href}/`));
                   return (
                     <li key={item.href}>
                       <Link

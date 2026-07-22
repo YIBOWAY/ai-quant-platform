@@ -232,6 +232,10 @@ describe("Hermes Today hierarchy", () => {
     expect(html).not.toContain("候选</h");
     expect(html).toContain('data-hermes-automation-summary');
     expect(html).not.toContain("data-hermes-automation-exception");
+    expect(html).toContain('data-testid="hermes-today-brief-entry"');
+    expect(html).toContain('href="/zh/brief"');
+    expect(html).toContain("每日晨报");
+    expect(html).toContain('aria-label="打开每日晨报"');
   });
 
   it("separates unified platform results from HQA conclusion artifacts", () => {

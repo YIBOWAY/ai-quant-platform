@@ -107,12 +107,11 @@ def owner_bootstrap(
         csrf_token=issued.session.csrf_token,
         secure=secure,
     )
-    view = session_public_view(issued.session)
+    mutation_on = bool(getattr(settings.local_mutation, "enabled", False))
+    view = session_public_view(issued.session, mutation_enabled=mutation_on)
     view["csrf_token"] = issued.session.csrf_token
     view["csrf_header"] = CSRF_HEADER_NAME
     view["security_ready"] = local_session_security_ready(output_dir)
-    # Never open writes from bootstrap alone.
-    view["mutation_enabled"] = False
     response.headers["Cache-Control"] = "no-store"
     return view
 
@@ -137,7 +136,8 @@ def owner_session_status(
         )
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _http_error(exc) from exc
-    view = session_public_view(session)
+    mutation_on = bool(getattr(settings.local_mutation, "enabled", False))
+    view = session_public_view(session, mutation_enabled=mutation_on)
     view["security_ready"] = local_session_security_ready(output_dir)
     return view
 
@@ -167,7 +167,8 @@ def owner_logout(
         raise _http_error(exc) from exc
     _clear_session_cookies(response)
     response.headers["Cache-Control"] = "no-store"
-    return {"ok": True, "mutation_enabled": False}
+    mutation_on = bool(getattr(settings.local_mutation, "enabled", False))
+    return {"ok": True, "mutation_enabled": mutation_on}
 
 
 @router.post("/auth/owner/bootstrap-token/issue")
@@ -180,7 +181,6 @@ def issue_owner_bootstrap_token(
 
     Intended for loopback CLI/operator use during single-user local setup.
     Still requires same-origin browser gates when called from a browser.
-    Does not enable mutation.
     """
     policy = _policy(settings, request)
     try:
@@ -194,8 +194,9 @@ def issue_owner_bootstrap_token(
         token = issue_bootstrap_token(output_dir)
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _http_error(exc) from exc
+    mutation_on = bool(getattr(settings.local_mutation, "enabled", False))
     return {
         "bootstrap_token": token,
-        "mutation_enabled": False,
+        "mutation_enabled": mutation_on,
         "note": "one-time; exchange via POST /api/auth/owner/bootstrap",
     }

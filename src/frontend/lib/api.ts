@@ -1,8 +1,10 @@
 import {
   buildBriefIssuePath,
+  buildBriefIssueListPath,
   buildLatestBriefIssuePath,
   type BriefIssue,
   type BriefIssueEnvelope,
+  type BriefIssueListResponse,
   type BriefSnapshot,
 } from "./briefArchive";
 import type { components as GeneratedApiComponents } from "./api.generated";
@@ -39,6 +41,7 @@ export type ApiEnvelope = {
 export type BriefIssueResponse = BriefIssue;
 export type BriefSnapshotResponse = BriefSnapshot;
 export type BriefIssueEnvelopeResponse = BriefIssueEnvelope;
+export type { BriefIssueListResponse };
 
 export type ErrorResponse = {
   detail: string;
@@ -2049,6 +2052,18 @@ export function getLatestBriefIssue(query: { locale?: string } = {}) {
     },
     warnings: ["Brief archive issue is unavailable."],
     safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getBriefIssueList(query: { locale?: string; limit?: number; offset?: number } = {}) {
+  const locale = query.locale ?? "zh";
+  const limit = query.limit ?? 30;
+  const offset = query.offset ?? 0;
+  return apiGet<BriefIssueListResponse>(buildBriefIssueListPath(locale, limit, offset), {
+    items: [],
+    total: 0,
+    limit,
+    offset,
   });
 }
 

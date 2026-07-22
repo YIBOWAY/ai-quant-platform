@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from quant_system.api.dependencies import get_hermes_api_read_client
 from quant_system.api.server import create_app
-from quant_system.config.settings import HermesGatewaySettings, Settings
+from quant_system.config.settings import HermesGatewaySettings, LocalMutationSettings, Settings
 
 
 class _FakeHermesReadClient:
@@ -83,6 +83,8 @@ class _NoSessionResourcesClient(_FakeHermesReadClient):
 
 def test_gateway_endpoints_fail_closed_when_integration_disabled() -> None:
     settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+
         hermes_gateway=HermesGatewaySettings(enabled=False),
     )
     with TestClient(create_app(settings=settings)) as client:
@@ -103,6 +105,8 @@ def test_gateway_endpoints_fail_closed_when_integration_disabled() -> None:
 
 def test_gateway_endpoints_expose_only_sanitized_read_models() -> None:
     settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+
         hermes_gateway=HermesGatewaySettings(enabled=True),
     )
     app = create_app(settings=settings, bind_address="127.0.0.1")
@@ -133,7 +137,10 @@ def test_gateway_endpoints_expose_only_sanitized_read_models() -> None:
 
 
 def test_gateway_query_bounds_are_enforced_without_calling_upstream() -> None:
-    settings = Settings(hermes_gateway=HermesGatewaySettings(enabled=True))
+    settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+        hermes_gateway=HermesGatewaySettings(enabled=True),
+    )
     app = create_app(settings=settings, bind_address="127.0.0.1")
     app.dependency_overrides[get_hermes_api_read_client] = _FakeHermesReadClient
     with TestClient(app, base_url="http://127.0.0.1") as client:
@@ -146,7 +153,10 @@ def test_gateway_query_bounds_are_enforced_without_calling_upstream() -> None:
 def test_gateway_read_integration_rejects_non_loopback_platform_bind(
     bind_address: str,
 ) -> None:
-    settings = Settings(hermes_gateway=HermesGatewaySettings(enabled=True))
+    settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+        hermes_gateway=HermesGatewaySettings(enabled=True),
+    )
 
     with pytest.raises(ValueError, match="loopback"):
         create_app(
@@ -158,6 +168,8 @@ def test_gateway_read_integration_rejects_non_loopback_platform_bind(
 
 def test_disabled_gateway_ignores_invalid_endpoint_configuration() -> None:
     settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+
         hermes_gateway=HermesGatewaySettings(
             enabled=False,
             base_url="http://localhost:8642",
@@ -173,6 +185,8 @@ def test_disabled_gateway_ignores_invalid_endpoint_configuration() -> None:
 
 def test_enabled_gateway_rejects_invalid_endpoint_at_startup() -> None:
     settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+
         hermes_gateway=HermesGatewaySettings(
             enabled=True,
             base_url="http://localhost:8642",
@@ -187,7 +201,10 @@ def test_enabled_gateway_rejects_invalid_endpoint_at_startup() -> None:
 def test_gateway_session_routes_reject_unsafe_ids_before_echoing(
     session_id: str,
 ) -> None:
-    settings = Settings(hermes_gateway=HermesGatewaySettings(enabled=False))
+    settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+        hermes_gateway=HermesGatewaySettings(enabled=False),
+    )
 
     with TestClient(create_app(settings=settings)) as client:
         response = client.get(f"/api/hermes/sessions/{session_id}/messages")
@@ -199,14 +216,20 @@ def test_enabled_gateway_requires_explicit_bind_declaration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("QS_API_BIND_ADDRESS", raising=False)
-    settings = Settings(hermes_gateway=HermesGatewaySettings(enabled=True))
+    settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+        hermes_gateway=HermesGatewaySettings(enabled=True),
+    )
 
     with pytest.raises(ValueError, match="explicit loopback bind"):
         create_app(settings=settings)
 
 
 def test_gateway_request_rejects_non_loopback_actual_server_scope() -> None:
-    settings = Settings(hermes_gateway=HermesGatewaySettings(enabled=True))
+    settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+        hermes_gateway=HermesGatewaySettings(enabled=True),
+    )
     app = create_app(settings=settings, bind_address="127.0.0.1")
     app.dependency_overrides[get_hermes_api_read_client] = _FakeHermesReadClient
 
@@ -218,7 +241,10 @@ def test_gateway_request_rejects_non_loopback_actual_server_scope() -> None:
 
 
 def test_session_route_refuses_upstream_without_session_resources_capability() -> None:
-    settings = Settings(hermes_gateway=HermesGatewaySettings(enabled=True))
+    settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+        hermes_gateway=HermesGatewaySettings(enabled=True),
+    )
     app = create_app(settings=settings, bind_address="127.0.0.1")
     upstream = _NoSessionResourcesClient()
     app.dependency_overrides[get_hermes_api_read_client] = lambda: upstream

@@ -1,6 +1,8 @@
 // Hermes component namespace for orchestration workbench surfaces.
 export { ComposerDock } from "./ComposerDock";
 export type { ComposerDockProps } from "./ComposerDock";
+export { ComposerSubmitController } from "./ComposerSubmitController";
+export type { ComposerSubmitControllerProps } from "./ComposerSubmitController";
 export { ArtifactShelf } from "./ArtifactShelf";
 export type { ArtifactShelfProps } from "./ArtifactShelf";
 export { HermesWorkbenchShell } from "./shell/HermesWorkbenchShell";

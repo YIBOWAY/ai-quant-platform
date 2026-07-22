@@ -75,12 +75,15 @@ export type HermesTodayModelInput = {
   results: HermesResultsResponse;
 };
 
-export type HermesDeliveryState = "blocked_in_this_slice";
+export type HermesDeliveryState =
+  | "blocked_in_this_slice"
+  | "local_mutation_authorized";
 
 export type HermesFeatureFlags = {
   shell: boolean;
   sessionRead: true;
-  chat: false;
+  /** Local single-user unlock via QS_HERMES_CHAT_ENABLED; public cutover still off. */
+  chat: boolean;
   execution: false;
   approvalMutations: false;
   unifiedResultsCutoverAccepted: false;

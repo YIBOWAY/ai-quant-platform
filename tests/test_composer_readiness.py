@@ -8,7 +8,11 @@ from fastapi.testclient import TestClient
 
 from quant_system.api.safety.local_session import issue_bootstrap_token
 from quant_system.api.server import create_app
-from quant_system.config.settings import HermesGatewaySettings, Settings
+from quant_system.config.settings import (
+    HermesGatewaySettings,
+    LocalMutationSettings,
+    Settings,
+)
 from quant_system.hermes.composer_readiness import (
     UPSTREAM_CHAT_WRITE_BLOCKERS,
     authority_readiness,
@@ -23,7 +27,6 @@ ORIGIN = "http://127.0.0.1:3001"
 _PERMANENT = {
     "authenticated_mutation_bff_unavailable",
     "prompt_retention_boundary_unavailable",
-    "command_dispatch_adapter_unavailable",
     "research_workflow_submission_unavailable",
     "composer_resume_stop_unavailable",
     "independent_security_review_unavailable",
@@ -34,6 +37,7 @@ _PERMANENT = {
 def _settings() -> Settings:
     return Settings(
         hermes_gateway=HermesGatewaySettings(enabled=False),
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
         api_cors_origins=[ORIGIN, "http://127.0.0.1:3000", "http://localhost:3001"],
     )
 
@@ -59,6 +63,7 @@ def test_authority_readiness_without_database() -> None:
     assert ready["workflow_binding_schema_ready"] is False
     assert ready["ready"] is False
     assert ready["research_binding_ready"] is False
+    assert ready["dark_dispatch_ready"] is False
     assert ready["mutation_enabled"] is False
     assert ready["composer_write_ready"] is False
     assert ready["chat_write_ready"] is False
@@ -72,6 +77,8 @@ def test_platform_blockers_include_permanent_and_schema_gaps() -> None:
     assert "command_ledger_schema_unavailable" in blockers
     assert "session_registry_schema_unavailable" in blockers
     assert "hqa_task_attempt_binding_unavailable" in blockers
+    # Dispatch adapter is schema-gated (V5); absent binding ⇒ unavailable.
+    assert "command_dispatch_adapter_unavailable" in blockers
     # CSRF is implemented; must not reappear.
     assert "csrf_protection_unavailable" not in blockers
 
@@ -146,3 +153,23 @@ def test_workspace_authorities_composite_snapshot(tmp_path: Path) -> None:
     assert "authenticated_mutation_bff_unavailable" in body["platform_delivery_blockers"]
     assert "research_workflow_submission_unavailable" in body["platform_delivery_blockers"]
     assert "independent_security_review_unavailable" in body["platform_delivery_blockers"]
+
+
+def test_local_mutation_settings_clear_authenticated_bff_blocker() -> None:
+    settings = Settings(
+        hermes_gateway=HermesGatewaySettings(enabled=False),
+        local_mutation=LocalMutationSettings(enabled=True, composer_open=False),
+        api_cors_origins=[ORIGIN, "http://127.0.0.1:3000", "http://localhost:3001"],
+    )
+    ready = authority_readiness(settings)
+    assert ready["mutation_enabled"] is True
+    # Schemas absent → composer still closed even with mutation on.
+    assert ready["composer_write_ready"] is False
+    assert ready["chat_write_ready"] is False
+    blockers = platform_delivery_blockers(settings)
+    assert "authenticated_mutation_bff_unavailable" not in blockers
+    assert "independent_security_review_unavailable" not in blockers
+    assert "user_chat_cutover_approval_required" not in blockers
+    # Research submission still blocked without binding schema.
+    assert "research_workflow_submission_unavailable" in blockers
+    assert "composer_resume_stop_unavailable" in blockers

@@ -169,14 +169,17 @@ http://127.0.0.1:3001
 ## 当前交接
 
 HQA 9A-9G、mini/full 9H、Scene-B final→Gate 3、official Hermes session-read、
-PostgreSQL transport ledger 与只读 Unified Results 已完成。当前不是“完整 Hermes 已接通”：
-chat write、approval mutation、独立 Hermes Run 结果、完整 Results cutover 与旧页 retirement
-仍关闭。
+PostgreSQL transport ledger 与只读 Unified Results 已完成。V5 dark supervised dispatch
+与 V6 本地 dark enablement（2026-07-21）已把真实 loopback `/v1/runs` adapter、CLI
+supervised mode、provider smoke 与 settings-gated local mutation/composer 打开。
+**L2a-Send（2026-07-22）** 接上 composite `submit-turn` → Intent Payload Store →
+ledger → worker bind/resolve → Hermes（live `L2a-pong`）。**L2b-Observe（2026-07-22）**
+接上 command-aware snapshot/follow 与 delivered 后 messages 预览。交易 kill_switch 与
+approval mutation / Results cutover / 旧页 retirement / **public** composer 仍关闭。
+Plan-V6 完整 transcript UI / SSE 仍未完成。
 
-Migration 005 的 ledger 已提供 claim/lease/heartbeat primitives；当前 deterministic
-connector worker runtime 只做 `LISTEN/NOTIFY` 唤醒、periodic scan 与 expired-lease
-reconcile，不 claim queued command，也不会向 Hermes 提交 run。未来 dispatch adapter
-验收后才会消费明确授权的 queued command。空队列检查不调用 LLM；不要用 Hermes cron
-反复询问“有没有新任务”。
-写端还必须另行解决认证/CSRF、幂等、request recovery、event replay、provider 锁定与
-实际 provider 证据、审批精确绑定及 stop reconciliation 后，才可启用 composer。
+Migration 005–007 已 live；L2a claim 扩展见 `008_l2a_conversation_turn_claim.sql`。
+connector worker 默认 `reconcile_only`。`--mode supervised_dispatch` 自动构建
+`HttpHermesDispatchAdapter`（ephemeral runs 可开）。空队列检查不调用 LLM；不要用
+Hermes cron 反复询问“有没有新任务”。完整 public composer 仍需 V8 与剩余 Plan-V6 UI
+（Attempt observe 全链、approval exact binding、stop reconciliation、SSE）。

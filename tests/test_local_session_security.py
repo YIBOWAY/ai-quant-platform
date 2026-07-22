@@ -32,8 +32,11 @@ ORIGIN = "http://127.0.0.1:3001"
 
 
 def _settings() -> Settings:
+    from quant_system.config.settings import LocalMutationSettings
+
     return Settings(
         hermes_gateway=HermesGatewaySettings(enabled=False),
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
         api_cors_origins=[
             ORIGIN,
             "http://127.0.0.1:3000",

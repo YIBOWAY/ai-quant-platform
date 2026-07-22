@@ -1403,7 +1403,9 @@ _REQUIRED_FUNCTIONS = frozenset(
             "plpgsql",
             False,
             "v",
-            "e000614e2af32e436db5933a5b78ea1420715dc1771520b552f1860ce7730477",
+            # 008_l2a_conversation_turn_claim.sql — research binding OR
+            # store-backed conversation_turn claim path.
+            "82f5e1d2f04e077eba8894a6111f41ab2989cdc9e4b00ca53aef34d4b4ebba10",
         ),
         (
             "protect_hermes_command_intent_identity",

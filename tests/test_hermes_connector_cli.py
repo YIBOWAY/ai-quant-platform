@@ -23,6 +23,22 @@ class _FakeLedger:
         self.limits.append(limit)
         return SimpleNamespace(requeued=(), outcome_unknown=())
 
+    # Supervised-dispatch surface (unused by reconcile-only fake cycles).
+    def claim_next_command(self, *, worker_id, now, lease_duration):
+        return None
+
+    def mark_dispatch_started(self, **_kwargs):
+        return None
+
+    def mark_delivered(self, **_kwargs):
+        return None
+
+    def mark_dispatch_timeout(self, **_kwargs):
+        return None
+
+    def mark_dispatch_rejected(self, **_kwargs):
+        return None
+
 
 class _FakeWaiter:
     def __init__(self) -> None:
@@ -70,10 +86,16 @@ def test_connector_worker_once_outputs_one_provider_free_json_cycle(monkeypatch)
     assert len(lines) == 1
     assert json.loads(lines[0]) == {
         "capability_read_status": "not_configured",
+        "claimed_count": 0,
+        "delivered_count": 0,
+        "dispatch_unknown_count": 0,
         "hermes_mutation_count": 0,
+        "last_command_id": None,
+        "last_dispatch_outcome": None,
         "mode": "reconcile_only",
         "outcome_unknown_count": 0,
         "provider_call_count": 0,
+        "rejected_count": 0,
         "requeued_count": 0,
     }
     assert ledger.calls == 1
@@ -88,7 +110,7 @@ def test_connector_worker_loop_streams_json_and_scans_after_missed_notify(
     waiter = _FakeWaiter()
     build_limits: list[int] = []
 
-    def build_runtime(*, reconcile_limit: int):
+    def build_runtime(*, reconcile_limit: int = 100, **_kwargs):
         build_limits.append(reconcile_limit)
         return connector_cli.ConnectorRuntime(
             worker=HermesConnectorWorker(
@@ -168,3 +190,67 @@ def test_connector_worker_reports_fail_closed_runtime_error_as_json(monkeypatch)
         "mode": "reconcile_only",
     }
     assert "database URL omitted" not in result.stdout
+
+
+def test_connector_worker_supervised_mode_is_forwarded(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    ledger = _FakeLedger()
+    waiter = _FakeWaiter()
+
+    def build_runtime(**kwargs):
+        captured.update(kwargs)
+        return connector_cli.ConnectorRuntime(
+            worker=HermesConnectorWorker(
+                ledger=ledger,
+                mode="supervised_dispatch",
+                dispatch_adapter=object(),  # type: ignore[arg-type]
+            ),
+            wakeup_waiter=waiter,
+            stop_requested=lambda: False,
+        )
+
+    monkeypatch.setattr(connector_cli, "build_connector_runtime", build_runtime)
+
+    result = runner.invoke(
+        app,
+        [
+            "hermes",
+            "connector-worker",
+            "--once",
+            "--mode",
+            "supervised_dispatch",
+            "--fixed-input",
+            "Reply with exactly: pong",
+            "--worker-id",
+            "smoke-worker-1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert captured["mode"] == "supervised_dispatch"
+    assert captured["fixed_input"] == "Reply with exactly: pong"
+    assert captured["worker_id"] == "smoke-worker-1"
+    payload = json.loads(result.stdout.strip().splitlines()[0])
+    assert payload["mode"] == "supervised_dispatch"
+
+
+def test_connector_worker_rejects_invalid_mode() -> None:
+    result = runner.invoke(
+        app,
+        ["hermes", "connector-worker", "--once", "--mode", "not-a-mode"],
+    )
+    assert result.exit_code != 0
+
+
+def test_connector_worker_fixed_input_requires_supervised_mode() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "hermes",
+            "connector-worker",
+            "--once",
+            "--fixed-input",
+            "hello",
+        ],
+    )
+    assert result.exit_code != 0

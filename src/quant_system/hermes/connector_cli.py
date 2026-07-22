@@ -1,4 +1,4 @@
-"""JSON-lines CLI for the deterministic, reconcile-only Hermes connector."""
+"""JSON-lines CLI for the deterministic Hermes connector worker."""
 
 from __future__ import annotations
 
@@ -55,8 +55,20 @@ class ConnectorRuntime:
     request_stop: Callable[[], None] = lambda: None
 
 
-def build_connector_runtime(*, reconcile_limit: int = 100) -> ConnectorRuntime:
-    """Build a provider-free worker from the configured PostgreSQL authority."""
+def build_connector_runtime(
+    *,
+    reconcile_limit: int = 100,
+    mode: str = "reconcile_only",
+    worker_id: str = "connector-worker-1",
+    dispatch_adapter=None,
+    fixed_input: str | None = None,
+) -> ConnectorRuntime:
+    """Build a worker from the configured PostgreSQL authority.
+
+    Default mode remains ``reconcile_only`` (no claim/dispatch). Pass
+    ``mode="supervised_dispatch"`` to build the real loopback Hermes adapter
+    from settings (or inject ``dispatch_adapter`` for tests).
+    """
     settings = load_settings()
     database = get_database(settings)
     if database is None:
@@ -68,12 +80,42 @@ def build_connector_runtime(*, reconcile_limit: int = 100) -> ConnectorRuntime:
         database=database,
         stop_requested=stop_event.is_set,
     )
+    worker_kwargs: dict = {
+        "ledger": HermesCommandLedger(settings),
+        "capability_probe": None,
+        "reconcile_limit": reconcile_limit,
+        "mode": mode,
+        "worker_id": worker_id,
+    }
+    if mode == "supervised_dispatch":
+        if dispatch_adapter is None:
+            from quant_system.hermes.dispatch_adapter import (
+                HermesDispatchAdapterError,
+                build_http_dispatch_adapter,
+            )
+
+            try:
+                if fixed_input is not None:
+                    # Explicit smoke path — never the L2a chat resolve path.
+                    dispatch_adapter = build_http_dispatch_adapter(
+                        settings,
+                        fixed_input=fixed_input,
+                    )
+                else:
+                    # L2a-Send default: worker bind_resolve via Intent Payload CLI Port.
+                    from quant_system.hermes.intent_payload_port import (
+                        intent_payload_input_resolver,
+                    )
+
+                    dispatch_adapter = build_http_dispatch_adapter(
+                        settings,
+                        input_resolver=intent_payload_input_resolver(settings),
+                    )
+            except HermesDispatchAdapterError as exc:
+                raise ConnectorRuntimeUnavailable(exc.message) from exc
+        worker_kwargs["dispatch_adapter"] = dispatch_adapter
     return ConnectorRuntime(
-        worker=HermesConnectorWorker(
-            ledger=HermesCommandLedger(settings),
-            capability_probe=None,
-            reconcile_limit=reconcile_limit,
-        ),
+        worker=HermesConnectorWorker(**worker_kwargs),
         wakeup_waiter=waiter,
         stop_requested=stop_event.is_set,
         request_stop=stop_event.set,
@@ -356,14 +398,56 @@ def connector_worker_command(
             help="Maximum expired local leases reconciled in one cycle.",
         ),
     ] = 100,
+    mode: Annotated[
+        str,
+        typer.Option(
+            "--mode",
+            help=(
+                "Worker mode: reconcile_only (default, no claim) or "
+                "supervised_dispatch (claim + real Hermes adapter)."
+            ),
+        ),
+    ] = "reconcile_only",
+    fixed_input: Annotated[
+        str | None,
+        typer.Option(
+            "--fixed-input",
+            help=(
+                "Optional fixed prompt body for supervised_dispatch smoke. "
+                "When omitted the adapter uses a metadata-only instruction."
+            ),
+        ),
+    ] = None,
+    worker_id: Annotated[
+        str,
+        typer.Option(
+            "--worker-id",
+            help="Stable worker identity written into lease rows.",
+        ),
+    ] = "connector-worker-1",
 ) -> None:
-    """Run the provider-free connector framework and stream JSON cycle facts."""
+    """Run the connector framework and stream JSON cycle facts."""
     if once and max_cycles is not None:
         raise typer.BadParameter("--max-cycles cannot be combined with --once")
+    if mode not in {"reconcile_only", "supervised_dispatch"}:
+        raise typer.BadParameter(
+            "--mode must be reconcile_only or supervised_dispatch"
+        )
+    if fixed_input is not None and mode != "supervised_dispatch":
+        raise typer.BadParameter("--fixed-input requires --mode supervised_dispatch")
+    if fixed_input is not None and (
+        not fixed_input or len(fixed_input.encode("utf-8")) > 16_384
+    ):
+        raise typer.BadParameter("--fixed-input must be non-empty and <= 16KiB")
 
     runtime: ConnectorRuntime | None = None
     try:
-        runtime = build_connector_runtime(reconcile_limit=reconcile_limit)
+        runtime = build_connector_runtime(
+            reconcile_limit=reconcile_limit,
+            mode=mode,
+            worker_id=worker_id,
+            fixed_input=fixed_input,
+        )
         with _graceful_stop_signals(runtime):
             if once:
                 _emit_cycle(runtime.worker.run_once())
@@ -384,7 +468,7 @@ def connector_worker_command(
             json.dumps(
                 {
                     "error_code": "connector_runtime_unavailable",
-                    "mode": "reconcile_only",
+                    "mode": mode,
                 },
                 sort_keys=True,
                 separators=(",", ":"),

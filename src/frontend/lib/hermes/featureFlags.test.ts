@@ -12,22 +12,23 @@ const attemptedCapabilityOverrides = {
 };
 
 describe("hermesFeatureFlags", () => {
-  it("allows only the shell and independent Agent Studio cutover flags to vary", () => {
+  it("allows shell, local chat unlock, and Agent Studio cutover to vary", () => {
     expect(hermesFeatureFlags(attemptedCapabilityOverrides)).toEqual({
       shell: true,
       sessionRead: true,
-      chat: false,
+      chat: true,
       execution: false,
       approvalMutations: false,
       unifiedResultsCutoverAccepted: false,
       legacyRedirects: false,
       agentStudioRedirect: true,
-      deliveryState: "blocked_in_this_slice",
+      deliveryState: "local_mutation_authorized",
     });
     expect(
       hermesFeatureFlags({
         ...attemptedCapabilityOverrides,
         QS_HERMES_SHELL_ENABLED: "false",
+        QS_HERMES_CHAT_ENABLED: "false",
       }),
     ).toEqual({
       shell: false,
@@ -42,8 +43,10 @@ describe("hermesFeatureFlags", () => {
     });
   });
 
-  it("defaults shell to true when the shell env var is unset", () => {
+  it("defaults shell to true and chat to false when env vars are unset", () => {
     expect(hermesFeatureFlags({}).shell).toBe(true);
+    expect(hermesFeatureFlags({}).chat).toBe(false);
     expect(hermesFeatureFlags({}).agentStudioRedirect).toBe(false);
+    expect(hermesFeatureFlags({}).deliveryState).toBe("blocked_in_this_slice");
   });
 });

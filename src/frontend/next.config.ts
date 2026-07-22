@@ -25,6 +25,12 @@ const routeRedirects = RENAMED_ROUTES.flatMap(({ from, to }) =>
   })),
 );
 
+// L2a-Send owner gate requires same-origin browser calls (cookie + CSRF +
+// Sec-Fetch-Site=same-origin). Dev/prod FE therefore rewrites /api/* to the
+// local BFF instead of browser-cross-origin fetch to :8765.
+const API_REWRITE_ORIGIN =
+  process.env.QUANT_API_REWRITE_ORIGIN ?? "http://127.0.0.1:8765";
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   typescript: {
@@ -49,6 +55,14 @@ const nextConfig: NextConfig = {
   transpilePackages: ["motion"],
   async redirects() {
     return routeRedirects;
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${API_REWRITE_ORIGIN}/api/:path*`,
+      },
+    ];
   },
 };
 

@@ -2,12 +2,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import HermesGatewaySettings, Settings
+from quant_system.config.settings import (
+    HermesGatewaySettings,
+    LocalMutationSettings,
+    Settings,
+)
 
 
 def _local_settings(*, gateway_enabled: bool = False) -> Settings:
-    """Isolate health tests from developer .env gateway/read integration."""
-    return Settings(hermes_gateway=HermesGatewaySettings(enabled=gateway_enabled))
+    """Isolate health tests from developer .env gateway/read/mutation flags."""
+    return Settings(
+        hermes_gateway=HermesGatewaySettings(enabled=gateway_enabled),
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+    )
 
 
 def test_health_returns_safety_snapshot(tmp_path) -> None:

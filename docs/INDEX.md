@@ -12,7 +12,7 @@
 | 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
 | 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、HQA Scene-B Gate 1 精确源绑定、Gate 2 digest CAS、迁移工具、隔离且可恢复的 Gate 3 worktree 已交付并完成对抗性加固。Scene-B 已完成 final receipt → prepare → 人工 diff/commit → reviewed → cleanup，并以 `524e791` 合入当前分支（见下）。 |
 | 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 Hermes 壳与可回滚默认首页已交付。Approvals 保持证据只读（`approvalMutations=false`）；official Hermes API 会话读取已接入（`sessionRead=true`）。3E-A 又交付只读 Unified Results 目录/详情，但完整切流仍关闭。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
-| 当前实现选择 | D-31 Wave 3：3A/3B/3E-A DONE；3C reconcile-only；3C.1 code accepted/live 006 pending；3D BLOCKED | official API 会话读取、migration 005 transport ledger 与 Unified Results 只读目录/详情已完成本机验收。3C.1 的 HQA Task/Attempt/payload exact-binding、平台 migration 006/inventory 已通过代码和隔离 PostgreSQL 验收，但 006 尚未 live apply。ledger 已提供 claim/lease/heartbeat primitives；当前 worker runtime 只有 LISTEN/scan + expired-lease reconcile，不 claim queued command，也不具备 dispatch/provider/SSE。17 个写端 blocker 仍在，composer 正确 fail closed。Agent Studio 只有默认关闭的页面级 redirect gate。 |
+| 当前实现选择 | Agent v0.2：V4–V5 ACCEPT；**V6 本地 dark enablement ACCEPT@2026-07-21**；**L2a-Send M1+M2 ACCEPT@2026-07-22**；**L2b-Observe M1+M2 ACCEPT@2026-07-22** | 005/006/007 live；L2a claim path `008`。owner session/CSRF。CLI 默认 `reconcile_only`；`--mode supervised_dispatch` + `HttpHermesDispatchAdapter`。local `QS_LOCAL_MUTATION_*` + FE chat flag 可开草稿与 **composite submit-turn**（≠ public V8）。snapshot/follow 有 command 对象 + lifecycle poll；delivered 后 messages 预览。Plan-V6 全 UI/SSE/launchd 仍待。交易 kill_switch 仍 true。 |
 | 本机 Hermes 连接决策 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-15-local-hermes-integration-decision.md` | 采用 PostgreSQL durable command/event/outbox + deterministic worker；`LISTEN/NOTIFY` 唤醒、periodic scan 兜底，不让 Hermes/LLM cron 空轮询。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
 | 被替代计划 | HQA `2026-07-07-phase-1a-4-research-employees.md` | 目标保留，旧 implementation 模板不得原样执行。 |
@@ -119,7 +119,9 @@ scheduler、outbound worker、POST route 或数据库 migration。
   repeatable-read inventory 及 HQA reverse authority audit。代码/隔离 PostgreSQL 已验收，但
   migration 006/007 **已于 2026-07-21 live apply**（证据
   [audits/2026-07-21-v4-live-migrate-006-007.md](audits/2026-07-21-v4-live-migrate-006-007.md)）；
-  worker 仍 reconcile-only，BFF mutation/composer 仍 OFF，不能视为写端激活。
+  V5 提供 dark `supervised_dispatch`；V6 本地授权后 CLI
+  `--mode supervised_dispatch` 自动构建 `HttpHermesDispatchAdapter`。默认 CLI 仍
+  reconcile-only。BFF mutation/composer 由 `QS_LOCAL_MUTATION_*` settings-gated（默认 OFF）。
   旧 TUI gateway capability contract 已因上游代码漂移而 fail closed，不再作为主连接。
   loopback 只构成网络暴露边界，不是 OS 用户认证；启用本地会话读取时，平台后端必须
   绑定 `127.0.0.1` 或 `::1`。运行与威胁模型见
@@ -132,14 +134,15 @@ scheduler、outbound worker、POST route 或数据库 migration。
 - Agent Studio 已有独立、可回滚、默认关闭的页面级 redirect gate
   `QS_HERMES_AGENT_STUDIO_REDIRECT_ENABLED=true`；默认运行态不重定向，且在 exact
   digest-bound audit parity 与用户批准前不得开启。其他旧页没有 cutover 授权。
-- 3B ledger 已交付 claim/lease/heartbeat primitives；3C connector worker runtime 仅交付
-  `LISTEN/NOTIFY` + periodic scan 与 expired-lease reconcile，不 claim queued command，
-  也没有 dispatch adapter；Hermes/provider mutation 计数固定为 0。
-  `chat_write` 仍 false。V4 后 platform blockers 由 `composer_readiness` 统一生成：
-  permanent cutover/security 码（含 `research_workflow_submission_unavailable`、
-  `independent_security_review_unavailable`、`user_chat_cutover_approval_required`）
-  + 缺 schema 时的动态码；`csrf_protection_unavailable` 已移除。live gateway 仍报告
-  9 个 upstream blocker + 上述 platform blockers；`composer_open` 恒 false。
+- 3B ledger 已交付 claim/lease/heartbeat primitives。3C/V5/V6 connector worker：默认
+  `reconcile_only`；`supervised_dispatch` 经 CLI 自动构建 HTTP adapter（测试仍可用
+  `FakeHermesDispatchAdapter`）。网络永远在 DB 事务外；timeout → durable
+  `outcome_unknown`，禁止盲重试；空队列零 Hermes/provider。
+  live 已 smoke：bound command → delivered / provider_call_count=1。
+  `chat_write_ready` 在 local mutation + schema ready 时可 true；platform blockers 由
+  `composer_readiness` 统一生成，local mutation ON 时清除 authenticated BFF/security
+  permanent 码。`dark_dispatch_ready` 仅表示 research schema 就绪。
+  `csrf_protection_unavailable` 已移除。ComposerDock 网络 submit 仍未接线。
 - `/brief` 由官方本地 UI 聚合 factual v1 payload 与逐源 watermark；paper-account 权威源不可用时
   不显示虚构金额且禁用保存。后端严格校验完整 schema、日期、locale 与水位，但不会重新抓取每个
   上游来源来证明客户端 payload；因此它是本地单用户可信 UI 的事实快照，不是密码学来源证明。

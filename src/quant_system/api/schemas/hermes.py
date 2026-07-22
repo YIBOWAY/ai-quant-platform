@@ -28,7 +28,7 @@ class HermesGatewayStatusResponse(_HermesGatewayReadModel):
     connected: bool
     model: str | None = Field(default=None, max_length=256)
     session_api_available: bool
-    chat_write_ready: Literal[False]
+    chat_write_ready: bool
     features: dict[str, bool]
     # Upstream capability gaps are necessary-but-not-sufficient chat blockers.
     # Platform delivery/security gaps must independently reach zero as well.

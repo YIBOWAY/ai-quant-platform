@@ -81,8 +81,7 @@ def _hermes_command_ledger_status(settings: SettingsDep) -> dict[str, Any]:
         "agent_workspace_authorities_ready": bool(ready["ready"]),
         # Research prepare binding (ledger + session + 006 workflow binding).
         "research_binding_ready": bool(ready["research_binding_ready"]),
-        # Owner session + CSRF exist; public mutation / composer stay hard OFF.
-        "mutation_enabled": False,
-        "composer_write_ready": False,
-        "chat_write_ready": False,
+        "mutation_enabled": bool(ready["mutation_enabled"]),
+        "composer_write_ready": bool(ready["composer_write_ready"]),
+        "chat_write_ready": bool(ready["chat_write_ready"]),
     }

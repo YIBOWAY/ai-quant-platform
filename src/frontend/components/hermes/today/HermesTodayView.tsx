@@ -1,8 +1,11 @@
+import Link from "next/link";
+import { Sunrise } from "lucide-react";
 import type { HermesArtifactShelfEnvelope } from "@/lib/api";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
 import type { HermesTodayModel } from "@/lib/hermes/types";
 import { pickLatestAutomation } from "@/lib/hermes/viewModel";
 import type { Locale } from "@/lib/locale";
+import { localizePath } from "@/lib/locale";
 import { ArtifactFeed } from "@/components/hermes/artifacts";
 import { TechnicalDetails } from "@/components/hermes/artifacts/TechnicalDetails";
 import { AttentionSummary } from "./AttentionSummary";
@@ -35,18 +38,32 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
       data-state={model.state}
       data-testid="hermes-today-state"
     >
-      <header className="space-y-2">
-        <p className="font-label-caps uppercase text-text-secondary">
-          {locale === "zh" ? "今日" : "Today"}
-        </p>
-        <h1 className="font-headline-lg text-text-primary" id="hermes-today-title">
-          {copy.states[model.state]}
-        </h1>
-        <p className="font-body-sm text-text-secondary">
-          {locale === "zh"
-            ? "以行动、异常与结论为先的只读研究工作台。提交仍保持禁用。"
-            : "Read-only research desk prioritizing action, exceptions, and conclusions. Submit remains disabled."}
-        </p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-2">
+          <p className="font-label-caps uppercase text-text-secondary">
+            {locale === "zh" ? "今日" : "Today"}
+          </p>
+          <h1 className="font-headline-lg text-text-primary" id="hermes-today-title">
+            {copy.states[model.state]}
+          </h1>
+          <p className="font-body-sm text-text-secondary">
+            {locale === "zh"
+              ? "以行动、异常与结论为先的只读研究工作台。提交仍保持禁用。"
+              : "Read-only research desk prioritizing action, exceptions, and conclusions. Submit remains disabled."}
+          </p>
+        </div>
+        <Link
+          aria-label={copy.labels.openMorningBriefAria}
+          className="app-touch-target inline-flex shrink-0 items-center gap-2 self-start rounded-lg border border-info/40 bg-info/5 px-3 font-body-sm text-info transition-colors hover:bg-info/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+          data-testid="hermes-today-brief-entry"
+          href={localizePath("/brief", locale)}
+        >
+          <Sunrise aria-hidden size={16} />
+          <span>{copy.labels.openMorningBrief}</span>
+          <span aria-hidden className="text-info/80">
+            ›
+          </span>
+        </Link>
       </header>
 
       <AttentionSummary items={model.attention} locale={locale} />

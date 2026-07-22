@@ -114,10 +114,13 @@ def require_owner_session(request: Request) -> OwnerSession:
 
 
 def require_mutation_security(request: Request) -> OwnerSession:
-    """Session + CSRF + origin gates. Still refuses until mutation_enabled is true.
+    """Session + CSRF + origin gates. Honors ``QS_LOCAL_MUTATION_ENABLED``.
 
-    No public mutation route should call this until the V4/V8 write gate opens.
+    Default remains fail-closed. Local single-user installs open the BFF
+    mutation path via settings without touching live-trading safety flags.
     """
+    settings = get_settings(request)
+    mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     try:
         return require_mutation_precheck(
             output_dir=get_output_dir(request),
@@ -127,7 +130,7 @@ def require_mutation_security(request: Request) -> OwnerSession:
             host_header=request.headers.get("host"),
             origin_header=request.headers.get("origin"),
             sec_fetch_site=request.headers.get("sec-fetch-site"),
-            mutation_enabled=False,
+            mutation_enabled=mutation_enabled,
         )
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _security_http_error(exc) from exc

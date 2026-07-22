@@ -149,22 +149,30 @@ data/                     Local cache, fixtures, generated research outputs.
   readiness as write authorization. V4 006 is Scheme A:
   `UNIQUE(attempt_id)` + `UNIQUE(task_id, attempt_number)`; readiness refuses the
   obsolete `UNIQUE(task_id)`-only shape. Additive 007 is the session registry.
-  `hermes/composer_readiness.py` is the single blocker/readiness surface;
-  `chat_write_ready`/`mutation_enabled`/`composer_open` stay false. Typed
-  `research.*` actions exist but browser submission stays
-  `research_workflow_submission_unavailable` with zero research PG writes.
-  Cross-repo status: V0 formal DONE (`release_authorized=false`), V1 code DONE /
-  V1.2A live role+RLS PARTIAL, V2 source accepted / live durable OFF, V3 HQA dark
-  install DONE, **V4 code + isolated + live schema ACCEPT**; **next default slice
-  is V5** supervised claim/dispatch (dark; no public composer; no provider smoke
-  without separate auth). See HQA `docs/README.md` and
-  `docs/superpowers/plans/2026-07-16-agent-v0-2-full-hermes-web-chat.md`.
-  The currently runnable connector worker only provides `LISTEN/NOTIFY`, periodic
-  scan and expired-lease reconciliation; it does not claim queued commands or
-  heartbeat a worker lease. It is intentionally reconcile-only until V5: there is
-  no dispatch adapter, prompt submission, provider call, SSE replay or approval
-  mutation. These deterministic lifecycle operations must never invoke an LLM when
-  no queued command exists. Do not implement Hermes cron prompt polling as a queue.
+  `hermes/composer_readiness.py` is the single blocker/readiness surface.
+  **Public** write stays OFF until V8. Local single-user may open
+  `QS_LOCAL_MUTATION_ENABLED` / `QS_LOCAL_MUTATION_COMPOSER_OPEN` (and FE
+  `QS_HERMES_CHAT_ENABLED` draft) under the trading kill switch — that is local
+  dark enablement, not public cutover and not Plan-V6 full-UI acceptance.
+  Typed `research.*` actions remain fail-closed for browser research submit until
+  their Gate; L2a uses `conversation_turn` + payload ref claim path (migration
+  `008_l2a_conversation_turn_claim.sql`) instead of putting prompts on `/act`.
+  Cross-repo status (2026-07-22): V0 formal DONE (`release_authorized=false`),
+  V1 code DONE / V1.2A live role+RLS PARTIAL, V2 source accepted / live durable
+  OFF, V3 HQA dark install DONE, **V4 live schema ACCEPT**, **V5 dark
+  claim/dispatch ACCEPT**, **V6 local dark enablement ACCEPT**, **L2a-Send
+  M1+M2 ACCEPT**, **L2b-Observe M1+M2 ACCEPT**. Next: remaining Plan-V6 UI (L3)
+  + V7; public V8 still closed. See HQA `docs/README.md`, L2a ADR, and platform
+  audits `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
+  `docs/audits/2026-07-21-v6-local-off-to-on.md`.
+  Connector worker CLI **defaults to `reconcile_only`** (LISTEN/NOTIFY + scan +
+  expired-lease). `--mode supervised_dispatch` claims with a real
+  `HttpHermesDispatchAdapter` (or injected port in tests). Empty queue must
+  never call an LLM. Do not implement Hermes cron prompt polling as a queue.
+  Platform must never `import hqa`; Intent Payload Store I/O goes through the
+  subprocess CLI port (`QS_INTENT_PAYLOAD_*`). Owner gate is loopback cookie +
+  CSRF only (Origin `http://127.0.0.1:3000`); FE workspace client uses
+  same-origin `/api/*` rewrites, not absolute `:8765` with credentials omit.
 
 
 ## Core Engineering Rules

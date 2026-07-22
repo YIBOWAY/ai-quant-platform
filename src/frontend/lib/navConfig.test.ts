@@ -12,6 +12,7 @@ import {
 
 const expectedEnabledItemIds: NavItemId[] = [
   "hermes",
+  "brief",
   "dataExplorer",
   "factorLab",
   "backtester",
@@ -34,6 +35,7 @@ const expectedEnabledItemIds: NavItemId[] = [
 const expectedRolledBackItemIds: NavItemId[] = [
   "dashboard",
   "hermes",
+  "brief",
   "dataExplorer",
   "factorLab",
   "backtester",
@@ -111,6 +113,7 @@ describe("buildNavSections", () => {
     const enabled = buildNavSections({ shellEnabled: true });
     expect(itemRoutesFor(enabled, "research")).toEqual([
       { id: "hermes", href: "/hermes" },
+      { id: "brief", href: "/brief" },
       { id: "dataExplorer", href: "/data-explorer" },
       { id: "factorLab", href: "/factor-lab" },
       { id: "backtester", href: "/backtest" },
@@ -122,6 +125,7 @@ describe("buildNavSections", () => {
     expect(itemRoutesFor(rolledBack, "research")).toEqual([
       { id: "dashboard", href: "/" },
       { id: "hermes", href: "/hermes" },
+      { id: "brief", href: "/brief" },
       { id: "dataExplorer", href: "/data-explorer" },
       { id: "factorLab", href: "/factor-lab" },
       { id: "backtester", href: "/backtest" },

@@ -109,7 +109,8 @@ gateway 正常时应看到：
 - `platform_delivery_blockers` 含 permanent cutover/security 码（如
   `authenticated_mutation_bff_unavailable`、`research_workflow_submission_unavailable`、
   `independent_security_review_unavailable`、`user_chat_cutover_approval_required`）以及
-  schema 未就绪时的动态码；**不含**已实现的 `csrf_protection_unavailable`
+  schema 未就绪时的动态码（binding 未就绪时含 `command_dispatch_adapter_unavailable`）；
+  **不含**已实现的 `csrf_protection_unavailable`；`dark_dispatch_ready` 不打开 public write
 - `blockers` 仍合并 upstream 写端可靠性缺口与 platform blockers
 
 从 sessions 响应选择一个真实 `id` 后，可以验证：
@@ -185,43 +186,66 @@ ID。当前会话页只经平台 API/BFF 读取，从不接触上游 URL 或 Bea
 | `session_resources_unavailable` | 当前 Hermes capability 没有明确声明 persisted session resources；保持 fail closed。 |
 | 页面“读取不可用” | 先看 `/api/hermes/gateway` warning，再看后端日志；不要通过启用 composer 绕过。 |
 
-## Wave 3 底座与下一阶段：成熟写端连接，而不是空轮询
+## Wave 3 / V5–V6 底座：成熟写端连接，而不是空轮询
 
-下图是目标链路。Wave 3 的当前运行态只启用了 PostgreSQL migration 005 transport ledger、
-GET-only session BFF 与 deterministic worker 的 **notify/scan/expired-lease reconcile 底座**。
-3C.1 的 Task/payload/exact-binding foundation 已完成代码与隔离 PostgreSQL 验收，但 migration
-006/007 已于 2026-07-21 live apply，但 authenticated mutation、claim/dispatch 和 HTTP/SSE 写边均未准入：
+下图是目标链路。当前 live 已启用 PostgreSQL migration 005 transport ledger + 006/007
+workflow-binding/session-registry、session BFF，以及 deterministic connector worker。
+**V5（2026-07-21）** 交付 dark `supervised_dispatch` + crash matrix。
+**V6 本地授权（2026-07-21）** 在纯本地单用户前提下打开了此前 OFF 的四项：真实
+`HttpHermesDispatchAdapter`、CLI `--mode supervised_dispatch`、provider smoke、
+settings-gated local mutation / composer 就绪位。**交易**仍 fail-closed
+（`kill_switch=true` / `dry_run` / `paper` / `live_trading_enabled=false`）。
 
 ```text
-Browser
-  -> platform same-origin authenticated BFF
-    -> PostgreSQL durable command/outbox/event ledger
-      -> deterministic connector worker
-        -> official Hermes API HTTP + SSE
+Browser (QS_HERMES_CHAT_ENABLED + owner cookie/CSRF)
+  -> same-origin BFF
+       POST /api/agent/workspace/submit-turn  (L2a composite)
+         -> HQA Intent Payload Store put (subprocess CLI)
+         -> PostgreSQL command/outbox/event (conversation_turn + payload ref)
+  -> connector-worker --mode supervised_dispatch
+       -> bind_resolve payload -> HttpHermesDispatchAdapter POST /v1/runs
+  -> Browser observe (L2b)
+       GET …/snapshot + …/follow  (lifecycle; no assistant bodies)
+       after delivered: GET /api/hermes/sessions/{id}/messages (preview)
 ```
 
-当前已具备 schema v1 五张表、48 项约束签名、append-only 事件/run-link 保护；ledger
-repository 已实现并测试 claim/lease/heartbeat primitives。当前可运行 worker 只执行
-`LISTEN/NOTIFY`、periodic scan 与 expired-lease reconcile，**不会 claim queued command**。
-当前也没有 command dispatch adapter、Hermes mutation、provider call、SSE replay 或常驻
-worker 进程，因此不能把它称为平台已把请求交给 Hermes。
+Worker 模式：
 
-3C.1 source 另提供独立 workflow-binding schema meta、append-only exact binding、原子 bound
-command/event/outbox/NOTIFY primitive、binding-aware claim、read-only repeatable-read inventory，
-以及 HQA append-only Task/Attempt/payload authority 与 reverse audit。它们目前是
-**CODE ACCEPTED / LIVE APPLY PENDING**：在 migration 006 获得单独授权、完成 apply/幂等/
-readiness 与 HQA authority backup/restore drill 前，不得由 browser 或 worker 消费。006 激活
-本身也不会开放 claim/dispatch。
+| mode | 行为 | 默认 |
+|---|---|---|
+| `reconcile_only` | LISTEN/NOTIFY + periodic scan + expired-lease reconcile；**不 claim** | CLI 默认 |
+| `supervised_dispatch` | reconcile → claim → gate → `mark_dispatch_started` → adapter **事务外** → delivered / rejected / `outcome_unknown` | 需 `--mode supervised_dispatch`；自动构建 HTTP adapter |
+
+本地开关（默认 OFF；live `.env` 可按授权打开）：
+
+| 变量 | 作用 |
+|---|---|
+| `QS_HERMES_GATEWAY_ALLOW_EPHEMERAL_RUNS` | 上游无 durable 时仍允许 POST `/v1/runs` |
+| `QS_HERMES_GATEWAY_DISPATCH_TIMEOUT_SECONDS` | 写端超时（默认 120s；读端仍 2s） |
+| `QS_LOCAL_MUTATION_ENABLED` | 打开 authenticated local BFF mutation 门 |
+| `QS_LOCAL_MUTATION_COMPOSER_OPEN` | 在 schema 就绪时表面 `chat_write_ready` / composer |
+| `QS_HERMES_CHAT_ENABLED`（FE） | 解锁 composer 草稿 UI；与 API local mutation 联用后可走 L2a composite submit（仍非 public V8） |
+| `QS_INTENT_PAYLOAD_*` | BFF/worker 子进程调用 HQA Intent Payload CLI（put / bind_resolve）；平台不 `import hqa` |
+
+V5/V6 验收要点：
+
+- `FakeHermesDispatchAdapter`：accept / recover / timeout / reject / accept_drop_ack。
+- `HttpHermesDispatchAdapter`：mock transport unit + live smoke
+  `ensure_bound_command` → `connector-worker --once --mode supervised_dispatch --fixed-input "Reply with exactly: pong"` → `delivered` / `provider_call_count=1`。
+- 空队列：零 Hermes mutation、零 provider call。
+- timeout / transport → durable `outcome_unknown`；**禁止盲重试**。
+- gate deny 在 claim 后、网络前 reject。
+- `composer_readiness` 现为 settings-gated：local mutation ON + research schema ready
+  ⇒ `mutation_enabled` / `composer_write_ready` / `chat_write_ready` 可为 true。
 
 最终 worker 的职责仍是确定性的队列与恢复，不是让模型担任消息队列：
 
 1. HQA 先以稳定 request/saga 准备 Task/Attempt 与 immutable payload；平台只在一个事务中
    创建 exact-bound durable command/event/outbox，且同一请求只能产生一个逻辑 run。
-2. 未来 dispatch worker 才会用短事务和 `FOR UPDATE SKIP LOCKED` claim，记录 lease、
-   attempt、heartbeat 和 recovery evidence；这些目前只是 ledger primitives，不在现有
-   reconcile-only `run_once` 中调用。
+2. supervised worker 用短事务和 `FOR UPDATE SKIP LOCKED` claim，记录 lease、
+   attempt、heartbeat 和 recovery evidence；网络 I/O 永远在事务外。
 3. PostgreSQL `LISTEN/NOTIFY` 只作低延迟唤醒；通知可能丢失，因此必须有 periodic scan
-   fallback。scan 与 ledger 的 claim/lease/heartbeat primitives 本身都不调用 LLM。
+   fallback。scan 与 claim/lease/heartbeat 本身都不调用 LLM。
 4. 只有 claim 到明确、已授权的 queued command 后，worker 才向 Hermes 提交 run；
    无任务时零 provider 请求、零 provider 额度。
 5. upstream events 写入带稳定 event identity/cursor 的 durable ledger；重连时 replay/
@@ -229,11 +253,17 @@ readiness 与 HQA authority backup/restore drill 前，不得由 browser 或 wor
 6. UI 只从平台 read model 恢复状态；网络 timeout 是 unknown outcome，不能直接重试创建
    第二个 run。
 
-不推荐“让 Hermes cron 每隔 N 秒请求平台并问有没有任务”：这种方案把调度、幂等和恢复
-交给 prompt/模型，空队列也可能消耗额度，且无法可靠证明 provider、事件与审批来源。
+不推荐“让 Hermes cron 每隔 N 秒请求平台并问有没有任务”。
 
-启用 composer 前，独立计划至少要验收：平台身份认证/会话授权/CSRF、end-to-end
-idempotency、request recovery、stable run/event IDs 与 replay、immutable provider policy
-和 actual provider evidence、approval exact binding/TTL/CAS、stop reconciliation，以及
-process restart/timeout/duplicate delivery 的故障注入测试。在这些条件未满足前，当前
-GET-only BFF 和 disabled composer 是正确状态。
+**L2a/L2b（2026-07-22，本地 dark）：**
+
+- `POST /api/agent/workspace/submit-turn`：owner CSRF + composite put + ledger turn。
+- FE `workspaceClient` / `ComposerSubmitController`：same-origin cookies；poll follow
+  lifecycle；delivered 后 `GET /api/hermes/sessions/{hermes_session_id}/messages` 预览
+  最新 assistant（用 command/event 的 `hermes_session_id`，不要用 registry `web_`/`wm_`）。
+- snapshot `commands[]` 为 public objects；follow cursor = workspace-scoped max event_id。
+- ADR（HQA）：`docs/design/2026-07-22-l2a-send-thin-write-rail-adr.md`。
+
+仍待后续：Plan-V6 完整 transcript/SSE/Task drawer、HQA Attempt observe 全链路、
+approval exact binding、stop reconciliation、常驻 launchd supervised daemon 默认开启、
+**public** V8 cutover。

@@ -413,12 +413,16 @@ def require_mutation_precheck(
     return session
 
 
-def session_public_view(session: OwnerSession) -> dict[str, object]:
+def session_public_view(
+    session: OwnerSession,
+    *,
+    mutation_enabled: bool = False,
+) -> dict[str, object]:
     return {
         "owner_user_id": str(session.owner_user_id),
         "session_id": session.session_id,
         "expires_at": session.expires_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
-        "mutation_enabled": False,
+        "mutation_enabled": bool(mutation_enabled),
     }
 
 

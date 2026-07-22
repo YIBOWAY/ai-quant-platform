@@ -504,8 +504,8 @@ class HermesGatewaySettings(BaseSettings):
     """Fail-closed, server-side access to the local Hermes API Server.
 
     This credential authorizes the full upstream API, so browser code must
-    never receive it.  The current platform integration uses only the three
-    persisted-session GET endpoints through a fixed allowlist.
+    never receive it.  Session reads stay GET-only; supervised dispatch uses a
+    separate POST path with its own timeout and explicit ephemeral allow.
     """
 
     model_config = SettingsConfigDict(
@@ -518,8 +518,54 @@ class HermesGatewaySettings(BaseSettings):
     base_url: str = "http://127.0.0.1:8642"
     api_key_file: Path | None = None
     timeout_seconds: float = Field(default=2.0, gt=0, le=30, allow_inf_nan=False)
+    # Real /v1/runs can take tens of seconds; keep read timeout short separately.
+    dispatch_timeout_seconds: float = Field(default=120.0, gt=0, le=600, allow_inf_nan=False)
+    # Local Hermes 0.18.x may omit durable. True = allow POST /v1/runs anyway.
+    allow_ephemeral_runs: bool = True
     max_response_bytes: int = Field(default=4 * 1024 * 1024, ge=4096, le=16 * 1024 * 1024)
     max_messages: int = Field(default=200, ge=1, le=1000)
+
+
+class LocalMutationSettings(BaseSettings):
+    """Local single-user mutation / composer gate (default OFF).
+
+    Opening this does **not** enable live trading. Trading stays behind
+    ``SafetySettings`` (kill_switch / paper / dry_run). This flag only unlocks
+    the authenticated local BFF mutation path for research composer / workspace
+    act on loopback.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_LOCAL_MUTATION_",
+        extra="ignore",
+    )
+
+    enabled: bool = False
+    # When true and schemas+dispatch are ready, surface chat_write_ready locally.
+    composer_open: bool = False
+
+
+class IntentPayloadSettings(BaseSettings):
+    """Subprocess Port to HQA ``intent_payload_cli`` (L2a-Send).
+
+    Platform must not import ``hqa``. BFF uses ``put``; the supervised worker
+    uses ``bind_resolve``. Defaults point at the sibling Hermes-quant-agent
+    checkout and its venv when present.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_INTENT_PAYLOAD_",
+        extra="ignore",
+    )
+
+    # Empty → Port picks sibling HQA .venv/bin/python, else sys.executable.
+    python_executable: Path | None = None
+    hqa_root: Path = (
+        Path(__file__).resolve().parents[4] / "Hermes-quant-agent"
+    )
+    timeout_seconds: float = Field(default=15.0, gt=0, le=300, allow_inf_nan=False)
 
 
 class Settings(BaseSettings):
@@ -557,6 +603,8 @@ class Settings(BaseSettings):
     backtest_jobs: BacktestJobSettings = Field(default_factory=BacktestJobSettings)
     hermes_artifacts: HermesArtifactSettings = Field(default_factory=HermesArtifactSettings)
     hermes_gateway: HermesGatewaySettings = Field(default_factory=HermesGatewaySettings)
+    local_mutation: LocalMutationSettings = Field(default_factory=LocalMutationSettings)
+    intent_payload: IntentPayloadSettings = Field(default_factory=IntentPayloadSettings)
 
 
 # Note on env loading:
