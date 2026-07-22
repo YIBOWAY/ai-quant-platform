@@ -8,12 +8,12 @@ import { useOptionalActiveHermesSession } from "@/lib/hermes/activeSession";
 import {
   WorkspaceClientError,
   fetchLatestAssistantText,
-  fetchWorkspaceSnapshot,
   isTerminalCommandState,
-  pollCommandUntilTerminal,
   previewAssistantText,
   sendComposerTurn,
 } from "@/lib/hermes/workspaceClient";
+import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
+import { waitForCommandTerminalOnSpine } from "@/lib/hermes/workspaceFollowSpine";
 
 export type ComposerSubmitControllerProps = Omit<
   ComposerDockProps,
@@ -126,7 +126,7 @@ async function surfaceAssistantPreview(options: {
 
 /**
  * Client boundary that wires L2a-Send composite submit into ComposerDock.
- * L2b-M1: after accept, poll workspace follow for command lifecycle.
+ * L5a: after accept, wait on shared L4b follow spine (no private follow poll).
  * L2b-M2: after delivered, fetch Hermes messages and surface assistant preview.
  * Parent shell stays a server component; only this island touches cookies/fetch.
  */
@@ -142,6 +142,7 @@ export function ComposerSubmitController({
   const activeSession = useOptionalActiveHermesSession();
   const bindSession = activeSession?.setActiveHermesSession;
   const setPendingUserText = activeSession?.setPendingUserText;
+  const { state: followState, spine } = useWorkspaceFollow();
 
   useEffect(() => {
     return () => {
@@ -159,7 +160,7 @@ export function ComposerSubmitController({
           "forbidden",
         );
       }
-      // Abort any in-flight poll from a prior send.
+      // Abort any in-flight wait from a prior send.
       pollAbortRef.current?.abort();
       const pollAbort = new AbortController();
       pollAbortRef.current = pollAbort;
@@ -206,51 +207,41 @@ export function ComposerSubmitController({
           );
         }
 
-        // L2b-M1: after accept (or outcome_unknown with a command id), poll follow.
+        // L5a: after accept (or outcome_unknown with a command id), wait on spine.
         if (receipt.command_id && !pollAbort.signal.aborted) {
-          let afterCursor: number | null = 0;
           let earlyHermesSessionId: string | null =
             receipt.hermes_session_id ?? null;
-          try {
-            const snap = await fetchWorkspaceSnapshot(
-              undefined,
-              pollAbort.signal,
+
+          // Immediate match from shared spine snapshot (no private GET).
+          const existing = followState.commands.find(
+            (c) => c.command_id === receipt.command_id,
+          );
+          if (existing?.state) {
+            setStatusText(
+              formatLifecycleStatus(
+                existing.state,
+                receipt.command_id,
+                existing.hermes_run_id,
+              ),
             );
-            afterCursor = snap.snapshot_workspace_cursor ?? 0;
-            const match = (snap.commands ?? []).find(
-              (c) => c.command_id === receipt.command_id,
-            );
-            if (match?.state) {
-              setStatusText(
-                formatLifecycleStatus(
-                  match.state,
-                  receipt.command_id,
-                  match.hermes_run_id,
-                ),
-              );
-              if (match.hermes_session_id) {
-                earlyHermesSessionId = match.hermes_session_id;
-              }
-              if (isTerminalCommandState(match.state)) {
-                if (match.state === "delivered") {
-                  await surfaceAssistantPreview({
-                    hermesSessionId: earlyHermesSessionId,
-                    commandId: receipt.command_id,
-                    hermesRunId: match.hermes_run_id ?? null,
-                    signal: pollAbort.signal,
-                    setStatusText,
-                    onBindSession: bindSession,
-                  });
-                } else {
-                  // L3b: drop optimistic "sending" bubble on terminal non-deliver.
-                  setPendingUserText?.(null);
-                }
-                return;
-              }
+            if (existing.hermes_session_id) {
+              earlyHermesSessionId = existing.hermes_session_id;
             }
-          } catch {
-            // Snapshot blip is non-fatal; poll from cursor 0.
-            afterCursor = 0;
+            if (isTerminalCommandState(existing.state)) {
+              if (existing.state === "delivered") {
+                await surfaceAssistantPreview({
+                  hermesSessionId: earlyHermesSessionId,
+                  commandId: receipt.command_id,
+                  hermesRunId: existing.hermes_run_id ?? null,
+                  signal: pollAbort.signal,
+                  setStatusText,
+                  onBindSession: bindSession,
+                });
+              } else {
+                setPendingUserText?.(null);
+              }
+              return;
+            }
           }
 
           if (pollAbort.signal.aborted) {
@@ -260,36 +251,50 @@ export function ComposerSubmitController({
           setStatusText(
             formatLifecycleStatus("queued", receipt.command_id, null),
           );
-          const result = await pollCommandUntilTerminal({
-            commandId: receipt.command_id,
-            afterCursor,
-            signal: pollAbort.signal,
-          });
+
+          // Nudge spine after submit so we do not wait solely on the next tick.
+          if (spine) {
+            void spine.resyncNow().catch(() => {
+              /* soft */
+            });
+          }
+
+          const match = spine
+            ? await waitForCommandTerminalOnSpine(spine, {
+                commandId: receipt.command_id,
+                signal: pollAbort.signal,
+                timeoutMs: 45_000,
+              })
+            : null;
+
           if (pollAbort.signal.aborted) {
             return;
           }
-          const lifecycle = formatLifecycleStatus(
-            result.state ?? "queued",
-            receipt.command_id,
-            result.hermesRunId,
-          );
-          setStatusText(lifecycle);
 
-          // L2b-M2: after delivered, pull assistant body via Hermes messages path.
-          // L3a: also bind workbench transcript to hermes_session_id.
-          if (result.state === "delivered") {
+          const terminalState = match?.state ?? null;
+          const lifecycle = formatLifecycleStatus(
+            terminalState ?? "queued",
+            receipt.command_id,
+            match?.hermes_run_id ?? null,
+          );
+          setStatusText(
+            terminalState
+              ? lifecycle
+              : `${lifecycle} · still tracking via follow spine`,
+          );
+
+          if (terminalState === "delivered") {
             await surfaceAssistantPreview({
               hermesSessionId:
-                result.hermesSessionId ?? earlyHermesSessionId,
+                match?.hermes_session_id ?? earlyHermesSessionId,
               commandId: receipt.command_id,
-              hermesRunId: result.hermesRunId,
+              hermesRunId: match?.hermes_run_id ?? null,
               signal: pollAbort.signal,
               setStatusText,
               lifecyclePrefix: lifecycle,
               onBindSession: bindSession,
             });
-          } else if (result.state && isTerminalCommandState(result.state)) {
-            // L3b: failed/cancelled/etc. must not leave a stuck "sending" bubble.
+          } else if (terminalState && isTerminalCommandState(terminalState)) {
             setPendingUserText?.(null);
           }
         }
@@ -314,7 +319,13 @@ export function ComposerSubmitController({
         }
       }
     },
-    [networkSubmit, bindSession, setPendingUserText],
+    [
+      networkSubmit,
+      bindSession,
+      setPendingUserText,
+      spine,
+      followState.commands,
+    ],
   );
 
   return (

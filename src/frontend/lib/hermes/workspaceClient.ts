@@ -408,6 +408,19 @@ export type WorkspaceCommandProjection = {
   created_at?: string | null;
 };
 
+/** L5a: Hermes command-approval challenge projection (observe-only). */
+export type WorkspaceApprovalProjection = {
+  approval_id: string;
+  run_id?: string | null;
+  command_id?: string | null;
+  /** Canonical command digest bound to the challenge (plan §5.4). */
+  digest?: string | null;
+  expires_at?: string | null;
+  expected_status?: string | null;
+  status?: string | null;
+  kind?: string | null;
+};
+
 export type WorkspaceSnapshot = {
   workspace?: { workspace_id: string };
   owner_user_id?: string;
@@ -418,6 +431,8 @@ export type WorkspaceSnapshot = {
   attempts?: unknown[];
   runs?: unknown[];
   results?: unknown[];
+  /** L5a: Hermes command-approval challenges; empty until durable projector. */
+  approvals?: WorkspaceApprovalProjection[];
   authority_health?: Record<string, string>;
   mutation_enabled?: boolean;
   observed_at?: string;

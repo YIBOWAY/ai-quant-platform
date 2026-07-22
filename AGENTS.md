@@ -166,9 +166,11 @@ data/                     Local cache, fixtures, generated research outputs.
   Activity from workspace `commands[]`; Task/Attempt authority still empty),
   **L4b-SSE-Follow M1 ACCEPT** (BFF `GET …/follow/stream` + shared FE follow
   spine; SSE preferred / poll fallback; Activity consumes spine; no assistant
-  bodies on follow). Next: remaining Plan-V6 UI (approvals / a11y / richer
-  Task·Attempt projections) + V7; public V8 still closed. See HQA
-  `docs/README.md`, L2a ADR, and platform audits
+  bodies on follow), **L5a-Hermes-Approval-Observe M1 ACCEPT** (snapshot
+  `approvals=[]` + `command_approval=unavailable`; Composer waits on shared
+  spine; read-only Approvals panel; no allow/deny write; ≠ Gate 1/2/3). Next:
+  remaining Plan-V6 UI (a11y / richer Task·Attempt projections) + V7; public
+  V8 still closed. See HQA `docs/README.md`, L2a ADR, and platform audits
   `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
   `docs/audits/2026-07-21-v6-local-off-to-on.md`.
   Connector worker CLI **defaults to `reconcile_only`** (LISTEN/NOTIFY + scan +

@@ -72,6 +72,9 @@ class WorkspaceSnapshot:
     commands: tuple[dict[str, object], ...]
     runs: tuple[str, ...]
     results: tuple[str, ...]
+    # L5a-M1: Hermes command-approval challenges. Empty until a durable projector
+    # lands; never invent Gate 1/2/3 or candidate approvals here.
+    approvals: tuple[dict[str, object], ...]
     authority_health: Mapping[str, str]
     mutation_enabled: bool
     observed_at: str
@@ -87,6 +90,7 @@ class WorkspaceSnapshot:
             "commands": [dict(item) for item in self.commands],
             "runs": list(self.runs),
             "results": list(self.results),
+            "approvals": [dict(item) for item in self.approvals],
             "authority_health": dict(self.authority_health),
             "mutation_enabled": self.mutation_enabled,
             "observed_at": self.observed_at,
@@ -217,6 +221,8 @@ class PlatformAgentWorkspace:
             "provider": "dark",
             "mutation": "enabled" if mutation_on else "disabled",
             "composer": "enabled" if composer_on else "disabled",
+            # L5a: no durable Hermes command-approval projector yet.
+            "command_approval": "unavailable",
         }
 
         sessions: list[str] = []
@@ -238,6 +244,7 @@ class PlatformAgentWorkspace:
             commands=tuple(commands),
             runs=(),
             results=(),
+            approvals=(),
             authority_health=health,
             mutation_enabled=mutation_on,
             observed_at=observed_at,

@@ -45,6 +45,7 @@ export function WorkspaceFollowProvider({
   const [state, setState] = useState<FollowSpineState>(() => ({
     cursor: 0,
     commands: [],
+    approvals: [],
     lastEvents: [],
     transport: "idle",
     resyncCount: 0,
@@ -128,6 +129,7 @@ export function useWorkspaceFollow(): WorkspaceFollowContextValue {
       state: {
         cursor: 0,
         commands: [],
+        approvals: [],
         lastEvents: [],
         transport: "idle",
         resyncCount: 0,

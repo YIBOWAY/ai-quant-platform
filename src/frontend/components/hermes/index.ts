@@ -17,6 +17,8 @@ export { WorkbenchTranscriptPanel } from "./transcript/WorkbenchTranscriptPanel"
 export type { WorkbenchTranscriptPanelProps } from "./transcript/WorkbenchTranscriptPanel";
 export { WorkbenchCommandActivityPanel } from "./activity/WorkbenchCommandActivityPanel";
 export type { WorkbenchCommandActivityPanelProps } from "./activity/WorkbenchCommandActivityPanel";
+export { WorkbenchCommandApprovalsPanel } from "./approvals/WorkbenchCommandApprovalsPanel";
+export type { WorkbenchCommandApprovalsPanelProps } from "./approvals/WorkbenchCommandApprovalsPanel";
 export {
   HermesTodayView,
   AttentionSummary,

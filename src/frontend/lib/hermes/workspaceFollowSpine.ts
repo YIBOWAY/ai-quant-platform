@@ -8,6 +8,8 @@
 import {
   fetchWorkspaceFollow,
   fetchWorkspaceSnapshot,
+  isTerminalCommandState,
+  type WorkspaceApprovalProjection,
   type WorkspaceCommandProjection,
   type WorkspaceFollowEvent,
   type WorkspaceSnapshot,
@@ -19,6 +21,8 @@ export type FollowTransport = "sse" | "poll" | "idle";
 export type FollowSpineState = {
   cursor: number;
   commands: WorkspaceCommandProjection[];
+  /** L5a: Hermes command-approval challenges from snapshot (empty until projector). */
+  approvals: WorkspaceApprovalProjection[];
   lastEvents: WorkspaceFollowEvent[];
   transport: FollowTransport;
   resyncCount: number;
@@ -49,6 +53,7 @@ function emptyState(): FollowSpineState {
   return {
     cursor: 0,
     commands: [],
+    approvals: [],
     lastEvents: [],
     transport: "idle",
     resyncCount: 0,
@@ -154,12 +159,14 @@ export function createWorkspaceFollowSpine(
   const snapshotReconcile = async (signal?: AbortSignal) => {
     const snap = await fetchWorkspaceSnapshot(workspaceId, signal);
     const commands = mergeSnapshotCommands(snap);
+    const approvals = Array.isArray(snap.approvals) ? [...snap.approvals] : [];
     const cursor =
       typeof snap.snapshot_workspace_cursor === "number"
         ? snap.snapshot_workspace_cursor
         : state.cursor;
     setState({
       commands,
+      approvals,
       cursor: Math.max(state.cursor, cursor),
       observedAt: snap.observed_at,
       snapshotCursor: snap.snapshot_workspace_cursor,
@@ -402,6 +409,60 @@ export function createWorkspaceFollowSpine(
       await handleResync();
     },
   };
+}
+
+/**
+ * L5a: wait on the shared spine until a command reaches a terminal state.
+ * Replaces Composer private pollCommandUntilTerminal dual path.
+ */
+export function waitForCommandTerminalOnSpine(
+  spine: WorkspaceFollowSpine,
+  options: {
+    commandId: string;
+    signal?: AbortSignal;
+    /** Soft ceiling; spine keeps running after. */
+    timeoutMs?: number;
+  },
+): Promise<WorkspaceCommandProjection | null> {
+  const timeoutMs = options.timeoutMs ?? 45_000;
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let unsub: (() => void) | null = null;
+    const finish = (value: WorkspaceCommandProjection | null) => {
+      if (settled) return;
+      settled = true;
+      unsub?.();
+      if (timer != null) clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+      resolve(value);
+    };
+    const onAbort = () => finish(null);
+    const check = (state: FollowSpineState) => {
+      const match = state.commands.find(
+        (c) => c.command_id === options.commandId,
+      );
+      if (match && isTerminalCommandState(match.state)) {
+        finish(match);
+      }
+    };
+    unsub = spine.subscribe(check);
+    // subscribe already emitted current state; if that settled us, drop the
+    // listener now (finish ran while unsub was still being assigned).
+    if (settled) {
+      unsub();
+      return;
+    }
+    if (options.signal) {
+      if (options.signal.aborted) {
+        finish(null);
+        return;
+      }
+      options.signal.addEventListener("abort", onAbort, { once: true });
+    }
+    // globalThis timers work in browser + node vitest (avoid bare `window`).
+    timer = setTimeout(() => finish(null), timeoutMs);
+  });
 }
 
 /** Pure helpers exported for unit tests. */

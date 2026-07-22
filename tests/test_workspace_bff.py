@@ -133,6 +133,9 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     assert body["owner_user_id"] == str(ROOT_USER_ID)
     assert body["mutation_enabled"] is False
     assert body["authority_health"]["mutation"] == "disabled"
+    # L5a: approvals slot is present and honestly empty (no invented challenges).
+    assert body.get("approvals") == []
+    assert body["authority_health"].get("command_approval") == "unavailable"
 
     follow = client.get(
         f"/api/workspace/{WORKSPACE_ID}/follow?after_cursor=0",

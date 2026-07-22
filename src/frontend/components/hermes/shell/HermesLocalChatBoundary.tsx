@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { WorkbenchCommandActivityPanel } from "@/components/hermes/activity/WorkbenchCommandActivityPanel";
+import { WorkbenchCommandApprovalsPanel } from "@/components/hermes/approvals/WorkbenchCommandApprovalsPanel";
 import { ComposerSubmitController } from "@/components/hermes/ComposerSubmitController";
 import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { WorkbenchTranscriptPanel } from "@/components/hermes/transcript/WorkbenchTranscriptPanel";
@@ -57,6 +58,9 @@ export function HermesLocalChatBoundary({
               {chatOpen ? <WorkbenchTranscriptPanel locale={locale} /> : null}
               {chatOpen ? (
                 <WorkbenchCommandActivityPanel locale={locale} />
+              ) : null}
+              {chatOpen ? (
+                <WorkbenchCommandApprovalsPanel locale={locale} />
               ) : null}
               {children}
             </div>
