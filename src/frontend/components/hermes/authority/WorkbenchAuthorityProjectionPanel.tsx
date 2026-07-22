@@ -8,6 +8,7 @@ import {
   LONG_ID_CLASS,
 } from "@/lib/hermes/workbenchA11y";
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
+import { resultIdsFromProjection } from "@/lib/hermes/workspaceFollowSpine";
 import type { Locale } from "@/lib/locale";
 
 export type WorkbenchAuthorityProjectionPanelProps = {
@@ -23,7 +24,7 @@ type AuthoritySlot = {
 };
 
 /**
- * L5b-Authority-Projection-M1: read-only Task / Attempt / Run / result-ref slots
+ * L5b-Authority-Projection-M1: read-only Task / Attempt / Run / result-ref slots (ids only; typed body lives in Typed results panel)
  * from the shared follow spine snapshot. Empty is honest — never invent HQA
  * rows from conversation commands. ≠ /hermes/tasks research page; no mutation.
  * L5c: shared collapse/long-id a11y contracts.
@@ -63,7 +64,7 @@ export function WorkbenchAuthorityProjectionPanel({
         key: "result",
         labelEn: "Results",
         labelZh: "结果",
-        ids: Array.isArray(follow.results) ? follow.results : [],
+        ids: resultIdsFromProjection(follow.results as never),
         health: health.result ?? "unavailable",
       },
     ];
@@ -120,8 +121,8 @@ export function WorkbenchAuthorityProjectionPanel({
         >
           <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
             {isZh
-              ? "只读：HQA Task / Attempt / Run / result-ref 槽位。普通 conversation_turn 不会伪造 Attempt。投影未接时诚实为空；≠ /hermes/tasks 研究任务页；无 stop/gate 写端。"
-              : "Read-only: HQA Task / Attempt / Run / result-ref slots. Ordinary conversation_turn never invents Attempt rows. Empty is honest until projectors land; not the /hermes/tasks research page; no stop/gate write."}
+              ? "只读：HQA Task / Attempt / Run / result-ref 槽位（仅 id；typed 正文在 Typed results 面板）。普通 conversation_turn 不会伪造 Attempt。投影未接时诚实为空；≠ /hermes/tasks 研究任务页；无 stop/gate 写端。"
+              : "Read-only: HQA Task / Attempt / Run / result-ref slots (ids only; typed body lives in Typed results panel). Ordinary conversation_turn never invents Attempt rows. Empty is honest until projectors land; not the /hermes/tasks research page; no stop/gate write."}
           </p>
 
           {!spineReady ? (

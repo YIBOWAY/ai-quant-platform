@@ -499,6 +499,55 @@ export type WorkspaceGateProjection = {
   decided_at?: string | null;
 };
 
+/** V7f: typed result projection on snapshot/follow spine (not bare id). */
+export type WorkspaceResultProjection = {
+  result_id: string;
+  /** Spine/authority id slot compatibility. */
+  id?: string;
+  kind: string;
+  display_title: string;
+  status?: string | null;
+  sample_or_real: "sample" | "real" | string;
+  freshness?: string | null;
+  read_status?: string | null;
+  occurred_at?: string | null;
+  summary?: string | null;
+  task_id?: string | null;
+  attempt_id?: string | null;
+  run_id?: string | null;
+  artifact_id?: string | null;
+  command_id?: string | null;
+  ticker?: string | null;
+  expiry?: string | null;
+  strike?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  delta?: number | null;
+  iv?: number | null;
+  apr?: number | null;
+  provider_evidence?: string[] | null;
+  filters?: string[] | null;
+  exclusions?: string[] | null;
+  limitations?: string[] | null;
+  detail_href?: string | null;
+  original_href?: string | null;
+  source?: string | null;
+  authority?: string | null;
+  payload_digest?: string | null;
+  exact_links?: {
+    task_id?: string;
+    task_ref?: string;
+    attempt_id?: string;
+    attempt_ref?: string;
+    run_id?: string;
+    run_ref?: string;
+    artifact_id?: string;
+    artifact_ref?: string;
+    command_id?: string;
+  } | null;
+};
+
+
 export function buildConfirmFormulaSourceAction(input: {
   taskId: string;
   reviewedSourceSha256: string;
@@ -739,8 +788,8 @@ export type WorkspaceSnapshot = {
   attempts?: string[];
   /** L5b: Run authority ids/objects; empty until projector. */
   runs?: string[];
-  /** L5b: result-ref ids/objects; empty until projector. */
-  results?: string[];
+  /** V7f: typed result projections; empty honest until seeded. */
+  results?: WorkspaceResultProjection[] | string[];
   /** L5a/V7a: Hermes command-approval challenges; empty when none pending. */
   approvals?: WorkspaceApprovalProjection[];
   /** V7e: Domain Gate 1/2/3 surfaces; never mixed into approvals[]. */
@@ -779,6 +828,8 @@ export type WorkspaceEventPage = {
   approvals?: WorkspaceApprovalProjection[];
   /** V7e: gates projection on follow pages (separate from approvals). */
   gates?: WorkspaceGateProjection[];
+  /** V7f: typed results projection on follow pages. */
+  results?: WorkspaceResultProjection[];
   authority_health?: Record<string, string>;
 };
 

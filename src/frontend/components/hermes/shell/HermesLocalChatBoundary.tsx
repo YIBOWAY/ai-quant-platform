@@ -6,6 +6,7 @@ import { WorkbenchCommandActivityPanel } from "@/components/hermes/activity/Work
 import { WorkbenchCommandApprovalsPanel } from "@/components/hermes/approvals/WorkbenchCommandApprovalsPanel";
 import { WorkbenchAuthorityProjectionPanel } from "@/components/hermes/authority/WorkbenchAuthorityProjectionPanel";
 import { WorkbenchGateSurfacesPanel } from "@/components/hermes/gates/WorkbenchGateSurfacesPanel";
+import { WorkbenchTypedResultsPanel } from "@/components/hermes/results/WorkbenchTypedResultsPanel";
 import { ComposerSubmitController } from "@/components/hermes/ComposerSubmitController";
 import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { WorkbenchTranscriptPanel } from "@/components/hermes/transcript/WorkbenchTranscriptPanel";
@@ -80,6 +81,9 @@ export function HermesLocalChatBoundary({
                 ) : null}
                 {chatOpen ? (
                   <WorkbenchGateSurfacesPanel locale={locale} />
+                ) : null}
+                {chatOpen ? (
+                  <WorkbenchTypedResultsPanel locale={locale} />
                 ) : null}
                 {chatOpen ? (
                   <WorkbenchAuthorityProjectionPanel locale={locale} />

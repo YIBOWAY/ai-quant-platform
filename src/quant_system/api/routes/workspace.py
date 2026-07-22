@@ -180,11 +180,15 @@ def workspace_follow_stream(
         from quant_system.hermes.gate_observe import (
             default_gate_observe_journal,
         )
+        from quant_system.hermes.result_observe import (
+            default_result_observe_journal,
+        )
 
         cursor = start_cursor
         idle = 0
         journal = default_approval_observe_journal()
         gate_journal = default_gate_observe_journal()
+        result_journal = default_result_observe_journal()
         yield _sse_pack(
             "ready",
             {
@@ -193,7 +197,7 @@ def workspace_follow_stream(
                 "mutation_enabled": mutation_enabled,
                 "transport": "sse",
                 # Honest scope marker for FE/docs (V7d approvals + V7e gates).
-                "scope": "command_lifecycle+approvals+gates",
+                "scope": "command_lifecycle+approvals+gates+results",
             },
         )
         for _tick in range(tick_limit):
@@ -301,6 +305,30 @@ def workspace_follow_stream(
                                 "gate_3": health.get("gate_3", "ready")
                                 if isinstance(health, dict)
                                 else "ready",
+                            },
+                            "mutation_enabled": public.get("mutation_enabled"),
+                        },
+                    )
+                    emitted = True
+            # V7f: typed results projection on the same follow spine. Never stuff
+            # results into event:gates or event:approvals.
+            results = public.get("results")
+            if isinstance(results, list):
+                r_changed = result_journal.take_results_if_changed(
+                    workspace_id, list(results)
+                )
+                if r_changed is not None:
+                    health = public.get("authority_health") or {}
+                    yield _sse_pack(
+                        "results",
+                        {
+                            "results": r_changed,
+                            "authority_health": {
+                                # Prefer explicit health; missing key stays unavailable
+                                # rather than inventing ready.
+                                "result": health.get("result", "unavailable")
+                                if isinstance(health, dict)
+                                else "unavailable",
                             },
                             "mutation_enabled": public.get("mutation_enabled"),
                         },

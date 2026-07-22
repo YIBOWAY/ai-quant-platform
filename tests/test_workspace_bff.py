@@ -137,7 +137,8 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     # V7a hermetic authority is reachable → health ready even when empty.
     assert body.get("approvals") == []
     assert body["authority_health"].get("command_approval") == "ready"
-    # L5b: Task/Attempt/Run/result authority slots stay empty; health unavailable.
+    # L5b: Task/Attempt/Run authority slots stay empty; health unavailable.
+    # V7f: result projector is mounted → empty results[] + health ready (honest empty).
     assert body.get("tasks") == []
     assert body.get("attempts") == []
     assert body.get("runs") == []
@@ -145,7 +146,7 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     assert body["authority_health"].get("task") == "unavailable"
     assert body["authority_health"].get("attempt") == "unavailable"
     assert body["authority_health"].get("run") == "unavailable"
-    assert body["authority_health"].get("result") == "unavailable"
+    assert body["authority_health"].get("result") == "ready"
 
     follow = client.get(
         f"/api/workspace/{WORKSPACE_ID}/follow?after_cursor=0",

@@ -14,6 +14,7 @@ import {
   type WorkspaceCommandProjection,
   type WorkspaceFollowEvent,
   type WorkspaceGateProjection,
+  type WorkspaceResultProjection,
   type WorkspaceSnapshot,
 } from "@/lib/hermes/workspaceClient";
 import { PLATFORM_WORKSPACE_ID } from "@/lib/hermes/darkIdentity";
@@ -31,7 +32,8 @@ export type FollowSpineState = {
   tasks: string[];
   attempts: string[];
   runs: string[];
-  results: string[];
+  /** V7f: typed results (objects). Empty honest. */
+  results: WorkspaceResultProjection[];
   /** L5b: snapshot authority_health carry-through (optional keys). */
   authorityHealth: Record<string, string>;
   /** V7a: snapshot mutation_enabled — gates approval decide controls. */
@@ -101,6 +103,89 @@ function asIdList(value: unknown): string[] {
       if (item && typeof item === "object" && "id" in item) {
         const id = (item as { id?: unknown }).id;
         return typeof id === "string" ? id : "";
+      }
+      return "";
+    })
+    .filter(Boolean);
+}
+
+/** Fail-closed sample/real: only exact "real" is real; everything else is sample. */
+function normalizeSampleOrReal(value: unknown): "sample" | "real" {
+  return typeof value === "string" && value.toLowerCase() === "real"
+    ? "real"
+    : "sample";
+}
+
+/** Fail-closed read_status: unknown/invalid → unavailable (never invent available). */
+function normalizeReadStatus(
+  value: unknown,
+): WorkspaceResultProjection["read_status"] {
+  if (typeof value !== "string") return "unavailable";
+  const v = value.toLowerCase();
+  if (
+    v === "available" ||
+    v === "degraded" ||
+    v === "missing" ||
+    v === "corrupt" ||
+    v === "unavailable"
+  ) {
+    return v;
+  }
+  return "unavailable";
+}
+
+/** V7f: accept typed result objects; coerce bare id strings into minimal stubs. */
+function asResultList(value: unknown): WorkspaceResultProjection[] {
+  if (!Array.isArray(value)) return [];
+  const out: WorkspaceResultProjection[] = [];
+  for (const item of value) {
+    if (!item) continue;
+    if (typeof item === "string") {
+      if (!item) continue;
+      out.push({
+        result_id: item,
+        id: item,
+        kind: "generic",
+        display_title: item,
+        sample_or_real: "sample",
+        // Bare id has no proven payload — never claim available.
+        read_status: "unavailable",
+      });
+      continue;
+    }
+    if (typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const resultId =
+      typeof row.result_id === "string"
+        ? row.result_id
+        : typeof row.id === "string"
+          ? row.id
+          : "";
+    if (!resultId) continue;
+    out.push({
+      ...(row as WorkspaceResultProjection),
+      result_id: resultId,
+      id: typeof row.id === "string" ? row.id : resultId,
+      kind: typeof row.kind === "string" ? row.kind : "generic",
+      display_title:
+        typeof row.display_title === "string" ? row.display_title : resultId,
+      sample_or_real: normalizeSampleOrReal(row.sample_or_real),
+      read_status: normalizeReadStatus(row.read_status),
+    });
+  }
+  return out;
+}
+
+/** Ids-only view for L5b authority panel slot (never invents Task rows). */
+export function resultIdsFromProjection(
+  results: WorkspaceResultProjection[] | string[] | undefined,
+): string[] {
+  if (!Array.isArray(results)) return [];
+  return results
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (item && typeof item === "object") {
+        return item.result_id || item.id || "";
       }
       return "";
     })
@@ -253,6 +338,33 @@ export function createWorkspaceFollowSpine(
     setState(patch);
   };
 
+  const applyResultsProjection = (
+    results: WorkspaceResultProjection[] | undefined,
+    authorityHealth?: Record<string, string> | undefined,
+  ) => {
+    if (!Array.isArray(results)) return;
+    const patch: Partial<FollowSpineState> = {
+      // Always normalize so poll/SSE match snapshot shape (sample/real fail-closed).
+      results: asResultList(results),
+      error: null,
+    };
+    if (authorityHealth && typeof authorityHealth === "object") {
+      patch.authorityHealth = {
+        ...state.authorityHealth,
+        ...authorityHealth,
+      };
+    } else if (
+      !state.authorityHealth.result ||
+      state.authorityHealth.result === "unavailable"
+    ) {
+      patch.authorityHealth = {
+        ...state.authorityHealth,
+        result: "ready",
+      };
+    }
+    setState(patch);
+  };
+
   const snapshotReconcile = async (signal?: AbortSignal) => {
     const snap = await fetchWorkspaceSnapshot(workspaceId, signal);
     const commands = mergeSnapshotCommands(snap);
@@ -261,7 +373,7 @@ export function createWorkspaceFollowSpine(
     const tasks = asIdList(snap.tasks);
     const attempts = asIdList(snap.attempts);
     const runs = asIdList(snap.runs);
-    const results = asIdList(snap.results);
+    const results = asResultList(snap.results);
     const authorityHealth =
       snap.authority_health && typeof snap.authority_health === "object"
         ? { ...snap.authority_health }
@@ -326,6 +438,7 @@ export function createWorkspaceFollowSpine(
       // V7d/V7e: follow pages may carry approvals + gates (same spine).
       applyApprovalsProjection(page.approvals, page.authority_health);
       applyGatesProjection(page.gates, page.authority_health);
+      applyResultsProjection(page.results, page.authority_health);
       if (typeof page.next_cursor === "number") {
         setState({
           cursor: Math.max(state.cursor, page.next_cursor),
@@ -438,6 +551,17 @@ export function createWorkspaceFollowSpine(
         /* ignore malformed */
       }
     };
+    const onResults = (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(String(ev.data)) as {
+          results?: WorkspaceResultProjection[];
+          authority_health?: Record<string, string>;
+        };
+        applyResultsProjection(data.results, data.authority_health);
+      } catch {
+        /* ignore malformed */
+      }
+    };
     const onCursor = (ev: MessageEvent) => {
       try {
         const data = JSON.parse(String(ev.data)) as { next_cursor?: number };
@@ -488,6 +612,7 @@ export function createWorkspaceFollowSpine(
     es.addEventListener("command", onCommand);
     es.addEventListener("approvals", onApprovals);
     es.addEventListener("gates", onGates);
+    es.addEventListener("results", onResults);
     es.addEventListener("cursor", onCursor);
     es.addEventListener("resync", onResync);
     es.addEventListener("reconnect", onReconnect);
@@ -610,5 +735,9 @@ export const __followSpineTestUtils = {
   applyCommandEvent,
   emptyState,
   asIdList,
+  asResultList,
+  resultIdsFromProjection,
+  normalizeSampleOrReal,
+  normalizeReadStatus,
   EMPTY_AUTHORITY_HEALTH,
 };

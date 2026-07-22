@@ -1,0 +1,499 @@
+"""V7f-Typed-Results-M1: hermetic typed result surface authority.
+
+In-process store for workspace-scoped typed result projections used by the
+AgentWorkspace snapshot/follow spine. Empty is honest. Never invents Task /
+Attempt / Run / Gate / command-approval rows. Not live Futu / HQA final
+authority — hermetic fixture class matching V7a–V7e.
+
+M1 scope:
+* seed typed results (including vertical-A options sample fields)
+* sample vs real marking
+* exact Task/Attempt/Run/artifact/command link fields when known
+* list_observed for projector
+* no public write path; no always-allow; no Gate expansion
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from threading import Lock
+from typing import Any, Literal, Mapping
+
+ResultSampleMark = Literal["sample", "real"]
+ResultKind = Literal[
+    "options_vertical_a",
+    "backtest",
+    "factor",
+    "paper",
+    "replication",
+    "experiment",
+    "factor_candidate",
+    "generic",
+]
+ResultFreshness = Literal["fresh", "stale", "not_applicable", "unknown"]
+ResultReadStatus = Literal[
+    "available",
+    "degraded",
+    "missing",
+    "corrupt",
+    "unavailable",
+]
+
+_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_PUBLIC_KINDS = frozenset(
+    {
+        "options_vertical_a",
+        "backtest",
+        "factor",
+        "paper",
+        "replication",
+        "experiment",
+        "factor_candidate",
+        "generic",
+    }
+)
+_PUBLIC_MARKS = frozenset({"sample", "real"})
+_PUBLIC_FRESHNESS = frozenset({"fresh", "stale", "not_applicable", "unknown"})
+_PUBLIC_READ = frozenset(
+    {"available", "degraded", "missing", "corrupt", "unavailable"}
+)
+
+
+class ResultSurfaceAuthorityError(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _dt_public(value: datetime | str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    if type(value) is str and value:
+        return value
+    return None
+
+
+def _validate_id(value: str, field: str) -> str:
+    if type(value) is not str or _ID.fullmatch(value) is None:
+        raise ResultSurfaceAuthorityError(
+            "validation", f"{field} must be a bounded identifier"
+        )
+    return value
+
+
+def _optional_id(value: str | None, field: str) -> str | None:
+    if value is None:
+        return None
+    return _validate_id(value, field)
+
+
+def _optional_digest(value: str | None, field: str) -> str | None:
+    if value is None:
+        return None
+    if type(value) is not str or _DIGEST.fullmatch(value) is None:
+        raise ResultSurfaceAuthorityError(
+            "validation", f"{field} must be lowercase SHA-256 hex"
+        )
+    return value
+
+
+def _bounded_text(
+    value: str | None, field: str, *, max_len: int, required: bool = False
+) -> str | None:
+    if value is None:
+        if required:
+            raise ResultSurfaceAuthorityError(
+                "validation", f"{field} is required"
+            )
+        return None
+    if type(value) is not str or not value.strip() or len(value) > max_len:
+        raise ResultSurfaceAuthorityError(
+            "validation", f"{field} must be bounded nonempty text"
+        )
+    # Allow printable + common whitespace for notes/limitations.
+    cleaned = value.strip()
+    if any(ord(ch) < 9 or (13 < ord(ch) < 32) for ch in cleaned):
+        raise ResultSurfaceAuthorityError(
+            "validation", f"{field} contains control characters"
+        )
+    return cleaned
+
+
+def _bounded_str_list(
+    values: list[str] | tuple[str, ...] | None, field: str, *, max_items: int = 32
+) -> tuple[str, ...]:
+    if values is None:
+        return ()
+    if not isinstance(values, (list, tuple)):
+        raise ResultSurfaceAuthorityError(
+            "validation", f"{field} must be a list of strings"
+        )
+    if len(values) > max_items:
+        raise ResultSurfaceAuthorityError(
+            "validation", f"{field} exceeds max {max_items} items"
+        )
+    out: list[str] = []
+    for item in values:
+        text = _bounded_text(item, field, max_len=256, required=True)
+        assert text is not None
+        out.append(text)
+    return tuple(out)
+
+
+def _optional_number(value: Any, field: str) -> float | int | None:
+    if value is None:
+        return None
+    if type(value) is bool:
+        raise ResultSurfaceAuthorityError(
+            "validation", f"{field} must be a number"
+        )
+    if type(value) is int:
+        return value
+    if type(value) is float:
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ResultSurfaceAuthorityError(
+                "validation", f"{field} must be a finite number"
+            )
+        return value
+    raise ResultSurfaceAuthorityError("validation", f"{field} must be a number")
+
+
+@dataclass
+class TypedResultRecord:
+    workspace_id: str
+    result_id: str
+    kind: str
+    display_title: str
+    status: str
+    sample_or_real: ResultSampleMark
+    freshness: ResultFreshness
+    read_status: ResultReadStatus
+    occurred_at: str
+    summary: str | None = None
+    # Exact authority links (optional; never invent when absent).
+    task_id: str | None = None
+    attempt_id: str | None = None
+    run_id: str | None = None
+    artifact_id: str | None = None
+    command_id: str | None = None
+    # Vertical A options fields (optional; present for options_vertical_a).
+    ticker: str | None = None
+    expiry: str | None = None
+    strike: float | int | None = None
+    bid: float | int | None = None
+    ask: float | int | None = None
+    delta: float | int | None = None
+    iv: float | int | None = None
+    apr: float | int | None = None
+    # Evidence / honesty fields.
+    provider_evidence: tuple[str, ...] = ()
+    filters: tuple[str, ...] = ()
+    exclusions: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
+    detail_href: str | None = None
+    original_href: str | None = None
+    source: str | None = None
+    authority: str | None = None
+    payload_digest: str | None = None
+    extra: dict[str, object] = field(default_factory=dict)
+
+    def to_public_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "result_id": self.result_id,
+            "id": self.result_id,  # spine asIdList / authority panel id slot
+            "kind": self.kind,
+            "display_title": self.display_title,
+            "status": self.status,
+            "sample_or_real": self.sample_or_real,
+            "freshness": self.freshness,
+            "read_status": self.read_status,
+            "occurred_at": self.occurred_at,
+        }
+        if self.summary is not None:
+            payload["summary"] = self.summary
+        for key, value in (
+            ("task_id", self.task_id),
+            ("attempt_id", self.attempt_id),
+            ("run_id", self.run_id),
+            ("artifact_id", self.artifact_id),
+            ("command_id", self.command_id),
+            ("ticker", self.ticker),
+            ("expiry", self.expiry),
+            ("strike", self.strike),
+            ("bid", self.bid),
+            ("ask", self.ask),
+            ("delta", self.delta),
+            ("iv", self.iv),
+            ("apr", self.apr),
+            ("detail_href", self.detail_href),
+            ("original_href", self.original_href),
+            ("source", self.source),
+            ("authority", self.authority),
+            ("payload_digest", self.payload_digest),
+        ):
+            if value is not None:
+                payload[key] = value
+        if self.provider_evidence:
+            payload["provider_evidence"] = list(self.provider_evidence)
+        if self.filters:
+            payload["filters"] = list(self.filters)
+        if self.exclusions:
+            payload["exclusions"] = list(self.exclusions)
+        if self.limitations:
+            payload["limitations"] = list(self.limitations)
+        # Explicit exact-link block for FE presenter (never invent missing keys).
+        links: dict[str, object] = {}
+        if self.task_id is not None:
+            links["task_id"] = self.task_id
+            links["task_ref"] = f"task:{self.task_id}"
+        if self.attempt_id is not None:
+            links["attempt_id"] = self.attempt_id
+            links["attempt_ref"] = f"attempt:{self.attempt_id}"
+        if self.run_id is not None:
+            links["run_id"] = self.run_id
+            links["run_ref"] = f"run:{self.run_id}"
+        if self.artifact_id is not None:
+            links["artifact_id"] = self.artifact_id
+            links["artifact_ref"] = f"artifact:{self.artifact_id}"
+        if self.command_id is not None:
+            links["command_id"] = self.command_id
+        if links:
+            payload["exact_links"] = links
+        return payload
+
+
+class ResultSurfaceAuthority:
+    """Thread-safe in-process typed result store (hermetic + local-dark)."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        # key = (workspace_id, result_id)
+        self._rows: dict[tuple[str, str], TypedResultRecord] = {}
+
+    def reset(self) -> None:
+        with self._lock:
+            self._rows.clear()
+
+    def seed_result(
+        self,
+        *,
+        workspace_id: str,
+        result_id: str,
+        kind: str,
+        display_title: str,
+        status: str = "ready",
+        sample_or_real: str = "sample",
+        freshness: str = "unknown",
+        read_status: str = "available",
+        occurred_at: str | datetime | None = None,
+        summary: str | None = None,
+        task_id: str | None = None,
+        attempt_id: str | None = None,
+        run_id: str | None = None,
+        artifact_id: str | None = None,
+        command_id: str | None = None,
+        ticker: str | None = None,
+        expiry: str | None = None,
+        strike: float | int | None = None,
+        bid: float | int | None = None,
+        ask: float | int | None = None,
+        delta: float | int | None = None,
+        iv: float | int | None = None,
+        apr: float | int | None = None,
+        provider_evidence: list[str] | tuple[str, ...] | None = None,
+        filters: list[str] | tuple[str, ...] | None = None,
+        exclusions: list[str] | tuple[str, ...] | None = None,
+        limitations: list[str] | tuple[str, ...] | None = None,
+        detail_href: str | None = None,
+        original_href: str | None = None,
+        source: str | None = None,
+        authority: str | None = None,
+        payload_digest: str | None = None,
+    ) -> TypedResultRecord:
+        ws = _validate_id(workspace_id, "workspace_id")
+        rid = _validate_id(result_id, "result_id")
+        if kind not in _PUBLIC_KINDS:
+            raise ResultSurfaceAuthorityError(
+                "validation", f"kind must be one of {sorted(_PUBLIC_KINDS)}"
+            )
+        if sample_or_real not in _PUBLIC_MARKS:
+            raise ResultSurfaceAuthorityError(
+                "validation", "sample_or_real must be sample|real"
+            )
+        if freshness not in _PUBLIC_FRESHNESS:
+            raise ResultSurfaceAuthorityError(
+                "validation", "freshness must be a known token"
+            )
+        if read_status not in _PUBLIC_READ:
+            raise ResultSurfaceAuthorityError(
+                "validation", "read_status must be a known token"
+            )
+        title = _bounded_text(display_title, "display_title", max_len=256, required=True)
+        assert title is not None
+        status_s = _bounded_text(status, "status", max_len=128, required=True)
+        assert status_s is not None
+        ts = _dt_public(occurred_at) or _utc_now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        row = TypedResultRecord(
+            workspace_id=ws,
+            result_id=rid,
+            kind=kind,
+            display_title=title,
+            status=status_s,
+            sample_or_real=sample_or_real,  # type: ignore[arg-type]
+            freshness=freshness,  # type: ignore[arg-type]
+            read_status=read_status,  # type: ignore[arg-type]
+            occurred_at=ts,
+            summary=_bounded_text(summary, "summary", max_len=1000),
+            task_id=_optional_id(task_id, "task_id"),
+            attempt_id=_optional_id(attempt_id, "attempt_id"),
+            run_id=_optional_id(run_id, "run_id"),
+            artifact_id=_optional_id(artifact_id, "artifact_id"),
+            command_id=_optional_id(command_id, "command_id"),
+            ticker=_bounded_text(ticker, "ticker", max_len=32),
+            expiry=_bounded_text(expiry, "expiry", max_len=32),
+            strike=_optional_number(strike, "strike"),
+            bid=_optional_number(bid, "bid"),
+            ask=_optional_number(ask, "ask"),
+            delta=_optional_number(delta, "delta"),
+            iv=_optional_number(iv, "iv"),
+            apr=_optional_number(apr, "apr"),
+            provider_evidence=_bounded_str_list(provider_evidence, "provider_evidence"),
+            filters=_bounded_str_list(filters, "filters"),
+            exclusions=_bounded_str_list(exclusions, "exclusions"),
+            limitations=_bounded_str_list(limitations, "limitations"),
+            detail_href=_bounded_text(detail_href, "detail_href", max_len=1000),
+            original_href=_bounded_text(original_href, "original_href", max_len=1000),
+            source=_bounded_text(source, "source", max_len=128),
+            authority=_bounded_text(authority, "authority", max_len=128),
+            payload_digest=_optional_digest(payload_digest, "payload_digest"),
+        )
+        with self._lock:
+            self._rows[(ws, rid)] = row
+        return row
+
+    def seed_options_vertical_a_sample(
+        self,
+        *,
+        workspace_id: str,
+        result_id: str,
+        ticker: str,
+        expiry: str,
+        strike: float | int,
+        bid: float | int,
+        ask: float | int,
+        delta: float | int,
+        iv: float | int,
+        apr: float | int,
+        display_title: str | None = None,
+        task_id: str | None = None,
+        attempt_id: str | None = None,
+        run_id: str | None = None,
+        artifact_id: str | None = None,
+        command_id: str | None = None,
+        provider_evidence: list[str] | tuple[str, ...] | None = None,
+        filters: list[str] | tuple[str, ...] | None = None,
+        exclusions: list[str] | tuple[str, ...] | None = None,
+        limitations: list[str] | tuple[str, ...] | None = None,
+        freshness: str = "fresh",
+        sample_or_real: str = "sample",
+    ) -> TypedResultRecord:
+        """Convenience seeder for Plan vertical A typed options fields.
+
+        This helper is hermetic-fixture oriented: default limitations claim
+        not_live_futu_quote. Callers that pass sample_or_real="real" without
+        replacing limitations are coerced back to sample (honesty).
+        """
+        title = display_title or f"{ticker} {expiry} {strike} options"
+        default_limitations = limitations or (
+            "hermetic_fixture",
+            "not_live_futu_quote",
+            "not_tradeable",
+        )
+        # Honesty: hermetic/not_live limitations cannot wear a REAL badge.
+        mark = sample_or_real
+        lim_set = {str(x) for x in default_limitations}
+        if mark == "real" and (
+            "hermetic_fixture" in lim_set or "not_live_futu_quote" in lim_set
+        ):
+            mark = "sample"
+        default_evidence = provider_evidence or ("hermetic_seed",)
+        return self.seed_result(
+            workspace_id=workspace_id,
+            result_id=result_id,
+            kind="options_vertical_a",
+            display_title=title,
+            status="ready",
+            sample_or_real=mark,
+            freshness=freshness,
+            read_status="available",
+            summary=f"{ticker} covered-call style options projection ({sample_or_real})",
+            task_id=task_id,
+            attempt_id=attempt_id,
+            run_id=run_id,
+            artifact_id=artifact_id,
+            command_id=command_id,
+            ticker=ticker,
+            expiry=expiry,
+            strike=strike,
+            bid=bid,
+            ask=ask,
+            delta=delta,
+            iv=iv,
+            apr=apr,
+            provider_evidence=default_evidence,
+            filters=filters or ("delta_band", "dte_window"),
+            exclusions=exclusions or ("earnings_week",),
+            limitations=default_limitations,
+            source="hermetic_result_surface",
+            authority="hermetic_result_surface_authority",
+        )
+
+    def get(self, workspace_id: str, result_id: str) -> TypedResultRecord | None:
+        with self._lock:
+            return self._rows.get((workspace_id, result_id))
+
+    def list_observed(
+        self,
+        workspace_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[TypedResultRecord]:
+        """Newest-first by occurred_at then result_id. Empty is honest."""
+        lim = limit if type(limit) is int and limit > 0 else 50
+        with self._lock:
+            rows = [r for (ws, _), r in self._rows.items() if ws == workspace_id]
+        rows.sort(key=lambda r: (r.occurred_at, r.result_id), reverse=True)
+        return rows[:lim]
+
+
+_DEFAULT_AUTHORITY = ResultSurfaceAuthority()
+
+
+def default_result_surface_authority() -> ResultSurfaceAuthority:
+    return _DEFAULT_AUTHORITY
+
+
+def reset_default_result_surface_authority() -> None:
+    _DEFAULT_AUTHORITY.reset()
+
+
+__all__ = [
+    "ResultSurfaceAuthority",
+    "ResultSurfaceAuthorityError",
+    "TypedResultRecord",
+    "default_result_surface_authority",
+    "reset_default_result_surface_authority",
+]

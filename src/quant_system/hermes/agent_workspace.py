@@ -71,7 +71,8 @@ class WorkspaceSnapshot:
     attempts: tuple[str, ...]
     commands: tuple[dict[str, object], ...]
     runs: tuple[str, ...]
-    results: tuple[str, ...]
+    # V7f: typed result projections (objects). Empty honest; never bare invented Task rows.
+    results: tuple[dict[str, object], ...]
     # L5a/V7a/V7d: Hermes command-approval challenges from hermetic authority
     # (pending + recent decided). Empty is honest; never invent Gate 1/2/3 rows.
     approvals: tuple[dict[str, object], ...]
@@ -91,7 +92,7 @@ class WorkspaceSnapshot:
             "attempts": list(self.attempts),
             "commands": [dict(item) for item in self.commands],
             "runs": list(self.runs),
-            "results": list(self.results),
+            "results": [dict(item) if isinstance(item, dict) else item for item in self.results],
             "approvals": [dict(item) for item in self.approvals],
             "gates": [dict(item) for item in self.gates],
             "authority_health": dict(self.authority_health),
@@ -114,6 +115,8 @@ class EventPage:
     approvals: tuple[dict[str, object], ...] | None = None
     # V7e: optional gates projection (separate namespace from approvals).
     gates: tuple[dict[str, object], ...] | None = None
+    # V7f: optional typed results projection (separate from gates/approvals).
+    results: tuple[dict[str, object], ...] | None = None
     authority_health: Mapping[str, str] | None = None
 
     def to_public_dict(self) -> dict[str, object]:
@@ -129,6 +132,8 @@ class EventPage:
             payload["approvals"] = [dict(item) for item in self.approvals]
         if self.gates is not None:
             payload["gates"] = [dict(item) for item in self.gates]
+        if self.results is not None:
+            payload["results"] = [dict(item) for item in self.results]
         if self.authority_health is not None:
             payload["authority_health"] = dict(self.authority_health)
         return payload
@@ -245,12 +250,13 @@ class PlatformAgentWorkspace:
             "gate_1": "ready",
             "gate_2": "ready",
             "gate_3": "ready",
-            # L5b: Task/Attempt/Run/result authority projectors not wired —
+            # L5b: Task/Attempt/Run authority projectors not wired —
             # empty tuples stay empty; never invent HQA rows from commands.
             "task": "unavailable",
             "attempt": "unavailable",
             "run": "unavailable",
-            "result": "unavailable",
+            # V7f: hermetic typed-result projector mounted (empty honest).
+            "result": "ready",
         }
 
         sessions: list[str] = []
@@ -266,11 +272,14 @@ class PlatformAgentWorkspace:
         # from hermetic authority. Never invent Gate 1/2/3 into approvals[].
         from quant_system.hermes.approval_observe import project_workspace_approvals
         from quant_system.hermes.gate_observe import project_workspace_gates
+        from quant_system.hermes.result_observe import project_workspace_results
 
-        # Empty approvals[] / gates[] is honest; health stays "ready" because the
-        # hermetic in-process authorities are mounted (not live Hermes HTTP).
+        # Empty approvals[] / gates[] / results[] is honest; health stays "ready"
+        # because the hermetic in-process authorities are mounted (not live
+        # Hermes HTTP / live Futu).
         approvals = tuple(project_workspace_approvals(workspace_id))
         gates = tuple(project_workspace_gates(workspace_id))
+        results = tuple(project_workspace_results(workspace_id))
 
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
@@ -281,7 +290,7 @@ class PlatformAgentWorkspace:
             attempts=(),
             commands=tuple(commands),
             runs=(),
-            results=(),
+            results=results,
             approvals=approvals,
             gates=gates,
             authority_health=health,
@@ -361,10 +370,19 @@ class PlatformAgentWorkspace:
             gate_authority_health,
             project_workspace_gates,
         )
+        from quant_system.hermes.result_observe import (
+            project_workspace_results,
+            result_authority_health,
+        )
 
         approvals = tuple(project_workspace_approvals(workspace_id))
         gates = tuple(project_workspace_gates(workspace_id))
-        health = {"command_approval": "ready", **gate_authority_health()}
+        results = tuple(project_workspace_results(workspace_id))
+        health = {
+            "command_approval": "ready",
+            **gate_authority_health(),
+            **result_authority_health(),
+        }
         return EventPage(
             events=tuple(events),
             after_cursor=after_value,
@@ -374,6 +392,7 @@ class PlatformAgentWorkspace:
             mutation_enabled=mutation_on,
             approvals=approvals,
             gates=gates,
+            results=results,
             authority_health=health,
         )
 
