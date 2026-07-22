@@ -109,6 +109,13 @@ Covered evidence includes:
 - canonical TTL `7`, provider policy, immutable session rows, composite
   store-before-command binding, and fail-closed BFF behavior.
 
+Final cross-cut verification after V4–V7 remediation collected `1926` backend
+tests and completed with exit 0 against disposable PostgreSQL 16 (2 skipped).
+Full Ruff was clean. Frontend Vitest completed `56 files / 298 tests`; TypeScript,
+ESLint with zero warnings, and the Next production build also completed with
+exit 0. The remaining Starlette TestClient deprecation is an upstream dependency
+upgrade reminder, not a V4-R authority failure.
+
 ## Future live provisioning procedure (not executed)
 
 These steps require a separate live authorization, backup, fingerprint, and
