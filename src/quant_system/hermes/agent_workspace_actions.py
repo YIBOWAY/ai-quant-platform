@@ -28,6 +28,7 @@ _ACTION_KINDS = frozenset(
         "gate1.formula_source.confirm",
         "gate2.candidate.review",
         "gate3.promotion_review.prepare",
+        "vertical.options_a.bind",
     }
 )
 _COMMON_DOCUMENT_FIELDS = frozenset(
@@ -78,6 +79,19 @@ _ACTION_FIELDS = {
         "expected_digest",
         "final_backtest_receipt_ref",
         "base_commit",
+    },
+    "vertical.options_a.bind": _COMMON_DOCUMENT_FIELDS
+    | {
+        "ticker",
+        "goal_note",
+        "expiry",
+        "strike",
+        "bid",
+        "ask",
+        "delta",
+        "iv",
+        "apr",
+        "include_provider_evidence",
     },
 }
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
@@ -497,6 +511,66 @@ class PreparePromotionReview:
 
 
 @dataclass(frozen=True)
+class BindOptionsVerticalA:
+    """V7g-A-M1: hermetic Vertical A options research binding.
+
+    NL goal + fixture options fields → Task/Attempt/Run + typed result
+    (V7f shape) → completed|completed_degraded. Zero live Futu. Zero orders.
+    Not StartResearch (still dark). Not Gate. Not public write.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    ticker: str
+    goal_note: str
+    expiry: str
+    strike: float | int
+    bid: float | int
+    ask: float | int
+    delta: float | int
+    iv: float | int
+    apr: float | int
+    include_provider_evidence: bool
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        if (
+            type(self.ticker) is not str
+            or not self.ticker.strip()
+            or len(self.ticker) > 32
+            or not self.ticker.strip().replace(".", "").replace("-", "").isalnum()
+        ):
+            raise AgentWorkspaceActionError("ticker must be a bounded symbol")
+        object.__setattr__(self, "ticker", self.ticker.strip().upper())
+        _validate_note(self.goal_note, "goal_note")
+        if (
+            type(self.expiry) is not str
+            or not self.expiry.strip()
+            or len(self.expiry) > 32
+        ):
+            raise AgentWorkspaceActionError("expiry must be bounded text")
+        for field_name in ("strike", "bid", "ask", "delta", "iv", "apr"):
+            value = getattr(self, field_name)
+            if type(value) is bool or value is None:
+                raise AgentWorkspaceActionError(
+                    f"{field_name} must be a finite number"
+                )
+            if type(value) is int:
+                continue
+            if type(value) is float:
+                if value != value or value in (float("inf"), float("-inf")):
+                    raise AgentWorkspaceActionError(
+                        f"{field_name} must be a finite number"
+                    )
+                continue
+            raise AgentWorkspaceActionError(f"{field_name} must be a finite number")
+        if type(self.include_provider_evidence) is not bool:
+            raise AgentWorkspaceActionError(
+                "include_provider_evidence must be a boolean"
+            )
+
+
+@dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
 
@@ -523,6 +597,7 @@ UserActionV1 = Union[
     ConfirmFormulaSource,
     ReviewCandidateCAS,
     PreparePromotionReview,
+    BindOptionsVerticalA,
     UnsupportedWorkspaceAction,
 ]
 
@@ -536,6 +611,7 @@ _IMPLEMENTED_TYPES = (
     ConfirmFormulaSource,
     ReviewCandidateCAS,
     PreparePromotionReview,
+    BindOptionsVerticalA,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -676,6 +752,23 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is BindOptionsVerticalA:
+        document.update(
+            {
+                "kind": "vertical.options_a.bind",
+                "ticker": action.ticker,
+                "goal_note": action.goal_note,
+                "expiry": action.expiry,
+                "strike": action.strike,
+                "bid": action.bid,
+                "ask": action.ask,
+                "delta": action.delta,
+                "iv": action.iv,
+                "apr": action.apr,
+                "include_provider_evidence": action.include_provider_evidence,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -801,6 +894,20 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             final_backtest_receipt_ref=document["final_backtest_receipt_ref"],
             base_commit=document["base_commit"],
         )
+    if kind == "vertical.options_a.bind":
+        return BindOptionsVerticalA(
+            **common,
+            ticker=document["ticker"],
+            goal_note=document["goal_note"],
+            expiry=document["expiry"],
+            strike=document["strike"],
+            bid=document["bid"],
+            ask=document["ask"],
+            delta=document["delta"],
+            iv=document["iv"],
+            apr=document["apr"],
+            include_provider_evidence=document["include_provider_evidence"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -837,6 +944,7 @@ def action_payload_ref_for_digest(action_digest: str) -> str:
 
 __all__ = [
     "AgentWorkspaceActionError",
+    "BindOptionsVerticalA",
     "ConfirmFormulaSource",
     "ConfirmResearchPlan",
     "ContinueResearch",

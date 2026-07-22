@@ -31,6 +31,7 @@ from uuid import UUID
 from quant_system.config.settings import Settings
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
+    BindOptionsVerticalA,
     ConfirmFormulaSource,
     ConfirmResearchPlan,
     ContinueResearch,
@@ -72,6 +73,11 @@ from quant_system.hermes.gate_surface_authority import (
     default_gate_surface_authority,
 )
 from quant_system.hermes.gate_observe import note_gate_decided
+from quant_system.hermes.result_observe import note_result_raised
+from quant_system.hermes.vertical_binding_authority import (
+    VerticalBindingAuthorityError,
+    default_vertical_binding_authority,
+)
 from quant_system.hermes.command_ledger import (
     ROOT_USER_ID,
     CreateHermesCommandResult,
@@ -126,6 +132,11 @@ class ActionReceipt:
     mutation_enabled: bool = False
     # V7c plan §5.5 layered stop observation (optional; stop actions only).
     stop_layers: dict[str, object] | None = None
+    # V7g-A-M1: hermetic vertical bind outcome ids (optional).
+    task_id: str | None = None
+    attempt_id: str | None = None
+    result_id: str | None = None
+    terminal_status: str | None = None
 
     def __post_init__(self) -> None:
         expected = _RECOVERY[self.status]
@@ -154,6 +165,14 @@ class ActionReceipt:
             payload["reason_code"] = self.reason_code
         if self.stop_layers is not None:
             payload["stop_layers"] = dict(self.stop_layers)
+        if self.task_id is not None:
+            payload["task_id"] = self.task_id
+        if self.attempt_id is not None:
+            payload["attempt_id"] = self.attempt_id
+        if self.result_id is not None:
+            payload["result_id"] = self.result_id
+        if self.terminal_status is not None:
+            payload["terminal_status"] = self.terminal_status
         return payload
 
 
@@ -211,6 +230,10 @@ def _receipt(
     reason_code: str | None = None,
     mutation_enabled: bool = False,
     stop_layers: dict[str, object] | None = None,
+    task_id: str | None = None,
+    attempt_id: str | None = None,
+    result_id: str | None = None,
+    terminal_status: str | None = None,
 ) -> ActionReceipt:
     return ActionReceipt(
         status=status,
@@ -224,6 +247,10 @@ def _receipt(
         reason_code=reason_code,
         mutation_enabled=bool(mutation_enabled),
         stop_layers=stop_layers,
+        task_id=task_id,
+        attempt_id=attempt_id,
+        result_id=result_id,
+        terminal_status=terminal_status,
     )
 
 
@@ -1175,6 +1202,103 @@ def submit_prepare_promotion_review(
 
 
 
+def submit_bind_options_vertical_a(
+    settings: Settings,
+    action: BindOptionsVerticalA,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V7g-A-M1: hermetic Vertical A options research bind.
+
+    NL goal + fixture fields → Task/Attempt/Run + typed result.
+    Zero live Futu. Zero orders. Not StartResearch. Not public write.
+    """
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+    authority = default_vertical_binding_authority()
+    try:
+        outcome = authority.bind_options_vertical_a(
+            workspace_id=action.workspace.workspace_id,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+            ticker=action.ticker,
+            goal_note=action.goal_note,
+            expiry=action.expiry,
+            strike=action.strike,
+            bid=action.bid,
+            ask=action.ask,
+            delta=action.delta,
+            iv=action.iv,
+            apr=action.apr,
+            include_provider_evidence=action.include_provider_evidence,
+        )
+    except VerticalBindingAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message or "vertical_binding_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        note_result_raised(
+            workspace_id=action.workspace.workspace_id,
+            result=outcome.result,
+        )
+    except Exception:
+        pass
+    command_id: str | None = None
+    if _ensure_ready(settings):
+        control_session = control_plane_session_id(action.workspace.workspace_id)
+        try:
+            cmd = _create_idempotent_command(
+                settings,
+                platform_session_id=control_session,
+                client_request_id=action.client_action_id,
+                kind="vertical_options_a_bind",
+                action_digest=digest,
+                payload_ref=action_payload_ref_for_digest(digest),
+                provider_policy_digest=None,
+            )
+            command_id = str(cmd.command.command_id)
+        except SubmissionSagaError:
+            # Bind already committed; audit-rail problems must not look like bind failure.
+            command_id = None
+        except Exception:
+            command_id = None
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        run_id=outcome.run.run_id,
+        task_id=outcome.task.task_id,
+        attempt_id=outcome.attempt.attempt_id,
+        result_id=outcome.result.result_id,
+        terminal_status=outcome.terminal,
+        mutation_enabled=mutation_enabled,
+    )
+
+
 def submit_action(
     settings: Settings,
     action: UserActionV1 | dict[str, object],
@@ -1252,6 +1376,13 @@ def submit_action(
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
         )
+    if type(parsed) is BindOptionsVerticalA:
+        return submit_bind_options_vertical_a(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
     if type(parsed) in (StartResearch, ContinueResearch, ConfirmResearchPlan):
         # Research kinds are typed and digest-stable, but the HQA prepare →
         # ensure_bound_command browser path stays dark in V4. Public mutation
@@ -1293,6 +1424,7 @@ __all__ = [
     "derive_managed_hermes_session_id",
     "derive_managed_platform_session_id",
     "submit_action",
+    "submit_bind_options_vertical_a",
     "submit_conversation_turn",
     "submit_create_managed_session",
     "submit_decide_hermes_command_approval",

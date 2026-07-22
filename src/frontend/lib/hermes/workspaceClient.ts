@@ -40,6 +40,11 @@ export type WorkspaceActionReceipt = {
   payload_ref?: string;
   payload_digest?: string;
   kind?: string;
+  /** V7g-A-M1 hermetic vertical bind outcome (optional). */
+  task_id?: string;
+  attempt_id?: string;
+  result_id?: string;
+  terminal_status?: string;
 };
 
 export class WorkspaceClientError extends Error {
@@ -730,6 +735,82 @@ export async function preparePromotionReview(options: {
     expectedDigest: options.expectedDigest,
     finalBacktestReceiptId: options.finalBacktestReceiptId,
     baseCommit: options.baseCommit,
+    clientActionId,
+    workspaceId,
+  });
+  return sameOriginJson<WorkspaceActionReceipt>(
+    `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
+    {
+      method: "POST",
+      csrf: true,
+      signal: options.signal,
+      body: { action },
+    },
+  );
+}
+
+/** V7g-A-M1: hermetic Vertical A options research bind (fixture only). */
+export function buildBindOptionsVerticalAAction(input: {
+  ticker: string;
+  goalNote: string;
+  expiry: string;
+  strike: number;
+  bid: number;
+  ask: number;
+  delta: number;
+  iv: number;
+  apr: number;
+  includeProviderEvidence?: boolean;
+  clientActionId: string;
+  workspaceId: string;
+}): Record<string, unknown> {
+  return {
+    schema_version: 1,
+    kind: "vertical.options_a.bind",
+    client_action_id: input.clientActionId,
+    workspace: { workspace_id: input.workspaceId },
+    ticker: input.ticker,
+    goal_note: input.goalNote,
+    expiry: input.expiry,
+    strike: input.strike,
+    bid: input.bid,
+    ask: input.ask,
+    delta: input.delta,
+    iv: input.iv,
+    apr: input.apr,
+    include_provider_evidence: input.includeProviderEvidence !== false,
+  };
+}
+
+export async function bindOptionsVerticalA(options: {
+  ticker: string;
+  goalNote: string;
+  expiry: string;
+  strike: number;
+  bid: number;
+  ask: number;
+  delta: number;
+  iv: number;
+  apr: number;
+  includeProviderEvidence?: boolean;
+  clientActionId?: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+}): Promise<WorkspaceActionReceipt> {
+  await ensureOwnerSession(options.signal);
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  const clientActionId = options.clientActionId ?? crypto.randomUUID();
+  const action = buildBindOptionsVerticalAAction({
+    ticker: options.ticker,
+    goalNote: options.goalNote,
+    expiry: options.expiry,
+    strike: options.strike,
+    bid: options.bid,
+    ask: options.ask,
+    delta: options.delta,
+    iv: options.iv,
+    apr: options.apr,
+    includeProviderEvidence: options.includeProviderEvidence,
     clientActionId,
     workspaceId,
   });

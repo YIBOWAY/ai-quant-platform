@@ -143,9 +143,10 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     assert body.get("attempts") == []
     assert body.get("runs") == []
     assert body.get("results") == []
-    assert body["authority_health"].get("task") == "unavailable"
-    assert body["authority_health"].get("attempt") == "unavailable"
-    assert body["authority_health"].get("run") == "unavailable"
+    # V7g-A-M1: hermetic vertical projectors mounted; empty lists remain honest.
+    assert body["authority_health"].get("task") == "ready"
+    assert body["authority_health"].get("attempt") == "ready"
+    assert body["authority_health"].get("run") == "ready"
     assert body["authority_health"].get("result") == "ready"
 
     follow = client.get(

@@ -121,8 +121,8 @@ export function WorkbenchAuthorityProjectionPanel({
         >
           <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
             {isZh
-              ? "只读：HQA Task / Attempt / Run / result-ref 槽位（仅 id；typed 正文在 Typed results 面板）。普通 conversation_turn 不会伪造 Attempt。投影未接时诚实为空；≠ /hermes/tasks 研究任务页；无 stop/gate 写端。"
-              : "Read-only: HQA Task / Attempt / Run / result-ref slots (ids only; typed body lives in Typed results panel). Ordinary conversation_turn never invents Attempt rows. Empty is honest until projectors land; not the /hermes/tasks research page; no stop/gate write."}
+              ? "只读：HQA Task / Attempt / Run / result-ref 槽位（仅 id；typed 正文在 Typed results 面板）。V7g hermetic vertical bind 可填充 id；普通 conversation_turn 不会伪造 Attempt。空列表诚实；≠ /hermes/tasks 研究任务页；无 stop/gate 写端。"
+              : "Read-only: HQA Task / Attempt / Run / result-ref slots (ids only; typed body lives in Typed results panel). V7g hermetic vertical bind may fill ids; ordinary conversation_turn never invents Attempt rows. Empty is honest; not the /hermes/tasks research page; no stop/gate write."}
           </p>
 
           {!spineReady ? (

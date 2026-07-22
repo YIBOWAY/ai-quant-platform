@@ -250,11 +250,11 @@ class PlatformAgentWorkspace:
             "gate_1": "ready",
             "gate_2": "ready",
             "gate_3": "ready",
-            # L5b: Task/Attempt/Run authority projectors not wired —
-            # empty tuples stay empty; never invent HQA rows from commands.
-            "task": "unavailable",
-            "attempt": "unavailable",
-            "run": "unavailable",
+            # V7g-A-M1: hermetic vertical Task/Attempt/Run projector mounted
+            # (empty honest until bind; never invent from conversation.turn).
+            "task": "ready",
+            "attempt": "ready",
+            "run": "ready",
             # V7f: hermetic typed-result projector mounted (empty honest).
             "result": "ready",
         }
@@ -273,23 +273,31 @@ class PlatformAgentWorkspace:
         from quant_system.hermes.approval_observe import project_workspace_approvals
         from quant_system.hermes.gate_observe import project_workspace_gates
         from quant_system.hermes.result_observe import project_workspace_results
+        from quant_system.hermes.vertical_observe import (
+            attempt_ids_for_spine,
+            run_ids_for_spine,
+            task_ids_for_spine,
+        )
 
-        # Empty approvals[] / gates[] / results[] is honest; health stays "ready"
-        # because the hermetic in-process authorities are mounted (not live
-        # Hermes HTTP / live Futu).
+        # Empty approvals[] / gates[] / results[] / tasks is honest; health stays
+        # "ready" because the hermetic in-process authorities are mounted (not
+        # live Hermes HTTP / live Futu). V7g bind promotes task/attempt/run ids.
         approvals = tuple(project_workspace_approvals(workspace_id))
         gates = tuple(project_workspace_gates(workspace_id))
         results = tuple(project_workspace_results(workspace_id))
+        tasks = tuple(task_ids_for_spine(workspace_id))
+        attempts = tuple(attempt_ids_for_spine(workspace_id))
+        runs = tuple(run_ids_for_spine(workspace_id))
 
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
             owner_user_id=str(owner),
             snapshot_workspace_cursor=cursor,
             sessions=tuple(sessions),
-            tasks=(),
-            attempts=(),
+            tasks=tasks,
+            attempts=attempts,
             commands=tuple(commands),
-            runs=(),
+            runs=runs,
             results=results,
             approvals=approvals,
             gates=gates,
@@ -374,6 +382,7 @@ class PlatformAgentWorkspace:
             project_workspace_results,
             result_authority_health,
         )
+        from quant_system.hermes.vertical_observe import vertical_authority_health
 
         approvals = tuple(project_workspace_approvals(workspace_id))
         gates = tuple(project_workspace_gates(workspace_id))
@@ -382,6 +391,7 @@ class PlatformAgentWorkspace:
             "command_approval": "ready",
             **gate_authority_health(),
             **result_authority_health(),
+            **vertical_authority_health(),
         }
         return EventPage(
             events=tuple(events),
