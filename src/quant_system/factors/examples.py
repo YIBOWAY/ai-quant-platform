@@ -14,7 +14,10 @@ class MomentumFactor(BaseFactor):
     description = "Close-to-close momentum over a trailing window."
 
     def _compute_values(self, frame: pd.DataFrame) -> pd.Series:
-        return frame.groupby("symbol", sort=False)["close"].pct_change(self.lookback)
+        return frame.groupby("symbol", sort=False)["close"].pct_change(
+            self.lookback,
+            fill_method=None,
+        )
 
 
 class VolatilityFactor(BaseFactor):
