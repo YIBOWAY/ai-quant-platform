@@ -11,9 +11,10 @@ submission saga against the isolated database only.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Mapping
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from quant_system.config.settings import Settings
@@ -31,7 +32,7 @@ from quant_system.hermes.submission_saga import (
     authorities_ready,
     submit_action,
 )
-from quant_system.storage.database import DatabaseUnavailable, get_database
+from quant_system.storage.database import get_database
 
 # HQA-aligned public recovery codes (strings only; no HQA import).
 _RECOVERY_RESNAPSHOT = "resnapshot_workspace"
@@ -240,11 +241,12 @@ class PlatformAgentWorkspace:
 
         ready = authorities_ready(self._settings)
         observed_at = (
-            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         )
         mutation_on = bool(self._mutation_enabled or ready.get("mutation_enabled"))
         composer_on = bool(ready.get("composer_write_ready") or ready.get("chat_write_ready"))
         health: dict[str, str] = {
+            "database": "ready" if ready["ready"] else "unavailable",
             "command_ledger": (
                 "ready" if ready["command_ledger_schema_ready"] else "unavailable"
             ),
@@ -283,9 +285,18 @@ class PlatformAgentWorkspace:
         cursor = 0
 
         if ready["ready"]:
-            sessions, commands, cursor = self._collect_workspace_projection(
+            sessions, commands, cursor, projection_available = self._collect_workspace_projection(
                 workspace_id
             )
+            if not projection_available:
+                for authority_name in (
+                    "database",
+                    "command_ledger",
+                    "session_registry",
+                    "workflow_binding",
+                    "research_binding",
+                ):
+                    health[authority_name] = "unavailable"
 
         # V7a/V7d: project pending + recent decided command-approval challenges
         # from hermetic authority. Never invent Gate 1/2/3 into approvals[].
@@ -418,6 +429,30 @@ class PlatformAgentWorkspace:
         # Hermetic projections always attach (V7d–V7g), even when durable command
         # events require resync. MAJOR-2: Task/Attempt/Run ids must not wait for PG.
         proj = self._hermetic_spine_projections(workspace_id)
+        supplemental_health = dict(proj["authority_health"])  # type: ignore[arg-type]
+
+        def _set_database_health(available: bool) -> None:
+            state = "ready" if available else "unavailable"
+            supplemental_health.update(
+                {
+                    "database": state,
+                    "command_ledger": state
+                    if ready.get("command_ledger_schema_ready")
+                    else "unavailable",
+                    "session_registry": state
+                    if ready.get("session_registry_schema_ready")
+                    else "unavailable",
+                    "workflow_binding": state
+                    if ready.get("workflow_binding_schema_ready")
+                    else "unavailable",
+                    "research_binding": state
+                    if ready.get("research_binding_ready")
+                    else "unavailable",
+                }
+            )
+            proj["authority_health"] = supplemental_health
+
+        _set_database_health(bool(ready["ready"]))
         if not ready["ready"]:
             # Fail closed on command events: client must resnapshot rather than
             # invent lifecycle rows. Hermetic projections still ride along so
@@ -443,12 +478,14 @@ class PlatformAgentWorkspace:
         page_limit = limit if type(limit) is int and 1 <= limit <= 200 else 100
         after_cursor = 0 if after_value is None else after_value
         try:
-            events, next_cursor, resync = self._collect_workspace_events(
+            events, next_cursor, resync, database_available = self._collect_workspace_events(
                 workspace_id,
                 after_cursor=after_cursor,
                 limit=page_limit,
             )
-        except (DatabaseUnavailable, Exception):
+            _set_database_health(database_available)
+        except Exception:
+            _set_database_health(False)
             return EventPage(
                 events=(),
                 after_cursor=after_value,
@@ -513,12 +550,13 @@ class PlatformAgentWorkspace:
 
     def _collect_workspace_projection(
         self, workspace_id: str
-    ) -> tuple[list[str], list[dict[str, object]], int]:
-        """Best-effort read of sessions + command objects + durable event cursor.
+    ) -> tuple[list[str], list[dict[str, object]], int, bool]:
+        """Read sessions + command objects + cursor and report authority health.
 
-        Never raises for missing rows; authority outage surfaces as empty
-        projection with health already marked unavailable by the caller when
-        readiness is false. Here readiness is true.
+        The last boolean is true only when the read reached PostgreSQL.  A
+        snapshot stays structurally available during an outage, but the caller
+        must mark every DB-backed authority unavailable instead of presenting
+        an empty projection as a healthy empty state.
         """
         from quant_system.hermes.submission_saga import control_plane_session_id
         from quant_system.hermes.workspace_observe import project_command_public
@@ -529,7 +567,7 @@ class PlatformAgentWorkspace:
         cursor = 0
         database = get_database(self._settings)
         if database is None:
-            return sessions, commands, cursor
+            return sessions, commands, cursor, False
         try:
             with database.connect() as conn:
                 sessions = self._workspace_session_ids(conn, workspace_id)
@@ -597,10 +635,9 @@ class PlatformAgentWorkspace:
                     (ROOT_USER_ID, control, session_filter or [""]),
                 ).fetchone()
                 cursor = int(head[0]) if head is not None else 0
-        except (DatabaseUnavailable, Exception):
-            # Snapshot stays available with empty projection; health already set.
-            return [], [], 0
-        return sessions, commands, cursor
+        except Exception:
+            return [], [], 0, False
+        return sessions, commands, cursor, True
 
     def _collect_workspace_events(
         self,
@@ -608,8 +645,8 @@ class PlatformAgentWorkspace:
         *,
         after_cursor: int,
         limit: int,
-    ) -> tuple[list[dict[str, object]], int | None, bool]:
-        """Return (events, next_cursor, resync_required)."""
+    ) -> tuple[list[dict[str, object]], int | None, bool, bool]:
+        """Return events, cursor, resync flag and database availability."""
         from quant_system.hermes.submission_saga import control_plane_session_id
         from quant_system.hermes.workspace_observe import (
             follow_resync_required,
@@ -619,7 +656,7 @@ class PlatformAgentWorkspace:
 
         database = get_database(self._settings)
         if database is None:
-            return [], None, True
+            return [], None, True, False
         with database.connect() as conn:
             sessions = self._workspace_session_ids(conn, workspace_id)
             control = control_plane_session_id(workspace_id)
@@ -642,7 +679,7 @@ class PlatformAgentWorkspace:
             if follow_resync_required(
                 after_cursor=after_cursor, head_event_id=head_event_id
             ):
-                return [], None, True
+                return [], None, True, True
             rows = conn.execute(
                 f"""
                 SELECT
@@ -708,7 +745,7 @@ class PlatformAgentWorkspace:
         # Idle poll: keep cursor at after when no new events.
         if not events:
             next_cursor = after_cursor
-        return events, next_cursor, False
+        return events, next_cursor, False, True
 
     @staticmethod
     def _resolve_actor(actor: ActorRef | Mapping[str, Any] | str) -> UUID:

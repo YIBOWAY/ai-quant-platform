@@ -90,3 +90,50 @@ def test_default_workspace_rejects_hermetic_vertical_action() -> None:
     assert receipt.attempt_id is None
     assert receipt.run_id is None
     assert receipt.result_id is None
+
+
+def test_snapshot_marks_db_authorities_unavailable_when_read_fails(
+    monkeypatch,
+) -> None:
+    from quant_system.hermes import agent_workspace as workspace_module
+
+    ready = {
+        "ready": True,
+        "mutation_enabled": True,
+        "composer_write_ready": False,
+        "chat_write_ready": False,
+        "command_ledger_schema_ready": True,
+        "session_registry_schema_ready": True,
+        "workflow_binding_schema_ready": True,
+        "research_binding_ready": True,
+    }
+
+    class _BrokenDatabase:
+        def connect(self):
+            raise RuntimeError("simulated database outage")
+
+    monkeypatch.setattr(workspace_module, "authorities_ready", lambda _settings: ready)
+    monkeypatch.setattr(workspace_module, "get_database", lambda _settings: _BrokenDatabase())
+
+    snapshot = PlatformAgentWorkspace(_settings(), mutation_enabled=True).snapshot(
+        str(ROOT_USER_ID),
+        {"workspace_id": WORKSPACE_ID},
+    )
+
+    assert snapshot.sessions == ()
+    assert snapshot.commands == ()
+    assert snapshot.authority_health["database"] == "unavailable"
+    assert snapshot.authority_health["command_ledger"] == "unavailable"
+    assert snapshot.authority_health["session_registry"] == "unavailable"
+    assert snapshot.authority_health["workflow_binding"] == "unavailable"
+    assert snapshot.authority_health["research_binding"] == "unavailable"
+
+    page = PlatformAgentWorkspace(_settings(), mutation_enabled=True).follow(
+        str(ROOT_USER_ID),
+        {"workspace_id": WORKSPACE_ID},
+        after=0,
+    )
+    assert page.resync_required is True
+    assert page.authority_health is not None
+    assert page.authority_health["database"] == "unavailable"
+    assert page.authority_health["command_ledger"] == "unavailable"
