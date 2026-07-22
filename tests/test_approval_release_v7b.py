@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -10,28 +11,45 @@ from quant_system.config.settings import DatabaseSettings, Settings
 from quant_system.hermes.approval_release_port import (
     ApprovalReleaseError,
     FakeHermesApprovalReleaseAdapter,
-    default_approval_release_adapter,
     map_decision_to_release_choice,
     project_pending_challenge,
-    reset_default_approval_release_adapter,
 )
-from quant_system.hermes.command_approval_authority import (
-    default_command_approval_authority,
-    reset_default_command_approval_authority,
-)
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.command_approval_authority import CommandApprovalAuthority
+from quant_system.hermes.submission_saga import ActionReceipt, submit_action
 
 DIGEST = "a" * 64
 WS = "ws-v7b-release"
 
 
-@pytest.fixture(autouse=True)
-def _reset() -> None:
-    reset_default_command_approval_authority()
-    reset_default_approval_release_adapter()
-    yield
-    reset_default_command_approval_authority()
-    reset_default_approval_release_adapter()
+@dataclass(frozen=True)
+class ApprovalTestHarness:
+    authority: CommandApprovalAuthority
+    release_adapter: FakeHermesApprovalReleaseAdapter
+
+    def project(self, **kwargs: Any) -> dict[str, object]:
+        return project_pending_challenge(
+            **kwargs,
+            approval_authority=self.authority,
+            release_adapter=self.release_adapter,
+        )
+
+    def submit(self, doc: dict[str, object], *, mutation_enabled: bool) -> ActionReceipt:
+        return submit_action(
+            _settings(),
+            doc,
+            mutation_enabled=mutation_enabled,
+            allow_hermetic_authorities=True,
+            approval_authority=self.authority,
+            approval_release_adapter=self.release_adapter,
+        )
+
+
+@pytest.fixture
+def harness() -> ApprovalTestHarness:
+    return ApprovalTestHarness(
+        authority=CommandApprovalAuthority(),
+        release_adapter=FakeHermesApprovalReleaseAdapter(),
+    )
 
 
 def _settings() -> Settings:
@@ -48,8 +66,10 @@ def test_map_decision_to_release_choice() -> None:
         map_decision_to_release_choice("allow")
 
 
-def test_raise_and_project_pending_appears_in_list() -> None:
-    row = project_pending_challenge(
+def test_raise_and_project_pending_appears_in_list(
+    harness: ApprovalTestHarness,
+) -> None:
+    row = harness.project(
         workspace_id=WS,
         run_id="hermes.v7b.1",
         command_digest=DIGEST,
@@ -61,15 +81,17 @@ def test_raise_and_project_pending_appears_in_list() -> None:
     assert row["run_id"] == "hermes.v7b.1"
     assert row["status"] == "pending"
     assert row["digest"] == DIGEST
-    pending = default_command_approval_authority().list_pending(WS)
+    pending = harness.authority.list_pending(WS)
     assert len(pending) == 1
-    grants = default_approval_release_adapter().list_pending_grants()
+    grants = harness.release_adapter.list_pending_grants()
     assert len(grants) == 1
     assert grants[0]["challenge_id"] == "challenge.v7b.1"
 
 
-def test_allow_once_decide_releases_and_signals_once() -> None:
-    row = project_pending_challenge(
+def test_allow_once_decide_releases_and_signals_once(
+    harness: ApprovalTestHarness,
+) -> None:
+    row = harness.project(
         workspace_id=WS,
         run_id="hermes.v7b.allow",
         command_digest=DIGEST,
@@ -89,11 +111,11 @@ def test_allow_once_decide_releases_and_signals_once() -> None:
         "expected_expires_at": exp,
         "decision": "allow_once",
     }
-    receipt = submit_action(_settings(), doc, mutation_enabled=True)
+    receipt = harness.submit(doc, mutation_enabled=True)
     assert receipt.status == "accepted"
     assert receipt.run_id == "hermes.v7b.allow"
-    assert default_command_approval_authority().list_pending(WS) == []
-    adapter = default_approval_release_adapter()
+    assert harness.authority.list_pending(WS) == []
+    adapter = harness.release_adapter
     assert adapter.respond_calls == 1
     events = adapter.events("hermes.v7b.allow")
     assert [e["event_type"] for e in events] == [
@@ -106,8 +128,10 @@ def test_allow_once_decide_releases_and_signals_once() -> None:
     assert adapter.list_pending_grants() == []
 
 
-def test_deny_decide_releases_with_choice_deny() -> None:
-    row = project_pending_challenge(
+def test_deny_decide_releases_with_choice_deny(
+    harness: ApprovalTestHarness,
+) -> None:
+    row = harness.project(
         workspace_id=WS,
         run_id="hermes.v7b.deny",
         command_digest=DIGEST,
@@ -127,14 +151,16 @@ def test_deny_decide_releases_with_choice_deny() -> None:
         "expected_expires_at": exp,
         "decision": "deny",
     }
-    receipt = submit_action(_settings(), doc, mutation_enabled=True)
+    receipt = harness.submit(doc, mutation_enabled=True)
     assert receipt.status == "accepted"
-    events = default_approval_release_adapter().events("hermes.v7b.deny")
+    events = harness.release_adapter.events("hermes.v7b.deny")
     assert events[-1]["payload"]["choice"] == "deny"
 
 
-def test_idempotent_replay_does_not_double_signal() -> None:
-    row = project_pending_challenge(
+def test_idempotent_replay_does_not_double_signal(
+    harness: ApprovalTestHarness,
+) -> None:
+    row = harness.project(
         workspace_id=WS,
         run_id="hermes.v7b.idem",
         command_digest=DIGEST,
@@ -154,18 +180,20 @@ def test_idempotent_replay_does_not_double_signal() -> None:
         "expected_expires_at": exp,
         "decision": "allow_once",
     }
-    first = submit_action(_settings(), doc, mutation_enabled=True)
-    second = submit_action(_settings(), doc, mutation_enabled=True)
+    first = harness.submit(doc, mutation_enabled=True)
+    second = harness.submit(doc, mutation_enabled=True)
     assert first.status == "accepted"
     assert second.status == "accepted"
-    adapter = default_approval_release_adapter()
+    adapter = harness.release_adapter
     assert adapter.respond_calls == 2  # second is idempotent replay call
     events = adapter.events("hermes.v7b.idem")
     assert len([e for e in events if e["event_type"] == "approval.signalled"]) == 1
 
 
-def test_second_decision_after_consume_is_conflict_no_extra_signal() -> None:
-    row = project_pending_challenge(
+def test_second_decision_after_consume_is_conflict_no_extra_signal(
+    harness: ApprovalTestHarness,
+) -> None:
+    row = harness.project(
         workspace_id=WS,
         run_id="hermes.v7b.once",
         command_digest=DIGEST,
@@ -183,25 +211,25 @@ def test_second_decision_after_consume_is_conflict_no_extra_signal() -> None:
         "expected_status": "pending",
         "expected_expires_at": exp,
     }
-    first = submit_action(
-        _settings(),
+    first = harness.submit(
         {**base, "client_action_id": "act-1", "decision": "allow_once"},
         mutation_enabled=True,
     )
     assert first.status == "accepted"
-    conflict = submit_action(
-        _settings(),
+    conflict = harness.submit(
         {**base, "client_action_id": "act-2", "decision": "deny"},
         mutation_enabled=True,
     )
     assert conflict.status == "conflict"
     assert "already_decided" in (conflict.reason_code or "")
-    events = default_approval_release_adapter().events("hermes.v7b.once")
+    events = harness.release_adapter.events("hermes.v7b.once")
     assert len([e for e in events if e["event_type"] == "approval.signalled"]) == 1
 
 
-def test_digest_mismatch_does_not_release() -> None:
-    row = project_pending_challenge(
+def test_digest_mismatch_does_not_release(
+    harness: ApprovalTestHarness,
+) -> None:
+    row = harness.project(
         workspace_id=WS,
         run_id="hermes.v7b.mismatch",
         command_digest=DIGEST,
@@ -221,16 +249,18 @@ def test_digest_mismatch_does_not_release() -> None:
         "expected_expires_at": exp,
         "decision": "deny",
     }
-    receipt = submit_action(_settings(), doc, mutation_enabled=True)
+    receipt = harness.submit(doc, mutation_enabled=True)
     assert receipt.status == "conflict"
     assert "digest_mismatch" in (receipt.reason_code or "")
-    assert len(default_command_approval_authority().list_pending(WS)) == 1
-    assert default_approval_release_adapter().respond_calls == 0
-    assert default_approval_release_adapter().events("hermes.v7b.mismatch") == []
+    assert len(harness.authority.list_pending(WS)) == 1
+    assert harness.release_adapter.respond_calls == 0
+    assert harness.release_adapter.events("hermes.v7b.mismatch") == []
 
 
-def test_mutation_off_no_release_side_effect() -> None:
-    row = project_pending_challenge(
+def test_mutation_off_no_release_side_effect(
+    harness: ApprovalTestHarness,
+) -> None:
+    row = harness.project(
         workspace_id=WS,
         run_id="hermes.v7b.off",
         command_digest=DIGEST,
@@ -250,14 +280,16 @@ def test_mutation_off_no_release_side_effect() -> None:
         "expected_expires_at": exp,
         "decision": "allow_once",
     }
-    receipt = submit_action(_settings(), doc, mutation_enabled=False)
+    receipt = harness.submit(doc, mutation_enabled=False)
     assert receipt.status == "unavailable"
-    assert len(default_command_approval_authority().list_pending(WS)) == 1
-    assert default_approval_release_adapter().respond_calls == 0
+    assert len(harness.authority.list_pending(WS)) == 1
+    assert harness.release_adapter.respond_calls == 0
 
 
-def test_release_fault_after_cas_returns_reconciling() -> None:
-    row = project_pending_challenge(
+def test_release_fault_after_cas_returns_reconciling(
+    harness: ApprovalTestHarness,
+) -> None:
+    row = harness.project(
         workspace_id=WS,
         run_id="hermes.v7b.stale",
         command_digest=DIGEST,
@@ -265,7 +297,7 @@ def test_release_fault_after_cas_returns_reconciling() -> None:
         ttl_seconds=3600.0,
     )
     exp = str(row["expires_at"])
-    adapter = default_approval_release_adapter()
+    adapter = harness.release_adapter
     adapter.next_fault = "stale"
     doc = {
         "schema_version": 1,
@@ -279,11 +311,11 @@ def test_release_fault_after_cas_returns_reconciling() -> None:
         "expected_expires_at": exp,
         "decision": "allow_once",
     }
-    receipt = submit_action(_settings(), doc, mutation_enabled=True)
+    receipt = harness.submit(doc, mutation_enabled=True)
     assert receipt.status == "reconciling"
     assert receipt.reason_code == "approval_challenge_invalid"
     # CAS already committed — pending must stay empty (no resurrect).
-    assert default_command_approval_authority().list_pending(WS) == []
+    assert harness.authority.list_pending(WS) == []
     # No signalled event because release failed closed.
     assert adapter.events("hermes.v7b.stale") == []
 

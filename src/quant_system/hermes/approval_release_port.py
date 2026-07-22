@@ -13,15 +13,17 @@ and **not** a public write path. Production HTTP release remains a later slice.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from threading import Lock
-from typing import Literal, Mapping
 import re
 import time
 import uuid
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from threading import Lock
+from typing import Literal, Protocol
 
 from quant_system.hermes.command_approval_authority import (
+    CommandApprovalAuthority,
     CommandApprovalAuthorityError,
     default_command_approval_authority,
 )
@@ -66,6 +68,32 @@ class ApprovalReleaseResult:
             "action_digest": self.action_digest,
             "resolved": self.resolved,
         }
+
+
+class ApprovalReleasePort(Protocol):
+    """Minimal release seam used by the approval-decision saga."""
+
+    def respond_approval(
+        self,
+        run_id: str,
+        *,
+        choice: str,
+        challenge_id: str,
+        action_digest: str,
+    ) -> ApprovalReleaseResult: ...
+
+
+class ApprovalChallengeSeedPort(ApprovalReleasePort, Protocol):
+    """Hermetic extension used only to seed a challenge in contract tests."""
+
+    def raise_approval(
+        self,
+        run_id: str,
+        *,
+        action_digest: str,
+        challenge_id: str | None = None,
+        ttl_seconds: float = 300.0,
+    ) -> dict[str, object]: ...
 
 
 @dataclass
@@ -117,7 +145,7 @@ def _validate_id(value: str, field: str) -> str:
 
 def _canon_expires_rfc3339(expires_at: float) -> str:
     return (
-        datetime.fromtimestamp(expires_at, tz=timezone.utc)
+        datetime.fromtimestamp(expires_at, tz=UTC)
         .strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     )
 
@@ -167,10 +195,11 @@ class FakeHermesApprovalReleaseAdapter:
         if ttl_seconds <= 0:
             raise ApprovalReleaseError("validation", "ttl_seconds must be positive")
         cid = challenge_id
-        if cid is None:
-            cid = f"ch_{uuid.uuid4().hex}"
-        else:
-            cid = _validate_id(cid, "challenge_id")
+        cid = (
+            f"ch_{uuid.uuid4().hex}"
+            if cid is None
+            else _validate_id(cid, "challenge_id")
+        )
         expires_at = time.time() + float(ttl_seconds)
         grant = _ReleaseGrant(
             challenge_id=cid,
@@ -377,7 +406,8 @@ def project_pending_challenge(
     approval_id: str | None = None,
     command_id: str | None = None,
     ttl_seconds: float = 300.0,
-    release_adapter: FakeHermesApprovalReleaseAdapter | None = None,
+    release_adapter: ApprovalChallengeSeedPort | None = None,
+    approval_authority: CommandApprovalAuthority | None = None,
 ) -> dict[str, object]:
     """Raise on the release adapter AND seed CommandApprovalAuthority.
 
@@ -385,7 +415,7 @@ def project_pending_challenge(
     the same challenge_id / digest / expires_at binding.
     """
     adapter = release_adapter or default_approval_release_adapter()
-    authority = default_command_approval_authority()
+    authority = approval_authority or default_command_approval_authority()
     if type(workspace_id) is not str or _ID.fullmatch(workspace_id) is None:
         raise ApprovalReleaseError(
             "validation", "workspace_id must be a bounded identifier"
@@ -424,7 +454,9 @@ def reset_default_approval_release_adapter() -> None:
 
 
 __all__ = [
+    "ApprovalChallengeSeedPort",
     "ApprovalReleaseError",
+    "ApprovalReleasePort",
     "ApprovalReleaseResult",
     "FakeHermesApprovalReleaseAdapter",
     "default_approval_release_adapter",

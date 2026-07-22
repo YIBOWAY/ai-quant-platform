@@ -25,6 +25,13 @@ from quant_system.api.dependencies import (
     SettingsDep,
     require_mutation_security,
 )
+from quant_system.api.schemas.workspace import (
+    CompositeTurnReceiptResponse,
+    WorkspaceActionReceiptResponse,
+    WorkspaceAuthoritiesResponse,
+    WorkspaceFollowResponse,
+    WorkspaceSnapshotResponse,
+)
 from quant_system.hermes.agent_workspace import (
     ActorRef,
     PlatformAgentWorkspace,
@@ -93,7 +100,10 @@ def _http_from_saga(exc: SubmissionSagaError, *, mutation_enabled: bool = False)
     )
 
 
-@router.get("/workspace/{workspace_id}/snapshot")
+@router.get(
+    "/workspace/{workspace_id}/snapshot",
+    response_model=WorkspaceSnapshotResponse,
+)
 def workspace_snapshot(
     workspace_id: str,
     settings: SettingsDep,
@@ -115,7 +125,11 @@ def workspace_snapshot(
     return snap.to_public_dict()
 
 
-@router.get("/workspace/{workspace_id}/follow")
+@router.get(
+    "/workspace/{workspace_id}/follow",
+    response_model=WorkspaceFollowResponse,
+    response_model_exclude_none=True,
+)
 def workspace_follow(
     workspace_id: str,
     settings: SettingsDep,
@@ -150,7 +164,14 @@ _SSE_MAX_TICKS = 600  # ~10 min then client reconnects
 _SSE_MAX_TICKS_CEILING = 600
 
 
-@router.get("/workspace/{workspace_id}/follow/stream")
+class WorkspaceEventStreamResponse(StreamingResponse):
+    media_type = "text/event-stream"
+
+
+@router.get(
+    "/workspace/{workspace_id}/follow/stream",
+    response_class=WorkspaceEventStreamResponse,
+)
 def workspace_follow_stream(
     workspace_id: str,
     settings: SettingsDep,
@@ -510,14 +531,16 @@ def workspace_follow_stream(
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
     }
-    return StreamingResponse(
+    return WorkspaceEventStreamResponse(
         event_iter(),
-        media_type="text/event-stream",
         headers=headers,
     )
 
 
-@router.get("/workspace/authorities")
+@router.get(
+    "/workspace/authorities",
+    response_model=WorkspaceAuthoritiesResponse,
+)
 def workspace_authorities(
     settings: SettingsDep,
     owner: OwnerSessionDep,
@@ -527,7 +550,11 @@ def workspace_authorities(
     return composer_readiness_snapshot(settings)
 
 
-@router.post("/workspace/{workspace_id}/act")
+@router.post(
+    "/workspace/{workspace_id}/act",
+    response_model=WorkspaceActionReceiptResponse,
+    response_model_exclude_none=True,
+)
 def workspace_act(
     workspace_id: str,
     body: WorkspaceActRequest,
@@ -581,7 +608,11 @@ def workspace_act(
     return receipt.to_public_dict()
 
 
-@router.post("/agent/workspace/submit-turn")
+@router.post(
+    "/agent/workspace/submit-turn",
+    response_model=CompositeTurnReceiptResponse,
+    response_model_exclude_none=True,
+)
 def workspace_submit_turn(
     body: SubmitTurnRequest,
     request: Request,

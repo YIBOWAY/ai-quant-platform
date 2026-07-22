@@ -21,6 +21,32 @@ def test_all_json_200_responses_publish_component_refs(tmp_path) -> None:
     assert non_ref_responses == []
 
 
+def test_owner_and_workspace_routes_publish_named_response_contracts(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+    expected = {
+        ("post", "/api/auth/owner/bootstrap"): "OwnerBootstrapResponse",
+        ("get", "/api/auth/owner/session"): "OwnerSessionStatusResponse",
+        ("post", "/api/auth/owner/logout"): "OwnerLogoutResponse",
+        ("get", "/api/workspace/{workspace_id}/snapshot"): "WorkspaceSnapshotResponse",
+        ("get", "/api/workspace/{workspace_id}/follow"): "WorkspaceFollowResponse",
+        ("get", "/api/workspace/authorities"): "WorkspaceAuthoritiesResponse",
+        ("post", "/api/workspace/{workspace_id}/act"): "WorkspaceActionReceiptResponse",
+        ("post", "/api/agent/workspace/submit-turn"): "CompositeTurnReceiptResponse",
+    }
+    for (method, path), model_name in expected.items():
+        schema = openapi["paths"][path][method]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert schema == {"$ref": f"#/components/schemas/{model_name}"}
+
+    stream = openapi["paths"]["/api/workspace/{workspace_id}/follow/stream"]["get"]
+    assert stream["responses"]["200"]["content"] == {
+        "text/event-stream": {"schema": {"type": "string"}}
+    }
+
+
 def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 

@@ -24,6 +24,11 @@ from quant_system.api.safety.local_session import (
     session_public_view,
     verify_session_cookie,
 )
+from quant_system.api.schemas.local_session import (
+    OwnerBootstrapResponse,
+    OwnerLogoutResponse,
+    OwnerSessionStatusResponse,
+)
 
 router = APIRouter()
 
@@ -81,7 +86,7 @@ def _clear_session_cookies(response: Response) -> None:
     response.delete_cookie(CSRF_COOKIE_NAME, path="/")
 
 
-@router.post("/auth/owner/bootstrap")
+@router.post("/auth/owner/bootstrap", response_model=OwnerBootstrapResponse)
 def owner_bootstrap(
     body: BootstrapRequest,
     request: Request,
@@ -119,7 +124,7 @@ def owner_bootstrap(
     return view
 
 
-@router.get("/auth/owner/session")
+@router.get("/auth/owner/session", response_model=OwnerSessionStatusResponse)
 def owner_session_status(
     request: Request,
     settings: SettingsDep,
@@ -146,7 +151,7 @@ def owner_session_status(
     return view
 
 
-@router.post("/auth/owner/logout")
+@router.post("/auth/owner/logout", response_model=OwnerLogoutResponse)
 def owner_logout(
     request: Request,
     response: Response,

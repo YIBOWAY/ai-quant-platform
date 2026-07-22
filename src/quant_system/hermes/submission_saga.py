@@ -55,10 +55,12 @@ from quant_system.hermes.agent_workspace_actions import (
 )
 from quant_system.hermes.approval_release_port import (
     ApprovalReleaseError,
+    ApprovalReleasePort,
     default_approval_release_adapter,
     map_decision_to_release_choice,
 )
 from quant_system.hermes.command_approval_authority import (
+    CommandApprovalAuthority,
     CommandApprovalAuthorityError,
     default_command_approval_authority,
 )
@@ -672,6 +674,8 @@ def submit_decide_hermes_command_approval(
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    approval_authority: CommandApprovalAuthority | None = None,
+    approval_release_adapter: ApprovalReleasePort | None = None,
 ) -> ActionReceipt:
     """V7a+V7b: exact CAS decide then hermetic respond_approval release/signal.
 
@@ -694,7 +698,7 @@ def submit_decide_hermes_command_approval(
         )
     _require_root_actor(actor_owner_user_id)
 
-    authority = default_command_approval_authority()
+    authority = approval_authority or default_command_approval_authority()
     try:
         decided = authority.decide(
             workspace_id=action.workspace.workspace_id,
@@ -731,7 +735,8 @@ def submit_decide_hermes_command_approval(
     # respond_approval so the release side can idempotent-replay.
     try:
         choice = map_decision_to_release_choice(action.decision)
-        default_approval_release_adapter().respond_approval(
+        release_adapter = approval_release_adapter or default_approval_release_adapter()
+        release_adapter.respond_approval(
             decided.run_id,
             choice=choice,
             challenge_id=decided.approval_id,
@@ -1286,6 +1291,8 @@ def submit_action(
     mutation_enabled: bool = False,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
     allow_hermetic_authorities: bool = False,
+    approval_authority: CommandApprovalAuthority | None = None,
+    approval_release_adapter: ApprovalReleasePort | None = None,
 ) -> ActionReceipt:
     """Dispatch one closed action through the crash-safe submission path."""
     if isinstance(action, dict):
@@ -1349,6 +1356,8 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            approval_authority=approval_authority,
+            approval_release_adapter=approval_release_adapter,
         )
     if type(parsed) is RequestStop:
         return submit_stop_run_request(
