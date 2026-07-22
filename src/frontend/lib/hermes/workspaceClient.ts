@@ -203,36 +203,27 @@ export async function getOwnerSession(
   }
 }
 
-/**
- * Ensure owner loopback session exists.
- * Uses operator helper issue → one-time bootstrap exchange when no cookie yet.
- */
-export async function ensureOwnerSession(
+const OWNER_BOOTSTRAP_INSTRUCTION =
+  "Owner session required. Run `quant-system owner-bootstrap-token` in the backend terminal, then paste the one-time token here.";
+
+export async function bootstrapOwnerSession(
+  bootstrapToken: string,
   signal?: AbortSignal,
 ): Promise<OwnerSessionView> {
-  const existing = await getOwnerSession(signal);
-  if (existing?.session_id) {
-    return existing;
-  }
-
-  const issued = await sameOriginJson<{ bootstrap_token: string }>(
-    "/api/auth/owner/bootstrap-token/issue",
-    { method: "POST", signal },
-  );
-  if (!issued.bootstrap_token) {
+  const token = bootstrapToken.trim();
+  if (token.length < 32 || token.length > 256) {
     throw new WorkspaceClientError(
-      "bootstrap token issue returned empty token",
-      503,
-      "unavailable",
+      "owner bootstrap token must be 32-256 characters",
+      422,
+      "validation",
     );
   }
-
   const bootstrapped = await sameOriginJson<OwnerSessionView>(
     "/api/auth/owner/bootstrap",
     {
       method: "POST",
-      body: { bootstrap_token: issued.bootstrap_token },
-      // Bootstrap is the cookie mint; CSRF not yet established.
+      body: { bootstrap_token: token },
+      // Bootstrap is the cookie mint; CSRF is not established yet.
       signal,
     },
   );
@@ -244,6 +235,33 @@ export async function ensureOwnerSession(
     );
   }
   return bootstrapped;
+}
+
+/**
+ * Ensure an owner loopback session exists. First bootstrap is an explicit
+ * operator action: the browser never asks an unauthenticated HTTP route to
+ * disclose the owner-only token file.
+ */
+export async function ensureOwnerSession(
+  signal?: AbortSignal,
+): Promise<OwnerSessionView> {
+  const existing = await getOwnerSession(signal);
+  if (existing?.session_id) {
+    return existing;
+  }
+
+  const presented =
+    typeof window !== "undefined" && typeof window.prompt === "function"
+      ? window.prompt(OWNER_BOOTSTRAP_INSTRUCTION)
+      : null;
+  if (!presented) {
+    throw new WorkspaceClientError(
+      OWNER_BOOTSTRAP_INSTRUCTION,
+      401,
+      "owner_bootstrap_required",
+    );
+  }
+  return bootstrapOwnerSession(presented, signal);
 }
 
 function sessionStorageOrMemory(): Storage | null {

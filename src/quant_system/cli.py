@@ -30,6 +30,10 @@ from quant_system.agent.promotion import (
     load_approved_factor_candidate,
 )
 from quant_system.agent.runner import AgentRunner
+from quant_system.api.safety.local_session import (
+    bootstrap_token_path,
+    issue_bootstrap_token,
+)
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
 from quant_system.config.settings import load_settings, reload_settings
 from quant_system.data.pipeline import IngestionResult, run_sample_ingestion, run_tiingo_ingestion
@@ -300,6 +304,37 @@ def doctor(
                 "ok": True,
             }
         )
+
+
+@app.command("owner-bootstrap-token")
+def owner_bootstrap_token(
+    data_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--data-dir",
+            help="Backend data directory that owns the 0600 security token file.",
+        ),
+    ] = None,
+    rotate: Annotated[
+        bool,
+        typer.Option(
+            "--rotate",
+            help="Invalidate the current one-time token and create a replacement.",
+        ),
+    ] = False,
+) -> None:
+    """Print an owner-only one-time token for explicit Web bootstrap."""
+
+    settings = reload_settings()
+    output_dir = data_dir if data_dir is not None else settings.data.data_dir
+    token = issue_bootstrap_token(output_dir, force_rotate=rotate)
+    typer.echo(
+        f"owner bootstrap token file: {bootstrap_token_path(output_dir)} (0600)",
+        err=True,
+    )
+    # The operator explicitly invoked a secret-output command. Keep stdout to
+    # the token alone so it can be copied without leaking through HTTP/logs.
+    typer.echo(token)
 
 
 @app.command("migrate")
