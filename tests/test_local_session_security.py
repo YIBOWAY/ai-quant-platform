@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 import stat
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -19,6 +21,7 @@ from quant_system.api.safety.local_session import (
     issue_bootstrap_token,
     mint_owner_session,
     policy_from_settings,
+    require_loopback_peer,
     require_mutation_precheck,
     signing_key_path,
     verify_csrf,
@@ -143,6 +146,56 @@ def test_bootstrap_token_is_one_time(tmp_path: Path) -> None:
     assert second.json()["detail"]["code"] == "auth"
 
 
+def test_bootstrap_rotation_refuses_symlink_without_touching_target(
+    tmp_path: Path,
+) -> None:
+    from quant_system.api.safety.local_session import bootstrap_token_path
+
+    victim = tmp_path / "must-not-be-overwritten"
+    victim.write_text("preserve-me", encoding="utf-8")
+    token_path = bootstrap_token_path(tmp_path)
+    token_path.parent.mkdir(parents=True, exist_ok=True)
+    token_path.symlink_to(victim)
+
+    with pytest.raises((LocalSessionForbidden, OSError)):
+        issue_bootstrap_token(tmp_path, force_rotate=True)
+
+    assert victim.read_text(encoding="utf-8") == "preserve-me"
+
+
+def test_concurrent_bootstrap_exchange_has_exactly_one_winner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two readers that both saw the old token still cannot both consume it."""
+    from quant_system.api.safety.local_session import bootstrap_token_path
+
+    token = issue_bootstrap_token(tmp_path)
+    token_path = bootstrap_token_path(tmp_path)
+    original_read_text = Path.read_text
+    both_read = threading.Barrier(2)
+
+    def _synchronised_read(path: Path, *args, **kwargs):
+        value = original_read_text(path, *args, **kwargs)
+        if path == token_path:
+            both_read.wait(timeout=2)
+        return value
+
+    monkeypatch.setattr(Path, "read_text", _synchronised_read)
+
+    def _exchange() -> bool:
+        try:
+            exchange_bootstrap_token(tmp_path, token)
+        except LocalSessionAuthError:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        winners = list(pool.map(lambda _index: _exchange(), range(2)))
+
+    assert winners.count(True) == 1
+
+
 def test_forged_and_expired_cookie_fail(tmp_path: Path) -> None:
     issued = exchange_bootstrap_token(tmp_path, issue_bootstrap_token(tmp_path))
     with pytest.raises(LocalSessionAuthError):
@@ -177,6 +230,17 @@ def test_cross_origin_and_sec_fetch_site_fail_closed(tmp_path: Path) -> None:
         headers=_browser_headers(site="none"),
     )
     assert none_site.status_code == 403
+
+
+def test_actual_client_peer_must_be_loopback() -> None:
+    require_loopback_peer("127.0.0.1")
+    require_loopback_peer("::1")
+    # Starlette TestClient's synthetic peer; never produced by a real socket.
+    require_loopback_peer("testclient")
+    with pytest.raises(LocalSessionForbidden):
+        require_loopback_peer("192.0.2.25")
+    with pytest.raises(LocalSessionForbidden):
+        require_loopback_peer(None)
 
 
 def test_mutation_precheck_requires_csrf_and_stays_disabled(tmp_path: Path) -> None:

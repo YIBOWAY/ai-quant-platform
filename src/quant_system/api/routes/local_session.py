@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
@@ -14,11 +16,12 @@ from quant_system.api.safety.local_session import (
     LocalSessionAuthError,
     LocalSessionForbidden,
     LocalSessionValidationError,
-    exchange_bootstrap_token,
     enforce_browser_request_gates,
+    exchange_bootstrap_token,
     issue_bootstrap_token,
     local_session_security_ready,
     policy_from_settings,
+    require_loopback_peer,
     session_public_view,
     verify_session_cookie,
 )
@@ -89,6 +92,7 @@ def owner_bootstrap(
 ) -> dict:
     policy = _policy(settings, request)
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         enforce_browser_request_gates(
             policy=policy,
             request_kind="mutation",
@@ -124,6 +128,7 @@ def owner_session_status(
 ) -> dict:
     policy = _policy(settings, request)
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         enforce_browser_request_gates(
             policy=policy,
             request_kind="api_read",
@@ -151,6 +156,7 @@ def owner_logout(
 ) -> dict:
     policy = _policy(settings, request)
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         enforce_browser_request_gates(
             policy=policy,
             request_kind="mutation",
@@ -159,10 +165,8 @@ def owner_logout(
             sec_fetch_site=request.headers.get("sec-fetch-site"),
         )
         # Best-effort verify; always clear cookies.
-        try:
+        with suppress(LocalSessionAuthError):
             verify_session_cookie(output_dir, request.cookies.get(SESSION_COOKIE_NAME))
-        except LocalSessionAuthError:
-            pass
     except (LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _http_error(exc) from exc
     _clear_session_cookies(response)
@@ -184,6 +188,7 @@ def issue_owner_bootstrap_token(
     """
     policy = _policy(settings, request)
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         enforce_browser_request_gates(
             policy=policy,
             request_kind="api_read",

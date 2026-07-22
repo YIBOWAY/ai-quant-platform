@@ -16,6 +16,7 @@ from quant_system.api.safety.local_session import (
     OwnerSession,
     enforce_browser_request_gates,
     policy_from_settings,
+    require_loopback_peer,
     require_mutation_precheck,
     verify_session_cookie,
 )
@@ -97,6 +98,7 @@ def _security_http_error(exc: Exception) -> HTTPException:
 def require_owner_session(request: Request) -> OwnerSession:
     """Require signed owner session + api_read browser gates."""
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         policy = _local_session_policy(request)
         enforce_browser_request_gates(
             policy=policy,
@@ -122,6 +124,7 @@ def require_mutation_security(request: Request) -> OwnerSession:
     settings = get_settings(request)
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         return require_mutation_precheck(
             output_dir=get_output_dir(request),
             policy=_local_session_policy(request),
