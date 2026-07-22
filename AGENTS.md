@@ -161,9 +161,10 @@ data/                     Local cache, fixtures, generated research outputs.
   V1 code DONE / V1.2A live role+RLS PARTIAL, V2 source accepted / live durable
   OFF, V3 HQA dark install DONE, **V4 live schema ACCEPT**, **V5 dark
   claim/dispatch ACCEPT**, **V6 local dark enablement ACCEPT**, **L2a-Send
-  M1+M2 ACCEPT**, **L2b-Observe M1+M2 ACCEPT**. Next: remaining Plan-V6 UI (L3)
-  + V7; public V8 still closed. See HQA `docs/README.md`, L2a ADR, and platform
-  audits `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
+  M1+M2 ACCEPT**, **L2b-Observe M1+M2 ACCEPT**, **L3a-Transcript M1 ACCEPT**.
+  Next: L3b polish + remaining Plan-V6 UI + V7; public V8 still closed. See HQA
+  `docs/README.md`, L2a ADR, and platform audits
+  `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
   `docs/audits/2026-07-21-v6-local-off-to-on.md`.
   Connector worker CLI **defaults to `reconcile_only`** (LISTEN/NOTIFY + scan +
   expired-lease). `--mode supervised_dispatch` claims with a real
@@ -171,8 +172,10 @@ data/                     Local cache, fixtures, generated research outputs.
   never call an LLM. Do not implement Hermes cron prompt polling as a queue.
   Platform must never `import hqa`; Intent Payload Store I/O goes through the
   subprocess CLI port (`QS_INTENT_PAYLOAD_*`). Owner gate is loopback cookie +
-  CSRF only (Origin `http://127.0.0.1:3000`); FE workspace client uses
-  same-origin `/api/*` rewrites, not absolute `:8765` with credentials omit.
+  CSRF only; default `accepted_origin` is first CORS entry
+  (`http://127.0.0.1:3001` — FE port). FE workspace client uses same-origin
+  `/api/*` rewrites, not absolute `:8765` with credentials omit. Messages ids
+  must be Hermes API sessions (`run_…`); never registry `web_` / workspace `wm_`.
 
 
 ## Core Engineering Rules

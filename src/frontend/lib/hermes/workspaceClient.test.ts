@@ -461,6 +461,24 @@ describe("assistant observe helpers (L2b-M2)", () => {
     );
   });
 
+  it("fetchHermesSessionMessages rejects web_/wm_/empty without network", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fetchHermesSessionMessages("web_abc")).rejects.toMatchObject({
+      status: 400,
+      code: "validation",
+    });
+    await expect(fetchHermesSessionMessages("wm_abc")).rejects.toMatchObject({
+      status: 400,
+      code: "validation",
+    });
+    await expect(fetchHermesSessionMessages("   ")).rejects.toMatchObject({
+      status: 400,
+      code: "validation",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("fetchLatestAssistantText returns null on unavailable without throwing", async () => {
     vi.stubGlobal(
       "fetch",

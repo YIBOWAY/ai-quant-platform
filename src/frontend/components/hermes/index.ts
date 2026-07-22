@@ -11,6 +11,10 @@ export { HermesInternalNav } from "./shell/HermesInternalNav";
 export type { HermesInternalNavProps } from "./shell/HermesInternalNav";
 export { HermesCapabilityNotice } from "./shell/HermesCapabilityNotice";
 export type { HermesCapabilityNoticeProps } from "./shell/HermesCapabilityNotice";
+export { TranscriptCanvas } from "./transcript/TranscriptCanvas";
+export type { TranscriptCanvasProps } from "./transcript/TranscriptCanvas";
+export { WorkbenchTranscriptPanel } from "./transcript/WorkbenchTranscriptPanel";
+export type { WorkbenchTranscriptPanelProps } from "./transcript/WorkbenchTranscriptPanel";
 export {
   HermesTodayView,
   AttentionSummary,

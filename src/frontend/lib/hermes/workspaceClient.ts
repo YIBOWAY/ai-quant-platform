@@ -15,6 +15,7 @@ import {
   PLATFORM_WORKSPACE_ID,
   PROVIDER_POLICY_DIGEST,
 } from "./darkIdentity";
+import { isUsableHermesApiSessionId } from "./transcriptHelpers";
 
 export type ActionReceiptStatus =
   | "accepted"
@@ -682,15 +683,15 @@ export async function fetchHermesSessionMessages(
   sessionId: string,
   signal?: AbortSignal,
 ): Promise<HermesSessionMessagesView> {
-  if (typeof sessionId !== "string" || !sessionId.trim()) {
+  if (!isUsableHermesApiSessionId(sessionId)) {
     throw new WorkspaceClientError(
-      "hermes session id required",
+      "hermes session id required (reject web_/wm_/empty)",
       400,
       "validation",
     );
   }
   return sameOriginJson<HermesSessionMessagesView>(
-    `/api/hermes/sessions/${encodeURIComponent(sessionId)}/messages`,
+    `/api/hermes/sessions/${encodeURIComponent(sessionId.trim())}/messages`,
     { method: "GET", signal },
   );
 }

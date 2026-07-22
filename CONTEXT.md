@@ -70,6 +70,10 @@ _Avoid_: Plan-V6 complete, FE-only submit, calling M1 “delivered to Hermes”
 Command-aware workspace snapshot/follow plus post-deliver assistant preview via the existing Hermes messages BFF bound by `hermes_session_id`. M1 = lifecycle objects/poll; M2 = latest assistant text in Composer status. **M1+M2 ACCEPT@2026-07-22**. No SSE; follow carries no message bodies.
 _Avoid_: Plan-V6 transcript UI done, assistant bodies in follow ledger, public cutover
 
+**L3a-Transcript**:
+Workbench Conversation panel above Today when local chat is open; binds usable Hermes API `hermes_session_id` on deliver (and snapshot bootstrap with only-if-empty), then loads full user/assistant bubbles via same-origin messages BFF. **M1 ACCEPT@2026-07-22** (live `L3a-pong` + FE marker). No SSE; not Task drawer/approval/a11y.
+_Avoid_: Plan-V6 complete, SSE done, public cutover, registry `web_`/`wm_` as messages id
+
 **Observe Spine**:
 Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; richer Task/Attempt/Run projections remain Plan-V6 remainder.
 _Avoid_: empty follow poll, sessions-and-commands-only snapshot sold as complete observe UI

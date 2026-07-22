@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ComposerDock } from "@/components/hermes/ComposerDock";
 import type { ComposerDockProps } from "@/components/hermes/ComposerDock";
+import { useOptionalActiveHermesSession } from "@/lib/hermes/activeSession";
 import {
   WorkspaceClientError,
   fetchLatestAssistantText,
@@ -91,11 +92,20 @@ async function surfaceAssistantPreview(options: {
   signal: AbortSignal;
   setStatusText: (text: string | null) => void;
   lifecyclePrefix?: string;
+  /** L3a: publish session id so workbench transcript can load full messages. */
+  onBindSession?: (next: {
+    hermesSessionId: string;
+    commandId?: string | null;
+  }) => void;
 }): Promise<void> {
   const sessionId = options.hermesSessionId?.trim();
   if (!sessionId || options.signal.aborted) {
     return;
   }
+  options.onBindSession?.({
+    hermesSessionId: sessionId,
+    commandId: options.commandId,
+  });
   const lifecycle =
     options.lifecyclePrefix ??
     formatLifecycleStatus("delivered", options.commandId, options.hermesRunId);
@@ -129,6 +139,8 @@ export function ComposerSubmitController({
   const [statusText, setStatusText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const pollAbortRef = useRef<AbortController | null>(null);
+  const activeSession = useOptionalActiveHermesSession();
+  const bindSession = activeSession?.setActiveHermesSession;
 
   useEffect(() => {
     return () => {
@@ -217,6 +229,7 @@ export function ComposerSubmitController({
                     hermesRunId: match.hermes_run_id ?? null,
                     signal: pollAbort.signal,
                     setStatusText,
+                    onBindSession: bindSession,
                   });
                 }
                 return;
@@ -250,6 +263,7 @@ export function ComposerSubmitController({
           setStatusText(lifecycle);
 
           // L2b-M2: after delivered, pull assistant body via Hermes messages path.
+          // L3a: also bind workbench transcript to hermes_session_id.
           if (result.state === "delivered") {
             await surfaceAssistantPreview({
               hermesSessionId:
@@ -259,6 +273,7 @@ export function ComposerSubmitController({
               signal: pollAbort.signal,
               setStatusText,
               lifecyclePrefix: lifecycle,
+              onBindSession: bindSession,
             });
           }
         }
@@ -283,7 +298,7 @@ export function ComposerSubmitController({
         }
       }
     },
-    [networkSubmit],
+    [networkSubmit, bindSession],
   );
 
   return (

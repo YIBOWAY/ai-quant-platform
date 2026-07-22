@@ -581,11 +581,14 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "paper", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     api_cors_origins: list[str] = Field(
+        # First loopback origin becomes LocalSessionPolicy.accepted_origin
+        # (owner cookie/CSRF gate). Prefer the real FE default port 3001 so
+        # Next same-origin rewrites on :3001 are not workspace_forbidden.
         default_factory=lambda: [
-            "http://127.0.0.1:3000",
             "http://127.0.0.1:3001",
-            "http://localhost:3000",
+            "http://127.0.0.1:3000",
             "http://localhost:3001",
+            "http://localhost:3000",
         ]
     )
     safety: SafetySettings = Field(default_factory=SafetySettings)

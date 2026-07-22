@@ -62,6 +62,19 @@ def _browser_headers(*, origin: str = ORIGIN, site: str = "same-origin") -> dict
     }
 
 
+def test_default_policy_accepts_frontend_port_3001() -> None:
+    """Default CORS order must pin accepted_origin to the real FE port."""
+    from quant_system.config.settings import Settings
+
+    settings = Settings()
+    policy = policy_from_settings(
+        cors_origins=list(settings.api_cors_origins),
+        bind_address="127.0.0.1",
+    )
+    assert policy.accepted_origin == "http://127.0.0.1:3001"
+    assert policy.accepted_host == "127.0.0.1:3001"
+
+
 def test_bootstrap_issues_http_only_session_and_csrf(tmp_path: Path) -> None:
     client = _client(tmp_path)
     token = issue_bootstrap_token(tmp_path)
