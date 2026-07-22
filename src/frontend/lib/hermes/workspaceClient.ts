@@ -427,10 +427,14 @@ export type WorkspaceSnapshot = {
   snapshot_workspace_cursor?: number;
   sessions?: string[];
   commands?: WorkspaceCommandProjection[];
-  tasks?: unknown[];
-  attempts?: unknown[];
-  runs?: unknown[];
-  results?: unknown[];
+  /** L5b: HQA Task authority ids/objects; empty until projector. */
+  tasks?: string[];
+  /** L5b: Attempt authority ids/objects; empty until projector. */
+  attempts?: string[];
+  /** L5b: Run authority ids/objects; empty until projector. */
+  runs?: string[];
+  /** L5b: result-ref ids/objects; empty until projector. */
+  results?: string[];
   /** L5a: Hermes command-approval challenges; empty until durable projector. */
   approvals?: WorkspaceApprovalProjection[];
   authority_health?: Record<string, string>;

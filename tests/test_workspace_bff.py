@@ -136,6 +136,15 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     # L5a: approvals slot is present and honestly empty (no invented challenges).
     assert body.get("approvals") == []
     assert body["authority_health"].get("command_approval") == "unavailable"
+    # L5b: Task/Attempt/Run/result authority slots stay empty; health unavailable.
+    assert body.get("tasks") == []
+    assert body.get("attempts") == []
+    assert body.get("runs") == []
+    assert body.get("results") == []
+    assert body["authority_health"].get("task") == "unavailable"
+    assert body["authority_health"].get("attempt") == "unavailable"
+    assert body["authority_health"].get("run") == "unavailable"
+    assert body["authority_health"].get("result") == "unavailable"
 
     follow = client.get(
         f"/api/workspace/{WORKSPACE_ID}/follow?after_cursor=0",

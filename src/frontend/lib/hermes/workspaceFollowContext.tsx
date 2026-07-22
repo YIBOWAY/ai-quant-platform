@@ -19,6 +19,7 @@ import { useActiveHermesSession } from "@/lib/hermes/activeSession";
 import { isTerminalCommandState } from "@/lib/hermes/workspaceClient";
 import {
   createWorkspaceFollowSpine,
+  EMPTY_AUTHORITY_HEALTH,
   type FollowSpineState,
   type WorkspaceFollowSpine,
 } from "@/lib/hermes/workspaceFollowSpine";
@@ -46,6 +47,11 @@ export function WorkspaceFollowProvider({
     cursor: 0,
     commands: [],
     approvals: [],
+    tasks: [],
+    attempts: [],
+    runs: [],
+    results: [],
+    authorityHealth: { ...EMPTY_AUTHORITY_HEALTH },
     lastEvents: [],
     transport: "idle",
     resyncCount: 0,
@@ -130,6 +136,11 @@ export function useWorkspaceFollow(): WorkspaceFollowContextValue {
         cursor: 0,
         commands: [],
         approvals: [],
+        tasks: [],
+        attempts: [],
+        runs: [],
+        results: [],
+        authorityHealth: {},
         lastEvents: [],
         transport: "idle",
         resyncCount: 0,

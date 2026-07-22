@@ -27,10 +27,10 @@ export function WorkbenchCommandApprovalsPanel({
     [follow.approvals],
   );
   const health = follow.snapshotCursor != null || follow.transport !== "idle";
-  const approvalHealthUnavailable =
-    // Spine does not expose authority_health yet; empty list + ready spine =
-    // honest empty. When projector lands, rows appear without inventing.
-    approvals.length === 0;
+  const commandApprovalHealth =
+    follow.authorityHealth?.command_approval ?? "unavailable";
+  // Empty list is honest; health is surfaced on data-hermes-command-approval-health.
+  const showEmptyApprovals = health && approvals.length === 0;
 
   return (
     <section
@@ -38,6 +38,7 @@ export function WorkbenchCommandApprovalsPanel({
       className="space-y-2"
       data-hermes-command-approvals
       data-hermes-approval-observe="l5a-m1"
+      data-hermes-command-approval-health={commandApprovalHealth}
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
@@ -79,7 +80,7 @@ export function WorkbenchCommandApprovalsPanel({
               : "Read-only: Hermes command-approval challenges (approval_id + run_id + digest + expires_at). Not Gate 1/2/3, not candidate approvals page; no allow/deny write. Empty is honest until durable projector lands."}
           </p>
 
-          {approvalHealthUnavailable && health ? (
+          {showEmptyApprovals ? (
             <p
               className="px-3 py-4 font-body-sm text-text-secondary"
               data-hermes-approvals-empty

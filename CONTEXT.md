@@ -90,8 +90,12 @@ _Avoid_: assistant token stream, message bodies in follow, inventing Task author
 Honest empty Hermes **command-approval** observe slot + Composer dual-poll hygiene. Snapshot emits `approvals=[]` and `authority_health.command_approval="unavailable"` (no invented challenges; ≠ Gate 1/2/3, ≠ `/hermes/approvals` candidate page). FE spine carries `approvals`; `waitForCommandTerminalOnSpine` replaces Composer private `pollCommandUntilTerminal`. Read-only workbench panel `WorkbenchCommandApprovalsPanel` (`data-hermes-approval-observe=l5a-m1`) mounts when chat open. **No allow/deny write**. **M1 ACCEPT@2026-07-22**.
 _Avoid_: inventing approval rows, Gate mutation, conflating with candidate approvals page, assistant bodies on follow, public write
 
+**L5b-Authority-Projection**:
+Honest empty **Task / Attempt / Run / result-ref** slots on snapshot + shared spine, plus `authority_health.task|attempt|run|result="unavailable"`. FE spine carries `tasks/attempts/runs/results` + `authorityHealth`. Read-only `WorkbenchAuthorityProjectionPanel` (`data-hermes-authority-observe=l5b-m1`). Ordinary `conversation_turn` never invents Attempt. **≠** `/hermes/tasks`. **No stop/gate/mutation**. **M1 ACCEPT@2026-07-22**.
+_Avoid_: inventing HQA Task/Attempt from commands, stop/gate writes, research Task creation UI, public write
+
 **Observe Spine**:
-Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; L4b-M1 is the shared SSE/poll transport; L5a-M1 adds empty-honest approvals + Composer on spine; richer Task/Attempt/Run projections remain Plan-V6 remainder.
+Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; L4b-M1 is the shared SSE/poll transport; L5a-M1 adds empty-honest approvals + Composer on spine; L5b-M1 carries empty-honest Task/Attempt/Run/result slots + health on spine; multi-breakpoint a11y remains Plan-V6 remainder (L5c).
 _Avoid_: empty follow poll, commands-only Activity sold as complete Task/Attempt observe spine, private dual poll after L4b/L5a
 
 **Action Receipt**:

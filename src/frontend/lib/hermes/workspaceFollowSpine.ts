@@ -23,6 +23,13 @@ export type FollowSpineState = {
   commands: WorkspaceCommandProjection[];
   /** L5a: Hermes command-approval challenges from snapshot (empty until projector). */
   approvals: WorkspaceApprovalProjection[];
+  /** L5b: authority id slots from snapshot (honest empty until projectors). */
+  tasks: string[];
+  attempts: string[];
+  runs: string[];
+  results: string[];
+  /** L5b: snapshot authority_health carry-through (optional keys). */
+  authorityHealth: Record<string, string>;
   lastEvents: WorkspaceFollowEvent[];
   transport: FollowTransport;
   resyncCount: number;
@@ -49,16 +56,44 @@ const DEFAULT_POLL_MS = 2_000;
 const DEFAULT_SNAPSHOT_RECONCILE_MS = 30_000;
 const DEFAULT_MAX_SSE_FAILURES = 3;
 
+/** Pre-snapshot defaults: honest unavailable until first snapshot reconcile. */
+export const EMPTY_AUTHORITY_HEALTH: Record<string, string> = {
+  task: "unavailable",
+  attempt: "unavailable",
+  run: "unavailable",
+  result: "unavailable",
+  command_approval: "unavailable",
+};
+
 function emptyState(): FollowSpineState {
   return {
     cursor: 0,
     commands: [],
     approvals: [],
+    tasks: [],
+    attempts: [],
+    runs: [],
+    results: [],
+    authorityHealth: { ...EMPTY_AUTHORITY_HEALTH },
     lastEvents: [],
     transport: "idle",
     resyncCount: 0,
     error: null,
   };
+}
+
+function asIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (item && typeof item === "object" && "id" in item) {
+        const id = (item as { id?: unknown }).id;
+        return typeof id === "string" ? id : "";
+      }
+      return "";
+    })
+    .filter(Boolean);
 }
 
 function applyCommandEvent(
@@ -160,6 +195,14 @@ export function createWorkspaceFollowSpine(
     const snap = await fetchWorkspaceSnapshot(workspaceId, signal);
     const commands = mergeSnapshotCommands(snap);
     const approvals = Array.isArray(snap.approvals) ? [...snap.approvals] : [];
+    const tasks = asIdList(snap.tasks);
+    const attempts = asIdList(snap.attempts);
+    const runs = asIdList(snap.runs);
+    const results = asIdList(snap.results);
+    const authorityHealth =
+      snap.authority_health && typeof snap.authority_health === "object"
+        ? { ...snap.authority_health }
+        : {};
     const cursor =
       typeof snap.snapshot_workspace_cursor === "number"
         ? snap.snapshot_workspace_cursor
@@ -167,6 +210,11 @@ export function createWorkspaceFollowSpine(
     setState({
       commands,
       approvals,
+      tasks,
+      attempts,
+      runs,
+      results,
+      authorityHealth,
       cursor: Math.max(state.cursor, cursor),
       observedAt: snap.observed_at,
       snapshotCursor: snap.snapshot_workspace_cursor,
@@ -469,4 +517,6 @@ export function waitForCommandTerminalOnSpine(
 export const __followSpineTestUtils = {
   applyCommandEvent,
   emptyState,
+  asIdList,
+  EMPTY_AUTHORITY_HEALTH,
 };

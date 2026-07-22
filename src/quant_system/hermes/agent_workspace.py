@@ -223,6 +223,12 @@ class PlatformAgentWorkspace:
             "composer": "enabled" if composer_on else "disabled",
             # L5a: no durable Hermes command-approval projector yet.
             "command_approval": "unavailable",
+            # L5b: Task/Attempt/Run/result authority projectors not wired —
+            # empty tuples stay empty; never invent HQA rows from commands.
+            "task": "unavailable",
+            "attempt": "unavailable",
+            "run": "unavailable",
+            "result": "unavailable",
         }
 
         sessions: list[str] = []

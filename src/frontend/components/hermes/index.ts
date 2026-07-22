@@ -19,6 +19,8 @@ export { WorkbenchCommandActivityPanel } from "./activity/WorkbenchCommandActivi
 export type { WorkbenchCommandActivityPanelProps } from "./activity/WorkbenchCommandActivityPanel";
 export { WorkbenchCommandApprovalsPanel } from "./approvals/WorkbenchCommandApprovalsPanel";
 export type { WorkbenchCommandApprovalsPanelProps } from "./approvals/WorkbenchCommandApprovalsPanel";
+export { WorkbenchAuthorityProjectionPanel } from "./authority/WorkbenchAuthorityProjectionPanel";
+export type { WorkbenchAuthorityProjectionPanelProps } from "./authority/WorkbenchAuthorityProjectionPanel";
 export {
   HermesTodayView,
   AttentionSummary,

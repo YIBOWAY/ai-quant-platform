@@ -1,16 +1,36 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   __followSpineTestUtils,
+  createWorkspaceFollowSpine,
   waitForCommandTerminalOnSpine,
   type FollowSpineListener,
   type FollowSpineState,
   type WorkspaceFollowSpine,
 } from "./workspaceFollowSpine";
-import type { WorkspaceCommandProjection } from "./workspaceClient";
-import type { WorkspaceFollowEvent } from "./workspaceClient";
+import type {
+  WorkspaceCommandProjection,
+  WorkspaceFollowEvent,
+  WorkspaceSnapshot,
+} from "./workspaceClient";
 
-const { applyCommandEvent, emptyState } = __followSpineTestUtils;
+const { applyCommandEvent, emptyState, asIdList, EMPTY_AUTHORITY_HEALTH } =
+  __followSpineTestUtils;
+
+const fetchWorkspaceSnapshot = vi.fn();
+const fetchWorkspaceFollow = vi.fn();
+
+vi.mock("./workspaceClient", async () => {
+  const actual = await vi.importActual<typeof import("./workspaceClient")>(
+    "./workspaceClient",
+  );
+  return {
+    ...actual,
+    fetchWorkspaceSnapshot: (...args: unknown[]) =>
+      fetchWorkspaceSnapshot(...args),
+    fetchWorkspaceFollow: (...args: unknown[]) => fetchWorkspaceFollow(...args),
+  };
+});
 
 function baseCmd(
   partial: Partial<WorkspaceCommandProjection> & { command_id: string },
@@ -34,6 +54,31 @@ function evt(
     state: "queued",
     ...partial,
   };
+}
+
+function baseSnapshot(
+  partial: Partial<WorkspaceSnapshot> = {},
+): WorkspaceSnapshot {
+  return {
+    workspace_id: "ws-local-main",
+    observed_at: "2026-07-22T00:00:00Z",
+    snapshot_workspace_cursor: 0,
+    sessions: [],
+    commands: [],
+    approvals: [],
+    tasks: [],
+    attempts: [],
+    runs: [],
+    results: [],
+    authority_health: {
+      task: "unavailable",
+      attempt: "unavailable",
+      run: "unavailable",
+      result: "unavailable",
+      command_approval: "unavailable",
+    },
+    ...partial,
+  } as WorkspaceSnapshot;
 }
 
 describe("workspaceFollowSpine helpers (L4b)", () => {
@@ -91,6 +136,121 @@ describe("workspaceFollowSpine helpers (L4b)", () => {
     const s = emptyState();
     expect(s.approvals).toEqual([]);
     expect(s.commands).toEqual([]);
+  });
+
+  it("emptyState carries honest empty authority slots (L5b)", () => {
+    const s = emptyState();
+    expect(s.tasks).toEqual([]);
+    expect(s.attempts).toEqual([]);
+    expect(s.runs).toEqual([]);
+    expect(s.results).toEqual([]);
+    expect(s.authorityHealth).toEqual(EMPTY_AUTHORITY_HEALTH);
+  });
+
+  it("asIdList accepts string ids and {id} objects", () => {
+    expect(asIdList(["a", { id: "b" }, { id: 3 }, null, ""])).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+});
+
+describe("snapshot reconcile authority slots (L5b)", () => {
+  beforeEach(() => {
+    fetchWorkspaceSnapshot.mockReset();
+    fetchWorkspaceFollow.mockReset();
+    // Prevent EventSource / poll loops if start() is ever called.
+    fetchWorkspaceFollow.mockResolvedValue({
+      events: [],
+      next_cursor: 0,
+      resync_required: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("resyncNow copies empty authority slots + health from snapshot", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({
+        snapshot_workspace_cursor: 7,
+        tasks: [],
+        attempts: [],
+        runs: [],
+        results: [],
+        authority_health: {
+          task: "unavailable",
+          attempt: "unavailable",
+          run: "unavailable",
+          result: "unavailable",
+          command_approval: "unavailable",
+          command_ledger: "ready",
+        },
+      }),
+    );
+
+    // Avoid real EventSource during restartTransport after resync.
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {
+          /* noop */
+        }
+        addEventListener() {
+          /* noop */
+        }
+        removeEventListener() {
+          /* noop */
+        }
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: false,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      await spine.resyncNow();
+      const s = spine.getState();
+      expect(s.tasks).toEqual([]);
+      expect(s.attempts).toEqual([]);
+      expect(s.runs).toEqual([]);
+      expect(s.results).toEqual([]);
+      expect(s.authorityHealth.task).toBe("unavailable");
+      expect(s.authorityHealth.attempt).toBe("unavailable");
+      expect(s.authorityHealth.run).toBe("unavailable");
+      expect(s.authorityHealth.result).toBe("unavailable");
+      expect(s.authorityHealth.command_approval).toBe("unavailable");
+      expect(s.snapshotCursor).toBe(7);
+      expect(fetchWorkspaceSnapshot).toHaveBeenCalled();
+    } finally {
+      spine.stop();
+    }
+  });
+
+  it("command events never invent authority rows", () => {
+    const prior = emptyState();
+    // applyCommandEvent only returns commands; authority slots stay spine-owned.
+    const nextCommands = applyCommandEvent(
+      prior.commands,
+      evt({
+        event_id: 9,
+        command_id: "c-auth",
+        state: "delivered",
+        type: "command.delivered",
+        hermes_run_id: "run-should-not-become-authority",
+      }),
+    );
+    expect(nextCommands[0].hermes_run_id).toBe(
+      "run-should-not-become-authority",
+    );
+    // Authority slots are not part of applyCommandEvent return — still empty.
+    expect(prior.tasks).toEqual([]);
+    expect(prior.attempts).toEqual([]);
+    expect(prior.runs).toEqual([]);
+    expect(prior.results).toEqual([]);
   });
 });
 
