@@ -31,6 +31,15 @@ export type BriefIssueEnvelope = {
   apiError?: string;
 };
 
+export type BriefIssueListResponse = {
+  items: BriefIssue[];
+  total: number;
+  limit: number;
+  offset: number;
+  safety?: BriefSafetyFooter;
+  apiError?: string;
+};
+
 export type BriefIssueArchiveView = {
   publicId: string;
   issueDate: string;
@@ -47,6 +56,14 @@ export type BriefIssueArchiveView = {
 
 export function buildBriefIssuePath(publicId: string) {
   return `/api/brief/issues/${encodeURIComponent(publicId)}`;
+}
+
+export function buildBriefIssueListPath(locale: string, limit: number, offset: number) {
+  const params = new URLSearchParams();
+  params.set("locale", locale || "zh");
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  return `/api/brief/issues?${params.toString()}`;
 }
 
 export function buildLatestBriefIssuePath(locale: string) {

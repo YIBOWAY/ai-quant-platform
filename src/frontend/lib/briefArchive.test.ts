@@ -28,6 +28,14 @@ describe("brief archive API contract", () => {
     expect(buildLatestBriefIssuePath("")).toBe("/api/brief/issues/latest?locale=zh");
   });
 
+  it("builds the issue list path with explicit pagination", async () => {
+    const { buildBriefIssueListPath } = await import("./briefArchive");
+
+    expect(buildBriefIssueListPath("zh", 30, 0)).toBe(
+      "/api/brief/issues?locale=zh&limit=30&offset=0",
+    );
+  });
+
   it("normalizes the issue envelope into archive display data", async () => {
     const { normalizeBriefIssueEnvelope } = await import("./briefArchive");
 
