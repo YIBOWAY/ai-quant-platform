@@ -3,6 +3,10 @@
 import { useCallback, useState } from "react";
 
 import { copyTextToClipboard } from "@/lib/hermes/transcriptHelpers";
+import {
+  COLLAPSE_TOGGLE_CLASS,
+  displayId,
+} from "@/lib/hermes/workbenchA11y";
 import type { HermesSessionMessage } from "@/lib/hermes/workspaceClient";
 
 export type TranscriptCanvasProps = {
@@ -163,16 +167,18 @@ function SessionChip({
           : "Copy";
   return (
     <div
-      className="flex flex-wrap items-center gap-2 font-data-mono text-[11px] text-text-secondary"
+      className="flex min-w-0 flex-wrap items-center gap-2 font-data-mono text-[11px] text-text-secondary"
       data-hermes-transcript-session-chip
     >
-      <span data-hermes-transcript-session-id title={hermesSessionId}>
-        {hermesSessionId.length > 36
-          ? `${hermesSessionId.slice(0, 20)}…${hermesSessionId.slice(-8)}`
-          : hermesSessionId}
+      <span
+        className="min-w-0 max-w-full break-all"
+        data-hermes-transcript-session-id
+        title={hermesSessionId}
+      >
+        {displayId(hermesSessionId, { head: 20, tail: 8, max: 36 })}
       </span>
       <button
-        className="app-touch-target rounded border border-border-subtle px-2 py-0.5 font-body-sm text-text-primary hover:bg-bg-surface"
+        className={COLLAPSE_TOGGLE_CLASS}
         data-hermes-transcript-copy-session
         onClick={onCopy}
         type="button"

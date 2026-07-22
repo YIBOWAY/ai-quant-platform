@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 
-import { shortId } from "@/lib/hermes/commandActivity";
+import {
+  COLLAPSE_TOGGLE_CLASS,
+  displayId,
+  LONG_ID_CLASS,
+} from "@/lib/hermes/workbenchA11y";
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
 import type { Locale } from "@/lib/locale";
 
@@ -59,7 +63,7 @@ export function WorkbenchCommandApprovalsPanel({
         <button
           aria-controls="hermes-command-approvals-body"
           aria-expanded={open}
-          className="app-touch-target rounded border border-border-subtle px-2 py-0.5 font-body-sm text-text-primary hover:bg-bg-surface"
+          className={COLLAPSE_TOGGLE_CLASS}
           data-hermes-approvals-toggle
           onClick={() => setOpen((v) => !v)}
           type="button"
@@ -70,11 +74,11 @@ export function WorkbenchCommandApprovalsPanel({
 
       {open ? (
         <div
-          className="rounded-lg border border-border-subtle bg-bg-surface"
+          className="min-w-0 rounded-lg border border-border-subtle bg-bg-surface"
           data-hermes-command-approvals-body
           id="hermes-command-approvals-body"
         >
-          <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary">
+          <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
             {isZh
               ? "只读：Hermes command-approval 挑战（approval_id + run_id + digest + expires_at）。≠ Gate 1/2/3、≠ 候选审批页；无 allow/deny 写端。投影未接时列表诚实为空。"
               : "Read-only: Hermes command-approval challenges (approval_id + run_id + digest + expires_at). Not Gate 1/2/3, not candidate approvals page; no allow/deny write. Empty is honest until durable projector lands."}
@@ -82,7 +86,7 @@ export function WorkbenchCommandApprovalsPanel({
 
           {showEmptyApprovals ? (
             <p
-              className="px-3 py-4 font-body-sm text-text-secondary"
+              className="px-3 py-4 font-body-sm text-text-secondary break-words"
               data-hermes-approvals-empty
             >
               {isZh
@@ -99,62 +103,84 @@ export function WorkbenchCommandApprovalsPanel({
 
           {approvals.length ? (
             <ol
+              aria-live="polite"
+              aria-relevant="additions text"
               className="divide-y divide-border-subtle"
               data-hermes-approvals-list
             >
               {approvals.map((row) => (
                 <li
-                  className="px-3 py-2"
+                  className="min-w-0 px-3 py-2"
                   data-hermes-approval-row
                   data-hermes-approval-id={row.approval_id}
                   key={row.approval_id}
                 >
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="font-body-sm font-semibold text-text-primary">
+                  <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+                    <p className="min-w-0 font-body-sm font-semibold text-text-primary">
                       <span data-hermes-approval-status>
                         {row.status || row.expected_status || "pending"}
                       </span>
                       {row.kind ? (
                         <>
                           <span className="mx-1 text-text-secondary">·</span>
-                          <span className="font-data-mono text-xs text-text-secondary">
+                          <span className="break-all font-data-mono text-xs text-text-secondary">
                             {row.kind}
                           </span>
                         </>
                       ) : null}
                     </p>
-                    <p className="font-data-mono text-[11px] text-text-secondary">
+                    <p className="shrink-0 font-data-mono text-[11px] text-text-secondary">
                       {row.expires_at || ""}
                     </p>
                   </div>
-                  <dl className="mt-1 grid gap-0.5 font-data-mono text-[11px] text-text-secondary sm:grid-cols-2">
-                    <div>
-                      <dt className="inline">approval </dt>
-                      <dd className="inline" title={row.approval_id}>
-                        {shortId(row.approval_id, 12)}
+                  <dl className="mt-1 grid min-w-0 gap-0.5 sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <dt className="inline font-data-mono text-[11px] text-text-secondary">
+                        approval{" "}
+                      </dt>
+                      <dd
+                        className={`inline ${LONG_ID_CLASS}`}
+                        title={row.approval_id}
+                      >
+                        {displayId(row.approval_id, { head: 12, tail: 6 })}
                       </dd>
                     </div>
                     {row.run_id ? (
-                      <div>
-                        <dt className="inline">run </dt>
-                        <dd className="inline" title={row.run_id}>
-                          {shortId(row.run_id, 12)}
+                      <div className="min-w-0">
+                        <dt className="inline font-data-mono text-[11px] text-text-secondary">
+                          run{" "}
+                        </dt>
+                        <dd
+                          className={`inline ${LONG_ID_CLASS}`}
+                          title={row.run_id}
+                        >
+                          {displayId(row.run_id, { head: 12, tail: 6 })}
                         </dd>
                       </div>
                     ) : null}
                     {row.command_id ? (
-                      <div>
-                        <dt className="inline">cmd </dt>
-                        <dd className="inline" title={row.command_id}>
-                          {shortId(row.command_id, 10)}
+                      <div className="min-w-0">
+                        <dt className="inline font-data-mono text-[11px] text-text-secondary">
+                          cmd{" "}
+                        </dt>
+                        <dd
+                          className={`inline ${LONG_ID_CLASS}`}
+                          title={row.command_id}
+                        >
+                          {displayId(row.command_id, { head: 10, tail: 6 })}
                         </dd>
                       </div>
                     ) : null}
                     {row.digest ? (
-                      <div className="sm:col-span-2">
-                        <dt className="inline">digest </dt>
-                        <dd className="inline" title={row.digest}>
-                          {shortId(row.digest, 16)}
+                      <div className="min-w-0 sm:col-span-2">
+                        <dt className="inline font-data-mono text-[11px] text-text-secondary">
+                          digest{" "}
+                        </dt>
+                        <dd
+                          className={`inline ${LONG_ID_CLASS}`}
+                          title={row.digest}
+                        >
+                          {displayId(row.digest, { head: 16, tail: 6 })}
                         </dd>
                       </div>
                     ) : null}

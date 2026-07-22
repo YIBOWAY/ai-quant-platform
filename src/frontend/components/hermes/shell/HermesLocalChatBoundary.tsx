@@ -9,6 +9,10 @@ import { ComposerSubmitController } from "@/components/hermes/ComposerSubmitCont
 import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { WorkbenchTranscriptPanel } from "@/components/hermes/transcript/WorkbenchTranscriptPanel";
 import { ActiveHermesSessionProvider } from "@/lib/hermes/activeSession";
+import {
+  WORKBENCH_A11Y_MARKER,
+  WORKBENCH_CONTENT_PAD_CLASS,
+} from "@/lib/hermes/workbenchA11y";
 import { WorkspaceFollowProvider } from "@/lib/hermes/workspaceFollowContext";
 import type { HermesDeliveryState } from "@/lib/hermes/types";
 import type { Locale } from "@/lib/locale";
@@ -32,6 +36,7 @@ export type HermesLocalChatBoundaryProps = {
 /**
  * Client island: active Hermes session + shared L4b follow spine + transcript
  * + command activity + composer. Keeps server shell free of cookie/fetch.
+ * L5c: main landmark + responsive content pad + workbench a11y marker.
  */
 export function HermesLocalChatBoundary({
   locale,
@@ -40,47 +45,59 @@ export function HermesLocalChatBoundary({
   composer,
   chatOpen,
 }: HermesLocalChatBoundaryProps) {
+  const isZh = locale === "zh";
   return (
     <ActiveHermesSessionProvider>
       <WorkspaceFollowProvider enabled={chatOpen}>
         <div
           className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
           data-hermes-workspace-follow="l4b-m1"
+          data-hermes-workbench-a11y={WORKBENCH_A11Y_MARKER}
         >
+          {/* role=region (not nested main element): root layout already owns document main. */}
           <div
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
-            data-page-scroll-region
+            aria-label={isZh ? "Hermes 工作台主区" : "Hermes workbench main"}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            data-hermes-workbench-main
+            role="region"
           >
-            <div className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-4 p-4 lg:p-6">
-              <HermesCapabilityNotice
-                deliveryState={deliveryState}
-                locale={locale}
-              />
-              {chatOpen ? <WorkbenchTranscriptPanel locale={locale} /> : null}
-              {chatOpen ? (
-                <WorkbenchCommandActivityPanel locale={locale} />
-              ) : null}
-              {chatOpen ? (
-                <WorkbenchCommandApprovalsPanel locale={locale} />
-              ) : null}
-              {chatOpen ? (
-                <WorkbenchAuthorityProjectionPanel locale={locale} />
-              ) : null}
-              {children}
+            <div
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
+              data-page-scroll-region
+            >
+              <div className={WORKBENCH_CONTENT_PAD_CLASS}>
+                <HermesCapabilityNotice
+                  deliveryState={deliveryState}
+                  locale={locale}
+                />
+                {chatOpen ? <WorkbenchTranscriptPanel locale={locale} /> : null}
+                {chatOpen ? (
+                  <WorkbenchCommandActivityPanel locale={locale} />
+                ) : null}
+                {chatOpen ? (
+                  <WorkbenchCommandApprovalsPanel locale={locale} />
+                ) : null}
+                {chatOpen ? (
+                  <WorkbenchAuthorityProjectionPanel locale={locale} />
+                ) : null}
+                {children}
+              </div>
             </div>
-          </div>
-          <div className="min-h-[var(--spacing-hermes-composer-min)] shrink-0">
-            <ComposerSubmitController
-              allowSubmit={chatOpen}
-              disabled={!chatOpen}
-              label={composer.label}
-              networkSubmit={chatOpen}
-              placeholder={
-                chatOpen ? composer.placeholderOpen : composer.placeholder
-              }
-              sendLabel={chatOpen ? composer.sendEnabled : composer.sendDisabled}
-              unavailableHint={composer.unavailable}
-            />
+            <div className="min-h-[var(--spacing-hermes-composer-min)] shrink-0">
+              <ComposerSubmitController
+                allowSubmit={chatOpen}
+                disabled={!chatOpen}
+                label={composer.label}
+                networkSubmit={chatOpen}
+                placeholder={
+                  chatOpen ? composer.placeholderOpen : composer.placeholder
+                }
+                sendLabel={
+                  chatOpen ? composer.sendEnabled : composer.sendDisabled
+                }
+                unavailableHint={composer.unavailable}
+              />
+            </div>
           </div>
         </div>
       </WorkspaceFollowProvider>

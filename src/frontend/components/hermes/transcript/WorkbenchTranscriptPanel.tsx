@@ -10,6 +10,7 @@ import {
   mergePendingUserMessage,
   pickLatestHermesSessionId,
 } from "@/lib/hermes/transcriptHelpers";
+import { LONG_ID_CLASS, displayId } from "@/lib/hermes/workbenchA11y";
 import {
   fetchHermesSessionMessages,
   fetchWorkspaceSnapshot,
@@ -298,8 +299,13 @@ export function WorkbenchTranscriptPanel({
           <p className="font-semibold">
             {isZh ? "暂时无法读取对话" : "Transcript temporarily unavailable"}
           </p>
-          <p className="mt-1 font-data-mono text-xs text-text-secondary">
-            {state.kind === "unavailable" ? state.sessionId : ""}
+          <p
+            className={`mt-1 ${LONG_ID_CLASS}`}
+            title={state.kind === "unavailable" ? state.sessionId : undefined}
+          >
+            {state.kind === "unavailable"
+              ? displayId(state.sessionId, { head: 16, tail: 8, max: 36 })
+              : ""}
             {state.kind === "unavailable" && state.detail
               ? ` · ${state.detail}`
               : ""}

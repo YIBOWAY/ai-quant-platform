@@ -94,9 +94,11 @@ export function ComposerDock({
           </label>
           <textarea
             id="hermes-composer-draft"
+            aria-busy={busy || submitting || undefined}
             aria-disabled={disabled || undefined}
+            aria-invalid={localError ? true : undefined}
             aria-label={label}
-            className="app-touch-target min-h-[44px] max-h-32 flex-1 resize-y rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-primary placeholder:text-text-secondary disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
+            className="app-touch-target min-h-[44px] max-h-32 min-w-0 flex-1 resize-y rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-primary placeholder:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
             disabled={disabled || busy || submitting}
             placeholder={placeholder}
             readOnly={disabled}
@@ -110,7 +112,7 @@ export function ComposerDock({
           />
           <button
             aria-label={sendLabel}
-            className="app-touch-target inline-flex shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-info/10 text-info transition-colors disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-bg-surface-muted disabled:text-text-secondary disabled:opacity-50"
+            className="app-touch-target inline-flex shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-info/10 text-info transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-bg-surface-muted disabled:text-text-secondary disabled:opacity-50 motion-reduce:transition-none"
             disabled={!submitEnabled}
             type="submit"
           >

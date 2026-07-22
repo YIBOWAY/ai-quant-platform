@@ -4,6 +4,10 @@ import { ComposerDock } from "@/components/hermes/ComposerDock";
 import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
 import { hermesFeatureFlags } from "@/lib/hermes/featureFlags";
+import {
+  WORKBENCH_A11Y_MARKER,
+  WORKBENCH_CONTENT_PAD_CLASS,
+} from "@/lib/hermes/workbenchA11y";
 import type { HermesDeliveryState } from "@/lib/hermes/types";
 import type { Locale } from "@/lib/locale";
 
@@ -31,7 +35,10 @@ export function HermesWorkbenchShell({
   const composerOpen = flags.chat === true;
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--color-hermes-canvas)]">
+    <div
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--color-hermes-canvas)]"
+      data-hermes-workbench-a11y={WORKBENCH_A11Y_MARKER}
+    >
       <HermesInternalNav locale={locale} />
 
       {composerOpen ? (
@@ -52,27 +59,37 @@ export function HermesWorkbenchShell({
         </HermesLocalChatBoundary>
       ) : (
         <>
+          {/* role=region (not nested main element): root layout already owns document main. */}
           <div
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
-            data-page-scroll-region
+            aria-label={
+              locale === "zh" ? "Hermes 工作台主区" : "Hermes workbench main"
+            }
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            data-hermes-workbench-main
+            role="region"
           >
-            <div className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-4 p-4 lg:p-6">
-              <HermesCapabilityNotice
-                deliveryState={resolvedDelivery}
-                locale={locale}
-              />
-              {children}
+            <div
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
+              data-page-scroll-region
+            >
+              <div className={WORKBENCH_CONTENT_PAD_CLASS}>
+                <HermesCapabilityNotice
+                  deliveryState={resolvedDelivery}
+                  locale={locale}
+                />
+                {children}
+              </div>
             </div>
-          </div>
-          <div className="min-h-[var(--spacing-hermes-composer-min)] shrink-0">
-            <ComposerDock
-              allowSubmit={false}
-              disabled
-              label={copy.composer.label}
-              placeholder={copy.composer.placeholder}
-              sendLabel={copy.composer.sendDisabled}
-              unavailableHint={copy.composer.unavailable}
-            />
+            <div className="min-h-[var(--spacing-hermes-composer-min)] shrink-0">
+              <ComposerDock
+                allowSubmit={false}
+                disabled
+                label={copy.composer.label}
+                placeholder={copy.composer.placeholder}
+                sendLabel={copy.composer.sendDisabled}
+                unavailableHint={copy.composer.unavailable}
+              />
+            </div>
           </div>
         </>
       )}

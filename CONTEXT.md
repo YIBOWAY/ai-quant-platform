@@ -94,8 +94,12 @@ _Avoid_: inventing approval rows, Gate mutation, conflating with candidate appro
 Honest empty **Task / Attempt / Run / result-ref** slots on snapshot + shared spine, plus `authority_health.task|attempt|run|result="unavailable"`. FE spine carries `tasks/attempts/runs/results` + `authorityHealth`. Read-only `WorkbenchAuthorityProjectionPanel` (`data-hermes-authority-observe=l5b-m1`). Ordinary `conversation_turn` never invents Attempt. **≠** `/hermes/tasks`. **No stop/gate/mutation**. **M1 ACCEPT@2026-07-22**.
 _Avoid_: inventing HQA Task/Attempt from commands, stop/gate writes, research Task creation UI, public write
 
+**L5c-Workbench-A11y**:
+FE-only workbench shell a11y contracts. Marker `data-hermes-workbench-a11y=l5c-m1`; `data-hermes-workbench-main` region landmark (not nested main; root layout owns document main); responsive content pad (p-3/sm:p-4/lg:p-6); shared `COLLAPSE_TOGGLE_CLASS` (44px + focus-visible) + `LONG_ID_CLASS`/`displayId` on Activity/Approvals/Authority + transcript session chip; Composer focus-visible + aria-busy/invalid; breakpoints 1440/1280/768/390; globals keep reduced-motion + focus ring. **No mutation routes**. **M1 ACCEPT@2026-07-22**.
+_Avoid_: approval decision mutation, inventing Task/Attempt, assistant bodies on follow, public write, selling visual e2e as full screen-reader certification
+
 **Observe Spine**:
-Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; L4b-M1 is the shared SSE/poll transport; L5a-M1 adds empty-honest approvals + Composer on spine; L5b-M1 carries empty-honest Task/Attempt/Run/result slots + health on spine; multi-breakpoint a11y remains Plan-V6 remainder (L5c).
+Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; L4b-M1 is the shared SSE/poll transport; L5a-M1 adds empty-honest approvals + Composer on spine; L5b-M1 carries empty-honest Task/Attempt/Run/result slots + health on spine; L5c-M1 hardens shell a11y around that spine (no new observe fields).
 _Avoid_: empty follow poll, commands-only Activity sold as complete Task/Attempt observe spine, private dual poll after L4b/L5a
 
 **Action Receipt**:

@@ -170,9 +170,12 @@ data/                     Local cache, fixtures, generated research outputs.
   `approvals=[]` + `command_approval=unavailable`; Composer waits on shared
   spine; read-only Approvals panel; no allow/deny write; ≠ Gate 1/2/3),
   **L5b-Authority-Projection M1 ACCEPT** (honest empty Task/Attempt/Run/result
-  slots + health on spine; read-only Authority panel; no invented HQA rows).
-  Next: L5c a11y + V7; public V8 still closed. See HQA `docs/README.md`, L2a
-  ADR, and platform audits
+  slots + health on spine; read-only Authority panel; no invented HQA rows),
+  **L5c-Workbench-A11y M1 ACCEPT** (FE-only shell a11y: workbench region landmark,
+  responsive pad, collapse/long-id contracts, composer focus-visible;
+  marker `data-hermes-workbench-a11y=l5c-m1`; no mutation routes).
+  Next: V7 verticals (exact command approval + Gates + stop — not inside L5c);
+  public V8 still closed. See HQA `docs/README.md`, L2a ADR, and platform audits
   `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
   `docs/audits/2026-07-21-v6-local-off-to-on.md`.
   Connector worker CLI **defaults to `reconcile_only`** (LISTEN/NOTIFY + scan +

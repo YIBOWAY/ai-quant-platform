@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 
-import { shortId } from "@/lib/hermes/commandActivity";
+import {
+  COLLAPSE_TOGGLE_CLASS,
+  displayId,
+  LONG_ID_CLASS,
+} from "@/lib/hermes/workbenchA11y";
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
 import type { Locale } from "@/lib/locale";
 
@@ -22,6 +26,7 @@ type AuthoritySlot = {
  * L5b-Authority-Projection-M1: read-only Task / Attempt / Run / result-ref slots
  * from the shared follow spine snapshot. Empty is honest — never invent HQA
  * rows from conversation commands. ≠ /hermes/tasks research page; no mutation.
+ * L5c: shared collapse/long-id a11y contracts.
  */
 export function WorkbenchAuthorityProjectionPanel({
   locale,
@@ -81,8 +86,8 @@ export function WorkbenchAuthorityProjectionPanel({
       data-hermes-authority-projection
       data-hermes-authority-observe="l5b-m1"
     >
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2">
+      <header className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-baseline gap-2">
           <h2 className="font-headline-sm text-text-primary">
             {isZh ? "权威" : "Authority"}
           </h2>
@@ -98,7 +103,7 @@ export function WorkbenchAuthorityProjectionPanel({
         <button
           aria-controls="hermes-authority-projection-body"
           aria-expanded={open}
-          className="app-touch-target rounded border border-border-subtle px-2 py-0.5 font-body-sm text-text-primary hover:bg-bg-surface"
+          className={COLLAPSE_TOGGLE_CLASS}
           data-hermes-authority-toggle
           onClick={() => setOpen((v) => !v)}
           type="button"
@@ -109,11 +114,11 @@ export function WorkbenchAuthorityProjectionPanel({
 
       {open ? (
         <div
-          className="rounded-lg border border-border-subtle bg-bg-surface"
+          className="min-w-0 rounded-lg border border-border-subtle bg-bg-surface"
           data-hermes-authority-projection-body
           id="hermes-authority-projection-body"
         >
-          <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary">
+          <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
             {isZh
               ? "只读：HQA Task / Attempt / Run / result-ref 槽位。普通 conversation_turn 不会伪造 Attempt。投影未接时诚实为空；≠ /hermes/tasks 研究任务页；无 stop/gate 写端。"
               : "Read-only: HQA Task / Attempt / Run / result-ref slots. Ordinary conversation_turn never invents Attempt rows. Empty is honest until projectors land; not the /hermes/tasks research page; no stop/gate write."}
@@ -127,25 +132,26 @@ export function WorkbenchAuthorityProjectionPanel({
 
           {spineReady ? (
             <ul
+              aria-live="polite"
               className="divide-y divide-border-subtle"
               data-hermes-authority-slots
             >
               {slots.map((slot) => (
                 <li
-                  className="px-3 py-2"
+                  className="min-w-0 px-3 py-2"
                   data-hermes-authority-slot={slot.key}
                   data-hermes-authority-health={slot.health}
                   key={slot.key}
                 >
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="font-body-sm font-semibold text-text-primary">
+                  <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+                    <p className="min-w-0 font-body-sm font-semibold text-text-primary">
                       {isZh ? slot.labelZh : slot.labelEn}
                       <span className="ml-2 font-data-mono text-[11px] font-normal text-text-secondary">
                         {slot.ids.length}
                       </span>
                     </p>
                     <p
-                      className="font-data-mono text-[11px] text-text-secondary"
+                      className="shrink-0 font-data-mono text-[11px] text-text-secondary"
                       data-hermes-authority-health-label
                     >
                       {slot.health}
@@ -153,7 +159,7 @@ export function WorkbenchAuthorityProjectionPanel({
                   </div>
                   {slot.ids.length === 0 ? (
                     <p
-                      className="mt-1 font-body-sm text-text-secondary"
+                      className="mt-1 break-words font-body-sm text-text-secondary"
                       data-hermes-authority-empty={slot.key}
                     >
                       {isZh
@@ -161,10 +167,10 @@ export function WorkbenchAuthorityProjectionPanel({
                         : "No authority rows (none invented from commands)."}
                     </p>
                   ) : (
-                    <ul className="mt-1 space-y-0.5 font-data-mono text-[11px] text-text-secondary">
+                    <ul className="mt-1 min-w-0 space-y-0.5">
                       {slot.ids.map((id) => (
-                        <li key={id} title={id}>
-                          {shortId(id, 16)}
+                        <li className={LONG_ID_CLASS} key={id} title={id}>
+                          {displayId(id, { head: 16, tail: 6 })}
                         </li>
                       ))}
                     </ul>
