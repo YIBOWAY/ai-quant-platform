@@ -157,14 +157,23 @@ class PlatformAgentWorkspace:
         settings: Settings,
         *,
         mutation_enabled: bool = False,
+        hermetic_authorities: bool = False,
     ) -> None:
         self._settings = settings
         # Public path hard-defaults False. Tests may flip True in-process only.
         self._mutation_enabled = bool(mutation_enabled)
+        # V7 M1 authorities are process-local contract-test doubles.  They are
+        # never mounted by the production factory/route merely because local
+        # mutation is enabled; tests must opt in explicitly.
+        self._hermetic_authorities = bool(hermetic_authorities)
 
     @property
     def mutation_enabled(self) -> bool:
         return self._mutation_enabled
+
+    @property
+    def hermetic_authorities(self) -> bool:
+        return self._hermetic_authorities
 
     def authorities(self) -> dict[str, object]:
         payload = authorities_ready(self._settings)
@@ -214,6 +223,7 @@ class PlatformAgentWorkspace:
                 action if not isinstance(action, Mapping) else dict(action),
                 mutation_enabled=self._mutation_enabled,
                 actor_owner_user_id=owner,
+                allow_hermetic_authorities=self._hermetic_authorities,
             )
         except SubmissionSagaError:
             raise
@@ -253,20 +263,19 @@ class PlatformAgentWorkspace:
             "provider": "dark",
             "mutation": "enabled" if mutation_on else "disabled",
             "composer": "enabled" if composer_on else "disabled",
-            # V7a: hermetic in-process command-approval authority may hold
-            # pending challenges. Empty is still honest when none are seeded.
-            "command_approval": "ready",
-            # V7e: hermetic Domain Gate 1/2/3 surfaces (empty honest until seeded).
-            "gate_1": "ready",
-            "gate_2": "ready",
-            "gate_3": "ready",
-            # V7g-A-M1: hermetic vertical Task/Attempt/Run projector mounted
-            # (empty honest until bind; never invent from conversation.turn).
-            "task": "ready",
-            "attempt": "ready",
-            "run": "ready",
-            # V7f: hermetic typed-result projector mounted (empty honest).
-            "result": "ready",
+            # V7 M1 authorities are useful contract-test doubles, not durable
+            # production authorities.  Report unavailable unless the caller
+            # explicitly constructed a hermetic test workspace.
+            "command_approval": (
+                "hermetic" if self._hermetic_authorities else "unavailable"
+            ),
+            "gate_1": "hermetic" if self._hermetic_authorities else "unavailable",
+            "gate_2": "hermetic" if self._hermetic_authorities else "unavailable",
+            "gate_3": "hermetic" if self._hermetic_authorities else "unavailable",
+            "task": "hermetic" if self._hermetic_authorities else "unavailable",
+            "attempt": "hermetic" if self._hermetic_authorities else "unavailable",
+            "run": "hermetic" if self._hermetic_authorities else "unavailable",
+            "result": "hermetic" if self._hermetic_authorities else "unavailable",
         }
 
         sessions: list[str] = []
@@ -292,12 +301,20 @@ class PlatformAgentWorkspace:
         # Empty approvals[] / gates[] / results[] / tasks is honest; health stays
         # "ready" because the hermetic in-process authorities are mounted (not
         # live Hermes HTTP / live Futu). V7g bind promotes task/attempt/run ids.
-        approvals = tuple(project_workspace_approvals(workspace_id))
-        gates = tuple(project_workspace_gates(workspace_id))
-        results = tuple(project_workspace_results(workspace_id))
-        tasks = tuple(task_ids_for_spine(workspace_id))
-        attempts = tuple(attempt_ids_for_spine(workspace_id))
-        runs = tuple(run_ids_for_spine(workspace_id))
+        if self._hermetic_authorities:
+            approvals = tuple(project_workspace_approvals(workspace_id))
+            gates = tuple(project_workspace_gates(workspace_id))
+            results = tuple(project_workspace_results(workspace_id))
+            tasks = tuple(task_ids_for_spine(workspace_id))
+            attempts = tuple(attempt_ids_for_spine(workspace_id))
+            runs = tuple(run_ids_for_spine(workspace_id))
+        else:
+            approvals = ()
+            gates = ()
+            results = ()
+            tasks = ()
+            attempts = ()
+            runs = ()
 
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
@@ -326,20 +343,33 @@ class PlatformAgentWorkspace:
         events. Gates never land in approvals[].
         """
         from quant_system.hermes.approval_observe import project_workspace_approvals
-        from quant_system.hermes.gate_observe import (
-            gate_authority_health,
-            project_workspace_gates,
-        )
-        from quant_system.hermes.result_observe import (
-            project_workspace_results,
-            result_authority_health,
-        )
+        from quant_system.hermes.gate_observe import project_workspace_gates
+        from quant_system.hermes.result_observe import project_workspace_results
         from quant_system.hermes.vertical_observe import (
             attempt_ids_for_spine,
             run_ids_for_spine,
             task_ids_for_spine,
-            vertical_authority_health,
         )
+
+        if not self._hermetic_authorities:
+            return {
+                "approvals": (),
+                "gates": (),
+                "results": (),
+                "tasks": (),
+                "attempts": (),
+                "runs": (),
+                "authority_health": {
+                    "command_approval": "unavailable",
+                    "gate_1": "unavailable",
+                    "gate_2": "unavailable",
+                    "gate_3": "unavailable",
+                    "task": "unavailable",
+                    "attempt": "unavailable",
+                    "run": "unavailable",
+                    "result": "unavailable",
+                },
+            }
 
         return {
             "approvals": tuple(project_workspace_approvals(workspace_id)),
@@ -349,10 +379,14 @@ class PlatformAgentWorkspace:
             "attempts": tuple(attempt_ids_for_spine(workspace_id)),
             "runs": tuple(run_ids_for_spine(workspace_id)),
             "authority_health": {
-                "command_approval": "ready",
-                **gate_authority_health(),
-                **result_authority_health(),
-                **vertical_authority_health(),
+                "command_approval": "hermetic",
+                "gate_1": "hermetic",
+                "gate_2": "hermetic",
+                "gate_3": "hermetic",
+                "result": "hermetic",
+                "task": "hermetic",
+                "attempt": "hermetic",
+                "run": "hermetic",
             },
         }
 
@@ -714,9 +748,14 @@ def build_platform_agent_workspace(
     settings: Settings,
     *,
     mutation_enabled: bool = False,
+    hermetic_authorities: bool = False,
 ) -> PlatformAgentWorkspace:
     """Factory used by routes/tests. Public callers must leave mutation off."""
-    return PlatformAgentWorkspace(settings, mutation_enabled=mutation_enabled)
+    return PlatformAgentWorkspace(
+        settings,
+        mutation_enabled=mutation_enabled,
+        hermetic_authorities=hermetic_authorities,
+    )
 
 
 __all__ = [

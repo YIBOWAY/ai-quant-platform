@@ -23,7 +23,13 @@ from quant_system.hermes.command_approval_authority import (
     reset_default_command_approval_authority,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
+
+
+def submit_action(*args, **kwargs):
+    """Exercise the explicitly hermetic M1 adapter in this contract suite."""
+    kwargs.setdefault("allow_hermetic_authorities", True)
+    return _submit_action(*args, **kwargs)
 
 WS = "ws-v7d-observe"
 RUN_ID = "hermes.v7d.1"
@@ -209,13 +215,17 @@ def test_snapshot_projects_pending_and_decided() -> None:
         client_action_id="act-snap",
         action_digest="c" * 64,
     )
-    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
+    ws = PlatformAgentWorkspace(
+        _settings(),
+        mutation_enabled=True,
+        hermetic_authorities=True,
+    )
     snap = ws.snapshot(
         actor={"owner_user_id": str(ROOT_USER_ID)},
         workspace={"workspace_id": "ws-local-main"},
     )
     body = snap.to_public_dict()
-    assert body["authority_health"]["command_approval"] == "ready"
+    assert body["authority_health"]["command_approval"] == "hermetic"
     ids = [r["approval_id"] for r in body["approvals"]]
     assert "challenge.snap.pend" in ids
     assert "challenge.snap.done" in ids
@@ -237,7 +247,11 @@ def test_follow_page_carries_approvals_projection() -> None:
         command_digest=DIGEST,
         expires_at=exp,
     )
-    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=False)
+    ws = PlatformAgentWorkspace(
+        _settings(),
+        mutation_enabled=False,
+        hermetic_authorities=True,
+    )
     # Database disabled → follow fail-closed resync, but when ready path is
     # exercised via direct EventPage construction after authorities_ready false.
     # Still: when we force the successful return path by mocking readiness is hard.
@@ -275,14 +289,18 @@ def test_follow_page_carries_approvals_projection() -> None:
 
 
 def test_never_invents_when_empty_snapshot() -> None:
-    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=False)
+    ws = PlatformAgentWorkspace(
+        _settings(),
+        mutation_enabled=False,
+        hermetic_authorities=True,
+    )
     snap = ws.snapshot(
         actor={"owner_user_id": str(ROOT_USER_ID)},
         workspace={"workspace_id": "ws-empty-v7d"},
     )
     body = snap.to_public_dict()
     assert body["approvals"] == []
-    assert body["authority_health"]["command_approval"] == "ready"
+    assert body["authority_health"]["command_approval"] == "hermetic"
     # Still no Task/Attempt invention.
     assert body["tasks"] == []
     assert body["attempts"] == []
@@ -362,4 +380,3 @@ def test_sse_fingerprint_emits_only_on_change() -> None:
     decided = next(r for r in second if r.get("approval_id") == "challenge.fp")
     assert decided.get("status") == "allowed_once"
     assert decided.get("decision") == "allow_once"
-

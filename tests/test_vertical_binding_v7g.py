@@ -22,7 +22,7 @@ from quant_system.hermes.result_surface_authority import (
     default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
 from quant_system.hermes.vertical_binding_authority import (
     default_vertical_binding_authority,
     reset_default_vertical_binding_authority,
@@ -33,6 +33,12 @@ from quant_system.hermes.vertical_observe import (
     reset_default_vertical_observe_journal,
     vertical_authority_health,
 )
+
+
+def submit_action(*args, **kwargs):
+    """Exercise the explicitly hermetic M1 adapter in this contract suite."""
+    kwargs.setdefault("allow_hermetic_authorities", True)
+    return _submit_action(*args, **kwargs)
 
 WS = "ws-v7g-vertical-a"
 
@@ -122,7 +128,11 @@ def test_bind_completed_with_evidence_and_snapshot() -> None:
     assert "not_live_futu_quote" in (row.get("limitations") or [])
     assert "not_tradeable" in (row.get("limitations") or [])
 
-    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
+    ws = PlatformAgentWorkspace(
+        _settings(),
+        mutation_enabled=True,
+        hermetic_authorities=True,
+    )
     snap = ws.snapshot(ROOT_USER_ID, WorkspaceRef(workspace_id=WS)).to_public_dict()
     assert receipt.task_id in snap["tasks"]
     assert receipt.attempt_id in snap["attempts"]
@@ -130,10 +140,10 @@ def test_bind_completed_with_evidence_and_snapshot() -> None:
     assert len(snap["results"]) == 1
     assert snap["results"][0]["result_id"] == receipt.result_id
     health = snap["authority_health"]
-    assert health["task"] == "ready"
-    assert health["attempt"] == "ready"
-    assert health["run"] == "ready"
-    assert health["result"] == "ready"
+    assert health["task"] == "hermetic"
+    assert health["attempt"] == "hermetic"
+    assert health["run"] == "hermetic"
+    assert health["result"] == "hermetic"
     # Never invent approvals/gates from bind
     assert snap["approvals"] == []
     assert snap["gates"] == []
@@ -245,7 +255,11 @@ def test_follow_page_carries_vertical_ids() -> None:
     doc = _bind_doc(client_action_id="act-v7g-follow")
     receipt = submit_action(_settings(), doc, mutation_enabled=True)
     assert receipt.status == "accepted"
-    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
+    ws = PlatformAgentWorkspace(
+        _settings(),
+        mutation_enabled=True,
+        hermetic_authorities=True,
+    )
     page = ws.follow(
         ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0
     ).to_public_dict()
@@ -255,9 +269,9 @@ def test_follow_page_carries_vertical_ids() -> None:
     assert isinstance(page.get("results"), list)
     assert any(r.get("result_id") == receipt.result_id for r in page["results"])
     health = page.get("authority_health") or {}
-    assert health.get("task") == "ready"
-    assert health.get("attempt") == "ready"
-    assert health.get("run") == "ready"
+    assert health.get("task") == "hermetic"
+    assert health.get("attempt") == "hermetic"
+    assert health.get("run") == "hermetic"
 
 
 def test_vertical_observe_journal_fingerprint() -> None:

@@ -21,7 +21,18 @@ from quant_system.hermes.run_stop_port import (
     reset_default_run_stop_adapter,
     strip_run_ref,
 )
-from quant_system.hermes.submission_saga import submit_action, submit_stop_run_request
+from quant_system.hermes.submission_saga import (
+    submit_action as _submit_action,
+)
+from quant_system.hermes.submission_saga import (
+    submit_stop_run_request,
+)
+
+
+def submit_action(*args, **kwargs):
+    """Exercise the explicitly hermetic M1 adapter in this contract suite."""
+    kwargs.setdefault("allow_hermetic_authorities", True)
+    return _submit_action(*args, **kwargs)
 
 WS = "ws-v7c-stop"
 RUN_ID = "hermes.v7c.1"

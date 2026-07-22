@@ -1305,6 +1305,7 @@ def submit_action(
     *,
     mutation_enabled: bool = False,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    allow_hermetic_authorities: bool = False,
 ) -> ActionReceipt:
     """Dispatch one closed action through the crash-safe submission path."""
     if isinstance(action, dict):
@@ -1319,6 +1320,27 @@ def submit_action(
             parsed = parse_user_action_v1(action_to_document(parsed))
         except (AgentWorkspaceActionError, TypeError, ValueError) as exc:
             raise SubmissionSagaError("validation", str(exc) or "validation") from exc
+
+    hermetic_only_types = (
+        DecideHermesCommandApproval,
+        RequestStop,
+        ConfirmFormulaSource,
+        ReviewCandidateCAS,
+        PreparePromotionReview,
+        BindOptionsVerticalA,
+    )
+    if (
+        mutation_enabled
+        and not allow_hermetic_authorities
+        and type(parsed) in hermetic_only_types
+    ):
+        return _receipt(
+            status="unavailable",
+            action=parsed,
+            digest=canonical_action_digest(parsed),
+            reason_code="canonical_authority_adapter_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
 
     if type(parsed) is CreateManagedSession:
         return submit_create_managed_session(

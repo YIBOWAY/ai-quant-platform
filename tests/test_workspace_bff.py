@@ -134,20 +134,19 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     assert body["mutation_enabled"] is False
     assert body["authority_health"]["mutation"] == "disabled"
     # L5a/V7a: approvals slot is present and honestly empty (no invented challenges).
-    # V7a hermetic authority is reachable → health ready even when empty.
+    # Production BFF never mounts the process-local V7 contract-test double.
     assert body.get("approvals") == []
-    assert body["authority_health"].get("command_approval") == "ready"
+    assert body["authority_health"].get("command_approval") == "unavailable"
     # L5b: Task/Attempt/Run authority slots stay empty; health unavailable.
-    # V7f: result projector is mounted → empty results[] + health ready (honest empty).
+    # Empty slots remain visible, but unavailable until canonical adapters land.
     assert body.get("tasks") == []
     assert body.get("attempts") == []
     assert body.get("runs") == []
     assert body.get("results") == []
-    # V7g-A-M1: hermetic vertical projectors mounted; empty lists remain honest.
-    assert body["authority_health"].get("task") == "ready"
-    assert body["authority_health"].get("attempt") == "ready"
-    assert body["authority_health"].get("run") == "ready"
-    assert body["authority_health"].get("result") == "ready"
+    assert body["authority_health"].get("task") == "unavailable"
+    assert body["authority_health"].get("attempt") == "unavailable"
+    assert body["authority_health"].get("run") == "unavailable"
+    assert body["authority_health"].get("result") == "unavailable"
 
     follow = client.get(
         f"/api/workspace/{WORKSPACE_ID}/follow?after_cursor=0",

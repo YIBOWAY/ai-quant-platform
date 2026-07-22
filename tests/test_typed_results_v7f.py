@@ -103,7 +103,11 @@ def test_snapshot_carries_typed_results_not_gates() -> None:
         iv=0.22,
         apr=0.15,
     )
-    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=False)
+    ws = PlatformAgentWorkspace(
+        _settings(),
+        mutation_enabled=False,
+        hermetic_authorities=True,
+    )
     snap = ws.snapshot(ROOT_USER_ID, WorkspaceRef(workspace_id=WS))
     public = snap.to_public_dict()
     assert len(public["results"]) == 1
@@ -113,7 +117,7 @@ def test_snapshot_carries_typed_results_not_gates() -> None:
     assert public["gates"] == []
     assert public["approvals"] == []
     assert public["tasks"] == []
-    assert public["authority_health"]["result"] == "ready"
+    assert public["authority_health"]["result"] == "hermetic"
     # Never invent Task from result link alone
     assert public["tasks"] == []
 

@@ -25,7 +25,13 @@ from quant_system.hermes.command_approval_authority import (
     default_command_approval_authority,
     reset_default_command_approval_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
+
+
+def submit_action(*args, **kwargs):
+    """Exercise the explicitly hermetic M1 adapter in this contract suite."""
+    kwargs.setdefault("allow_hermetic_authorities", True)
+    return _submit_action(*args, **kwargs)
 
 DIGEST = "e" * 64
 WS = "ws-v7a-decide"
@@ -338,7 +344,11 @@ def test_snapshot_projects_pending_approvals_when_seeded() -> None:
         expires_at=exp,
         command_id="cmd-1",
     )
-    ws = PlatformAgentWorkspace(settings, mutation_enabled=True)
+    ws = PlatformAgentWorkspace(
+        settings,
+        mutation_enabled=True,
+        hermetic_authorities=True,
+    )
     snap = ws.snapshot(
         actor={"owner_user_id": str(ROOT_USER_ID)},
         workspace={"workspace_id": "ws-local-main"},
@@ -355,6 +365,5 @@ def test_snapshot_projects_pending_approvals_when_seeded() -> None:
         assert row["digest"] == DIGEST
         assert row["status"] == "pending"
     else:
-        assert body["authority_health"]["command_approval"] == "ready"
+        assert body["authority_health"]["command_approval"] == "hermetic"
         assert len(body["approvals"]) == 1
-

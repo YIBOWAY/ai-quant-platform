@@ -29,7 +29,13 @@ from quant_system.hermes.gate_surface_authority import (
     default_gate_surface_authority,
     reset_default_gate_surface_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
+
+
+def submit_action(*args, **kwargs):
+    """Exercise the explicitly hermetic M1 adapter in this contract suite."""
+    kwargs.setdefault("allow_hermetic_authorities", True)
+    return _submit_action(*args, **kwargs)
 
 WS = "ws-v7e-gates"
 DIGEST = "a" * 64
@@ -228,7 +234,11 @@ def test_snapshot_and_follow_carry_gates_not_approvals() -> None:
         task_id="t-snap",
         reviewed_source_sha256=DIGEST,
     )
-    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=False)
+    ws = PlatformAgentWorkspace(
+        _settings(),
+        mutation_enabled=False,
+        hermetic_authorities=True,
+    )
     snap = ws.snapshot(ROOT_USER_ID, WorkspaceRef(workspace_id=WS))
     public = snap.to_public_dict()
     assert "gates" in public
@@ -237,10 +247,10 @@ def test_snapshot_and_follow_carry_gates_not_approvals() -> None:
     # Never stuff gates into approvals
     assert public["approvals"] == []
     health = public["authority_health"]
-    assert health["gate_1"] == "ready"
-    assert health["gate_2"] == "ready"
-    assert health["gate_3"] == "ready"
-    assert health["command_approval"] == "ready"
+    assert health["gate_1"] == "hermetic"
+    assert health["gate_2"] == "hermetic"
+    assert health["gate_3"] == "hermetic"
+    assert health["command_approval"] == "hermetic"
 
     # Follow may resync when PG off; still must not invent gates into approvals
     # when authorities_ready is false. When ready=false, EventPage has no gates.
