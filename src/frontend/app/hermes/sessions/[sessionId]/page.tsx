@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { HermesSessionLatestAnchor } from "@/components/hermes/sessions/HermesSessionLatestAnchor";
+import { TranscriptCanvas } from "@/components/hermes/transcript/TranscriptCanvas";
 import { Card } from "@/components/ui/primitives";
 import { getHermesSessionDetail, getHermesSessionMessages } from "@/lib/api";
+import { displayableTranscriptMessages } from "@/lib/hermes/transcriptHelpers";
 import { localizePath } from "@/lib/locale";
 import { getServerLocale } from "@/lib/serverLocale";
 
@@ -23,6 +25,7 @@ export default async function HermesSessionDetailPage({
     detail.read_status === "available" &&
     detail.session !== null &&
     history.read_status === "available";
+  const displayMessages = displayableTranscriptMessages(history.messages);
 
   return (
     <section
@@ -57,51 +60,23 @@ export default async function HermesSessionDetailPage({
             </p>
           ))}
         </Card>
-      ) : history.messages.length === 0 ? (
-        <Card data-hermes-session-empty>
-          <p className="font-body-sm text-text-secondary">
-            {isZh ? "此会话没有可展示的用户/助手消息。" : "No displayable user/assistant messages."}
-          </p>
-        </Card>
       ) : (
         <>
-          <ol className="space-y-3" data-hermes-session-messages>
-            {history.messages.map((message, index) => (
-              <li
-                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                key={`${message.id}:${index}`}
-              >
-                <Card
-                  className={`max-w-[88%] ${
-                    message.role === "user" ? "border-info/30 bg-info/10" : "bg-bg-surface"
-                  }`}
-                >
-                  <p className="font-label-caps text-text-secondary">
-                    {message.role === "user" ? (isZh ? "你" : "You") : "Hermes"}
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap break-words font-body-sm text-text-primary">
-                    {message.content}
-                  </p>
-                  {message.timestamp ? (
-                    <p className="mt-2 font-data-mono text-[11px] text-text-secondary">
-                      {message.timestamp}
-                    </p>
-                  ) : null}
-                </Card>
-              </li>
-            ))}
-          </ol>
-          <HermesSessionLatestAnchor />
+          {/* L3b: shared presentational canvas with workbench transcript */}
+          <TranscriptCanvas
+            emptyHint={
+              isZh
+                ? "此会话没有可展示的用户/助手消息。"
+                : "No displayable user/assistant messages."
+            }
+            hermesSessionId={sessionId}
+            isZh={isZh}
+            messages={displayMessages}
+            omittedCount={history.omitted_message_count}
+          />
+          {displayMessages.length > 0 ? <HermesSessionLatestAnchor /> : null}
         </>
       )}
-
-      {history.omitted_message_count > 0 ? (
-        <p className="font-body-sm text-text-secondary" data-hermes-omitted-message-count>
-          {isZh
-            ? `为保护敏感工具内容和控制响应大小，省略了 ${history.omitted_message_count} 条系统、工具或较早消息。`
-            : `${history.omitted_message_count} system, tool, or older messages were omitted for safety and response bounds.`}
-        </p>
-      ) : null}
     </section>
   );
 }

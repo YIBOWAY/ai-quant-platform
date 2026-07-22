@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TranscriptCanvas } from "@/components/hermes/transcript/TranscriptCanvas";
 import { useActiveHermesSession } from "@/lib/hermes/activeSession";
 import {
   displayableTranscriptMessages,
+  isNearBottom,
+  mergePendingUserMessage,
   pickLatestHermesSessionId,
 } from "@/lib/hermes/transcriptHelpers";
 import {
@@ -19,28 +21,70 @@ export type WorkbenchTranscriptPanelProps = {
   locale: Locale;
 };
 
+type PriorBundle = {
+  sessionId: string;
+  messages: HermesSessionMessage[];
+  omitted: number;
+};
+
 type LoadState =
   | { kind: "idle" }
-  | { kind: "loading"; sessionId: string }
+  | {
+      kind: "loading";
+      sessionId: string;
+      /** Keep prior ready bubbles visible while refreshing (L3b no-flicker). */
+      prior?: PriorBundle;
+    }
   | {
       kind: "ready";
       sessionId: string;
       messages: HermesSessionMessage[];
       omitted: number;
     }
-  | { kind: "unavailable"; sessionId: string; detail?: string };
+  | {
+      kind: "unavailable";
+      sessionId: string;
+      detail?: string;
+      prior?: PriorBundle;
+    };
+
+function priorFromState(state: LoadState): PriorBundle | undefined {
+  if (state.kind === "ready") {
+    return {
+      sessionId: state.sessionId,
+      messages: state.messages,
+      omitted: state.omitted,
+    };
+  }
+  if (
+    (state.kind === "loading" || state.kind === "unavailable") &&
+    state.prior
+  ) {
+    return state.prior;
+  }
+  return undefined;
+}
 
 /**
- * L3a-Transcript-M1: workbench-local transcript bound by active hermes_session_id.
+ * L3a + L3b: workbench-local transcript bound by active hermes_session_id.
  * Loads via same-origin messages BFF; soft-fails without breaking composer.
+ * L3b: keep last ready canvas while refreshing; soft-stick scroll; optimistic user.
  */
 export function WorkbenchTranscriptPanel({
   locale,
 }: WorkbenchTranscriptPanelProps) {
   const isZh = locale === "zh";
-  const { hermesSessionId, setActiveHermesSession, transcriptEpoch } =
-    useActiveHermesSession();
+  const {
+    hermesSessionId,
+    setActiveHermesSession,
+    transcriptEpoch,
+    pendingUserText,
+    setPendingUserText,
+  } = useActiveHermesSession();
   const [state, setState] = useState<LoadState>({ kind: "idle" });
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
+  const lastMessageKeyRef = useRef<string>("");
 
   // Bootstrap: if composer has not bound a session yet, pick latest command's
   // hermes_session_id from workspace snapshot (local dark observe).
@@ -78,17 +122,27 @@ export function WorkbenchTranscriptPanel({
     }
     let cancelled = false;
     const ac = new AbortController();
-    setState({ kind: "loading", sessionId });
+    setState((prev) => {
+      const prior = priorFromState(prev);
+      // Only keep prior bubbles when same session (avoid flash of wrong thread).
+      const keep =
+        prior && prior.sessionId === sessionId ? prior : undefined;
+      return { kind: "loading", sessionId, prior: keep };
+    });
     (async () => {
       try {
         const envelope = await fetchHermesSessionMessages(sessionId, ac.signal);
         if (cancelled) return;
         if (envelope.read_status && envelope.read_status !== "available") {
-          setState({
+          setState((prev) => ({
             kind: "unavailable",
             sessionId,
             detail: String(envelope.read_status),
-          });
+            prior:
+              priorFromState(prev)?.sessionId === sessionId
+                ? priorFromState(prev)
+                : undefined,
+          }));
           return;
         }
         const messages = displayableTranscriptMessages(envelope.messages);
@@ -100,11 +154,15 @@ export function WorkbenchTranscriptPanel({
         });
       } catch (error) {
         if (cancelled || ac.signal.aborted) return;
-        setState({
+        setState((prev) => ({
           kind: "unavailable",
           sessionId,
           detail: error instanceof Error ? error.message : "fetch failed",
-        });
+          prior:
+            priorFromState(prev)?.sessionId === sessionId
+              ? priorFromState(prev)
+              : undefined,
+        }));
       }
     })();
     return () => {
@@ -112,6 +170,85 @@ export function WorkbenchTranscriptPanel({
       ac.abort();
     };
   }, [hermesSessionId, transcriptEpoch]);
+
+  // Drop optimistic bubble once server transcript already has that user text.
+  useEffect(() => {
+    if (!pendingUserText || state.kind !== "ready") return;
+    const hit = state.messages.some(
+      (m) => m.role === "user" && m.content.trim() === pendingUserText.trim(),
+    );
+    if (hit) setPendingUserText(null);
+  }, [pendingUserText, setPendingUserText, state]);
+
+  const readyView =
+    state.kind === "ready"
+      ? state
+      : state.kind === "loading" && state.prior
+        ? {
+            sessionId: state.prior.sessionId,
+            messages: state.prior.messages,
+            omitted: state.prior.omitted,
+          }
+        : state.kind === "unavailable" && state.prior
+          ? {
+              sessionId: state.prior.sessionId,
+              messages: state.prior.messages,
+              omitted: state.prior.omitted,
+            }
+          : null;
+
+  const canvasMessages = useMemo(() => {
+    if (state.kind === "idle") {
+      return mergePendingUserMessage([], pendingUserText);
+    }
+    if (readyView) {
+      return mergePendingUserMessage(readyView.messages, pendingUserText);
+    }
+    return mergePendingUserMessage([], pendingUserText);
+  }, [state.kind, readyView, pendingUserText]);
+
+  // Soft stick-to-bottom: only auto-scroll when user is already near bottom
+  // and a new message arrives (L3b; does not steal upward reading).
+  useEffect(() => {
+    const last = canvasMessages[canvasMessages.length - 1];
+    const key = last
+      ? `${last.id}:${last.role}:${last.content.length}:${last.timestamp ?? ""}`
+      : "empty";
+    const changed = key !== lastMessageKeyRef.current;
+    lastMessageKeyRef.current = key;
+    if (!changed || !stickToBottomRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [canvasMessages]);
+
+  const onScroll = () => {
+    stickToBottomRef.current = isNearBottom(scrollRef.current);
+  };
+
+  const headerStatus =
+    state.kind === "loading"
+      ? isZh
+        ? state.prior
+          ? "刷新中…"
+          : "加载中…"
+        : state.prior
+          ? "Refreshing…"
+          : "Loading…"
+      : state.kind === "idle" && !pendingUserText
+        ? isZh
+          ? "发送一条消息后显示完整回复"
+          : "Send a message to load the transcript"
+        : state.kind === "unavailable" && !state.prior
+          ? isZh
+            ? "暂时不可用"
+            : "Unavailable"
+          : null;
+
+  const showEmptyIdle = state.kind === "idle" && canvasMessages.length === 0;
+  const showFirstLoad = state.kind === "loading" && !state.prior && !pendingUserText;
+  const showHardUnavailable =
+    state.kind === "unavailable" && !state.prior && canvasMessages.length === 0;
 
   return (
     <section
@@ -123,20 +260,16 @@ export function WorkbenchTranscriptPanel({
         <h2 className="font-headline-sm text-text-primary">
           {isZh ? "对话" : "Conversation"}
         </h2>
-        <p className="font-body-sm text-text-secondary">
-          {state.kind === "loading"
-            ? isZh
-              ? "加载中…"
-              : "Loading…"
-            : state.kind === "idle"
-              ? isZh
-                ? "发送一条消息后显示完整回复"
-                : "Send a message to load the transcript"
-              : null}
+        <p
+          aria-live="polite"
+          className="font-body-sm text-text-secondary"
+          data-hermes-transcript-status
+        >
+          {headerStatus}
         </p>
       </header>
 
-      {state.kind === "idle" ? (
+      {showEmptyIdle ? (
         <TranscriptCanvas
           emptyHint={
             isZh
@@ -148,7 +281,7 @@ export function WorkbenchTranscriptPanel({
         />
       ) : null}
 
-      {state.kind === "loading" ? (
+      {showFirstLoad ? (
         <div
           className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-4 font-body-sm text-text-secondary"
           data-hermes-transcript-loading
@@ -157,7 +290,7 @@ export function WorkbenchTranscriptPanel({
         </div>
       ) : null}
 
-      {state.kind === "unavailable" ? (
+      {showHardUnavailable ? (
         <div
           className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-3 font-body-sm text-text-primary"
           data-hermes-transcript-unavailable
@@ -166,19 +299,41 @@ export function WorkbenchTranscriptPanel({
             {isZh ? "暂时无法读取对话" : "Transcript temporarily unavailable"}
           </p>
           <p className="mt-1 font-data-mono text-xs text-text-secondary">
-            {state.sessionId}
-            {state.detail ? ` · ${state.detail}` : ""}
+            {state.kind === "unavailable" ? state.sessionId : ""}
+            {state.kind === "unavailable" && state.detail
+              ? ` · ${state.detail}`
+              : ""}
           </p>
         </div>
       ) : null}
 
-      {state.kind === "ready" ? (
-        <TranscriptCanvas
-          hermesSessionId={state.sessionId}
-          isZh={isZh}
-          messages={state.messages}
-          omittedCount={state.omitted}
-        />
+      {state.kind === "unavailable" && state.prior ? (
+        <p
+          className="font-body-sm text-warning"
+          data-hermes-transcript-stale-warning
+        >
+          {isZh
+            ? `刷新失败，仍显示上一份对话${state.detail ? `（${state.detail}）` : ""}`
+            : `Refresh failed; showing last transcript${state.detail ? ` (${state.detail})` : ""}`}
+        </p>
+      ) : null}
+
+      {!showEmptyIdle && !showFirstLoad && !showHardUnavailable ? (
+        <div
+          className="max-h-[min(48vh,28rem)] overflow-y-auto rounded-lg"
+          data-hermes-transcript-scroll
+          onScroll={onScroll}
+          ref={scrollRef}
+        >
+          <TranscriptCanvas
+            hermesSessionId={
+              readyView?.sessionId ?? hermesSessionId ?? undefined
+            }
+            isZh={isZh}
+            messages={canvasMessages}
+            omittedCount={readyView?.omitted ?? 0}
+          />
+        </div>
       ) : null}
     </section>
   );

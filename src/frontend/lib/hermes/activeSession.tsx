@@ -32,6 +32,12 @@ export type ActiveHermesSessionValue = {
   /** Bump to force transcript reload without changing session id. */
   transcriptEpoch: number;
   bumpTranscript: () => void;
+  /**
+   * L3b: optimistic user text after submit accept, cleared when server
+   * transcript includes the same user body (or explicitly cleared).
+   */
+  pendingUserText: string | null;
+  setPendingUserText: (text: string | null) => void;
 };
 
 const ActiveHermesSessionContext =
@@ -45,6 +51,9 @@ export function ActiveHermesSessionProvider({
   const [hermesSessionId, setHermesSessionId] = useState<string | null>(null);
   const [boundCommandId, setBoundCommandId] = useState<string | null>(null);
   const [transcriptEpoch, setTranscriptEpoch] = useState(0);
+  const [pendingUserText, setPendingUserTextState] = useState<string | null>(
+    null,
+  );
   // Synchronous mirror so onlyIfEmpty / same-id checks do not race setState.
   const hermesSessionIdRef = useRef<string | null>(null);
 
@@ -62,6 +71,8 @@ export function ActiveHermesSessionProvider({
       if (idChanged) {
         hermesSessionIdRef.current = id;
         setHermesSessionId(id);
+        // New thread: drop optimistic bubble from prior session.
+        setPendingUserTextState(null);
       }
       if (next.commandId) {
         setBoundCommandId(next.commandId);
@@ -76,6 +87,15 @@ export function ActiveHermesSessionProvider({
     setTranscriptEpoch((n) => n + 1);
   }, []);
 
+  const setPendingUserText = useCallback((text: string | null) => {
+    if (text == null) {
+      setPendingUserTextState(null);
+      return;
+    }
+    const trimmed = text.trim();
+    setPendingUserTextState(trimmed.length ? trimmed : null);
+  }, []);
+
   const value = useMemo(
     () => ({
       hermesSessionId,
@@ -83,6 +103,8 @@ export function ActiveHermesSessionProvider({
       setActiveHermesSession,
       transcriptEpoch,
       bumpTranscript,
+      pendingUserText,
+      setPendingUserText,
     }),
     [
       hermesSessionId,
@@ -90,6 +112,8 @@ export function ActiveHermesSessionProvider({
       setActiveHermesSession,
       transcriptEpoch,
       bumpTranscript,
+      pendingUserText,
+      setPendingUserText,
     ],
   );
 

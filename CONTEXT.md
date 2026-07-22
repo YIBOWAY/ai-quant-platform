@@ -74,6 +74,10 @@ _Avoid_: Plan-V6 transcript UI done, assistant bodies in follow ledger, public c
 Workbench Conversation panel above Today when local chat is open; binds usable Hermes API `hermes_session_id` on deliver (and snapshot bootstrap with only-if-empty), then loads full user/assistant bubbles via same-origin messages BFF. **M1 ACCEPT@2026-07-22** (live `L3a-pong` + FE marker). No SSE; not Task drawer/approval/a11y.
 _Avoid_: Plan-V6 complete, SSE done, public cutover, registry `web_`/`wm_` as messages id
 
+**L3b-Transcript-Polish**:
+FE polish on the L3a canvas only: keep-last-ready no-flicker refresh, soft stick-to-bottom when near bottom, optimistic user bubble on submit accept, `aria-live` on canvas, copyable session chip, sessions detail reuses shared `TranscriptCanvas`. **M1 ACCEPT@2026-07-22**. Still no SSE / Task drawer / public write.
+_Avoid_: Plan-V6 complete, SSE done, inventing assistant text, binding on accept instead of deliver
+
 **Observe Spine**:
 Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; richer Task/Attempt/Run projections remain Plan-V6 remainder.
 _Avoid_: empty follow poll, sessions-and-commands-only snapshot sold as complete observe UI

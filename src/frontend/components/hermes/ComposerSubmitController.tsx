@@ -141,6 +141,7 @@ export function ComposerSubmitController({
   const pollAbortRef = useRef<AbortController | null>(null);
   const activeSession = useOptionalActiveHermesSession();
   const bindSession = activeSession?.setActiveHermesSession;
+  const setPendingUserText = activeSession?.setPendingUserText;
 
   useEffect(() => {
     return () => {
@@ -180,6 +181,15 @@ export function ComposerSubmitController({
             receipt.reason_code,
           ),
         );
+
+        // L3b: optimistic user bubble on accept (or outcome_unknown with command).
+        // Bind still only happens on deliver via surfaceAssistantPreview.
+        if (
+          receipt.status === "accepted" ||
+          (receipt.status === "outcome_unknown" && receipt.command_id)
+        ) {
+          setPendingUserText?.(prompt);
+        }
 
         if (
           receipt.status === "conflict" ||
@@ -231,6 +241,9 @@ export function ComposerSubmitController({
                     setStatusText,
                     onBindSession: bindSession,
                   });
+                } else {
+                  // L3b: drop optimistic "sending" bubble on terminal non-deliver.
+                  setPendingUserText?.(null);
                 }
                 return;
               }
@@ -275,6 +288,9 @@ export function ComposerSubmitController({
               lifecyclePrefix: lifecycle,
               onBindSession: bindSession,
             });
+          } else if (result.state && isTerminalCommandState(result.state)) {
+            // L3b: failed/cancelled/etc. must not leave a stuck "sending" bubble.
+            setPendingUserText?.(null);
           }
         }
       } catch (error) {
@@ -298,7 +314,7 @@ export function ComposerSubmitController({
         }
       }
     },
-    [networkSubmit, bindSession],
+    [networkSubmit, bindSession, setPendingUserText],
   );
 
   return (

@@ -1,3 +1,8 @@
+'use client';
+
+import { useCallback, useState } from "react";
+
+import { copyTextToClipboard } from "@/lib/hermes/transcriptHelpers";
 import type { HermesSessionMessage } from "@/lib/hermes/workspaceClient";
 
 export type TranscriptCanvasProps = {
@@ -7,13 +12,15 @@ export type TranscriptCanvasProps = {
   omittedCount?: number;
   emptyHint?: string;
   className?: string;
-  /** Optional session id shown in footer for operator clarity. */
+  /** Optional session id shown as copyable chip for operator clarity. */
   hermesSessionId?: string | null;
+  /** Local optimistic user bubble id marker (styling only). */
+  pendingMessageId?: string;
 };
 
 /**
  * Presentational user/assistant bubble list.
- * Visual parity with `/hermes/sessions/[id]` detail; no fetch here.
+ * Shared by workbench Conversation and `/hermes/sessions/[id]` detail.
  */
 export function TranscriptCanvas({
   messages,
@@ -22,7 +29,17 @@ export function TranscriptCanvas({
   emptyHint,
   className = "",
   hermesSessionId = null,
+  pendingMessageId = "local-pending-user",
 }: TranscriptCanvasProps) {
+  const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
+
+  const onCopySession = useCallback(async () => {
+    if (!hermesSessionId) return;
+    const ok = await copyTextToClipboard(hermesSessionId);
+    setCopyState(ok ? "ok" : "fail");
+    window.setTimeout(() => setCopyState("idle"), 1500);
+  }, [hermesSessionId]);
+
   const resolvedEmpty =
     emptyHint ??
     (isZh
@@ -33,32 +50,66 @@ export function TranscriptCanvas({
     return (
       <div
         className={`rounded-lg border border-border-subtle bg-bg-surface px-3 py-4 ${className}`}
+        data-hermes-session-empty
         data-hermes-transcript-empty
       >
         <p className="font-body-sm text-text-secondary">{resolvedEmpty}</p>
+        {hermesSessionId ? (
+          <SessionChip
+            copyState={copyState}
+            hermesSessionId={hermesSessionId}
+            isZh={isZh}
+            onCopy={onCopySession}
+          />
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className={`space-y-3 ${className}`} data-hermes-transcript-canvas>
+    <div
+      aria-live="polite"
+      aria-relevant="additions"
+      className={`space-y-3 ${className}`}
+      data-hermes-transcript-canvas
+    >
+      {hermesSessionId ? (
+        <SessionChip
+          copyState={copyState}
+          hermesSessionId={hermesSessionId}
+          isZh={isZh}
+          onCopy={onCopySession}
+        />
+      ) : null}
       <ol className="space-y-3" data-hermes-session-messages>
         {messages.map((message, index) => {
           const isUser = message.role === "user";
+          const isPending = message.id === pendingMessageId;
           return (
             <li
               className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+              data-hermes-message-pending={isPending ? "true" : undefined}
               key={`${message.id || "msg"}:${index}`}
             >
               <div
                 className={`max-w-[88%] rounded-lg border px-3 py-2 shadow-sm ${
                   isUser
-                    ? "border-info/30 bg-info/10"
+                    ? isPending
+                      ? "border-info/20 bg-info/5 opacity-90"
+                      : "border-info/30 bg-info/10"
                     : "border-border-subtle bg-bg-surface"
                 }`}
               >
                 <p className="font-label-caps text-text-secondary">
-                  {isUser ? (isZh ? "你" : "You") : "Hermes"}
+                  {isUser
+                    ? isPending
+                      ? isZh
+                        ? "你 · 发送中"
+                        : "You · sending"
+                      : isZh
+                        ? "你"
+                        : "You"
+                    : "Hermes"}
                 </p>
                 <p className="mt-2 whitespace-pre-wrap break-words font-body-sm text-text-primary">
                   {message.content}
@@ -83,14 +134,51 @@ export function TranscriptCanvas({
             : `${omittedCount} system, tool, or older messages were omitted for safety and response bounds.`}
         </p>
       ) : null}
-      {hermesSessionId ? (
-        <p
-          className="font-data-mono text-[11px] text-text-secondary"
-          data-hermes-transcript-session-id
-        >
-          {hermesSessionId}
-        </p>
-      ) : null}
+    </div>
+  );
+}
+
+function SessionChip({
+  hermesSessionId,
+  isZh,
+  copyState,
+  onCopy,
+}: {
+  hermesSessionId: string;
+  isZh: boolean;
+  copyState: "idle" | "ok" | "fail";
+  onCopy: () => void;
+}) {
+  const label =
+    copyState === "ok"
+      ? isZh
+        ? "已复制"
+        : "Copied"
+      : copyState === "fail"
+        ? isZh
+          ? "复制失败"
+          : "Copy failed"
+        : isZh
+          ? "复制"
+          : "Copy";
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 font-data-mono text-[11px] text-text-secondary"
+      data-hermes-transcript-session-chip
+    >
+      <span data-hermes-transcript-session-id title={hermesSessionId}>
+        {hermesSessionId.length > 36
+          ? `${hermesSessionId.slice(0, 20)}…${hermesSessionId.slice(-8)}`
+          : hermesSessionId}
+      </span>
+      <button
+        className="app-touch-target rounded border border-border-subtle px-2 py-0.5 font-body-sm text-text-primary hover:bg-bg-surface"
+        data-hermes-transcript-copy-session
+        onClick={onCopy}
+        type="button"
+      >
+        {label}
+      </button>
     </div>
   );
 }

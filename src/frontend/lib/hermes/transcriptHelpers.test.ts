@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   displayableTranscriptMessages,
+  isNearBottom,
   isUsableHermesApiSessionId,
+  mergePendingUserMessage,
   pickLatestHermesSessionId,
 } from "./transcriptHelpers";
 
-describe("transcriptHelpers (L3a)", () => {
+describe("transcriptHelpers (L3a + L3b)", () => {
   it("accepts Hermes API session ids and rejects registry/workspace markers", () => {
     expect(isUsableHermesApiSessionId("run_127dd275e6964abc")).toBe(true);
     expect(isUsableHermesApiSessionId("agent:main:l2a")).toBe(true);
@@ -45,5 +47,36 @@ describe("transcriptHelpers (L3a)", () => {
         { command_id: "c3", hermes_session_id: "run_new" },
       ]),
     ).toEqual({ hermesSessionId: "run_new", commandId: "c3" });
+  });
+
+  it("isNearBottom respects threshold", () => {
+    expect(
+      isNearBottom({ scrollHeight: 1000, scrollTop: 900, clientHeight: 100 }, 80),
+    ).toBe(true);
+    expect(
+      isNearBottom({ scrollHeight: 1000, scrollTop: 100, clientHeight: 100 }, 80),
+    ).toBe(false);
+    expect(isNearBottom(null)).toBe(true);
+  });
+
+  it("mergePendingUserMessage appends until server has same user text", () => {
+    const withPending = mergePendingUserMessage(
+      [{ id: "a1", role: "assistant", content: "hi" }],
+      "  hello  ",
+    );
+    expect(withPending.map((m) => m.id)).toEqual(["a1", "local-pending-user"]);
+    expect(withPending[1]?.content).toBe("hello");
+
+    const already = mergePendingUserMessage(
+      [
+        { id: "u1", role: "user", content: "hello" },
+        { id: "a1", role: "assistant", content: "pong" },
+      ],
+      "hello",
+    );
+    expect(already.map((m) => m.id)).toEqual(["u1", "a1"]);
+
+    expect(mergePendingUserMessage([], null)).toEqual([]);
+    expect(mergePendingUserMessage([], "   ")).toEqual([]);
   });
 });
