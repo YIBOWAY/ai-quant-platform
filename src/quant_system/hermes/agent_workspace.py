@@ -117,6 +117,10 @@ class EventPage:
     gates: tuple[dict[str, object], ...] | None = None
     # V7f: optional typed results projection (separate from gates/approvals).
     results: tuple[dict[str, object], ...] | None = None
+    # V7g-A-M1: optional Task/Attempt/Run id lists on follow (same as snapshot).
+    tasks: tuple[str, ...] | None = None
+    attempts: tuple[str, ...] | None = None
+    runs: tuple[str, ...] | None = None
     authority_health: Mapping[str, str] | None = None
 
     def to_public_dict(self) -> dict[str, object]:
@@ -134,6 +138,12 @@ class EventPage:
             payload["gates"] = [dict(item) for item in self.gates]
         if self.results is not None:
             payload["results"] = [dict(item) for item in self.results]
+        if self.tasks is not None:
+            payload["tasks"] = list(self.tasks)
+        if self.attempts is not None:
+            payload["attempts"] = list(self.attempts)
+        if self.runs is not None:
+            payload["runs"] = list(self.runs)
         if self.authority_health is not None:
             payload["authority_health"] = dict(self.authority_health)
         return payload
@@ -306,6 +316,46 @@ class PlatformAgentWorkspace:
             observed_at=observed_at,
         )
 
+    def _hermetic_spine_projections(
+        self, workspace_id: str
+    ) -> dict[str, object]:
+        """Attach in-process hermetic projections for follow/SSE.
+
+        Independent of PG readiness: approvals/gates/results/vertical ids are
+        in-process authorities. Empty remains honest. Never invents command
+        events. Gates never land in approvals[].
+        """
+        from quant_system.hermes.approval_observe import project_workspace_approvals
+        from quant_system.hermes.gate_observe import (
+            gate_authority_health,
+            project_workspace_gates,
+        )
+        from quant_system.hermes.result_observe import (
+            project_workspace_results,
+            result_authority_health,
+        )
+        from quant_system.hermes.vertical_observe import (
+            attempt_ids_for_spine,
+            run_ids_for_spine,
+            task_ids_for_spine,
+            vertical_authority_health,
+        )
+
+        return {
+            "approvals": tuple(project_workspace_approvals(workspace_id)),
+            "gates": tuple(project_workspace_gates(workspace_id)),
+            "results": tuple(project_workspace_results(workspace_id)),
+            "tasks": tuple(task_ids_for_spine(workspace_id)),
+            "attempts": tuple(attempt_ids_for_spine(workspace_id)),
+            "runs": tuple(run_ids_for_spine(workspace_id)),
+            "authority_health": {
+                "command_approval": "ready",
+                **gate_authority_health(),
+                **result_authority_health(),
+                **vertical_authority_health(),
+            },
+        }
+
     def follow(
         self,
         actor: ActorRef | Mapping[str, Any] | str,
@@ -331,8 +381,13 @@ class PlatformAgentWorkspace:
 
         ready = authorities_ready(self._settings)
         mutation_on = bool(self._mutation_enabled or ready.get("mutation_enabled"))
+        # Hermetic projections always attach (V7d–V7g), even when durable command
+        # events require resync. MAJOR-2: Task/Attempt/Run ids must not wait for PG.
+        proj = self._hermetic_spine_projections(workspace_id)
         if not ready["ready"]:
-            # Fail closed: client must resnapshot rather than invent events.
+            # Fail closed on command events: client must resnapshot rather than
+            # invent lifecycle rows. Hermetic projections still ride along so
+            # SSE fingerprint journals can emit approvals/gates/results/vertical.
             return EventPage(
                 events=(),
                 after_cursor=after_value,
@@ -340,6 +395,13 @@ class PlatformAgentWorkspace:
                 resync_required=True,
                 recovery_action=_RECOVERY_RESNAPSHOT,
                 mutation_enabled=mutation_on,
+                approvals=proj["approvals"],  # type: ignore[arg-type]
+                gates=proj["gates"],  # type: ignore[arg-type]
+                results=proj["results"],  # type: ignore[arg-type]
+                tasks=proj["tasks"],  # type: ignore[arg-type]
+                attempts=proj["attempts"],  # type: ignore[arg-type]
+                runs=proj["runs"],  # type: ignore[arg-type]
+                authority_health=proj["authority_health"],  # type: ignore[arg-type]
             )
 
         # L2b-M1: poll page over workspace-scoped hermes_command_events.
@@ -360,6 +422,13 @@ class PlatformAgentWorkspace:
                 resync_required=True,
                 recovery_action=_RECOVERY_RESNAPSHOT,
                 mutation_enabled=mutation_on,
+                approvals=proj["approvals"],  # type: ignore[arg-type]
+                gates=proj["gates"],  # type: ignore[arg-type]
+                results=proj["results"],  # type: ignore[arg-type]
+                tasks=proj["tasks"],  # type: ignore[arg-type]
+                attempts=proj["attempts"],  # type: ignore[arg-type]
+                runs=proj["runs"],  # type: ignore[arg-type]
+                authority_health=proj["authority_health"],  # type: ignore[arg-type]
             )
         if resync:
             return EventPage(
@@ -369,30 +438,14 @@ class PlatformAgentWorkspace:
                 resync_required=True,
                 recovery_action=_RECOVERY_RESNAPSHOT,
                 mutation_enabled=mutation_on,
+                approvals=proj["approvals"],  # type: ignore[arg-type]
+                gates=proj["gates"],  # type: ignore[arg-type]
+                results=proj["results"],  # type: ignore[arg-type]
+                tasks=proj["tasks"],  # type: ignore[arg-type]
+                attempts=proj["attempts"],  # type: ignore[arg-type]
+                runs=proj["runs"],  # type: ignore[arg-type]
+                authority_health=proj["authority_health"],  # type: ignore[arg-type]
             )
-        # V7d/V7e: attach approvals + gates projections so follow/SSE spine stays
-        # honest without a dual private poll. Empty remains honest. Gates never
-        # land in approvals[].
-        from quant_system.hermes.approval_observe import project_workspace_approvals
-        from quant_system.hermes.gate_observe import (
-            gate_authority_health,
-            project_workspace_gates,
-        )
-        from quant_system.hermes.result_observe import (
-            project_workspace_results,
-            result_authority_health,
-        )
-        from quant_system.hermes.vertical_observe import vertical_authority_health
-
-        approvals = tuple(project_workspace_approvals(workspace_id))
-        gates = tuple(project_workspace_gates(workspace_id))
-        results = tuple(project_workspace_results(workspace_id))
-        health = {
-            "command_approval": "ready",
-            **gate_authority_health(),
-            **result_authority_health(),
-            **vertical_authority_health(),
-        }
         return EventPage(
             events=tuple(events),
             after_cursor=after_value,
@@ -400,10 +453,13 @@ class PlatformAgentWorkspace:
             resync_required=False,
             recovery_action=None,
             mutation_enabled=mutation_on,
-            approvals=approvals,
-            gates=gates,
-            results=results,
-            authority_health=health,
+            approvals=proj["approvals"],  # type: ignore[arg-type]
+            gates=proj["gates"],  # type: ignore[arg-type]
+            results=proj["results"],  # type: ignore[arg-type]
+            tasks=proj["tasks"],  # type: ignore[arg-type]
+            attempts=proj["attempts"],  # type: ignore[arg-type]
+            runs=proj["runs"],  # type: ignore[arg-type]
+            authority_health=proj["authority_health"],  # type: ignore[arg-type]
         )
 
     def _workspace_session_ids(self, conn: Any, workspace_id: str) -> list[str]:

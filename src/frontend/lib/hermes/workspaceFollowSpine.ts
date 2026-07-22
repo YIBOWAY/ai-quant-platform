@@ -365,6 +365,46 @@ export function createWorkspaceFollowSpine(
     setState(patch);
   };
 
+  /** V7g: Task/Attempt/Run id lists on poll/SSE (not only snapshot). Empty honest. */
+  const applyVerticalIdsProjection = (
+    tasks: string[] | undefined,
+    attempts: string[] | undefined,
+    runs: string[] | undefined,
+    authorityHealth?: Record<string, string> | undefined,
+  ) => {
+    // Require at least one array present so partial SSE payloads can still apply.
+    if (
+      !Array.isArray(tasks) &&
+      !Array.isArray(attempts) &&
+      !Array.isArray(runs)
+    ) {
+      return;
+    }
+    const patch: Partial<FollowSpineState> = {
+      error: null,
+    };
+    if (Array.isArray(tasks)) patch.tasks = asIdList(tasks);
+    if (Array.isArray(attempts)) patch.attempts = asIdList(attempts);
+    if (Array.isArray(runs)) patch.runs = asIdList(runs);
+    if (authorityHealth && typeof authorityHealth === "object") {
+      patch.authorityHealth = {
+        ...state.authorityHealth,
+        ...authorityHealth,
+      };
+    } else {
+      const nextHealth = { ...state.authorityHealth };
+      let touched = false;
+      for (const key of ["task", "attempt", "run"] as const) {
+        if (!nextHealth[key] || nextHealth[key] === "unavailable") {
+          nextHealth[key] = "ready";
+          touched = true;
+        }
+      }
+      if (touched) patch.authorityHealth = nextHealth;
+    }
+    setState(patch);
+  };
+
   const snapshotReconcile = async (signal?: AbortSignal) => {
     const snap = await fetchWorkspaceSnapshot(workspaceId, signal);
     const commands = mergeSnapshotCommands(snap);
@@ -435,10 +475,16 @@ export function createWorkspaceFollowSpine(
       if (events.length) {
         applyEvents(events);
       }
-      // V7d/V7e: follow pages may carry approvals + gates (same spine).
+      // V7d–V7g: follow pages may carry approvals + gates + results + vertical ids.
       applyApprovalsProjection(page.approvals, page.authority_health);
       applyGatesProjection(page.gates, page.authority_health);
       applyResultsProjection(page.results, page.authority_health);
+      applyVerticalIdsProjection(
+        page.tasks,
+        page.attempts,
+        page.runs,
+        page.authority_health,
+      );
       if (typeof page.next_cursor === "number") {
         setState({
           cursor: Math.max(state.cursor, page.next_cursor),
@@ -562,6 +608,24 @@ export function createWorkspaceFollowSpine(
         /* ignore malformed */
       }
     };
+    const onVertical = (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(String(ev.data)) as {
+          tasks?: string[];
+          attempts?: string[];
+          runs?: string[];
+          authority_health?: Record<string, string>;
+        };
+        applyVerticalIdsProjection(
+          data.tasks,
+          data.attempts,
+          data.runs,
+          data.authority_health,
+        );
+      } catch {
+        /* ignore malformed */
+      }
+    };
     const onCursor = (ev: MessageEvent) => {
       try {
         const data = JSON.parse(String(ev.data)) as { next_cursor?: number };
@@ -613,6 +677,7 @@ export function createWorkspaceFollowSpine(
     es.addEventListener("approvals", onApprovals);
     es.addEventListener("gates", onGates);
     es.addEventListener("results", onResults);
+    es.addEventListener("vertical", onVertical);
     es.addEventListener("cursor", onCursor);
     es.addEventListener("resync", onResync);
     es.addEventListener("reconnect", onReconnect);

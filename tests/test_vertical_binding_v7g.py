@@ -19,14 +19,18 @@ from quant_system.hermes.result_observe import (
     reset_default_result_observe_journal,
 )
 from quant_system.hermes.result_surface_authority import (
+    default_result_surface_authority,
     reset_default_result_surface_authority,
 )
 from quant_system.hermes.submission_saga import submit_action
 from quant_system.hermes.vertical_binding_authority import (
+    default_vertical_binding_authority,
     reset_default_vertical_binding_authority,
 )
 from quant_system.hermes.vertical_observe import (
+    default_vertical_observe_journal,
     project_workspace_tasks,
+    reset_default_vertical_observe_journal,
     vertical_authority_health,
 )
 
@@ -38,10 +42,12 @@ def _reset() -> None:
     reset_default_vertical_binding_authority()
     reset_default_result_surface_authority()
     reset_default_result_observe_journal()
+    reset_default_vertical_observe_journal()
     yield
     reset_default_vertical_binding_authority()
     reset_default_result_surface_authority()
     reset_default_result_observe_journal()
+    reset_default_vertical_observe_journal()
 
 
 def _settings() -> Settings:
@@ -210,27 +216,123 @@ def test_conversation_turn_does_not_invent_task() -> None:
 
 
 def test_start_research_still_dark() -> None:
-    """Bind is separate; StartResearch remains dark."""
+    """Bind is separate; StartResearch remains dark with explicit reason_code."""
+    from quant_system.hermes.agent_workspace_actions import StartResearch
+
     doc = {
         "schema_version": 1,
         "kind": "research.start",
         "client_action_id": "act-research-dark",
         "workspace": {"workspace_id": WS},
-        "goal": "should stay dark",
+        "managed_session_ref": "session:s-research-dark",
+        "payload_ref": "payload:sha256:" + ("a" * 64),
+        "payload_digest": "a" * 64,
+        "initial_mode": "plan_only",
     }
-    # research.start may fail parse if shape differs — check via kind path
-    from quant_system.hermes.agent_workspace_actions import (
-        AgentWorkspaceActionError,
-        StartResearch,
-    )
-
-    # Prefer bind kind exists and research path still blocked when parseable.
-    # If StartResearch requires more fields, just assert bind is implemented.
-    assert "vertical.options_a.bind" in {
-        # smoke: parse bind ok
-    } or True
+    parsed = parse_user_action_v1(doc)
+    assert type(parsed) is StartResearch
+    receipt = submit_action(_settings(), doc, mutation_enabled=True)
+    assert receipt.status == "unavailable"
+    assert receipt.reason_code == "research_workflow_submission_unavailable"
+    # Bind path still works independently; research never invents vertical rows.
+    assert project_workspace_tasks(WS) == []
     bind = parse_user_action_v1(_bind_doc(client_action_id="act-vs-research"))
     assert type(bind) is BindOptionsVerticalA
+
+
+def test_follow_page_carries_vertical_ids() -> None:
+    """MAJOR-2: EventPage (follow) attaches task/attempt/run ids, not only snapshot."""
+    doc = _bind_doc(client_action_id="act-v7g-follow")
+    receipt = submit_action(_settings(), doc, mutation_enabled=True)
+    assert receipt.status == "accepted"
+    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
+    page = ws.follow(
+        ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0
+    ).to_public_dict()
+    assert receipt.task_id in (page.get("tasks") or [])
+    assert receipt.attempt_id in (page.get("attempts") or [])
+    assert receipt.run_id in (page.get("runs") or [])
+    assert isinstance(page.get("results"), list)
+    assert any(r.get("result_id") == receipt.result_id for r in page["results"])
+    health = page.get("authority_health") or {}
+    assert health.get("task") == "ready"
+    assert health.get("attempt") == "ready"
+    assert health.get("run") == "ready"
+
+
+def test_vertical_observe_journal_fingerprint() -> None:
+    journal = default_vertical_observe_journal()
+    first = journal.take_vertical_ids_if_changed(WS, ["t1"], ["a1"], ["r1"])
+    assert first == {"tasks": ["t1"], "attempts": ["a1"], "runs": ["r1"]}
+    second = journal.take_vertical_ids_if_changed(WS, ["t1"], ["a1"], ["r1"])
+    assert second is None
+    third = journal.take_vertical_ids_if_changed(WS, ["t1", "t2"], ["a1"], ["r1"])
+    assert third is not None
+    assert third["tasks"] == ["t1", "t2"]
+
+
+def test_concurrent_bind_same_action_no_orphan_results() -> None:
+    """MAJOR-1: concurrent identical binds must not orphan typed results."""
+    import concurrent.futures
+
+    doc = _bind_doc(client_action_id="act-v7g-race-same")
+    settings = _settings()
+
+    def _once() -> object:
+        return submit_action(settings, doc, mutation_enabled=True)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futs = [pool.submit(_once) for _ in range(16)]
+        receipts = [f.result() for f in futs]
+    assert all(r.status == "accepted" for r in receipts)
+    task_ids = {r.task_id for r in receipts}
+    result_ids = {r.result_id for r in receipts}
+    assert len(task_ids) == 1
+    assert len(result_ids) == 1
+    assert len(project_workspace_tasks(WS)) == 1
+    assert len(project_workspace_results(WS)) == 1
+    # Result store has exactly the bound result for this workspace.
+    rauth = default_result_surface_authority()
+    observed = rauth.list_observed(WS, limit=100)
+    assert len(observed) == 1
+    assert observed[0].result_id == next(iter(result_ids))
+
+
+def test_concurrent_bind_digest_conflict_no_orphan_results() -> None:
+    """MAJOR-1: loser of digest conflict must not leave orphan result rows."""
+    import concurrent.futures
+
+    settings = _settings()
+    base = _bind_doc(client_action_id="act-v7g-race-conflict")
+    alt = dict(base)
+    alt["goal_note"] = "冲突目标备注 — different digest"
+
+    def _submit(doc: dict) -> object:
+        return submit_action(settings, doc, mutation_enabled=True)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futs = []
+        for i in range(16):
+            futs.append(pool.submit(_submit, base if i % 2 == 0 else alt))
+        receipts = [f.result() for f in futs]
+    accepted = [r for r in receipts if r.status == "accepted"]
+    conflicts = [r for r in receipts if r.status == "conflict"]
+    assert accepted, "at least one bind must win"
+    assert conflicts, "digest mismatch must surface as conflict"
+    # Exactly one logical binding survives.
+    assert len(project_workspace_tasks(WS)) == 1
+    assert len(project_workspace_results(WS)) == 1
+    winner_result = accepted[0].result_id
+    assert all(r.result_id == winner_result for r in accepted)
+    rauth = default_result_surface_authority()
+    observed = rauth.list_observed(WS, limit=100)
+    assert len(observed) == 1
+    assert observed[0].result_id == winner_result
+    # No binder rows without matching result, and no extra results.
+    binder = default_vertical_binding_authority()
+    tasks = binder.list_tasks(WS)
+    assert len(tasks) == 1
+    assert tasks[0].result_id == winner_result
 
 
 def test_no_live_futu_markers_on_result() -> None:

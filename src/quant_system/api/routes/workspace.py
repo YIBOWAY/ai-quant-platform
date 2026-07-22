@@ -183,12 +183,16 @@ def workspace_follow_stream(
         from quant_system.hermes.result_observe import (
             default_result_observe_journal,
         )
+        from quant_system.hermes.vertical_observe import (
+            default_vertical_observe_journal,
+        )
 
         cursor = start_cursor
         idle = 0
         journal = default_approval_observe_journal()
         gate_journal = default_gate_observe_journal()
         result_journal = default_result_observe_journal()
+        vertical_journal = default_vertical_observe_journal()
         yield _sse_pack(
             "ready",
             {
@@ -196,8 +200,8 @@ def workspace_follow_stream(
                 "after_cursor": cursor,
                 "mutation_enabled": mutation_enabled,
                 "transport": "sse",
-                # Honest scope marker for FE/docs (V7d approvals + V7e gates).
-                "scope": "command_lifecycle+approvals+gates+results",
+                # Honest scope marker for FE/docs (V7d–V7g).
+                "scope": "command_lifecycle+approvals+gates+results+vertical_ids",
             },
         )
         for _tick in range(tick_limit):
@@ -240,7 +244,111 @@ def workspace_follow_stream(
                         "mutation_enabled": public.get("mutation_enabled"),
                     },
                 )
-                # Client must snapshot; keep cursor until they reconnect with new head.
+                # Still emit hermetic projections on resync pages (V7d–V7g).
+                # Command events stay empty/fail-closed; spine ids must not wait for PG.
+                emitted_proj = False
+                approvals = public.get("approvals")
+                if isinstance(approvals, list):
+                    changed = journal.take_approvals_if_changed(
+                        workspace_id, list(approvals)
+                    )
+                    if changed is not None:
+                        yield _sse_pack(
+                            "approvals",
+                            {
+                                "approvals": changed,
+                                "authority_health": (
+                                    public.get("authority_health") or {}
+                                ),
+                                "mutation_enabled": public.get("mutation_enabled"),
+                            },
+                        )
+                        emitted_proj = True
+                gates = public.get("gates")
+                if isinstance(gates, list):
+                    g_changed = gate_journal.take_gates_if_changed(
+                        workspace_id, list(gates)
+                    )
+                    if g_changed is not None:
+                        health = public.get("authority_health") or {}
+                        yield _sse_pack(
+                            "gates",
+                            {
+                                "gates": g_changed,
+                                "authority_health": {
+                                    "gate_1": health.get("gate_1", "unavailable")
+                                    if isinstance(health, dict)
+                                    else "unavailable",
+                                    "gate_2": health.get("gate_2", "unavailable")
+                                    if isinstance(health, dict)
+                                    else "unavailable",
+                                    "gate_3": health.get("gate_3", "unavailable")
+                                    if isinstance(health, dict)
+                                    else "unavailable",
+                                },
+                                "mutation_enabled": public.get("mutation_enabled"),
+                            },
+                        )
+                        emitted_proj = True
+                results = public.get("results")
+                if isinstance(results, list):
+                    r_changed = result_journal.take_results_if_changed(
+                        workspace_id, list(results)
+                    )
+                    if r_changed is not None:
+                        health = public.get("authority_health") or {}
+                        yield _sse_pack(
+                            "results",
+                            {
+                                "results": r_changed,
+                                "authority_health": {
+                                    "result": health.get("result", "unavailable")
+                                    if isinstance(health, dict)
+                                    else "unavailable",
+                                },
+                                "mutation_enabled": public.get("mutation_enabled"),
+                            },
+                        )
+                        emitted_proj = True
+                tasks = public.get("tasks")
+                attempts = public.get("attempts")
+                runs = public.get("runs")
+                if (
+                    isinstance(tasks, list)
+                    and isinstance(attempts, list)
+                    and isinstance(runs, list)
+                ):
+                    v_changed = vertical_journal.take_vertical_ids_if_changed(
+                        workspace_id,
+                        [str(x) for x in tasks],
+                        [str(x) for x in attempts],
+                        [str(x) for x in runs],
+                    )
+                    if v_changed is not None:
+                        health = public.get("authority_health") or {}
+                        yield _sse_pack(
+                            "vertical",
+                            {
+                                "tasks": v_changed["tasks"],
+                                "attempts": v_changed["attempts"],
+                                "runs": v_changed["runs"],
+                                "authority_health": {
+                                    "task": health.get("task", "unavailable")
+                                    if isinstance(health, dict)
+                                    else "unavailable",
+                                    "attempt": health.get("attempt", "unavailable")
+                                    if isinstance(health, dict)
+                                    else "unavailable",
+                                    "run": health.get("run", "unavailable")
+                                    if isinstance(health, dict)
+                                    else "unavailable",
+                                },
+                                "mutation_enabled": public.get("mutation_enabled"),
+                            },
+                        )
+                        emitted_proj = True
+                _ = emitted_proj  # projections optional; resync still primary
+                # Client must snapshot command cursor; keep head until reconnect.
                 idle = 0
                 if sleep_s > 0:
                     time.sleep(sleep_s)
@@ -327,6 +435,45 @@ def workspace_follow_stream(
                                 # Prefer explicit health; missing key stays unavailable
                                 # rather than inventing ready.
                                 "result": health.get("result", "unavailable")
+                                if isinstance(health, dict)
+                                else "unavailable",
+                            },
+                            "mutation_enabled": public.get("mutation_enabled"),
+                        },
+                    )
+                    emitted = True
+            # V7g: Task/Attempt/Run id lists on the same follow spine (not only
+            # snapshot). Fingerprint-gated; never invent from commands.
+            tasks = public.get("tasks")
+            attempts = public.get("attempts")
+            runs = public.get("runs")
+            if (
+                isinstance(tasks, list)
+                and isinstance(attempts, list)
+                and isinstance(runs, list)
+            ):
+                v_changed = vertical_journal.take_vertical_ids_if_changed(
+                    workspace_id,
+                    [str(x) for x in tasks],
+                    [str(x) for x in attempts],
+                    [str(x) for x in runs],
+                )
+                if v_changed is not None:
+                    health = public.get("authority_health") or {}
+                    yield _sse_pack(
+                        "vertical",
+                        {
+                            "tasks": v_changed["tasks"],
+                            "attempts": v_changed["attempts"],
+                            "runs": v_changed["runs"],
+                            "authority_health": {
+                                "task": health.get("task", "unavailable")
+                                if isinstance(health, dict)
+                                else "unavailable",
+                                "attempt": health.get("attempt", "unavailable")
+                                if isinstance(health, dict)
+                                else "unavailable",
+                                "run": health.get("run", "unavailable")
                                 if isinstance(health, dict)
                                 else "unavailable",
                             },

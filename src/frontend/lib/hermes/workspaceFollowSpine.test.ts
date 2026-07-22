@@ -554,3 +554,193 @@ describe("V7e Domain Gate surfaces on spine", () => {
     }
   });
 });
+
+describe("V7g Vertical A ids on spine", () => {
+  beforeEach(() => {
+    fetchWorkspaceSnapshot.mockReset();
+    fetchWorkspaceFollow.mockReset();
+    fetchWorkspaceFollow.mockResolvedValue({
+      events: [],
+      next_cursor: 0,
+      resync_required: false,
+    });
+    // Node vitest env has no window; spine timers need it.
+    vi.stubGlobal("window", {
+      setInterval: (fn: TimerHandler, ms?: number) =>
+        setInterval(fn as () => void, ms) as unknown as number,
+      clearInterval: (id: number) => clearInterval(id as unknown as NodeJS.Timeout),
+      setTimeout: (fn: TimerHandler, ms?: number) =>
+        setTimeout(fn as () => void, ms) as unknown as number,
+      clearTimeout: (id: number) => clearTimeout(id as unknown as NodeJS.Timeout),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("snapshot reconcile carries task/attempt/run ids with ready health", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({
+        snapshot_workspace_cursor: 7,
+        tasks: ["task.v7g.1"],
+        attempts: ["attempt.v7g.1"],
+        runs: ["run.v7g.1"],
+        results: [
+          {
+            result_id: "result.v7g.1",
+            id: "result.v7g.1",
+            kind: "options_vertical_a",
+            display_title: "AAPL sample",
+            sample_or_real: "sample",
+            status: "completed",
+          },
+        ],
+        authority_health: {
+          ...EMPTY_AUTHORITY_HEALTH,
+          task: "ready",
+          attempt: "ready",
+          run: "ready",
+          result: "ready",
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {}
+        addEventListener() {}
+        removeEventListener() {}
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: false,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      await spine.resyncNow();
+      const s = spine.getState();
+      expect(s.tasks).toEqual(["task.v7g.1"]);
+      expect(s.attempts).toEqual(["attempt.v7g.1"]);
+      expect(s.runs).toEqual(["run.v7g.1"]);
+      expect(s.results[0]?.result_id).toBe("result.v7g.1");
+      expect(s.authorityHealth.task).toBe("ready");
+      expect(s.authorityHealth.attempt).toBe("ready");
+      expect(s.authorityHealth.run).toBe("ready");
+    } finally {
+      spine.stop();
+    }
+  });
+
+  it("poll follow pages project task/attempt/run ids (MAJOR-2)", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({
+        snapshot_workspace_cursor: 0,
+        authority_health: { ...EMPTY_AUTHORITY_HEALTH },
+      }),
+    );
+    fetchWorkspaceFollow.mockResolvedValue({
+      events: [],
+      after_cursor: 0,
+      next_cursor: 1,
+      resync_required: false,
+      tasks: ["task.poll.1"],
+      attempts: ["attempt.poll.1"],
+      runs: ["run.poll.1"],
+      results: [],
+      authority_health: {
+        task: "ready",
+        attempt: "ready",
+        run: "ready",
+      },
+    });
+
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {}
+        addEventListener() {}
+        removeEventListener() {}
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: false,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      spine.start();
+      // Allow poll tick after bootstrap snapshot.
+      await new Promise((r) => setTimeout(r, 30));
+      const s = spine.getState();
+      expect(s.tasks).toEqual(["task.poll.1"]);
+      expect(s.attempts).toEqual(["attempt.poll.1"]);
+      expect(s.runs).toEqual(["run.poll.1"]);
+      expect(s.authorityHealth.task).toBe("ready");
+    } finally {
+      spine.stop();
+    }
+  });
+
+  it("SSE event:vertical projects task/attempt/run ids (MAJOR-2)", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({
+        snapshot_workspace_cursor: 0,
+        authority_health: { ...EMPTY_AUTHORITY_HEALTH },
+      }),
+    );
+
+    type Handler = (ev: MessageEvent) => void;
+    const handlers: Record<string, Handler[]> = {};
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {}
+        addEventListener(type: string, handler: Handler) {
+          (handlers[type] ||= []).push(handler);
+        }
+        removeEventListener() {}
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: true,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      spine.start();
+      await new Promise((r) => setTimeout(r, 20));
+      const verticalHandlers = handlers["vertical"] || [];
+      expect(verticalHandlers.length).toBeGreaterThan(0);
+      for (const h of verticalHandlers) {
+        h({
+          data: JSON.stringify({
+            tasks: ["task.sse.1"],
+            attempts: ["attempt.sse.1"],
+            runs: ["run.sse.1"],
+            authority_health: {
+              task: "ready",
+              attempt: "ready",
+              run: "ready",
+            },
+          }),
+        } as MessageEvent);
+      }
+      const s = spine.getState();
+      expect(s.tasks).toEqual(["task.sse.1"]);
+      expect(s.attempts).toEqual(["attempt.sse.1"]);
+      expect(s.runs).toEqual(["run.sse.1"]);
+      expect(s.authorityHealth.task).toBe("ready");
+      expect(s.authorityHealth.attempt).toBe("ready");
+      expect(s.authorityHealth.run).toBe("ready");
+    } finally {
+      spine.stop();
+    }
+  });
+});
+

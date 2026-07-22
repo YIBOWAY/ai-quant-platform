@@ -911,6 +911,10 @@ export type WorkspaceEventPage = {
   gates?: WorkspaceGateProjection[];
   /** V7f: typed results projection on follow pages. */
   results?: WorkspaceResultProjection[];
+  /** V7g: Task/Attempt/Run id lists on follow pages (not only snapshot). */
+  tasks?: string[];
+  attempts?: string[];
+  runs?: string[];
   authority_health?: Record<string, string>;
 };
 

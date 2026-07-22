@@ -465,6 +465,15 @@ class ResultSurfaceAuthority:
         with self._lock:
             return self._rows.get((workspace_id, result_id))
 
+    def delete_result(self, workspace_id: str, result_id: str) -> bool:
+        """Remove a result row. Used to roll back orphan seeds on bind race/conflict."""
+        with self._lock:
+            key = (workspace_id, result_id)
+            if key in self._rows:
+                del self._rows[key]
+                return True
+            return False
+
     def list_observed(
         self,
         workspace_id: str,

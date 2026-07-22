@@ -232,6 +232,9 @@ class VerticalBindingAuthority:
 
         completed when fixture provider_evidence present;
         completed_degraded when evidence intentionally omitted (still no live call).
+
+        Race safety: binder lock is held across digest CAS + result seed + row
+        store so a losing concurrent bind cannot leave an orphan typed result.
         """
         ws = _validate_id(workspace_id, "workspace_id")
         act = _validate_id(client_action_id, "client_action_id")
@@ -248,8 +251,14 @@ class VerticalBindingAuthority:
         delta_n = _optional_number(delta, "delta")
         iv_n = _optional_number(iv, "iv")
         apr_n = _optional_number(apr, "apr")
+        if type(include_provider_evidence) is not bool:
+            raise VerticalBindingAuthorityError(
+                "validation", "include_provider_evidence must be a boolean"
+            )
 
         key = (ws, act)
+        rauth = result_authority or default_result_surface_authority()
+
         with self._lock:
             prior_digest = self._action_digest.get(key)
             if prior_digest is not None and prior_digest != action_digest:
@@ -262,7 +271,6 @@ class VerticalBindingAuthority:
                 task = self._tasks[(ws, prior_task_id)]
                 attempt = self._attempts[(ws, task.attempt_id)]
                 run = self._runs[(ws, task.run_id)]
-                rauth = result_authority or default_result_surface_authority()
                 result = rauth.get(ws, task.result_id or "")
                 if result is None:
                     raise VerticalBindingAuthorityError(
@@ -276,137 +284,121 @@ class VerticalBindingAuthority:
                     terminal=task.status,  # type: ignore[arg-type]
                 )
 
-        task_id = _stable_id("task", action_digest, "task")
-        attempt_id = _stable_id("attempt", action_digest, "attempt")
-        run_id = _stable_id("run", action_digest, "run")
-        result_id = _stable_id("result", action_digest, "result")
-        ts = _dt_public()
+            task_id = _stable_id("task", action_digest, "task")
+            attempt_id = _stable_id("attempt", action_digest, "attempt")
+            run_id = _stable_id("run", action_digest, "run")
+            result_id = _stable_id("result", action_digest, "result")
+            ts = _dt_public()
 
-        if include_provider_evidence:
-            terminal: VerticalTerminal = "completed"
-            evidence = ("hermetic_fixture_apr", "hermetic_options_chain")
-            terminal_reason = "fixture_provider_evidence_present"
-            limitations = (
-                "hermetic_fixture",
-                "not_live_futu_quote",
-                "not_tradeable",
-                "zero_orders",
-            )
-        else:
-            terminal = "completed_degraded"
-            evidence = ()
-            terminal_reason = "provider_evidence_missing"
-            limitations = (
-                "hermetic_fixture",
-                "not_live_futu_quote",
-                "not_tradeable",
-                "zero_orders",
-                "unverified_without_provider_evidence",
-            )
-
-        rauth = result_authority or default_result_surface_authority()
-        # Always sample — hermetic fixture, never claim REAL live quote.
-        result = rauth.seed_result(
-            workspace_id=ws,
-            result_id=result_id,
-            kind="options_vertical_a",
-            display_title=f"{tkr} sell-put research ({terminal})",
-            status=terminal,
-            sample_or_real="sample",
-            freshness="fresh" if include_provider_evidence else "unknown",
-            read_status="available" if include_provider_evidence else "degraded",
-            summary=goal,
-            task_id=task_id,
-            attempt_id=attempt_id,
-            run_id=run_id,
-            command_id=None,
-            ticker=tkr,
-            expiry=exp,
-            strike=strike_n,
-            bid=bid_n,
-            ask=ask_n,
-            delta=delta_n,
-            iv=iv_n,
-            apr=apr_n,
-            provider_evidence=evidence,
-            filters=("delta_band", "dte_window", "sell_put_research"),
-            exclusions=("earnings_week",),
-            limitations=limitations,
-            source="hermetic_vertical_a_binding",
-            authority="hermetic_vertical_binding_authority",
-        )
-
-        task = VerticalTaskRecord(
-            workspace_id=ws,
-            task_id=task_id,
-            kind="options_vertical_a_research",
-            status=terminal,
-            display_title=f"Research {tkr} sell put",
-            goal_note=goal,
-            ticker=tkr,
-            attempt_id=attempt_id,
-            run_id=run_id,
-            result_id=result_id,
-            client_action_id=act,
-            action_digest=action_digest,
-            occurred_at=ts,
-            terminal_reason=terminal_reason,
-            provider_evidence=evidence,
-            limitations=limitations,
-        )
-        attempt = VerticalAttemptRecord(
-            workspace_id=ws,
-            attempt_id=attempt_id,
-            task_id=task_id,
-            run_id=run_id,
-            status=terminal,
-            occurred_at=ts,
-        )
-        run = VerticalRunRecord(
-            workspace_id=ws,
-            run_id=run_id,
-            task_id=task_id,
-            attempt_id=attempt_id,
-            status=terminal,
-            occurred_at=ts,
-            mode="hermetic_fixture",
-        )
-
-        with self._lock:
-            # Re-check race
-            prior_digest = self._action_digest.get(key)
-            if prior_digest is not None and prior_digest != action_digest:
-                raise VerticalBindingAuthorityError(
-                    "conflict",
-                    "client_action_id already bound to a different action_digest",
+            if include_provider_evidence:
+                terminal: VerticalTerminal = "completed"
+                evidence = ("hermetic_fixture_apr", "hermetic_options_chain")
+                terminal_reason = "fixture_provider_evidence_present"
+                limitations = (
+                    "hermetic_fixture",
+                    "not_live_futu_quote",
+                    "not_tradeable",
+                    "zero_orders",
                 )
-            prior_task_id = self._by_action.get(key)
-            if prior_task_id is not None:
-                task = self._tasks[(ws, prior_task_id)]
-                attempt = self._attempts[(ws, task.attempt_id)]
-                run = self._runs[(ws, task.run_id)]
-                result2 = rauth.get(ws, task.result_id or "")
-                assert result2 is not None
-                return VerticalBindOutcome(
-                    task=task,
-                    attempt=attempt,
-                    run=run,
-                    result=result2,
-                    terminal=task.status,  # type: ignore[arg-type]
+            else:
+                terminal = "completed_degraded"
+                evidence = ()
+                terminal_reason = "provider_evidence_missing"
+                limitations = (
+                    "hermetic_fixture",
+                    "not_live_futu_quote",
+                    "not_tradeable",
+                    "zero_orders",
+                    "unverified_without_provider_evidence",
                 )
+
+            # Seed under binder lock so conflict cannot publish unbound results.
+            # Always sample — hermetic fixture, never claim REAL live quote.
+            try:
+                result = rauth.seed_result(
+                    workspace_id=ws,
+                    result_id=result_id,
+                    kind="options_vertical_a",
+                    display_title=f"{tkr} sell-put research ({terminal})",
+                    status=terminal,
+                    sample_or_real="sample",
+                    freshness="fresh" if include_provider_evidence else "unknown",
+                    read_status=(
+                        "available" if include_provider_evidence else "degraded"
+                    ),
+                    summary=goal,
+                    task_id=task_id,
+                    attempt_id=attempt_id,
+                    run_id=run_id,
+                    command_id=None,
+                    ticker=tkr,
+                    expiry=exp,
+                    strike=strike_n,
+                    bid=bid_n,
+                    ask=ask_n,
+                    delta=delta_n,
+                    iv=iv_n,
+                    apr=apr_n,
+                    provider_evidence=evidence,
+                    filters=("delta_band", "dte_window", "sell_put_research"),
+                    exclusions=("earnings_week",),
+                    limitations=limitations,
+                    source="hermetic_vertical_a_binding",
+                    authority="hermetic_vertical_binding_authority",
+                )
+            except Exception:
+                # Never leave half-written binder state (we have not stored yet).
+                raise
+
+            task = VerticalTaskRecord(
+                workspace_id=ws,
+                task_id=task_id,
+                kind="options_vertical_a_research",
+                status=terminal,
+                display_title=f"Research {tkr} sell put",
+                goal_note=goal,
+                ticker=tkr,
+                attempt_id=attempt_id,
+                run_id=run_id,
+                result_id=result_id,
+                client_action_id=act,
+                action_digest=action_digest,
+                occurred_at=ts,
+                terminal_reason=terminal_reason,
+                provider_evidence=evidence,
+                limitations=limitations,
+            )
+            attempt = VerticalAttemptRecord(
+                workspace_id=ws,
+                attempt_id=attempt_id,
+                task_id=task_id,
+                run_id=run_id,
+                status=terminal,
+                occurred_at=ts,
+            )
+            run = VerticalRunRecord(
+                workspace_id=ws,
+                run_id=run_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                status=terminal,
+                occurred_at=ts,
+                mode="hermetic_fixture",
+            )
+
             self._tasks[(ws, task_id)] = task
             self._attempts[(ws, attempt_id)] = attempt
             self._runs[(ws, run_id)] = run
             self._by_action[key] = task_id
             self._action_digest[key] = action_digest
 
-        return VerticalBindOutcome(
-            task=task,
-            attempt=attempt,
-            run=run,
-            result=result,
-            terminal=terminal,
-        )
+            return VerticalBindOutcome(
+                task=task,
+                attempt=attempt,
+                run=run,
+                result=result,
+                terminal=terminal,
+            )
 
     def list_tasks(self, workspace_id: str, *, limit: int = 50) -> list[VerticalTaskRecord]:
         lim = limit if type(limit) is int and limit > 0 else 50
