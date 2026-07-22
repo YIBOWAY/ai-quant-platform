@@ -548,7 +548,8 @@ class HermesGatewaySettings(BaseSettings):
 
     This credential authorizes the full upstream API, so browser code must
     never receive it.  Session reads stay GET-only; supervised dispatch uses a
-    separate POST path with its own timeout and explicit ephemeral allow.
+    separate durable HQA subprocess port. The legacy ephemeral POST adapter is
+    test-only and remains fail-closed unless an isolated caller opts in.
     """
 
     model_config = SettingsConfigDict(
@@ -563,8 +564,8 @@ class HermesGatewaySettings(BaseSettings):
     timeout_seconds: float = Field(default=2.0, gt=0, le=30, allow_inf_nan=False)
     # Real /v1/runs can take tens of seconds; keep read timeout short separately.
     dispatch_timeout_seconds: float = Field(default=120.0, gt=0, le=600, allow_inf_nan=False)
-    # Local Hermes 0.18.x may omit durable. True = allow POST /v1/runs anyway.
-    allow_ephemeral_runs: bool = True
+    # Deprecated test-only escape hatch for the legacy direct HTTP adapter.
+    allow_ephemeral_runs: bool = False
     max_response_bytes: int = Field(default=4 * 1024 * 1024, ge=4096, le=16 * 1024 * 1024)
     max_messages: int = Field(default=200, ge=1, le=1000)
 

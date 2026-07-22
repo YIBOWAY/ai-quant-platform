@@ -126,7 +126,6 @@ describe("workspaceFollowSpine helpers (L4b)", () => {
     const prior = [baseCmd({ command_id: "c1" })];
     const next = applyCommandEvent(
       prior,
-      // @ts-expect-error intentional empty id
       evt({ event_id: 3, command_id: "", state: "failed" }),
     );
     expect(next[0].state).toBe("queued");
@@ -294,7 +293,7 @@ describe("waitForCommandTerminalOnSpine (L5a)", () => {
       commands: [
         baseCmd({
           command_id: "c-done",
-          state: "delivered",
+          state: "succeeded",
           hermes_session_id: "sess-1",
           hermes_run_id: "run-1",
         }),
@@ -317,13 +316,13 @@ describe("waitForCommandTerminalOnSpine (L5a)", () => {
       commandId: "c-done",
       timeoutMs: 1_000,
     });
-    expect(match?.state).toBe("delivered");
+    expect(match?.state).toBe("succeeded");
     expect(match?.hermes_session_id).toBe("sess-1");
     // Sync-terminal settle must not leave a zombie listener.
     expect(listeners.count).toBe(0);
   });
 
-  it("resolves when a later push reaches terminal", async () => {
+  it("does not settle on delivered and resolves on later success", async () => {
     const { spine, push } = makeFakeSpine({
       ...emptyState(),
       commands: [baseCmd({ command_id: "c-live", state: "queued" })],
@@ -331,6 +330,10 @@ describe("waitForCommandTerminalOnSpine (L5a)", () => {
     const pending = waitForCommandTerminalOnSpine(spine, {
       commandId: "c-live",
       timeoutMs: 5_000,
+    });
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
     });
     push({
       ...emptyState(),
@@ -342,8 +345,20 @@ describe("waitForCommandTerminalOnSpine (L5a)", () => {
         }),
       ],
     });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    push({
+      ...emptyState(),
+      commands: [
+        baseCmd({
+          command_id: "c-live",
+          state: "succeeded",
+          hermes_run_id: "run-z",
+        }),
+      ],
+    });
     const match = await pending;
-    expect(match?.state).toBe("delivered");
+    expect(match?.state).toBe("succeeded");
     expect(match?.hermes_run_id).toBe("run-z");
   });
 
@@ -743,7 +758,6 @@ describe("V7g Vertical A ids on spine", () => {
     }
   });
 });
-
 describe("Plan-V6-Token-Stream-M1 transcript hints on spine", () => {
   beforeEach(() => {
     fetchWorkspaceSnapshot.mockReset();
@@ -976,4 +990,3 @@ describe("Plan-V6-Token-Stream-M1 transcript hints on spine", () => {
     }
   });
 });
-

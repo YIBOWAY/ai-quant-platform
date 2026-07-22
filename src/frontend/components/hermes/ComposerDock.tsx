@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from "react";
-import { Send } from "lucide-react";
+import { RotateCcw, Send } from "lucide-react";
 
 export type ComposerDockProps = {
   /**
@@ -29,6 +29,9 @@ export type ComposerDockProps = {
    * External busy flag (e.g. in-flight submit).
    */
   busy?: boolean;
+  /** Exact-id retry for an outcome_unknown attempt. */
+  onRetry?: () => void | Promise<void>;
+  retryLabel?: string;
 };
 
 /**
@@ -45,6 +48,8 @@ export function ComposerDock({
   onSubmitPrompt,
   statusText = null,
   busy = false,
+  onRetry,
+  retryLabel = "Retry same send",
 }: ComposerDockProps) {
   const [draft, setDraft] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -69,6 +74,19 @@ export function ComposerDock({
       const message =
         error instanceof Error ? error.message : "Submit failed";
       setLocalError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleRetry() {
+    if (!onRetry || busy || submitting) return;
+    setLocalError(null);
+    setSubmitting(true);
+    try {
+      await onRetry();
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "Retry failed");
     } finally {
       setSubmitting(false);
     }
@@ -123,13 +141,27 @@ export function ComposerDock({
           <p className="font-body-sm text-text-secondary">{hint}</p>
         ) : null}
         {displayStatus ? (
-          <p
-            className={`font-body-sm ${localError ? "text-danger" : "text-text-secondary"}`}
-            data-testid="hermes-composer-status"
-            role="status"
-          >
-            {displayStatus}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p
+              className={`font-body-sm ${localError ? "text-danger" : "text-text-secondary"}`}
+              data-testid="hermes-composer-status"
+              role="status"
+            >
+              {displayStatus}
+            </p>
+            {onRetry ? (
+              <button
+                aria-label={retryLabel}
+                className="app-touch-target inline-flex items-center gap-1 rounded-md border border-border-subtle bg-bg-surface-muted px-2 py-1 font-body-sm text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
+                disabled={busy || submitting}
+                onClick={() => void handleRetry()}
+                type="button"
+              >
+                <RotateCcw aria-hidden="true" size={14} />
+                {retryLabel}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </form>
     </div>

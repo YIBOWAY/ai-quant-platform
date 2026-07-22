@@ -4,6 +4,7 @@ import json
 import threading
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 from quant_system.cli import app
@@ -30,10 +31,16 @@ class _FakeLedger:
     def mark_dispatch_started(self, **_kwargs):
         return None
 
+    def heartbeat_lease(self, **_kwargs):
+        return None
+
     def mark_delivered(self, **_kwargs):
         return None
 
     def mark_dispatch_timeout(self, **_kwargs):
+        return None
+
+    def mark_dispatch_unavailable(self, **_kwargs):
         return None
 
     def mark_dispatch_rejected(self, **_kwargs):
@@ -96,7 +103,9 @@ def test_connector_worker_once_outputs_one_provider_free_json_cycle(monkeypatch)
         "outcome_unknown_count": 0,
         "provider_call_count": 0,
         "rejected_count": 0,
+        "recovered_count": 0,
         "requeued_count": 0,
+        "terminal_count": 0,
     }
     assert ledger.calls == 1
     assert waiter.waits == []
@@ -219,8 +228,6 @@ def test_connector_worker_supervised_mode_is_forwarded(monkeypatch) -> None:
             "--once",
             "--mode",
             "supervised_dispatch",
-            "--fixed-input",
-            "Reply with exactly: pong",
             "--worker-id",
             "smoke-worker-1",
         ],
@@ -228,7 +235,6 @@ def test_connector_worker_supervised_mode_is_forwarded(monkeypatch) -> None:
 
     assert result.exit_code == 0, result.stdout
     assert captured["mode"] == "supervised_dispatch"
-    assert captured["fixed_input"] == "Reply with exactly: pong"
     assert captured["worker_id"] == "smoke-worker-1"
     payload = json.loads(result.stdout.strip().splitlines()[0])
     assert payload["mode"] == "supervised_dispatch"
@@ -242,15 +248,81 @@ def test_connector_worker_rejects_invalid_mode() -> None:
     assert result.exit_code != 0
 
 
-def test_connector_worker_fixed_input_requires_supervised_mode() -> None:
+def test_connector_worker_rejects_prompt_bearing_fixed_input_option() -> None:
     result = runner.invoke(
         app,
         [
             "hermes",
             "connector-worker",
             "--once",
+            "--mode",
+            "supervised_dispatch",
             "--fixed-input",
             "hello",
         ],
     )
     assert result.exit_code != 0
+    assert "No such option" in result.output
+
+
+def test_supervised_runtime_normalizes_intent_port_configuration_failure(
+    monkeypatch,
+) -> None:
+    from quant_system.hermes import intent_payload_port
+
+    settings = SimpleNamespace()
+    monkeypatch.setattr(connector_cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(connector_cli, "get_database", lambda _settings: object())
+
+    def fail_resolver(_settings):
+        raise intent_payload_port.IntentPayloadPortError(
+            "intent_port_misconfigured",
+            "secret local path",
+            retryable=False,
+        )
+
+    monkeypatch.setattr(intent_payload_port, "intent_payload_input_resolver", fail_resolver)
+
+    with pytest.raises(connector_cli.ConnectorRuntimeUnavailable) as captured:
+        connector_cli.build_connector_runtime(mode="supervised_dispatch")
+
+    assert str(captured.value) == "Hermes durable Run port is misconfigured"
+    assert "secret local path" not in str(captured.value)
+
+
+def test_production_supervised_runtime_never_builds_legacy_http_adapter(
+    monkeypatch,
+) -> None:
+    from quant_system.hermes import dispatch_adapter, intent_payload_port, run_lifecycle_port
+
+    durable_port = SimpleNamespace(
+        capabilities=lambda: {"features": {"session_resources": True}},
+        submit_or_recover=lambda _request: None,
+        observe=lambda **_kwargs: None,
+    )
+    settings = SimpleNamespace()
+    monkeypatch.setattr(connector_cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(connector_cli, "get_database", lambda _settings: object())
+    monkeypatch.setattr(
+        intent_payload_port,
+        "intent_payload_input_resolver",
+        lambda _settings: (lambda _request: "prompt"),
+    )
+    monkeypatch.setattr(
+        run_lifecycle_port,
+        "build_subprocess_run_lifecycle_port",
+        lambda _settings, *, input_resolver: durable_port,
+    )
+
+    def fail_legacy_factory(*_args, **_kwargs):
+        raise AssertionError("legacy ephemeral adapter must not be constructed")
+
+    monkeypatch.setattr(
+        dispatch_adapter,
+        "build_http_dispatch_adapter",
+        fail_legacy_factory,
+    )
+
+    runtime = connector_cli.build_connector_runtime(mode="supervised_dispatch")
+
+    assert runtime.worker._dispatch_adapter is durable_port

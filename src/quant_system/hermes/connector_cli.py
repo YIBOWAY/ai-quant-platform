@@ -61,7 +61,8 @@ def build_connector_runtime(
     mode: str = "reconcile_only",
     worker_id: str = "connector-worker-1",
     dispatch_adapter=None,
-    fixed_input: str | None = None,
+    run_lifecycle_port=None,
+    managed_session_resolver=None,
 ) -> ConnectorRuntime:
     """Build a worker from the configured PostgreSQL authority.
 
@@ -88,32 +89,54 @@ def build_connector_runtime(
         "worker_id": worker_id,
     }
     if mode == "supervised_dispatch":
+        from quant_system.hermes.intent_payload_port import (
+            IntentPayloadPortError,
+            intent_payload_input_resolver,
+        )
+        from quant_system.hermes.run_lifecycle_port import (
+            HermesRunPortError,
+            build_subprocess_run_lifecycle_port,
+        )
+        from quant_system.hermes.session_registry import (
+            require_web_writable_session,
+        )
+
         if dispatch_adapter is None:
-            from quant_system.hermes.dispatch_adapter import (
-                HermesDispatchAdapterError,
-                build_http_dispatch_adapter,
-            )
-
             try:
-                if fixed_input is not None:
-                    # Explicit smoke path — never the L2a chat resolve path.
-                    dispatch_adapter = build_http_dispatch_adapter(
-                        settings,
-                        fixed_input=fixed_input,
-                    )
-                else:
-                    # L2a-Send default: worker bind_resolve via Intent Payload CLI Port.
-                    from quant_system.hermes.intent_payload_port import (
-                        intent_payload_input_resolver,
-                    )
+                input_resolver = intent_payload_input_resolver(settings)
+                run_lifecycle_port = build_subprocess_run_lifecycle_port(
+                    settings,
+                    input_resolver=input_resolver,
+                )
+                dispatch_adapter = run_lifecycle_port
+            except (HermesRunPortError, IntentPayloadPortError) as exc:
+                raise ConnectorRuntimeUnavailable(
+                    "Hermes durable Run port is misconfigured"
+                ) from exc
+        elif run_lifecycle_port is None and callable(
+            getattr(dispatch_adapter, "observe", None)
+        ):
+            run_lifecycle_port = dispatch_adapter
 
-                    dispatch_adapter = build_http_dispatch_adapter(
-                        settings,
-                        input_resolver=intent_payload_input_resolver(settings),
+        active_session_resolver = managed_session_resolver
+        if active_session_resolver is None:
+            def _resolve_managed_session(command):
+                record = require_web_writable_session(
+                    settings,
+                    platform_session_id=command.platform_session_id,
+                )
+                if not record.hermes_session_id.startswith("web_"):
+                    raise ConnectorRuntimeUnavailable(
+                        "managed Hermes session identity is invalid"
                     )
-            except HermesDispatchAdapterError as exc:
-                raise ConnectorRuntimeUnavailable(exc.message) from exc
+                return record.hermes_session_id
+
+            active_session_resolver = _resolve_managed_session
+
         worker_kwargs["dispatch_adapter"] = dispatch_adapter
+        worker_kwargs["run_lifecycle_port"] = run_lifecycle_port
+        worker_kwargs["managed_session_resolver"] = active_session_resolver
+        worker_kwargs["capability_probe"] = dispatch_adapter.capabilities
     return ConnectorRuntime(
         worker=HermesConnectorWorker(**worker_kwargs),
         wakeup_waiter=waiter,
@@ -408,16 +431,6 @@ def connector_worker_command(
             ),
         ),
     ] = "reconcile_only",
-    fixed_input: Annotated[
-        str | None,
-        typer.Option(
-            "--fixed-input",
-            help=(
-                "Optional fixed prompt body for supervised_dispatch smoke. "
-                "When omitted the adapter uses a metadata-only instruction."
-            ),
-        ),
-    ] = None,
     worker_id: Annotated[
         str,
         typer.Option(
@@ -433,20 +446,12 @@ def connector_worker_command(
         raise typer.BadParameter(
             "--mode must be reconcile_only or supervised_dispatch"
         )
-    if fixed_input is not None and mode != "supervised_dispatch":
-        raise typer.BadParameter("--fixed-input requires --mode supervised_dispatch")
-    if fixed_input is not None and (
-        not fixed_input or len(fixed_input.encode("utf-8")) > 16_384
-    ):
-        raise typer.BadParameter("--fixed-input must be non-empty and <= 16KiB")
-
     runtime: ConnectorRuntime | None = None
     try:
         runtime = build_connector_runtime(
             reconcile_limit=reconcile_limit,
             mode=mode,
             worker_id=worker_id,
-            fixed_input=fixed_input,
         )
         with _graceful_stop_signals(runtime):
             if once:

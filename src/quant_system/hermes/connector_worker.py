@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager
@@ -33,6 +34,7 @@ from quant_system.hermes.command_ledger import (
     ExpiredLeaseReconciliation,
     HermesCommand,
     HermesCommandLeaseConflict,
+    HermesCommandLedgerUnavailable,
     HermesCommandNotFound,
     HermesCommandStateConflict,
     HermesCommandVersionConflict,
@@ -41,8 +43,15 @@ from quant_system.hermes.dispatch_adapter import (
     HermesDispatchPort,
     HermesDispatchRequest,
     HermesDispatchResult,
+    HermesRunObservation,
+    RunLifecyclePort,
+    evidence_digest_for,
 )
+from quant_system.hermes.session_registry import HermesSessionRegistryUnavailable
 from quant_system.storage.database import DatabaseUnavailable
+
+_UNAVAILABLE_RETRY_BASE_SECONDS = 5.0
+_UNAVAILABLE_RETRY_MAX_SECONDS = 300.0
 
 
 class CommandLeaseReconciler(Protocol):
@@ -55,6 +64,12 @@ class CommandLeaseReconciler(Protocol):
 
 
 class CommandClaimLedger(CommandLeaseReconciler, Protocol):
+    def list_commands_for_run_reconciliation(
+        self,
+        *,
+        limit: int,
+    ) -> tuple[HermesCommand, ...]: ...
+
     def claim_next_command(
         self,
         *,
@@ -70,6 +85,16 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         expected_version: int,
         lease_token: UUID,
         now: datetime,
+    ) -> HermesCommand: ...
+
+    def heartbeat_lease(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        lease_token: UUID,
+        now: datetime,
+        lease_duration: timedelta,
     ) -> HermesCommand: ...
 
     def mark_delivered(
@@ -93,6 +118,17 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         error_code: str = "dispatch_timeout",
     ) -> HermesCommand: ...
 
+    def mark_dispatch_unavailable(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        lease_token: UUID,
+        now: datetime,
+        retry_at: datetime,
+        error_code: str,
+    ) -> HermesCommand: ...
+
     def mark_dispatch_rejected(
         self,
         *,
@@ -102,6 +138,51 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         now: datetime,
         evidence_digest: str,
         error_code: str,
+    ) -> HermesCommand: ...
+
+    def reconcile_outcome_as_delivered(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        now: datetime,
+        hermes_session_id: str,
+        hermes_run_id: str,
+        evidence_digest: str,
+    ) -> HermesCommand: ...
+
+    def mark_succeeded(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        now: datetime,
+        hermes_session_id: str,
+        hermes_run_id: str,
+        evidence_digest: str,
+    ) -> HermesCommand: ...
+
+    def mark_failed(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        now: datetime,
+        hermes_session_id: str,
+        hermes_run_id: str,
+        evidence_digest: str,
+        error_code: str,
+    ) -> HermesCommand: ...
+
+    def mark_cancelled(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        now: datetime,
+        hermes_session_id: str,
+        hermes_run_id: str,
+        evidence_digest: str,
     ) -> HermesCommand: ...
 
 
@@ -201,6 +282,8 @@ class HermesConnectorCycleResult:
     delivered_count: int = 0
     rejected_count: int = 0
     dispatch_unknown_count: int = 0
+    recovered_count: int = 0
+    terminal_count: int = 0
     last_command_id: str | None = None
     last_dispatch_outcome: str | None = None
 
@@ -227,7 +310,9 @@ class HermesConnectorWorker:
         worker_id: str = "connector-worker-1",
         lease_duration: timedelta = timedelta(seconds=30),
         dispatch_adapter: HermesDispatchPort | None = None,
+        run_lifecycle_port: RunLifecyclePort | None = None,
         dispatch_gate: Callable[[HermesCommand], DispatchGateDecision] | None = None,
+        managed_session_resolver: Callable[[HermesCommand], str | None] | None = None,
         claims_per_cycle: int = 1,
     ) -> None:
         if isinstance(reconcile_limit, bool) or not 1 <= reconcile_limit <= 1000:
@@ -249,9 +334,11 @@ class HermesConnectorWorker:
         self._worker_id = worker_id
         self._lease_duration = lease_duration
         self._dispatch_adapter = dispatch_adapter
+        self._run_lifecycle_port = run_lifecycle_port
         self._dispatch_gate = dispatch_gate or (
             lambda _cmd: DispatchGateDecision(allow=True)
         )
+        self._managed_session_resolver = managed_session_resolver or (lambda _cmd: None)
         self._claims_per_cycle = claims_per_cycle
 
     @property
@@ -272,9 +359,15 @@ class HermesConnectorWorker:
         provider_calls = 0
         last_command_id: str | None = None
         last_outcome: str | None = None
+        recovered_count = 0
+        terminal_count = 0
 
         if self._mode == "supervised_dispatch":
             claim_ledger = self._as_claim_ledger()
+            if self._run_lifecycle_port is not None:
+                recovered_count, terminal_count = self._reconcile_active_runs(
+                    claim_ledger
+                )
             for _ in range(self._claims_per_cycle):
                 outcome = self._claim_and_dispatch(claim_ledger)
                 if outcome is None:
@@ -292,7 +385,6 @@ class HermesConnectorWorker:
                     "outcome_unknown",
                     "timeout",
                     "transport_error",
-                    "unavailable",
                 }:
                     dispatch_unknown += 1
 
@@ -307,6 +399,8 @@ class HermesConnectorWorker:
             delivered_count=delivered,
             rejected_count=rejected,
             dispatch_unknown_count=dispatch_unknown,
+            recovered_count=recovered_count,
+            terminal_count=terminal_count,
             last_command_id=last_command_id,
             last_dispatch_outcome=last_outcome,
         )
@@ -364,17 +458,170 @@ class HermesConnectorWorker:
         ledger = self._ledger
         required = (
             "claim_next_command",
+            "heartbeat_lease",
             "mark_dispatch_started",
             "mark_delivered",
             "mark_dispatch_timeout",
+            "mark_dispatch_unavailable",
             "mark_dispatch_rejected",
         )
+        if self._run_lifecycle_port is not None:
+            required += (
+                "list_commands_for_run_reconciliation",
+                "reconcile_outcome_as_delivered",
+                "mark_succeeded",
+                "mark_failed",
+                "mark_cancelled",
+            )
         missing = [name for name in required if not callable(getattr(ledger, name, None))]
         if missing:
             raise TypeError(
                 "supervised_dispatch ledger is missing: " + ", ".join(missing)
             )
         return ledger  # type: ignore[return-value]
+
+    def _reconcile_active_runs(
+        self,
+        ledger: CommandClaimLedger,
+    ) -> tuple[int, int]:
+        """Recover unknown ACKs, then fold replay-backed terminal Run facts."""
+
+        port = self._run_lifecycle_port
+        if port is None:
+            return 0, 0
+        try:
+            commands = ledger.list_commands_for_run_reconciliation(
+                limit=self._reconcile_limit
+            )
+        except Exception:  # noqa: BLE001 - a read outage must not start new recovery I/O
+            return 0, 0
+
+        recovered_count = 0
+        terminal_count = 0
+        for command in commands:
+            current = command
+            if current.state == "outcome_unknown" and (
+                not current.hermes_session_id or not current.hermes_run_id
+            ):
+                current = self._recover_unknown_outcome(ledger, current, port)
+                if current.state == "delivered":
+                    recovered_count += 1
+            if (
+                current.state not in {"delivered", "outcome_unknown"}
+                or not current.hermes_session_id
+                or not current.hermes_run_id
+            ):
+                continue
+            try:
+                observation = port.observe(
+                    hermes_session_id=current.hermes_session_id,
+                    hermes_run_id=current.hermes_run_id,
+                    # Until a durable platform cursor is introduced, replay from
+                    # zero and let command-version CAS deduplicate the fold.
+                    after_cursor=0,
+                )
+            except Exception:  # noqa: BLE001 - observation failure is nonterminal
+                continue
+            if self._record_terminal_observation(ledger, current, observation):
+                terminal_count += 1
+        return recovered_count, terminal_count
+
+    def _recover_unknown_outcome(
+        self,
+        ledger: CommandClaimLedger,
+        command: HermesCommand,
+        port: RunLifecyclePort,
+    ) -> HermesCommand:
+        """Use the original identity/body digest; never create a blind retry."""
+
+        try:
+            request = self._dispatch_request(command)
+            result = port.submit_or_recover(request)
+        except Exception:  # noqa: BLE001 - preserve durable outcome_unknown
+            return command
+        if (
+            not result.is_success
+            or not result.hermes_session_id
+            or not result.hermes_run_id
+            or result.hermes_session_id != request.hermes_session_id
+        ):
+            return command
+        evidence = result.evidence_digest or evidence_digest_for(
+            hermes_session_id=result.hermes_session_id,
+            hermes_run_id=result.hermes_run_id,
+            outcome="recovered",
+        )
+        try:
+            return ledger.reconcile_outcome_as_delivered(
+                command_id=command.command_id,
+                expected_version=command.version,
+                now=self._now(),
+                hermes_session_id=result.hermes_session_id,
+                hermes_run_id=result.hermes_run_id,
+                evidence_digest=evidence,
+            )
+        except (
+            HermesCommandLedgerUnavailable,
+            HermesCommandNotFound,
+            HermesCommandStateConflict,
+            HermesCommandVersionConflict,
+        ):
+            return command
+
+    def _record_terminal_observation(
+        self,
+        ledger: CommandClaimLedger,
+        command: HermesCommand,
+        observation: HermesRunObservation,
+    ) -> bool:
+        if (
+            not observation.is_terminal
+            or not observation.replay_complete
+            or not observation.evidence_digest
+            or observation.hermes_session_id != command.hermes_session_id
+            or observation.hermes_run_id != command.hermes_run_id
+        ):
+            return False
+        common = {
+            "command_id": command.command_id,
+            "expected_version": command.version,
+            "now": self._now(),
+            "hermes_session_id": observation.hermes_session_id,
+            "hermes_run_id": observation.hermes_run_id,
+            "evidence_digest": observation.evidence_digest,
+        }
+        try:
+            if observation.status == "succeeded":
+                ledger.mark_succeeded(**common)
+            elif observation.status == "failed":
+                ledger.mark_failed(
+                    **common,
+                    error_code=_safe_error_code(
+                        observation.error_code or "hermes_run_failed"
+                    ),
+                )
+            else:
+                ledger.mark_cancelled(**common)
+        except (
+            HermesCommandLedgerUnavailable,
+            HermesCommandNotFound,
+            HermesCommandStateConflict,
+            HermesCommandVersionConflict,
+        ):
+            return False
+        return True
+
+    def _dispatch_request(self, command: HermesCommand) -> HermesDispatchRequest:
+        return HermesDispatchRequest(
+            command_id=str(command.command_id),
+            kind=command.kind,
+            client_request_id=command.client_request_id,
+            platform_session_id=command.platform_session_id,
+            canonical_request_digest=command.canonical_request_digest,
+            payload_ref=command.payload_ref,
+            provider_policy_digest=command.provider_policy_digest,
+            hermes_session_id=self._managed_session_resolver(command),
+        )
 
     def _claim_and_dispatch(self, ledger: CommandClaimLedger) -> dict[str, object] | None:
         now = self._now()
@@ -414,6 +661,7 @@ class HermesConnectorWorker:
                     error_code=_safe_error_code(gate.reason),
                 )
             except (
+                HermesCommandLedgerUnavailable,
                 HermesCommandLeaseConflict,
                 HermesCommandNotFound,
                 HermesCommandStateConflict,
@@ -437,6 +685,7 @@ class HermesConnectorWorker:
                 now=self._now(),
             )
         except (
+            HermesCommandLedgerUnavailable,
             HermesCommandLeaseConflict,
             HermesCommandNotFound,
             HermesCommandStateConflict,
@@ -451,22 +700,79 @@ class HermesConnectorWorker:
 
         # Crash matrix: dispatch_started committed; network is outside TX.
         assert self._dispatch_adapter is not None
-        request = HermesDispatchRequest(
-            command_id=str(started.command_id),
-            kind=started.kind,
-            client_request_id=started.client_request_id,
-            platform_session_id=started.platform_session_id,
-            canonical_request_digest=started.canonical_request_digest,
-            payload_ref=started.payload_ref,
-            provider_policy_digest=started.provider_policy_digest,
-        )
         try:
-            result = self._dispatch_adapter.submit_or_recover(request)
-        except Exception:  # noqa: BLE001 - unexpected adapter failure is unknown
-            result = HermesDispatchResult(
-                kind="transport_error",
-                error_code="hermes_adapter_exception",
+            request = self._dispatch_request(started)
+        except HermesSessionRegistryUnavailable:
+            return self._record_dispatch_result(
+                ledger=ledger,
+                started=started,
+                lease_token=claimed.lease_token,
+                result=HermesDispatchResult(
+                    kind="unavailable",
+                    error_code="managed_session_registry_unavailable",
+                    network_attempted=False,
+                ),
             )
+        except Exception:  # noqa: BLE001 - registry errors stay secret-free
+            try:
+                ledger.mark_dispatch_rejected(
+                    command_id=started.command_id,
+                    expected_version=started.version,
+                    lease_token=claimed.lease_token,
+                    now=self._now(),
+                    evidence_digest=_sha256("managed_session_resolution_failed"),
+                    error_code="managed_session_resolution_failed",
+                )
+            except (
+                HermesCommandLedgerUnavailable,
+                HermesCommandLeaseConflict,
+                HermesCommandNotFound,
+                HermesCommandStateConflict,
+                HermesCommandVersionConflict,
+            ):
+                return {
+                    "command_id": str(started.command_id),
+                    "dispatch_outcome": "outcome_unknown",
+                    "hermes_mutation_count": 0,
+                    "provider_call_count": 0,
+                }
+            return {
+                "command_id": str(started.command_id),
+                "dispatch_outcome": "rejected",
+                "hermes_mutation_count": 0,
+                "provider_call_count": 0,
+            }
+        # Extend once immediately, then periodically while the external call is
+        # in flight. The latest version returned by heartbeat CAS is the only
+        # version allowed to record the response.
+        try:
+            started = ledger.heartbeat_lease(
+                command_id=started.command_id,
+                expected_version=started.version,
+                lease_token=claimed.lease_token,
+                now=self._now(),
+                lease_duration=self._lease_duration,
+            )
+        except (
+            HermesCommandLedgerUnavailable,
+            HermesCommandLeaseConflict,
+            HermesCommandNotFound,
+            HermesCommandStateConflict,
+            HermesCommandVersionConflict,
+        ):
+            return {
+                "command_id": str(started.command_id),
+                "dispatch_outcome": "outcome_unknown",
+                "hermes_mutation_count": 0,
+                "provider_call_count": 0,
+            }
+
+        result, started = self._submit_with_lease_heartbeat(
+            ledger=ledger,
+            started=started,
+            lease_token=claimed.lease_token,
+            request=request,
+        )
 
         return self._record_dispatch_result(
             ledger=ledger,
@@ -474,6 +780,57 @@ class HermesConnectorWorker:
             lease_token=claimed.lease_token,
             result=result,
         )
+
+    def _submit_with_lease_heartbeat(
+        self,
+        *,
+        ledger: CommandClaimLedger,
+        started: HermesCommand,
+        lease_token: UUID,
+        request: HermesDispatchRequest,
+    ) -> tuple[HermesDispatchResult, HermesCommand]:
+        """Submit outside PostgreSQL transactions while renewing lease fencing."""
+
+        current = [started]
+        lock = threading.Lock()
+        stop = threading.Event()
+        interval = max(0.05, min(10.0, self._lease_duration.total_seconds() / 3.0))
+
+        def _heartbeat() -> None:
+            while not stop.wait(interval):
+                try:
+                    with lock:
+                        row = current[0]
+                        current[0] = ledger.heartbeat_lease(
+                            command_id=row.command_id,
+                            expected_version=row.version,
+                            lease_token=lease_token,
+                            now=self._now(),
+                            lease_duration=self._lease_duration,
+                        )
+                except Exception:  # noqa: BLE001 - response CAS will fence loss
+                    return
+
+        thread = threading.Thread(
+            target=_heartbeat,
+            name=f"hermes-lease-heartbeat-{started.command_id}",
+            daemon=True,
+        )
+        thread.start()
+        assert self._dispatch_adapter is not None
+        try:
+            result = self._dispatch_adapter.submit_or_recover(request)
+        except Exception:  # noqa: BLE001 - unexpected adapter failure is unknown
+            result = HermesDispatchResult(
+                kind="transport_error",
+                error_code="hermes_adapter_exception",
+            )
+        finally:
+            stop.set()
+            thread.join(timeout=min(1.0, interval + 0.1))
+        with lock:
+            latest = current[0]
+        return result, latest
 
     def _record_dispatch_result(
         self,
@@ -484,7 +841,7 @@ class HermesConnectorWorker:
         result: HermesDispatchResult,
     ) -> dict[str, object]:
         command_id = str(started.command_id)
-        hermes_mutations = 1
+        hermes_mutations = int(result.network_attempted)
         provider_calls = int(result.provider_call_count)
 
         try:
@@ -540,7 +897,30 @@ class HermesConnectorWorker:
                     "provider_call_count": provider_calls,
                 }
 
-            # timeout / transport_error / unavailable → durable outcome_unknown.
+            if not result.network_attempted:
+                # The Run mutation seam was definitively not reached. Release
+                # the lease back to a delayed queue instead of fabricating an
+                # ``outcome_unknown`` fact that would require Run recovery.
+                recorded_at = self._now()
+                ledger.mark_dispatch_unavailable(
+                    command_id=started.command_id,
+                    expected_version=started.version,
+                    lease_token=lease_token,
+                    now=recorded_at,
+                    retry_at=recorded_at + _unavailable_retry_delay(started),
+                    error_code=_safe_error_code(
+                        result.error_code or "dispatch_unavailable"
+                    ),
+                )
+                return {
+                    "command_id": command_id,
+                    "dispatch_outcome": "unavailable",
+                    "hermes_mutation_count": 0,
+                    "provider_call_count": provider_calls,
+                }
+
+            # Once the Run mutation seam may have been reached, timeout /
+            # transport failure is durably unknown and must never blind-retry.
             # Never blind-retry; recovery must use submit-or-recover identity.
             ledger.mark_dispatch_timeout(
                 command_id=started.command_id,
@@ -556,6 +936,7 @@ class HermesConnectorWorker:
                 "provider_call_count": provider_calls,
             }
         except (
+            HermesCommandLedgerUnavailable,
             HermesCommandLeaseConflict,
             HermesCommandNotFound,
             HermesCommandStateConflict,
@@ -584,6 +965,20 @@ class HermesConnectorWorker:
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _unavailable_retry_delay(command: HermesCommand) -> timedelta:
+    """Bounded exponential retry with deterministic per-command jitter."""
+
+    attempt = max(1, int(command.attempt_count))
+    exponent = min(attempt - 1, 16)
+    base = _UNAVAILABLE_RETRY_BASE_SECONDS * (2**exponent)
+    jitter_seed = hashlib.sha256(
+        f"{command.command_id}:{attempt}".encode("ascii")
+    ).digest()
+    jitter = 0.9 + (int.from_bytes(jitter_seed[:2], "big") / 65_535) * 0.2
+    seconds = min(_UNAVAILABLE_RETRY_MAX_SECONDS, base * jitter)
+    return timedelta(seconds=seconds)
 
 
 def _safe_error_code(raw: str) -> str:

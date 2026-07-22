@@ -6,6 +6,12 @@ import { ComposerDock } from "@/components/hermes/ComposerDock";
 import type { ComposerDockProps } from "@/components/hermes/ComposerDock";
 import { useOptionalActiveHermesSession } from "@/lib/hermes/activeSession";
 import {
+  createComposerAttempt,
+  retryComposerAttempt,
+  shouldRetainComposerAttemptAfterError,
+  type ComposerAttempt,
+} from "@/lib/hermes/composerAttempt";
+import {
   WorkspaceClientError,
   fetchLatestAssistantText,
   isTerminalCommandState,
@@ -17,7 +23,7 @@ import { waitForCommandTerminalOnSpine } from "@/lib/hermes/workspaceFollowSpine
 
 export type ComposerSubmitControllerProps = Omit<
   ComposerDockProps,
-  "onSubmitPrompt" | "statusText" | "busy"
+  "onSubmitPrompt" | "onRetry" | "statusText" | "busy"
 > & {
   /** When false, dock stays visual-only even if allowSubmit is true. */
   networkSubmit?: boolean;
@@ -66,6 +72,8 @@ function formatLifecycleStatus(
       return `Leased${cmd}`;
     case "delivered":
       return `Delivered${cmd}${run}`;
+    case "succeeded":
+      return `Succeeded${cmd}${run}`;
     case "failed":
       return `Failed${cmd}`;
     case "rejected":
@@ -82,7 +90,7 @@ function formatLifecycleStatus(
 }
 
 /**
- * L2b-M2: best-effort assistant preview after deliver.
+ * Best-effort assistant preview only after authoritative terminal success.
  * Failures leave lifecycle status intact (messages path is interim, not ledger).
  */
 async function surfaceAssistantPreview(options: {
@@ -108,7 +116,7 @@ async function surfaceAssistantPreview(options: {
   });
   const lifecycle =
     options.lifecyclePrefix ??
-    formatLifecycleStatus("delivered", options.commandId, options.hermesRunId);
+    formatLifecycleStatus("succeeded", options.commandId, options.hermesRunId);
   options.setStatusText(`${lifecycle} · loading reply…`);
   const text = await fetchLatestAssistantText({
     hermesSessionId: sessionId,
@@ -127,7 +135,7 @@ async function surfaceAssistantPreview(options: {
 /**
  * Client boundary that wires L2a-Send composite submit into ComposerDock.
  * L5a: after accept, wait on shared L4b follow spine (no private follow poll).
- * L2b-M2: after delivered, fetch Hermes messages and surface assistant preview.
+ * After succeeded, fetch Hermes messages and surface assistant preview.
  * Parent shell stays a server component; only this island touches cookies/fetch.
  */
 export function ComposerSubmitController({
@@ -138,6 +146,7 @@ export function ComposerSubmitController({
 }: ComposerSubmitControllerProps) {
   const [statusText, setStatusText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState<ComposerAttempt | null>(null);
   const pollAbortRef = useRef<AbortController | null>(null);
   const activeSession = useOptionalActiveHermesSession();
   const bindSession = activeSession?.setActiveHermesSession;
@@ -151,8 +160,9 @@ export function ComposerSubmitController({
     };
   }, []);
 
-  const onSubmitPrompt = useCallback(
-    async (prompt: string) => {
+  const submitAttempt = useCallback(
+    async (attempt: ComposerAttempt) => {
+      const { prompt, clientActionId } = attempt;
       if (!networkSubmit) {
         throw new WorkspaceClientError(
           "network submit is not enabled on this shell",
@@ -167,8 +177,6 @@ export function ComposerSubmitController({
 
       setBusy(true);
       setStatusText("Submitting…");
-      // One UUID per gesture; outcome_unknown retries should reuse — user can resend.
-      const clientActionId = crypto.randomUUID();
       try {
         const receipt = await sendComposerTurn({
           prompt,
@@ -182,9 +190,14 @@ export function ComposerSubmitController({
             receipt.reason_code,
           ),
         );
+        if (receipt.status === "outcome_unknown") {
+          setRetryAttempt(attempt);
+        } else {
+          setRetryAttempt(null);
+        }
 
         // L3b: optimistic user bubble on accept (or outcome_unknown with command).
-        // Bind still only happens on deliver via surfaceAssistantPreview.
+        // Bind still only happens on terminal success via surfaceAssistantPreview.
         if (
           receipt.status === "accepted" ||
           (receipt.status === "outcome_unknown" && receipt.command_id)
@@ -228,7 +241,8 @@ export function ComposerSubmitController({
               earlyHermesSessionId = existing.hermes_session_id;
             }
             if (isTerminalCommandState(existing.state)) {
-              if (existing.state === "delivered") {
+              setRetryAttempt(null);
+              if (existing.state === "succeeded") {
                 await surfaceAssistantPreview({
                   hermesSessionId: earlyHermesSessionId,
                   commandId: receipt.command_id,
@@ -271,11 +285,17 @@ export function ComposerSubmitController({
             return;
           }
 
-          const terminalState = match?.state ?? null;
+          const observed =
+            match ??
+            spine?.getState().commands.find(
+              (command) => command.command_id === receipt.command_id,
+            ) ??
+            null;
+          const terminalState = observed?.state ?? null;
           const lifecycle = formatLifecycleStatus(
             terminalState ?? "queued",
             receipt.command_id,
-            match?.hermes_run_id ?? null,
+            observed?.hermes_run_id ?? null,
           );
           setStatusText(
             terminalState
@@ -283,24 +303,35 @@ export function ComposerSubmitController({
               : `${lifecycle} · still tracking via follow spine`,
           );
 
-          if (terminalState === "delivered") {
+          if (terminalState === "outcome_unknown") {
+            setRetryAttempt(attempt);
+          }
+
+          if (terminalState === "succeeded") {
+            setRetryAttempt(null);
             await surfaceAssistantPreview({
               hermesSessionId:
-                match?.hermes_session_id ?? earlyHermesSessionId,
+                observed?.hermes_session_id ?? earlyHermesSessionId,
               commandId: receipt.command_id,
-              hermesRunId: match?.hermes_run_id ?? null,
+              hermesRunId: observed?.hermes_run_id ?? null,
               signal: pollAbort.signal,
               setStatusText,
               lifecyclePrefix: lifecycle,
               onBindSession: bindSession,
             });
           } else if (terminalState && isTerminalCommandState(terminalState)) {
+            setRetryAttempt(null);
             setPendingUserText?.(null);
           }
         }
       } catch (error) {
         if (pollAbort.signal.aborted) {
           return;
+        }
+        if (shouldRetainComposerAttemptAfterError(error)) {
+          setRetryAttempt(attempt);
+        } else {
+          setRetryAttempt(null);
         }
         if (error instanceof WorkspaceClientError) {
           setStatusText(error.message);
@@ -328,6 +359,20 @@ export function ComposerSubmitController({
     ],
   );
 
+  const onSubmitPrompt = useCallback(
+    (prompt: string) => {
+      const attempt = createComposerAttempt(prompt);
+      setRetryAttempt(null);
+      return submitAttempt(attempt);
+    },
+    [submitAttempt],
+  );
+
+  const onRetry = useCallback(() => {
+    if (!retryAttempt) return Promise.resolve();
+    return submitAttempt(retryComposerAttempt(retryAttempt));
+  }, [retryAttempt, submitAttempt]);
+
   return (
     <ComposerDock
       {...dockProps}
@@ -335,6 +380,11 @@ export function ComposerSubmitController({
       busy={busy}
       disabled={disabled}
       onSubmitPrompt={networkSubmit && allowSubmit && !disabled ? onSubmitPrompt : undefined}
+      onRetry={
+        retryAttempt && networkSubmit && allowSubmit && !disabled
+          ? onRetry
+          : undefined
+      }
       statusText={statusText}
     />
   );

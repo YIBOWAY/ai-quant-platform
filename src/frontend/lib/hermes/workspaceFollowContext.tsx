@@ -62,7 +62,7 @@ export function WorkspaceFollowProvider({
     transcriptDirtySeq: 0,
   }));
   const spineRef = useRef<WorkspaceFollowSpine | null>(null);
-  const seenDeliveredRef = useRef<Set<string>>(new Set());
+  const seenTerminalRef = useRef<Set<string>>(new Set());
 
   const spine = useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -94,24 +94,24 @@ export function WorkspaceFollowProvider({
     };
   }, [spine, enabled]);
 
-  // Bind / bump transcript when follow sees a delivered command with session id.
+  // Bind / bump transcript only after a replay-backed terminal command fact.
   useEffect(() => {
     for (const event of state.lastEvents) {
       if (!event.command_id) continue;
       const terminal = isTerminalCommandState(event.state);
       if (!terminal) continue;
       const key = `${event.command_id}:${event.state}:${event.event_id ?? ""}`;
-      if (seenDeliveredRef.current.has(key)) continue;
-      seenDeliveredRef.current.add(key);
+      if (seenTerminalRef.current.has(key)) continue;
+      seenTerminalRef.current.add(key);
       if (
-        event.state === "delivered" &&
+        event.state === "succeeded" &&
         isUsableHermesApiSessionId(event.hermes_session_id)
       ) {
         setActiveHermesSession({
           hermesSessionId: event.hermes_session_id,
           commandId: event.command_id,
         });
-      } else if (event.state === "delivered") {
+      } else if (event.state === "succeeded") {
         bumpTranscript();
       }
     }
@@ -146,6 +146,7 @@ export function useWorkspaceFollow(): WorkspaceFollowContextValue {
         runs: [],
         results: [],
         authorityHealth: {},
+        mutationEnabled: false,
         lastEvents: [],
         transport: "idle",
         resyncCount: 0,

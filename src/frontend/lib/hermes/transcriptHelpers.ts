@@ -1,8 +1,8 @@
 import type { HermesSessionMessage } from "@/lib/hermes/workspaceClient";
 
 /**
- * Hermes messages BFF ids are API session ids (often `run_…` / `agent:…`).
- * Platform registry `web_*` and workspace `wm_*` must never hit /messages.
+ * Hermes messages BFF ids include canonical managed `web_*` sessions.
+ * Platform registry `wm_*` must never hit /messages.
  */
 export function isUsableHermesApiSessionId(
   value: string | null | undefined,
@@ -10,7 +10,7 @@ export function isUsableHermesApiSessionId(
   if (typeof value !== "string") return false;
   const id = value.trim();
   if (!id) return false;
-  if (id.startsWith("web_") || id.startsWith("wm_")) return false;
+  if (id.startsWith("wm_")) return false;
   return true;
 }
 
@@ -35,6 +35,7 @@ export function pickLatestHermesSessionId(
   commands:
     | Array<{
         command_id?: string | null;
+        state?: string | null;
         hermes_session_id?: string | null;
       }>
     | null
@@ -45,6 +46,9 @@ export function pickLatestHermesSessionId(
   }
   for (let i = commands.length - 1; i >= 0; i -= 1) {
     const row = commands[i];
+    if (!row || !["succeeded", "failed", "cancelled"].includes(row.state ?? "")) {
+      continue;
+    }
     const id = row?.hermes_session_id;
     if (!isUsableHermesApiSessionId(id)) continue;
     return {
@@ -244,7 +248,16 @@ export function sanitizeTranscriptHint(
 ): TranscriptHint | null {
   if (!raw || typeof raw !== "object") return null;
   const sid = raw.hermes_session_id;
-  if (typeof sid !== "string" || !isUsableHermesApiSessionId(sid)) {
+  const normalizedSid = typeof sid === "string" ? sid.trim() : "";
+  // Follow-spine transcript hints are not session-registry authority. Managed
+  // web_* and workspace wm_* identifiers must be resolved through the
+  // authoritative snapshot/messages path before they can drive a refetch.
+  if (
+    !normalizedSid ||
+    normalizedSid.startsWith("web_") ||
+    normalizedSid.startsWith("wm_") ||
+    !isUsableHermesApiSessionId(normalizedSid)
+  ) {
     return null;
   }
   const phaseRaw = typeof raw.phase === "string" ? raw.phase.trim().toLowerCase() : "";
@@ -256,7 +269,7 @@ export function sanitizeTranscriptHint(
       ? (phaseRaw as AssistantPhase)
       : undefined;
   return {
-    hermes_session_id: sid.trim(),
+    hermes_session_id: normalizedSid,
     command_id:
       typeof raw.command_id === "string" || raw.command_id === null
         ? (raw.command_id as string | null)
@@ -391,4 +404,3 @@ export function createQuietRefetchScheduler(
     },
   };
 }
-

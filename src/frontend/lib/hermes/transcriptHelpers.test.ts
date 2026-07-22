@@ -14,11 +14,11 @@ import {
 } from "./transcriptHelpers";
 
 describe("transcriptHelpers (L3a + L3b)", () => {
-  it("accepts Hermes API session ids and rejects registry/workspace markers", () => {
+  it("accepts canonical managed Hermes ids and rejects platform registry ids", () => {
     expect(isUsableHermesApiSessionId("run_127dd275e6964abc")).toBe(true);
     expect(isUsableHermesApiSessionId("agent:main:l2a")).toBe(true);
     expect(isUsableHermesApiSessionId("  run_abc  ")).toBe(true);
-    expect(isUsableHermesApiSessionId("web_abc")).toBe(false);
+    expect(isUsableHermesApiSessionId("web_abc")).toBe(true);
     expect(isUsableHermesApiSessionId("wm_local")).toBe(false);
     expect(isUsableHermesApiSessionId("")).toBe(false);
     expect(isUsableHermesApiSessionId("   ")).toBe(false);
@@ -41,17 +41,17 @@ describe("transcriptHelpers (L3a + L3b)", () => {
     expect(pickLatestHermesSessionId([])).toBeNull();
     expect(
       pickLatestHermesSessionId([
-        { command_id: "c1", hermes_session_id: "web_x" },
+        { command_id: "c1", state: "delivered", hermes_session_id: "web_x" },
         { command_id: "c2", hermes_session_id: "wm_y" },
       ]),
     ).toBeNull();
     expect(
       pickLatestHermesSessionId([
-        { command_id: "c1", hermes_session_id: "run_old" },
-        { command_id: "c2", hermes_session_id: "web_skip" },
-        { command_id: "c3", hermes_session_id: "run_new" },
+        { command_id: "c1", state: "succeeded", hermes_session_id: "run_old" },
+        { command_id: "c2", state: "delivered", hermes_session_id: "web_skip" },
+        { command_id: "c3", state: "succeeded", hermes_session_id: "web_new" },
       ]),
-    ).toEqual({ hermesSessionId: "run_new", commandId: "c3" });
+    ).toEqual({ hermesSessionId: "web_new", commandId: "c3" });
   });
 
   it("isNearBottom respects threshold", () => {

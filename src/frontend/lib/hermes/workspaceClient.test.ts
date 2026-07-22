@@ -7,6 +7,7 @@ import {
 } from "./darkIdentity";
 import {
   WorkspaceClientError,
+  ensureManagedSession,
   fetchHermesSessionMessages,
   fetchLatestAssistantText,
   fetchWorkspaceFollow,
@@ -124,6 +125,15 @@ describe("sendComposerTurn", () => {
             { status: 200, headers: { "content-type": "application/json" } },
           );
         }
+        if (url.includes("/api/workspace/") && url.endsWith("/snapshot")) {
+          return new Response(
+            JSON.stringify({
+              sessions: [],
+              authority_health: { session_registry: "ready" },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
         if (url.endsWith("/api/agent/workspace/submit-turn")) {
           const headers = new Headers(init?.headers as HeadersInit);
           expect(headers.get("X-CSRF-Token")).toBe("csrf-live-token");
@@ -169,6 +179,7 @@ describe("sendComposerTurn", () => {
       "/api/auth/owner/session",
       "/api/auth/owner/bootstrap-token/issue",
       "/api/auth/owner/bootstrap",
+      `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot`,
       `/api/workspace/${PLATFORM_WORKSPACE_ID}/act`,
       "/api/agent/workspace/submit-turn",
     ]);
@@ -180,16 +191,48 @@ describe("sendComposerTurn", () => {
     await expect(sendComposerTurn({ prompt: "  " })).rejects.toThrow(/non-empty/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("restores the newest server managed session in a fresh tab", async () => {
+    const memory = new Map<string, string>();
+    const calls: string[] = [];
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: (key: string) => memory.get(key) ?? null,
+        setItem: (key: string, value: string) => memory.set(key, value),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        calls.push(url);
+        return new Response(
+          JSON.stringify({
+            sessions: ["discord_observed", "wm_older", "wm_newest"],
+            authority_health: { session_registry: "ready" },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    await expect(ensureManagedSession()).resolves.toBe("session:wm_newest");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("/snapshot");
+    expect([...memory.values()]).toEqual(["session:wm_newest"]);
+  });
 });
 
 describe("isTerminalCommandState", () => {
   it("recognizes terminal lifecycle states only", () => {
-    expect(isTerminalCommandState("delivered")).toBe(true);
+    expect(isTerminalCommandState("delivered")).toBe(false);
+    expect(isTerminalCommandState("outcome_unknown")).toBe(false);
+    expect(isTerminalCommandState("succeeded")).toBe(true);
     expect(isTerminalCommandState("failed")).toBe(true);
     expect(isTerminalCommandState("rejected")).toBe(true);
     expect(isTerminalCommandState("cancelled")).toBe(true);
     expect(isTerminalCommandState("timed_out")).toBe(true);
-    expect(isTerminalCommandState("outcome_unknown")).toBe(true);
+    expect(isTerminalCommandState("outcome_unknown")).toBe(false);
     expect(isTerminalCommandState("queued")).toBe(false);
     expect(isTerminalCommandState("leased")).toBe(false);
     expect(isTerminalCommandState(null)).toBe(false);
@@ -247,7 +290,7 @@ describe("pollCommandUntilTerminal", () => {
     vi.restoreAllMocks();
   });
 
-  it("advances through lifecycle events until delivered", async () => {
+  it("continues beyond accepted delivery until succeeded", async () => {
     let calls = 0;
     vi.stubGlobal(
       "fetch",
@@ -273,20 +316,21 @@ describe("pollCommandUntilTerminal", () => {
               { status: 200, headers: { "content-type": "application/json" } },
             );
           }
+          const delivered = calls === 2;
           return new Response(
             JSON.stringify({
               events: [
                 {
-                  event_id: 2,
-                  type: "command.delivered",
+                  event_id: delivered ? 2 : 3,
+                  type: delivered ? "command.delivered" : "command.succeeded",
                   command_id: "cmd-aa",
-                  state: "delivered",
+                  state: delivered ? "delivered" : "succeeded",
                   hermes_run_id: "run_abc",
-                  hermes_session_id: "agent:main:l2a",
+                  hermes_session_id: "web_managed_l2a",
                 },
               ],
-              after_cursor: 1,
-              next_cursor: 2,
+              after_cursor: delivered ? 1 : 2,
+              next_cursor: delivered ? 2 : 3,
               resync_required: false,
             }),
             { status: 200, headers: { "content-type": "application/json" } },
@@ -302,11 +346,11 @@ describe("pollCommandUntilTerminal", () => {
       maxAttempts: 5,
       intervalMs: 1,
     });
-    expect(result.state).toBe("delivered");
+    expect(result.state).toBe("succeeded");
     expect(result.hermesRunId).toBe("run_abc");
-    expect(result.hermesSessionId).toBe("agent:main:l2a");
-    expect(result.cursor).toBe(2);
-    expect(result.events.length).toBeGreaterThanOrEqual(2);
+    expect(result.hermesSessionId).toBe("web_managed_l2a");
+    expect(result.cursor).toBe(3);
+    expect(result.events.length).toBeGreaterThanOrEqual(3);
     expect(result.resyncRequired).toBe(false);
   });
 
@@ -335,7 +379,7 @@ describe("pollCommandUntilTerminal", () => {
                 {
                   command_id: "cmd-bb",
                   kind: "conversation_turn",
-                  state: "delivered",
+                  state: "succeeded",
                   version: 2,
                   hermes_run_id: "run_bb",
                   hermes_session_id: "agent:main:bb",
@@ -355,7 +399,7 @@ describe("pollCommandUntilTerminal", () => {
       maxAttempts: 3,
       intervalMs: 1,
     });
-    expect(result.state).toBe("delivered");
+    expect(result.state).toBe("succeeded");
     expect(result.hermesRunId).toBe("run_bb");
     expect(result.hermesSessionId).toBe("agent:main:bb");
     expect(result.resyncRequired).toBe(true);
@@ -433,11 +477,11 @@ describe("assistant observe helpers (L2b-M2)", () => {
   it("fetchHermesSessionMessages uses same-origin path with encoded id", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      expect(url).toBe("/api/hermes/sessions/agent%3Amain%3Al2a/messages");
+      expect(url).toBe("/api/hermes/sessions/web_managed_l2a/messages");
       return new Response(
         JSON.stringify({
           read_status: "available",
-          session_id: "agent:main:l2a",
+          session_id: "web_managed_l2a",
           messages: [
             { id: "1", role: "user", content: "ping" },
             { id: "2", role: "assistant", content: "L2a-pong" },
@@ -449,11 +493,11 @@ describe("assistant observe helpers (L2b-M2)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const envelope = await fetchHermesSessionMessages("agent:main:l2a");
+    const envelope = await fetchHermesSessionMessages("web_managed_l2a");
     expect(envelope.read_status).toBe("available");
     expect(latestAssistantText(envelope)).toBe("L2a-pong");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/hermes/sessions/agent%3Amain%3Al2a/messages",
+      "/api/hermes/sessions/web_managed_l2a/messages",
       expect.objectContaining({
         method: "GET",
         credentials: "same-origin",
@@ -461,13 +505,9 @@ describe("assistant observe helpers (L2b-M2)", () => {
     );
   });
 
-  it("fetchHermesSessionMessages rejects web_/wm_/empty without network", async () => {
+  it("fetchHermesSessionMessages rejects wm_/empty without network", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    await expect(fetchHermesSessionMessages("web_abc")).rejects.toMatchObject({
-      status: 400,
-      code: "validation",
-    });
     await expect(fetchHermesSessionMessages("wm_abc")).rejects.toMatchObject({
       status: 400,
       code: "validation",
