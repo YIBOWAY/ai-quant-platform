@@ -398,6 +398,32 @@ class DecideHermesCommandApproval:
 
 
 @dataclass(frozen=True)
+class RequestStop:
+    """V7c: Run-scoped stop intent with optional layered target refs.
+
+    Required ``run_ref``; optional ``task_ref`` / ``attempt_ref`` /
+    ``platform_job_ref`` stay nullable. M1 hermetic stop never invents Task
+    stopped from a single run confirmation alone.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    run_ref: str
+    task_ref: str | None
+    attempt_ref: str | None
+    platform_job_ref: str | None
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_ref(self.run_ref, "run_ref", "run:")
+        _validate_optional_ref(self.task_ref, "task_ref", "task:")
+        _validate_optional_ref(self.attempt_ref, "attempt_ref", "attempt:")
+        _validate_optional_ref(
+            self.platform_job_ref, "platform_job_ref", "job:"
+        )
+
+
+@dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
 
@@ -420,6 +446,7 @@ UserActionV1 = Union[
     ContinueResearch,
     ConfirmResearchPlan,
     DecideHermesCommandApproval,
+    RequestStop,
     UnsupportedWorkspaceAction,
 ]
 
@@ -429,6 +456,7 @@ _IMPLEMENTED_TYPES = (
     ForkIntoManagedSession,
     ConversationTurn,
     DecideHermesCommandApproval,
+    RequestStop,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -526,6 +554,17 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is RequestStop:
+        document.update(
+            {
+                "kind": "run.stop.request",
+                "run_ref": action.run_ref,
+                "task_ref": action.task_ref,
+                "attempt_ref": action.attempt_ref,
+                "platform_job_ref": action.platform_job_ref,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -620,6 +659,14 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             expected_expires_at=document["expected_expires_at"],
             decision=document["decision"],
         )
+    if kind == "run.stop.request":
+        return RequestStop(
+            **common,
+            run_ref=document["run_ref"],
+            task_ref=document["task_ref"],
+            attempt_ref=document["attempt_ref"],
+            platform_job_ref=document["platform_job_ref"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -662,6 +709,7 @@ __all__ = [
     "CreateManagedSession",
     "DecideHermesCommandApproval",
     "ForkIntoManagedSession",
+    "RequestStop",
     "StartResearch",
     "UnsupportedWorkspaceAction",
     "UserActionV1",

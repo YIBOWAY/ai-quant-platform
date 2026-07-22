@@ -37,6 +37,7 @@ from quant_system.hermes.agent_workspace_actions import (
     CreateManagedSession,
     DecideHermesCommandApproval,
     ForkIntoManagedSession,
+    RequestStop,
     StartResearch,
     UnsupportedWorkspaceAction,
     UserActionV1,
@@ -52,6 +53,12 @@ from quant_system.hermes.approval_release_port import (
     ApprovalReleaseError,
     default_approval_release_adapter,
     map_decision_to_release_choice,
+)
+from quant_system.hermes.run_stop_port import (
+    RunStopError,
+    build_layered_stop_receipt,
+    default_run_stop_adapter,
+    strip_run_ref,
 )
 from quant_system.hermes.command_approval_authority import (
     CommandApprovalAuthorityError,
@@ -109,6 +116,8 @@ class ActionReceipt:
     recovery_action: str | None = None
     reason_code: str | None = None
     mutation_enabled: bool = False
+    # V7c plan §5.5 layered stop observation (optional; stop actions only).
+    stop_layers: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         expected = _RECOVERY[self.status]
@@ -135,6 +144,8 @@ class ActionReceipt:
             payload["hermes_session_id"] = self.hermes_session_id
         if self.reason_code is not None:
             payload["reason_code"] = self.reason_code
+        if self.stop_layers is not None:
+            payload["stop_layers"] = dict(self.stop_layers)
         return payload
 
 
@@ -191,6 +202,7 @@ def _receipt(
     hermes_session_id: str | None = None,
     reason_code: str | None = None,
     mutation_enabled: bool = False,
+    stop_layers: dict[str, object] | None = None,
 ) -> ActionReceipt:
     return ActionReceipt(
         status=status,
@@ -203,6 +215,7 @@ def _receipt(
         hermes_session_id=hermes_session_id,
         reason_code=reason_code,
         mutation_enabled=bool(mutation_enabled),
+        stop_layers=stop_layers,
     )
 
 
@@ -747,6 +760,166 @@ def submit_decide_hermes_command_approval(
     )
 
 
+def submit_stop_run_request(
+    settings: Settings,
+    action: RequestStop,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V7c: hermetic Run-scoped stop with plan §5.5 layered receipt.
+
+    Calls the hermetic stop port (no ``import hqa``). Hermes Run layer is real;
+    Attempt/job layers are ``not_applicable`` when refs are absent and
+    ``unknown`` when present without an authority in M1. Overall is ``stopped``
+    / ``already_terminal`` only when every artifact-producing target is known
+    terminal — an unknown Attempt keeps overall ``reconciling`` even if the
+    run is confirmed. Partial-stop (committed, ack lost) returns reconciling
+    and heals on exact client_action_id+digest replay. No Task invention, no
+    Gate, no live HTTP, no public write.
+    """
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+
+    try:
+        run_id = strip_run_ref(action.run_ref)
+    except RunStopError as exc:
+        raise SubmissionSagaError("validation", exc.message) from exc
+
+    adapter = default_run_stop_adapter()
+    identity = adapter.remember_request(
+        workspace_id=action.workspace.workspace_id,
+        client_action_id=action.client_action_id,
+        action_digest=digest,
+    )
+    if identity == "conflict":
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            reason_code="idempotency_digest_conflict",
+            mutation_enabled=mutation_enabled,
+        )
+
+    try:
+        result = adapter.stop(run_id)
+    except RunStopError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "transport_error":
+            # PARTIAL_STOP: durable commit happened; ack lost. Layer unknown.
+            layers = build_layered_stop_receipt(
+                stop=None,
+                hermes_run_layer="unknown",
+                attempt_ref=action.attempt_ref,
+                platform_job_ref=action.platform_job_ref,
+                transport_unknown=True,
+            )
+            return _receipt(
+                status="reconciling",
+                action=action,
+                digest=digest,
+                run_id=run_id,
+                reason_code=exc.code,
+                mutation_enabled=mutation_enabled,
+                stop_layers=layers.to_public_dict(),
+            )
+        if exc.code == "run_not_found":
+            layers = build_layered_stop_receipt(
+                stop=None,
+                hermes_run_layer="unknown",
+                attempt_ref=action.attempt_ref,
+                platform_job_ref=action.platform_job_ref,
+                transport_unknown=True,
+            )
+            return _receipt(
+                status="unavailable",
+                action=action,
+                digest=digest,
+                run_id=run_id,
+                reason_code=exc.code,
+                mutation_enabled=mutation_enabled,
+                stop_layers=layers.to_public_dict(),
+            )
+        layers = build_layered_stop_receipt(
+            stop=None,
+            hermes_run_layer="unknown",
+            attempt_ref=action.attempt_ref,
+            platform_job_ref=action.platform_job_ref,
+            transport_unknown=True,
+        )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            run_id=run_id,
+            reason_code=exc.code or "stop_unavailable",
+            mutation_enabled=mutation_enabled,
+            stop_layers=layers.to_public_dict(),
+        )
+
+    hermes_layer = (
+        "already_terminal" if result.idempotent_replay else "confirmed"
+    )
+    layers = build_layered_stop_receipt(
+        stop=result,
+        hermes_run_layer=hermes_layer,  # type: ignore[arg-type]
+        attempt_ref=action.attempt_ref,
+        platform_job_ref=action.platform_job_ref,
+    )
+    # Map overall → ActionReceipt.status. Keep reconciling when any layer
+    # is unknown so clients never paint Task stopped early.
+    if layers.overall == "reconciling":
+        receipt_status: ReceiptStatus = "reconciling"
+    elif layers.overall in ("stopped", "already_terminal"):
+        receipt_status = "accepted"
+    else:
+        receipt_status = "reconciling"
+
+    # Best-effort durable audit row on the control-plane session.
+    command_id: str | None = None
+    if _ensure_ready(settings):
+        control_session = control_plane_session_id(action.workspace.workspace_id)
+        try:
+            cmd = _create_idempotent_command(
+                settings,
+                platform_session_id=control_session,
+                client_request_id=action.client_action_id,
+                kind="run_stop_request",
+                action_digest=digest,
+                payload_ref=action_payload_ref_for_digest(digest),
+                provider_policy_digest=None,
+            )
+            command_id = str(cmd.command.command_id)
+        except SubmissionSagaError as exc:
+            # Stop already committed on the hermetic port. A ledger digest
+            # conflict is an audit-rail problem only — do not report conflict
+            # as if the stop failed (Reviewer M1 / same honesty as V7a CAS).
+            if exc.code == "conflict":
+                command_id = None
+            else:
+                command_id = None
+
+    return _receipt(
+        status=receipt_status,
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        run_id=result.run_id,
+        reason_code=None if receipt_status == "accepted" else "stop_layers_reconciling",
+        mutation_enabled=mutation_enabled,
+        stop_layers=layers.to_public_dict(),
+    )
+
+
 def submit_action(
     settings: Settings,
     action: UserActionV1 | dict[str, object],
@@ -791,6 +964,13 @@ def submit_action(
         )
     if type(parsed) is DecideHermesCommandApproval:
         return submit_decide_hermes_command_approval(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
+    if type(parsed) is RequestStop:
+        return submit_stop_run_request(
             settings,
             parsed,
             mutation_enabled=mutation_enabled,
@@ -841,4 +1021,5 @@ __all__ = [
     "submit_create_managed_session",
     "submit_decide_hermes_command_approval",
     "submit_fork_into_managed_session",
+    "submit_stop_run_request",
 ]
