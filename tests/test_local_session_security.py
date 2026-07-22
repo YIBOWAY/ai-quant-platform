@@ -17,6 +17,7 @@ from quant_system.api.safety.local_session import (
     SESSION_COOKIE_NAME,
     LocalSessionAuthError,
     LocalSessionForbidden,
+    bootstrap_token_path,
     exchange_bootstrap_token,
     issue_bootstrap_token,
     mint_owner_session,
@@ -82,6 +83,9 @@ def test_default_policy_accepts_frontend_port_3001() -> None:
 def test_bootstrap_issues_http_only_session_and_csrf(tmp_path: Path) -> None:
     client = _client(tmp_path)
     token = issue_bootstrap_token(tmp_path)
+    token_file = bootstrap_token_path(tmp_path)
+    assert token_file.read_text(encoding="utf-8") == token
+    assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
     key = signing_key_path(tmp_path)
     assert key.exists()
     assert stat.S_IMODE(key.stat().st_mode) == 0o600
@@ -127,6 +131,21 @@ def test_bootstrap_issues_http_only_session_and_csrf(tmp_path: Path) -> None:
     assert status.status_code == 200
     assert status.json()["session_id"] == payload["session_id"]
     assert status.json()["mutation_enabled"] is False
+
+
+def test_loopback_http_cannot_issue_or_retrieve_bootstrap_token(
+    tmp_path: Path,
+) -> None:
+    """Bootstrap secrets are operator-file input, never an unauthenticated API."""
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/api/auth/owner/bootstrap-token/issue",
+        headers=_browser_headers(),
+    )
+
+    assert response.status_code == 404
+    assert "bootstrap_token" not in response.text
 
 
 def test_bootstrap_token_is_one_time(tmp_path: Path) -> None:

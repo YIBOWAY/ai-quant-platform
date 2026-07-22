@@ -148,6 +148,22 @@ class PromotionWorkspaceResult(BaseModel):
     scoped_paths: list[str]
 
 
+def _gate3_transition_refusal(manifest: PromotionManifestV1) -> str | None:
+    """Return why this persisted manifest may be observed but never mutated."""
+    receipt_id = manifest.final_backtest_receipt_id
+    if manifest.schema_version != "1.1":
+        return (
+            f"legacy promotion manifest schema {manifest.schema_version} is read-only; "
+            "Gate 3 transitions require schema 1.1 with a final backtest receipt"
+        )
+    if (
+        not isinstance(receipt_id, str)
+        or _FINAL_BACKTEST_RECEIPT_ID.fullmatch(receipt_id) is None
+    ):
+        return "promotion manifest has no valid final backtest receipt"
+    return None
+
+
 def resolve_platform_repo() -> Path:
     return PLATFORM_REPO_ROOT
 
@@ -1249,6 +1265,14 @@ def _promotion_status_locked(
             "scoped_paths": manifest.scoped_paths,
         }
 
+    transition_refusal = _gate3_transition_refusal(manifest)
+    if transition_refusal is not None:
+        return payload(
+            status=state.status,
+            reviewed_commit=state.reviewed_commit,
+            reason=transition_refusal,
+        )
+
     if state.status in {"abandoned", "cleaned"}:
         return payload(
             status=state.status,
@@ -1358,6 +1382,10 @@ def _cleanup_promotion_workspace_locked(
         repo_dir=repo_dir,
     )
     worktree = worktree_root / promotion_id
+
+    transition_refusal = _gate3_transition_refusal(manifest)
+    if transition_refusal is not None:
+        raise PromotionWorkspaceError(f"cleanup refused: {transition_refusal}")
 
     if state.status == "cleaned":
         return {

@@ -18,7 +18,6 @@ from quant_system.api.safety.local_session import (
     LocalSessionValidationError,
     enforce_browser_request_gates,
     exchange_bootstrap_token,
-    issue_bootstrap_token,
     local_session_security_ready,
     policy_from_settings,
     require_loopback_peer,
@@ -173,35 +172,3 @@ def owner_logout(
     response.headers["Cache-Control"] = "no-store"
     mutation_on = bool(getattr(settings.local_mutation, "enabled", False))
     return {"ok": True, "mutation_enabled": mutation_on}
-
-
-@router.post("/auth/owner/bootstrap-token/issue")
-def issue_owner_bootstrap_token(
-    request: Request,
-    settings: SettingsDep,
-    output_dir: OutputDirDep,
-) -> dict:
-    """Local operator helper: mint/return bootstrap token path contents.
-
-    Intended for loopback CLI/operator use during single-user local setup.
-    Still requires same-origin browser gates when called from a browser.
-    """
-    policy = _policy(settings, request)
-    try:
-        require_loopback_peer(request.client.host if request.client else None)
-        enforce_browser_request_gates(
-            policy=policy,
-            request_kind="api_read",
-            host_header=request.headers.get("host"),
-            origin_header=request.headers.get("origin"),
-            sec_fetch_site=request.headers.get("sec-fetch-site"),
-        )
-        token = issue_bootstrap_token(output_dir)
-    except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
-        raise _http_error(exc) from exc
-    mutation_on = bool(getattr(settings.local_mutation, "enabled", False))
-    return {
-        "bootstrap_token": token,
-        "mutation_enabled": mutation_on,
-        "note": "one-time; exchange via POST /api/auth/owner/bootstrap",
-    }
