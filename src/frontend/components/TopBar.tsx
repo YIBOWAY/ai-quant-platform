@@ -210,7 +210,7 @@ export function TopBar({
                     (item.href !== "/" && activePath.startsWith(`${item.href}/`));
                   return (
                   <Link
-                    aria-current={isActive ? "page" : undefined}
+                    aria-current={activePath === item.href ? "page" : undefined}
                     className={`app-touch-target flex items-center rounded-lg border px-3 font-body-sm ${
                       isActive
                         ? "border-border-subtle bg-bg-sidebar-muted text-text-primary"
