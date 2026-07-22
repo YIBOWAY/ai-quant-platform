@@ -181,22 +181,17 @@ export function WorkbenchTranscriptPanel({
     if (hit) setPendingUserText(null);
   }, [pendingUserText, setPendingUserText, state]);
 
-  const readyView =
-    state.kind === "ready"
-      ? state
-      : state.kind === "loading" && state.prior
-        ? {
-            sessionId: state.prior.sessionId,
-            messages: state.prior.messages,
-            omitted: state.prior.omitted,
-          }
-        : state.kind === "unavailable" && state.prior
-          ? {
-              sessionId: state.prior.sessionId,
-              messages: state.prior.messages,
-              omitted: state.prior.omitted,
-            }
-          : null;
+  const readyView = useMemo<PriorBundle | null>(() => {
+    if (state.kind === "ready") return state;
+    if ((state.kind === "loading" || state.kind === "unavailable") && state.prior) {
+      return {
+        sessionId: state.prior.sessionId,
+        messages: state.prior.messages,
+        omitted: state.prior.omitted,
+      };
+    }
+    return null;
+  }, [state]);
 
   const canvasMessages = useMemo(() => {
     if (state.kind === "idle") {
