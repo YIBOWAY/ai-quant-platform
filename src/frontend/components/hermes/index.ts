@@ -15,6 +15,8 @@ export { TranscriptCanvas } from "./transcript/TranscriptCanvas";
 export type { TranscriptCanvasProps } from "./transcript/TranscriptCanvas";
 export { WorkbenchTranscriptPanel } from "./transcript/WorkbenchTranscriptPanel";
 export type { WorkbenchTranscriptPanelProps } from "./transcript/WorkbenchTranscriptPanel";
+export { WorkbenchCommandActivityPanel } from "./activity/WorkbenchCommandActivityPanel";
+export type { WorkbenchCommandActivityPanelProps } from "./activity/WorkbenchCommandActivityPanel";
 export {
   HermesTodayView,
   AttentionSummary,

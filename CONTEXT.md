@@ -75,12 +75,16 @@ Workbench Conversation panel above Today when local chat is open; binds usable H
 _Avoid_: Plan-V6 complete, SSE done, public cutover, registry `web_`/`wm_` as messages id
 
 **L3b-Transcript-Polish**:
-FE polish on the L3a canvas only: keep-last-ready no-flicker refresh, soft stick-to-bottom when near bottom, optimistic user bubble on submit accept, `aria-live` on canvas, copyable session chip, sessions detail reuses shared `TranscriptCanvas`. **M1 ACCEPT@2026-07-22**. Still no SSE / Task drawer / public write.
+FE polish on the L3a canvas only: keep-last-ready no-flicker refresh, soft stick-to-bottom when near bottom, optimistic user bubble on submit accept, `aria-live` on canvas, copyable session chip, sessions detail reuses shared `TranscriptCanvas`. **M1 ACCEPT@2026-07-22**. Still no SSE / public write.
 _Avoid_: Plan-V6 complete, SSE done, inventing assistant text, binding on accept instead of deliver
 
+**L4a-Task-Drawer (Command Activity)**:
+Read-only workbench **Activity** panel from snapshot `commands[]` (conversation_turn lifecycle). Task/Attempt authority rows still empty tuples — M1 does **not** invent HQA Task UI. Collapsible; ~8s poll; markers `data-hermes-command-activity` + `data-hermes-task-drawer=l4a-m1`. Mounted in `HermesLocalChatBoundary` when chat open. **≠** `/hermes/tasks` artifacts page. **M1 ACCEPT@2026-07-22**. No SSE / mutation / approvals.
+_Avoid_: filled Task/Attempt authority, SSE, stop/gate actions, conflating with research Tasks page, public write
+
 **Observe Spine**:
-Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; richer Task/Attempt/Run projections remain Plan-V6 remainder.
-_Avoid_: empty follow poll, sessions-and-commands-only snapshot sold as complete observe UI
+Durable workspace cursor plus snapshot and follow that project sessions, commands, tasks, attempts, runs, results, approvals, and authority health without inventing missing facts. L2b-M1 covers commands lifecycle; L4a-M1 surfaces those commands in UI; richer Task/Attempt/Run projections remain Plan-V6 remainder.
+_Avoid_: empty follow poll, commands-only Activity sold as complete Task/Attempt observe spine
 
 **Action Receipt**:
 The durable acknowledgment of one user action, carrying status, digests, recovery guidance, and optional command or session identities.

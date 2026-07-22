@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { WorkbenchCommandActivityPanel } from "@/components/hermes/activity/WorkbenchCommandActivityPanel";
 import { ComposerSubmitController } from "@/components/hermes/ComposerSubmitController";
 import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { WorkbenchTranscriptPanel } from "@/components/hermes/transcript/WorkbenchTranscriptPanel";
@@ -26,8 +27,8 @@ export type HermesLocalChatBoundaryProps = {
 };
 
 /**
- * Client island: active Hermes session context + transcript canvas + composer.
- * Keeps server shell free of cookie/fetch; L3a mounts transcript above Today.
+ * Client island: active Hermes session + transcript + command activity + composer.
+ * Keeps server shell free of cookie/fetch; L3a transcript + L4a activity above Today.
  */
 export function HermesLocalChatBoundary({
   locale,
@@ -49,6 +50,7 @@ export function HermesLocalChatBoundary({
               locale={locale}
             />
             {chatOpen ? <WorkbenchTranscriptPanel locale={locale} /> : null}
+            {chatOpen ? <WorkbenchCommandActivityPanel locale={locale} /> : null}
             {children}
           </div>
         </div>
