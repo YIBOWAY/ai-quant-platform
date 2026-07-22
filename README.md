@@ -8,17 +8,19 @@ and options research platform.
 The Phase 0-14 documents describe delivered historical capability layers, not
 the current implementation queue. Start with [docs/INDEX.md](docs/INDEX.md).
 HQA Slices 9A-9G, the read-only mini 9H Hermes artifact shelf, and full 9H
-automation/notifications are delivered. D-31 Waves 1-3 have delivered the
-fail-closed gateway contract, candidate integrity/scoped Gate 3, the
-professional read-only Hermes shell, official-API persisted-session reads,
-migration 005's durable transport ledger, a reconcile-only connector-worker
-framework, and a read-only Unified Results catalog/detail UI. Slice 3C.1 now has
-code-accepted exact workflow-binding/inventory primitives for HQA Task/Attempt and
-immutable payload metadata, but migration 006 is not applied to the live database
-and no browser or worker path consumes it. This is not a
-write bridge: real local-Hermes chat/provider use, approval mutations, exact
-Hermes-run links, full results cutover, and legacy-page retirement remain
-unfinished and require later independent evidence gates. Slice 9E is an HQA-local locked
+automation/notifications are delivered. The active cross-repo plan is Agent
+v0.2. V4–V7 remediation now provides reviewed source for constrained runtime
+roles/FORCE RLS, registry-owned managed-session idempotency, durable Hermes Run
+submit/recover/fold, isolated SSE delivery, explicit owner bootstrap, and
+fail-closed approval/Gate/result projections. This is **source and isolated
+evidence, not the live deployment**: migrations 009/010 are not live-applied,
+the application runtime has not switched away from the historical `quant`
+superuser, and the reviewed Hermes durable candidate is not installed. The
+local and public composers must therefore remain OFF; public V8, live trading,
+paper-account mutation, and order submission are not authorized. See
+[the V4-R audit](docs/audits/2026-07-23-v4r-runtime-security-remediation.md) and
+[the idempotency cutover preflight](docs/runbooks/hermes-idempotency-key-cutover.md).
+Slice 9E is an HQA-local locked
 prediction event ledger that reuses, but does not modify, the platform. Slice 9D adds a strict read-only
 `data prices` JSON seam: explicit Futu, QFQ, and 1d only; at most 25 symbols
 and 500 inclusive calendar dates; no sample/local/Tiingo/Longbridge fallback.
@@ -149,6 +151,16 @@ quant-system doctor
 `doctor` does not contact providers or PostgreSQL. It prints the effective
 environment, safety flags, default data provider, Futu/OpenD endpoint, optional
 database-index settings, and the runtime log path.
+
+If an authorized local mutation build needs an owner session, the operator must
+explicitly mint a one-time token in the backend terminal:
+
+```powershell
+quant-system owner-bootstrap-token
+```
+
+Paste that token into the `/hermes` prompt. The browser cannot fetch the secret
+from an HTTP endpoint; the token is stored in a 0600 file and consumed once.
 
 ## Main Pages
 

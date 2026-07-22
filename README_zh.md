@@ -4,10 +4,15 @@
 
 Phase 0-14 文档描述已经交付的历史能力层，不是当前实现队列。先读
 [docs/INDEX.md](docs/INDEX.md)。HQA Slice 9A-9G、只读 mini 9H Hermes 产物架与
-完整 9H 自动化/通知均已完成。D-31 Wave 3 也已交付 official API 会话读取、
-PostgreSQL transport ledger、仅对账的 connector-worker 框架，以及只读 Unified
-Results 目录/详情。这里没有真实 chat 写桥：prompt/provider、审批 mutation、精确
-Hermes Run 关联、完整结果切流和旧页退休仍受独立证据门阻断。9E 是 HQA 本地带锁的
+完整 9H 自动化/通知均已完成。当前跨仓主线是 Agent v0.2。V4–V7 对抗修复已经在
+源码和隔离环境中补齐受限 runtime role/FORCE RLS、session registry 幂等、durable
+Hermes Run submit/recover/fold、SSE client isolation、显式 owner bootstrap，以及
+fail-closed approval/Gate/result projection。但这**不是 live 部署**：migration 009/010
+尚未 live apply，backend 仍未从历史 `quant` superuser 切换，reviewed Hermes durable
+candidate 也未安装。因此本机/public composer 都必须保持 OFF；public V8、实盘交易、
+paper account mutation 与下单均未授权。详见
+[V4-R 审计](docs/audits/2026-07-23-v4r-runtime-security-remediation.md)和
+[幂等 cutover preflight](docs/runbooks/hermes-idempotency-key-cutover.md)。9E 是 HQA 本地带锁的
 prediction event ledger，复用但
 不修改平台代码或 schema。9D 新增严格只读的 `data prices` JSON seam：只接受
 显式 Futu、QFQ、1d，最多 25 个标的和 500 个含首尾日历日期，不回退到
@@ -73,6 +78,16 @@ python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 
 ```
 
 直接 app factory 启动路径也会写入同一个 `backend.jsonl` 运行日志。
+
+若经授权的本机 mutation build 需要 owner session，operator 必须在 backend terminal
+显式生成一次性 token：
+
+```powershell
+quant-system owner-bootstrap-token
+```
+
+把 token 手工粘贴到 `/hermes` 提示框。浏览器不能通过 HTTP 获取该 secret；token 文件权限
+为 0600，exchange 成功后立即消费。
 
 在另一个 PowerShell 窗口中启动前端：
 

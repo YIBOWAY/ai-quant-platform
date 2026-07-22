@@ -178,13 +178,21 @@ data/                     Local cache, fixtures, generated research outputs.
   public V8 still closed. See HQA `docs/README.md`, L2a ADR, and platform audits
   `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
   `docs/audits/2026-07-21-v6-local-off-to-on.md`.
+  **2026-07-23 remediation overrides any release implication of those historical
+  ACCEPT labels:** 009/010, constrained runtime LOGIN and reviewed Hermes
+  durable candidate are source/isolated only and not live. Create/fork
+  idempotency belongs to registry v2, not the dispatch ledger. Production must
+  not inject hermetic V7 authorities. Local/public composer remain OFF until
+  separate platform-authority and Hermes/HQA cutover evidence is complete.
   Connector worker CLI **defaults to `reconcile_only`** (LISTEN/NOTIFY + scan +
   expired-lease). `--mode supervised_dispatch` claims with a real
   `HttpHermesDispatchAdapter` (or injected port in tests). Empty queue must
   never call an LLM. Do not implement Hermes cron prompt polling as a queue.
   Platform must never `import hqa`; Intent Payload Store I/O goes through the
-  subprocess CLI port (`QS_INTENT_PAYLOAD_*`). Owner gate is loopback cookie +
-  CSRF only; default `accepted_origin` is first CORS entry
+  subprocess CLI port (`QS_INTENT_PAYLOAD_*`). Owner gate requires an explicit
+  operator-generated one-time token, signed loopback cookie, origin/fetch
+  metadata and CSRF; no HTTP route may return the bootstrap secret. Default
+  `accepted_origin` is first CORS entry
   (`http://127.0.0.1:3001` — FE port). FE workspace client uses same-origin
   `/api/*` rewrites, not absolute `:8765` with credentials omit. Messages ids
   must be Hermes API sessions (`run_…`); never registry `web_` / workspace `wm_`.

@@ -49,8 +49,9 @@ The only admitted policy is:
 - payload TTL exactly `7` days.
 
 The browser may carry these fields for the closed action schema, but it cannot
-choose them: create/fork rejects every other digest or TTL before a command
-write. The session registry stores the canonical values. Composite submit reads
+choose them: create/fork rejects every other digest or TTL before a registry
+write. Create/fork action idempotency is owned by the registry and does not
+create a dispatchable command. The session registry stores the canonical values. Composite submit reads
 them back from the registry before Intent Payload Store `put`, and verifies the
 store receipt matches before creating a conversation command. PostgreSQL binds
 managed sessions to TTL `7`, external sessions to `NULL`, and rejects TTL,
@@ -115,10 +116,14 @@ rollback decision. Passwords must come from the operator's secret store and
 must never be committed.
 
 1. Back up the target database and capture the pre-apply schema fingerprint.
-2. Apply the single reviewed migration with the existing explicit gate:
+2. Apply both reviewed migrations with the existing explicit gate. Migration
+   010 upgrades the registry to v2 and retires only exact legacy queued
+   create/fork control rows after 009 has established the runtime boundary:
 
    ```bash
-   quant-system migrate --apply --allow scripts/sql/009_agent_v0_2_v4r_security.sql
+   quant-system migrate --apply --yes \
+     --allow 009_agent_v0_2_v4r_security.sql \
+     --allow 010_hermes_session_action_idempotency.sql
    ```
 
    Initial bootstrap must run under the existing authorized database
@@ -164,9 +169,10 @@ It must never be the application runtime credential.
 
 - This slice does not provide a durable worker capability lease/heartbeat;
   dispatch and composer admission remain OFF.
-- It does not repair the permanently queued `managed_session_create` claim
-  contract or implement expired payload/session deletion.
-- It does not apply migration 009, provision a live LOGIN, restart services, or
+- Migration 010 repairs the create/fork authority mismatch in source and
+  isolated PostgreSQL, but has not retired the three observed live queued
+  control rows. It does not implement expired payload/session deletion.
+- It does not apply migrations 009/010, provision a live LOGIN, restart services, or
   change the live `quant` superuser.
 - Runtime DML for the wider monolithic platform remains broader than the seven
   RLS-protected Hermes authority tables. Splitting trading/research services into

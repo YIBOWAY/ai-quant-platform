@@ -3,7 +3,7 @@
 这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
 指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-## 当前工作（2026-07-16）
+## 当前工作（2026-07-23）
 
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
@@ -12,7 +12,7 @@
 | 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
 | 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、HQA Scene-B Gate 1 精确源绑定、Gate 2 digest CAS、迁移工具、隔离且可恢复的 Gate 3 worktree 已交付并完成对抗性加固。Scene-B 已完成 final receipt → prepare → 人工 diff/commit → reviewed → cleanup，并以 `524e791` 合入当前分支（见下）。 |
 | 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 Hermes 壳与可回滚默认首页已交付。Approvals 保持证据只读（`approvalMutations=false`）；official Hermes API 会话读取已接入（`sessionRead=true`）。3E-A 又交付只读 Unified Results 目录/详情，但完整切流仍关闭。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
-| 当前实现选择 | Agent v0.2：V4–V5 ACCEPT；**V6 本地 dark enablement ACCEPT@2026-07-21**；**L2a-Send M1+M2 ACCEPT@2026-07-22**；**L2b-Observe M1+M2 ACCEPT@2026-07-22** | 005/006/007 live；L2a claim path `008`。owner session/CSRF。CLI 默认 `reconcile_only`；`--mode supervised_dispatch` + `HttpHermesDispatchAdapter`。local `QS_LOCAL_MUTATION_*` + FE chat flag 可开草稿与 **composite submit-turn**（≠ public V8）。snapshot/follow 有 command 对象 + lifecycle poll；delivered 后 messages 预览。Plan-V6 全 UI/SSE/launchd 仍待。交易 kill_switch 仍 true。 |
+| 当前实现选择 | Agent v0.2 V4–V7 对抗修复 | 009/010、constrained runtime LOGIN 与 Hermes durable candidate 仅 source/isolated，尚未 live。create/fork 幂等归 registry；turn/research 才进 command ledger。CLI 默认 `reconcile_only`；production 不注入 hermetic authority。local/public composer 必须 OFF，直到分别完成 platform authority cutover 与 Hermes/HQA install/restart/canary；交易 kill switch 不变。 |
 | 本机 Hermes 连接决策 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-15-local-hermes-integration-decision.md` | 采用 PostgreSQL durable command/event/outbox + deterministic worker；`LISTEN/NOTIFY` 唤醒、periodic scan 兜底，不让 Hermes/LLM cron 空轮询。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
 | 被替代计划 | HQA `2026-07-07-phase-1a-4-research-employees.md` | 目标保留，旧 implementation 模板不得原样执行。 |
