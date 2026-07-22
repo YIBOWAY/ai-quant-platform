@@ -357,6 +357,67 @@ class HermesCommandLedger:
             raise HermesCommandLedgerUnavailable(str(exc)) from exc
         return tuple(_command_from_row(row) for row in rows)
 
+    def mark_run_reconciliation_started(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        now: datetime,
+    ) -> HermesCommand:
+        """Durably rotate one active Run before attempting upstream observation.
+
+        This state-preserving transition is the persistent fairness cursor for
+        bounded reconciliation scans. The version CAS prevents two workers that
+        selected the same snapshot from both observing it, and the append-only
+        event makes the scheduling touch auditable without inventing a Run fact.
+        """
+
+        _validate_expected_version(expected_version)
+        _validate_aware_datetime(now, field="now")
+        database = self._require_ready_database()
+        try:
+            with database.connect() as conn, conn.transaction():
+                row = conn.execute(
+                    f"""
+                    UPDATE {SCHEMA}.hermes_commands
+                    SET version = version + 1,
+                        updated_at = clock_timestamp()
+                    WHERE command_id = %s
+                      AND owner_user_id = %s
+                      AND version = %s
+                      AND state IN ('delivered', 'outcome_unknown')
+                    RETURNING {_COMMAND_COLUMNS}
+                    """,
+                    (command_id, ROOT_USER_ID, expected_version),
+                ).fetchone()
+                if row is None:
+                    self._raise_transition_conflict(
+                        conn,
+                        command_id=command_id,
+                        expected_version=expected_version,
+                        allowed_states={"delivered", "outcome_unknown"},
+                    )
+                command = _command_from_row(row)
+                _append_snapshot_event(
+                    conn,
+                    command=command,
+                    event_type="run_reconciliation_started",
+                    actor="reconciler",
+                    from_state=command.state,
+                    event_data={"phase": "observation_started"},
+                )
+                return command
+        except (
+            HermesCommandNotFound,
+            HermesCommandStateConflict,
+            HermesCommandVersionConflict,
+        ):
+            raise
+        except DatabaseUnavailable as exc:
+            raise HermesCommandLedgerUnavailable(str(exc)) from exc
+        except psycopg.Error as exc:
+            raise HermesCommandLedgerUnavailable(str(exc)) from exc
+
     def list_command_events(
         self,
         command_id: UUID,

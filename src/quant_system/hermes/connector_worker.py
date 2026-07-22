@@ -70,6 +70,14 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         limit: int,
     ) -> tuple[HermesCommand, ...]: ...
 
+    def mark_run_reconciliation_started(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        now: datetime,
+    ) -> HermesCommand: ...
+
     def claim_next_command(
         self,
         *,
@@ -468,6 +476,7 @@ class HermesConnectorWorker:
         if self._run_lifecycle_port is not None:
             required += (
                 "list_commands_for_run_reconciliation",
+                "mark_run_reconciliation_started",
                 "reconcile_outcome_as_delivered",
                 "mark_succeeded",
                 "mark_failed",
@@ -499,7 +508,23 @@ class HermesConnectorWorker:
         recovered_count = 0
         terminal_count = 0
         for command in commands:
-            current = command
+            try:
+                # Persist the scheduling decision before any upstream I/O. The
+                # version CAS admits one concurrent reconciler, while the
+                # updated_at touch moves this command behind older active Runs.
+                # A crash/restart therefore cannot reset the fairness cursor.
+                current = ledger.mark_run_reconciliation_started(
+                    command_id=command.command_id,
+                    expected_version=command.version,
+                    now=self._now(),
+                )
+            except (
+                HermesCommandLedgerUnavailable,
+                HermesCommandNotFound,
+                HermesCommandStateConflict,
+                HermesCommandVersionConflict,
+            ):
+                continue
             if current.state == "outcome_unknown" and (
                 not current.hermes_session_id or not current.hermes_run_id
             ):
