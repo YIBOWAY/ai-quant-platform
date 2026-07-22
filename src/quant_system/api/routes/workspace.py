@@ -122,11 +122,9 @@ def workspace_follow(
     owner: OwnerSessionDep,
     after_cursor: int | None = None,
 ) -> dict[str, object]:
-    after: WorkspaceCursor | int | None
-    if after_cursor is None:
-        after = None
-    else:
-        after = after_cursor
+    after: WorkspaceCursor | int | None = (
+        None if after_cursor is None else after_cursor
+    )
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     try:
         page = _workspace(settings).follow(
@@ -175,24 +173,27 @@ def workspace_follow_stream(
 
     def event_iter() -> Iterator[str]:
         from quant_system.hermes.approval_observe import (
-            default_approval_observe_journal,
+            ApprovalObserveJournal,
         )
         from quant_system.hermes.gate_observe import (
-            default_gate_observe_journal,
+            GateObserveJournal,
         )
         from quant_system.hermes.result_observe import (
-            default_result_observe_journal,
+            ResultObserveJournal,
         )
         from quant_system.hermes.vertical_observe import (
-            default_vertical_observe_journal,
+            VerticalObserveJournal,
         )
 
         cursor = start_cursor
         idle = 0
-        journal = default_approval_observe_journal()
-        gate_journal = default_gate_observe_journal()
-        result_journal = default_result_observe_journal()
-        vertical_journal = default_vertical_observe_journal()
+        # Projection fingerprints are connection-local delivery state.  A
+        # process-global fingerprint lets the first browser consume a change
+        # and starves every other client subscribed to the same workspace.
+        journal = ApprovalObserveJournal()
+        gate_journal = GateObserveJournal()
+        result_journal = ResultObserveJournal()
+        vertical_journal = VerticalObserveJournal()
         yield _sse_pack(
             "ready",
             {

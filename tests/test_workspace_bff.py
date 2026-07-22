@@ -202,6 +202,54 @@ def test_workspace_follow_stream_requires_owner_and_emits_sse(tmp_path: Path) ->
     assert "message_body" not in body
 
 
+def test_each_sse_connection_gets_its_own_projection_fingerprint(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from quant_system.api.routes import workspace as workspace_routes
+    from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+    from quant_system.hermes.approval_observe import (
+        reset_default_approval_observe_journal,
+    )
+    from quant_system.hermes.command_approval_authority import (
+        default_command_approval_authority,
+        reset_default_command_approval_authority,
+    )
+
+    reset_default_command_approval_authority()
+    reset_default_approval_observe_journal()
+    try:
+        default_command_approval_authority().seed_pending(
+            workspace_id=WORKSPACE_ID,
+            approval_id="challenge.two-sse-clients",
+            run_id="hermes.two-sse-clients",
+            command_digest="a" * 64,
+            expires_at="2099-01-01T00:00:00.000000Z",
+        )
+        client = _client(tmp_path)
+        _bootstrap(client, tmp_path)
+        hermetic = PlatformAgentWorkspace(
+            _settings(),
+            mutation_enabled=False,
+            hermetic_authorities=True,
+        )
+        monkeypatch.setattr(workspace_routes, "_workspace", lambda _settings: hermetic)
+        url = (
+            f"/api/workspace/{WORKSPACE_ID}/follow/stream"
+            "?after_cursor=0&max_ticks=1&poll_seconds=0"
+        )
+
+        first = client.get(url, headers=_browser_headers())
+        second = client.get(url, headers=_browser_headers())
+
+        assert first.status_code == second.status_code == 200
+        assert "challenge.two-sse-clients" in first.text
+        assert "challenge.two-sse-clients" in second.text
+    finally:
+        reset_default_command_approval_authority()
+        reset_default_approval_observe_journal()
+
+
 def test_health_still_mutation_false_with_workspace_module(tmp_path: Path) -> None:
     client = _client(tmp_path)
     response = client.get("/api/health")
