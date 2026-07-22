@@ -13,7 +13,10 @@ from quant_system.hermes.composite_turn_submit import (
     parse_submit_turn_body,
     submit_composite_turn,
 )
-from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
+from quant_system.hermes.dark_identity_profile import (
+    PLATFORM_WORKSPACE_ID,
+    PROVIDER_POLICY_DIGEST,
+)
 from quant_system.hermes.intent_payload_port import (
     FakeIntentPayloadPort,
     IntentPayloadPortError,
@@ -43,6 +46,23 @@ def _accepted_receipt(request: CompositeTurnRequest) -> ActionReceipt:
         hermes_session_id="hermes-s1",
         mutation_enabled=True,
     )
+
+
+def _managed_session(*, payload_ttl_days: int = 7) -> SimpleNamespace:
+    return SimpleNamespace(
+        workspace_id=PLATFORM_WORKSPACE_ID,
+        payload_ttl_days=payload_ttl_days,
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _canonical_managed_session_registry():  # type: ignore[no-untyped-def]
+    with patch(
+        "quant_system.hermes.composite_turn_submit.require_web_writable_session",
+        return_value=_managed_session(),
+    ):
+        yield
 
 
 def test_parse_submit_turn_body_closed_schema() -> None:
@@ -146,6 +166,83 @@ def test_happy_path_put_then_turn() -> None:
     assert action.payload_ref == result["payload_ref"]
     assert action.payload_digest == result["payload_digest"]
     assert action.client_action_id == req.client_action_id
+
+
+def test_put_uses_registry_owned_ttl_and_provider_policy() -> None:
+    port = FakeIntentPayloadPort()
+    req = _request()
+    session = _managed_session()
+    with (
+        patch(
+            "quant_system.hermes.composite_turn_submit.require_web_writable_session",
+            return_value=session,
+        ),
+        patch(
+            "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+            return_value=_accepted_receipt(req),
+        ),
+    ):
+        result = submit_composite_turn(
+            SimpleNamespace(), req, mutation_enabled=True, port=port
+        )
+
+    assert result["status"] == "accepted"
+    assert port.puts[0]["ttl_days"] == 7
+    assert port.puts[0]["provider_policy"]
+
+
+def test_noncanonical_registry_ttl_fails_before_payload_store() -> None:
+    port = FakeIntentPayloadPort()
+    req = _request()
+    with (
+        patch(
+            "quant_system.hermes.composite_turn_submit.require_web_writable_session",
+            return_value=_managed_session(payload_ttl_days=14),
+        ),
+        patch(
+            "quant_system.hermes.composite_turn_submit.submit_conversation_turn"
+        ) as turn,
+        pytest.raises(CompositeTurnSubmitError) as exc,
+    ):
+        submit_composite_turn(
+            SimpleNamespace(), req, mutation_enabled=True, port=port
+        )
+
+    assert exc.value.code == "integrity"
+    assert port.puts == []
+    turn.assert_not_called()
+
+
+def test_put_receipt_policy_mismatch_fails_before_command_write() -> None:
+    req = _request()
+    session = _managed_session()
+
+    def wrong_policy(_body):  # type: ignore[no-untyped-def]
+        return {
+            "payload_ref": "payload:sha256:" + ("a" * 64),
+            "payload_digest": "a" * 64,
+            "provider_policy_digest": "b" * 64,
+            "ttl_days": 7,
+        }
+
+    port = FakeIntentPayloadPort(put_handler=wrong_policy)
+    with (
+        patch(
+            "quant_system.hermes.composite_turn_submit.require_web_writable_session",
+            return_value=session,
+        ),
+        patch(
+            "quant_system.hermes.composite_turn_submit.submit_conversation_turn"
+        ) as turn,
+        pytest.raises(CompositeTurnSubmitError) as exc,
+    ):
+        submit_composite_turn(
+            SimpleNamespace(), req, mutation_enabled=True, port=port
+        )
+
+    assert exc.value.code == "integrity"
+    assert exc.value.http_status == 503
+    turn.assert_not_called()
 
 
 def test_put_conflict_maps_to_http_conflict() -> None:

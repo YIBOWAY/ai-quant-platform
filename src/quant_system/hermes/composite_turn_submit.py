@@ -16,6 +16,7 @@ from quant_system.hermes.agent_workspace_actions import (
     ConversationTurn,
     WorkspaceRef,
     session_ref,
+    strip_session_ref,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID
 from quant_system.hermes.dark_identity_profile import (
@@ -24,12 +25,19 @@ from quant_system.hermes.dark_identity_profile import (
     DarkIdentityProfileError,
     build_put_request,
     require_l2a_workspace,
+    require_server_managed_session_policy,
     store_session_id,
 )
 from quant_system.hermes.intent_payload_port import (
     IntentPayloadPort,
     IntentPayloadPortError,
     build_intent_payload_port,
+)
+from quant_system.hermes.session_registry import (
+    HermesSessionNotWritable,
+    HermesSessionRegistryUnavailable,
+    HermesSessionRegistryValidationError,
+    require_web_writable_session,
 )
 from quant_system.hermes.submission_saga import (
     ActionReceipt,
@@ -201,10 +209,60 @@ def submit_composite_turn(
         )
 
     try:
+        session = require_web_writable_session(
+            settings,
+            platform_session_id=strip_session_ref(request.managed_session_ref),
+        )
+    except HermesSessionNotWritable as exc:
+        raise CompositeTurnSubmitError(
+            "conflict",
+            "external_session_not_writable",
+            http_status=409,
+        ) from exc
+    except LookupError as exc:
+        raise CompositeTurnSubmitError(
+            "conflict",
+            "managed_session_missing",
+            http_status=409,
+        ) from exc
+    except HermesSessionRegistryValidationError as exc:
+        raise CompositeTurnSubmitError(
+            "validation",
+            "managed session reference is invalid",
+            http_status=400,
+        ) from exc
+    except HermesSessionRegistryUnavailable as exc:
+        raise CompositeTurnSubmitError(
+            "unavailable",
+            "session registry is unavailable",
+            http_status=503,
+            retryable=True,
+        ) from exc
+
+    if session.workspace_id != request.workspace_id:
+        raise CompositeTurnSubmitError(
+            "conflict",
+            "session_workspace_mismatch",
+            http_status=409,
+        )
+    try:
+        require_server_managed_session_policy(
+            provider_policy_digest=session.provider_policy_digest,
+            payload_ttl_days=session.payload_ttl_days,
+        )
+    except DarkIdentityProfileError as exc:
+        raise CompositeTurnSubmitError(
+            "integrity",
+            "managed session payload policy is invalid",
+            http_status=503,
+        ) from exc
+
+    try:
         put_body = build_put_request(
             managed_session_ref=request.managed_session_ref,
             client_intent_id=request.client_action_id,
             prompt=request.prompt,
+            payload_ttl_days=session.payload_ttl_days,
             workspace_id=request.workspace_id,
         )
     except DarkIdentityProfileError as exc:
@@ -228,6 +286,17 @@ def submit_composite_turn(
             "intent put receipt missing binding",
             http_status=503,
             retryable=True,
+        )
+    if (
+        put_receipt.get("provider_policy_digest")
+        != session.provider_policy_digest
+        or put_receipt.get("ttl_days") != session.payload_ttl_days
+    ):
+        raise CompositeTurnSubmitError(
+            "integrity",
+            "intent put receipt does not match managed session policy",
+            http_status=503,
+            retryable=False,
         )
 
     action = ConversationTurn(

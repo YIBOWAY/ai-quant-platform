@@ -433,6 +433,7 @@ class FakeIntentPayloadPort:
                 "provider_policy_digest",
                 "be9265ec683224ba28643b01938dba87d2642944f3a0516ccb9ff0126f872e31",
             ),
+            "ttl_days": body.get("ttl_days"),
             "status": "stored",
         }
         self._store[key] = {

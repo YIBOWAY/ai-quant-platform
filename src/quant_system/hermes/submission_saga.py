@@ -86,6 +86,10 @@ from quant_system.hermes.command_ledger import (
     HermesCommandLedgerUnavailable,
     HermesCommandValidationError,
 )
+from quant_system.hermes.dark_identity_profile import (
+    DarkIdentityProfileError,
+    require_server_managed_session_policy,
+)
 from quant_system.hermes.session_registry import (
     HermesSessionNotWritable,
     HermesSessionRegistryConflict,
@@ -271,6 +275,19 @@ def _ensure_ready(settings: Settings) -> bool:
     return bool(authorities_ready(settings)["ready"])
 
 
+def _server_managed_session_policy_admitted(
+    *, provider_policy_digest: str, payload_ttl_days: int
+) -> bool:
+    try:
+        require_server_managed_session_policy(
+            provider_policy_digest=provider_policy_digest,
+            payload_ttl_days=payload_ttl_days,
+        )
+    except DarkIdentityProfileError:
+        return False
+    return True
+
+
 def _create_idempotent_command(
     settings: Settings,
     *,
@@ -316,6 +333,17 @@ def submit_create_managed_session(
             mutation_enabled=mutation_enabled,
 )
     _require_root_actor(actor_owner_user_id)
+    if not _server_managed_session_policy_admitted(
+        provider_policy_digest=action.provider_policy_digest,
+        payload_ttl_days=action.payload_ttl_days,
+    ):
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="server_managed_session_policy_required",
+            mutation_enabled=mutation_enabled,
+        )
     if not _ensure_ready(settings):
         return _receipt(
             status="unavailable",
@@ -366,6 +394,7 @@ def submit_create_managed_session(
                 workspace_id=action.workspace.workspace_id,
                 kind="web_managed_session",
                 provider_policy_digest=action.provider_policy_digest,
+                payload_ttl_days=action.payload_ttl_days,
             ),
         )
     except HermesSessionRegistryConflict:
@@ -427,6 +456,17 @@ def submit_fork_into_managed_session(
             mutation_enabled=mutation_enabled,
 )
     _require_root_actor(actor_owner_user_id)
+    if not _server_managed_session_policy_admitted(
+        provider_policy_digest=action.new_provider_policy_digest,
+        payload_ttl_days=action.payload_ttl_days,
+    ):
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="server_managed_session_policy_required",
+            mutation_enabled=mutation_enabled,
+        )
     if not _ensure_ready(settings):
         return _receipt(
             status="unavailable",
@@ -514,6 +554,7 @@ def submit_fork_into_managed_session(
                 parent_platform_session_id=source.platform_session_id,
                 fork_point=action.fork_point,
                 provider_policy_digest=action.new_provider_policy_digest,
+                payload_ttl_days=action.payload_ttl_days,
             ),
         )
     except HermesSessionRegistryConflict:

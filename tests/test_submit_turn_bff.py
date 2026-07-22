@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -17,7 +18,10 @@ from quant_system.config.settings import (
     LocalMutationSettings,
     Settings,
 )
-from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
+from quant_system.hermes.dark_identity_profile import (
+    PLATFORM_WORKSPACE_ID,
+    PROVIDER_POLICY_DIGEST,
+)
 from quant_system.hermes.intent_payload_port import FakeIntentPayloadPort
 from quant_system.hermes.submission_saga import ActionReceipt
 
@@ -151,9 +155,19 @@ def test_submit_turn_happy_path_with_fake_port_and_mocked_turn(
             mutation_enabled=True,
         )
 
-    with patch(
-        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
-        side_effect=_fake_turn,
+    with (
+        patch(
+            "quant_system.hermes.composite_turn_submit.require_web_writable_session",
+            return_value=SimpleNamespace(
+                workspace_id=PLATFORM_WORKSPACE_ID,
+                provider_policy_digest=PROVIDER_POLICY_DIGEST,
+                payload_ttl_days=7,
+            ),
+        ),
+        patch(
+            "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+            side_effect=_fake_turn,
+        ),
     ):
         response = client.post(
             "/api/agent/workspace/submit-turn",

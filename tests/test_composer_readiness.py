@@ -13,6 +13,7 @@ from quant_system.config.settings import (
     LocalMutationSettings,
     Settings,
 )
+from quant_system.hermes import composer_readiness as readiness_module
 from quant_system.hermes.composer_readiness import (
     UPSTREAM_CHAT_WRITE_BLOCKERS,
     authority_readiness,
@@ -20,7 +21,6 @@ from quant_system.hermes.composer_readiness import (
     composer_readiness_snapshot,
     platform_delivery_blockers,
 )
-
 
 ORIGIN = "http://127.0.0.1:3001"
 
@@ -168,8 +168,79 @@ def test_local_mutation_settings_clear_authenticated_bff_blocker() -> None:
     assert ready["chat_write_ready"] is False
     blockers = platform_delivery_blockers(settings)
     assert "authenticated_mutation_bff_unavailable" not in blockers
-    assert "independent_security_review_unavailable" not in blockers
-    assert "user_chat_cutover_approval_required" not in blockers
+    # Local intent cannot self-approve the public security/cutover gates.
+    assert "independent_security_review_unavailable" in blockers
+    assert "user_chat_cutover_approval_required" in blockers
+    assert "runtime_database_role_unavailable" in blockers
     # Research submission still blocked without binding schema.
     assert "research_workflow_submission_unavailable" in blockers
     assert "composer_resume_stop_unavailable" in blockers
+
+
+def test_local_dark_readiness_never_promotes_public_chat_or_hides_upstream(
+    monkeypatch,
+) -> None:
+    """Local operator enablement and public V8 release are separate gates."""
+
+    monkeypatch.setattr(
+        readiness_module, "command_ledger_schema_version", lambda _settings: 1
+    )
+    monkeypatch.setattr(
+        readiness_module, "session_registry_schema_version", lambda _settings: 1
+    )
+    monkeypatch.setattr(
+        readiness_module, "workflow_binding_schema_version", lambda _settings: 1
+    )
+    monkeypatch.setattr(
+        readiness_module, "hermes_runtime_security_ready", lambda _settings: True
+    )
+    settings = Settings(
+        hermes_gateway=HermesGatewaySettings(enabled=False),
+        local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
+        api_cors_origins=[ORIGIN],
+    )
+
+    ready = authority_readiness(settings)
+    assert ready["runtime_security_ready"] is True
+    assert ready["dark_dispatch_schema_ready"] is True
+    assert ready["dark_dispatch_ready"] is False
+    assert ready["local_chat_write_ready"] is False
+    assert ready["composer_write_ready"] is False
+    assert ready["public_chat_write_ready"] is False
+    assert ready["chat_write_ready"] is False
+
+    blockers = chat_write_blockers(settings)
+    assert blockers["upstream_blockers"] == list(UPSTREAM_CHAT_WRITE_BLOCKERS)
+    assert set(UPSTREAM_CHAT_WRITE_BLOCKERS).issubset(blockers["blockers"])
+    assert "durable_dispatch_operational_unavailable" in blockers["blockers"]
+
+
+def test_local_flags_cannot_clear_runtime_security_or_public_cutover_blockers(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        readiness_module, "command_ledger_schema_version", lambda _settings: 1
+    )
+    monkeypatch.setattr(
+        readiness_module, "session_registry_schema_version", lambda _settings: 1
+    )
+    monkeypatch.setattr(
+        readiness_module, "workflow_binding_schema_version", lambda _settings: 1
+    )
+    monkeypatch.setattr(
+        readiness_module, "hermes_runtime_security_ready", lambda _settings: False
+    )
+    settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
+        api_cors_origins=[ORIGIN],
+    )
+
+    ready = authority_readiness(settings)
+    assert ready["schema_ready"] is True
+    assert ready["write_authority_ready"] is False
+    assert ready["local_chat_write_ready"] is False
+    blockers = platform_delivery_blockers(settings)
+    assert "runtime_database_role_unavailable" in blockers
+    assert "independent_security_review_unavailable" in blockers
+    assert "user_chat_cutover_approval_required" in blockers
+    assert "authenticated_mutation_bff_unavailable" not in blockers

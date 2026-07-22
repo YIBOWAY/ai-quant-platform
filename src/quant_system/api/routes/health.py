@@ -71,7 +71,7 @@ def _hermes_command_ledger_status(settings: SettingsDep) -> dict[str, Any]:
     ready = authority_readiness(settings)
     return {
         "database_configured": settings.database.enabled and settings.database.url is not None,
-        "schema_ready": bool(ready["command_ledger_schema_ready"]),
+        "schema_ready": bool(ready["schema_ready"]),
         "schema_version": ready["command_ledger_schema_version"],
         "workflow_binding_schema_ready": bool(ready["workflow_binding_schema_ready"]),
         "workflow_binding_schema_version": ready["workflow_binding_schema_version"],
@@ -79,9 +79,18 @@ def _hermes_command_ledger_status(settings: SettingsDep) -> dict[str, Any]:
         "session_registry_schema_version": ready["session_registry_schema_version"],
         # Ordinary create/fork/turn authorities (ledger + session registry).
         "agent_workspace_authorities_ready": bool(ready["ready"]),
+        "runtime_security_ready": bool(ready["runtime_security_ready"]),
+        "write_authority_ready": bool(ready["write_authority_ready"]),
         # Research prepare binding (ledger + session + 006 workflow binding).
+        "research_binding_schema_ready": bool(
+            ready["research_binding_schema_ready"]
+        ),
         "research_binding_ready": bool(ready["research_binding_ready"]),
+        "dark_dispatch_schema_ready": bool(ready["dark_dispatch_schema_ready"]),
+        "dark_dispatch_ready": bool(ready["dark_dispatch_ready"]),
         "mutation_enabled": bool(ready["mutation_enabled"]),
+        "local_chat_write_ready": bool(ready["local_chat_write_ready"]),
         "composer_write_ready": bool(ready["composer_write_ready"]),
+        "public_chat_write_ready": bool(ready["public_chat_write_ready"]),
         "chat_write_ready": bool(ready["chat_write_ready"]),
     }

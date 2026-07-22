@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from unittest.mock import patch
 from uuid import UUID
 
 import psycopg
@@ -9,9 +10,12 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from quant_system.config.settings import DatabaseSettings, Settings
+from quant_system.hermes.agent_workspace_actions import CreateManagedSession, WorkspaceRef
+from quant_system.hermes.dark_identity_profile import PROVIDER_POLICY_DIGEST
 from quant_system.hermes.session_registry import (
     HermesSessionNotWritable,
     HermesSessionRegistryConflict,
+    HermesSessionRegistryUnavailable,
     HermesSessionRegistryValidationError,
     RegisterWorkspaceSession,
     get_workspace_session,
@@ -19,13 +23,78 @@ from quant_system.hermes.session_registry import (
     require_web_writable_session,
     session_registry_schema_version,
 )
+from quant_system.hermes.submission_saga import submit_create_managed_session
 from quant_system.storage import database as db
 
 pytestmark = pytest.mark.pg
 
 ROOT_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
-DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
+
+
+def test_managed_session_policy_is_server_owned_before_database_access() -> None:
+    settings = Settings(database=DatabaseSettings(enabled=False, auto_migrate=False))
+    with pytest.raises(HermesSessionRegistryValidationError):
+        register_workspace_session(
+            settings,
+            RegisterWorkspaceSession(
+                platform_session_id="web-policy-rejected",
+                hermes_session_id="hermes-policy-rejected",
+                workspace_id="workspace-root",
+                kind="web_managed_session",
+                provider_policy_digest=DIGEST_B,
+                payload_ttl_days=7,
+            ),
+        )
+
+    # Canonical server policy passes validation and reaches the DB boundary.
+    with pytest.raises(HermesSessionRegistryUnavailable):
+        register_workspace_session(
+            settings,
+            RegisterWorkspaceSession(
+                platform_session_id="web-policy-canonical",
+                hermes_session_id="hermes-policy-canonical",
+                workspace_id="workspace-root",
+                kind="web_managed_session",
+                provider_policy_digest=PROVIDER_POLICY_DIGEST,
+                payload_ttl_days=7,
+            ),
+        )
+
+
+def test_create_rejects_browser_policy_before_command_write() -> None:
+    policy_action = CreateManagedSession(
+        client_action_id="reject-browser-policy",
+        workspace=WorkspaceRef(workspace_id="workspace-root"),
+        provider_policy_digest=DIGEST_B,
+        payload_ttl_days=7,
+    )
+    ttl_action = CreateManagedSession(
+        client_action_id="reject-browser-ttl",
+        workspace=WorkspaceRef(workspace_id="workspace-root"),
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        payload_ttl_days=14,
+    )
+    with (
+        patch("quant_system.hermes.submission_saga._ensure_ready", return_value=True),
+        patch("quant_system.hermes.submission_saga._create_idempotent_command") as create,
+    ):
+        policy_receipt = submit_create_managed_session(
+            Settings(database=DatabaseSettings(enabled=False, auto_migrate=False)),
+            policy_action,
+            mutation_enabled=True,
+        )
+        ttl_receipt = submit_create_managed_session(
+            Settings(database=DatabaseSettings(enabled=False, auto_migrate=False)),
+            ttl_action,
+            mutation_enabled=True,
+        )
+
+    assert policy_receipt.status == "unavailable"
+    assert policy_receipt.reason_code == "server_managed_session_policy_required"
+    assert ttl_receipt.status == "unavailable"
+    assert ttl_receipt.reason_code == "server_managed_session_policy_required"
+    create.assert_not_called()
 
 
 def _ensure_test_database(url: str) -> None:
@@ -127,7 +196,8 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
                 hermes_session_id="20260720_web_001",
                 workspace_id="workspace-root",
                 kind="web_managed_session",
-                provider_policy_digest=DIGEST_A,
+                provider_policy_digest=PROVIDER_POLICY_DIGEST,
+                payload_ttl_days=7,
             ),
         )
         assert managed_created is True
@@ -143,7 +213,8 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
                 source_channel="discord",
                 parent_platform_session_id="ext-session-001",
                 fork_point="msg:discord:abc123",
-                provider_policy_digest=DIGEST_B,
+                provider_policy_digest=PROVIDER_POLICY_DIGEST,
+                payload_ttl_days=7,
             ),
         )
         assert fork_created is True
@@ -216,7 +287,8 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                 hermes_session_id="20260720_web_conflict",
                 workspace_id="workspace-root",
                 kind="web_managed_session",
-                provider_policy_digest=DIGEST_A,
+                provider_policy_digest=PROVIDER_POLICY_DIGEST,
+                payload_ttl_days=7,
             ),
         )
         with pytest.raises(HermesSessionRegistryConflict):
@@ -224,10 +296,11 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                 settings,
                 RegisterWorkspaceSession(
                     platform_session_id="web-session-conflict",
-                    hermes_session_id="20260720_web_conflict",
+                    hermes_session_id="20260720_web_conflict_changed",
                     workspace_id="workspace-root",
                     kind="web_managed_session",
-                    provider_policy_digest=DIGEST_B,
+                    provider_policy_digest=PROVIDER_POLICY_DIGEST,
+                    payload_ttl_days=7,
                 ),
             )
         with pytest.raises(HermesSessionRegistryConflict):
@@ -238,7 +311,8 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                     hermes_session_id="20260720_web_conflict",
                     workspace_id="workspace-root",
                     kind="web_managed_session",
-                    provider_policy_digest=DIGEST_A,
+                    provider_policy_digest=PROVIDER_POLICY_DIGEST,
+                    payload_ttl_days=7,
                 ),
             )
         with pytest.raises(HermesSessionRegistryValidationError):
@@ -249,7 +323,7 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                     hermes_session_id="20260720_bad_ext",
                     workspace_id="workspace-root",
                     kind="observed_external_session",
-                    provider_policy_digest=DIGEST_A,
+                    provider_policy_digest=DIGEST_B,
                 ),
             )
         with pytest.raises(HermesSessionRegistryValidationError):
@@ -266,7 +340,8 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
         record = get_workspace_session(
             settings, platform_session_id="web-session-conflict"
         )
-        assert record.provider_policy_digest == DIGEST_A
+        assert record.provider_policy_digest == PROVIDER_POLICY_DIGEST
+        assert record.payload_ttl_days == 7
         with database.connect() as conn:
             assert conn.execute(
                 "SELECT count(*) FROM quant_system.hermes_workspace_sessions"

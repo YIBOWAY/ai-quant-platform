@@ -7,14 +7,14 @@ owner/policy/ttl; create session and composite put must use the same digest.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
     session_ref,
     strip_session_ref,
 )
-
 
 # Platform-side workspace id admitted by L2a-Send.
 PLATFORM_WORKSPACE_ID = "ws-local-main"
@@ -56,6 +56,23 @@ def require_l2a_workspace(workspace_id: str) -> str:
             "L2a-Send only admits workspace ws-local-main",
         )
     return workspace_id
+
+
+def require_server_managed_session_policy(
+    *, provider_policy_digest: object, payload_ttl_days: object
+) -> None:
+    """Admit the one server-owned v0.2 provider policy and immutable TTL."""
+
+    if provider_policy_digest != PROVIDER_POLICY_DIGEST:
+        raise DarkIdentityProfileError(
+            "provider_policy_not_admitted",
+            "managed session provider policy is not server-admitted",
+        )
+    if type(payload_ttl_days) is not int or payload_ttl_days != STORE_TTL_DAYS:
+        raise DarkIdentityProfileError(
+            "invalid_payload_ttl_days",
+            f"payload_ttl_days must equal the server policy {STORE_TTL_DAYS}",
+        )
 
 
 def store_session_id(managed_session_ref: str) -> str:
@@ -113,6 +130,7 @@ def build_put_request(
     managed_session_ref: str,
     client_intent_id: str,
     prompt: str,
+    payload_ttl_days: int,
     workspace_id: str = PLATFORM_WORKSPACE_ID,
 ) -> dict[str, Any]:
     """Build closed-schema stdin body for ``intent_payload_cli put``."""
@@ -135,6 +153,10 @@ def build_put_request(
             "prompt_too_large",
             "prompt exceeds 16 KiB UTF-8 chat ceiling",
         )
+    require_server_managed_session_policy(
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        payload_ttl_days=payload_ttl_days,
+    )
     return {
         "schema_version": STORE_SCHEMA_VERSION,
         "kind": STORE_KIND,
@@ -144,7 +166,7 @@ def build_put_request(
         "client_intent_id": client_intent_id,
         "provider_policy": dict(PROVIDER_POLICY),
         "prompt": prompt,
-        "ttl_days": STORE_TTL_DAYS,
+        "ttl_days": payload_ttl_days,
     }
 
 
@@ -201,5 +223,6 @@ __all__ = [
     "normalize_payload_ref",
     "profile_public_constants",
     "require_l2a_workspace",
+    "require_server_managed_session_policy",
     "store_session_id",
 ]

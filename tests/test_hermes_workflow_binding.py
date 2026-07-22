@@ -1394,9 +1394,16 @@ def test_legacy_event_append_only_function_drift_fails_closed_and_006_restores_i
             "session_registry_schema_ready": True,
             "session_registry_schema_version": 1,
             "agent_workspace_authorities_ready": False,
+            "runtime_security_ready": False,
+            "write_authority_ready": False,
+            "research_binding_schema_ready": False,
             "research_binding_ready": False,
+            "dark_dispatch_schema_ready": False,
+            "dark_dispatch_ready": False,
             "mutation_enabled": False,
+            "local_chat_write_ready": False,
             "composer_write_ready": False,
+            "public_chat_write_ready": False,
             "chat_write_ready": False,
         }
         with pytest.raises(

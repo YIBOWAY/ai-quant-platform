@@ -10,6 +10,7 @@ import psycopg
 import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from pydantic import SecretStr
 
 from quant_system.config.settings import DatabaseSettings, Settings
 from quant_system.hermes.agent_workspace import (
@@ -29,6 +30,7 @@ from quant_system.hermes.agent_workspace_actions import (
     session_ref,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID, HermesCommandLedger
+from quant_system.hermes.dark_identity_profile import PROVIDER_POLICY_DIGEST
 from quant_system.hermes.session_registry import (
     RegisterWorkspaceSession,
     get_workspace_session,
@@ -44,10 +46,11 @@ from quant_system.storage import database as db
 
 pytestmark = pytest.mark.pg
 
-DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
 DIGEST_C = "c" * 64
 WORKSPACE_ID = "ws-v4-agent-workspace"
+RUNTIME_LOGIN = "aqp_agent_workspace_runtime_test"
+RUNTIME_PASSWORD = "agent-workspace-runtime-test-only"
 
 
 def _ensure_test_database(url: str) -> None:
@@ -159,7 +162,7 @@ def _create_action(client_action_id: str = "act-create-1") -> CreateManagedSessi
     return CreateManagedSession(
         client_action_id=client_action_id,
         workspace=WorkspaceRef(workspace_id=WORKSPACE_ID),
-        provider_policy_digest=DIGEST_A,
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
         payload_ttl_days=7,
     )
 
@@ -170,6 +173,36 @@ def _prepare(settings: Settings) -> db.Database:
     assert database is not None
     db.run_migrations(database)
     _reset_authorities(database)
+    assert settings.database.url is not None
+    admin_url = settings.database.url.get_secret_value()
+    with database.connect() as conn:
+        if conn.execute(
+            "SELECT 1 FROM pg_roles WHERE rolname = %s", (RUNTIME_LOGIN,)
+        ).fetchone() is not None:
+            conn.execute(
+                sql.SQL("DROP OWNED BY {}").format(sql.Identifier(RUNTIME_LOGIN))
+            )
+            conn.execute(
+                sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN))
+            )
+        conn.execute(
+            sql.SQL(
+                "CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD {}"
+            ).format(
+                sql.Identifier(RUNTIME_LOGIN),
+                sql.Literal(RUNTIME_PASSWORD),
+            )
+        )
+        conn.execute(
+            sql.SQL("GRANT quant_runtime TO {}").format(
+                sql.Identifier(RUNTIME_LOGIN)
+            )
+        )
+    runtime_params = conninfo_to_dict(admin_url)
+    runtime_params["user"] = RUNTIME_LOGIN
+    runtime_params["password"] = RUNTIME_PASSWORD
+    settings.database.url = SecretStr(make_conninfo(**runtime_params))
+    db.reset_database_cache()
     return database
 
 
@@ -277,16 +310,16 @@ def test_mutation_enabled_create_is_idempotent_by_digest() -> None:
     assert commands == 1
     assert sessions == 1
 
-    # Same client_action_id, different digest → conflict, zero second write.
-    conflict_action = CreateManagedSession(
+    # Browser cannot manufacture a second valid create digest by selecting TTL.
+    rejected_action = CreateManagedSession(
         client_action_id="act-create-idem",
         workspace=WorkspaceRef(workspace_id=WORKSPACE_ID),
-        provider_policy_digest=DIGEST_B,
-        payload_ttl_days=7,
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        payload_ttl_days=14,
     )
-    conflict = workspace.act(actor, conflict_action)
-    assert conflict.status == "conflict"
-    assert conflict.reason_code == "idempotency_digest_conflict"
+    rejected = workspace.act(actor, rejected_action)
+    assert rejected.status == "unavailable"
+    assert rejected.reason_code == "server_managed_session_policy_required"
     commands2, sessions2 = _count_rows(database)
     assert (commands2, sessions2) == (1, 1)
 
@@ -294,7 +327,8 @@ def test_mutation_enabled_create_is_idempotent_by_digest() -> None:
         settings, platform_session_id=first.platform_session_id  # type: ignore[arg-type]
     )
     assert record.kind == "web_managed_session"
-    assert record.provider_policy_digest == DIGEST_A
+    assert record.provider_policy_digest == PROVIDER_POLICY_DIGEST
+    assert record.payload_ttl_days == 7
     assert record.web_writable is True
 
 
@@ -324,8 +358,8 @@ def test_fork_creates_managed_without_mutating_external() -> None:
         source_session_ref=session_ref(external.platform_session_id),
         source_channel="discord",
         fork_point="cursor:42",
-        new_provider_policy_digest=DIGEST_B,
-        payload_ttl_days=14,
+        new_provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        payload_ttl_days=7,
     )
     receipt = workspace.act(actor, fork)
     assert receipt.status == "accepted"
@@ -347,7 +381,8 @@ def test_fork_creates_managed_without_mutating_external() -> None:
     assert managed.parent_platform_session_id == external.platform_session_id
     assert managed.fork_point == "cursor:42"
     assert managed.source_channel == "discord"
-    assert managed.provider_policy_digest == DIGEST_B
+    assert managed.provider_policy_digest == PROVIDER_POLICY_DIGEST
+    assert managed.payload_ttl_days == 7
 
     # Idempotent fork retry
     again = workspace.act(actor, fork)
@@ -529,7 +564,7 @@ def test_submit_action_document_path_and_unsupported_kind() -> None:
         submit_action(settings, bad_mode, mutation_enabled=True)
     assert excinfo.value.code == "validation"
 
-    # Other non-research unsupported kinds keep action_kind_not_implemented.
+    # V7 authority kinds fail closed until the canonical adapter is mounted.
     stop_doc = {
         "schema_version": 1,
         "kind": "run.stop.request",
@@ -542,7 +577,7 @@ def test_submit_action_document_path_and_unsupported_kind() -> None:
     }
     stop = submit_action(settings, stop_doc, mutation_enabled=True)
     assert stop.status == "unavailable"
-    assert stop.reason_code == "action_kind_not_implemented"
+    assert stop.reason_code == "canonical_authority_adapter_unavailable"
 
 
 def test_public_workspace_factory_defaults_mutation_off() -> None:
