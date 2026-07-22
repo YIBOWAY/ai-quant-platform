@@ -48,6 +48,11 @@ from quant_system.hermes.agent_workspace_actions import (
     session_ref,
     strip_session_ref,
 )
+from quant_system.hermes.approval_release_port import (
+    ApprovalReleaseError,
+    default_approval_release_adapter,
+    map_decision_to_release_choice,
+)
 from quant_system.hermes.command_approval_authority import (
     CommandApprovalAuthorityError,
     default_command_approval_authority,
@@ -626,11 +631,15 @@ def submit_decide_hermes_command_approval(
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
 ) -> ActionReceipt:
-    """V7a: exact single-use allow_once|deny against hermetic approval authority.
+    """V7a+V7b: exact CAS decide then hermetic respond_approval release/signal.
 
-    Ledger row is optional audit (control-plane session); the challenge CAS is
-    owned by ``CommandApprovalAuthority``. No Hermes network call; no Gate
-    1/2/3; no always-allow.
+    Challenge CAS is owned by ``CommandApprovalAuthority``. After a successful
+    decide (including exact client_action_id+digest replay), the saga maps
+    ``allow_once``→``once`` / ``deny``→``deny`` and calls the hermetic approval
+    release port so the waiter can be signalled. Release failure does **not**
+    roll back the CAS; the receipt becomes ``reconciling`` so the client
+    follows workspace state (pending already empty). No always-allow; no Gate
+    1/2/3; no live HTTP Hermes in M1.
     """
     digest = canonical_action_digest(action)
     if not mutation_enabled:
@@ -675,9 +684,29 @@ def submit_decide_hermes_command_approval(
             mutation_enabled=mutation_enabled,
         )
 
+    # V7b: release + signal after CAS. Authority already committed; never
+    # resurrect pending on release failure. Exact decide replay also re-enters
+    # respond_approval so the release side can idempotent-replay.
+    try:
+        choice = map_decision_to_release_choice(action.decision)
+        default_approval_release_adapter().respond_approval(
+            decided.run_id,
+            choice=choice,
+            challenge_id=decided.approval_id,
+            action_digest=decided.command_digest,
+        )
+    except ApprovalReleaseError as exc:
+        return _receipt(
+            status="reconciling",
+            action=action,
+            digest=digest,
+            run_id=decided.run_id,
+            reason_code=exc.code or "approval_release_failed",
+            mutation_enabled=mutation_enabled,
+        )
+
     # Best-effort durable audit row on the control-plane session. Challenge CAS
-    # already committed above; ledger outage must not undo the decision, but
-    # still surfaces as reconciling so the client follows workspace state.
+    # + release already committed above; ledger outage must not undo them.
     command_id: str | None = None
     if _ensure_ready(settings):
         control_session = control_plane_session_id(action.workspace.workspace_id)
@@ -705,7 +734,7 @@ def submit_decide_hermes_command_approval(
                         reason_code="idempotency_digest_conflict",
                         mutation_enabled=mutation_enabled,
                     )
-            # Authority already decided; return accepted without command_id.
+            # Authority + release already decided; return accepted without command_id.
             command_id = None
 
     return _receipt(

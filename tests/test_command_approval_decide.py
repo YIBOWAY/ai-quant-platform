@@ -14,6 +14,11 @@ from quant_system.hermes.agent_workspace_actions import (
     canonical_action_digest,
     parse_user_action_v1,
 )
+from quant_system.hermes.approval_release_port import (
+    default_approval_release_adapter,
+    project_pending_challenge,
+    reset_default_approval_release_adapter,
+)
 from quant_system.hermes.command_approval_authority import (
     CommandApprovalAuthority,
     CommandApprovalAuthorityError,
@@ -29,8 +34,10 @@ WS = "ws-v7a-decide"
 @pytest.fixture(autouse=True)
 def _reset_authority() -> None:
     reset_default_command_approval_authority()
+    reset_default_approval_release_adapter()
     yield
     reset_default_command_approval_authority()
+    reset_default_approval_release_adapter()
 
 
 def _future_expiry(hours: int = 2) -> str:
@@ -234,20 +241,21 @@ def test_authority_fail_closed_matrix() -> None:
 
 
 def test_submit_action_decide_mutation_gate_and_accept(tmp_path=None) -> None:
-    """Saga path without requiring PG: mutation OFF unavailable; ON accepts CAS."""
+    """Saga path without requiring PG: mutation OFF unavailable; ON accepts CAS+release."""
     from quant_system.config.settings import DatabaseSettings, Settings
 
     settings = Settings(
         database=DatabaseSettings(enabled=False, auto_migrate=False),
     )
-    exp = _future_expiry()
-    default_command_approval_authority().seed_pending(
+    # Dual-seed authority + release port so V7b respond_approval can commit.
+    row = project_pending_challenge(
         workspace_id=WS,
-        approval_id="challenge.saga",
         run_id="hermes.saga",
         command_digest=DIGEST,
-        expires_at=exp,
+        approval_id="challenge.saga",
+        ttl_seconds=7200.0,
     )
+    exp = str(row["expires_at"])
     doc = {
         "schema_version": 1,
         "kind": "hermes.command_approval.decide",
@@ -266,15 +274,26 @@ def test_submit_action_decide_mutation_gate_and_accept(tmp_path=None) -> None:
     assert off.reason_code == "authenticated_mutation_bff_unavailable"
     # Challenge still pending when mutation OFF (no side effect).
     assert len(default_command_approval_authority().list_pending(WS)) == 1
+    assert default_approval_release_adapter().respond_calls == 0
 
     on = submit_action(settings, doc, mutation_enabled=True)
     assert on.status == "accepted"
     assert on.reason_code is None
     assert default_command_approval_authority().list_pending(WS) == []
+    events = default_approval_release_adapter().events("hermes.saga")
+    assert [e["event_type"] for e in events] == [
+        "approval.responded",
+        "approval.release_committed",
+        "approval.signalled",
+    ]
+    assert events[0]["payload"]["choice"] == "deny"
 
-    # Replay same action id+digest is accepted (idempotent).
+    # Replay same action id+digest is accepted (idempotent release too).
     replay = submit_action(settings, doc, mutation_enabled=True)
     assert replay.status == "accepted"
+    # No second signalled set.
+    events2 = default_approval_release_adapter().events("hermes.saga")
+    assert len(events2) == 3
 
     # Double-click different decision after consume → conflict.
     other = dict(doc, client_action_id="act-saga-2", decision="allow_once")
