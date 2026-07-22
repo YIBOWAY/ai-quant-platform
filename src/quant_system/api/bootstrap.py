@@ -5,6 +5,7 @@ from typing import Any
 
 from quant_system.agent.paths import resolve_agent_output_dir
 from quant_system.api.jobs.backtest_jobs import BacktestJobRunner
+from quant_system.api.safety.mutation_rate_limit import OwnerMutationRateLimiter
 from quant_system.config.settings import Settings, reload_settings
 
 
@@ -35,4 +36,5 @@ def build_services(
             api_runs_dir=api_runs_dir,
             settings=active_settings,
         ),
+        "owner_mutation_rate_limiter": OwnerMutationRateLimiter(),
     }

@@ -27,6 +27,7 @@ from quant_system.api.safety.local_session import (
     verify_csrf,
     verify_session_cookie,
 )
+from quant_system.api.safety.mutation_rate_limit import OwnerMutationRateLimiter
 from quant_system.api.server import create_app
 from quant_system.config.settings import HermesGatewaySettings, Settings
 from quant_system.hermes.command_ledger import ROOT_USER_ID
@@ -283,6 +284,54 @@ def test_health_mutation_still_false_with_session_module(tmp_path: Path) -> None
     assert response.status_code == 200
     ledger = response.json()["hermes_command_ledger"]
     assert ledger["mutation_enabled"] is False
+
+
+def test_mutation_bff_returns_429_after_session_budget(tmp_path: Path) -> None:
+    from quant_system.config.settings import LocalMutationSettings
+
+    settings = _settings().model_copy(
+        update={
+            "local_mutation": LocalMutationSettings(
+                enabled=True,
+                composer_open=False,
+            )
+        }
+    )
+    app = create_app(
+        settings=settings,
+        output_dir=tmp_path,
+        bind_address="127.0.0.1",
+    )
+    app.state.services["owner_mutation_rate_limiter"] = OwnerMutationRateLimiter(
+        max_requests=1,
+        window_seconds=60,
+    )
+    client = TestClient(app)
+    token = issue_bootstrap_token(tmp_path)
+    boot = client.post(
+        "/api/auth/owner/bootstrap",
+        json={"bootstrap_token": token},
+        headers=_browser_headers(),
+    )
+    csrf = boot.json()["csrf_token"]
+    headers = {**_browser_headers(), CSRF_HEADER_NAME: csrf}
+    body = {
+        "action": {
+            "schema_version": 1,
+            "kind": "managed_session.create",
+            "client_action_id": "rate-limit-action",
+            "workspace": {"workspace_id": "ws-rate-limit"},
+            "provider_policy_digest": "a" * 64,
+            "payload_ttl_days": 7,
+        }
+    }
+
+    first = client.post("/api/workspace/ws-rate-limit/act", json=body, headers=headers)
+    assert first.status_code != 429
+    second = client.post("/api/workspace/ws-rate-limit/act", json=body, headers=headers)
+    assert second.status_code == 429
+    assert second.headers["retry-after"] == "60"
+    assert second.json()["detail"]["code"] == "mutation_rate_limited"
 
 
 def test_logout_clears_cookies(tmp_path: Path) -> None:

@@ -20,6 +20,10 @@ from quant_system.api.safety.local_session import (
     require_mutation_precheck,
     verify_session_cookie,
 )
+from quant_system.api.safety.mutation_rate_limit import (
+    MutationRateLimitExceeded,
+    OwnerMutationRateLimiter,
+)
 from quant_system.config.settings import Settings
 from quant_system.hermes.gateway_client import HermesApiReadClient
 
@@ -125,7 +129,7 @@ def require_mutation_security(request: Request) -> OwnerSession:
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     try:
         require_loopback_peer(request.client.host if request.client else None)
-        return require_mutation_precheck(
+        session = require_mutation_precheck(
             output_dir=get_output_dir(request),
             policy=_local_session_policy(request),
             cookie_value=request.cookies.get(SESSION_COOKIE_NAME),
@@ -135,6 +139,21 @@ def require_mutation_security(request: Request) -> OwnerSession:
             sec_fetch_site=request.headers.get("sec-fetch-site"),
             mutation_enabled=mutation_enabled,
         )
+        limiter = request.app.state.services.get("owner_mutation_rate_limiter")
+        if not isinstance(limiter, OwnerMutationRateLimiter):
+            raise LocalSessionForbidden("mutation rate limiter unavailable")
+        limiter.consume(session.session_id)
+        return session
+    except MutationRateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+            detail={
+                "code": exc.code,
+                "message": "mutation rate limit exceeded",
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+        ) from exc
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _security_http_error(exc) from exc
 
