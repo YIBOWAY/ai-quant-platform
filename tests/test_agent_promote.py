@@ -237,6 +237,46 @@ def test_happy_path_writes_module_init_and_test_scaffold(dirs) -> None:
     ast.parse(test_content)
 
 
+def test_gate3_scaffold_sizes_history_from_factor_lookback_and_is_ruff_clean(
+    dirs,
+) -> None:
+    import subprocess
+    import sys
+
+    source = _FACTOR_SRC.replace(
+        "default_lookback = 20", "default_lookback = 252"
+    ).replace(
+        'factor_id = "wiring_test_factor"',
+        'factor_id = "paper_reversal_momentum_long_lookback_test_factor"',
+    )
+    _write_candidate(dirs["agent"], "cand-long-lookback", source)
+
+    result = _promote("cand-long-lookback", dirs)
+    content = result.test_path.read_text(encoding="utf-8")
+
+    assert "def _synthetic_ohlcv(rows: int = 272)" in content
+    ruff = shutil.which("ruff")
+    if ruff is None:
+        candidate = Path(sys.executable).with_name("ruff")
+        ruff = str(candidate) if candidate.exists() else None
+    if ruff is None:
+        pytest.skip("ruff executable not available")
+    checked = subprocess.run(
+        [
+            ruff,
+            "check",
+            "--no-cache",
+            "--config",
+            str(Path(__file__).resolve().parents[1] / "pyproject.toml"),
+            str(result.test_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
 def test_init_regeneration_is_sorted_across_promotions(dirs) -> None:
     _write_candidate(dirs["agent"], "cand-w", _FACTOR_SRC)
     _write_candidate(dirs["agent"], "cand-a", _SECOND_FACTOR_SRC)

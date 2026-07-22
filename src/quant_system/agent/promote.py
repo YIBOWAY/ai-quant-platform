@@ -111,6 +111,7 @@ def promote_candidate(
 
     # 3. Static discovery of the single factor class -- no exec.
     class_name, factor_id = _extract_factor_class(source, candidate_id)
+    default_lookback = _extract_default_lookback(source, candidate_id)
 
     # 4. Registry-collision refusal (review finding F4 + adversarial re-review):
     # a promoted module whose factor_id shadows any registrable factor would make
@@ -192,7 +193,11 @@ def promote_candidate(
             tests_dir.mkdir(parents=True, exist_ok=True)
             _write_new(
                 test_path,
-                _test_scaffold(class_name=class_name, factor_id=factor_id),
+                _test_scaffold(
+                    class_name=class_name,
+                    factor_id=factor_id,
+                    default_lookback=default_lookback,
+                ),
             )
         except BaseException:
             module_path.unlink(missing_ok=True)
@@ -297,6 +302,41 @@ def _extract_factor_id(class_def: ast.ClassDef) -> str | None:
     return None
 
 
+def _extract_default_lookback(source: str, context: str) -> int:
+    tree = ast.parse(source)
+    factor_classes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and _has_base_factor_base(node)
+    ]
+    if len(factor_classes) != 1:
+        raise PromotionError(
+            f"candidate {context!r} must define exactly one BaseFactor subclass"
+        )
+    for stmt in factor_classes[0].body:
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(stmt, ast.Assign):
+            targets, value = stmt.targets, stmt.value
+        elif isinstance(stmt, ast.AnnAssign):
+            targets, value = [stmt.target], stmt.value
+        if any(
+            isinstance(target, ast.Name) and target.id == "default_lookback"
+            for target in targets
+        ):
+            if (
+                isinstance(value, ast.Constant)
+                and isinstance(value.value, int)
+                and not isinstance(value.value, bool)
+                and value.value > 0
+            ):
+                return value.value
+            break
+    raise PromotionError(
+        f"candidate {context!r} must assign a positive literal default_lookback"
+    )
+
+
 def _provenance_header(
     *,
     candidate_id: str,
@@ -393,8 +433,25 @@ def _regenerate_init(library_dir: Path) -> Path:
     return init_path
 
 
-def _test_scaffold(*, class_name: str, factor_id: str) -> str:
-    return f'''"""Scaffold test for promoted factor {factor_id!r} (generated at Gate 3).
+def _test_scaffold(
+    *, class_name: str, factor_id: str, default_lookback: int
+) -> str:
+    synthetic_rows = max(80, default_lookback + 20)
+    import_module = f"{_PROMOTED_PACKAGE}.{factor_id}"
+    single_import = f"from {import_module} import {class_name}"
+    if len(single_import) <= 100:
+        factor_import = single_import
+        factor_constructor = class_name
+    else:
+        factor_import = (
+            f"from {_PROMOTED_PACKAGE} import (\n"
+            f"    {factor_id} as factor_module,\n"
+            ")"
+        )
+        factor_constructor = f"factor_module.{class_name}"
+    return f'''"""Scaffold test for a promoted factor (generated at Gate 3).
+
+Factor id: ``{factor_id}``.
 
 Extend with factor-specific assertions during the git-diff review.
 """
@@ -403,10 +460,10 @@ from __future__ import annotations
 
 import pandas as pd
 
-from {_PROMOTED_PACKAGE}.{factor_id} import {class_name}
+{factor_import}
 
 
-def _synthetic_ohlcv(rows: int = 80) -> pd.DataFrame:
+def _synthetic_ohlcv(rows: int = {synthetic_rows}) -> pd.DataFrame:
     timestamps = pd.date_range("2024-01-01", periods=rows, freq="D", tz="UTC")
     close = 100.0 + 0.5 * pd.Series(range(rows), dtype="float64")
     return pd.DataFrame(
@@ -420,7 +477,7 @@ def _synthetic_ohlcv(rows: int = 80) -> pd.DataFrame:
 
 
 def test_{factor_id}_metadata() -> None:
-    factor = {class_name}()
+    factor = {factor_constructor}()
     metadata = factor.metadata
     assert metadata.factor_id == "{factor_id}"
     assert metadata.factor_name
@@ -430,7 +487,7 @@ def test_{factor_id}_metadata() -> None:
 
 
 def test_{factor_id}_computes_on_synthetic_ohlcv() -> None:
-    factor = {class_name}()
+    factor = {factor_constructor}()
     result = factor.compute(_synthetic_ohlcv())
     assert not result.empty
     assert set(result["factor_id"]) == {{"{factor_id}"}}

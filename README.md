@@ -54,10 +54,11 @@ domain backend, not an independent Phase 15 product track.
 - Options Income Screener, Options Radar, and Buy-Side Options Assistant.
 - Local AlphaGBM-style options toolbox and local Futu option quote cache.
 - Read-only AI HOT news research feed with optional PostgreSQL stale fallback.
-- Strategy Catalog with the reversal/momentum replication, the registered
+- Strategy Catalog with the reversal/momentum paper-workflow proxy, the registered
   cross-sectional Top-N backtest strategy, and a mean-reversion Top-N strategy.
-- Reversal/momentum replication runs persist as local `replication-*` artifacts
-  with a dedicated detail page.
+- Reversal/momentum proxy runs persist as local `replication-*` artifacts with a
+  dedicated detail page. They exercise a monthly long-short workflow; they are
+  not a complete global/country/earnings-event replication of the paper.
 - Backtest engine controls: rebalance frequency (every bar / weekly / monthly),
   per-symbol weight cap, API-level sector cap when a sector map is supplied,
   and per-name return attribution.

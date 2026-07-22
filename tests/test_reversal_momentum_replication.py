@@ -110,6 +110,18 @@ def test_reversal_momentum_replication_defaults_to_decile_portfolios() -> None:
     assert first_composite["long_count"] == 2
     assert first_composite["short_count"] == 2
     assert result["methodology"]["formation"] == "decile long-short portfolios"
+    assert result["methodology"]["scope_classification"] == "workflow_proxy"
+    assert result["methodology"]["full_paper_replication"] is False
+    assert (
+        result["methodology"]["terminal_month_completeness"][
+            "exchange_holiday_calendar"
+        ]
+        is False
+    )
+    assert any(
+        "not a full paper replication" in warning
+        for warning in result["warnings"]
+    )
 
 
 def test_reversal_momentum_replication_excludes_low_price_names() -> None:
@@ -124,3 +136,70 @@ def test_reversal_momentum_replication_excludes_low_price_names() -> None:
 
     assert "S00" not in {row["symbol"] for row in result["positions"]}
     assert any("below $1" in warning for warning in result["warnings"])
+
+
+def test_reversal_momentum_replication_excludes_terminal_partial_month() -> None:
+    frame = _wide_frame()
+    partial_timestamp = pd.Timestamp("2024-07-15", tz="UTC")
+    partial_rows = frame.loc[
+        frame["timestamp"] == frame["timestamp"].max()
+    ].copy()
+    partial_rows["timestamp"] = partial_timestamp
+    partial_rows["event_ts"] = partial_timestamp
+    partial_rows["knowledge_ts"] = partial_timestamp
+    partial_rows["close"] *= 1.5
+
+    result = build_reversal_momentum_replication(
+        pd.concat([frame, partial_rows], ignore_index=True),
+        initial_cash=1.0,
+        top_n=1,
+    )
+
+    return_dates = {
+        pd.Timestamp(row["return_date"])
+        for row in result["monthly_returns"]
+    }
+    assert pd.Timestamp("2024-07-31", tz="UTC") not in return_dates
+
+
+def test_reversal_momentum_replication_keeps_complete_business_month() -> None:
+    frame = _wide_frame()
+    calendar_month_end = frame["timestamp"].max()
+    last_trading_day = pd.Timestamp("2024-06-28", tz="UTC")
+    terminal = frame["timestamp"] == calendar_month_end
+    frame.loc[terminal, "timestamp"] = last_trading_day
+    frame.loc[terminal, "event_ts"] = last_trading_day
+    frame.loc[terminal, "knowledge_ts"] = last_trading_day
+
+    result = build_reversal_momentum_replication(
+        frame,
+        initial_cash=1.0,
+        top_n=1,
+    )
+
+    return_dates = {
+        pd.Timestamp(row["return_date"])
+        for row in result["monthly_returns"]
+    }
+    assert pd.Timestamp("2024-06-30", tz="UTC") in return_dates
+
+
+def test_reversal_momentum_replication_aligns_noise_diagnostics_by_month() -> None:
+    result = build_reversal_momentum_replication(
+        _wide_frame(),
+        initial_cash=1.0,
+        top_n=1,
+    )
+
+    assert result["diagnostics"]["high_noise_average_reversal_return"] is not None
+
+
+def test_reversal_momentum_replication_treats_all_invalid_rows_as_empty() -> None:
+    invalid = pd.DataFrame(
+        [{"symbol": None, "timestamp": None, "close": None}]
+    )
+
+    result = build_reversal_momentum_replication(invalid)
+
+    assert result["metrics"]["observation_months"] == 0
+    assert result["warnings"]

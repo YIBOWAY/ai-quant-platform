@@ -1,6 +1,6 @@
-# 短期反转与长期动量复现
+# 短期反转与长期动量论文工作流代理
 
-本文档描述以下论文在本地平台上的复现：
+本文档描述一个受以下论文启发的本地月度多空工作流代理，而不是论文完整复现：
 
 Short-Term Reversals and Longer-Term Momentum around the World: Theory and
 Evidence. DOI: `10.1093/rfs/hhaf057`。
@@ -13,7 +13,7 @@ C:\Users\86189\Desktop\Short-Term Reversals and Longer-Term Momentum around the 
 
 ## 平台实现了什么
 
-所实现的工作流复现了论文核心的月度组合检验：
+所实现的代理覆盖论文核心信号的一个月度组合工作流子集：
 
 1. 从所选只读数据源拉取日频 OHLCV 数据。
 2. 将日收盘价转换为月末收盘价。
@@ -82,6 +82,8 @@ recent mirror，数据库不可用时不影响详情页复看。
 - 论文采用广泛的全球股票池。小型 ETF 篮子对于验证平台流程很有用，
   但并非完整的学术复现。
 - 本地实现大约需要 14 个月的月末收盘价，才能产生 12-2 动量信号。
+- 终止月份只使用通用周一至周五 business-month-end heuristic 判断完整性；
+  它能识别周末月末，但没有加载各交易所节假日日历，不能声称全球市场精确完整性。
 
 ## 当前范围限制
 

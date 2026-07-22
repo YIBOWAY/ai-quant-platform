@@ -20,6 +20,42 @@ PAPER_METADATA = {
     "journal": "The Review of Financial Studies",
 }
 
+_PROXY_SCOPE_WARNING = (
+    "Workflow proxy only: this is not a full paper replication; country-level, "
+    "earnings-window, and global-market hypothesis tests are not implemented."
+)
+_CALENDAR_SCOPE_WARNING = (
+    "Terminal-month completeness uses a generic Monday-Friday business-month-end "
+    "heuristic; exchange-specific holiday calendars are not modeled."
+)
+
+
+def _methodology(*, formation: str) -> dict[str, Any]:
+    return {
+        "scope_classification": "workflow_proxy",
+        "full_paper_replication": False,
+        "implemented_scope": "monthly cross-sectional long-short signal workflow",
+        "omitted_paper_tests": [
+            "country-level tests",
+            "earnings-window tests",
+            "global-market hypothesis tests",
+        ],
+        "terminal_month_completeness": {
+            "method": "generic_business_month_end",
+            "weekend_aware": True,
+            "exchange_holiday_calendar": False,
+        },
+        "formation": formation,
+        "reversal_signal": "past 1-month return, ranked contrarian",
+        "momentum_signal": "past months t-12 through t-2 return, ranked continuation",
+        "holding_period": "subsequent month",
+        "price_filter": "exclude signal observations with prior-month close below $1",
+    }
+
+
+def _scope_warnings() -> list[str]:
+    return [_PROXY_SCOPE_WARNING, _CALENDAR_SCOPE_WARNING]
+
 
 def build_reversal_momentum_replication(
     ohlcv: pd.DataFrame,
@@ -27,9 +63,9 @@ def build_reversal_momentum_replication(
     initial_cash: float = 1.0,
     top_n: int | None = None,
 ) -> dict[str, Any]:
-    """Build a monthly long-short replication from normalized daily OHLCV data."""
+    """Build the paper-inspired monthly long-short workflow proxy."""
 
-    warnings: list[str] = []
+    warnings = _scope_warnings()
     if ohlcv.empty:
         return _empty_result(initial_cash, ["No OHLCV rows were available."])
 
@@ -112,13 +148,7 @@ def build_reversal_momentum_replication(
 
     return {
         "paper": PAPER_METADATA,
-        "methodology": {
-            "formation": formation,
-            "reversal_signal": "past 1-month return, ranked contrarian",
-            "momentum_signal": "past months t-12 through t-2 return, ranked continuation",
-            "holding_period": "subsequent month",
-            "price_filter": "exclude signal observations with prior-month close below $1",
-        },
+        "methodology": _methodology(formation=formation),
         "metrics": metrics,
         "diagnostics": diagnostics,
         "equity_curve": dataframe_records(equity_curve),
@@ -147,6 +177,11 @@ def _monthly_panel(ohlcv: pd.DataFrame) -> pd.DataFrame:
     frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
     frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
     frame = frame.dropna(subset=["symbol", "timestamp", "close"])
+    if frame.empty:
+        return pd.DataFrame(
+            columns=["symbol", "timestamp", "close", "monthly_return"]
+        )
+    observed_end = frame["timestamp"].max()
     monthly = (
         frame.sort_values(["symbol", "timestamp"])
         .set_index("timestamp")
@@ -157,6 +192,15 @@ def _monthly_panel(ohlcv: pd.DataFrame) -> pd.DataFrame:
         .rename("close")
         .reset_index()
     )
+    # A calendar month can finish on a weekend. Treat its final business day as
+    # complete, while excluding a genuinely in-progress terminal month.
+    terminal_month_start = observed_end.normalize().replace(day=1)
+    terminal_month_end = terminal_month_start + pd.offsets.BMonthEnd(0)
+    if observed_end.normalize() < terminal_month_end.normalize():
+        last_complete_month_end = observed_end - pd.offsets.MonthEnd(1)
+        monthly = monthly.loc[
+            monthly["timestamp"] <= last_complete_month_end.normalize()
+        ].copy()
     monthly["monthly_return"] = monthly.groupby("symbol")["close"].pct_change()
     return monthly.dropna(subset=["monthly_return"]).reset_index(drop=True)
 
@@ -299,15 +343,18 @@ def _diagnostics(monthly_returns: pd.DataFrame, signal: pd.DataFrame) -> dict[st
         high_noise_reversal = None
         low_noise_reversal = None
     else:
-        aligned = pd.DataFrame(
-            {
-                "noise": noise_by_month,
-                "reversal": reversal.rename(
-                    index=lambda value: str(
-                        pd.Timestamp(value) - pd.offsets.MonthEnd(1)
-                    )
-                ),
-            }
+        noise_by_month.index = pd.to_datetime(noise_by_month.index, utc=True)
+        reversal_by_rebalance_month = reversal.copy()
+        reversal_by_rebalance_month.index = (
+            pd.to_datetime(reversal_by_rebalance_month.index, utc=True)
+            - pd.offsets.MonthEnd(1)
+        )
+        aligned = pd.concat(
+            [
+                noise_by_month.rename("noise"),
+                reversal_by_rebalance_month.rename("reversal"),
+            ],
+            axis=1,
         ).dropna()
         if len(aligned) < 2:
             high_noise_reversal = None
@@ -345,13 +392,7 @@ def _strategy_average(frame: pd.DataFrame, strategy: str) -> float | None:
 def _empty_result(initial_cash: float, warnings: list[str]) -> dict[str, Any]:
     return {
         "paper": PAPER_METADATA,
-        "methodology": {
-            "formation": "decile long-short portfolios",
-            "reversal_signal": "past 1-month return, ranked contrarian",
-            "momentum_signal": "past months t-12 through t-2 return, ranked continuation",
-            "holding_period": "subsequent month",
-            "price_filter": "exclude signal observations with prior-month close below $1",
-        },
+        "methodology": _methodology(formation="decile long-short portfolios"),
         "metrics": {
             "total_return": 0.0,
             "annualized_return": 0.0,
@@ -373,5 +414,5 @@ def _empty_result(initial_cash: float, warnings: list[str]) -> dict[str, Any]:
         "monthly_returns": [],
         "positions": [],
         "legs": [],
-        "warnings": warnings,
+        "warnings": [*warnings, *_scope_warnings()],
     }
