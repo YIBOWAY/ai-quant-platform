@@ -34,6 +34,22 @@ function canDecide(row: WorkspaceApprovalProjection): boolean {
 }
 
 /**
+ * V7d: optimistic hide only while the spine still shows the row as pending.
+ * Once the projector surfaces a terminal decided/expired fact, keep the row
+ * so decision is visible and canDecide stays false.
+ */
+export function filterApprovalsForPanel(
+  rows: WorkspaceApprovalProjection[],
+  consumedIds: Record<string, true>,
+): WorkspaceApprovalProjection[] {
+  return rows.filter((row) => {
+    if (!consumedIds[row.approval_id]) return true;
+    // Hide only while still pending; surface terminal decided facts (V7d).
+    return !canDecide(row);
+  });
+}
+
+/**
  * L5a observe + V7a decide: Hermes command-approval challenges from the shared
  * follow spine. Empty is honest. Controls appear only for real pending rows
  * with full CAS binding. allow_once|deny only — no always-allow.
@@ -48,12 +64,12 @@ export function WorkbenchCommandApprovalsPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
-  // Optimistic hide after accepted decide until spine resync drops the row.
+  // Optimistic hide of still-pending rows after accepted decide; V7d keeps terminal decided facts visible.
   const [consumedIds, setConsumedIds] = useState<Record<string, true>>({});
 
   const approvals = useMemo(() => {
     const raw = Array.isArray(follow.approvals) ? follow.approvals : [];
-    return raw.filter((row) => !consumedIds[row.approval_id]);
+    return filterApprovalsForPanel(raw, consumedIds);
   }, [follow.approvals, consumedIds]);
   const health = follow.snapshotCursor != null || follow.transport !== "idle";
   const commandApprovalHealth =
@@ -108,6 +124,7 @@ export function WorkbenchCommandApprovalsPanel({
       className="space-y-2"
       data-hermes-command-approvals
       data-hermes-approval-observe="l5a-m1"
+      data-hermes-approval-projector="v7d-m1"
       data-hermes-approval-decide="v7a-m1"
       data-hermes-command-approval-health={commandApprovalHealth}
       data-hermes-approval-mutation={mutationOn ? "enabled" : "disabled"}
@@ -183,8 +200,8 @@ export function WorkbenchCommandApprovalsPanel({
               data-hermes-approvals-empty
             >
               {isZh
-                ? "当前无 pending command-approval 挑战。不会伪造行。"
-                : "No pending command-approval challenges. None are invented."}
+                ? "当前无 command-approval 投影行（pending/decided）。不会伪造行。"
+                : "No command-approval projection rows (pending/decided). None are invented."}
             </p>
           ) : null}
 
@@ -216,6 +233,7 @@ export function WorkbenchCommandApprovalsPanel({
                       <p className="min-w-0 font-body-sm font-semibold text-text-primary">
                         <span data-hermes-approval-status>
                           {row.status || row.expected_status || "pending"}
+                          {row.decision ? ` · ${row.decision}` : ""}
                         </span>
                         {row.kind ? (
                           <>

@@ -494,7 +494,7 @@ export type WorkspaceCommandProjection = {
   created_at?: string | null;
 };
 
-/** L5a/V7a: Hermes command-approval challenge projection. */
+/** L5a/V7a/V7d: Hermes command-approval challenge projection. */
 export type WorkspaceApprovalProjection = {
   approval_id: string;
   run_id?: string | null;
@@ -505,6 +505,9 @@ export type WorkspaceApprovalProjection = {
   expected_status?: string | null;
   status?: string | null;
   kind?: string | null;
+  /** V7d: decided fact when status is allowed_once|denied. */
+  decision?: "allow_once" | "deny" | string | null;
+  decided_at?: string | null;
 };
 
 export type WorkspaceSnapshot = {
@@ -553,6 +556,9 @@ export type WorkspaceEventPage = {
   resync_required: boolean;
   recovery_action?: string | null;
   mutation_enabled?: boolean;
+  /** V7d: approvals projection on follow pages (pending + recent decided). */
+  approvals?: WorkspaceApprovalProjection[];
+  authority_health?: Record<string, string>;
 };
 
 export async function fetchWorkspaceSnapshot(

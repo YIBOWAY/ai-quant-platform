@@ -11,8 +11,9 @@ Design freeze
 * No always-allow / permanent allow.
 * Fail closed on stale, expired, wrong digest, wrong run, already-consumed,
   or cross-id replay.
-* Snapshot projection lists only still-pending, non-expired challenges.
-* Durable PG projector / live Hermes commit remain later slices; hermetic
+* Snapshot projection lists still-pending, non-expired challenges plus recent
+  decided facts (V7d projector). Empty remains honest.
+* Durable PG store / live Hermes HTTP commit remain later slices; hermetic
   fixtures and local-dark smoke seed this store explicitly.
 """
 
@@ -129,7 +130,7 @@ class ApprovalChallenge:
         return f"run:{self.run_id}"
 
     def to_public_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "approval_id": self.approval_id,
             "run_id": self.run_id,
             "command_id": self.command_id,
@@ -139,6 +140,12 @@ class ApprovalChallenge:
             "status": self.status,
             "kind": self.kind,
         }
+        # V7d: surface decided facts when known (never invent Gate fields).
+        if self.decision is not None:
+            payload["decision"] = self.decision
+        if self.decided_at is not None:
+            payload["decided_at"] = self.decided_at
+        return payload
 
 
 class CommandApprovalAuthority:
@@ -202,7 +209,14 @@ class CommandApprovalAuthority:
                     "conflict", "approval_id already pending with different binding"
                 )
             self._rows[key] = row
-            return row
+        # Outside lock: journal is best-effort observe rail (V7d).
+        try:
+            from quant_system.hermes.approval_observe import note_approval_raised
+
+            note_approval_raised(workspace_id=workspace_id, approval=row)
+        except Exception:
+            pass
+        return row
 
     def list_pending(
         self, workspace_id: str, *, now: datetime | None = None
@@ -220,6 +234,47 @@ class CommandApprovalAuthority:
                     continue
                 out.append(row.to_public_dict())
         return out
+
+    def list_observed(
+        self,
+        workspace_id: str,
+        *,
+        decided_limit: int = 20,
+        now: datetime | None = None,
+    ) -> list[dict[str, object]]:
+        """Pending first, then recent decided/expired facts (V7d projector).
+
+        Empty is honest. Never invents Gate rows. Decided rows keep their
+        terminal status + decision so the spine can drop decide controls.
+        """
+        clock = now or _utc_now()
+        limit = (
+            decided_limit
+            if type(decided_limit) is int and decided_limit > 0
+            else 20
+        )
+        pending: list[dict[str, object]] = []
+        decided: list[ApprovalChallenge] = []
+        with self._lock:
+            for (ws, _), row in sorted(self._rows.items(), key=lambda kv: kv[0][1]):
+                if ws != workspace_id:
+                    continue
+                if row.status == "pending":
+                    if _parse_rfc3339(row.expires_at) <= clock:
+                        row.status = "expired"
+                        decided.append(row)
+                        continue
+                    pending.append(row.to_public_dict())
+                    continue
+                if row.status in ("allowed_once", "denied", "expired"):
+                    decided.append(row)
+            # Most-recent decided first (by decided_at, then approval_id).
+            def _decided_key(r: ApprovalChallenge) -> tuple[str, str]:
+                return (r.decided_at or "", r.approval_id)
+
+            decided_sorted = sorted(decided, key=_decided_key, reverse=True)[:limit]
+            decided_out = [r.to_public_dict() for r in decided_sorted]
+        return pending + decided_out
 
     def get(
         self, workspace_id: str, approval_id: str
@@ -305,7 +360,16 @@ class CommandApprovalAuthority:
             row.decided_at = clock.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
             row.decision_action_id = client_action_id
             row.decision_action_digest = action_digest
-            return row
+            decided_row = row
+        try:
+            from quant_system.hermes.approval_observe import note_approval_decided
+
+            note_approval_decided(
+                workspace_id=workspace_id, approval=decided_row
+            )
+        except Exception:
+            pass
+        return decided_row
 
 
 _DEFAULT = CommandApprovalAuthority()

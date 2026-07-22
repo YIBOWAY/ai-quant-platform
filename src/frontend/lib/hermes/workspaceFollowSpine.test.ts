@@ -376,3 +376,92 @@ describe("waitForCommandTerminalOnSpine (L5a)", () => {
     await expect(pending).resolves.toBeNull();
   });
 });
+
+describe("V7d durable approval projector on spine", () => {
+  beforeEach(() => {
+    fetchWorkspaceSnapshot.mockReset();
+    fetchWorkspaceFollow.mockReset();
+    fetchWorkspaceFollow.mockResolvedValue({
+      events: [],
+      next_cursor: 0,
+      resync_required: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("snapshot reconcile carries pending + decided approvals", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({
+        snapshot_workspace_cursor: 1,
+        approvals: [
+          {
+            approval_id: "c-pend",
+            run_id: "run.1",
+            digest: "a".repeat(64),
+            expires_at: "2099-01-01T00:00:00.000000Z",
+            status: "pending",
+            kind: "hermes.command_approval",
+          },
+          {
+            approval_id: "c-done",
+            run_id: "run.2",
+            digest: "b".repeat(64),
+            expires_at: "2099-01-01T00:00:00.000000Z",
+            status: "denied",
+            decision: "deny",
+            decided_at: "2026-07-22T00:00:00.000000Z",
+            kind: "hermes.command_approval",
+          },
+        ],
+        tasks: [],
+        attempts: [],
+        runs: [],
+        results: [],
+        authority_health: {
+          ...EMPTY_AUTHORITY_HEALTH,
+          command_approval: "ready",
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {
+          /* noop */
+        }
+        addEventListener() {
+          /* noop */
+        }
+        removeEventListener() {
+          /* noop */
+        }
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: false,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      await spine.resyncNow();
+      const s = spine.getState();
+      expect(s.approvals.length).toBe(2);
+      expect(s.approvals[0].approval_id).toBe("c-pend");
+      expect(s.approvals[1].status).toBe("denied");
+      expect(s.approvals[1].decision).toBe("deny");
+      expect(s.authorityHealth.command_approval).toBe("ready");
+      // Empty honest authority slots remain empty (no Task invention).
+      expect(s.tasks).toEqual([]);
+      expect(s.attempts).toEqual([]);
+      expect(s.runs).toEqual([]);
+      expect(s.results).toEqual([]);
+    } finally {
+      spine.stop();
+    }
+  });
+});

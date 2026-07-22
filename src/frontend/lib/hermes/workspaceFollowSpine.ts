@@ -2,7 +2,8 @@
  * L4b-SSE-Follow-M1: shared durable workspace follow spine.
  *
  * Prefer EventSource on GET …/follow/stream; fall back to GET …/follow poll.
- * Command lifecycle only — no assistant bodies. On resync: snapshot then continue.
+ * Command lifecycle + V7d approvals projection — no assistant bodies.
+ * On resync: snapshot then continue. No dual private approval poll.
  */
 
 import {
@@ -194,6 +195,29 @@ export function createWorkspaceFollowSpine(
     });
   };
 
+  const applyApprovalsProjection = (
+    approvals: WorkspaceApprovalProjection[] | undefined,
+    authorityHealth?: Record<string, string> | undefined,
+  ) => {
+    if (!Array.isArray(approvals)) return;
+    const patch: Partial<FollowSpineState> = {
+      approvals: [...approvals],
+      error: null,
+    };
+    if (authorityHealth && typeof authorityHealth === "object") {
+      patch.authorityHealth = {
+        ...state.authorityHealth,
+        ...authorityHealth,
+      };
+    } else if (!state.authorityHealth.command_approval || state.authorityHealth.command_approval === "unavailable") {
+      patch.authorityHealth = {
+        ...state.authorityHealth,
+        command_approval: "ready",
+      };
+    }
+    setState(patch);
+  };
+
   const snapshotReconcile = async (signal?: AbortSignal) => {
     const snap = await fetchWorkspaceSnapshot(workspaceId, signal);
     const commands = mergeSnapshotCommands(snap);
@@ -262,6 +286,8 @@ export function createWorkspaceFollowSpine(
       if (events.length) {
         applyEvents(events);
       }
+      // V7d: follow pages may carry approvals projection (same spine).
+      applyApprovalsProjection(page.approvals, page.authority_health);
       if (typeof page.next_cursor === "number") {
         setState({
           cursor: Math.max(state.cursor, page.next_cursor),
@@ -352,6 +378,17 @@ export function createWorkspaceFollowSpine(
         /* ignore malformed */
       }
     };
+    const onApprovals = (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(String(ev.data)) as {
+          approvals?: WorkspaceApprovalProjection[];
+          authority_health?: Record<string, string>;
+        };
+        applyApprovalsProjection(data.approvals, data.authority_health);
+      } catch {
+        /* ignore malformed */
+      }
+    };
     const onCursor = (ev: MessageEvent) => {
       try {
         const data = JSON.parse(String(ev.data)) as { next_cursor?: number };
@@ -400,6 +437,7 @@ export function createWorkspaceFollowSpine(
 
     es.addEventListener("ready", onReady);
     es.addEventListener("command", onCommand);
+    es.addEventListener("approvals", onApprovals);
     es.addEventListener("cursor", onCursor);
     es.addEventListener("resync", onResync);
     es.addEventListener("reconnect", onReconnect);

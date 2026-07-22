@@ -72,8 +72,8 @@ class WorkspaceSnapshot:
     commands: tuple[dict[str, object], ...]
     runs: tuple[str, ...]
     results: tuple[str, ...]
-    # L5a/V7a: Hermes command-approval challenges from hermetic authority.
-    # Empty is honest when none pending; never invent Gate 1/2/3 rows.
+    # L5a/V7a/V7d: Hermes command-approval challenges from hermetic authority
+    # (pending + recent decided). Empty is honest; never invent Gate 1/2/3 rows.
     approvals: tuple[dict[str, object], ...]
     authority_health: Mapping[str, str]
     mutation_enabled: bool
@@ -105,9 +105,14 @@ class EventPage:
     resync_required: bool
     recovery_action: str | None
     mutation_enabled: bool
+    # V7d: optional approvals projection on follow pages so L4b spine can
+    # refresh without inventing a private poll. None → omit from public dict
+    # (BC for callers that only care about command events).
+    approvals: tuple[dict[str, object], ...] | None = None
+    authority_health: Mapping[str, str] | None = None
 
     def to_public_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "events": list(self.events),
             "after_cursor": self.after_cursor,
             "next_cursor": self.next_cursor,
@@ -115,6 +120,11 @@ class EventPage:
             "recovery_action": self.recovery_action,
             "mutation_enabled": self.mutation_enabled,
         }
+        if self.approvals is not None:
+            payload["approvals"] = [dict(item) for item in self.approvals]
+        if self.authority_health is not None:
+            payload["authority_health"] = dict(self.authority_health)
+        return payload
 
 
 class PlatformAgentWorkspace:
@@ -241,17 +251,13 @@ class PlatformAgentWorkspace:
                 workspace_id
             )
 
-        # V7a: project pending command-approval challenges from hermetic
-        # authority. Never invent Gate 1/2/3 or candidate approvals.
-        from quant_system.hermes.command_approval_authority import (
-            default_command_approval_authority,
-        )
+        # V7a/V7d: project pending + recent decided command-approval challenges
+        # from hermetic authority. Never invent Gate 1/2/3 or candidate approvals.
+        from quant_system.hermes.approval_observe import project_workspace_approvals
 
         # Empty approvals[] is honest; health stays "ready" because the
-        # hermetic in-process authority is mounted (not a live Hermes projector).
-        approvals = tuple(
-            default_command_approval_authority().list_pending(workspace_id)
-        )
+        # hermetic in-process authority is mounted (not a live Hermes HTTP path).
+        approvals = tuple(project_workspace_approvals(workspace_id))
 
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
@@ -333,6 +339,11 @@ class PlatformAgentWorkspace:
                 recovery_action=_RECOVERY_RESNAPSHOT,
                 mutation_enabled=mutation_on,
             )
+        # V7d: attach current approvals projection so follow/SSE spine stays
+        # honest without a dual private poll. Empty remains honest.
+        from quant_system.hermes.approval_observe import project_workspace_approvals
+
+        approvals = tuple(project_workspace_approvals(workspace_id))
         return EventPage(
             events=tuple(events),
             after_cursor=after_value,
@@ -340,6 +351,8 @@ class PlatformAgentWorkspace:
             resync_required=False,
             recovery_action=None,
             mutation_enabled=mutation_on,
+            approvals=approvals,
+            authority_health={"command_approval": "ready"},
         )
 
     def _workspace_session_ids(self, conn: Any, workspace_id: str) -> list[str]:

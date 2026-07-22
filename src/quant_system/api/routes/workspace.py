@@ -174,8 +174,13 @@ def workspace_follow_stream(
         return f"event: {event}\ndata: {payload}\n\n"
 
     def event_iter() -> Iterator[str]:
+        from quant_system.hermes.approval_observe import (
+            default_approval_observe_journal,
+        )
+
         cursor = start_cursor
         idle = 0
+        journal = default_approval_observe_journal()
         yield _sse_pack(
             "ready",
             {
@@ -183,8 +188,8 @@ def workspace_follow_stream(
                 "after_cursor": cursor,
                 "mutation_enabled": mutation_enabled,
                 "transport": "sse",
-                # Honest scope marker for FE/docs.
-                "scope": "command_lifecycle",
+                # Honest scope marker for FE/docs (V7d adds approvals on spine).
+                "scope": "command_lifecycle+approvals",
             },
         )
         for _tick in range(tick_limit):
@@ -234,6 +239,7 @@ def workspace_follow_stream(
                 continue
 
             events = public.get("events") or []
+            emitted = False
             if isinstance(events, list) and events:
                 for item in events:
                     if isinstance(item, dict):
@@ -248,6 +254,27 @@ def workspace_follow_stream(
                         "mutation_enabled": public.get("mutation_enabled"),
                     },
                 )
+                emitted = True
+            # V7d: approvals projection on the same follow spine (not a dual poll).
+            # Emit only when the projected set changes (fingerprint), so idle
+            # heartbeats still work and we do not flood the stream.
+            approvals = public.get("approvals")
+            if isinstance(approvals, list):
+                changed = journal.take_approvals_if_changed(
+                    workspace_id, list(approvals)
+                )
+                if changed is not None:
+                    yield _sse_pack(
+                        "approvals",
+                        {
+                            "approvals": changed,
+                            "authority_health": public.get("authority_health")
+                            or {"command_approval": "ready"},
+                            "mutation_enabled": public.get("mutation_enabled"),
+                        },
+                    )
+                    emitted = True
+            if emitted:
                 idle = 0
             else:
                 idle += 1

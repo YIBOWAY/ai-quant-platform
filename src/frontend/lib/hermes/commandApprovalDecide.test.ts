@@ -179,3 +179,39 @@ describe("V7a panel source contracts", () => {
     expect(src).not.toMatch(/gate1|gate2|gate3|CandidateApproval/i);
   });
 });
+
+describe("V7d filterApprovalsForPanel (consumedIds vs decided)", () => {
+  it("hides consumed id only while still pending; keeps decided with decision", async () => {
+    const { filterApprovalsForPanel } = await import(
+      "@/components/hermes/approvals/WorkbenchCommandApprovalsPanel"
+    );
+    const pending = {
+      approval_id: "a1",
+      run_id: "run.1",
+      digest: "a".repeat(64),
+      expires_at: "2099-01-01T00:00:00.000000Z",
+      status: "pending",
+      kind: "hermes.command_approval",
+    };
+    const decided = {
+      ...pending,
+      status: "denied",
+      decision: "deny" as const,
+      decided_at: "2026-07-22T00:00:00.000000Z",
+    };
+    const consumed = { a1: true as const };
+
+    // Still pending + consumed → hidden (optimistic).
+    expect(filterApprovalsForPanel([pending], consumed)).toEqual([]);
+
+    // Spine projects decided fact → visible, decision present, not decidable.
+    const shown = filterApprovalsForPanel([decided], consumed);
+    expect(shown).toHaveLength(1);
+    expect(shown[0].status).toBe("denied");
+    expect(shown[0].decision).toBe("deny");
+
+    // Unconsumed pending still visible.
+    expect(filterApprovalsForPanel([pending], {})).toHaveLength(1);
+  });
+});
+
