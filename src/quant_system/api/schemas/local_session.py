@@ -3,11 +3,11 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class _LocalSessionResponse(BaseModel):
+class _LocalSessionContract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class OwnerSessionStatusResponse(_LocalSessionResponse):
+class OwnerSessionStatusResponse(_LocalSessionContract):
     owner_user_id: str = Field(min_length=1, max_length=64)
     session_id: str = Field(min_length=1, max_length=128)
     expires_at: str = Field(min_length=1, max_length=64)
@@ -20,7 +20,7 @@ class OwnerBootstrapResponse(OwnerSessionStatusResponse):
     csrf_header: str = Field(min_length=1, max_length=128)
 
 
-class OwnerLogoutResponse(_LocalSessionResponse):
+class OwnerLogoutResponse(_LocalSessionContract):
     ok: bool
     mutation_enabled: bool
 

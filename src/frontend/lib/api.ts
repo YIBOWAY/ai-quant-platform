@@ -1920,6 +1920,115 @@ export type HermesResultsResponse = ApiEnvelope &
 export type HermesResultDetailResponse = ApiEnvelope &
   HermesSchemas["HermesResultDetailResponse"];
 
+// Agent v0.2 owner/workspace response names mirror the backend's named
+// Pydantic contracts. The same-origin workspace client keeps its richer view
+// models, while these exports make the HTTP boundary explicit and auditable.
+export type OwnerSessionStatusResponse = {
+  owner_user_id: string;
+  session_id: string;
+  expires_at: string;
+  mutation_enabled: boolean;
+  security_ready: boolean;
+};
+
+export type OwnerBootstrapResponse = OwnerSessionStatusResponse & {
+  csrf_token: string;
+  csrf_header: string;
+};
+
+export type OwnerLogoutResponse = {
+  ok: boolean;
+  mutation_enabled: boolean;
+};
+
+export type WorkspaceRefResponse = {
+  workspace_id: string;
+};
+
+export type WorkspaceSnapshotResponse = {
+  workspace: WorkspaceRefResponse;
+  owner_user_id: string;
+  snapshot_workspace_cursor: number;
+  sessions: string[];
+  tasks: string[];
+  attempts: string[];
+  commands: Array<Record<string, unknown>>;
+  runs: string[];
+  results: Array<Record<string, unknown>>;
+  approvals: Array<Record<string, unknown>>;
+  gates: Array<Record<string, unknown>>;
+  authority_health: Record<string, string>;
+  mutation_enabled: boolean;
+  observed_at: string;
+};
+
+export type WorkspaceFollowResponse = {
+  events: Array<Record<string, unknown>>;
+  after_cursor: number | null;
+  next_cursor: number | null;
+  resync_required: boolean;
+  recovery_action?: string | null;
+  mutation_enabled: boolean;
+  approvals?: Array<Record<string, unknown>> | null;
+  gates?: Array<Record<string, unknown>> | null;
+  results?: Array<Record<string, unknown>> | null;
+  tasks?: string[] | null;
+  attempts?: string[] | null;
+  runs?: string[] | null;
+  authority_health?: Record<string, string> | null;
+};
+
+export type WorkspaceAuthoritiesResponse = {
+  command_ledger_schema_ready: boolean;
+  command_ledger_schema_version: number | null;
+  session_registry_schema_ready: boolean;
+  session_registry_schema_version: number | null;
+  workflow_binding_schema_ready: boolean;
+  workflow_binding_schema_version: number | null;
+  schema_ready: boolean;
+  ready: boolean;
+  research_binding_schema_ready: boolean;
+  research_binding_ready: boolean;
+  runtime_security_ready: boolean;
+  write_authority_ready: boolean;
+  dark_dispatch_schema_ready: boolean;
+  dark_dispatch_ready: boolean;
+  mutation_enabled: boolean;
+  local_chat_write_ready: boolean;
+  composer_write_ready: boolean;
+  public_chat_write_ready: boolean;
+  chat_write_ready: boolean;
+  platform_delivery_blockers: string[];
+  platform_delivery_blocker_count: number;
+  composer_open: boolean;
+};
+
+export type WorkspaceActionReceiptResponse = {
+  status: "accepted" | "reconciling" | "conflict" | "unavailable" | "outcome_unknown";
+  client_action_id: string;
+  action_digest: string;
+  workspace: WorkspaceRefResponse;
+  recovery_action?: string | null;
+  mutation_enabled: boolean;
+  command_id?: string | null;
+  run_id?: string | null;
+  platform_session_id?: string | null;
+  session_ref?: string | null;
+  hermes_session_id?: string | null;
+  reason_code?: string | null;
+  stop_layers?: Record<string, unknown> | null;
+  task_id?: string | null;
+  attempt_id?: string | null;
+  result_id?: string | null;
+  terminal_status?: string | null;
+};
+
+export type CompositeTurnReceiptResponse = WorkspaceActionReceiptResponse & {
+  payload_ref: string;
+  payload_digest: string;
+  kind: "conversation.turn";
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 
 const FALLBACK_SAFETY: SafetyFooter = {

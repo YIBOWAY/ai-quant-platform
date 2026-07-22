@@ -5,15 +5,15 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class _WorkspaceResponse(BaseModel):
+class _WorkspaceContract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class WorkspaceRefResponse(_WorkspaceResponse):
+class WorkspaceRefResponse(_WorkspaceContract):
     workspace_id: str = Field(min_length=1, max_length=200)
 
 
-class WorkspaceSnapshotResponse(_WorkspaceResponse):
+class WorkspaceSnapshotResponse(_WorkspaceContract):
     workspace: WorkspaceRefResponse
     owner_user_id: str = Field(min_length=1, max_length=64)
     snapshot_workspace_cursor: int = Field(ge=0, le=2**63 - 1)
@@ -30,7 +30,7 @@ class WorkspaceSnapshotResponse(_WorkspaceResponse):
     observed_at: str = Field(min_length=1, max_length=64)
 
 
-class WorkspaceFollowResponse(_WorkspaceResponse):
+class WorkspaceFollowResponse(_WorkspaceContract):
     events: list[dict[str, Any]]
     after_cursor: int | None = Field(default=None, ge=0, le=2**63 - 1)
     next_cursor: int | None = Field(default=None, ge=0, le=2**63 - 1)
@@ -46,7 +46,7 @@ class WorkspaceFollowResponse(_WorkspaceResponse):
     authority_health: dict[str, str] | None = None
 
 
-class WorkspaceAuthoritiesResponse(_WorkspaceResponse):
+class WorkspaceAuthoritiesResponse(_WorkspaceContract):
     command_ledger_schema_ready: bool
     command_ledger_schema_version: int | None
     session_registry_schema_ready: bool
@@ -71,7 +71,7 @@ class WorkspaceAuthoritiesResponse(_WorkspaceResponse):
     composer_open: bool
 
 
-class WorkspaceActionReceiptResponse(_WorkspaceResponse):
+class WorkspaceActionReceiptResponse(_WorkspaceContract):
     status: Literal[
         "accepted",
         "reconciling",
