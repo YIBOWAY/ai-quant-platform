@@ -12,10 +12,11 @@ yet UPDATE/DELETE/TRUNCATE still fail with the trigger's append-only error, and
 the role cannot escalate (disable triggers, ALTER TABLE, or set
 session_replication_role).
 
-Scope note (V1.2A only): this hardens migration/readiness/isolated-PostgreSQL
-behavior. It makes **no** live schema/role change, provisions no runtime role,
-and adds no RLS. Live role provisioning + per-table RLS is a separately
-authorized V4 task. Status: code_hardened / live_role_unprovisioned.
+Scope note: migration 009 now adds FORCE RLS in source. The adversarial LOGIN is
+therefore made a member of the NOLOGIN ``quant_runtime`` policy role while still
+receiving explicit DML grants. This lets the test reach the exact root-owned row
+and prove that the append-only trigger, rather than RLS invisibility or a missing
+privilege, rejects mutation. No live schema or role is changed.
 """
 
 from __future__ import annotations
@@ -127,9 +128,14 @@ def _provision_adversary(database: db.Database) -> None:
     _drop_adversary(database)
     with database.connect() as conn, conn.transaction():
         conn.execute(
-            sql.SQL("CREATE ROLE {} NOSUPERUSER NOINHERIT LOGIN PASSWORD {}").format(
+            sql.SQL("CREATE ROLE {} NOSUPERUSER INHERIT LOGIN PASSWORD {}").format(
                 sql.Identifier(ADVERSARY_ROLE),
                 sql.Literal("adv-pass"),
+            )
+        )
+        conn.execute(
+            sql.SQL("GRANT quant_runtime TO {}").format(
+                sql.Identifier(ADVERSARY_ROLE)
             )
         )
         conn.execute(
