@@ -184,6 +184,37 @@ def test_reversal_momentum_replication_keeps_complete_business_month() -> None:
     assert pd.Timestamp("2024-06-30", tz="UTC") in return_dates
 
 
+def test_reversal_momentum_replication_checks_terminal_month_per_symbol() -> None:
+    frame = _wide_frame()
+    terminal_month = frame["timestamp"].max()
+    partial_symbol = (frame["symbol"] == "S00") & (
+        frame["timestamp"] == terminal_month
+    )
+    partial_timestamp = pd.Timestamp("2024-06-03", tz="UTC")
+    frame.loc[partial_symbol, "timestamp"] = partial_timestamp
+    frame.loc[partial_symbol, "event_ts"] = partial_timestamp
+    frame.loc[partial_symbol, "knowledge_ts"] = partial_timestamp
+
+    result = build_reversal_momentum_replication(
+        frame,
+        initial_cash=1.0,
+        top_n=20,
+    )
+
+    may_positions = [
+        row
+        for row in result["positions"]
+        if pd.Timestamp(row["rebalance_date"])
+        == pd.Timestamp("2024-05-31", tz="UTC")
+    ]
+    assert "S00" not in {row["symbol"] for row in may_positions}
+    assert "S01" in {row["symbol"] for row in may_positions}
+    assert (
+        result["methodology"]["terminal_month_completeness"]["evaluation_scope"]
+        == "per_symbol"
+    )
+
+
 def test_reversal_momentum_replication_aligns_noise_diagnostics_by_month() -> None:
     result = build_reversal_momentum_replication(
         _wide_frame(),

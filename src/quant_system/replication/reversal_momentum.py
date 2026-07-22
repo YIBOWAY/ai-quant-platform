@@ -25,8 +25,9 @@ _PROXY_SCOPE_WARNING = (
     "earnings-window, and global-market hypothesis tests are not implemented."
 )
 _CALENDAR_SCOPE_WARNING = (
-    "Terminal-month completeness uses a generic Monday-Friday business-month-end "
-    "heuristic; exchange-specific holiday calendars are not modeled."
+    "Terminal-month completeness is evaluated per symbol with a generic "
+    "Monday-Friday business-month-end heuristic; exchange-specific holiday "
+    "calendars are not modeled."
 )
 
 
@@ -42,6 +43,7 @@ def _methodology(*, formation: str) -> dict[str, Any]:
         ],
         "terminal_month_completeness": {
             "method": "generic_business_month_end",
+            "evaluation_scope": "per_symbol",
             "weekend_aware": True,
             "exchange_holiday_calendar": False,
         },
@@ -181,7 +183,7 @@ def _monthly_panel(ohlcv: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             columns=["symbol", "timestamp", "close", "monthly_return"]
         )
-    observed_end = frame["timestamp"].max()
+    observed_ends = frame.groupby("symbol")["timestamp"].max()
     monthly = (
         frame.sort_values(["symbol", "timestamp"])
         .set_index("timestamp")
@@ -193,14 +195,21 @@ def _monthly_panel(ohlcv: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
     # A calendar month can finish on a weekend. Treat its final business day as
-    # complete, while excluding a genuinely in-progress terminal month.
-    terminal_month_start = observed_end.normalize().replace(day=1)
-    terminal_month_end = terminal_month_start + pd.offsets.BMonthEnd(0)
-    if observed_end.normalize() < terminal_month_end.normalize():
-        last_complete_month_end = observed_end - pd.offsets.MonthEnd(1)
-        monthly = monthly.loc[
-            monthly["timestamp"] <= last_complete_month_end.normalize()
-        ].copy()
+    # complete, while excluding each symbol's genuinely in-progress terminal
+    # month. Resampling first labels a month-start observation as month-end, so
+    # completeness must be decided from that symbol's raw last observation.
+    complete_groups = []
+    for symbol, group in monthly.groupby("symbol", sort=False):
+        observed_end = observed_ends.loc[symbol]
+        terminal_month_start = observed_end.normalize().replace(day=1)
+        terminal_month_end = terminal_month_start + pd.offsets.BMonthEnd(0)
+        if observed_end.normalize() < terminal_month_end.normalize():
+            last_complete_month_end = observed_end - pd.offsets.MonthEnd(1)
+            group = group.loc[
+                group["timestamp"] <= last_complete_month_end.normalize()
+            ]
+        complete_groups.append(group)
+    monthly = pd.concat(complete_groups, ignore_index=True)
     monthly["monthly_return"] = monthly.groupby("symbol")["close"].pct_change()
     return monthly.dropna(subset=["monthly_return"]).reset_index(drop=True)
 
