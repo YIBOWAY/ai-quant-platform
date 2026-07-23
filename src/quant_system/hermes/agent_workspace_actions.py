@@ -31,6 +31,7 @@ _ACTION_KINDS = frozenset(
         "vertical.options_a.bind",
         "vertical.factor_b.bind",
         "vertical.factor_b.plan_confirm",
+        "vertical.factor_b.gate1_seed",
     }
 )
 _COMMON_DOCUMENT_FIELDS = frozenset(
@@ -115,6 +116,14 @@ _ACTION_FIELDS = {
         "plan_version",
         "plan_digest",
         "confirmation_note",
+    },
+    "vertical.factor_b.gate1_seed": _COMMON_DOCUMENT_FIELDS
+    | {
+        "task_ref",
+        "expected_bind_digest",
+        "expected_plan_digest",
+        "reviewed_source_sha256",
+        "seed_note",
     },
 }
 _PROVIDER_MODES = frozenset({"hermetic_fixture", "live_futu_ro"})
@@ -881,6 +890,33 @@ class ConfirmFactorVerticalBPlan:
 
 
 @dataclass(frozen=True)
+class SeedFactorVerticalBGate1:
+    """V7g-B-M3: hermetic factor_b Gate1 seed cascade notch.
+
+    CAS-seeds a pending Gate1 formula-source challenge onto an already
+    plan_confirmed factor_b Task. Advances cascade_stage to gate1_seeded only.
+    Never decides Gate1, never lifts gate_cascade_locked, never StartResearch /
+    global ConfirmResearchPlan / Gate2-3 / backtest / Git / orders / public write.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    task_ref: str
+    expected_bind_digest: str
+    expected_plan_digest: str
+    reviewed_source_sha256: str
+    seed_note: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_ref(self.task_ref, "task_ref", "task:")
+        _validate_digest(self.expected_bind_digest, "expected_bind_digest")
+        _validate_digest(self.expected_plan_digest, "expected_plan_digest")
+        _validate_digest(self.reviewed_source_sha256, "reviewed_source_sha256")
+        _validate_note(self.seed_note, "seed_note")
+
+
+@dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
 
@@ -910,6 +946,7 @@ UserActionV1 = Union[
     BindOptionsVerticalA,
     BindFactorVerticalB,
     ConfirmFactorVerticalBPlan,
+    SeedFactorVerticalBGate1,
     UnsupportedWorkspaceAction,
 ]
 
@@ -926,6 +963,7 @@ _IMPLEMENTED_TYPES = (
     BindOptionsVerticalA,
     BindFactorVerticalB,
     ConfirmFactorVerticalBPlan,
+    SeedFactorVerticalBGate1,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -1115,6 +1153,18 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is SeedFactorVerticalBGate1:
+        document.update(
+            {
+                "kind": "vertical.factor_b.gate1_seed",
+                "task_ref": action.task_ref,
+                "expected_bind_digest": action.expected_bind_digest,
+                "expected_plan_digest": action.expected_plan_digest,
+                "reviewed_source_sha256": action.reviewed_source_sha256,
+                "seed_note": action.seed_note,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -1276,6 +1326,15 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             plan_digest=document["plan_digest"],
             confirmation_note=document["confirmation_note"],
         )
+    if kind == "vertical.factor_b.gate1_seed":
+        return SeedFactorVerticalBGate1(
+            **common,
+            task_ref=document["task_ref"],
+            expected_bind_digest=document["expected_bind_digest"],
+            expected_plan_digest=document["expected_plan_digest"],
+            reviewed_source_sha256=document["reviewed_source_sha256"],
+            seed_note=document["seed_note"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -1316,6 +1375,7 @@ __all__ = [
     "BindOptionsVerticalA",
     "ConfirmFactorVerticalBPlan",
     "ConfirmFormulaSource",
+    "SeedFactorVerticalBGate1",
     "ConfirmResearchPlan",
     "ContinueResearch",
     "ConversationTurn",

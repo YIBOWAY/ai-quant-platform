@@ -336,6 +336,31 @@ class GateSurfaceAuthority:
             row = self._rows.get((workspace_id, gate_id))
             return None if row is None else row
 
+    def delete_pending_if_matches(
+        self,
+        *,
+        workspace_id: str,
+        gate_id: str,
+        task_id: str,
+        reviewed_source_sha256: str,
+    ) -> bool:
+        """Narrow abort cleanup for V7g-B-M3 seed: remove pending only if owned shape matches."""
+        key = (workspace_id, gate_id)
+        with self._lock:
+            row = self._rows.get(key)
+            if row is None:
+                return False
+            if row.status != "pending":
+                return False
+            if row.gate_kind != "gate1":
+                return False
+            if row.task_id != task_id:
+                return False
+            if row.reviewed_source_sha256 != reviewed_source_sha256:
+                return False
+            del self._rows[key]
+            return True
+
     def list_observed(
         self,
         workspace_id: str,

@@ -576,7 +576,11 @@ def test_zero_orders_invariant_on_confirm_source() -> None:
     body = src.read_text(encoding="utf-8")
     # Locate confirm method body roughly
     start = body.index("def confirm_factor_vertical_b_plan")
-    end = body.index("def _release_reservation", start)
+    # Bound confirm body before the M3 seed method (or release helper fallback).
+    try:
+        end = body.index("def seed_factor_vertical_b_gate1", start)
+    except ValueError:
+        end = body.index("def _release_reservation", start)
     chunk = body[start:end]
     for banned in (
         "place_order",

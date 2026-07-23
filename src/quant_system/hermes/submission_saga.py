@@ -35,6 +35,7 @@ from quant_system.hermes.agent_workspace_actions import (
     BindOptionsVerticalA,
     ConfirmFactorVerticalBPlan,
     ConfirmFormulaSource,
+    SeedFactorVerticalBGate1,
     ConfirmResearchPlan,
     ContinueResearch,
     ConversationTurn,
@@ -74,7 +75,7 @@ from quant_system.hermes.gate_surface_authority import (
     GateSurfaceAuthorityError,
     default_gate_surface_authority,
 )
-from quant_system.hermes.gate_observe import note_gate_decided
+from quant_system.hermes.gate_observe import note_gate_decided, note_gate_raised
 from quant_system.hermes.result_observe import note_result_raised
 from quant_system.hermes.vertical_binding_authority import (
     VerticalBindingAuthorityError,
@@ -139,6 +140,8 @@ class ActionReceipt:
     attempt_id: str | None = None
     result_id: str | None = None
     terminal_status: str | None = None
+    # V7g-B-M3: optional Gate1 id after vertical.factor_b.gate1_seed.
+    gate_id: str | None = None
 
     def __post_init__(self) -> None:
         expected = _RECOVERY[self.status]
@@ -175,6 +178,8 @@ class ActionReceipt:
             payload["result_id"] = self.result_id
         if self.terminal_status is not None:
             payload["terminal_status"] = self.terminal_status
+        if self.gate_id is not None:
+            payload["gate_id"] = self.gate_id
         return payload
 
 
@@ -236,6 +241,7 @@ def _receipt(
     attempt_id: str | None = None,
     result_id: str | None = None,
     terminal_status: str | None = None,
+    gate_id: str | None = None,
 ) -> ActionReceipt:
     return ActionReceipt(
         status=status,
@@ -253,6 +259,7 @@ def _receipt(
         attempt_id=attempt_id,
         result_id=result_id,
         terminal_status=terminal_status,
+        gate_id=gate_id,
     )
 
 
@@ -1512,6 +1519,125 @@ def submit_confirm_factor_vertical_b_plan(
     )
 
 
+
+def submit_seed_factor_vertical_b_gate1(
+    settings: Settings,
+    action: SeedFactorVerticalBGate1,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V7g-B-M3: hermetic factor_b Gate1 seed cascade notch.
+
+    Never decides Gate1 / lifts gate_cascade_locked / StartResearch /
+    global ConfirmResearchPlan / Gate2-3 / backtest / Git. Zero orders.
+    M2 plan_confirm acceptance is not standing auth for M3.
+    """
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+    authority = default_vertical_binding_authority()
+    try:
+        outcome = authority.seed_factor_vertical_b_gate1(
+            workspace_id=action.workspace.workspace_id,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+            task_ref=action.task_ref,
+            expected_bind_digest=action.expected_bind_digest,
+            expected_plan_digest=action.expected_plan_digest,
+            reviewed_source_sha256=action.reviewed_source_sha256,
+            seed_note=action.seed_note,
+        )
+    except VerticalBindingAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code in {
+            "factor_b_task_not_found",
+            "factor_b_task_wrong_vertical",
+            "factor_b_bind_digest_mismatch",
+            "factor_b_gate1_not_seedable",
+            "factor_b_plan_digest_mismatch",
+            "factor_b_formula_source_unavailable",
+            "factor_b_formula_source_digest_mismatch",
+        }:
+            return _receipt(
+                status="unavailable",
+                action=action,
+                digest=digest,
+                reason_code=exc.code,
+                mutation_enabled=mutation_enabled,
+            )
+        if exc.code in {"conflict", "cascade_already_gate1_seeded"}:
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.code if exc.code != "conflict" else exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message or "vertical_binding_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        note_result_raised(
+            workspace_id=action.workspace.workspace_id,
+            result=outcome.result,
+        )
+    except Exception:
+        pass
+    if outcome.gate_id is not None:
+        try:
+            gauth = default_gate_surface_authority()
+            gate_row = gauth.get(action.workspace.workspace_id, outcome.gate_id)
+            if gate_row is not None:
+                note_gate_raised(
+                    workspace_id=action.workspace.workspace_id,
+                    gate=gate_row,
+                )
+        except Exception:
+            pass
+    command_id: str | None = None
+    if _ensure_ready(settings):
+        control_session = control_plane_session_id(action.workspace.workspace_id)
+        try:
+            cmd = _create_idempotent_command(
+                settings,
+                platform_session_id=control_session,
+                client_request_id=action.client_action_id,
+                kind="vertical_factor_b_gate1_seed",
+                action_digest=digest,
+                payload_ref=action_payload_ref_for_digest(digest),
+                provider_policy_digest=None,
+            )
+            command_id = str(cmd.command.command_id)
+        except Exception:
+            command_id = None
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        run_id=outcome.run.run_id,
+        task_id=outcome.task.task_id,
+        attempt_id=outcome.attempt.attempt_id,
+        result_id=outcome.result.result_id,
+        terminal_status=outcome.terminal,
+        mutation_enabled=mutation_enabled,
+        gate_id=outcome.gate_id,
+    )
+
+
 def submit_action(
     settings: Settings,
     action: UserActionV1 | dict[str, object],
@@ -1610,6 +1736,13 @@ def submit_action(
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
         )
+    if type(parsed) is SeedFactorVerticalBGate1:
+        return submit_seed_factor_vertical_b_gate1(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
     if type(parsed) in (StartResearch, ContinueResearch, ConfirmResearchPlan):
         # Research kinds are typed and digest-stable, but the HQA prepare →
         # ensure_bound_command browser path stays dark in V4. Public mutation
@@ -1654,6 +1787,7 @@ __all__ = [
     "submit_bind_factor_vertical_b",
     "submit_bind_options_vertical_a",
     "submit_confirm_factor_vertical_b_plan",
+    "submit_seed_factor_vertical_b_gate1",
     "submit_conversation_turn",
     "submit_create_managed_session",
     "submit_decide_hermes_command_approval",
