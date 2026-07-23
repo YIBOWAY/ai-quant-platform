@@ -20,6 +20,99 @@ PAPER_METADATA = {
     "journal": "The Review of Financial Studies",
 }
 
+_REAL_OHLCV_PROVIDERS = frozenset({"futu", "tiingo"})
+_PROXY_SCOPE_WARNING = (
+    "Workflow proxy only: this is not a full paper replication; country-level, "
+    "earnings-window, and global-market hypothesis tests are not implemented."
+)
+_CALENDAR_SCOPE_WARNING = (
+    "Terminal-month completeness is evaluated per symbol with a generic "
+    "Monday-Friday business-month-end heuristic; exchange-specific holiday "
+    "calendars are not modeled."
+)
+
+
+def _methodology(
+    *,
+    formation: str,
+    data_evidence: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "scope_classification": "workflow_proxy",
+        "full_paper_replication": False,
+        "implemented_scope": "monthly cross-sectional long-short signal workflow",
+        "omitted_paper_tests": [
+            "country-level tests",
+            "earnings-window tests",
+            "global-market hypothesis tests",
+        ],
+        "data_evidence": dict(data_evidence),
+        "terminal_month_completeness": {
+            "method": "generic_business_month_end",
+            "evaluation_scope": "per_symbol",
+            "weekend_aware": True,
+            "exchange_holiday_calendar": False,
+        },
+        "turnover": {
+            "target_weights": (
+                "unit long and unit short; gross target exposure 2.0 and net exposure 0.0"
+            ),
+            "gross_definition": "sum(abs(target_weight_t - target_weight_t_minus_1))",
+            "one_way_definition": "0.5 * gross turnover",
+            "legacy_metric": "cumulative_one_way",
+            "initial_build_included": True,
+            "initial_state": "all target weights are zero before the first rebalance",
+        },
+        "formation": formation,
+        "reversal_signal": "past 1-month return, ranked contrarian",
+        "momentum_signal": "past months t-12 through t-2 return, ranked continuation",
+        "holding_period": "subsequent month",
+        "price_filter": "exclude signal observations with prior-month close below $1",
+    }
+
+
+def _data_evidence(ohlcv: pd.DataFrame) -> dict[str, Any]:
+    if "provider" not in ohlcv.columns:
+        providers: list[str] = []
+    else:
+        providers = sorted(
+            {
+                str(value).strip().lower()
+                for value in ohlcv["provider"].dropna().tolist()
+                if str(value).strip()
+            }
+        )
+    provider_consistent = len(providers) == 1
+    sample_or_real = (
+        "real"
+        if provider_consistent and providers[0] in _REAL_OHLCV_PROVIDERS
+        else "sample"
+    )
+    return {
+        "actual_providers": providers,
+        "provider_consistent": provider_consistent,
+        "sample_or_real": sample_or_real,
+    }
+
+
+def _scope_warnings(data_evidence: dict[str, Any]) -> list[str]:
+    warnings = [_PROXY_SCOPE_WARNING, _CALENDAR_SCOPE_WARNING]
+    providers = data_evidence["actual_providers"]
+    if not providers:
+        warnings.append(
+            "Provider evidence is unavailable; sample_or_real fails closed to sample."
+        )
+    elif not data_evidence["provider_consistent"]:
+        warnings.append(
+            "Mixed provider rows were observed; sample_or_real fails closed to sample."
+        )
+    elif data_evidence["sample_or_real"] != "real":
+        warnings.append(
+            f"Provider {providers[0]!r} is not verified as real market data; "
+            "sample_or_real is sample."
+        )
+    return warnings
+
 
 def build_reversal_momentum_replication(
     ohlcv: pd.DataFrame,
@@ -27,17 +120,23 @@ def build_reversal_momentum_replication(
     initial_cash: float = 1.0,
     top_n: int | None = None,
 ) -> dict[str, Any]:
-    """Build a monthly long-short replication from normalized daily OHLCV data."""
+    """Build the paper-inspired monthly long-short workflow proxy."""
 
-    warnings: list[str] = []
+    data_evidence = _data_evidence(ohlcv)
+    warnings = _scope_warnings(data_evidence)
     if ohlcv.empty:
-        return _empty_result(initial_cash, ["No OHLCV rows were available."])
+        return _empty_result(
+            initial_cash,
+            [*warnings, "No OHLCV rows were available."],
+            data_evidence=data_evidence,
+        )
 
     monthly = _monthly_panel(ohlcv)
     if monthly.empty or monthly["symbol"].nunique() < 2:
         return _empty_result(
             initial_cash,
-            ["At least two symbols with monthly closes are required."],
+            [*warnings, "At least two symbols with monthly closes are required."],
+            data_evidence=data_evidence,
         )
 
     low_price_observations = _low_price_observation_count(monthly)
@@ -45,7 +144,12 @@ def build_reversal_momentum_replication(
     if signal_frame.empty:
         return _empty_result(
             initial_cash,
-            ["Not enough monthly history. Need roughly 14 monthly closes for 12-2 momentum."],
+            [
+                *warnings,
+                "Not enough monthly history. Need roughly 14 monthly closes for "
+                "12-2 momentum.",
+            ],
+            data_evidence=data_evidence,
         )
 
     effective_top_n = top_n or max(
@@ -81,9 +185,11 @@ def build_reversal_momentum_replication(
         return _empty_result(
             initial_cash,
             [
+                *warnings,
                 "The selected universe did not produce any investable "
                 "monthly long-short observations."
             ],
+            data_evidence=data_evidence,
         )
 
     equity_curve = _equity_curve(composite_returns, initial_cash=initial_cash)
@@ -93,6 +199,7 @@ def build_reversal_momentum_replication(
         initial_cash=initial_cash,
         annualization_factor=12,
     ).model_dump()
+    metrics.update(_turnover_metrics(pd.DataFrame(positions)))
     metrics["observation_months"] = int(len(composite_returns))
     metrics["average_monthly_return"] = float(composite_returns["return"].mean())
     metrics["average_reversal_return"] = _strategy_average(monthly_returns_frame, "reversal")
@@ -112,13 +219,11 @@ def build_reversal_momentum_replication(
 
     return {
         "paper": PAPER_METADATA,
-        "methodology": {
-            "formation": formation,
-            "reversal_signal": "past 1-month return, ranked contrarian",
-            "momentum_signal": "past months t-12 through t-2 return, ranked continuation",
-            "holding_period": "subsequent month",
-            "price_filter": "exclude signal observations with prior-month close below $1",
-        },
+        "methodology": _methodology(
+            formation=formation,
+            data_evidence=data_evidence,
+        ),
+        "data_evidence": data_evidence,
         "metrics": metrics,
         "diagnostics": diagnostics,
         "equity_curve": dataframe_records(equity_curve),
@@ -147,6 +252,11 @@ def _monthly_panel(ohlcv: pd.DataFrame) -> pd.DataFrame:
     frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
     frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
     frame = frame.dropna(subset=["symbol", "timestamp", "close"])
+    if frame.empty:
+        return pd.DataFrame(
+            columns=["symbol", "timestamp", "close", "monthly_return"]
+        )
+    observed_ends = frame.groupby("symbol")["timestamp"].max()
     monthly = (
         frame.sort_values(["symbol", "timestamp"])
         .set_index("timestamp")
@@ -157,6 +267,21 @@ def _monthly_panel(ohlcv: pd.DataFrame) -> pd.DataFrame:
         .rename("close")
         .reset_index()
     )
+    # Resampling labels every terminal observation as calendar month-end. Use
+    # each symbol's raw last observation to exclude a genuinely in-progress
+    # month, while treating a Friday before a weekend month-end as complete.
+    complete_groups = []
+    for symbol, group in monthly.groupby("symbol", sort=False):
+        observed_end = observed_ends.loc[symbol]
+        terminal_month_start = observed_end.normalize().replace(day=1)
+        terminal_month_end = terminal_month_start + pd.offsets.BMonthEnd(0)
+        if observed_end.normalize() < terminal_month_end.normalize():
+            last_complete_month_end = observed_end - pd.offsets.MonthEnd(1)
+            group = group.loc[
+                group["timestamp"] <= last_complete_month_end.normalize()
+            ]
+        complete_groups.append(group)
+    monthly = pd.concat(complete_groups, ignore_index=True)
     monthly["monthly_return"] = monthly.groupby("symbol")["close"].pct_change()
     return monthly.dropna(subset=["monthly_return"]).reset_index(drop=True)
 
@@ -231,6 +356,7 @@ def _long_short_returns(
             }
         )
         for side, rows in [("long", longs), ("short", shorts)]:
+            target_weight = (1.0 if side == "long" else -1.0) / len(rows)
             for _, row in rows.iterrows():
                 positions.append(
                     {
@@ -239,6 +365,7 @@ def _long_short_returns(
                         "return_date": return_date,
                         "symbol": row["symbol"],
                         "side": side,
+                        "target_weight": target_weight,
                         "one_month_return": float(row["one_month_return"]),
                         "momentum_return_12_2": float(row["momentum_return_12_2"]),
                         "composite_score": float(row["composite_score"]),
@@ -276,6 +403,58 @@ def _low_price_observation_count(monthly: pd.DataFrame) -> int:
     return int(ordered["prior_close"].lt(1.0).sum())
 
 
+def _turnover_metrics(positions: pd.DataFrame) -> dict[str, float | int]:
+    if positions.empty:
+        return {
+            "turnover": 0.0,
+            "turnover_one_way": 0.0,
+            "turnover_gross": 0.0,
+            "turnover_average_one_way": 0.0,
+            "turnover_average_gross": 0.0,
+            "turnover_initial_build_one_way": 0.0,
+            "turnover_initial_build_gross": 0.0,
+            "turnover_rebalances": 0,
+        }
+
+    previous_weights: dict[str, float] = {}
+    cumulative_gross = 0.0
+    initial_gross = 0.0
+    rebalance_count = 0
+    for _rebalance_date, group in positions.groupby("rebalance_date", sort=True):
+        current_weights = {
+            str(symbol): float(weight)
+            for symbol, weight in zip(
+                group["symbol"],
+                group["target_weight"],
+                strict=True,
+            )
+        }
+        symbols = set(previous_weights) | set(current_weights)
+        gross = sum(
+            abs(current_weights.get(symbol, 0.0) - previous_weights.get(symbol, 0.0))
+            for symbol in symbols
+        )
+        if rebalance_count == 0:
+            initial_gross = gross
+        cumulative_gross += gross
+        previous_weights = current_weights
+        rebalance_count += 1
+
+    cumulative_one_way = cumulative_gross / 2.0
+    return {
+        # Keep the longstanding field, but now define it explicitly as the
+        # cumulative one-way target-weight turnover instead of a fake zero.
+        "turnover": cumulative_one_way,
+        "turnover_one_way": cumulative_one_way,
+        "turnover_gross": cumulative_gross,
+        "turnover_average_one_way": cumulative_one_way / rebalance_count,
+        "turnover_average_gross": cumulative_gross / rebalance_count,
+        "turnover_initial_build_one_way": initial_gross / 2.0,
+        "turnover_initial_build_gross": initial_gross,
+        "turnover_rebalances": rebalance_count,
+    }
+
+
 def _diagnostics(monthly_returns: pd.DataFrame, signal: pd.DataFrame) -> dict[str, float | None]:
     pivot = monthly_returns.pivot_table(
         index="return_date",
@@ -299,15 +478,18 @@ def _diagnostics(monthly_returns: pd.DataFrame, signal: pd.DataFrame) -> dict[st
         high_noise_reversal = None
         low_noise_reversal = None
     else:
-        aligned = pd.DataFrame(
-            {
-                "noise": noise_by_month,
-                "reversal": reversal.rename(
-                    index=lambda value: str(
-                        pd.Timestamp(value) - pd.offsets.MonthEnd(1)
-                    )
-                ),
-            }
+        noise_by_month.index = pd.to_datetime(noise_by_month.index, utc=True)
+        reversal_by_rebalance_month = reversal.copy()
+        reversal_by_rebalance_month.index = (
+            pd.to_datetime(reversal_by_rebalance_month.index, utc=True)
+            - pd.offsets.MonthEnd(1)
+        )
+        aligned = pd.concat(
+            [
+                noise_by_month.rename("noise"),
+                reversal_by_rebalance_month.rename("reversal"),
+            ],
+            axis=1,
         ).dropna()
         if len(aligned) < 2:
             high_noise_reversal = None
@@ -342,16 +524,19 @@ def _strategy_average(frame: pd.DataFrame, strategy: str) -> float | None:
     return float(values.mean())
 
 
-def _empty_result(initial_cash: float, warnings: list[str]) -> dict[str, Any]:
+def _empty_result(
+    initial_cash: float,
+    warnings: list[str],
+    *,
+    data_evidence: dict[str, Any],
+) -> dict[str, Any]:
     return {
         "paper": PAPER_METADATA,
-        "methodology": {
-            "formation": "decile long-short portfolios",
-            "reversal_signal": "past 1-month return, ranked contrarian",
-            "momentum_signal": "past months t-12 through t-2 return, ranked continuation",
-            "holding_period": "subsequent month",
-            "price_filter": "exclude signal observations with prior-month close below $1",
-        },
+        "methodology": _methodology(
+            formation="decile long-short portfolios",
+            data_evidence=data_evidence,
+        ),
+        "data_evidence": data_evidence,
         "metrics": {
             "total_return": 0.0,
             "annualized_return": 0.0,
@@ -359,6 +544,13 @@ def _empty_result(initial_cash: float, warnings: list[str]) -> dict[str, Any]:
             "sharpe": 0.0,
             "max_drawdown": 0.0,
             "turnover": 0.0,
+            "turnover_one_way": 0.0,
+            "turnover_gross": 0.0,
+            "turnover_average_one_way": 0.0,
+            "turnover_average_gross": 0.0,
+            "turnover_initial_build_one_way": 0.0,
+            "turnover_initial_build_gross": 0.0,
+            "turnover_rebalances": 0,
             "observation_months": 0,
             "average_monthly_return": 0.0,
             "average_reversal_return": None,

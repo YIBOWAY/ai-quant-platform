@@ -2253,6 +2253,13 @@ def agent_promote_candidate(
             help="Exact manifest SHA-256 bound by Gate 2 approval (CAS).",
         ),
     ],
+    final_backtest_receipt: Annotated[
+        str,
+        typer.Option(
+            "--final-backtest-receipt",
+            help="Exact successful full-window receipt verified by the HQA Gate 3 caller.",
+        ),
+    ],
     base_commit: Annotated[
         str,
         typer.Option(
@@ -2279,6 +2286,7 @@ def agent_promote_candidate(
             agent_output_dir=agent_root,
             candidate_id=candidate_id,
             expected_candidate_digest=expected_digest,
+            final_backtest_receipt_id=final_backtest_receipt,
             base_commit=base_commit,
             promotion_root=default_promotion_root(agent_root),
             worktree_root=resolve_managed_worktree_root(),
@@ -2289,7 +2297,11 @@ def agent_promote_candidate(
 
     typer.echo(json.dumps(prepare_cli_payload(result), sort_keys=True))
     typer.echo(
-        _human_instructions(result.promotion_id, result.scoped_paths),
+        _human_instructions(
+            result.promotion_id,
+            result.scoped_paths,
+            final_backtest_receipt,
+        ),
         err=True,
     )
 

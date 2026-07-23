@@ -25,8 +25,17 @@ def test_reversal_momentum_replication_api_runs_with_sample_data(tmp_path) -> No
     assert response.status_code == 200
     payload = response.json()
     assert payload["source"] == "sample"
+    assert payload["methodology"]["scope_classification"] == "workflow_proxy"
+    assert payload["methodology"]["full_paper_replication"] is False
+    assert payload["methodology"]["data_evidence"] == {
+        "actual_providers": ["sample"],
+        "provider_consistent": True,
+        "sample_or_real": "sample",
+    }
     assert payload["paper"]["doi"] == "10.1093/rfs/hhaf057"
     assert payload["metrics"]["observation_months"] > 0
+    assert payload["metrics"]["turnover"] > 0
+    assert payload["metrics"]["turnover"] == payload["metrics"]["turnover_one_way"]
     assert payload["equity_curve"]
     assert payload["run_id"].startswith("replication-")
     run_dir = tmp_path / "api_runs" / "replications" / payload["run_id"]

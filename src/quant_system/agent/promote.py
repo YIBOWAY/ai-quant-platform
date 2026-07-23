@@ -111,6 +111,7 @@ def promote_candidate(
 
     # 3. Static discovery of the single factor class -- no exec.
     class_name, factor_id = _extract_factor_class(source, candidate_id)
+    default_lookback = _extract_default_lookback(source, candidate_id)
 
     # 4. Registry-collision refusal (review finding F4 + adversarial re-review):
     # a promoted module whose factor_id shadows any registrable factor would make
@@ -192,7 +193,11 @@ def promote_candidate(
             tests_dir.mkdir(parents=True, exist_ok=True)
             _write_new(
                 test_path,
-                _test_scaffold(class_name=class_name, factor_id=factor_id),
+                _test_scaffold(
+                    class_name=class_name,
+                    factor_id=factor_id,
+                    default_lookback=default_lookback,
+                ),
             )
         except BaseException:
             module_path.unlink(missing_ok=True)
@@ -297,6 +302,41 @@ def _extract_factor_id(class_def: ast.ClassDef) -> str | None:
     return None
 
 
+def _extract_default_lookback(source: str, context: str) -> int:
+    tree = ast.parse(source)
+    factor_classes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and _has_base_factor_base(node)
+    ]
+    if len(factor_classes) != 1:
+        raise PromotionError(
+            f"candidate {context!r} must define exactly one BaseFactor subclass"
+        )
+    for stmt in factor_classes[0].body:
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(stmt, ast.Assign):
+            targets, value = stmt.targets, stmt.value
+        elif isinstance(stmt, ast.AnnAssign):
+            targets, value = [stmt.target], stmt.value
+        if any(
+            isinstance(target, ast.Name) and target.id == "default_lookback"
+            for target in targets
+        ):
+            if (
+                isinstance(value, ast.Constant)
+                and isinstance(value.value, int)
+                and not isinstance(value.value, bool)
+                and value.value > 0
+            ):
+                return value.value
+            break
+    raise PromotionError(
+        f"candidate {context!r} must assign a positive literal default_lookback"
+    )
+
+
 def _provenance_header(
     *,
     candidate_id: str,
@@ -393,20 +433,42 @@ def _regenerate_init(library_dir: Path) -> Path:
     return init_path
 
 
-def _test_scaffold(*, class_name: str, factor_id: str) -> str:
-    return f'''"""Scaffold test for promoted factor {factor_id!r} (generated at Gate 3).
+def _test_scaffold(
+    *, class_name: str, factor_id: str, default_lookback: int
+) -> str:
+    synthetic_rows = max(80, default_lookback + 20)
+    import_module = f"{_PROMOTED_PACKAGE}.{factor_id}"
+    single_import = f"from {import_module} import {class_name}"
+    if len(single_import) <= 100:
+        imports = f"import pandas as pd\n\n{single_import}"
+        factor_helpers = ""
+        factor_constructor = class_name
+        expected_factor_id = f'"{factor_id}"'
+    else:
+        imports = "from importlib import import_module\n\nimport pandas as pd"
+        factor_helpers = (
+            f"\n{_render_string_constant('EXPECTED_FACTOR_ID', factor_id)}\n\n"
+            f"{_render_string_constant('FACTOR_CLASS_NAME', class_name)}\n\n\n"
+            "def _factor():\n"
+            "    factor_module = import_module(\n"
+            f'        f"{_PROMOTED_PACKAGE}.{{EXPECTED_FACTOR_ID}}"\n'
+            "    )\n"
+            "    return getattr(factor_module, FACTOR_CLASS_NAME)()"
+        )
+        factor_constructor = "_factor"
+        expected_factor_id = "EXPECTED_FACTOR_ID"
+    return f'''"""Scaffold test for a promoted factor (generated at Gate 3).
 
 Extend with factor-specific assertions during the git-diff review.
 """
 
 from __future__ import annotations
 
-import pandas as pd
+{imports}
+{factor_helpers}
 
-from {_PROMOTED_PACKAGE}.{factor_id} import {class_name}
 
-
-def _synthetic_ohlcv(rows: int = 80) -> pd.DataFrame:
+def _synthetic_ohlcv(rows: int = {synthetic_rows}) -> pd.DataFrame:
     timestamps = pd.date_range("2024-01-01", periods=rows, freq="D", tz="UTC")
     close = 100.0 + 0.5 * pd.Series(range(rows), dtype="float64")
     return pd.DataFrame(
@@ -419,20 +481,31 @@ def _synthetic_ohlcv(rows: int = 80) -> pd.DataFrame:
     )
 
 
-def test_{factor_id}_metadata() -> None:
-    factor = {class_name}()
+def test_factor_metadata() -> None:
+    factor = {factor_constructor}()
     metadata = factor.metadata
-    assert metadata.factor_id == "{factor_id}"
+    assert metadata.factor_id == {expected_factor_id}
     assert metadata.factor_name
     assert metadata.factor_version
     assert metadata.lookback > 0
     assert metadata.description
 
 
-def test_{factor_id}_computes_on_synthetic_ohlcv() -> None:
-    factor = {class_name}()
+def test_factor_computes_on_synthetic_ohlcv() -> None:
+    factor = {factor_constructor}()
     result = factor.compute(_synthetic_ohlcv())
     assert not result.empty
-    assert set(result["factor_id"]) == {{"{factor_id}"}}
+    assert set(result["factor_id"]) == {{{expected_factor_id}}}
     assert result["value"].notna().all()
 '''
+
+
+def _render_string_constant(name: str, value: str) -> str:
+    chunks = [value[index : index + 72] for index in range(0, len(value), 72)]
+    return "\n".join(
+        [
+            f"{name} = (",
+            *(f"    {chunk!r}" for chunk in chunks),
+            ")",
+        ]
+    )

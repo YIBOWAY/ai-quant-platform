@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from quant_system.agent.candidate_fs import (
     open_absolute_directory,
@@ -59,6 +59,7 @@ _PROMOTED_REL = Path("src/quant_system/factors/library/promoted")
 _TESTS_REL = Path("tests/factors")
 _GIT_FILE_MODE = "100644"
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_FINAL_BACKTEST_RECEIPT_ID = re.compile(r"^backtest-[0-9a-f]{32}$")
 _SAFE_PROMOTION_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,120}$")
 _LOCK_NAME = ".promotion-workspace.lock"
 _MANIFEST_NAME = "manifest.v1.json"
@@ -85,14 +86,31 @@ class PromotionFileEntry(BaseModel):
 class PromotionManifestV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.1"
     promotion_id: str
     base_commit: str
     candidate_id: str
     candidate_digest: str
+    final_backtest_receipt_id: str | None = None
     scoped_paths: list[str]
     files: list[PromotionFileEntry]
     patch_sha256: str
+
+    @model_validator(mode="after")
+    def validate_receipt_schema(self) -> PromotionManifestV1:
+        if self.schema_version == "1.0":
+            if self.final_backtest_receipt_id is not None:
+                raise ValueError("schema 1.0 must not contain a final receipt")
+            return self
+        if (
+            not isinstance(self.final_backtest_receipt_id, str)
+            or _FINAL_BACKTEST_RECEIPT_ID.fullmatch(
+                self.final_backtest_receipt_id
+            )
+            is None
+        ):
+            raise ValueError("schema 1.1 requires a valid final backtest receipt")
+        return self
 
 
 class PromotionStateV1(BaseModel):
@@ -128,6 +146,22 @@ class PromotionWorkspaceResult(BaseModel):
     manifest_path: Path
     state_path: Path
     scoped_paths: list[str]
+
+
+def _gate3_transition_refusal(manifest: PromotionManifestV1) -> str | None:
+    """Return why this persisted manifest may be observed but never mutated."""
+    receipt_id = manifest.final_backtest_receipt_id
+    if manifest.schema_version != "1.1":
+        return (
+            f"legacy promotion manifest schema {manifest.schema_version} is read-only; "
+            "Gate 3 transitions require schema 1.1 with a final backtest receipt"
+        )
+    if (
+        not isinstance(receipt_id, str)
+        or _FINAL_BACKTEST_RECEIPT_ID.fullmatch(receipt_id) is None
+    ):
+        return "promotion manifest has no valid final backtest receipt"
+    return None
 
 
 def resolve_platform_repo() -> Path:
@@ -569,6 +603,7 @@ def _derive_promotion_id(
     *,
     candidate_id: str,
     candidate_digest: str,
+    final_backtest_receipt_id: str,
     base_commit: str,
     scoped_paths: list[str],
     files: list[PromotionFileEntry],
@@ -578,6 +613,7 @@ def _derive_promotion_id(
         "base_commit": base_commit,
         "candidate_digest": candidate_digest,
         "candidate_id": candidate_id,
+        "final_backtest_receipt_id": final_backtest_receipt_id,
         "files": [entry.model_dump(mode="json") for entry in files],
         "patch_sha256": patch_sha256,
         "scoped_paths": scoped_paths,
@@ -652,7 +688,11 @@ def _write_bytes_replace(path: Path, payload: bytes) -> None:
     os.replace(os.fspath(tmp), os.fspath(path))
 
 
-def _human_instructions(promotion_id: str, scoped: list[str]) -> str:
+def _human_instructions(
+    promotion_id: str,
+    scoped: list[str],
+    final_backtest_receipt_id: str,
+) -> str:
     paths = " ".join(shlex.quote(path) for path in scoped)
     branch = f"codex/promotion-{promotion_id}"
     worktree = resolve_managed_worktree_root() / promotion_id
@@ -671,7 +711,8 @@ def _human_instructions(promotion_id: str, scoped: list[str]) -> str:
         f"quant-system agent cleanup-promotion --promotion-id {promotion_id} "
         "--abandon; then re-run the original quant-system agent promote-candidate "
         "command with the exact original candidate-id, expected-digest, and "
-        "base-commit. --abandon is destructive.\n"
+        f"base-commit, plus --final-backtest-receipt {final_backtest_receipt_id}. "
+        "--abandon is destructive.\n"
     )
 
 
@@ -681,6 +722,7 @@ def prepare_promotion_workspace(
     agent_output_dir: Path | str,
     candidate_id: str,
     expected_candidate_digest: str,
+    final_backtest_receipt_id: str,
     base_commit: str,
     promotion_root: Path,
     worktree_root: Path,
@@ -690,6 +732,9 @@ def prepare_promotion_workspace(
     agent_output_dir = Path(agent_output_dir)
     promotion_root = _normalize_trusted_root_alias(Path(promotion_root))
     worktree_root = _normalize_trusted_root_alias(Path(worktree_root))
+
+    if _FINAL_BACKTEST_RECEIPT_ID.fullmatch(final_backtest_receipt_id) is None:
+        raise PromotionWorkspaceError("invalid final backtest receipt ID")
 
     if not repo_dir.is_dir():
         raise PromotionWorkspaceError(f"repo_dir does not exist: {repo_dir}")
@@ -750,6 +795,7 @@ def prepare_promotion_workspace(
             base_promotion_id = _derive_promotion_id(
                 candidate_id=candidate_id,
                 candidate_digest=expected_candidate_digest,
+                final_backtest_receipt_id=final_backtest_receipt_id,
                 base_commit=base,
                 scoped_paths=scoped,
                 files=entries,
@@ -772,6 +818,7 @@ def prepare_promotion_workspace(
                 base_commit=base,
                 candidate_id=candidate_id,
                 candidate_digest=expected_candidate_digest,
+                final_backtest_receipt_id=final_backtest_receipt_id,
                 scoped_paths=scoped,
                 files=entries,
                 patch_sha256=patch_sha,
@@ -1213,9 +1260,18 @@ def _promotion_status_locked(
             "patch_sha256": manifest.patch_sha256,
             "candidate_id": manifest.candidate_id,
             "candidate_digest": manifest.candidate_digest,
+            "final_backtest_receipt_id": manifest.final_backtest_receipt_id,
             "base_commit": manifest.base_commit,
             "scoped_paths": manifest.scoped_paths,
         }
+
+    transition_refusal = _gate3_transition_refusal(manifest)
+    if transition_refusal is not None:
+        return payload(
+            status=state.status,
+            reviewed_commit=state.reviewed_commit,
+            reason=transition_refusal,
+        )
 
     if state.status in {"abandoned", "cleaned"}:
         return payload(
@@ -1326,6 +1382,10 @@ def _cleanup_promotion_workspace_locked(
         repo_dir=repo_dir,
     )
     worktree = worktree_root / promotion_id
+
+    transition_refusal = _gate3_transition_refusal(manifest)
+    if transition_refusal is not None:
+        raise PromotionWorkspaceError(f"cleanup refused: {transition_refusal}")
 
     if state.status == "cleaned":
         return {

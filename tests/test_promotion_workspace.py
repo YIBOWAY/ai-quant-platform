@@ -20,6 +20,8 @@ from quant_system.cli import app
 
 runner = CliRunner()
 
+_FINAL_BACKTEST_RECEIPT = "backtest-" + "f" * 32
+
 _FACTOR_SRC = '''
 from quant_system.factors.base import BaseFactor
 
@@ -57,6 +59,32 @@ PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = ()
 
 __all__ = ["PROMOTED_FACTORS"]
 '''
+
+
+def test_historical_promotion_manifest_v1_0_remains_readable() -> None:
+    from quant_system.agent.promotion_workspace import PromotionManifestV1
+
+    manifest = PromotionManifestV1.model_validate(
+        {
+            "schema_version": "1.0",
+            "promotion_id": "promo-historical",
+            "base_commit": "a" * 40,
+            "candidate_id": "candidate-historical",
+            "candidate_digest": "b" * 64,
+            "scoped_paths": ["src/factor.py"],
+            "files": [
+                {
+                    "path": "src/factor.py",
+                    "mode": "100644",
+                    "sha256": "c" * 64,
+                }
+            ],
+            "patch_sha256": "d" * 64,
+        }
+    )
+
+    assert manifest.schema_version == "1.0"
+    assert manifest.final_backtest_receipt_id is None
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> str:
@@ -171,10 +199,134 @@ def _prepare_kwargs(tmp_path: Path, repo: Path, agent_output: Path, candidate_id
         "agent_output_dir": agent_output,
         "candidate_id": candidate_id,
         "expected_candidate_digest": digest,
+        "final_backtest_receipt_id": _FINAL_BACKTEST_RECEIPT,
         "base_commit": _git(repo, "rev-parse", "HEAD").strip(),
         "promotion_root": tmp_path / "promotion-state",
         "worktree_root": tmp_path / "worktrees",
     }
+
+
+def test_prepare_persists_final_receipt_in_manifest_identity_and_status(
+    tmp_path: Path,
+) -> None:
+    from quant_system.agent.promotion_workspace import (
+        prepare_promotion_workspace,
+        promotion_status,
+    )
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+
+    result = prepare_promotion_workspace(**kwargs)
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    status = promotion_status(
+        promotion_id=result.promotion_id,
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+    )
+
+    assert manifest["schema_version"] == "1.1"
+    assert manifest["final_backtest_receipt_id"] == _FINAL_BACKTEST_RECEIPT
+    assert status["final_backtest_receipt_id"] == _FINAL_BACKTEST_RECEIPT
+
+    other = prepare_promotion_workspace(
+        **{
+            **kwargs,
+            "final_backtest_receipt_id": "backtest-" + "e" * 32,
+        }
+    )
+    assert other.promotion_id != result.promotion_id
+
+
+def test_prepare_rejects_invalid_final_receipt_before_creating_state(
+    tmp_path: Path,
+) -> None:
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        prepare_promotion_workspace,
+    )
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    kwargs["final_backtest_receipt_id"] = "backtest-not-content-addressed"
+
+    with pytest.raises(PromotionWorkspaceError, match="final backtest receipt"):
+        prepare_promotion_workspace(**kwargs)
+
+    assert not kwargs["promotion_root"].exists()
+    assert not kwargs["worktree_root"].exists()
+
+
+def test_legacy_pending_manifest_stays_read_only_after_patch_commit(
+    tmp_path: Path,
+) -> None:
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        cleanup_promotion_workspace,
+        prepare_promotion_workspace,
+        promotion_status,
+    )
+
+    repo = _git_repo(tmp_path)
+    agent_output, candidate_id, digest = _approved_candidate(tmp_path)
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    result = prepare_promotion_workspace(**kwargs)
+
+    # Reproduce a historical pre-receipt record while preserving the exact
+    # persisted manifest/state digest contract.
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = "1.0"
+    manifest.pop("final_backtest_receipt_id")
+    manifest_bytes = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    result.manifest_path.write_bytes(manifest_bytes)
+
+    state = json.loads(result.state_path.read_text(encoding="utf-8"))
+    state["manifest_sha256"] = hashlib.sha256(manifest_bytes).hexdigest()
+    result.state_path.write_text(
+        json.dumps(state, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    scoped = manifest["scoped_paths"]
+    _git(result.worktree_path, "add", "--", *scoped)
+    _git(result.worktree_path, "commit", "-m", "historical human promotion")
+    _git(
+        result.worktree_path,
+        "branch",
+        f"codex/promotion-{result.promotion_id}",
+        "HEAD",
+    )
+
+    status = promotion_status(
+        promotion_id=result.promotion_id,
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+    )
+    assert status["status"] == "awaiting_human_commit"
+    assert status["reviewed_commit"] is None
+    assert "schema 1.0" in status["reason"]
+    persisted = json.loads(result.state_path.read_text(encoding="utf-8"))
+    assert persisted["status"] == "awaiting_human_commit"
+    assert persisted["reviewed_commit"] is None
+
+    with pytest.raises(PromotionWorkspaceError, match="schema 1.0.*read-only"):
+        cleanup_promotion_workspace(
+            promotion_id=result.promotion_id,
+            agent_output_dir=agent_output,
+            promotion_root=kwargs["promotion_root"],
+            worktree_root=kwargs["worktree_root"],
+            repo_dir=repo,
+            abandon=False,
+        )
+    assert result.worktree_path.exists()
 
 
 def test_managed_root_normalizes_only_macos_system_alias_prefix(
@@ -381,6 +533,7 @@ def test_patch_manifest_deterministic_across_roots_and_clock(
             agent_output_dir=agent_output,
             candidate_id=candidate_id,
             expected_candidate_digest=digest,
+            final_backtest_receipt_id=_FINAL_BACKTEST_RECEIPT,
             base_commit=_git(repo, "rev-parse", "HEAD").strip(),
             promotion_root=root / "promo",
             worktree_root=root / "wt",
@@ -474,6 +627,7 @@ def test_cleanup_refuses_uncommitted_and_detached_until_named_branch(
         "patch_sha256": prepared_manifest["patch_sha256"],
         "candidate_id": candidate_id,
         "candidate_digest": digest,
+        "final_backtest_receipt_id": _FINAL_BACKTEST_RECEIPT,
         "base_commit": prepared_manifest["base_commit"],
         "scoped_paths": prepared_manifest["scoped_paths"],
     }
@@ -1115,6 +1269,7 @@ def test_cli_help_contracts() -> None:
     assert prep.exit_code == 0
     assert "--candidate-id" in prep.output
     assert "--expected-digest" in prep.output
+    assert "--final-backtest-receipt" in prep.output
     assert "--base-commit" in prep.output
     assert "--library-dir" not in prep.output
     assert "--tests-dir" not in prep.output
@@ -1138,7 +1293,12 @@ def test_cli_help_contracts() -> None:
 
 @pytest.mark.parametrize(
     "omit",
-    ["--candidate-id", "--expected-digest", "--base-commit"],
+    [
+        "--candidate-id",
+        "--expected-digest",
+        "--final-backtest-receipt",
+        "--base-commit",
+    ],
 )
 def test_cli_missing_required_exits_2_without_mutation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, omit: str
@@ -1167,6 +1327,8 @@ def test_cli_missing_required_exits_2_without_mutation(
         args.extend(["--candidate-id", candidate_id])
     if omit != "--expected-digest":
         args.extend(["--expected-digest", digest])
+    if omit != "--final-backtest-receipt":
+        args.extend(["--final-backtest-receipt", _FINAL_BACKTEST_RECEIPT])
     if omit != "--base-commit":
         args.extend(["--base-commit", base])
 
@@ -1197,6 +1359,7 @@ def test_cli_prepare_success_stdout_json(
         agent_output_dir=agent_output,
         candidate_id=candidate_id,
         expected_candidate_digest=digest,
+        final_backtest_receipt_id=_FINAL_BACKTEST_RECEIPT,
         base_commit=base,
         promotion_root=agent_output / "agent" / "promotions",
         worktree_root=worktree_root,
@@ -1211,6 +1374,8 @@ def test_cli_prepare_success_stdout_json(
             candidate_id,
             "--expected-digest",
             digest,
+            "--final-backtest-receipt",
+            _FINAL_BACKTEST_RECEIPT,
             "--base-commit",
             base,
         ],
@@ -1246,6 +1411,8 @@ def test_cli_human_instructions_name_actual_worktree_and_safe_quant_system_comma
             candidate_id,
             "--expected-digest",
             digest,
+            "--final-backtest-receipt",
+            _FINAL_BACKTEST_RECEIPT,
             "--base-commit",
             base,
         ],
@@ -1268,6 +1435,10 @@ def test_cli_human_instructions_name_actual_worktree_and_safe_quant_system_comma
         in result.stderr
     )
     assert "quant-system agent promote-candidate" in result.stderr
+    assert (
+        f"--final-backtest-receipt {_FINAL_BACKTEST_RECEIPT}"
+        in result.stderr
+    )
     assert "re-prepare" in result.stderr.lower()
     assert "then run: agent " not in result.stderr
 
