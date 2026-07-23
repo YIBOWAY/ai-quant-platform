@@ -940,7 +940,7 @@ def test_zero_orders_invariant_on_confirm_source() -> None:
         "vertical_binding_authority.py"
     ).read_text()
     start = src.index("def confirm_factor_vertical_b_gate1")
-    end = src.index("def _release_reservation", start)
+    end = src.index("def seed_factor_vertical_b_gate2", start)
     body = src[start:end]
     for banned in (
         "place_order",

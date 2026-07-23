@@ -33,6 +33,7 @@ _ACTION_KINDS = frozenset(
         "vertical.factor_b.plan_confirm",
         "vertical.factor_b.gate1_seed",
         "vertical.factor_b.gate1_confirm",
+        "vertical.factor_b.gate2_seed",
     }
 )
 _COMMON_DOCUMENT_FIELDS = frozenset(
@@ -134,6 +135,16 @@ _ACTION_FIELDS = {
         "expected_gate1_id",
         "reviewed_source_sha256",
         "confirmation_note",
+    },
+    "vertical.factor_b.gate2_seed": _COMMON_DOCUMENT_FIELDS
+    | {
+        "task_ref",
+        "expected_bind_digest",
+        "expected_plan_digest",
+        "expected_gate1_id",
+        "expected_gate1_confirm_digest",
+        "expected_candidate_digest",
+        "seed_note",
     },
 }
 _PROVIDER_MODES = frozenset({"hermetic_fixture", "live_futu_ro"})
@@ -963,6 +974,46 @@ class ConfirmFactorVerticalBGate1:
 
 
 @dataclass(frozen=True)
+class SeedFactorVerticalBGate2:
+    """V7g-B-M5: hermetic factor_b Gate2 seed cascade notch.
+
+    CAS-seeds a pending Gate2 candidate challenge onto an already
+    gate1_confirmed factor_b Task. Advances cascade_stage to gate2_seeded only.
+    Never decides Gate2, never lifts gate_cascade_locked, never StartResearch /
+    global ConfirmResearchPlan / Gate3 / backtest / Git / orders / public write.
+    M4 gate1_confirm acceptance is not standing auth for M5.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    task_ref: str
+    expected_bind_digest: str
+    expected_plan_digest: str
+    expected_gate1_id: str
+    expected_gate1_confirm_digest: str
+    expected_candidate_digest: str
+    seed_note: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_ref(self.task_ref, "task_ref", "task:")
+        _validate_digest(self.expected_bind_digest, "expected_bind_digest")
+        _validate_digest(self.expected_plan_digest, "expected_plan_digest")
+        if (
+            type(self.expected_gate1_id) is not str
+            or _IDENTIFIER_RE.fullmatch(self.expected_gate1_id) is None
+        ):
+            raise AgentWorkspaceActionError(
+                "expected_gate1_id must be a bounded identifier"
+            )
+        _validate_digest(
+            self.expected_gate1_confirm_digest, "expected_gate1_confirm_digest"
+        )
+        _validate_digest(self.expected_candidate_digest, "expected_candidate_digest")
+        _validate_note(self.seed_note, "seed_note")
+
+
+@dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
 
@@ -994,6 +1045,7 @@ UserActionV1 = Union[
     ConfirmFactorVerticalBPlan,
     SeedFactorVerticalBGate1,
     ConfirmFactorVerticalBGate1,
+    SeedFactorVerticalBGate2,
     UnsupportedWorkspaceAction,
 ]
 
@@ -1012,6 +1064,7 @@ _IMPLEMENTED_TYPES = (
     ConfirmFactorVerticalBPlan,
     SeedFactorVerticalBGate1,
     ConfirmFactorVerticalBGate1,
+    SeedFactorVerticalBGate2,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -1226,6 +1279,20 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is SeedFactorVerticalBGate2:
+        document.update(
+            {
+                "kind": "vertical.factor_b.gate2_seed",
+                "task_ref": action.task_ref,
+                "expected_bind_digest": action.expected_bind_digest,
+                "expected_plan_digest": action.expected_plan_digest,
+                "expected_gate1_id": action.expected_gate1_id,
+                "expected_gate1_confirm_digest": action.expected_gate1_confirm_digest,
+                "expected_candidate_digest": action.expected_candidate_digest,
+                "seed_note": action.seed_note,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -1406,6 +1473,17 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             reviewed_source_sha256=document["reviewed_source_sha256"],
             confirmation_note=document["confirmation_note"],
         )
+    if kind == "vertical.factor_b.gate2_seed":
+        return SeedFactorVerticalBGate2(
+            **common,
+            task_ref=document["task_ref"],
+            expected_bind_digest=document["expected_bind_digest"],
+            expected_plan_digest=document["expected_plan_digest"],
+            expected_gate1_id=document["expected_gate1_id"],
+            expected_gate1_confirm_digest=document["expected_gate1_confirm_digest"],
+            expected_candidate_digest=document["expected_candidate_digest"],
+            seed_note=document["seed_note"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -1448,6 +1526,7 @@ __all__ = [
     "ConfirmFactorVerticalBPlan",
     "ConfirmFormulaSource",
     "SeedFactorVerticalBGate1",
+    "SeedFactorVerticalBGate2",
     "ConfirmResearchPlan",
     "ContinueResearch",
     "ConversationTurn",

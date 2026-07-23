@@ -902,6 +902,129 @@ class ResultSurfaceAuthority:
             payload_digest=reviewed_source_sha256,
         )
 
+
+    def seed_factor_vertical_b_gate2_seed_sample(
+        self,
+        *,
+        workspace_id: str,
+        result_id: str,
+        factor_name: str,
+        paper_ref: str,
+        paper_digest: str,
+        expected_candidate_digest: str,
+        formula_sketch: str,
+        universe_note: str,
+        display_title: str | None = None,
+        summary: str | None = None,
+        status: str = "completed",
+        task_id: str | None = None,
+        attempt_id: str | None = None,
+        run_id: str | None = None,
+        provider_evidence: list[str] | tuple[str, ...] | None = None,
+        filters: list[str] | tuple[str, ...] | None = None,
+        exclusions: list[str] | tuple[str, ...] | None = None,
+        limitations: list[str] | tuple[str, ...] | None = None,
+        freshness: str = "fresh",
+        read_status: str = "available",
+        sample_or_real: str = "sample",
+        ic_mean: float | int | None = None,
+        sample_window: str | None = None,
+        source: str = "hermetic_vertical_b_gate2_seed",
+        authority: str = "vertical_binding_authority",
+    ) -> TypedResultRecord:
+        """V7g-B-M5 Gate2-seed seeder.
+
+        Always sample. payload_digest is the candidate identity
+        (expected_candidate_digest). Default limitations include gate2_seeded +
+        gate_cascade_locked and historical gate1_confirmed / gate1_seeded /
+        plan_confirmed.
+        """
+        title = display_title or f"{factor_name} factor Gate2 seeded"
+        default_limitations = limitations or (
+            "hermetic_fixture",
+            "not_live_backtest",
+            "not_tradeable",
+            "zero_orders",
+            "plan_confirmed",
+            "gate1_seeded",
+            "gate1_confirmed",
+            "gate2_seeded",
+            "gate_cascade_locked",
+            "not_git_commit",
+        )
+        mark = "sample"
+        if sample_or_real == "real":
+            default_limitations = tuple(
+                dict.fromkeys(list(default_limitations) + ["honesty_coercion"])
+            )
+        banned = {
+            "plan_confirm_required",
+            "gate_cascade_unlock",
+            "gate2_decide",
+            "gate2_confirmed",
+            "start_research",
+            "tradeable",
+            "live_backtest",
+        }
+        default_limitations = tuple(
+            x for x in default_limitations if x not in banned
+        )
+        for required in (
+            "plan_confirmed",
+            "gate1_seeded",
+            "gate1_confirmed",
+            "gate2_seeded",
+            "gate_cascade_locked",
+            "zero_orders",
+            "not_live_backtest",
+            "not_tradeable",
+            "not_git_commit",
+            "hermetic_fixture",
+        ):
+            if required not in default_limitations:
+                default_limitations = tuple(list(default_limitations) + [required])
+        # paper_digest retained for API continuity; payload is candidate identity.
+        _ = paper_digest
+        default_evidence = provider_evidence
+        if default_evidence is None:
+            default_evidence = ("hermetic_factor_fixture", "hermetic_gate2_seed")
+        return self.seed_result(
+            workspace_id=workspace_id,
+            result_id=result_id,
+            kind="factor",
+            display_title=title,
+            status=status,
+            sample_or_real=mark,
+            freshness=freshness,
+            read_status=read_status,
+            summary=summary or f"{factor_name} hermetic factor Gate2 seed",
+            task_id=task_id,
+            attempt_id=attempt_id,
+            run_id=run_id,
+            factor_name=factor_name,
+            paper_ref=paper_ref,
+            formula_sketch=formula_sketch,
+            universe_note=universe_note,
+            ic_mean=ic_mean,
+            sample_window=sample_window,
+            provider_evidence=default_evidence,
+            filters=filters
+            or ("hermetic_factor_fixture", "gate2_seeded"),
+            exclusions=exclusions
+            or (
+                "live_backtest",
+                "gate2_decide",
+                "gate_cascade_unlock",
+                "git_commit",
+                "start_research",
+                "orders",
+            ),
+            limitations=default_limitations,
+            source=source,
+            authority=authority,
+            payload_digest=expected_candidate_digest,
+        )
+
     def get(self, workspace_id: str, result_id: str) -> TypedResultRecord | None:
         with self._lock:
             return self._rows.get((workspace_id, result_id))
