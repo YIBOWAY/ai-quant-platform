@@ -19,6 +19,18 @@ def _copy_script(tmp_path: Path, name: str) -> tuple[Path, Path]:
     return release_root, script
 
 
+def _write_frontend_env(release_root: Path, *, mode: int = 0o600) -> Path:
+    env_file = release_root / "data" / "_runtime" / "agent-v0.2-frontend.env"
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    env_file.write_text(
+        "QS_HERMES_CHAT_ENABLED=true\n"
+        "NEXT_PUBLIC_QUANT_API_BASE_URL=http://127.0.0.1:8765\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(mode)
+    return env_file
+
+
 def test_backend_check_uses_release_source_with_main_repo_python(
     tmp_path: Path,
 ) -> None:
@@ -128,6 +140,7 @@ def test_frontend_check_uses_release_build_with_main_repo_next(
     tmp_path: Path,
 ) -> None:
     release_root, script = _copy_script(tmp_path, "run_quant_frontend.sh")
+    env_file = _write_frontend_env(release_root)
     build_id = release_root / "src" / "frontend" / ".next" / "BUILD_ID"
     build_id.parent.mkdir(parents=True)
     build_id.write_text("release-build\n", encoding="utf-8")
@@ -141,7 +154,11 @@ def test_frontend_check_uses_release_build_with_main_repo_next(
     result = subprocess.run(
         [str(script), "--check"],
         cwd=release_root,
-        env={**os.environ, "QS_MAIN_REPO_ROOT": str(main_root)},
+        env={
+            **os.environ,
+            "QS_MAIN_REPO_ROOT": str(main_root),
+            "QS_AGENT_V02_FRONTEND_ENV_FILE": str(env_file),
+        },
         text=True,
         capture_output=True,
         check=False,
@@ -151,6 +168,29 @@ def test_frontend_check_uses_release_build_with_main_repo_next(
     assert "frontend_ready=true" in result.stdout
     assert f"release_root={release_root}" in result.stdout
     assert f"next={next_bin}" in result.stdout
+
+
+def test_frontend_rejects_non_owner_only_env_before_start(
+    tmp_path: Path,
+) -> None:
+    release_root, script = _copy_script(tmp_path, "run_quant_frontend.sh")
+    env_file = _write_frontend_env(release_root, mode=0o640)
+
+    result = subprocess.run(
+        [str(script), "--check"],
+        cwd=release_root,
+        env={
+            **os.environ,
+            "QS_AGENT_V02_FRONTEND_ENV_FILE": str(env_file),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 78
+    assert result.stdout == ""
+    assert "frontend_config_error=frontend_env_mode_must_be_600" in result.stderr
 
 
 def test_backend_start_is_release_bound_and_disables_auto_migration(
@@ -206,6 +246,7 @@ def test_frontend_start_serves_release_build_with_main_repo_modules(
     tmp_path: Path,
 ) -> None:
     release_root, script = _copy_script(tmp_path, "run_quant_frontend.sh")
+    env_file = _write_frontend_env(release_root)
     frontend_dir = release_root / "src" / "frontend"
     build_id = frontend_dir / ".next" / "BUILD_ID"
     build_id.parent.mkdir(parents=True)
@@ -219,6 +260,7 @@ def test_frontend_start_serves_release_build_with_main_repo_modules(
         "#!/usr/bin/env bash\n"
         'printf "cwd=%s\\n" "$PWD"\n'
         'printf "node_path=%s\\n" "$NODE_PATH"\n'
+        'printf "hermes_chat=%s\\n" "$QS_HERMES_CHAT_ENABLED"\n'
         'printf "args=%s\\n" "$*"\n',
         encoding="utf-8",
     )
@@ -227,7 +269,11 @@ def test_frontend_start_serves_release_build_with_main_repo_modules(
     result = subprocess.run(
         [str(script)],
         cwd=release_root,
-        env={**os.environ, "QS_MAIN_REPO_ROOT": str(main_root)},
+        env={
+            **os.environ,
+            "QS_MAIN_REPO_ROOT": str(main_root),
+            "QS_AGENT_V02_FRONTEND_ENV_FILE": str(env_file),
+        },
         text=True,
         capture_output=True,
         check=False,
@@ -238,6 +284,7 @@ def test_frontend_start_serves_release_build_with_main_repo_modules(
     log = log_path.read_text(encoding="utf-8")
     assert f"cwd={frontend_dir}" in log
     assert f"node_path={main_modules}" in log
+    assert "hermes_chat=true" in log
     assert "args=start -H 127.0.0.1 -p 3001" in log
     assert stat.S_IMODE(log_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(log_path.parent.stat().st_mode) == 0o700
@@ -272,6 +319,7 @@ def test_stack_installer_is_replay_safe_and_never_installs_strategy_jobs(
     env_file.parent.mkdir(parents=True)
     env_file.write_text("QS_DATABASE_AUTO_MIGRATE=false\n", encoding="utf-8")
     env_file.chmod(0o600)
+    frontend_env_file = _write_frontend_env(release_root)
 
     main_root = tmp_path / "main"
     python = main_root / "ai-quant" / "bin" / "python"
@@ -300,6 +348,7 @@ def test_stack_installer_is_replay_safe_and_never_installs_strategy_jobs(
         "HOME": str(home),
         "QS_MAIN_REPO_ROOT": str(main_root),
         "QS_AGENT_V02_BACKEND_ENV_FILE": str(env_file),
+        "QS_AGENT_V02_FRONTEND_ENV_FILE": str(frontend_env_file),
         "QS_LAUNCHCTL_BIN": str(launchctl),
     }
 

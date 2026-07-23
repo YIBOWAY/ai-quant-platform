@@ -50,11 +50,26 @@ QS_LOCAL_MUTATION_ENABLED=true
 QS_LOCAL_MUTATION_COMPOSER_OPEN=true
 ```
 
+Create a second ignored, owner-only frontend runtime file:
+
+```text
+data/_runtime/agent-v0.2-frontend.env
+```
+
+The frontend runner requires an explicit local chat enablement instead of
+silently serving a disabled build:
+
+```dotenv
+QS_HERMES_CHAT_ENABLED=true
+NEXT_PUBLIC_QUANT_API_BASE_URL=http://127.0.0.1:8765
+```
+
 Keep the Hermes API key in its separate owner-only file. Then validate both
 runners without starting them:
 
 ```bash
 chmod 600 data/_runtime/agent-v0.2-backend.env
+chmod 600 data/_runtime/agent-v0.2-frontend.env
 bash scripts/run_quant_backend.sh --check
 bash scripts/run_quant_frontend.sh --check
 ```

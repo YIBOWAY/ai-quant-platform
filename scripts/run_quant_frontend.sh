@@ -5,10 +5,35 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_DIR="$ROOT/src/frontend"
 LOG_DIR="$ROOT/data/_runtime/logs"
 LOG_PATH="$LOG_DIR/frontend-next.launchd.log"
+ENV_FILE="${QS_AGENT_V02_FRONTEND_ENV_FILE:-$ROOT/data/_runtime/agent-v0.2-frontend.env}"
 
 fail() {
   echo "frontend_config_error=$1" >&2
   exit 78
+}
+
+file_owner_and_mode() {
+  local path="$1"
+  if stat -f "%u %Lp" "$path" >/dev/null 2>&1; then
+    stat -f "%u %Lp" "$path"
+  else
+    stat -c "%u %a" "$path"
+  fi
+}
+
+load_frontend_env() {
+  local metadata owner mode
+  [[ -e "$ENV_FILE" || -L "$ENV_FILE" ]] || fail "frontend_env_missing"
+  [[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] || fail "frontend_env_not_regular"
+  metadata="$(file_owner_and_mode "$ENV_FILE")" || fail "frontend_env_stat_failed"
+  read -r owner mode <<<"$metadata"
+  [[ "$owner" == "$(id -u)" ]] || fail "frontend_env_wrong_owner"
+  [[ "$mode" =~ ^0?600$ ]] || fail "frontend_env_mode_must_be_600"
+  set -a
+  # The file is a trusted shell dotenv after its owner/type/mode checks.
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
 }
 
 discover_main_root() {
@@ -40,6 +65,7 @@ resolve_next() {
   fail "next_executable_not_found"
 }
 
+load_frontend_env
 MAIN_ROOT="$(discover_main_root)"
 [[ -d "$MAIN_ROOT" ]] || fail "main_repo_missing"
 [[ -f "$FRONTEND_DIR/.next/BUILD_ID" ]] || fail "release_build_missing"
@@ -49,6 +75,15 @@ if [[ -d "$MAIN_NODE_MODULES" ]]; then
   export NODE_PATH="$MAIN_NODE_MODULES${NODE_PATH:+:$NODE_PATH}"
 fi
 export NEXT_PUBLIC_QUANT_API_BASE_URL="${NEXT_PUBLIC_QUANT_API_BASE_URL:-http://127.0.0.1:8765}"
+
+case "${QS_HERMES_CHAT_ENABLED:-false}" in
+  true | TRUE | 1 | yes | YES | on | ON)
+    export QS_HERMES_CHAT_ENABLED=true
+    ;;
+  *)
+    fail "hermes_chat_must_be_explicitly_enabled"
+    ;;
+esac
 
 case "${1:-}" in
   --check)
