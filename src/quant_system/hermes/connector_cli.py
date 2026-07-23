@@ -29,6 +29,7 @@ from quant_system.hermes.connector_worker import (
     HermesConnectorWorker,
     PostgresCommandWakeupWaiter,
 )
+from quant_system.hermes.release_cli import release_app
 from quant_system.hermes.workflow_binding import (
     PreparedWorkflowCommand,
     ensure_bound_command,
@@ -157,6 +158,7 @@ workflow_binding_app = typer.Typer(
     no_args_is_help=True,
 )
 hermes_app.add_typer(workflow_binding_app, name="workflow-binding")
+hermes_app.add_typer(release_app, name="release")
 
 _WORKFLOW_BINDING_STDIN_LIMIT = 16 * 1024
 _PG_BIGINT_MAX = 9_223_372_036_854_775_807
