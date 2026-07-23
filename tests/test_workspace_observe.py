@@ -157,8 +157,10 @@ def test_follow_resync_and_terminal() -> None:
     assert follow_resync_required(after_cursor=3, head_event_id=3) is False
     assert follow_resync_required(after_cursor=4, head_event_id=3) is True
     assert follow_resync_required(after_cursor=-1, head_event_id=0) is True
-    assert is_terminal_command_state("delivered")
+    assert is_terminal_command_state("succeeded")
     assert is_terminal_command_state("failed")
+    assert not is_terminal_command_state("delivered")
+    assert not is_terminal_command_state("outcome_unknown")
     assert not is_terminal_command_state("queued")
     assert not is_terminal_command_state(None)
 

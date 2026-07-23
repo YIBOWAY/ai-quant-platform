@@ -7,9 +7,10 @@ unchanged. No Task invention, no public write, no provider token passthrough.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from collections.abc import Mapping
 from threading import Lock
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 TranscriptPhase = Literal["waiting", "partial", "final", "unavailable"]
 
@@ -29,12 +30,11 @@ _FORBIDDEN_BODY_KEYS = frozenset(
 
 _TERMINAL_FINAL = frozenset(
     {
-        "delivered",
+        "succeeded",
         "cancelled",
         "failed",
         "rejected",
         "timed_out",
-        "outcome_unknown",
     }
 )
 
@@ -46,8 +46,12 @@ _IN_FLIGHT = frozenset(
         "dispatching",
         "accepted",
         "submitting",
+        "delivered",
+        "outcome_unknown",
     }
 )
+
+_HERMES_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$")
 
 
 def phase_from_command_state(state: str | None) -> TranscriptPhase | None:
@@ -91,8 +95,9 @@ def project_transcript_hint(
     sid = str(hermes_session_id or "").strip()
     if not sid:
         raise ValueError("hermes_session_id required")
-    # Reject registry/workspace ids that must never hit messages BFF.
-    if sid.startswith("web_") or sid.startswith("wm_"):
+    # `web_*` is the canonical Hermes SessionDB identity for managed Web
+    # sessions. Platform-only `wm_*` registry ids must never hit messages BFF.
+    if sid.startswith("wm_") or _HERMES_SESSION_ID_RE.fullmatch(sid) is None:
         raise ValueError("hermes_session_id not usable for messages")
     phase_s = str(phase or "").strip().lower()
     if phase_s not in {"waiting", "partial", "final", "unavailable"}:
@@ -137,7 +142,7 @@ def hints_from_command_events(
         sid = item.get("hermes_session_id")
         if type(sid) is not str or not sid.strip():
             continue
-        if sid.startswith("web_") or sid.startswith("wm_"):
+        if sid.startswith("wm_"):
             continue
         state = item.get("state")
         phase = phase_from_command_state(

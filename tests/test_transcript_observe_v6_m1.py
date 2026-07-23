@@ -75,7 +75,9 @@ def _bootstrap(client: TestClient, tmp_path: Path) -> None:
 def test_phase_from_command_state_mapping() -> None:
     assert phase_from_command_state("queued") == "waiting"
     assert phase_from_command_state("leased") == "waiting"
-    assert phase_from_command_state("delivered") == "final"
+    assert phase_from_command_state("delivered") == "waiting"
+    assert phase_from_command_state("outcome_unknown") == "waiting"
+    assert phase_from_command_state("succeeded") == "final"
     assert phase_from_command_state("failed") == "final"
     assert phase_from_command_state(None) is None
     assert phase_from_command_state("") is None
@@ -104,15 +106,16 @@ def test_project_hint_forbids_bodies() -> None:
     assert "messages_bff_is_text_authority" in hint["limitations"]
 
 
-def test_project_hint_rejects_web_wm_ids() -> None:
-    with pytest.raises(ValueError):
-        project_transcript_hint(
-            workspace_id=WORKSPACE_ID,
-            hermes_session_id="web_abc",
-            command_id=None,
-            phase="waiting",
-            revision="r1",
-        )
+def test_project_hint_accepts_hermes_web_id_and_rejects_platform_wm_id() -> None:
+    hint = project_transcript_hint(
+        workspace_id=WORKSPACE_ID,
+        hermes_session_id="web_abc",
+        command_id=None,
+        phase="waiting",
+        revision="r1",
+    )
+    assert hint["hermes_session_id"] == "web_abc"
+
     with pytest.raises(ValueError):
         project_transcript_hint(
             workspace_id=WORKSPACE_ID,
@@ -129,19 +132,19 @@ def test_hints_from_command_events() -> None:
         {
             "command_id": "c1",
             "state": "leased",
-            "hermes_session_id": "run_sess1",
+            "hermes_session_id": "web_sess1",
             "command_version": 2,
         },
         {
             "command_id": "c1",
             "state": "delivered",
-            "hermes_session_id": "run_sess1",
+            "hermes_session_id": "web_sess1",
             "command_version": 3,
         },
         {
             "command_id": "c2",
             "state": "queued",
-            "hermes_session_id": "web_bad",
+            "hermes_session_id": "wm_bad",
         },
         {
             "command_id": "c3",
@@ -154,10 +157,10 @@ def test_hints_from_command_events() -> None:
     )
     assert len(hints) == 2
     assert hints[0]["phase"] == "waiting"
-    assert hints[1]["phase"] == "final"
+    assert hints[1]["phase"] == "waiting"
     for h in hints:
         assert "content" not in h
-        assert h["hermes_session_id"] == "run_sess1"
+        assert h["hermes_session_id"] == "web_sess1"
 
 
 def test_journal_dedupes_same_revision() -> None:
@@ -259,8 +262,11 @@ def test_mutation_off_observe_still_streams(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "mutation_enabled" in response.text
 
-def test_follow_stream_emits_transcript_hint_no_body(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Hard assert: when follow page carries hermes_session_id events, SSE emits body-free transcript."""
+def test_follow_stream_emits_transcript_hint_no_body(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SSE emits a body-free hint when follow carries a Hermes Session id."""
     from quant_system.hermes import agent_workspace as aw
 
     class _FakePage:
@@ -330,4 +336,3 @@ def test_follow_stream_emits_transcript_hint_no_body(tmp_path: Path, monkeypatch
         assert payload.get("transport") == "spine-refetch"
         assert "not_provider_token_passthrough" in (payload.get("limitations") or [])
     assert transcript_count >= 1
-
