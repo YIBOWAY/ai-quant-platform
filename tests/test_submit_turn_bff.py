@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
+from quant_system.api.routes import workspace as workspace_routes
 from quant_system.api.safety.local_session import (
     CSRF_HEADER_NAME,
     issue_bootstrap_token,
@@ -17,11 +20,38 @@ from quant_system.config.settings import (
     LocalMutationSettings,
     Settings,
 )
-from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
+from quant_system.hermes.dark_identity_profile import (
+    PLATFORM_WORKSPACE_ID,
+    PROVIDER_POLICY_DIGEST,
+    STORE_TTL_DAYS,
+)
 from quant_system.hermes.intent_payload_port import FakeIntentPayloadPort
 from quant_system.hermes.submission_saga import ActionReceipt
 
 ORIGIN = "http://127.0.0.1:3001"
+
+
+@pytest.fixture(autouse=True)
+def _admit_hermetic_bff_release(monkeypatch) -> None:
+    """These transport tests isolate the BFF behind an explicitly admitted gate."""
+
+    monkeypatch.setattr(
+        workspace_routes,
+        "composer_readiness_snapshot",
+        lambda _settings, *, fresh=False: {
+            "chat_write_ready": True,
+            "release_blockers": [],
+        },
+    )
+    monkeypatch.setattr(
+        "quant_system.hermes.composite_turn_submit.require_web_writable_session",
+        lambda _settings, *, platform_session_id: SimpleNamespace(
+            platform_session_id=platform_session_id,
+            workspace_id=PLATFORM_WORKSPACE_ID,
+            provider_policy_digest=PROVIDER_POLICY_DIGEST,
+            payload_ttl_days=STORE_TTL_DAYS,
+        ),
+    )
 
 
 def _settings(*, mutation: bool = False) -> Settings:
@@ -262,6 +292,8 @@ def test_v8_m2_bff_same_id_different_prompt_409(tmp_path: Path) -> None:
     assert r1.status_code == 200, r1.text
     assert r2.status_code == 409, r2.text
     detail = r2.json()["detail"]
-    assert detail["code"] in {"conflict", "intent_idempotency_conflict"} or "conflict" in str(detail).lower()
+    assert (
+        detail["code"] in {"conflict", "intent_idempotency_conflict"}
+        or "conflict" in str(detail).lower()
+    )
     assert turn.call_count == 1
-

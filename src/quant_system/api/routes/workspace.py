@@ -55,6 +55,17 @@ router = APIRouter()
 # Hard body ceiling for action documents (bytes of JSON object, not prompt text).
 _MAX_ACTION_DOCUMENT_BYTES = 16_384
 
+# Loss of release admission must never trap a user behind an unsafe open run or
+# approval.  Only strictly reducing actions bypass the write admission check.
+_RELEASE_ROLLBACK_ACTION_KINDS = frozenset(
+    {
+        "hermes.run.stop",
+        "public.cutover.close",
+        "v8.public.cutover.close",
+        "v8.canary.grant.revoke",
+    }
+)
+
 
 class WorkspaceActRequest(BaseModel):
     action: dict[str, Any] = Field(min_length=1)
@@ -80,6 +91,37 @@ def _workspace(settings: SettingsDep) -> PlatformAgentWorkspace:
 
 def _actor(session_owner_user_id: object) -> ActorRef:
     return ActorRef(owner_user_id=str(session_owner_user_id))
+
+
+def _is_release_rollback_action(action: dict[str, Any]) -> bool:
+    kind = action.get("kind")
+    if kind in _RELEASE_ROLLBACK_ACTION_KINDS:
+        return True
+    return (
+        kind == "hermes.command_approval.decide"
+        and action.get("decision") == "deny"
+    )
+
+
+def _require_effective_release(settings: SettingsDep) -> None:
+    readiness = composer_readiness_snapshot(settings, fresh=True)
+    if readiness.get("chat_write_ready") is True:
+        return
+    raw_blockers = readiness.get("release_blockers")
+    blockers = (
+        [str(item) for item in raw_blockers]
+        if isinstance(raw_blockers, list)
+        else ["effective_release_gate_unavailable"]
+    )
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "agent_v02_release_not_ready",
+            "message": "Agent v0.2 durable release admission is closed",
+            "blockers": blockers[:64],
+            "mutation_enabled": bool(settings.local_mutation.enabled),
+        },
+    )
 
 
 def _http_from_saga(exc: SubmissionSagaError, *, mutation_enabled: bool = False) -> HTTPException:
@@ -136,11 +178,9 @@ def workspace_follow(
     owner: OwnerSessionDep,
     after_cursor: int | None = None,
 ) -> dict[str, object]:
-    after: WorkspaceCursor | int | None
-    if after_cursor is None:
-        after = None
-    else:
-        after = after_cursor
+    after: WorkspaceCursor | int | None = (
+        None if after_cursor is None else after_cursor
+    )
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     try:
         page = _workspace(settings).follow(
@@ -176,9 +216,10 @@ class WorkspaceEventStreamResponse(StreamingResponse):
 )
 def workspace_follow_stream(
     workspace_id: str,
+    request: Request,
     settings: SettingsDep,
     owner: OwnerSessionDep,
-    after_cursor: int | None = Query(default=0, ge=0, le=2**63 - 1),
+    after_cursor: int | None = Query(default=None, ge=0, le=2**63 - 1),
     max_ticks: int | None = Query(default=None, ge=1, le=_SSE_MAX_TICKS_CEILING),
     poll_seconds: float | None = Query(default=None, ge=0.0, le=5.0),
 ) -> StreamingResponse:
@@ -192,13 +233,38 @@ def workspace_follow_stream(
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     workspace = _workspace(settings)
     actor = _actor(owner.owner_user_id)
-    start_cursor = 0 if after_cursor is None else int(after_cursor)
+    last_event_id = request.headers.get("last-event-id")
+    if last_event_id is not None and last_event_id != "":
+        if (
+            len(last_event_id) <= 19
+            and last_event_id.isascii()
+            and last_event_id.isdecimal()
+            and int(last_event_id) <= 2**63 - 1
+        ):
+            start_cursor = int(last_event_id)
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "invalid_last_event_id",
+                    "message": "Last-Event-ID must be a non-negative 63-bit integer",
+                },
+            )
+    elif after_cursor is not None:
+        start_cursor = int(after_cursor)
+    else:
+        start_cursor = 0
     tick_limit = int(max_ticks) if max_ticks is not None else _SSE_MAX_TICKS
     sleep_s = float(poll_seconds) if poll_seconds is not None else _SSE_POLL_SECONDS
+    cursor_state = [start_cursor]
 
     def _sse_pack(event: str, data: dict[str, object]) -> str:
         payload = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
-        return f"event: {event}\ndata: {payload}\n\n"
+        return (
+            f"id: {cursor_state[0]}\n"
+            f"event: {event}\n"
+            f"data: {payload}\n\n"
+        )
 
     def event_iter() -> Iterator[str]:
         from quant_system.hermes.approval_observe import (
@@ -210,12 +276,12 @@ def workspace_follow_stream(
         from quant_system.hermes.result_observe import (
             default_result_observe_journal,
         )
-        from quant_system.hermes.vertical_observe import (
-            default_vertical_observe_journal,
-        )
         from quant_system.hermes.transcript_observe import (
             default_transcript_observe_journal,
             hints_from_command_events,
+        )
+        from quant_system.hermes.vertical_observe import (
+            default_vertical_observe_journal,
         )
 
         cursor = start_cursor
@@ -391,10 +457,23 @@ def workspace_follow_stream(
             if isinstance(events, list) and events:
                 for item in events:
                     if isinstance(item, dict):
+                        item_event_id = item.get("event_id")
+                        if (
+                            isinstance(item_event_id, int)
+                            and not isinstance(item_event_id, bool)
+                            and item_event_id >= cursor
+                        ):
+                            cursor = item_event_id
+                            cursor_state[0] = cursor
                         yield _sse_pack("command", dict(item))
                 next_cursor = public.get("next_cursor")
-                if isinstance(next_cursor, int):
+                if (
+                    isinstance(next_cursor, int)
+                    and not isinstance(next_cursor, bool)
+                    and next_cursor >= cursor
+                ):
                     cursor = next_cursor
+                    cursor_state[0] = cursor
                 yield _sse_pack(
                     "cursor",
                     {
@@ -623,6 +702,9 @@ def workspace_act(
                 },
             )
 
+    if not _is_release_rollback_action(raw):
+        _require_effective_release(settings)
+
     try:
         receipt = _workspace(settings).act(_actor(owner.owner_user_id), raw)
     except (SubmissionSagaError, AgentWorkspaceActionError, ValueError, TypeError) as exc:
@@ -652,6 +734,7 @@ def workspace_submit_turn(
     """
     owner = require_mutation_security(request)
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
+    _require_effective_release(settings)
 
     # Reject oversized prompts before any store I/O (Pydantic already requires
     # nonempty; profile enforces 16 KiB + strip).

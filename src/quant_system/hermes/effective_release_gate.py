@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
+from quant_system.hermes.compatibility_contract import (
+    load_hermes_compatibility_contract,
+)
 from quant_system.hermes.release_authority import (
     PublicCutoverRecord,
     ReleaseAuthorityError,
@@ -25,23 +28,9 @@ from quant_system.hermes.release_authority import (
 )
 
 _DIGEST_LENGTH = 64
-_REQUIRED_FEATURES = (
-    "session_resources",
-    "run_submission",
-    "run_events_sse",
-    "run_status",
-    "run_approval_response",
-    "run_stop",
-    "managed_run_sessions",
-)
-_REQUIRED_DURABLE = (
-    "idempotency",
-    "event_replay",
-    "approval_cas",
-    "idempotent_stop",
-    "restart_reconcile",
-    "run_evidence",
-)
+_COMPATIBILITY = load_hermes_compatibility_contract()
+_REQUIRED_FEATURES = _COMPATIBILITY.required_bool_features
+_REQUIRED_DURABLE = _COMPATIBILITY.required_durable
 
 
 class ReleaseAuthorityReadPort(Protocol):
@@ -196,7 +185,7 @@ class EffectiveReleaseGate:
         if (
             isinstance(contract_version, bool)
             or not isinstance(contract_version, int)
-            or contract_version < 1
+            or contract_version < _COMPATIBILITY.hermes_contract_version_min
         ):
             self._append(blockers, "hermes_durable_contract_unavailable")
 
@@ -213,14 +202,19 @@ class EffectiveReleaseGate:
                 or fact.get("supported") is not True
                 or fact.get("grounded") is not True
                 or fact.get("evidence")
-                != f"store.transactional_probe:{name}"
+                != _COMPATIBILITY.durable_evidence_template.format(
+                    capability=name
+                )
             ):
                 self._append(blockers, f"hermes_durable_{name}_unready")
 
         managed_contract = payload.get("managed_session_contract")
         if (
             not isinstance(managed_contract, Mapping)
-            or managed_contract.get("history_authority") != "hermes_session_db"
+            or managed_contract.get("history_authority")
+            != _COMPATIBILITY.required_exact_features[
+                "managed_run_history_authority"
+            ]
         ):
             self._append(
                 blockers,
@@ -229,7 +223,9 @@ class EffectiveReleaseGate:
         if (
             not isinstance(managed_contract, Mapping)
             or managed_contract.get("fork_mode")
-            != "preserve_source_exact_message_cursor"
+            != _COMPATIBILITY.required_exact_features[
+                "managed_session_fork_mode"
+            ]
         ):
             self._append(
                 blockers,

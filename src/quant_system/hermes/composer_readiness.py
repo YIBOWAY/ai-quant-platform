@@ -1,193 +1,68 @@
-"""Composer / chat_write readiness surface.
+"""Effective Agent v0.2 composer admission.
 
-Public composer stays fail-closed by default. This module is the single source
-of truth for:
+The browser write surface is admitted only when two independent runtime facts
+agree:
 
-- permanent cutover / security blockers (cleared only by explicit local settings)
-- dynamic schema/authority blockers derived from PostgreSQL readiness
-- ``chat_write_ready`` / ``composer_write_ready`` / ``mutation_enabled`` flags
+* the durable release stamp and public cutover remain exactly bound to the
+  clean Platform/HQA/Hermes runtimes, live schema, sealed evidence, constrained
+  database role, and grounded Hermes capabilities; and
+* one exact supervised connector generation still owns its PostgreSQL session
+  lock and has a fresh heartbeat.
 
-Local single-user installs may open mutation via ``QS_LOCAL_MUTATION_ENABLED``
-and the composer surface via ``QS_LOCAL_MUTATION_COMPOSER_OPEN``. Trading safety
-(kill_switch / paper / dry_run) is independent and stays under SafetySettings.
+The research Task/Attempt binding is intentionally reported separately.  It is
+required for the paper workflow, not for an ordinary Hermes conversation.
 """
 
 from __future__ import annotations
 
+import threading
+import time
+from dataclasses import dataclass
 from typing import Final
 
 from quant_system.config.settings import Settings
 from quant_system.hermes.command_ledger import command_ledger_schema_version
+from quant_system.hermes.connector_liveness import ConnectorLivenessAuthority
+from quant_system.hermes.release_runtime import (
+    current_release_decision,
+    runtime_identity_observation,
+)
 from quant_system.hermes.session_registry import (
     hermes_runtime_security_ready,
     session_registry_schema_version,
 )
 from quant_system.hermes.workflow_binding import workflow_binding_schema_version
 
-# Upstream Hermes capability gaps (necessary but not sufficient for chat write).
-# Live 0.18.x without durable still lists these; local ephemeral dispatch does
-# not clear them for product admission, only for the settings-gated local path.
-UPSTREAM_CHAT_WRITE_BLOCKERS: Final[tuple[str, ...]] = (
-    "run_submission_not_idempotent",
-    "request_recovery_unavailable",
-    "event_id_unavailable",
-    "event_replay_unavailable",
-    "run_status_not_persistent",
-    "provider_policy_not_immutable",
-    "actual_provider_evidence_unavailable",
-    "approval_exact_binding_unavailable",
-    "stop_reconciliation_unavailable",
-)
+# Compatibility export for existing clients.  Capability blockers are no
+# longer a frozen list: they come from the live durable release decision.
+UPSTREAM_CHAT_WRITE_BLOCKERS: Final[tuple[str, ...]] = ()
 
-# Blockers that remain until an explicit local / cutover setting clears them.
-_DEFAULT_PLATFORM_BLOCKERS: Final[tuple[str, ...]] = (
-    "authenticated_mutation_bff_unavailable",
-    "prompt_retention_boundary_unavailable",
-    "composer_resume_stop_unavailable",
-    "research_workflow_submission_unavailable",
-    "independent_security_review_unavailable",
-    "user_chat_cutover_approval_required",
-)
+_READINESS_CACHE_SECONDS = 1.0
+_READINESS_CACHE_LIMIT = 16
+_CACHE_LOCK = threading.Lock()
 
 
-def _local_mutation_enabled(settings: Settings) -> bool:
-    local = getattr(settings, "local_mutation", None)
-    return bool(getattr(local, "enabled", False))
+@dataclass(frozen=True)
+class _EffectiveAdmission:
+    release_ready: bool
+    connector_ready: bool
+    ready: bool
+    blockers: tuple[str, ...]
+    release_stamp_id: str | None
+    public_cutover_id: str | None
+    release_event_cursor: int
+    connector_reason: str
+    connector_worker_id: str | None
+    connector_mode: str | None
+    connector_heartbeat_age_seconds: float | None
 
 
-def _local_composer_open(settings: Settings) -> bool:
-    local = getattr(settings, "local_mutation", None)
-    return bool(getattr(local, "composer_open", False))
-
-
-def authority_readiness(settings: Settings) -> dict[str, object]:
-    """Schema readiness for ledger, session registry, and research workflow binding.
-
-    ``ready`` covers ordinary managed-session create/fork/turn authorities
-    (ledger + session registry). ``research_binding_ready`` additionally
-    requires the 006 workflow-binding schema.
-    """
-    ledger_version = command_ledger_schema_version(settings)
-    session_version = session_registry_schema_version(settings)
-    binding_version = workflow_binding_schema_version(settings)
-    ledger_ready = ledger_version is not None
-    session_ready = session_version is not None
-    binding_ready = binding_version is not None
-    schema_ready = ledger_ready and session_ready
-    research_schema_ready = schema_ready and binding_ready
-    runtime_security_ready = hermes_runtime_security_ready(settings)
-    write_authority_ready = schema_ready and runtime_security_ready
-    # Schema is not worker liveness. No durable capability lease/heartbeat is
-    # currently projected into this process, so operational dispatch stays OFF.
-    dark_dispatch_ready = False
-    mutation_on = _local_mutation_enabled(settings)
-    composer_wanted = _local_composer_open(settings)
-    # Local composer opens only when mutation is on, schemas are research-ready,
-    # and the operator explicitly set composer_open.
-    local_chat_ready = bool(
-        mutation_on
-        and composer_wanted
-        and research_schema_ready
-        and runtime_security_ready
-        and dark_dispatch_ready
-    )
-    return {
-        "command_ledger_schema_ready": ledger_ready,
-        "command_ledger_schema_version": ledger_version,
-        "session_registry_schema_ready": session_ready,
-        "session_registry_schema_version": session_version,
-        "workflow_binding_schema_ready": binding_ready,
-        "workflow_binding_schema_version": binding_version,
-        "schema_ready": schema_ready,
-        "ready": write_authority_ready,
-        "research_binding_schema_ready": research_schema_ready,
-        # Compatibility name: this is only the immutable binding *schema*.
-        "research_binding_ready": research_schema_ready,
-        "runtime_security_ready": runtime_security_ready,
-        "write_authority_ready": write_authority_ready,
-        # Schema is necessary but worker liveness/capability is independent.
-        "dark_dispatch_schema_ready": research_schema_ready,
-        "dark_dispatch_ready": dark_dispatch_ready,
-        "mutation_enabled": mutation_on,
-        "local_chat_write_ready": local_chat_ready,
-        # Existing UI field remains the local-dark composer gate.
-        "composer_write_ready": local_chat_ready,
-        # Public V8 release has no setting in V4-R and remains hard closed.
-        "public_chat_write_ready": False,
-        "chat_write_ready": False,
-    }
-
-
-def platform_delivery_blockers(settings: Settings) -> list[str]:
-    """Ordered public-delivery blockers plus dynamic local authority gaps.
-
-    Local flags may prove that the owner BFF is intentionally enabled, but
-    they cannot clear public V8 review/cutover or missing runtime isolation.
-    """
-    mutation_on = _local_mutation_enabled(settings)
-    ready = authority_readiness(settings)
-    blockers: list[str] = []
-
-    if not mutation_on:
-        blockers.append("authenticated_mutation_bff_unavailable")
-
-    # These are public-release gates, not aliases for local mutation settings.
-    blockers.append("independent_security_review_unavailable")
-    blockers.append("user_chat_cutover_approval_required")
-
-    if not ready["runtime_security_ready"]:
-        blockers.append("runtime_database_role_unavailable")
-    if not ready["dark_dispatch_ready"]:
-        blockers.append("durable_dispatch_operational_unavailable")
-
-    # Session-bound encrypted payload retention is usable only after both the
-    # registry shape and constrained runtime role are verified.
-    if not (
-        mutation_on
-        and ready["session_registry_schema_ready"]
-        and ready["runtime_security_ready"]
-    ):
-        blockers.append("prompt_retention_boundary_unavailable")
-
-    # Full public resume/stop and research submission remain independent.
-    blockers.append("composer_resume_stop_unavailable")
-    blockers.append("research_workflow_submission_unavailable")
-
-    if not ready["command_ledger_schema_ready"]:
-        blockers.append("command_ledger_schema_unavailable")
-    if not ready["session_registry_schema_ready"]:
-        blockers.append("session_registry_schema_unavailable")
-    if not ready["workflow_binding_schema_ready"]:
-        blockers.append("hqa_task_attempt_binding_unavailable")
-        blockers.append("command_dispatch_adapter_unavailable")
-    return _dedupe(blockers)
-
-
-def chat_write_blockers(
-    settings: Settings,
-    *operational: str,
-) -> dict[str, list[str]]:
-    """Full chat blocker envelope used by ``GET /api/hermes/gateway``."""
-    # Local dark enablement must never erase public durable-Hermes blockers.
-    upstream = list(UPSTREAM_CHAT_WRITE_BLOCKERS)
-    platform = platform_delivery_blockers(settings)
-    return {
-        "upstream_blockers": upstream,
-        "platform_delivery_blockers": platform,
-        "blockers": _dedupe([*operational, *upstream, *platform]),
-    }
-
-
-def composer_readiness_snapshot(settings: Settings) -> dict[str, object]:
-    """Composite readiness view for authorities / health / workspace surfaces."""
-    authorities = authority_readiness(settings)
-    platform = platform_delivery_blockers(settings)
-    return {
-        **authorities,
-        "platform_delivery_blockers": platform,
-        "platform_delivery_blocker_count": len(platform),
-        "composer_open": bool(authorities["local_chat_write_ready"]),
-    }
+# Keep the settings object alongside its id so Python id reuse cannot return a
+# prior process/config observation.  The cache is deliberately tiny and short.
+_ADMISSION_CACHE: dict[
+    int,
+    tuple[Settings, float, _EffectiveAdmission],
+] = {}
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -199,6 +74,238 @@ def _dedupe(items: list[str]) -> list[str]:
         seen.add(item)
         out.append(item)
     return out
+
+
+def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
+    blockers: list[str] = []
+    release = None
+    try:
+        release = current_release_decision(settings)
+        blockers.extend(str(item) for item in release.blockers)
+    except Exception:  # noqa: BLE001 - admission probes always fail closed
+        blockers.append("effective_release_gate_unavailable")
+
+    connector = None
+    if release is not None:
+        try:
+            platform_digest = runtime_identity_observation(
+                settings
+            ).platform_runtime_digest
+            max_age = float(
+                getattr(
+                    settings.agent_v02_release,
+                    "connector_heartbeat_max_age_seconds",
+                    30.0,
+                )
+            )
+            connector = ConnectorLivenessAuthority(settings).probe(
+                workspace_id=settings.agent_v02_release.workspace_id,
+                expected_runtime_digest=platform_digest,
+                max_heartbeat_age_seconds=max_age,
+            )
+            if connector.ready is not True:
+                blockers.append(str(connector.reason))
+        except Exception:  # noqa: BLE001 - liveness uncertainty closes writes
+            blockers.append("connector_liveness_unavailable")
+    else:
+        blockers.append("connector_liveness_unavailable")
+
+    release_ready = bool(release is not None and release.ready)
+    connector_ready = bool(connector is not None and connector.ready)
+    ordered = tuple(_dedupe(blockers))
+    ready = release_ready and connector_ready and not ordered
+    return _EffectiveAdmission(
+        release_ready=release_ready,
+        connector_ready=connector_ready,
+        ready=ready,
+        blockers=ordered,
+        release_stamp_id=(
+            str(release.release_stamp_id)
+            if release is not None and release.release_stamp_id is not None
+            else None
+        ),
+        public_cutover_id=(
+            str(release.public_cutover_id)
+            if release is not None and release.public_cutover_id is not None
+            else None
+        ),
+        release_event_cursor=(
+            int(release.event_cursor)
+            if release is not None
+            and isinstance(release.event_cursor, int)
+            and not isinstance(release.event_cursor, bool)
+            and release.event_cursor >= 0
+            else 0
+        ),
+        connector_reason=(
+            str(connector.reason)
+            if connector is not None
+            else "connector_liveness_unavailable"
+        ),
+        connector_worker_id=(
+            str(connector.worker_id)
+            if connector is not None and connector.worker_id is not None
+            else None
+        ),
+        connector_mode=(
+            str(connector.mode)
+            if connector is not None and connector.mode is not None
+            else None
+        ),
+        connector_heartbeat_age_seconds=(
+            float(connector.heartbeat_age_seconds)
+            if connector is not None
+            and connector.heartbeat_age_seconds is not None
+            else None
+        ),
+    )
+
+
+def _effective_admission(
+    settings: Settings,
+    *,
+    fresh: bool,
+) -> _EffectiveAdmission:
+    if fresh:
+        return _observe_effective_admission(settings)
+
+    key = id(settings)
+    now = time.monotonic()
+    with _CACHE_LOCK:
+        cached = _ADMISSION_CACHE.get(key)
+        if (
+            cached is not None
+            and cached[0] is settings
+            and now - cached[1] <= _READINESS_CACHE_SECONDS
+        ):
+            return cached[2]
+
+    observed = _observe_effective_admission(settings)
+    with _CACHE_LOCK:
+        if len(_ADMISSION_CACHE) >= _READINESS_CACHE_LIMIT:
+            oldest = min(_ADMISSION_CACHE, key=lambda item: _ADMISSION_CACHE[item][1])
+            _ADMISSION_CACHE.pop(oldest, None)
+        _ADMISSION_CACHE[key] = (settings, now, observed)
+    return observed
+
+
+def _local_mutation_enabled(settings: Settings) -> bool:
+    return bool(getattr(settings.local_mutation, "enabled", False))
+
+
+def authority_readiness(
+    settings: Settings,
+    *,
+    fresh: bool = False,
+) -> dict[str, object]:
+    """Return schema, research, release, and live connector facts.
+
+    ``ready`` continues to mean that the ordinary workspace persistence
+    authorities are present under the constrained runtime role.  Public chat
+    additionally requires the durable release and connector observations.
+    """
+
+    ledger_version = command_ledger_schema_version(settings)
+    session_version = session_registry_schema_version(settings)
+    binding_version = workflow_binding_schema_version(settings)
+    ledger_ready = ledger_version is not None
+    session_ready = session_version is not None
+    binding_ready = binding_version is not None
+    schema_ready = ledger_ready and session_ready
+    research_schema_ready = schema_ready and binding_ready
+    runtime_security_ready = hermes_runtime_security_ready(settings)
+    write_authority_ready = schema_ready and runtime_security_ready
+    admission = _effective_admission(settings, fresh=fresh)
+    mutation_on = _local_mutation_enabled(settings)
+
+    return {
+        "command_ledger_schema_ready": ledger_ready,
+        "command_ledger_schema_version": ledger_version,
+        "session_registry_schema_ready": session_ready,
+        "session_registry_schema_version": session_version,
+        "workflow_binding_schema_ready": binding_ready,
+        "workflow_binding_schema_version": binding_version,
+        "schema_ready": schema_ready,
+        "ready": write_authority_ready,
+        "research_binding_schema_ready": research_schema_ready,
+        "research_binding_ready": research_schema_ready and runtime_security_ready,
+        "runtime_security_ready": runtime_security_ready,
+        "write_authority_ready": write_authority_ready,
+        "dark_dispatch_schema_ready": schema_ready,
+        "dark_dispatch_ready": admission.connector_ready,
+        "connector_liveness_ready": admission.connector_ready,
+        "connector_liveness_reason": admission.connector_reason,
+        "connector_worker_id": admission.connector_worker_id,
+        "connector_mode": admission.connector_mode,
+        "connector_heartbeat_age_seconds": (
+            admission.connector_heartbeat_age_seconds
+        ),
+        "release_authorized": admission.release_ready,
+        "release_blockers": list(admission.blockers),
+        "release_stamp_id": admission.release_stamp_id,
+        "public_cutover_id": admission.public_cutover_id,
+        "release_event_cursor": admission.release_event_cursor,
+        "mutation_enabled": mutation_on,
+        "local_chat_write_ready": admission.ready,
+        "composer_write_ready": admission.ready,
+        "public_chat_write_ready": admission.ready,
+        "chat_write_ready": admission.ready,
+    }
+
+
+def platform_delivery_blockers(
+    settings: Settings,
+    *,
+    fresh: bool = False,
+) -> list[str]:
+    """Return live Platform/release blockers for the ordinary chat surface."""
+
+    admission = _effective_admission(settings, fresh=fresh)
+    return [
+        blocker
+        for blocker in admission.blockers
+        if not blocker.startswith("hermes_")
+    ]
+
+
+def chat_write_blockers(
+    settings: Settings,
+    *operational: str,
+    fresh: bool = False,
+) -> dict[str, list[str]]:
+    """Return a compatibility envelope backed by current runtime facts."""
+
+    admission = _effective_admission(settings, fresh=fresh)
+    upstream = [
+        blocker for blocker in admission.blockers if blocker.startswith("hermes_")
+    ]
+    platform = [
+        blocker
+        for blocker in admission.blockers
+        if not blocker.startswith("hermes_")
+    ]
+    return {
+        "upstream_blockers": upstream,
+        "platform_delivery_blockers": platform,
+        "blockers": _dedupe([*operational, *admission.blockers]),
+    }
+
+
+def composer_readiness_snapshot(
+    settings: Settings,
+    *,
+    fresh: bool = False,
+) -> dict[str, object]:
+    """Composite readiness view for authorities, health, and workspace."""
+
+    authorities = authority_readiness(settings, fresh=fresh)
+    platform = platform_delivery_blockers(settings, fresh=fresh)
+    return {
+        **authorities,
+        "platform_delivery_blockers": platform,
+        "platform_delivery_blocker_count": len(platform),
+        "composer_open": bool(authorities["chat_write_ready"]),
+    }
 
 
 __all__ = [

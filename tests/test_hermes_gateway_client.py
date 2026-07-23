@@ -171,6 +171,7 @@ def test_client_calls_only_allowlisted_gets_and_keeps_bearer_server_side(
                     "object": "hermes.api_server.capabilities",
                     "platform": "hermes-agent",
                     "model": "codex-local",
+                    "contract_version": 1,
                     "features": {
                         "session_resources": True,
                         "run_submission": True,
@@ -178,6 +179,27 @@ def test_client_calls_only_allowlisted_gets_and_keeps_bearer_server_side(
                         "run_status": True,
                         "run_approval_response": True,
                         "run_stop": True,
+                        "managed_run_sessions": True,
+                        "managed_run_history_authority": "hermes_session_db",
+                        "managed_session_fork_mode": (
+                            "preserve_source_exact_message_cursor"
+                        ),
+                    },
+                    "durable": {
+                        name: {
+                            "supported": True,
+                            "grounded": True,
+                            "evidence": f"store.transactional_probe:{name}",
+                            "secret": "must-not-escape",
+                        }
+                        for name in (
+                            "idempotency",
+                            "event_replay",
+                            "approval_cas",
+                            "idempotent_stop",
+                            "restart_reconcile",
+                            "run_evidence",
+                        )
                     },
                 },
             )
@@ -214,6 +236,17 @@ def test_client_calls_only_allowlisted_gets_and_keeps_bearer_server_side(
 
     assert capabilities["model"] == "codex-local"
     assert capabilities["features"]["session_resources"] is True
+    assert capabilities["features"]["managed_run_sessions"] is True
+    assert capabilities["contract_version"] == 1
+    assert capabilities["managed_session_contract"] == {
+        "history_authority": "hermes_session_db",
+        "fork_mode": "preserve_source_exact_message_cursor",
+    }
+    assert capabilities["durable"]["run_evidence"] == {
+        "supported": True,
+        "grounded": True,
+        "evidence": "store.transactional_probe:run_evidence",
+    }
     assert sessions["data"] == [
         {
             "id": "session-1",

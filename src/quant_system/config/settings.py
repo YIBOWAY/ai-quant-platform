@@ -575,6 +575,16 @@ class HermesGatewaySettings(BaseSettings):
     enabled: bool = False
     base_url: str = "http://127.0.0.1:8642"
     api_key_file: Path | None = None
+    # Git checkout that owns the running Hermes API Server. Release admission
+    # hashes its clean commit identity and must match the operator stamp.
+    runtime_root: Path = (
+        Path.home()
+        / ".hermes"
+        / "hermes-agent"
+        / ".claude"
+        / "worktrees"
+        / "v2-integration"
+    )
     timeout_seconds: float = Field(default=2.0, gt=0, le=30, allow_inf_nan=False)
     # Real /v1/runs can take tens of seconds; keep read timeout short separately.
     dispatch_timeout_seconds: float = Field(default=120.0, gt=0, le=600, allow_inf_nan=False)
@@ -602,6 +612,41 @@ class LocalMutationSettings(BaseSettings):
     enabled: bool = False
     # When true and schemas+dispatch are ready, surface chat_write_ready locally.
     composer_open: bool = False
+
+
+class AgentV02ReleaseSettings(BaseSettings):
+    """Local operator inputs for the durable Agent v0.2 release gate."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_AGENT_V02_RELEASE_",
+        extra="ignore",
+    )
+
+    workspace_id: str = Field(
+        default="workspace-root",
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
+    evidence_file: Path = (
+        Path(__file__).resolve().parents[3]
+        / "data"
+        / "_runtime"
+        / "agent-v0.2-release-evidence.json"
+    )
+    capability_max_age_seconds: float = Field(
+        default=30.0,
+        ge=1.0,
+        le=300.0,
+        allow_inf_nan=False,
+    )
+    connector_heartbeat_max_age_seconds: float = Field(
+        default=30.0,
+        ge=1.0,
+        le=300.0,
+        allow_inf_nan=False,
+    )
 
 
 class IntentPayloadSettings(BaseSettings):
@@ -667,6 +712,9 @@ class Settings(BaseSettings):
     hermes_artifacts: HermesArtifactSettings = Field(default_factory=HermesArtifactSettings)
     hermes_gateway: HermesGatewaySettings = Field(default_factory=HermesGatewaySettings)
     local_mutation: LocalMutationSettings = Field(default_factory=LocalMutationSettings)
+    agent_v02_release: AgentV02ReleaseSettings = Field(
+        default_factory=AgentV02ReleaseSettings
+    )
     intent_payload: IntentPayloadSettings = Field(default_factory=IntentPayloadSettings)
 
 

@@ -96,8 +96,10 @@ def test_gateway_endpoints_fail_closed_when_integration_disabled() -> None:
     assert gateway.json()["connected"] is False
     assert gateway.json()["chat_write_ready"] is False
     assert "integration_disabled" in gateway.json()["blockers"]
-    assert "run_submission_not_idempotent" in gateway.json()["upstream_blockers"]
-    assert "authenticated_mutation_bff_unavailable" in gateway.json()["platform_delivery_blockers"]
+    assert "hermes_durable_capability_unavailable" in gateway.json()[
+        "upstream_blockers"
+    ]
+    assert "local_mutation_disabled" in gateway.json()["platform_delivery_blockers"]
     assert sessions.status_code == 200
     assert sessions.json()["read_status"] == "unavailable"
     assert sessions.json()["sessions"] == []
@@ -122,7 +124,7 @@ def test_gateway_endpoints_expose_only_sanitized_read_models() -> None:
     assert gateway.json()["read_status"] == "available"
     assert gateway.json()["connected"] is True
     assert gateway.json()["chat_write_ready"] is False
-    assert "run_submission_not_idempotent" in gateway.json()["blockers"]
+    assert "active_release_stamp_missing" in gateway.json()["blockers"]
     assert gateway.json()["upstream_blockers"]
     assert gateway.json()["platform_delivery_blockers"]
     assert set(gateway.json()["upstream_blockers"]).issubset(gateway.json()["blockers"])

@@ -44,6 +44,15 @@ _CAPABILITY_FEATURES = (
     "run_status",
     "run_approval_response",
     "run_stop",
+    "managed_run_sessions",
+)
+_DURABLE_CAPABILITIES = (
+    "idempotency",
+    "event_replay",
+    "approval_cas",
+    "idempotent_stop",
+    "restart_reconcile",
+    "run_evidence",
 )
 _MESSAGE_ROLES = frozenset({"user", "assistant"})
 _MAX_TOKEN_BYTES = 4096
@@ -379,9 +388,60 @@ class HermesApiReadClient:
             key: raw_features.get(key) is True if isinstance(raw_features, Mapping) else False
             for key in _CAPABILITY_FEATURES
         }
+        raw_durable = raw.get("durable")
+        durable: dict[str, dict[str, object]] = {}
+        for name in _DURABLE_CAPABILITIES:
+            raw_fact = (
+                raw_durable.get(name)
+                if isinstance(raw_durable, Mapping)
+                else None
+            )
+            durable[name] = {
+                "supported": (
+                    isinstance(raw_fact, Mapping)
+                    and raw_fact.get("supported") is True
+                ),
+                "grounded": (
+                    isinstance(raw_fact, Mapping)
+                    and raw_fact.get("grounded") is True
+                ),
+                "evidence": (
+                    _bounded_text(raw_fact.get("evidence"), maximum=128)
+                    if isinstance(raw_fact, Mapping)
+                    else None
+                ),
+            }
+        contract_version = raw.get("contract_version")
+        if (
+            isinstance(contract_version, bool)
+            or not isinstance(contract_version, int)
+            or contract_version < 1
+        ):
+            contract_version = None
+        managed_session_contract = {
+            "history_authority": (
+                _bounded_text(
+                    raw_features.get("managed_run_history_authority"),
+                    maximum=128,
+                )
+                if isinstance(raw_features, Mapping)
+                else None
+            ),
+            "fork_mode": (
+                _bounded_text(
+                    raw_features.get("managed_session_fork_mode"),
+                    maximum=128,
+                )
+                if isinstance(raw_features, Mapping)
+                else None
+            ),
+        }
         return {
             "model": _bounded_text(raw.get("model"), maximum=256),
             "features": features,
+            "contract_version": contract_version,
+            "durable": durable,
+            "managed_session_contract": managed_session_contract,
         }
 
     def list_sessions(self, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:

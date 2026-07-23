@@ -32,9 +32,9 @@ class HermesGatewayStatusResponse(_HermesGatewayReadModel):
     features: dict[str, bool]
     # Upstream capability gaps are necessary-but-not-sufficient chat blockers.
     # Platform delivery/security gaps must independently reach zero as well.
-    upstream_blockers: list[str] = Field(max_length=32)
-    platform_delivery_blockers: list[str] = Field(max_length=32)
-    blockers: list[str] = Field(max_length=32)
+    upstream_blockers: list[str] = Field(max_length=64)
+    platform_delivery_blockers: list[str] = Field(max_length=64)
+    blockers: list[str] = Field(max_length=64)
     warnings: list[HermesGatewayWarningResponse] = Field(max_length=20)
 
 

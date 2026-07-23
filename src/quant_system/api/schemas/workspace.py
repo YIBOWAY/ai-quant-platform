@@ -148,11 +148,28 @@ class WorkspaceAuthoritiesResponse(_WorkspaceSchema):
     session_registry_schema_version: int | None
     workflow_binding_schema_ready: bool
     workflow_binding_schema_version: int | None
+    schema_ready: bool
     ready: bool
+    research_binding_schema_ready: bool
     research_binding_ready: bool
+    runtime_security_ready: bool
+    write_authority_ready: bool
+    dark_dispatch_schema_ready: bool
     dark_dispatch_ready: bool
+    connector_liveness_ready: bool
+    connector_liveness_reason: str
+    connector_worker_id: str | None
+    connector_mode: str | None
+    connector_heartbeat_age_seconds: float | None
+    release_authorized: bool
+    release_blockers: list[str]
+    release_stamp_id: str | None
+    public_cutover_id: str | None
+    release_event_cursor: int = Field(ge=0, le=2**63 - 1)
     mutation_enabled: bool
+    local_chat_write_ready: bool
     composer_write_ready: bool
+    public_chat_write_ready: bool
     chat_write_ready: bool
     platform_delivery_blockers: list[str]
     platform_delivery_blocker_count: int = Field(ge=0)

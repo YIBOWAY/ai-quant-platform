@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from quant_system.api.routes import workspace as workspace_routes
 from quant_system.api.safety.local_session import (
     CSRF_HEADER_NAME,
     issue_bootstrap_token,
@@ -43,6 +44,25 @@ def _client(tmp_path: Path) -> TestClient:
         bind_address="127.0.0.1",
     )
     return TestClient(app)
+
+
+def _mutation_enabled_client(tmp_path: Path) -> TestClient:
+    settings = Settings(
+        hermes_gateway=HermesGatewaySettings(enabled=False),
+        local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
+        api_cors_origins=[
+            ORIGIN,
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+        ],
+    )
+    return TestClient(
+        create_app(
+            settings=settings,
+            output_dir=tmp_path,
+            bind_address="127.0.0.1",
+        )
+    )
 
 
 def _browser_headers(*, origin: str = ORIGIN, site: str = "same-origin") -> dict[str, str]:
@@ -112,6 +132,63 @@ def test_workspace_act_with_csrf_still_mutation_disabled(tmp_path: Path) -> None
     detail = response.json()["detail"]
     assert detail["code"] == "forbidden"
     assert "authenticated_mutation_bff_unavailable" in detail["message"]
+
+
+def test_workspace_mutations_require_fresh_effective_release_before_any_write(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _mutation_enabled_client(tmp_path)
+    boot = _bootstrap(client, tmp_path)
+    monkeypatch.setattr(
+        workspace_routes,
+        "composer_readiness_snapshot",
+        lambda _settings, *, fresh=False: {
+            "chat_write_ready": False,
+            "release_blockers": [
+                "connector_heartbeat_stale",
+                "release_evidence_digest_mismatch",
+            ],
+        },
+    )
+    headers = {
+        **_browser_headers(),
+        CSRF_HEADER_NAME: boot["csrf"],
+    }
+
+    act = client.post(
+        f"/api/workspace/{WORKSPACE_ID}/act",
+        json={
+            "action": {
+                "schema_version": 1,
+                "kind": "managed_session.create",
+                "client_action_id": "effective-gate-act",
+                "workspace": {"workspace_id": WORKSPACE_ID},
+                "provider_policy_digest": "a" * 64,
+                "payload_ttl_days": 7,
+            }
+        },
+        headers=headers,
+    )
+    turn = client.post(
+        "/api/agent/workspace/submit-turn",
+        json={
+            "workspace_id": WORKSPACE_ID,
+            "managed_session_ref": "session:wm_never_written",
+            "client_action_id": "effective-gate-turn",
+            "prompt": "must not reach the payload store",
+        },
+        headers=headers,
+    )
+
+    for response in (act, turn):
+        assert response.status_code == 503, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "agent_v02_release_not_ready"
+        assert detail["blockers"] == [
+            "connector_heartbeat_stale",
+            "release_evidence_digest_mismatch",
+        ]
 
 
 def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> None:
@@ -203,6 +280,40 @@ def test_workspace_follow_stream_requires_owner_and_emits_sse(tmp_path: Path) ->
     assert "message_body" not in body
 
 
+def test_workspace_follow_stream_resumes_from_numeric_last_event_id(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+    _bootstrap(client, tmp_path)
+
+    response = client.get(
+        f"/api/workspace/{WORKSPACE_ID}/follow/stream"
+        "?after_cursor=0&max_ticks=1&poll_seconds=0",
+        headers={**_browser_headers(), "Last-Event-ID": "41"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert "id: 41\nevent: ready" in response.text
+    assert '"after_cursor":41' in response.text
+    assert "id: 41\nevent: reconnect" in response.text
+
+
+def test_workspace_follow_stream_rejects_non_numeric_last_event_id(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+    _bootstrap(client, tmp_path)
+
+    response = client.get(
+        f"/api/workspace/{WORKSPACE_ID}/follow/stream"
+        "?max_ticks=1&poll_seconds=0",
+        headers={**_browser_headers(), "Last-Event-ID": "cursor:41"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_last_event_id"
+
+
 def test_health_still_mutation_false_with_workspace_module(tmp_path: Path) -> None:
     client = _client(tmp_path)
     response = client.get("/api/health")
@@ -219,10 +330,11 @@ def test_hermes_gateway_blockers_drop_csrf_unavailable(tmp_path: Path) -> None:
     payload = response.json()
     assert payload["chat_write_ready"] is False
     blockers = payload["platform_delivery_blockers"]
-    assert "authenticated_mutation_bff_unavailable" in blockers
-    assert "research_workflow_submission_unavailable" in blockers
-    assert "independent_security_review_unavailable" in blockers
-    assert "user_chat_cutover_approval_required" in blockers
+    assert "local_mutation_disabled" in blockers
+    assert "active_release_stamp_missing" in blockers
+    assert "open_public_cutover_missing" in blockers
+    assert "connector_liveness_unavailable" in blockers
+    assert "research_workflow_submission_unavailable" not in blockers
     assert "csrf_protection_unavailable" not in blockers
 
 
@@ -239,5 +351,9 @@ def test_workspace_authorities_include_research_and_blockers(tmp_path: Path) -> 
     assert body["composer_open"] is False
     assert body["chat_write_ready"] is False
     assert body["research_binding_ready"] is False
-    assert "research_workflow_submission_unavailable" in body["platform_delivery_blockers"]
+    assert "active_release_stamp_missing" in body["platform_delivery_blockers"]
+    assert "connector_liveness_unavailable" in body["platform_delivery_blockers"]
+    assert "research_workflow_submission_unavailable" not in body[
+        "platform_delivery_blockers"
+    ]
     assert body["platform_delivery_blocker_count"] == len(body["platform_delivery_blockers"])

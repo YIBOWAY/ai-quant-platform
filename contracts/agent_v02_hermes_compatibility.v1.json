@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "profile": "local_agent_v0_2",
+  "hermes_contract_version_min": 1,
+  "required_bool_features": [
+    "session_resources",
+    "run_submission",
+    "run_events_sse",
+    "run_status",
+    "run_approval_response",
+    "run_stop",
+    "managed_run_sessions"
+  ],
+  "required_exact_features": {
+    "managed_run_history_authority": "hermes_session_db",
+    "managed_session_fork_mode": "preserve_source_exact_message_cursor"
+  },
+  "required_durable": [
+    "idempotency",
+    "event_replay",
+    "approval_cas",
+    "idempotent_stop",
+    "restart_reconcile",
+    "run_evidence"
+  ],
+  "durable_evidence_template": "store.transactional_probe:{capability}",
+  "hqa_cli_operations": [
+    "capabilities",
+    "submit",
+    "status",
+    "events",
+    "session-ensure",
+    "session-fork"
+  ],
+  "http_endpoints": [
+    {
+      "method": "GET",
+      "path": "/v1/capabilities"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/runs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runs/{run_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runs/{run_id}/events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/runs/{run_id}/approval"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/runs/{run_id}/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/fork"
+    }
+  ],
+  "write_contract": {
+    "run_submit_fields": [
+      "input",
+      "session_id",
+      "metadata"
+    ],
+    "platform_must_not_send": [
+      "conversation_history",
+      "previous_response_id"
+    ],
+    "fork_requires": {
+      "preserve_source": true,
+      "fork_point_format": "message:<positive-integer-id>"
+    }
+  }
+}
