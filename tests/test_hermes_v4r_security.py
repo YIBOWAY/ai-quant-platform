@@ -544,6 +544,15 @@ def test_managed_session_ttl_and_row_are_immutable_in_postgres() -> None:
             with pytest.raises(psycopg.errors.RaiseException, match="immutable"):
                 conn.execute(
                     """
+                    UPDATE quant_system.hermes_workspace_sessions
+                    SET created_at = created_at - interval '1 day'
+                    WHERE platform_session_id = %s
+                    """,
+                    (platform_session_id,),
+                )
+            with pytest.raises(psycopg.errors.RaiseException, match="immutable"):
+                conn.execute(
+                    """
                     DELETE FROM quant_system.hermes_workspace_sessions
                     WHERE platform_session_id = %s
                     """,
@@ -641,6 +650,52 @@ def test_runtime_probe_rejects_missing_required_table_privilege() -> None:
             conn.execute("REVOKE UPDATE ON quant_system.hermes_commands FROM quant_runtime")
         db.reset_database_cache()
         assert hermes_runtime_security_ready(runtime_settings) is False
+    finally:
+        db.run_migrations(database)
+        with database.connect() as conn:
+            _drop_test_login(conn, RUNTIME_LOGIN)
+        db.reset_database_cache()
+
+
+def test_runtime_probe_rejects_session_provision_acl_drift() -> None:
+    admin_url = _test_url()
+    database = db.Database(admin_url, connect_timeout=1)
+    db.run_migrations(database)
+    runtime_settings = _settings(
+        _url_as(admin_url, user=RUNTIME_LOGIN, password=RUNTIME_PASSWORD)
+    )
+    try:
+        with database.connect() as conn:
+            _provision_test_login(
+                conn,
+                login=RUNTIME_LOGIN,
+                password=RUNTIME_PASSWORD,
+                group=HERMES_RUNTIME_ROLE,
+            )
+        db.reset_database_cache()
+        assert hermes_runtime_security_ready(runtime_settings) is True
+
+        for grant_sql in (
+            """
+            GRANT UPDATE (provider_policy_digest)
+            ON quant_system.hermes_workspace_sessions TO quant_runtime
+            """,
+            """
+            GRANT UPDATE (provision_state)
+            ON quant_system.hermes_workspace_sessions TO quant_readonly
+            """,
+            """
+            GRANT UPDATE (kind)
+            ON quant_system.hermes_workspace_sessions TO PUBLIC
+            """,
+        ):
+            with database.connect() as conn:
+                conn.execute(grant_sql)
+            db.reset_database_cache()
+            assert hermes_runtime_security_ready(runtime_settings) is False
+            db.run_migrations(database)
+            db.reset_database_cache()
+            assert hermes_runtime_security_ready(runtime_settings) is True
     finally:
         db.run_migrations(database)
         with database.connect() as conn:

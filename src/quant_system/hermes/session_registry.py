@@ -76,6 +76,7 @@ BEGIN
        OR NEW.fork_point IS DISTINCT FROM OLD.fork_point
        OR NEW.source_channel IS DISTINCT FROM OLD.source_channel
        OR NEW.platform_session_id IS DISTINCT FROM OLD.platform_session_id
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at
     THEN
         RAISE EXCEPTION
             'Hermes workspace session identity, lineage, action and payload policy are immutable';
@@ -744,6 +745,38 @@ def hermes_runtime_security_is_ready_on_connection(
                 AND NOT has_table_privilege(session_user, %s, 'DELETE')
             ),
             (
+                NOT has_table_privilege(%s, %s, 'UPDATE')
+                AND NOT has_table_privilege(%s, %s, 'UPDATE')
+                AND NOT has_table_privilege(%s, %s, 'DELETE')
+            ),
+            (
+                NOT EXISTS (
+                    SELECT 1
+                    FROM pg_class AS relation
+                    JOIN pg_namespace AS namespace
+                      ON namespace.oid = relation.relnamespace
+                    CROSS JOIN LATERAL aclexplode(
+                        relation.relacl
+                    ) AS privilege
+                    WHERE namespace.nspname = %s
+                      AND relation.relname = 'hermes_workspace_sessions'
+                      AND privilege.grantee = 0
+                      AND privilege.privilege_type = 'UPDATE'
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_attribute AS attribute
+                    CROSS JOIN LATERAL aclexplode(
+                        attribute.attacl
+                    ) AS privilege
+                    WHERE attribute.attrelid = %s::regclass
+                      AND attribute.attnum > 0
+                      AND NOT attribute.attisdropped
+                      AND privilege.grantee = 0
+                      AND privilege.privilege_type = 'UPDATE'
+                )
+            ),
+            (
                 SELECT
                     count(*) FILTER (
                         WHERE attribute.attname = ANY(%s::text[])
@@ -756,6 +789,19 @@ def hermes_runtime_security_is_ready_on_connection(
                             'UPDATE'
                         )
                         = (attribute.attname = ANY(%s::text[]))
+                        AND has_column_privilege(
+                            %s,
+                            %s,
+                            attribute.attname,
+                            'UPDATE'
+                        )
+                        = (attribute.attname = ANY(%s::text[]))
+                        AND NOT has_column_privilege(
+                            %s,
+                            %s,
+                            attribute.attname,
+                            'UPDATE'
+                        )
                    )
                 FROM pg_attribute AS attribute
                 WHERE attribute.attrelid = %s::regclass
@@ -783,10 +829,23 @@ def hermes_runtime_security_is_ready_on_connection(
             f"{SCHEMA}.hermes_workspace_sessions",
             f"{SCHEMA}.hermes_workspace_sessions",
             f"{SCHEMA}.hermes_workspace_sessions",
+            HERMES_RUNTIME_ROLE,
+            f"{SCHEMA}.hermes_workspace_sessions",
+            HERMES_READONLY_ROLE,
+            f"{SCHEMA}.hermes_workspace_sessions",
+            HERMES_READONLY_ROLE,
+            f"{SCHEMA}.hermes_workspace_sessions",
+            SCHEMA,
+            f"{SCHEMA}.hermes_workspace_sessions",
             list(_PROVISION_UPDATE_COLUMNS),
             len(_PROVISION_UPDATE_COLUMNS),
             f"{SCHEMA}.hermes_workspace_sessions",
             list(_PROVISION_UPDATE_COLUMNS),
+            HERMES_RUNTIME_ROLE,
+            f"{SCHEMA}.hermes_workspace_sessions",
+            list(_PROVISION_UPDATE_COLUMNS),
+            HERMES_READONLY_ROLE,
+            f"{SCHEMA}.hermes_workspace_sessions",
             f"{SCHEMA}.hermes_workspace_sessions",
         ),
     ).fetchone()
