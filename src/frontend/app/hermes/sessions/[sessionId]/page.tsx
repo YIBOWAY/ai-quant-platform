@@ -1,6 +1,6 @@
 import Link from "next/link";
+import { HermesSessionForkController } from "@/components/hermes/sessions/HermesSessionForkController";
 import { HermesSessionLatestAnchor } from "@/components/hermes/sessions/HermesSessionLatestAnchor";
-import { TranscriptCanvas } from "@/components/hermes/transcript/TranscriptCanvas";
 import { Card } from "@/components/ui/primitives";
 import { getHermesSessionDetail, getHermesSessionMessages } from "@/lib/api";
 import { displayableTranscriptMessages } from "@/lib/hermes/transcriptHelpers";
@@ -62,15 +62,17 @@ export default async function HermesSessionDetailPage({
         </Card>
       ) : (
         <>
-          {/* L3b: shared presentational canvas with workbench transcript */}
-          <TranscriptCanvas
+          <HermesSessionForkController
             emptyHint={
               isZh
                 ? "此会话没有可展示的用户/助手消息。"
                 : "No displayable user/assistant messages."
             }
+            forkEligible={detail.fork_context.eligible === true}
+            forkReasonCode={detail.fork_context.reason_code}
             hermesSessionId={sessionId}
             isZh={isZh}
+            locale={locale}
             messages={displayMessages}
             omittedCount={history.omitted_message_count}
           />

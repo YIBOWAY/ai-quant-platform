@@ -2790,6 +2790,11 @@ export function getHermesSessionDetail(sessionId: string) {
   return apiGet<HermesSessionDetailResponse>(`/api/hermes/sessions/${encodedId}`, {
     read_status: "unavailable",
     session: null,
+    fork_context: {
+      eligible: false,
+      source_channel: null,
+      reason_code: "api_unavailable",
+    },
     warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
     safety: FALLBACK_SAFETY,
   });

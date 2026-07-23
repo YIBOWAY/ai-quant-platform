@@ -61,7 +61,9 @@ describe("Hermes Today server page", () => {
   });
 
   it("loads and renders a five-item GET-only unified-results preview", async () => {
-    const page = await HermesWorkbenchPage();
+    const page = await HermesWorkbenchPage({
+      searchParams: Promise.resolve({}),
+    });
     const html = renderToStaticMarkup(createElement(() => page));
 
     expect(api.getHermesResults).toHaveBeenCalledWith({ limit: 5, offset: 0 });
@@ -69,5 +71,16 @@ describe("Hermes Today server page", () => {
     expect(api.getHermesArtifacts).toHaveBeenCalledOnce();
     expect(html).toContain("AAPL 页面接线回测");
     expect(html).toContain("HQA 结论产物");
+  });
+
+  it("projects a validated child-session deep link into the shared workbench binding", async () => {
+    const childId = "web_" + "a".repeat(40);
+    const page = await HermesWorkbenchPage({
+      searchParams: Promise.resolve({ hermes_session_id: childId }),
+    });
+    const html = renderToStaticMarkup(createElement(() => page));
+
+    expect(html).toContain("data-hermes-session-deep-link");
+    expect(html).toContain(`data-hermes-session-id="${childId}"`);
   });
 });

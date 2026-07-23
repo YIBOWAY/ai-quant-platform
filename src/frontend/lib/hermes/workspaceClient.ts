@@ -479,6 +479,129 @@ export async function ensureManagedSession(options?: {
   });
 }
 
+export type ForkHermesSessionResult = {
+  receipt: WorkspaceActionReceipt;
+  managedSession: ManagedSessionProjection;
+};
+
+/**
+ * Explicitly fork one authoritative Hermes message into a new managed Web
+ * session. Source identity, channel, provider policy, and TTL remain
+ * server-owned; the browser sends only the immutable attempt id + cursor.
+ */
+export async function forkHermesSessionToManaged(options: {
+  hermesSessionId: string;
+  clientActionId: string;
+  forkPoint: string;
+  signal?: AbortSignal;
+  provisionTimeoutMs?: number;
+  provisionInitialIntervalMs?: number;
+  onReceipt?: (receipt: WorkspaceActionReceipt) => void;
+}): Promise<ForkHermesSessionResult> {
+  const hermesSessionId = options.hermesSessionId;
+  const clientActionId = options.clientActionId;
+  const forkPoint = options.forkPoint;
+  if (
+    hermesSessionId !== hermesSessionId.trim() ||
+    !isUsableHermesApiSessionId(hermesSessionId)
+  ) {
+    throw new WorkspaceClientError(
+      "valid Hermes session id required",
+      400,
+      "validation",
+    );
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(clientActionId)) {
+    throw new WorkspaceClientError(
+      "valid fork client_action_id required",
+      400,
+      "validation",
+    );
+  }
+  if (!/^message:[1-9][0-9]*$/.test(forkPoint)) {
+    throw new WorkspaceClientError(
+      "authoritative message:<positive-integer> fork point required",
+      400,
+      "validation",
+    );
+  }
+
+  await ensureOwnerSession(options.signal);
+  const receipt = await sameOriginJson<WorkspaceActionReceipt>(
+    `/api/hermes/sessions/${encodeURIComponent(
+      hermesSessionId,
+    )}/forks-to-managed`,
+    {
+      method: "POST",
+      csrf: true,
+      signal: options.signal,
+      body: {
+        client_action_id: clientActionId,
+        fork_point: forkPoint,
+      },
+    },
+  );
+  if (receipt.client_action_id !== clientActionId) {
+    throw new WorkspaceClientError(
+      "fork receipt does not match the immutable attempt",
+      503,
+      "fork_receipt_identity_mismatch",
+    );
+  }
+  if (receipt.workspace?.workspace_id !== PLATFORM_WORKSPACE_ID) {
+    throw new WorkspaceClientError(
+      "fork receipt does not match the local managed workspace",
+      503,
+      "fork_receipt_workspace_mismatch",
+    );
+  }
+  if (receipt.status !== "accepted" && receipt.status !== "reconciling") {
+    throw new WorkspaceClientError(
+      receipt.reason_code || `fork returned status=${receipt.status}`,
+      receipt.status === "conflict" ? 409 : 503,
+      receipt.status,
+    );
+  }
+  const sessionRef = receipt.session_ref;
+  if (
+    !sessionRef ||
+    sessionRef !== sessionRef.trim() ||
+    !sessionRef.startsWith("session:wm_") ||
+    (receipt.platform_session_id != null &&
+      sessionRef !== `session:${receipt.platform_session_id}`)
+  ) {
+    throw new WorkspaceClientError(
+      "fork receipt is missing an exact managed session reference",
+      503,
+      "fork_receipt_session_ref_invalid",
+    );
+  }
+
+  options.onReceipt?.(receipt);
+  // Persist the exact lineage before a bounded observation can time out.
+  saveManagedSessionRef(sessionRef, PLATFORM_WORKSPACE_ID);
+  const managedSession = await waitForManagedSessionReady({
+    workspaceId: PLATFORM_WORKSPACE_ID,
+    sessionRef,
+    signal: options.signal,
+    timeoutMs: options.provisionTimeoutMs,
+    initialIntervalMs: options.provisionInitialIntervalMs,
+  });
+  if (
+    managedSession.session_ref !== sessionRef ||
+    managedSession.fork_point !== forkPoint ||
+    !managedSession.parent_session_ref?.startsWith("session:")
+  ) {
+    throw new WorkspaceClientError(
+      "ready managed session does not preserve the requested fork lineage",
+      503,
+      "managed_session_fork_lineage_invalid",
+    );
+  }
+  saveManagedSessionRef(sessionRef, PLATFORM_WORKSPACE_ID);
+  return { receipt, managedSession };
+}
+
 async function submitReadyTurn(
   options: {
     prompt: string;
@@ -1452,6 +1575,8 @@ export type HermesSessionMessage = {
   role: "user" | "assistant" | string;
   content: string;
   timestamp?: string | null;
+  /** Server-authoritative cursor; null when the upstream id was not a positive integer. */
+  fork_point?: string | null;
 };
 
 export type HermesSessionMessagesView = {

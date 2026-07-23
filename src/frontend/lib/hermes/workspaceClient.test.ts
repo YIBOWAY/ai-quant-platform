@@ -12,6 +12,7 @@ import {
   fetchHermesSessionMessages,
   fetchLatestAssistantText,
   fetchWorkspaceFollow,
+  forkHermesSessionToManaged,
   isTerminalCommandState,
   latestManagedSessionProjection,
   latestAssistantText,
@@ -511,6 +512,231 @@ describe("sendComposerTurn", () => {
       status: 401,
     });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("forkHermesSessionToManaged", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("rejects a normalized or invented cursor before owner/network access", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      forkHermesSessionToManaged({
+        hermesSessionId: "agent:main:discord",
+        clientActionId: "fork-attempt-invalid",
+        forkPoint: " message:42",
+      }),
+    ).rejects.toMatchObject({
+      code: "validation",
+      status: 400,
+    });
+    await expect(
+      forkHermesSessionToManaged({
+        hermesSessionId: "agent:main:discord",
+        clientActionId: "fork-attempt-invalid",
+        forkPoint: "message:display-id",
+      }),
+    ).rejects.toMatchObject({
+      code: "validation",
+      status: 400,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends only the immutable attempt fields and waits on the receipt session", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const memory = new Map<string, string>();
+    const childRef = "session:wm_" + "f".repeat(32);
+    const childHermesId = "web_" + "a".repeat(40);
+
+    vi.stubGlobal("document", { cookie: "qs_aw_csrf=csrf-fork-token" });
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: (key: string) => memory.get(key) ?? null,
+        setItem: (key: string, value: string) => memory.set(key, value),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, init: init ?? {} });
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "/api/auth/owner/session" && method === "GET") {
+          return new Response(
+            JSON.stringify({ session_id: "owner-session", mutation_enabled: true }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (
+          url ===
+            "/api/hermes/sessions/agent%3Amain%3Adiscord/forks-to-managed" &&
+          method === "POST"
+        ) {
+          expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe(
+            "csrf-fork-token",
+          );
+          expect(init?.credentials).toBe("same-origin");
+          expect(JSON.parse(String(init?.body))).toEqual({
+            client_action_id: "fork-attempt-0001",
+            fork_point: "message:42",
+          });
+          return new Response(
+            JSON.stringify({
+              status: "accepted",
+              client_action_id: "fork-attempt-0001",
+              action_digest: "d".repeat(64),
+              workspace: { workspace_id: PLATFORM_WORKSPACE_ID },
+              mutation_enabled: true,
+              platform_session_id: childRef.slice("session:".length),
+              session_ref: childRef,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (
+          url === `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot` &&
+          method === "GET"
+        ) {
+          return new Response(
+            JSON.stringify({
+              managed_sessions: [
+                {
+                  platform_session_id: childRef.slice("session:".length),
+                  session_ref: childRef,
+                  hermes_session_id: childHermesId,
+                  provision_state: "ready",
+                  web_writable: true,
+                  attempt_count: 1,
+                  parent_session_ref: "session:ext_" + "b".repeat(32),
+                  fork_point: "message:42",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${method} ${url}`);
+      }),
+    );
+
+    const result = await forkHermesSessionToManaged({
+      hermesSessionId: "agent:main:discord",
+      clientActionId: "fork-attempt-0001",
+      forkPoint: "message:42",
+      provisionInitialIntervalMs: 1,
+    });
+
+    expect(result.receipt.status).toBe("accepted");
+    expect(result.managedSession).toMatchObject({
+      session_ref: childRef,
+      hermes_session_id: childHermesId,
+      fork_point: "message:42",
+    });
+    expect(
+      memory.get(
+        "qs.hermes.l2a.managed_session_ref:" + PLATFORM_WORKSPACE_ID,
+      ),
+    ).toBe(childRef);
+    expect(calls.map(({ url }) => url)).toEqual([
+      "/api/auth/owner/session",
+      "/api/hermes/sessions/agent%3Amain%3Adiscord/forks-to-managed",
+      `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot`,
+    ]);
+  });
+
+  it("reconciles by waiting on the same receipt session without creating another lineage", async () => {
+    const childRef = "session:wm_" + "9".repeat(32);
+    const childHermesId = "web_" + "9".repeat(40);
+    let snapshots = 0;
+    const onReceipt = vi.fn();
+
+    vi.stubGlobal("document", { cookie: "qs_aw_csrf=csrf-fork-token" });
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: () => null,
+        setItem: vi.fn(),
+      },
+    });
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "/api/auth/owner/session" && method === "GET") {
+          return new Response(JSON.stringify({ session_id: "owner-session" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (url.endsWith("/forks-to-managed") && method === "POST") {
+          return new Response(
+            JSON.stringify({
+              status: "reconciling",
+              client_action_id: "fork-attempt-reconcile",
+              action_digest: "e".repeat(64),
+              workspace: { workspace_id: PLATFORM_WORKSPACE_ID },
+              mutation_enabled: true,
+              platform_session_id: childRef.slice("session:".length),
+              session_ref: childRef,
+              recovery_action: "follow_workspace",
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url.endsWith("/snapshot") && method === "GET") {
+          snapshots += 1;
+          return new Response(
+            JSON.stringify({
+              managed_sessions: [
+                {
+                  platform_session_id: childRef.slice("session:".length),
+                  session_ref: childRef,
+                  hermes_session_id: childHermesId,
+                  provision_state: snapshots === 1 ? "pending" : "ready",
+                  web_writable: snapshots > 1,
+                  attempt_count: snapshots,
+                  parent_session_ref: "session:ext_" + "8".repeat(32),
+                  fork_point: "message:88",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${method} ${url}`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await forkHermesSessionToManaged({
+      hermesSessionId: "agent:main:discord",
+      clientActionId: "fork-attempt-reconcile",
+      forkPoint: "message:88",
+      provisionInitialIntervalMs: 1,
+      onReceipt,
+    });
+
+    expect(onReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "reconciling",
+        session_ref: childRef,
+      }),
+    );
+    expect(result.managedSession.session_ref).toBe(childRef);
+    expect(snapshots).toBe(2);
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith("/forks-to-managed"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).endsWith("/act")),
+    ).toBe(false);
   });
 });
 

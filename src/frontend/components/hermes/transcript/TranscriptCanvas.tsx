@@ -25,6 +25,11 @@ export type TranscriptCanvasProps = {
   assistantPhase?: AssistantPhase;
   /** Always spine-refetch for M1 (not provider-token). */
   transport?: "spine-refetch" | string;
+  /** Exact backend-issued message cursor selection; absent on read-only canvases. */
+  onSelectForkPoint?: (forkPoint: string) => void;
+  selectedForkPoint?: string | null;
+  forkSelectionDisabled?: boolean;
+  forkActionLabel?: string;
 };
 
 /**
@@ -41,7 +46,10 @@ export function TranscriptCanvas({
   pendingMessageId = "local-pending-user",
   assistantPhase = "idle",
   transport = "spine-refetch",
-
+  onSelectForkPoint,
+  selectedForkPoint = null,
+  forkSelectionDisabled = false,
+  forkActionLabel = isZh ? "从这里继续" : "Continue from here",
 }: TranscriptCanvasProps) {
   const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
 
@@ -103,15 +111,27 @@ export function TranscriptCanvas({
         {messages.map((message, index) => {
           const isUser = message.role === "user";
           const isPending = message.id === pendingMessageId;
+          const forkPoint =
+            typeof message.fork_point === "string" &&
+            /^message:[1-9][0-9]*$/.test(message.fork_point)
+              ? message.fork_point
+              : null;
+          const isForkSelected =
+            forkPoint !== null && forkPoint === selectedForkPoint;
           return (
             <li
               className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+              data-hermes-message-fork-selected={
+                isForkSelected ? "true" : undefined
+              }
               data-hermes-message-pending={isPending ? "true" : undefined}
               key={`${message.id || "msg"}:${index}`}
             >
               <div
                 className={`max-w-[88%] rounded-lg border px-3 py-2 shadow-sm ${
-                  isUser
+                  isForkSelected
+                    ? "border-info bg-info/10 ring-2 ring-info/30"
+                    : isUser
                     ? isPending
                       ? "border-info/20 bg-info/5 opacity-90"
                       : "border-info/30 bg-info/10"
@@ -136,6 +156,22 @@ export function TranscriptCanvas({
                   <p className="mt-2 font-data-mono text-[11px] text-text-secondary">
                     {message.timestamp}
                   </p>
+                ) : null}
+                {forkPoint && onSelectForkPoint ? (
+                  <button
+                    aria-label={`${forkActionLabel}: ${message.role}${
+                      message.timestamp ? ` · ${message.timestamp}` : ""
+                    }`}
+                    aria-pressed={isForkSelected}
+                    className="app-touch-target mt-3 inline-flex min-h-11 items-center justify-center rounded-lg border border-info/40 bg-info/5 px-3 font-body-sm text-info transition-colors hover:bg-info/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+                    data-hermes-fork-point={forkPoint}
+                    data-hermes-message-fork-select
+                    disabled={forkSelectionDisabled}
+                    onClick={() => onSelectForkPoint(forkPoint)}
+                    type="button"
+                  >
+                    {forkActionLabel}
+                  </button>
                 ) : null}
               </div>
             </li>
