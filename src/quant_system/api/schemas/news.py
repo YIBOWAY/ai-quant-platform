@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -10,6 +10,10 @@ class AiHotResearchSafety(BaseModel):
     not_investment_advice: bool = True
     does_not_trigger_trading: bool = True
     verify_original_source: bool = True
+
+
+NewsPreference = Literal["auto", "aihot", "horizon"]
+NewsServedFrom = Literal["primary", "failover", "cache", "forced"]
 
 
 class AiHotItemResponse(BaseModel):
@@ -36,8 +40,8 @@ class AiHotItemsResponse(BaseModel):
     items: list[AiHotItemResponse]
     warnings: list[str] = Field(default_factory=list)
     research_safety: AiHotResearchSafety = Field(default_factory=AiHotResearchSafety)
-    preference: str = "auto"
-    served_from: str = "primary"
+    preference: NewsPreference = "auto"
+    served_from: NewsServedFrom = "primary"
 
 
 class AiHotDailyResponse(BaseModel):
@@ -54,8 +58,8 @@ class AiHotDailyResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     research_safety: AiHotResearchSafety = Field(default_factory=AiHotResearchSafety)
     raw: dict[str, Any] = Field(default_factory=dict)
-    preference: str = "auto"
-    served_from: str = "primary"
+    preference: NewsPreference = "auto"
+    served_from: NewsServedFrom = "primary"
 
 
 class AiHotDailyIndexResponse(BaseModel):
@@ -73,17 +77,35 @@ class AiHotDailiesResponse(BaseModel):
     items: list[AiHotDailyIndexResponse]
     warnings: list[str] = Field(default_factory=list)
     research_safety: AiHotResearchSafety = Field(default_factory=AiHotResearchSafety)
-    preference: str = "auto"
-    served_from: str = "primary"
+    preference: NewsPreference = "auto"
+    served_from: NewsServedFrom = "primary"
 
 
-class AiHotStatusResponse(BaseModel):
-    provider: str
-    provider_beta: bool
-    enabled: bool
-    base_url: str
-    timeout_seconds: int
-    cache_ttl_seconds: int
-    last_error: dict[str, Any] | None = None
+class NewsFailoverStatus(BaseModel):
+    auto_enabled: bool = True
+    order: list[str] = Field(
+        default_factory=lambda: ["aihot_live", "horizon_pg", "aihot_cache"]
+    )
+
+
+class NewsStatusResponse(BaseModel):
+    """Aggregated dual-source status (spec §6.5) plus aihot-compat fields."""
+
+    preference_default: NewsPreference = "auto"
+    research_only: bool = True
+    providers: dict[str, Any] = Field(default_factory=dict)
+    failover: NewsFailoverStatus = Field(default_factory=NewsFailoverStatus)
     warnings: list[str] = Field(default_factory=list)
     research_safety: AiHotResearchSafety = Field(default_factory=AiHotResearchSafety)
+    # Backward-compatible aihot status fields.
+    provider: str = "aihot"
+    provider_beta: bool = True
+    enabled: bool = True
+    base_url: str = ""
+    timeout_seconds: int = 0
+    cache_ttl_seconds: int = 0
+    last_error: dict[str, Any] | None = None
+
+
+# Keep old name as alias for any external imports.
+AiHotStatusResponse = NewsStatusResponse

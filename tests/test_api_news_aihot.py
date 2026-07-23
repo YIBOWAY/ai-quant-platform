@@ -244,6 +244,7 @@ def test_aihot_items_route_returns_cached_page_when_upstream_fails(
     assert captured_queries[0].q == "OpenAI"
     assert payload["items"][0]["id"] == "cached-1"
     assert payload["fetched_at"] == "2026-06-28T12:30:00+00:00"
+    assert payload["served_from"] == "cache"
     assert "Using cached AI HOT items from the local database." in payload["warnings"]
     assert "AI HOT request timed out" in payload["warnings"]
     assert payload["research_safety"]["does_not_trigger_trading"] is True
@@ -289,6 +290,7 @@ def test_aihot_daily_route_returns_cached_report_when_upstream_fails(
     payload = response.json()
     assert payload["date"] == "2026-07-08"
     assert payload["lead"] == {"title": "Cached daily"}
+    assert payload["served_from"] == "cache"
     assert payload["research_safety"]["research_only"] is True
     assert payload["research_safety"]["does_not_trigger_trading"] is True
     assert daily_report_cache_warning("2026-07-08") in payload["warnings"]
@@ -321,19 +323,61 @@ def test_aihot_daily_and_dailies_routes_proxy_read_only(tmp_path, monkeypatch) -
     assert dailies_payload["served_from"] == "primary"
 
 
-def test_aihot_disabled_returns_503_without_calling_upstream(tmp_path, monkeypatch) -> None:
+def test_aihot_disabled_auto_does_not_call_upstream_and_may_failover(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Default preference is auto: disabled aihot must not 503 as aihot_disabled.
+
+    Without horizon/cache this becomes news_unavailable; with fresh horizon
+    it failsover (covered in test_api_news_facade).
+    """
+
     calls = 0
 
     def fail_if_called(_settings):
         nonlocal calls
         calls += 1
-        raise AssertionError("disabled route must not build an upstream client")
+        raise AssertionError("disabled auto path must not build an upstream client")
+
+    monkeypatch.setattr(news_routes, "_client_for_settings", fail_if_called)
+    monkeypatch.setattr(
+        news_routes.horizon_repository,
+        "load_latest_horizon_run",
+        lambda **_k: None,
+    )
+    monkeypatch.setattr(
+        news_routes.horizon_repository,
+        "load_horizon_items_page",
+        lambda **_k: None,
+    )
+    monkeypatch.setattr(news_routes, "_load_cached_items_page", lambda **_k: None)
+    settings = Settings(aihot=AiHotSettings(enabled=False))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.get("/api/news/aihot/items")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "news_unavailable"
+    assert calls == 0
+
+
+def test_forced_aihot_disabled_returns_503_without_calling_upstream(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    calls = 0
+
+    def fail_if_called(_settings):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("forced disabled route must not build an upstream client")
 
     monkeypatch.setattr(news_routes, "_client_for_settings", fail_if_called)
     settings = Settings(aihot=AiHotSettings(enabled=False))
     client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
-    response = client.get("/api/news/aihot/items")
+    response = client.get("/api/news/aihot/items", params={"preference": "aihot"})
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "aihot_disabled"
@@ -381,6 +425,9 @@ def test_aihot_status_does_not_probe_upstream(tmp_path, monkeypatch) -> None:
     assert payload["enabled"] is True
     assert payload["provider_beta"] is True
     assert payload["base_url"] == "https://aihot.virxact.com"
+    assert payload["preference_default"] == "auto"
+    assert "providers" in payload
+    assert "failover" in payload
     assert payload["research_safety"]["verify_original_source"] is True
 
 
@@ -397,9 +444,16 @@ def test_aihot_provider_errors_map_to_structured_http_errors(
             )
 
     monkeypatch.setattr(news_routes, "_client_for_settings", lambda _settings: TimeoutClient())
+    monkeypatch.setattr(
+        news_routes.horizon_repository,
+        "load_latest_horizon_run",
+        lambda **_k: None,
+    )
+    monkeypatch.setattr(news_routes, "_load_cached_items_page", lambda **_k: None)
     client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
 
-    response = client.get("/api/news/aihot/items")
+    # Forced aihot keeps upstream error codes; auto would map to news_unavailable.
+    response = client.get("/api/news/aihot/items", params={"preference": "aihot"})
 
     assert response.status_code == 503
     assert response.json()["detail"] == {
