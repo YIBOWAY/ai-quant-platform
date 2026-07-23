@@ -14,11 +14,15 @@ import {
 } from "./transcriptHelpers";
 
 describe("transcriptHelpers (L3a + L3b)", () => {
-  it("accepts Hermes API session ids and rejects registry/workspace markers", () => {
+  it("accepts Hermes-managed web session ids and rejects platform-only markers", () => {
     expect(isUsableHermesApiSessionId("run_127dd275e6964abc")).toBe(true);
     expect(isUsableHermesApiSessionId("agent:main:l2a")).toBe(true);
     expect(isUsableHermesApiSessionId("  run_abc  ")).toBe(true);
-    expect(isUsableHermesApiSessionId("web_abc")).toBe(false);
+    expect(
+      isUsableHermesApiSessionId(
+        "web_0123456789abcdef0123456789abcdef01234567",
+      ),
+    ).toBe(true);
     expect(isUsableHermesApiSessionId("wm_local")).toBe(false);
     expect(isUsableHermesApiSessionId("")).toBe(false);
     expect(isUsableHermesApiSessionId("   ")).toBe(false);
@@ -41,14 +45,14 @@ describe("transcriptHelpers (L3a + L3b)", () => {
     expect(pickLatestHermesSessionId([])).toBeNull();
     expect(
       pickLatestHermesSessionId([
-        { command_id: "c1", hermes_session_id: "web_x" },
+        { command_id: "c1", hermes_session_id: "web_real" },
         { command_id: "c2", hermes_session_id: "wm_y" },
       ]),
-    ).toBeNull();
+    ).toEqual({ hermesSessionId: "web_real", commandId: "c1" });
     expect(
       pickLatestHermesSessionId([
         { command_id: "c1", hermes_session_id: "run_old" },
-        { command_id: "c2", hermes_session_id: "web_skip" },
+        { command_id: "c2", hermes_session_id: "web_managed" },
         { command_id: "c3", hermes_session_id: "run_new" },
       ]),
     ).toEqual({ hermesSessionId: "run_new", commandId: "c3" });
@@ -171,14 +175,14 @@ describe("Plan-V6-Token-Stream-M1 phase helpers", () => {
     ).not.toBe("partial");
   });
 
-  it("TC-TS-06 sanitize rejects web_/wm_", () => {
-    expect(
-      sanitizeTranscriptHint({
-        hermes_session_id: "web_x",
-        phase: "waiting",
-        revision: "1",
-      }),
-    ).toBeNull();
+  it("TC-TS-06 sanitize accepts Hermes web_* and rejects platform wm_*", () => {
+    const managed = sanitizeTranscriptHint({
+      hermes_session_id: "web_x",
+      phase: "waiting",
+      revision: "1",
+    });
+    expect(managed).not.toBeNull();
+    expect(managed!.hermes_session_id).toBe("web_x");
     expect(
       sanitizeTranscriptHint({
         hermes_session_id: "wm_x",
@@ -378,4 +382,3 @@ describe("createQuietRefetchScheduler (V8-M2 GAP-09)", () => {
     sched.dispose();
   });
 });
-

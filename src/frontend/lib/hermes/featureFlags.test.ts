@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hermesFeatureFlags } from "./featureFlags";
+import { hermesChatAdmission, hermesFeatureFlags } from "./featureFlags";
 
 const attemptedCapabilityOverrides = {
   QS_HERMES_SHELL_ENABLED: "true",
@@ -48,5 +48,20 @@ describe("hermesFeatureFlags", () => {
     expect(hermesFeatureFlags({}).chat).toBe(false);
     expect(hermesFeatureFlags({}).agentStudioRedirect).toBe(false);
     expect(hermesFeatureFlags({}).deliveryState).toBe("blocked_in_this_slice");
+  });
+
+  it("treats the env flag as deny-only and requires live backend admission", () => {
+    const enabled = hermesFeatureFlags(attemptedCapabilityOverrides);
+    expect(hermesChatAdmission(enabled, false)).toEqual({
+      chatOpen: false,
+      deliveryState: "blocked_in_this_slice",
+    });
+    expect(hermesChatAdmission(enabled, true)).toEqual({
+      chatOpen: true,
+      deliveryState: "local_mutation_authorized",
+    });
+    expect(hermesChatAdmission(hermesFeatureFlags({}), true).chatOpen).toBe(
+      false,
+    );
   });
 });

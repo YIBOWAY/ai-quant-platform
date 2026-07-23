@@ -1,5 +1,9 @@
 import { HermesWorkbenchShell } from "@/components/hermes/shell/HermesWorkbenchShell";
-import { hermesFeatureFlags } from "@/lib/hermes/featureFlags";
+import { getHermesGatewayStatus } from "@/lib/api";
+import {
+  hermesChatAdmission,
+  hermesFeatureFlags,
+} from "@/lib/hermes/featureFlags";
 import { getServerLocale } from "@/lib/serverLocale";
 
 export default async function HermesLayout({
@@ -8,10 +12,20 @@ export default async function HermesLayout({
   children: React.ReactNode;
 }) {
   const locale = await getServerLocale();
-  const deliveryState = hermesFeatureFlags().deliveryState;
+  const flags = hermesFeatureFlags();
+  const gateway = await getHermesGatewayStatus();
+  const chatWriteReady = Boolean(gateway.chat_write_ready);
+  const deliveryState = hermesChatAdmission(
+    flags,
+    chatWriteReady,
+  ).deliveryState;
 
   return (
-    <HermesWorkbenchShell deliveryState={deliveryState} locale={locale}>
+    <HermesWorkbenchShell
+      chatWriteReady={chatWriteReady}
+      deliveryState={deliveryState}
+      locale={locale}
+    >
       {children}
     </HermesWorkbenchShell>
   );

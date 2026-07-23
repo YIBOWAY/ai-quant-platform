@@ -1,4 +1,7 @@
-import type { HermesFeatureFlags } from "./types";
+import type {
+  HermesDeliveryState,
+  HermesFeatureFlags,
+} from "./types";
 
 /**
  * Shell, Agent Studio cutover, and local chat unlock are env-configurable.
@@ -25,4 +28,25 @@ export function hermesFeatureFlags(
       env.QS_HERMES_AGENT_STUDIO_REDIRECT_ENABLED === "true",
     deliveryState: chat ? "local_mutation_authorized" : "blocked_in_this_slice",
   } as const;
+}
+
+/**
+ * The deploy-time flag is only an operator deny switch. A writable composer
+ * also requires the backend's live, persistent release admission; an env flag
+ * alone must never turn the network path on.
+ */
+export function hermesChatAdmission(
+  flags: HermesFeatureFlags,
+  chatWriteReady: boolean,
+): {
+  chatOpen: boolean;
+  deliveryState: HermesDeliveryState;
+} {
+  const chatOpen = flags.chat === true && chatWriteReady === true;
+  return {
+    chatOpen,
+    deliveryState: chatOpen
+      ? "local_mutation_authorized"
+      : "blocked_in_this_slice",
+  };
 }

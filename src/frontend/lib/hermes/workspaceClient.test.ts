@@ -478,14 +478,36 @@ describe("assistant observe helpers (L2b-M2)", () => {
     );
   });
 
-  it("fetchHermesSessionMessages rejects web_/wm_/empty without network", async () => {
+  it("fetchHermesSessionMessages accepts Hermes-managed web_* sessions", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe("/api/hermes/sessions/web_abc/messages");
+      return new Response(
+        JSON.stringify({
+          read_status: "available",
+          session_id: "web_abc",
+          messages: [{ id: "1", role: "assistant", content: "managed" }],
+          omitted_message_count: 0,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchHermesSessionMessages("web_abc")).resolves.toMatchObject({
+      read_status: "available",
+      session_id: "web_abc",
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("fetchHermesSessionMessages rejects wm_/unsafe/empty without network", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    await expect(fetchHermesSessionMessages("web_abc")).rejects.toMatchObject({
+    await expect(fetchHermesSessionMessages("wm_abc")).rejects.toMatchObject({
       status: 400,
       code: "validation",
     });
-    await expect(fetchHermesSessionMessages("wm_abc")).rejects.toMatchObject({
+    await expect(fetchHermesSessionMessages("../escape")).rejects.toMatchObject({
       status: 400,
       code: "validation",
     });

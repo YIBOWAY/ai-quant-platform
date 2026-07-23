@@ -1,8 +1,9 @@
 import type { HermesSessionMessage } from "@/lib/hermes/workspaceClient";
 
 /**
- * Hermes messages BFF ids are API session ids (often `run_…` / `agent:…`).
- * Platform registry `web_*` and workspace `wm_*` must never hit /messages.
+ * Hermes messages BFF ids are Hermes SessionDB ids, including managed
+ * `web_*` sessions created for the Web control plane. Platform-only `wm_*`
+ * registry ids must never hit /messages.
  */
 export function isUsableHermesApiSessionId(
   value: string | null | undefined,
@@ -10,8 +11,8 @@ export function isUsableHermesApiSessionId(
   if (typeof value !== "string") return false;
   const id = value.trim();
   if (!id) return false;
-  if (id.startsWith("web_") || id.startsWith("wm_")) return false;
-  return true;
+  if (id.startsWith("wm_")) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/.test(id);
 }
 
 /** Keep non-empty user/assistant rows for workbench transcript canvas. */
@@ -391,4 +392,3 @@ export function createQuietRefetchScheduler(
     },
   };
 }
-

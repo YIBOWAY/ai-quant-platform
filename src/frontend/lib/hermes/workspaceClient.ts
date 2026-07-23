@@ -1173,7 +1173,7 @@ export async function fetchHermesSessionMessages(
 ): Promise<HermesSessionMessagesView> {
   if (!isUsableHermesApiSessionId(sessionId)) {
     throw new WorkspaceClientError(
-      "hermes session id required (reject web_/wm_/empty)",
+      "Hermes SessionDB id required (reject platform wm_/unsafe/empty)",
       400,
       "validation",
     );

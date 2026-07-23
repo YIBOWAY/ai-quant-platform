@@ -3,7 +3,10 @@ import { HermesLocalChatBoundary } from "@/components/hermes/shell/HermesLocalCh
 import { ComposerDock } from "@/components/hermes/ComposerDock";
 import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
-import { hermesFeatureFlags } from "@/lib/hermes/featureFlags";
+import {
+  hermesChatAdmission,
+  hermesFeatureFlags,
+} from "@/lib/hermes/featureFlags";
 import {
   WORKBENCH_A11Y_MARKER,
   WORKBENCH_CONTENT_PAD_CLASS,
@@ -15,6 +18,8 @@ export type HermesWorkbenchShellProps = {
   locale: Locale;
   /** Static delivery fact only — never a live capability probe. */
   deliveryState?: HermesDeliveryState;
+  /** Live backend release admission. The env flag remains deny-only. */
+  chatWriteReady?: boolean;
   children: React.ReactNode;
 };
 
@@ -26,13 +31,15 @@ export type HermesWorkbenchShellProps = {
 export function HermesWorkbenchShell({
   locale,
   deliveryState,
+  chatWriteReady = false,
   children,
 }: HermesWorkbenchShellProps) {
   const copy = hermesWorkbenchCopy(locale);
   const flags = hermesFeatureFlags();
+  const admission = hermesChatAdmission(flags, chatWriteReady);
   const resolvedDelivery =
-    deliveryState ?? flags.deliveryState ?? "blocked_in_this_slice";
-  const composerOpen = flags.chat === true;
+    deliveryState ?? admission.deliveryState ?? "blocked_in_this_slice";
+  const composerOpen = admission.chatOpen;
 
   return (
     <div

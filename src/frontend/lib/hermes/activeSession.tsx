@@ -24,7 +24,7 @@ export type SetActiveHermesSessionInput = {
 };
 
 export type ActiveHermesSessionValue = {
-  /** Hermes API session id (often `run_…`); never registry `web_` / workspace `wm_`. */
+  /** Hermes SessionDB id (managed Web sessions use `web_…`); never platform `wm_…`. */
   hermesSessionId: string | null;
   /** Last command id that bound this session (debug/status only). */
   boundCommandId: string | null;
