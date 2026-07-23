@@ -162,6 +162,8 @@ class ActionReceipt:
     grant_digest: str | None = None
     canary_ref: str | None = None
     acceptance_id: str | None = None
+    # V8-M5: force honesty triad on canary-kind receipts (incl. conflict/unavailable).
+    canary_honesty: bool = False
 
     def __post_init__(self) -> None:
         expected = _RECOVERY[self.status]
@@ -208,8 +210,14 @@ class ActionReceipt:
             payload["canary_ref"] = self.canary_ref
         if self.acceptance_id is not None:
             payload["acceptance_id"] = self.acceptance_id
-        # Honesty: canary receipts never authorize public write.
-        if self.grant_id is not None or self.canary_ref is not None:
+        # Honesty: canary-kind receipts never authorize public write,
+        # including conflict/unavailable paths that lack grant_id yet.
+        if (
+            self.canary_honesty
+            or self.grant_id is not None
+            or self.canary_ref is not None
+            or self.acceptance_id is not None
+        ):
             payload["public_write_authorized"] = False
             payload["chat_write_ready"] = False
             payload["release_authorized"] = False
@@ -279,6 +287,7 @@ def _receipt(
     grant_digest: str | None = None,
     canary_ref: str | None = None,
     acceptance_id: str | None = None,
+    canary_honesty: bool = False,
 ) -> ActionReceipt:
     return ActionReceipt(
         status=status,
@@ -301,6 +310,7 @@ def _receipt(
         grant_digest=grant_digest,
         canary_ref=canary_ref,
         acceptance_id=acceptance_id,
+        canary_honesty=bool(canary_honesty),
     )
 
 
@@ -1950,6 +1960,7 @@ def submit_issue_canary_grant(
             digest=digest,
             reason_code="authenticated_mutation_bff_unavailable",
             mutation_enabled=mutation_enabled,
+            canary_honesty=True,
         )
     _require_root_actor(actor_owner_user_id)
     authority = default_canary_grant_authority()
@@ -1973,13 +1984,15 @@ def submit_issue_canary_grant(
                 digest=digest,
                 reason_code=exc.message,
                 mutation_enabled=mutation_enabled,
-            )
+            canary_honesty=True,
+        )
         return _receipt(
             status="unavailable",
             action=action,
             digest=digest,
             reason_code=exc.message,
             mutation_enabled=mutation_enabled,
+            canary_honesty=True,
         )
     note_canary_issued(
         workspace_id=action.workspace.workspace_id, grant=grant
@@ -1993,7 +2006,8 @@ def submit_issue_canary_grant(
         grant_digest=grant.grant_digest,
         canary_ref=grant.canary_ref,
         terminal_status=grant.status,
-    )
+            canary_honesty=True,
+        )
 
 
 def submit_revoke_canary_grant(
@@ -2013,6 +2027,7 @@ def submit_revoke_canary_grant(
             digest=digest,
             reason_code="authenticated_mutation_bff_unavailable",
             mutation_enabled=mutation_enabled,
+            canary_honesty=True,
         )
     _require_root_actor(actor_owner_user_id)
     authority = default_canary_grant_authority()
@@ -2036,13 +2051,15 @@ def submit_revoke_canary_grant(
                 digest=digest,
                 reason_code=exc.message,
                 mutation_enabled=mutation_enabled,
-            )
+            canary_honesty=True,
+        )
         return _receipt(
             status="unavailable",
             action=action,
             digest=digest,
             reason_code=exc.message,
             mutation_enabled=mutation_enabled,
+            canary_honesty=True,
         )
     note_canary_revoked(
         workspace_id=action.workspace.workspace_id, grant=grant
@@ -2056,7 +2073,8 @@ def submit_revoke_canary_grant(
         grant_digest=grant.grant_digest,
         canary_ref=grant.canary_ref,
         terminal_status=grant.status,
-    )
+            canary_honesty=True,
+        )
 
 
 def submit_accept_canary_dual_vertical(
@@ -2079,6 +2097,7 @@ def submit_accept_canary_dual_vertical(
             digest=digest,
             reason_code="authenticated_mutation_bff_unavailable",
             mutation_enabled=mutation_enabled,
+            canary_honesty=True,
         )
     _require_root_actor(actor_owner_user_id)
 
@@ -2110,13 +2129,15 @@ def submit_accept_canary_dual_vertical(
                 digest=digest,
                 reason_code=exc.message,
                 mutation_enabled=mutation_enabled,
-            )
+            canary_honesty=True,
+        )
         return _receipt(
             status="unavailable",
             action=action,
             digest=digest,
             reason_code=exc.message,
             mutation_enabled=mutation_enabled,
+            canary_honesty=True,
         )
     note_canary_accepted(
         workspace_id=action.workspace.workspace_id,
@@ -2135,7 +2156,8 @@ def submit_accept_canary_dual_vertical(
         terminal_status=grant.status,
         task_id=acceptance.options_a_task_id,
         result_id=acceptance.options_a_result_id,
-    )
+            canary_honesty=True,
+        )
 
 
 def submit_action(

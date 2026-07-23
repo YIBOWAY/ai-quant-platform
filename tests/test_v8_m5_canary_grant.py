@@ -253,6 +253,7 @@ def test_issue_mutation_off_unavailable() -> None:
     assert receipt.status == "unavailable"
     assert receipt.reason_code == "authenticated_mutation_bff_unavailable"
     assert project_workspace_canary_grants(WS) == []
+    _assert_public_write_still_off(receipt.to_public_dict())
 
 
 def test_issue_second_active_conflicts() -> None:
@@ -265,6 +266,8 @@ def test_issue_second_active_conflicts() -> None:
     )
     assert r2.status == "conflict"
     assert r2.reason_code == "canary_grant_already_active"
+    # Honesty triad present even on conflict (no grant_id on r2).
+    _assert_public_write_still_off(r2.to_public_dict())
 
 
 def test_issue_idempotent_replay() -> None:
