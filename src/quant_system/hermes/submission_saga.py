@@ -2233,12 +2233,25 @@ def submit_open_public_cutover(
         )
     _require_root_actor(actor_owner_user_id)
 
-    # Prerequisite: G6 dual-vertical acceptance must exist in canary authority.
+    # Prerequisite: G6 dual-vertical acceptance must exist AND bind build_digest.
     canary_auth = default_canary_grant_authority()
     acceptances = canary_auth.list_acceptances(action.workspace.workspace_id)
-    acceptance_exists = any(
-        a.acceptance_id == action.acceptance_id for a in acceptances
+    matched = next(
+        (a for a in acceptances if a.acceptance_id == action.acceptance_id),
+        None,
     )
+    if matched is None:
+        raise SubmissionSagaError("validation", "dual_vertical_acceptance_required")
+    if matched.build_digest != action.build_digest:
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            reason_code="acceptance_build_digest_mismatch",
+            mutation_enabled=mutation_enabled,
+            public_cutover_honesty=True,
+            public_flag_open=False,
+        )
 
     authority = default_public_cutover_authority()
     try:
@@ -2250,7 +2263,7 @@ def submit_open_public_cutover(
             open_note=action.open_note,
             client_action_id=action.client_action_id,
             action_digest=digest,
-            acceptance_exists=acceptance_exists,
+            acceptance_exists=True,
         )
     except PublicCutoverAuthorityError as exc:
         if exc.code == "validation":
@@ -2278,6 +2291,7 @@ def submit_open_public_cutover(
     note_public_cutover_opened(
         workspace_id=action.workspace.workspace_id, cutover=cutover
     )
+    # Honesty: never claim public write unless the cutover is actually open.
     return _receipt(
         status="accepted",
         action=action,
@@ -2286,7 +2300,7 @@ def submit_open_public_cutover(
         cutover_id=cutover.cutover_id,
         cutover_digest=cutover.cutover_digest,
         cutover_ref=cutover.cutover_ref,
-        public_flag_open=True,
+        public_flag_open=bool(cutover.public_flag_open),
         public_cutover_honesty=True,
         acceptance_id=cutover.acceptance_id,
     )

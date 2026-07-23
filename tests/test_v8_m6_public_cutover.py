@@ -476,3 +476,72 @@ def test_default_no_cutover_public_off() -> None:
     )
     # empty honest health still ready
     assert public_cutover_authority_health()["public_cutover"] == "ready"
+
+
+def test_open_replay_after_close_does_not_claim_write() -> None:
+    """Honesty hole fix: same open action after close must not claim public write."""
+    aid = _seed_g6_acceptance()
+    open_doc = _open_doc(acceptance_id=aid, client_action_id="act-replay-open")
+    rcpt = submit_action(
+        _settings(),
+        open_doc,
+        mutation_enabled=True,
+        actor_owner_user_id=ROOT_USER_ID,
+    )
+    assert rcpt.status == "accepted"
+    assert rcpt.public_flag_open is True
+    d = rcpt.to_public_dict()
+    _assert_rails(d, public_open=True)
+    cref = rcpt.cutover_ref
+    cdig = rcpt.cutover_digest
+    assert workspace_public_flag_open(WS) is True
+
+    close_rcpt = submit_action(
+        _settings(),
+        _close_doc(cutover_ref=cref, expected_cutover_digest=cdig),
+        mutation_enabled=True,
+        actor_owner_user_id=ROOT_USER_ID,
+    )
+    assert close_rcpt.status == "accepted"
+    assert close_rcpt.public_flag_open is False
+    assert workspace_public_flag_open(WS) is False
+
+    # Replay exact same open doc — must NOT resurrect write authorization.
+    replay = submit_action(
+        _settings(),
+        open_doc,
+        mutation_enabled=True,
+        actor_owner_user_id=ROOT_USER_ID,
+    )
+    assert replay.status == "conflict"
+    assert replay.reason_code == "public_cutover_already_closed"
+    rd = replay.to_public_dict()
+    _assert_rails(rd, public_open=False)
+    assert rd.get("public_flag_open") is False
+    assert rd.get("public_write_authorized") is False
+    assert rd.get("chat_write_ready") is False
+    assert workspace_public_flag_open(WS) is False
+    # Closed fact retained; no new open row.
+    rows = project_workspace_public_cutovers(WS)
+    assert any(r.get("status") == "closed" for r in rows)
+    assert not any(r.get("status") == "open" for r in rows)
+
+
+def test_open_requires_acceptance_build_digest_match() -> None:
+    """G6 acceptance_id alone is not enough — build_digest must CAS-bind."""
+    aid = _seed_g6_acceptance()  # seeds with BUILD
+    other = PAPER_DIGEST  # different 64-hex
+    assert other != BUILD
+    rcpt = submit_action(
+        _settings(),
+        _open_doc(acceptance_id=aid, build_digest=other, client_action_id="act-mismatch-bd"),
+        mutation_enabled=True,
+        actor_owner_user_id=ROOT_USER_ID,
+    )
+    assert rcpt.status == "conflict"
+    assert rcpt.reason_code == "acceptance_build_digest_mismatch"
+    d = rcpt.to_public_dict()
+    _assert_rails(d, public_open=False)
+    assert workspace_public_flag_open(WS) is False
+    assert project_workspace_public_cutovers(WS) == []
+

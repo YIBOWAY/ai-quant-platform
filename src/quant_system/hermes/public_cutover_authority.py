@@ -1,10 +1,11 @@
 """Hermetic V8-M6 public flag cutover authority (G7 open + G8 rollback).
 
 Single public flag cutover under the same ``/hermes`` route. Opening the flag
-surfaces ``chat_write_ready=true`` / ``composer_write_ready=true`` **only when**
-an active public cutover is recorded for the workspace AND local mutation +
-composer_open settings + research schemas are ready (composes with
-``composer_readiness``). Closing the flag is one-click rollback that:
+stamps ``public_write_authorized=true`` / ``chat_write_ready=true`` **on the
+cutover public dict and ActionReceipt only while status=open**. Global gateway
+``composer_readiness`` / health ``chat_write_ready`` remain a separate settings
+composition and are **not** auto-flipped by this authority (compose at release
+stamp if desired). Closing the flag is one-click rollback that:
 
 * never deletes append-only facts
 * never flips kill_switch / paper / dry_run
@@ -253,7 +254,9 @@ class PublicCutoverAuthority:
                 )
 
         with self._lock:
-            # Idempotent replay of exact same open action.
+            # Idempotent replay of exact same open action — only while still open.
+            # After close, replaying the same open action must NOT resurrect the
+            # flag or claim public write; force a fresh client_action_id to reopen.
             for (w, _), row in self._cutovers.items():
                 if w != ws:
                     continue
@@ -261,7 +264,11 @@ class PublicCutoverAuthority:
                     row.open_action_id == client_action_id
                     and row.open_action_digest == ad
                 ):
-                    return row
+                    if row.status == "open":
+                        return row
+                    raise PublicCutoverAuthorityError(
+                        "conflict", "public_cutover_already_closed"
+                    )
                 if row.status == "open":
                     raise PublicCutoverAuthorityError(
                         "conflict", "public_cutover_already_open"
