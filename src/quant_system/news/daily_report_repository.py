@@ -1,4 +1,4 @@
-"""Optional PostgreSQL cache for AI HOT daily reports."""
+"""Optional PostgreSQL cache for AI news daily reports."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from quant_system.news.models import AiHotDaily, utc_now_iso
+from quant_system.news.models import AiHotDaily, AiHotDailiesPage, AiHotDailyIndex, utc_now_iso
 from quant_system.storage.database import SCHEMA, get_database
 
 if TYPE_CHECKING:
@@ -23,8 +23,25 @@ def daily_report_cache_warning(report_date: str) -> str:
     return f"Using cached AI HOT daily report for {report_date} from the local database."
 
 
+def news_daily_report_cache_warning(report_date: str, *, provider: str) -> str:
+    if provider == "aihot":
+        return daily_report_cache_warning(report_date)
+    return f"Using cached {provider} daily report for {report_date} from the local database."
+
+
 def cache_aihot_daily_report(daily: AiHotDaily, *, settings: Settings) -> None:
     """Best-effort upsert of a live AI HOT daily report into the optional DB."""
+
+    return cache_news_daily_report(daily, settings=settings, provider=_PROVIDER)
+
+
+def cache_news_daily_report(
+    daily: AiHotDaily,
+    *,
+    settings: Settings,
+    provider: str,
+) -> None:
+    """Best-effort upsert of a daily report for any news provider."""
 
     database = get_database(settings)
     if database is None:
@@ -63,7 +80,7 @@ def cache_aihot_daily_report(daily: AiHotDaily, *, settings: Settings) -> None:
                 """,
                 (
                     _ROOT_OWNER_USER_ID,
-                    _PROVIDER,
+                    provider,
                     daily.date,
                     daily.fetched_at,
                     daily.generated_at,
@@ -75,7 +92,7 @@ def cache_aihot_daily_report(daily: AiHotDaily, *, settings: Settings) -> None:
                 ),
             )
     except Exception as exc:  # noqa: BLE001 - cache must not affect live reads
-        log.warning("aihot daily report cache write skipped: %s", exc)
+        log.warning("%s daily report cache write skipped: %s", provider, exc)
 
 
 def load_cached_aihot_daily_report(
@@ -84,6 +101,17 @@ def load_cached_aihot_daily_report(
     settings: Settings,
 ) -> AiHotDaily | None:
     """Return a cached AI HOT daily report, or ``None`` if unavailable."""
+
+    return load_cached_news_daily_report(date, settings=settings, provider=_PROVIDER)
+
+
+def load_cached_news_daily_report(
+    date: str,
+    *,
+    settings: Settings,
+    provider: str,
+) -> AiHotDaily | None:
+    """Return a cached daily report for any provider, or ``None`` if unavailable."""
 
     database = get_database(settings)
     if database is None:
@@ -106,23 +134,106 @@ def load_cached_aihot_daily_report(
                   AND provider = %s
                   AND report_date = %s::date
                 """,
-                (_ROOT_OWNER_USER_ID, _PROVIDER, date),
+                (_ROOT_OWNER_USER_ID, provider, date),
             ).fetchone()
     except Exception as exc:  # noqa: BLE001 - upstream error path must survive DB trouble
-        log.warning("aihot daily report cache read skipped: %s", exc)
+        log.warning("%s daily report cache read skipped: %s", provider, exc)
         return None
 
     if row is None:
         return None
-    return _daily_from_row(row)
+    return _daily_from_row(row, provider=provider)
 
 
-def _daily_from_row(row: tuple[Any, ...]) -> AiHotDaily:
+def load_latest_cached_news_daily_report(
+    *,
+    settings: Settings,
+    provider: str,
+) -> AiHotDaily | None:
+    """Return the newest cached daily report for a provider, or ``None``."""
+
+    database = get_database(settings)
+    if database is None:
+        return None
+    try:
+        with database.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT
+                    report_date::text,
+                    fetched_at::text,
+                    generated_at::text,
+                    lead,
+                    sections,
+                    flashes,
+                    warnings,
+                    raw
+                FROM {SCHEMA}.ai_news_daily_reports
+                WHERE owner_user_id = %s
+                  AND provider = %s
+                ORDER BY report_date DESC
+                LIMIT 1
+                """,
+                (_ROOT_OWNER_USER_ID, provider),
+            ).fetchone()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("%s latest daily report cache read skipped: %s", provider, exc)
+        return None
+
+    if row is None:
+        return None
+    return _daily_from_row(row, provider=provider)
+
+
+def load_cached_news_dailies(
+    *,
+    settings: Settings,
+    provider: str,
+    take: int = 14,
+) -> AiHotDailiesPage | None:
+    """Return an index page of cached daily reports for a provider."""
+
+    database = get_database(settings)
+    if database is None:
+        return None
+    limit = max(1, min(int(take), 100))
+    try:
+        with database.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT
+                    report_date::text,
+                    generated_at::text,
+                    lead,
+                    raw
+                FROM {SCHEMA}.ai_news_daily_reports
+                WHERE owner_user_id = %s
+                  AND provider = %s
+                ORDER BY report_date DESC
+                LIMIT %s
+                """,
+                (_ROOT_OWNER_USER_ID, provider, limit),
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("%s dailies cache read skipped: %s", provider, exc)
+        return None
+
+    if not rows:
+        return None
+    items = [_daily_index_from_row(row) for row in rows]
+    return AiHotDailiesPage(
+        count=len(items),
+        items=items,
+        warnings=[f"Using cached {provider} daily index from the local database."],
+    )
+
+
+def _daily_from_row(row: tuple[Any, ...], *, provider: str = _PROVIDER) -> AiHotDaily:
     report_date = _iso_or_none(row[0]) or ""
     raw = _json_dict(row[7])
     warnings = [
         *_json_string_list(row[6]),
-        daily_report_cache_warning(report_date),
+        news_daily_report_cache_warning(report_date, provider=provider),
     ]
     return AiHotDaily(
         date=report_date,
@@ -135,6 +246,17 @@ def _daily_from_row(row: tuple[Any, ...]) -> AiHotDaily:
         flashes=_json_dict_list(row[5]),
         warnings=warnings,
         raw=raw,
+    )
+
+
+def _daily_index_from_row(row: tuple[Any, ...]) -> AiHotDailyIndex:
+    lead = _json_dict_or_none(row[2]) or {}
+    lead_title = lead.get("title")
+    return AiHotDailyIndex(
+        date=_iso_or_none(row[0]) or "",
+        generated_at=_iso_or_none(row[1]),
+        lead_title=str(lead_title) if lead_title is not None else None,
+        raw=_json_dict(row[3]),
     )
 
 
