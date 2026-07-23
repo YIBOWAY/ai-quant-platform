@@ -675,14 +675,18 @@ def workspace_act(
     """Mutation entry. Defaults fail-closed; opens via QS_LOCAL_MUTATION_ENABLED."""
     # Enforce owner session + CSRF + origin before any action parse / PG I/O.
     owner = require_mutation_security(request)
-    consume_owner_mutation_budget(
-        request,
-        owner_user_id=owner.owner_user_id,
-        route=WORKSPACE_ACT_ROUTE,
-    )
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
 
     raw = body.action
+    # A burst guard must never trap the owner behind an unsafe open run or
+    # cutover. Strictly reducing/idempotent rollback actions retain their
+    # release-admission bypass; every other /act mutation consumes the budget.
+    if not _is_release_rollback_action(raw):
+        consume_owner_mutation_budget(
+            request,
+            owner_user_id=owner.owner_user_id,
+            route=WORKSPACE_ACT_ROUTE,
+        )
     # Cheap size ceiling on the action object (not a prompt store).
     try:
         import json

@@ -452,6 +452,20 @@ def test_workspace_act_has_an_independent_owner_route_budget(
     assert token not in limited.text
     assert csrf not in limited.text
 
+    rollback = client.post(
+        "/api/workspace/ws-rate-limit/act",
+        json={
+            "action": {
+                "schema_version": 1,
+                "kind": "hermes.run.stop",
+                "client_action_id": "rate-limit-emergency-stop",
+                "workspace": {"workspace_id": "ws-rate-limit"},
+            }
+        },
+        headers=headers,
+    )
+    assert rollback.status_code != 429
+
 
 def test_logout_clears_cookies(tmp_path: Path) -> None:
     client = _client(tmp_path)
