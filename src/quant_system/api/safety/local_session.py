@@ -7,19 +7,21 @@ or composer. ``mutation_enabled`` remains false until the full V4/V8 gate.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import hmac
+import ipaddress
 import os
 import re
 import secrets
 import stat
-import time
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
-from uuid import UUID
 from urllib.parse import urlparse
+from uuid import UUID
 
 from quant_system.hermes.command_ledger import ROOT_USER_ID
 
@@ -63,6 +65,25 @@ class LocalSessionValidationError(Exception):
     def __init__(self, message: str = "workspace_validation_failed") -> None:
         super().__init__(message)
         self.message = message
+
+
+def require_loopback_peer(peer_host: str | None) -> None:
+    """Bind owner-session APIs to the actual ASGI client socket.
+
+    Host and Origin are still required browser-CSRF signals, but both are
+    attacker-controlled headers. ``testclient`` is Starlette's synthetic
+    in-process peer and cannot be emitted by a real TCP client.
+    """
+    if peer_host == "testclient":
+        return
+    if type(peer_host) is not str or not peer_host:
+        raise LocalSessionForbidden("owner session requires a loopback client")
+    try:
+        is_loopback = ipaddress.ip_address(peer_host.split("%", 1)[0]).is_loopback
+    except ValueError:
+        is_loopback = False
+    if not is_loopback:
+        raise LocalSessionForbidden("owner session requires a loopback client")
 
 
 @dataclass(frozen=True)
@@ -113,44 +134,217 @@ def bootstrap_token_path(output_dir: Path) -> Path:
     return security_dir(output_dir) / "owner_bootstrap.token"
 
 
-def _assert_owner_only_file(path: Path) -> None:
-    mode = stat.S_IMODE(path.stat().st_mode)
+def bootstrap_lock_path(output_dir: Path) -> Path:
+    return security_dir(output_dir) / "owner_bootstrap.lock"
+
+
+def signing_lock_path(output_dir: Path) -> Path:
+    return security_dir(output_dir) / "session_signing.lock"
+
+
+def _validate_owner_file_info(info: os.stat_result) -> None:
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_uid != os.getuid()
+        or info.st_nlink != 1
+    ):
+        raise LocalSessionForbidden("security material is not an owner regular file")
+    mode = stat.S_IMODE(info.st_mode)
     if mode & (stat.S_IRWXG | stat.S_IRWXO):
         raise LocalSessionForbidden("security material permissions are too open")
 
 
-def _write_secret_file(path: Path, payload: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # O_NOFOLLOW where available; exclusive create then replace for rotation.
-    fd = os.open(
-        path,
-        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-        0o600,
-    )
+def _open_owner_security_directory(directory: Path) -> int:
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise LocalSessionForbidden("security directory is invalid")
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        os.write(fd, payload)
-        os.fsync(fd)
+        directory_fd = os.open(directory, flags)
+    except OSError as exc:
+        raise LocalSessionForbidden("security directory is invalid") from exc
+    try:
+        opened = os.fstat(directory_fd)
+        if not stat.S_ISDIR(opened.st_mode) or opened.st_uid != os.getuid():
+            raise LocalSessionForbidden("security directory is invalid")
+        os.fchmod(directory_fd, 0o700)
+    except BaseException:
+        os.close(directory_fd)
+        raise
+    return directory_fd
+
+
+def _destination_is_safe_or_missing(directory_fd: int, name: str) -> None:
+    try:
+        info = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    _validate_owner_file_info(info)
+
+
+def _write_secret_at(directory_fd: int, name: str, payload: bytes) -> None:
+    if not payload:
+        raise LocalSessionForbidden("security material is invalid")
+    _destination_is_safe_or_missing(directory_fd, name)
+    temporary = f".{name}.{secrets.token_hex(12)}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(temporary, flags, 0o600, dir_fd=directory_fd)
+        try:
+            view = memoryview(payload)
+            written = 0
+            while written < len(view):
+                count = os.write(fd, view[written:])
+                if count <= 0:
+                    raise OSError("short write for security material")
+                written += count
+            os.fchmod(fd, 0o600)
+            os.fsync(fd)
+            _validate_owner_file_info(os.fstat(fd))
+        finally:
+            os.close(fd)
+        # Refuse an observed symlink/non-owner/racy destination. A swap after
+        # this check is still safe: rename replaces the directory entry and
+        # never follows its target, then the installed inode is revalidated.
+        _destination_is_safe_or_missing(directory_fd, name)
+        os.replace(
+            temporary,
+            name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+        )
+        installed_fd = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=directory_fd,
+        )
+        try:
+            _validate_owner_file_info(os.fstat(installed_fd))
+        finally:
+            os.close(installed_fd)
+        os.fsync(directory_fd)
+    finally:
+        with suppress(OSError):
+            os.unlink(temporary, dir_fd=directory_fd)
+
+
+def _write_secret_file(path: Path, payload: bytes) -> None:
+    directory_fd = _open_owner_security_directory(path.parent)
+    try:
+        _write_secret_at(directory_fd, path.name, payload)
+    finally:
+        os.close(directory_fd)
+
+
+def _read_secret_at(directory_fd: int, name: str, *, max_bytes: int) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(name, flags, dir_fd=directory_fd)
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        raise LocalSessionForbidden("security material is invalid") from exc
+    try:
+        _validate_owner_file_info(os.fstat(fd))
+        chunks: list[bytes] = []
+        remaining = max_bytes + 1
+        while remaining:
+            chunk = os.read(fd, min(remaining, 4096))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
     finally:
         os.close(fd)
-    os.chmod(path, 0o600)
-    _assert_owner_only_file(path)
+    if not data or len(data) > max_bytes:
+        raise LocalSessionForbidden("security material is invalid")
+    return data
+
+
+def _read_secret_file(path: Path, *, max_bytes: int) -> bytes:
+    directory_fd = _open_owner_security_directory(path.parent)
+    try:
+        return _read_secret_at(directory_fd, path.name, max_bytes=max_bytes)
+    finally:
+        os.close(directory_fd)
+
+
+def _open_owner_lock_at(directory_fd: int, name: str) -> int:
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(
+            name,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | nofollow,
+            0o600,
+            dir_fd=directory_fd,
+        )
+    except FileExistsError:
+        try:
+            fd = os.open(name, os.O_RDWR | nofollow, dir_fd=directory_fd)
+        except OSError as exc:
+            raise LocalSessionForbidden("security lock is invalid") from exc
+    except OSError as exc:
+        raise LocalSessionForbidden("security lock is invalid") from exc
+    try:
+        _validate_owner_file_info(os.fstat(fd))
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
 
 
 def ensure_security_material(output_dir: Path) -> Path:
     """Ensure signing key exists (0600). Does not mint bootstrap token."""
     key_path = signing_key_path(output_dir)
-    if not key_path.exists():
-        _write_secret_file(key_path, secrets.token_bytes(32))
-    else:
-        _assert_owner_only_file(key_path)
-        if key_path.stat().st_size < 32:
-            raise LocalSessionForbidden("signing key material is invalid")
+    try:
+        data = _read_secret_file(key_path, max_bytes=4096)
+    except FileNotFoundError:
+        directory_fd = _open_owner_security_directory(key_path.parent)
+        try:
+            lock_fd = _open_owner_lock_at(
+                directory_fd,
+                signing_lock_path(output_dir).name,
+            )
+        except BaseException:
+            os.close(directory_fd)
+            raise
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            try:
+                data = _read_secret_at(
+                    directory_fd,
+                    key_path.name,
+                    max_bytes=4096,
+                )
+            except FileNotFoundError:
+                _write_secret_at(
+                    directory_fd,
+                    key_path.name,
+                    secrets.token_bytes(32),
+                )
+                data = _read_secret_at(
+                    directory_fd,
+                    key_path.name,
+                    max_bytes=4096,
+                )
+        finally:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            finally:
+                os.close(lock_fd)
+                os.close(directory_fd)
+    if len(data) < 32:
+        raise LocalSessionForbidden("signing key material is invalid")
     return key_path
 
 
 def load_signing_key(output_dir: Path) -> bytes:
     key_path = ensure_security_material(output_dir)
-    data = key_path.read_bytes()
+    data = _read_secret_file(key_path, max_bytes=4096)
     if len(data) < 32:
         raise LocalSessionForbidden("signing key material is invalid")
     return data
@@ -160,9 +354,13 @@ def issue_bootstrap_token(output_dir: Path, *, force_rotate: bool = False) -> st
     """Create or return the current one-time bootstrap token (file 0600)."""
     ensure_security_material(output_dir)
     path = bootstrap_token_path(output_dir)
-    if path.exists() and not force_rotate:
-        _assert_owner_only_file(path)
-        token = path.read_text(encoding="ascii").strip()
+    if not force_rotate:
+        try:
+            token = _read_secret_file(path, max_bytes=512).decode("ascii").strip()
+        except FileNotFoundError:
+            token = ""
+        except UnicodeDecodeError:
+            token = ""
         if _TOKEN_RE.fullmatch(token) is not None:
             return token
     token = secrets.token_urlsafe(32)
@@ -174,18 +372,35 @@ def _consume_bootstrap_token(output_dir: Path, presented: str) -> None:
     if type(presented) is not str or _TOKEN_RE.fullmatch(presented) is None:
         raise LocalSessionValidationError("invalid bootstrap token")
     path = bootstrap_token_path(output_dir)
-    if not path.exists():
-        raise LocalSessionAuthError()
-    _assert_owner_only_file(path)
+    directory_fd = _open_owner_security_directory(path.parent)
+    lock_name = bootstrap_lock_path(output_dir).name
     try:
-        expected = path.read_text(encoding="ascii").strip()
-    except OSError as exc:
-        raise LocalSessionAuthError() from exc
-    if not expected or not hmac.compare_digest(expected, presented):
-        raise LocalSessionAuthError()
-    # Rotate immediately so the presented token cannot be reused.
-    replacement = secrets.token_urlsafe(32)
-    _write_secret_file(path, replacement.encode("ascii"))
+        lock_fd = _open_owner_lock_at(directory_fd, lock_name)
+    except LocalSessionForbidden:
+        os.close(directory_fd)
+        raise
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        try:
+            expected = _read_secret_at(
+                directory_fd,
+                path.name,
+                max_bytes=512,
+            ).decode("ascii").strip()
+        except (FileNotFoundError, OSError, UnicodeDecodeError, LocalSessionForbidden) as exc:
+            raise LocalSessionAuthError() from exc
+        if not expected or not hmac.compare_digest(expected, presented):
+            raise LocalSessionAuthError()
+        # The process-shared lock plus atomic replacement admits exactly one
+        # consumer of the old token.
+        replacement = secrets.token_urlsafe(32)
+        _write_secret_at(directory_fd, path.name, replacement.encode("ascii"))
+    finally:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
+            os.close(directory_fd)
 
 
 def _b64url(data: bytes) -> str:
@@ -345,18 +560,22 @@ def enforce_browser_request_gates(
 ) -> None:
     """Fail closed on Host / Origin / Sec-Fetch-Site (HQA security contract)."""
     host = _request_host(host_header)
-    if host is None or host != policy.accepted_host:
-        # Also allow API host when FE and API share no host — browser Host is the
-        # API host for same-origin BFF proxies. When FE is :3001 and API :8765,
-        # requests are cross-origin unless Next rewrites. For local BFF called
-        # via same-origin rewrite, Host is the FE host. For direct API tests,
-        # accept either policy.accepted_host OR loopback API host forms.
-        if host not in _api_loopback_hosts(policy):
-            raise LocalSessionForbidden()
+    # Also allow API host when FE and API share no host — browser Host is the
+    # API host for same-origin BFF proxies. When FE is :3001 and API :8765,
+    # requests are cross-origin unless Next rewrites. For local BFF called
+    # via same-origin rewrite, Host is the FE host. For direct API tests,
+    # accept either policy.accepted_host OR loopback API host forms.
+    if (
+        (host is None or host != policy.accepted_host)
+        and host not in _api_loopback_hosts(policy)
+    ):
+        raise LocalSessionForbidden()
 
-    if origin_header is not None:
-        if type(origin_header) is not str or origin_header != policy.accepted_origin:
-            raise LocalSessionForbidden()
+    if origin_header is not None and (
+        type(origin_header) is not str
+        or origin_header != policy.accepted_origin
+    ):
+        raise LocalSessionForbidden()
 
     site = (sec_fetch_site or "").lower() if sec_fetch_site is not None else ""
     if request_kind == "top_level_document":
@@ -428,14 +647,7 @@ def session_public_view(
 
 def local_session_security_ready(output_dir: Path) -> bool:
     try:
-        path = signing_key_path(output_dir)
-        if not path.exists():
-            return False
-        _assert_owner_only_file(path)
-        return path.stat().st_size >= 32
-    except OSError:
+        data = _read_secret_file(signing_key_path(output_dir), max_bytes=4096)
+        return len(data) >= 32
+    except (OSError, LocalSessionForbidden):
         return False
-
-
-# Silence unused import warning for time in case of future clock helpers.
-_ = time

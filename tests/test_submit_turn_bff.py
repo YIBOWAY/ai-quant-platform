@@ -14,6 +14,7 @@ from quant_system.api.safety.local_session import (
     CSRF_HEADER_NAME,
     issue_bootstrap_token,
 )
+from quant_system.api.safety.mutation_rate_limit import OwnerMutationRateLimiter
 from quant_system.api.server import create_app
 from quant_system.config.settings import (
     HermesGatewaySettings,
@@ -196,6 +197,48 @@ def test_submit_turn_happy_path_with_fake_port_and_mocked_turn(
     assert payload["payload_ref"].startswith("payload:sha256:")
     assert payload["command_id"]
     assert "prompt" not in payload
+
+
+def test_submit_turn_has_an_independent_owner_route_budget(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path, mutation=True)
+    client.app.state.services["owner_mutation_rate_limiter"] = (
+        OwnerMutationRateLimiter(max_requests=1, window_seconds=60)
+    )
+    boot = _bootstrap(client, tmp_path)
+    headers = {**_browser_headers(), CSRF_HEADER_NAME: boot["csrf"]}
+    receipt = ActionReceipt(
+        status="accepted",
+        client_action_id="intent-bff-rate-01",
+        action_digest="d" * 64,
+        workspace_id=PLATFORM_WORKSPACE_ID,
+        command_id="00000000-0000-4000-8000-0000000000aa",
+        platform_session_id="managed-bff-1",
+        mutation_enabled=True,
+    )
+    body = _body(client_action_id="intent-bff-rate-01")
+
+    with patch(
+        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+        return_value=receipt,
+    ):
+        first = client.post(
+            "/api/agent/workspace/submit-turn",
+            json=body,
+            headers=headers,
+        )
+        limited = client.post(
+            "/api/agent/workspace/submit-turn",
+            json=body,
+            headers=headers,
+        )
+
+    assert first.status_code == 200, first.text
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"] == "60"
+    assert limited.json()["detail"]["code"] == "mutation_rate_limited"
+    assert boot["csrf"] not in limited.text
 
 
 def test_act_still_rejects_prompt_field(tmp_path: Path) -> None:

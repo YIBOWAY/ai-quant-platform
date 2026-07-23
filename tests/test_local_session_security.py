@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 import stat
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -15,15 +17,20 @@ from quant_system.api.safety.local_session import (
     SESSION_COOKIE_NAME,
     LocalSessionAuthError,
     LocalSessionForbidden,
+    bootstrap_lock_path,
+    bootstrap_token_path,
     exchange_bootstrap_token,
     issue_bootstrap_token,
+    local_session_security_ready,
     mint_owner_session,
     policy_from_settings,
+    require_loopback_peer,
     require_mutation_precheck,
     signing_key_path,
     verify_csrf,
     verify_session_cookie,
 )
+from quant_system.api.safety.mutation_rate_limit import OwnerMutationRateLimiter
 from quant_system.api.server import create_app
 from quant_system.config.settings import HermesGatewaySettings, Settings
 from quant_system.hermes.command_ledger import ROOT_USER_ID
@@ -158,6 +165,91 @@ def test_bootstrap_token_is_one_time(tmp_path: Path) -> None:
     assert second.json()["detail"]["code"] == "auth"
 
 
+def test_secret_rotation_is_atomic_and_refuses_symlink(
+    tmp_path: Path,
+) -> None:
+    token = issue_bootstrap_token(tmp_path)
+    token_path = bootstrap_token_path(tmp_path)
+    old_inode = token_path.stat().st_ino
+    rotated = issue_bootstrap_token(tmp_path, force_rotate=True)
+    assert rotated != token
+    assert token_path.stat().st_ino != old_inode
+    assert stat.S_IMODE(token_path.stat().st_mode) == 0o600
+
+    victim = tmp_path / "must-not-be-overwritten"
+    victim.write_text("preserve-me", encoding="utf-8")
+    token_path.unlink()
+    token_path.symlink_to(victim)
+    with pytest.raises(LocalSessionForbidden):
+        issue_bootstrap_token(tmp_path, force_rotate=True)
+    assert victim.read_text(encoding="utf-8") == "preserve-me"
+
+
+def test_security_material_must_be_owner_only_regular_file(
+    tmp_path: Path,
+) -> None:
+    issued = mint_owner_session(tmp_path)
+    key_path = signing_key_path(tmp_path)
+    key_path.chmod(0o640)
+
+    with pytest.raises(LocalSessionForbidden):
+        verify_session_cookie(tmp_path, issued.session_cookie_value)
+
+    assert local_session_security_ready(tmp_path) is False
+
+
+def test_bootstrap_lock_refuses_symlink_without_touching_target(
+    tmp_path: Path,
+) -> None:
+    token = issue_bootstrap_token(tmp_path)
+    victim = tmp_path / "must-not-be-locked"
+    victim.write_text("preserve-me", encoding="utf-8")
+    lock_path = bootstrap_lock_path(tmp_path)
+    lock_path.symlink_to(victim)
+
+    with pytest.raises(LocalSessionForbidden):
+        exchange_bootstrap_token(tmp_path, token)
+    assert victim.read_text(encoding="utf-8") == "preserve-me"
+
+
+def test_concurrent_bootstrap_exchange_has_exactly_one_winner(
+    tmp_path: Path,
+) -> None:
+    token = issue_bootstrap_token(tmp_path)
+    ready = threading.Barrier(8)
+
+    def _exchange(_index: int) -> bool:
+        ready.wait(timeout=3)
+        try:
+            exchange_bootstrap_token(tmp_path, token)
+        except LocalSessionAuthError:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        winners = list(pool.map(_exchange, range(8)))
+    assert winners.count(True) == 1
+
+
+def test_concurrent_signing_key_initialization_never_invalidates_sessions(
+    tmp_path: Path,
+) -> None:
+    ready = threading.Barrier(8)
+
+    def _mint(_index: int):
+        ready.wait(timeout=3)
+        return mint_owner_session(tmp_path)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        issued = list(pool.map(_mint, range(8)))
+
+    for item in issued:
+        assert (
+            verify_session_cookie(tmp_path, item.session_cookie_value).owner_user_id
+            == ROOT_USER_ID
+        )
+
+
 def test_forged_and_expired_cookie_fail(tmp_path: Path) -> None:
     issued = exchange_bootstrap_token(tmp_path, issue_bootstrap_token(tmp_path))
     with pytest.raises(LocalSessionAuthError):
@@ -192,6 +284,79 @@ def test_cross_origin_and_sec_fetch_site_fail_closed(tmp_path: Path) -> None:
         headers=_browser_headers(site="none"),
     )
     assert none_site.status_code == 403
+
+
+def test_actual_client_peer_must_be_loopback() -> None:
+    require_loopback_peer("127.0.0.1")
+    require_loopback_peer("::1")
+    require_loopback_peer("testclient")
+    with pytest.raises(LocalSessionForbidden):
+        require_loopback_peer("192.0.2.25")
+    with pytest.raises(LocalSessionForbidden):
+        require_loopback_peer(None)
+
+
+def test_owner_http_surface_rejects_non_loopback_asgi_peer(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        settings=_settings(),
+        output_dir=tmp_path,
+        bind_address="127.0.0.1",
+    )
+    remote = TestClient(app, client=("192.0.2.25", 50123))
+    token = issue_bootstrap_token(tmp_path)
+    denied = remote.post(
+        "/api/auth/owner/bootstrap",
+        json={"bootstrap_token": token},
+        headers=_browser_headers(),
+    )
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "forbidden"
+    assert token not in denied.text
+
+    # The rejected peer did not consume the one-time token.
+    loopback = TestClient(app)
+    accepted = loopback.post(
+        "/api/auth/owner/bootstrap",
+        json={"bootstrap_token": token},
+        headers=_browser_headers(),
+    )
+    assert accepted.status_code == 200
+
+
+def test_bootstrap_returns_bounded_429_without_disclosing_token(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        settings=_settings(),
+        output_dir=tmp_path,
+        bind_address="127.0.0.1",
+    )
+    app.state.services["owner_mutation_rate_limiter"] = OwnerMutationRateLimiter(
+        max_requests=1,
+        window_seconds=60,
+    )
+    client = TestClient(app)
+    token = issue_bootstrap_token(tmp_path)
+    wrong = "x" * len(token)
+
+    first = client.post(
+        "/api/auth/owner/bootstrap",
+        json={"bootstrap_token": wrong},
+        headers=_browser_headers(),
+    )
+    assert first.status_code == 401
+    limited = client.post(
+        "/api/auth/owner/bootstrap",
+        json={"bootstrap_token": token},
+        headers=_browser_headers(),
+    )
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"] == "60"
+    assert limited.json()["detail"]["code"] == "mutation_rate_limited"
+    assert token not in limited.text
+    assert wrong not in limited.text
 
 
 def test_mutation_precheck_requires_csrf_and_stays_disabled(tmp_path: Path) -> None:
@@ -234,6 +399,58 @@ def test_health_mutation_still_false_with_session_module(tmp_path: Path) -> None
     assert response.status_code == 200
     ledger = response.json()["hermes_command_ledger"]
     assert ledger["mutation_enabled"] is False
+
+
+def test_workspace_act_has_an_independent_owner_route_budget(
+    tmp_path: Path,
+) -> None:
+    from quant_system.config.settings import LocalMutationSettings
+
+    settings = _settings().model_copy(
+        update={
+            "local_mutation": LocalMutationSettings(
+                enabled=True,
+                composer_open=False,
+            )
+        }
+    )
+    app = create_app(
+        settings=settings,
+        output_dir=tmp_path,
+        bind_address="127.0.0.1",
+    )
+    app.state.services["owner_mutation_rate_limiter"] = OwnerMutationRateLimiter(
+        max_requests=1,
+        window_seconds=60,
+    )
+    client = TestClient(app)
+    token = issue_bootstrap_token(tmp_path)
+    boot = client.post(
+        "/api/auth/owner/bootstrap",
+        json={"bootstrap_token": token},
+        headers=_browser_headers(),
+    )
+    csrf = boot.json()["csrf_token"]
+    headers = {**_browser_headers(), CSRF_HEADER_NAME: csrf}
+    body = {
+        "action": {
+            "schema_version": 1,
+            "kind": "managed_session.create",
+            "client_action_id": "rate-limit-action",
+            "workspace": {"workspace_id": "ws-rate-limit"},
+            "provider_policy_digest": "a" * 64,
+            "payload_ttl_days": 7,
+        }
+    }
+
+    first = client.post("/api/workspace/ws-rate-limit/act", json=body, headers=headers)
+    assert first.status_code != 429
+    limited = client.post("/api/workspace/ws-rate-limit/act", json=body, headers=headers)
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"] == "60"
+    assert limited.json()["detail"]["code"] == "mutation_rate_limited"
+    assert token not in limited.text
+    assert csrf not in limited.text
 
 
 def test_logout_clears_cookies(tmp_path: Path) -> None:

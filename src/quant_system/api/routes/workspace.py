@@ -23,7 +23,12 @@ from pydantic import BaseModel, Field
 from quant_system.api.dependencies import (
     OwnerSessionDep,
     SettingsDep,
+    consume_owner_mutation_budget,
     require_mutation_security,
+)
+from quant_system.api.safety.mutation_rate_limit import (
+    WORKSPACE_ACT_ROUTE,
+    WORKSPACE_SUBMIT_TURN_ROUTE,
 )
 from quant_system.api.schemas.workspace import (
     CompositeTurnReceiptResponse,
@@ -670,6 +675,11 @@ def workspace_act(
     """Mutation entry. Defaults fail-closed; opens via QS_LOCAL_MUTATION_ENABLED."""
     # Enforce owner session + CSRF + origin before any action parse / PG I/O.
     owner = require_mutation_security(request)
+    consume_owner_mutation_budget(
+        request,
+        owner_user_id=owner.owner_user_id,
+        route=WORKSPACE_ACT_ROUTE,
+    )
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
 
     raw = body.action
@@ -733,6 +743,11 @@ def workspace_submit_turn(
     ``client_action_id``, ``prompt``. Prompt never accepted on ``/act``.
     """
     owner = require_mutation_security(request)
+    consume_owner_mutation_budget(
+        request,
+        owner_user_id=owner.owner_user_id,
+        route=WORKSPACE_SUBMIT_TURN_ROUTE,
+    )
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     _require_effective_release(settings)
 

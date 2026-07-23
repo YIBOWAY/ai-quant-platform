@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from quant_system.api.dependencies import OutputDirDep, SettingsDep, get_bind_address
+from quant_system.api.dependencies import (
+    OutputDirDep,
+    SettingsDep,
+    consume_owner_mutation_budget,
+    get_bind_address,
+)
 from quant_system.api.safety.local_session import (
     CSRF_COOKIE_NAME,
     CSRF_HEADER_NAME,
@@ -14,18 +21,21 @@ from quant_system.api.safety.local_session import (
     LocalSessionAuthError,
     LocalSessionForbidden,
     LocalSessionValidationError,
-    exchange_bootstrap_token,
     enforce_browser_request_gates,
+    exchange_bootstrap_token,
     local_session_security_ready,
     policy_from_settings,
+    require_loopback_peer,
     session_public_view,
     verify_session_cookie,
 )
+from quant_system.api.safety.mutation_rate_limit import OWNER_BOOTSTRAP_ROUTE
 from quant_system.api.schemas.local_session import (
     OwnerBootstrapResponse,
     OwnerLogoutResponse,
     OwnerSessionStatusResponse,
 )
+from quant_system.hermes.command_ledger import ROOT_USER_ID
 
 router = APIRouter()
 
@@ -93,12 +103,18 @@ def owner_bootstrap(
 ) -> dict:
     policy = _policy(settings, request)
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         enforce_browser_request_gates(
             policy=policy,
             request_kind="mutation",
             host_header=request.headers.get("host"),
             origin_header=request.headers.get("origin"),
             sec_fetch_site=request.headers.get("sec-fetch-site"),
+        )
+        consume_owner_mutation_budget(
+            request,
+            owner_user_id=ROOT_USER_ID,
+            route=OWNER_BOOTSTRAP_ROUTE,
         )
         issued = exchange_bootstrap_token(output_dir, body.bootstrap_token)
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
@@ -128,6 +144,7 @@ def owner_session_status(
 ) -> dict:
     policy = _policy(settings, request)
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         enforce_browser_request_gates(
             policy=policy,
             request_kind="api_read",
@@ -155,6 +172,7 @@ def owner_logout(
 ) -> dict:
     policy = _policy(settings, request)
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         enforce_browser_request_gates(
             policy=policy,
             request_kind="mutation",
@@ -163,10 +181,8 @@ def owner_logout(
             sec_fetch_site=request.headers.get("sec-fetch-site"),
         )
         # Best-effort verify; always clear cookies.
-        try:
+        with suppress(LocalSessionAuthError):
             verify_session_cookie(output_dir, request.cookies.get(SESSION_COOKIE_NAME))
-        except LocalSessionAuthError:
-            pass
     except (LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _http_error(exc) from exc
     _clear_session_cookies(response)

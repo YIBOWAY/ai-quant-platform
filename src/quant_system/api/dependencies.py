@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request
 
@@ -16,8 +17,14 @@ from quant_system.api.safety.local_session import (
     OwnerSession,
     enforce_browser_request_gates,
     policy_from_settings,
+    require_loopback_peer,
     require_mutation_precheck,
     verify_session_cookie,
+)
+from quant_system.api.safety.mutation_rate_limit import (
+    MUTATION_RATE_LIMIT_ROUTES,
+    MutationRateLimitExceeded,
+    OwnerMutationRateLimiter,
 )
 from quant_system.config.settings import Settings
 from quant_system.hermes.gateway_client import HermesApiReadClient
@@ -97,6 +104,7 @@ def _security_http_error(exc: Exception) -> HTTPException:
 def require_owner_session(request: Request) -> OwnerSession:
     """Require signed owner session + api_read browser gates."""
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         policy = _local_session_policy(request)
         enforce_browser_request_gates(
             policy=policy,
@@ -122,6 +130,7 @@ def require_mutation_security(request: Request) -> OwnerSession:
     settings = get_settings(request)
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     try:
+        require_loopback_peer(request.client.host if request.client else None)
         return require_mutation_precheck(
             output_dir=get_output_dir(request),
             policy=_local_session_policy(request),
@@ -134,6 +143,41 @@ def require_mutation_security(request: Request) -> OwnerSession:
         )
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _security_http_error(exc) from exc
+
+
+def consume_owner_mutation_budget(
+    request: Request,
+    *,
+    owner_user_id: UUID,
+    route: str,
+) -> None:
+    """Apply a bounded owner/route budget without using secret material as a key."""
+    if route not in MUTATION_RATE_LIMIT_ROUTES:
+        raise _security_http_error(
+            LocalSessionForbidden("mutation rate limit route is invalid")
+        )
+    services = getattr(request.app.state, "services", None)
+    limiter = (
+        services.get("owner_mutation_rate_limiter")
+        if isinstance(services, dict)
+        else None
+    )
+    if not isinstance(limiter, OwnerMutationRateLimiter):
+        raise _security_http_error(
+            LocalSessionForbidden("mutation rate limiter unavailable")
+        )
+    try:
+        limiter.consume(str(owner_user_id), route=route)
+    except MutationRateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+            detail={
+                "code": exc.code,
+                "message": "mutation rate limit exceeded",
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+        ) from exc
 
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
