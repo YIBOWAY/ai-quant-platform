@@ -1955,205 +1955,34 @@ export type HermesResultDetailResponse = ApiEnvelope &
 
 // Agent v0.2 HTTP contracts. These names intentionally mirror the backend's
 // Pydantic components so generated-contract audits catch drift at either side.
-export type OwnerSessionStatusResponse = {
-  owner_user_id: string;
-  session_id: string;
-  expires_at: string;
-  mutation_enabled: boolean;
-  security_ready: boolean;
-};
-
-export type OwnerBootstrapResponse = OwnerSessionStatusResponse & {
-  csrf_token: string;
-  csrf_header: string;
-};
-
-export type OwnerLogoutResponse = {
-  ok: boolean;
-  mutation_enabled: boolean;
-};
-
-export type WorkspaceRefResponse = {
-  workspace_id: string;
-};
-
-export type DualVerticalAcceptanceResponse = {
-  acceptance_id: string;
-  grant_id: string;
-  grant_digest: string;
-  build_digest: string;
-  options_a_task_id: string;
-  options_a_result_id: string;
-  factor_b_task_id: string;
-  factor_b_result_id: string;
-  acceptance_note: string;
-  accepted_at: string;
-  kind: "v8.canary.dual_vertical_acceptance";
-  public_write_authorized: false;
-  chat_write_ready: false;
-  release_authorized: false;
-};
-
-export type CanaryGrantResponse = {
-  grant_id: string;
-  canary_ref: string;
-  build_digest: string;
-  route: "/hermes";
-  grant_digest: string;
-  issued_at: string;
-  expires_at: string;
-  status: "active" | "revoked" | "expired" | "consumed";
-  kind: "v8.canary.grant";
-  public_write_authorized: false;
-  chat_write_ready: false;
-  release_authorized: false;
-  grant_note?: string | null;
-  revoked_at?: string | null;
-  revoke_reason?: string | null;
-  acceptance?: DualVerticalAcceptanceResponse | null;
-};
-
-export type PublicCutoverResponse = {
-  cutover_id: string;
-  cutover_ref: string;
-  build_digest: string;
-  route: "/hermes";
-  cutover_digest: string;
-  acceptance_id: string;
-  opened_at: string;
-  status: "open" | "closed";
-  public_flag_open: boolean;
-  kind: "v8.public.cutover";
-  release_authorized: false;
-  m6_gate2_decide_authorized: false;
-  v2_durable_live: false;
-  kill_switch_unchanged: true;
-  public_write_authorized: boolean;
-  chat_write_ready: boolean;
-  open_note?: string | null;
-  closed_at?: string | null;
-  close_reason?: string | null;
-};
-
-export type GateProjectionResponse = {
-  gate_id: string;
-  gate_kind: "gate1" | "gate2" | "gate3";
-  kind: "gate1.formula_source" | "gate2.candidate" | "gate3.promotion_review";
-  status: "pending" | "confirmed" | "reviewed" | "prepared" | "rejected" | "expired";
-  expected_status: string;
-  task_id?: string | null;
-  task_ref?: string | null;
-  reviewed_source_sha256?: string | null;
-  candidate_id?: string | null;
-  candidate_ref?: string | null;
-  expected_digest?: string | null;
-  final_backtest_receipt_id?: string | null;
-  final_backtest_receipt_ref?: string | null;
-  base_commit?: string | null;
-  expires_at?: string | null;
-  note?: string | null;
-  decided_at?: string | null;
-};
-
+export type OwnerSessionStatusResponse =
+  GeneratedApiComponents["schemas"]["OwnerSessionStatusResponse"];
+export type OwnerBootstrapResponse =
+  GeneratedApiComponents["schemas"]["OwnerBootstrapResponse"];
+export type OwnerLogoutResponse =
+  GeneratedApiComponents["schemas"]["OwnerLogoutResponse"];
+export type WorkspaceRefResponse =
+  GeneratedApiComponents["schemas"]["WorkspaceRefResponse"];
+export type DualVerticalAcceptanceResponse =
+  GeneratedApiComponents["schemas"]["DualVerticalAcceptanceResponse"];
+export type CanaryGrantResponse =
+  GeneratedApiComponents["schemas"]["CanaryGrantResponse"];
+export type PublicCutoverResponse =
+  GeneratedApiComponents["schemas"]["PublicCutoverResponse"];
+export type GateProjectionResponse =
+  GeneratedApiComponents["schemas"]["GateProjectionResponse"];
 export type ManagedSessionProjectionResponse =
   GeneratedApiComponents["schemas"]["ManagedSessionProjectionResponse"];
-
-export type WorkspaceSnapshotResponse = {
-  workspace: WorkspaceRefResponse;
-  owner_user_id: string;
-  snapshot_workspace_cursor: number;
-  sessions: string[];
-  managed_sessions: ManagedSessionProjectionResponse[];
-  tasks: string[];
-  attempts: string[];
-  commands: Array<Record<string, unknown>>;
-  runs: string[];
-  results: Array<Record<string, unknown>>;
-  approvals: Array<Record<string, unknown>>;
-  gates: GateProjectionResponse[];
-  canary_grants: CanaryGrantResponse[];
-  public_cutovers: PublicCutoverResponse[];
-  authority_health: Record<string, string>;
-  mutation_enabled: boolean;
-  observed_at: string;
-};
-
-export type WorkspaceFollowResponse = {
-  events: Array<Record<string, unknown>>;
-  after_cursor: number | null;
-  next_cursor: number | null;
-  resync_required: boolean;
-  recovery_action?: string | null;
-  mutation_enabled: boolean;
-  approvals?: Array<Record<string, unknown>> | null;
-  gates?: GateProjectionResponse[] | null;
-  canary_grants?: CanaryGrantResponse[] | null;
-  public_cutovers?: PublicCutoverResponse[] | null;
-  results?: Array<Record<string, unknown>> | null;
-  tasks?: string[] | null;
-  attempts?: string[] | null;
-  runs?: string[] | null;
-  authority_health?: Record<string, string> | null;
-};
-
-export type WorkspaceAuthoritiesResponse = {
-  command_ledger_schema_ready: boolean;
-  command_ledger_schema_version: number | null;
-  session_registry_schema_ready: boolean;
-  session_registry_schema_version: number | null;
-  workflow_binding_schema_ready: boolean;
-  workflow_binding_schema_version: number | null;
-  ready: boolean;
-  research_binding_ready: boolean;
-  dark_dispatch_ready: boolean;
-  mutation_enabled: boolean;
-  composer_write_ready: boolean;
-  chat_write_ready: boolean;
-  platform_delivery_blockers: string[];
-  platform_delivery_blocker_count: number;
-  composer_open: boolean;
-};
-
-export type WorkspaceActionReceiptResponse = {
-  status: "accepted" | "reconciling" | "conflict" | "unavailable" | "outcome_unknown";
-  client_action_id: string;
-  action_digest: string;
-  workspace: WorkspaceRefResponse;
-  recovery_action?: string | null;
-  mutation_enabled: boolean;
-  command_id?: string | null;
-  run_id?: string | null;
-  platform_session_id?: string | null;
-  session_ref?: string | null;
-  hermes_session_id?: string | null;
-  reason_code?: string | null;
-  stop_layers?: Record<string, unknown> | null;
-  task_id?: string | null;
-  attempt_id?: string | null;
-  result_id?: string | null;
-  terminal_status?: string | null;
-  gate_id?: string | null;
-  grant_id?: string | null;
-  grant_digest?: string | null;
-  canary_ref?: string | null;
-  acceptance_id?: string | null;
-  cutover_id?: string | null;
-  cutover_digest?: string | null;
-  cutover_ref?: string | null;
-  public_flag_open?: boolean | null;
-  public_write_authorized?: boolean | null;
-  chat_write_ready?: boolean | null;
-  release_authorized?: false | null;
-  m6_gate2_decide_authorized?: false | null;
-  v2_durable_live?: false | null;
-  kill_switch_unchanged?: true | null;
-};
-
-export type CompositeTurnReceiptResponse = WorkspaceActionReceiptResponse & {
-  payload_ref: string;
-  payload_digest: string;
-  kind: "conversation.turn";
-};
+export type WorkspaceSnapshotResponse =
+  GeneratedApiComponents["schemas"]["WorkspaceSnapshotResponse"];
+export type WorkspaceFollowResponse =
+  GeneratedApiComponents["schemas"]["WorkspaceFollowResponse"];
+export type WorkspaceAuthoritiesResponse =
+  GeneratedApiComponents["schemas"]["WorkspaceAuthoritiesResponse"];
+export type WorkspaceActionReceiptResponse =
+  GeneratedApiComponents["schemas"]["WorkspaceActionReceiptResponse"];
+export type CompositeTurnReceiptResponse =
+  GeneratedApiComponents["schemas"]["CompositeTurnReceiptResponse"];
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 
