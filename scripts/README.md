@@ -21,6 +21,9 @@ helpers.
 | `run_quant_frontend.sh` | Agent v0.2 LaunchAgent target for the built Next.js frontend on `127.0.0.1:3001`; serves this worktree's `.next` and can reuse main-repo `node_modules`. |
 | `install_agent_v02_stack_launchagents.sh` | Validate, render, and replay-safely install only the Agent v0.2 backend/frontend LaunchAgents. It never installs strategy schedulers. |
 | `uninstall_agent_v02_stack_launchagents.sh` | Boot out and remove only the Agent v0.2 backend/frontend LaunchAgents. |
+| `run_agent_v02_connector.sh` | Supervised Agent v0.2 connector target; loads an optional owner-only env file, performs the bounded HQA/Hermes preflight, and dispatches only after the effective release gate opens. |
+| `install_agent_v02_connector_launchagent.sh` | Render and replay-safely install only the supervised Agent v0.2 connector LaunchAgent. |
+| `uninstall_agent_v02_connector_launchagent.sh` | Boot out and remove only the supervised Agent v0.2 connector LaunchAgent. |
 | `run_paper_strategy_sleeves.sh` | LaunchAgent/CLI wrapper for one-shot Paper Strategy Sleeves ops commands (`ops-status`, `generate-due-signals`, `execute-due`). |
 | `install_paper_strategy_sleeves_launchagent.sh` | Render and bootstrap user-level macOS LaunchAgents under `~/Library/LaunchAgents/`; does not use sudo. |
 | `uninstall_paper_strategy_sleeves_launchagent.sh` | Boot out and remove the rendered user-level LaunchAgents. |
