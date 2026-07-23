@@ -2055,11 +2055,15 @@ export type GateProjectionResponse = {
   decided_at?: string | null;
 };
 
+export type ManagedSessionProjectionResponse =
+  GeneratedApiComponents["schemas"]["ManagedSessionProjectionResponse"];
+
 export type WorkspaceSnapshotResponse = {
   workspace: WorkspaceRefResponse;
   owner_user_id: string;
   snapshot_workspace_cursor: number;
   sessions: string[];
+  managed_sessions: ManagedSessionProjectionResponse[];
   tasks: string[];
   attempts: string[];
   commands: Array<Record<string, unknown>>;
