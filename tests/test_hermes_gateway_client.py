@@ -346,8 +346,15 @@ def test_message_history_is_bounded_and_drops_tool_and_reasoning_payloads(
                 "role": "assistant",
                 "content": "second",
                 "timestamp": "2024-07-03T09:46:40Z",
+                "fork_point": "message:4",
             },
-            {"id": "5", "role": "user", "content": "third", "timestamp": None},
+            {
+                "id": "5",
+                "role": "user",
+                "content": "third",
+                "timestamp": None,
+                "fork_point": "message:5",
+            },
         ],
         "omitted_message_count": 3,
     }
@@ -460,6 +467,44 @@ def test_message_history_drops_empty_and_whitespace_only_messages(
     assert contents == ["real question", "real answer"]
     # Empty/whitespace rows are omitted from the rendered transcript.
     assert all(c.strip() != "" for c in contents)
+
+
+def test_message_history_exposes_only_authoritative_positive_integer_fork_points(
+    tmp_path: Path,
+) -> None:
+    client = _messages_client(
+        tmp_path,
+        [
+            {"id": 41, "role": "user", "content": "authoritative"},
+            {"id": "42", "role": "assistant", "content": "numeric string"},
+            {"id": 0, "role": "user", "content": "zero"},
+            {"id": -1, "role": "assistant", "content": "negative"},
+            {"role": "user", "content": "missing"},
+            {"id": True, "role": "assistant", "content": "boolean"},
+            {"id": 10**300, "role": "user", "content": "oversized"},
+        ],
+    )
+
+    result = client.session_messages("s1")
+
+    assert [message["id"] for message in result["data"]] == [
+        "41",
+        "42",
+        "0",
+        "-1",
+        "4",
+        "True",
+        "6",
+    ]
+    assert [message.get("fork_point") for message in result["data"]] == [
+        "message:41",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ]
 
 
 def test_message_history_drops_internal_compaction_entries(tmp_path: Path) -> None:

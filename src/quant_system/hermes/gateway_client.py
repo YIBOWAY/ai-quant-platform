@@ -520,15 +520,33 @@ class HermesApiReadClient:
             if stripped == "":
                 continue
             content = _redact_secrets(stripped)
-            message_id = str(row.get("id") if row.get("id") is not None else index)
+            raw_message_id = row.get("id")
+            message_id = str(
+                raw_message_id if raw_message_id is not None else index
+            )
             if not message_id or len(message_id) > 256:
                 message_id = str(index)
+            # An exact Hermes fork cursor is authority-bearing.  Only the
+            # original positive integer SessionDB id qualifies; the display
+            # fallback index and numeric-looking strings must never be
+            # promoted into a cursor.
+            rendered_fork_point = f"message:{raw_message_id}"
+            fork_point = (
+                rendered_fork_point
+                if (
+                    type(raw_message_id) is int
+                    and raw_message_id > 0
+                    and len(rendered_fork_point) <= 256
+                )
+                else None
+            )
             messages.append(
                 {
                     "id": message_id,
                     "role": str(row["role"]),
                     "content": content,
                     "timestamp": _normalized_timestamp(row.get("timestamp")),
+                    "fork_point": fork_point,
                 }
             )
         bounded = messages[-self.settings.max_messages :]

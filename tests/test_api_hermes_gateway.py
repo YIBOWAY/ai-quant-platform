@@ -131,6 +131,11 @@ def test_gateway_endpoints_expose_only_sanitized_read_models() -> None:
     assert set(gateway.json()["platform_delivery_blockers"]).issubset(gateway.json()["blockers"])
     assert sessions.json()["sessions"][0]["id"] == "s-1"
     assert detail.json()["session"]["title"] == "AAPL research"
+    assert detail.json()["fork_context"] == {
+        "eligible": False,
+        "source_channel": None,
+        "reason_code": "source_session_not_external",
+    }
     assert messages.json()["messages"][1]["content"] == "hi"
     raw = json_bytes = messages.content + gateway.content
     assert b"authorization" not in raw.lower()

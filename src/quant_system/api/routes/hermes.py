@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, HTTPException, Path, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from quant_system.api.dependencies import (
     AgentOutputDirDep,
@@ -12,7 +13,10 @@ from quant_system.api.dependencies import (
     HermesLoopbackRequestDep,
     OutputDirDep,
     SettingsDep,
+    consume_owner_mutation_budget,
+    require_mutation_security,
 )
+from quant_system.api.safety.mutation_rate_limit import WORKSPACE_ACT_ROUTE
 from quant_system.api.schemas.hermes import (
     HermesArtifactFeedResponse,
     HermesGatewayStatusResponse,
@@ -26,12 +30,20 @@ from quant_system.api.schemas.hermes_results import (
     HermesResultSource,
     HermesResultsResponse,
 )
+from quant_system.api.schemas.workspace import WorkspaceActionReceiptResponse
+from quant_system.hermes.agent_workspace_actions import AgentWorkspaceActionError
 from quant_system.hermes.artifact_catalog import HermesArtifactCatalog
 from quant_system.hermes.composer_readiness import (
     authority_readiness,
+    composer_readiness_snapshot,
 )
 from quant_system.hermes.composer_readiness import (
     chat_write_blockers as _chat_blockers,
+)
+from quant_system.hermes.external_session_fork import (
+    ExternalSessionForkError,
+    external_session_fork_context,
+    submit_external_session_fork,
 )
 from quant_system.hermes.gateway_client import (
     HermesApiReadClient,
@@ -39,12 +51,51 @@ from quant_system.hermes.gateway_client import (
     validate_hermes_session_id,
 )
 from quant_system.hermes.results_catalog import HermesResultsCatalog
+from quant_system.hermes.submission_saga import SubmissionSagaError
 
 router = APIRouter()
 
 
+class HermesForkToManagedRequest(BaseModel):
+    """Closed browser body; authority-bearing source facts remain server-owned."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_action_id: str = Field(
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
+    fork_point: str = Field(
+        min_length=9,
+        max_length=256,
+        pattern=r"^message:[1-9][0-9]*$",
+    )
+
+
 def _chat_write_ready(settings: SettingsDep) -> bool:
     return bool(authority_readiness(settings)["chat_write_ready"])
+
+
+def _require_effective_release(settings: SettingsDep) -> None:
+    readiness = composer_readiness_snapshot(settings, fresh=True)
+    if readiness.get("chat_write_ready") is True:
+        return
+    raw_blockers = readiness.get("release_blockers")
+    blockers = (
+        [str(item) for item in raw_blockers]
+        if isinstance(raw_blockers, list)
+        else ["effective_release_gate_unavailable"]
+    )
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "agent_v02_release_not_ready",
+            "message": "Agent v0.2 durable release admission is closed",
+            "blockers": blockers[:64],
+            "mutation_enabled": bool(settings.local_mutation.enabled),
+        },
+    )
 
 
 @router.get("/hermes/results", response_model=HermesResultsResponse)
@@ -117,6 +168,7 @@ def hermes_artifacts(
         max_manifest_bytes=settings.hermes_artifacts.max_manifest_bytes,
     )
     return catalog.latest(limit=limit)
+
 
 def _warning(exc: HermesApiReadError) -> list[dict[str, str]]:
     return [{"code": exc.code, "message": exc.message}]
@@ -285,6 +337,11 @@ def hermes_session_detail(
         return {
             "read_status": "unavailable",
             "session": None,
+            "fork_context": {
+                "eligible": False,
+                "source_channel": None,
+                "reason_code": "integration_disabled",
+            },
             "warnings": [
                 {
                     "code": "integration_disabled",
@@ -296,6 +353,11 @@ def hermes_session_detail(
         return {
             "read_status": "unavailable",
             "session": None,
+            "fork_context": {
+                "eligible": False,
+                "source_channel": None,
+                "reason_code": "gateway_client_unavailable",
+            },
             "warnings": [
                 {
                     "code": "gateway_client_unavailable",
@@ -310,9 +372,19 @@ def hermes_session_detail(
         return {
             "read_status": "unavailable",
             "session": None,
+            "fork_context": {
+                "eligible": False,
+                "source_channel": None,
+                "reason_code": exc.code,
+            },
             "warnings": _warning(exc),
         }
-    return {"read_status": "available", "session": session, "warnings": []}
+    return {
+        "read_status": "available",
+        "session": session,
+        "fork_context": external_session_fork_context(session),
+        "warnings": [],
+    }
 
 
 @router.get(
@@ -370,3 +442,74 @@ def hermes_session_messages(
         "omitted_message_count": result["omitted_message_count"],
         "warnings": [],
     }
+
+
+@router.post(
+    "/hermes/sessions/{session_id}/forks-to-managed",
+    response_model=WorkspaceActionReceiptResponse,
+    response_model_exclude_none=True,
+)
+def hermes_session_fork_to_managed(
+    session_id: str,
+    body: HermesForkToManagedRequest,
+    request: Request,
+    settings: SettingsDep,
+    gateway: HermesApiReadClientDep,
+    _loopback: HermesLoopbackRequestDep,
+) -> dict[str, object]:
+    """Fork one exact external message into a new server-managed Session."""
+
+    owner = require_mutation_security(request)
+    consume_owner_mutation_budget(
+        request,
+        owner_user_id=owner.owner_user_id,
+        route=WORKSPACE_ACT_ROUTE,
+    )
+    _require_effective_release(settings)
+    safe_session_id = _validated_route_session_id(session_id)
+    if gateway is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "gateway_client_unavailable",
+                "message": "Hermes API client is unavailable",
+            },
+        )
+
+    mutation_enabled = bool(settings.local_mutation.enabled)
+    try:
+        receipt = submit_external_session_fork(
+            settings,
+            gateway,
+            hermes_session_id=safe_session_id,
+            fork_point=body.fork_point,
+            client_action_id=body.client_action_id,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=owner.owner_user_id,
+        )
+    except HermesApiReadError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    except ExternalSessionForkError as exc:
+        status = {
+            "actor_invalid": 403,
+            "fork_point_invalid": 422,
+            "fork_point_not_authoritative": 409,
+            "session_identity_mismatch": 409,
+            "source_session_not_external": 409,
+            "source_session_identity_conflict": 409,
+            "session_resources_unavailable": 503,
+            "source_session_registry_unavailable": 503,
+        }.get(exc.code, 503)
+        raise HTTPException(
+            status_code=status,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    except (AgentWorkspaceActionError, SubmissionSagaError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "validation", "message": str(exc) or "validation"},
+        ) from exc
+    return receipt.to_public_dict()

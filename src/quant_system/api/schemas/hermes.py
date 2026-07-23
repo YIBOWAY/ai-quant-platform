@@ -59,9 +59,16 @@ class HermesSessionsResponse(_HermesGatewayReadModel):
     warnings: list[HermesGatewayWarningResponse] = Field(max_length=20)
 
 
+class HermesExternalSessionForkContextResponse(_HermesGatewayReadModel):
+    eligible: bool
+    source_channel: Literal["discord", "historical"] | None
+    reason_code: str | None = Field(default=None, max_length=128)
+
+
 class HermesSessionDetailResponse(_HermesGatewayReadModel):
     read_status: Literal["available", "unavailable"]
     session: HermesSessionSummaryResponse | None
+    fork_context: HermesExternalSessionForkContextResponse
     warnings: list[HermesGatewayWarningResponse] = Field(max_length=20)
 
 
@@ -70,6 +77,11 @@ class HermesMessageResponse(_HermesGatewayReadModel):
     role: Literal["user", "assistant"]
     content: str = Field(max_length=100_000)
     timestamp: str | None = Field(default=None, max_length=128)
+    fork_point: str | None = Field(
+        default=None,
+        pattern=r"^message:[1-9][0-9]*$",
+        max_length=256,
+    )
 
 
 class HermesSessionMessagesResponse(_HermesGatewayReadModel):
@@ -91,6 +103,7 @@ __all__ = [
     "HermesArtifactWarningResponse",
     "HermesGatewayStatusResponse",
     "HermesGatewayWarningResponse",
+    "HermesExternalSessionForkContextResponse",
     "HermesMessageResponse",
     "HermesSessionDetailResponse",
     "HermesSessionMessagesResponse",
