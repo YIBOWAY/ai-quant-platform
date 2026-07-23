@@ -89,6 +89,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/workspace/submit-turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workspace Submit Turn
+         * @description Composite Turn Submit (L2a-Send A2): put intent then conversation.turn.
+         *
+         *     Body is exactly ``workspace_id``, ``managed_session_ref``,
+         *     ``client_action_id``, ``prompt``. Prompt never accepted on ``/act``.
+         */
+        post: operations["workspace_submit_turn_api_agent_workspace_submit_turn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/owner/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner Bootstrap */
+        post: operations["owner_bootstrap_api_auth_owner_bootstrap_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/owner/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner Logout */
+        post: operations["owner_logout_api_auth_owner_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/owner/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner Session Status */
+        get: operations["owner_session_status_api_auth_owner_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backtests": {
         parameters: {
             query?: never;
@@ -591,6 +665,74 @@ export interface paths {
         };
         /** Aihot Status */
         get: operations["aihot_status_api_news_aihot_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/dailies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** News Dailies */
+        get: operations["news_dailies_api_news_dailies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** News Daily */
+        get: operations["news_daily_api_news_daily_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** News Items */
+        get: operations["news_items_api_news_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** News Status */
+        get: operations["news_status_api_news_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1860,6 +2002,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace/authorities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace Authorities */
+        get: operations["workspace_authorities_api_workspace_authorities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace/{workspace_id}/act": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workspace Act
+         * @description Mutation entry. Defaults fail-closed; opens via QS_LOCAL_MUTATION_ENABLED.
+         */
+        post: operations["workspace_act_api_workspace__workspace_id__act_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace/{workspace_id}/follow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace Follow */
+        get: operations["workspace_follow_api_workspace__workspace_id__follow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace/{workspace_id}/follow/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workspace Follow Stream
+         * @description Server-Sent Events over workspace follow pages.
+         *
+         *     Command lifecycle + approvals/gates/results/vertical_ids + Plan-V6
+         *     transcript **hints only**. Assistant bodies never ride this stream;
+         *     text authority remains GET /api/hermes/sessions/{id}/messages
+         *     (spine-refetch, not provider-token passthrough).
+         */
+        get: operations["workspace_follow_stream_api_workspace__workspace_id__follow_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace/{workspace_id}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace Snapshot */
+        get: operations["workspace_snapshot_api_workspace__workspace_id__snapshot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2050,11 +2288,23 @@ export interface components {
             fetched_at: string;
             /** Items */
             items: components["schemas"]["AiHotDailyIndexResponse"][];
+            /**
+             * Preference
+             * @default auto
+             * @enum {string}
+             */
+            preference: "auto" | "aihot" | "horizon";
             /** Provider */
             provider: string;
             /** Provider Beta */
             provider_beta: boolean;
             research_safety?: components["schemas"]["AiHotResearchSafety"];
+            /**
+             * Served From
+             * @default primary
+             * @enum {string}
+             */
+            served_from: "primary" | "failover" | "cache" | "forced";
             /** Warnings */
             warnings?: string[];
         };
@@ -2087,6 +2337,12 @@ export interface components {
             lead?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Preference
+             * @default auto
+             * @enum {string}
+             */
+            preference: "auto" | "aihot" | "horizon";
             /** Provider */
             provider: string;
             /** Provider Beta */
@@ -2100,6 +2356,12 @@ export interface components {
             sections?: {
                 [key: string]: unknown;
             }[];
+            /**
+             * Served From
+             * @default primary
+             * @enum {string}
+             */
+            served_from: "primary" | "failover" | "cache" | "forced";
             /** Warnings */
             warnings?: string[];
             /** Window End */
@@ -2146,11 +2408,23 @@ export interface components {
             items: components["schemas"]["AiHotItemResponse"][];
             /** Next Cursor */
             next_cursor?: string | null;
+            /**
+             * Preference
+             * @default auto
+             * @enum {string}
+             */
+            preference: "auto" | "aihot" | "horizon";
             /** Provider */
             provider: string;
             /** Provider Beta */
             provider_beta: boolean;
             research_safety?: components["schemas"]["AiHotResearchSafety"];
+            /**
+             * Served From
+             * @default primary
+             * @enum {string}
+             */
+            served_from: "primary" | "failover" | "cache" | "forced";
             /** Warnings */
             warnings?: string[];
         };
@@ -2176,28 +2450,6 @@ export interface components {
              * @default true
              */
             verify_original_source: boolean;
-        };
-        /** AiHotStatusResponse */
-        AiHotStatusResponse: {
-            /** Base Url */
-            base_url: string;
-            /** Cache Ttl Seconds */
-            cache_ttl_seconds: number;
-            /** Enabled */
-            enabled: boolean;
-            /** Last Error */
-            last_error?: {
-                [key: string]: unknown;
-            } | null;
-            /** Provider */
-            provider: string;
-            /** Provider Beta */
-            provider_beta: boolean;
-            research_safety?: components["schemas"]["AiHotResearchSafety"];
-            /** Timeout Seconds */
-            timeout_seconds: number;
-            /** Warnings */
-            warnings?: string[];
         };
         /** BacktestBenchmarkSnapshot */
         BacktestBenchmarkSnapshot: {
@@ -2542,6 +2794,11 @@ export interface components {
             source: string;
             /** Symbol */
             symbol: string;
+        };
+        /** BootstrapRequest */
+        BootstrapRequest: {
+            /** Bootstrap Token */
+            bootstrap_token: string;
         };
         /** BriefAccountPosition */
         BriefAccountPosition: {
@@ -3129,6 +3386,58 @@ export interface components {
             /** Size */
             size: number;
         };
+        /** CanaryGrantResponse */
+        CanaryGrantResponse: {
+            acceptance?: components["schemas"]["DualVerticalAcceptanceResponse"] | null;
+            /** Build Digest */
+            build_digest: string;
+            /** Canary Ref */
+            canary_ref: string;
+            /**
+             * Chat Write Ready
+             * @constant
+             */
+            chat_write_ready: false;
+            /** Expires At */
+            expires_at: string;
+            /** Grant Digest */
+            grant_digest: string;
+            /** Grant Id */
+            grant_id: string;
+            /** Grant Note */
+            grant_note?: string | null;
+            /** Issued At */
+            issued_at: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "v8.canary.grant";
+            /**
+             * Public Write Authorized
+             * @constant
+             */
+            public_write_authorized: false;
+            /**
+             * Release Authorized
+             * @constant
+             */
+            release_authorized: false;
+            /** Revoke Reason */
+            revoke_reason?: string | null;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /**
+             * Route
+             * @constant
+             */
+            route: "/hermes";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "revoked" | "expired" | "consumed";
+        };
         /** CandidateSummary */
         CandidateSummary: {
             /** Approval Binding */
@@ -3158,6 +3467,129 @@ export interface components {
             status: ("pending" | "approved" | "rejected") | null;
             /** Universe */
             universe: string[] | null;
+        };
+        /** CompositeTurnReceiptResponse */
+        CompositeTurnReceiptResponse: {
+            /** Acceptance Id */
+            acceptance_id?: string | null;
+            /** Action Digest */
+            action_digest: string;
+            /** Attempt Id */
+            attempt_id?: string | null;
+            /** Canary Ref */
+            canary_ref?: string | null;
+            /** Chat Write Ready */
+            chat_write_ready?: boolean | null;
+            /** Client Action Id */
+            client_action_id: string;
+            /** Command Id */
+            command_id?: string | null;
+            /** Cutover Digest */
+            cutover_digest?: string | null;
+            /** Cutover Id */
+            cutover_id?: string | null;
+            /** Cutover Ref */
+            cutover_ref?: string | null;
+            /** Gate Id */
+            gate_id?: string | null;
+            /** Grant Digest */
+            grant_digest?: string | null;
+            /** Grant Id */
+            grant_id?: string | null;
+            /** Hermes Session Id */
+            hermes_session_id?: string | null;
+            /** Kill Switch Unchanged */
+            kill_switch_unchanged?: true | null;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "conversation.turn";
+            /** M6 Gate2 Decide Authorized */
+            m6_gate2_decide_authorized?: false | null;
+            /** Mutation Enabled */
+            mutation_enabled: boolean;
+            /** Payload Digest */
+            payload_digest: string;
+            /** Payload Ref */
+            payload_ref: string;
+            /** Platform Session Id */
+            platform_session_id?: string | null;
+            /** Public Flag Open */
+            public_flag_open?: boolean | null;
+            /** Public Write Authorized */
+            public_write_authorized?: boolean | null;
+            /** Reason Code */
+            reason_code?: string | null;
+            /** Recovery Action */
+            recovery_action?: string | null;
+            /** Release Authorized */
+            release_authorized?: false | null;
+            /** Result Id */
+            result_id?: string | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Session Ref */
+            session_ref?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "accepted" | "reconciling" | "conflict" | "unavailable" | "outcome_unknown";
+            /** Stop Layers */
+            stop_layers?: {
+                [key: string]: unknown;
+            } | null;
+            /** Task Id */
+            task_id?: string | null;
+            /** Terminal Status */
+            terminal_status?: string | null;
+            /** V2 Durable Live */
+            v2_durable_live?: false | null;
+            workspace: components["schemas"]["WorkspaceRefResponse"];
+        };
+        /** DualVerticalAcceptanceResponse */
+        DualVerticalAcceptanceResponse: {
+            /** Acceptance Id */
+            acceptance_id: string;
+            /** Acceptance Note */
+            acceptance_note: string;
+            /** Accepted At */
+            accepted_at: string;
+            /** Build Digest */
+            build_digest: string;
+            /**
+             * Chat Write Ready
+             * @constant
+             */
+            chat_write_ready: false;
+            /** Factor B Result Id */
+            factor_b_result_id: string;
+            /** Factor B Task Id */
+            factor_b_task_id: string;
+            /** Grant Digest */
+            grant_digest: string;
+            /** Grant Id */
+            grant_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "v8.canary.dual_vertical_acceptance";
+            /** Options A Result Id */
+            options_a_result_id: string;
+            /** Options A Task Id */
+            options_a_task_id: string;
+            /**
+             * Public Write Authorized
+             * @constant
+             */
+            public_write_authorized: false;
+            /**
+             * Release Authorized
+             * @constant
+             */
+            release_authorized: false;
         };
         /** ExperimentDetailResponse */
         ExperimentDetailResponse: {
@@ -3563,6 +3995,52 @@ export interface components {
             /** Runs */
             runs: components["schemas"]["FactorRunSummary"][];
         };
+        /** GateProjectionResponse */
+        GateProjectionResponse: {
+            /** Base Commit */
+            base_commit?: string | null;
+            /** Candidate Id */
+            candidate_id?: string | null;
+            /** Candidate Ref */
+            candidate_ref?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Expected Digest */
+            expected_digest?: string | null;
+            /** Expected Status */
+            expected_status: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Final Backtest Receipt Id */
+            final_backtest_receipt_id?: string | null;
+            /** Final Backtest Receipt Ref */
+            final_backtest_receipt_ref?: string | null;
+            /** Gate Id */
+            gate_id: string;
+            /**
+             * Gate Kind
+             * @enum {string}
+             */
+            gate_kind: "gate1" | "gate2" | "gate3";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "gate1.formula_source" | "gate2.candidate" | "gate3.promotion_review";
+            /** Note */
+            note?: string | null;
+            /** Reviewed Source Sha256 */
+            reviewed_source_sha256?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "confirmed" | "reviewed" | "prepared" | "rejected" | "expired";
+            /** Task Id */
+            task_id?: string | null;
+            /** Task Ref */
+            task_ref?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -3781,11 +4259,8 @@ export interface components {
         HermesGatewayStatusResponse: {
             /** Blockers */
             blockers: string[];
-            /**
-             * Chat Write Ready
-             * @constant
-             */
-            chat_write_ready: false;
+            /** Chat Write Ready */
+            chat_write_ready: boolean;
             /** Connected */
             connected: boolean;
             /** Features */
@@ -4351,6 +4826,40 @@ export interface components {
             /** Timestamp */
             timestamp: string;
         };
+        /** ManagedSessionProjectionResponse */
+        ManagedSessionProjectionResponse: {
+            /** Attempt Count */
+            attempt_count: number;
+            /** Created At */
+            created_at?: string | null;
+            /** Fork Point */
+            fork_point?: string | null;
+            /** Hermes Session Id */
+            hermes_session_id: string;
+            /** Last Error Code */
+            last_error_code?: string | null;
+            /** Lease Until */
+            lease_until?: string | null;
+            /** Parent Session Ref */
+            parent_session_ref?: string | null;
+            /** Platform Session Id */
+            platform_session_id: string;
+            /**
+             * Provision State
+             * @enum {string}
+             */
+            provision_state: "pending" | "leased" | "retryable" | "ready" | "failed";
+            /** Provisioned At */
+            provisioned_at?: string | null;
+            /** Retry At */
+            retry_at?: string | null;
+            /** Session Ref */
+            session_ref: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Web Writable */
+            web_writable: boolean;
+        };
         /** ManualOrderRequest */
         ManualOrderRequest: {
             /** Limit Price */
@@ -4441,6 +4950,75 @@ export interface components {
             };
             /** Scanner Id */
             scanner_id: string;
+        };
+        /** NewsFailoverStatus */
+        NewsFailoverStatus: {
+            /**
+             * Auto Enabled
+             * @default true
+             */
+            auto_enabled: boolean;
+            /** Order */
+            order?: string[];
+        };
+        /**
+         * NewsStatusResponse
+         * @description Aggregated dual-source status (spec §6.5) plus aihot-compat fields.
+         */
+        NewsStatusResponse: {
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /**
+             * Cache Ttl Seconds
+             * @default 0
+             */
+            cache_ttl_seconds: number;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            failover?: components["schemas"]["NewsFailoverStatus"];
+            /** Last Error */
+            last_error?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Preference Default
+             * @default auto
+             * @enum {string}
+             */
+            preference_default: "auto" | "aihot" | "horizon";
+            /**
+             * Provider
+             * @default aihot
+             */
+            provider: string;
+            /**
+             * Provider Beta
+             * @default true
+             */
+            provider_beta: boolean;
+            /** Providers */
+            providers?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Research Only
+             * @default true
+             */
+            research_only: boolean;
+            research_safety?: components["schemas"]["AiHotResearchSafety"];
+            /**
+             * Timeout Seconds
+             * @default 0
+             */
+            timeout_seconds: number;
+            /** Warnings */
+            warnings?: string[];
         };
         /** OHLCVResponse */
         OHLCVResponse: {
@@ -4922,6 +5500,7 @@ export interface components {
             max_spread_pct: number;
             /**
              * Min Apr
+             * @description Minimum annualized premium yield (APR) as a whole-number PERCENT: 15 means 15%. Unlike max_spread_pct (a fraction, 0.35 = 35%), this is a percent, matching the screener check `annualized_yield * 100 < min_apr` where annualized_yield is a fraction.
              * @default 0
              */
             min_apr: number;
@@ -5287,6 +5866,43 @@ export interface components {
             outcome_index: number;
             /** Token Id */
             token_id: string;
+        };
+        /** OwnerBootstrapResponse */
+        OwnerBootstrapResponse: {
+            /** Csrf Header */
+            csrf_header: string;
+            /** Csrf Token */
+            csrf_token: string;
+            /** Expires At */
+            expires_at: string;
+            /** Mutation Enabled */
+            mutation_enabled: boolean;
+            /** Owner User Id */
+            owner_user_id: string;
+            /** Security Ready */
+            security_ready: boolean;
+            /** Session Id */
+            session_id: string;
+        };
+        /** OwnerLogoutResponse */
+        OwnerLogoutResponse: {
+            /** Mutation Enabled */
+            mutation_enabled: boolean;
+            /** Ok */
+            ok: boolean;
+        };
+        /** OwnerSessionStatusResponse */
+        OwnerSessionStatusResponse: {
+            /** Expires At */
+            expires_at: string;
+            /** Mutation Enabled */
+            mutation_enabled: boolean;
+            /** Owner User Id */
+            owner_user_id: string;
+            /** Security Ready */
+            security_ready: boolean;
+            /** Session Id */
+            session_id: string;
         };
         /** PaperAccountActivityResponse */
         PaperAccountActivityResponse: {
@@ -6213,6 +6829,68 @@ export interface components {
              */
             threshold_passed: boolean;
         };
+        /** PublicCutoverResponse */
+        PublicCutoverResponse: {
+            /** Acceptance Id */
+            acceptance_id: string;
+            /** Build Digest */
+            build_digest: string;
+            /** Chat Write Ready */
+            chat_write_ready: boolean;
+            /** Close Reason */
+            close_reason?: string | null;
+            /** Closed At */
+            closed_at?: string | null;
+            /** Cutover Digest */
+            cutover_digest: string;
+            /** Cutover Id */
+            cutover_id: string;
+            /** Cutover Ref */
+            cutover_ref: string;
+            /**
+             * Kill Switch Unchanged
+             * @constant
+             */
+            kill_switch_unchanged: true;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "v8.public.cutover";
+            /**
+             * M6 Gate2 Decide Authorized
+             * @constant
+             */
+            m6_gate2_decide_authorized: false;
+            /** Open Note */
+            open_note?: string | null;
+            /** Opened At */
+            opened_at: string;
+            /** Public Flag Open */
+            public_flag_open: boolean;
+            /** Public Write Authorized */
+            public_write_authorized: boolean;
+            /**
+             * Release Authorized
+             * @constant
+             */
+            release_authorized: false;
+            /**
+             * Route
+             * @constant
+             */
+            route: "/hermes";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "closed";
+            /**
+             * V2 Durable Live
+             * @constant
+             */
+            v2_durable_live: false;
+        };
         /** RecentRun */
         RecentRun: {
             /** Created At */
@@ -6834,6 +7512,20 @@ export interface components {
             /** Sleeves */
             sleeves: components["schemas"]["StrategySleeveResponse"][];
         };
+        /**
+         * SubmitTurnRequest
+         * @description Closed browser body for Composite Turn Submit (A2).
+         */
+        SubmitTurnRequest: {
+            /** Client Action Id */
+            client_action_id: string;
+            /** Managed Session Ref */
+            managed_session_ref: string;
+            /** Prompt */
+            prompt: string;
+            /** Workspace Id */
+            workspace_id: string;
+        };
         /** SymbolsResponse */
         SymbolsResponse: {
             /** Source */
@@ -6897,6 +7589,241 @@ export interface components {
              * @default 20
              */
             validation_bars: number;
+        };
+        /** WorkspaceActRequest */
+        WorkspaceActRequest: {
+            /** Action */
+            action: {
+                [key: string]: unknown;
+            };
+        };
+        /** WorkspaceActionReceiptResponse */
+        WorkspaceActionReceiptResponse: {
+            /** Acceptance Id */
+            acceptance_id?: string | null;
+            /** Action Digest */
+            action_digest: string;
+            /** Attempt Id */
+            attempt_id?: string | null;
+            /** Canary Ref */
+            canary_ref?: string | null;
+            /** Chat Write Ready */
+            chat_write_ready?: boolean | null;
+            /** Client Action Id */
+            client_action_id: string;
+            /** Command Id */
+            command_id?: string | null;
+            /** Cutover Digest */
+            cutover_digest?: string | null;
+            /** Cutover Id */
+            cutover_id?: string | null;
+            /** Cutover Ref */
+            cutover_ref?: string | null;
+            /** Gate Id */
+            gate_id?: string | null;
+            /** Grant Digest */
+            grant_digest?: string | null;
+            /** Grant Id */
+            grant_id?: string | null;
+            /** Hermes Session Id */
+            hermes_session_id?: string | null;
+            /** Kill Switch Unchanged */
+            kill_switch_unchanged?: true | null;
+            /** M6 Gate2 Decide Authorized */
+            m6_gate2_decide_authorized?: false | null;
+            /** Mutation Enabled */
+            mutation_enabled: boolean;
+            /** Platform Session Id */
+            platform_session_id?: string | null;
+            /** Public Flag Open */
+            public_flag_open?: boolean | null;
+            /** Public Write Authorized */
+            public_write_authorized?: boolean | null;
+            /** Reason Code */
+            reason_code?: string | null;
+            /** Recovery Action */
+            recovery_action?: string | null;
+            /** Release Authorized */
+            release_authorized?: false | null;
+            /** Result Id */
+            result_id?: string | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Session Ref */
+            session_ref?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "accepted" | "reconciling" | "conflict" | "unavailable" | "outcome_unknown";
+            /** Stop Layers */
+            stop_layers?: {
+                [key: string]: unknown;
+            } | null;
+            /** Task Id */
+            task_id?: string | null;
+            /** Terminal Status */
+            terminal_status?: string | null;
+            /** V2 Durable Live */
+            v2_durable_live?: false | null;
+            workspace: components["schemas"]["WorkspaceRefResponse"];
+        };
+        /** WorkspaceAuthoritiesResponse */
+        WorkspaceAuthoritiesResponse: {
+            /** Chat Write Ready */
+            chat_write_ready: boolean;
+            /** Command Ledger Schema Ready */
+            command_ledger_schema_ready: boolean;
+            /** Command Ledger Schema Version */
+            command_ledger_schema_version: number | null;
+            /** Composer Open */
+            composer_open: boolean;
+            /** Composer Write Ready */
+            composer_write_ready: boolean;
+            /** Connector Heartbeat Age Seconds */
+            connector_heartbeat_age_seconds: number | null;
+            /** Connector Liveness Ready */
+            connector_liveness_ready: boolean;
+            /** Connector Liveness Reason */
+            connector_liveness_reason: string;
+            /** Connector Mode */
+            connector_mode: string | null;
+            /** Connector Worker Id */
+            connector_worker_id: string | null;
+            /** Dark Dispatch Ready */
+            dark_dispatch_ready: boolean;
+            /** Dark Dispatch Schema Ready */
+            dark_dispatch_schema_ready: boolean;
+            /** Local Chat Write Ready */
+            local_chat_write_ready: boolean;
+            /** Mutation Enabled */
+            mutation_enabled: boolean;
+            /** Platform Delivery Blocker Count */
+            platform_delivery_blocker_count: number;
+            /** Platform Delivery Blockers */
+            platform_delivery_blockers: string[];
+            /** Public Chat Write Ready */
+            public_chat_write_ready: boolean;
+            /** Public Cutover Id */
+            public_cutover_id: string | null;
+            /** Ready */
+            ready: boolean;
+            /** Release Authorized */
+            release_authorized: boolean;
+            /** Release Blockers */
+            release_blockers: string[];
+            /** Release Event Cursor */
+            release_event_cursor: number;
+            /** Release Stamp Id */
+            release_stamp_id: string | null;
+            /** Research Binding Ready */
+            research_binding_ready: boolean;
+            /** Research Binding Schema Ready */
+            research_binding_schema_ready: boolean;
+            /** Runtime Security Ready */
+            runtime_security_ready: boolean;
+            /** Schema Ready */
+            schema_ready: boolean;
+            /** Session Registry Schema Ready */
+            session_registry_schema_ready: boolean;
+            /** Session Registry Schema Version */
+            session_registry_schema_version: number | null;
+            /** Workflow Binding Schema Ready */
+            workflow_binding_schema_ready: boolean;
+            /** Workflow Binding Schema Version */
+            workflow_binding_schema_version: number | null;
+            /** Write Authority Ready */
+            write_authority_ready: boolean;
+        };
+        /** WorkspaceFollowResponse */
+        WorkspaceFollowResponse: {
+            /** After Cursor */
+            after_cursor?: number | null;
+            /** Approvals */
+            approvals?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Attempts */
+            attempts?: string[] | null;
+            /** Authority Health */
+            authority_health?: {
+                [key: string]: string;
+            } | null;
+            /** Canary Grants */
+            canary_grants?: components["schemas"]["CanaryGrantResponse"][] | null;
+            /** Events */
+            events: {
+                [key: string]: unknown;
+            }[];
+            /** Gates */
+            gates?: components["schemas"]["GateProjectionResponse"][] | null;
+            /** Mutation Enabled */
+            mutation_enabled: boolean;
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /** Public Cutovers */
+            public_cutovers?: components["schemas"]["PublicCutoverResponse"][] | null;
+            /** Recovery Action */
+            recovery_action?: string | null;
+            /** Results */
+            results?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Resync Required */
+            resync_required: boolean;
+            /** Runs */
+            runs?: string[] | null;
+            /** Tasks */
+            tasks?: string[] | null;
+        };
+        /** WorkspaceRefResponse */
+        WorkspaceRefResponse: {
+            /** Workspace Id */
+            workspace_id: string;
+        };
+        /** WorkspaceSnapshotResponse */
+        WorkspaceSnapshotResponse: {
+            /** Approvals */
+            approvals: {
+                [key: string]: unknown;
+            }[];
+            /** Attempts */
+            attempts: string[];
+            /** Authority Health */
+            authority_health: {
+                [key: string]: string;
+            };
+            /** Canary Grants */
+            canary_grants: components["schemas"]["CanaryGrantResponse"][];
+            /** Commands */
+            commands: {
+                [key: string]: unknown;
+            }[];
+            /** Gates */
+            gates: components["schemas"]["GateProjectionResponse"][];
+            /** Managed Sessions */
+            managed_sessions: components["schemas"]["ManagedSessionProjectionResponse"][];
+            /** Mutation Enabled */
+            mutation_enabled: boolean;
+            /** Observed At */
+            observed_at: string;
+            /** Owner User Id */
+            owner_user_id: string;
+            /** Public Cutovers */
+            public_cutovers: components["schemas"]["PublicCutoverResponse"][];
+            /** Results */
+            results: {
+                [key: string]: unknown;
+            }[];
+            /** Runs */
+            runs: string[];
+            /** Sessions */
+            sessions: string[];
+            /** Snapshot Workspace Cursor */
+            snapshot_workspace_cursor: number;
+            /** Tasks */
+            tasks: string[];
+            workspace: components["schemas"]["WorkspaceRefResponse"];
         };
     };
     responses: never;
@@ -7053,6 +7980,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_submit_turn_api_agent_workspace_submit_turn_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitTurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompositeTurnReceiptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    owner_bootstrap_api_auth_owner_bootstrap_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BootstrapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerBootstrapResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    owner_logout_api_auth_owner_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerLogoutResponse"];
+                };
+            };
+        };
+    };
+    owner_session_status_api_auth_owner_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerSessionStatusResponse"];
                 };
             };
         };
@@ -7839,6 +8872,7 @@ export interface operations {
     aihot_dailies_api_news_aihot_dailies_get: {
         parameters: {
             query?: {
+                preference?: ("auto" | "aihot" | "horizon") | null;
                 take?: number;
             };
             header?: never;
@@ -7870,6 +8904,7 @@ export interface operations {
     aihot_daily_api_news_aihot_daily_get: {
         parameters: {
             query?: {
+                preference?: ("auto" | "aihot" | "horizon") | null;
                 date?: string | null;
             };
             header?: never;
@@ -7901,6 +8936,7 @@ export interface operations {
     aihot_items_api_news_aihot_items_get: {
         parameters: {
             query?: {
+                preference?: ("auto" | "aihot" | "horizon") | null;
                 mode?: "selected" | "all";
                 category?: ("ai-models" | "ai-products" | "industry" | "paper" | "tip") | null;
                 q?: string | null;
@@ -7949,7 +8985,128 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AiHotStatusResponse"];
+                    "application/json": components["schemas"]["NewsStatusResponse"];
+                };
+            };
+        };
+    };
+    news_dailies_api_news_dailies_get: {
+        parameters: {
+            query?: {
+                preference?: ("auto" | "aihot" | "horizon") | null;
+                take?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiHotDailiesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    news_daily_api_news_daily_get: {
+        parameters: {
+            query?: {
+                preference?: ("auto" | "aihot" | "horizon") | null;
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiHotDailyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    news_items_api_news_items_get: {
+        parameters: {
+            query?: {
+                preference?: ("auto" | "aihot" | "horizon") | null;
+                mode?: "selected" | "all";
+                category?: ("ai-models" | "ai-products" | "industry" | "paper" | "tip") | null;
+                q?: string | null;
+                since?: string | null;
+                cursor?: string | null;
+                take?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiHotItemsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    news_status_api_news_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsStatusResponse"];
                 };
             };
         };
@@ -10379,6 +11536,160 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UniverseCatalogResponse"];
+                };
+            };
+        };
+    };
+    workspace_authorities_api_workspace_authorities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceAuthoritiesResponse"];
+                };
+            };
+        };
+    };
+    workspace_act_api_workspace__workspace_id__act_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceActRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceActionReceiptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_follow_api_workspace__workspace_id__follow_get: {
+        parameters: {
+            query?: {
+                after_cursor?: number | null;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceFollowResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_follow_stream_api_workspace__workspace_id__follow_stream_get: {
+        parameters: {
+            query?: {
+                after_cursor?: number | null;
+                max_ticks?: number | null;
+                poll_seconds?: number | null;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_snapshot_api_workspace__workspace_id__snapshot_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSnapshotResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
