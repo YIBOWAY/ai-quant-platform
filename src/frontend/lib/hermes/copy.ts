@@ -52,6 +52,7 @@ export type HermesWorkbenchCopy = {
     unavailable: string;
     sendDisabled: string;
     sendEnabled: string;
+    retrySame: string;
   };
 };
 
@@ -106,6 +107,7 @@ const en: HermesWorkbenchCopy = {
     unavailable: "Composer cannot submit research tasks in this delivery",
     sendDisabled: "Send (disabled)",
     sendEnabled: "Send",
+    retrySame: "Retry same send",
   },
 };
 
@@ -159,6 +161,7 @@ const zh: HermesWorkbenchCopy = {
     unavailable: "本交付中撰写区不能提交研究任务",
     sendDisabled: "发送（已禁用）",
     sendEnabled: "发送",
+    retrySame: "重试同一次发送",
   },
 };
 

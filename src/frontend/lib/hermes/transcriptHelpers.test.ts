@@ -45,15 +45,31 @@ describe("transcriptHelpers (L3a + L3b)", () => {
     expect(pickLatestHermesSessionId([])).toBeNull();
     expect(
       pickLatestHermesSessionId([
-        { command_id: "c1", hermes_session_id: "web_real" },
-        { command_id: "c2", hermes_session_id: "wm_y" },
+        {
+          command_id: "c1",
+          state: "succeeded",
+          hermes_session_id: "web_real",
+        },
+        { command_id: "c2", state: "succeeded", hermes_session_id: "wm_y" },
       ]),
     ).toEqual({ hermesSessionId: "web_real", commandId: "c1" });
     expect(
       pickLatestHermesSessionId([
-        { command_id: "c1", hermes_session_id: "run_old" },
-        { command_id: "c2", hermes_session_id: "web_managed" },
-        { command_id: "c3", hermes_session_id: "run_new" },
+        {
+          command_id: "c1",
+          state: "succeeded",
+          hermes_session_id: "run_old",
+        },
+        {
+          command_id: "c2",
+          state: "delivered",
+          hermes_session_id: "web_unfinished",
+        },
+        {
+          command_id: "c3",
+          state: "succeeded",
+          hermes_session_id: "run_new",
+        },
       ]),
     ).toEqual({ hermesSessionId: "run_new", commandId: "c3" });
   });
@@ -100,11 +116,11 @@ describe("Plan-V6-Token-Stream-M1 phase helpers", () => {
     ).toBe("waiting");
   });
 
-  it("TC-TS-08 delivered + assistant → final", () => {
+  it("TC-TS-08 succeeded + assistant → final", () => {
     expect(
       deriveAssistantPhase({
         hasActiveSession: true,
-        commandState: "delivered",
+        commandState: "succeeded",
         assistantContentLength: 8,
       }),
     ).toBe("final");
@@ -144,7 +160,7 @@ describe("Plan-V6-Token-Stream-M1 phase helpers", () => {
     expect(assistantTextGrew(b, a)).toBe(false);
   });
 
-  it("TC-V8-M2-11 delivered without assistant growth → final (no fake partial)", () => {
+  it("delivered without replay-backed success stays waiting", () => {
     expect(
       deriveAssistantPhase({
         hasActiveSession: true,
@@ -153,7 +169,18 @@ describe("Plan-V6-Token-Stream-M1 phase helpers", () => {
         submitAccepted: true,
         priorPhase: "waiting",
       }),
-    ).toBe("final");
+    ).toBe("waiting");
+  });
+
+  it("outcome_unknown remains recoverable rather than terminal", () => {
+    expect(
+      deriveAssistantPhase({
+        hasActiveSession: true,
+        commandState: "outcome_unknown",
+        assistantContentLength: 0,
+        priorPhase: "waiting",
+      }),
+    ).toBe("waiting");
   });
 
   it("TC-V8-M2-11 running without assistant growth stays waiting (no fake typing)", () => {

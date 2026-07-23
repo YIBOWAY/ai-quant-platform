@@ -29,6 +29,7 @@ export type HermesLocalChatBoundaryProps = {
     placeholderOpen: string;
     sendEnabled: string;
     sendDisabled: string;
+    retrySame: string;
     unavailable: string;
   };
   /** When false, composer stays locked (should not use this boundary). */
@@ -103,6 +104,7 @@ export function HermesLocalChatBoundary({
                 sendLabel={
                   chatOpen ? composer.sendEnabled : composer.sendDisabled
                 }
+                retryLabel={composer.retrySame}
                 unavailableHint={composer.unavailable}
               />
             </div>

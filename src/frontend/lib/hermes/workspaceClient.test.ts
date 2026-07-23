@@ -13,6 +13,7 @@ import {
   fetchLatestAssistantText,
   fetchWorkspaceFollow,
   isTerminalCommandState,
+  latestManagedSessionProjection,
   latestAssistantText,
   pollCommandUntilTerminal,
   preflightPrompt,
@@ -56,6 +57,7 @@ describe("sendComposerTurn", () => {
   it("bootstraps owner, creates session, then submit-turn with four fields + CSRF", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     let csrfCookie = "";
+    let managedSessionCreated = false;
     const memory = new Map<string, string>();
 
     // Node vitest env: stub minimal browser globals used by the client.
@@ -120,12 +122,13 @@ describe("sendComposerTurn", () => {
             PROVIDER_POLICY_DIGEST,
           );
           expect(body.action.prompt).toBeUndefined();
+          managedSessionCreated = true;
           return new Response(
             JSON.stringify({
               status: "accepted",
               client_action_id: body.action.client_action_id,
-              platform_session_id: "managed-1",
-              session_ref: "session:managed-1",
+              platform_session_id: "wm_managed_1",
+              session_ref: "session:wm_managed_1",
               mutation_enabled: true,
             }),
             { status: 200, headers: { "content-type": "application/json" } },
@@ -135,24 +138,27 @@ describe("sendComposerTurn", () => {
           return new Response(
             JSON.stringify({
               workspace: { workspace_id: PLATFORM_WORKSPACE_ID },
-              managed_sessions: [
-                {
-                  platform_session_id: "managed-1",
-                  session_ref: "session:managed-1",
-                  hermes_session_id: "web_" + "a".repeat(40),
-                  provision_state: "ready",
-                  web_writable: true,
-                  attempt_count: 1,
-                  lease_until: null,
-                  retry_at: null,
-                  last_error_code: null,
-                  provisioned_at: "2026-07-24T12:00:00.000000Z",
-                  parent_session_ref: null,
-                  fork_point: null,
-                  created_at: "2026-07-24T11:59:59.000000Z",
-                  updated_at: "2026-07-24T12:00:00.000000Z",
-                },
-              ],
+              authority_health: { session_registry: "ready" },
+              managed_sessions: managedSessionCreated
+                ? [
+                    {
+                      platform_session_id: "wm_managed_1",
+                      session_ref: "session:wm_managed_1",
+                      hermes_session_id: "web_" + "a".repeat(40),
+                      provision_state: "ready",
+                      web_writable: true,
+                      attempt_count: 1,
+                      lease_until: null,
+                      retry_at: null,
+                      last_error_code: null,
+                      provisioned_at: "2026-07-24T12:00:00.000000Z",
+                      parent_session_ref: null,
+                      fork_point: null,
+                      created_at: "2026-07-24T11:59:59.000000Z",
+                      updated_at: "2026-07-24T12:00:00.000000Z",
+                    },
+                  ]
+                : [],
             }),
             { status: 200, headers: { "content-type": "application/json" } },
           );
@@ -171,7 +177,7 @@ describe("sendComposerTurn", () => {
             "workspace_id",
           ]);
           expect(body.workspace_id).toBe(PLATFORM_WORKSPACE_ID);
-          expect(body.managed_session_ref).toBe("session:managed-1");
+          expect(body.managed_session_ref).toBe("session:wm_managed_1");
           expect(body.prompt).toBe("Reply with exactly: L2a-pong");
           return new Response(
             JSON.stringify({
@@ -207,10 +213,82 @@ describe("sendComposerTurn", () => {
     expect(paths).toEqual([
       "/api/auth/owner/session",
       "/api/auth/owner/bootstrap",
+      `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot`,
       `/api/workspace/${PLATFORM_WORKSPACE_ID}/act`,
       `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot`,
       "/api/agent/workspace/submit-turn",
     ]);
+  });
+
+  it("recovers the latest ready server managed session without duplicate creation", async () => {
+    const memory = new Map<string, string>();
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect((init?.method ?? "GET").toUpperCase()).toBe("GET");
+      return new Response(
+        JSON.stringify({
+          authority_health: { session_registry: "ready" },
+          managed_sessions: [
+            {
+              platform_session_id: "wm_older",
+              session_ref: "session:wm_older",
+              hermes_session_id: "web_" + "1".repeat(40),
+              provision_state: "ready",
+              web_writable: true,
+              attempt_count: 1,
+              created_at: "2026-07-24T10:00:00.000000Z",
+            },
+            {
+              platform_session_id: "wm_newest",
+              session_ref: "session:wm_newest",
+              hermes_session_id: "web_" + "2".repeat(40),
+              provision_state: "ready",
+              web_writable: true,
+              attempt_count: 1,
+              created_at: "2026-07-24T11:00:00.000000Z",
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: (key: string) => memory.get(key) ?? null,
+        setItem: (key: string, value: string) => memory.set(key, value),
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const managed = await ensureManagedSession();
+
+    expect(managed.platform_session_id).toBe("wm_newest");
+    expect(managed.hermes_session_id).toBe("web_" + "2".repeat(40));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(
+      memory.get("qs.hermes.l2a.managed_session_ref:" + PLATFORM_WORKSPACE_ID),
+    ).toBe("session:wm_newest");
+  });
+
+  it("fails closed on an inconsistent latest managed projection", () => {
+    expect(() =>
+      latestManagedSessionProjection({
+        managed_sessions: [
+          {
+            platform_session_id: "wm_latest",
+            session_ref: "session:wm_different",
+            hermes_session_id: "web_" + "3".repeat(40),
+            provision_state: "ready",
+            web_writable: true,
+            attempt_count: 1,
+          },
+        ],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "managed_session_projection_invalid",
+        status: 503,
+      }),
+    );
   });
 
   it("waits through pending provisioning before the first submit", async () => {
@@ -438,12 +516,13 @@ describe("sendComposerTurn", () => {
 
 describe("isTerminalCommandState", () => {
   it("recognizes terminal lifecycle states only", () => {
-    expect(isTerminalCommandState("delivered")).toBe(true);
+    expect(isTerminalCommandState("delivered")).toBe(false);
+    expect(isTerminalCommandState("succeeded")).toBe(true);
     expect(isTerminalCommandState("failed")).toBe(true);
     expect(isTerminalCommandState("rejected")).toBe(true);
     expect(isTerminalCommandState("cancelled")).toBe(true);
     expect(isTerminalCommandState("timed_out")).toBe(true);
-    expect(isTerminalCommandState("outcome_unknown")).toBe(true);
+    expect(isTerminalCommandState("outcome_unknown")).toBe(false);
     expect(isTerminalCommandState("queued")).toBe(false);
     expect(isTerminalCommandState("leased")).toBe(false);
     expect(isTerminalCommandState(null)).toBe(false);
@@ -501,7 +580,7 @@ describe("pollCommandUntilTerminal", () => {
     vi.restoreAllMocks();
   });
 
-  it("advances through lifecycle events until delivered", async () => {
+  it("continues beyond delivered until authoritative succeeded", async () => {
     let calls = 0;
     vi.stubGlobal(
       "fetch",
@@ -527,20 +606,40 @@ describe("pollCommandUntilTerminal", () => {
               { status: 200, headers: { "content-type": "application/json" } },
             );
           }
+          if (calls === 2) {
+            return new Response(
+              JSON.stringify({
+                events: [
+                  {
+                    event_id: 2,
+                    type: "command.delivered",
+                    command_id: "cmd-aa",
+                    state: "delivered",
+                    hermes_run_id: "run_abc",
+                    hermes_session_id: "web_" + "a".repeat(40),
+                  },
+                ],
+                after_cursor: 1,
+                next_cursor: 2,
+                resync_required: false,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          }
           return new Response(
             JSON.stringify({
               events: [
                 {
-                  event_id: 2,
-                  type: "command.delivered",
+                  event_id: 3,
+                  type: "command.succeeded",
                   command_id: "cmd-aa",
-                  state: "delivered",
+                  state: "succeeded",
                   hermes_run_id: "run_abc",
-                  hermes_session_id: "agent:main:l2a",
+                  hermes_session_id: "web_" + "a".repeat(40),
                 },
               ],
-              after_cursor: 1,
-              next_cursor: 2,
+              after_cursor: 2,
+              next_cursor: 3,
               resync_required: false,
             }),
             { status: 200, headers: { "content-type": "application/json" } },
@@ -556,11 +655,11 @@ describe("pollCommandUntilTerminal", () => {
       maxAttempts: 5,
       intervalMs: 1,
     });
-    expect(result.state).toBe("delivered");
+    expect(result.state).toBe("succeeded");
     expect(result.hermesRunId).toBe("run_abc");
-    expect(result.hermesSessionId).toBe("agent:main:l2a");
-    expect(result.cursor).toBe(2);
-    expect(result.events.length).toBeGreaterThanOrEqual(2);
+    expect(result.hermesSessionId).toBe("web_" + "a".repeat(40));
+    expect(result.cursor).toBe(3);
+    expect(result.events.length).toBeGreaterThanOrEqual(3);
     expect(result.resyncRequired).toBe(false);
   });
 
@@ -589,7 +688,7 @@ describe("pollCommandUntilTerminal", () => {
                 {
                   command_id: "cmd-bb",
                   kind: "conversation_turn",
-                  state: "delivered",
+                  state: "succeeded",
                   version: 2,
                   hermes_run_id: "run_bb",
                   hermes_session_id: "agent:main:bb",
@@ -609,7 +708,7 @@ describe("pollCommandUntilTerminal", () => {
       maxAttempts: 3,
       intervalMs: 1,
     });
-    expect(result.state).toBe("delivered");
+    expect(result.state).toBe("succeeded");
     expect(result.hermesRunId).toBe("run_bb");
     expect(result.hermesSessionId).toBe("agent:main:bb");
     expect(result.resyncRequired).toBe(true);

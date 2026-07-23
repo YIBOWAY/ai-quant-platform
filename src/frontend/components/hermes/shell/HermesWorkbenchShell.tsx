@@ -57,6 +57,7 @@ export function HermesWorkbenchShell({
             placeholderOpen: copy.composer.placeholderOpen,
             sendEnabled: copy.composer.sendEnabled,
             sendDisabled: copy.composer.sendDisabled,
+            retrySame: copy.composer.retrySame,
             unavailable: copy.composer.unavailable,
           }}
           deliveryState={resolvedDelivery}

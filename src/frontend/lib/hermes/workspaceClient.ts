@@ -296,6 +296,76 @@ export function saveManagedSessionRef(
   store.setItem(`${MANAGED_SESSION_STORAGE_KEY}:${workspaceId}`, sessionRef);
 }
 
+const MANAGED_SESSION_PROVISION_STATES = new Set<ManagedSessionProvisionState>([
+  "pending",
+  "leased",
+  "retryable",
+  "ready",
+  "failed",
+]);
+
+function assertManagedSessionProjectionIdentity(
+  projection: ManagedSessionProjection,
+): void {
+  const platformId = projection?.platform_session_id?.trim();
+  const sessionRef = projection?.session_ref?.trim();
+  if (
+    !platformId ||
+    !platformId.startsWith("wm_") ||
+    sessionRef !== `session:${platformId}` ||
+    !MANAGED_SESSION_PROVISION_STATES.has(projection.provision_state) ||
+    !Number.isInteger(projection.attempt_count) ||
+    projection.attempt_count < 0
+  ) {
+    throw new WorkspaceClientError(
+      "latest managed session projection is internally inconsistent",
+      503,
+      "managed_session_projection_invalid",
+    );
+  }
+}
+
+function managedSessionProjectionIsReady(
+  projection: ManagedSessionProjection,
+): boolean {
+  if (projection.provision_state !== "ready") {
+    return false;
+  }
+  if (
+    projection.web_writable !== true ||
+    !isUsableHermesApiSessionId(projection.hermes_session_id)
+  ) {
+    throw new WorkspaceClientError(
+      "managed session ready projection is internally inconsistent",
+      503,
+      "managed_session_ready_contract_invalid",
+    );
+  }
+  return true;
+}
+
+/**
+ * Snapshot rows are emitted oldest-first by the current workspace contract.
+ * Never skip a malformed newest row and silently resume an older lineage.
+ */
+export function latestManagedSessionProjection(
+  snapshot: Pick<WorkspaceSnapshot, "managed_sessions">,
+): ManagedSessionProjection | null {
+  if (!Array.isArray(snapshot.managed_sessions)) {
+    throw new WorkspaceClientError(
+      "managed session projection is unavailable; refusing duplicate create",
+      503,
+      "managed_session_projection_unavailable",
+    );
+  }
+  const latest = snapshot.managed_sessions.at(-1) ?? null;
+  if (!latest) {
+    return null;
+  }
+  assertManagedSessionProjectionIdentity(latest);
+  return latest;
+}
+
 export async function createManagedSession(options?: {
   workspaceId?: string;
   clientActionId?: string;
@@ -332,7 +402,10 @@ export async function createManagedSession(options?: {
   return receipt;
 }
 
-/** Ensure a managed session exists; create via /act when storage is empty. */
+/**
+ * Ensure a managed session exists. Restore the newest server-authoritative
+ * lineage first; create only after a healthy, explicitly empty projection.
+ */
 export async function ensureManagedSession(options?: {
   workspaceId?: string;
   signal?: AbortSignal;
@@ -345,6 +418,28 @@ export async function ensureManagedSession(options?: {
     return waitForManagedSessionReady({
       workspaceId,
       sessionRef: existing,
+      signal: options?.signal,
+      timeoutMs: options?.provisionTimeoutMs,
+      initialIntervalMs: options?.provisionInitialIntervalMs,
+    });
+  }
+  const snapshot = await fetchWorkspaceSnapshot(workspaceId, options?.signal);
+  if (snapshot.authority_health?.session_registry !== "ready") {
+    throw new WorkspaceClientError(
+      "managed session registry is unavailable; refusing duplicate create",
+      503,
+      "managed_session_registry_unavailable",
+    );
+  }
+  const recovered = latestManagedSessionProjection(snapshot);
+  if (recovered) {
+    saveManagedSessionRef(recovered.session_ref, workspaceId);
+    if (managedSessionProjectionIsReady(recovered)) {
+      return recovered;
+    }
+    return waitForManagedSessionReady({
+      workspaceId,
+      sessionRef: recovered.session_ref,
       signal: options?.signal,
       timeoutMs: options?.provisionTimeoutMs,
       initialIntervalMs: options?.provisionInitialIntervalMs,
@@ -1140,23 +1235,17 @@ export async function waitForManagedSessionReady(options: {
             "managed_session_provision_failed",
           );
         }
-        if (last?.provision_state === "ready") {
-          if (
-            last.web_writable !== true ||
-            !isUsableHermesApiSessionId(last.hermes_session_id)
-          ) {
-            throw new WorkspaceClientError(
-              "managed session ready projection is internally inconsistent",
-              503,
-              "managed_session_ready_contract_invalid",
-            );
-          }
+        if (last) {
+          assertManagedSessionProjectionIdentity(last);
+        }
+        if (last && managedSessionProjectionIsReady(last)) {
           return last;
         }
       } catch (error) {
         if (
           error instanceof WorkspaceClientError &&
           (error.code === "managed_session_provision_failed" ||
+            error.code === "managed_session_projection_invalid" ||
             error.code === "managed_session_ready_contract_invalid")
         ) {
           throw error;
@@ -1220,12 +1309,11 @@ export async function fetchWorkspaceFollow(options?: {
 }
 
 const TERMINAL_COMMAND_STATES = new Set([
-  "delivered",
+  "succeeded",
   "cancelled",
   "failed",
   "rejected",
   "timed_out",
-  "outcome_unknown",
 ]);
 
 export function isTerminalCommandState(

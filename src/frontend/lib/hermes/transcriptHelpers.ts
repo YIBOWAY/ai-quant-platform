@@ -31,11 +31,14 @@ export function displayableTranscriptMessages(
 
 /**
  * Prefer the newest command that already carries a usable hermes_session_id.
+ * A dispatch acknowledgement is not sufficient: only replay-backed terminal
+ * commands may bind the transcript after reload.
  */
 export function pickLatestHermesSessionId(
   commands:
     | Array<{
         command_id?: string | null;
+        state?: string | null;
         hermes_session_id?: string | null;
       }>
     | null
@@ -46,6 +49,9 @@ export function pickLatestHermesSessionId(
   }
   for (let i = commands.length - 1; i >= 0; i -= 1) {
     const row = commands[i];
+    if (!row || !["succeeded", "failed", "cancelled"].includes(row.state ?? "")) {
+      continue;
+    }
     const id = row?.hermes_session_id;
     if (!isUsableHermesApiSessionId(id)) continue;
     return {
@@ -149,12 +155,11 @@ export type TranscriptHint = {
 };
 
 const TERMINAL_FOR_PHASE = new Set([
-  "delivered",
+  "succeeded",
   "cancelled",
   "failed",
   "rejected",
   "timed_out",
-  "outcome_unknown",
 ]);
 
 /**
@@ -192,7 +197,7 @@ export function deriveAssistantPhase(options: {
   const hasAssistant = assistantContentLength > 0;
 
   if (terminal) {
-    // Terminal with or without assistant body is final (failed/cancelled/empty delivered honest).
+    // Terminal with or without assistant body is final.
     return "final";
   }
 
@@ -200,7 +205,14 @@ export function deriveAssistantPhase(options: {
     return "partial";
   }
 
-  if (submitAccepted || state === "queued" || state === "leased" || state === "running") {
+  if (
+    submitAccepted ||
+    state === "queued" ||
+    state === "leased" ||
+    state === "running" ||
+    state === "delivered" ||
+    state === "outcome_unknown"
+  ) {
     return "waiting";
   }
 
