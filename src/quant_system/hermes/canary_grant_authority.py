@@ -20,14 +20,14 @@ Design freeze
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from threading import Lock
-from typing import Literal
 import hashlib
 import json
 import re
 import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from threading import Lock
+from typing import Literal
 
 GrantStatus = Literal["active", "revoked", "expired", "consumed"]
 
@@ -48,7 +48,7 @@ class CanaryGrantAuthorityError(RuntimeError):
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _canon_ts(dt: datetime) -> str:
@@ -56,7 +56,7 @@ def _canon_ts(dt: datetime) -> str:
         raise CanaryGrantAuthorityError(
             "validation", "timestamp must be timezone-aware"
         )
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _parse_rfc3339(value: str) -> datetime:
@@ -75,7 +75,7 @@ def _parse_rfc3339(value: str) -> datetime:
         raise CanaryGrantAuthorityError(
             "validation", "timestamp must be timezone-aware"
         )
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def _validate_digest(value: str, field: str) -> str:
@@ -482,11 +482,11 @@ class CanaryGrantAuthority:
         clock = now or _utc_now()
 
         # External vertical/result existence checks (outside lock for import safety).
-        from quant_system.hermes.vertical_binding_authority import (
-            default_vertical_binding_authority,
-        )
         from quant_system.hermes.result_surface_authority import (
             default_result_surface_authority,
+        )
+        from quant_system.hermes.vertical_binding_authority import (
+            default_vertical_binding_authority,
         )
 
         binder = default_vertical_binding_authority()

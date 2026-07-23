@@ -7,9 +7,10 @@ It must never import or call order, account, position, or trade APIs.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable, Protocol
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
 from quant_system.config.settings import Settings
 
@@ -59,14 +60,14 @@ class VerticalRoQuote:
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _dt_public(dt: datetime | None = None) -> str:
     value = dt or _utc_now()
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _finite_number(value: object, field: str) -> float | int:
@@ -94,10 +95,10 @@ def _finite_number(value: object, field: str) -> float | int:
 
 def _days_to_expiry(expiry: str, *, as_of: datetime) -> int | None:
     try:
-        exp = datetime.fromisoformat(expiry[:10]).replace(tzinfo=timezone.utc)
+        exp = datetime.fromisoformat(expiry[:10]).replace(tzinfo=UTC)
     except ValueError:
         return None
-    day = as_of.astimezone(timezone.utc).replace(
+    day = as_of.astimezone(UTC).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     return max(int((exp - day).days), 0)

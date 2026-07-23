@@ -158,7 +158,11 @@ def test_frontend_api_exposes_neutral_news_client_and_stamps() -> None:
     assert "export function getNewsDaily" in source
     assert "export function getNewsDailies" in source
     assert "export function getNewsStatus" in source
-    assert "`/api/news/items?" in source or '"/api/news/items"' in source or "`/api/news/items" in source
+    assert (
+        "`/api/news/items?" in source
+        or '"/api/news/items"' in source
+        or "`/api/news/items" in source
+    )
     assert "`/api/news/daily" in source or '"/api/news/daily"' in source
     assert "`/api/news/dailies?" in source or '"/api/news/dailies"' in source
     assert '"/api/news/status"' in source
@@ -188,12 +192,21 @@ def test_ai_news_view_surfaces_dual_source_stamps() -> None:
     assert "failoverActive" in source or "failover" in source
     assert "data-testid=\"ai-news-failover-banner\"" in source or "ai-news-failover" in source
     # Provider from items/daily payload, not only status.
-    assert "activeProvider" in source or "feedPages[0]?.provider" in source or "page.provider" in source
+    assert (
+        "activeProvider" in source
+        or "feedPages[0]?.provider" in source
+        or "page.provider" in source
+    )
     # Bilingual dual-source research copy.
     assert "Horizon" in source
     assert "AI HOT" in source
     assert "standby" in source.lower() or "备用" in source or "待命" in source
-    assert "research-only" in source.lower() or "research only" in source.lower() or "仅供研究" in source or "研究" in source
+    assert (
+        "research-only" in source.lower()
+        or "research only" in source.lower()
+        or "仅供研究" in source
+        or "研究" in source
+    )
 
 
 def test_ai_news_view_stops_pagination_on_stamp_mismatch() -> None:

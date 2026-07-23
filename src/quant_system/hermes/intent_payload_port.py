@@ -335,13 +335,13 @@ class SubprocessIntentPayloadPort:
         # Prefer structured stdout even on non-zero exit.
         try:
             document = _parse_stdout(completed.stdout or b"")
-        except IntentPayloadPortError:
+        except IntentPayloadPortError as exc:
             if completed.returncode != 0:
                 raise IntentPayloadPortError(
                     "intent_cli_failed",
                     "intent payload CLI exited without structured stdout",
                     retryable=True,
-                )
+                ) from exc
             raise
 
         if completed.returncode != 0 and document.get("ok") is True:

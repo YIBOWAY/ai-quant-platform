@@ -19,11 +19,11 @@ Design freeze
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Lock
 from typing import Literal
-import re
 
 Decision = Literal["allow_once", "deny"]
 ChallengeStatus = Literal["pending", "allowed_once", "denied", "expired"]
@@ -42,7 +42,7 @@ class CommandApprovalAuthorityError(RuntimeError):
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _parse_rfc3339(value: str) -> datetime:
@@ -61,7 +61,7 @@ def _parse_rfc3339(value: str) -> datetime:
         raise CommandApprovalAuthorityError(
             "validation", "expires_at must be timezone-aware"
         )
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def _canon_ts(value: str | datetime) -> str:
@@ -71,7 +71,7 @@ def _canon_ts(value: str | datetime) -> str:
             raise CommandApprovalAuthorityError(
                 "validation", "expires_at must be timezone-aware"
             )
-        dt = dt.astimezone(timezone.utc)
+        dt = dt.astimezone(UTC)
     else:
         dt = _parse_rfc3339(value)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")

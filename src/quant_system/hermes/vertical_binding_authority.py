@@ -5,7 +5,8 @@ Vertical A (options):
   NL goal -> Task/Attempt/Run -> typed options result -> completed|degraded.
   Live path requires auth envelope; real only with verifiable evidence.
 
-Vertical B (factor) — V7g-B-M1 bind + M2 plan-confirm + M3 Gate1 seed + M4 Gate1 confirm + M5 Gate2 seed:
+Vertical B (factor) — V7g-B-M1 bind + M2 plan-confirm + M3 Gate1 seed +
+M4 Gate1 confirm + M5 Gate2 seed:
   M1: NL + paper ref -> Task/Attempt/Run -> typed factor result -> completed|degraded.
   M2: CAS plan_confirm on bound factor_b Task -> cascade_stage=plan_confirmed.
   M3: CAS gate1_seed on plan_confirmed Task -> cascade_stage=gate1_seeded + pending Gate1.
@@ -25,10 +26,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Condition, Lock
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from quant_system.hermes.result_surface_authority import (
     ResultSurfaceAuthority,
@@ -57,7 +60,7 @@ class VerticalBindingAuthorityError(Exception):
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _dt_public(value: datetime | str | None = None) -> str:
@@ -65,8 +68,8 @@ def _dt_public(value: datetime | str | None = None) -> str:
         return value
     dt = value if isinstance(value, datetime) else _utc_now()
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _validate_id(value: str, field: str) -> str:
@@ -105,7 +108,7 @@ def _optional_number(value: object, field: str) -> float | int:
 
 
 def _stable_id(prefix: str, digest: str, salt: str) -> str:
-    h = hashlib.sha256(f"{digest}:{salt}".encode("utf-8")).hexdigest()[:20]
+    h = hashlib.sha256(f"{digest}:{salt}".encode()).hexdigest()[:20]
     return f"{prefix}-{h}"
 
 
@@ -388,7 +391,7 @@ def _enforce_live_auth_envelope(
         ) from exc
     clock = now or _utc_now()
     if clock.tzinfo is None:
-        clock = clock.replace(tzinfo=timezone.utc)
+        clock = clock.replace(tzinfo=UTC)
     if not (start <= clock <= end):
         raise VerticalBindingAuthorityError(
             "auth_envelope_invalid",
@@ -1736,10 +1739,8 @@ class VerticalBindingAuthority:
                     )
                     gate_inserted = True
                 except GateSurfaceAuthorityError as exc:
-                    try:
+                    with suppress(Exception):
                         rauth.delete_result(ws, result_id)
-                    except Exception:
-                        pass
                     if owned_reservation:
                         self._action_digest.pop(key, None)
                     raise VerticalBindingAuthorityError(
@@ -1747,10 +1748,8 @@ class VerticalBindingAuthority:
                         exc.message or "gate_surface_authority_unavailable",
                     ) from exc
                 except Exception:
-                    try:
+                    with suppress(Exception):
                         rauth.delete_result(ws, result_id)
-                    except Exception:
-                        pass
                     if owned_reservation:
                         self._action_digest.pop(key, None)
                     raise
@@ -2561,10 +2560,8 @@ class VerticalBindingAuthority:
                     )
                     gate_inserted = True
                 except GateSurfaceAuthorityError as exc:
-                    try:
+                    with suppress(Exception):
                         rauth.delete_result(ws, result_id)
-                    except Exception:
-                        pass
                     if owned_reservation:
                         self._action_digest.pop(key, None)
                     raise VerticalBindingAuthorityError(
@@ -2572,10 +2569,8 @@ class VerticalBindingAuthority:
                         exc.message or "gate_surface_authority_unavailable",
                     ) from exc
                 except Exception:
-                    try:
+                    with suppress(Exception):
                         rauth.delete_result(ws, result_id)
-                    except Exception:
-                        pass
                     if owned_reservation:
                         self._action_digest.pop(key, None)
                     raise

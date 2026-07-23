@@ -27,14 +27,14 @@ Design freeze
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from threading import Lock
-from typing import Literal
 import hashlib
 import json
 import re
 import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from threading import Lock
+from typing import Literal
 
 CutoverStatus = Literal["open", "closed"]
 
@@ -53,7 +53,7 @@ class PublicCutoverAuthorityError(RuntimeError):
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _canon_ts(dt: datetime) -> str:
@@ -61,7 +61,7 @@ def _canon_ts(dt: datetime) -> str:
         raise PublicCutoverAuthorityError(
             "validation", "timestamp must be timezone-aware"
         )
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _validate_digest(value: str, field: str) -> str:
@@ -245,13 +245,12 @@ class PublicCutoverAuthority:
         ad = _validate_digest(action_digest, "action_digest")
         clock = now or _utc_now()
 
-        if require_acceptance:
-            # Caller supplies existence check (saga binds canary acceptances).
-            if acceptance_exists is not True:
-                raise PublicCutoverAuthorityError(
-                    "validation",
-                    "dual_vertical_acceptance_required",
-                )
+        # Caller supplies existence check (saga binds canary acceptances).
+        if require_acceptance and acceptance_exists is not True:
+            raise PublicCutoverAuthorityError(
+                "validation",
+                "dual_vertical_acceptance_required",
+            )
 
         with self._lock:
             # Idempotent replay of exact same open action — only while still open.

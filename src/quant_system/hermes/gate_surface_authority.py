@@ -19,11 +19,11 @@ Design freeze
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Lock
 from typing import Literal
-import re
 
 GateKind = Literal["gate1", "gate2", "gate3"]
 GateStatus = Literal[
@@ -56,7 +56,7 @@ class GateSurfaceAuthorityError(RuntimeError):
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _canon_now() -> str:
@@ -79,7 +79,7 @@ def _parse_rfc3339(value: str) -> datetime:
         raise GateSurfaceAuthorityError(
             "validation", "expires_at must be timezone-aware"
         )
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def _canon_ts(value: str | datetime | None) -> str | None:
@@ -91,7 +91,7 @@ def _canon_ts(value: str | datetime | None) -> str | None:
             raise GateSurfaceAuthorityError(
                 "validation", "expires_at must be timezone-aware"
             )
-        dt = dt.astimezone(timezone.utc)
+        dt = dt.astimezone(UTC)
     else:
         dt = _parse_rfc3339(value)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -369,7 +369,7 @@ class GateSurfaceAuthority:
         candidate_id: str,
         expected_digest: str,
     ) -> bool:
-        """Narrow abort cleanup for V7g-B-M5 seed: remove pending Gate2 only if owned shape matches."""
+        """Remove an owned pending Gate2 during narrow V7g-B-M5 abort cleanup."""
         key = (workspace_id, gate_id)
         with self._lock:
             row = self._rows.get(key)

@@ -11,9 +11,10 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Mapping, Union
+from datetime import UTC, datetime
+from typing import Any
 
 _ACTION_KINDS = frozenset(
     {
@@ -255,7 +256,7 @@ def _parse_workspace(value: Any) -> WorkspaceRef:
 def _validate_digest(value: Any, field: str) -> None:
     if type(value) is not str or _HEX64_RE.fullmatch(value) is None:
         raise AgentWorkspaceActionError(
-            "{} must be a lowercase SHA-256 digest".format(field)
+            f"{field} must be a lowercase SHA-256 digest"
         )
 
 
@@ -274,7 +275,7 @@ def _validate_ref(value: Any, field: str, prefix: str) -> None:
         or _IDENTIFIER_RE.fullmatch(value) is None
     ):
         raise AgentWorkspaceActionError(
-            "{} must be a bounded {} reference".format(field, prefix)
+            f"{field} must be a bounded {prefix} reference"
         )
 
 
@@ -320,7 +321,7 @@ def _normalize_timestamp(value: Any) -> str:
             raise AgentWorkspaceActionError(
                 "expected_expires_at must be timezone-aware"
             )
-        return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     except (ValueError, OverflowError, OSError) as exc:
         raise AgentWorkspaceActionError(
             "expected_expires_at must be a canonical timezone-aware timestamp"
@@ -335,7 +336,7 @@ def _validate_note(value: Any, field: str) -> None:
         or not value.isprintable()
     ):
         raise AgentWorkspaceActionError(
-            "{} must be bounded nonempty printable text".format(field)
+            f"{field} must be bounded nonempty printable text"
         )
 
 
@@ -473,7 +474,7 @@ def _normalize_envelope_timestamp(value: Any, field: str) -> str:
             raise AgentWorkspaceActionError(
                 f"auth_envelope.{field} must be timezone-aware"
             )
-        return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     except (ValueError, OverflowError, OSError) as exc:
         raise AgentWorkspaceActionError(
             f"auth_envelope.{field} must be a canonical timezone-aware timestamp"
@@ -1271,31 +1272,31 @@ class UnsupportedWorkspaceAction:
             raise AgentWorkspaceActionError("unknown UserActionV1 kind")
 
 
-UserActionV1 = Union[
-    CreateManagedSession,
-    ForkIntoManagedSession,
-    ConversationTurn,
-    StartResearch,
-    ContinueResearch,
-    ConfirmResearchPlan,
-    DecideHermesCommandApproval,
-    RequestStop,
-    ConfirmFormulaSource,
-    ReviewCandidateCAS,
-    PreparePromotionReview,
-    BindOptionsVerticalA,
-    BindFactorVerticalB,
-    ConfirmFactorVerticalBPlan,
-    SeedFactorVerticalBGate1,
-    ConfirmFactorVerticalBGate1,
-    SeedFactorVerticalBGate2,
-    IssueCanaryGrant,
-    RevokeCanaryGrant,
-    AcceptCanaryDualVertical,
-    OpenPublicCutover,
-    ClosePublicCutover,
-    UnsupportedWorkspaceAction,
-]
+UserActionV1 = (
+    CreateManagedSession
+    | ForkIntoManagedSession
+    | ConversationTurn
+    | StartResearch
+    | ContinueResearch
+    | ConfirmResearchPlan
+    | DecideHermesCommandApproval
+    | RequestStop
+    | ConfirmFormulaSource
+    | ReviewCandidateCAS
+    | PreparePromotionReview
+    | BindOptionsVerticalA
+    | BindFactorVerticalB
+    | ConfirmFactorVerticalBPlan
+    | SeedFactorVerticalBGate1
+    | ConfirmFactorVerticalBGate1
+    | SeedFactorVerticalBGate2
+    | IssueCanaryGrant
+    | RevokeCanaryGrant
+    | AcceptCanaryDualVertical
+    | OpenPublicCutover
+    | ClosePublicCutover
+    | UnsupportedWorkspaceAction
+)
 
 # Fully executable on the hermetic saga path (mutation gate still required).
 _IMPLEMENTED_TYPES = (
