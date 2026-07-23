@@ -36,6 +36,8 @@ class AiHotItemsResponse(BaseModel):
     items: list[AiHotItemResponse]
     warnings: list[str] = Field(default_factory=list)
     research_safety: AiHotResearchSafety = Field(default_factory=AiHotResearchSafety)
+    preference: str = "auto"
+    served_from: str = "primary"
 
 
 class AiHotDailyResponse(BaseModel):
@@ -52,6 +54,8 @@ class AiHotDailyResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     research_safety: AiHotResearchSafety = Field(default_factory=AiHotResearchSafety)
     raw: dict[str, Any] = Field(default_factory=dict)
+    preference: str = "auto"
+    served_from: str = "primary"
 
 
 class AiHotDailyIndexResponse(BaseModel):
@@ -69,6 +73,8 @@ class AiHotDailiesResponse(BaseModel):
     items: list[AiHotDailyIndexResponse]
     warnings: list[str] = Field(default_factory=list)
     research_safety: AiHotResearchSafety = Field(default_factory=AiHotResearchSafety)
+    preference: str = "auto"
+    served_from: str = "primary"
 
 
 class AiHotStatusResponse(BaseModel):

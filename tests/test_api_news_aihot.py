@@ -1,3 +1,4 @@
+import os
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
@@ -14,6 +15,9 @@ from quant_system.news.models import (
     AiHotItem,
     AiHotItemsPage,
 )
+
+# Local .env may enable Hermes gateway; declare loopback bind so create_app can start.
+os.environ.setdefault("QS_API_BIND_ADDRESS", "127.0.0.1")
 
 
 class FakeAiHotClient:
@@ -121,6 +125,10 @@ def test_aihot_items_route_returns_research_only_payload(tmp_path, monkeypatch) 
     assert payload["research_safety"]["research_only"] is True
     assert payload["research_safety"]["does_not_trigger_trading"] is True
     assert payload["safety"]["live_trading_enabled"] is False
+    assert payload["preference"] == "auto"
+    assert payload["served_from"] == "primary"
+    assert "research_safety" in payload
+    assert "safety" not in payload or payload.get("safety")
 
 
 def test_aihot_items_route_caches_live_page_best_effort(tmp_path, monkeypatch) -> None:
@@ -302,9 +310,15 @@ def test_aihot_daily_and_dailies_routes_proxy_read_only(tmp_path, monkeypatch) -
         ("daily", {"date": "2026-06-28"}),
         ("dailies", {"take": 5}),
     ]
-    assert daily_response.json()["date"] == "2026-06-28"
-    assert daily_response.json()["research_safety"]["not_investment_advice"] is True
-    assert dailies_response.json()["items"][0]["lead_title"] == "今日要点"
+    daily_payload = daily_response.json()
+    dailies_payload = dailies_response.json()
+    assert daily_payload["date"] == "2026-06-28"
+    assert daily_payload["research_safety"]["not_investment_advice"] is True
+    assert daily_payload["preference"] == "auto"
+    assert daily_payload["served_from"] == "primary"
+    assert dailies_payload["items"][0]["lead_title"] == "今日要点"
+    assert dailies_payload["preference"] == "auto"
+    assert dailies_payload["served_from"] == "primary"
 
 
 def test_aihot_disabled_returns_503_without_calling_upstream(tmp_path, monkeypatch) -> None:

@@ -257,6 +257,8 @@ def _items_payload(page: AiHotItemsPage) -> dict:
         ],
         "warnings": [*page.warnings, _PROVIDER_BETA_WARNING],
         "research_safety": _research_safety(),
+        "preference": "auto",
+        "served_from": "primary",
     }
 
 
@@ -275,6 +277,8 @@ def _daily_payload(daily: AiHotDaily) -> dict:
         "warnings": [*daily.warnings, _PROVIDER_BETA_WARNING],
         "research_safety": _research_safety(),
         "raw": daily.raw,
+        "preference": "auto",
+        "served_from": "primary",
     }
 
 
@@ -295,6 +299,8 @@ def _dailies_payload(page: AiHotDailiesPage) -> dict:
         ],
         "warnings": [*page.warnings, _PROVIDER_BETA_WARNING],
         "research_safety": _research_safety(),
+        "preference": "auto",
+        "served_from": "primary",
     }
 
 
