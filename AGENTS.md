@@ -150,14 +150,14 @@ data/                     Local cache, fixtures, generated research outputs.
   `UNIQUE(attempt_id)` + `UNIQUE(task_id, attempt_number)`; readiness refuses the
   obsolete `UNIQUE(task_id)`-only shape. Additive 007 is the session registry.
   `hermes/composer_readiness.py` is the single blocker/readiness surface.
-  **Public** write stays OFF until V8. Local single-user may open
+  **Public** write standing default OFF (V8-M6 hermetic G7/G8 surface ACCEPT@a2953cb; operator open is explicit; full V8 release stamp still requires fresh auth; `release_authorized=false`). Local single-user may open
   `QS_LOCAL_MUTATION_ENABLED` / `QS_LOCAL_MUTATION_COMPOSER_OPEN` (and FE
   `QS_HERMES_CHAT_ENABLED` draft) under the trading kill switch — that is local
   dark enablement, not public cutover and not Plan-V6 full-UI acceptance.
   Typed `research.*` actions remain fail-closed for browser research submit until
   their Gate; L2a uses `conversation_turn` + payload ref claim path (migration
   `008_l2a_conversation_turn_claim.sql`) instead of putting prompts on `/act`.
-  Cross-repo status (2026-07-22): V0 formal DONE (`release_authorized=false`),
+  Cross-repo status (2026-07-23): V0 formal DONE (`release_authorized=false`),
   V1 code DONE / V1.2A live role+RLS PARTIAL, V2 source accepted / live durable
   OFF, V3 HQA dark install DONE, **V4 live schema ACCEPT**, **V5 dark
   claim/dispatch ACCEPT**, **V6 local dark enablement ACCEPT**, **L2a-Send
@@ -175,7 +175,7 @@ data/                     Local cache, fixtures, generated research outputs.
   responsive pad, collapse/long-id contracts, composer focus-visible;
   marker `data-hermes-workbench-a11y=l5c-m1`; no mutation routes).
   **V7a–V7g-A-M1 ACCEPT** (exact allow_once|deny CAS + hermetic respond_approval release/signal + hermetic Run-scoped stop with §5.5 layered receipt + durable approval projector + Domain Gate 1/2/3 surfaces + typed results on spine + hermetic Vertical A options bind → Task/Attempt/Run + typed result → completed|completed_degraded; sample/real fail-closed; no always-allow; Gates ≠ command-approval ≠ results; no Task invention from conversation.turn; no catalog-on-spine; zero live Futu/orders). Next: V7g-A-M2 live Futu RO → V7g-B;
-  public V8 still closed. See HQA `docs/README.md`, L2a ADR, and platform audits
+  full operator V8 release stamp still closed (`release_authorized=false`; standing public default OFF). See HQA `docs/README.md`, L2a ADR, and platform audits
   `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
   `docs/audits/2026-07-21-v6-local-off-to-on.md`.
   Connector worker CLI **defaults to `reconcile_only`** (LISTEN/NOTIFY + scan +
