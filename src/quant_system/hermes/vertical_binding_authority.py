@@ -5,11 +5,12 @@ Vertical A (options):
   NL goal -> Task/Attempt/Run -> typed options result -> completed|degraded.
   Live path requires auth envelope; real only with verifiable evidence.
 
-Vertical B (factor) — V7g-B-M1 bind + M2 plan-confirm + M3 Gate1 seed:
+Vertical B (factor) — V7g-B-M1 bind + M2 plan-confirm + M3 Gate1 seed + M4 Gate1 confirm:
   M1: NL + paper ref -> Task/Attempt/Run -> typed factor result -> completed|degraded.
   M2: CAS plan_confirm on bound factor_b Task -> cascade_stage=plan_confirmed.
   M3: CAS gate1_seed on plan_confirmed Task -> cascade_stage=gate1_seeded + pending Gate1.
-  Always sample. Never StartResearch/global ConfirmResearchPlan/Gate decide/backtest/Git/live.
+  M4: CAS gate1_confirm dual-path -> cascade_stage=gate1_confirmed; keep gate_cascade_locked.
+  Always sample. Never StartResearch/global ConfirmResearchPlan/auto Gate2/backtest/Git/live.
 
 Zero orders/account mutation. Public write stays OFF.
 
@@ -156,6 +157,14 @@ class VerticalTaskRecord:
     gate1_seeded_at: str | None = None
     gate1_seed_action_id: str | None = None
     gate1_seed_action_digest: str | None = None
+    # Seed-era artifact ids retained after gate1_confirm moves latest pointers.
+    gate1_seed_attempt_id: str | None = None
+    gate1_seed_run_id: str | None = None
+    gate1_seed_result_id: str | None = None
+    # V7g-B-M4 Gate1 confirm projection (factor_b only).
+    gate1_confirmed_at: str | None = None
+    gate1_confirm_action_id: str | None = None
+    gate1_confirm_action_digest: str | None = None
 
     def to_public_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -218,6 +227,18 @@ class VerticalTaskRecord:
             payload["gate1_seed_action_id"] = self.gate1_seed_action_id
         if self.gate1_seed_action_digest is not None:
             payload["gate1_seed_action_digest"] = self.gate1_seed_action_digest
+        if self.gate1_seed_attempt_id is not None:
+            payload["gate1_seed_attempt_id"] = self.gate1_seed_attempt_id
+        if self.gate1_seed_run_id is not None:
+            payload["gate1_seed_run_id"] = self.gate1_seed_run_id
+        if self.gate1_seed_result_id is not None:
+            payload["gate1_seed_result_id"] = self.gate1_seed_result_id
+        if self.gate1_confirmed_at is not None:
+            payload["gate1_confirmed_at"] = self.gate1_confirmed_at
+        if self.gate1_confirm_action_id is not None:
+            payload["gate1_confirm_action_id"] = self.gate1_confirm_action_id
+        if self.gate1_confirm_action_digest is not None:
+            payload["gate1_confirm_action_digest"] = self.gate1_confirm_action_digest
         if self.result_id is not None:
             payload["result_id"] = self.result_id
         if self.terminal_reason is not None:
@@ -1746,6 +1767,415 @@ class VerticalBindingAuthority:
                             )
                     except Exception:
                         pass
+                raise
+            finally:
+                if owned_reservation:
+                    self._inflight.discard(key)
+                if owned_cascade:
+                    self._inflight.discard(cascade_key)
+                if owned_reservation or owned_cascade:
+                    self._cv.notify_all()
+
+    def confirm_factor_vertical_b_gate1(
+        self,
+        *,
+        workspace_id: str,
+        client_action_id: str,
+        action_digest: str,
+        task_ref: str,
+        expected_bind_digest: str,
+        expected_plan_digest: str,
+        expected_gate1_id: str,
+        reviewed_source_sha256: str,
+        confirmation_note: str,
+        result_authority: ResultSurfaceAuthority | None = None,
+        now: datetime | None = None,
+    ) -> VerticalBindOutcome:
+        """V7g-B-M4: CAS Gate1 decide→cascade on already gate1_seeded factor_b Task.
+
+        Dual-path under cascade lock:
+          - pending Gate1 → confirm_formula_source then advance cascade
+          - confirmed matching Gate1 → cascade-only (no rewrite of gate decision)
+        Never lifts gate_cascade_locked, never auto Gate2 / StartResearch / orders / Git.
+        """
+        from quant_system.hermes.gate_surface_authority import (
+            GateSurfaceAuthorityError,
+            default_gate_surface_authority,
+        )
+
+        ws = _validate_id(workspace_id, "workspace_id")
+        act = _validate_id(client_action_id, "client_action_id")
+        if type(action_digest) is not str or len(action_digest) != 64:
+            raise VerticalBindingAuthorityError(
+                "validation", "action_digest must be 64-hex"
+            )
+        if type(task_ref) is not str or not task_ref.startswith("task:"):
+            raise VerticalBindingAuthorityError(
+                "validation", "task_ref must be a task: reference"
+            )
+        task_id = task_ref[len("task:") :]
+        task_id = _validate_id(task_id, "task_id")
+        gate1_id = _validate_id(expected_gate1_id, "expected_gate1_id")
+        for field_name, value in (
+            ("expected_bind_digest", expected_bind_digest),
+            ("expected_plan_digest", expected_plan_digest),
+            ("reviewed_source_sha256", reviewed_source_sha256),
+        ):
+            if (
+                type(value) is not str
+                or len(value) != 64
+                or any(ch not in "0123456789abcdef" for ch in value)
+            ):
+                raise VerticalBindingAuthorityError(
+                    "validation", f"{field_name} must be lowercase 64-hex"
+                )
+        note = _bounded_text(confirmation_note, "confirmation_note", max_len=2000)
+
+        key = (ws, act)
+        cascade_key = (ws, f"cascade:{task_id}")
+        rauth = result_authority or default_result_surface_authority()
+        gauth = default_gate_surface_authority()
+        owned_reservation = False
+        owned_cascade = False
+        result_id: str | None = None
+        surface_confirmed_by_us = False
+
+        with self._cv:
+            while True:
+                prior_digest = self._action_digest.get(key)
+                if prior_digest is not None and prior_digest != action_digest:
+                    raise VerticalBindingAuthorityError(
+                        "conflict",
+                        "client_action_id already bound to a different action_digest",
+                    )
+                prior_task_id = self._by_action.get(key)
+                if prior_task_id is not None:
+                    return self._replay_outcome(ws, prior_task_id, rauth)
+                if key in self._inflight or cascade_key in self._inflight:
+                    if not self._cv.wait(timeout=30.0):
+                        raise VerticalBindingAuthorityError(
+                            "unavailable",
+                            "vertical_bind_inflight_timeout",
+                        )
+                    continue
+                self._action_digest[key] = action_digest
+                self._inflight.add(key)
+                self._inflight.add(cascade_key)
+                owned_reservation = True
+                owned_cascade = True
+                break
+
+        with self._cv:
+            try:
+                prior_task_id = self._by_action.get(key)
+                if prior_task_id is not None:
+                    return self._replay_outcome(ws, prior_task_id, rauth)
+                if self._action_digest.get(key) != action_digest:
+                    raise VerticalBindingAuthorityError(
+                        "conflict",
+                        "client_action_id already bound to a different action_digest",
+                    )
+
+                task = self._tasks.get((ws, task_id))
+                if task is None:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_task_not_found",
+                        "factor_b_task_not_found",
+                    )
+                if task.vertical != "factor_b" or task.kind != "factor_vertical_b_research":
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_task_wrong_vertical",
+                        "factor_b_task_wrong_vertical",
+                    )
+                if task.action_digest != expected_bind_digest:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_bind_digest_mismatch",
+                        "factor_b_bind_digest_mismatch",
+                    )
+                if task.status != "completed":
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_gate1_not_confirmable",
+                        "factor_b_gate1_not_confirmable",
+                    )
+                stage = task.cascade_stage
+                if stage == "gate1_confirmed":
+                    raise VerticalBindingAuthorityError(
+                        "cascade_already_gate1_confirmed",
+                        "cascade_already_gate1_confirmed",
+                    )
+                if stage != "gate1_seeded":
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_gate1_not_confirmable",
+                        "factor_b_gate1_not_confirmable",
+                    )
+                if not task.plan_digest:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_plan_digest_mismatch",
+                        "factor_b_plan_digest_mismatch",
+                    )
+                if expected_plan_digest != task.plan_digest:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_plan_digest_mismatch",
+                        "factor_b_plan_digest_mismatch",
+                    )
+                server_plan_digest = canonical_factor_b_plan_digest(task)
+                if task.plan_digest != server_plan_digest:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_plan_digest_mismatch",
+                        "factor_b_plan_digest_mismatch",
+                    )
+                if not task.gate1_id or task.gate1_id != gate1_id:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_gate1_id_mismatch",
+                        "factor_b_gate1_id_mismatch",
+                    )
+                if (
+                    not task.gate1_reviewed_source_sha256
+                    or task.gate1_reviewed_source_sha256 != reviewed_source_sha256
+                ):
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_formula_source_digest_mismatch",
+                        "factor_b_formula_source_digest_mismatch",
+                    )
+                if not task.factor_name or not task.paper_ref or not task.paper_digest:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_gate1_not_confirmable",
+                        "factor_b_gate1_not_confirmable",
+                    )
+
+                # Resolve formula_sketch from bind-era result only (fail-closed).
+                bind_result_id = task.bind_result_id
+                if not bind_result_id:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_formula_source_unavailable",
+                        "factor_b_formula_source_unavailable",
+                    )
+                bind_result = rauth.get(ws, bind_result_id)
+                if bind_result is None or not (
+                    bind_result.formula_sketch or ""
+                ).strip():
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_formula_source_unavailable",
+                        "factor_b_formula_source_unavailable",
+                    )
+                formula_sketch = bind_result.formula_sketch or ""
+                universe_note = (
+                    bind_result.universe_note or "hermetic_gate1_confirm"
+                )
+
+                server_src = canonical_factor_b_formula_source_digest(
+                    task, formula_sketch=formula_sketch
+                )
+                if reviewed_source_sha256 != server_src:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_formula_source_digest_mismatch",
+                        "factor_b_formula_source_digest_mismatch",
+                    )
+
+                # Load gate row under cascade lock.
+                gate_row = gauth.get(ws, gate1_id)
+                if (
+                    gate_row is None
+                    or gate_row.gate_kind != "gate1"
+                    or gate_row.task_id != task_id
+                    or gate_row.reviewed_source_sha256 != reviewed_source_sha256
+                ):
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_gate1_not_confirmable",
+                        "factor_b_gate1_not_confirmable",
+                    )
+                if gate_row.status not in {"pending", "confirmed"}:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_gate1_not_confirmable",
+                        "factor_b_gate1_not_confirmable",
+                    )
+
+                attempt_id = _stable_id(
+                    "attempt", action_digest, "gate1_confirm_attempt"
+                )
+                run_id = _stable_id("run", action_digest, "gate1_confirm_run")
+                result_id = _stable_id(
+                    "result", action_digest, "gate1_confirm_result"
+                )
+                ts = _dt_public(now)
+
+                limitations: tuple[str, ...] = (
+                    "hermetic_fixture",
+                    "not_live_backtest",
+                    "not_tradeable",
+                    "zero_orders",
+                    "plan_confirmed",
+                    "gate1_seeded",
+                    "gate1_confirmed",
+                    "gate_cascade_locked",
+                    "not_git_commit",
+                )
+                evidence: tuple[str, ...] = (
+                    "hermetic_factor_fixture",
+                    "hermetic_gate1_confirm",
+                )
+
+                # Path CONFIRM+CASCADE when pending; CASCADE-ONLY when confirmed.
+                if gate_row.status == "pending":
+                    try:
+                        gauth.confirm_formula_source(
+                            workspace_id=ws,
+                            task_ref=f"task:{task_id}",
+                            reviewed_source_sha256=reviewed_source_sha256,
+                            confirmation_note=note,
+                            client_action_id=act,
+                            action_digest=action_digest,
+                            gate_id=gate1_id,
+                            now=now,
+                        )
+                        surface_confirmed_by_us = True
+                    except GateSurfaceAuthorityError as exc:
+                        if owned_reservation:
+                            self._action_digest.pop(key, None)
+                        if exc.code == "validation":
+                            raise VerticalBindingAuthorityError(
+                                "validation", exc.message
+                            ) from exc
+                        if exc.code == "conflict":
+                            raise VerticalBindingAuthorityError(
+                                "conflict",
+                                exc.message or "gate_not_pending",
+                            ) from exc
+                        raise VerticalBindingAuthorityError(
+                            "factor_b_gate1_not_confirmable",
+                            "factor_b_gate1_not_confirmable",
+                        ) from exc
+
+                try:
+                    result = rauth.seed_factor_vertical_b_gate1_confirm_sample(
+                        workspace_id=ws,
+                        result_id=result_id,
+                        factor_name=task.factor_name or "",
+                        paper_ref=task.paper_ref or "",
+                        paper_digest=task.paper_digest or "",
+                        reviewed_source_sha256=reviewed_source_sha256,
+                        formula_sketch=formula_sketch,
+                        universe_note=universe_note,
+                        display_title=f"{task.factor_name} factor Gate1 confirmed",
+                        summary=note,
+                        status="completed",
+                        task_id=task_id,
+                        attempt_id=attempt_id,
+                        run_id=run_id,
+                        provider_evidence=evidence,
+                        limitations=limitations,
+                        source="hermetic_vertical_b_gate1_confirm",
+                        authority="vertical_binding_authority",
+                    )
+                except Exception:
+                    # Gate may already be confirmed; never un-confirm. Clear
+                    # action reservation so CASCADE-ONLY retry can succeed.
+                    if owned_reservation:
+                        self._action_digest.pop(key, None)
+                    raise
+
+                # Snapshot seed-era pointers before moving latest.
+                seed_attempt_id = (
+                    task.gate1_seed_attempt_id or task.attempt_id
+                )
+                seed_run_id = task.gate1_seed_run_id or task.run_id
+                seed_result_id = task.gate1_seed_result_id or task.result_id
+
+                task = VerticalTaskRecord(
+                    workspace_id=task.workspace_id,
+                    task_id=task.task_id,
+                    kind=task.kind,
+                    status="completed",
+                    display_title=task.display_title,
+                    goal_note=task.goal_note,
+                    ticker=task.ticker,
+                    attempt_id=attempt_id,
+                    run_id=run_id,
+                    result_id=result_id,
+                    client_action_id=task.client_action_id,
+                    action_digest=task.action_digest,
+                    occurred_at=task.occurred_at,
+                    terminal_reason="gate1_confirmed",
+                    provider_evidence=task.provider_evidence,
+                    limitations=limitations,
+                    provider_mode=task.provider_mode,
+                    vertical=task.vertical,
+                    factor_name=task.factor_name,
+                    paper_ref=task.paper_ref,
+                    paper_digest=task.paper_digest,
+                    cascade_stage="gate1_confirmed",
+                    plan_version=task.plan_version,
+                    plan_digest=task.plan_digest,
+                    plan_confirmed_at=task.plan_confirmed_at,
+                    plan_confirm_action_id=task.plan_confirm_action_id,
+                    plan_confirm_action_digest=task.plan_confirm_action_digest,
+                    bind_attempt_id=task.bind_attempt_id,
+                    bind_run_id=task.bind_run_id,
+                    bind_result_id=task.bind_result_id,
+                    plan_attempt_id=task.plan_attempt_id,
+                    plan_run_id=task.plan_run_id,
+                    plan_result_id=task.plan_result_id,
+                    gate1_id=task.gate1_id,
+                    gate1_reviewed_source_sha256=task.gate1_reviewed_source_sha256,
+                    gate1_seeded_at=task.gate1_seeded_at,
+                    gate1_seed_action_id=task.gate1_seed_action_id,
+                    gate1_seed_action_digest=task.gate1_seed_action_digest,
+                    gate1_seed_attempt_id=seed_attempt_id,
+                    gate1_seed_run_id=seed_run_id,
+                    gate1_seed_result_id=seed_result_id,
+                    gate1_confirmed_at=ts,
+                    gate1_confirm_action_id=act,
+                    gate1_confirm_action_digest=action_digest,
+                )
+
+                attempt = VerticalAttemptRecord(
+                    workspace_id=ws,
+                    attempt_id=attempt_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    status="completed",
+                    occurred_at=ts,
+                    vertical="factor_b",
+                )
+                run = VerticalRunRecord(
+                    workspace_id=ws,
+                    run_id=run_id,
+                    task_id=task_id,
+                    attempt_id=attempt_id,
+                    status="completed",
+                    occurred_at=ts,
+                    mode="hermetic_gate1_confirm",
+                    vertical="factor_b",
+                )
+
+                self._tasks[(ws, task_id)] = task
+                self._attempts[(ws, attempt_id)] = attempt
+                self._runs[(ws, run_id)] = run
+                self._by_action[key] = task_id
+                self._action_digest[key] = action_digest
+
+                outcome = VerticalBindOutcome(
+                    task=task,
+                    attempt=attempt,
+                    run=run,
+                    result=result,
+                    terminal="completed",
+                    gate_id=gate1_id,
+                )
+                # Stash path marker for saga journals via outcome attributes
+                # already covered by gate_id; surface_confirmed_by_us is
+                # communicated by re-reading gate decision_action_id in saga.
+                _ = surface_confirmed_by_us
+                return outcome
+            except Exception:
+                if owned_reservation:
+                    self._action_digest.pop(key, None)
+                    try:
+                        if result_id:
+                            rauth.delete_result(ws, result_id)
+                    except Exception:
+                        pass
+                    # Never roll confirmed gate back to pending.
                 raise
             finally:
                 if owned_reservation:

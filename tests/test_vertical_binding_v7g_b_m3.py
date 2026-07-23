@@ -772,7 +772,8 @@ def test_zero_orders_invariant_on_seed_source() -> None:
         "vertical_binding_authority.py"
     ).read_text()
     start = src.index("def seed_factor_vertical_b_gate1")
-    end = src.index("def _release_reservation", start)
+    # Bound end at M4 confirm so seed body scan stays seed-only.
+    end = src.index("def confirm_factor_vertical_b_gate1", start)
     body = src[start:end]
     for banned in (
         "place_order",

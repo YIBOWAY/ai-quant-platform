@@ -32,6 +32,7 @@ _ACTION_KINDS = frozenset(
         "vertical.factor_b.bind",
         "vertical.factor_b.plan_confirm",
         "vertical.factor_b.gate1_seed",
+        "vertical.factor_b.gate1_confirm",
     }
 )
 _COMMON_DOCUMENT_FIELDS = frozenset(
@@ -124,6 +125,15 @@ _ACTION_FIELDS = {
         "expected_plan_digest",
         "reviewed_source_sha256",
         "seed_note",
+    },
+    "vertical.factor_b.gate1_confirm": _COMMON_DOCUMENT_FIELDS
+    | {
+        "task_ref",
+        "expected_bind_digest",
+        "expected_plan_digest",
+        "expected_gate1_id",
+        "reviewed_source_sha256",
+        "confirmation_note",
     },
 }
 _PROVIDER_MODES = frozenset({"hermetic_fixture", "live_futu_ro"})
@@ -917,6 +927,42 @@ class SeedFactorVerticalBGate1:
 
 
 @dataclass(frozen=True)
+class ConfirmFactorVerticalBGate1:
+    """V7g-B-M4: hermetic factor_b Gate1 decide→cascade coupler.
+
+    Dual-path CAS under cascade lock: confirms pending Gate1 when needed, or
+    cascade-only when already V7e-confirmed. Advances cascade_stage to
+    gate1_confirmed only. Never lifts gate_cascade_locked, never auto Gate2 /
+    StartResearch / global ConfirmResearchPlan / Gate2-3 cascade / backtest /
+    Git / orders / public write. V7e surface confirm stays independent.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    task_ref: str
+    expected_bind_digest: str
+    expected_plan_digest: str
+    expected_gate1_id: str
+    reviewed_source_sha256: str
+    confirmation_note: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_ref(self.task_ref, "task_ref", "task:")
+        _validate_digest(self.expected_bind_digest, "expected_bind_digest")
+        _validate_digest(self.expected_plan_digest, "expected_plan_digest")
+        if (
+            type(self.expected_gate1_id) is not str
+            or _IDENTIFIER_RE.fullmatch(self.expected_gate1_id) is None
+        ):
+            raise AgentWorkspaceActionError(
+                "expected_gate1_id must be a bounded identifier"
+            )
+        _validate_digest(self.reviewed_source_sha256, "reviewed_source_sha256")
+        _validate_note(self.confirmation_note, "confirmation_note")
+
+
+@dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
 
@@ -947,6 +993,7 @@ UserActionV1 = Union[
     BindFactorVerticalB,
     ConfirmFactorVerticalBPlan,
     SeedFactorVerticalBGate1,
+    ConfirmFactorVerticalBGate1,
     UnsupportedWorkspaceAction,
 ]
 
@@ -964,6 +1011,7 @@ _IMPLEMENTED_TYPES = (
     BindFactorVerticalB,
     ConfirmFactorVerticalBPlan,
     SeedFactorVerticalBGate1,
+    ConfirmFactorVerticalBGate1,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -1165,6 +1213,19 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is ConfirmFactorVerticalBGate1:
+        document.update(
+            {
+                "kind": "vertical.factor_b.gate1_confirm",
+                "task_ref": action.task_ref,
+                "expected_bind_digest": action.expected_bind_digest,
+                "expected_plan_digest": action.expected_plan_digest,
+                "expected_gate1_id": action.expected_gate1_id,
+                "reviewed_source_sha256": action.reviewed_source_sha256,
+                "confirmation_note": action.confirmation_note,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -1335,6 +1396,16 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             reviewed_source_sha256=document["reviewed_source_sha256"],
             seed_note=document["seed_note"],
         )
+    if kind == "vertical.factor_b.gate1_confirm":
+        return ConfirmFactorVerticalBGate1(
+            **common,
+            task_ref=document["task_ref"],
+            expected_bind_digest=document["expected_bind_digest"],
+            expected_plan_digest=document["expected_plan_digest"],
+            expected_gate1_id=document["expected_gate1_id"],
+            reviewed_source_sha256=document["reviewed_source_sha256"],
+            confirmation_note=document["confirmation_note"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -1373,6 +1444,7 @@ __all__ = [
     "AgentWorkspaceActionError",
     "BindFactorVerticalB",
     "BindOptionsVerticalA",
+    "ConfirmFactorVerticalBGate1",
     "ConfirmFactorVerticalBPlan",
     "ConfirmFormulaSource",
     "SeedFactorVerticalBGate1",
