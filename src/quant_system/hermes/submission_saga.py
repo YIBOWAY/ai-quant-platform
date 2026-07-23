@@ -60,6 +60,8 @@ from quant_system.hermes.agent_workspace_actions import (
     IssueCanaryGrant,
     RevokeCanaryGrant,
     AcceptCanaryDualVertical,
+    OpenPublicCutover,
+    ClosePublicCutover,
 )
 from quant_system.hermes.approval_release_port import (
     ApprovalReleaseError,
@@ -79,6 +81,14 @@ from quant_system.hermes.command_approval_authority import (
 from quant_system.hermes.gate_surface_authority import (
     GateSurfaceAuthorityError,
     default_gate_surface_authority,
+)
+from quant_system.hermes.public_cutover_authority import (
+    PublicCutoverAuthorityError,
+    default_public_cutover_authority,
+)
+from quant_system.hermes.public_cutover_observe import (
+    note_public_cutover_closed,
+    note_public_cutover_opened,
 )
 from quant_system.hermes.canary_grant_authority import (
     CanaryGrantAuthorityError,
@@ -164,6 +174,12 @@ class ActionReceipt:
     acceptance_id: str | None = None
     # V8-M5: force honesty triad on canary-kind receipts (incl. conflict/unavailable).
     canary_honesty: bool = False
+    # V8-M6 public cutover (G7/G8)
+    cutover_id: str | None = None
+    cutover_digest: str | None = None
+    cutover_ref: str | None = None
+    public_flag_open: bool | None = None
+    public_cutover_honesty: bool = False
 
     def __post_init__(self) -> None:
         expected = _RECOVERY[self.status]
@@ -212,6 +228,14 @@ class ActionReceipt:
             payload["acceptance_id"] = self.acceptance_id
         # Honesty: canary-kind receipts never authorize public write,
         # including conflict/unavailable paths that lack grant_id yet.
+        if self.cutover_id is not None:
+            payload["cutover_id"] = self.cutover_id
+        if self.cutover_digest is not None:
+            payload["cutover_digest"] = self.cutover_digest
+        if self.cutover_ref is not None:
+            payload["cutover_ref"] = self.cutover_ref
+        if self.public_flag_open is not None:
+            payload["public_flag_open"] = self.public_flag_open
         if (
             self.canary_honesty
             or self.grant_id is not None
@@ -221,6 +245,19 @@ class ActionReceipt:
             payload["public_write_authorized"] = False
             payload["chat_write_ready"] = False
             payload["release_authorized"] = False
+        if self.public_cutover_honesty or self.cutover_id is not None or self.cutover_ref is not None:
+            # Rails honesty: release / Gate2 decide / V2 durable / kill_switch never flip.
+            payload["release_authorized"] = False
+            payload["m6_gate2_decide_authorized"] = False
+            payload["v2_durable_live"] = False
+            payload["kill_switch_unchanged"] = True
+            if self.public_flag_open is True:
+                payload["public_write_authorized"] = True
+                payload["chat_write_ready"] = True
+            else:
+                # closed / conflict / unavailable → public write OFF
+                payload["public_write_authorized"] = False
+                payload["chat_write_ready"] = False
         return payload
 
 
@@ -288,6 +325,11 @@ def _receipt(
     canary_ref: str | None = None,
     acceptance_id: str | None = None,
     canary_honesty: bool = False,
+    cutover_id: str | None = None,
+    cutover_digest: str | None = None,
+    cutover_ref: str | None = None,
+    public_flag_open: bool | None = None,
+    public_cutover_honesty: bool = False,
 ) -> ActionReceipt:
     return ActionReceipt(
         status=status,
@@ -311,6 +353,11 @@ def _receipt(
         canary_ref=canary_ref,
         acceptance_id=acceptance_id,
         canary_honesty=bool(canary_honesty),
+        cutover_id=cutover_id,
+        cutover_digest=cutover_digest,
+        cutover_ref=cutover_ref,
+        public_flag_open=public_flag_open,
+        public_cutover_honesty=bool(public_cutover_honesty),
     )
 
 
@@ -2160,6 +2207,163 @@ def submit_accept_canary_dual_vertical(
         )
 
 
+
+def submit_open_public_cutover(
+    settings: Settings,
+    action: OpenPublicCutover,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V8-M6 G7: open single public flag after G6 dual-vertical acceptance.
+
+    Never opens kill_switch / Gate2 decide / V2 durable / release_authorized.
+    """
+    _ = settings  # hermetic in-process; no PG required
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+            public_cutover_honesty=True,
+            public_flag_open=False,
+        )
+    _require_root_actor(actor_owner_user_id)
+
+    # Prerequisite: G6 dual-vertical acceptance must exist in canary authority.
+    canary_auth = default_canary_grant_authority()
+    acceptances = canary_auth.list_acceptances(action.workspace.workspace_id)
+    acceptance_exists = any(
+        a.acceptance_id == action.acceptance_id for a in acceptances
+    )
+
+    authority = default_public_cutover_authority()
+    try:
+        cutover = authority.open(
+            workspace_id=action.workspace.workspace_id,
+            build_digest=action.build_digest,
+            route=action.route,
+            acceptance_id=action.acceptance_id,
+            open_note=action.open_note,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+            acceptance_exists=acceptance_exists,
+        )
+    except PublicCutoverAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+                public_cutover_honesty=True,
+                public_flag_open=False,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message if exc.message else exc.code,
+            mutation_enabled=mutation_enabled,
+            public_cutover_honesty=True,
+            public_flag_open=False,
+        )
+
+    note_public_cutover_opened(
+        workspace_id=action.workspace.workspace_id, cutover=cutover
+    )
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        mutation_enabled=mutation_enabled,
+        cutover_id=cutover.cutover_id,
+        cutover_digest=cutover.cutover_digest,
+        cutover_ref=cutover.cutover_ref,
+        public_flag_open=True,
+        public_cutover_honesty=True,
+        acceptance_id=cutover.acceptance_id,
+    )
+
+
+def submit_close_public_cutover(
+    settings: Settings,
+    action: ClosePublicCutover,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V8-M6 G8: one-click public flag rollback. Facts retained."""
+    _ = settings
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+            public_cutover_honesty=True,
+            public_flag_open=False,
+        )
+    _require_root_actor(actor_owner_user_id)
+
+    authority = default_public_cutover_authority()
+    try:
+        cutover = authority.close(
+            workspace_id=action.workspace.workspace_id,
+            cutover_ref=action.cutover_ref,
+            expected_cutover_digest=action.expected_cutover_digest,
+            reason=action.reason,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+        )
+    except PublicCutoverAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+                public_cutover_honesty=True,
+                public_flag_open=False,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message if exc.message else exc.code,
+            mutation_enabled=mutation_enabled,
+            public_cutover_honesty=True,
+            public_flag_open=False,
+        )
+
+    note_public_cutover_closed(
+        workspace_id=action.workspace.workspace_id, cutover=cutover
+    )
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        mutation_enabled=mutation_enabled,
+        cutover_id=cutover.cutover_id,
+        cutover_digest=cutover.cutover_digest,
+        cutover_ref=cutover.cutover_ref,
+        public_flag_open=False,
+        public_cutover_honesty=True,
+        acceptance_id=cutover.acceptance_id,
+    )
+
+
 def submit_action(
     settings: Settings,
     action: UserActionV1 | dict[str, object],
@@ -2293,6 +2497,20 @@ def submit_action(
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
         )
+    if type(parsed) is OpenPublicCutover:
+        return submit_open_public_cutover(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
+    if type(parsed) is ClosePublicCutover:
+        return submit_close_public_cutover(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
     if type(parsed) is AcceptCanaryDualVertical:
         return submit_accept_canary_dual_vertical(
             settings,
@@ -2350,6 +2568,8 @@ __all__ = [
     "submit_issue_canary_grant",
     "submit_revoke_canary_grant",
     "submit_accept_canary_dual_vertical",
+    "submit_open_public_cutover",
+    "submit_close_public_cutover",
     "submit_conversation_turn",
     "submit_create_managed_session",
     "submit_decide_hermes_command_approval",

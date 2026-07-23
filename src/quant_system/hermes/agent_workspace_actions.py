@@ -37,6 +37,8 @@ _ACTION_KINDS = frozenset(
         "canary.grant.issue",
         "canary.grant.revoke",
         "canary.dual_vertical.accept",
+        "public.cutover.open",
+        "public.cutover.close",
     }
 )
 _COMMON_DOCUMENT_FIELDS = frozenset(
@@ -173,6 +175,19 @@ _ACTION_FIELDS = {
         "factor_b_task_ref",
         "factor_b_result_ref",
         "acceptance_note",
+    },
+    "public.cutover.open": _COMMON_DOCUMENT_FIELDS
+    | {
+        "build_digest",
+        "route",
+        "acceptance_id",
+        "open_note",
+    },
+    "public.cutover.close": _COMMON_DOCUMENT_FIELDS
+    | {
+        "cutover_ref",
+        "expected_cutover_digest",
+        "reason",
     },
 }
 _PROVIDER_MODES = frozenset({"hermetic_fixture", "live_futu_ro"})
@@ -1161,6 +1176,86 @@ class AcceptCanaryDualVertical:
 
 
 
+
+@dataclass(frozen=True)
+class OpenPublicCutover:
+    """V8-M6 G7: open the single public flag after G6 dual-vertical acceptance.
+
+    Same ``/hermes`` route only. Does **not** flip kill_switch, does **not**
+    authorize M6 Gate2 decide, does **not** set release_authorized=true, does
+    **not** smuggle V2 durable live ON. Rollback is ``ClosePublicCutover``.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    build_digest: str
+    route: str
+    acceptance_id: str
+    open_note: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_digest(self.build_digest, "build_digest")
+        if type(self.route) is not str or self.route != "/hermes":
+            raise AgentWorkspaceActionError(
+                "route must be exactly /hermes (no alternate public page)"
+            )
+        if (
+            type(self.acceptance_id) is not str
+            or _IDENTIFIER_RE.fullmatch(self.acceptance_id) is None
+        ):
+            raise AgentWorkspaceActionError(
+                "acceptance_id must be a bounded identifier (G6 dual-vertical evidence)"
+            )
+        if (
+            type(self.open_note) is not str
+            or not self.open_note.strip()
+            or len(self.open_note) > 500
+            or not self.open_note.isprintable()
+        ):
+            raise AgentWorkspaceActionError(
+                "open_note must be bounded nonempty printable text"
+            )
+        object.__setattr__(self, "open_note", self.open_note.strip())
+
+
+@dataclass(frozen=True)
+class ClosePublicCutover:
+    """V8-M6 G8: one-click public flag rollback.
+
+    Closes the open cutover. Append-only facts remain. Never touches kill_switch,
+    Discord, Gate2 decide, V2 durable, or release_authorized.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    cutover_ref: str
+    expected_cutover_digest: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        if (
+            type(self.cutover_ref) is not str
+            or not self.cutover_ref.startswith("cutover:")
+            or _IDENTIFIER_RE.fullmatch(self.cutover_ref[len("cutover:") :]) is None
+        ):
+            raise AgentWorkspaceActionError(
+                "cutover_ref must be cutover:<cutover_id>"
+            )
+        _validate_digest(self.expected_cutover_digest, "expected_cutover_digest")
+        if (
+            type(self.reason) is not str
+            or not self.reason.strip()
+            or len(self.reason) > 500
+            or not self.reason.isprintable()
+        ):
+            raise AgentWorkspaceActionError(
+                "reason must be bounded nonempty printable text"
+            )
+        object.__setattr__(self, "reason", self.reason.strip())
+
+
 @dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
@@ -1197,6 +1292,8 @@ UserActionV1 = Union[
     IssueCanaryGrant,
     RevokeCanaryGrant,
     AcceptCanaryDualVertical,
+    OpenPublicCutover,
+    ClosePublicCutover,
     UnsupportedWorkspaceAction,
 ]
 
@@ -1219,6 +1316,8 @@ _IMPLEMENTED_TYPES = (
     IssueCanaryGrant,
     RevokeCanaryGrant,
     AcceptCanaryDualVertical,
+    OpenPublicCutover,
+    ClosePublicCutover,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -1483,6 +1582,27 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is OpenPublicCutover:
+        document.update(
+            {
+                "kind": "public.cutover.open",
+                "build_digest": action.build_digest,
+                "route": action.route,
+                "acceptance_id": action.acceptance_id,
+                "open_note": action.open_note,
+            }
+        )
+        return _strict_json_document(document)
+    if type(action) is ClosePublicCutover:
+        document.update(
+            {
+                "kind": "public.cutover.close",
+                "cutover_ref": action.cutover_ref,
+                "expected_cutover_digest": action.expected_cutover_digest,
+                "reason": action.reason,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -1701,6 +1821,21 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             factor_b_result_ref=document["factor_b_result_ref"],
             acceptance_note=document["acceptance_note"],
         )
+    if kind == "public.cutover.open":
+        return OpenPublicCutover(
+            **common,
+            build_digest=document["build_digest"],
+            route=document["route"],
+            acceptance_id=document["acceptance_id"],
+            open_note=document["open_note"],
+        )
+    if kind == "public.cutover.close":
+        return ClosePublicCutover(
+            **common,
+            cutover_ref=document["cutover_ref"],
+            expected_cutover_digest=document["expected_cutover_digest"],
+            reason=document["reason"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -1747,6 +1882,8 @@ __all__ = [
     "IssueCanaryGrant",
     "RevokeCanaryGrant",
     "AcceptCanaryDualVertical",
+    "OpenPublicCutover",
+    "ClosePublicCutover",
     "ConfirmResearchPlan",
     "ContinueResearch",
     "ConversationTurn",
