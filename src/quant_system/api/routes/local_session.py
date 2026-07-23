@@ -16,11 +16,15 @@ from quant_system.api.safety.local_session import (
     LocalSessionValidationError,
     exchange_bootstrap_token,
     enforce_browser_request_gates,
-    issue_bootstrap_token,
     local_session_security_ready,
     policy_from_settings,
     session_public_view,
     verify_session_cookie,
+)
+from quant_system.api.schemas.local_session import (
+    OwnerBootstrapResponse,
+    OwnerLogoutResponse,
+    OwnerSessionStatusResponse,
 )
 
 router = APIRouter()
@@ -79,7 +83,7 @@ def _clear_session_cookies(response: Response) -> None:
     response.delete_cookie(CSRF_COOKIE_NAME, path="/")
 
 
-@router.post("/auth/owner/bootstrap")
+@router.post("/auth/owner/bootstrap", response_model=OwnerBootstrapResponse)
 def owner_bootstrap(
     body: BootstrapRequest,
     request: Request,
@@ -116,7 +120,7 @@ def owner_bootstrap(
     return view
 
 
-@router.get("/auth/owner/session")
+@router.get("/auth/owner/session", response_model=OwnerSessionStatusResponse)
 def owner_session_status(
     request: Request,
     settings: SettingsDep,
@@ -142,7 +146,7 @@ def owner_session_status(
     return view
 
 
-@router.post("/auth/owner/logout")
+@router.post("/auth/owner/logout", response_model=OwnerLogoutResponse)
 def owner_logout(
     request: Request,
     response: Response,
@@ -169,34 +173,3 @@ def owner_logout(
     response.headers["Cache-Control"] = "no-store"
     mutation_on = bool(getattr(settings.local_mutation, "enabled", False))
     return {"ok": True, "mutation_enabled": mutation_on}
-
-
-@router.post("/auth/owner/bootstrap-token/issue")
-def issue_owner_bootstrap_token(
-    request: Request,
-    settings: SettingsDep,
-    output_dir: OutputDirDep,
-) -> dict:
-    """Local operator helper: mint/return bootstrap token path contents.
-
-    Intended for loopback CLI/operator use during single-user local setup.
-    Still requires same-origin browser gates when called from a browser.
-    """
-    policy = _policy(settings, request)
-    try:
-        enforce_browser_request_gates(
-            policy=policy,
-            request_kind="api_read",
-            host_header=request.headers.get("host"),
-            origin_header=request.headers.get("origin"),
-            sec_fetch_site=request.headers.get("sec-fetch-site"),
-        )
-        token = issue_bootstrap_token(output_dir)
-    except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
-        raise _http_error(exc) from exc
-    mutation_on = bool(getattr(settings.local_mutation, "enabled", False))
-    return {
-        "bootstrap_token": token,
-        "mutation_enabled": mutation_on,
-        "note": "one-time; exchange via POST /api/auth/owner/bootstrap",
-    }

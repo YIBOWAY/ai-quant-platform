@@ -126,7 +126,6 @@ describe("workspaceFollowSpine helpers (L4b)", () => {
     const prior = [baseCmd({ command_id: "c1" })];
     const next = applyCommandEvent(
       prior,
-      // @ts-expect-error intentional empty id
       evt({ event_id: 3, command_id: "", state: "failed" }),
     );
     expect(next[0].state).toBe("queued");
@@ -976,4 +975,3 @@ describe("Plan-V6-Token-Stream-M1 transcript hints on spine", () => {
     }
   });
 });
-

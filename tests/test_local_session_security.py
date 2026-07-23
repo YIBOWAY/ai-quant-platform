@@ -125,6 +125,21 @@ def test_bootstrap_issues_http_only_session_and_csrf(tmp_path: Path) -> None:
     assert status.json()["mutation_enabled"] is False
 
 
+def test_loopback_http_cannot_issue_or_retrieve_bootstrap_token(
+    tmp_path: Path,
+) -> None:
+    """Bootstrap secrets are operator input, never an unauthenticated API."""
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/api/auth/owner/bootstrap-token/issue",
+        headers=_browser_headers(),
+    )
+
+    assert response.status_code == 404
+    assert "bootstrap_token" not in response.text
+
+
 def test_bootstrap_token_is_one_time(tmp_path: Path) -> None:
     client = _client(tmp_path)
     token = issue_bootstrap_token(tmp_path)

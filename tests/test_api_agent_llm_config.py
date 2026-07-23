@@ -30,7 +30,25 @@ def test_agent_llm_config_masks_api_key(tmp_path) -> None:
     assert "test-llm-key" not in response.text
 
 
-def test_agent_llm_config_allows_missing_optional_model_settings(tmp_path) -> None:
+def test_agent_llm_config_allows_missing_optional_model_settings(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    # Empty entries are common in a checked-in .env template. They must behave
+    # like omitted optional configuration instead of making Settings fail at
+    # process startup.
+    for name in (
+        "QS_LLM_PROVIDER",
+        "LLM_PROVIDER",
+        "QS_LLM_API_KEY",
+        "LLM_API_KEY",
+        "QS_LLM_BASE_URL",
+        "LLM_BASE_URL",
+        "QS_LLM_MODEL",
+        "LLM_MODEL",
+    ):
+        monkeypatch.setenv(name, "")
+
     client = TestClient(create_app(settings=Settings(), output_dir=tmp_path))
 
     response = client.get("/api/agent/llm-config")

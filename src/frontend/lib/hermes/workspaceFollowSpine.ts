@@ -193,7 +193,7 @@ function asResultList(value: unknown): WorkspaceResultProjection[] {
 
 /** Ids-only view for L5b authority panel slot (never invents Task rows). */
 export function resultIdsFromProjection(
-  results: WorkspaceResultProjection[] | string[] | undefined,
+  results: Array<WorkspaceResultProjection | string> | undefined,
 ): string[] {
   if (!Array.isArray(results)) return [];
   return results

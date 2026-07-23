@@ -146,6 +146,7 @@ export function useWorkspaceFollow(): WorkspaceFollowContextValue {
         runs: [],
         results: [],
         authorityHealth: {},
+        mutationEnabled: false,
         lastEvents: [],
         transport: "idle",
         resyncCount: 0,

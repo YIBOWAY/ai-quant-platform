@@ -7,6 +7,7 @@ import {
 } from "./darkIdentity";
 import {
   WorkspaceClientError,
+  ensureOwnerSession,
   fetchHermesSessionMessages,
   fetchLatestAssistantText,
   fetchWorkspaceFollow,
@@ -64,6 +65,7 @@ describe("sendComposerTurn", () => {
       },
     });
     vi.stubGlobal("window", {
+      prompt: vi.fn(() => "t".repeat(40)),
       sessionStorage: {
         getItem: (key: string) => memory.get(key) ?? null,
         setItem: (key: string, value: string) => {
@@ -86,13 +88,10 @@ describe("sendComposerTurn", () => {
             headers: { "content-type": "application/json" },
           });
         }
-        if (url.endsWith("/api/auth/owner/bootstrap-token/issue")) {
-          return new Response(
-            JSON.stringify({ bootstrap_token: "t".repeat(40) }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          );
-        }
         if (url.endsWith("/api/auth/owner/bootstrap")) {
+          expect(JSON.parse(String(init?.body))).toEqual({
+            bootstrap_token: "t".repeat(40),
+          });
           csrfCookie = "qs_aw_csrf=csrf-live-token";
           return new Response(
             JSON.stringify({
@@ -167,7 +166,6 @@ describe("sendComposerTurn", () => {
     const paths = calls.map((c) => new URL(c.url, "http://127.0.0.1:3001").pathname);
     expect(paths).toEqual([
       "/api/auth/owner/session",
-      "/api/auth/owner/bootstrap-token/issue",
       "/api/auth/owner/bootstrap",
       `/api/workspace/${PLATFORM_WORKSPACE_ID}/act`,
       "/api/agent/workspace/submit-turn",
@@ -179,6 +177,25 @@ describe("sendComposerTurn", () => {
     vi.stubGlobal("fetch", fetchMock);
     await expect(sendComposerTurn({ prompt: "  " })).rejects.toThrow(/non-empty/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not bootstrap or disclose a token when the operator cancels", async () => {
+    vi.stubGlobal("window", { prompt: vi.fn(() => null) });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ detail: { code: "auth", message: "no" } }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(ensureOwnerSession()).rejects.toMatchObject({
+      code: "owner_bootstrap_required",
+      status: 401,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 

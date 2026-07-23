@@ -10,6 +10,7 @@ from pydantic import (
     SecretStr,
     ValidationError,
     field_serializer,
+    field_validator,
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -329,6 +330,20 @@ class LLMSettings(BaseSettings):
         gt=0,
     )
 
+    @field_validator("provider", mode="before")
+    @classmethod
+    def normalize_empty_provider(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return "stub"
+        return value
+
+    @field_validator("api_key", "base_url", "model", mode="before")
+    @classmethod
+    def normalize_empty_optional_value(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_serializer("api_key", when_used="json")
     def serialize_llm_secret(self, value: SecretStr | None) -> str | None:
         return "**********" if value else None
@@ -547,8 +562,8 @@ class HermesGatewaySettings(BaseSettings):
     """Fail-closed, server-side access to the local Hermes API Server.
 
     This credential authorizes the full upstream API, so browser code must
-    never receive it.  Session reads stay GET-only; supervised dispatch uses a
-    separate POST path with its own timeout and explicit ephemeral allow.
+    never receive it. Session reads stay GET-only; supervised dispatch uses a
+    separate durable port. The legacy ephemeral HTTP adapter is test-only.
     """
 
     model_config = SettingsConfigDict(
@@ -563,8 +578,8 @@ class HermesGatewaySettings(BaseSettings):
     timeout_seconds: float = Field(default=2.0, gt=0, le=30, allow_inf_nan=False)
     # Real /v1/runs can take tens of seconds; keep read timeout short separately.
     dispatch_timeout_seconds: float = Field(default=120.0, gt=0, le=600, allow_inf_nan=False)
-    # Local Hermes 0.18.x may omit durable. True = allow POST /v1/runs anyway.
-    allow_ephemeral_runs: bool = True
+    # Explicit hermetic-test escape hatch only; production defaults fail closed.
+    allow_ephemeral_runs: bool = False
     max_response_bytes: int = Field(default=4 * 1024 * 1024, ge=4096, le=16 * 1024 * 1024)
     max_messages: int = Field(default=200, ge=1, le=1000)
 
