@@ -103,12 +103,12 @@ Stage preference when discovering MCP run-store artifacts:
 
 **CLI vs MCP artifacts:** `uv run horizon` (this sidecar’s default) persists
 daily markdown under `data/summaries/horizon-{date}-{lang}.md` and does **not**
-write the MCP run-store item JSON. Export still succeeds: it copies any
-summaries it finds and emits `items.json` (possibly empty) + `READY`. Structured
-item lists appear when upstream also wrote `data/mcp-runs/<run_id>/*_items.json`
-(e.g. via `horizon-mcp`) or when loose stage files are present under the data
-dir. Empty `item_count=0` with READY is intentional so ops can see the attempt;
-platform ingest skips empty runs as not fresh.
+write the MCP run-store item JSON. Export prefers structured stage JSON when
+present (`data/mcp-runs/<run_id>/*_items.json` from `horizon-mcp`, or loose
+stage files). **When no stage item JSON is found, export parses inbox items
+from the daily summary markdown** (prefer zh, fall back en). Empty markdown or
+unparseable content still yields `item_count=0` + `READY` so ops can see the
+attempt; platform ingest skips empty runs as not fresh.
 
 ## 3. Apply migration 009 (host)
 
@@ -204,7 +204,7 @@ the network.
 | Symptom | Check |
 |---------|--------|
 | No `READY` files | `docker compose ... logs horizon`; export errors leave partial dirs without READY |
-| `item_count: 0` + READY | Upstream produced no scored items / wrong data mount; still intentional empty emit |
+| `item_count: 0` + READY | No stage JSON and daily markdown missing/unparseable; still intentional empty emit |
 | Ingest skips run | Already ingested (content_digest) or empty/not fresh |
 | Config missing in container | Ensure host `data/horizon_config/config.json` exists (entrypoint symlinks to `/opt/horizon/data/config.json`) |
 | Auth errors from LLM | `.env` key name must match `config.ai.api_key_env` |

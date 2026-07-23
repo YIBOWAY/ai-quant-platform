@@ -18,7 +18,9 @@ not fresh.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import secrets
 import sys
 from datetime import UTC, datetime
@@ -33,6 +35,20 @@ _STAGE_FILES: tuple[str, ...] = (
 )
 
 _SUMMARY_TRUNCATE = 2000
+
+# Heading: ## [title](url) ⭐️ 8.5/10  (star emoji optional; score may be ?)
+_HEADING_RE = re.compile(
+    r"^##\s+\[(?P<title>[^\]]+)\]\((?P<url>[^)]+)\)"
+    r"(?:\s*(?:⭐️|⭐)\s*(?P<score>\d+(?:\.\d+)?|\?)\s*/\s*10)?",
+    re.MULTILINE,
+)
+_ITEM_ANCHOR_RE = re.compile(r'<a\s+id="item-\d+"\s*></a>', re.IGNORECASE)
+_SOURCE_LINE_RE = re.compile(
+    r"^(?P<source>[^\n·]+?)(?:\s*·\s*[^\n]*)?$",
+    re.MULTILINE,
+)
+_TAGS_RE = re.compile(r"\*\*Tags\*\*\s*:\s*(?P<tags>.+)", re.IGNORECASE)
+_TAG_TOKEN_RE = re.compile(r"`?#?([A-Za-z0-9][\w-]*)`?")
 
 
 def utc_now() -> datetime:
@@ -221,6 +237,203 @@ def discover_summaries(horizon_data: Path) -> dict[str, Path]:
     return result
 
 
+def _stable_md_item_id(url: str, index: int, title: str) -> str:
+    """Stable slug id for markdown-derived items."""
+
+    url = (url or "").strip()
+    if url:
+        digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:12]
+        return f"hz-md-{digest}"
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:32] or "item"
+    return f"hz-md-{index}-{slug}"
+
+
+def _split_markdown_item_blocks(text: str) -> list[str]:
+    """Split daily summary markdown into per-item body blocks."""
+
+    if not text or not text.strip():
+        return []
+
+    anchors = list(_ITEM_ANCHOR_RE.finditer(text))
+    if anchors:
+        blocks: list[str] = []
+        for i, match in enumerate(anchors):
+            start = match.end()
+            end = anchors[i + 1].start() if i + 1 < len(anchors) else len(text)
+            block = text[start:end].strip()
+            if block:
+                blocks.append(block)
+        return blocks
+
+    # Fallback: split on ## [title](url) headings with optional score.
+    heading_iter = list(_HEADING_RE.finditer(text))
+    if not heading_iter:
+        return []
+    blocks = []
+    for i, match in enumerate(heading_iter):
+        start = match.start()
+        end = heading_iter[i + 1].start() if i + 1 < len(heading_iter) else len(text)
+        block = text[start:end].strip()
+        if block:
+            blocks.append(block)
+    return blocks
+
+
+def _parse_score(raw: str | None) -> float | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text or text == "?":
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _first_tag(block: str) -> str | None:
+    match = _TAGS_RE.search(block)
+    if not match:
+        return None
+    tags_line = match.group("tags")
+    for token in _TAG_TOKEN_RE.finditer(tags_line):
+        tag = token.group(1).strip()
+        if tag:
+            return tag
+    return None
+
+
+def _extract_summary_paragraph(body_after_heading: str) -> str | None:
+    """First non-empty paragraph before source / Background / horizontal rule."""
+
+    lines = body_after_heading.splitlines()
+    collected: list[str] = []
+    started = False
+    for line in lines:
+        stripped = line.strip()
+        if not started:
+            if not stripped:
+                continue
+            # Skip residual heading leftovers
+            if stripped.startswith("##"):
+                continue
+            if stripped == "---":
+                break
+            if stripped.startswith("**Background**"):
+                break
+            if stripped.startswith("**Tags**"):
+                break
+            # Source line pattern: "hackernews · author · Jul 23, 11:00"
+            if " · " in stripped and not stripped.startswith("http"):
+                break
+            started = True
+            collected.append(stripped)
+            continue
+
+        if not stripped:
+            break
+        if stripped == "---":
+            break
+        if stripped.startswith("**Background**") or stripped.startswith("**Tags**"):
+            break
+        if " · " in stripped and not stripped.startswith("http"):
+            break
+        collected.append(stripped)
+
+    if not collected:
+        return None
+    return _truncate(" ".join(collected).strip())
+
+
+def _extract_source(body_after_heading: str) -> str:
+    for line in body_after_heading.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("**"):
+            continue
+        if stripped == "---":
+            continue
+        if " · " in stripped:
+            source = stripped.split(" · ", 1)[0].strip()
+            return source or "horizon"
+    return "horizon"
+
+
+def parse_horizon_summary_markdown(
+    text: str,
+    *,
+    published_at: str | None = None,
+) -> list[dict[str, Any]]:
+    """Best-effort parse of Horizon daily summary markdown into inbox items.
+
+    Prefer structured stage JSON when available; this is the CLI-path fallback
+    when only ``data/summaries/horizon-{date}-{lang}.md`` exists.
+    """
+
+    items: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+
+    for index, block in enumerate(_split_markdown_item_blocks(text), start=1):
+        heading = _HEADING_RE.search(block)
+        if not heading:
+            continue
+        title = heading.group("title").strip()
+        url = heading.group("url").strip()
+        if not title or not url:
+            continue
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        body = block[heading.end() :]
+        summary = _extract_summary_paragraph(body)
+        source = _extract_source(body)
+        category = _first_tag(block) or "industry"
+        score = _parse_score(heading.group("score"))
+
+        item: dict[str, Any] = {
+            "id": _stable_md_item_id(url, index, title),
+            "title": title,
+            "title_en": title,
+            "url": url,
+            "source": source,
+            "published_at": published_at,
+            "summary": summary,
+            "category": category,
+        }
+        if score is not None:
+            item["score"] = score
+        items.append(item)
+
+    return items
+
+
+def _merge_markdown_items(
+    by_lang: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Prefer zh items; fill missing urls from en when useful."""
+
+    preferred = by_lang.get("zh") or by_lang.get("en") or []
+    if not preferred:
+        return []
+    if "zh" in by_lang and "en" in by_lang:
+        by_url = {item["url"]: dict(item) for item in preferred}
+        for en_item in by_lang["en"]:
+            url = en_item.get("url")
+            if not url or url in by_url:
+                continue
+            by_url[url] = dict(en_item)
+        # Preserve zh order, then any en-only extras
+        ordered = [by_url[i["url"]] for i in preferred if i.get("url") in by_url]
+        seen = {i["url"] for i in ordered}
+        for en_item in by_lang["en"]:
+            url = en_item.get("url")
+            if url and url not in seen:
+                ordered.append(by_url[url])
+                seen.add(url)
+        return ordered
+    return [dict(item) for item in preferred]
+
+
 def build_inbox_payload(
     horizon_data: Path,
     *,
@@ -258,6 +471,24 @@ def build_inbox_payload(
             summary_texts[lang] = path.read_text(encoding="utf-8")
         except OSError:
             continue
+
+    # CLI path fallback: parse items from daily summary markdown when no stage JSON.
+    if not items and summary_texts:
+        parsed_by_lang: dict[str, list[dict[str, Any]]] = {}
+        for lang in ("zh", "en"):
+            text = summary_texts.get(lang)
+            if not text:
+                continue
+            parsed = parse_horizon_summary_markdown(text, published_at=generated_at)
+            if parsed:
+                parsed_by_lang[lang] = parsed
+        items = _merge_markdown_items(parsed_by_lang)
+        if items and source_path is None:
+            # Point meta at the preferred summary file used for parse.
+            for lang in ("zh", "en"):
+                if lang in summaries and lang in parsed_by_lang:
+                    source_path = str(summaries[lang])
+                    break
 
     meta = {
         "run_id": rid,

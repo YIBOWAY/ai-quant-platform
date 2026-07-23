@@ -155,7 +155,7 @@ def test_falls_back_to_daily_summaries_dir(tmp_path: Path) -> None:
     summaries.mkdir(parents=True)
     (summaries / "horizon-2026-07-23-zh.md").write_text("中文日报", encoding="utf-8")
     (summaries / "horizon-2026-07-23-en.md").write_text("English daily", encoding="utf-8")
-    # No mcp-runs — empty items but summaries still export.
+    # No mcp-runs and no parseable item blocks — empty items but summaries still export.
     inbox = tmp_path / "inbox"
     run_dir = export_run_mod.export_run(
         horizon_data, inbox, run_id="20260723T130000Z-empty"
@@ -167,6 +167,118 @@ def test_falls_back_to_daily_summaries_dir(tmp_path: Path) -> None:
     loaded = load_run(run_dir)
     assert loaded.items == []
     assert loaded.daily is not None
+
+
+_SAMPLE_DAILY_MD = """# Horizon Daily - 2026-07-23
+
+> Selected 2 important items from 40 fetched items.
+
+---
+
+1. [Title A](#item-1) ⭐️ 8.5/10
+2. [Title B](#item-2) ⭐️ 7/10
+
+---
+
+<a id="item-1"></a>
+## [Title A](https://example.com/a) ⭐️ 8.5/10
+
+summary paragraph about A that is non-empty.
+
+hackernews · author · Jul 23, 11:00
+
+**Background**: context for A
+**Tags**: `#ai-tools`, `#foo`
+
+---
+
+<a id="item-2"></a>
+## [Title B](https://example.com/b) ⭐️ 7/10
+
+second item summary body.
+
+rss · writer · Jul 23, 12:00
+
+**Tags**: `#industry`
+"""
+
+
+def test_parse_horizon_summary_markdown_extracts_items() -> None:
+    items = export_run_mod.parse_horizon_summary_markdown(
+        _SAMPLE_DAILY_MD,
+        published_at="2026-07-23T12:00:00+00:00",
+    )
+    assert len(items) == 2
+    assert items[0]["url"] == "https://example.com/a"
+    assert items[0]["title"] == "Title A"
+    assert items[0]["title_en"] == "Title A"
+    assert items[0]["score"] == 8.5
+    assert items[0]["summary"]
+    assert "summary paragraph" in items[0]["summary"]
+    assert items[0]["source"] == "hackernews"
+    assert items[0]["category"] == "ai-tools"
+    assert items[0]["id"].startswith("hz-md-")
+    assert items[0]["published_at"] == "2026-07-23T12:00:00+00:00"
+    assert items[1]["url"] == "https://example.com/b"
+    assert items[1]["score"] == 7.0
+
+
+def test_export_parses_items_from_daily_markdown_when_no_stage_json(
+    tmp_path: Path,
+) -> None:
+    horizon_data = tmp_path / "horizon-data"
+    summaries = horizon_data / "summaries"
+    summaries.mkdir(parents=True)
+    (summaries / "horizon-2026-07-23-zh.md").write_text(
+        _SAMPLE_DAILY_MD, encoding="utf-8"
+    )
+    (summaries / "horizon-2026-07-23-en.md").write_text(
+        _SAMPLE_DAILY_MD.replace("Title A", "Title A EN"),
+        encoding="utf-8",
+    )
+    inbox = tmp_path / "inbox"
+    fixed = datetime(2026, 7, 23, 12, 0, 0, tzinfo=UTC)
+    run_dir = export_run_mod.export_run(
+        horizon_data,
+        inbox,
+        now=fixed,
+        run_id="20260723T120000Z-mdfb",
+    )
+
+    assert (run_dir / "READY").is_file()
+    meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
+    assert meta["item_count"] == 2
+    assert meta["status"] == "ok"
+
+    items = json.loads((run_dir / "items.json").read_text(encoding="utf-8"))
+    assert len(items) == 2
+    assert items[0]["url"] == "https://example.com/a"
+    assert items[0]["score"] == pytest.approx(8.5)
+    assert items[0]["summary"]
+    assert items[0]["source"] == "hackernews"
+
+    loaded = load_run(run_dir)
+    assert loaded.run_id == "20260723T120000Z-mdfb"
+    assert len(loaded.items) == 2
+    assert loaded.items[0].url == "https://example.com/a"
+    assert loaded.items[0].score == pytest.approx(8.5)
+    assert loaded.items[0].summary
+
+
+def test_stage_json_still_preferred_when_markdown_also_present(tmp_path: Path) -> None:
+    horizon_data = tmp_path / "horizon-data"
+    _seed_mcp_run(horizon_data)
+    summaries = horizon_data / "summaries"
+    summaries.mkdir(parents=True)
+    (summaries / "horizon-2026-07-23-zh.md").write_text(
+        _SAMPLE_DAILY_MD, encoding="utf-8"
+    )
+
+    payload = export_run_mod.build_inbox_payload(horizon_data)
+    assert len(payload["items"]) == 2
+    # Stage JSON ids, not markdown-derived hz-md-* ids
+    assert payload["items"][0]["id"] == "hackernews:story:1"
+    assert payload["items"][0]["url"] == "https://example.com/hz-upstream-1"
 
 
 def test_empty_items_still_emits_ready(tmp_path: Path) -> None:
