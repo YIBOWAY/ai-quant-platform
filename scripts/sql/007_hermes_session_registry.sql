@@ -39,9 +39,9 @@ BEGIN
     FROM quant_system.hermes_session_registry_meta
     WHERE singleton IS TRUE;
 
-    IF installed_version > 2 THEN
+    IF installed_version > 3 THEN
         RAISE EXCEPTION
-            'Hermes session registry schema version % is newer than this migration chain supports (2)',
+            'Hermes session registry schema version % is newer than this migration chain supports (3)',
             installed_version;
     ELSIF installed_version < 1 THEN
         RAISE EXCEPTION

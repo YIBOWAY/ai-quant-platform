@@ -29,7 +29,7 @@ from quant_system.storage.database import (
     get_database,
 )
 
-SESSION_REGISTRY_SCHEMA_VERSION = 2
+SESSION_REGISTRY_SCHEMA_VERSION = 3
 HERMES_MIGRATOR_ROLE = "quant_migrator"
 HERMES_RUNTIME_ROLE = "quant_runtime"
 HERMES_READONLY_ROLE = "quant_readonly"
@@ -81,6 +81,62 @@ BEGIN
             'Hermes workspace session identity, lineage, action and payload policy are immutable';
     END IF;
 
+    IF NEW.provision_state = 'leased'
+       AND OLD.provision_state IN ('pending', 'retryable', 'leased')
+       AND NEW.provision_version = OLD.provision_version + 1
+       AND NEW.provision_attempt_count = OLD.provision_attempt_count + 1
+       AND NEW.provision_lease_owner IS NOT NULL
+       AND NEW.provision_lease_token IS NOT NULL
+       AND NEW.provision_lease_until IS NOT NULL
+       AND (
+            OLD.provision_state <> 'leased'
+            OR NEW.provision_lease_token IS DISTINCT FROM OLD.provision_lease_token
+       )
+       AND NEW.provision_next_attempt_at IS NULL
+       AND NEW.provision_last_error_code IS NULL
+       AND NEW.provisioning_receipt_digest IS NULL
+       AND NEW.provisioned_at IS NULL
+    THEN
+        NULL;
+    ELSIF OLD.provision_state = 'leased'
+       AND NEW.provision_state IN ('retryable', 'ready', 'failed')
+       AND NEW.provision_version = OLD.provision_version + 1
+       AND NEW.provision_attempt_count = OLD.provision_attempt_count
+       AND NEW.provision_lease_owner IS NULL
+       AND NEW.provision_lease_token IS NULL
+       AND NEW.provision_lease_until IS NULL
+       AND (
+            (
+                NEW.provision_state = 'retryable'
+                AND NEW.provision_next_attempt_at IS NOT NULL
+                AND NEW.provision_last_error_code IS NOT NULL
+                AND NEW.provisioning_receipt_digest IS NULL
+                AND NEW.provisioned_at IS NULL
+            )
+            OR
+            (
+                NEW.provision_state = 'ready'
+                AND NEW.provision_next_attempt_at IS NULL
+                AND NEW.provision_last_error_code IS NULL
+                AND NEW.provisioning_receipt_digest IS NOT NULL
+                AND NEW.provisioned_at IS NOT NULL
+            )
+            OR
+            (
+                NEW.provision_state = 'failed'
+                AND NEW.provision_next_attempt_at IS NULL
+                AND NEW.provision_last_error_code IS NOT NULL
+                AND NEW.provisioning_receipt_digest IS NULL
+                AND NEW.provisioned_at IS NULL
+            )
+       )
+    THEN
+        NULL;
+    ELSE
+        RAISE EXCEPTION
+            'Hermes workspace session provisioning requires an exact lease/CAS transition';
+    END IF;
+
     NEW.updated_at := now();
     RETURN NEW;
 END;
@@ -104,12 +160,22 @@ _SESSION_CREATION_ACTION_CONSTRAINT = (
 SessionKind = Literal["observed_external_session", "web_managed_session"]
 SessionWriter = Literal["external_channel", "web_control_plane"]
 SourceChannel = Literal["discord", "historical", "web_managed"]
+ProvisionState = Literal[
+    "observed",
+    "pending",
+    "leased",
+    "retryable",
+    "ready",
+    "failed",
+]
 
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 _HERMES_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$")
 _WORKSPACE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _ACTION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+_MANAGED_HERMES_ID_RE = re.compile(r"^web_[0-9a-f]{40}$")
+_FORK_POINT_RE = re.compile(r"^message:[1-9][0-9]*$")
 
 
 class HermesSessionRegistryUnavailable(RuntimeError):
@@ -147,12 +213,26 @@ class WorkspaceSessionRecord:
     creation_client_action_id: str | None
     creation_action_digest: str | None
     writer: SessionWriter
+    provisioning_state: ProvisionState
+    provisioning_version: int
+    provisioning_attempt_count: int
+    provisioning_lease_owner: str | None
+    provisioning_lease_token: UUID | None
+    provisioning_lease_until: datetime | None
+    provisioning_next_attempt_at: datetime | None
+    provisioning_last_error_code: str | None
+    provisioning_receipt_digest: str | None
+    provisioned_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
     @property
     def web_writable(self) -> bool:
-        return self.kind == "web_managed_session" and self.writer == "web_control_plane"
+        return (
+            self.kind == "web_managed_session"
+            and self.writer == "web_control_plane"
+            and self.provisioning_state == "ready"
+        )
 
 
 @dataclass(frozen=True)
@@ -228,6 +308,14 @@ def _validate_register(request: RegisterWorkspaceSession) -> SessionWriter:
             "web_managed_session requires creation action identity"
         )
     if (
+        request.creation_action_digest is None
+        or _MANAGED_HERMES_ID_RE.fullmatch(request.hermes_session_id) is None
+        or request.hermes_session_id != f"web_{request.creation_action_digest[:40]}"
+    ):
+        raise HermesSessionRegistryValidationError(
+            "web_managed_session requires its exact action-derived Hermes Session"
+        )
+    if (
         request.provider_policy_digest is None
         or _DIGEST_RE.fullmatch(request.provider_policy_digest) is None
     ):
@@ -257,14 +345,9 @@ def _validate_register(request: RegisterWorkspaceSession) -> SessionWriter:
             raise HermesSessionRegistryValidationError(
                 "forked web_managed_session requires source_channel"
             )
-        if (
-            request.fork_point is None
-            or not request.fork_point
-            or len(request.fork_point) > 2000
-            or not request.fork_point.isprintable()
-        ):
+        if request.fork_point is None or _FORK_POINT_RE.fullmatch(request.fork_point) is None:
             raise HermesSessionRegistryValidationError(
-                "forked web_managed_session requires fork_point"
+                "forked web_managed_session requires exact message:<id> fork_point"
             )
     return "web_control_plane"
 
@@ -293,8 +376,18 @@ def _row_to_record(row: tuple[object, ...]) -> WorkspaceSessionRecord:
         creation_client_action_id=str(row[10]) if row[10] is not None else None,
         creation_action_digest=str(row[11]) if row[11] is not None else None,
         writer=row[12],  # type: ignore[arg-type]
-        created_at=row[13],  # type: ignore[arg-type]
-        updated_at=row[14],  # type: ignore[arg-type]
+        provisioning_state=row[13],  # type: ignore[arg-type]
+        provisioning_version=int(row[14]),
+        provisioning_attempt_count=int(row[15]),
+        provisioning_lease_owner=str(row[16]) if row[16] is not None else None,
+        provisioning_lease_token=UUID(str(row[17])) if row[17] is not None else None,
+        provisioning_lease_until=row[18],  # type: ignore[arg-type]
+        provisioning_next_attempt_at=row[19],  # type: ignore[arg-type]
+        provisioning_last_error_code=(str(row[20]) if row[20] is not None else None),
+        provisioning_receipt_digest=(str(row[21]) if row[21] is not None else None),
+        provisioned_at=row[22],  # type: ignore[arg-type]
+        created_at=row[23],  # type: ignore[arg-type]
+        updated_at=row[24],  # type: ignore[arg-type]
     )
 
 
@@ -312,6 +405,16 @@ _SELECT_COLUMNS = """
     creation_client_action_id,
     creation_action_digest,
     writer,
+    provision_state,
+    provision_version,
+    provision_attempt_count,
+    provision_lease_owner,
+    provision_lease_token,
+    provision_lease_until,
+    provision_next_attempt_at,
+    provision_last_error_code,
+    provisioning_receipt_digest,
+    provisioned_at,
     created_at,
     updated_at
 """
@@ -434,6 +537,66 @@ def session_registry_schema_is_ready_on_connection(conn: psycopg.Connection) -> 
     if required is None or not all(bool(value) for value in required):
         return False
 
+    provisioning_required = conn.execute(
+        """
+        SELECT
+            (
+                SELECT count(*) = 10
+                FROM pg_attribute
+                WHERE attrelid = %s::regclass
+                  AND attname = ANY(%s)
+                  AND NOT attisdropped
+            ),
+            (
+                SELECT count(*) = 7
+                FROM pg_constraint
+                WHERE conrelid = %s::regclass
+                  AND conname = ANY(%s)
+                  AND contype = 'c'
+                  AND convalidated
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_index AS index
+                JOIN pg_class AS relation ON relation.oid = index.indexrelid
+                WHERE relation.relname =
+                    'idx_hermes_workspace_sessions_provision_claim'
+                  AND index.indrelid = %s::regclass
+                  AND index.indisvalid
+                  AND index.indisready
+                  AND index.indpred IS NOT NULL
+            )
+        """,
+        (
+            f"{SCHEMA}.hermes_workspace_sessions",
+            [
+                "provision_state",
+                "provision_version",
+                "provision_attempt_count",
+                "provision_lease_owner",
+                "provision_lease_token",
+                "provision_lease_until",
+                "provision_next_attempt_at",
+                "provision_last_error_code",
+                "provisioning_receipt_digest",
+                "provisioned_at",
+            ],
+            f"{SCHEMA}.hermes_workspace_sessions",
+            [
+                "ck_hermes_workspace_session_provision_state",
+                "ck_hermes_workspace_session_provision_counters",
+                "ck_hermes_workspace_session_provision_error",
+                "ck_hermes_workspace_session_provision_receipt",
+                "ck_hermes_workspace_session_provision_shape",
+                "ck_hermes_workspace_session_managed_exact_identity",
+                "ck_hermes_workspace_session_exact_fork_point",
+            ],
+            f"{SCHEMA}.hermes_workspace_sessions",
+        ),
+    ).fetchone()
+    if provisioning_required is None or not all(bool(value) for value in provisioning_required):
+        return False
+
     trigger_signature = conn.execute(
         """
         SELECT
@@ -457,14 +620,11 @@ def session_registry_schema_is_ready_on_connection(conn: psycopg.Connection) -> 
     ).fetchone()
     if trigger_signature is None:
         return False
-    trigger_type, enabled, body, security_definer, volatility, language = (
-        trigger_signature
-    )
+    trigger_type, enabled, body, security_definer, volatility, language = trigger_signature
     return (
         int(trigger_type) == 27  # BEFORE + ROW + UPDATE + DELETE
         and str(enabled) == "A"
-        and " ".join(str(body).split())
-        == " ".join(_SESSION_IMMUTABILITY_FUNCTION_BODY.split())
+        and " ".join(str(body).split()) == " ".join(_SESSION_IMMUTABILITY_FUNCTION_BODY.split())
         and security_definer is False
         and str(volatility) == "v"
         and str(language) == "plpgsql"
@@ -644,10 +804,7 @@ def hermes_runtime_security_is_ready_on_connection(
         ):
             return False
         expected_expression = _expected_root_policy_expression(str(table_name))
-        if (
-            normalized_using != expected_expression
-            or normalized_check != expected_expression
-        ):
+        if normalized_using != expected_expression or normalized_check != expected_expression:
             return False
     return True
 
@@ -811,11 +968,14 @@ def register_workspace_session(
                     payload_ttl_days,
                     creation_client_action_id,
                     creation_action_digest,
-                    writer
+                    writer,
+                    provision_state,
+                    provision_version,
+                    provision_attempt_count
                 )
                 VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, 0, 0
                 )
                 RETURNING {_SELECT_COLUMNS}
                 """,
@@ -833,6 +993,7 @@ def register_workspace_session(
                     request.creation_client_action_id,
                     request.creation_action_digest,
                     writer,
+                    ("observed" if request.kind == "observed_external_session" else "pending"),
                 ),
             ).fetchone()
             if row is None:
@@ -881,9 +1042,7 @@ def get_workspace_session(
     except (HermesSessionRegistryUnavailable, HermesSessionRegistryValidationError, LookupError):
         raise
     except (DatabaseUnavailable, psycopg.Error) as exc:
-        raise HermesSessionRegistryUnavailable(
-            "Hermes session registry lookup failed"
-        ) from exc
+        raise HermesSessionRegistryUnavailable("Hermes session registry lookup failed") from exc
 
 
 def require_web_writable_session(
@@ -895,7 +1054,5 @@ def require_web_writable_session(
 
     record = get_workspace_session(settings, platform_session_id=platform_session_id)
     if not record.web_writable:
-        raise HermesSessionNotWritable(
-            "observed_external_session rejects web mutation; fork to web_managed_session"
-        )
+        raise HermesSessionNotWritable("session is not a provisioned web_managed_session")
     return record

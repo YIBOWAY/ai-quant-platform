@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 
@@ -38,8 +39,7 @@ def _test_url() -> str:
     dbname = conninfo_to_dict(url).get("dbname")
     if not dbname or not (dbname.endswith("_tmp") or "test" in dbname):
         pytest.fail(
-            "QS_TEST_DATABASE_URL must point at a throwaway test database "
-            f"(got {dbname!r})"
+            f"QS_TEST_DATABASE_URL must point at a throwaway test database (got {dbname!r})"
         )
     return url
 
@@ -62,20 +62,14 @@ def _url_as(url: str, *, user: str, password: str) -> str:
     return make_conninfo(**params)
 
 
-def _url_as_group_role(
-    url: str, *, user: str, password: str, group: str
-) -> str:
+def _url_as_group_role(url: str, *, user: str, password: str, group: str) -> str:
     params = conninfo_to_dict(_url_as(url, user=user, password=password))
     params["options"] = f"-c role={group}"
     return make_conninfo(**params)
 
 
-def _drop_test_login(
-    conn: psycopg.Connection, login: str = RUNTIME_LOGIN
-) -> None:
-    if conn.execute(
-        "SELECT 1 FROM pg_roles WHERE rolname = %s", (login,)
-    ).fetchone() is None:
+def _drop_test_login(conn: psycopg.Connection, login: str = RUNTIME_LOGIN) -> None:
+    if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (login,)).fetchone() is None:
         return
     conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(login)))
     conn.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(login)))
@@ -86,15 +80,11 @@ def _provision_test_login(
 ) -> None:
     _drop_test_login(conn, login)
     conn.execute(
-        sql.SQL(
-            "CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD {}"
-        ).format(sql.Identifier(login), sql.Literal(password))
-    )
-    conn.execute(
-        sql.SQL("GRANT {} TO {}").format(
-            sql.Identifier(group), sql.Identifier(login)
+        sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD {}").format(
+            sql.Identifier(login), sql.Literal(password)
         )
     )
+    conn.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(group), sql.Identifier(login)))
 
 
 def test_v4r_migration_provisions_roles_rls_and_safe_runtime_probe() -> None:
@@ -280,9 +270,7 @@ def test_runtime_and_readonly_roles_are_root_scoped_and_cannot_escalate() -> Non
                     ),
                 )
 
-        runtime_url = _url_as(
-            admin_url, user=RUNTIME_LOGIN, password=RUNTIME_PASSWORD
-        )
+        runtime_url = _url_as(admin_url, user=RUNTIME_LOGIN, password=RUNTIME_PASSWORD)
         with psycopg.connect(runtime_url, autocommit=True) as conn:
             visible = {
                 str(row[0])
@@ -332,13 +320,9 @@ def test_runtime_and_readonly_roles_are_root_scoped_and_cannot_escalate() -> Non
                     (runtime_command_id,),
                 )
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
-                conn.execute(
-                    "ALTER TABLE quant_system.hermes_commands DISABLE ROW LEVEL SECURITY"
-                )
+                conn.execute("ALTER TABLE quant_system.hermes_commands DISABLE ROW LEVEL SECURITY")
 
-        readonly_url = _url_as(
-            admin_url, user=READONLY_LOGIN, password=READONLY_PASSWORD
-        )
+        readonly_url = _url_as(admin_url, user=READONLY_LOGIN, password=READONLY_PASSWORD)
         with psycopg.connect(readonly_url, autocommit=True) as conn:
             visible = {
                 str(row[0])
@@ -350,9 +334,7 @@ def test_runtime_and_readonly_roles_are_root_scoped_and_cannot_escalate() -> Non
             assert runtime_command_id in visible
             assert other_command_id not in visible
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
-                conn.execute(
-                    "UPDATE quant_system.hermes_commands SET updated_at = now()"
-                )
+                conn.execute("UPDATE quant_system.hermes_commands SET updated_at = now()")
     finally:
         with database.connect() as conn:
             conn.execute(
@@ -366,9 +348,7 @@ def test_runtime_and_readonly_roles_are_root_scoped_and_cannot_escalate() -> Non
                     ],
                 ),
             )
-            conn.execute(
-                "DELETE FROM quant_system.app_users WHERE id = %s", (other_owner,)
-            )
+            conn.execute("DELETE FROM quant_system.app_users WHERE id = %s", (other_owner,))
             _drop_test_login(conn, RUNTIME_LOGIN)
             _drop_test_login(conn, READONLY_LOGIN)
 
@@ -449,6 +429,8 @@ def test_managed_session_ttl_and_row_are_immutable_in_postgres() -> None:
     database = db.Database(_test_url(), connect_timeout=1)
     db.run_migrations(database)
     marker = uuid.uuid4().hex
+    action_digest = hashlib.sha256(f"valid:{marker}".encode()).hexdigest()
+    noncanonical_action_digest = hashlib.sha256(f"noncanonical:{marker}".encode()).hexdigest()
     platform_session_id = f"v4r-session-{marker}"
     noncanonical_session_id = f"v4r-session-noncanonical-{marker}"
     external_session_id = f"v4r-external-{marker}"
@@ -459,14 +441,22 @@ def test_managed_session_ttl_and_row_are_immutable_in_postgres() -> None:
                 INSERT INTO quant_system.hermes_workspace_sessions (
                     platform_session_id, hermes_session_id, workspace_id,
                     owner_user_id, kind, provider_policy_digest,
-                    payload_ttl_days, writer
+                    payload_ttl_days, creation_client_action_id,
+                    creation_action_digest, writer, provision_state
                 ) VALUES (
                     %s, %s, 'ws-local-main',
                     '00000000-0000-0000-0000-000000000001',
-                    'web_managed_session', %s, 7, 'web_control_plane'
+                    'web_managed_session', %s, 7, %s, %s,
+                    'web_control_plane', 'pending'
                 )
                 """,
-                (platform_session_id, f"hermes-{marker}", PROVIDER_POLICY_DIGEST),
+                (
+                    platform_session_id,
+                    f"web_{action_digest[:40]}",
+                    PROVIDER_POLICY_DIGEST,
+                    f"security-valid-{marker}",
+                    action_digest,
+                ),
             )
 
             with pytest.raises(psycopg.errors.CheckViolation):
@@ -475,17 +465,21 @@ def test_managed_session_ttl_and_row_are_immutable_in_postgres() -> None:
                     INSERT INTO quant_system.hermes_workspace_sessions (
                         platform_session_id, hermes_session_id, workspace_id,
                         owner_user_id, kind, provider_policy_digest,
-                        payload_ttl_days, writer
+                        payload_ttl_days, creation_client_action_id,
+                        creation_action_digest, writer, provision_state
                     ) VALUES (
                         %s, %s, 'ws-local-main',
                         '00000000-0000-0000-0000-000000000001',
-                        'web_managed_session', %s, 14, 'web_control_plane'
+                        'web_managed_session', %s, 14, %s, %s,
+                        'web_control_plane', 'pending'
                     )
                     """,
                     (
                         noncanonical_session_id,
-                        f"hermes-noncanonical-{marker}",
+                        f"web_{noncanonical_action_digest[:40]}",
                         PROVIDER_POLICY_DIGEST,
+                        f"security-noncanonical-{marker}",
+                        noncanonical_action_digest,
                     ),
                 )
 
@@ -512,12 +506,12 @@ def test_managed_session_ttl_and_row_are_immutable_in_postgres() -> None:
                     INSERT INTO quant_system.hermes_workspace_sessions (
                         platform_session_id, hermes_session_id, workspace_id,
                         owner_user_id, kind, source_channel,
-                        payload_ttl_days, writer
+                        payload_ttl_days, writer, provision_state
                     ) VALUES (
                         %s, %s, 'ws-local-main',
                         '00000000-0000-0000-0000-000000000001',
                         'observed_external_session', 'discord', 7,
-                        'external_channel'
+                        'external_channel', 'observed'
                     )
                     """,
                     (external_session_id, f"hermes-external-{marker}"),
@@ -555,9 +549,7 @@ def test_runtime_probe_fails_closed_when_rls_signature_drifts() -> None:
     admin_url = _test_url()
     database = db.Database(admin_url, connect_timeout=1)
     db.run_migrations(database)
-    runtime_settings = _settings(
-        _url_as(admin_url, user=RUNTIME_LOGIN, password=RUNTIME_PASSWORD)
-    )
+    runtime_settings = _settings(_url_as(admin_url, user=RUNTIME_LOGIN, password=RUNTIME_PASSWORD))
     try:
         with database.connect() as conn:
             _provision_test_login(
@@ -570,9 +562,7 @@ def test_runtime_probe_fails_closed_when_rls_signature_drifts() -> None:
         assert hermes_runtime_security_ready(runtime_settings) is True
 
         with database.connect() as conn:
-            conn.execute(
-                "ALTER TABLE quant_system.hermes_commands DISABLE ROW LEVEL SECURITY"
-            )
+            conn.execute("ALTER TABLE quant_system.hermes_commands DISABLE ROW LEVEL SECURITY")
         db.reset_database_cache()
         assert hermes_runtime_security_ready(runtime_settings) is False
     finally:
@@ -586,9 +576,7 @@ def test_runtime_probe_rejects_missing_required_table_privilege() -> None:
     admin_url = _test_url()
     database = db.Database(admin_url, connect_timeout=1)
     db.run_migrations(database)
-    runtime_settings = _settings(
-        _url_as(admin_url, user=RUNTIME_LOGIN, password=RUNTIME_PASSWORD)
-    )
+    runtime_settings = _settings(_url_as(admin_url, user=RUNTIME_LOGIN, password=RUNTIME_PASSWORD))
     try:
         with database.connect() as conn:
             _provision_test_login(
@@ -601,9 +589,7 @@ def test_runtime_probe_rejects_missing_required_table_privilege() -> None:
         assert hermes_runtime_security_ready(runtime_settings) is True
 
         with database.connect() as conn:
-            conn.execute(
-                "REVOKE UPDATE ON quant_system.hermes_commands FROM quant_runtime"
-            )
+            conn.execute("REVOKE UPDATE ON quant_system.hermes_commands FROM quant_runtime")
         db.reset_database_cache()
         assert hermes_runtime_security_ready(runtime_settings) is False
     finally:
@@ -637,9 +623,7 @@ def test_non_superuser_migrator_can_replay_the_full_migration_set() -> None:
         db.run_migrations(migrator_database)
 
         with migrator_database.connect() as conn:
-            identity = conn.execute(
-                "SELECT session_user, current_user"
-            ).fetchone()
+            identity = conn.execute("SELECT session_user, current_user").fetchone()
             assert identity == (MIGRATOR_LOGIN, MIGRATOR_ROLE)
             attrs = conn.execute(
                 """
@@ -657,9 +641,7 @@ def test_runtime_probe_rejects_fail_open_policy_body_drift() -> None:
     admin_url = _test_url()
     database = db.Database(admin_url, connect_timeout=1)
     db.run_migrations(database)
-    runtime_settings = _settings(
-        _url_as(admin_url, user=RUNTIME_LOGIN, password=RUNTIME_PASSWORD)
-    )
+    runtime_settings = _settings(_url_as(admin_url, user=RUNTIME_LOGIN, password=RUNTIME_PASSWORD))
     try:
         with database.connect() as conn:
             _provision_test_login(

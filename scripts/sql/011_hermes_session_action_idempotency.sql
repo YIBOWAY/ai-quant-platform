@@ -22,7 +22,7 @@ BEGIN
     FROM quant_system.hermes_session_registry_meta
     WHERE singleton IS TRUE;
 
-    IF installed_version IS NULL OR installed_version NOT IN (1, 2) THEN
+    IF installed_version IS NULL OR installed_version NOT IN (1, 2, 3) THEN
         RAISE EXCEPTION
             'Hermes session registry schema version % cannot migrate to 2',
             installed_version;
@@ -169,7 +169,7 @@ WHERE outbox.command_id = command.command_id
   AND command.last_error_code = 'legacy_control_command_retired';
 
 UPDATE quant_system.hermes_session_registry_meta
-SET schema_version = 2,
+SET schema_version = GREATEST(schema_version, 2),
     updated_at = now()
 WHERE singleton IS TRUE;
 

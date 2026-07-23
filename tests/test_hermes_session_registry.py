@@ -43,7 +43,7 @@ def test_managed_session_policy_is_server_owned_before_database_access() -> None
             settings,
             RegisterWorkspaceSession(
                 platform_session_id="web-policy-rejected",
-                hermes_session_id="hermes-policy-rejected",
+                hermes_session_id=f"web_{ACTION_DIGEST_A[:40]}",
                 workspace_id="workspace-root",
                 kind="web_managed_session",
                 provider_policy_digest=DIGEST_B,
@@ -59,7 +59,7 @@ def test_managed_session_policy_is_server_owned_before_database_access() -> None
             settings,
             RegisterWorkspaceSession(
                 platform_session_id="web-policy-canonical",
-                hermes_session_id="hermes-policy-canonical",
+                hermes_session_id=f"web_{ACTION_DIGEST_A[:40]}",
                 workspace_id="workspace-root",
                 kind="web_managed_session",
                 provider_policy_digest=PROVIDER_POLICY_DIGEST,
@@ -142,9 +142,7 @@ def _postgres_settings() -> Settings:
 
 def _reset_sessions(database: db.Database) -> None:
     with database.connect() as conn, conn.transaction():
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_workspace_sessions DISABLE TRIGGER USER"
-        )
+        conn.execute("ALTER TABLE quant_system.hermes_workspace_sessions DISABLE TRIGGER USER")
         conn.execute("TRUNCATE TABLE quant_system.hermes_workspace_sessions")
         conn.execute(
             "ALTER TABLE quant_system.hermes_workspace_sessions "
@@ -158,9 +156,41 @@ def test_session_registry_migration_is_ready_and_repeatable() -> None:
     database = db.get_database(settings)
     assert database is not None
     db.run_migrations(database)
-    assert session_registry_schema_version(settings) == 2
+    assert session_registry_schema_version(settings) == 3
     db.run_migrations(database)
-    assert session_registry_schema_version(settings) == 2
+    assert session_registry_schema_version(settings) == 3
+
+
+def test_session_registry_migration_rejects_unknown_future_version() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+    try:
+        with database.connect() as conn:
+            conn.execute(
+                """
+                UPDATE quant_system.hermes_session_registry_meta
+                SET schema_version = 4
+                WHERE singleton IS TRUE
+                """
+            )
+        with pytest.raises(psycopg.errors.RaiseException, match="newer"):
+            db.run_migrations(
+                database,
+                only={"007_hermes_session_registry.sql"},
+            )
+    finally:
+        with database.connect() as conn:
+            conn.execute(
+                """
+                UPDATE quant_system.hermes_session_registry_meta
+                SET schema_version = 3
+                WHERE singleton IS TRUE
+                """
+            )
+        db.reset_database_cache()
 
 
 def test_migration_retires_only_legacy_queued_session_control_commands() -> None:
@@ -219,7 +249,7 @@ def test_migration_retires_only_legacy_queued_session_control_commands() -> None
             (created.command_id,),
         ).fetchone() == (2,)
     db.run_migrations(database)
-    assert session_registry_schema_version(settings) == 2
+    assert session_registry_schema_version(settings) == 3
 
 
 def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> None:
@@ -260,7 +290,7 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
             settings,
             RegisterWorkspaceSession(
                 platform_session_id="web-session-001",
-                hermes_session_id="20260720_web_001",
+                hermes_session_id=f"web_{ACTION_DIGEST_A[:40]}",
                 workspace_id="workspace-root",
                 kind="web_managed_session",
                 provider_policy_digest=PROVIDER_POLICY_DIGEST,
@@ -270,18 +300,19 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
             ),
         )
         assert managed_created is True
-        assert managed.web_writable is True
+        assert managed.provisioning_state == "pending"
+        assert managed.web_writable is False
 
         forked, fork_created = register_workspace_session(
             settings,
             RegisterWorkspaceSession(
                 platform_session_id="web-session-fork-001",
-                hermes_session_id="20260720_web_fork_001",
+                hermes_session_id=f"web_{ACTION_DIGEST_C[:40]}",
                 workspace_id="workspace-root",
                 kind="web_managed_session",
                 source_channel="discord",
                 parent_platform_session_id="ext-session-001",
-                fork_point="msg:discord:abc123",
+                fork_point="message:123",
                 provider_policy_digest=PROVIDER_POLICY_DIGEST,
                 payload_ttl_days=7,
                 creation_client_action_id="registry-managed-fork",
@@ -290,9 +321,8 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
         )
         assert fork_created is True
         assert forked.parent_platform_session_id == "ext-session-001"
-        assert require_web_writable_session(
-            settings, platform_session_id="web-session-001"
-        ).platform_session_id == "web-session-001"
+        with pytest.raises(HermesSessionNotWritable):
+            require_web_writable_session(settings, platform_session_id="web-session-001")
     finally:
         _reset_sessions(database)
         db.reset_database_cache()
@@ -355,7 +385,7 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
             settings,
             RegisterWorkspaceSession(
                 platform_session_id="web-session-conflict",
-                hermes_session_id="20260720_web_conflict",
+                hermes_session_id=f"web_{ACTION_DIGEST_A[:40]}",
                 workspace_id="workspace-root",
                 kind="web_managed_session",
                 provider_policy_digest=PROVIDER_POLICY_DIGEST,
@@ -369,7 +399,7 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                 settings,
                 RegisterWorkspaceSession(
                     platform_session_id="web-session-conflict",
-                    hermes_session_id="20260720_web_conflict_changed",
+                    hermes_session_id=f"web_{ACTION_DIGEST_C[:40]}",
                     workspace_id="workspace-root",
                     kind="web_managed_session",
                     provider_policy_digest=PROVIDER_POLICY_DIGEST,
@@ -383,13 +413,13 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                 settings,
                 RegisterWorkspaceSession(
                     platform_session_id="web-session-other",
-                    hermes_session_id="20260720_web_conflict",
+                    hermes_session_id=f"web_{ACTION_DIGEST_A[:40]}",
                     workspace_id="workspace-root",
                     kind="web_managed_session",
                     provider_policy_digest=PROVIDER_POLICY_DIGEST,
                     payload_ttl_days=7,
                     creation_client_action_id="registry-other",
-                    creation_action_digest=ACTION_DIGEST_C,
+                    creation_action_digest=ACTION_DIGEST_A,
                 ),
             )
         with pytest.raises(HermesSessionRegistryValidationError):
@@ -414,9 +444,7 @@ def test_conflicting_identity_and_invalid_shapes_fail_closed() -> None:
                 ),
             )
         # still only the first durable row
-        record = get_workspace_session(
-            settings, platform_session_id="web-session-conflict"
-        )
+        record = get_workspace_session(settings, platform_session_id="web-session-conflict")
         assert record.provider_policy_digest == PROVIDER_POLICY_DIGEST
         assert record.payload_ttl_days == 7
         assert record.creation_client_action_id == "registry-conflict"
