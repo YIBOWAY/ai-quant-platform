@@ -1,6 +1,6 @@
 # AI News × Horizon Bridge 设计文档（Phase A）
 
-> **状态：** 设计已评审通过，待实施计划。  
+> **状态：** Phase A **已实现**（Tasks 1–10）。实现计划见 [plans/2026-07-23-ai-news-horizon-bridge.md](../plans/2026-07-23-ai-news-horizon-bridge.md)；操作指南 [guides/ai-news.md](../../guides/ai-news.md)；runbook [execution/ai-news-horizon.md](../../execution/ai-news-horizon.md)。  
 > **日期：** 2026-07-23  
 > **范围：** Phase A — 热备 failover + 合同可升 Phase B 双源合并。  
 > **前序：** [docs/design/ai_news_integration_plan.md](../../design/ai_news_integration_plan.md)（MVP-1/MVP-2 AI HOT 只读接入；本文落实其 §9 Horizon 二期占位）。  

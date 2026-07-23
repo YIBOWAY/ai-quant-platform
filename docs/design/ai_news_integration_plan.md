@@ -1,7 +1,7 @@
 # AI News Integration MVP-1 / MVP-2 设计文档
 
-> 状态：MVP-1 已实现；MVP-2 可选 Postgres 读穿缓存已补齐。
-> 日期：2026-06-15；最近更新：2026-06-29。
+> 状态：MVP-1 已实现；MVP-2 可选 Postgres 读穿缓存已补齐；**Horizon Bridge Phase A（热备 failover）已实现**——见 [superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md](../superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md) 与 [guides/ai-news.md](../guides/ai-news.md)。
+> 日期：2026-06-15；最近更新：2026-07-23。
 > 命名说明：本文的 **AI News Integration MVP-1** 指「外部 AI 新闻只读接入」的第一阶段，不属于项目历史 Phase 阶段地图，也不属于 Paper Strategy Sleeves 路线。
 
 ## 1. 背景与目标
@@ -598,3 +598,4 @@ Paper Strategy Sleeves 路线：
 | 2026-06-15 | AI News 不触发策略、因子、回测、paper account 或 strategy sleeve。 |
 | 2026-06-15 | MVP-1 不写 execution 文档；只有引入 CLI/调度/Horizon 本地流水线时再写 runbook。 |
 | 2026-06-29 | MVP-2 复用现有可选 Postgres 增加 AI HOT items 读穿缓存；测试仍 mock 外网和数据库。 |
+| 2026-07-23 | **Horizon Bridge Phase A 已实现**：同机 Docker Horizon 产物桥 + `NewsFacade` 热备 failover（auto：aihot live → horizon PG fresh → aihot cache → unavailable）。权威设计：[superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md](../superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md)；计划：[superpowers/plans/2026-07-23-ai-news-horizon-bridge.md](../superpowers/plans/2026-07-23-ai-news-horizon-bridge.md)；runbook：[execution/ai-news-horizon.md](../execution/ai-news-horizon.md)；指南：[guides/ai-news.md](../guides/ai-news.md)。中性路由 `GET /api/news/items|daily|dailies|status`；`/api/news/aihot/*` 为兼容别名。LLM key 仅在 Horizon 容器 env_file。 |

@@ -167,13 +167,16 @@ scheduler、outbound worker、POST route 或数据库 migration。
 | [guides/experiments.md](guides/experiments.md) | 实验管理 `/experiments` |
 | [guides/paper-trading.md](guides/paper-trading.md) | 模拟交易 `/paper-trading` |
 | [guides/position-map.md](guides/position-map.md) | 持仓地图 `/position-map` |
-| [guides/ai-news.md](guides/ai-news.md) | AI 新闻研究流 `/ai-news` |
+| [guides/ai-news.md](guides/ai-news.md) | AI 新闻研究流 `/ai-news`（双源 Facade：AI HOT 主源 + Horizon 热备；auto failover） |
 | [guides/hermes-sessions.md](guides/hermes-sessions.md) | Hermes official API 会话读取、密钥边界、故障排查与下一阶段连接架构 |
 | [design/paper_trading_position_map_redesign.md](design/paper_trading_position_map_redesign.md) | 模拟交易 + 持仓地图**重设计**（设计文档 + 分阶段实现计划） |
 | [design/paper_strategy_sleeves_plan.md](design/paper_strategy_sleeves_plan.md) | Paper Strategy Sleeves **MVP-1**（策略资金段/信号观察/allocated 分账设计，非历史 Phase 1） |
 | [design/paper_strategy_sleeves_mvp2_plan.md](design/paper_strategy_sleeves_mvp2_plan.md) | Paper Strategy Sleeves **MVP-2**（pending execution / next-open 纸面执行计划） |
 | [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（后端基础、API contract、daily signal、手动 signal CLI、pending execution、backend next-open processor、手动处理 API/CLI、UI 执行状态控件与 opt-in 真实 Futu 验证已实现；自动调度尚未实现） |
-| [design/ai_news_integration_plan.md](design/ai_news_integration_plan.md) | AI News Integration **MVP-1 / MVP-2**（AI HOT 只读新闻接入、可选 Postgres 缓存兜底，Horizon 二期自托管雷达方向） |
+| [design/ai_news_integration_plan.md](design/ai_news_integration_plan.md) | AI News Integration **MVP-1 / MVP-2**（AI HOT 只读接入 + 可选 PG 缓存；决策日志指向 Horizon Bridge） |
+| [superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md](superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md) | AI News × Horizon Bridge **Phase A 设计**（热备 failover；合同可升 Phase B；**已实现**） |
+| [superpowers/plans/2026-07-23-ai-news-horizon-bridge.md](superpowers/plans/2026-07-23-ai-news-horizon-bridge.md) | AI News × Horizon Bridge **实现计划**（Tasks 1–10） |
+| [execution/ai-news-horizon.md](execution/ai-news-horizon.md) | Horizon sidecar 执行 runbook（Docker、migration 009、`news horizon-ingest`、failover 演练） |
 
 ## 1. 从这里开始
 
@@ -247,7 +250,8 @@ scheduler、outbound worker、POST route 或数据库 migration。
 | PostgreSQL 运行索引（可选） | `src/quant_system/storage/runs_repository.py` |
 | 数据库连接 + 迁移 | `src/quant_system/storage/database.py` |
 | Brief 业务事实 | `src/quant_system/brief/` / `src/quant_system/api/routes/brief.py` |
-| AI HOT 只读新闻缓存（可选） | `src/quant_system/news/repository.py` / `scripts/sql/002_ai_news_cache.sql` |
+| AI 新闻缓存 + Horizon provider runs（可选） | `src/quant_system/news/repository.py` / `scripts/sql/002_ai_news_cache.sql` / `scripts/sql/009_ai_news_provider_runs.sql` |
+| AI 新闻 Facade（双源 failover） | `src/quant_system/news/facade.py` |
 | Paper repository factory | `src/quant_system/execution/account_repository_factory.py` |
 | Paper PostgreSQL / mirror repository | `src/quant_system/execution/account_postgres_repository.py` / `account_dual_write_repository.py` |
 | 买方指标 | `src/quant_system/options/buy_side_metrics.py` |
@@ -256,7 +260,7 @@ scheduler、outbound worker、POST route 或数据库 migration。
 | 买方决策 API 逻辑 | `src/quant_system/options/buy_side_decision.py` |
 | Futu 股票/期权提供方 | `src/quant_system/data/providers/futu.py` |
 | AI HOT 只读新闻 client | `src/quant_system/news/aihot_client.py` |
-| AI News API route/schema | `src/quant_system/api/routes/news.py` / `src/quant_system/api/schemas/news.py` |
+| AI News API route/schema（中性 `/api/news/*` + aihot 别名） | `src/quant_system/api/routes/news.py` / `src/quant_system/api/schemas/news.py` |
 | 预测市场提供方工厂 | `src/quant_system/prediction_market/provider_factory.py` |
 | 预测市场采集器 | `src/quant_system/prediction_market/collector.py` |
 | 预测市场回放回测 | `src/quant_system/prediction_market/timeseries_backtest.py` |
@@ -324,7 +328,7 @@ scheduler、outbound worker、POST route 或数据库 migration。
 | `/options-radar/[symbol]` | 已保存的雷达候选，以及可选的实时期权链加载。 |
 | `/options-tools` | 本地 AlphaGBM 风格期权工具箱。 |
 | `/options-buyside` | 买方期权策略助手。 |
-| `/ai-news` | AI HOT 只读新闻研究流，含精选动态、关键词/分类/时间窗筛选、日报和原文链接。 |
+| `/ai-news` | AI 新闻研究流（AI HOT 主源 + Horizon 热备 Facade），含精选动态、关键词/分类/时间窗筛选、日报、原文链接与实际 provider/served_from。 |
 | `/polymarket` | 只读预测市场研究。 |
 | `/agent-studio` | 过渡期只读候选池检查；展示源码与审计证据，不再提供平台 LLM task 或批准/拒绝控件，并引导返回 Hermes。 |
 | `/settings` | 脱敏后的本地设置。 |
@@ -409,9 +413,14 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
   基于文件的 backtest/factor/paper/replication 运行以便快速列出。它默认关闭
   （`QS_DATABASE_ENABLED`），在启动时于后台与文件系统对账，当数据库
   关闭、缓慢或不可达时，API 回退到扫描文件。
-- 一个可选的 PostgreSQL **AI HOT 新闻缓存**（`news/repository.py`、
-  `scripts/sql/002_ai_news_cache.sql`）镜像只读 AI 新闻条目；实时请求成功后写入，
-  上游失败时可作为 `/ai-news` 的 stale fallback，并通过 warning 告知用户。
+- 一个可选的 PostgreSQL **AI 新闻缓存 + Horizon provider runs**（`news/repository.py`、
+  `news/facade.py`、`scripts/sql/002_ai_news_cache.sql`、
+  `scripts/sql/009_ai_news_provider_runs.sql`）：镜像 AI HOT 只读条目/日报，并承接
+  Horizon sidecar inbox ingest（`provider=horizon`）。`preference=auto` 顺序为
+  aihot live → horizon PG fresh → aihot cache → unavailable；中性路由
+  `GET /api/news/*`，`/api/news/aihot/*` 为兼容别名。LLM key 仅在 Horizon 容器
+  env_file。见 [guides/ai-news.md](guides/ai-news.md) 与
+  [execution/ai-news-horizon.md](execution/ai-news-horizon.md)。
 - PostgreSQL **brief / AI daily 业务事实**（migration 003）：root owner、不可变
   brief issue/snapshot/source 和 owner-scoped AI 日报。
 - PostgreSQL **paper account repository**（migration 004）：`file` 默认、
