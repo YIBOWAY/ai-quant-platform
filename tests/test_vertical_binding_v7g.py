@@ -350,3 +350,33 @@ def test_no_live_futu_markers_on_result() -> None:
     assert "zero_orders" in lim or "not_tradeable" in lim
     assert row["sample_or_real"] == "sample"
     assert row.get("source") == "hermetic_vertical_a_binding"
+
+
+# --- V8-M2 GAP-08 ---
+
+
+def test_v8_m2_missing_provider_evidence_task_not_normal_completed() -> None:
+    """TC-V8-M1-16: missing provider evidence → completed_degraded, never plain completed."""
+    receipt = submit_action(
+        _settings(),
+        _bind_doc(include_provider_evidence=False),
+        mutation_enabled=True,
+    )
+    assert receipt.status == "accepted"
+    assert receipt.terminal_status == "completed_degraded"
+    assert receipt.terminal_status != "completed"
+    tasks = project_workspace_tasks(WS)
+    assert len(tasks) == 1
+    t = tasks[0]
+    # Task projection must not look like a fully verified completed bind.
+    term = t.get("terminal_status") or t.get("status") or t.get("task_status")
+    assert term in {"completed_degraded", "degraded", receipt.terminal_status}
+    assert term != "completed"
+    rows = project_workspace_results(WS)
+    row = next(r for r in rows if r["result_id"] == receipt.result_id)
+    assert row["status"] == "completed_degraded"
+    assert row.get("sample_or_real") == "sample"
+    assert not row.get("provider_evidence")
+    lim = set(row.get("limitations") or [])
+    assert "unverified_without_provider_evidence" in lim
+

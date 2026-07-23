@@ -197,26 +197,26 @@ export function WorkbenchTranscriptPanel({
     };
   }, [hermesSessionId, transcriptEpoch]);
 
-  // Spine-driven dirty: coalesced refetch while waiting/partial or on hint.
-  useEffect(() => {
-    const sessionId = hermesSessionId?.trim();
-    if (!sessionId || !isUsableHermesApiSessionId(sessionId)) return;
-    const dirty = followState.transcriptDirtySeq ?? 0;
-    if (dirty === lastDirtySeqRef.current) return;
-    lastDirtySeqRef.current = dirty;
-
+  // Single owner for quiet messages refetch (V8-M2 GAP-09).
+  // Spine dirty + waiting/partial interval both schedule through scheduleQuietRefetch
+  // so in-flight work is not dropped by a parallel fetch path.
+  const scheduleQuietRefetch = (sessionId: string) => {
     if (refetchTimerRef.current != null) {
       clearTimeout(refetchTimerRef.current);
     }
-    // Coalesce bursts (command + transcript hint) into one refetch.
+    // Coalesce bursts (command + transcript hint + interval nudge) into one refetch.
     refetchTimerRef.current = setTimeout(() => {
-      // Quiet refetch: keep-last-ready (L3b) — no loading wipe.
-      const ac = new AbortController();
       void (async () => {
-        if (inFlightRef.current) return;
+        if (inFlightRef.current) {
+          // Re-arm once so a dirty bump during flight is not lost.
+          refetchTimerRef.current = setTimeout(() => {
+            scheduleQuietRefetch(sessionId);
+          }, 200);
+          return;
+        }
         inFlightRef.current = true;
         try {
-          const envelope = await fetchHermesSessionMessages(sessionId, ac.signal);
+          const envelope = await fetchHermesSessionMessages(sessionId);
           if (envelope.read_status && envelope.read_status !== "available") {
             setState((prev) => ({
               kind: "unavailable",
@@ -244,6 +244,16 @@ export function WorkbenchTranscriptPanel({
         }
       })();
     }, 200);
+  };
+
+  // Spine-driven dirty: coalesced refetch while waiting/partial or on hint.
+  useEffect(() => {
+    const sessionId = hermesSessionId?.trim();
+    if (!sessionId || !isUsableHermesApiSessionId(sessionId)) return;
+    const dirty = followState.transcriptDirtySeq ?? 0;
+    if (dirty === lastDirtySeqRef.current) return;
+    lastDirtySeqRef.current = dirty;
+    scheduleQuietRefetch(sessionId);
 
     return () => {
       if (refetchTimerRef.current != null) {
@@ -253,32 +263,14 @@ export function WorkbenchTranscriptPanel({
     };
   }, [followState.transcriptDirtySeq, hermesSessionId]);
 
-  // Bounded backoff poll while phase is waiting/partial (shared spine session).
+  // Bounded backoff poll while phase is waiting/partial — same owner as dirty path.
   useEffect(() => {
     if (phase !== "waiting" && phase !== "partial") return;
     const sessionId = hermesSessionId?.trim();
     if (!sessionId || !isUsableHermesApiSessionId(sessionId)) return;
     const id = setInterval(() => {
-      // Drive via dirty seq so the coalesced path owns fetch.
-      lastDirtySeqRef.current = -1;
-      // Nudge by depending on follow dirty; if spine idle, self-bump via epoch-less path:
-      void fetchHermesSessionMessages(sessionId)
-        .then((envelope) => {
-          if (envelope.read_status && envelope.read_status !== "available") {
-            setPhase("unavailable");
-            return;
-          }
-          const messages = displayableTranscriptMessages(envelope.messages);
-          setState({
-            kind: "ready",
-            sessionId,
-            messages,
-            omitted: Number(envelope.omitted_message_count ?? 0) || 0,
-          });
-        })
-        .catch(() => {
-          /* soft */
-        });
+      // Nudge sole owner; do not open a second fetch pipeline.
+      scheduleQuietRefetch(sessionId);
     }, 1500);
     return () => clearInterval(id);
   }, [phase, hermesSessionId]);

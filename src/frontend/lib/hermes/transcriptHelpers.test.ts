@@ -139,6 +139,37 @@ describe("Plan-V6-Token-Stream-M1 phase helpers", () => {
     expect(assistantTextGrew(b, a)).toBe(false);
   });
 
+  it("TC-V8-M2-11 delivered without assistant growth → final (no fake partial)", () => {
+    expect(
+      deriveAssistantPhase({
+        hasActiveSession: true,
+        commandState: "delivered",
+        assistantContentLength: 0,
+        submitAccepted: true,
+        priorPhase: "waiting",
+      }),
+    ).toBe("final");
+  });
+
+  it("TC-V8-M2-11 running without assistant growth stays waiting (no fake typing)", () => {
+    expect(
+      deriveAssistantPhase({
+        hasActiveSession: true,
+        commandState: "running",
+        assistantContentLength: 0,
+        submitAccepted: true,
+      }),
+    ).toBe("waiting");
+    expect(
+      deriveAssistantPhase({
+        hasActiveSession: true,
+        commandState: "running",
+        assistantContentLength: 0,
+        priorPhase: "waiting",
+      }),
+    ).not.toBe("partial");
+  });
+
   it("TC-TS-06 sanitize rejects web_/wm_", () => {
     expect(
       sanitizeTranscriptHint({

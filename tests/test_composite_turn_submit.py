@@ -253,3 +253,148 @@ def test_act_style_document_must_not_carry_prompt_field_in_composite_parser() ->
                 "action": {"prompt": "nope"},
             }
         )
+
+
+# --- V8-M2 adversarial close (GAP-01/02/03) ---
+
+
+def test_v8_m2_same_id_different_prompt_conflicts_zero_turn() -> None:
+    """TC-V8-M1-02 / GAP-02: same client_action_id, different body → 409; turn never called."""
+    port = FakeIntentPayloadPort()
+    req_a = _request(client_action_id="intent-v8-dup", prompt="Reply with exactly: L2a-pong")
+    req_b = _request(client_action_id="intent-v8-dup", prompt="Reply with exactly: OTHER")
+    with patch(
+        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+        return_value=_accepted_receipt(req_a),
+    ) as turn:
+        first = submit_composite_turn(
+            SimpleNamespace(), req_a, mutation_enabled=True, port=port
+        )
+        assert first["status"] == "accepted"
+        with pytest.raises(CompositeTurnSubmitError) as exc:
+            submit_composite_turn(
+                SimpleNamespace(), req_b, mutation_enabled=True, port=port
+            )
+    assert exc.value.http_status == 409
+    assert exc.value.code == "conflict"
+    # First put stored; second put attempted then conflicted — turn only once.
+    assert turn.call_count == 1
+    assert len(port.puts) == 2
+
+
+def test_v8_m2_double_submit_same_body_stable_receipt_identity() -> None:
+    """TC-V8-M1-01 / GAP-01: double-submit same action → stable payload + command identity."""
+    port = FakeIntentPayloadPort()
+    req = _request(client_action_id="intent-v8-dbl", prompt="Reply with exactly: L2a-pong")
+    receipt = _accepted_receipt(req)
+
+    def _turn(_settings, action, **_kwargs):  # type: ignore[no-untyped-def]
+        # Mirror ledger idempotency: same client_action_id → same command_id.
+        return ActionReceipt(
+            status="accepted",
+            client_action_id=action.client_action_id,
+            action_digest=receipt.action_digest,
+            workspace_id=action.workspace.workspace_id,
+            command_id=receipt.command_id,
+            platform_session_id=receipt.platform_session_id,
+            hermes_session_id=receipt.hermes_session_id,
+            mutation_enabled=True,
+        )
+
+    with patch(
+        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+        side_effect=_turn,
+    ) as turn:
+        r1 = submit_composite_turn(
+            SimpleNamespace(), req, mutation_enabled=True, port=port
+        )
+        r2 = submit_composite_turn(
+            SimpleNamespace(), req, mutation_enabled=True, port=port
+        )
+    assert r1["status"] == r2["status"] == "accepted"
+    assert r1["payload_digest"] == r2["payload_digest"]
+    assert r1["payload_ref"] == r2["payload_ref"]
+    assert r1["command_id"] == r2["command_id"] == receipt.command_id
+    assert turn.call_count == 2
+    # Fake store keeps a single binding for the client_intent_id.
+    assert len(port._store) == 1  # type: ignore[arg-type]
+
+
+def test_v8_m2_ack_loss_retry_recovers_same_payload_binding() -> None:
+    """TC-V8-M1-03 / GAP-03: after put+accepted, lost BFF ack retry recovers same binding."""
+    port = FakeIntentPayloadPort()
+    req = _request(client_action_id="intent-v8-ack", prompt="Reply with exactly: L2a-pong")
+    with patch(
+        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+        return_value=_accepted_receipt(req),
+    ):
+        first = submit_composite_turn(
+            SimpleNamespace(), req, mutation_enabled=True, port=port
+        )
+        # Simulate client never saw first HTTP body; retries identical request.
+        recovered = submit_composite_turn(
+            SimpleNamespace(), req, mutation_enabled=True, port=port
+        )
+    assert recovered["status"] == "accepted"
+    assert recovered["payload_digest"] == first["payload_digest"]
+    assert recovered["payload_ref"] == first["payload_ref"]
+    assert recovered["command_id"] == first["command_id"]
+    assert recovered["client_action_id"] == first["client_action_id"]
+
+
+def test_v8_m2_outcome_unknown_then_retry_same_id() -> None:
+    """GAP-03 branch: put ok + turn unavailable → outcome_unknown; retry may accept."""
+    port = FakeIntentPayloadPort()
+    req = _request(client_action_id="intent-v8-unk", prompt="Reply with exactly: L2a-pong")
+    from quant_system.hermes.submission_saga import SubmissionSagaError
+
+    calls = {"n": 0}
+
+    def _turn(_settings, action, **_kwargs):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise SubmissionSagaError("unavailable", "pg blip")
+        return _accepted_receipt(req)
+
+    with patch(
+        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+        side_effect=_turn,
+    ):
+        unknown = submit_composite_turn(
+            SimpleNamespace(), req, mutation_enabled=True, port=port
+        )
+        assert unknown["status"] == "outcome_unknown"
+        assert unknown["recovery_action"] == "follow_and_reconcile_original_action"
+        accepted = submit_composite_turn(
+            SimpleNamespace(), req, mutation_enabled=True, port=port
+        )
+    assert accepted["status"] == "accepted"
+    assert accepted["payload_digest"] == unknown["payload_digest"]
+    assert len(port._store) == 1  # type: ignore[arg-type]
+
+
+def test_v8_m2_port_unavailable_fail_closed_no_turn() -> None:
+    """TC-V8-M1-14 / GAP-07 partial: intent port down → 503; turn never called."""
+
+    def boom(_req):  # type: ignore[no-untyped-def]
+        raise IntentPayloadPortError(
+            "intent_cli_unavailable",
+            "hqa intent cli down",
+            retryable=True,
+        )
+
+    port = FakeIntentPayloadPort(put_handler=boom)
+    with patch(
+        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+    ) as turn:
+        with pytest.raises(CompositeTurnSubmitError) as exc:
+            submit_composite_turn(
+                SimpleNamespace(),
+                _request(),
+                mutation_enabled=True,
+                port=port,
+            )
+    assert exc.value.http_status == 503
+    assert exc.value.code == "unavailable"
+    turn.assert_not_called()
+
