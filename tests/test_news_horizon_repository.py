@@ -394,7 +394,11 @@ def test_load_horizon_daily_and_dailies(monkeypatch) -> None:
 
         def execute(self, sql: str, params: tuple = ()) -> FakeConnection:
             self.executions.append((sql, params))
-            self._mode = "all" if "ORDER BY report_date DESC" in sql and "LIMIT %s" in sql else "one"
+            self._mode = (
+                "all"
+                if "ORDER BY report_date DESC" in sql and "LIMIT %s" in sql
+                else "one"
+            )
             if "LIMIT 1" in sql and "report_date = %s::date" not in sql:
                 self._mode = "latest"
             return self

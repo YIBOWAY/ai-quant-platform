@@ -67,7 +67,14 @@ class LiveClient:
 
         return AiHotDailiesPage(
             count=1,
-            items=[AiHotDailyIndex(date="2026-07-23", generated_at=None, lead_title="Live", raw={})],
+            items=[
+                AiHotDailyIndex(
+                    date="2026-07-23",
+                    generated_at=None,
+                    lead_title="Live",
+                    raw={},
+                )
+            ],
             warnings=[],
         )
 

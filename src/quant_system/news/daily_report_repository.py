@@ -7,7 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from quant_system.news.models import AiHotDaily, AiHotDailiesPage, AiHotDailyIndex, utc_now_iso
+from quant_system.news.models import AiHotDailiesPage, AiHotDaily, AiHotDailyIndex, utc_now_iso
 from quant_system.storage.database import SCHEMA, get_database
 
 if TYPE_CHECKING:

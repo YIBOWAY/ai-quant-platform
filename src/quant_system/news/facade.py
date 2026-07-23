@@ -12,7 +12,6 @@ Request path never runs Horizon pipeline / ingest / LLM.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -358,7 +357,9 @@ class NewsFacade:
 
     # ------------------------------------------------------------- forced aihot
 
-    def _aihot_items(self, *, forced: bool, preference: Preference, **kwargs: Any) -> dict[str, Any]:
+    def _aihot_items(
+        self, *, forced: bool, preference: Preference, **kwargs: Any
+    ) -> dict[str, Any]:
         self._require_aihot_enabled()
         try:
             page = self._aihot_live_items(**kwargs)
@@ -711,7 +712,12 @@ class NewsFacade:
         served_from: ServedFrom,
         extra_warnings: list[str] | None = None,
     ) -> dict[str, Any]:
-        warnings = _merge_warnings(page.warnings, extra_warnings, provider=provider, settings=self.settings)
+        warnings = _merge_warnings(
+            page.warnings,
+            extra_warnings,
+            provider=provider,
+            settings=self.settings,
+        )
         return {
             "provider": provider,
             "provider_beta": _provider_beta(provider, self.settings),
@@ -750,7 +756,12 @@ class NewsFacade:
         served_from: ServedFrom,
         extra_warnings: list[str] | None = None,
     ) -> dict[str, Any]:
-        warnings = _merge_warnings(daily.warnings, extra_warnings, provider=provider, settings=self.settings)
+        warnings = _merge_warnings(
+            daily.warnings,
+            extra_warnings,
+            provider=provider,
+            settings=self.settings,
+        )
         return {
             "provider": provider,
             "provider_beta": _provider_beta(provider, self.settings),
@@ -778,7 +789,12 @@ class NewsFacade:
         served_from: ServedFrom,
         extra_warnings: list[str] | None = None,
     ) -> dict[str, Any]:
-        warnings = _merge_warnings(page.warnings, extra_warnings, provider=provider, settings=self.settings)
+        warnings = _merge_warnings(
+            page.warnings,
+            extra_warnings,
+            provider=provider,
+            settings=self.settings,
+        )
         return {
             "provider": provider,
             "provider_beta": _provider_beta(provider, self.settings),

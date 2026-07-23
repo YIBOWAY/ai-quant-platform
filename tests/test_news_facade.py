@@ -70,7 +70,12 @@ def _daily(date: str = "2026-07-23", *, warnings: list[str] | None = None) -> Ai
 
 def _dailies(*dates: str) -> AiHotDailiesPage:
     items = [
-        AiHotDailyIndex(date=d, generated_at=f"{d}T00:01:00+00:00", lead_title=f"Lead {d}", raw={"date": d})
+        AiHotDailyIndex(
+            date=d,
+            generated_at=f"{d}T00:01:00+00:00",
+            lead_title=f"Lead {d}",
+            raw={"date": d},
+        )
         for d in (dates or ("2026-07-23",))
     ]
     return AiHotDailiesPage(count=len(items), items=items, warnings=[])
@@ -401,7 +406,11 @@ def test_auto_daily_failover_horizon() -> None:
 
 def test_auto_daily_rejects_stale_horizon_date() -> None:
     old = (datetime.now(UTC).date() - timedelta(days=5)).isoformat()
-    cached = _daily("2026-07-23", warnings=["cached daily"])
+    # Cache key for undated auto daily is Asia/Shanghai "today" (current_brief_date).
+    from quant_system.news.facade import current_brief_date
+
+    brief_today = current_brief_date()
+    cached = _daily(brief_today, warnings=["cached daily"])
     facade = _facade(
         client=FakeTimeout(),
         horizon=HorizonState(fresh_run=_fresh_run(), daily=_daily(old)),
@@ -412,6 +421,7 @@ def test_auto_daily_rejects_stale_horizon_date() -> None:
 
     assert payload["provider"] == "aihot"
     assert payload["served_from"] == "cache"
+    assert payload["date"] == brief_today
 
 
 def test_auto_dailies_failover_horizon() -> None:
