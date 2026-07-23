@@ -41,19 +41,21 @@ temporary registry outage returns the exact turn to the delayed queue with
 bounded backoff and performs zero Hermes mutations. Never drain or delete those
 retryable queued turns to make readiness appear green.
 
-The wrapper reads inherited variables and, when present, this optional
-owner-only file:
+The wrapper requires this trusted shell dotenv:
 
 ```text
 data/_runtime/agent-v0.2-connector.env
 ```
 
-Keep the file owned by the current user and mode `600`. A typical local file
-sets paths and loopback coordinates, not raw prompts:
+It must be a regular, non-symlink file owned by the current user with exact
+mode `600`. Group-readable files, permissive files, symlinks, directories, and
+missing files all fail closed. A typical local file sets paths and loopback
+coordinates, not raw prompts:
 
 ```dotenv
 QS_DATABASE_ENABLED=true
 QS_DATABASE_URL=postgresql://quant_app_runtime:REDACTED@127.0.0.1:5432/quantplatform
+QS_DATABASE_AUTO_MIGRATE=false
 QS_HERMES_GATEWAY_ENABLED=true
 QS_HERMES_GATEWAY_BASE_URL=http://127.0.0.1:8642
 QS_HERMES_GATEWAY_API_KEY_FILE=/Users/you/.hermes/api-server.key
@@ -64,13 +66,40 @@ QS_LOCAL_MUTATION_ENABLED=true
 QS_LOCAL_MUTATION_COMPOSER_OPEN=true
 ```
 
+Because this is an owner-only trusted shell dotenv, a local operator may keep
+the database password in macOS Keychain instead of writing it into the file:
+
+```dotenv
+QS_DATABASE_URL="postgresql://quant_app_runtime:$(security find-generic-password -w -s ai-quant-platform-agent-v02-db -a "${USER}")@127.0.0.1:5432/quantplatform"
+QS_DATABASE_AUTO_MIGRATE=false
+```
+
+The wrapper suppresses dotenv evaluation output, so neither the password nor a
+secret-helper diagnostic is copied into launchd logs. Startup always exports
+`QS_DATABASE_AUTO_MIGRATE=false`; any truthy request is rejected before Python
+starts.
+
 The Hermes API key stays in its separate mode-`600` file. Never put prompt
 content or `--fixed-input` in the daemon configuration.
 
+Validate the exact checkout before installing:
+
+```bash
+chmod 600 data/_runtime/agent-v0.2-connector.env
+bash scripts/run_agent_v02_connector.sh --check
+```
+
+This check sources the protected dotenv, rejects startup migration, verifies
+the configured Python can import `quant_system` and connector configuration
+from this release checkout, and validates the poll/worker settings. It does not
+open PostgreSQL, contact Hermes or a provider, acquire connector liveness, or
+claim work.
+
 ## Install or replace
 
-The installer is replay-safe: it validates the plist, boots out an older
-generation when present, then bootstraps this exact template.
+The installer is replay-safe. It runs the same network-free check before
+creating or replacing any LaunchAgent state, validates the plist, boots out an
+older generation when present, then bootstraps this exact template.
 
 ```bash
 chmod 600 data/_runtime/agent-v0.2-connector.env
