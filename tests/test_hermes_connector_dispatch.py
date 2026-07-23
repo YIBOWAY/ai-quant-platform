@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 
-from quant_system.hermes.command_ledger import ExpiredLeaseReconciliation, HermesCommand
+from quant_system.config.settings import DatabaseSettings, Settings
+from quant_system.hermes.command_ledger import (
+    ExpiredLeaseReconciliation,
+    HermesCommand,
+    HermesCommandLedger,
+    HermesCommandLedgerUnavailable,
+)
 from quant_system.hermes.connector_worker import (
     DispatchGateDecision,
     HermesConnectorWorker,
@@ -18,7 +25,15 @@ from quant_system.hermes.dispatch_adapter import (
     FakeHermesDispatchAdapter,
     HermesDispatchRequest,
     HermesDispatchResult,
+    HermesRunObservation,
 )
+from quant_system.hermes.session_registry import HermesSessionRegistryUnavailable
+from quant_system.hermes.workflow_binding import (
+    PreparedWorkflowCommand,
+    ensure_bound_command,
+    workflow_preparation_digest,
+)
+from quant_system.storage import database as db
 
 
 def _cmd(
@@ -27,12 +42,14 @@ def _cmd(
     version: int = 1,
     lease_token: UUID | None = None,
     client_request_id: str = "req-v5-001",
+    platform_session_id: str = "platform-session-v5",
+    attempt_count: int = 0,
 ) -> HermesCommand:
     token = lease_token if lease_token is not None else uuid4()
     return HermesCommand(
         command_id=uuid4(),
         owner_user_id=UUID("00000000-0000-0000-0000-000000000001"),
-        platform_session_id="platform-session-v5",
+        platform_session_id=platform_session_id,
         client_request_id=client_request_id,
         kind="research_chat",
         intent_schema_version=1,
@@ -41,7 +58,7 @@ def _cmd(
         provider_policy_digest="c" * 64,
         state=state,  # type: ignore[arg-type]
         version=version,
-        attempt_count=0,
+        attempt_count=attempt_count,
         next_attempt_at=None,
         lease_owner="worker-v5" if state == "leased" else None,
         lease_token=token if state == "leased" else None,
@@ -66,6 +83,8 @@ class _ScriptedLedger:
     delivered: list[tuple[UUID, str, str]] = None  # type: ignore[assignment]
     rejected: list[tuple[UUID, str]] = None  # type: ignore[assignment]
     timed_out: list[tuple[UUID, str]] = None  # type: ignore[assignment]
+    succeeded: list[UUID] = None  # type: ignore[assignment]
+    heartbeat_calls: int = 0
     fail_on: str | None = None  # crash injection point name
 
     def __post_init__(self) -> None:
@@ -73,11 +92,86 @@ class _ScriptedLedger:
         self.delivered = []
         self.rejected = []
         self.timed_out = []
+        self.succeeded = []
         self._by_id: dict[UUID, HermesCommand] = {c.command_id: c for c in self.queue}
 
     def reconcile_expired_leases(self, *, now, limit):
         self.reconcile_calls += 1
         return ExpiredLeaseReconciliation(requeued=(), outcome_unknown=())
+
+    def list_commands_for_run_reconciliation(self, *, limit):
+        return tuple(
+            command
+            for command in self._by_id.values()
+            if command.state in {"delivered", "outcome_unknown"}
+        )[:limit]
+
+    def reconcile_outcome_as_delivered(
+        self,
+        *,
+        command_id,
+        expected_version,
+        now,
+        hermes_session_id,
+        hermes_run_id,
+        evidence_digest,
+    ):
+        cmd = self._by_id[command_id]
+        assert cmd.version == expected_version
+        delivered = replace(
+            cmd,
+            state="delivered",  # type: ignore[arg-type]
+            version=cmd.version + 1,
+            hermes_session_id=hermes_session_id,
+            hermes_run_id=hermes_run_id,
+            last_error_code=None,
+        )
+        self._by_id[command_id] = delivered
+        return delivered
+
+    def mark_succeeded(
+        self,
+        *,
+        command_id,
+        expected_version,
+        now,
+        hermes_session_id,
+        hermes_run_id,
+        evidence_digest,
+    ):
+        cmd = self._by_id[command_id]
+        assert cmd.version == expected_version
+        assert cmd.hermes_session_id == hermes_session_id
+        assert cmd.hermes_run_id == hermes_run_id
+        terminal = replace(
+            cmd,
+            state="succeeded",  # type: ignore[arg-type]
+            version=cmd.version + 1,
+        )
+        self._by_id[command_id] = terminal
+        self.succeeded.append(command_id)
+        return terminal
+
+    def mark_failed(self, **kwargs):
+        cmd = self._by_id[kwargs["command_id"]]
+        terminal = replace(
+            cmd,
+            state="failed",  # type: ignore[arg-type]
+            version=cmd.version + 1,
+            last_error_code=kwargs["error_code"],
+        )
+        self._by_id[cmd.command_id] = terminal
+        return terminal
+
+    def mark_cancelled(self, **kwargs):
+        cmd = self._by_id[kwargs["command_id"]]
+        terminal = replace(
+            cmd,
+            state="cancelled",  # type: ignore[arg-type]
+            version=cmd.version + 1,
+        )
+        self._by_id[cmd.command_id] = terminal
+        return terminal
 
     def claim_next_command(self, *, worker_id, now, lease_duration):
         self.claim_calls += 1
@@ -85,6 +179,8 @@ class _ScriptedLedger:
             return None
         for cmd in list(self.queue):
             if cmd.state != "queued":
+                continue
+            if cmd.next_attempt_at is not None and cmd.next_attempt_at > now:
                 continue
             self.queue.remove(cmd)
             leased = replace(
@@ -121,6 +217,27 @@ class _ScriptedLedger:
             return started
         return started
 
+    def heartbeat_lease(
+        self,
+        *,
+        command_id,
+        expected_version,
+        lease_token,
+        now,
+        lease_duration,
+    ):
+        cmd = self._by_id[command_id]
+        assert cmd.version == expected_version
+        assert cmd.lease_token == lease_token
+        heartbeat = replace(
+            cmd,
+            version=cmd.version + 1,
+            lease_until=now + lease_duration,
+        )
+        self._by_id[command_id] = heartbeat
+        self.heartbeat_calls += 1
+        return heartbeat
+
     def mark_delivered(
         self,
         *,
@@ -133,7 +250,7 @@ class _ScriptedLedger:
     ):
         if self.fail_on == "after_hermes_before_pg_link":
             # Crash: Hermes accepted but PG never records delivery.
-            raise RuntimeError("simulated crash before PG run link")
+            raise HermesCommandLedgerUnavailable("simulated database outage")
         cmd = self._by_id[command_id]
         assert cmd.version == expected_version
         delivered = replace(
@@ -166,6 +283,34 @@ class _ScriptedLedger:
         self._by_id[command_id] = unknown
         self.timed_out.append((command_id, error_code))
         return unknown
+
+    def mark_dispatch_unavailable(
+        self,
+        *,
+        command_id,
+        expected_version,
+        lease_token,
+        now,
+        retry_at,
+        error_code,
+    ):
+        cmd = self._by_id[command_id]
+        assert cmd.version == expected_version
+        assert cmd.lease_token == lease_token
+        queued = replace(
+            cmd,
+            state="queued",  # type: ignore[arg-type]
+            version=cmd.version + 1,
+            next_attempt_at=retry_at,
+            lease_owner=None,
+            lease_token=None,
+            lease_until=None,
+            dispatch_started_at=None,
+            last_error_code=error_code,
+        )
+        self._by_id[command_id] = queued
+        self.queue.append(queued)
+        return queued
 
     def mark_dispatch_rejected(
         self, *, command_id, expected_version, lease_token, now, evidence_digest, error_code
@@ -235,6 +380,317 @@ def test_happy_path_claim_dispatch_delivered() -> None:
     assert session_id.startswith("sess_")
     assert run_id.startswith("run_")
     assert ledger._by_id[cmd.command_id].state == "delivered"
+
+
+def test_worker_resolves_and_reuses_managed_hermes_session() -> None:
+    cmd = _cmd()
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+    resolved: list[str] = []
+
+    def resolve_managed_session(command: HermesCommand) -> str:
+        resolved.append(command.platform_session_id)
+        return "web_managed_deadbeef"
+
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        managed_session_resolver=resolve_managed_session,
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.delivered_count == 1
+    assert resolved == ["platform-session-v5"]
+    assert ledger.delivered[0][1] == "web_managed_deadbeef"
+
+
+def test_accepted_is_nonterminal_until_durable_observer_reports_success() -> None:
+    cmd = _cmd(client_request_id="req-v6-observe")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        run_lifecycle_port=adapter,
+        managed_session_resolver=lambda _command: "web_managed_observe",
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    accepted = worker.run_once()
+    delivered = ledger._by_id[cmd.command_id]
+    assert accepted.delivered_count == 1
+    assert delivered.state == "delivered"
+    assert delivered.hermes_run_id is not None
+
+    adapter.set_run_observation(
+        HermesRunObservation(
+            status="succeeded",
+            hermes_session_id="web_managed_observe",
+            hermes_run_id=delivered.hermes_run_id,
+            evidence_digest="f" * 64,
+            next_cursor=3,
+            replay_complete=True,
+        )
+    )
+    observed = worker.run_once()
+
+    assert observed.terminal_count == 1
+    assert ledger._by_id[cmd.command_id].state == "succeeded"
+
+
+def test_terminal_observation_always_replays_from_zero() -> None:
+    class CursorRecordingAdapter(FakeHermesDispatchAdapter):
+        observed_cursors: list[int]
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.observed_cursors = []
+
+        def observe(self, *, hermes_session_id, hermes_run_id, after_cursor=0):
+            self.observed_cursors.append(after_cursor)
+            return super().observe(
+                hermes_session_id=hermes_session_id,
+                hermes_run_id=hermes_run_id,
+                after_cursor=after_cursor,
+            )
+
+    cmd = _cmd(client_request_id="req-v6-full-replay")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = CursorRecordingAdapter()
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        run_lifecycle_port=adapter,
+        managed_session_resolver=lambda _command: "web_managed_full_replay",
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    worker.run_once()
+    worker.run_once()
+
+    assert adapter.observed_cursors == [0]
+
+
+def test_worker_recovers_accept_drop_ack_with_same_identity_and_session() -> None:
+    cmd = _cmd(client_request_id="req-v6-ack-loss")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter(force_provider_calls=True)
+    adapter.next_fault = "accept_drop_ack"
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        run_lifecycle_port=adapter,
+        managed_session_resolver=lambda _command: "web_managed_ack_loss",
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    first = worker.run_once()
+    assert first.dispatch_unknown_count == 1
+    assert ledger._by_id[cmd.command_id].state == "outcome_unknown"
+
+    second = worker.run_once()
+    recovered = ledger._by_id[cmd.command_id]
+
+    assert second.recovered_count == 1
+    assert recovered.state == "delivered"
+    assert recovered.hermes_session_id == "web_managed_ack_loss"
+    assert recovered.hermes_run_id is not None
+    assert adapter.submit_calls == 2
+    assert adapter.provider_calls == 1
+
+
+def test_same_client_request_id_in_two_sessions_uses_distinct_upstream_keys() -> None:
+    """Ledger idempotency is session-scoped; upstream keys must not collide."""
+
+    first = _cmd(
+        client_request_id="same-browser-action",
+        platform_session_id="wm_session_one",
+    )
+    second = _cmd(
+        client_request_id="same-browser-action",
+        platform_session_id="wm_session_two",
+    )
+    adapter = FakeHermesDispatchAdapter()
+
+    first_result = adapter.submit_or_recover(
+        HermesDispatchRequest(
+            command_id=str(first.command_id),
+            kind=first.kind,
+            client_request_id=first.client_request_id,
+            platform_session_id=first.platform_session_id,
+            canonical_request_digest=first.canonical_request_digest,
+            payload_ref=first.payload_ref,
+            hermes_session_id="web_session_one",
+        )
+    )
+    second_result = adapter.submit_or_recover(
+        HermesDispatchRequest(
+            command_id=str(second.command_id),
+            kind=second.kind,
+            client_request_id=second.client_request_id,
+            platform_session_id=second.platform_session_id,
+            canonical_request_digest=second.canonical_request_digest,
+            payload_ref=second.payload_ref,
+            hermes_session_id="web_session_two",
+        )
+    )
+
+    assert first_result.kind == "accepted"
+    assert second_result.kind == "accepted"
+    assert first_result.hermes_run_id != second_result.hermes_run_id
+
+
+def test_worker_heartbeats_lease_before_external_dispatch() -> None:
+    cmd = _cmd(client_request_id="req-v6-heartbeat")
+    ledger = _ScriptedLedger(queue=[cmd])
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=FakeHermesDispatchAdapter(),
+        managed_session_resolver=lambda _command: "web_managed_heartbeat",
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.delivered_count == 1
+    assert ledger.heartbeat_calls >= 1
+
+
+def test_managed_session_resolution_failure_never_calls_hermes() -> None:
+    cmd = _cmd(client_request_id="req-v6-session-fail")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+
+    def fail_resolution(_command: HermesCommand) -> str:
+        raise RuntimeError("registry unavailable with secret detail")
+
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        managed_session_resolver=fail_resolution,
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.rejected_count == 1
+    assert adapter.submit_calls == 0
+    assert ledger._by_id[cmd.command_id].last_error_code == "managed_session_resolution_failed"
+
+
+def test_temporary_managed_session_registry_outage_requeues_without_hermes() -> None:
+    cmd = _cmd(client_request_id="req-v6-session-temporary")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+
+    def unavailable(_command: HermesCommand) -> str:
+        raise HermesSessionRegistryUnavailable("secret database detail")
+
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        managed_session_resolver=unavailable,
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    command = ledger._by_id[cmd.command_id]
+    assert result.last_dispatch_outcome == "unavailable"
+    assert result.hermes_mutation_count == 0
+    assert adapter.submit_calls == 0
+    assert command.state == "queued"
+    assert command.last_error_code == "managed_session_registry_unavailable"
+
+
+def test_pre_network_payload_failure_reports_zero_hermes_mutations() -> None:
+    class PreNetworkFailureAdapter(FakeHermesDispatchAdapter):
+        def submit_or_recover(self, request):  # type: ignore[no-untyped-def]
+            self.submit_calls += 1
+            return HermesDispatchResult(
+                kind="rejected",
+                error_code="payload_resolve_failed",
+                network_attempted=False,
+            )
+
+    ledger = _ScriptedLedger(queue=[_cmd(client_request_id="req-v6-pre-network")])
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=PreNetworkFailureAdapter(),
+        managed_session_resolver=lambda _command: "web_managed_pre_network",
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.rejected_count == 1
+    assert result.hermes_mutation_count == 0
+
+
+def test_pre_network_unavailable_is_requeued_not_outcome_unknown() -> None:
+    cmd = _cmd(client_request_id="req-v6-unavailable-before-network")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+    adapter.next_fault = "unavailable"
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        managed_session_resolver=lambda _command: "web_managed_unavailable",
+        claims_per_cycle=5,
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    command = ledger._by_id[cmd.command_id]
+    assert result.last_dispatch_outcome == "unavailable"
+    assert result.dispatch_unknown_count == 0
+    assert result.hermes_mutation_count == 0
+    assert adapter.submit_calls == 1
+    assert command.state == "queued"
+    assert command.dispatch_started_at is None
+    assert command.next_attempt_at is not None
+    assert command.last_error_code == "durable_unavailable"
+
+
+def test_pre_network_unavailable_retry_is_bounded_exponential() -> None:
+    now = datetime(2026, 7, 21, 12, 0, tzinfo=UTC)
+
+    def dispatch_delay(*, previous_attempts: int, request_id: str) -> float:
+        command = _cmd(
+            client_request_id=request_id,
+            attempt_count=previous_attempts,
+        )
+        ledger = _ScriptedLedger(queue=[command])
+        adapter = FakeHermesDispatchAdapter(next_fault="unavailable")
+        worker = HermesConnectorWorker(
+            ledger=ledger,
+            mode="supervised_dispatch",
+            dispatch_adapter=adapter,
+            managed_session_resolver=lambda _command: "web_managed_backoff",
+            now=lambda: now,
+        )
+        worker.run_once()
+        retry_at = ledger._by_id[command.command_id].next_attempt_at
+        assert retry_at is not None
+        return (retry_at - now).total_seconds()
+
+    first_delay = dispatch_delay(previous_attempts=0, request_id="retry-first")
+    later_delay = dispatch_delay(previous_attempts=8, request_id="retry-later")
+
+    assert 4.5 <= first_delay <= 5.5
+    assert first_delay < later_delay <= 300
 
 
 def test_gate_rejects_without_hermes_call() -> None:
@@ -356,26 +812,11 @@ def test_crash_after_hermes_before_pg_link_records_unknown_via_exception_path() 
         dispatch_adapter=adapter,
         now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
     )
-    # mark_delivered raises; worker catches lease-like errors only — RuntimeError
-    # propagates from _record_dispatch_result. Guard: we want durable unknown.
-    # Adjust expectation: uncaught RuntimeError is a bug; worker should treat
-    # unexpected record failures. Current code only catches lease conflicts.
-    # So we assert the adapter was called and started was recorded; delivery
-    # failed open. Improve by catching Exception in _record — already only lease.
-    # For this unit test, swap fail to use timeout fault instead for unknown.
-    ledger.fail_on = None
-    adapter.next_fault = "timeout"
-    # reset queue
-    ledger2 = _ScriptedLedger(queue=[_cmd(client_request_id="req-v5-timeout")])
-    worker2 = HermesConnectorWorker(
-        ledger=ledger2,
-        mode="supervised_dispatch",
-        dispatch_adapter=adapter,
-        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
-    )
-    result = worker2.run_once()
+    result = worker.run_once()
+
     assert result.dispatch_unknown_count == 1
     assert adapter.submit_calls == 1
+    assert ledger._by_id[cmd.command_id].state == "leased"
 
 
 def test_idempotent_recover_after_delivered_does_not_create_second_run() -> None:
@@ -412,20 +853,6 @@ def test_reconcile_only_still_default_and_ignores_queue() -> None:
 # ---------------------------------------------------------------------------
 # PostgreSQL integration crash matrix (requires QS_TEST_DATABASE_URL)
 # ---------------------------------------------------------------------------
-
-import hashlib
-import os
-from dataclasses import replace
-from datetime import timedelta
-
-from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.command_ledger import HermesCommandLedger
-from quant_system.hermes.workflow_binding import (
-    PreparedWorkflowCommand,
-    ensure_bound_command,
-    workflow_preparation_digest,
-)
-from quant_system.storage import database as db
 
 
 def _pg_settings() -> Settings:
