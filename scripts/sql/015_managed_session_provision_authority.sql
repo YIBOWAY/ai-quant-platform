@@ -46,7 +46,7 @@ END $$;
 -- Correct both accidental table-wide grants and any stale column grants before
 -- applying the exact allowlist.  The readonly role remains unable to mutate.
 REVOKE UPDATE ON quant_system.hermes_workspace_sessions
-    FROM quant_runtime, quant_readonly;
+    FROM quant_runtime, quant_readonly, PUBLIC;
 REVOKE UPDATE (
     platform_session_id,
     hermes_session_id,
@@ -74,7 +74,7 @@ REVOKE UPDATE (
     created_at,
     updated_at
 ) ON quant_system.hermes_workspace_sessions
-    FROM quant_runtime, quant_readonly;
+    FROM quant_runtime, quant_readonly, PUBLIC;
 
 GRANT UPDATE (
     provision_state,

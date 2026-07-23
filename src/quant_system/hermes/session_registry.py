@@ -432,25 +432,6 @@ _PROVISION_UPDATE_COLUMNS = (
     "provisioned_at",
 )
 
-_IMMUTABLE_SESSION_COLUMNS = (
-    "platform_session_id",
-    "hermes_session_id",
-    "workspace_id",
-    "owner_user_id",
-    "kind",
-    "source_channel",
-    "parent_platform_session_id",
-    "fork_point",
-    "provider_policy_digest",
-    "payload_ttl_days",
-    "creation_client_action_id",
-    "creation_action_digest",
-    "writer",
-    "created_at",
-    "updated_at",
-)
-
-
 def session_registry_schema_is_ready_on_connection(conn: psycopg.Connection) -> bool:
     exists = conn.execute(
         "SELECT to_regclass(%s), to_regclass(%s)",
@@ -731,6 +712,14 @@ def hermes_runtime_security_is_ready_on_connection(
             has_schema_privilege(session_user, %s, 'USAGE'),
             NOT has_schema_privilege(session_user, %s, 'CREATE'),
             (
+                SELECT pg_get_userbyid(relation.relowner) = %s
+                FROM pg_class AS relation
+                JOIN pg_namespace AS namespace
+                  ON namespace.oid = relation.relnamespace
+                WHERE namespace.nspname = %s
+                  AND relation.relname = 'hermes_workspace_sessions'
+            ),
+            (
                 SELECT count(*) = %s
                 FROM pg_class AS relation
                 JOIN pg_namespace AS namespace
@@ -755,28 +744,23 @@ def hermes_runtime_security_is_ready_on_connection(
                 AND NOT has_table_privilege(session_user, %s, 'DELETE')
             ),
             (
-                SELECT count(*) = %s
+                SELECT
+                    count(*) FILTER (
+                        WHERE attribute.attname = ANY(%s::text[])
+                    ) = %s
                    AND bool_and(
                         has_column_privilege(
                             session_user,
                             %s,
-                            allowed_column,
+                            attribute.attname,
                             'UPDATE'
                         )
+                        = (attribute.attname = ANY(%s::text[]))
                    )
-                FROM unnest(%s::text[]) AS allowed(allowed_column)
-            ),
-            (
-                SELECT count(*) = %s
-                   AND bool_and(
-                        NOT has_column_privilege(
-                            session_user,
-                            %s,
-                            immutable_column,
-                            'UPDATE'
-                        )
-                   )
-                FROM unnest(%s::text[]) AS immutable(immutable_column)
+                FROM pg_attribute AS attribute
+                WHERE attribute.attrelid = %s::regclass
+                  AND attribute.attnum > 0
+                  AND NOT attribute.attisdropped
             )
         """,
         (
@@ -785,6 +769,8 @@ def hermes_runtime_security_is_ready_on_connection(
             HERMES_RUNTIME_ROLE,
             HERMES_MIGRATOR_ROLE,
             SCHEMA,
+            SCHEMA,
+            HERMES_MIGRATOR_ROLE,
             SCHEMA,
             len(_HERMES_RLS_TABLES),
             SCHEMA,
@@ -797,12 +783,11 @@ def hermes_runtime_security_is_ready_on_connection(
             f"{SCHEMA}.hermes_workspace_sessions",
             f"{SCHEMA}.hermes_workspace_sessions",
             f"{SCHEMA}.hermes_workspace_sessions",
+            list(_PROVISION_UPDATE_COLUMNS),
             len(_PROVISION_UPDATE_COLUMNS),
             f"{SCHEMA}.hermes_workspace_sessions",
             list(_PROVISION_UPDATE_COLUMNS),
-            len(_IMMUTABLE_SESSION_COLUMNS),
             f"{SCHEMA}.hermes_workspace_sessions",
-            list(_IMMUTABLE_SESSION_COLUMNS),
         ),
     ).fetchone()
     if row is None or not all(bool(value) for value in row):
