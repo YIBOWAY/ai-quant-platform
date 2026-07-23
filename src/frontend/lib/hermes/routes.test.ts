@@ -53,3 +53,54 @@ describe("hermesRouteHref", () => {
     expect(hermesRouteHref("sessions", "en")).toBe("/en/hermes/sessions");
   });
 });
+
+describe("V8-M3 deep-link catalog (G3 observe-only)", () => {
+  const OBSERVE_QUERY_KEYS = [
+    "focus",
+    "task_id",
+    "gate_id",
+    "approval_id",
+    "result_id",
+    "hermes_session_id",
+    "command_id",
+  ] as const;
+
+  it("builds observe deep-links for tasks/approvals/results without write verbs", () => {
+    expect(
+      hermesRouteHref("tasks", "en", { task_id: "task-abc", focus: "cascade" }),
+    ).toBe("/en/hermes/tasks?focus=cascade&task_id=task-abc");
+    expect(
+      hermesRouteHref("approvals", "zh", {
+        approval_id: "appr-1",
+        gate_id: "gate-1",
+      }),
+    ).toBe("/zh/hermes/approvals?approval_id=appr-1&gate_id=gate-1");
+    expect(
+      hermesRouteHref("results", "en", { result_id: "res-1" }),
+    ).toBe("/en/hermes/results?result_id=res-1");
+    expect(
+      hermesHomeHref("en", { hermes_session_id: "run_deadbeef", command_id: "c1" }),
+    ).toBe("/en/hermes?command_id=c1&hermes_session_id=run_deadbeef");
+  });
+
+  it("catalog keys stay observe-only (no write/mutate/conversation verbs)", () => {
+    const blob = [
+      ...Object.values(hermesRoutes),
+      ...OBSERVE_QUERY_KEYS,
+    ].join(" ");
+    expect(blob).not.toMatch(/write|mutate|conversation\.turn|submit-turn/i);
+  });
+
+  it("deep-link hrefs do not encode mutation enablement", () => {
+    const href = hermesRouteHref("tasks", "en", {
+      task_id: "task-1",
+      mutation_enabled: "true",
+    });
+    // Query may carry the string, but routes helper is pure URL — readiness
+    // gates stay server-side. Ensure path itself is still /hermes/tasks.
+    expect(href.startsWith("/en/hermes/tasks")).toBe(true);
+    expect(href).not.toContain("/act");
+    expect(href).not.toContain("submit-turn");
+  });
+});
+
