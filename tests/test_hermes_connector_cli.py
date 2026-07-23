@@ -36,7 +36,13 @@ class _FakeLedger:
     def mark_dispatch_timeout(self, **_kwargs):
         return None
 
+    def mark_dispatch_unavailable(self, **_kwargs):
+        return None
+
     def mark_dispatch_rejected(self, **_kwargs):
+        return None
+
+    def heartbeat_lease(self, **_kwargs):
         return None
 
 
@@ -95,8 +101,12 @@ def test_connector_worker_once_outputs_one_provider_free_json_cycle(monkeypatch)
         "mode": "reconcile_only",
         "outcome_unknown_count": 0,
         "provider_call_count": 0,
+        "recovered_count": 0,
         "rejected_count": 0,
         "requeued_count": 0,
+        "terminal_count": 0,
+        "session_provisioning": {"outcome": "not_configured"},
+        "connector_liveness": {"status": "not_acquired"},
     }
     assert ledger.calls == 1
     assert waiter.waits == []

@@ -7,7 +7,7 @@ import signal
 import sys
 import threading
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Annotated
@@ -23,13 +23,37 @@ from quant_system.hermes.command_ledger import (
     HermesCommandNotFound,
     HermesCommandValidationError,
 )
+from quant_system.hermes.connector_liveness import (
+    ConnectorLivenessAuthority,
+    ConnectorLivenessError,
+    ConnectorLivenessLease,
+)
 from quant_system.hermes.connector_worker import (
     CommandWakeupWaiter,
+    DispatchGateDecision,
     HermesConnectorCycleResult,
     HermesConnectorWorker,
     PostgresCommandWakeupWaiter,
 )
+from quant_system.hermes.dispatch_adapter import fixed_input_resolver
+from quant_system.hermes.intent_payload_port import intent_payload_input_resolver
+from quant_system.hermes.managed_session_provisioner import (
+    ManagedSessionProvisioner,
+    ManagedSessionProvisionResult,
+    SubprocessManagedSessionProvisionPort,
+)
 from quant_system.hermes.release_cli import release_app
+from quant_system.hermes.release_runtime import (
+    ReleaseRuntimeProbeError,
+    current_release_decision,
+    git_runtime_digest,
+    platform_runtime_root,
+)
+from quant_system.hermes.run_lifecycle_port import (
+    HermesRunPortError,
+    build_subprocess_run_lifecycle_port,
+)
+from quant_system.hermes.session_registry import require_web_writable_session
 from quant_system.hermes.workflow_binding import (
     PreparedWorkflowCommand,
     ensure_bound_command,
@@ -49,11 +73,150 @@ class WorkflowBindingInputError(ValueError):
 
 
 @dataclass(frozen=True)
+class ConnectorRuntimeCycle:
+    cycle: HermesConnectorCycleResult
+    session_provisioning: dict[str, object]
+    connector_liveness: dict[str, object]
+
+    def to_dict(self) -> dict[str, object]:
+        document = asdict(self.cycle)
+        document["session_provisioning"] = dict(self.session_provisioning)
+        document["connector_liveness"] = dict(self.connector_liveness)
+        return document
+
+
+@dataclass
 class ConnectorRuntime:
     worker: HermesConnectorWorker
     wakeup_waiter: CommandWakeupWaiter
     stop_requested: Callable[[], bool]
     request_stop: Callable[[], None] = lambda: None
+    worker_id: str = "connector-worker-1"
+    provisioner: ManagedSessionProvisioner | None = None
+    network_gate: Callable[[], DispatchGateDecision] = lambda: DispatchGateDecision(
+        allow=True,
+        reason="ready",
+    )
+    liveness_lease: ConnectorLivenessLease | None = None
+    heartbeat_interval_seconds: float = 5.0
+    _heartbeat_thread: threading.Thread | None = None
+    _heartbeat_stop: threading.Event | None = None
+    _liveness_state: str = "not_acquired"
+    _closed: bool = False
+
+    def start_liveness_heartbeat(self) -> None:
+        """Renew the daemon generation independently of slow Hermes calls."""
+
+        if self.liveness_lease is None or self._heartbeat_thread is not None:
+            return
+        interval = float(self.heartbeat_interval_seconds)
+        if not 0.005 <= interval <= 100:
+            raise ValueError("heartbeat_interval_seconds must be in [0.005, 100]")
+        stop = threading.Event()
+        self._heartbeat_stop = stop
+        self._liveness_state = "active"
+
+        def _heartbeat() -> None:
+            assert self.liveness_lease is not None
+            while not stop.wait(interval):
+                try:
+                    self.liveness_lease.heartbeat(now=datetime.now(UTC))
+                except Exception:  # noqa: BLE001 - lease loss is a closed runtime
+                    self._liveness_state = "lease_lost"
+                    self.request_stop()
+                    return
+
+        thread = threading.Thread(
+            target=_heartbeat,
+            name="agent-v02-connector-liveness-heartbeat",
+            daemon=True,
+        )
+        self._heartbeat_thread = thread
+        thread.start()
+
+    def liveness_projection(self) -> dict[str, object]:
+        """Return bounded generation state; never include credentials or prompts."""
+
+        lease = self.liveness_lease
+        if lease is None:
+            return {"status": "not_acquired"}
+        record = lease.record
+        return {
+            "status": self._liveness_state,
+            "mode": record.mode,
+            "generation_token": record.generation_token,
+        }
+
+    def run_once(self) -> ConnectorRuntimeCycle:
+        """Provision one due Session before any conversation-turn claim."""
+
+        session_projection: dict[str, object] = {"outcome": "not_configured"}
+        if self.provisioner is not None:
+            gate = self.network_gate()
+            if gate.allow:
+                provisioned = self.provisioner.provision_next(
+                    worker_id=self.worker_id,
+                )
+                session_projection = _provision_projection(provisioned)
+            else:
+                session_projection = {
+                    "outcome": "blocked",
+                    "error_code": _safe_runtime_code(gate.reason),
+                }
+        cycle = self.worker.run_once()
+        return ConnectorRuntimeCycle(
+            cycle=cycle,
+            session_provisioning=session_projection,
+            connector_liveness=self.liveness_projection(),
+        )
+
+    def iter_cycles(
+        self,
+        *,
+        poll_interval_seconds: float,
+        max_cycles: int | None,
+    ) -> Iterator[ConnectorRuntimeCycle]:
+        if not 0.05 <= poll_interval_seconds <= 3600:
+            raise ValueError("poll_interval_seconds must be between 0.05 and 3600")
+        if max_cycles is not None and (
+            isinstance(max_cycles, bool) or not 1 <= max_cycles <= 1_000_000
+        ):
+            raise ValueError("max_cycles must be positive when provided")
+        completed = 0
+        while not self.stop_requested():
+            yield self.run_once()
+            completed += 1
+            if max_cycles is not None and completed >= max_cycles:
+                break
+            if self.stop_requested():
+                break
+            self.wakeup_waiter.wait(poll_interval_seconds)
+
+    def close(self, *, reason: str = "connector_runtime_closed") -> None:
+        if self._closed:
+            return
+        self._closed = True
+        heartbeat_stop = self._heartbeat_stop
+        if heartbeat_stop is not None:
+            heartbeat_stop.set()
+        heartbeat_thread = self._heartbeat_thread
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=min(2.0, self.heartbeat_interval_seconds + 0.25))
+        if self.liveness_lease is not None:
+            try:
+                stopped = self.liveness_lease.stop(
+                    reason=_safe_stop_reason(reason)
+                )
+                self._liveness_state = (
+                    "stopped"
+                    if stopped.status == "stopped"
+                    else "stop_unconfirmed"
+                )
+            except Exception:  # noqa: BLE001 - cleanup is already fail-closed
+                self._liveness_state = "stop_unconfirmed"
+        close = getattr(self.wakeup_waiter, "close", None)
+        if callable(close):
+            close()
 
 
 def build_connector_runtime(
@@ -67,8 +230,9 @@ def build_connector_runtime(
     """Build a worker from the configured PostgreSQL authority.
 
     Default mode remains ``reconcile_only`` (no claim/dispatch). Pass
-    ``mode="supervised_dispatch"`` to build the real loopback Hermes adapter
-    from settings (or inject ``dispatch_adapter`` for tests).
+    ``mode="supervised_dispatch"`` to build the HQA subprocess port for the
+    real durable Hermes Run authority.  The legacy HTTP adapter is never a
+    production fallback; ``dispatch_adapter`` remains an explicit test seam.
     """
     settings = load_settings()
     database = get_database(settings)
@@ -88,43 +252,157 @@ def build_connector_runtime(
         "mode": mode,
         "worker_id": worker_id,
     }
-    if mode == "supervised_dispatch":
-        if dispatch_adapter is None:
-            from quant_system.hermes.dispatch_adapter import (
-                HermesDispatchAdapterError,
-                build_http_dispatch_adapter,
+    provisioner: ManagedSessionProvisioner | None = None
+    liveness_lease: ConnectorLivenessLease | None = None
+    heartbeat_interval = 5.0
+
+    def _network_gate() -> DispatchGateDecision:
+        if stop_event.is_set():
+            return DispatchGateDecision(
+                allow=False,
+                reason="connector_liveness_lost",
             )
+        try:
+            decision = current_release_decision(settings)
+        except Exception:  # noqa: BLE001 - a failed release probe closes dispatch
+            return DispatchGateDecision(
+                allow=False,
+                reason="release_gate_unavailable",
+            )
+        if decision.chat_write_ready is not True:
+            blocker = (
+                decision.blockers[0]
+                if decision.blockers
+                else "release_gate_closed"
+            )
+            return DispatchGateDecision(
+                allow=False,
+                reason=_safe_runtime_code(blocker),
+            )
+        return DispatchGateDecision(allow=True, reason="ready")
 
-            try:
-                if fixed_input is not None:
-                    # Explicit smoke path — never the L2a chat resolve path.
-                    dispatch_adapter = build_http_dispatch_adapter(
-                        settings,
-                        fixed_input=fixed_input,
-                    )
-                else:
-                    # L2a-Send default: worker bind_resolve via Intent Payload CLI Port.
-                    from quant_system.hermes.intent_payload_port import (
-                        intent_payload_input_resolver,
-                    )
-
-                    dispatch_adapter = build_http_dispatch_adapter(
-                        settings,
-                        input_resolver=intent_payload_input_resolver(settings),
-                    )
-            except HermesDispatchAdapterError as exc:
-                raise ConnectorRuntimeUnavailable(exc.message) from exc
+    if mode == "supervised_dispatch":
+        try:
+            if dispatch_adapter is None:
+                input_resolver = (
+                    fixed_input_resolver(fixed_input)
+                    if fixed_input is not None
+                    else intent_payload_input_resolver(settings)
+                )
+                run_port = build_subprocess_run_lifecycle_port(
+                    settings,
+                    input_resolver=input_resolver,
+                )
+                dispatch_adapter = run_port
+                worker_kwargs["run_lifecycle_port"] = run_port
+                session_port = SubprocessManagedSessionProvisionPort(
+                    cli_settings=run_port.cli_settings
+                )
+                provisioner = ManagedSessionProvisioner(
+                    settings,
+                    port=session_port,
+                )
+            runtime_digest = git_runtime_digest(
+                platform_runtime_root(),
+                logical_name="platform",
+            )
+            liveness_lease = ConnectorLivenessAuthority(settings).acquire(
+                workspace_id=settings.agent_v02_release.workspace_id,
+                worker_id=worker_id,
+                mode=mode,
+                runtime_digest=runtime_digest,
+            )
+            max_age = float(
+                settings.agent_v02_release.connector_heartbeat_max_age_seconds
+            )
+            heartbeat_interval = max(0.25, min(5.0, max_age / 3.0))
+        except (
+            ConnectorLivenessError,
+            HermesRunPortError,
+            ReleaseRuntimeProbeError,
+            ValueError,
+        ) as exc:
+            if liveness_lease is not None:
+                with suppress(Exception):
+                    liveness_lease.stop(reason="connector_runtime_build_failed")
+            raise ConnectorRuntimeUnavailable(
+                "supervised connector prerequisites are unavailable"
+            ) from exc
         worker_kwargs["dispatch_adapter"] = dispatch_adapter
-    return ConnectorRuntime(
-        worker=HermesConnectorWorker(**worker_kwargs),
-        wakeup_waiter=waiter,
-        stop_requested=stop_event.is_set,
-        request_stop=stop_event.set,
+        worker_kwargs["dispatch_gate"] = lambda _command: _network_gate()
+        worker_kwargs["managed_session_resolver"] = lambda command: (
+            require_web_writable_session(
+                settings,
+                platform_session_id=command.platform_session_id,
+            ).hermes_session_id
+        )
+    try:
+        runtime = ConnectorRuntime(
+            worker=HermesConnectorWorker(**worker_kwargs),
+            wakeup_waiter=waiter,
+            stop_requested=stop_event.is_set,
+            request_stop=stop_event.set,
+            worker_id=worker_id,
+            provisioner=provisioner,
+            network_gate=_network_gate,
+            liveness_lease=liveness_lease,
+            heartbeat_interval_seconds=heartbeat_interval,
+        )
+        runtime.start_liveness_heartbeat()
+        return runtime
+    except BaseException:
+        if liveness_lease is not None:
+            with suppress(Exception):
+                liveness_lease.stop(reason="connector_runtime_build_failed")
+        raise
+
+
+def _safe_runtime_code(value: object) -> str:
+    text = value if type(value) is str else "runtime_gate_closed"
+    if (
+        not text
+        or len(text) > 200
+        or any(
+            not (char.isalnum() or char in "._:-")
+            for char in text
+        )
+    ):
+        return "runtime_gate_closed"
+    return text
+
+
+def _safe_stop_reason(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        return "connector_runtime_closed"
+    return normalized[:500]
+
+
+def _provision_projection(
+    result: ManagedSessionProvisionResult,
+) -> dict[str, object]:
+    """Project only bounded identifiers/status, never the CLI request body."""
+
+    return {
+        "outcome": result.outcome,
+        "platform_session_id": result.platform_session_id,
+        "hermes_session_id": result.hermes_session_id,
+        "error_code": (
+            _safe_runtime_code(result.error_code)
+            if result.error_code is not None
+            else None
+        ),
+    }
+
+
+def _emit_cycle(result: ConnectorRuntimeCycle) -> None:
+    typer.echo(
+        json.dumps(
+            result.to_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     )
-
-
-def _emit_cycle(result: HermesConnectorCycleResult) -> None:
-    typer.echo(json.dumps(asdict(result), sort_keys=True, separators=(",", ":")))
 
 
 @contextmanager
@@ -415,8 +693,8 @@ def connector_worker_command(
         typer.Option(
             "--fixed-input",
             help=(
-                "Optional fixed prompt body for supervised_dispatch smoke. "
-                "When omitted the adapter uses a metadata-only instruction."
+                "Explicit smoke-only prompt for supervised_dispatch. "
+                "The daemon default resolves the encrypted turn payload."
             ),
         ),
     ] = None,
@@ -452,13 +730,11 @@ def connector_worker_command(
         )
         with _graceful_stop_signals(runtime):
             if once:
-                _emit_cycle(runtime.worker.run_once())
+                _emit_cycle(runtime.run_once())
                 return
-            for result in runtime.worker.iter_cycles(
-                wakeup_waiter=runtime.wakeup_waiter,
+            for result in runtime.iter_cycles(
                 poll_interval_seconds=poll_interval_seconds,
                 max_cycles=max_cycles,
-                stop_requested=runtime.stop_requested,
             ):
                 _emit_cycle(result)
     except (
@@ -479,13 +755,12 @@ def connector_worker_command(
         raise typer.Exit(code=1) from None
     finally:
         if runtime is not None:
-            close = getattr(runtime.wakeup_waiter, "close", None)
-            if callable(close):
-                close()
+            runtime.close(reason="connector_process_exit")
 
 
 __all__ = [
     "ConnectorRuntime",
+    "ConnectorRuntimeCycle",
     "ConnectorRuntimeUnavailable",
     "build_connector_runtime",
     "hermes_app",

@@ -476,6 +476,45 @@ def test_terminal_observation_always_replays_from_zero() -> None:
     assert adapter.observed_cursors == [0]
 
 
+def test_closed_fresh_gate_blocks_active_run_network_reconciliation() -> None:
+    class RecordingAdapter(FakeHermesDispatchAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.observe_calls = 0
+
+        def observe(self, *, hermes_session_id, hermes_run_id, after_cursor=0):
+            self.observe_calls += 1
+            return super().observe(
+                hermes_session_id=hermes_session_id,
+                hermes_run_id=hermes_run_id,
+                after_cursor=after_cursor,
+            )
+
+    command = _cmd(client_request_id="req-v6-gated-reconcile")
+    ledger = _ScriptedLedger(queue=[command])
+    adapter = RecordingAdapter()
+    gate_open = True
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        run_lifecycle_port=adapter,
+        dispatch_gate=lambda _command: DispatchGateDecision(
+            allow=gate_open,
+            reason="ready" if gate_open else "release_gate_closed",
+        ),
+        managed_session_resolver=lambda _command: "web_managed_gate_reconcile",
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    assert worker.run_once().delivered_count == 1
+    gate_open = False
+    assert worker.run_once().terminal_count == 0
+
+    assert adapter.submit_calls == 1
+    assert adapter.observe_calls == 0
+
+
 def test_worker_recovers_accept_drop_ack_with_same_identity_and_session() -> None:
     cmd = _cmd(client_request_id="req-v6-ack-loss")
     ledger = _ScriptedLedger(queue=[cmd])

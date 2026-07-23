@@ -499,6 +499,11 @@ class HermesConnectorWorker:
         recovered_count = 0
         terminal_count = 0
         for command in commands:
+            # A delivered/outcome-unknown row must not become an implicit
+            # network bypass after the operator closes the effective release.
+            # Re-evaluate immediately before every recover/observe operation.
+            if not self._fresh_dispatch_gate(command).allow:
+                continue
             current = command
             if current.state == "outcome_unknown" and (
                 not current.hermes_session_id or not current.hermes_run_id
@@ -640,7 +645,7 @@ class HermesConnectorWorker:
                 "provider_call_count": 0,
             }
 
-        gate = self._dispatch_gate(claimed)
+        gate = self._fresh_dispatch_gate(claimed)
         if not gate.allow:
             # Gate failure after claim but before network: definitive reject,
             # never call Hermes.
@@ -780,6 +785,23 @@ class HermesConnectorWorker:
             lease_token=claimed.lease_token,
             result=result,
         )
+
+    def _fresh_dispatch_gate(self, command: HermesCommand) -> DispatchGateDecision:
+        """Turn any gate-probe failure into a deterministic pre-network close."""
+
+        try:
+            decision = self._dispatch_gate(command)
+        except Exception:  # noqa: BLE001 - release/liveness probes fail closed
+            return DispatchGateDecision(
+                allow=False,
+                reason="dispatch_gate_unavailable",
+            )
+        if not isinstance(decision, DispatchGateDecision):
+            return DispatchGateDecision(
+                allow=False,
+                reason="dispatch_gate_invalid",
+            )
+        return decision
 
     def _submit_with_lease_heartbeat(
         self,
