@@ -23,6 +23,69 @@ from quant_system.hermes.run_lifecycle_port import (
 )
 
 
+def _compatible_capability_receipt() -> dict[str, object]:
+    durable = {
+        name: {
+            "supported": True,
+            "grounded": True,
+            "evidence": f"store.transactional_probe:{name}",
+        }
+        for name in (
+            "idempotency",
+            "event_replay",
+            "approval_cas",
+            "idempotent_stop",
+            "restart_reconcile",
+            "run_evidence",
+        )
+    }
+    return {
+        "ok": True,
+        "capabilities": {
+            "contract_version": 1,
+            "features": {
+                "session_resources": True,
+                "run_submission": True,
+                "run_events_sse": True,
+                "run_status": True,
+                "run_approval_response": True,
+                "run_stop": True,
+                "managed_run_sessions": True,
+                "managed_run_history_authority": "hermes_session_db",
+                "managed_session_fork_mode": (
+                    "preserve_source_exact_message_cursor"
+                ),
+            },
+            "durable": durable,
+        },
+        "cli_contract": {
+            "schema_version": 1,
+            "profile": "local_agent_v0_2",
+            "operations": [
+                "capabilities",
+                "submit",
+                "status",
+                "events",
+                "session-ensure",
+                "session-fork",
+            ],
+            "write_contract": {
+                "run_submit_fields": ["input", "session_id", "metadata"],
+                "platform_must_not_send": [
+                    "conversation_history",
+                    "previous_response_id",
+                ],
+                "fork_requires": {
+                    "preserve_source": True,
+                    "fork_point_format": "message:<positive-integer-id>",
+                },
+            },
+        },
+        "durable_ready": True,
+        "managed_session_ready": True,
+    }
+
+
 def _request() -> HermesDispatchRequest:
     return HermesDispatchRequest(
         command_id="00000000-0000-4000-8000-000000000001",
@@ -34,6 +97,134 @@ def _request() -> HermesDispatchRequest:
         provider_policy_digest="c" * 64,
         hermes_session_id="web_managed_1",
     )
+
+
+def test_strict_capability_preflight_validates_real_hqa_cli_contract(
+    tmp_path: Path,
+) -> None:
+    python = tmp_path / "python"
+    python.touch(mode=0o700)
+    hqa_root = tmp_path / "hqa"
+    hqa_root.mkdir()
+    operations: list[str] = []
+
+    def runner(argv, **_kwargs):
+        operations.append(argv[-1])
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(_compatible_capability_receipt()).encode(),
+            stderr=b"",
+        )
+
+    port = SubprocessHermesRunLifecyclePort(
+        cli_settings=HermesRunCliSettings(
+            python_executable=python,
+            hqa_root=hqa_root,
+            base_url="http://127.0.0.1:8642",
+            api_key="stdin-only-secret",
+            timeout_seconds=5.0,
+        ),
+        input_resolver=fixed_input_resolver("unused"),
+        runner=runner,
+    )
+
+    receipt = port.require_compatible_capabilities()
+
+    assert operations == ["capabilities"]
+    assert receipt.cli_operations == (
+        "capabilities",
+        "submit",
+        "status",
+        "events",
+        "session-ensure",
+        "session-fork",
+    )
+    assert receipt.hermes_contract_version == 1
+    assert len(receipt.evidence_digest) == 64
+    assert "stdin-only-secret" not in repr(receipt)
+
+
+def test_strict_capability_preflight_rejects_drifted_hqa_operation_surface(
+    tmp_path: Path,
+) -> None:
+    python = tmp_path / "python"
+    python.touch(mode=0o700)
+    hqa_root = tmp_path / "hqa"
+    hqa_root.mkdir()
+    drifted = _compatible_capability_receipt()
+    cli_contract = drifted["cli_contract"]
+    assert isinstance(cli_contract, dict)
+    cli_contract["operations"] = ["capabilities", "submit", "unsafe-extra"]
+
+    def runner(argv, **_kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(drifted).encode(),
+            stderr=b"api-key=must-not-escape",
+        )
+
+    port = SubprocessHermesRunLifecyclePort(
+        cli_settings=HermesRunCliSettings(
+            python_executable=python,
+            hqa_root=hqa_root,
+            base_url="http://127.0.0.1:8642",
+            api_key="stdin-only-secret",
+            timeout_seconds=5.0,
+        ),
+        input_resolver=fixed_input_resolver("unused"),
+        runner=runner,
+    )
+
+    with pytest.raises(HermesRunPortError) as captured:
+        port.require_compatible_capabilities()
+
+    assert captured.value.code == "run_cli_contract_mismatch"
+    assert captured.value.retryable is False
+    assert "unsafe-extra" not in str(captured.value)
+    assert "stdin-only-secret" not in str(captured.value)
+
+
+def test_capability_preflight_uses_short_bounded_probe_deadlines(
+    tmp_path: Path,
+) -> None:
+    python = tmp_path / "python"
+    python.touch(mode=0o700)
+    hqa_root = tmp_path / "hqa"
+    hqa_root.mkdir()
+    observed: dict[str, object] = {}
+
+    def runner(argv, **kwargs):
+        observed["process_timeout"] = kwargs["timeout"]
+        observed["request"] = json.loads(kwargs["input"])
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(_compatible_capability_receipt()).encode(),
+            stderr=b"",
+        )
+
+    port = SubprocessHermesRunLifecyclePort(
+        cli_settings=HermesRunCliSettings(
+            python_executable=python,
+            hqa_root=hqa_root,
+            base_url="http://127.0.0.1:8642",
+            api_key=None,
+            timeout_seconds=120.0,
+        ),
+        input_resolver=fixed_input_resolver("unused"),
+        runner=runner,
+    )
+
+    port.require_compatible_capabilities()
+
+    request = observed["request"]
+    assert isinstance(request, dict)
+    endpoint = request["endpoint"]
+    assert isinstance(endpoint, dict)
+    assert endpoint["timeout_seconds"] == 5.0
+    assert observed["process_timeout"] == 7.0
 
 
 def test_submit_uses_strict_hqa_cli_and_preserves_managed_session(

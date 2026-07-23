@@ -750,6 +750,63 @@ def test_gate_rejects_without_hermes_call() -> None:
     assert ledger.rejected[0][1] == "kill_switch"
 
 
+def test_retryable_release_probe_failure_requeues_without_hermes_call() -> None:
+    cmd = _cmd(client_request_id="req-release-probe-temporary")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        dispatch_gate=lambda _c: DispatchGateDecision(
+            allow=False,
+            reason="release_gate_unavailable",
+            retryable=True,
+        ),
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    command = ledger._by_id[cmd.command_id]
+    assert result.claimed_count == 1
+    assert result.rejected_count == 0
+    assert result.last_dispatch_outcome == "unavailable"
+    assert result.hermes_mutation_count == 0
+    assert result.provider_call_count == 0
+    assert adapter.submit_calls == 0
+    assert command.state == "queued"
+    assert command.dispatch_started_at is None
+    assert command.last_error_code == "release_gate_unavailable"
+    assert command.next_attempt_at is not None
+
+
+def test_release_probe_exception_requeues_without_hermes_call() -> None:
+    cmd = _cmd(client_request_id="req-release-probe-exception")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+
+    def unavailable_gate(_command):
+        raise RuntimeError("database password and Hermes key")
+
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        dispatch_gate=unavailable_gate,
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    command = ledger._by_id[cmd.command_id]
+    assert result.last_dispatch_outcome == "unavailable"
+    assert adapter.submit_calls == 0
+    assert command.state == "queued"
+    assert command.last_error_code == "dispatch_gate_unavailable"
+    assert "password" not in repr(result)
+
+
 def test_timeout_becomes_outcome_unknown_no_blind_retry_in_same_cycle() -> None:
     cmd = _cmd()
     ledger = _ScriptedLedger(queue=[cmd])

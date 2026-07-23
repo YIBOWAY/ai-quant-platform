@@ -294,6 +294,7 @@ class DispatchGateDecision:
 
     allow: bool
     reason: str = "ok"
+    retryable: bool = False
 
 
 class HermesConnectorWorker:
@@ -647,8 +648,9 @@ class HermesConnectorWorker:
 
         gate = self._fresh_dispatch_gate(claimed)
         if not gate.allow:
-            # Gate failure after claim but before network: definitive reject,
-            # never call Hermes.
+            # Gate failure after claim but before network never calls Hermes.
+            # Transient probe/DB/Hermes uncertainty returns the exact command to
+            # the delayed queue; only operator close or trusted drift is final.
             try:
                 started = ledger.mark_dispatch_started(
                     command_id=claimed.command_id,
@@ -656,6 +658,17 @@ class HermesConnectorWorker:
                     lease_token=claimed.lease_token,
                     now=self._now(),
                 )
+                if gate.retryable:
+                    return self._record_dispatch_result(
+                        ledger=ledger,
+                        started=started,
+                        lease_token=claimed.lease_token,
+                        result=HermesDispatchResult(
+                            kind="unavailable",
+                            error_code=_safe_error_code(gate.reason),
+                            network_attempted=False,
+                        ),
+                    )
                 evidence = _sha256(gate.reason)
                 ledger.mark_dispatch_rejected(
                     command_id=started.command_id,
@@ -795,8 +808,15 @@ class HermesConnectorWorker:
             return DispatchGateDecision(
                 allow=False,
                 reason="dispatch_gate_unavailable",
+                retryable=True,
             )
-        if not isinstance(decision, DispatchGateDecision):
+        if (
+            not isinstance(decision, DispatchGateDecision)
+            or type(decision.allow) is not bool
+            or type(decision.retryable) is not bool
+            or type(decision.reason) is not str
+            or not decision.reason
+        ):
             return DispatchGateDecision(
                 allow=False,
                 reason="dispatch_gate_invalid",

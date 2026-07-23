@@ -17,6 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from quant_system.hermes.compatibility_contract import (
+    HermesCompatibilityContract,
+    load_hermes_compatibility_contract,
+)
 from quant_system.hermes.dispatch_adapter import (
     HermesDispatchRequest,
     HermesDispatchResult,
@@ -29,6 +33,8 @@ from quant_system.hermes.intent_payload_port import IntentPayloadPortError
 _STDIN_LIMIT = 1_200_000
 _STDOUT_LIMIT = 4_194_304
 _IDENTIFIER_MAX = 512
+_CAPABILITY_HTTP_TIMEOUT_SECONDS = 5.0
+_CAPABILITY_PROCESS_TIMEOUT_SECONDS = 7.0
 
 
 class HermesRunPortError(RuntimeError):
@@ -70,6 +76,15 @@ class HermesRunCliSettings:
         return endpoint
 
 
+@dataclass(frozen=True)
+class HermesRunCompatibilityReceipt:
+    """Bounded, secret-free proof that the real HQA subprocess is compatible."""
+
+    hermes_contract_version: int
+    cli_operations: tuple[str, ...]
+    evidence_digest: str
+
+
 @dataclass
 class SubprocessHermesRunLifecyclePort:
     """Durable submit/recover and observation through ``hermes_run_cli``."""
@@ -77,6 +92,26 @@ class SubprocessHermesRunLifecyclePort:
     cli_settings: HermesRunCliSettings
     input_resolver: Callable[[HermesDispatchRequest], str]
     runner: Callable[..., subprocess.CompletedProcess[bytes]] | None = None
+
+    def require_compatible_capabilities(
+        self,
+        contract: HermesCompatibilityContract | None = None,
+    ) -> HermesRunCompatibilityReceipt:
+        """Probe HQA itself and validate its exact CLI/Hermes contract."""
+
+        if contract is None:
+            try:
+                compatibility = load_hermes_compatibility_contract()
+            except Exception as exc:  # noqa: BLE001 - normalize manifest details
+                raise HermesRunPortError(
+                    "run_cli_contract_unavailable",
+                    "Hermes durable Run compatibility contract is unavailable",
+                    retryable=False,
+                ) from exc
+        else:
+            compatibility = contract
+        document = self._invoke("capabilities", {})
+        return _validate_compatibility_receipt(document, compatibility)
 
     def capabilities(self) -> Mapping[str, object]:
         try:
@@ -275,10 +310,18 @@ class SubprocessHermesRunLifecyclePort:
                 "Hermes durable Run CLI is unavailable",
                 retryable=True,
             )
-        document = {
-            "endpoint": self.cli_settings.endpoint_document(),
-            **dict(request),
-        }
+        endpoint = self.cli_settings.endpoint_document()
+        process_timeout = self.cli_settings.timeout_seconds
+        if operation == "capabilities":
+            endpoint["timeout_seconds"] = min(
+                float(endpoint["timeout_seconds"]),
+                _CAPABILITY_HTTP_TIMEOUT_SECONDS,
+            )
+            process_timeout = min(
+                process_timeout,
+                _CAPABILITY_PROCESS_TIMEOUT_SECONDS,
+            )
+        document = {"endpoint": endpoint, **dict(request)}
         try:
             raw = json.dumps(
                 document,
@@ -310,7 +353,7 @@ class SubprocessHermesRunLifecyclePort:
                 argv,
                 input=raw,
                 capture_output=True,
-                timeout=self.cli_settings.timeout_seconds,
+                timeout=process_timeout,
                 check=False,
                 cwd=str(hqa_root),
                 env=env,
@@ -374,6 +417,94 @@ def _parse_stdout(raw: bytes) -> dict[str, object]:
             retryable=True,
         )
     return document
+
+
+def _validate_compatibility_receipt(
+    document: Mapping[str, object],
+    contract: HermesCompatibilityContract,
+) -> HermesRunCompatibilityReceipt:
+    """Validate one exact HQA capability envelope without returning its body."""
+
+    if set(document) != {
+        "ok",
+        "capabilities",
+        "cli_contract",
+        "durable_ready",
+        "managed_session_ready",
+    }:
+        raise _compatibility_error("run_cli_contract_mismatch")
+    if (
+        document.get("ok") is not True
+        or document.get("durable_ready") is not True
+        or document.get("managed_session_ready") is not True
+    ):
+        raise _compatibility_error("durable_unavailable", retryable=True)
+
+    expected_cli_contract = {
+        "schema_version": contract.schema_version,
+        "profile": contract.profile,
+        "operations": list(contract.hqa_cli_operations),
+        "write_contract": dict(contract.write_contract),
+    }
+    if document.get("cli_contract") != expected_cli_contract:
+        raise _compatibility_error("run_cli_contract_mismatch")
+
+    capabilities = document.get("capabilities")
+    if not isinstance(capabilities, Mapping):
+        raise _compatibility_error("run_cli_contract_mismatch")
+    version = capabilities.get("contract_version")
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version < contract.hermes_contract_version_min
+    ):
+        raise _compatibility_error("hermes_contract_mismatch")
+
+    features = capabilities.get("features")
+    if not isinstance(features, Mapping):
+        raise _compatibility_error("hermes_contract_mismatch")
+    for name in contract.required_bool_features:
+        if features.get(name) is not True:
+            raise _compatibility_error("hermes_contract_mismatch")
+    for name, expected in contract.required_exact_features.items():
+        if features.get(name) != expected:
+            raise _compatibility_error("hermes_contract_mismatch")
+
+    durable = capabilities.get("durable")
+    if not isinstance(durable, Mapping):
+        raise _compatibility_error("hermes_contract_mismatch")
+    for name in contract.required_durable:
+        fact = durable.get(name)
+        if (
+            not isinstance(fact, Mapping)
+            or fact.get("supported") is not True
+            or fact.get("grounded") is not True
+            or fact.get("evidence")
+            != contract.durable_evidence_template.format(capability=name)
+        ):
+            raise _compatibility_error("hermes_contract_mismatch")
+
+    evidence = {
+        "capabilities": dict(capabilities),
+        "cli_contract": expected_cli_contract,
+    }
+    return HermesRunCompatibilityReceipt(
+        hermes_contract_version=version,
+        cli_operations=contract.hqa_cli_operations,
+        evidence_digest=_evidence_digest(evidence),
+    )
+
+
+def _compatibility_error(
+    code: str,
+    *,
+    retryable: bool = False,
+) -> HermesRunPortError:
+    return HermesRunPortError(
+        code,
+        "Hermes durable Run compatibility preflight failed",
+        retryable=retryable,
+    )
 
 
 def _unique_json_object(
@@ -624,6 +755,7 @@ def _is_loopback_origin(value: str) -> bool:
 
 
 __all__ = [
+    "HermesRunCompatibilityReceipt",
     "HermesRunCliSettings",
     "HermesRunPortError",
     "SubprocessHermesRunLifecyclePort",

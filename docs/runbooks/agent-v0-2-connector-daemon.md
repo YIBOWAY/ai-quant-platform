@@ -7,6 +7,12 @@ old dark worker:
 - mode is always `supervised_dispatch`;
 - the production dispatch and Run-observation seam is HQA's subprocess CLI and
   Hermes' durable `/v1/runs` contract;
+- before publishing liveness, the daemon invokes the real HQA `capabilities`
+  subprocess and verifies its exact six-operation/write/fork contract plus the
+  grounded Hermes capability receipt against the shared Platform manifest;
+- the same short-bounded compatibility probe repeats before every work cycle;
+  one permanent contract drift, or three consecutive transient CLI/probe
+  failures, requests cooperative shutdown without claiming or provisioning;
 - one pending managed Session is provisioned before each command-claim cycle;
 - the daemon holds the single-active PostgreSQL liveness lease for its complete
   process lifetime and heartbeats independently of a slow Hermes call;
@@ -26,6 +32,14 @@ database login is configured. The Platform, HQA and Hermes runtime checkouts
 must be clean commits because the daemon binds its generation to the exact
 Platform Git runtime digest. Hermes must expose the managed Session and durable
 Run capability contract on loopback.
+
+The release gate distinguishes durable operator/drift facts from uncertainty.
+An operator-closed stamp/cutover, runtime identity mismatch, schema fingerprint
+mismatch, or release-evidence mismatch may terminally reject a newly claimed
+turn. A timeout, unavailable release/DB/Hermes probe, stale capability read, or
+temporary registry outage returns the exact turn to the delayed queue with
+bounded backoff and performs zero Hermes mutations. Never drain or delete those
+retryable queued turns to make readiness appear green.
 
 The wrapper reads inherited variables and, when present, this optional
 owner-only file:

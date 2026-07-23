@@ -97,11 +97,14 @@ class ConnectorRuntime:
         allow=True,
         reason="ready",
     )
+    compatibility_probe: Callable[[], object] | None = None
+    compatibility_failure_limit: int = 3
     liveness_lease: ConnectorLivenessLease | None = None
     heartbeat_interval_seconds: float = 5.0
     _heartbeat_thread: threading.Thread | None = None
     _heartbeat_stop: threading.Event | None = None
     _liveness_state: str = "not_acquired"
+    _compatibility_failures: int = 0
     _closed: bool = False
 
     def start_liveness_heartbeat(self) -> None:
@@ -150,6 +153,9 @@ class ConnectorRuntime:
     def run_once(self) -> ConnectorRuntimeCycle:
         """Provision one due Session before any conversation-turn claim."""
 
+        compatibility = self._compatibility_cycle_if_blocked()
+        if compatibility is not None:
+            return compatibility
         session_projection: dict[str, object] = {"outcome": "not_configured"}
         if self.provisioner is not None:
             gate = self.network_gate()
@@ -169,6 +175,45 @@ class ConnectorRuntime:
             session_provisioning=session_projection,
             connector_liveness=self.liveness_projection(),
         )
+
+    def _compatibility_cycle_if_blocked(self) -> ConnectorRuntimeCycle | None:
+        """Continuously verify HQA; never work through a failed real CLI probe."""
+
+        probe = self.compatibility_probe
+        if probe is None:
+            return None
+        try:
+            probe()
+        except Exception as exc:  # noqa: BLE001 - the boundary stays secret-free
+            self._compatibility_failures += 1
+            retryable = isinstance(exc, HermesRunPortError) and exc.retryable
+            error_code = (
+                exc.code
+                if isinstance(exc, HermesRunPortError)
+                else "run_cli_unavailable"
+            )
+            limit = self.compatibility_failure_limit if retryable else 1
+            if self._compatibility_failures >= limit:
+                self._liveness_state = "compatibility_lost"
+                self.request_stop()
+            cycle = HermesConnectorCycleResult(
+                mode=self.worker.mode,
+                requeued_count=0,
+                outcome_unknown_count=0,
+                capability_read_status=(
+                    "unavailable" if retryable else "degraded"
+                ),
+            )
+            return ConnectorRuntimeCycle(
+                cycle=cycle,
+                session_provisioning={
+                    "outcome": "blocked",
+                    "error_code": _safe_runtime_code(error_code),
+                },
+                connector_liveness=self.liveness_projection(),
+            )
+        self._compatibility_failures = 0
+        return None
 
     def iter_cycles(
         self,
@@ -254,6 +299,7 @@ def build_connector_runtime(
     }
     provisioner: ManagedSessionProvisioner | None = None
     liveness_lease: ConnectorLivenessLease | None = None
+    compatibility_probe: Callable[[], object] | None = None
     heartbeat_interval = 5.0
 
     def _network_gate() -> DispatchGateDecision:
@@ -261,6 +307,7 @@ def build_connector_runtime(
             return DispatchGateDecision(
                 allow=False,
                 reason="connector_liveness_lost",
+                retryable=True,
             )
         try:
             decision = current_release_decision(settings)
@@ -268,6 +315,7 @@ def build_connector_runtime(
             return DispatchGateDecision(
                 allow=False,
                 reason="release_gate_unavailable",
+                retryable=True,
             )
         if decision.chat_write_ready is not True:
             blocker = (
@@ -278,6 +326,7 @@ def build_connector_runtime(
             return DispatchGateDecision(
                 allow=False,
                 reason=_safe_runtime_code(blocker),
+                retryable=_release_blocker_is_retryable(blocker),
             )
         return DispatchGateDecision(allow=True, reason="ready")
 
@@ -293,6 +342,10 @@ def build_connector_runtime(
                     settings,
                     input_resolver=input_resolver,
                 )
+                # The real HQA subprocess must prove the shared six-operation
+                # contract before this generation may advertise liveness.
+                run_port.require_compatible_capabilities()
+                compatibility_probe = run_port.require_compatible_capabilities
                 dispatch_adapter = run_port
                 worker_kwargs["run_lifecycle_port"] = run_port
                 session_port = SubprocessManagedSessionProvisionPort(
@@ -345,6 +398,7 @@ def build_connector_runtime(
             worker_id=worker_id,
             provisioner=provisioner,
             network_gate=_network_gate,
+            compatibility_probe=compatibility_probe,
             liveness_lease=liveness_lease,
             heartbeat_interval_seconds=heartbeat_interval,
         )
@@ -369,6 +423,39 @@ def _safe_runtime_code(value: object) -> str:
     ):
         return "runtime_gate_closed"
     return text
+
+
+def _release_blocker_is_retryable(value: object) -> bool:
+    """Preserve queued intent unless the release close/drift fact is definitive."""
+
+    blocker = _safe_runtime_code(value)
+    permanent = {
+        "active_release_stamp_invalid",
+        "active_release_stamp_missing",
+        "database_schema_fingerprint_mismatch",
+        "hermes_gateway_disabled",
+        "local_composer_closed",
+        "local_mutation_disabled",
+        "open_public_cutover_missing",
+        "public_cutover_release_binding_mismatch",
+        "release_evidence_digest_mismatch",
+        "release_gate_closed",
+    }
+    if blocker in permanent:
+        return False
+    if blocker.endswith("_runtime_identity_mismatch"):
+        return False
+    if blocker.startswith("hermes_feature_") and blocker.endswith("_unready"):
+        return False
+    if blocker.startswith("hermes_durable_") and (
+        blocker.endswith("_unready")
+        or blocker == "hermes_durable_contract_unavailable"
+    ):
+        return False
+    return blocker not in {
+        "hermes_managed_session_fork_mode_unready",
+        "hermes_managed_session_history_authority_unready",
+    }
 
 
 def _safe_stop_reason(value: str) -> str:
