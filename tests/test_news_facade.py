@@ -417,7 +417,10 @@ def test_auto_daily_rejects_stale_horizon_date() -> None:
 def test_auto_dailies_failover_horizon() -> None:
     facade = _facade(
         client=FakeTimeout(),
-        horizon=HorizonState(dailies=_dailies("2026-07-23", "2026-07-22")),
+        horizon=HorizonState(
+            fresh_run=_fresh_run(),
+            dailies=_dailies("2026-07-23", "2026-07-22"),
+        ),
     )
 
     payload = facade.dailies(preference="auto", take=5)
@@ -425,6 +428,57 @@ def test_auto_dailies_failover_horizon() -> None:
     assert payload["provider"] == "horizon"
     assert payload["served_from"] == "failover"
     assert payload["count"] == 2
+
+
+def test_forced_horizon_daily_archive_when_run_stale() -> None:
+    facade = _facade(
+        client=FakeOk(),
+        horizon=HorizonState(
+            fresh_run=None,
+            any_daily=_daily("2026-07-01"),
+        ),
+    )
+
+    payload = facade.daily(preference="horizon", date="2026-07-01")
+
+    assert payload["provider"] == "horizon"
+    assert payload["served_from"] == "forced"
+    assert payload["preference"] == "horizon"
+    assert payload["date"] == "2026-07-01"
+    assert any("archive" in w for w in payload["warnings"])
+
+
+def test_forced_horizon_daily_current_stale_when_run_stale() -> None:
+    facade = _facade(
+        client=FakeOk(),
+        horizon=HorizonState(
+            fresh_run=None,
+            any_daily=_daily("2026-07-23"),
+        ),
+    )
+
+    with pytest.raises(NewsFacadeError) as ei:
+        facade.daily(preference="horizon", date=None)
+
+    assert ei.value.code == "horizon_stale"
+    assert ei.value.status_code == 503
+
+
+def test_auto_dailies_skips_stale_horizon() -> None:
+    facade = _facade(
+        client=FakeTimeout(),
+        horizon=HorizonState(
+            fresh_run=None,
+            dailies=_dailies("2026-07-23", "2026-07-22"),
+        ),
+        cache=RecordingCache(),
+    )
+
+    with pytest.raises(NewsFacadeError) as ei:
+        facade.dailies(preference="auto", take=5)
+
+    assert ei.value.code == "news_unavailable"
+    assert ei.value.status_code == 503
 
 
 def test_status_is_local_only_and_does_not_use_client() -> None:

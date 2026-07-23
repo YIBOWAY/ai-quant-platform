@@ -332,20 +332,23 @@ class NewsFacade:
             )
             self._note_error(aihot_exc)
 
-        page = self._call_optional(
-            self._load_horizon_dailies,
-            settings=self.settings,
-            take=take,
-        )
-        if page is not None and page.items:
-            run = self._safe_latest_run()
-            return self._stamp_dailies(
-                page,
-                provider="horizon",
-                preference="auto",
-                served_from="failover",
-                extra_warnings=_failover_warnings(aihot_exc, run),
+        # Auto failover only when the latest Horizon run is still fresh
+        # (same gate as items/daily). Forced horizon dailies stay ungated.
+        run = self._safe_latest_run()
+        if run is not None:
+            page = self._call_optional(
+                self._load_horizon_dailies,
+                settings=self.settings,
+                take=take,
             )
+            if page is not None and page.items:
+                return self._stamp_dailies(
+                    page,
+                    provider="horizon",
+                    preference="auto",
+                    served_from="failover",
+                    extra_warnings=_failover_warnings(aihot_exc, run),
+                )
 
         raise NewsFacadeError(
             "news_unavailable",
@@ -492,6 +495,25 @@ class NewsFacade:
             settings=self.settings,
             date=date,
         )
+        # Forced + explicit date: serve archive even when the latest run is stale
+        # (design §5.5). Undated / current daily stays gated on freshness.
+        if any_daily is not None and date is not None and forced:
+            if any_daily.date != date:
+                raise NewsFacadeError(
+                    "horizon_unavailable",
+                    "No Horizon daily report is available in PostgreSQL.",
+                    503,
+                )
+            return self._stamp_daily(
+                any_daily,
+                provider="horizon",
+                preference=preference,
+                served_from="forced",
+                extra_warnings=[
+                    "horizon_archive_read",
+                    "horizon_run outside max_age / freshness window",
+                ],
+            )
         if any_daily is not None:
             raise NewsFacadeError(
                 "horizon_stale",

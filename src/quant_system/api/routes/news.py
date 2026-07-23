@@ -160,6 +160,9 @@ class _LazyAiHotClient:
 def _facade_for_settings(settings: Settings) -> NewsFacade:
     # Lazy client: status / horizon-only never touch AI HOT construction.
     client = _LazyAiHotClient(settings) if settings.aihot.enabled else None
+    # "any" hooks intentionally reuse the same PG loaders as the fresh path:
+    # content loaders do not gate on run max_age. Freshness is decided only by
+    # the facade via load_latest_horizon_run (+ date recency for undated daily).
     return NewsFacade(
         settings=settings,
         aihot_client=client,
