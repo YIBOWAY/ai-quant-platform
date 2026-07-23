@@ -571,6 +571,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hermes/sessions/{session_id}/forks-to-managed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hermes Session Fork To Managed
+         * @description Fork one exact external message into a new server-managed Session.
+         */
+        post: operations["hermes_session_fork_to_managed_api_hermes_sessions__session_id__forks_to_managed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hermes/sessions/{session_id}/messages": {
         parameters: {
             query?: never;
@@ -4200,6 +4220,15 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** HermesExternalSessionForkContextResponse */
+        HermesExternalSessionForkContextResponse: {
+            /** Eligible */
+            eligible: boolean;
+            /** Reason Code */
+            reason_code?: string | null;
+            /** Source Channel */
+            source_channel: ("discord" | "historical") | null;
+        };
         /** HermesForesightCandidate */
         HermesForesightCandidate: {
             /**
@@ -4254,6 +4283,16 @@ export interface components {
              * @constant
              */
             trading_allowed: false;
+        };
+        /**
+         * HermesForkToManagedRequest
+         * @description Closed browser body; authority-bearing source facts remain server-owned.
+         */
+        HermesForkToManagedRequest: {
+            /** Client Action Id */
+            client_action_id: string;
+            /** Fork Point */
+            fork_point: string;
         };
         /** HermesGatewayStatusResponse */
         HermesGatewayStatusResponse: {
@@ -4325,6 +4364,8 @@ export interface components {
         HermesMessageResponse: {
             /** Content */
             content: string;
+            /** Fork Point */
+            fork_point?: string | null;
             /** Id */
             id: string;
             /**
@@ -4651,6 +4692,7 @@ export interface components {
         };
         /** HermesSessionDetailResponse */
         HermesSessionDetailResponse: {
+            fork_context: components["schemas"]["HermesExternalSessionForkContextResponse"];
             /**
              * Read Status
              * @enum {string}
@@ -8790,6 +8832,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HermesSessionDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hermes_session_fork_to_managed_api_hermes_sessions__session_id__forks_to_managed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HermesForkToManagedRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceActionReceiptResponse"];
                 };
             };
             /** @description Validation Error */
