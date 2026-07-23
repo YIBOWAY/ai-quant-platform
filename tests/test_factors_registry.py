@@ -1,23 +1,19 @@
 import pytest
 
 from quant_system.factors.examples import MomentumFactor
+from quant_system.factors.library.promoted import PROMOTED_FACTORS
 from quant_system.factors.pipeline import build_default_factors
 from quant_system.factors.registry import FactorRegistry, build_default_factor_registry
 
-_PROMOTED_FACTOR_ID = "agent_candidate_wave2_sceneb_mom20_v3"
+_EXAMPLE_FACTOR_IDS = ("momentum", "volatility", "liquidity", "rsi", "macd")
+_PROMOTED_FACTOR_IDS = tuple(factor_cls().factor_id for factor_cls in PROMOTED_FACTORS)
+_RESIDENT_FACTOR_IDS = _EXAMPLE_FACTOR_IDS + _PROMOTED_FACTOR_IDS
 
 
 def test_default_registry_contains_examples_and_promoted_factors() -> None:
     registry = build_default_factor_registry()
 
-    assert set(registry.factor_ids()) == {
-        "momentum",
-        "volatility",
-        "liquidity",
-        "rsi",
-        "macd",
-        _PROMOTED_FACTOR_ID,
-    }
+    assert tuple(registry.factor_ids()) == _RESIDENT_FACTOR_IDS
     assert registry.create("momentum", lookback=5).lookback == 5
 
 
@@ -34,14 +30,7 @@ def test_registry_lists_metadata_without_exposing_implementation_details() -> No
 
     metadata = registry.list_metadata()
 
-    assert [item.factor_id for item in metadata] == [
-        "momentum",
-        "volatility",
-        "liquidity",
-        "rsi",
-        "macd",
-        _PROMOTED_FACTOR_ID,
-    ]
+    assert tuple(item.factor_id for item in metadata) == _RESIDENT_FACTOR_IDS
     assert all(item.lookback > 0 for item in metadata)
 
 

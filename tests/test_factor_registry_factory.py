@@ -20,7 +20,9 @@ from quant_system.factors.registry import (
 )
 
 _EXAMPLE_IDS = {"momentum", "volatility", "liquidity", "rsi", "macd"}
-_PROMOTED_IDS = {"agent_candidate_wave2_sceneb_mom20_v3"}
+_PROMOTED_IDS = {
+    factor_cls().factor_id for factor_cls in library.promoted.PROMOTED_FACTORS
+}
 _RESIDENT_IDS = _EXAMPLE_IDS | _PROMOTED_IDS
 
 _CANDIDATE_SRC = '''
