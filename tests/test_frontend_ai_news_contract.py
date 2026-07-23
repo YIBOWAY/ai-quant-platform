@@ -134,7 +134,8 @@ def test_ai_news_view_surfaces_operational_warnings() -> None:
 
     assert "OperationalWarningStrip" in source
     assert "operationalWarnings" in source
-    assert "external beta source" in source
+    # Filters upstream aihot "external beta source" noise from the warning strip.
+    assert '!warning.includes("external beta source")' in source
 
 
 def test_ai_news_view_sanitizes_external_links() -> None:
@@ -193,3 +194,15 @@ def test_ai_news_view_surfaces_dual_source_stamps() -> None:
     assert "AI HOT" in source
     assert "standby" in source.lower() or "备用" in source or "待命" in source
     assert "research-only" in source.lower() or "research only" in source.lower() or "仅供研究" in source or "研究" in source
+
+
+def test_ai_news_view_stops_pagination_on_stamp_mismatch() -> None:
+    source = Path("src/frontend/components/forms/AiNewsView.tsx").read_text(encoding="utf-8")
+
+    assert "getNextPageParam" in source
+    assert "allPages" in source
+    assert "lastPage.provider !== firstPage.provider" in source
+    assert "lastPage.served_from !== firstPage.served_from" in source
+    # Prefer failover stamp if any page flipped before stop.
+    assert 'page.served_from === "failover"' in source
+    assert "feedStampPage" in source

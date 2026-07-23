@@ -244,8 +244,18 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
         since,
         take,
       }),
-    getNextPageParam: (lastPage) =>
-      lastPage.has_next && lastPage.next_cursor ? lastPage.next_cursor : undefined,
+    getNextPageParam: (lastPage, allPages) => {
+      // Do not chain cursors across provider/served_from failover flips.
+      const firstPage = allPages[0];
+      if (
+        firstPage &&
+        (lastPage.provider !== firstPage.provider ||
+          lastPage.served_from !== firstPage.served_from)
+      ) {
+        return undefined;
+      }
+      return lastPage.has_next && lastPage.next_cursor ? lastPage.next_cursor : undefined;
+    },
   });
   const dailyQuery = useQuery({
     queryKey: ["news-daily", dailyDate],
@@ -276,15 +286,18 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
   const feedItems = feedPages.flatMap((page) => page.items);
   const feedWarnings = uniqueStrings(feedPages.flatMap((page) => page.warnings ?? []));
   const feedApiError = feedPages.find((page) => page.apiError)?.apiError;
-  const activeFetchedAt = tab === "feed" ? feedPages[0]?.fetched_at : dailyQuery.data?.generated_at;
+  // Prefer a failover stamp if any page flipped before pagination stopped.
+  const feedStampPage =
+    feedPages.find((page) => page.served_from === "failover") ?? feedPages[0];
+  const activeFetchedAt = tab === "feed" ? feedStampPage?.fetched_at : dailyQuery.data?.generated_at;
   const activeWarnings = tab === "feed" ? feedWarnings : dailyQuery.data?.warnings;
   // Prefer payload provider/served_from from items/daily over status-only.
   const activeProvider =
     tab === "feed"
-      ? feedPages[0]?.provider ?? statusQuery.data?.provider
+      ? feedStampPage?.provider ?? statusQuery.data?.provider
       : dailyQuery.data?.provider ?? statusQuery.data?.provider;
   const activeServedFrom: NewsServedFrom | undefined =
-    tab === "feed" ? feedPages[0]?.served_from : dailyQuery.data?.served_from;
+    tab === "feed" ? feedStampPage?.served_from : dailyQuery.data?.served_from;
   const failoverActive = activeServedFrom === "failover";
   const providerLabel = formatProviderLabel(activeProvider);
   const isRefreshing =
@@ -354,7 +367,7 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
               <StatusPill
                 label={text.beta}
                 value={
-                  (feedPages[0]?.provider_beta ??
+                  (feedStampPage?.provider_beta ??
                     dailyQuery.data?.provider_beta ??
                     statusQuery.data?.provider_beta)
                     ? "ON"

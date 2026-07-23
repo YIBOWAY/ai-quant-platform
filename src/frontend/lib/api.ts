@@ -2130,7 +2130,6 @@ export function getNewsItems(query: NewsItemsQuery = {}) {
     warnings: ["AI news feed is unavailable."],
     research_safety: AIHOT_RESEARCH_SAFETY,
     preference: query.preference ?? "auto",
-    served_from: "primary",
     safety: FALLBACK_SAFETY,
   });
 }
@@ -2159,7 +2158,6 @@ export function getNewsDaily(date?: string, preference?: NewsPreference) {
     research_safety: AIHOT_RESEARCH_SAFETY,
     raw: {},
     preference: preference ?? "auto",
-    served_from: "primary",
     safety: FALLBACK_SAFETY,
   });
 }
@@ -2178,7 +2176,6 @@ export function getNewsDailies(take = 14, preference?: NewsPreference) {
     warnings: ["AI news daily archive is unavailable."],
     research_safety: AIHOT_RESEARCH_SAFETY,
     preference: preference ?? "auto",
-    served_from: "primary",
     safety: FALLBACK_SAFETY,
   });
 }
@@ -2198,7 +2195,7 @@ export function getNewsStatus() {
     preference_default: "auto",
     research_only: true,
     providers: {},
-    failover: { auto_enabled: true, order: [] },
+    failover: { auto_enabled: false, order: [] },
     safety: FALLBACK_SAFETY,
   });
 }
