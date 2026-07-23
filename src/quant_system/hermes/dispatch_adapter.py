@@ -34,13 +34,17 @@ class HermesDispatchRequest:
     kind: str
     client_request_id: str
     platform_session_id: str
+    hermes_session_id: str
     canonical_request_digest: str
     payload_ref: str
     provider_policy_digest: str | None = None
 
     def idempotency_key(self) -> str:
-        # One logical command identity → at most one upstream Run.
-        return self.client_request_id
+        # command_id already belongs to the durable Platform namespace
+        # (owner + platform session + client request). A bare client request ID
+        # can legally repeat in another managed session and therefore cannot be
+        # the globally unique Hermes DurableRun key.
+        return self.command_id
 
     def request_body(self) -> dict[str, object]:
         body: dict[str, object] = {
@@ -48,6 +52,7 @@ class HermesDispatchRequest:
             "kind": self.kind,
             "client_request_id": self.client_request_id,
             "platform_session_id": self.platform_session_id,
+            "hermes_session_id": self.hermes_session_id,
             "canonical_request_digest": self.canonical_request_digest,
             "payload_ref": self.payload_ref,
         }
@@ -183,7 +188,7 @@ class FakeHermesDispatchAdapter:
                 provider_call_count=0,
             )
 
-        session_id = f"sess_{uuid.uuid4().hex}"
+        session_id = request.hermes_session_id
         run_id = f"run_{uuid.uuid4().hex}"
         self._by_key[key] = (session_id, run_id, body_digest)
         self.provider_calls += provider_delta
@@ -344,6 +349,7 @@ class HttpHermesDispatchAdapter:
             payload = self._post_run(
                 input_text=prompt,
                 idempotency_key=key,
+                session_id=request.hermes_session_id,
                 metadata={
                     "command_id": request.command_id,
                     "kind": request.kind,
@@ -364,19 +370,29 @@ class HttpHermesDispatchAdapter:
 
         run_id = _as_nonempty_str(payload.get("run_id") or payload.get("id"))
         session_id = _as_nonempty_str(
-            payload.get("session_id") or payload.get("hermes_session_id") or run_id
+            payload.get("session_id") or payload.get("hermes_session_id")
         )
         if not run_id or not session_id:
             return HermesDispatchResult(
-                kind="timeout",
+                kind="transport_error",
                 error_code="missing_hermes_ids",
+            )
+        if session_id != request.hermes_session_id:
+            return HermesDispatchResult(
+                kind="transport_error",
+                error_code="session_identity_mismatch",
             )
 
         self._by_key[key] = (session_id, run_id, body_digest)
-        self._provider_calls += 1
         created = payload.get("created")
-        # Upstream may omit created; treat first observation as accepted.
+        if type(created) is not bool:
+            return HermesDispatchResult(
+                kind="transport_error",
+                error_code="missing_created_flag",
+            )
         kind: DispatchOutcomeKind = "recovered" if created is False else "accepted"
+        provider_calls = 0 if created is False else 1
+        self._provider_calls += provider_calls
         return HermesDispatchResult(
             kind=kind,
             hermes_session_id=session_id,
@@ -386,7 +402,7 @@ class HttpHermesDispatchAdapter:
                 hermes_run_id=run_id,
                 outcome=kind,
             ),
-            provider_call_count=1,
+            provider_call_count=provider_calls,
         )
 
     # -- internals -----------------------------------------------------------
@@ -581,11 +597,16 @@ class HttpHermesDispatchAdapter:
         *,
         input_text: str,
         idempotency_key: str,
+        session_id: str,
         metadata: dict[str, object],
     ) -> dict[str, object]:
         import httpx
 
-        body = {"input": input_text, "metadata": metadata}
+        body = {
+            "input": input_text,
+            "session_id": session_id,
+            "metadata": metadata,
+        }
         headers = {"Idempotency-Key": idempotency_key, "content-type": "application/json"}
         try:
             with self._client() as client:

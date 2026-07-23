@@ -44,6 +44,7 @@ def _request(**overrides: object) -> HermesDispatchRequest:
         kind="research_chat",
         client_request_id="client-req-smoke-0001",
         platform_session_id="wm_deadbeef",
+        hermes_session_id="web_deadbeef",
         canonical_request_digest="a" * 64,
         payload_ref="hqa-payload:sha256:" + ("b" * 64),
         provider_policy_digest="c" * 64,
@@ -68,15 +69,18 @@ def test_accepts_ephemeral_run_when_durable_absent(tmp_path: Path) -> None:
             )
         assert request.url.path == "/v1/runs"
         assert request.headers.get("authorization") == "Bearer test-key-value"
-        assert request.headers.get("idempotency-key") == "client-req-smoke-0001"
+        assert request.headers.get("idempotency-key") == (
+            "00000000-0000-4000-8000-000000000001"
+        )
         body = json.loads(request.content.decode("utf-8"))
         assert body["input"] == "Reply with exactly: pong"
+        assert body["session_id"] == "web_deadbeef"
         assert "metadata" in body
         return httpx.Response(
             200,
             json={
                 "run_id": "run_abc123",
-                "session_id": "run_abc123",
+                "session_id": "web_deadbeef",
                 "status": "completed",
                 "created": True,
             },
@@ -91,7 +95,7 @@ def test_accepts_ephemeral_run_when_durable_absent(tmp_path: Path) -> None:
     result = adapter.submit_or_recover(_request())
     assert result.kind == "accepted"
     assert result.hermes_run_id == "run_abc123"
-    assert result.hermes_session_id == "run_abc123"
+    assert result.hermes_session_id == "web_deadbeef"
     assert result.provider_call_count == 1
     assert result.evidence_digest
 
@@ -108,7 +112,11 @@ def test_recover_by_idempotency_key_without_second_provider_call(tmp_path: Path)
         calls["runs"] += 1
         return httpx.Response(
             200,
-            json={"run_id": "run_once", "session_id": "sess_once", "created": True},
+            json={
+                "run_id": "run_once",
+                "session_id": "web_deadbeef",
+                "created": True,
+            },
         )
 
     adapter = HttpHermesDispatchAdapter(
@@ -124,6 +132,84 @@ def test_recover_by_idempotency_key_without_second_provider_call(tmp_path: Path)
     assert second.hermes_run_id == "run_once"
     assert second.provider_call_count == 0
     assert calls["runs"] == 1
+
+
+def test_adapter_rejects_response_that_substitutes_managed_session(
+    tmp_path: Path,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(
+                200,
+                json={"features": {"run_submission": True}},
+            )
+        return httpx.Response(
+            202,
+            json={
+                "run_id": "run_wrong_session",
+                "session_id": "different_session",
+                "created": True,
+            },
+        )
+
+    adapter = HttpHermesDispatchAdapter(
+        settings=_settings(tmp_path),
+        input_resolver=fixed_input_resolver("ping"),
+        transport=_mock_transport(handler),
+    )
+
+    result = adapter.submit_or_recover(_request())
+
+    assert result.kind == "transport_error"
+    assert result.error_code == "session_identity_mismatch"
+
+
+def test_same_client_id_in_two_sessions_has_distinct_upstream_keys(
+    tmp_path: Path,
+) -> None:
+    observed: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(
+                200,
+                json={"features": {"run_submission": True}},
+            )
+        body = json.loads(request.content.decode("utf-8"))
+        key = request.headers["idempotency-key"]
+        session_id = body["session_id"]
+        observed.append((key, session_id))
+        return httpx.Response(
+            202,
+            json={
+                "run_id": f"run_{len(observed)}",
+                "session_id": session_id,
+                "created": True,
+            },
+        )
+
+    adapter = HttpHermesDispatchAdapter(
+        settings=_settings(tmp_path),
+        input_resolver=fixed_input_resolver("ping"),
+        transport=_mock_transport(handler),
+    )
+    first = _request(
+        command_id="00000000-0000-4000-8000-000000000001",
+        platform_session_id="wm_one",
+        hermes_session_id="web_one",
+    )
+    second = _request(
+        command_id="00000000-0000-4000-8000-000000000002",
+        platform_session_id="wm_two",
+        hermes_session_id="web_two",
+    )
+
+    assert adapter.submit_or_recover(first).is_success
+    assert adapter.submit_or_recover(second).is_success
+    assert observed == [
+        ("00000000-0000-4000-8000-000000000001", "web_one"),
+        ("00000000-0000-4000-8000-000000000002", "web_two"),
+    ]
 
 
 def test_durable_absent_fails_closed_without_ephemeral_allow(tmp_path: Path) -> None:
