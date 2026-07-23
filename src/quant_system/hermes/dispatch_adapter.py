@@ -11,10 +11,9 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from collections.abc import Callable
-from typing import Literal, Mapping, Protocol
-
+from typing import Literal, Protocol
 
 DispatchOutcomeKind = Literal[
     "accepted",
@@ -23,6 +22,14 @@ DispatchOutcomeKind = Literal[
     "timeout",
     "transport_error",
     "unavailable",
+]
+RunLifecycleStatus = Literal[
+    "accepted",
+    "running",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "outcome_unknown",
 ]
 
 
@@ -34,17 +41,19 @@ class HermesDispatchRequest:
     kind: str
     client_request_id: str
     platform_session_id: str
-    hermes_session_id: str
     canonical_request_digest: str
     payload_ref: str
     provider_policy_digest: str | None = None
+    # Exact Hermes managed-session identity resolved from the platform registry.
+    # ``wm_*`` is the platform key and must never be sent upstream; ``web_*`` is
+    # preallocated for Hermes and is reused by every turn in the conversation.
+    hermes_session_id: str | None = None
 
     def idempotency_key(self) -> str:
-        # command_id already belongs to the durable Platform namespace
-        # (owner + platform session + client request). A bare client request ID
-        # can legally repeat in another managed session and therefore cannot be
-        # the globally unique Hermes DurableRun key.
-        return self.command_id
+        # ``client_request_id`` is unique only inside one platform session.
+        # The durable command UUID is globally unique and stable across every
+        # ACK-loss recovery attempt for the same ledger row.
+        return f"platform-command:{self.command_id}"
 
     def request_body(self) -> dict[str, object]:
         body: dict[str, object] = {
@@ -52,12 +61,13 @@ class HermesDispatchRequest:
             "kind": self.kind,
             "client_request_id": self.client_request_id,
             "platform_session_id": self.platform_session_id,
-            "hermes_session_id": self.hermes_session_id,
             "canonical_request_digest": self.canonical_request_digest,
             "payload_ref": self.payload_ref,
         }
         if self.provider_policy_digest is not None:
             body["provider_policy_digest"] = self.provider_policy_digest
+        if self.hermes_session_id is not None:
+            body["hermes_session_id"] = self.hermes_session_id
         return body
 
 
@@ -69,10 +79,34 @@ class HermesDispatchResult:
     error_code: str | None = None
     evidence_digest: str | None = None
     provider_call_count: int = 0
+    # True only when the Run mutation seam may have been reached. Payload/
+    # registry/capability failures before submission keep this False.
+    network_attempted: bool = True
 
     @property
     def is_success(self) -> bool:
         return self.kind in {"accepted", "recovered"}
+
+
+@dataclass(frozen=True)
+class HermesRunObservation:
+    """Replay-backed lifecycle fact for one exact Hermes Run.
+
+    ``accepted`` and ``running`` are deliberately nonterminal. A terminal fact
+    is usable only when replay is complete and a content digest is present.
+    """
+
+    status: RunLifecycleStatus
+    hermes_session_id: str
+    hermes_run_id: str
+    evidence_digest: str | None = None
+    error_code: str | None = None
+    next_cursor: int = 0
+    replay_complete: bool = False
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in {"succeeded", "failed", "cancelled"}
 
 
 class HermesDispatchPort(Protocol):
@@ -81,6 +115,18 @@ class HermesDispatchPort(Protocol):
     def submit_or_recover(self, request: HermesDispatchRequest) -> HermesDispatchResult: ...
 
     def capabilities(self) -> Mapping[str, object]: ...
+
+
+class RunLifecyclePort(HermesDispatchPort, Protocol):
+    """Durable submit/recover plus replay-backed Run observation surface."""
+
+    def observe(
+        self,
+        *,
+        hermes_session_id: str,
+        hermes_run_id: str,
+        after_cursor: int = 0,
+    ) -> HermesRunObservation: ...
 
 
 def evidence_digest_for(
@@ -118,6 +164,7 @@ class FakeHermesDispatchAdapter:
     submit_calls: int = 0
     provider_calls: int = 0
     _by_key: dict[str, tuple[str, str, str]] = field(default_factory=dict)
+    _observations: dict[str, HermesRunObservation] = field(default_factory=dict)
 
     def capabilities(self) -> Mapping[str, object]:
         return {
@@ -144,6 +191,7 @@ class FakeHermesDispatchAdapter:
                 kind="unavailable",
                 error_code="durable_unavailable",
                 evidence_digest=_digest({"fault": "unavailable", "key": request.idempotency_key()}),
+                network_attempted=False,
             )
         if fault == "rejected":
             return HermesDispatchResult(
@@ -188,7 +236,7 @@ class FakeHermesDispatchAdapter:
                 provider_call_count=0,
             )
 
-        session_id = request.hermes_session_id
+        session_id = request.hermes_session_id or f"sess_{uuid.uuid4().hex}"
         run_id = f"run_{uuid.uuid4().hex}"
         self._by_key[key] = (session_id, run_id, body_digest)
         self.provider_calls += provider_delta
@@ -211,6 +259,27 @@ class FakeHermesDispatchAdapter:
                 outcome="accepted",
             ),
             provider_call_count=provider_delta,
+        )
+
+    def set_run_observation(self, observation: HermesRunObservation) -> None:
+        self._observations[observation.hermes_run_id] = observation
+
+    def observe(
+        self,
+        *,
+        hermes_session_id: str,
+        hermes_run_id: str,
+        after_cursor: int = 0,
+    ) -> HermesRunObservation:
+        observation = self._observations.get(hermes_run_id)
+        if observation is not None:
+            return observation
+        return HermesRunObservation(
+            status="accepted",
+            hermes_session_id=hermes_session_id,
+            hermes_run_id=hermes_run_id,
+            next_cursor=max(0, after_cursor),
+            replay_complete=True,
         )
 
 
@@ -264,19 +333,15 @@ def metadata_input_resolver(request: HermesDispatchRequest) -> str:
 
 @dataclass
 class HttpHermesDispatchAdapter:
-    """Loopback POST ``/v1/runs`` adapter implementing :class:`HermesDispatchPort`.
+    """Deprecated test-only direct POST ``/v1/runs`` adapter.
 
     Design notes
     ------------
     * Does **not** mutate :class:`~quant_system.hermes.gateway_client.HermesApiReadClient`
       (that type stays GET-only).
-    * Live Hermes 0.18.x may omit the durable capability block. When
-      ``allow_ephemeral_runs=True`` (local default), dispatch is still allowed if
-      ``features.run_submission`` is true; recover-by-key is then honored via an
-      in-process cache keyed by ``client_request_id`` so a lost ACK does not
-      double-burn when the process is still alive. Process restart without
-      durable broker remains an acknowledged local risk — product admission still
-      wants the V2 durable canary.
+    * Production connector construction uses ``RunLifecyclePort`` through HQA,
+      never this adapter. Ephemeral mode defaults OFF and exists only for bounded
+      hermetic compatibility tests.
     * ``input_resolver`` is the only place prompt text may appear; the ledger
       still stores only ``payload_ref``.
     """
@@ -285,7 +350,7 @@ class HttpHermesDispatchAdapter:
     input_resolver: Callable[[HermesDispatchRequest], str] = field(
         default=metadata_input_resolver
     )
-    allow_ephemeral_runs: bool = True
+    allow_ephemeral_runs: bool = False
     transport: object | None = None  # httpx.BaseTransport | None
     dispatch_timeout_seconds: float | None = None
     _by_key: dict[str, tuple[str, str, str]] = field(default_factory=dict, init=False, repr=False)
@@ -302,6 +367,14 @@ class HttpHermesDispatchAdapter:
             }
 
     def submit_or_recover(self, request: HermesDispatchRequest) -> HermesDispatchResult:
+        if request.hermes_session_id is not None and not request.hermes_session_id.startswith(
+            "web_"
+        ):
+            return HermesDispatchResult(
+                kind="rejected",
+                error_code="managed_session_required",
+                network_attempted=False,
+            )
         key = request.idempotency_key()
         body_digest = _digest(request.request_body())
         cached = self._by_key.get(key)
@@ -338,12 +411,14 @@ class HttpHermesDispatchAdapter:
                     kind="rejected",
                     error_code="payload_resolve_failed",
                     evidence_digest=_digest({"fault": "payload_resolve_failed", "key": key}),
+                    network_attempted=False,
                 )
             if type(prompt) is not str or not prompt or len(prompt.encode("utf-8")) > 16_384:
                 return HermesDispatchResult(
                     kind="rejected",
                     error_code="payload_input_invalid",
                     evidence_digest=_digest({"fault": "payload_input_invalid", "key": key}),
+                    network_attempted=False,
                 )
 
             payload = self._post_run(
@@ -377,10 +452,11 @@ class HttpHermesDispatchAdapter:
                 kind="transport_error",
                 error_code="missing_hermes_ids",
             )
-        if session_id != request.hermes_session_id:
+        if request.hermes_session_id is not None and session_id != request.hermes_session_id:
             return HermesDispatchResult(
                 kind="transport_error",
-                error_code="session_identity_mismatch",
+                error_code="managed_session_identity_mismatch",
+                network_attempted=True,
             )
 
         self._by_key[key] = (session_id, run_id, body_digest)
@@ -416,6 +492,7 @@ class HttpHermesDispatchAdapter:
                 kind="unavailable",
                 error_code="run_submission_unavailable",
                 evidence_digest=_digest({"fault": "run_submission_unavailable"}),
+                network_attempted=False,
             )
         durable = caps.get("durable")
         if isinstance(durable, Mapping):
@@ -434,13 +511,19 @@ class HttpHermesDispatchAdapter:
                     return HermesDispatchResult(
                         kind="unavailable",
                         error_code="durable_probe_missing",
-                        evidence_digest=_digest({"fault": "durable_probe_missing", "probe": probe_name}),
+                        evidence_digest=_digest(
+                            {"fault": "durable_probe_missing", "probe": probe_name}
+                        ),
+                        network_attempted=False,
                     )
                 if probe.get("supported") is not True or probe.get("grounded") is not True:
                     return HermesDispatchResult(
                         kind="unavailable",
                         error_code="durable_ungrounded",
-                        evidence_digest=_digest({"fault": "durable_ungrounded", "probe": probe_name}),
+                        evidence_digest=_digest(
+                            {"fault": "durable_ungrounded", "probe": probe_name}
+                        ),
+                        network_attempted=False,
                     )
             return None
         # Durable block absent (live 0.18.x default).
@@ -450,6 +533,7 @@ class HttpHermesDispatchAdapter:
             kind="unavailable",
             error_code="durable_unavailable",
             evidence_digest=_digest({"fault": "durable_block_absent"}),
+            network_attempted=False,
         )
 
     def _map_transport_error(self, exc: HermesDispatchAdapterError) -> HermesDispatchResult:
@@ -597,16 +681,14 @@ class HttpHermesDispatchAdapter:
         *,
         input_text: str,
         idempotency_key: str,
-        session_id: str,
+        session_id: str | None,
         metadata: dict[str, object],
     ) -> dict[str, object]:
         import httpx
 
-        body = {
-            "input": input_text,
-            "session_id": session_id,
-            "metadata": metadata,
-        }
+        body: dict[str, object] = {"input": input_text, "metadata": metadata}
+        if session_id is not None:
+            body["session_id"] = session_id
         headers = {"Idempotency-Key": idempotency_key, "content-type": "application/json"}
         try:
             with self._client() as client:
@@ -695,7 +777,7 @@ def build_http_dispatch_adapter(
     transport: object | None = None,
     fixed_input: str | None = None,
 ) -> HttpHermesDispatchAdapter:
-    """Factory used by the supervised CLI / daemon path."""
+    """Build the deprecated direct adapter; production connector never calls it."""
     gateway = getattr(settings, "hermes_gateway", settings)
     if not bool(getattr(gateway, "enabled", False)):
         raise HermesDispatchAdapterError(
@@ -703,7 +785,7 @@ def build_http_dispatch_adapter(
             "Hermes gateway integration is disabled",
         )
     if allow_ephemeral_runs is None:
-        allow_ephemeral_runs = bool(getattr(gateway, "allow_ephemeral_runs", True))
+        allow_ephemeral_runs = bool(getattr(gateway, "allow_ephemeral_runs", False))
     resolver: Callable[[HermesDispatchRequest], str]
     if fixed_input is not None:
         resolver = fixed_input_resolver(fixed_input)
@@ -727,7 +809,9 @@ __all__ = [
     "HermesDispatchPort",
     "HermesDispatchRequest",
     "HermesDispatchResult",
+    "HermesRunObservation",
     "HttpHermesDispatchAdapter",
+    "RunLifecyclePort",
     "build_http_dispatch_adapter",
     "evidence_digest_for",
     "fixed_input_resolver",

@@ -331,6 +331,32 @@ class HermesCommandLedger:
             raise HermesCommandNotFound(str(command_id))
         return _command_from_row(row)
 
+    def list_commands_for_run_reconciliation(
+        self,
+        *,
+        limit: int = 100,
+    ) -> tuple[HermesCommand, ...]:
+        """Return active/unknown Run bindings in deterministic recovery order."""
+
+        _validate_limit(limit)
+        database = self._require_ready_database()
+        try:
+            with database.connect() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT {_COMMAND_COLUMNS}
+                    FROM {SCHEMA}.hermes_commands
+                    WHERE owner_user_id = %s
+                      AND state IN ('delivered', 'outcome_unknown')
+                    ORDER BY updated_at ASC, command_id ASC
+                    LIMIT %s
+                    """,
+                    (ROOT_USER_ID, limit),
+                ).fetchall()
+        except (DatabaseUnavailable, psycopg.Error) as exc:
+            raise HermesCommandLedgerUnavailable(str(exc)) from exc
+        return tuple(_command_from_row(row) for row in rows)
+
     def list_command_events(
         self,
         command_id: UUID,
@@ -980,6 +1006,107 @@ class HermesCommandLedger:
         except psycopg.Error as exc:
             raise HermesCommandLedgerUnavailable(str(exc)) from exc
 
+    def mark_dispatch_unavailable(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        lease_token: UUID,
+        now: datetime,
+        retry_at: datetime,
+        error_code: str,
+    ) -> HermesCommand:
+        """Requeue a dispatch known not to have reached the Run mutation seam."""
+
+        _validate_expected_version(expected_version)
+        _validate_aware_datetime(now, field="now")
+        _validate_aware_datetime(retry_at, field="retry_at")
+        _validate_error_code(error_code)
+        if retry_at <= now:
+            raise HermesCommandValidationError("retry_at must be later than now")
+        database = self._require_ready_database()
+        try:
+            with database.connect() as conn, conn.transaction():
+                self._lock_active_lease(
+                    conn,
+                    command_id=command_id,
+                    expected_version=expected_version,
+                    lease_token=lease_token,
+                    dispatch_requirement="started",
+                )
+                row = conn.execute(
+                    f"""
+                    UPDATE {SCHEMA}.hermes_commands
+                    SET state = 'queued',
+                        version = version + 1,
+                        next_attempt_at = %s,
+                        lease_owner = NULL,
+                        lease_token = NULL,
+                        lease_until = NULL,
+                        dispatch_started_at = NULL,
+                        last_error_code = %s,
+                        updated_at = clock_timestamp()
+                    WHERE command_id = %s
+                      AND owner_user_id = %s
+                      AND state = 'leased'
+                      AND version = %s
+                      AND lease_token = %s
+                      AND lease_until > clock_timestamp()
+                      AND dispatch_started_at IS NOT NULL
+                    RETURNING {_COMMAND_COLUMNS}
+                    """,
+                    (
+                        retry_at,
+                        error_code,
+                        command_id,
+                        ROOT_USER_ID,
+                        expected_version,
+                        lease_token,
+                    ),
+                ).fetchone()
+                if row is None:
+                    self._raise_lease_conflict(
+                        conn,
+                        command_id=command_id,
+                        expected_version=expected_version,
+                        lease_token=lease_token,
+                        now=now,
+                        require_dispatch_started=True,
+                    )
+                command = _command_from_row(row)
+                _append_snapshot_event(
+                    conn,
+                    command=command,
+                    event_type="dispatch_unavailable_requeued",
+                    actor="worker",
+                    from_state="leased",
+                )
+                conn.execute(
+                    f"""
+                    INSERT INTO {SCHEMA}.hermes_outbox (
+                        command_id,
+                        command_version,
+                        topic,
+                        available_at
+                    )
+                    VALUES (%s, %s, 'hermes.command.queued', %s)
+                    """,
+                    (command.command_id, command.version, retry_at),
+                )
+                _notify_command_wakeup(conn, command.command_id)
+                return command
+        except (
+            HermesCommandLeaseConflict,
+            HermesCommandNotFound,
+            HermesCommandStateConflict,
+            HermesCommandVersionConflict,
+        ):
+            raise
+        except DatabaseUnavailable as exc:
+            raise HermesCommandLedgerUnavailable(str(exc)) from exc
+        except psycopg.Error as exc:
+            raise HermesCommandLedgerUnavailable(str(exc)) from exc
+
     def mark_dispatch_rejected(
         self,
         *,
@@ -1109,6 +1236,29 @@ class HermesCommandLedger:
             error_code=error_code,
         )
 
+    def mark_cancelled(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        now: datetime,
+        hermes_session_id: str,
+        hermes_run_id: str,
+        evidence_digest: str,
+    ) -> HermesCommand:
+        """Record an authoritative cancelled/stopped outcome for an exact Run."""
+
+        return self._mark_run_terminal(
+            command_id=command_id,
+            expected_version=expected_version,
+            now=now,
+            hermes_session_id=hermes_session_id,
+            hermes_run_id=hermes_run_id,
+            evidence_digest=evidence_digest,
+            terminal_state="cancelled",
+            error_code=None,
+        )
+
     def reconcile_outcome_as_delivered(
         self,
         *,
@@ -1200,7 +1350,7 @@ class HermesCommandLedger:
         hermes_session_id: str,
         hermes_run_id: str,
         evidence_digest: str,
-        terminal_state: Literal["succeeded", "failed"],
+        terminal_state: Literal["succeeded", "failed", "cancelled"],
         error_code: str | None,
     ) -> HermesCommand:
         _validate_expected_version(expected_version)
