@@ -879,7 +879,7 @@ describe("Plan-V6-Token-Stream-M1 transcript hints on spine", () => {
     }
   });
 
-  it("rejects web_/wm_ transcript hints", async () => {
+  it("accepts Hermes web_ transcript hints and rejects platform/unsafe ids", async () => {
     fetchWorkspaceSnapshot.mockResolvedValue(
       baseSnapshot({ snapshot_workspace_cursor: 0 }),
     );
@@ -906,7 +906,7 @@ describe("Plan-V6-Token-Stream-M1 transcript hints on spine", () => {
       for (const h of handlers["transcript"] || []) {
         h({
           data: JSON.stringify({
-            hermes_session_id: "web_bad",
+            hermes_session_id: "web_managed",
             phase: "waiting",
             revision: "x",
           }),
@@ -918,8 +918,20 @@ describe("Plan-V6-Token-Stream-M1 transcript hints on spine", () => {
             revision: "y",
           }),
         } as MessageEvent);
+        h({
+          data: JSON.stringify({
+            hermes_session_id: "bad/session",
+            phase: "waiting",
+            revision: "z",
+          }),
+        } as MessageEvent);
       }
-      expect(spine.getState().transcriptHints).toEqual([]);
+      expect(spine.getState().transcriptHints).toEqual([
+        expect.objectContaining({
+          hermes_session_id: "web_managed",
+          revision: "x",
+        }),
+      ]);
     } finally {
       spine.stop();
     }
