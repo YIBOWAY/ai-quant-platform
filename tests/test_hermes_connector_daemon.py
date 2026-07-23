@@ -31,8 +31,12 @@ class _Worker:
     def __init__(self, events: list[str]) -> None:
         self.events = events
 
-    def run_once(self) -> HermesConnectorCycleResult:
-        self.events.append("worker")
+    def run_once(
+        self,
+        *,
+        dispatch_allowed: bool = True,
+    ) -> HermesConnectorCycleResult:
+        self.events.append("worker" if dispatch_allowed else "worker:reconcile-only")
         return HermesConnectorCycleResult(
             mode=self.mode,
             requeued_count=0,
@@ -126,7 +130,7 @@ def test_runtime_release_gate_blocks_session_network_before_worker_cycle() -> No
 
     cycle = runtime.run_once()
 
-    assert events == ["worker"]
+    assert events == ["worker:reconcile-only"]
     assert cycle.session_provisioning == {
         "outcome": "blocked",
         "error_code": "release_gate_closed",

@@ -354,8 +354,17 @@ class HermesConnectorWorker:
     def mode(self) -> str:
         return self._mode
 
-    def run_once(self) -> HermesConnectorCycleResult:
-        """Reconcile local facts; optionally claim/dispatch one or more commands."""
+    def run_once(
+        self,
+        *,
+        dispatch_allowed: bool = True,
+    ) -> HermesConnectorCycleResult:
+        """Reconcile local facts; optionally claim/dispatch one or more commands.
+
+        ``dispatch_allowed`` is the cycle-level admission checked before any
+        durable claim.  The existing per-command dispatch gate remains the
+        fresh, post-claim check that closes the claim-to-network race.
+        """
         recovered = self._ledger.reconcile_expired_leases(
             now=self._now(),
             limit=self._reconcile_limit,
@@ -371,7 +380,7 @@ class HermesConnectorWorker:
         recovered_count = 0
         terminal_count = 0
 
-        if self._mode == "supervised_dispatch":
+        if self._mode == "supervised_dispatch" and dispatch_allowed:
             claim_ledger = self._as_claim_ledger()
             if self._run_lifecycle_port is not None:
                 recovered_count, terminal_count = self._reconcile_active_runs(

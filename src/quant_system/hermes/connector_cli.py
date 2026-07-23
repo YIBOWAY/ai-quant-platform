@@ -156,9 +156,14 @@ class ConnectorRuntime:
         compatibility = self._compatibility_cycle_if_blocked()
         if compatibility is not None:
             return compatibility
+        gate = DispatchGateDecision(allow=True, reason="ready")
+        if self.worker.mode == "supervised_dispatch" or self.provisioner is not None:
+            # First half of the two-stage dispatch gate: a known-closed
+            # release/candidate cycle must never lease a durable command.
+            # HermesConnectorWorker retains the fresh post-claim check.
+            gate = self.network_gate()
         session_projection: dict[str, object] = {"outcome": "not_configured"}
         if self.provisioner is not None:
-            gate = self.network_gate()
             if gate.allow:
                 provisioned = self.provisioner.provision_next(
                     worker_id=self.worker_id,
@@ -169,7 +174,7 @@ class ConnectorRuntime:
                     "outcome": "blocked",
                     "error_code": _safe_runtime_code(gate.reason),
                 }
-        cycle = self.worker.run_once()
+        cycle = self.worker.run_once(dispatch_allowed=gate.allow)
         return ConnectorRuntimeCycle(
             cycle=cycle,
             session_provisioning=session_projection,

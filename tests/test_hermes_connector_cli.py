@@ -16,6 +16,7 @@ runner = CliRunner()
 class _FakeLedger:
     def __init__(self) -> None:
         self.calls = 0
+        self.claim_calls = 0
         self.limits: list[int] = []
 
     def reconcile_expired_leases(self, *, now, limit):
@@ -25,6 +26,7 @@ class _FakeLedger:
 
     # Supervised-dispatch surface (unused by reconcile-only fake cycles).
     def claim_next_command(self, *, worker_id, now, lease_duration):
+        self.claim_calls += 1
         return None
 
     def mark_dispatch_started(self, **_kwargs):
@@ -242,6 +244,43 @@ def test_connector_worker_supervised_mode_is_forwarded(monkeypatch) -> None:
     assert captured["worker_id"] == "smoke-worker-1"
     payload = json.loads(result.stdout.strip().splitlines()[0])
     assert payload["mode"] == "supervised_dispatch"
+
+
+def test_closed_network_gate_reconciles_without_claiming_a_queued_command() -> None:
+    """A closed release/candidate gate must be checked before claim.
+
+    The worker retains its per-command gate as the second half of the
+    claim-to-network race defence, but a known-closed cycle must not lease and
+    then reject a durable command merely because public release is not open.
+    """
+
+    ledger = _FakeLedger()
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=object(),  # type: ignore[arg-type]
+    )
+    runtime = connector_cli.ConnectorRuntime(
+        worker=worker,
+        wakeup_waiter=_FakeWaiter(),
+        stop_requested=lambda: False,
+        network_gate=lambda: connector_cli.DispatchGateDecision(
+            allow=False,
+            reason="active_release_stamp_missing",
+            retryable=False,
+        ),
+    )
+
+    result = runtime.run_once()
+
+    assert result.cycle.mode == "supervised_dispatch"
+    assert result.cycle.claimed_count == 0
+    assert result.cycle.rejected_count == 0
+    assert result.cycle.hermes_mutation_count == 0
+    assert result.cycle.provider_call_count == 0
+    assert result.session_provisioning == {"outcome": "not_configured"}
+    assert ledger.calls == 1
+    assert ledger.claim_calls == 0
 
 
 def test_connector_worker_rejects_invalid_mode() -> None:
