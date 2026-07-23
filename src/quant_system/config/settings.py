@@ -377,6 +377,49 @@ class AiHotSettings(BaseSettings):
     )
 
 
+class NewsSettings(BaseSettings):
+    """AI News source preference and failover policy."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="", extra="ignore", populate_by_name=True
+    )
+    source_preference: Literal["auto", "aihot", "horizon"] = Field(
+        default="auto",
+        validation_alias=AliasChoices("QS_NEWS_SOURCE_PREFERENCE"),
+    )
+    failover_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_NEWS_FAILOVER_ENABLED"),
+    )
+
+
+class HorizonSettings(BaseSettings):
+    """Local Horizon inbox feed settings for AI News bridge."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="", extra="ignore", populate_by_name=True
+    )
+    enabled: bool = Field(default=True, validation_alias=AliasChoices("QS_HORIZON_ENABLED"))
+    inbox_dir: str = Field(
+        default=str(Path(__file__).resolve().parents[3] / "data" / "horizon_inbox"),
+        validation_alias=AliasChoices("QS_HORIZON_INBOX_DIR"),
+        min_length=1,
+    )
+    max_age_seconds: int = Field(
+        default=129_600,
+        validation_alias=AliasChoices("QS_HORIZON_MAX_AGE_SECONDS"),
+        gt=0,
+    )
+    provider_beta: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("QS_HORIZON_PROVIDER_BETA"),
+    )
+    ingest_on_read: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("QS_HORIZON_INGEST_ON_READ"),
+    )
+
+
 class PredictionMarketSettings(BaseSettings):
     """Read-only prediction market research settings."""
 
@@ -600,6 +643,8 @@ class Settings(BaseSettings):
     options_radar: OptionsRadarSettings = Field(default_factory=OptionsRadarSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     aihot: AiHotSettings = Field(default_factory=AiHotSettings)
+    news: NewsSettings = Field(default_factory=NewsSettings)
+    horizon: HorizonSettings = Field(default_factory=HorizonSettings)
     prediction_market: PredictionMarketSettings = Field(
         default_factory=PredictionMarketSettings
     )
