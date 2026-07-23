@@ -65,6 +65,7 @@ from quant_system.hermes.agent_workspace_actions import (
 )
 from quant_system.hermes.approval_release_port import (
     ApprovalReleaseError,
+    ApprovalReleasePort,
     default_approval_release_adapter,
     map_decision_to_release_choice,
 )
@@ -78,6 +79,7 @@ from quant_system.hermes.canary_observe import (
     note_canary_revoked,
 )
 from quant_system.hermes.command_approval_authority import (
+    CommandApprovalAuthority,
     CommandApprovalAuthorityError,
     default_command_approval_authority,
 )
@@ -109,6 +111,7 @@ from quant_system.hermes.public_cutover_observe import (
 from quant_system.hermes.result_observe import note_result_raised
 from quant_system.hermes.run_stop_port import (
     RunStopError,
+    RunStopPort,
     build_layered_stop_receipt,
     default_run_stop_adapter,
     strip_run_ref,
@@ -136,6 +139,31 @@ ReceiptStatus = Literal[
     "unavailable",
     "outcome_unknown",
 ]
+
+_PROCESS_LOCAL_AUTHORITY_ACTIONS = (
+    DecideHermesCommandApproval,
+    RequestStop,
+    ConfirmFormulaSource,
+    ReviewCandidateCAS,
+    PreparePromotionReview,
+    BindOptionsVerticalA,
+    BindFactorVerticalB,
+    ConfirmFactorVerticalBPlan,
+    SeedFactorVerticalBGate1,
+    ConfirmFactorVerticalBGate1,
+    SeedFactorVerticalBGate2,
+    IssueCanaryGrant,
+    RevokeCanaryGrant,
+    AcceptCanaryDualVertical,
+    OpenPublicCutover,
+    ClosePublicCutover,
+)
+_CANARY_ACTIONS = (
+    IssueCanaryGrant,
+    RevokeCanaryGrant,
+    AcceptCanaryDualVertical,
+)
+_PUBLIC_CUTOVER_ACTIONS = (OpenPublicCutover, ClosePublicCutover)
 
 _RECOVERY = {
     "accepted": None,
@@ -249,7 +277,11 @@ class ActionReceipt:
             payload["public_write_authorized"] = False
             payload["chat_write_ready"] = False
             payload["release_authorized"] = False
-        if self.public_cutover_honesty or self.cutover_id is not None or self.cutover_ref is not None:
+        if (
+            self.public_cutover_honesty
+            or self.cutover_id is not None
+            or self.cutover_ref is not None
+        ):
             # Rails honesty: release / Gate2 decide / V2 durable / kill_switch never flip.
             payload["release_authorized"] = False
             payload["m6_gate2_decide_authorized"] = False
@@ -438,7 +470,7 @@ def submit_create_managed_session(
             digest=digest,
             reason_code="authenticated_mutation_bff_unavailable",
             mutation_enabled=mutation_enabled,
-)
+        )
     _require_root_actor(actor_owner_user_id)
     if not _server_managed_session_policy_admitted(
         provider_policy_digest=action.provider_policy_digest,
@@ -458,7 +490,7 @@ def submit_create_managed_session(
             digest=digest,
             reason_code="workspace_authority_unavailable",
             mutation_enabled=mutation_enabled,
-)
+        )
 
     platform_session_id = derive_managed_platform_session_id(digest)
     hermes_session_id = derive_managed_hermes_session_id(digest)
@@ -491,7 +523,7 @@ def submit_create_managed_session(
             digest=digest,
             reason_code="session_identity_conflict",
             mutation_enabled=mutation_enabled,
-)
+        )
     except HermesSessionRegistryUnavailable:
         # Commit outcome may be unknown; exact retry is registry-idempotent.
         return _receipt(
@@ -502,7 +534,7 @@ def submit_create_managed_session(
             hermes_session_id=hermes_session_id,
             reason_code="session_registry_pending",
             mutation_enabled=mutation_enabled,
-)
+        )
     except HermesSessionRegistryValidationError:
         return _receipt(
             status="unavailable",
@@ -510,7 +542,7 @@ def submit_create_managed_session(
             digest=digest,
             reason_code="session_registry_validation",
             mutation_enabled=mutation_enabled,
-)
+        )
 
     return _receipt(
         status="accepted",
@@ -519,7 +551,7 @@ def submit_create_managed_session(
         platform_session_id=record.platform_session_id,
         hermes_session_id=record.hermes_session_id,
         mutation_enabled=mutation_enabled,
-)
+    )
 
 
 def submit_fork_into_managed_session(
@@ -537,7 +569,7 @@ def submit_fork_into_managed_session(
             digest=digest,
             reason_code="authenticated_mutation_bff_unavailable",
             mutation_enabled=mutation_enabled,
-)
+        )
     _require_root_actor(actor_owner_user_id)
     if not _server_managed_session_policy_admitted(
         provider_policy_digest=action.new_provider_policy_digest,
@@ -557,13 +589,11 @@ def submit_fork_into_managed_session(
             digest=digest,
             reason_code="workspace_authority_unavailable",
             mutation_enabled=mutation_enabled,
-)
+        )
 
     source_platform_session_id = strip_session_ref(action.source_session_ref)
     try:
-        source = get_workspace_session(
-            settings, platform_session_id=source_platform_session_id
-        )
+        source = get_workspace_session(settings, platform_session_id=source_platform_session_id)
     except LookupError:
         return _receipt(
             status="conflict",
@@ -571,7 +601,7 @@ def submit_fork_into_managed_session(
             digest=digest,
             reason_code="source_session_missing",
             mutation_enabled=mutation_enabled,
-)
+        )
     except (
         HermesSessionRegistryUnavailable,
         HermesSessionRegistryValidationError,
@@ -582,7 +612,7 @@ def submit_fork_into_managed_session(
             digest=digest,
             reason_code="session_registry_unavailable",
             mutation_enabled=mutation_enabled,
-)
+        )
 
     if source.workspace_id != action.workspace.workspace_id:
         return _receipt(
@@ -591,7 +621,7 @@ def submit_fork_into_managed_session(
             digest=digest,
             reason_code="source_workspace_mismatch",
             mutation_enabled=mutation_enabled,
-)
+        )
 
     platform_session_id = derive_managed_platform_session_id(digest)
     hermes_session_id = derive_managed_hermes_session_id(digest)
@@ -627,7 +657,7 @@ def submit_fork_into_managed_session(
             digest=digest,
             reason_code="session_identity_conflict",
             mutation_enabled=mutation_enabled,
-)
+        )
     except HermesSessionRegistryUnavailable:
         return _receipt(
             status="reconciling",
@@ -637,7 +667,7 @@ def submit_fork_into_managed_session(
             hermes_session_id=hermes_session_id,
             reason_code="session_registry_pending",
             mutation_enabled=mutation_enabled,
-)
+        )
     except HermesSessionRegistryValidationError:
         return _receipt(
             status="unavailable",
@@ -645,7 +675,7 @@ def submit_fork_into_managed_session(
             digest=digest,
             reason_code="session_registry_validation",
             mutation_enabled=mutation_enabled,
-)
+        )
 
     # Source external/managed row must remain unchanged (fork is additive).
     return _receipt(
@@ -655,7 +685,7 @@ def submit_fork_into_managed_session(
         platform_session_id=record.platform_session_id,
         hermes_session_id=record.hermes_session_id,
         mutation_enabled=mutation_enabled,
-)
+    )
 
 
 def submit_conversation_turn(
@@ -673,7 +703,7 @@ def submit_conversation_turn(
             digest=digest,
             reason_code="authenticated_mutation_bff_unavailable",
             mutation_enabled=mutation_enabled,
-)
+        )
     _require_root_actor(actor_owner_user_id)
     if not _ensure_ready(settings):
         return _receipt(
@@ -682,13 +712,11 @@ def submit_conversation_turn(
             digest=digest,
             reason_code="workspace_authority_unavailable",
             mutation_enabled=mutation_enabled,
-)
+        )
 
     platform_session_id = strip_session_ref(action.managed_session_ref)
     try:
-        session = require_web_writable_session(
-            settings, platform_session_id=platform_session_id
-        )
+        session = require_web_writable_session(settings, platform_session_id=platform_session_id)
     except HermesSessionNotWritable:
         return _receipt(
             status="conflict",
@@ -697,7 +725,7 @@ def submit_conversation_turn(
             platform_session_id=platform_session_id,
             reason_code="external_session_not_writable",
             mutation_enabled=mutation_enabled,
-)
+        )
     except LookupError:
         return _receipt(
             status="conflict",
@@ -705,7 +733,7 @@ def submit_conversation_turn(
             digest=digest,
             reason_code="managed_session_missing",
             mutation_enabled=mutation_enabled,
-)
+        )
     except (
         HermesSessionRegistryUnavailable,
         HermesSessionRegistryValidationError,
@@ -716,7 +744,7 @@ def submit_conversation_turn(
             digest=digest,
             reason_code="session_registry_unavailable",
             mutation_enabled=mutation_enabled,
-)
+        )
 
     if session.workspace_id != action.workspace.workspace_id:
         return _receipt(
@@ -726,7 +754,7 @@ def submit_conversation_turn(
             platform_session_id=platform_session_id,
             reason_code="session_workspace_mismatch",
             mutation_enabled=mutation_enabled,
-)
+        )
 
     platform_payload_ref = hqa_payload_to_platform_payload_ref(action.payload_digest)
     try:
@@ -749,7 +777,7 @@ def submit_conversation_turn(
                 hermes_session_id=session.hermes_session_id,
                 reason_code="idempotency_digest_conflict",
                 mutation_enabled=mutation_enabled,
-)
+            )
         if exc.code == "unavailable":
             return _receipt(
                 status="unavailable",
@@ -758,7 +786,7 @@ def submit_conversation_turn(
                 platform_session_id=platform_session_id,
                 reason_code="authority_unavailable",
                 mutation_enabled=mutation_enabled,
-)
+            )
         raise
 
     return _receipt(
@@ -769,7 +797,7 @@ def submit_conversation_turn(
         platform_session_id=session.platform_session_id,
         hermes_session_id=session.hermes_session_id,
         mutation_enabled=mutation_enabled,
-)
+    )
 
 
 def submit_decide_hermes_command_approval(
@@ -778,6 +806,8 @@ def submit_decide_hermes_command_approval(
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    approval_authority: CommandApprovalAuthority | None = None,
+    approval_release_adapter: ApprovalReleasePort | None = None,
 ) -> ActionReceipt:
     """V7a+V7b: exact CAS decide then hermetic respond_approval release/signal.
 
@@ -800,7 +830,7 @@ def submit_decide_hermes_command_approval(
         )
     _require_root_actor(actor_owner_user_id)
 
-    authority = default_command_approval_authority()
+    authority = approval_authority or default_command_approval_authority()
     try:
         decided = authority.decide(
             workspace_id=action.workspace.workspace_id,
@@ -837,7 +867,8 @@ def submit_decide_hermes_command_approval(
     # respond_approval so the release side can idempotent-replay.
     try:
         choice = map_decision_to_release_choice(action.decision)
-        default_approval_release_adapter().respond_approval(
+        release_adapter = approval_release_adapter or default_approval_release_adapter()
+        release_adapter.respond_approval(
             decided.run_id,
             choice=choice,
             challenge_id=decided.approval_id,
@@ -870,11 +901,7 @@ def submit_decide_hermes_command_approval(
             )
             command_id = str(cmd.command.command_id)
         except SubmissionSagaError as exc:
-            if (
-                exc.code == "conflict"
-                and exc.message
-                and "digest" in exc.message.lower()
-            ):
+            if exc.code == "conflict" and exc.message and "digest" in exc.message.lower():
                 # Same client_action_id / different digest is a true conflict on
                 # the audit rail; challenge already matches action_digest.
                 return _receipt(
@@ -903,6 +930,7 @@ def submit_stop_run_request(
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    stop_adapter: RunStopPort | None = None,
 ) -> ActionReceipt:
     """V7c: hermetic Run-scoped stop with plan §5.5 layered receipt.
 
@@ -931,7 +959,7 @@ def submit_stop_run_request(
     except RunStopError as exc:
         raise SubmissionSagaError("validation", exc.message) from exc
 
-    adapter = default_run_stop_adapter()
+    adapter = stop_adapter or default_run_stop_adapter()
     identity = adapter.remember_request(
         workspace_id=action.workspace.workspace_id,
         client_action_id=action.client_action_id,
@@ -1003,9 +1031,7 @@ def submit_stop_run_request(
             stop_layers=layers.to_public_dict(),
         )
 
-    hermes_layer = (
-        "already_terminal" if result.idempotent_replay else "confirmed"
-    )
+    hermes_layer = "already_terminal" if result.idempotent_replay else "confirmed"
     layers = build_layered_stop_receipt(
         stop=result,
         hermes_run_layer=hermes_layer,  # type: ignore[arg-type]
@@ -1047,7 +1073,6 @@ def submit_stop_run_request(
         mutation_enabled=mutation_enabled,
         stop_layers=layers.to_public_dict(),
     )
-
 
 
 def submit_confirm_formula_source(
@@ -1289,7 +1314,6 @@ def submit_prepare_promotion_review(
     )
 
 
-
 def submit_bind_options_vertical_a(
     settings: Settings,
     action: BindOptionsVerticalA,
@@ -1454,13 +1478,11 @@ def submit_bind_factor_vertical_b(
             reason_code=exc.message or "vertical_binding_authority_unavailable",
             mutation_enabled=mutation_enabled,
         )
-    try:
+    with suppress(Exception):
         note_result_raised(
             workspace_id=action.workspace.workspace_id,
             result=outcome.result,
         )
-    except Exception:
-        pass
     command_id: str | None = None
     if _ensure_ready(settings):
         control_session = control_plane_session_id(action.workspace.workspace_id)
@@ -1559,13 +1581,11 @@ def submit_confirm_factor_vertical_b_plan(
             reason_code=exc.message or "vertical_binding_authority_unavailable",
             mutation_enabled=mutation_enabled,
         )
-    try:
+    with suppress(Exception):
         note_result_raised(
             workspace_id=action.workspace.workspace_id,
             result=outcome.result,
         )
-    except Exception:
-        pass
     command_id: str | None = None
     if _ensure_ready(settings):
         control_session = control_plane_session_id(action.workspace.workspace_id)
@@ -1594,7 +1614,6 @@ def submit_confirm_factor_vertical_b_plan(
         terminal_status=outcome.terminal,
         mutation_enabled=mutation_enabled,
     )
-
 
 
 def submit_seed_factor_vertical_b_gate1(
@@ -1666,13 +1685,11 @@ def submit_seed_factor_vertical_b_gate1(
             reason_code=exc.message or "vertical_binding_authority_unavailable",
             mutation_enabled=mutation_enabled,
         )
-    try:
+    with suppress(Exception):
         note_result_raised(
             workspace_id=action.workspace.workspace_id,
             result=outcome.result,
         )
-    except Exception:
-        pass
     if outcome.gate_id is not None:
         try:
             gauth = default_gate_surface_authority()
@@ -1787,13 +1804,11 @@ def submit_confirm_factor_vertical_b_gate1(
             reason_code=exc.message or "vertical_binding_authority_unavailable",
             mutation_enabled=mutation_enabled,
         )
-    try:
+    with suppress(Exception):
         note_result_raised(
             workspace_id=action.workspace.workspace_id,
             result=outcome.result,
         )
-    except Exception:
-        pass
     # note_gate_decided only when this act confirmed the surface (decision_action
     # matches). CASCADE-ONLY after V7e leaves V7e's decision facts untouched.
     if outcome.gate_id is not None:
@@ -1916,13 +1931,11 @@ def submit_seed_factor_vertical_b_gate2(
             reason_code=exc.message or "vertical_binding_authority_unavailable",
             mutation_enabled=mutation_enabled,
         )
-    try:
+    with suppress(Exception):
         note_result_raised(
             workspace_id=action.workspace.workspace_id,
             result=outcome.result,
         )
-    except Exception:
-        pass
     if outcome.gate_id is not None:
         try:
             gauth = default_gate_surface_authority()
@@ -1963,7 +1976,6 @@ def submit_seed_factor_vertical_b_gate2(
         mutation_enabled=mutation_enabled,
         gate_id=outcome.gate_id,
     )
-
 
 
 def submit_issue_canary_grant(
@@ -2010,8 +2022,8 @@ def submit_issue_canary_grant(
                 digest=digest,
                 reason_code=exc.message,
                 mutation_enabled=mutation_enabled,
-            canary_honesty=True,
-        )
+                canary_honesty=True,
+            )
         return _receipt(
             status="unavailable",
             action=action,
@@ -2020,9 +2032,7 @@ def submit_issue_canary_grant(
             mutation_enabled=mutation_enabled,
             canary_honesty=True,
         )
-    note_canary_issued(
-        workspace_id=action.workspace.workspace_id, grant=grant
-    )
+    note_canary_issued(workspace_id=action.workspace.workspace_id, grant=grant)
     return _receipt(
         status="accepted",
         action=action,
@@ -2032,8 +2042,8 @@ def submit_issue_canary_grant(
         grant_digest=grant.grant_digest,
         canary_ref=grant.canary_ref,
         terminal_status=grant.status,
-            canary_honesty=True,
-        )
+        canary_honesty=True,
+    )
 
 
 def submit_revoke_canary_grant(
@@ -2077,8 +2087,8 @@ def submit_revoke_canary_grant(
                 digest=digest,
                 reason_code=exc.message,
                 mutation_enabled=mutation_enabled,
-            canary_honesty=True,
-        )
+                canary_honesty=True,
+            )
         return _receipt(
             status="unavailable",
             action=action,
@@ -2087,9 +2097,7 @@ def submit_revoke_canary_grant(
             mutation_enabled=mutation_enabled,
             canary_honesty=True,
         )
-    note_canary_revoked(
-        workspace_id=action.workspace.workspace_id, grant=grant
-    )
+    note_canary_revoked(workspace_id=action.workspace.workspace_id, grant=grant)
     return _receipt(
         status="accepted",
         action=action,
@@ -2099,8 +2107,8 @@ def submit_revoke_canary_grant(
         grant_digest=grant.grant_digest,
         canary_ref=grant.canary_ref,
         terminal_status=grant.status,
-            canary_honesty=True,
-        )
+        canary_honesty=True,
+    )
 
 
 def submit_accept_canary_dual_vertical(
@@ -2155,8 +2163,8 @@ def submit_accept_canary_dual_vertical(
                 digest=digest,
                 reason_code=exc.message,
                 mutation_enabled=mutation_enabled,
-            canary_honesty=True,
-        )
+                canary_honesty=True,
+            )
         return _receipt(
             status="unavailable",
             action=action,
@@ -2182,9 +2190,8 @@ def submit_accept_canary_dual_vertical(
         terminal_status=grant.status,
         task_id=acceptance.options_a_task_id,
         result_id=acceptance.options_a_result_id,
-            canary_honesty=True,
-        )
-
+        canary_honesty=True,
+    )
 
 
 def submit_open_public_cutover(
@@ -2267,9 +2274,7 @@ def submit_open_public_cutover(
             public_flag_open=False,
         )
 
-    note_public_cutover_opened(
-        workspace_id=action.workspace.workspace_id, cutover=cutover
-    )
+    note_public_cutover_opened(workspace_id=action.workspace.workspace_id, cutover=cutover)
     # Honesty: never claim public write unless the cutover is actually open.
     return _receipt(
         status="accepted",
@@ -2340,9 +2345,7 @@ def submit_close_public_cutover(
             public_flag_open=False,
         )
 
-    note_public_cutover_closed(
-        workspace_id=action.workspace.workspace_id, cutover=cutover
-    )
+    note_public_cutover_closed(workspace_id=action.workspace.workspace_id, cutover=cutover)
     return _receipt(
         status="accepted",
         action=action,
@@ -2363,6 +2366,10 @@ def submit_action(
     *,
     mutation_enabled: bool = False,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    allow_hermetic_authorities: bool = False,
+    approval_authority: CommandApprovalAuthority | None = None,
+    approval_release_adapter: ApprovalReleasePort | None = None,
+    stop_adapter: RunStopPort | None = None,
 ) -> ActionReceipt:
     """Dispatch one closed action through the crash-safe submission path."""
     if isinstance(action, dict):
@@ -2377,6 +2384,31 @@ def submit_action(
             parsed = parse_user_action_v1(action_to_document(parsed))
         except (AgentWorkspaceActionError, TypeError, ValueError) as exc:
             raise SubmissionSagaError("validation", str(exc) or "validation") from exc
+
+    explicitly_injected_approval_ports = (
+        type(parsed) is DecideHermesCommandApproval
+        and approval_authority is not None
+        and approval_release_adapter is not None
+    )
+    explicitly_injected_stop_port = type(parsed) is RequestStop and stop_adapter is not None
+    if (
+        mutation_enabled
+        and not allow_hermetic_authorities
+        and not explicitly_injected_approval_ports
+        and not explicitly_injected_stop_port
+        and type(parsed) in _PROCESS_LOCAL_AUTHORITY_ACTIONS
+    ):
+        public_cutover_action = type(parsed) in _PUBLIC_CUTOVER_ACTIONS
+        return _receipt(
+            status="unavailable",
+            action=parsed,
+            digest=canonical_action_digest(parsed),
+            reason_code="canonical_authority_adapter_unavailable",
+            mutation_enabled=mutation_enabled,
+            canary_honesty=type(parsed) in _CANARY_ACTIONS,
+            public_cutover_honesty=public_cutover_action,
+            public_flag_open=False if public_cutover_action else None,
+        )
 
     if type(parsed) is CreateManagedSession:
         return submit_create_managed_session(
@@ -2405,6 +2437,8 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            approval_authority=approval_authority,
+            approval_release_adapter=approval_release_adapter,
         )
     if type(parsed) is RequestStop:
         return submit_stop_run_request(
@@ -2412,6 +2446,7 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            stop_adapter=stop_adapter,
         )
     if type(parsed) is ConfirmFormulaSource:
         return submit_confirm_formula_source(
@@ -2524,14 +2559,14 @@ def submit_action(
                 digest=digest,
                 reason_code="authenticated_mutation_bff_unavailable",
                 mutation_enabled=mutation_enabled,
-)
+            )
         return _receipt(
             status="unavailable",
             action=parsed,
             digest=digest,
             reason_code="research_workflow_submission_unavailable",
             mutation_enabled=mutation_enabled,
-)
+        )
     if type(parsed) is UnsupportedWorkspaceAction:
         digest = canonical_action_digest(parsed)
         return _receipt(
@@ -2540,7 +2575,7 @@ def submit_action(
             digest=digest,
             reason_code="action_kind_not_implemented",
             mutation_enabled=mutation_enabled,
-)
+        )
     raise SubmissionSagaError("validation", "unknown action type")
 
 

@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import concurrent.futures
+from contextlib import suppress
+from functools import partial
 from pathlib import Path
 
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
-    BindFactorVerticalB,
-    BindOptionsVerticalA,
-    ConfirmFactorVerticalBPlan,
     SeedFactorVerticalBGate1,
     WorkspaceRef,
     action_to_document,
@@ -26,7 +27,6 @@ from quant_system.hermes.gate_observe import (
     reset_default_gate_observe_journal,
 )
 from quant_system.hermes.gate_surface_authority import (
-    default_gate_surface_authority,
     reset_default_gate_surface_authority,
 )
 from quant_system.hermes.result_observe import (
@@ -37,7 +37,12 @@ from quant_system.hermes.result_surface_authority import (
     default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import SubmissionSagaError, submit_action
+from quant_system.hermes.submission_saga import (
+    SubmissionSagaError,
+)
+from quant_system.hermes.submission_saga import (
+    submit_action as _submit_action,
+)
 from quant_system.hermes.vertical_binding_authority import (
     canonical_factor_b_formula_source_digest,
     canonical_factor_b_plan_digest,
@@ -45,11 +50,14 @@ from quant_system.hermes.vertical_binding_authority import (
     reset_default_vertical_binding_authority,
 )
 from quant_system.hermes.vertical_observe import (
-    default_vertical_observe_journal,
-    project_workspace_attempts,
-    project_workspace_runs,
     project_workspace_tasks,
     reset_default_vertical_observe_journal,
+)
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
 )
 
 WS = "ws-v7g-vertical-b-m3"
@@ -308,9 +316,7 @@ def test_seed_snapshot_gates_pending() -> None:
     assert any(x.get("gate_id") == receipt.gate_id for x in snap.get("gates") or [])
     assert snap.get("approvals") == []
     # gates must not leak into approvals
-    assert not any(
-        (a.get("gate_id") == receipt.gate_id) for a in (snap.get("approvals") or [])
-    )
+    assert not any((a.get("gate_id") == receipt.gate_id) for a in (snap.get("approvals") or []))
 
 
 # TC-B-M3-04
@@ -548,11 +554,7 @@ def test_double_seed_different_action_conflict() -> None:
     r2 = submit_action(_settings(), doc2, mutation_enabled=True)
     assert r2.status == "conflict"
     assert r2.reason_code == "cascade_already_gate1_seeded"
-    pending = [
-        g
-        for g in project_workspace_gates(WS)
-        if g.get("status") == "pending"
-    ]
+    pending = [g for g in project_workspace_gates(WS) if g.get("status") == "pending"]
     assert len(pending) == 1
     assert pending[0]["gate_id"] == r1.gate_id
 
@@ -675,9 +677,7 @@ def test_follow_sse_vertical_ids_include_seed() -> None:
     receipt = submit_action(_settings(), doc, mutation_enabled=True)
     assert receipt.status == "accepted"
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
-    page = ws.follow(
-        ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0
-    ).to_public_dict()
+    page = ws.follow(ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0).to_public_dict()
     assert receipt.task_id in (page.get("tasks") or [])
     assert receipt.attempt_id in (page.get("attempts") or [])
     assert receipt.run_id in (page.get("runs") or [])
@@ -871,9 +871,7 @@ def test_canonical_formula_source_digest_golden() -> None:
     assert d1 == d2
     assert len(d1) == 64
     # Sensitivity: formula_sketch change alters digest
-    d3 = canonical_factor_b_formula_source_digest(
-        task, formula_sketch=sketch + "; extra"
-    )
+    d3 = canonical_factor_b_formula_source_digest(task, formula_sketch=sketch + "; extra")
     assert d3 != d1
     # Sensitivity: plan_digest change alters digest
     from dataclasses import replace
@@ -895,9 +893,7 @@ def test_conversation_turn_invents_zero_factor_tasks_or_gates() -> None:
         "session_ref": "session:s-hermetic-m3",
         "prompt": "hello without vertical seed",
     }
-    try:
+    with suppress(Exception):
         submit_action(_settings(), doc, mutation_enabled=True)
-    except Exception:
-        pass
     assert project_workspace_tasks(WS) == before_tasks
     assert project_workspace_gates(WS) == before_gates

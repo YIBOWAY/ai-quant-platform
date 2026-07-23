@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from functools import partial
 
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.approval_observe import (
     default_approval_observe_journal,
     project_approval_public,
@@ -23,7 +26,13 @@ from quant_system.hermes.command_approval_authority import (
     reset_default_command_approval_authority,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
+)
 
 WS = "ws-v7d-observe"
 RUN_ID = "hermes.v7d.1"
@@ -46,9 +55,7 @@ def _settings() -> Settings:
 
 
 def _future_expiry(hours: int = 1) -> str:
-    return (
-        datetime.now(timezone.utc) + timedelta(hours=hours)
-    ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return (datetime.now(UTC) + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _decide_doc(
@@ -215,7 +222,7 @@ def test_snapshot_projects_pending_and_decided() -> None:
         workspace={"workspace_id": "ws-local-main"},
     )
     body = snap.to_public_dict()
-    assert body["authority_health"]["command_approval"] == "ready"
+    assert body["authority_health"]["command_approval"] == "hermetic"
     ids = [r["approval_id"] for r in body["approvals"]]
     assert "challenge.snap.pend" in ids
     assert "challenge.snap.done" in ids
@@ -237,7 +244,6 @@ def test_follow_page_carries_approvals_projection() -> None:
         command_digest=DIGEST,
         expires_at=exp,
     )
-    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=False)
     # Database disabled → follow fail-closed resync, but when ready path is
     # exercised via direct EventPage construction after authorities_ready false.
     # Still: when we force the successful return path by mocking readiness is hard.
@@ -282,7 +288,7 @@ def test_never_invents_when_empty_snapshot() -> None:
     )
     body = snap.to_public_dict()
     assert body["approvals"] == []
-    assert body["authority_health"]["command_approval"] == "ready"
+    assert body["authority_health"]["command_approval"] == "hermetic"
     # Still no Task/Attempt invention.
     assert body["tasks"] == []
     assert body["attempts"] == []
@@ -291,7 +297,6 @@ def test_never_invents_when_empty_snapshot() -> None:
 
 
 def test_decide_removes_pending_and_surfaces_decided_on_snapshot() -> None:
-    exp = _future_expiry()
     row = project_pending_challenge(
         workspace_id=WS,
         run_id=RUN_ID,
@@ -362,4 +367,3 @@ def test_sse_fingerprint_emits_only_on_change() -> None:
     decided = next(r for r in second if r.get("approval_id") == "challenge.fp")
     assert decided.get("status") == "allowed_once"
     assert decided.get("decision") == "allow_once"
-

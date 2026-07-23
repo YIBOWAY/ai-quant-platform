@@ -10,12 +10,15 @@ Safety rails held on every path:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from functools import partial
 
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     AcceptCanaryDualVertical,
     AgentWorkspaceActionError,
@@ -38,15 +41,19 @@ from quant_system.hermes.command_ledger import ROOT_USER_ID
 from quant_system.hermes.composer_readiness import authority_readiness
 from quant_system.hermes.result_observe import reset_default_result_observe_journal
 from quant_system.hermes.result_surface_authority import (
-    default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
 from quant_system.hermes.vertical_binding_authority import (
-    default_vertical_binding_authority,
     reset_default_vertical_binding_authority,
 )
 from quant_system.hermes.vertical_observe import reset_default_vertical_observe_journal
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
+)
 
 WS = "ws-v8-m5-canary"
 BUILD = "b" * 64
@@ -237,15 +244,13 @@ def test_issue_accepted_and_projects_on_spine() -> None:
 
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
     snap = ws.snapshot(ROOT_USER_ID, WS).to_public_dict()
-    assert snap["authority_health"]["canary_grant"] == "ready"
+    assert snap["authority_health"]["canary_grant"] == "hermetic"
     assert len(snap["canary_grants"]) == 1
     assert snap["canary_grants"][0]["grant_id"] == receipt.grant_id
     # Public composer/chat write remains settings-gated OFF in hermetic.
     surface = authority_readiness(_settings())
     assert surface.get("chat_write_ready") is False
-    assert surface.get("composer_write_ready") is False or surface.get(
-        "chat_write_ready"
-    ) is False
+    assert surface.get("composer_write_ready") is False or surface.get("chat_write_ready") is False
 
 
 def test_issue_mutation_off_unavailable() -> None:
@@ -318,7 +323,7 @@ def test_revoke_digest_mismatch_conflicts() -> None:
 
 def test_ttl_expiry_marks_expired_and_blocks_accept() -> None:
     auth = default_canary_grant_authority()
-    past = datetime.now(timezone.utc) - timedelta(seconds=5)
+    past = datetime.now(UTC) - timedelta(seconds=5)
     grant = auth.issue(
         workspace_id=WS,
         build_digest=BUILD,
@@ -402,7 +407,7 @@ def test_dual_vertical_accept_consumes_grant() -> None:
     # Snapshot still honest; canary consumed; public write OFF.
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
     snap = ws.snapshot(ROOT_USER_ID, WS).to_public_dict()
-    assert snap["authority_health"]["canary_grant"] == "ready"
+    assert snap["authority_health"]["canary_grant"] == "hermetic"
     assert any(g["status"] == "consumed" for g in snap["canary_grants"])
     surface = authority_readiness(_settings())
     assert surface.get("chat_write_ready") is False
@@ -475,7 +480,7 @@ def test_follow_carries_canary_grants() -> None:
     page = ws.follow(ROOT_USER_ID, WS).to_public_dict()
     assert "canary_grants" in page
     assert page["canary_grants"][0]["grant_id"] == issued.grant_id
-    assert page["authority_health"]["canary_grant"] == "ready"
+    assert page["authority_health"]["canary_grant"] == "hermetic"
     _assert_public_write_still_off(page["canary_grants"][0])
 
 

@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+from functools import partial
+
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     BindOptionsVerticalA,
     WorkspaceRef,
@@ -22,7 +27,7 @@ from quant_system.hermes.result_surface_authority import (
     default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
 from quant_system.hermes.vertical_binding_authority import (
     default_vertical_binding_authority,
     reset_default_vertical_binding_authority,
@@ -32,6 +37,12 @@ from quant_system.hermes.vertical_observe import (
     project_workspace_tasks,
     reset_default_vertical_observe_journal,
     vertical_authority_health,
+)
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
 )
 
 WS = "ws-v7g-vertical-a"
@@ -132,10 +143,10 @@ def test_bind_completed_with_evidence_and_snapshot() -> None:
     assert len(snap["results"]) == 1
     assert snap["results"][0]["result_id"] == receipt.result_id
     health = snap["authority_health"]
-    assert health["task"] == "ready"
-    assert health["attempt"] == "ready"
-    assert health["run"] == "ready"
-    assert health["result"] == "ready"
+    assert health["task"] == "hermetic"
+    assert health["attempt"] == "hermetic"
+    assert health["run"] == "hermetic"
+    assert health["result"] == "hermetic"
     # Never invent approvals/gates from bind
     assert snap["approvals"] == []
     assert snap["gates"] == []
@@ -205,10 +216,8 @@ def test_conversation_turn_does_not_invent_task() -> None:
         "prompt": "hello without vertical bind",
     }
     # May be unavailable without session registry; either way zero tasks.
-    try:
+    with suppress(Exception):
         submit_action(_settings(), doc, mutation_enabled=True)
-    except Exception:
-        pass
     assert project_workspace_tasks(WS) == []
     assert vertical_authority_health() == {
         "task": "ready",
@@ -248,18 +257,16 @@ def test_follow_page_carries_vertical_ids() -> None:
     receipt = submit_action(_settings(), doc, mutation_enabled=True)
     assert receipt.status == "accepted"
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
-    page = ws.follow(
-        ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0
-    ).to_public_dict()
+    page = ws.follow(ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0).to_public_dict()
     assert receipt.task_id in (page.get("tasks") or [])
     assert receipt.attempt_id in (page.get("attempts") or [])
     assert receipt.run_id in (page.get("runs") or [])
     assert isinstance(page.get("results"), list)
     assert any(r.get("result_id") == receipt.result_id for r in page["results"])
     health = page.get("authority_health") or {}
-    assert health.get("task") == "ready"
-    assert health.get("attempt") == "ready"
-    assert health.get("run") == "ready"
+    assert health.get("task") == "hermetic"
+    assert health.get("attempt") == "hermetic"
+    assert health.get("run") == "hermetic"
 
 
 def test_vertical_observe_journal_fingerprint() -> None:
@@ -379,4 +386,3 @@ def test_v8_m2_missing_provider_evidence_task_not_normal_completed() -> None:
     assert not row.get("provider_evidence")
     lim = set(row.get("limitations") or [])
     assert "unverified_without_provider_evidence" in lim
-

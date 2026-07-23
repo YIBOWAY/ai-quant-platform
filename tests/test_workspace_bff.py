@@ -210,21 +210,28 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     assert body["owner_user_id"] == str(ROOT_USER_ID)
     assert body["mutation_enabled"] is False
     assert body["authority_health"]["mutation"] == "disabled"
-    # L5a/V7a: approvals slot is present and honestly empty (no invented challenges).
-    # V7a hermetic authority is reachable → health ready even when empty.
+    # V7/V8 process-local authorities are never mounted by the production BFF.
     assert body.get("approvals") == []
-    assert body["authority_health"].get("command_approval") == "ready"
-    # L5b: Task/Attempt/Run authority slots stay empty; health unavailable.
-    # V7f: result projector is mounted → empty results[] + health ready (honest empty).
+    assert body.get("gates") == []
+    assert body.get("canary_grants") == []
+    assert body.get("public_cutovers") == []
     assert body.get("tasks") == []
     assert body.get("attempts") == []
     assert body.get("runs") == []
     assert body.get("results") == []
-    # V7g-A-M1: hermetic vertical projectors mounted; empty lists remain honest.
-    assert body["authority_health"].get("task") == "ready"
-    assert body["authority_health"].get("attempt") == "ready"
-    assert body["authority_health"].get("run") == "ready"
-    assert body["authority_health"].get("result") == "ready"
+    for name in (
+        "command_approval",
+        "gate_1",
+        "gate_2",
+        "gate_3",
+        "task",
+        "attempt",
+        "run",
+        "result",
+        "canary_grant",
+        "public_cutover",
+    ):
+        assert body["authority_health"].get(name) == "unavailable"
 
     follow = client.get(
         f"/api/workspace/{WORKSPACE_ID}/follow?after_cursor=0",
@@ -265,8 +272,7 @@ def test_workspace_follow_stream_requires_owner_and_emits_sse(tmp_path: Path) ->
     _bootstrap(client, tmp_path)
     # Bound the generator so TestClient cannot hang on the long-lived stream.
     response = client.get(
-        f"/api/workspace/{WORKSPACE_ID}/follow/stream"
-        f"?after_cursor=0&max_ticks=1&poll_seconds=0",
+        f"/api/workspace/{WORKSPACE_ID}/follow/stream?after_cursor=0&max_ticks=1&poll_seconds=0",
         headers=_browser_headers(),
     )
     assert response.status_code == 200, response.text
@@ -287,8 +293,7 @@ def test_workspace_follow_stream_resumes_from_numeric_last_event_id(
     _bootstrap(client, tmp_path)
 
     response = client.get(
-        f"/api/workspace/{WORKSPACE_ID}/follow/stream"
-        "?after_cursor=0&max_ticks=1&poll_seconds=0",
+        f"/api/workspace/{WORKSPACE_ID}/follow/stream?after_cursor=0&max_ticks=1&poll_seconds=0",
         headers={**_browser_headers(), "Last-Event-ID": "41"},
     )
 
@@ -305,8 +310,7 @@ def test_workspace_follow_stream_rejects_non_numeric_last_event_id(
     _bootstrap(client, tmp_path)
 
     response = client.get(
-        f"/api/workspace/{WORKSPACE_ID}/follow/stream"
-        "?max_ticks=1&poll_seconds=0",
+        f"/api/workspace/{WORKSPACE_ID}/follow/stream?max_ticks=1&poll_seconds=0",
         headers={**_browser_headers(), "Last-Event-ID": "cursor:41"},
     )
 
@@ -353,7 +357,5 @@ def test_workspace_authorities_include_research_and_blockers(tmp_path: Path) -> 
     assert body["research_binding_ready"] is False
     assert "active_release_stamp_missing" in body["platform_delivery_blockers"]
     assert "connector_liveness_unavailable" in body["platform_delivery_blockers"]
-    assert "research_workflow_submission_unavailable" not in body[
-        "platform_delivery_blockers"
-    ]
+    assert "research_workflow_submission_unavailable" not in body["platform_delivery_blockers"]
     assert body["platform_delivery_blocker_count"] == len(body["platform_delivery_blockers"])

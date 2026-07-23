@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import concurrent.futures
+from contextlib import suppress
+from functools import partial
 
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
     BindFactorVerticalB,
-    BindOptionsVerticalA,
     WorkspaceRef,
     action_to_document,
     canonical_action_digest,
@@ -26,7 +29,12 @@ from quant_system.hermes.result_surface_authority import (
     default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import SubmissionSagaError, submit_action
+from quant_system.hermes.submission_saga import (
+    SubmissionSagaError,
+)
+from quant_system.hermes.submission_saga import (
+    submit_action as _submit_action,
+)
 from quant_system.hermes.vertical_binding_authority import (
     default_vertical_binding_authority,
     reset_default_vertical_binding_authority,
@@ -36,6 +44,12 @@ from quant_system.hermes.vertical_observe import (
     project_workspace_tasks,
     reset_default_vertical_observe_journal,
     vertical_authority_health,
+)
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
 )
 
 WS = "ws-v7g-vertical-b"
@@ -210,10 +224,10 @@ def test_snapshot_projection() -> None:
     assert len(snap["results"]) == 1
     assert snap["results"][0]["result_id"] == receipt.result_id
     health = snap["authority_health"]
-    assert health["task"] == "ready"
-    assert health["attempt"] == "ready"
-    assert health["run"] == "ready"
-    assert health["result"] == "ready"
+    assert health["task"] == "hermetic"
+    assert health["attempt"] == "hermetic"
+    assert health["run"] == "hermetic"
+    assert health["result"] == "hermetic"
     assert snap["approvals"] == []
     assert snap["gates"] == []
 
@@ -383,9 +397,7 @@ def test_follow_sse_vertical_ids() -> None:
     assert second is None
 
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
-    page = ws.follow(
-        ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0
-    ).to_public_dict()
+    page = ws.follow(ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0).to_public_dict()
     assert receipt.task_id in (page.get("tasks") or [])
     assert receipt.attempt_id in (page.get("attempts") or [])
     assert receipt.run_id in (page.get("runs") or [])
@@ -419,9 +431,9 @@ def test_a_isolation() -> None:
     by_rid = {r["result_id"]: r for r in results}
     assert by_rid[a.result_id]["kind"] == "options_vertical_a"
     assert by_rid[b.result_id]["kind"] == "factor"
-    assert "factor_name" not in by_rid[a.result_id] or by_rid[a.result_id].get(
-        "factor_name"
-    ) is None
+    assert (
+        "factor_name" not in by_rid[a.result_id] or by_rid[a.result_id].get("factor_name") is None
+    )
     assert by_rid[b.result_id].get("factor_name") == "momentum_20d_reversal"
     assert "ticker" not in by_rid[b.result_id]
 
@@ -520,10 +532,8 @@ def test_conversation_turn_no_task_invention() -> None:
         "session_ref": "session:s-hermetic-b",
         "prompt": "hello without vertical bind",
     }
-    try:
+    with suppress(Exception):
         submit_action(_settings(), doc, mutation_enabled=True)
-    except Exception:
-        pass
     assert project_workspace_tasks(WS) == []
     assert vertical_authority_health() == {
         "task": "ready",

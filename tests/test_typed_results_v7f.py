@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import WorkspaceRef
 from quant_system.hermes.command_ledger import ROOT_USER_ID
 from quant_system.hermes.result_observe import (
@@ -19,6 +23,11 @@ from quant_system.hermes.result_surface_authority import (
     ResultSurfaceAuthorityError,
     default_result_surface_authority,
     reset_default_result_surface_authority,
+)
+
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
 )
 
 WS = "ws-v7f-results"
@@ -113,7 +122,7 @@ def test_snapshot_carries_typed_results_not_gates() -> None:
     assert public["gates"] == []
     assert public["approvals"] == []
     assert public["tasks"] == []
-    assert public["authority_health"]["result"] == "ready"
+    assert public["authority_health"]["result"] == "hermetic"
     # Never invent Task from result link alone
     assert public["tasks"] == []
 

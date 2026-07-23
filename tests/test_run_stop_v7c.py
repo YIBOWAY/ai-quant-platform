@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
@@ -21,7 +23,14 @@ from quant_system.hermes.run_stop_port import (
     reset_default_run_stop_adapter,
     strip_run_ref,
 )
-from quant_system.hermes.submission_saga import submit_action, submit_stop_run_request
+from quant_system.hermes.submission_saga import (
+    submit_action as _submit_action,
+)
+from quant_system.hermes.submission_saga import (
+    submit_stop_run_request,
+)
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
 
 WS = "ws-v7c-stop"
 RUN_ID = "hermes.v7c.1"
@@ -229,9 +238,7 @@ def test_saga_digest_conflict_same_client_action_id() -> None:
     default_run_stop_adapter().ensure_run(RUN_ID, status="running")
     default_run_stop_adapter().ensure_run("hermes.v7c.other", status="running")
     doc_a = _stop_doc(client_action_id="act-conflict", run_ref=RUN_REF)
-    doc_b = _stop_doc(
-        client_action_id="act-conflict", run_ref="run:hermes.v7c.other"
-    )
+    doc_b = _stop_doc(client_action_id="act-conflict", run_ref="run:hermes.v7c.other")
     first = submit_action(_settings(), doc_a, mutation_enabled=True)
     assert first.status == "accepted"
     second = submit_action(_settings(), doc_b, mutation_enabled=True)
@@ -304,7 +311,10 @@ def test_submit_stop_run_request_direct() -> None:
         platform_job_ref=None,
     )
     receipt = submit_stop_run_request(
-        _settings(), action, mutation_enabled=True
+        _settings(),
+        action,
+        mutation_enabled=True,
+        stop_adapter=default_run_stop_adapter(),
     )
     assert receipt.status == "accepted"
     assert receipt.run_id == RUN_ID

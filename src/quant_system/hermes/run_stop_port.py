@@ -11,11 +11,12 @@ state from a single run, **not** Gate mutation, and **not** a public write path.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from threading import Lock
-from typing import Literal, Mapping
 import re
 import time
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from threading import Lock
+from typing import Literal, Protocol
 
 RunStatus = Literal[
     "accepted",
@@ -64,6 +65,20 @@ class StopResult:
             "status": self.status,
             "idempotent_replay": self.idempotent_replay,
         }
+
+
+class RunStopPort(Protocol):
+    """Minimal run-stop seam consumed by the submission saga."""
+
+    def remember_request(
+        self,
+        *,
+        workspace_id: str,
+        client_action_id: str,
+        action_digest: str,
+    ) -> Literal["new", "replay", "conflict"]: ...
+
+    def stop(self, run_id: str) -> StopResult: ...
 
 
 @dataclass(frozen=True)
@@ -122,9 +137,7 @@ def strip_run_ref(run_ref: str) -> str:
         or len(run_ref) == len(_RUN_REF_PREFIX)
         or _ID.fullmatch(run_ref) is None
     ):
-        raise RunStopError(
-            "validation", "run_ref must be a bounded run: reference"
-        )
+        raise RunStopError("validation", "run_ref must be a bounded run: reference")
     return run_ref[len(_RUN_REF_PREFIX) :]
 
 
@@ -197,9 +210,7 @@ class FakeHermesRunStopAdapter:
             self.next_fault = None
             self.stop_calls = 0
 
-    def ensure_run(
-        self, run_id: str, *, status: str = "running"
-    ) -> str:
+    def ensure_run(self, run_id: str, *, status: str = "running") -> str:
         rid = _validate_id(run_id, "run_id")
         if type(status) is not str or not status:
             raise RunStopError("validation", "status must be a non-empty string")
@@ -256,9 +267,7 @@ class FakeHermesRunStopAdapter:
         ws = _validate_id(workspace_id, "workspace_id")
         cid = _validate_id(client_action_id, "client_action_id")
         if type(action_digest) is not str or len(action_digest) != 64:
-            raise RunStopError(
-                "validation", "action_digest must be a lowercase SHA-256 digest"
-            )
+            raise RunStopError("validation", "action_digest must be a lowercase SHA-256 digest")
         key = (ws, cid)
         with self._lock:
             prior = self._requests.get(key)
@@ -297,9 +306,7 @@ class FakeHermesRunStopAdapter:
             self.next_fault = None
 
             if fault == "unavailable":
-                raise RunStopError(
-                    "stop_unavailable", "Run stop port unavailable"
-                )
+                raise RunStopError("stop_unavailable", "Run stop port unavailable")
             record = self._runs.get(rid)
             if fault == "run_not_found" or record is None:
                 raise RunStopError("run_not_found", f"Run not found: {rid}")
@@ -341,6 +348,7 @@ __all__ = [
     "FakeHermesRunStopAdapter",
     "LayeredStopReceipt",
     "RunStopError",
+    "RunStopPort",
     "StopResult",
     "build_layered_stop_receipt",
     "classify_optional_layer",

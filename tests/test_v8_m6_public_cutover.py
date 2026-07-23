@@ -14,10 +14,15 @@ Safety rails held on every path:
 
 from __future__ import annotations
 
+from datetime import UTC
+from functools import partial
+
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
     ClosePublicCutover,
@@ -44,15 +49,24 @@ from quant_system.hermes.public_cutover_observe import (
 )
 from quant_system.hermes.result_observe import reset_default_result_observe_journal
 from quant_system.hermes.result_surface_authority import (
-    default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import SubmissionSagaError, submit_action
+from quant_system.hermes.submission_saga import (
+    SubmissionSagaError,
+)
+from quant_system.hermes.submission_saga import (
+    submit_action as _submit_action,
+)
 from quant_system.hermes.vertical_binding_authority import (
-    default_vertical_binding_authority,
     reset_default_vertical_binding_authority,
 )
 from quant_system.hermes.vertical_observe import reset_default_vertical_observe_journal
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
+)
 
 WS = "ws-v8-m6-cutover"
 BUILD = "d" * 64
@@ -98,8 +112,9 @@ def _seed_g6_acceptance(*, acceptance_id: str = "acc-v8m6-g6") -> str:
     """Seed a dual-vertical acceptance fact required by G7 open."""
     # Minimal: write acceptance directly into canary authority store via public API.
     # Prefer going through accept_dual_vertical when a grant is active.
+    from datetime import datetime
+
     from quant_system.hermes.canary_grant_authority import DualVerticalAcceptance
-    from datetime import datetime, timezone
 
     auth = default_canary_grant_authority()
     # Use internal store via issue+accept path for honesty.
@@ -113,7 +128,7 @@ def _seed_g6_acceptance(*, acceptance_id: str = "acc-v8m6-g6") -> str:
         action_digest="e" * 64,
     )
     # Manually register a matching options/factor binding is heavy; inject acceptance.
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     acc = DualVerticalAcceptance(
         workspace_id=WS,
         acceptance_id=acceptance_id,
@@ -257,7 +272,7 @@ def test_open_spine_and_flag() -> None:
     ws = PlatformAgentWorkspace(settings=_settings())
     snap = ws.snapshot(ROOT_USER_ID, WS)
     pub = snap.to_public_dict()
-    assert pub["authority_health"].get("public_cutover") == "ready"
+    assert pub["authority_health"].get("public_cutover") == "hermetic"
     assert any(c.get("status") == "open" for c in pub.get("public_cutovers", []))
 
 
@@ -287,12 +302,8 @@ def test_second_open_conflicts_honesty() -> None:
 def test_open_idempotent() -> None:
     aid = _seed_g6_acceptance()
     doc = _open_doc(acceptance_id=aid, client_action_id="act-open-idem")
-    a = submit_action(
-        _settings(), doc, mutation_enabled=True, actor_owner_user_id=ROOT_USER_ID
-    )
-    b = submit_action(
-        _settings(), doc, mutation_enabled=True, actor_owner_user_id=ROOT_USER_ID
-    )
+    a = submit_action(_settings(), doc, mutation_enabled=True, actor_owner_user_id=ROOT_USER_ID)
+    b = submit_action(_settings(), doc, mutation_enabled=True, actor_owner_user_id=ROOT_USER_ID)
     assert a.to_public_dict()["status"] == "accepted"
     assert b.to_public_dict()["status"] == "accepted"
     assert a.to_public_dict()["cutover_id"] == b.to_public_dict()["cutover_id"]
@@ -323,7 +334,9 @@ def test_close_rollback_retains_facts() -> None:
 
     # Facts retained on spine (closed row still listed)
     rows = project_workspace_public_cutovers(WS)
-    assert any(r.get("status") == "closed" and r.get("cutover_id") == opened["cutover_id"] for r in rows)
+    assert any(
+        r.get("status") == "closed" and r.get("cutover_id") == opened["cutover_id"] for r in rows
+    )
     # acceptance still present (append-only G6 fact)
     accs = default_canary_grant_authority().list_acceptances(WS)
     assert any(a.acceptance_id == aid for a in accs)
@@ -419,7 +432,7 @@ def test_follow_carries_public_cutovers() -> None:
     pub = page.to_public_dict()
     assert pub.get("public_cutovers") is not None
     assert any(c.get("status") == "open" for c in pub["public_cutovers"])
-    assert pub.get("authority_health", {}).get("public_cutover") == "ready"
+    assert pub.get("authority_health", {}).get("public_cutover") == "hermetic"
 
 
 def test_canonical_digest_stable() -> None:
@@ -544,4 +557,3 @@ def test_open_requires_acceptance_build_digest_match() -> None:
     _assert_rails(d, public_open=False)
     assert workspace_public_flag_open(WS) is False
     assert project_workspace_public_cutovers(WS) == []
-

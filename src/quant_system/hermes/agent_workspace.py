@@ -32,7 +32,7 @@ from quant_system.hermes.submission_saga import (
     authorities_ready,
     submit_action,
 )
-from quant_system.storage.database import DatabaseUnavailable, get_database
+from quant_system.storage.database import get_database
 
 # HQA-aligned public recovery codes (strings only; no HQA import).
 _RECOVERY_RESNAPSHOT = "resnapshot_workspace"
@@ -216,17 +216,24 @@ class EventPage:
 
 
 class PlatformAgentWorkspace:
-    """Root-owner AgentWorkspace backed by PG authorities (V4 skeleton)."""
+    """Root-owner AgentWorkspace backed by durable production authorities.
+
+    V7/V8 process-local authorities are contract-test adapters only.  They are
+    mounted solely when ``hermetic_authorities=True`` is passed explicitly;
+    the production BFF factory leaves that test-only switch off.
+    """
 
     def __init__(
         self,
         settings: Settings,
         *,
         mutation_enabled: bool = False,
+        hermetic_authorities: bool = False,
     ) -> None:
         self._settings = settings
-        # Public path hard-defaults False. Tests may flip True in-process only.
+        # Public path hard-defaults False. Tests may flip these independently.
         self._mutation_enabled = bool(mutation_enabled)
+        self._hermetic_authorities = bool(hermetic_authorities)
 
     @property
     def mutation_enabled(self) -> bool:
@@ -278,6 +285,7 @@ class PlatformAgentWorkspace:
                 action if not isinstance(action, Mapping) else dict(action),
                 mutation_enabled=self._mutation_enabled,
                 actor_owner_user_id=owner,
+                allow_hermetic_authorities=self._hermetic_authorities,
             )
         except SubmissionSagaError:
             raise
@@ -296,7 +304,9 @@ class PlatformAgentWorkspace:
         observed_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         mutation_on = bool(self._mutation_enabled or ready.get("mutation_enabled"))
         composer_on = bool(ready.get("composer_write_ready") or ready.get("chat_write_ready"))
+        process_authority_state = "hermetic" if self._hermetic_authorities else "unavailable"
         health: dict[str, str] = {
+            "database": "ready" if ready["ready"] else "unavailable",
             "command_ledger": ("ready" if ready["command_ledger_schema_ready"] else "unavailable"),
             "session_registry": (
                 "ready" if ready["session_registry_schema_ready"] else "unavailable"
@@ -309,23 +319,18 @@ class PlatformAgentWorkspace:
             "provider": "dark",
             "mutation": "enabled" if mutation_on else "disabled",
             "composer": "enabled" if composer_on else "disabled",
-            # V7a: hermetic in-process command-approval authority may hold
-            # pending challenges. Empty is still honest when none are seeded.
-            "command_approval": "ready",
-            # V7e: hermetic Domain Gate 1/2/3 surfaces (empty honest until seeded).
-            "gate_1": "ready",
-            "gate_2": "ready",
-            "gate_3": "ready",
-            # V7g-A-M1: hermetic vertical Task/Attempt/Run projector mounted
-            # (empty honest until bind; never invent from conversation.turn).
-            "task": "ready",
-            "attempt": "ready",
-            "run": "ready",
-            # V7f: hermetic typed-result projector mounted (empty honest).
-            "result": "ready",
-            # V8-M5: hermetic canary grant authority (empty honest; never public write).
-            "canary_grant": "ready",
-            "public_cutover": "ready",
+            # These V7/V8 projections are restart-volatile test adapters, never
+            # production authority.  "hermetic" is deliberately not "ready".
+            "command_approval": process_authority_state,
+            "gate_1": process_authority_state,
+            "gate_2": process_authority_state,
+            "gate_3": process_authority_state,
+            "task": process_authority_state,
+            "attempt": process_authority_state,
+            "run": process_authority_state,
+            "result": process_authority_state,
+            "canary_grant": process_authority_state,
+            "public_cutover": process_authority_state,
         }
 
         sessions: list[str] = []
@@ -339,36 +344,19 @@ class PlatformAgentWorkspace:
                 managed_sessions,
                 commands,
                 cursor,
+                projection_available,
             ) = self._collect_workspace_projection(workspace_id)
+            if not projection_available:
+                for authority_name in (
+                    "database",
+                    "command_ledger",
+                    "session_registry",
+                    "workflow_binding",
+                    "research_binding",
+                ):
+                    health[authority_name] = "unavailable"
 
-        # V7a/V7d: project pending + recent decided command-approval challenges
-        # from hermetic authority. Never invent Gate 1/2/3 into approvals[].
-        from quant_system.hermes.approval_observe import project_workspace_approvals
-        from quant_system.hermes.canary_observe import project_workspace_canary_grants
-        from quant_system.hermes.gate_observe import project_workspace_gates
-        from quant_system.hermes.result_observe import project_workspace_results
-        from quant_system.hermes.vertical_observe import (
-            attempt_ids_for_spine,
-            run_ids_for_spine,
-            task_ids_for_spine,
-        )
-
-        # Empty approvals[] / gates[] / results[] / tasks / canary_grants is honest;
-        # health stays "ready" because the hermetic in-process authorities are
-        # mounted (not live Hermes HTTP / live Futu). V7g bind promotes
-        # task/attempt/run ids. Canary never flips chat_write_ready.
-        approvals = tuple(project_workspace_approvals(workspace_id))
-        gates = tuple(project_workspace_gates(workspace_id))
-        results = tuple(project_workspace_results(workspace_id))
-        canary_grants = tuple(project_workspace_canary_grants(workspace_id))
-        from quant_system.hermes.public_cutover_observe import (
-            project_workspace_public_cutovers as _project_public_cutovers,
-        )
-
-        public_cutovers = tuple(_project_public_cutovers(workspace_id))
-        tasks = tuple(task_ids_for_spine(workspace_id))
-        attempts = tuple(attempt_ids_for_spine(workspace_id))
-        runs = tuple(run_ids_for_spine(workspace_id))
+        process_projection = self._authority_spine_projections(workspace_id)
 
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
@@ -376,49 +364,63 @@ class PlatformAgentWorkspace:
             snapshot_workspace_cursor=cursor,
             sessions=tuple(sessions),
             managed_sessions=tuple(managed_sessions),
-            tasks=tasks,
-            attempts=attempts,
+            tasks=process_projection["tasks"],  # type: ignore[arg-type]
+            attempts=process_projection["attempts"],  # type: ignore[arg-type]
             commands=tuple(commands),
-            runs=runs,
-            results=results,
-            approvals=approvals,
-            gates=gates,
-            canary_grants=canary_grants,
-            public_cutovers=public_cutovers,
+            runs=process_projection["runs"],  # type: ignore[arg-type]
+            results=process_projection["results"],  # type: ignore[arg-type]
+            approvals=process_projection["approvals"],  # type: ignore[arg-type]
+            gates=process_projection["gates"],  # type: ignore[arg-type]
+            canary_grants=process_projection["canary_grants"],  # type: ignore[arg-type]
+            public_cutovers=process_projection["public_cutovers"],  # type: ignore[arg-type]
             authority_health=health,
             mutation_enabled=mutation_on,
             observed_at=observed_at,
         )
 
-    def _hermetic_spine_projections(self, workspace_id: str) -> dict[str, object]:
-        """Attach in-process hermetic projections for follow/SSE.
+    def _authority_spine_projections(self, workspace_id: str) -> dict[str, object]:
+        """Project explicitly mounted V7/V8 contract-test authorities.
 
-        Independent of PG readiness: approvals/gates/results/vertical ids are
-        in-process authorities. Empty remains honest. Never invents command
-        events. Gates never land in approvals[].
+        With the production default, every restart-volatile projection is empty
+        and reports unavailable.  Durable session/command rows remain on their
+        separate PostgreSQL projection and are unaffected.
         """
+        authority_names = (
+            "command_approval",
+            "gate_1",
+            "gate_2",
+            "gate_3",
+            "result",
+            "task",
+            "attempt",
+            "run",
+            "canary_grant",
+            "public_cutover",
+        )
+        if not self._hermetic_authorities:
+            return {
+                "approvals": (),
+                "gates": (),
+                "canary_grants": (),
+                "public_cutovers": (),
+                "results": (),
+                "tasks": (),
+                "attempts": (),
+                "runs": (),
+                "authority_health": {name: "unavailable" for name in authority_names},
+            }
+
         from quant_system.hermes.approval_observe import project_workspace_approvals
-        from quant_system.hermes.canary_observe import (
-            canary_authority_health,
-            project_workspace_canary_grants,
-        )
-        from quant_system.hermes.gate_observe import (
-            gate_authority_health,
-            project_workspace_gates,
-        )
+        from quant_system.hermes.canary_observe import project_workspace_canary_grants
+        from quant_system.hermes.gate_observe import project_workspace_gates
         from quant_system.hermes.public_cutover_observe import (
             project_workspace_public_cutovers,
-            public_cutover_authority_health,
         )
-        from quant_system.hermes.result_observe import (
-            project_workspace_results,
-            result_authority_health,
-        )
+        from quant_system.hermes.result_observe import project_workspace_results
         from quant_system.hermes.vertical_observe import (
             attempt_ids_for_spine,
             run_ids_for_spine,
             task_ids_for_spine,
-            vertical_authority_health,
         )
 
         return {
@@ -430,14 +432,7 @@ class PlatformAgentWorkspace:
             "tasks": tuple(task_ids_for_spine(workspace_id)),
             "attempts": tuple(attempt_ids_for_spine(workspace_id)),
             "runs": tuple(run_ids_for_spine(workspace_id)),
-            "authority_health": {
-                "command_approval": "ready",
-                **gate_authority_health(),
-                **result_authority_health(),
-                **vertical_authority_health(),
-                **canary_authority_health(),
-                **public_cutover_authority_health(),
-            },
+            "authority_health": {name: "hermetic" for name in authority_names},
         }
 
     def follow(
@@ -465,9 +460,33 @@ class PlatformAgentWorkspace:
 
         ready = authorities_ready(self._settings)
         mutation_on = bool(self._mutation_enabled or ready.get("mutation_enabled"))
-        # Hermetic projections always attach (V7d–V7g), even when durable command
-        # events require resync. MAJOR-2: Task/Attempt/Run ids must not wait for PG.
-        proj = self._hermetic_spine_projections(workspace_id)
+        # Explicit contract-test projections attach even when durable command
+        # events require resync. Production defaults to empty/unavailable.
+        proj = self._authority_spine_projections(workspace_id)
+        supplemental_health = dict(proj["authority_health"])  # type: ignore[arg-type]
+
+        def _set_database_health(available: bool) -> None:
+            state = "ready" if available else "unavailable"
+            supplemental_health.update(
+                {
+                    "database": state,
+                    "command_ledger": (
+                        state if ready.get("command_ledger_schema_ready") else "unavailable"
+                    ),
+                    "session_registry": (
+                        state if ready.get("session_registry_schema_ready") else "unavailable"
+                    ),
+                    "workflow_binding": (
+                        state if ready.get("workflow_binding_schema_ready") else "unavailable"
+                    ),
+                    "research_binding": (
+                        state if ready.get("research_binding_ready") else "unavailable"
+                    ),
+                }
+            )
+            proj["authority_health"] = supplemental_health
+
+        _set_database_health(bool(ready["ready"]))
         if not ready["ready"]:
             # Fail closed on command events: client must resnapshot rather than
             # invent lifecycle rows. Hermetic projections still ride along so
@@ -495,12 +514,14 @@ class PlatformAgentWorkspace:
         page_limit = limit if type(limit) is int and 1 <= limit <= 200 else 100
         after_cursor = 0 if after_value is None else after_value
         try:
-            events, next_cursor, resync = self._collect_workspace_events(
+            events, next_cursor, resync, database_available = self._collect_workspace_events(
                 workspace_id,
                 after_cursor=after_cursor,
                 limit=page_limit,
             )
-        except (DatabaseUnavailable, Exception):
+            _set_database_health(database_available)
+        except Exception:
+            _set_database_health(False)
             return EventPage(
                 events=(),
                 after_cursor=after_value,
@@ -576,12 +597,13 @@ class PlatformAgentWorkspace:
         list[dict[str, object]],
         list[dict[str, object]],
         int,
+        bool,
     ]:
-        """Best-effort read of sessions + command objects + durable event cursor.
+        """Read session/command projections and report database availability.
 
-        Never raises for missing rows; authority outage surfaces as empty
-        projection with health already marked unavailable by the caller when
-        readiness is false. Here readiness is true.
+        The final boolean is true only when the read reached PostgreSQL.  The
+        snapshot remains structurally available during an outage, while health
+        distinguishes unavailable-empty from healthy-empty.
         """
         from quant_system.hermes.submission_saga import control_plane_session_id
         from quant_system.hermes.workspace_observe import project_command_public
@@ -593,7 +615,7 @@ class PlatformAgentWorkspace:
         cursor = 0
         database = get_database(self._settings)
         if database is None:
-            return sessions, managed_sessions, commands, cursor
+            return sessions, managed_sessions, commands, cursor, False
         try:
             with database.connect() as conn:
                 sessions = self._workspace_session_ids(conn, workspace_id)
@@ -704,10 +726,9 @@ class PlatformAgentWorkspace:
                     (ROOT_USER_ID, control, session_filter or [""]),
                 ).fetchone()
                 cursor = int(head[0]) if head is not None else 0
-        except (DatabaseUnavailable, Exception):
-            # Snapshot stays available with empty projection; health already set.
-            return [], [], [], 0
-        return sessions, managed_sessions, commands, cursor
+        except Exception:
+            return [], [], [], 0, False
+        return sessions, managed_sessions, commands, cursor, True
 
     def _collect_workspace_events(
         self,
@@ -715,8 +736,8 @@ class PlatformAgentWorkspace:
         *,
         after_cursor: int,
         limit: int,
-    ) -> tuple[list[dict[str, object]], int | None, bool]:
-        """Return (events, next_cursor, resync_required)."""
+    ) -> tuple[list[dict[str, object]], int | None, bool, bool]:
+        """Return events, cursor, resync flag and database availability."""
         from quant_system.hermes.submission_saga import control_plane_session_id
         from quant_system.hermes.workspace_observe import (
             follow_resync_required,
@@ -726,7 +747,7 @@ class PlatformAgentWorkspace:
 
         database = get_database(self._settings)
         if database is None:
-            return [], None, True
+            return [], None, True, False
         with database.connect() as conn:
             sessions = self._workspace_session_ids(conn, workspace_id)
             control = control_plane_session_id(workspace_id)
@@ -747,7 +768,7 @@ class PlatformAgentWorkspace:
             ).fetchone()
             head_event_id = int(head_row[0]) if head_row is not None else 0
             if follow_resync_required(after_cursor=after_cursor, head_event_id=head_event_id):
-                return [], None, True
+                return [], None, True, True
             rows = conn.execute(
                 f"""
                 SELECT
@@ -813,7 +834,7 @@ class PlatformAgentWorkspace:
         # Idle poll: keep cursor at after when no new events.
         if not events:
             next_cursor = after_cursor
-        return events, next_cursor, False
+        return events, next_cursor, False, True
 
     @staticmethod
     def _resolve_actor(actor: ActorRef | Mapping[str, Any] | str) -> UUID:
@@ -853,9 +874,14 @@ def build_platform_agent_workspace(
     settings: Settings,
     *,
     mutation_enabled: bool = False,
+    hermetic_authorities: bool = False,
 ) -> PlatformAgentWorkspace:
-    """Factory used by routes/tests. Public callers must leave mutation off."""
-    return PlatformAgentWorkspace(settings, mutation_enabled=mutation_enabled)
+    """Build a workspace; the production BFF leaves hermetic authorities off."""
+    return PlatformAgentWorkspace(
+        settings,
+        mutation_enabled=mutation_enabled,
+        hermetic_authorities=hermetic_authorities,
+    )
 
 
 __all__ = [

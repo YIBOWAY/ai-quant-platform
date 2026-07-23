@@ -7,6 +7,7 @@ Does NOT authorize public write, canary, M6, kill_switch flip, or V2 durable liv
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -49,7 +50,7 @@ from quant_system.hermes.result_surface_authority import (
     default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
 from quant_system.hermes.vertical_binding_authority import (
     default_vertical_binding_authority,
     reset_default_vertical_binding_authority,
@@ -60,6 +61,8 @@ from quant_system.hermes.vertical_observe import (
     project_workspace_tasks,
     reset_default_vertical_observe_journal,
 )
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
 
 WS = PLATFORM_WORKSPACE_ID
 ORIGIN = "http://127.0.0.1:3001"
@@ -90,15 +93,17 @@ def _settings(*, mutation: bool = False) -> Settings:
     return Settings(
         database=DatabaseSettings(enabled=False, auto_migrate=False),
         hermes_gateway=HermesGatewaySettings(enabled=False),
-        local_mutation=LocalMutationSettings(
-            enabled=mutation, composer_open=mutation
-        ),
+        local_mutation=LocalMutationSettings(enabled=mutation, composer_open=mutation),
         api_cors_origins=[ORIGIN, "http://127.0.0.1:3000", "http://localhost:3001"],
     )
 
 
 def _workspace(*, mutation: bool = False) -> PlatformAgentWorkspace:
-    return PlatformAgentWorkspace(_settings(mutation=mutation), mutation_enabled=mutation)
+    return PlatformAgentWorkspace(
+        _settings(mutation=mutation),
+        mutation_enabled=mutation,
+        hermetic_authorities=True,
+    )
 
 
 def _bind_options_doc(*, client_action_id: str = "act-v8m3-bind") -> dict:
@@ -169,9 +174,7 @@ def _bootstrap(client: TestClient, tmp_path: Path) -> None:
 def test_v8_m3_cold_start_empty_spine_honest() -> None:
     """Fresh process defaults: empty projections; health ready; no invented rows."""
     _assert_empty_honest_spine()
-    snap = _workspace(mutation=False).snapshot(
-        ROOT_USER_ID, WorkspaceRef(workspace_id=WS)
-    )
+    snap = _workspace(mutation=False).snapshot(ROOT_USER_ID, WorkspaceRef(workspace_id=WS))
     public = snap.to_public_dict()
     assert public["tasks"] == []
     assert public["attempts"] == []
@@ -191,7 +194,7 @@ def test_v8_m3_cold_start_empty_spine_honest() -> None:
         "run",
         "result",
     ):
-        assert health[key] == "ready"
+        assert health[key] == "hermetic"
     assert health["mutation"] == "disabled"
     assert health["composer"] == "disabled"
     assert health["hermes_gateway"] == "dark"
@@ -217,9 +220,7 @@ def test_v8_m3_dual_cold_start_after_bind_clears_rows() -> None:
     # Prior task_id must not reappear without durable restore (authorities are ephemeral).
     assert default_vertical_binding_authority().get_task(WS, r.task_id) is None
 
-    snap = _workspace(mutation=False).snapshot(
-        ROOT_USER_ID, WorkspaceRef(workspace_id=WS)
-    )
+    snap = _workspace(mutation=False).snapshot(ROOT_USER_ID, WorkspaceRef(workspace_id=WS))
     assert list(snap.to_public_dict()["tasks"]) == []
 
 
@@ -240,8 +241,8 @@ def test_v8_m3_composer_and_chat_write_stay_off_on_cold_start() -> None:
     assert snap["composer_write_ready"] is False
 
 
-# TC-V8-M3-G03-05 — BFF dual cold-start via snapshot
-def test_v8_m3_bff_snapshot_empty_after_authority_reset(tmp_path: Path) -> None:
+# TC-V8-M3-G03-05 — production BFF never mounts cold-start authorities
+def test_v8_m3_bff_never_projects_process_local_authorities(tmp_path: Path) -> None:
     client = TestClient(
         create_app(
             settings=_settings(mutation=True),
@@ -262,8 +263,9 @@ def test_v8_m3_bff_snapshot_empty_after_authority_reset(tmp_path: Path) -> None:
     r1 = client.get(f"/api/workspace/{WS}/snapshot", headers=_browser_headers())
     assert r1.status_code == 200, r1.text
     body1 = r1.json()
-    # Snapshot tasks are id strings on the spine.
-    assert receipt.task_id in (body1.get("tasks") or [])
+    assert body1.get("tasks") == []
+    assert body1["authority_health"]["task"] == "unavailable"
+    assert receipt.task_id not in (body1.get("tasks") or [])
 
     _wipe_authorities()
 

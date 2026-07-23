@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import concurrent.futures
+from contextlib import suppress
+from functools import partial
 from pathlib import Path
 
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
-    BindFactorVerticalB,
-    BindOptionsVerticalA,
     ConfirmFactorVerticalBPlan,
     WorkspaceRef,
     action_to_document,
@@ -25,10 +27,14 @@ from quant_system.hermes.result_observe import (
     reset_default_result_observe_journal,
 )
 from quant_system.hermes.result_surface_authority import (
-    default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import SubmissionSagaError, submit_action
+from quant_system.hermes.submission_saga import (
+    SubmissionSagaError,
+)
+from quant_system.hermes.submission_saga import (
+    submit_action as _submit_action,
+)
 from quant_system.hermes.vertical_binding_authority import (
     canonical_factor_b_plan_digest,
     default_vertical_binding_authority,
@@ -37,9 +43,14 @@ from quant_system.hermes.vertical_binding_authority import (
 from quant_system.hermes.vertical_observe import (
     default_vertical_observe_journal,
     project_workspace_attempts,
-    project_workspace_runs,
     project_workspace_tasks,
     reset_default_vertical_observe_journal,
+)
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
 )
 
 WS = "ws-v7g-vertical-b-m2"
@@ -225,11 +236,7 @@ def test_confirm_exact_links() -> None:
     bind = _bind_completed()
     doc = _confirm_doc(task_id=bind.task_id, bind_digest=bind.action_digest)
     receipt = submit_action(_settings(), doc, mutation_enabled=True)
-    row = next(
-        r
-        for r in project_workspace_results(WS)
-        if r["result_id"] == receipt.result_id
-    )
+    row = next(r for r in project_workspace_results(WS) if r["result_id"] == receipt.result_id)
     assert row["task_id"] == bind.task_id
     assert row["attempt_id"] == receipt.attempt_id
     assert row["run_id"] == receipt.run_id
@@ -252,10 +259,10 @@ def test_confirm_snapshot_projection() -> None:
     assert any(r.get("result_id") == receipt.result_id for r in snap["results"])
     assert any(r.get("result_id") == bind.result_id for r in snap["results"])
     health = snap["authority_health"]
-    assert health["task"] == "ready"
-    assert health["attempt"] == "ready"
-    assert health["run"] == "ready"
-    assert health["result"] == "ready"
+    assert health["task"] == "hermetic"
+    assert health["attempt"] == "hermetic"
+    assert health["run"] == "hermetic"
+    assert health["result"] == "hermetic"
     assert snap["approvals"] == []
     assert snap["gates"] == []
 
@@ -493,9 +500,7 @@ def test_follow_sse_vertical_ids_include_new() -> None:
     bind = _bind_completed()
     journal = default_vertical_observe_journal()
     # establish baseline fingerprint after bind
-    journal.take_vertical_ids_if_changed(
-        WS, [bind.task_id], [bind.attempt_id], [bind.run_id]
-    )
+    journal.take_vertical_ids_if_changed(WS, [bind.task_id], [bind.attempt_id], [bind.run_id])
     doc = _confirm_doc(task_id=bind.task_id, bind_digest=bind.action_digest)
     receipt = submit_action(_settings(), doc, mutation_enabled=True)
     changed = journal.take_vertical_ids_if_changed(
@@ -518,9 +523,7 @@ def test_follow_sse_vertical_ids_include_new() -> None:
     assert again is None
 
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
-    page = ws.follow(
-        ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0
-    ).to_public_dict()
+    page = ws.follow(ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0).to_public_dict()
     assert bind.task_id in (page.get("tasks") or [])
     assert receipt.attempt_id in (page.get("attempts") or [])
     assert receipt.run_id in (page.get("runs") or [])
@@ -597,11 +600,7 @@ def test_zero_orders_invariant_on_confirm_source() -> None:
         client_action_id="act-zero-orders-confirm",
     )
     receipt = submit_action(_settings(), doc, mutation_enabled=True)
-    row = next(
-        r
-        for r in project_workspace_results(WS)
-        if r["result_id"] == receipt.result_id
-    )
+    row = next(r for r in project_workspace_results(WS) if r["result_id"] == receipt.result_id)
     assert "zero_orders" in (row.get("limitations") or [])
 
 
@@ -626,10 +625,8 @@ def test_conversation_turn_invents_zero_factor_tasks() -> None:
         "payload_ref": "payload:sha256:" + ("c" * 64),
         "payload_digest": "c" * 64,
     }
-    try:
+    with suppress(Exception):
         submit_action(_settings(), doc, mutation_enabled=True)
-    except Exception:
-        pass
     assert project_workspace_tasks(WS) == before
 
 
@@ -651,9 +648,10 @@ def test_a_isolation_with_factor_confirm() -> None:
     assert conf.status == "accepted"
     tasks = {t["task_id"]: t for t in project_workspace_tasks(WS)}
     assert tasks[opt.task_id]["vertical"] == "options_a"
-    assert "cascade_stage" not in tasks[opt.task_id] or tasks[opt.task_id].get(
-        "cascade_stage"
-    ) in (None, "options_a")
+    assert "cascade_stage" not in tasks[opt.task_id] or tasks[opt.task_id].get("cascade_stage") in (
+        None,
+        "options_a",
+    )
     # options task should not gain plan_confirmed
     assert tasks[opt.task_id].get("cascade_stage") != "plan_confirmed"
     assert tasks[bind.task_id]["vertical"] == "factor_b"
@@ -703,14 +701,8 @@ def test_canonical_plan_digest_helper_golden() -> None:
     d2 = canonical_factor_b_plan_digest(task)
     assert d1 == d2
     assert len(d1) == 64
-    # Mutating goal_note identity would change digest — verify field sensitivity
-    # by constructing a twin with different goal via second bind.
-    bind2 = _bind_completed(
-        client_action_id="act-golden-bind-2",
-    )
-    # force different goal via direct field (same bind fields otherwise would
-    # collide only on client_action_id). Use distinct action.
-    # Re-bind with different goal_note:
+    # Mutating goal_note identity changes the digest. Re-bind with different
+    # goals after resetting the singleton authorities.
     reset_default_vertical_binding_authority()
     reset_default_result_surface_authority()
     r_a = submit_action(
@@ -726,11 +718,3 @@ def test_canonical_plan_digest_helper_golden() -> None:
     ta = default_vertical_binding_authority().get_task(WS, r_a.task_id)
     tb = default_vertical_binding_authority().get_task(WS, r_b.task_id)
     assert canonical_factor_b_plan_digest(ta) != canonical_factor_b_plan_digest(tb)
-
-
-# Ensure project_workspace_attempts / runs exist; if not, tests that use them
-# should still work via binder list.
-try:
-    project_workspace_attempts  # type: ignore[name-defined]
-except NameError:  # pragma: no cover
-    pass

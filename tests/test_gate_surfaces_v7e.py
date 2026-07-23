@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from functools import partial
 
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     ConfirmFormulaSource,
     PreparePromotionReview,
@@ -29,7 +32,13 @@ from quant_system.hermes.gate_surface_authority import (
     default_gate_surface_authority,
     reset_default_gate_surface_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
+)
 
 WS = "ws-v7e-gates"
 DIGEST = "a" * 64
@@ -51,9 +60,7 @@ def _settings() -> Settings:
 
 
 def _future_expiry(hours: int = 1) -> str:
-    return (
-        datetime.now(timezone.utc) + timedelta(hours=hours)
-    ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return (datetime.now(UTC) + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def test_parse_and_digest_gate_actions_stable() -> None:
@@ -237,10 +244,10 @@ def test_snapshot_and_follow_carry_gates_not_approvals() -> None:
     # Never stuff gates into approvals
     assert public["approvals"] == []
     health = public["authority_health"]
-    assert health["gate_1"] == "ready"
-    assert health["gate_2"] == "ready"
-    assert health["gate_3"] == "ready"
-    assert health["command_approval"] == "ready"
+    assert health["gate_1"] == "hermetic"
+    assert health["gate_2"] == "hermetic"
+    assert health["gate_3"] == "hermetic"
+    assert health["command_approval"] == "hermetic"
 
     # Follow may resync when PG off; still must not invent gates into approvals
     # when authorities_ready is false. When ready=false, EventPage has no gates.

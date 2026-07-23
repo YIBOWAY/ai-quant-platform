@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import concurrent.futures
+from functools import partial
 from pathlib import Path
 
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
     SeedFactorVerticalBGate2,
@@ -34,7 +37,12 @@ from quant_system.hermes.result_surface_authority import (
     default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import SubmissionSagaError, submit_action
+from quant_system.hermes.submission_saga import (
+    SubmissionSagaError,
+)
+from quant_system.hermes.submission_saga import (
+    submit_action as _submit_action,
+)
 from quant_system.hermes.vertical_binding_authority import (
     canonical_factor_b_formula_source_digest,
     canonical_factor_b_gate2_candidate_digest,
@@ -45,6 +53,12 @@ from quant_system.hermes.vertical_binding_authority import (
 from quant_system.hermes.vertical_observe import (
     project_workspace_tasks,
     reset_default_vertical_observe_journal,
+)
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
 )
 
 WS = "ws-v7g-vertical-b-m5"
@@ -1047,15 +1061,11 @@ def test_follow_sse_vertical_ids_include_gate2_seed() -> None:
     )
     assert receipt.status == "accepted"
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
-    page = ws.follow(
-        ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0
-    ).to_public_dict()
+    page = ws.follow(ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0).to_public_dict()
     assert receipt.task_id in (page.get("tasks") or [])
     assert receipt.attempt_id in (page.get("attempts") or [])
     assert receipt.run_id in (page.get("runs") or [])
-    assert any(
-        r.get("result_id") == receipt.result_id for r in page.get("results") or []
-    )
+    assert any(r.get("result_id") == receipt.result_id for r in page.get("results") or [])
     snap = ws.snapshot(ROOT_USER_ID, WorkspaceRef(workspace_id=WS)).to_public_dict()
     assert any(x.get("gate_id") == receipt.gate_id for x in snap.get("gates") or [])
 
@@ -1080,17 +1090,12 @@ def test_gate_observe_journal_raised() -> None:
     )
     assert receipt.status == "accepted"
     gates = project_workspace_gates(WS)
-    assert any(
-        g.get("gate_id") == receipt.gate_id and g.get("status") == "pending"
-        for g in gates
-    )
+    assert any(g.get("gate_id") == receipt.gate_id and g.get("status") == "pending" for g in gates)
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
     snap = ws.snapshot(ROOT_USER_ID, WorkspaceRef(workspace_id=WS)).to_public_dict()
     assert any(x.get("gate_id") == receipt.gate_id for x in snap.get("gates") or [])
     assert snap.get("approvals") == []
-    assert not any(
-        (a.get("gate_id") == receipt.gate_id) for a in (snap.get("approvals") or [])
-    )
+    assert not any((a.get("gate_id") == receipt.gate_id) for a in (snap.get("approvals") or []))
 
 
 # TC-B-M5-27
@@ -1153,8 +1158,7 @@ def test_zero_orders_invariant_on_seed_source() -> None:
     for banned in ("place_order", "submit_order", "import hqa"):
         assert banned not in s_body
     saga_src = Path(
-        "/Users/sunyibo/programs/ai-quant-platform/src/quant_system/hermes/"
-        "submission_saga.py"
+        "/Users/sunyibo/programs/ai-quant-platform/src/quant_system/hermes/submission_saga.py"
     ).read_text()
     g_start = saga_src.index("def submit_seed_factor_vertical_b_gate2")
     g_end = saga_src.index("\ndef ", g_start + 10)
@@ -1177,8 +1181,7 @@ def test_v7e_source_has_no_cascade_write() -> None:
     assert "_tasks" not in body
 
     saga_src = Path(
-        "/Users/sunyibo/programs/ai-quant-platform/src/quant_system/hermes/"
-        "submission_saga.py"
+        "/Users/sunyibo/programs/ai-quant-platform/src/quant_system/hermes/submission_saga.py"
     ).read_text()
     s_start = saga_src.index("def submit_review_candidate")
     s_end = saga_src.index("\ndef ", s_start + 10)
@@ -1259,9 +1262,7 @@ def test_reject_smuggled_keys() -> None:
         bad = dict(base)
         bad["client_action_id"] = f"act-smug-m5-{key}"
         bad[key] = val
-        with pytest.raises(
-            (AgentWorkspaceActionError, SubmissionSagaError, TypeError, ValueError)
-        ):
+        with pytest.raises((AgentWorkspaceActionError, SubmissionSagaError, TypeError, ValueError)):
             try:
                 parse_user_action_v1(bad)
             except AgentWorkspaceActionError:
@@ -1286,9 +1287,7 @@ def test_canonical_candidate_digest_golden() -> None:
     assert d1 == d2
     assert len(d1) == 64
     # Sensitive to formula_sketch
-    d_alt = canonical_factor_b_gate2_candidate_digest(
-        task, formula_sketch=sketch + "; #alt"
-    )
+    d_alt = canonical_factor_b_gate2_candidate_digest(task, formula_sketch=sketch + "; #alt")
     assert d_alt != d1
     # Sensitive to plan_digest
     from dataclasses import replace
@@ -1352,9 +1351,7 @@ def test_empty_seed_note_rejected() -> None:
         client_action_id="act-v7gb-m5-seed-empty",
         seed_note="",
     )
-    with pytest.raises(
-        (AgentWorkspaceActionError, SubmissionSagaError, TypeError, ValueError)
-    ):
+    with pytest.raises((AgentWorkspaceActionError, SubmissionSagaError, TypeError, ValueError)):
         try:
             parse_user_action_v1(doc)
         except AgentWorkspaceActionError:

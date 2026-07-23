@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any
 
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, SafetySettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     BindOptionsVerticalA,
     StartResearch,
@@ -24,12 +27,10 @@ from quant_system.hermes.result_observe import (
     reset_default_result_observe_journal,
 )
 from quant_system.hermes.result_surface_authority import (
-    default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
 from quant_system.hermes.vertical_binding_authority import (
-    VerticalBindingAuthorityError,
     default_vertical_binding_authority,
     reset_default_vertical_binding_authority,
 )
@@ -39,9 +40,13 @@ from quant_system.hermes.vertical_observe import (
 )
 from quant_system.hermes.vertical_ro_provider import (
     FutuReadOnlyOptionsFacade,
-    VerticalRoProviderError,
-    VerticalRoQuote,
     adapter_public_surface,
+)
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
 )
 
 WS = "ws-v7g-m2-live-ro"
@@ -68,11 +73,11 @@ def _settings() -> Settings:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _ts(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _envelope(
@@ -89,8 +94,7 @@ def _envelope(
     end = window_end or (now + timedelta(hours=2))
     body = {
         "tickers": [t.upper() for t in (tickers or ["AAPL"])],
-        "fields": fields
-        or ["bid", "ask", "delta", "iv", "expiry", "strike"],
+        "fields": fields or ["bid", "ask", "delta", "iv", "expiry", "strike"],
         "max_calls": max_calls,
         "window_start": _ts(start),
         "window_end": _ts(end),
@@ -366,7 +370,7 @@ def test_tc_m2_10_honesty_coercion_on_conflicting_limitations() -> None:
     # a quote that would be real, and check public contract: live success
     # never carries not_live_futu_quote / hermetic_fixture.
     _install_facade(_FakeInnerOk())
-    receipt = submit_action(
+    submit_action(
         _settings(),
         _live_doc(client_action_id="act-m2-honesty"),
         mutation_enabled=True,
@@ -469,9 +473,7 @@ def test_tc_m2_12_follow_carries_live_vertical_ids() -> None:
     )
     assert receipt.status == "accepted"
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
-    page = ws.follow(
-        ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0
-    ).to_public_dict()
+    page = ws.follow(ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0).to_public_dict()
     assert receipt.task_id in (page.get("tasks") or [])
     assert receipt.attempt_id in (page.get("attempts") or [])
     assert receipt.run_id in (page.get("runs") or [])

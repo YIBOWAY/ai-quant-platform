@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import concurrent.futures
+from functools import partial
 from pathlib import Path
 
 import pytest
 
 from quant_system.config.settings import DatabaseSettings, Settings
-from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+from quant_system.hermes.agent_workspace import (
+    PlatformAgentWorkspace as _PlatformAgentWorkspace,
+)
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
-    BindOptionsVerticalA,
     ConfirmFactorVerticalBGate1,
     WorkspaceRef,
     action_to_document,
@@ -35,7 +37,12 @@ from quant_system.hermes.result_surface_authority import (
     default_result_surface_authority,
     reset_default_result_surface_authority,
 )
-from quant_system.hermes.submission_saga import SubmissionSagaError, submit_action
+from quant_system.hermes.submission_saga import (
+    SubmissionSagaError,
+)
+from quant_system.hermes.submission_saga import (
+    submit_action as _submit_action,
+)
 from quant_system.hermes.vertical_binding_authority import (
     canonical_factor_b_formula_source_digest,
     canonical_factor_b_plan_digest,
@@ -45,6 +52,12 @@ from quant_system.hermes.vertical_binding_authority import (
 from quant_system.hermes.vertical_observe import (
     project_workspace_tasks,
     reset_default_vertical_observe_journal,
+)
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
+PlatformAgentWorkspace = partial(
+    _PlatformAgentWorkspace,
+    hermetic_authorities=True,
 )
 
 WS = "ws-v7g-vertical-b-m4"
@@ -395,11 +408,7 @@ def test_limitations_honesty() -> None:
         "plan_confirm_required",
     ):
         assert banned not in tlim
-    row = next(
-        r
-        for r in project_workspace_results(WS)
-        if r["result_id"] == conf.result_id
-    )
+    row = next(r for r in project_workspace_results(WS) if r["result_id"] == conf.result_id)
     rlim = set(row.get("limitations") or [])
     assert CONFIRM_LIMITATIONS.issubset(rlim)
     assert row.get("sample_or_real") == "sample"
@@ -758,9 +767,7 @@ def test_reject_smuggled_keys() -> None:
         bad = dict(base)
         bad["client_action_id"] = f"act-smug-m4-{key}"
         bad[key] = val
-        with pytest.raises(
-            (AgentWorkspaceActionError, SubmissionSagaError, TypeError, ValueError)
-        ):
+        with pytest.raises((AgentWorkspaceActionError, SubmissionSagaError, TypeError, ValueError)):
             try:
                 parse_user_action_v1(bad)
             except AgentWorkspaceActionError:
@@ -894,15 +901,11 @@ def test_follow_sse_vertical_ids_include_confirm() -> None:
     )
     assert conf.status == "accepted"
     ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
-    page = ws.follow(
-        ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0
-    ).to_public_dict()
+    page = ws.follow(ROOT_USER_ID, WorkspaceRef(workspace_id=WS), after=0).to_public_dict()
     assert conf.task_id in (page.get("tasks") or [])
     assert conf.attempt_id in (page.get("attempts") or [])
     assert conf.run_id in (page.get("runs") or [])
-    assert any(
-        r.get("result_id") == conf.result_id for r in page.get("results") or []
-    )
+    assert any(r.get("result_id") == conf.result_id for r in page.get("results") or [])
 
 
 # TC-B-M4-25
@@ -968,8 +971,7 @@ def test_v7e_confirm_source_has_no_cascade_write() -> None:
     assert "_tasks" not in body
 
     saga_src = Path(
-        "/Users/sunyibo/programs/ai-quant-platform/src/quant_system/hermes/"
-        "submission_saga.py"
+        "/Users/sunyibo/programs/ai-quant-platform/src/quant_system/hermes/submission_saga.py"
     ).read_text()
     s_start = saga_src.index("def submit_confirm_formula_source")
     # next def after this submit

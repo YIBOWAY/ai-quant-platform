@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from functools import partial
 
 import pytest
 
@@ -19,7 +19,9 @@ from quant_system.hermes.command_approval_authority import (
     default_command_approval_authority,
     reset_default_command_approval_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
 
 DIGEST = "a" * 64
 WS = "ws-v7b-release"

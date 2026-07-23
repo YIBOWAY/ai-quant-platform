@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from functools import partial
 
 import pytest
 
@@ -25,7 +26,9 @@ from quant_system.hermes.command_approval_authority import (
     default_command_approval_authority,
     reset_default_command_approval_authority,
 )
-from quant_system.hermes.submission_saga import submit_action
+from quant_system.hermes.submission_saga import submit_action as _submit_action
+
+submit_action = partial(_submit_action, allow_hermetic_authorities=True)
 
 DIGEST = "e" * 64
 WS = "ws-v7a-decide"
@@ -41,15 +44,11 @@ def _reset_authority() -> None:
 
 
 def _future_expiry(hours: int = 2) -> str:
-    return (datetime.now(timezone.utc) + timedelta(hours=hours)).strftime(
-        "%Y-%m-%dT%H:%M:%S.%fZ"
-    )
+    return (datetime.now(UTC) + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _past_expiry() -> str:
-    return (datetime.now(timezone.utc) - timedelta(hours=1)).strftime(
-        "%Y-%m-%dT%H:%M:%S.%fZ"
-    )
+    return (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def test_decide_action_round_trip_and_rejects_always_allow() -> None:
@@ -303,7 +302,6 @@ def test_submit_action_decide_mutation_gate_and_accept(tmp_path=None) -> None:
 
 
 def test_canonical_digest_stable_for_decide() -> None:
-    exp = "2026-07-16T12:30:40.000000Z"
     a = DecideHermesCommandApproval(
         client_action_id="action:test-1",
         workspace=WorkspaceRef(workspace_id="workspace:alpha"),
@@ -338,7 +336,11 @@ def test_snapshot_projects_pending_approvals_when_seeded() -> None:
         expires_at=exp,
         command_id="cmd-1",
     )
-    ws = PlatformAgentWorkspace(settings, mutation_enabled=True)
+    ws = PlatformAgentWorkspace(
+        settings,
+        mutation_enabled=True,
+        hermetic_authorities=True,
+    )
     snap = ws.snapshot(
         actor={"owner_user_id": str(ROOT_USER_ID)},
         workspace={"workspace_id": "ws-local-main"},
@@ -346,7 +348,7 @@ def test_snapshot_projects_pending_approvals_when_seeded() -> None:
     body = snap.to_public_dict() if hasattr(snap, "to_public_dict") else None
     if body is None:
         # dataclass public shape
-        assert snap.authority_health["command_approval"] == "ready"
+        assert snap.authority_health["command_approval"] == "hermetic"
         assert snap.mutation_enabled is True
         assert len(snap.approvals) == 1
         row = snap.approvals[0]
@@ -355,6 +357,5 @@ def test_snapshot_projects_pending_approvals_when_seeded() -> None:
         assert row["digest"] == DIGEST
         assert row["status"] == "pending"
     else:
-        assert body["authority_health"]["command_approval"] == "ready"
+        assert body["authority_health"]["command_approval"] == "hermetic"
         assert len(body["approvals"]) == 1
-

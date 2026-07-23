@@ -13,15 +13,17 @@ and **not** a public write path. Production HTTP release remains a later slice.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from threading import Lock
-from typing import Literal, Mapping
 import re
 import time
 import uuid
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from threading import Lock
+from typing import Literal, Protocol
 
 from quant_system.hermes.command_approval_authority import (
+    CommandApprovalAuthority,
     CommandApprovalAuthorityError,
     default_command_approval_authority,
 )
@@ -68,6 +70,32 @@ class ApprovalReleaseResult:
         }
 
 
+class ApprovalReleasePort(Protocol):
+    """Minimal release seam consumed by the approval decision saga."""
+
+    def respond_approval(
+        self,
+        run_id: str,
+        *,
+        choice: str,
+        challenge_id: str,
+        action_digest: str,
+    ) -> ApprovalReleaseResult: ...
+
+
+class ApprovalChallengeSeedPort(ApprovalReleasePort, Protocol):
+    """Hermetic-only extension used to seed a challenge in contract tests."""
+
+    def raise_approval(
+        self,
+        run_id: str,
+        *,
+        action_digest: str,
+        challenge_id: str | None = None,
+        ttl_seconds: float = 300.0,
+    ) -> dict[str, object]: ...
+
+
 @dataclass
 class _ReleaseGrant:
     challenge_id: str
@@ -101,25 +129,18 @@ def map_decision_to_release_choice(decision: str) -> ReleaseChoice:
 
 def _validate_digest(value: str, field: str = "action_digest") -> str:
     if type(value) is not str or _HEX64.fullmatch(value) is None:
-        raise ApprovalReleaseError(
-            "validation", f"{field} must be a lowercase SHA-256 digest"
-        )
+        raise ApprovalReleaseError("validation", f"{field} must be a lowercase SHA-256 digest")
     return value
 
 
 def _validate_id(value: str, field: str) -> str:
     if type(value) is not str or _ID.fullmatch(value) is None:
-        raise ApprovalReleaseError(
-            "validation", f"{field} must be a bounded identifier"
-        )
+        raise ApprovalReleaseError("validation", f"{field} must be a bounded identifier")
     return value
 
 
 def _canon_expires_rfc3339(expires_at: float) -> str:
-    return (
-        datetime.fromtimestamp(expires_at, tz=timezone.utc)
-        .strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    )
+    return datetime.fromtimestamp(expires_at, tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 class FakeHermesApprovalReleaseAdapter:
@@ -166,11 +187,11 @@ class FakeHermesApprovalReleaseAdapter:
         digest = _validate_digest(action_digest)
         if ttl_seconds <= 0:
             raise ApprovalReleaseError("validation", "ttl_seconds must be positive")
-        cid = challenge_id
-        if cid is None:
-            cid = f"ch_{uuid.uuid4().hex}"
-        else:
-            cid = _validate_id(cid, "challenge_id")
+        cid = (
+            f"ch_{uuid.uuid4().hex}"
+            if challenge_id is None
+            else _validate_id(challenge_id, "challenge_id")
+        )
         expires_at = time.time() + float(ttl_seconds)
         grant = _ReleaseGrant(
             challenge_id=cid,
@@ -181,18 +202,13 @@ class FakeHermesApprovalReleaseAdapter:
         with self._lock:
             existing = self._approvals.get(cid)
             if existing is not None and not existing.consumed:
-                if (
-                    existing.run_id == rid
-                    and existing.action_digest == digest
-                ):
+                if existing.run_id == rid and existing.action_digest == digest:
                     return {
                         "challenge_id": existing.challenge_id,
                         "run_id": existing.run_id,
                         "action_digest": existing.action_digest,
                         "expires_at": existing.expires_at,
-                        "expires_at_rfc3339": _canon_expires_rfc3339(
-                            existing.expires_at
-                        ),
+                        "expires_at_rfc3339": _canon_expires_rfc3339(existing.expires_at),
                     }
                 raise ApprovalReleaseError(
                     "conflict",
@@ -225,9 +241,7 @@ class FakeHermesApprovalReleaseAdapter:
         now = time.time()
         out: list[dict[str, object]] = []
         with self._lock:
-            for grant in sorted(
-                self._approvals.values(), key=lambda g: g.challenge_id
-            ):
+            for grant in sorted(self._approvals.values(), key=lambda g: g.challenge_id):
                 if grant.consumed or grant.expires_at <= now:
                     continue
                 out.append(
@@ -236,9 +250,7 @@ class FakeHermesApprovalReleaseAdapter:
                         "run_id": grant.run_id,
                         "action_digest": grant.action_digest,
                         "expires_at": grant.expires_at,
-                        "expires_at_rfc3339": _canon_expires_rfc3339(
-                            grant.expires_at
-                        ),
+                        "expires_at_rfc3339": _canon_expires_rfc3339(grant.expires_at),
                     }
                 )
         return out
@@ -291,9 +303,7 @@ class FakeHermesApprovalReleaseAdapter:
                     "Approval release port unavailable",
                 )
             if fault == "run_not_found" or rid not in self._runs:
-                raise ApprovalReleaseError(
-                    "run_not_found", f"Run not found: {rid}"
-                )
+                raise ApprovalReleaseError("run_not_found", f"Run not found: {rid}")
             if not cid or not digest:
                 raise ApprovalReleaseError(
                     "approval_challenge_required",
@@ -349,9 +359,7 @@ class FakeHermesApprovalReleaseAdapter:
                 "action_digest": digest,
             }
             self._append_event_unlocked(rid, "approval.responded", payload)
-            self._append_event_unlocked(
-                rid, "approval.release_committed", payload
-            )
+            self._append_event_unlocked(rid, "approval.release_committed", payload)
             signalled = {
                 **payload,
                 "waiter_signal_status": "confirmed",
@@ -377,7 +385,8 @@ def project_pending_challenge(
     approval_id: str | None = None,
     command_id: str | None = None,
     ttl_seconds: float = 300.0,
-    release_adapter: FakeHermesApprovalReleaseAdapter | None = None,
+    release_adapter: ApprovalChallengeSeedPort | None = None,
+    approval_authority: CommandApprovalAuthority | None = None,
 ) -> dict[str, object]:
     """Raise on the release adapter AND seed CommandApprovalAuthority.
 
@@ -385,11 +394,9 @@ def project_pending_challenge(
     the same challenge_id / digest / expires_at binding.
     """
     adapter = release_adapter or default_approval_release_adapter()
-    authority = default_command_approval_authority()
+    authority = approval_authority or default_command_approval_authority()
     if type(workspace_id) is not str or _ID.fullmatch(workspace_id) is None:
-        raise ApprovalReleaseError(
-            "validation", "workspace_id must be a bounded identifier"
-        )
+        raise ApprovalReleaseError("validation", "workspace_id must be a bounded identifier")
     digest = _validate_digest(command_digest, "command_digest")
     raised = adapter.raise_approval(
         run_id,
@@ -424,7 +431,9 @@ def reset_default_approval_release_adapter() -> None:
 
 
 __all__ = [
+    "ApprovalChallengeSeedPort",
     "ApprovalReleaseError",
+    "ApprovalReleasePort",
     "ApprovalReleaseResult",
     "FakeHermesApprovalReleaseAdapter",
     "default_approval_release_adapter",
