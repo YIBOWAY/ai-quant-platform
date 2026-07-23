@@ -18,6 +18,10 @@ import psycopg
 
 from quant_system.config.settings import Settings
 from quant_system.hermes.command_ledger import ROOT_USER_ID
+from quant_system.hermes.dark_identity_profile import (
+    DarkIdentityProfileError,
+    require_server_managed_session_policy,
+)
 from quant_system.storage.database import (
     SCHEMA,
     Database,
@@ -25,7 +29,78 @@ from quant_system.storage.database import (
     get_database,
 )
 
-SESSION_REGISTRY_SCHEMA_VERSION = 1
+SESSION_REGISTRY_SCHEMA_VERSION = 2
+HERMES_MIGRATOR_ROLE = "quant_migrator"
+HERMES_RUNTIME_ROLE = "quant_runtime"
+HERMES_READONLY_ROLE = "quant_readonly"
+HERMES_SECURITY_SCHEMA_VERSION = 1
+
+_HERMES_RLS_TABLES = (
+    "app_users",
+    "hermes_commands",
+    "hermes_command_events",
+    "hermes_outbox",
+    "hermes_run_links",
+    "hermes_command_workflow_bindings",
+    "hermes_workspace_sessions",
+)
+
+_ROOT_USER_ID_SQL = "'00000000-0000-0000-0000-000000000001'::uuid"
+_DIRECT_ROOT_POLICY_TABLES = {
+    "hermes_command_workflow_bindings",
+    "hermes_commands",
+    "hermes_workspace_sessions",
+}
+_COMMAND_CHILD_POLICY_TABLES = {
+    "hermes_command_events",
+    "hermes_outbox",
+    "hermes_run_links",
+}
+_SESSION_IMMUTABILITY_FUNCTION_BODY = """
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION
+            'Hermes workspace session rows are immutable once registered';
+    END IF;
+
+    IF NEW.kind IS DISTINCT FROM OLD.kind
+       OR NEW.hermes_session_id IS DISTINCT FROM OLD.hermes_session_id
+       OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+       OR NEW.owner_user_id IS DISTINCT FROM OLD.owner_user_id
+       OR NEW.writer IS DISTINCT FROM OLD.writer
+       OR NEW.provider_policy_digest IS DISTINCT FROM OLD.provider_policy_digest
+       OR NEW.payload_ttl_days IS DISTINCT FROM OLD.payload_ttl_days
+       OR NEW.creation_client_action_id IS DISTINCT FROM OLD.creation_client_action_id
+       OR NEW.creation_action_digest IS DISTINCT FROM OLD.creation_action_digest
+       OR NEW.parent_platform_session_id IS DISTINCT FROM OLD.parent_platform_session_id
+       OR NEW.fork_point IS DISTINCT FROM OLD.fork_point
+       OR NEW.source_channel IS DISTINCT FROM OLD.source_channel
+       OR NEW.platform_session_id IS DISTINCT FROM OLD.platform_session_id
+    THEN
+        RAISE EXCEPTION
+            'Hermes workspace session identity, lineage, action and payload policy are immutable';
+    END IF;
+
+    NEW.updated_at := now();
+    RETURN NEW;
+END;
+"""
+_SESSION_TTL_CONSTRAINT = (
+    "CHECK ((((kind = 'observed_external_session'::text) AND "
+    "(payload_ttl_days IS NULL)) OR ((kind = 'web_managed_session'::text) "
+    "AND (payload_ttl_days = 7))))"
+)
+_SESSION_CREATION_ACTION_CONSTRAINT = (
+    "CHECK ((((creation_client_action_id IS NULL) AND "
+    "(creation_action_digest IS NULL)) OR ((kind = "
+    "'web_managed_session'::text) AND (creation_client_action_id IS NOT NULL) "
+    "AND ((char_length(creation_client_action_id) >= 1) AND "
+    "(char_length(creation_client_action_id) <= 200)) AND "
+    "(creation_client_action_id ~ "
+    "'^[A-Za-z0-9][A-Za-z0-9._:-]*$'::text) AND "
+    "(creation_action_digest IS NOT NULL) AND "
+    "(creation_action_digest ~ '^[0-9a-f]{64}$'::text))))"
+)
 SessionKind = Literal["observed_external_session", "web_managed_session"]
 SessionWriter = Literal["external_channel", "web_control_plane"]
 SourceChannel = Literal["discord", "historical", "web_managed"]
@@ -34,6 +109,7 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 _HERMES_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$")
 _WORKSPACE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_ACTION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 
 
 class HermesSessionRegistryUnavailable(RuntimeError):
@@ -42,6 +118,10 @@ class HermesSessionRegistryUnavailable(RuntimeError):
 
 class HermesSessionRegistryConflict(RuntimeError):
     """Raised when an identity key is reused for different session facts."""
+
+
+class HermesSessionActionConflict(HermesSessionRegistryConflict):
+    """Raised when one create/fork action key is reused with another digest."""
 
 
 class HermesSessionRegistryValidationError(ValueError):
@@ -63,6 +143,9 @@ class WorkspaceSessionRecord:
     parent_platform_session_id: str | None
     fork_point: str | None
     provider_policy_digest: str | None
+    payload_ttl_days: int | None
+    creation_client_action_id: str | None
+    creation_action_digest: str | None
     writer: SessionWriter
     created_at: datetime
     updated_at: datetime
@@ -82,6 +165,9 @@ class RegisterWorkspaceSession:
     parent_platform_session_id: str | None = None
     fork_point: str | None = None
     provider_policy_digest: str | None = None
+    payload_ttl_days: int | None = None
+    creation_client_action_id: str | None = None
+    creation_action_digest: str | None = None
     owner_user_id: UUID = ROOT_USER_ID
 
 
@@ -94,6 +180,20 @@ def _validate_register(request: RegisterWorkspaceSession) -> SessionWriter:
         raise HermesSessionRegistryValidationError("invalid hermes_session_id")
     if _WORKSPACE_ID_RE.fullmatch(request.workspace_id) is None:
         raise HermesSessionRegistryValidationError("invalid workspace_id")
+    creation_fields_present = (
+        request.creation_client_action_id is not None,
+        request.creation_action_digest is not None,
+    )
+    if creation_fields_present[0] != creation_fields_present[1]:
+        raise HermesSessionRegistryValidationError(
+            "creation action id and digest must be supplied together"
+        )
+    if request.creation_client_action_id is not None and (
+        _ACTION_ID_RE.fullmatch(request.creation_client_action_id) is None
+        or request.creation_action_digest is None
+        or _DIGEST_RE.fullmatch(request.creation_action_digest) is None
+    ):
+        raise HermesSessionRegistryValidationError("invalid creation action identity")
     if request.kind == "observed_external_session":
         if request.source_channel not in {"discord", "historical"}:
             raise HermesSessionRegistryValidationError(
@@ -111,10 +211,22 @@ def _validate_register(request: RegisterWorkspaceSession) -> SessionWriter:
             raise HermesSessionRegistryValidationError(
                 "observed_external_session cannot carry provider_policy_digest"
             )
+        if request.payload_ttl_days is not None:
+            raise HermesSessionRegistryValidationError(
+                "observed_external_session cannot carry payload_ttl_days"
+            )
+        if request.creation_client_action_id is not None:
+            raise HermesSessionRegistryValidationError(
+                "observed_external_session cannot carry creation action identity"
+            )
         return "external_channel"
 
     if request.kind != "web_managed_session":
         raise HermesSessionRegistryValidationError("invalid session kind")
+    if request.creation_client_action_id is None:
+        raise HermesSessionRegistryValidationError(
+            "web_managed_session requires creation action identity"
+        )
     if (
         request.provider_policy_digest is None
         or _DIGEST_RE.fullmatch(request.provider_policy_digest) is None
@@ -122,6 +234,15 @@ def _validate_register(request: RegisterWorkspaceSession) -> SessionWriter:
         raise HermesSessionRegistryValidationError(
             "web_managed_session requires provider_policy_digest"
         )
+    try:
+        require_server_managed_session_policy(
+            provider_policy_digest=request.provider_policy_digest,
+            payload_ttl_days=request.payload_ttl_days,
+        )
+    except DarkIdentityProfileError as exc:
+        raise HermesSessionRegistryValidationError(
+            "web_managed_session requires the server-owned payload policy"
+        ) from exc
     if request.parent_platform_session_id is None:
         if request.source_channel is not None or request.fork_point is not None:
             raise HermesSessionRegistryValidationError(
@@ -168,9 +289,12 @@ def _row_to_record(row: tuple[object, ...]) -> WorkspaceSessionRecord:
         parent_platform_session_id=str(row[6]) if row[6] is not None else None,
         fork_point=str(row[7]) if row[7] is not None else None,
         provider_policy_digest=str(row[8]) if row[8] is not None else None,
-        writer=row[9],  # type: ignore[arg-type]
-        created_at=row[10],  # type: ignore[arg-type]
-        updated_at=row[11],  # type: ignore[arg-type]
+        payload_ttl_days=int(row[9]) if row[9] is not None else None,
+        creation_client_action_id=str(row[10]) if row[10] is not None else None,
+        creation_action_digest=str(row[11]) if row[11] is not None else None,
+        writer=row[12],  # type: ignore[arg-type]
+        created_at=row[13],  # type: ignore[arg-type]
+        updated_at=row[14],  # type: ignore[arg-type]
     )
 
 
@@ -184,6 +308,9 @@ _SELECT_COLUMNS = """
     parent_platform_session_id,
     fork_point,
     provider_policy_digest,
+    payload_ttl_days,
+    creation_client_action_id,
+    creation_action_digest,
     writer,
     created_at,
     updated_at
@@ -225,14 +352,123 @@ def session_registry_schema_is_ready_on_connection(conn: psycopg.Connection) -> 
                   AND tgrelid = %s::regclass
                   AND NOT tgisinternal
                   AND tgenabled = 'A'
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_attribute
+                WHERE attrelid = %s::regclass
+                  AND attname = 'payload_ttl_days'
+                  AND atttypid = 'smallint'::regtype
+                  AND NOT attisdropped
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'ck_hermes_workspace_session_payload_ttl'
+                  AND conrelid = %s::regclass
+                  AND contype = 'c'
+                  AND convalidated
+                  AND pg_get_constraintdef(oid) = %s
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_attribute
+                WHERE attrelid = %s::regclass
+                  AND attname = 'creation_client_action_id'
+                  AND atttypid = 'text'::regtype
+                  AND NOT attnotnull
+                  AND NOT attisdropped
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_attribute
+                WHERE attrelid = %s::regclass
+                  AND attname = 'creation_action_digest'
+                  AND atttypid = 'character'::regtype
+                  AND atttypmod = 68
+                  AND NOT attnotnull
+                  AND NOT attisdropped
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'ck_hermes_workspace_session_creation_action'
+                  AND conrelid = %s::regclass
+                  AND contype = 'c'
+                  AND convalidated
+                  AND pg_get_constraintdef(oid) = %s
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_index AS index
+                JOIN pg_class AS relation ON relation.oid = index.indexrelid
+                WHERE relation.relname =
+                    'uq_hermes_workspace_session_creation_action'
+                  AND index.indrelid = %s::regclass
+                  AND index.indisunique
+                  AND index.indisvalid
+                  AND index.indisready
+                  AND pg_get_indexdef(index.indexrelid) = %s
             )
         """,
         (
             f"{SCHEMA}.hermes_workspace_sessions",
             f"{SCHEMA}.hermes_workspace_sessions",
+            f"{SCHEMA}.hermes_workspace_sessions",
+            f"{SCHEMA}.hermes_workspace_sessions",
+            _SESSION_TTL_CONSTRAINT,
+            f"{SCHEMA}.hermes_workspace_sessions",
+            f"{SCHEMA}.hermes_workspace_sessions",
+            f"{SCHEMA}.hermes_workspace_sessions",
+            _SESSION_CREATION_ACTION_CONSTRAINT,
+            f"{SCHEMA}.hermes_workspace_sessions",
+            (
+                "CREATE UNIQUE INDEX "
+                "uq_hermes_workspace_session_creation_action ON "
+                f"{SCHEMA}.hermes_workspace_sessions USING btree "
+                "(owner_user_id, workspace_id, creation_client_action_id) "
+                "WHERE (creation_client_action_id IS NOT NULL)"
+            ),
         ),
     ).fetchone()
-    return required is not None and bool(required[0]) and bool(required[1])
+    if required is None or not all(bool(value) for value in required):
+        return False
+
+    trigger_signature = conn.execute(
+        """
+        SELECT
+            trigger.tgtype,
+            trigger.tgenabled,
+            procedure.prosrc,
+            procedure.prosecdef,
+            procedure.provolatile,
+            language.lanname
+        FROM pg_trigger AS trigger
+        JOIN pg_proc AS procedure ON procedure.oid = trigger.tgfoid
+        JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+        JOIN pg_language AS language ON language.oid = procedure.prolang
+        WHERE trigger.tgrelid = %s::regclass
+          AND trigger.tgname = 'trg_hermes_workspace_session_immutability'
+          AND NOT trigger.tgisinternal
+          AND namespace.nspname = %s
+          AND procedure.proname = 'reject_hermes_external_session_mutation'
+        """,
+        (f"{SCHEMA}.hermes_workspace_sessions", SCHEMA),
+    ).fetchone()
+    if trigger_signature is None:
+        return False
+    trigger_type, enabled, body, security_definer, volatility, language = (
+        trigger_signature
+    )
+    return (
+        int(trigger_type) == 27  # BEFORE + ROW + UPDATE + DELETE
+        and str(enabled) == "A"
+        and " ".join(str(body).split())
+        == " ".join(_SESSION_IMMUTABILITY_FUNCTION_BODY.split())
+        and security_definer is False
+        and str(volatility) == "v"
+        and str(language) == "plpgsql"
+    )
 
 
 def session_registry_schema_version(settings: Settings) -> int | None:
@@ -257,7 +493,197 @@ def session_registry_schema_version(settings: Settings) -> int | None:
         return None
 
 
-def _facts_match(existing: WorkspaceSessionRecord, request: RegisterWorkspaceSession, writer: SessionWriter) -> bool:
+def hermes_runtime_security_is_ready_on_connection(
+    conn: psycopg.Connection,
+) -> bool:
+    """Verify the V4-R role/RLS signature and the effective login principal."""
+
+    if not session_registry_schema_is_ready_on_connection(conn):
+        return False
+    row = conn.execute(
+        f"""
+        SELECT
+            EXISTS (
+                SELECT 1
+                FROM {SCHEMA}.hermes_security_meta
+                WHERE singleton IS TRUE
+                  AND schema_version = %s
+            ),
+            (
+                SELECT count(*) = 3
+                   AND bool_and(
+                        NOT rolsuper
+                        AND NOT rolbypassrls
+                        AND NOT rolcanlogin
+                        AND NOT rolcreatedb
+                        AND NOT rolcreaterole
+                        AND NOT rolinherit
+                        AND NOT rolreplication
+                   )
+                FROM pg_roles
+                WHERE rolname = ANY(%s)
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_roles
+                WHERE rolname = session_user
+                  AND rolcanlogin
+                  AND NOT rolsuper
+                  AND NOT rolbypassrls
+                  AND NOT rolcreatedb
+                  AND NOT rolcreaterole
+                  AND NOT rolreplication
+            ),
+            current_user = session_user,
+            pg_has_role(session_user, %s, 'MEMBER'),
+            NOT pg_has_role(session_user, %s, 'MEMBER'),
+            has_schema_privilege(session_user, %s, 'USAGE'),
+            NOT has_schema_privilege(session_user, %s, 'CREATE'),
+            (
+                SELECT count(*) = %s
+                FROM pg_class AS relation
+                JOIN pg_namespace AS namespace
+                  ON namespace.oid = relation.relnamespace
+                WHERE namespace.nspname = %s
+                  AND relation.relname = ANY(%s)
+                  AND relation.relrowsecurity
+                  AND relation.relforcerowsecurity
+            ),
+            (
+                has_table_privilege(session_user, %s, 'SELECT')
+                AND has_table_privilege(session_user, %s, 'INSERT')
+                AND has_table_privilege(session_user, %s, 'UPDATE')
+            ),
+            NOT has_table_privilege(session_user, %s, 'DELETE'),
+            (
+                has_table_privilege(session_user, %s, 'SELECT')
+                AND has_table_privilege(session_user, %s, 'INSERT')
+            ),
+            (
+                NOT has_table_privilege(session_user, %s, 'UPDATE')
+                AND NOT has_table_privilege(session_user, %s, 'DELETE')
+            )
+        """,
+        (
+            HERMES_SECURITY_SCHEMA_VERSION,
+            [HERMES_MIGRATOR_ROLE, HERMES_RUNTIME_ROLE, HERMES_READONLY_ROLE],
+            HERMES_RUNTIME_ROLE,
+            HERMES_MIGRATOR_ROLE,
+            SCHEMA,
+            SCHEMA,
+            len(_HERMES_RLS_TABLES),
+            SCHEMA,
+            list(_HERMES_RLS_TABLES),
+            f"{SCHEMA}.hermes_commands",
+            f"{SCHEMA}.hermes_commands",
+            f"{SCHEMA}.hermes_commands",
+            f"{SCHEMA}.hermes_commands",
+            f"{SCHEMA}.hermes_workspace_sessions",
+            f"{SCHEMA}.hermes_workspace_sessions",
+            f"{SCHEMA}.hermes_workspace_sessions",
+            f"{SCHEMA}.hermes_workspace_sessions",
+        ),
+    ).fetchone()
+    if row is None or not all(bool(value) for value in row):
+        return False
+
+    policy_rows = conn.execute(
+        """
+        SELECT
+            relation.relname,
+            policy.polname,
+            policy.polcmd,
+            pg_get_expr(policy.polqual, policy.polrelid),
+            pg_get_expr(policy.polwithcheck, policy.polrelid),
+            ARRAY(
+                SELECT role.rolname::text
+                FROM unnest(policy.polroles) AS policy_role(role_oid)
+                JOIN pg_roles AS role ON role.oid = policy_role.role_oid
+                ORDER BY role.rolname::text
+            )
+        FROM pg_policy AS policy
+        JOIN pg_class AS relation ON relation.oid = policy.polrelid
+        JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = %s
+          AND relation.relname = ANY(%s)
+          AND policy.polname = ANY(%s)
+        """,
+        (
+            SCHEMA,
+            list(_HERMES_RLS_TABLES),
+            ["v4r_root_scope", "v4r_migrator_all"],
+        ),
+    ).fetchall()
+    expected_keys = {
+        (table_name, policy_name)
+        for table_name in _HERMES_RLS_TABLES
+        for policy_name in ("v4r_root_scope", "v4r_migrator_all")
+    }
+    observed_keys = {(str(item[0]), str(item[1])) for item in policy_rows}
+    if observed_keys != expected_keys or len(policy_rows) != len(expected_keys):
+        return False
+
+    for table_name, policy_name, command, using, with_check, roles in policy_rows:
+        if str(command) != "*":
+            return False
+        normalized_using = " ".join(str(using).split())
+        normalized_check = " ".join(str(with_check).split())
+        normalized_roles = tuple(str(role) for role in roles)
+        if policy_name == "v4r_migrator_all":
+            if (
+                normalized_using != "true"
+                or normalized_check != "true"
+                or normalized_roles != (HERMES_MIGRATOR_ROLE,)
+            ):
+                return False
+            continue
+
+        if normalized_roles != (
+            HERMES_READONLY_ROLE,
+            HERMES_RUNTIME_ROLE,
+        ):
+            return False
+        expected_expression = _expected_root_policy_expression(str(table_name))
+        if (
+            normalized_using != expected_expression
+            or normalized_check != expected_expression
+        ):
+            return False
+    return True
+
+
+def _expected_root_policy_expression(table_name: str) -> str:
+    if table_name == "app_users":
+        return f"(id = {_ROOT_USER_ID_SQL})"
+    if table_name in _DIRECT_ROOT_POLICY_TABLES:
+        return f"(owner_user_id = {_ROOT_USER_ID_SQL})"
+    if table_name in _COMMAND_CHILD_POLICY_TABLES:
+        return (
+            f"(EXISTS ( SELECT 1 FROM {SCHEMA}.hermes_commands command "
+            f"WHERE ((command.command_id = {table_name}.command_id) AND "
+            f"(command.owner_user_id = {_ROOT_USER_ID_SQL}))))"
+        )
+    raise ValueError(f"unsupported V4-R policy table: {table_name}")
+
+
+def hermes_runtime_security_ready(settings: Settings) -> bool:
+    """Return whether this process uses the constrained V4-R runtime role."""
+
+    try:
+        database = get_database(settings)
+        if database is None:
+            return False
+        with database.connect() as conn:
+            return hermes_runtime_security_is_ready_on_connection(conn)
+    except (DatabaseUnavailable, psycopg.Error, TypeError, ValueError):
+        return False
+
+
+def _facts_match(
+    existing: WorkspaceSessionRecord,
+    request: RegisterWorkspaceSession,
+    writer: SessionWriter,
+) -> bool:
     return (
         existing.platform_session_id == request.platform_session_id
         and existing.hermes_session_id == request.hermes_session_id
@@ -268,6 +694,9 @@ def _facts_match(existing: WorkspaceSessionRecord, request: RegisterWorkspaceSes
         and existing.parent_platform_session_id == request.parent_platform_session_id
         and existing.fork_point == request.fork_point
         and existing.provider_policy_digest == request.provider_policy_digest
+        and existing.payload_ttl_days == request.payload_ttl_days
+        and existing.creation_client_action_id == request.creation_client_action_id
+        and existing.creation_action_digest == request.creation_action_digest
         and existing.writer == writer
     )
 
@@ -286,6 +715,37 @@ def register_workspace_session(
                 raise HermesSessionRegistryUnavailable(
                     "Hermes session registry schema is not ready"
                 )
+            if request.creation_client_action_id is not None:
+                conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (
+                        "hermes-session-action:"
+                        f"{request.owner_user_id}:"
+                        f"{request.workspace_id}:"
+                        f"{request.creation_client_action_id}",
+                    ),
+                )
+                action_row = conn.execute(
+                    f"""
+                    SELECT {_SELECT_COLUMNS}
+                    FROM {SCHEMA}.hermes_workspace_sessions
+                    WHERE owner_user_id = %s
+                      AND workspace_id = %s
+                      AND creation_client_action_id = %s
+                    """,
+                    (
+                        request.owner_user_id,
+                        request.workspace_id,
+                        request.creation_client_action_id,
+                    ),
+                ).fetchone()
+                if action_row is not None:
+                    action_record = _row_to_record(action_row)
+                    if not _facts_match(action_record, request, writer):
+                        raise HermesSessionActionConflict(
+                            "session creation action key reused with different facts"
+                        )
+                    return action_record, False
             conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
                 (f"hermes-workspace-session:{request.platform_session_id}",),
@@ -348,9 +808,15 @@ def register_workspace_session(
                     parent_platform_session_id,
                     fork_point,
                     provider_policy_digest,
+                    payload_ttl_days,
+                    creation_client_action_id,
+                    creation_action_digest,
                     writer
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s
+                )
                 RETURNING {_SELECT_COLUMNS}
                 """,
                 (
@@ -363,6 +829,9 @@ def register_workspace_session(
                     request.parent_platform_session_id,
                     request.fork_point,
                     request.provider_policy_digest,
+                    request.payload_ttl_days,
+                    request.creation_client_action_id,
+                    request.creation_action_digest,
                     writer,
                 ),
             ).fetchone()

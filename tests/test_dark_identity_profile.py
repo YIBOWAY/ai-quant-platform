@@ -54,6 +54,7 @@ def test_build_put_request_closed_schema() -> None:
         managed_session_ref="session:s1",
         client_intent_id="intent-1",
         prompt="Reply with exactly: L2a-pong",
+        payload_ttl_days=7,
     )
     assert body["owner_id"] == STORE_OWNER_ID
     assert body["workspace_id"] == STORE_WORKSPACE_ID
@@ -66,12 +67,24 @@ def test_build_put_request_closed_schema() -> None:
     assert "prompt" in body
 
 
+def test_build_put_request_rejects_noncanonical_session_ttl() -> None:
+    with pytest.raises(DarkIdentityProfileError) as exc:
+        build_put_request(
+            managed_session_ref="session:s1",
+            client_intent_id="intent-ttl-14",
+            prompt="hello",
+            payload_ttl_days=14,
+        )
+    assert exc.value.code == "invalid_payload_ttl_days"
+
+
 def test_build_put_rejects_empty_and_oversized_prompt() -> None:
     with pytest.raises(DarkIdentityProfileError) as empty:
         build_put_request(
             managed_session_ref="s1",
             client_intent_id="i1",
             prompt="   \n",
+            payload_ttl_days=7,
         )
     assert empty.value.code == "invalid_prompt"
 
@@ -81,6 +94,7 @@ def test_build_put_rejects_empty_and_oversized_prompt() -> None:
             managed_session_ref="s1",
             client_intent_id="i1",
             prompt=huge,
+            payload_ttl_days=7,
         )
     assert big.value.code == "prompt_too_large"
 

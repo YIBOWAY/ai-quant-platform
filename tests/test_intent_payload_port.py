@@ -29,6 +29,7 @@ def test_fake_put_and_bind_resolve_round_trip() -> None:
         managed_session_ref="session:m1",
         client_intent_id="intent-fake-1",
         prompt="Reply with exactly: L2a-pong",
+        payload_ttl_days=7,
     )
     receipt = port.put_intent(put_req)
     assert receipt["ok"] is True
@@ -54,6 +55,7 @@ def test_fake_put_idempotency_conflict() -> None:
         managed_session_ref="s1",
         client_intent_id="same-id",
         prompt="one",
+        payload_ttl_days=7,
     )
     port.put_intent(base)
     with pytest.raises(IntentPayloadPortError) as exc:
@@ -69,6 +71,7 @@ def test_fake_consumer_conflict() -> None:
             managed_session_ref="s1",
             client_intent_id="i1",
             prompt="hi",
+            payload_ttl_days=7,
         )
     )
     port.bind_and_resolve_prompt(
@@ -206,6 +209,7 @@ def test_intent_payload_input_resolver_bind_resolve() -> None:
         managed_session_ref="session:m1",
         client_intent_id="intent-resolve-1",
         prompt="Reply with exactly: L2a-pong",
+        payload_ttl_days=7,
     )
     receipt = port.put_intent(put_req)
     resolver = intent_payload_input_resolver(port=port)

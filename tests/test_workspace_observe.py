@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -36,7 +36,7 @@ def test_public_event_type_map_and_fallback() -> None:
 
 def test_project_command_public_no_payload() -> None:
     cid = uuid4()
-    now = datetime(2026, 7, 22, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 22, 12, 0, 0, tzinfo=UTC)
     pub = project_command_public(
         {
             "command_id": cid,
@@ -64,7 +64,7 @@ def test_project_command_public_no_payload() -> None:
 
 def test_project_event_public_joins_command_identity() -> None:
     cid = uuid4()
-    now = datetime(2026, 7, 22, 12, 0, 1, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 22, 12, 0, 1, tzinfo=UTC)
     ev = project_event_public(
         {
             "event_id": 7,
@@ -114,13 +114,17 @@ def test_snapshot_commands_are_objects_and_follow_emits_lifecycle() -> None:
         ActorRef,
         build_platform_agent_workspace,
     )
-    from quant_system.hermes.agent_workspace_actions import WorkspaceRef
+    from quant_system.hermes.agent_workspace_actions import (
+        ConversationTurn,
+        WorkspaceRef,
+        session_ref,
+    )
     from quant_system.hermes.command_ledger import ROOT_USER_ID
     from tests.test_agent_workspace import (
         WORKSPACE_ID,
         _create_action,
-        _prepare,
         _postgres_settings,
+        _prepare,
     )
 
     settings = _postgres_settings()
@@ -130,15 +134,30 @@ def test_snapshot_commands_are_objects_and_follow_emits_lifecycle() -> None:
 
     create = workspace.act(actor, _create_action("act-l2b-create"))
     assert create.status == "accepted"
-    assert create.command_id
+    assert create.command_id is None
+    assert create.platform_session_id is not None
+
+    payload_digest = "d" * 64
+    turn = workspace.act(
+        actor,
+        ConversationTurn(
+            client_action_id="act-l2b-turn",
+            workspace=WorkspaceRef(workspace_id=WORKSPACE_ID),
+            managed_session_ref=session_ref(create.platform_session_id),
+            payload_ref=f"payload:sha256:{payload_digest}",
+            payload_digest=payload_digest,
+        ),
+    )
+    assert turn.status == "accepted"
+    assert turn.command_id
 
     snap = workspace.snapshot(actor, WorkspaceRef(workspace_id=WORKSPACE_ID))
     assert snap.snapshot_workspace_cursor >= 1
     assert snap.commands, "expected at least the create command object"
     cmd0 = snap.commands[0]
     assert isinstance(cmd0, dict)
-    assert cmd0["command_id"] == create.command_id
-    assert cmd0["kind"] == "managed_session_create"
+    assert cmd0["command_id"] == turn.command_id
+    assert cmd0["kind"] == "conversation_turn"
     assert cmd0["state"] == "queued"
     assert "client_action_id" in cmd0
 
