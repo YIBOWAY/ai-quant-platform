@@ -5,9 +5,10 @@ Vertical A (options):
   NL goal -> Task/Attempt/Run -> typed options result -> completed|degraded.
   Live path requires auth envelope; real only with verifiable evidence.
 
-Vertical B (factor) — V7g-B-M1 hermetic only:
-  NL + paper ref -> Task/Attempt/Run -> typed factor result -> completed|degraded.
-  Always sample. Never StartResearch/Confirm/Gate/backtest/Git/live provider.
+Vertical B (factor) — V7g-B-M1 hermetic bind + V7g-B-M2 plan-confirm:
+  M1: NL + paper ref -> Task/Attempt/Run -> typed factor result -> completed|degraded.
+  M2: CAS plan_confirm on bound factor_b Task -> cascade_stage=plan_confirmed.
+  Always sample. Never StartResearch/global ConfirmResearchPlan/Gate/backtest/Git/live.
 
 Zero orders/account mutation. Public write stays OFF.
 
@@ -19,6 +20,7 @@ only the owner decrements/refunds.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -132,6 +134,17 @@ class VerticalTaskRecord:
     factor_name: str | None = None
     paper_ref: str | None = None
     paper_digest: str | None = None
+    # V7g-B-M2 cascade projection (factor_b only).
+    cascade_stage: str | None = None
+    plan_version: int | None = None
+    plan_digest: str | None = None
+    plan_confirmed_at: str | None = None
+    plan_confirm_action_id: str | None = None
+    plan_confirm_action_digest: str | None = None
+    # Bind-era artifact ids retained after plan_confirm moves latest pointers.
+    bind_attempt_id: str | None = None
+    bind_run_id: str | None = None
+    bind_result_id: str | None = None
 
     def to_public_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -158,6 +171,24 @@ class VerticalTaskRecord:
             payload["paper_ref"] = self.paper_ref
         if self.paper_digest is not None:
             payload["paper_digest"] = self.paper_digest
+        if self.cascade_stage is not None:
+            payload["cascade_stage"] = self.cascade_stage
+        if self.plan_version is not None:
+            payload["plan_version"] = self.plan_version
+        if self.plan_digest is not None:
+            payload["plan_digest"] = self.plan_digest
+        if self.plan_confirmed_at is not None:
+            payload["plan_confirmed_at"] = self.plan_confirmed_at
+        if self.plan_confirm_action_id is not None:
+            payload["plan_confirm_action_id"] = self.plan_confirm_action_id
+        if self.plan_confirm_action_digest is not None:
+            payload["plan_confirm_action_digest"] = self.plan_confirm_action_digest
+        if self.bind_attempt_id is not None:
+            payload["bind_attempt_id"] = self.bind_attempt_id
+        if self.bind_run_id is not None:
+            payload["bind_run_id"] = self.bind_run_id
+        if self.bind_result_id is not None:
+            payload["bind_result_id"] = self.bind_result_id
         if self.result_id is not None:
             payload["result_id"] = self.result_id
         if self.terminal_reason is not None:
@@ -283,6 +314,41 @@ def _enforce_live_auth_envelope(
             "auth_envelope_expired",
         )
     return env
+
+
+
+def canonical_factor_b_plan_digest(task: VerticalTaskRecord) -> str:
+    """Server-computed hermetic plan identity for V7g-B-M2 CAS.
+
+    Client must submit plan_digest equal to this value. Uses the same
+    canonical JSON serializer shape as action digests (sorted keys, tight
+    separators, UTF-8 SHA-256).
+    """
+    if task.vertical != "factor_b":
+        raise VerticalBindingAuthorityError(
+            "factor_b_task_wrong_vertical",
+            "factor_b_task_wrong_vertical",
+        )
+    plan_document = {
+        "schema_version": 1,
+        "kind": "factor_b_hermetic_plan",
+        "task_id": task.task_id,
+        "vertical": "factor_b",
+        "factor_name": task.factor_name,
+        "paper_ref": task.paper_ref,
+        "paper_digest": task.paper_digest,
+        "goal_note": task.goal_note,
+        "plan_version": 1,
+        "mode": "plan_only",
+        "bind_action_digest": task.action_digest,
+    }
+    canonical_json = json.dumps(
+        plan_document,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
 class VerticalBindingAuthority:
@@ -854,6 +920,11 @@ class VerticalBindingAuthority:
                         self._action_digest.pop(key, None)
                     raise
 
+                # cascade_stage: completed bind is bind_complete; degraded is
+                # bind_degraded (M2 plan_confirm refuses degraded).
+                cascade_stage = (
+                    "bind_complete" if terminal == "completed" else "bind_degraded"
+                )
                 task = VerticalTaskRecord(
                     workspace_id=ws,
                     task_id=task_id,
@@ -876,6 +947,10 @@ class VerticalBindingAuthority:
                     factor_name=fname,
                     paper_ref=pref,
                     paper_digest=paper_digest,
+                    cascade_stage=cascade_stage,
+                    bind_attempt_id=attempt_id,
+                    bind_run_id=run_id,
+                    bind_result_id=result_id,
                 )
                 attempt = VerticalAttemptRecord(
                     workspace_id=ws,
@@ -913,6 +988,323 @@ class VerticalBindingAuthority:
             finally:
                 if owned_reservation:
                     self._inflight.discard(key)
+                    self._cv.notify_all()
+
+    def get_task(
+        self, workspace_id: str, task_id: str
+    ) -> VerticalTaskRecord | None:
+        ws = _validate_id(workspace_id, "workspace_id")
+        tid = _validate_id(task_id, "task_id")
+        with self._lock:
+            return self._tasks.get((ws, tid))
+
+    def confirm_factor_vertical_b_plan(
+        self,
+        *,
+        workspace_id: str,
+        client_action_id: str,
+        action_digest: str,
+        task_ref: str,
+        expected_bind_digest: str,
+        plan_version: int,
+        plan_digest: str,
+        confirmation_note: str,
+        result_authority: ResultSurfaceAuthority | None = None,
+        now: datetime | None = None,
+    ) -> VerticalBindOutcome:
+        """V7g-B-M2: CAS plan-confirm on already-bound hermetic factor_b Task.
+
+        Lifts only plan_confirm_required. Never seeds Gates, never StartResearch,
+        never global ConfirmResearchPlan, never orders/backtest/Git/live.
+        """
+        ws = _validate_id(workspace_id, "workspace_id")
+        act = _validate_id(client_action_id, "client_action_id")
+        if type(action_digest) is not str or len(action_digest) != 64:
+            raise VerticalBindingAuthorityError(
+                "validation", "action_digest must be 64-hex"
+            )
+        if type(task_ref) is not str or not task_ref.startswith("task:"):
+            raise VerticalBindingAuthorityError(
+                "validation", "task_ref must be a task: reference"
+            )
+        task_id = task_ref[len("task:") :]
+        task_id = _validate_id(task_id, "task_id")
+        if (
+            type(expected_bind_digest) is not str
+            or len(expected_bind_digest) != 64
+            or any(ch not in "0123456789abcdef" for ch in expected_bind_digest)
+        ):
+            raise VerticalBindingAuthorityError(
+                "validation", "expected_bind_digest must be lowercase 64-hex"
+            )
+        if type(plan_version) is not int or isinstance(plan_version, bool):
+            raise VerticalBindingAuthorityError(
+                "validation", "plan_version must be a positive integer"
+            )
+        if plan_version != 1:
+            raise VerticalBindingAuthorityError(
+                "validation", "plan_version must be 1"
+            )
+        if (
+            type(plan_digest) is not str
+            or len(plan_digest) != 64
+            or any(ch not in "0123456789abcdef" for ch in plan_digest)
+        ):
+            raise VerticalBindingAuthorityError(
+                "validation", "plan_digest must be lowercase 64-hex"
+            )
+        note = _bounded_text(confirmation_note, "confirmation_note", max_len=2000)
+
+        key = (ws, act)
+        cascade_key = (ws, f"cascade:{task_id}")
+        rauth = result_authority or default_result_surface_authority()
+        owned_reservation = False
+        owned_cascade = False
+
+        with self._cv:
+            while True:
+                prior_digest = self._action_digest.get(key)
+                if prior_digest is not None and prior_digest != action_digest:
+                    raise VerticalBindingAuthorityError(
+                        "conflict",
+                        "client_action_id already bound to a different action_digest",
+                    )
+                prior_task_id = self._by_action.get(key)
+                if prior_task_id is not None:
+                    return self._replay_outcome(ws, prior_task_id, rauth)
+                if key in self._inflight or cascade_key in self._inflight:
+                    if not self._cv.wait(timeout=30.0):
+                        raise VerticalBindingAuthorityError(
+                            "unavailable",
+                            "vertical_bind_inflight_timeout",
+                        )
+                    continue
+                self._action_digest[key] = action_digest
+                self._inflight.add(key)
+                self._inflight.add(cascade_key)
+                owned_reservation = True
+                owned_cascade = True
+                break
+
+        with self._cv:
+            try:
+                prior_task_id = self._by_action.get(key)
+                if prior_task_id is not None:
+                    return self._replay_outcome(ws, prior_task_id, rauth)
+                if self._action_digest.get(key) != action_digest:
+                    raise VerticalBindingAuthorityError(
+                        "conflict",
+                        "client_action_id already bound to a different action_digest",
+                    )
+
+                task = self._tasks.get((ws, task_id))
+                if task is None:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_task_not_found",
+                        "factor_b_task_not_found",
+                    )
+                if task.vertical != "factor_b" or task.kind != "factor_vertical_b_research":
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_task_wrong_vertical",
+                        "factor_b_task_wrong_vertical",
+                    )
+                if task.action_digest != expected_bind_digest:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_bind_digest_mismatch",
+                        "factor_b_bind_digest_mismatch",
+                    )
+                if task.status != "completed":
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_bind_not_confirmable",
+                        "factor_b_bind_not_confirmable",
+                    )
+                stage = task.cascade_stage
+                # Pre-M2 rows without stage: treat as bind_complete when other CAS ok.
+                if stage is None:
+                    stage = "bind_complete"
+                if stage == "plan_confirmed":
+                    # Idempotent only via same client_action_id (handled above).
+                    raise VerticalBindingAuthorityError(
+                        "cascade_already_plan_confirmed",
+                        "cascade_already_plan_confirmed",
+                    )
+                if stage not in {"bind_complete"}:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_bind_not_confirmable",
+                        "factor_b_bind_not_confirmable",
+                    )
+                if not task.factor_name or not task.paper_ref or not task.paper_digest:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_bind_not_confirmable",
+                        "factor_b_bind_not_confirmable",
+                    )
+
+                server_plan_digest = canonical_factor_b_plan_digest(task)
+                if plan_digest != server_plan_digest:
+                    raise VerticalBindingAuthorityError(
+                        "factor_b_plan_digest_mismatch",
+                        "factor_b_plan_digest_mismatch",
+                    )
+
+                attempt_id = _stable_id(
+                    "attempt", action_digest, "plan_confirm_attempt"
+                )
+                run_id = _stable_id("run", action_digest, "plan_confirm_run")
+                result_id = _stable_id(
+                    "result", action_digest, "plan_confirm_result"
+                )
+                ts = _dt_public(now)
+
+                # Pull continuity fields from bind-era result when present.
+                bind_result = None
+                if task.result_id:
+                    bind_result = rauth.get(ws, task.result_id)
+                formula_sketch = (
+                    (bind_result.formula_sketch if bind_result else None)
+                    or ""
+                )
+                universe_note = (
+                    (bind_result.universe_note if bind_result else None) or ""
+                )
+                # formula/universe optional continuity; seeder requires nonempty —
+                # fall back to honest placeholders derived from task identity.
+                if not formula_sketch:
+                    formula_sketch = f"plan_only:{task.factor_name}"
+                if not universe_note:
+                    universe_note = "hermetic_plan_confirm"
+
+                limitations: tuple[str, ...] = (
+                    "hermetic_fixture",
+                    "not_live_backtest",
+                    "not_tradeable",
+                    "zero_orders",
+                    "plan_confirmed",
+                    "gate_cascade_locked",
+                    "not_git_commit",
+                )
+                evidence: tuple[str, ...] = (
+                    "hermetic_factor_fixture",
+                    "hermetic_plan_confirm",
+                )
+
+                try:
+                    result = rauth.seed_factor_vertical_b_plan_confirm_sample(
+                        workspace_id=ws,
+                        result_id=result_id,
+                        factor_name=task.factor_name or "",
+                        paper_ref=task.paper_ref or "",
+                        paper_digest=task.paper_digest or "",
+                        plan_digest=plan_digest,
+                        formula_sketch=formula_sketch,
+                        universe_note=universe_note,
+                        display_title=(
+                            f"{task.factor_name} factor plan confirmed"
+                        ),
+                        summary=note,
+                        status="completed",
+                        task_id=task_id,
+                        attempt_id=attempt_id,
+                        run_id=run_id,
+                        provider_evidence=evidence,
+                        limitations=limitations,
+                        source="hermetic_vertical_b_plan_confirm",
+                        authority="vertical_binding_authority",
+                    )
+                except Exception:
+                    if owned_reservation:
+                        self._action_digest.pop(key, None)
+                    raise
+
+                # Preserve bind-era artifact pointers; replace task immutably
+                # so concurrent snapshot readers never observe a torn record.
+                bind_attempt_id = task.bind_attempt_id or task.attempt_id
+                bind_run_id = task.bind_run_id or task.run_id
+                bind_result_id = task.bind_result_id or task.result_id
+
+                task = VerticalTaskRecord(
+                    workspace_id=task.workspace_id,
+                    task_id=task.task_id,
+                    kind=task.kind,
+                    status="completed",
+                    display_title=task.display_title,
+                    goal_note=task.goal_note,
+                    ticker=task.ticker,
+                    attempt_id=attempt_id,
+                    run_id=run_id,
+                    result_id=result_id,
+                    client_action_id=task.client_action_id,
+                    action_digest=task.action_digest,
+                    occurred_at=task.occurred_at,
+                    terminal_reason="plan_confirmed",
+                    provider_evidence=task.provider_evidence,
+                    limitations=limitations,
+                    provider_mode=task.provider_mode,
+                    vertical=task.vertical,
+                    factor_name=task.factor_name,
+                    paper_ref=task.paper_ref,
+                    paper_digest=task.paper_digest,
+                    cascade_stage="plan_confirmed",
+                    plan_version=1,
+                    plan_digest=plan_digest,
+                    plan_confirmed_at=ts,
+                    plan_confirm_action_id=act,
+                    plan_confirm_action_digest=action_digest,
+                    bind_attempt_id=bind_attempt_id,
+                    bind_run_id=bind_run_id,
+                    bind_result_id=bind_result_id,
+                )
+
+                attempt = VerticalAttemptRecord(
+                    workspace_id=ws,
+                    attempt_id=attempt_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    status="completed",
+                    occurred_at=ts,
+                    vertical="factor_b",
+                )
+                run = VerticalRunRecord(
+                    workspace_id=ws,
+                    run_id=run_id,
+                    task_id=task_id,
+                    attempt_id=attempt_id,
+                    status="completed",
+                    occurred_at=ts,
+                    mode="hermetic_plan_confirm",
+                    vertical="factor_b",
+                )
+
+                self._tasks[(ws, task_id)] = task
+                self._attempts[(ws, attempt_id)] = attempt
+                self._runs[(ws, run_id)] = run
+                # Map confirm action → existing task for idempotent replay.
+                self._by_action[key] = task_id
+                self._action_digest[key] = action_digest
+
+                return VerticalBindOutcome(
+                    task=task,
+                    attempt=attempt,
+                    run=run,
+                    result=result,
+                    terminal="completed",
+                )
+            except Exception:
+                if owned_reservation:
+                    self._action_digest.pop(key, None)
+                    # Best-effort orphan cleanup if confirm result was seeded
+                    # but task store commit did not finish.
+                    try:
+                        if "result_id" in locals() and result_id:
+                            rauth.delete_result(ws, result_id)
+                    except Exception:
+                        pass
+                raise
+            finally:
+                if owned_reservation:
+                    self._inflight.discard(key)
+                if owned_cascade:
+                    self._inflight.discard(cascade_key)
+                if owned_reservation or owned_cascade:
                     self._cv.notify_all()
 
     def _release_reservation(
@@ -1010,6 +1402,7 @@ __all__ = [
     "VerticalTaskRecord",
     "VerticalAttemptRecord",
     "VerticalRunRecord",
+    "canonical_factor_b_plan_digest",
     "default_vertical_binding_authority",
     "reset_default_vertical_binding_authority",
 ]

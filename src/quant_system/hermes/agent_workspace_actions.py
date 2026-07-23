@@ -30,6 +30,7 @@ _ACTION_KINDS = frozenset(
         "gate3.promotion_review.prepare",
         "vertical.options_a.bind",
         "vertical.factor_b.bind",
+        "vertical.factor_b.plan_confirm",
     }
 )
 _COMMON_DOCUMENT_FIELDS = frozenset(
@@ -106,6 +107,14 @@ _ACTION_FIELDS = {
         "formula_sketch",
         "universe_note",
         "include_provider_evidence",
+    },
+    "vertical.factor_b.plan_confirm": _COMMON_DOCUMENT_FIELDS
+    | {
+        "task_ref",
+        "expected_bind_digest",
+        "plan_version",
+        "plan_digest",
+        "confirmation_note",
     },
 }
 _PROVIDER_MODES = frozenset({"hermetic_fixture", "live_futu_ro"})
@@ -836,6 +845,42 @@ class BindFactorVerticalB:
 
 
 @dataclass(frozen=True)
+class ConfirmFactorVerticalBPlan:
+    """V7g-B-M2: hermetic factor_b plan-confirm cascade notch.
+
+    CAS-confirms a canonical plan digest on an already-bound factor_b Task.
+    Lifts only plan_confirm_required. Never StartResearch / global
+    ConfirmResearchPlan / Gate / backtest / Git / orders / public write.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    task_ref: str
+    expected_bind_digest: str
+    plan_version: int
+    plan_digest: str
+    confirmation_note: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_ref(self.task_ref, "task_ref", "task:")
+        _validate_digest(self.expected_bind_digest, "expected_bind_digest")
+        if type(self.plan_version) is not int or isinstance(
+            self.plan_version, bool
+        ) or self.plan_version < 1:
+            raise AgentWorkspaceActionError(
+                "plan_version must be a positive integer"
+            )
+        # M2 allows only plan_version == 1 (enforced again in binder).
+        if self.plan_version != 1:
+            raise AgentWorkspaceActionError(
+                "plan_version must be 1 for vertical.factor_b.plan_confirm M2"
+            )
+        _validate_digest(self.plan_digest, "plan_digest")
+        _validate_note(self.confirmation_note, "confirmation_note")
+
+
+@dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
 
@@ -864,6 +909,7 @@ UserActionV1 = Union[
     PreparePromotionReview,
     BindOptionsVerticalA,
     BindFactorVerticalB,
+    ConfirmFactorVerticalBPlan,
     UnsupportedWorkspaceAction,
 ]
 
@@ -879,6 +925,7 @@ _IMPLEMENTED_TYPES = (
     PreparePromotionReview,
     BindOptionsVerticalA,
     BindFactorVerticalB,
+    ConfirmFactorVerticalBPlan,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -1056,6 +1103,18 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is ConfirmFactorVerticalBPlan:
+        document.update(
+            {
+                "kind": "vertical.factor_b.plan_confirm",
+                "task_ref": action.task_ref,
+                "expected_bind_digest": action.expected_bind_digest,
+                "plan_version": action.plan_version,
+                "plan_digest": action.plan_digest,
+                "confirmation_note": action.confirmation_note,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -1208,6 +1267,15 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             universe_note=document["universe_note"],
             include_provider_evidence=document["include_provider_evidence"],
         )
+    if kind == "vertical.factor_b.plan_confirm":
+        return ConfirmFactorVerticalBPlan(
+            **common,
+            task_ref=document["task_ref"],
+            expected_bind_digest=document["expected_bind_digest"],
+            plan_version=document["plan_version"],
+            plan_digest=document["plan_digest"],
+            confirmation_note=document["confirmation_note"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -1246,6 +1314,7 @@ __all__ = [
     "AgentWorkspaceActionError",
     "BindFactorVerticalB",
     "BindOptionsVerticalA",
+    "ConfirmFactorVerticalBPlan",
     "ConfirmFormulaSource",
     "ConfirmResearchPlan",
     "ContinueResearch",
