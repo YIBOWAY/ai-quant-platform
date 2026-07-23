@@ -578,7 +578,7 @@ def _historical_volatility(ohlcv: pd.DataFrame, *, window: int = 20) -> float | 
     if len(ohlcv) < 2:
         return None
     closes = pd.to_numeric(ohlcv.sort_values("timestamp")["close"], errors="coerce")
-    returns = closes.pct_change().dropna()
+    returns = closes.pct_change(fill_method=None).dropna()
     if returns.empty:
         return None
     sample = returns.tail(window)

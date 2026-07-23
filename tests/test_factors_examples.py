@@ -61,6 +61,22 @@ def test_momentum_factor_uses_only_history_available_at_signal_time() -> None:
     assert first_spy["tradeable_ts"] == spy_prices.loc[signal_idx + 1, "timestamp"]
 
 
+def test_return_factors_do_not_forward_fill_missing_close() -> None:
+    frame = _sample_frame()
+    spy = frame.index[frame["symbol"] == "SPY"].tolist()
+    missing_index = spy[5]
+    missing_ts = frame.loc[missing_index, "timestamp"]
+    frame.loc[missing_index, "close"] = float("nan")
+
+    momentum = MomentumFactor(lookback=3).compute(frame)
+    volatility = VolatilityFactor(lookback=3).compute(frame)
+
+    spy_momentum = momentum.loc[momentum["symbol"] == "SPY", "signal_ts"]
+    spy_volatility = volatility.loc[volatility["symbol"] == "SPY", "signal_ts"]
+    assert missing_ts not in spy_momentum.tolist()
+    assert missing_ts not in spy_volatility.tolist()
+
+
 def test_rsi_factor_stays_within_expected_bounds() -> None:
     frame = _sample_frame()
     factor = RSIFactor(lookback=5)

@@ -75,7 +75,7 @@ def calculate_performance_metrics(
     denominator = initial_cash if initial_cash > 0 else first_equity
     total_return = last_equity / denominator - 1 if denominator else 0.0
 
-    returns = equity.pct_change().dropna()
+    returns = equity.pct_change(fill_method=None).dropna()
     periods = max(len(returns), 1)
     annualized_return = (
         (last_equity / denominator) ** (annualization_factor / periods) - 1

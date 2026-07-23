@@ -282,7 +282,9 @@ def _monthly_panel(ohlcv: pd.DataFrame) -> pd.DataFrame:
             ]
         complete_groups.append(group)
     monthly = pd.concat(complete_groups, ignore_index=True)
-    monthly["monthly_return"] = monthly.groupby("symbol")["close"].pct_change()
+    monthly["monthly_return"] = monthly.groupby("symbol")["close"].pct_change(
+        fill_method=None
+    )
     return monthly.dropna(subset=["monthly_return"]).reset_index(drop=True)
 
 

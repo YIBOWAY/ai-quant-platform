@@ -761,7 +761,7 @@ def _historical_volatility(history: pd.DataFrame, *, window: int) -> float | Non
     if len(history) < 2:
         return None
     closes = pd.to_numeric(history.sort_values("timestamp")["close"], errors="coerce")
-    returns = closes.pct_change().dropna()
+    returns = closes.pct_change(fill_method=None).dropna()
     if returns.empty:
         return None
     value = returns.tail(window).std(ddof=0) * math.sqrt(252)
@@ -775,7 +775,7 @@ def _iv_rank_from_hv_proxy(
     if current_iv is None or len(history) < 35:
         return None, None
     closes = pd.to_numeric(history.sort_values("timestamp")["close"], errors="coerce")
-    returns = closes.pct_change().dropna()
+    returns = closes.pct_change(fill_method=None).dropna()
     rolling = returns.rolling(30).std(ddof=0).dropna() * math.sqrt(252)
     if rolling.empty:
         return None, None

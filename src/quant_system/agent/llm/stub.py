@@ -44,6 +44,8 @@ class StubLLMClient:
                 "",
                 "    def _compute_values(self, frame):",
                 f"        # stub_generation_id={digest}",
-                '        return frame.groupby("symbol")["close"].pct_change(self.lookback)',
+                '        return frame.groupby("symbol")["close"].pct_change(',
+                "            self.lookback, fill_method=None",
+                "        )",
             ]
         )

@@ -321,7 +321,9 @@ def _signed_power(values: pd.Series, exponent: float) -> pd.Series:
 
 
 def _returns(frame: pd.DataFrame) -> pd.Series:
-    return frame.groupby("symbol", sort=False)["close"].pct_change()
+    return frame.groupby("symbol", sort=False)["close"].pct_change(
+        fill_method=None
+    )
 
 
 def _conditional_delta(
