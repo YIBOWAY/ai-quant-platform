@@ -78,6 +78,8 @@ class WorkspaceSnapshot:
     approvals: tuple[dict[str, object], ...]
     # V7e: Domain Gate 1/2/3 surfaces — separate from command-approval.
     gates: tuple[dict[str, object], ...]
+    # V8-M5: hermetic canary grants (separate namespace; empty honest).
+    canary_grants: tuple[dict[str, object], ...]
     authority_health: Mapping[str, str]
     mutation_enabled: bool
     observed_at: str
@@ -95,6 +97,7 @@ class WorkspaceSnapshot:
             "results": [dict(item) if isinstance(item, dict) else item for item in self.results],
             "approvals": [dict(item) for item in self.approvals],
             "gates": [dict(item) for item in self.gates],
+            "canary_grants": [dict(item) for item in self.canary_grants],
             "authority_health": dict(self.authority_health),
             "mutation_enabled": self.mutation_enabled,
             "observed_at": self.observed_at,
@@ -115,6 +118,8 @@ class EventPage:
     approvals: tuple[dict[str, object], ...] | None = None
     # V7e: optional gates projection (separate namespace from approvals).
     gates: tuple[dict[str, object], ...] | None = None
+    # V8-M5: optional canary grants projection (never public-write).
+    canary_grants: tuple[dict[str, object], ...] | None = None
     # V7f: optional typed results projection (separate from gates/approvals).
     results: tuple[dict[str, object], ...] | None = None
     # V7g-A-M1: optional Task/Attempt/Run id lists on follow (same as snapshot).
@@ -136,6 +141,8 @@ class EventPage:
             payload["approvals"] = [dict(item) for item in self.approvals]
         if self.gates is not None:
             payload["gates"] = [dict(item) for item in self.gates]
+        if self.canary_grants is not None:
+            payload["canary_grants"] = [dict(item) for item in self.canary_grants]
         if self.results is not None:
             payload["results"] = [dict(item) for item in self.results]
         if self.tasks is not None:
@@ -267,6 +274,8 @@ class PlatformAgentWorkspace:
             "run": "ready",
             # V7f: hermetic typed-result projector mounted (empty honest).
             "result": "ready",
+            # V8-M5: hermetic canary grant authority (empty honest; never public write).
+            "canary_grant": "ready",
         }
 
         sessions: list[str] = []
@@ -281,6 +290,7 @@ class PlatformAgentWorkspace:
         # V7a/V7d: project pending + recent decided command-approval challenges
         # from hermetic authority. Never invent Gate 1/2/3 into approvals[].
         from quant_system.hermes.approval_observe import project_workspace_approvals
+        from quant_system.hermes.canary_observe import project_workspace_canary_grants
         from quant_system.hermes.gate_observe import project_workspace_gates
         from quant_system.hermes.result_observe import project_workspace_results
         from quant_system.hermes.vertical_observe import (
@@ -289,12 +299,14 @@ class PlatformAgentWorkspace:
             task_ids_for_spine,
         )
 
-        # Empty approvals[] / gates[] / results[] / tasks is honest; health stays
-        # "ready" because the hermetic in-process authorities are mounted (not
-        # live Hermes HTTP / live Futu). V7g bind promotes task/attempt/run ids.
+        # Empty approvals[] / gates[] / results[] / tasks / canary_grants is honest;
+        # health stays "ready" because the hermetic in-process authorities are
+        # mounted (not live Hermes HTTP / live Futu). V7g bind promotes
+        # task/attempt/run ids. Canary never flips chat_write_ready.
         approvals = tuple(project_workspace_approvals(workspace_id))
         gates = tuple(project_workspace_gates(workspace_id))
         results = tuple(project_workspace_results(workspace_id))
+        canary_grants = tuple(project_workspace_canary_grants(workspace_id))
         tasks = tuple(task_ids_for_spine(workspace_id))
         attempts = tuple(attempt_ids_for_spine(workspace_id))
         runs = tuple(run_ids_for_spine(workspace_id))
@@ -311,6 +323,7 @@ class PlatformAgentWorkspace:
             results=results,
             approvals=approvals,
             gates=gates,
+            canary_grants=canary_grants,
             authority_health=health,
             mutation_enabled=mutation_on,
             observed_at=observed_at,
@@ -326,6 +339,10 @@ class PlatformAgentWorkspace:
         events. Gates never land in approvals[].
         """
         from quant_system.hermes.approval_observe import project_workspace_approvals
+        from quant_system.hermes.canary_observe import (
+            canary_authority_health,
+            project_workspace_canary_grants,
+        )
         from quant_system.hermes.gate_observe import (
             gate_authority_health,
             project_workspace_gates,
@@ -344,6 +361,7 @@ class PlatformAgentWorkspace:
         return {
             "approvals": tuple(project_workspace_approvals(workspace_id)),
             "gates": tuple(project_workspace_gates(workspace_id)),
+            "canary_grants": tuple(project_workspace_canary_grants(workspace_id)),
             "results": tuple(project_workspace_results(workspace_id)),
             "tasks": tuple(task_ids_for_spine(workspace_id)),
             "attempts": tuple(attempt_ids_for_spine(workspace_id)),
@@ -353,6 +371,7 @@ class PlatformAgentWorkspace:
                 **gate_authority_health(),
                 **result_authority_health(),
                 **vertical_authority_health(),
+                **canary_authority_health(),
             },
         }
 
@@ -397,6 +416,7 @@ class PlatformAgentWorkspace:
                 mutation_enabled=mutation_on,
                 approvals=proj["approvals"],  # type: ignore[arg-type]
                 gates=proj["gates"],  # type: ignore[arg-type]
+                canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
@@ -424,6 +444,7 @@ class PlatformAgentWorkspace:
                 mutation_enabled=mutation_on,
                 approvals=proj["approvals"],  # type: ignore[arg-type]
                 gates=proj["gates"],  # type: ignore[arg-type]
+                canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
@@ -440,6 +461,7 @@ class PlatformAgentWorkspace:
                 mutation_enabled=mutation_on,
                 approvals=proj["approvals"],  # type: ignore[arg-type]
                 gates=proj["gates"],  # type: ignore[arg-type]
+                canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
@@ -455,6 +477,7 @@ class PlatformAgentWorkspace:
             mutation_enabled=mutation_on,
             approvals=proj["approvals"],  # type: ignore[arg-type]
             gates=proj["gates"],  # type: ignore[arg-type]
+            canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
             results=proj["results"],  # type: ignore[arg-type]
             tasks=proj["tasks"],  # type: ignore[arg-type]
             attempts=proj["attempts"],  # type: ignore[arg-type]

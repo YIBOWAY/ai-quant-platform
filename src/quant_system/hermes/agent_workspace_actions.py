@@ -34,6 +34,9 @@ _ACTION_KINDS = frozenset(
         "vertical.factor_b.gate1_seed",
         "vertical.factor_b.gate1_confirm",
         "vertical.factor_b.gate2_seed",
+        "canary.grant.issue",
+        "canary.grant.revoke",
+        "canary.dual_vertical.accept",
     }
 )
 _COMMON_DOCUMENT_FIELDS = frozenset(
@@ -145,6 +148,31 @@ _ACTION_FIELDS = {
         "expected_gate1_confirm_digest",
         "expected_candidate_digest",
         "seed_note",
+    },
+    # V8-M5: hermetic release-candidate canary (NOT public write / NOT M6).
+    "canary.grant.issue": _COMMON_DOCUMENT_FIELDS
+    | {
+        "build_digest",
+        "route",
+        "ttl_seconds",
+        "grant_note",
+    },
+    "canary.grant.revoke": _COMMON_DOCUMENT_FIELDS
+    | {
+        "canary_ref",
+        "expected_grant_digest",
+        "reason",
+    },
+    "canary.dual_vertical.accept": _COMMON_DOCUMENT_FIELDS
+    | {
+        "canary_ref",
+        "expected_build_digest",
+        "expected_grant_digest",
+        "options_a_task_ref",
+        "options_a_result_ref",
+        "factor_b_task_ref",
+        "factor_b_result_ref",
+        "acceptance_note",
     },
 }
 _PROVIDER_MODES = frozenset({"hermetic_fixture", "live_futu_ro"})
@@ -1014,6 +1042,126 @@ class SeedFactorVerticalBGate2:
 
 
 @dataclass(frozen=True)
+class IssueCanaryGrant:
+    """V8-M5: issue owner-only short-TTL canary grant bound to build_digest.
+
+    Same ``/hermes`` route only. Never opens public write / chat_write_ready /
+    agentV02WebChat / kill_switch / M6 Gate2 decide / V2 durable live.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    build_digest: str
+    route: str
+    ttl_seconds: int
+    grant_note: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_digest(self.build_digest, "build_digest")
+        if type(self.route) is not str or self.route != "/hermes":
+            raise AgentWorkspaceActionError(
+                "route must be exactly /hermes (no alternate canary page)"
+            )
+        if type(self.ttl_seconds) is not int or isinstance(self.ttl_seconds, bool):
+            raise AgentWorkspaceActionError("ttl_seconds must be an int")
+        if self.ttl_seconds < 60 or self.ttl_seconds > 3600:
+            raise AgentWorkspaceActionError(
+                "ttl_seconds must be between 60 and 3600"
+            )
+        if (
+            type(self.grant_note) is not str
+            or not self.grant_note.strip()
+            or len(self.grant_note) > 500
+            or not self.grant_note.isprintable()
+        ):
+            raise AgentWorkspaceActionError(
+                "grant_note must be bounded nonempty printable text"
+            )
+        object.__setattr__(self, "grant_note", self.grant_note.strip())
+
+
+@dataclass(frozen=True)
+class RevokeCanaryGrant:
+    """V8-M5: revoke/consume an active canary grant by exact grant_digest CAS."""
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    canary_ref: str
+    expected_grant_digest: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        if (
+            type(self.canary_ref) is not str
+            or not self.canary_ref.startswith("canary:")
+            or _IDENTIFIER_RE.fullmatch(self.canary_ref[len("canary:") :]) is None
+        ):
+            raise AgentWorkspaceActionError(
+                "canary_ref must be canary:<grant_id>"
+            )
+        _validate_digest(self.expected_grant_digest, "expected_grant_digest")
+        if (
+            type(self.reason) is not str
+            or not self.reason.strip()
+            or len(self.reason) > 500
+            or not self.reason.isprintable()
+        ):
+            raise AgentWorkspaceActionError(
+                "reason must be bounded nonempty printable text"
+            )
+        object.__setattr__(self, "reason", self.reason.strip())
+
+
+@dataclass(frozen=True)
+class AcceptCanaryDualVertical:
+    """V8-M5: owner dual-vertical accept under active canary; consumes grant.
+
+    Binds options_a + factor_b task/result refs. Never flips public write.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    canary_ref: str
+    expected_build_digest: str
+    expected_grant_digest: str
+    options_a_task_ref: str
+    options_a_result_ref: str
+    factor_b_task_ref: str
+    factor_b_result_ref: str
+    acceptance_note: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        if (
+            type(self.canary_ref) is not str
+            or not self.canary_ref.startswith("canary:")
+            or _IDENTIFIER_RE.fullmatch(self.canary_ref[len("canary:") :]) is None
+        ):
+            raise AgentWorkspaceActionError(
+                "canary_ref must be canary:<grant_id>"
+            )
+        _validate_digest(self.expected_build_digest, "expected_build_digest")
+        _validate_digest(self.expected_grant_digest, "expected_grant_digest")
+        _validate_ref(self.options_a_task_ref, "options_a_task_ref", "task:")
+        _validate_ref(self.options_a_result_ref, "options_a_result_ref", "result:")
+        _validate_ref(self.factor_b_task_ref, "factor_b_task_ref", "task:")
+        _validate_ref(self.factor_b_result_ref, "factor_b_result_ref", "result:")
+        if (
+            type(self.acceptance_note) is not str
+            or not self.acceptance_note.strip()
+            or len(self.acceptance_note) > 500
+            or not self.acceptance_note.isprintable()
+        ):
+            raise AgentWorkspaceActionError(
+                "acceptance_note must be bounded nonempty printable text"
+            )
+        object.__setattr__(self, "acceptance_note", self.acceptance_note.strip())
+
+
+
+@dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
 
@@ -1046,6 +1194,9 @@ UserActionV1 = Union[
     SeedFactorVerticalBGate1,
     ConfirmFactorVerticalBGate1,
     SeedFactorVerticalBGate2,
+    IssueCanaryGrant,
+    RevokeCanaryGrant,
+    AcceptCanaryDualVertical,
     UnsupportedWorkspaceAction,
 ]
 
@@ -1065,6 +1216,9 @@ _IMPLEMENTED_TYPES = (
     SeedFactorVerticalBGate1,
     ConfirmFactorVerticalBGate1,
     SeedFactorVerticalBGate2,
+    IssueCanaryGrant,
+    RevokeCanaryGrant,
+    AcceptCanaryDualVertical,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -1293,6 +1447,42 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is IssueCanaryGrant:
+        document.update(
+            {
+                "kind": "canary.grant.issue",
+                "build_digest": action.build_digest,
+                "route": action.route,
+                "ttl_seconds": action.ttl_seconds,
+                "grant_note": action.grant_note,
+            }
+        )
+        return _strict_json_document(document)
+    if type(action) is RevokeCanaryGrant:
+        document.update(
+            {
+                "kind": "canary.grant.revoke",
+                "canary_ref": action.canary_ref,
+                "expected_grant_digest": action.expected_grant_digest,
+                "reason": action.reason,
+            }
+        )
+        return _strict_json_document(document)
+    if type(action) is AcceptCanaryDualVertical:
+        document.update(
+            {
+                "kind": "canary.dual_vertical.accept",
+                "canary_ref": action.canary_ref,
+                "expected_build_digest": action.expected_build_digest,
+                "expected_grant_digest": action.expected_grant_digest,
+                "options_a_task_ref": action.options_a_task_ref,
+                "options_a_result_ref": action.options_a_result_ref,
+                "factor_b_task_ref": action.factor_b_task_ref,
+                "factor_b_result_ref": action.factor_b_result_ref,
+                "acceptance_note": action.acceptance_note,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -1484,6 +1674,33 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             expected_candidate_digest=document["expected_candidate_digest"],
             seed_note=document["seed_note"],
         )
+    if kind == "canary.grant.issue":
+        return IssueCanaryGrant(
+            **common,
+            build_digest=document["build_digest"],
+            route=document["route"],
+            ttl_seconds=document["ttl_seconds"],
+            grant_note=document["grant_note"],
+        )
+    if kind == "canary.grant.revoke":
+        return RevokeCanaryGrant(
+            **common,
+            canary_ref=document["canary_ref"],
+            expected_grant_digest=document["expected_grant_digest"],
+            reason=document["reason"],
+        )
+    if kind == "canary.dual_vertical.accept":
+        return AcceptCanaryDualVertical(
+            **common,
+            canary_ref=document["canary_ref"],
+            expected_build_digest=document["expected_build_digest"],
+            expected_grant_digest=document["expected_grant_digest"],
+            options_a_task_ref=document["options_a_task_ref"],
+            options_a_result_ref=document["options_a_result_ref"],
+            factor_b_task_ref=document["factor_b_task_ref"],
+            factor_b_result_ref=document["factor_b_result_ref"],
+            acceptance_note=document["acceptance_note"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -1527,6 +1744,9 @@ __all__ = [
     "ConfirmFormulaSource",
     "SeedFactorVerticalBGate1",
     "SeedFactorVerticalBGate2",
+    "IssueCanaryGrant",
+    "RevokeCanaryGrant",
+    "AcceptCanaryDualVertical",
     "ConfirmResearchPlan",
     "ContinueResearch",
     "ConversationTurn",

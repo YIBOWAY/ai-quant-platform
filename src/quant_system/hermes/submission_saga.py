@@ -57,6 +57,9 @@ from quant_system.hermes.agent_workspace_actions import (
     parse_user_action_v1,
     session_ref,
     strip_session_ref,
+    IssueCanaryGrant,
+    RevokeCanaryGrant,
+    AcceptCanaryDualVertical,
 )
 from quant_system.hermes.approval_release_port import (
     ApprovalReleaseError,
@@ -77,6 +80,16 @@ from quant_system.hermes.gate_surface_authority import (
     GateSurfaceAuthorityError,
     default_gate_surface_authority,
 )
+from quant_system.hermes.canary_grant_authority import (
+    CanaryGrantAuthorityError,
+    default_canary_grant_authority,
+)
+from quant_system.hermes.canary_observe import (
+    note_canary_accepted,
+    note_canary_issued,
+    note_canary_revoked,
+)
+
 from quant_system.hermes.gate_observe import note_gate_decided, note_gate_raised
 from quant_system.hermes.result_observe import note_result_raised
 from quant_system.hermes.vertical_binding_authority import (
@@ -144,6 +157,11 @@ class ActionReceipt:
     terminal_status: str | None = None
     # V7g-B-M3: optional Gate1 id after vertical.factor_b.gate1_seed.
     gate_id: str | None = None
+    # V8-M5: optional canary grant identity (issue/revoke/accept).
+    grant_id: str | None = None
+    grant_digest: str | None = None
+    canary_ref: str | None = None
+    acceptance_id: str | None = None
 
     def __post_init__(self) -> None:
         expected = _RECOVERY[self.status]
@@ -182,6 +200,19 @@ class ActionReceipt:
             payload["terminal_status"] = self.terminal_status
         if self.gate_id is not None:
             payload["gate_id"] = self.gate_id
+        if self.grant_id is not None:
+            payload["grant_id"] = self.grant_id
+        if self.grant_digest is not None:
+            payload["grant_digest"] = self.grant_digest
+        if self.canary_ref is not None:
+            payload["canary_ref"] = self.canary_ref
+        if self.acceptance_id is not None:
+            payload["acceptance_id"] = self.acceptance_id
+        # Honesty: canary receipts never authorize public write.
+        if self.grant_id is not None or self.canary_ref is not None:
+            payload["public_write_authorized"] = False
+            payload["chat_write_ready"] = False
+            payload["release_authorized"] = False
         return payload
 
 
@@ -244,6 +275,10 @@ def _receipt(
     result_id: str | None = None,
     terminal_status: str | None = None,
     gate_id: str | None = None,
+    grant_id: str | None = None,
+    grant_digest: str | None = None,
+    canary_ref: str | None = None,
+    acceptance_id: str | None = None,
 ) -> ActionReceipt:
     return ActionReceipt(
         status=status,
@@ -262,6 +297,10 @@ def _receipt(
         result_id=result_id,
         terminal_status=terminal_status,
         gate_id=gate_id,
+        grant_id=grant_id,
+        grant_digest=grant_digest,
+        canary_ref=canary_ref,
+        acceptance_id=acceptance_id,
     )
 
 
@@ -1890,6 +1929,215 @@ def submit_seed_factor_vertical_b_gate2(
     )
 
 
+
+def submit_issue_canary_grant(
+    settings: Settings,
+    action: IssueCanaryGrant,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V8-M5: hermetic canary grant issue (owner-only, short TTL, build digest).
+
+    Never opens public write / chat_write_ready / kill_switch / M6 / V2 durable.
+    """
+    _ = settings  # hermetic in-process; no PG required
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+    authority = default_canary_grant_authority()
+    try:
+        grant = authority.issue(
+            workspace_id=action.workspace.workspace_id,
+            build_digest=action.build_digest,
+            route=action.route,
+            ttl_seconds=action.ttl_seconds,
+            grant_note=action.grant_note,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+        )
+    except CanaryGrantAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message,
+            mutation_enabled=mutation_enabled,
+        )
+    note_canary_issued(
+        workspace_id=action.workspace.workspace_id, grant=grant
+    )
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        mutation_enabled=mutation_enabled,
+        grant_id=grant.grant_id,
+        grant_digest=grant.grant_digest,
+        canary_ref=grant.canary_ref,
+        terminal_status=grant.status,
+    )
+
+
+def submit_revoke_canary_grant(
+    settings: Settings,
+    action: RevokeCanaryGrant,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V8-M5: revoke active canary grant by exact grant_digest CAS."""
+    _ = settings
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+    authority = default_canary_grant_authority()
+    try:
+        grant = authority.revoke(
+            workspace_id=action.workspace.workspace_id,
+            canary_ref=action.canary_ref,
+            expected_grant_digest=action.expected_grant_digest,
+            reason=action.reason,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+            terminal_status="revoked",
+        )
+    except CanaryGrantAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message,
+            mutation_enabled=mutation_enabled,
+        )
+    note_canary_revoked(
+        workspace_id=action.workspace.workspace_id, grant=grant
+    )
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        mutation_enabled=mutation_enabled,
+        grant_id=grant.grant_id,
+        grant_digest=grant.grant_digest,
+        canary_ref=grant.canary_ref,
+        terminal_status=grant.status,
+    )
+
+
+def submit_accept_canary_dual_vertical(
+    settings: Settings,
+    action: AcceptCanaryDualVertical,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V8-M5: dual-vertical owner accept under canary; consumes grant.
+
+    Public write / release_authorized stay false on every path.
+    """
+    _ = settings
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+
+    def _strip(ref: str, prefix: str) -> str:
+        return ref[len(prefix) :]
+
+    authority = default_canary_grant_authority()
+    try:
+        grant, acceptance = authority.accept_dual_vertical(
+            workspace_id=action.workspace.workspace_id,
+            canary_ref=action.canary_ref,
+            expected_build_digest=action.expected_build_digest,
+            expected_grant_digest=action.expected_grant_digest,
+            options_a_task_id=_strip(action.options_a_task_ref, "task:"),
+            options_a_result_id=_strip(action.options_a_result_ref, "result:"),
+            factor_b_task_id=_strip(action.factor_b_task_ref, "task:"),
+            factor_b_result_id=_strip(action.factor_b_result_ref, "result:"),
+            acceptance_note=action.acceptance_note,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+        )
+    except CanaryGrantAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message,
+            mutation_enabled=mutation_enabled,
+        )
+    note_canary_accepted(
+        workspace_id=action.workspace.workspace_id,
+        grant=grant,
+        acceptance=acceptance,
+    )
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        mutation_enabled=mutation_enabled,
+        grant_id=grant.grant_id,
+        grant_digest=grant.grant_digest,
+        canary_ref=grant.canary_ref,
+        acceptance_id=acceptance.acceptance_id,
+        terminal_status=grant.status,
+        task_id=acceptance.options_a_task_id,
+        result_id=acceptance.options_a_result_id,
+    )
+
+
 def submit_action(
     settings: Settings,
     action: UserActionV1 | dict[str, object],
@@ -2009,6 +2257,27 @@ def submit_action(
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
         )
+    if type(parsed) is IssueCanaryGrant:
+        return submit_issue_canary_grant(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
+    if type(parsed) is RevokeCanaryGrant:
+        return submit_revoke_canary_grant(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
+    if type(parsed) is AcceptCanaryDualVertical:
+        return submit_accept_canary_dual_vertical(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
     if type(parsed) in (StartResearch, ContinueResearch, ConfirmResearchPlan):
         # Research kinds are typed and digest-stable, but the HQA prepare →
         # ensure_bound_command browser path stays dark in V4. Public mutation
@@ -2056,6 +2325,9 @@ __all__ = [
     "submit_seed_factor_vertical_b_gate1",
     "submit_confirm_factor_vertical_b_gate1",
     "submit_seed_factor_vertical_b_gate2",
+    "submit_issue_canary_grant",
+    "submit_revoke_canary_grant",
+    "submit_accept_canary_dual_vertical",
     "submit_conversation_turn",
     "submit_create_managed_session",
     "submit_decide_hermes_command_approval",
