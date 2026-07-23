@@ -148,6 +148,7 @@ paper_strategies_app = typer.Typer(help="Manage Paper Strategy Sleeves strategy 
 agent_app = typer.Typer(help="Run Phase 7 AI research assistant commands.")
 prediction_market_app = typer.Typer(help="Run Phase 8 prediction-market dry scanning commands.")
 options_app = typer.Typer(help="Run read-only options research commands.")
+news_app = typer.Typer(help="Read-only AI news maintenance commands.")
 
 
 def _version_callback(value: bool) -> None:
@@ -3207,6 +3208,27 @@ app.add_typer(agent_app, name="agent")
 app.add_typer(prediction_market_app, name="prediction-market")
 app.add_typer(options_app, name="options")
 app.add_typer(hermes_app, name="hermes")
+app.add_typer(news_app, name="news")
+
+
+@news_app.command("horizon-ingest")
+def news_horizon_ingest(
+    inbox: Annotated[str | None, typer.Option("--inbox")] = None,
+    run_id: Annotated[str | None, typer.Option("--run-id")] = None,
+    once: Annotated[bool, typer.Option("--once")] = True,
+) -> None:
+    """Ingest READY Horizon inbox runs into the local news tables."""
+
+    del once  # reserved for future watch-loop mode; single-shot is default
+    settings = load_settings()
+    if inbox:
+        settings = settings.model_copy(
+            update={"horizon": settings.horizon.model_copy(update={"inbox_dir": inbox})}
+        )
+    from quant_system.news.horizon_ingest import ingest_horizon_inbox
+
+    result = ingest_horizon_inbox(settings=settings, run_id=run_id)
+    typer.echo(json.dumps(result, sort_keys=True))
 
 
 def _emit_ingestion_summary(result: IngestionResult) -> None:
