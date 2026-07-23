@@ -75,6 +75,8 @@ def _bind_doc(
         "iv": 0.28,
         "apr": 0.12,
         "include_provider_evidence": include_provider_evidence,
+        "provider_mode": "hermetic_fixture",
+        "auth_envelope": None,
     }
 
 

@@ -1209,10 +1209,10 @@ def submit_bind_options_vertical_a(
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
 ) -> ActionReceipt:
-    """V7g-A-M1: hermetic Vertical A options research bind.
+    """V7g-A: Vertical A options research bind (hermetic + live Futu RO).
 
-    NL goal + fixture fields → Task/Attempt/Run + typed result.
-    Zero live Futu. Zero orders. Not StartResearch. Not public write.
+    Hermetic fixture or authorized live_futu_ro with auth envelope.
+    Zero orders/account mutation. Not StartResearch. Not public write.
     """
     digest = canonical_action_digest(action)
     if not mutation_enabled:
@@ -1240,10 +1240,26 @@ def submit_bind_options_vertical_a(
             iv=action.iv,
             apr=action.apr,
             include_provider_evidence=action.include_provider_evidence,
+            provider_mode=action.provider_mode,
+            auth_envelope=action.auth_envelope,
+            settings=settings,
         )
     except VerticalBindingAuthorityError as exc:
         if exc.code == "validation":
             raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code in {
+            "auth_envelope_missing",
+            "auth_envelope_invalid",
+            "auth_envelope_denied",
+            "auth_envelope_budget_exceeded",
+        }:
+            return _receipt(
+                status="unavailable",
+                action=action,
+                digest=digest,
+                reason_code=exc.code,
+                mutation_enabled=mutation_enabled,
+            )
         if exc.code == "conflict":
             return _receipt(
                 status="conflict",

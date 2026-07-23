@@ -92,8 +92,26 @@ _ACTION_FIELDS = {
         "iv",
         "apr",
         "include_provider_evidence",
+        # V7g-A-M2 thin overlay (always present; null envelope on hermetic).
+        "provider_mode",
+        "auth_envelope",
     },
 }
+_PROVIDER_MODES = frozenset({"hermetic_fixture", "live_futu_ro"})
+_AUTH_ENVELOPE_FIELDS = frozenset(
+    {
+        "tickers",
+        "fields",
+        "max_calls",
+        "window_start",
+        "window_end",
+        "grant_id",
+        "grant_digest",
+    }
+)
+_DEFAULT_LIVE_FIELDS = frozenset(
+    {"bid", "ask", "delta", "iv", "expiry", "strike", "apr"}
+)
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
 _HEX64_RE = re.compile(r"[0-9a-f]{64}\Z")
 _HEX40_RE = re.compile(r"[0-9a-f]{40}\Z")
@@ -225,6 +243,147 @@ def _validate_note(value: Any, field: str) -> None:
         raise AgentWorkspaceActionError(
             "{} must be bounded nonempty printable text".format(field)
         )
+
+
+def canonical_auth_envelope_digest(envelope: Mapping[str, Any]) -> str:
+    """Public alias for live-RO auth envelope digest."""
+    return _canonical_auth_envelope_digest(envelope)
+
+
+def _canonical_auth_envelope_digest(envelope: Mapping[str, Any]) -> str:
+    """SHA-256 over canonical envelope excluding grant_digest itself."""
+    body = {
+        "tickers": list(envelope["tickers"]),
+        "fields": list(envelope["fields"]),
+        "max_calls": envelope["max_calls"],
+        "window_start": envelope["window_start"],
+        "window_end": envelope["window_end"],
+        "grant_id": envelope["grant_id"],
+    }
+    canonical_json = json.dumps(
+        body, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def _parse_auth_envelope(value: Any) -> dict[str, Any] | None:
+    """Parse optional live-RO auth envelope. None is valid for hermetic path."""
+    if value is None:
+        return None
+    if type(value) is not dict:
+        raise AgentWorkspaceActionError("auth_envelope must be a JSON object or null")
+    envelope = dict(value)
+    if any(type(key) is not str for key in envelope):
+        raise AgentWorkspaceActionError("auth_envelope keys must be exact strings")
+    if set(envelope) != _AUTH_ENVELOPE_FIELDS:
+        raise AgentWorkspaceActionError("auth_envelope requires exact fields")
+
+    tickers_raw = envelope.get("tickers")
+    if type(tickers_raw) is not list or not tickers_raw or len(tickers_raw) > 32:
+        raise AgentWorkspaceActionError(
+            "auth_envelope.tickers must be a nonempty bounded list"
+        )
+    tickers: list[str] = []
+    for item in tickers_raw:
+        if (
+            type(item) is not str
+            or not item.strip()
+            or len(item) > 32
+            or not item.strip().replace(".", "").replace("-", "").isalnum()
+        ):
+            raise AgentWorkspaceActionError(
+                "auth_envelope.tickers entries must be bounded symbols"
+            )
+        tickers.append(item.strip().upper())
+
+    fields_raw = envelope.get("fields")
+    if type(fields_raw) is not list or not fields_raw or len(fields_raw) > 32:
+        raise AgentWorkspaceActionError(
+            "auth_envelope.fields must be a nonempty bounded list"
+        )
+    fields: list[str] = []
+    for item in fields_raw:
+        if type(item) is not str or not item.strip() or len(item) > 32:
+            raise AgentWorkspaceActionError(
+                "auth_envelope.fields entries must be bounded tokens"
+            )
+        token = item.strip().lower()
+        if not token.replace("_", "").isalnum():
+            raise AgentWorkspaceActionError(
+                "auth_envelope.fields entries must be alnum tokens"
+            )
+        fields.append(token)
+
+    max_calls = envelope.get("max_calls")
+    if type(max_calls) is not int or isinstance(max_calls, bool) or not 1 <= max_calls <= 100:
+        raise AgentWorkspaceActionError(
+            "auth_envelope.max_calls must be an int from 1 through 100"
+        )
+
+    window_start = _normalize_envelope_timestamp(
+        envelope.get("window_start"), "window_start"
+    )
+    window_end = _normalize_envelope_timestamp(
+        envelope.get("window_end"), "window_end"
+    )
+    start_dt = datetime.fromisoformat(window_start.replace("Z", "+00:00"))
+    end_dt = datetime.fromisoformat(window_end.replace("Z", "+00:00"))
+    if end_dt <= start_dt:
+        raise AgentWorkspaceActionError(
+            "auth_envelope.window_end must be after window_start"
+        )
+
+    grant_id = envelope.get("grant_id")
+    if (
+        type(grant_id) is not str
+        or not grant_id.strip()
+        or len(grant_id) > 128
+        or _IDENTIFIER_RE.fullmatch(grant_id) is None
+    ):
+        raise AgentWorkspaceActionError(
+            "auth_envelope.grant_id must be a bounded identifier"
+        )
+
+    grant_digest = envelope.get("grant_digest")
+    if type(grant_digest) is not str or _HEX64_RE.fullmatch(grant_digest) is None:
+        raise AgentWorkspaceActionError(
+            "auth_envelope.grant_digest must be a lowercase SHA-256 digest"
+        )
+
+    parsed = {
+        "tickers": tickers,
+        "fields": fields,
+        "max_calls": max_calls,
+        "window_start": window_start,
+        "window_end": window_end,
+        "grant_id": grant_id.strip(),
+        "grant_digest": grant_digest,
+    }
+    expected = _canonical_auth_envelope_digest(parsed)
+    if grant_digest != expected:
+        raise AgentWorkspaceActionError(
+            "auth_envelope.grant_digest does not match canonical envelope"
+        )
+    return parsed
+
+
+def _normalize_envelope_timestamp(value: Any, field: str) -> str:
+    if type(value) is not str or _RFC3339_RE.fullmatch(value) is None:
+        raise AgentWorkspaceActionError(
+            f"auth_envelope.{field} must be a canonical timezone-aware timestamp"
+        )
+    parsed_value = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(parsed_value)
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise AgentWorkspaceActionError(
+                f"auth_envelope.{field} must be timezone-aware"
+            )
+        return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    except (ValueError, OverflowError, OSError) as exc:
+        raise AgentWorkspaceActionError(
+            f"auth_envelope.{field} must be a canonical timezone-aware timestamp"
+        ) from exc
 
 
 def _validate_strict_json(value: Any) -> None:
@@ -512,11 +671,11 @@ class PreparePromotionReview:
 
 @dataclass(frozen=True)
 class BindOptionsVerticalA:
-    """V7g-A-M1: hermetic Vertical A options research binding.
+    """V7g-A: Vertical A options research binding (hermetic M1 + live RO M2).
 
-    NL goal + fixture options fields → Task/Attempt/Run + typed result
-    (V7f shape) → completed|completed_degraded. Zero live Futu. Zero orders.
-    Not StartResearch (still dark). Not Gate. Not public write.
+    NL goal + options fields → Task/Attempt/Run + typed result (V7f shape)
+    → completed|completed_degraded. Live path requires explicit auth envelope.
+    Zero orders. Not StartResearch. Not Gate. Not public write.
     """
 
     client_action_id: str
@@ -531,6 +690,8 @@ class BindOptionsVerticalA:
     iv: float | int
     apr: float | int
     include_provider_evidence: bool
+    provider_mode: str = "hermetic_fixture"
+    auth_envelope: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         _validate_common(self.client_action_id, self.workspace)
@@ -567,6 +728,24 @@ class BindOptionsVerticalA:
         if type(self.include_provider_evidence) is not bool:
             raise AgentWorkspaceActionError(
                 "include_provider_evidence must be a boolean"
+            )
+        mode = self.provider_mode
+        if type(mode) is not str or mode not in _PROVIDER_MODES:
+            raise AgentWorkspaceActionError(
+                "provider_mode must be hermetic_fixture|live_futu_ro"
+            )
+        if self.auth_envelope is not None:
+            object.__setattr__(
+                self, "auth_envelope", _parse_auth_envelope(self.auth_envelope)
+            )
+        if mode == "live_futu_ro" and self.auth_envelope is None:
+            raise AgentWorkspaceActionError(
+                "auth_envelope is required when provider_mode=live_futu_ro"
+            )
+        if mode == "hermetic_fixture" and self.auth_envelope is not None:
+            # Hermetic path must not carry a live grant (digest honesty).
+            raise AgentWorkspaceActionError(
+                "auth_envelope must be null when provider_mode=hermetic_fixture"
             )
 
 
@@ -766,6 +945,12 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
                 "iv": action.iv,
                 "apr": action.apr,
                 "include_provider_evidence": action.include_provider_evidence,
+                "provider_mode": action.provider_mode,
+                "auth_envelope": (
+                    dict(action.auth_envelope)
+                    if action.auth_envelope is not None
+                    else None
+                ),
             }
         )
         return _strict_json_document(document)
@@ -907,6 +1092,8 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             iv=document["iv"],
             apr=document["apr"],
             include_provider_evidence=document["include_provider_evidence"],
+            provider_mode=document["provider_mode"],
+            auth_envelope=document["auth_envelope"],
         )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
@@ -962,6 +1149,7 @@ __all__ = [
     "action_payload_ref_for_digest",
     "action_to_document",
     "canonical_action_digest",
+    "canonical_auth_envelope_digest",
     "hqa_payload_to_platform_payload_ref",
     "parse_user_action_v1",
     "session_ref",
