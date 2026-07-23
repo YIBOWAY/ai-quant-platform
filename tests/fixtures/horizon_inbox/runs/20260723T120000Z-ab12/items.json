@@ -1,0 +1,13 @@
+[
+  {
+    "id": "hz-1",
+    "title": "Horizon sample",
+    "title_en": "Horizon sample",
+    "url": "https://example.com/hz-1",
+    "source": "HN",
+    "published_at": "2026-07-23T11:00:00+00:00",
+    "summary": "fixture summary",
+    "category": "industry",
+    "score": 8.5
+  }
+]
