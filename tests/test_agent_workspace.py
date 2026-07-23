@@ -29,8 +29,17 @@ from quant_system.hermes.agent_workspace_actions import (
     session_ref,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID, HermesCommandLedger
-from quant_system.hermes.dark_identity_profile import PROVIDER_POLICY_DIGEST
+from quant_system.hermes.dark_identity_profile import (
+    PLATFORM_WORKSPACE_ID,
+    PROVIDER_POLICY_DIGEST,
+    STORE_TTL_DAYS,
+)
+from quant_system.hermes.managed_session_provisioner import (
+    ManagedSessionProvisioner,
+    ManagedSessionProvisionReceipt,
+)
 from quant_system.hermes.session_registry import (
+    HERMES_RUNTIME_ROLE,
     RegisterWorkspaceSession,
     get_workspace_session,
     register_workspace_session,
@@ -45,10 +54,11 @@ from quant_system.storage import database as db
 
 pytestmark = pytest.mark.pg
 
-DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
 DIGEST_C = "c" * 64
-WORKSPACE_ID = "ws-v4-agent-workspace"
+WORKSPACE_ID = PLATFORM_WORKSPACE_ID
+RUNTIME_LOGIN = "aqp_agent_workspace_runtime_test"
+RUNTIME_PASSWORD = "agent-workspace-runtime-test-only"
 
 
 def _ensure_test_database(url: str) -> None:
@@ -76,10 +86,13 @@ def _postgres_settings() -> Settings:
     if not url:
         pytest.skip("set QS_TEST_DATABASE_URL to run PostgreSQL integration tests")
     _ensure_test_database(url)
+    params = conninfo_to_dict(url)
+    params["user"] = RUNTIME_LOGIN
+    params["password"] = RUNTIME_PASSWORD
     return Settings(
         database=DatabaseSettings(
             enabled=True,
-            url=url,
+            url=make_conninfo(**params),
             auto_migrate=False,
             connect_timeout_seconds=1,
         )
@@ -160,18 +173,86 @@ def _create_action(client_action_id: str = "act-create-1") -> CreateManagedSessi
     return CreateManagedSession(
         client_action_id=client_action_id,
         workspace=WorkspaceRef(workspace_id=WORKSPACE_ID),
-        provider_policy_digest=DIGEST_A,
-        payload_ttl_days=7,
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        payload_ttl_days=STORE_TTL_DAYS,
     )
 
 
 def _prepare(settings: Settings) -> db.Database:
+    admin_url = os.environ.get("QS_TEST_DATABASE_URL")
+    assert admin_url is not None
     db.reset_database_cache()
-    database = db.get_database(settings)
-    assert database is not None
-    db.run_migrations(database)
-    _reset_authorities(database)
-    return database
+    admin_database = db.Database(admin_url, connect_timeout=1)
+    db.run_migrations(admin_database)
+    with admin_database.connect() as conn:
+        if (
+            conn.execute(
+                "SELECT 1 FROM pg_roles WHERE rolname = %s",
+                (RUNTIME_LOGIN,),
+            ).fetchone()
+            is not None
+        ):
+            conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(RUNTIME_LOGIN)))
+            conn.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN)))
+        conn.execute(
+            sql.SQL(
+                "CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD {}"
+            ).format(sql.Identifier(RUNTIME_LOGIN), sql.Literal(RUNTIME_PASSWORD))
+        )
+        conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(HERMES_RUNTIME_ROLE),
+                sql.Identifier(RUNTIME_LOGIN),
+            )
+        )
+    _reset_authorities(admin_database)
+    db.reset_database_cache()
+    runtime_database = db.get_database(settings)
+    assert runtime_database is not None
+    return runtime_database
+
+
+class _SuccessfulProvisionPort:
+    def ensure_session(
+        self,
+        *,
+        session_id: str,
+        action_digest: str,
+    ) -> ManagedSessionProvisionReceipt:
+        return ManagedSessionProvisionReceipt(
+            session_id=session_id,
+            action_digest=action_digest,
+            created=True,
+            recovered=False,
+        )
+
+    def fork_session(
+        self,
+        *,
+        source_session_id: str,
+        session_id: str,
+        fork_point: str,
+        action_digest: str,
+    ) -> ManagedSessionProvisionReceipt:
+        return ManagedSessionProvisionReceipt(
+            session_id=session_id,
+            action_digest=action_digest,
+            created=True,
+            recovered=False,
+            source_session_id=source_session_id,
+            resolved_source_session_id=source_session_id,
+            fork_point=fork_point,
+            preserve_source=True,
+        )
+
+
+def _provision_next(settings: Settings) -> None:
+    result = ManagedSessionProvisioner(
+        settings=settings,
+        port=_SuccessfulProvisionPort(),
+        lease_seconds=30,
+    ).provision_next(worker_id="agent-workspace-test-provisioner")
+    assert result.outcome == "ready"
 
 
 def test_canonical_action_digest_is_stable_and_order_independent() -> None:
@@ -230,8 +311,8 @@ def test_mutation_disabled_create_fork_turn_zero_writes() -> None:
         source_session_ref=session_ref(external.platform_session_id),
         source_channel="discord",
         fork_point="msg:100",
-        new_provider_policy_digest=DIGEST_B,
-        payload_ttl_days=7,
+        new_provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        payload_ttl_days=STORE_TTL_DAYS,
     )
     fork_receipt = workspace.act(actor, fork)
     assert fork_receipt.status == "unavailable"
@@ -267,6 +348,7 @@ def test_mutation_enabled_create_is_idempotent_by_digest() -> None:
     assert first.platform_session_id == derive_managed_platform_session_id(digest)
     assert first.hermes_session_id == derive_managed_hermes_session_id(digest)
     assert first.recovery_action is None
+    _provision_next(settings)
 
     second = workspace.act(actor, action)
     assert second.status == "accepted"
@@ -278,16 +360,18 @@ def test_mutation_enabled_create_is_idempotent_by_digest() -> None:
     assert commands == 0
     assert sessions == 1
 
-    # Same client_action_id, different digest → conflict, zero second write.
-    conflict_action = CreateManagedSession(
+    # The current managed-session contract has no second valid policy variant:
+    # a client cannot alter the server-owned provider policy to manufacture a
+    # different create digest under the same idempotency key.
+    rejected_action = CreateManagedSession(
         client_action_id="act-create-idem",
         workspace=WorkspaceRef(workspace_id=WORKSPACE_ID),
         provider_policy_digest=DIGEST_B,
-        payload_ttl_days=7,
+        payload_ttl_days=STORE_TTL_DAYS,
     )
-    conflict = workspace.act(actor, conflict_action)
-    assert conflict.status == "conflict"
-    assert conflict.reason_code == "idempotency_digest_conflict"
+    rejected = workspace.act(actor, rejected_action)
+    assert rejected.status == "unavailable"
+    assert rejected.reason_code == "server_managed_session_policy_required"
     commands2, sessions2 = _count_rows(database)
     assert (commands2, sessions2) == (0, 1)
 
@@ -295,8 +379,8 @@ def test_mutation_enabled_create_is_idempotent_by_digest() -> None:
         settings, platform_session_id=first.platform_session_id  # type: ignore[arg-type]
     )
     assert record.kind == "web_managed_session"
-    assert record.provider_policy_digest == DIGEST_A
-    assert record.payload_ttl_days == 7
+    assert record.provider_policy_digest == PROVIDER_POLICY_DIGEST
+    assert record.payload_ttl_days == STORE_TTL_DAYS
     assert record.creation_client_action_id == action.client_action_id
     assert record.creation_action_digest == digest
     assert record.web_writable is True
@@ -327,15 +411,16 @@ def test_fork_creates_managed_without_mutating_external() -> None:
         workspace=WorkspaceRef(workspace_id=WORKSPACE_ID),
         source_session_ref=session_ref(external.platform_session_id),
         source_channel="discord",
-        fork_point="cursor:42",
-        new_provider_policy_digest=DIGEST_B,
-        payload_ttl_days=14,
+        fork_point="message:42",
+        new_provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        payload_ttl_days=STORE_TTL_DAYS,
     )
     receipt = workspace.act(actor, fork)
     assert receipt.status == "accepted"
     assert receipt.command_id is None
     assert receipt.platform_session_id is not None
     assert receipt.platform_session_id != external.platform_session_id
+    _provision_next(settings)
 
     after_external = get_workspace_session(
         settings, platform_session_id=external.platform_session_id
@@ -350,9 +435,9 @@ def test_fork_creates_managed_without_mutating_external() -> None:
     )
     assert managed.kind == "web_managed_session"
     assert managed.parent_platform_session_id == external.platform_session_id
-    assert managed.fork_point == "cursor:42"
+    assert managed.fork_point == "message:42"
     assert managed.source_channel == "discord"
-    assert managed.provider_policy_digest == DIGEST_B
+    assert managed.provider_policy_digest == PROVIDER_POLICY_DIGEST
 
     # Idempotent fork retry
     again = workspace.act(actor, fork)
@@ -365,7 +450,7 @@ def test_fork_creates_managed_without_mutating_external() -> None:
         workspace=fork.workspace,
         source_session_ref=fork.source_session_ref,
         source_channel=fork.source_channel,
-        fork_point="cursor:43",
+        fork_point="message:43",
         new_provider_policy_digest=fork.new_provider_policy_digest,
         payload_ttl_days=fork.payload_ttl_days,
     )
@@ -411,6 +496,7 @@ def test_external_turn_conflicts_managed_turn_idempotent_and_conflict() -> None:
     create = workspace.act(actor, _create_action("act-create-for-turn"))
     assert create.status == "accepted"
     assert create.platform_session_id is not None
+    _provision_next(settings)
 
     turn = ConversationTurn(
         client_action_id="act-turn-1",
@@ -468,6 +554,7 @@ def test_snapshot_lists_sessions_and_follow_lifecycle() -> None:
 
     create = workspace.act(actor, _create_action("act-snap-create"))
     assert create.status == "accepted"
+    _provision_next(settings)
 
     turn = ConversationTurn(
         client_action_id="act-snap-turn",
@@ -634,7 +721,8 @@ def test_submit_action_document_path_and_unsupported_kind() -> None:
         submit_action(settings, bad_mode, mutation_enabled=True)
     assert excinfo.value.code == "validation"
 
-    # Other non-research unsupported kinds keep action_kind_not_implemented.
+    # Production does not admit process-local stop authorities. Reaching a
+    # hermetic stop adapter requires an explicit test injection elsewhere.
     stop_doc = {
         "schema_version": 1,
         "kind": "run.stop.request",
@@ -647,7 +735,7 @@ def test_submit_action_document_path_and_unsupported_kind() -> None:
     }
     stop = submit_action(settings, stop_doc, mutation_enabled=True)
     assert stop.status == "unavailable"
-    assert stop.reason_code == "action_kind_not_implemented"
+    assert stop.reason_code == "canonical_authority_adapter_unavailable"
 
 
 def test_public_workspace_factory_defaults_mutation_off() -> None:

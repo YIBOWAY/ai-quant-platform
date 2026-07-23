@@ -167,6 +167,55 @@ def test_v4r_migration_provisions_roles_rls_and_safe_runtime_probe() -> None:
         )
         db.reset_database_cache()
         assert hermes_runtime_security_ready(runtime_settings) is True
+        with psycopg.connect(
+            _url_as(
+                admin_url,
+                user=RUNTIME_LOGIN,
+                password=RUNTIME_PASSWORD,
+            ),
+            autocommit=True,
+        ) as runtime_conn:
+            assert runtime_conn.execute(
+                """
+                SELECT
+                    has_table_privilege(
+                        session_user,
+                        'quant_system.hermes_workspace_sessions',
+                        'UPDATE'
+                    ),
+                    bool_and(
+                        has_column_privilege(
+                            session_user,
+                            'quant_system.hermes_workspace_sessions',
+                            column_name,
+                            'UPDATE'
+                        )
+                    )
+                FROM unnest(%s::text[]) AS allowed(column_name)
+                """,
+                (
+                    [
+                        "provision_state",
+                        "provision_version",
+                        "provision_attempt_count",
+                        "provision_lease_owner",
+                        "provision_lease_token",
+                        "provision_lease_until",
+                        "provision_next_attempt_at",
+                        "provision_last_error_code",
+                        "provisioning_receipt_digest",
+                        "provisioned_at",
+                    ],
+                ),
+            ).fetchone() == (False, True)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                runtime_conn.execute(
+                    """
+                    UPDATE quant_system.hermes_workspace_sessions
+                    SET provider_policy_digest = provider_policy_digest
+                    WHERE FALSE
+                    """
+                )
 
         # The runtime must execute as its dedicated LOGIN. A connection-level
         # SET ROLE would make current_user diverge from the attested principal.

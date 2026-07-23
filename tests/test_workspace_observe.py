@@ -188,6 +188,7 @@ def test_snapshot_commands_are_objects_and_follow_emits_lifecycle() -> None:
         _create_action,
         _postgres_settings,
         _prepare,
+        _provision_next,
     )
 
     settings = _postgres_settings()
@@ -199,6 +200,7 @@ def test_snapshot_commands_are_objects_and_follow_emits_lifecycle() -> None:
     assert create.status == "accepted"
     assert create.command_id is None
     assert create.platform_session_id is not None
+    _provision_next(settings)
 
     payload_digest = "d" * 64
     turn = workspace.act(

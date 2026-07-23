@@ -419,6 +419,37 @@ _SELECT_COLUMNS = """
     updated_at
 """
 
+_PROVISION_UPDATE_COLUMNS = (
+    "provision_state",
+    "provision_version",
+    "provision_attempt_count",
+    "provision_lease_owner",
+    "provision_lease_token",
+    "provision_lease_until",
+    "provision_next_attempt_at",
+    "provision_last_error_code",
+    "provisioning_receipt_digest",
+    "provisioned_at",
+)
+
+_IMMUTABLE_SESSION_COLUMNS = (
+    "platform_session_id",
+    "hermes_session_id",
+    "workspace_id",
+    "owner_user_id",
+    "kind",
+    "source_channel",
+    "parent_platform_session_id",
+    "fork_point",
+    "provider_policy_digest",
+    "payload_ttl_days",
+    "creation_client_action_id",
+    "creation_action_digest",
+    "writer",
+    "created_at",
+    "updated_at",
+)
+
 
 def session_registry_schema_is_ready_on_connection(conn: psycopg.Connection) -> bool:
     exists = conn.execute(
@@ -722,6 +753,30 @@ def hermes_runtime_security_is_ready_on_connection(
             (
                 NOT has_table_privilege(session_user, %s, 'UPDATE')
                 AND NOT has_table_privilege(session_user, %s, 'DELETE')
+            ),
+            (
+                SELECT count(*) = %s
+                   AND bool_and(
+                        has_column_privilege(
+                            session_user,
+                            %s,
+                            allowed_column,
+                            'UPDATE'
+                        )
+                   )
+                FROM unnest(%s::text[]) AS allowed(allowed_column)
+            ),
+            (
+                SELECT count(*) = %s
+                   AND bool_and(
+                        NOT has_column_privilege(
+                            session_user,
+                            %s,
+                            immutable_column,
+                            'UPDATE'
+                        )
+                   )
+                FROM unnest(%s::text[]) AS immutable(immutable_column)
             )
         """,
         (
@@ -742,6 +797,12 @@ def hermes_runtime_security_is_ready_on_connection(
             f"{SCHEMA}.hermes_workspace_sessions",
             f"{SCHEMA}.hermes_workspace_sessions",
             f"{SCHEMA}.hermes_workspace_sessions",
+            len(_PROVISION_UPDATE_COLUMNS),
+            f"{SCHEMA}.hermes_workspace_sessions",
+            list(_PROVISION_UPDATE_COLUMNS),
+            len(_IMMUTABLE_SESSION_COLUMNS),
+            f"{SCHEMA}.hermes_workspace_sessions",
+            list(_IMMUTABLE_SESSION_COLUMNS),
         ),
     ).fetchone()
     if row is None or not all(bool(value) for value in row):
