@@ -282,28 +282,21 @@ def test_v8_m2_same_id_different_prompt_conflicts_zero_turn() -> None:
     assert len(port.puts) == 2
 
 
-def test_v8_m2_double_submit_same_body_stable_receipt_identity() -> None:
-    """TC-V8-M1-01 / GAP-01: double-submit same action → stable payload + command identity."""
+def test_v8_m2_double_submit_same_body_stable_payload_binding() -> None:
+    """TC-V8-M1-01 / GAP-01 PARTIAL (composite layer): same body → one intent binding.
+
+    Proves FakeIntentPayloadPort single content-addressed binding + stable
+    payload_ref/digest across retries. Does **not** alone prove ledger single
+    command_id — that is covered by PG
+    ``test_external_turn_conflicts_managed_turn_idempotent_and_conflict``
+    (pytest.mark.pg) and BFF double-POST
+    ``test_v8_m2_bff_double_post_same_body_stable_payload``.
+    """
     port = FakeIntentPayloadPort()
     req = _request(client_action_id="intent-v8-dbl", prompt="Reply with exactly: L2a-pong")
-    receipt = _accepted_receipt(req)
-
-    def _turn(_settings, action, **_kwargs):  # type: ignore[no-untyped-def]
-        # Mirror ledger idempotency: same client_action_id → same command_id.
-        return ActionReceipt(
-            status="accepted",
-            client_action_id=action.client_action_id,
-            action_digest=receipt.action_digest,
-            workspace_id=action.workspace.workspace_id,
-            command_id=receipt.command_id,
-            platform_session_id=receipt.platform_session_id,
-            hermes_session_id=receipt.hermes_session_id,
-            mutation_enabled=True,
-        )
-
     with patch(
         "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
-        side_effect=_turn,
+        return_value=_accepted_receipt(req),
     ) as turn:
         r1 = submit_composite_turn(
             SimpleNamespace(), req, mutation_enabled=True, port=port
@@ -314,10 +307,11 @@ def test_v8_m2_double_submit_same_body_stable_receipt_identity() -> None:
     assert r1["status"] == r2["status"] == "accepted"
     assert r1["payload_digest"] == r2["payload_digest"]
     assert r1["payload_ref"] == r2["payload_ref"]
-    assert r1["command_id"] == r2["command_id"] == receipt.command_id
+    assert r1["client_action_id"] == r2["client_action_id"] == req.client_action_id
     assert turn.call_count == 2
     # Fake store keeps a single binding for the client_intent_id.
     assert len(port._store) == 1  # type: ignore[arg-type]
+    assert list(port._store.values())[0]["payload_digest"] == r1["payload_digest"]  # type: ignore[index]
 
 
 def test_v8_m2_ack_loss_retry_recovers_same_payload_binding() -> None:

@@ -194,3 +194,74 @@ def test_act_still_rejects_prompt_field(tmp_path: Path) -> None:
     # Must not be a clean accepted turn carrying the prompt.
     if response.status_code == 200:
         assert response.json().get("status") != "accepted"
+
+
+def test_v8_m2_bff_double_post_same_body_stable_payload(tmp_path: Path) -> None:
+    """TC-V8-M1-01 BFF layer: double POST same body → stable payload identity."""
+    client = _client(tmp_path, mutation=True)
+    boot = _bootstrap(client, tmp_path)
+    headers = {**_browser_headers(), CSRF_HEADER_NAME: boot["csrf"]}
+    body = _body(client_action_id="intent-bff-dbl-01")
+    receipt = ActionReceipt(
+        status="accepted",
+        client_action_id=str(body["client_action_id"]),
+        action_digest="d" * 64,
+        workspace_id=str(body["workspace_id"]),
+        command_id="00000000-0000-4000-8000-0000000000aa",
+        platform_session_id="managed-bff-1",
+        hermes_session_id="hermes-bff-1",
+        mutation_enabled=True,
+    )
+    with patch(
+        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+        return_value=receipt,
+    ):
+        r1 = client.post(
+            "/api/agent/workspace/submit-turn", json=body, headers=headers
+        )
+        r2 = client.post(
+            "/api/agent/workspace/submit-turn", json=body, headers=headers
+        )
+    assert r1.status_code == 200, r1.text
+    assert r2.status_code == 200, r2.text
+    j1, j2 = r1.json(), r2.json()
+    assert j1["status"] == j2["status"] == "accepted"
+    assert j1["payload_digest"] == j2["payload_digest"]
+    assert j1["payload_ref"] == j2["payload_ref"]
+    assert j1["client_action_id"] == j2["client_action_id"] == body["client_action_id"]
+    # Fake port is process-local on app — single binding for client_intent_id.
+    port = client.app.state.services["intent_payload_port"]
+    assert len(port._store) == 1  # type: ignore[attr-defined]
+
+
+def test_v8_m2_bff_same_id_different_prompt_409(tmp_path: Path) -> None:
+    """TC-V8-M1-02 BFF layer: same client_action_id different prompt → 409."""
+    client = _client(tmp_path, mutation=True)
+    boot = _bootstrap(client, tmp_path)
+    headers = {**_browser_headers(), CSRF_HEADER_NAME: boot["csrf"]}
+    body_a = _body(client_action_id="intent-bff-conf-01", prompt="Reply with exactly: L2a-pong")
+    body_b = _body(client_action_id="intent-bff-conf-01", prompt="Reply with exactly: OTHER")
+    receipt = ActionReceipt(
+        status="accepted",
+        client_action_id="intent-bff-conf-01",
+        action_digest="d" * 64,
+        workspace_id=str(body_a["workspace_id"]),
+        command_id="00000000-0000-4000-8000-0000000000bb",
+        mutation_enabled=True,
+    )
+    with patch(
+        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+        return_value=receipt,
+    ) as turn:
+        r1 = client.post(
+            "/api/agent/workspace/submit-turn", json=body_a, headers=headers
+        )
+        r2 = client.post(
+            "/api/agent/workspace/submit-turn", json=body_b, headers=headers
+        )
+    assert r1.status_code == 200, r1.text
+    assert r2.status_code == 409, r2.text
+    detail = r2.json()["detail"]
+    assert detail["code"] in {"conflict", "intent_idempotency_conflict"} or "conflict" in str(detail).lower()
+    assert turn.call_count == 1
+

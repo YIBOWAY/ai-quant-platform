@@ -282,3 +282,113 @@ export function sanitizeTranscriptHint(
   };
 }
 
+/**
+ * Sole-owner quiet messages refetch scheduler (V8-M2 GAP-09).
+ *
+ * Dirty bumps + waiting/partial interval share one owner. In-flight bumps set
+ * a pending bit; exactly one follow-up runs after the current fetch settles
+ * (no recursive 200ms polling chain while hung).
+ */
+export type QuietRefetchSchedulerOptions = {
+  coalesceMs?: number;
+  fetch: (sessionId: string) => Promise<void>;
+  /** Optional clock for tests; defaults to setTimeout/clearTimeout. */
+  setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimer?: (id: ReturnType<typeof setTimeout>) => void;
+};
+
+export type QuietRefetchScheduler = {
+  schedule: (sessionId: string) => void;
+  /** True while a fetch is outstanding. */
+  isInFlight: () => boolean;
+  /** True when a dirty bump arrived during flight and needs one follow-up. */
+  isPending: () => boolean;
+  /** Cancel timer + drop pending; does not abort an in-flight fetch. */
+  dispose: () => void;
+  /**
+   * Test/hook: mark the outstanding fetch settled. Production wires this
+   * from the fetch finally block automatically via schedule().
+   */
+  _notifySettledForTests?: () => void;
+};
+
+export function createQuietRefetchScheduler(
+  opts: QuietRefetchSchedulerOptions,
+): QuietRefetchScheduler {
+  const coalesceMs = opts.coalesceMs ?? 200;
+  const setTimer = opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+  const clearTimer =
+    opts.clearTimer ?? ((id) => clearTimeout(id as ReturnType<typeof setTimeout>));
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let inFlight = false;
+  let pending = false;
+  let activeSessionId: string | null = null;
+  let disposed = false;
+
+  const clearCoalesce = () => {
+    if (timer != null) {
+      clearTimer(timer);
+      timer = null;
+    }
+  };
+
+  const run = (sessionId: string) => {
+    if (disposed) return;
+    if (inFlight) {
+      // Remember exactly one follow-up; do not spin a retry chain.
+      pending = true;
+      activeSessionId = sessionId;
+      return;
+    }
+    inFlight = true;
+    pending = false;
+    activeSessionId = sessionId;
+    void Promise.resolve()
+      .then(() => opts.fetch(sessionId))
+      .catch(() => {
+        /* soft-fail; caller owns canvas */
+      })
+      .finally(() => {
+        inFlight = false;
+        if (disposed) return;
+        if (pending) {
+          pending = false;
+          const next = activeSessionId;
+          if (next) {
+            // Single deferred follow-up (coalesced).
+            clearCoalesce();
+            timer = setTimer(() => {
+              timer = null;
+              run(next);
+            }, coalesceMs);
+          }
+        }
+      });
+  };
+
+  return {
+    schedule(sessionId: string) {
+      if (disposed) return;
+      if (!sessionId) return;
+      activeSessionId = sessionId;
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      clearCoalesce();
+      timer = setTimer(() => {
+        timer = null;
+        run(sessionId);
+      }, coalesceMs);
+    },
+    isInFlight: () => inFlight,
+    isPending: () => pending,
+    dispose() {
+      disposed = true;
+      pending = false;
+      clearCoalesce();
+    },
+  };
+}
+

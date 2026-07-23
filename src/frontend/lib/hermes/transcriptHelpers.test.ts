@@ -10,6 +10,7 @@ import {
   mergePendingUserMessage,
   pickLatestHermesSessionId,
   sanitizeTranscriptHint,
+  createQuietRefetchScheduler,
 } from "./transcriptHelpers";
 
 describe("transcriptHelpers (L3a + L3b)", () => {
@@ -213,3 +214,168 @@ describe("Plan-V6-Token-Stream-M1 phase helpers", () => {
     expect(ok!.transport).toBe("spine-refetch");
   });
 });
+
+describe("createQuietRefetchScheduler (V8-M2 GAP-09)", () => {
+  async function drain(times = 20) {
+    for (let i = 0; i < times; i += 1) {
+      await Promise.resolve();
+    }
+  }
+
+  function installFakeTimers() {
+    const queue: Array<{ id: number; fn: () => void; ms: number; due: number }> =
+      [];
+    let now = 0;
+    let nextId = 1;
+    const setTimer = (fn: () => void, ms: number) => {
+      const id = nextId++;
+      queue.push({ id, fn, ms, due: now + ms });
+      return id as unknown as ReturnType<typeof setTimeout>;
+    };
+    const clearTimer = (id: ReturnType<typeof setTimeout>) => {
+      const n = id as unknown as number;
+      const idx = queue.findIndex((q) => q.id === n);
+      if (idx >= 0) queue.splice(idx, 1);
+    };
+    const flush = async (ms: number) => {
+      now += ms;
+      // Multi-pass: timers may enqueue more timers + microtasks.
+      for (let pass = 0; pass < 10; pass += 1) {
+        const due = queue
+          .filter((q) => q.due <= now)
+          .sort((a, b) => a.due - b.due || a.id - b.id);
+        if (!due.length) {
+          await drain(5);
+          const more = queue.filter((q) => q.due <= now);
+          if (!more.length) break;
+          continue;
+        }
+        for (const t of due) {
+          const idx = queue.findIndex((q) => q.id === t.id);
+          if (idx >= 0) queue.splice(idx, 1);
+          t.fn();
+        }
+        await drain(10);
+      }
+    };
+    return { setTimer, clearTimer, flush, queue };
+  }
+
+  it("coalesces bursts into one fetch", async () => {
+    const clock = installFakeTimers();
+    const calls: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const sched = createQuietRefetchScheduler({
+      coalesceMs: 200,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+      fetch: async (sid) => {
+        calls.push(sid);
+        await gate;
+      },
+    });
+    sched.schedule("s1");
+    sched.schedule("s1");
+    sched.schedule("s1");
+    await clock.flush(200);
+    expect(calls).toEqual(["s1"]);
+    expect(sched.isInFlight()).toBe(true);
+    release();
+    await drain(20);
+    expect(sched.isInFlight()).toBe(false);
+    expect(calls).toEqual(["s1"]);
+    sched.dispose();
+  });
+
+  it("pending-bit fires exactly one follow-up after in-flight settles", async () => {
+    const clock = installFakeTimers();
+    const calls: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((r) => {
+      releaseFirst = r;
+    });
+    let fetchCount = 0;
+    const sched = createQuietRefetchScheduler({
+      coalesceMs: 200,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+      fetch: async (sid) => {
+        fetchCount += 1;
+        calls.push(`${sid}:${fetchCount}`);
+        if (fetchCount === 1) await firstGate;
+      },
+    });
+    sched.schedule("s1");
+    await clock.flush(200);
+    expect(sched.isInFlight()).toBe(true);
+    expect(calls).toEqual(["s1:1"]);
+    // Dirty bumps during flight → pending, not a retry chain.
+    sched.schedule("s1");
+    sched.schedule("s1");
+    expect(sched.isPending()).toBe(true);
+    // No coalesce timers while in-flight (pending bit only).
+    expect(clock.queue.length).toBe(0);
+    releaseFirst();
+    await drain(20);
+    // Follow-up scheduled via coalesce timer after settle.
+    expect(sched.isInFlight()).toBe(false);
+    expect(clock.queue.length).toBe(1);
+    await clock.flush(200);
+    await drain(20);
+    expect(calls).toEqual(["s1:1", "s1:2"]);
+    expect(sched.isPending()).toBe(false);
+    expect(sched.isInFlight()).toBe(false);
+    sched.dispose();
+  });
+
+  it("dispose drops pending and cancels coalesce timer", async () => {
+    const clock = installFakeTimers();
+    const calls: string[] = [];
+    const sched = createQuietRefetchScheduler({
+      coalesceMs: 200,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+      fetch: async (sid) => {
+        calls.push(sid);
+      },
+    });
+    sched.schedule("s1");
+    sched.dispose();
+    await clock.flush(500);
+    expect(calls).toEqual([]);
+  });
+
+  it("does not spin timers while a hung fetch stays in-flight", async () => {
+    const clock = installFakeTimers();
+    const calls: string[] = [];
+    const hung = new Promise<void>(() => {
+      /* never settles */
+    });
+    const sched = createQuietRefetchScheduler({
+      coalesceMs: 200,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+      fetch: async (sid) => {
+        calls.push(sid);
+        await hung;
+      },
+    });
+    sched.schedule("s1");
+    await clock.flush(200);
+    expect(calls).toEqual(["s1"]);
+    // Interval-like nudges while hung.
+    for (let i = 0; i < 10; i += 1) {
+      sched.schedule("s1");
+      await clock.flush(200);
+    }
+    // Still exactly one fetch; pending bit set; no timer storm.
+    expect(calls).toEqual(["s1"]);
+    expect(sched.isPending()).toBe(true);
+    expect(clock.queue.length).toBe(0);
+    sched.dispose();
+  });
+});
+

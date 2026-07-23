@@ -6,6 +6,7 @@ import { TranscriptCanvas } from "@/components/hermes/transcript/TranscriptCanva
 import { useActiveHermesSession } from "@/lib/hermes/activeSession";
 import {
   assistantContentLength,
+  createQuietRefetchScheduler,
   deriveAssistantPhase,
   displayableTranscriptMessages,
   isNearBottom,
@@ -13,6 +14,7 @@ import {
   mergePendingUserMessage,
   pickLatestHermesSessionId,
   type AssistantPhase,
+  type QuietRefetchScheduler,
 } from "@/lib/hermes/transcriptHelpers";
 import { LONG_ID_CLASS, displayId } from "@/lib/hermes/workbenchA11y";
 import {
@@ -95,8 +97,10 @@ export function WorkbenchTranscriptPanel({
   const stickToBottomRef = useRef(true);
   const lastMessageKeyRef = useRef<string>("");
   const lastDirtySeqRef = useRef<number>(-1);
-  const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inFlightRef = useRef(false);
+  const inFlightRef = useRef(false); // bootstrap / non-quiet load only
+  const quietSchedulerRef = useRef<QuietRefetchScheduler | null>(null);
+  const hermesSessionIdRef = useRef<string | null>(hermesSessionId);
+  hermesSessionIdRef.current = hermesSessionId;
 
   // Bootstrap: if composer has not bound a session yet, pick latest command's
   // hermes_session_id from workspace snapshot (local dark observe).
@@ -198,25 +202,17 @@ export function WorkbenchTranscriptPanel({
   }, [hermesSessionId, transcriptEpoch]);
 
   // Single owner for quiet messages refetch (V8-M2 GAP-09).
-  // Spine dirty + waiting/partial interval both schedule through scheduleQuietRefetch
-  // so in-flight work is not dropped by a parallel fetch path.
-  const scheduleQuietRefetch = (sessionId: string) => {
-    if (refetchTimerRef.current != null) {
-      clearTimeout(refetchTimerRef.current);
-    }
-    // Coalesce bursts (command + transcript hint + interval nudge) into one refetch.
-    refetchTimerRef.current = setTimeout(() => {
-      void (async () => {
-        if (inFlightRef.current) {
-          // Re-arm once so a dirty bump during flight is not lost.
-          refetchTimerRef.current = setTimeout(() => {
-            scheduleQuietRefetch(sessionId);
-          }, 200);
-          return;
-        }
-        inFlightRef.current = true;
+  // Spine dirty + waiting/partial interval both schedule through one scheduler
+  // with pending-bit (no recursive re-arm chain while hung).
+  useEffect(() => {
+    const scheduler = createQuietRefetchScheduler({
+      coalesceMs: 200,
+      fetch: async (sessionId: string) => {
+        // Drop stale writes if session drifted mid-flight.
+        if (hermesSessionIdRef.current?.trim() !== sessionId) return;
         try {
           const envelope = await fetchHermesSessionMessages(sessionId);
+          if (hermesSessionIdRef.current?.trim() !== sessionId) return;
           if (envelope.read_status && envelope.read_status !== "available") {
             setState((prev) => ({
               kind: "unavailable",
@@ -239,11 +235,20 @@ export function WorkbenchTranscriptPanel({
           });
         } catch {
           // Soft-fail quiet refetch; keep prior canvas.
-        } finally {
-          inFlightRef.current = false;
         }
-      })();
-    }, 200);
+      },
+    });
+    quietSchedulerRef.current = scheduler;
+    return () => {
+      scheduler.dispose();
+      if (quietSchedulerRef.current === scheduler) {
+        quietSchedulerRef.current = null;
+      }
+    };
+  }, []);
+
+  const scheduleQuietRefetch = (sessionId: string) => {
+    quietSchedulerRef.current?.schedule(sessionId);
   };
 
   // Spine-driven dirty: coalesced refetch while waiting/partial or on hint.
@@ -254,13 +259,6 @@ export function WorkbenchTranscriptPanel({
     if (dirty === lastDirtySeqRef.current) return;
     lastDirtySeqRef.current = dirty;
     scheduleQuietRefetch(sessionId);
-
-    return () => {
-      if (refetchTimerRef.current != null) {
-        clearTimeout(refetchTimerRef.current);
-        refetchTimerRef.current = null;
-      }
-    };
   }, [followState.transcriptDirtySeq, hermesSessionId]);
 
   // Bounded backoff poll while phase is waiting/partial — same owner as dirty path.
@@ -274,6 +272,14 @@ export function WorkbenchTranscriptPanel({
     }, 1500);
     return () => clearInterval(id);
   }, [phase, hermesSessionId]);
+
+  // Session change: drop pending quiet work for prior session.
+  useEffect(() => {
+    return () => {
+      // On session id change React re-runs; dispose is owned by mount effect.
+      // Pending bit is session-scoped via hermesSessionIdRef guard in fetch.
+    };
+  }, [hermesSessionId]);
 
   // Derive honest phase from command + messages (never invent tokens).
   useEffect(() => {

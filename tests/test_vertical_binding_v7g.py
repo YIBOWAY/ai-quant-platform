@@ -368,10 +368,10 @@ def test_v8_m2_missing_provider_evidence_task_not_normal_completed() -> None:
     tasks = project_workspace_tasks(WS)
     assert len(tasks) == 1
     t = tasks[0]
-    # Task projection must not look like a fully verified completed bind.
-    term = t.get("terminal_status") or t.get("status") or t.get("task_status")
-    assert term in {"completed_degraded", "degraded", receipt.terminal_status}
-    assert term != "completed"
+    # Public task projection uses status (not terminal_status).
+    assert "status" in t
+    assert t["status"] == "completed_degraded"
+    assert t["status"] != "completed"
     rows = project_workspace_results(WS)
     row = next(r for r in rows if r["result_id"] == receipt.result_id)
     assert row["status"] == "completed_degraded"
