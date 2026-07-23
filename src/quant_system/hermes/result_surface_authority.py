@@ -6,7 +6,7 @@ Attempt / Run / Gate / command-approval rows. Not live Futu / HQA final
 authority — hermetic fixture class matching V7a–V7e.
 
 M1 scope:
-* seed typed results (including vertical-A options sample fields)
+* seed typed results (including vertical-A options + vertical-B factor sample fields)
 * sample vs real marking
 * exact Task/Attempt/Run/artifact/command link fields when known
 * list_observed for projector
@@ -198,6 +198,13 @@ class TypedResultRecord:
     delta: float | int | None = None
     iv: float | int | None = None
     apr: float | int | None = None
+    # Vertical B factor fields (optional; present for kind=factor).
+    factor_name: str | None = None
+    paper_ref: str | None = None
+    formula_sketch: str | None = None
+    universe_note: str | None = None
+    ic_mean: float | int | None = None
+    sample_window: str | None = None
     # Evidence / honesty fields.
     provider_evidence: tuple[str, ...] = ()
     filters: tuple[str, ...] = ()
@@ -238,6 +245,12 @@ class TypedResultRecord:
             ("delta", self.delta),
             ("iv", self.iv),
             ("apr", self.apr),
+            ("factor_name", self.factor_name),
+            ("paper_ref", self.paper_ref),
+            ("formula_sketch", self.formula_sketch),
+            ("universe_note", self.universe_note),
+            ("ic_mean", self.ic_mean),
+            ("sample_window", self.sample_window),
             ("detail_href", self.detail_href),
             ("original_href", self.original_href),
             ("source", self.source),
@@ -313,6 +326,12 @@ class ResultSurfaceAuthority:
         delta: float | int | None = None,
         iv: float | int | None = None,
         apr: float | int | None = None,
+        factor_name: str | None = None,
+        paper_ref: str | None = None,
+        formula_sketch: str | None = None,
+        universe_note: str | None = None,
+        ic_mean: float | int | None = None,
+        sample_window: str | None = None,
         provider_evidence: list[str] | tuple[str, ...] | None = None,
         filters: list[str] | tuple[str, ...] | None = None,
         exclusions: list[str] | tuple[str, ...] | None = None,
@@ -370,6 +389,12 @@ class ResultSurfaceAuthority:
             delta=_optional_number(delta, "delta"),
             iv=_optional_number(iv, "iv"),
             apr=_optional_number(apr, "apr"),
+            factor_name=_bounded_text(factor_name, "factor_name", max_len=64),
+            paper_ref=_bounded_text(paper_ref, "paper_ref", max_len=256),
+            formula_sketch=_bounded_text(formula_sketch, "formula_sketch", max_len=1000),
+            universe_note=_bounded_text(universe_note, "universe_note", max_len=256),
+            ic_mean=_optional_number(ic_mean, "ic_mean"),
+            sample_window=_bounded_text(sample_window, "sample_window", max_len=128),
             provider_evidence=_bounded_str_list(provider_evidence, "provider_evidence"),
             filters=_bounded_str_list(filters, "filters"),
             exclusions=_bounded_str_list(exclusions, "exclusions"),
@@ -459,6 +484,89 @@ class ResultSurfaceAuthority:
             limitations=default_limitations,
             source="hermetic_result_surface",
             authority="hermetic_result_surface_authority",
+        )
+
+    def seed_factor_vertical_b_sample(
+        self,
+        *,
+        workspace_id: str,
+        result_id: str,
+        factor_name: str,
+        paper_ref: str,
+        paper_digest: str,
+        formula_sketch: str,
+        universe_note: str,
+        display_title: str | None = None,
+        summary: str | None = None,
+        status: str = "completed",
+        task_id: str | None = None,
+        attempt_id: str | None = None,
+        run_id: str | None = None,
+        provider_evidence: list[str] | tuple[str, ...] | None = None,
+        filters: list[str] | tuple[str, ...] | None = None,
+        exclusions: list[str] | tuple[str, ...] | None = None,
+        limitations: list[str] | tuple[str, ...] | None = None,
+        freshness: str = "fresh",
+        read_status: str = "available",
+        sample_or_real: str = "sample",
+        ic_mean: float | int | None = 0.0,
+        sample_window: str | None = "hermetic_fixture_window",
+        source: str = "hermetic_vertical_b_binding",
+        authority: str = "vertical_binding_authority",
+    ) -> TypedResultRecord:
+        """Convenience seeder for V7g-B-M1 typed factor fields.
+
+        Hermetic-only: default limitations lock cascade + live backtest.
+        sample_or_real="real" with hermetic/not_live_backtest limitations is
+        coerced back to sample (honesty).
+        """
+        title = display_title or f"{factor_name} factor research ({status})"
+        default_limitations = limitations or (
+            "hermetic_fixture",
+            "not_live_backtest",
+            "not_tradeable",
+            "zero_orders",
+            "plan_confirm_required",
+            "gate_cascade_locked",
+            "not_git_commit",
+        )
+        # B-M1 hermetic-only seeder: never emit real, even if caller strips
+        # limitations or passes sample_or_real="real".
+        mark = "sample"
+        if sample_or_real == "real":
+            # Keep limitations honesty trail if caller tried real.
+            default_limitations = tuple(
+                dict.fromkeys(list(default_limitations) + ["honesty_coercion"])
+            )
+        default_evidence = provider_evidence
+        if default_evidence is None:
+            default_evidence = ("hermetic_factor_fixture", "hermetic_paper_ref")
+        return self.seed_result(
+            workspace_id=workspace_id,
+            result_id=result_id,
+            kind="factor",
+            display_title=title,
+            status=status,
+            sample_or_real=mark,
+            freshness=freshness,
+            read_status=read_status,
+            summary=summary or f"{factor_name} hermetic factor binding",
+            task_id=task_id,
+            attempt_id=attempt_id,
+            run_id=run_id,
+            factor_name=factor_name,
+            paper_ref=paper_ref,
+            formula_sketch=formula_sketch,
+            universe_note=universe_note,
+            ic_mean=ic_mean,
+            sample_window=sample_window,
+            provider_evidence=default_evidence,
+            filters=filters or ("hermetic_factor_fixture", "plan_only_binding"),
+            exclusions=exclusions or ("live_backtest", "gate_cascade", "git_commit"),
+            limitations=default_limitations,
+            source=source,
+            authority=authority,
+            payload_digest=paper_digest,
         )
 
     def get(self, workspace_id: str, result_id: str) -> TypedResultRecord | None:

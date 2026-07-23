@@ -31,6 +31,7 @@ from uuid import UUID
 from quant_system.config.settings import Settings
 from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
+    BindFactorVerticalB,
     BindOptionsVerticalA,
     ConfirmFormulaSource,
     ConfirmResearchPlan,
@@ -1315,6 +1316,98 @@ def submit_bind_options_vertical_a(
     )
 
 
+def submit_bind_factor_vertical_b(
+    settings: Settings,
+    action: BindFactorVerticalB,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+) -> ActionReceipt:
+    """V7g-B-M1: Vertical B factor research bind (hermetic only).
+
+    Never StartResearch/Confirm/Gate/backtest/Git. Zero orders. Not public write.
+    """
+    digest = canonical_action_digest(action)
+    if not mutation_enabled:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="authenticated_mutation_bff_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    _require_root_actor(actor_owner_user_id)
+    authority = default_vertical_binding_authority()
+    try:
+        outcome = authority.bind_factor_vertical_b(
+            workspace_id=action.workspace.workspace_id,
+            client_action_id=action.client_action_id,
+            action_digest=digest,
+            goal_note=action.goal_note,
+            paper_ref=action.paper_ref,
+            paper_digest=action.paper_digest,
+            factor_name=action.factor_name,
+            formula_sketch=action.formula_sketch,
+            universe_note=action.universe_note,
+            include_provider_evidence=action.include_provider_evidence,
+        )
+    except VerticalBindingAuthorityError as exc:
+        if exc.code == "validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                reason_code=exc.message,
+                mutation_enabled=mutation_enabled,
+            )
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.message or "vertical_binding_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        note_result_raised(
+            workspace_id=action.workspace.workspace_id,
+            result=outcome.result,
+        )
+    except Exception:
+        pass
+    command_id: str | None = None
+    if _ensure_ready(settings):
+        control_session = control_plane_session_id(action.workspace.workspace_id)
+        try:
+            cmd = _create_idempotent_command(
+                settings,
+                platform_session_id=control_session,
+                client_request_id=action.client_action_id,
+                kind="vertical_factor_b_bind",
+                action_digest=digest,
+                payload_ref=action_payload_ref_for_digest(digest),
+                provider_policy_digest=None,
+            )
+            command_id = str(cmd.command.command_id)
+        except SubmissionSagaError:
+            command_id = None
+        except Exception:
+            command_id = None
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        run_id=outcome.run.run_id,
+        task_id=outcome.task.task_id,
+        attempt_id=outcome.attempt.attempt_id,
+        result_id=outcome.result.result_id,
+        terminal_status=outcome.terminal,
+        mutation_enabled=mutation_enabled,
+    )
+
+
 def submit_action(
     settings: Settings,
     action: UserActionV1 | dict[str, object],
@@ -1399,6 +1492,13 @@ def submit_action(
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
         )
+    if type(parsed) is BindFactorVerticalB:
+        return submit_bind_factor_vertical_b(
+            settings,
+            parsed,
+            mutation_enabled=mutation_enabled,
+            actor_owner_user_id=actor_owner_user_id,
+        )
     if type(parsed) in (StartResearch, ContinueResearch, ConfirmResearchPlan):
         # Research kinds are typed and digest-stable, but the HQA prepare →
         # ensure_bound_command browser path stays dark in V4. Public mutation
@@ -1440,6 +1540,7 @@ __all__ = [
     "derive_managed_hermes_session_id",
     "derive_managed_platform_session_id",
     "submit_action",
+    "submit_bind_factor_vertical_b",
     "submit_bind_options_vertical_a",
     "submit_conversation_turn",
     "submit_create_managed_session",

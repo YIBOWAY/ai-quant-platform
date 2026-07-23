@@ -1,14 +1,15 @@
-"""V7g-A: Vertical A (options research) binding authority.
+"""V7g vertical binding authority (A options + B factor).
 
-M1 hermetic + M2 authorized live Futu RO thin overlay:
+Vertical A (options):
+  M1 hermetic + M2 authorized live Futu RO thin overlay.
+  NL goal -> Task/Attempt/Run -> typed options result -> completed|degraded.
+  Live path requires auth envelope; real only with verifiable evidence.
 
-  NL goal -> durable action receipt -> Task/Attempt/Run
-  -> typed options result (V7f shape) -> completed | completed_degraded
+Vertical B (factor) — V7g-B-M1 hermetic only:
+  NL + paper ref -> Task/Attempt/Run -> typed factor result -> completed|degraded.
+  Always sample. Never StartResearch/Confirm/Gate/backtest/Git/live provider.
 
-Hermetic path always sample + not_live_futu_quote.
-Live path (provider_mode=live_futu_ro) requires explicit auth envelope and
-only marks sample_or_real=real when provider_evidence is verifiable.
-Zero orders/account mutation. Not StartResearch. Public write stays OFF.
+Zero orders/account mutation. Public write stays OFF.
 
 Race safety: one in-flight owner per (workspace, client_action_id); waiters
 join via Condition and idempotent-replay. Grant budget keyed by grant_digest;
@@ -126,6 +127,11 @@ class VerticalTaskRecord:
     provider_evidence: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
     provider_mode: str = "hermetic_fixture"
+    vertical: str = "options_a"
+    # Optional factor-B fields (absent/empty on options_a rows).
+    factor_name: str | None = None
+    paper_ref: str | None = None
+    paper_digest: str | None = None
 
     def to_public_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -135,15 +141,23 @@ class VerticalTaskRecord:
             "status": self.status,
             "display_title": self.display_title,
             "goal_note": self.goal_note,
-            "ticker": self.ticker,
             "attempt_id": self.attempt_id,
             "run_id": self.run_id,
             "client_action_id": self.client_action_id,
             "action_digest": self.action_digest,
             "occurred_at": self.occurred_at,
-            "vertical": "options_a",
+            "vertical": self.vertical,
             "provider_mode": self.provider_mode,
         }
+        # ticker is options-A specific; omit empty on factor_b for field isolation.
+        if self.ticker:
+            payload["ticker"] = self.ticker
+        if self.factor_name is not None:
+            payload["factor_name"] = self.factor_name
+        if self.paper_ref is not None:
+            payload["paper_ref"] = self.paper_ref
+        if self.paper_digest is not None:
+            payload["paper_digest"] = self.paper_digest
         if self.result_id is not None:
             payload["result_id"] = self.result_id
         if self.terminal_reason is not None:
@@ -163,6 +177,7 @@ class VerticalAttemptRecord:
     run_id: str
     status: VerticalTerminal
     occurred_at: str
+    vertical: str = "options_a"
 
     def to_public_dict(self) -> dict[str, object]:
         return {
@@ -172,7 +187,7 @@ class VerticalAttemptRecord:
             "run_id": self.run_id,
             "status": self.status,
             "occurred_at": self.occurred_at,
-            "vertical": "options_a",
+            "vertical": self.vertical,
         }
 
 
@@ -185,6 +200,7 @@ class VerticalRunRecord:
     status: VerticalTerminal
     occurred_at: str
     mode: str = "hermetic_fixture"
+    vertical: str = "options_a"
 
     def to_public_dict(self) -> dict[str, object]:
         return {
@@ -195,7 +211,7 @@ class VerticalRunRecord:
             "status": self.status,
             "mode": self.mode,
             "occurred_at": self.occurred_at,
-            "vertical": "options_a",
+            "vertical": self.vertical,
         }
 
 
@@ -270,7 +286,7 @@ def _enforce_live_auth_envelope(
 
 
 class VerticalBindingAuthority:
-    """Thread-safe Vertical A binding store (hermetic + live RO)."""
+    """Thread-safe vertical binding store (A options + B factor)."""
 
     def __init__(self) -> None:
         self._lock = Lock()
@@ -632,6 +648,253 @@ class VerticalBindingAuthority:
                     status=terminal,
                     occurred_at=ts,
                     mode=run_mode,
+                )
+
+                self._tasks[(ws, task_id)] = task
+                self._attempts[(ws, attempt_id)] = attempt
+                self._runs[(ws, run_id)] = run
+                self._by_action[key] = task_id
+                self._action_digest[key] = action_digest
+
+                return VerticalBindOutcome(
+                    task=task,
+                    attempt=attempt,
+                    run=run,
+                    result=result,
+                    terminal=terminal,
+                )
+            finally:
+                if owned_reservation:
+                    self._inflight.discard(key)
+                    self._cv.notify_all()
+
+    def bind_factor_vertical_b(
+        self,
+        *,
+        workspace_id: str,
+        client_action_id: str,
+        action_digest: str,
+        goal_note: str,
+        paper_ref: str,
+        paper_digest: str,
+        factor_name: str,
+        formula_sketch: str,
+        universe_note: str,
+        include_provider_evidence: bool = True,
+        result_authority: ResultSurfaceAuthority | None = None,
+        now: datetime | None = None,
+    ) -> VerticalBindOutcome:
+        """Bind hermetic factor research goal → Task/Attempt/Run → typed factor.
+
+        M1 is hermetic-only. Never emits sample_or_real=real. Never touches
+        StartResearch, ConfirmResearchPlan, Gates, backtest, Git, or brokers.
+        Race safety: sole in-flight owner per action key; waiters join + replay.
+        """
+        ws = _validate_id(workspace_id, "workspace_id")
+        act = _validate_id(client_action_id, "client_action_id")
+        if type(action_digest) is not str or len(action_digest) != 64:
+            raise VerticalBindingAuthorityError(
+                "validation", "action_digest must be 64-hex"
+            )
+        goal = _bounded_text(goal_note, "goal_note", max_len=1000)
+        pref = _bounded_text(paper_ref, "paper_ref", max_len=256)
+        if type(paper_digest) is not str or len(paper_digest) != 64:
+            raise VerticalBindingAuthorityError(
+                "validation", "paper_digest must be 64-hex"
+            )
+        # lowercase hex only
+        if any(ch not in "0123456789abcdef" for ch in paper_digest):
+            raise VerticalBindingAuthorityError(
+                "validation", "paper_digest must be lowercase 64-hex"
+            )
+        fname = _bounded_text(factor_name, "factor_name", max_len=64)
+        sketch = _bounded_text(formula_sketch, "formula_sketch", max_len=1000)
+        universe = _bounded_text(universe_note, "universe_note", max_len=256)
+        if type(include_provider_evidence) is not bool:
+            raise VerticalBindingAuthorityError(
+                "validation", "include_provider_evidence must be a boolean"
+            )
+
+        key = (ws, act)
+        rauth = result_authority or default_result_surface_authority()
+        owned_reservation = False
+
+        with self._cv:
+            while True:
+                prior_digest = self._action_digest.get(key)
+                if prior_digest is not None and prior_digest != action_digest:
+                    raise VerticalBindingAuthorityError(
+                        "conflict",
+                        "client_action_id already bound to a different action_digest",
+                    )
+                prior_task_id = self._by_action.get(key)
+                if prior_task_id is not None:
+                    return self._replay_outcome(ws, prior_task_id, rauth)
+                if key in self._inflight:
+                    if not self._cv.wait(timeout=30.0):
+                        raise VerticalBindingAuthorityError(
+                            "unavailable",
+                            "vertical_bind_inflight_timeout",
+                        )
+                    continue
+                self._action_digest[key] = action_digest
+                self._inflight.add(key)
+                owned_reservation = True
+                break
+
+        with self._cv:
+            try:
+                prior_task_id = self._by_action.get(key)
+                if prior_task_id is not None:
+                    return self._replay_outcome(ws, prior_task_id, rauth)
+                if self._action_digest.get(key) != action_digest:
+                    raise VerticalBindingAuthorityError(
+                        "conflict",
+                        "client_action_id already bound to a different action_digest",
+                    )
+
+                task_id = _stable_id("task", action_digest, "task")
+                attempt_id = _stable_id("attempt", action_digest, "attempt")
+                run_id = _stable_id("run", action_digest, "run")
+                result_id = _stable_id("result", action_digest, "result")
+                ts = _dt_public(now)
+
+                sample_or_real = "sample"
+                source = "hermetic_vertical_b_binding"
+                run_mode = "hermetic_fixture"
+                if include_provider_evidence:
+                    terminal: VerticalTerminal = "completed"
+                    evidence: tuple[str, ...] = (
+                        "hermetic_factor_fixture",
+                        "hermetic_paper_ref",
+                    )
+                    terminal_reason = "fixture_provider_evidence_present"
+                    limitations: tuple[str, ...] = (
+                        "hermetic_fixture",
+                        "not_live_backtest",
+                        "not_tradeable",
+                        "zero_orders",
+                        "plan_confirm_required",
+                        "gate_cascade_locked",
+                        "not_git_commit",
+                    )
+                    freshness = "fresh"
+                    read_status = "available"
+                    ic_mean: float | int | None = 0.0
+                    sample_window: str | None = "hermetic_fixture_window"
+                else:
+                    terminal = "completed_degraded"
+                    evidence = ()
+                    terminal_reason = "provider_evidence_missing"
+                    limitations = (
+                        "hermetic_fixture",
+                        "not_live_backtest",
+                        "not_tradeable",
+                        "zero_orders",
+                        "plan_confirm_required",
+                        "gate_cascade_locked",
+                        "not_git_commit",
+                        "unverified_without_provider_evidence",
+                    )
+                    freshness = "unknown"
+                    read_status = "degraded"
+                    ic_mean = None
+                    sample_window = None
+
+                # Honesty: never real on hermetic B path.
+                lim_set = set(limitations)
+                if sample_or_real == "real" and (
+                    "hermetic_fixture" in lim_set or "not_live_backtest" in lim_set
+                ):
+                    sample_or_real = "sample"
+                    terminal = "completed_degraded"
+                    terminal_reason = "honesty_coercion"
+                    limitations = tuple(
+                        dict.fromkeys(
+                            list(limitations)
+                            + [
+                                "honesty_coercion",
+                                "not_live_backtest",
+                                "not_tradeable",
+                                "zero_orders",
+                            ]
+                        )
+                    )
+                    read_status = "degraded"
+                    ic_mean = None
+                    sample_window = None
+
+                try:
+                    result = rauth.seed_factor_vertical_b_sample(
+                        workspace_id=ws,
+                        result_id=result_id,
+                        factor_name=fname,
+                        paper_ref=pref,
+                        paper_digest=paper_digest,
+                        formula_sketch=sketch,
+                        universe_note=universe,
+                        display_title=f"{fname} factor research ({terminal})",
+                        summary=goal,
+                        status=terminal,
+                        task_id=task_id,
+                        attempt_id=attempt_id,
+                        run_id=run_id,
+                        provider_evidence=evidence,
+                        limitations=limitations,
+                        freshness=freshness,
+                        read_status=read_status,
+                        sample_or_real=sample_or_real,
+                        ic_mean=ic_mean,
+                        sample_window=sample_window,
+                        source=source,
+                        authority="vertical_binding_authority",
+                    )
+                except Exception:
+                    if owned_reservation:
+                        self._action_digest.pop(key, None)
+                    raise
+
+                task = VerticalTaskRecord(
+                    workspace_id=ws,
+                    task_id=task_id,
+                    kind="factor_vertical_b_research",
+                    status=terminal,
+                    display_title=f"Research {fname} factor",
+                    goal_note=goal,
+                    ticker="",  # factor rows omit ticker in public dict
+                    attempt_id=attempt_id,
+                    run_id=run_id,
+                    result_id=result_id,
+                    client_action_id=act,
+                    action_digest=action_digest,
+                    occurred_at=ts,
+                    terminal_reason=terminal_reason,
+                    provider_evidence=evidence,
+                    limitations=limitations,
+                    provider_mode="hermetic_fixture",
+                    vertical="factor_b",
+                    factor_name=fname,
+                    paper_ref=pref,
+                    paper_digest=paper_digest,
+                )
+                attempt = VerticalAttemptRecord(
+                    workspace_id=ws,
+                    attempt_id=attempt_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    status=terminal,
+                    occurred_at=ts,
+                    vertical="factor_b",
+                )
+                run = VerticalRunRecord(
+                    workspace_id=ws,
+                    run_id=run_id,
+                    task_id=task_id,
+                    attempt_id=attempt_id,
+                    status=terminal,
+                    occurred_at=ts,
+                    mode=run_mode,
+                    vertical="factor_b",
                 )
 
                 self._tasks[(ws, task_id)] = task

@@ -29,6 +29,7 @@ _ACTION_KINDS = frozenset(
         "gate2.candidate.review",
         "gate3.promotion_review.prepare",
         "vertical.options_a.bind",
+        "vertical.factor_b.bind",
     }
 )
 _COMMON_DOCUMENT_FIELDS = frozenset(
@@ -96,6 +97,16 @@ _ACTION_FIELDS = {
         "provider_mode",
         "auth_envelope",
     },
+    "vertical.factor_b.bind": _COMMON_DOCUMENT_FIELDS
+    | {
+        "goal_note",
+        "paper_ref",
+        "paper_digest",
+        "factor_name",
+        "formula_sketch",
+        "universe_note",
+        "include_provider_evidence",
+    },
 }
 _PROVIDER_MODES = frozenset({"hermetic_fixture", "live_futu_ro"})
 _AUTH_ENVELOPE_FIELDS = frozenset(
@@ -114,6 +125,7 @@ _DEFAULT_LIVE_FIELDS = frozenset(
 )
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
 _HEX64_RE = re.compile(r"[0-9a-f]{64}\Z")
+_FACTOR_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 _HEX40_RE = re.compile(r"[0-9a-f]{40}\Z")
 _RFC3339_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
@@ -750,6 +762,80 @@ class BindOptionsVerticalA:
 
 
 @dataclass(frozen=True)
+class BindFactorVerticalB:
+    """V7g-B-M1: Vertical B factor research binding (hermetic only).
+
+    NL + paper ref → Task/Attempt/Run + typed factor result (V7f shape)
+    → completed|completed_degraded. Never StartResearch/Confirm/Gate/backtest/Git.
+    Zero orders. Not public write. Not live provider.
+    """
+
+    client_action_id: str
+    workspace: WorkspaceRef
+    goal_note: str
+    paper_ref: str
+    paper_digest: str
+    factor_name: str
+    formula_sketch: str
+    universe_note: str
+    include_provider_evidence: bool
+
+    def __post_init__(self) -> None:
+        _validate_common(self.client_action_id, self.workspace)
+        _validate_note(self.goal_note, "goal_note")
+        if (
+            type(self.paper_ref) is not str
+            or not self.paper_ref.strip()
+            or len(self.paper_ref) > 256
+            or not self.paper_ref.isprintable()
+        ):
+            raise AgentWorkspaceActionError(
+                "paper_ref must be bounded nonempty printable text"
+            )
+        object.__setattr__(self, "paper_ref", self.paper_ref.strip())
+        if (
+            type(self.paper_digest) is not str
+            or _HEX64_RE.fullmatch(self.paper_digest) is None
+        ):
+            raise AgentWorkspaceActionError(
+                "paper_digest must be lowercase 64-hex SHA-256"
+            )
+        if (
+            type(self.factor_name) is not str
+            or not self.factor_name.strip()
+            or _FACTOR_NAME_RE.fullmatch(self.factor_name.strip()) is None
+        ):
+            raise AgentWorkspaceActionError(
+                "factor_name must match ^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+            )
+        object.__setattr__(self, "factor_name", self.factor_name.strip())
+        if (
+            type(self.formula_sketch) is not str
+            or not self.formula_sketch.strip()
+            or len(self.formula_sketch) > 1000
+            or not self.formula_sketch.isprintable()
+        ):
+            raise AgentWorkspaceActionError(
+                "formula_sketch must be bounded nonempty printable text"
+            )
+        object.__setattr__(self, "formula_sketch", self.formula_sketch.strip())
+        if (
+            type(self.universe_note) is not str
+            or not self.universe_note.strip()
+            or len(self.universe_note) > 256
+            or not self.universe_note.isprintable()
+        ):
+            raise AgentWorkspaceActionError(
+                "universe_note must be bounded nonempty printable text"
+            )
+        object.__setattr__(self, "universe_note", self.universe_note.strip())
+        if type(self.include_provider_evidence) is not bool:
+            raise AgentWorkspaceActionError(
+                "include_provider_evidence must be a boolean"
+            )
+
+
+@dataclass(frozen=True)
 class UnsupportedWorkspaceAction:
     """Placeholder for action kinds not yet implemented on the platform BFF."""
 
@@ -777,6 +863,7 @@ UserActionV1 = Union[
     ReviewCandidateCAS,
     PreparePromotionReview,
     BindOptionsVerticalA,
+    BindFactorVerticalB,
     UnsupportedWorkspaceAction,
 ]
 
@@ -791,6 +878,7 @@ _IMPLEMENTED_TYPES = (
     ReviewCandidateCAS,
     PreparePromotionReview,
     BindOptionsVerticalA,
+    BindFactorVerticalB,
 )
 
 # Typed + validated, but browser/saga submission stays fail-closed in V4.
@@ -954,6 +1042,20 @@ def _action_to_raw_document(action: UserActionV1) -> dict[str, Any]:
             }
         )
         return _strict_json_document(document)
+    if type(action) is BindFactorVerticalB:
+        document.update(
+            {
+                "kind": "vertical.factor_b.bind",
+                "goal_note": action.goal_note,
+                "paper_ref": action.paper_ref,
+                "paper_digest": action.paper_digest,
+                "factor_name": action.factor_name,
+                "formula_sketch": action.formula_sketch,
+                "universe_note": action.universe_note,
+                "include_provider_evidence": action.include_provider_evidence,
+            }
+        )
+        return _strict_json_document(document)
     raise TypeError("unknown UserActionV1 type")
 
 
@@ -1095,6 +1197,17 @@ def parse_user_action_v1(document: Mapping[str, Any]) -> UserActionV1:
             provider_mode=document["provider_mode"],
             auth_envelope=document["auth_envelope"],
         )
+    if kind == "vertical.factor_b.bind":
+        return BindFactorVerticalB(
+            **common,
+            goal_note=document["goal_note"],
+            paper_ref=document["paper_ref"],
+            paper_digest=document["paper_digest"],
+            factor_name=document["factor_name"],
+            formula_sketch=document["formula_sketch"],
+            universe_note=document["universe_note"],
+            include_provider_evidence=document["include_provider_evidence"],
+        )
     # Remaining kinds are accepted as typed documents but not executable yet.
     return UnsupportedWorkspaceAction(
         kind=kind,
@@ -1131,6 +1244,7 @@ def action_payload_ref_for_digest(action_digest: str) -> str:
 
 __all__ = [
     "AgentWorkspaceActionError",
+    "BindFactorVerticalB",
     "BindOptionsVerticalA",
     "ConfirmFormulaSource",
     "ConfirmResearchPlan",
