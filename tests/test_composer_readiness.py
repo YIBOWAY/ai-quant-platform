@@ -365,3 +365,42 @@ def test_effective_release_blockers_are_reported_without_obsolete_static_gaps(
     ]
     assert envelope["blockers"] == ["release_evidence_digest_mismatch"]
     assert "run_submission_not_idempotent" not in envelope["blockers"]
+
+
+def test_fresh_composer_snapshot_uses_one_consistent_admission_observation(
+    monkeypatch,
+) -> None:
+    _patch_effective_runtime(
+        monkeypatch,
+        release_ready=True,
+        connector_ready=True,
+    )
+    calls = 0
+
+    def changing_release(_settings):
+        nonlocal calls
+        calls += 1
+        ready = calls == 1
+        return SimpleNamespace(
+            ready=ready,
+            blockers=() if ready else ("active_release_stamp_missing",),
+            release_stamp_id="stamp-1" if ready else None,
+            public_cutover_id="cutover-1" if ready else None,
+            event_cursor=calls,
+        )
+
+    monkeypatch.setattr(
+        readiness_module,
+        "current_release_decision",
+        changing_release,
+    )
+    settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
+        api_cors_origins=[ORIGIN],
+    )
+
+    snapshot = composer_readiness_snapshot(settings, fresh=True)
+
+    assert calls == 1
+    assert snapshot["chat_write_ready"] is True
+    assert snapshot["platform_delivery_blockers"] == []

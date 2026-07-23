@@ -193,18 +193,11 @@ def _local_mutation_enabled(settings: Settings) -> bool:
     return bool(getattr(settings.local_mutation, "enabled", False))
 
 
-def authority_readiness(
+def _authority_readiness_projection(
     settings: Settings,
     *,
-    fresh: bool = False,
+    admission: _EffectiveAdmission,
 ) -> dict[str, object]:
-    """Return schema, research, release, and live connector facts.
-
-    ``ready`` continues to mean that the ordinary workspace persistence
-    authorities are present under the constrained runtime role.  Public chat
-    additionally requires the durable release and connector observations.
-    """
-
     ledger_version = command_ledger_schema_version(settings)
     session_version = session_registry_schema_version(settings)
     binding_version = workflow_binding_schema_version(settings)
@@ -215,7 +208,6 @@ def authority_readiness(
     research_schema_ready = schema_ready and binding_ready
     runtime_security_ready = hermes_runtime_security_ready(settings)
     write_authority_ready = schema_ready and runtime_security_ready
-    admission = _effective_admission(settings, fresh=fresh)
     mutation_on = _local_mutation_enabled(settings)
 
     return {
@@ -253,6 +245,33 @@ def authority_readiness(
     }
 
 
+def authority_readiness(
+    settings: Settings,
+    *,
+    fresh: bool = False,
+) -> dict[str, object]:
+    """Return schema, research, release, and live connector facts.
+
+    ``ready`` continues to mean that the ordinary workspace persistence
+    authorities are present under the constrained runtime role.  Public chat
+    additionally requires the durable release and connector observations.
+    """
+
+    admission = _effective_admission(settings, fresh=fresh)
+    return _authority_readiness_projection(
+        settings,
+        admission=admission,
+    )
+
+
+def _platform_blockers(admission: _EffectiveAdmission) -> list[str]:
+    return [
+        blocker
+        for blocker in admission.blockers
+        if not blocker.startswith("hermes_")
+    ]
+
+
 def platform_delivery_blockers(
     settings: Settings,
     *,
@@ -261,11 +280,7 @@ def platform_delivery_blockers(
     """Return live Platform/release blockers for the ordinary chat surface."""
 
     admission = _effective_admission(settings, fresh=fresh)
-    return [
-        blocker
-        for blocker in admission.blockers
-        if not blocker.startswith("hermes_")
-    ]
+    return _platform_blockers(admission)
 
 
 def chat_write_blockers(
@@ -298,8 +313,12 @@ def composer_readiness_snapshot(
 ) -> dict[str, object]:
     """Composite readiness view for authorities, health, and workspace."""
 
-    authorities = authority_readiness(settings, fresh=fresh)
-    platform = platform_delivery_blockers(settings, fresh=fresh)
+    admission = _effective_admission(settings, fresh=fresh)
+    authorities = _authority_readiness_projection(
+        settings,
+        admission=admission,
+    )
+    platform = _platform_blockers(admission)
     return {
         **authorities,
         "platform_delivery_blockers": platform,

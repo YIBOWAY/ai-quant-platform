@@ -7,6 +7,7 @@ from quant_system.hermes.effective_release_gate import (
     EffectiveReleaseGate,
     HermesDurableCapabilityObservation,
     LocalReleaseFlags,
+    ReleaseEvidenceObservation,
     RuntimeIdentityObservation,
 )
 from quant_system.hermes.release_authority import (
@@ -126,13 +127,23 @@ def _gate(
     capability: HermesDurableCapabilityObservation | None = None,
     schema: str = SCHEMA,
     evidence: str = EVIDENCE,
+    evidence_platform_runtime: str = PLATFORM,
     role_ready: bool = True,
     authority_schema_ready: bool = True,
+    gateway_enabled: bool = True,
+    kill_switch: bool = True,
+    live_trading_enabled: bool = False,
 ) -> EffectiveReleaseGate:
     return EffectiveReleaseGate(
         authority=authority or _Authority(),
         local_flags_probe=lambda: flags
-        or LocalReleaseFlags(mutation_enabled=True, composer_open=True),
+        or LocalReleaseFlags(
+            mutation_enabled=True,
+            composer_open=True,
+            hermes_gateway_enabled=gateway_enabled,
+            kill_switch_enabled=kill_switch,
+            live_trading_enabled=live_trading_enabled,
+        ),
         runtime_identity_probe=lambda: identities
         or RuntimeIdentityObservation(
             platform_runtime_digest=PLATFORM,
@@ -140,7 +151,12 @@ def _gate(
             hermes_runtime_digest=HERMES,
         ),
         database_schema_fingerprint_probe=lambda: schema,
-        release_evidence_digest_probe=lambda: evidence,
+        release_evidence_probe=lambda: ReleaseEvidenceObservation(
+            digest=evidence,
+            platform_runtime_digest=evidence_platform_runtime,
+            hqa_runtime_digest=HQA,
+            hermes_runtime_digest=HERMES,
+        ),
         runtime_role_readiness_probe=lambda: role_ready,
         authority_schema_readiness_probe=lambda: authority_schema_ready,
         hermes_capability_probe=lambda: capability or _capabilities(),
@@ -171,16 +187,46 @@ def test_local_flags_are_deny_only_not_an_authority() -> None:
     assert "open_public_cutover_missing" in decision.blockers
 
     mutation_off = _gate(
-        flags=LocalReleaseFlags(mutation_enabled=False, composer_open=True)
+        flags=LocalReleaseFlags(
+            mutation_enabled=False,
+            composer_open=True,
+            hermes_gateway_enabled=True,
+            kill_switch_enabled=True,
+            live_trading_enabled=False,
+        )
     ).evaluate("workspace-root")
     assert mutation_off.ready is False
     assert "local_mutation_disabled" in mutation_off.blockers
 
     composer_off = _gate(
-        flags=LocalReleaseFlags(mutation_enabled=True, composer_open=False)
+        flags=LocalReleaseFlags(
+            mutation_enabled=True,
+            composer_open=False,
+            hermes_gateway_enabled=True,
+            kill_switch_enabled=True,
+            live_trading_enabled=False,
+        )
     ).evaluate("workspace-root")
     assert composer_off.ready is False
     assert "local_composer_closed" in composer_off.blockers
+
+
+def test_disabled_hermes_gateway_closes_release_even_when_every_other_fact_matches() -> None:
+    decision = _gate(gateway_enabled=False).evaluate("workspace-root")
+
+    assert decision.ready is False
+    assert decision.chat_write_ready is False
+    assert "hermes_gateway_disabled" in decision.blockers
+
+
+def test_current_trading_safety_flags_must_remain_fail_closed() -> None:
+    kill_switch_off = _gate(kill_switch=False).evaluate("workspace-root")
+    live_enabled = _gate(live_trading_enabled=True).evaluate("workspace-root")
+
+    assert "trading_kill_switch_disabled" in kill_switch_off.blockers
+    assert "live_trading_enabled" in live_enabled.blockers
+    assert kill_switch_off.ready is False
+    assert live_enabled.ready is False
 
 
 def test_gate_rejects_runtime_schema_cutover_and_role_drift() -> None:
@@ -199,6 +245,18 @@ def test_gate_rejects_runtime_schema_cutover_and_role_drift() -> None:
 
     evidence_decision = _gate(evidence="c" * 64).evaluate("workspace-root")
     assert "release_evidence_digest_mismatch" in evidence_decision.blockers
+
+    pre_stamp = _Authority()
+    pre_stamp.stamp = None
+    pre_stamp.cutover = None
+    unbound_evidence = _gate(
+        authority=pre_stamp,
+        evidence_platform_runtime="d" * 64,
+    ).evaluate("workspace-root")
+    assert (
+        "release_evidence_platform_runtime_mismatch"
+        in unbound_evidence.blockers
+    )
 
     role_decision = _gate(role_ready=False).evaluate("workspace-root")
     assert "restricted_runtime_role_unready" in role_decision.blockers

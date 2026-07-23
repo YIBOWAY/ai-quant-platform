@@ -51,10 +51,23 @@ class ReleaseAuthorityReadPort(Protocol):
 class LocalReleaseFlags:
     mutation_enabled: bool
     composer_open: bool
+    hermes_gateway_enabled: bool
+    kill_switch_enabled: bool
+    live_trading_enabled: bool
 
 
 @dataclass(frozen=True)
 class RuntimeIdentityObservation:
+    platform_runtime_digest: str
+    hqa_runtime_digest: str
+    hermes_runtime_digest: str
+
+
+@dataclass(frozen=True)
+class ReleaseEvidenceObservation:
+    """Validated evidence identity and its three runtime bindings."""
+
+    digest: str
     platform_runtime_digest: str
     hqa_runtime_digest: str
     hermes_runtime_digest: str
@@ -123,7 +136,7 @@ class EffectiveReleaseGate:
         local_flags_probe: Callable[[], LocalReleaseFlags],
         runtime_identity_probe: Callable[[], RuntimeIdentityObservation],
         database_schema_fingerprint_probe: Callable[[], str],
-        release_evidence_digest_probe: Callable[[], str],
+        release_evidence_probe: Callable[[], ReleaseEvidenceObservation],
         runtime_role_readiness_probe: Callable[[], bool],
         authority_schema_readiness_probe: Callable[[], bool],
         hermes_capability_probe: Callable[
@@ -141,7 +154,7 @@ class EffectiveReleaseGate:
         self._local_flags_probe = local_flags_probe
         self._runtime_identity_probe = runtime_identity_probe
         self._schema_fingerprint_probe = database_schema_fingerprint_probe
-        self._release_evidence_digest_probe = release_evidence_digest_probe
+        self._release_evidence_probe = release_evidence_probe
         self._runtime_role_readiness_probe = runtime_role_readiness_probe
         self._authority_schema_readiness_probe = authority_schema_readiness_probe
         self._hermes_capability_probe = hermes_capability_probe
@@ -242,12 +255,24 @@ class EffectiveReleaseGate:
         try:
             flags = self._local_flags_probe()
         except Exception:  # noqa: BLE001 - a failed probe is a closed gate
-            flags = LocalReleaseFlags(False, False)
+            flags = LocalReleaseFlags(
+                mutation_enabled=False,
+                composer_open=False,
+                hermes_gateway_enabled=False,
+                kill_switch_enabled=False,
+                live_trading_enabled=True,
+            )
             self._append(blockers, "local_release_flags_unavailable")
         if flags.mutation_enabled is not True:
             self._append(blockers, "local_mutation_disabled")
         if flags.composer_open is not True:
             self._append(blockers, "local_composer_closed")
+        if flags.hermes_gateway_enabled is not True:
+            self._append(blockers, "hermes_gateway_disabled")
+        if flags.kill_switch_enabled is not True:
+            self._append(blockers, "trading_kill_switch_disabled")
+        if flags.live_trading_enabled is not False:
+            self._append(blockers, "live_trading_enabled")
 
         try:
             authority_schema_ready = self._authority_schema_readiness_probe()
@@ -271,10 +296,39 @@ class EffectiveReleaseGate:
             self._append(blockers, "database_schema_fingerprint_unavailable")
 
         try:
-            current_evidence = self._release_evidence_digest_probe()
+            evidence = self._release_evidence_probe()
         except Exception:  # noqa: BLE001 - a failed probe is a closed gate
-            current_evidence = "<unavailable>"
-        if not _is_digest(current_evidence):
+            evidence = None
+        if not isinstance(evidence, ReleaseEvidenceObservation):
+            evidence = None
+        current_evidence = (
+            evidence.digest if evidence is not None else "<unavailable>"
+        )
+        evidence_runtime_fields = (
+            (
+                "platform",
+                (
+                    evidence.platform_runtime_digest
+                    if evidence is not None
+                    else None
+                ),
+            ),
+            (
+                "hqa",
+                evidence.hqa_runtime_digest if evidence is not None else None,
+            ),
+            (
+                "hermes",
+                (
+                    evidence.hermes_runtime_digest
+                    if evidence is not None
+                    else None
+                ),
+            ),
+        )
+        if not _is_digest(current_evidence) or any(
+            not _is_digest(value) for _, value in evidence_runtime_fields
+        ):
             self._append(blockers, "release_evidence_digest_unavailable")
 
         try:
@@ -282,6 +336,30 @@ class EffectiveReleaseGate:
         except Exception:  # noqa: BLE001 - a failed probe is a closed gate
             identities = None
             self._append(blockers, "runtime_identity_observation_unavailable")
+        if identities is not None and evidence is not None:
+            evidence_runtime_bindings = (
+                (
+                    "platform",
+                    evidence.platform_runtime_digest,
+                    identities.platform_runtime_digest,
+                ),
+                (
+                    "hqa",
+                    evidence.hqa_runtime_digest,
+                    identities.hqa_runtime_digest,
+                ),
+                (
+                    "hermes",
+                    evidence.hermes_runtime_digest,
+                    identities.hermes_runtime_digest,
+                ),
+            )
+            for name, claimed, observed in evidence_runtime_bindings:
+                if _is_digest(claimed) and claimed != observed:
+                    self._append(
+                        blockers,
+                        f"release_evidence_{name}_runtime_mismatch",
+                    )
 
         try:
             stamp = self._authority.active_release_stamp(workspace_id)
@@ -391,6 +469,7 @@ __all__ = [
     "EffectiveReleaseGate",
     "HermesDurableCapabilityObservation",
     "LocalReleaseFlags",
+    "ReleaseEvidenceObservation",
     "ReleaseAuthorityReadPort",
     "RuntimeIdentityObservation",
 ]
