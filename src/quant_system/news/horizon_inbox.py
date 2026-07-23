@@ -22,13 +22,20 @@ class HorizonInboxRun:
 
 
 def iter_ready_runs(inbox_dir: str | Path) -> list[HorizonInboxRun]:
+    """Return parseable READY runs; skip corrupt siblings instead of aborting the batch."""
+
     root = Path(inbox_dir) / "runs"
     if not root.is_dir():
         return []
     found: list[HorizonInboxRun] = []
     for child in sorted(root.iterdir()):
-        if child.is_dir() and (child / "READY").is_file():
+        if not (child.is_dir() and (child / "READY").is_file()):
+            continue
+        try:
             found.append(load_run(child))
+        except (OSError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            # One bad export must not block healthy siblings in the same cron tick.
+            continue
     return found
 
 

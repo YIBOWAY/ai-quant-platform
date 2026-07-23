@@ -205,3 +205,32 @@ def test_horizon_ingest_cli(monkeypatch, tmp_path: Path) -> None:
     assert payload["ingested"] == [RUN_ID]
     assert captured["inbox_dir"] == str(inbox)
     assert captured["run_id"] == RUN_ID
+
+
+def test_horizon_ingest_cli_exits_nonzero_when_failed(monkeypatch, tmp_path: Path) -> None:
+    inbox = _copy_fixture_inbox(tmp_path)
+
+    def _fake_ingest(*, settings, run_id=None):  # noqa: ARG001
+        return {
+            "ingested": [],
+            "skipped": [],
+            "failed": [{"run_id": RUN_ID, "error": "boom"}],
+        }
+
+    monkeypatch.setattr(
+        "quant_system.news.horizon_ingest.ingest_horizon_inbox",
+        _fake_ingest,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "news",
+            "horizon-ingest",
+            "--inbox",
+            str(inbox),
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert len(payload["failed"]) == 1

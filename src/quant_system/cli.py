@@ -3229,6 +3229,8 @@ def news_horizon_ingest(
 
     result = ingest_horizon_inbox(settings=settings, run_id=run_id)
     typer.echo(json.dumps(result, sort_keys=True))
+    if result.get("failed"):
+        raise typer.Exit(code=1)
 
 
 def _emit_ingestion_summary(result: IngestionResult) -> None:

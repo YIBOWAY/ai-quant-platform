@@ -67,3 +67,35 @@ def test_rejects_item_with_empty_title_or_url(tmp_path):
 
     with pytest.raises(ValueError, match="title"):
         load_run(run_dir)
+
+
+def test_iter_ready_runs_skips_corrupt_sibling(tmp_path):
+    """One bad READY run must not prevent loading healthy siblings."""
+
+    import shutil
+
+    good = tmp_path / "runs" / "20260723T120000Z-ab12"
+    shutil.copytree(FIXTURE / "runs" / "20260723T120000Z-ab12", good)
+
+    bad = tmp_path / "runs" / "zzzz-corrupt"
+    bad.mkdir(parents=True)
+    (bad / "READY").write_text("", encoding="utf-8")
+    (bad / "meta.json").write_text("{not-json", encoding="utf-8")
+    (bad / "items.json").write_text("[]", encoding="utf-8")
+
+    # Lexicographic order puts corrupt last; also cover corrupt-first.
+    bad_first = tmp_path / "runs" / "0000-corrupt-first"
+    bad_first.mkdir(parents=True)
+    (bad_first / "READY").write_text("", encoding="utf-8")
+    (bad_first / "meta.json").write_text(
+        '{"run_id": "0000-corrupt-first", "generated_at": "2026-07-23T12:00:00+00:00"}',
+        encoding="utf-8",
+    )
+    (bad_first / "items.json").write_text(
+        '[{"id": "x", "title": "", "url": "https://example.com/x", "source": "HN"}]',
+        encoding="utf-8",
+    )
+
+    runs = iter_ready_runs(tmp_path)
+    assert len(runs) == 1
+    assert runs[0].run_id == "20260723T120000Z-ab12"
