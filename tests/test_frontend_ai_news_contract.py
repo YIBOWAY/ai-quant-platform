@@ -144,3 +144,52 @@ def test_ai_news_view_sanitizes_external_links() -> None:
     assert 'url.protocol === "http:" || url.protocol === "https:"' in source
     assert "href={item.url}" not in source
     assert "href={sourceUrl}" not in source
+
+
+def test_frontend_api_exposes_neutral_news_client_and_stamps() -> None:
+    source = Path("src/frontend/lib/api.ts").read_text(encoding="utf-8")
+
+    assert 'export type NewsServedFrom = "primary" | "failover" | "cache" | "forced"' in source
+    assert "export type NewsPreference" in source
+    assert "preference?: string" in source or "preference?: NewsPreference" in source
+    assert "served_from?: NewsServedFrom" in source
+    assert "export function getNewsItems" in source
+    assert "export function getNewsDaily" in source
+    assert "export function getNewsDailies" in source
+    assert "export function getNewsStatus" in source
+    assert "`/api/news/items?" in source or '"/api/news/items"' in source or "`/api/news/items" in source
+    assert "`/api/news/daily" in source or '"/api/news/daily"' in source
+    assert "`/api/news/dailies?" in source or '"/api/news/dailies"' in source
+    assert '"/api/news/status"' in source
+    assert "return getNewsItems(query)" in source
+    assert "return getNewsDaily(date)" in source
+    assert "return getNewsDailies(take)" in source
+    assert "return getNewsStatus()" in source
+    assert "providers?:" in source
+    assert "failover?:" in source
+    assert "preference_default?:" in source
+    # Status fallback stays local — no invented live probe.
+    assert 'enabled: false' in source
+    assert "research_safety: AIHOT_RESEARCH_SAFETY" in source
+    # research_safety retained; never renamed to safety-only.
+    assert "research_safety" in source
+
+
+def test_ai_news_view_surfaces_dual_source_stamps() -> None:
+    source = Path("src/frontend/components/forms/AiNewsView.tsx").read_text(encoding="utf-8")
+
+    assert "getNewsItems" in source
+    assert "getNewsDaily" in source
+    assert "getNewsDailies" in source
+    assert "getNewsStatus" in source
+    assert "served_from" in source
+    assert 'served_from === "failover"' in source or '=== "failover"' in source
+    assert "failoverActive" in source or "failover" in source
+    assert "data-testid=\"ai-news-failover-banner\"" in source or "ai-news-failover" in source
+    # Provider from items/daily payload, not only status.
+    assert "activeProvider" in source or "feedPages[0]?.provider" in source or "page.provider" in source
+    # Bilingual dual-source research copy.
+    assert "Horizon" in source
+    assert "AI HOT" in source
+    assert "standby" in source.lower() or "备用" in source or "待命" in source
+    assert "research-only" in source.lower() or "research only" in source.lower() or "仅供研究" in source or "研究" in source

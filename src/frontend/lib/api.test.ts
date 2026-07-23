@@ -151,7 +151,7 @@ describe("getAiHotItems", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const url = new URL(fetchMock.mock.calls[0][0] as string);
-    expect(url.pathname).toBe("/api/news/aihot/items");
+    expect(url.pathname).toBe("/api/news/items");
     expect(Object.fromEntries(url.searchParams.entries())).toEqual({
       mode: "all",
       category: "ai-models",

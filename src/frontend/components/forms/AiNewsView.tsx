@@ -10,13 +10,14 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
-  getAiHotDaily,
-  getAiHotDailies,
-  getAiHotItems,
-  getAiHotStatus,
+  getNewsDaily,
+  getNewsDailies,
+  getNewsItems,
+  getNewsStatus,
   type AiHotDailyIndex,
   type AiHotDailyResponse,
   type AiHotItem,
+  type NewsServedFrom,
 } from "@/lib/api";
 import { useIsHydrated } from "@/lib/hydration";
 import {
@@ -97,12 +98,13 @@ const categoryToneClasses: Record<string, NewsTone> = {
 
 const copy = {
   en: {
-    eyebrow: "Read-only · External beta source",
+    eyebrow: "Read-only · Research-only dual source",
     title: "AI News Research Feed",
     subtitle:
-      "AI HOT headlines for research reading. No strategy, backtest, paper account, or trade path is triggered from this page.",
-    safetyCompact: "Read-only AI HOT beta. Verify summaries against originals. No strategy, backtest, paper account, or trade path is triggered.",
-    safetyShort: "Read-only news. No strategy, backtest, paper account, or trade path.",
+      "Main source: AI HOT (beta). Standby: self-hosted Horizon. Verify summaries against originals. Research-only — no strategy, backtest, paper account, or trade path is triggered from this page.",
+    safetyCompact:
+      "Read-only research feed. Main source AI HOT (beta); standby self-hosted Horizon. Verify originals. No strategy, backtest, paper account, or trade path is triggered.",
+    safetyShort: "Research-only news. Verify originals. No strategy, backtest, paper account, or trade path.",
     mode: "Mode",
     selected: "Selected",
     all: "All",
@@ -119,7 +121,7 @@ const copy = {
     fetched: "Fetched",
     none: "None",
     safety:
-      "AI HOT is an external beta source. Summaries may be LLM-generated. Verify against original sources before citing. This page does not create trading signals, trigger strategies, or mutate the paper account.",
+      "Main source is AI HOT (external beta); standby is self-hosted Horizon. Summaries may be LLM-generated — verify against original sources before citing. Research-only: this page does not create trading signals, trigger strategies, or mutate the paper account.",
     feedTitle: "News feed",
     feedHint: "Read-only headlines in a Beijing-time market-news blotter.",
     feedCount: "Rows",
@@ -131,13 +133,13 @@ const copy = {
     score: "Score",
     newTab: "opens in a new tab",
     dailyTitle: "Daily report",
-    dailyHint: "AI HOT daily sections and archive links.",
+    dailyHint: "Daily sections and archive links (AI HOT primary, Horizon standby).",
     dailyDate: "Daily date",
     latestDaily: "Latest",
     archive: "Recent dailies",
     openOriginal: "Open original",
     selectedBadge: "Selected",
-    emptyFeed: "No AI HOT items returned for this filter.",
+    emptyFeed: "No news items returned for this filter.",
     emptyDaily: "No daily report returned.",
     archiveEmpty: "No daily archive entries returned.",
     loadMore: "Load more",
@@ -146,13 +148,19 @@ const copy = {
     beijingTime: "Beijing time",
     researchNote: "Research note",
     unknownDate: "Unscheduled",
+    failoverActive: "Failover active",
+    failoverBanner:
+      "Primary AI HOT is unavailable — serving standby Horizon. Research-only; verify originals.",
+    servedFrom: "Served from",
   },
   zh: {
-    eyebrow: "只读 · 外部测试版数据源",
+    eyebrow: "只读 · 双源研究资讯",
     title: "AI 新闻研究流",
-    subtitle: "读取 AI HOT 热点用于研究浏览。本页不会触发策略、回测、模拟账户或任何交易链路。",
-    safetyCompact: "只读 AI HOT 测试源；摘要需回原文核对；不会触发策略、回测、模拟账户或任何交易链路。",
-    safetyShort: "只读资讯；不触发策略、回测、模拟账户或交易链路。",
+    subtitle:
+      "主源：AI HOT（测试版）；备用：自托管 Horizon。摘要请回原文核对。仅供研究——本页不会触发策略、回测、模拟账户或任何交易链路。",
+    safetyCompact:
+      "只读研究资讯。主源 AI HOT（测试版）；备用自托管 Horizon；请回原文核对；不会触发策略、回测、模拟账户或交易链路。",
+    safetyShort: "仅供研究；请回原文核对；不触发策略、回测、模拟账户或交易链路。",
     mode: "模式",
     selected: "精选",
     all: "全部",
@@ -169,7 +177,7 @@ const copy = {
     fetched: "抓取时间",
     none: "无",
     safety:
-      "AI HOT 是外部测试版数据源，摘要可能由 LLM 生成。引用前请回原文核对。本页不会生成交易信号，不会触发策略，也不会修改模拟账户。",
+      "主源为 AI HOT（外部测试版），备用为自托管 Horizon。摘要可能由 LLM 生成，引用前请回原文核对。仅供研究：本页不会生成交易信号，不会触发策略，也不会修改模拟账户。",
     feedTitle: "新闻动态",
     feedHint: "只读外部标题，按北京时间组织成市场新闻 blotter。",
     feedCount: "行数",
@@ -181,13 +189,13 @@ const copy = {
     score: "评分",
     newTab: "新标签页打开",
     dailyTitle: "AI 日报",
-    dailyHint: "AI HOT 日报版块和近期归档。",
+    dailyHint: "日报版块和近期归档（AI HOT 主源，Horizon 备用）。",
     dailyDate: "日报日期",
     latestDaily: "最新",
     archive: "近期日报",
     openOriginal: "打开原文",
     selectedBadge: "精选",
-    emptyFeed: "当前筛选没有返回 AI HOT 条目。",
+    emptyFeed: "当前筛选没有返回新闻条目。",
     emptyDaily: "没有返回日报内容。",
     archiveEmpty: "没有返回日报归档。",
     loadMore: "加载更多",
@@ -196,6 +204,9 @@ const copy = {
     beijingTime: "北京时间",
     researchNote: "研究关注点",
     unknownDate: "未定时间",
+    failoverActive: "故障切换中",
+    failoverBanner: "主源 AI HOT 不可用，当前使用备用 Horizon。仅供研究；请回原文核对。",
+    servedFrom: "供应路径",
   },
 };
 
@@ -216,16 +227,16 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
   const debouncedKeyword = useDebouncedValue(normalizedKeyword, 350);
 
   const statusQuery = useQuery({
-    queryKey: ["aihot-status"],
+    queryKey: ["news-status"],
     enabled: hydrated,
-    queryFn: getAiHotStatus,
+    queryFn: getNewsStatus,
   });
   const itemsQuery = useInfiniteQuery({
-    queryKey: ["aihot-items", mode, category, debouncedKeyword, since, take],
+    queryKey: ["news-items", mode, category, debouncedKeyword, since, take],
     enabled: hydrated,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
-      getAiHotItems({
+      getNewsItems({
         mode,
         category: category || undefined,
         cursor: typeof pageParam === "string" ? pageParam : undefined,
@@ -237,14 +248,14 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
       lastPage.has_next && lastPage.next_cursor ? lastPage.next_cursor : undefined,
   });
   const dailyQuery = useQuery({
-    queryKey: ["aihot-daily", dailyDate],
+    queryKey: ["news-daily", dailyDate],
     enabled: hydrated && tab === "daily",
-    queryFn: () => getAiHotDaily(dailyDate || undefined),
+    queryFn: () => getNewsDaily(dailyDate || undefined),
   });
   const dailiesQuery = useQuery({
-    queryKey: ["aihot-dailies"],
+    queryKey: ["news-dailies"],
     enabled: hydrated && tab === "daily",
-    queryFn: () => getAiHotDailies(14),
+    queryFn: () => getNewsDailies(14),
   });
 
   function refreshActive() {
@@ -267,6 +278,15 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
   const feedApiError = feedPages.find((page) => page.apiError)?.apiError;
   const activeFetchedAt = tab === "feed" ? feedPages[0]?.fetched_at : dailyQuery.data?.generated_at;
   const activeWarnings = tab === "feed" ? feedWarnings : dailyQuery.data?.warnings;
+  // Prefer payload provider/served_from from items/daily over status-only.
+  const activeProvider =
+    tab === "feed"
+      ? feedPages[0]?.provider ?? statusQuery.data?.provider
+      : dailyQuery.data?.provider ?? statusQuery.data?.provider;
+  const activeServedFrom: NewsServedFrom | undefined =
+    tab === "feed" ? feedPages[0]?.served_from : dailyQuery.data?.served_from;
+  const failoverActive = activeServedFrom === "failover";
+  const providerLabel = formatProviderLabel(activeProvider);
   const isRefreshing =
     statusQuery.isFetching || itemsQuery.isFetching || dailyQuery.isFetching || dailiesQuery.isFetching;
 
@@ -317,10 +337,30 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
             <div className="hidden flex-wrap items-center gap-2 sm:flex">
               <HeaderStatusPill
                 label={text.source}
-                tone={statusQuery.data?.enabled === false ? "warning" : "info"}
-                value={statusQuery.data?.enabled === false ? text.unavailable : "AI HOT"}
+                tone={
+                  statusQuery.data?.enabled === false || failoverActive || !activeProvider
+                    ? "warning"
+                    : "info"
+                }
+                value={
+                  statusQuery.data?.enabled === false && !activeProvider
+                    ? text.unavailable
+                    : providerLabel || text.unavailable
+                }
               />
-              <StatusPill label={text.beta} value={statusQuery.data?.provider_beta ? "ON" : "--"} />
+              {failoverActive ? (
+                <HeaderStatusPill label={text.servedFrom} tone="warning" value={text.failoverActive} />
+              ) : null}
+              <StatusPill
+                label={text.beta}
+                value={
+                  (feedPages[0]?.provider_beta ??
+                    dailyQuery.data?.provider_beta ??
+                    statusQuery.data?.provider_beta)
+                    ? "ON"
+                    : "--"
+                }
+              />
               <StatusPill label={text.fetched} value={formatDateTime(activeFetchedAt, locale) || text.none} />
               <TerminalToolbarButton
                 className="border-info/40 bg-info/5 text-text-primary hover:border-info"
@@ -498,6 +538,16 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
             tab === "feed" ? feedApiError : dailyQuery.data?.apiError,
           ]}
         />
+        {failoverActive ? (
+          <div
+            aria-live="polite"
+            className="rounded-lg border border-warning/35 bg-warning/5 p-3 font-body-sm text-warning"
+            data-testid="ai-news-failover-banner"
+          >
+            {text.failoverBanner}
+            {providerLabel ? ` · ${text.source}: ${providerLabel}` : null}
+          </div>
+        ) : null}
         <OperationalWarningStrip warnings={activeWarnings ?? []} />
 
         {tab === "feed" ? (
@@ -858,6 +908,20 @@ function HeaderStatusPill({
       <span className="font-bold">{value}</span>
     </span>
   );
+}
+
+function formatProviderLabel(provider?: string | null): string {
+  if (!provider) {
+    return "";
+  }
+  const normalized = provider.trim().toLowerCase();
+  if (normalized === "aihot" || normalized === "ai-hot" || normalized === "ai_hot") {
+    return "AI HOT";
+  }
+  if (normalized === "horizon") {
+    return "Horizon";
+  }
+  return provider;
 }
 
 function categoryToneClass(value: string | null | undefined) {

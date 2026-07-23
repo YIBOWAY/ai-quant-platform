@@ -1820,6 +1820,14 @@ export type AiHotResearchSafety = {
   verify_original_source: boolean;
 };
 
+export type NewsPreference = "auto" | "aihot" | "horizon";
+export type NewsServedFrom = "primary" | "failover" | "cache" | "forced";
+
+export type NewsFailoverStatus = {
+  auto_enabled?: boolean;
+  order?: string[];
+};
+
 export type AiHotItem = {
   id: string;
   title: string;
@@ -1846,6 +1854,8 @@ export type AiHotItemsResponse = ApiEnvelope & {
   items: AiHotItem[];
   warnings: string[];
   research_safety: AiHotResearchSafety;
+  preference?: NewsPreference | string;
+  served_from?: NewsServedFrom;
 };
 
 export type AiHotDailyResponse = ApiEnvelope & {
@@ -1862,6 +1872,8 @@ export type AiHotDailyResponse = ApiEnvelope & {
   warnings: string[];
   research_safety: AiHotResearchSafety;
   raw?: Record<string, unknown>;
+  preference?: NewsPreference | string;
+  served_from?: NewsServedFrom;
 };
 
 export type AiHotDailyIndex = {
@@ -1881,6 +1893,8 @@ export type AiHotDailiesResponse = ApiEnvelope & {
   items: AiHotDailyIndex[];
   warnings: string[];
   research_safety: AiHotResearchSafety;
+  preference?: NewsPreference | string;
+  served_from?: NewsServedFrom;
 };
 
 export type AiHotStatusResponse = ApiEnvelope & {
@@ -1893,7 +1907,14 @@ export type AiHotStatusResponse = ApiEnvelope & {
   last_error?: Record<string, unknown> | null;
   warnings: string[];
   research_safety: AiHotResearchSafety;
+  /** Aggregated dual-source status (§6.5); optional for forward compat. */
+  preference_default?: NewsPreference | string;
+  research_only?: boolean;
+  providers?: Record<string, unknown>;
+  failover?: NewsFailoverStatus;
 };
+
+export type NewsStatusResponse = AiHotStatusResponse;
 
 export type SettingsResponse = ApiEnvelope & {
   settings?: Record<string, unknown>;
@@ -2074,9 +2095,12 @@ export type AiHotItemsQuery = {
   since?: string;
   cursor?: string;
   take?: number;
+  preference?: NewsPreference;
 };
 
-export function getAiHotItems(query: AiHotItemsQuery = {}) {
+export type NewsItemsQuery = AiHotItemsQuery;
+
+export function getNewsItems(query: NewsItemsQuery = {}) {
   const params = new URLSearchParams();
   params.set("mode", query.mode ?? "selected");
   if (query.category) {
@@ -2091,8 +2115,11 @@ export function getAiHotItems(query: AiHotItemsQuery = {}) {
   if (query.cursor) {
     params.set("cursor", query.cursor);
   }
+  if (query.preference) {
+    params.set("preference", query.preference);
+  }
   params.set("take", String(query.take ?? 50));
-  return apiGet<AiHotItemsResponse>(`/api/news/aihot/items?${params.toString()}`, {
+  return apiGet<AiHotItemsResponse>(`/api/news/items?${params.toString()}`, {
     provider: "aihot",
     provider_beta: true,
     fetched_at: "",
@@ -2100,19 +2127,24 @@ export function getAiHotItems(query: AiHotItemsQuery = {}) {
     has_next: false,
     next_cursor: null,
     items: [],
-    warnings: ["AI HOT feed is unavailable."],
+    warnings: ["AI news feed is unavailable."],
     research_safety: AIHOT_RESEARCH_SAFETY,
+    preference: query.preference ?? "auto",
+    served_from: "primary",
     safety: FALLBACK_SAFETY,
   });
 }
 
-export function getAiHotDaily(date?: string) {
+export function getNewsDaily(date?: string, preference?: NewsPreference) {
   const params = new URLSearchParams();
   if (date) {
     params.set("date", date);
   }
+  if (preference) {
+    params.set("preference", preference);
+  }
   const query = params.toString();
-  return apiGet<AiHotDailyResponse>(`/api/news/aihot/daily${query ? `?${query}` : ""}`, {
+  return apiGet<AiHotDailyResponse>(`/api/news/daily${query ? `?${query}` : ""}`, {
     provider: "aihot",
     provider_beta: true,
     fetched_at: "",
@@ -2123,29 +2155,37 @@ export function getAiHotDaily(date?: string) {
     lead: null,
     sections: [],
     flashes: [],
-    warnings: ["AI HOT daily report is unavailable."],
+    warnings: ["AI news daily report is unavailable."],
     research_safety: AIHOT_RESEARCH_SAFETY,
     raw: {},
+    preference: preference ?? "auto",
+    served_from: "primary",
     safety: FALLBACK_SAFETY,
   });
 }
 
-export function getAiHotDailies(take = 14) {
+export function getNewsDailies(take = 14, preference?: NewsPreference) {
   const params = new URLSearchParams({ take: String(take) });
-  return apiGet<AiHotDailiesResponse>(`/api/news/aihot/dailies?${params.toString()}`, {
+  if (preference) {
+    params.set("preference", preference);
+  }
+  return apiGet<AiHotDailiesResponse>(`/api/news/dailies?${params.toString()}`, {
     provider: "aihot",
     provider_beta: true,
     fetched_at: "",
     count: 0,
     items: [],
-    warnings: ["AI HOT daily archive is unavailable."],
+    warnings: ["AI news daily archive is unavailable."],
     research_safety: AIHOT_RESEARCH_SAFETY,
+    preference: preference ?? "auto",
+    served_from: "primary",
     safety: FALLBACK_SAFETY,
   });
 }
 
-export function getAiHotStatus() {
-  return apiGet<AiHotStatusResponse>("/api/news/aihot/status", {
+/** Local-only status fallback — does not invent a live probe. */
+export function getNewsStatus() {
+  return apiGet<NewsStatusResponse>("/api/news/status", {
     provider: "aihot",
     provider_beta: true,
     enabled: false,
@@ -2153,10 +2193,34 @@ export function getAiHotStatus() {
     timeout_seconds: 0,
     cache_ttl_seconds: 0,
     last_error: null,
-    warnings: ["AI HOT status is unavailable."],
+    warnings: ["AI news status is unavailable."],
     research_safety: AIHOT_RESEARCH_SAFETY,
+    preference_default: "auto",
+    research_only: true,
+    providers: {},
+    failover: { auto_enabled: true, order: [] },
     safety: FALLBACK_SAFETY,
   });
+}
+
+/** @deprecated Prefer getNewsItems — aliases the neutral /api/news/* facade. */
+export function getAiHotItems(query: AiHotItemsQuery = {}) {
+  return getNewsItems(query);
+}
+
+/** @deprecated Prefer getNewsDaily — aliases the neutral /api/news/* facade. */
+export function getAiHotDaily(date?: string) {
+  return getNewsDaily(date);
+}
+
+/** @deprecated Prefer getNewsDailies — aliases the neutral /api/news/* facade. */
+export function getAiHotDailies(take = 14) {
+  return getNewsDailies(take);
+}
+
+/** @deprecated Prefer getNewsStatus — aliases the neutral /api/news/* facade. */
+export function getAiHotStatus() {
+  return getNewsStatus();
 }
 
 export function getSymbols() {
