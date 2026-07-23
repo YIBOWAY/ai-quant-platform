@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 
+from quant_system.hermes.agent_workspace import project_managed_session_public
 from quant_system.hermes.workspace_observe import (
     follow_resync_required,
     is_terminal_command_state,
@@ -17,21 +18,13 @@ from quant_system.hermes.workspace_observe import (
 
 
 def test_public_event_type_map_and_fallback() -> None:
-    assert (
-        public_event_type(event_type="command_created", to_state="queued")
-        == "command.queued"
-    )
+    assert public_event_type(event_type="command_created", to_state="queued") == "command.queued"
     assert (
         public_event_type(event_type="command_delivered", to_state="delivered")
         == "command.delivered"
     )
-    assert (
-        public_event_type(event_type="weird_custom", to_state="leased")
-        == "command.leased"
-    )
-    assert (
-        public_event_type(event_type="weird_custom", to_state=None) == "command.event"
-    )
+    assert public_event_type(event_type="weird_custom", to_state="leased") == "command.leased"
+    assert public_event_type(event_type="weird_custom", to_state=None) == "command.event"
 
 
 def test_project_command_public_no_payload() -> None:
@@ -60,6 +53,74 @@ def test_project_command_public_no_payload() -> None:
     assert "payload" not in pub
     assert "payload_ref" not in pub
     assert str(pub["updated_at"]).endswith("Z")
+
+
+def test_project_managed_session_public_is_bounded_and_honest() -> None:
+    now = datetime(2026, 7, 24, 12, 0, 0, tzinfo=UTC)
+    projection = project_managed_session_public(
+        {
+            "platform_session_id": "wm_abc",
+            "hermes_session_id": "web_" + ("a" * 40),
+            "provision_state": "retryable",
+            "provision_attempt_count": 2,
+            "provision_lease_until": None,
+            "provision_next_attempt_at": now,
+            "provision_last_error_code": "gateway_timeout",
+            "provisioned_at": None,
+            "parent_platform_session_id": "wm_parent",
+            "fork_point": "message:7",
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+    assert projection == {
+        "platform_session_id": "wm_abc",
+        "session_ref": "session:wm_abc",
+        "hermes_session_id": "web_" + ("a" * 40),
+        "provision_state": "retryable",
+        "web_writable": False,
+        "attempt_count": 2,
+        "lease_until": None,
+        "retry_at": "2026-07-24T12:00:00.000000Z",
+        "last_error_code": "gateway_timeout",
+        "provisioned_at": None,
+        "parent_session_ref": "session:wm_parent",
+        "fork_point": "message:7",
+        "created_at": "2026-07-24T12:00:00.000000Z",
+        "updated_at": "2026-07-24T12:00:00.000000Z",
+    }
+    # Never disclose the provisioning lease principal/token or immutable policy
+    # digest through the browser observation surface.
+    assert "lease_owner" not in projection
+    assert "lease_token" not in projection
+    assert "provider_policy_digest" not in projection
+
+
+def test_project_managed_session_public_only_marks_ready_as_writable() -> None:
+    base = {
+        "platform_session_id": "wm_ready",
+        "hermes_session_id": "web_" + ("b" * 40),
+        "provision_attempt_count": 1,
+        "provision_lease_until": None,
+        "provision_next_attempt_at": None,
+        "provision_last_error_code": None,
+        "provisioned_at": datetime(2026, 7, 24, 12, 0, 0, tzinfo=UTC),
+        "parent_platform_session_id": None,
+        "fork_point": None,
+        "created_at": datetime(2026, 7, 24, 11, 59, 0, tzinfo=UTC),
+        "updated_at": datetime(2026, 7, 24, 12, 0, 0, tzinfo=UTC),
+    }
+    for state in ("pending", "leased", "retryable", "failed"):
+        row = {
+            **base,
+            "provision_state": state,
+            "provisioned_at": None,
+        }
+        assert project_managed_session_public(row)["web_writable"] is False
+
+    ready = project_managed_session_public({**base, "provision_state": "ready"})
+    assert ready["web_writable"] is True
 
 
 def test_project_event_public_joins_command_identity() -> None:

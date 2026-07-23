@@ -29,6 +29,7 @@ from quant_system.hermes.agent_workspace_actions import (
     session_ref,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID, HermesCommandLedger
+from quant_system.hermes.dark_identity_profile import PROVIDER_POLICY_DIGEST
 from quant_system.hermes.session_registry import (
     RegisterWorkspaceSession,
     get_workspace_session,
@@ -519,6 +520,81 @@ def test_snapshot_lists_sessions_and_follow_lifecycle() -> None:
     assert closed_snap.authority_health["mutation"] == (
         "enabled" if effective else "disabled"
     )
+
+
+def test_snapshot_projects_managed_session_provisioning_truth(monkeypatch) -> None:
+    settings = _postgres_settings()
+    _prepare(settings)
+    action = CreateManagedSession(
+        client_action_id="act-snap-provision-pending",
+        workspace=WorkspaceRef(workspace_id=WORKSPACE_ID),
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        payload_ttl_days=7,
+    )
+    action_digest = canonical_action_digest(action)
+    record, created = register_workspace_session(
+        settings,
+        RegisterWorkspaceSession(
+            platform_session_id=derive_managed_platform_session_id(action_digest),
+            hermes_session_id=derive_managed_hermes_session_id(action_digest),
+            workspace_id=WORKSPACE_ID,
+            kind="web_managed_session",
+            provider_policy_digest=action.provider_policy_digest,
+            payload_ttl_days=action.payload_ttl_days,
+            creation_client_action_id=action.client_action_id,
+            creation_action_digest=action_digest,
+        ),
+    )
+    assert created is True
+
+    # This test exercises the snapshot projection while connected as the
+    # migration owner. Dedicated runtime-role attestation has its own PG suite.
+    monkeypatch.setattr(
+        "quant_system.hermes.agent_workspace.authorities_ready",
+        lambda _settings: {
+            "command_ledger_schema_ready": True,
+            "session_registry_schema_ready": True,
+            "workflow_binding_schema_ready": True,
+            "research_binding_ready": True,
+            "ready": True,
+            "mutation_enabled": False,
+            "composer_write_ready": False,
+            "chat_write_ready": False,
+        },
+    )
+    workspace = build_platform_agent_workspace(settings, mutation_enabled=True)
+    actor = ActorRef(owner_user_id=str(ROOT_USER_ID))
+
+    snap = workspace.snapshot(actor, WorkspaceRef(workspace_id=WORKSPACE_ID))
+    projected = [
+        item
+        for item in snap.managed_sessions
+        if item["platform_session_id"] == record.platform_session_id
+    ]
+    assert len(projected) == 1
+    created_at = projected[0]["created_at"]
+    updated_at = projected[0]["updated_at"]
+    assert projected == [
+        {
+            "platform_session_id": record.platform_session_id,
+            "session_ref": session_ref(record.platform_session_id),
+            "hermes_session_id": record.hermes_session_id,
+            "provision_state": "pending",
+            "web_writable": False,
+            "attempt_count": 0,
+            "lease_until": None,
+            "retry_at": None,
+            "last_error_code": None,
+            "provisioned_at": None,
+            "parent_session_ref": None,
+            "fork_point": None,
+            "created_at": created_at,
+            "updated_at": updated_at,
+        }
+    ]
+    assert str(created_at).endswith("Z")
+    assert str(updated_at).endswith("Z")
+    assert snap.to_public_dict()["managed_sessions"] == projected
 
 
 def test_submit_action_document_path_and_unsupported_kind() -> None:

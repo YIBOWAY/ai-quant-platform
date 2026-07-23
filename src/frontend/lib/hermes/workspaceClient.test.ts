@@ -7,6 +7,7 @@ import {
 } from "./darkIdentity";
 import {
   WorkspaceClientError,
+  ensureManagedSession,
   ensureOwnerSession,
   fetchHermesSessionMessages,
   fetchLatestAssistantText,
@@ -18,7 +19,9 @@ import {
   previewAssistantText,
   readCsrfToken,
   sendComposerTurn,
+  submitTurn,
   utf8ByteLength,
+  waitForManagedSessionReady,
 } from "./workspaceClient";
 
 describe("workspaceClient preflight", () => {
@@ -83,10 +86,13 @@ describe("sendComposerTurn", () => {
         const method = (init?.method ?? "GET").toUpperCase();
 
         if (url.endsWith("/api/auth/owner/session") && method === "GET") {
-          return new Response(JSON.stringify({ detail: { code: "auth", message: "no" } }), {
-            status: 401,
-            headers: { "content-type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({ detail: { code: "auth", message: "no" } }),
+            {
+              status: 401,
+              headers: { "content-type": "application/json" },
+            },
+          );
         }
         if (url.endsWith("/api/auth/owner/bootstrap")) {
           expect(JSON.parse(String(init?.body))).toEqual({
@@ -110,7 +116,9 @@ describe("sendComposerTurn", () => {
             action: Record<string, unknown>;
           };
           expect(body.action.kind).toBe("managed_session.create");
-          expect(body.action.provider_policy_digest).toBe(PROVIDER_POLICY_DIGEST);
+          expect(body.action.provider_policy_digest).toBe(
+            PROVIDER_POLICY_DIGEST,
+          );
           expect(body.action.prompt).toBeUndefined();
           return new Response(
             JSON.stringify({
@@ -123,10 +131,39 @@ describe("sendComposerTurn", () => {
             { status: 200, headers: { "content-type": "application/json" } },
           );
         }
+        if (url.includes("/api/workspace/") && url.endsWith("/snapshot")) {
+          return new Response(
+            JSON.stringify({
+              workspace: { workspace_id: PLATFORM_WORKSPACE_ID },
+              managed_sessions: [
+                {
+                  platform_session_id: "managed-1",
+                  session_ref: "session:managed-1",
+                  hermes_session_id: "web_" + "a".repeat(40),
+                  provision_state: "ready",
+                  web_writable: true,
+                  attempt_count: 1,
+                  lease_until: null,
+                  retry_at: null,
+                  last_error_code: null,
+                  provisioned_at: "2026-07-24T12:00:00.000000Z",
+                  parent_session_ref: null,
+                  fork_point: null,
+                  created_at: "2026-07-24T11:59:59.000000Z",
+                  updated_at: "2026-07-24T12:00:00.000000Z",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
         if (url.endsWith("/api/agent/workspace/submit-turn")) {
           const headers = new Headers(init?.headers as HeadersInit);
           expect(headers.get("X-CSRF-Token")).toBe("csrf-live-token");
-          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          const body = JSON.parse(String(init?.body)) as Record<
+            string,
+            unknown
+          >;
           expect(Object.keys(body).sort()).toEqual([
             "client_action_id",
             "managed_session_ref",
@@ -160,22 +197,218 @@ describe("sendComposerTurn", () => {
 
     expect(receipt.status).toBe("accepted");
     expect(receipt.command_id).toBeTruthy();
+    expect(receipt.hermes_session_id).toBe("web_" + "a".repeat(40));
     expect(receipt.payload_ref).toMatch(/^payload:sha256:/);
     expect(receipt).not.toHaveProperty("prompt");
 
-    const paths = calls.map((c) => new URL(c.url, "http://127.0.0.1:3001").pathname);
+    const paths = calls.map(
+      (c) => new URL(c.url, "http://127.0.0.1:3001").pathname,
+    );
     expect(paths).toEqual([
       "/api/auth/owner/session",
       "/api/auth/owner/bootstrap",
       `/api/workspace/${PLATFORM_WORKSPACE_ID}/act`,
+      `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot`,
       "/api/agent/workspace/submit-turn",
     ]);
+  });
+
+  it("waits through pending provisioning before the first submit", async () => {
+    let snapshots = 0;
+    const calls: string[] = [];
+    vi.stubGlobal("document", { cookie: "qs_aw_csrf=csrf-wait-token" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push(url);
+        if (url.endsWith("/api/agent/workspace/submit-turn")) {
+          expect(snapshots).toBe(2);
+          expect(
+            new Headers(init?.headers as HeadersInit).get("X-CSRF-Token"),
+          ).toBe("csrf-wait-token");
+          return new Response(
+            JSON.stringify({
+              status: "accepted",
+              client_action_id: "turn-after-ready",
+              command_id: "cmd-after-ready",
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (!url.endsWith("/snapshot")) {
+          throw new Error(`unexpected ${url}`);
+        }
+        snapshots += 1;
+        const ready = snapshots >= 2;
+        return new Response(
+          JSON.stringify({
+            managed_sessions: [
+              {
+                platform_session_id: "wm_pending",
+                session_ref: "session:wm_pending",
+                hermes_session_id: "web_" + "b".repeat(40),
+                provision_state: ready ? "ready" : "pending",
+                web_writable: ready,
+                attempt_count: ready ? 1 : 0,
+                lease_until: null,
+                retry_at: null,
+                last_error_code: null,
+                provisioned_at: ready ? "2026-07-24T12:00:00.000000Z" : null,
+                parent_session_ref: null,
+                fork_point: null,
+                created_at: "2026-07-24T11:59:59.000000Z",
+                updated_at: "2026-07-24T12:00:00.000000Z",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    const receipt = await submitTurn({
+      prompt: "first turn waits",
+      clientActionId: "turn-after-ready",
+      managedSessionRef: "session:wm_pending",
+    });
+
+    expect(receipt.status).toBe("accepted");
+    expect(receipt.hermes_session_id).toBe("web_" + "b".repeat(40));
+    expect(calls.filter((url) => url.endsWith("/snapshot"))).toHaveLength(2);
+    expect(calls.at(-1)).toBe("/api/agent/workspace/submit-turn");
+  });
+
+  it("does not recreate a stored lineage session when observation is missing", async () => {
+    const memory = new Map<string, string>([
+      [
+        "qs.hermes.l2a.managed_session_ref:" + PLATFORM_WORKSPACE_ID,
+        "session:wm_child",
+      ],
+    ]);
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: (key: string) => memory.get(key) ?? null,
+        setItem: (key: string, value: string) => memory.set(key, value),
+      },
+    });
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL) =>
+        new Response(JSON.stringify({ managed_sessions: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      ensureManagedSession({
+        provisionTimeoutMs: 5,
+        provisionInitialIntervalMs: 1,
+      }),
+    ).rejects.toMatchObject({
+      code: "managed_session_not_observed",
+      status: 503,
+    });
+    expect(
+      memory.get("qs.hermes.l2a.managed_session_ref:" + PLATFORM_WORKSPACE_ID),
+    ).toBe("session:wm_child");
+    expect(
+      fetchMock.mock.calls.every(([url]) => String(url).endsWith("/snapshot")),
+    ).toBe(true);
+  });
+
+  it("surfaces failed and retryable provisioning without treating it as writable", async () => {
+    let state: "failed" | "retryable" = "failed";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              managed_sessions: [
+                {
+                  platform_session_id: "wm_bad",
+                  session_ref: "session:wm_bad",
+                  hermes_session_id: "web_" + "c".repeat(40),
+                  provision_state: state,
+                  web_writable: false,
+                  attempt_count: 3,
+                  retry_at:
+                    state === "retryable"
+                      ? "2026-07-24T12:01:00.000000Z"
+                      : null,
+                  last_error_code: "gateway_timeout",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    await expect(
+      waitForManagedSessionReady({
+        sessionRef: "session:wm_bad",
+        timeoutMs: 100,
+        initialIntervalMs: 1,
+      }),
+    ).rejects.toMatchObject({
+      code: "managed_session_provision_failed",
+    });
+
+    state = "retryable";
+    await expect(
+      waitForManagedSessionReady({
+        sessionRef: "session:wm_bad",
+        timeoutMs: 5,
+        initialIntervalMs: 1,
+      }),
+    ).rejects.toMatchObject({
+      code: "managed_session_provision_retryable",
+    });
+  });
+
+  it("honors AbortSignal while waiting for provisioning", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              managed_sessions: [
+                {
+                  platform_session_id: "wm_abort",
+                  session_ref: "session:wm_abort",
+                  hermes_session_id: "web_" + "d".repeat(40),
+                  provision_state: "pending",
+                  web_writable: false,
+                  attempt_count: 0,
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 1);
+    await expect(
+      waitForManagedSessionReady({
+        sessionRef: "session:wm_abort",
+        timeoutMs: 1_000,
+        initialIntervalMs: 20,
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("fails closed on empty prompt before any network", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    await expect(sendComposerTurn({ prompt: "  " })).rejects.toThrow(/non-empty/);
+    await expect(sendComposerTurn({ prompt: "  " })).rejects.toThrow(
+      /non-empty/,
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -183,11 +416,15 @@ describe("sendComposerTurn", () => {
     vi.stubGlobal("window", { prompt: vi.fn(() => null) });
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(JSON.stringify({ detail: { code: "auth", message: "no" } }), {
-          status: 401,
-          headers: { "content-type": "application/json" },
-        }),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ detail: { code: "auth", message: "no" } }),
+            {
+              status: 401,
+              headers: { "content-type": "application/json" },
+            },
+          ),
       ),
     );
 
@@ -507,10 +744,12 @@ describe("assistant observe helpers (L2b-M2)", () => {
       status: 400,
       code: "validation",
     });
-    await expect(fetchHermesSessionMessages("../escape")).rejects.toMatchObject({
-      status: 400,
-      code: "validation",
-    });
+    await expect(fetchHermesSessionMessages("../escape")).rejects.toMatchObject(
+      {
+        status: 400,
+        code: "validation",
+      },
+    );
     await expect(fetchHermesSessionMessages("   ")).rejects.toMatchObject({
       status: 400,
       code: "validation",
@@ -521,16 +760,17 @@ describe("assistant observe helpers (L2b-M2)", () => {
   it("fetchLatestAssistantText returns null on unavailable without throwing", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            read_status: "unavailable",
-            session_id: "agent:x",
-            messages: [],
-            warnings: [{ code: "gateway_client_unavailable" }],
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              read_status: "unavailable",
+              session_id: "agent:x",
+              messages: [],
+              warnings: [{ code: "gateway_client_unavailable" }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
       ),
     );
     await expect(

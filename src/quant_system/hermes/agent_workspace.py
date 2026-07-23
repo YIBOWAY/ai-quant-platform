@@ -11,9 +11,10 @@ submission saga against the isolated database only.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Mapping
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from quant_system.config.settings import Settings
@@ -35,6 +36,53 @@ from quant_system.storage.database import DatabaseUnavailable, get_database
 
 # HQA-aligned public recovery codes (strings only; no HQA import).
 _RECOVERY_RESNAPSHOT = "resnapshot_workspace"
+_MANAGED_PROVISION_STATES = frozenset({"pending", "leased", "retryable", "ready", "failed"})
+
+
+def _public_datetime(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, datetime):
+        raise ValueError("managed session timestamps must be datetime values")
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def project_managed_session_public(
+    row: Mapping[str, Any],
+) -> dict[str, object]:
+    """Return bounded browser metadata for one durable managed Session.
+
+    This is an observation of the platform registry, not a claim that a
+    reserved Hermes Session already exists.  ``web_writable`` becomes true
+    only after the provisioner has bound an exact Hermes receipt and advanced
+    the durable row to ``ready``.
+    """
+
+    platform_session_id = str(row["platform_session_id"])
+    hermes_session_id = str(row["hermes_session_id"])
+    provision_state = str(row["provision_state"])
+    if provision_state not in _MANAGED_PROVISION_STATES:
+        raise ValueError("invalid managed session provision_state")
+    parent = row.get("parent_platform_session_id")
+    last_error = row.get("provision_last_error_code")
+    return {
+        "platform_session_id": platform_session_id,
+        "session_ref": f"session:{platform_session_id}",
+        "hermes_session_id": hermes_session_id,
+        "provision_state": provision_state,
+        "web_writable": provision_state == "ready",
+        "attempt_count": max(0, int(row.get("provision_attempt_count") or 0)),
+        "lease_until": _public_datetime(row.get("provision_lease_until")),
+        "retry_at": _public_datetime(row.get("provision_next_attempt_at")),
+        "last_error_code": (None if last_error is None else str(last_error)[:200]),
+        "provisioned_at": _public_datetime(row.get("provisioned_at")),
+        "parent_session_ref": (None if parent is None else f"session:{str(parent)}"),
+        "fork_point": (None if row.get("fork_point") is None else str(row["fork_point"])[:200]),
+        "created_at": _public_datetime(row.get("created_at")),
+        "updated_at": _public_datetime(row.get("updated_at")),
+    }
 
 
 @dataclass(frozen=True)
@@ -67,6 +115,10 @@ class WorkspaceSnapshot:
     # L2b-M1: sessions remain id strings; commands are public objects.
     # Older clients that only need ids can read command_id from each object.
     sessions: tuple[str, ...]
+    # Durable provisioning facts for Web-managed sessions.  ``sessions`` stays
+    # as the backwards-compatible id list; this projection carries honest
+    # pending/leased/retryable/ready/failed state and exact Hermes identity.
+    managed_sessions: tuple[dict[str, object], ...]
     tasks: tuple[str, ...]
     attempts: tuple[str, ...]
     commands: tuple[dict[str, object], ...]
@@ -91,6 +143,7 @@ class WorkspaceSnapshot:
             "owner_user_id": self.owner_user_id,
             "snapshot_workspace_cursor": self.snapshot_workspace_cursor,
             "sessions": list(self.sessions),
+            "managed_sessions": [dict(item) for item in self.managed_sessions],
             "tasks": list(self.tasks),
             "attempts": list(self.attempts),
             "commands": [dict(item) for item in self.commands],
@@ -205,9 +258,7 @@ class PlatformAgentWorkspace:
                 else:
                     parsed = parse_user_action_v1(action_to_document(action))
             except (AgentWorkspaceActionError, TypeError, ValueError) as exc:
-                raise SubmissionSagaError(
-                    "validation", str(exc) or "validation"
-                ) from exc
+                raise SubmissionSagaError("validation", str(exc) or "validation") from exc
             from quant_system.hermes.agent_workspace_actions import (
                 canonical_action_digest,
             )
@@ -242,26 +293,18 @@ class PlatformAgentWorkspace:
             raise SubmissionSagaError("forbidden", "workspace_forbidden")
 
         ready = authorities_ready(self._settings)
-        observed_at = (
-            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-        )
+        observed_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         mutation_on = bool(self._mutation_enabled or ready.get("mutation_enabled"))
         composer_on = bool(ready.get("composer_write_ready") or ready.get("chat_write_ready"))
         health: dict[str, str] = {
-            "command_ledger": (
-                "ready" if ready["command_ledger_schema_ready"] else "unavailable"
-            ),
+            "command_ledger": ("ready" if ready["command_ledger_schema_ready"] else "unavailable"),
             "session_registry": (
                 "ready" if ready["session_registry_schema_ready"] else "unavailable"
             ),
             "workflow_binding": (
-                "ready"
-                if ready.get("workflow_binding_schema_ready")
-                else "unavailable"
+                "ready" if ready.get("workflow_binding_schema_ready") else "unavailable"
             ),
-            "research_binding": (
-                "ready" if ready.get("research_binding_ready") else "unavailable"
-            ),
+            "research_binding": ("ready" if ready.get("research_binding_ready") else "unavailable"),
             "hermes_gateway": "dark",
             "provider": "dark",
             "mutation": "enabled" if mutation_on else "disabled",
@@ -286,13 +329,17 @@ class PlatformAgentWorkspace:
         }
 
         sessions: list[str] = []
+        managed_sessions: list[dict[str, object]] = []
         commands: list[dict[str, object]] = []
         cursor = 0
 
         if ready["ready"]:
-            sessions, commands, cursor = self._collect_workspace_projection(
-                workspace_id
-            )
+            (
+                sessions,
+                managed_sessions,
+                commands,
+                cursor,
+            ) = self._collect_workspace_projection(workspace_id)
 
         # V7a/V7d: project pending + recent decided command-approval challenges
         # from hermetic authority. Never invent Gate 1/2/3 into approvals[].
@@ -316,8 +363,8 @@ class PlatformAgentWorkspace:
         canary_grants = tuple(project_workspace_canary_grants(workspace_id))
         from quant_system.hermes.public_cutover_observe import (
             project_workspace_public_cutovers as _project_public_cutovers,
-            public_cutover_authority_health as _public_cutover_health,
         )
+
         public_cutovers = tuple(_project_public_cutovers(workspace_id))
         tasks = tuple(task_ids_for_spine(workspace_id))
         attempts = tuple(attempt_ids_for_spine(workspace_id))
@@ -328,6 +375,7 @@ class PlatformAgentWorkspace:
             owner_user_id=str(owner),
             snapshot_workspace_cursor=cursor,
             sessions=tuple(sessions),
+            managed_sessions=tuple(managed_sessions),
             tasks=tasks,
             attempts=attempts,
             commands=tuple(commands),
@@ -342,9 +390,7 @@ class PlatformAgentWorkspace:
             observed_at=observed_at,
         )
 
-    def _hermetic_spine_projections(
-        self, workspace_id: str
-    ) -> dict[str, object]:
+    def _hermetic_spine_projections(self, workspace_id: str) -> dict[str, object]:
         """Attach in-process hermetic projections for follow/SSE.
 
         Independent of PG readiness: approvals/gates/results/vertical ids are
@@ -356,13 +402,13 @@ class PlatformAgentWorkspace:
             canary_authority_health,
             project_workspace_canary_grants,
         )
-        from quant_system.hermes.public_cutover_observe import (
-            public_cutover_authority_health,
-            project_workspace_public_cutovers,
-        )
         from quant_system.hermes.gate_observe import (
             gate_authority_health,
             project_workspace_gates,
+        )
+        from quant_system.hermes.public_cutover_observe import (
+            project_workspace_public_cutovers,
+            public_cutover_authority_health,
         )
         from quant_system.hermes.result_observe import (
             project_workspace_results,
@@ -436,7 +482,7 @@ class PlatformAgentWorkspace:
                 approvals=proj["approvals"],  # type: ignore[arg-type]
                 gates=proj["gates"],  # type: ignore[arg-type]
                 canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
-            public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
+                public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
@@ -465,7 +511,7 @@ class PlatformAgentWorkspace:
                 approvals=proj["approvals"],  # type: ignore[arg-type]
                 gates=proj["gates"],  # type: ignore[arg-type]
                 canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
-            public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
+                public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
@@ -483,7 +529,7 @@ class PlatformAgentWorkspace:
                 approvals=proj["approvals"],  # type: ignore[arg-type]
                 gates=proj["gates"],  # type: ignore[arg-type]
                 canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
-            public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
+                public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
@@ -525,7 +571,12 @@ class PlatformAgentWorkspace:
 
     def _collect_workspace_projection(
         self, workspace_id: str
-    ) -> tuple[list[str], list[dict[str, object]], int]:
+    ) -> tuple[
+        list[str],
+        list[dict[str, object]],
+        list[dict[str, object]],
+        int,
+    ]:
         """Best-effort read of sessions + command objects + durable event cursor.
 
         Never raises for missing rows; authority outage surfaces as empty
@@ -537,14 +588,58 @@ class PlatformAgentWorkspace:
         from quant_system.storage.database import SCHEMA
 
         sessions: list[str] = []
+        managed_sessions: list[dict[str, object]] = []
         commands: list[dict[str, object]] = []
         cursor = 0
         database = get_database(self._settings)
         if database is None:
-            return sessions, commands, cursor
+            return sessions, managed_sessions, commands, cursor
         try:
             with database.connect() as conn:
                 sessions = self._workspace_session_ids(conn, workspace_id)
+                managed_rows = conn.execute(
+                    f"""
+                    SELECT
+                        platform_session_id,
+                        hermes_session_id,
+                        provision_state,
+                        provision_attempt_count,
+                        provision_lease_until,
+                        provision_next_attempt_at,
+                        provision_last_error_code,
+                        provisioned_at,
+                        parent_platform_session_id,
+                        fork_point,
+                        created_at,
+                        updated_at
+                    FROM {SCHEMA}.hermes_workspace_sessions
+                    WHERE workspace_id = %s
+                      AND owner_user_id = %s
+                      AND kind = 'web_managed_session'
+                    ORDER BY created_at ASC
+                    LIMIT 200
+                    """,
+                    (workspace_id, ROOT_USER_ID),
+                ).fetchall()
+                managed_sessions = [
+                    project_managed_session_public(
+                        {
+                            "platform_session_id": row[0],
+                            "hermes_session_id": row[1],
+                            "provision_state": row[2],
+                            "provision_attempt_count": row[3],
+                            "provision_lease_until": row[4],
+                            "provision_next_attempt_at": row[5],
+                            "provision_last_error_code": row[6],
+                            "provisioned_at": row[7],
+                            "parent_platform_session_id": row[8],
+                            "fork_point": row[9],
+                            "created_at": row[10],
+                            "updated_at": row[11],
+                        }
+                    )
+                    for row in managed_rows
+                ]
                 control = control_plane_session_id(workspace_id)
                 session_filter = list(sessions) if sessions else []
                 cmd_rows = conn.execute(
@@ -611,8 +706,8 @@ class PlatformAgentWorkspace:
                 cursor = int(head[0]) if head is not None else 0
         except (DatabaseUnavailable, Exception):
             # Snapshot stays available with empty projection; health already set.
-            return [], [], 0
-        return sessions, commands, cursor
+            return [], [], [], 0
+        return sessions, managed_sessions, commands, cursor
 
     def _collect_workspace_events(
         self,
@@ -651,9 +746,7 @@ class PlatformAgentWorkspace:
                 (ROOT_USER_ID, control, session_filter or [""]),
             ).fetchone()
             head_event_id = int(head_row[0]) if head_row is not None else 0
-            if follow_resync_required(
-                after_cursor=after_cursor, head_event_id=head_event_id
-            ):
+            if follow_resync_required(after_cursor=after_cursor, head_event_id=head_event_id):
                 return [], None, True
             rows = conn.execute(
                 f"""

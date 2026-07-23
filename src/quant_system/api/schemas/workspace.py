@@ -104,11 +104,35 @@ class GateProjectionResponse(_WorkspaceSchema):
     decided_at: str | None = None
 
 
+class ManagedSessionProjectionResponse(_WorkspaceSchema):
+    platform_session_id: str = Field(min_length=1, max_length=200)
+    session_ref: str = Field(min_length=9, max_length=220)
+    hermes_session_id: str = Field(min_length=1, max_length=255)
+    provision_state: Literal[
+        "pending",
+        "leased",
+        "retryable",
+        "ready",
+        "failed",
+    ]
+    web_writable: bool
+    attempt_count: int = Field(ge=0)
+    lease_until: str | None = Field(default=None, max_length=64)
+    retry_at: str | None = Field(default=None, max_length=64)
+    last_error_code: str | None = Field(default=None, max_length=200)
+    provisioned_at: str | None = Field(default=None, max_length=64)
+    parent_session_ref: str | None = Field(default=None, max_length=220)
+    fork_point: str | None = Field(default=None, max_length=200)
+    created_at: str | None = Field(default=None, max_length=64)
+    updated_at: str | None = Field(default=None, max_length=64)
+
+
 class WorkspaceSnapshotResponse(_WorkspaceSchema):
     workspace: WorkspaceRefResponse
     owner_user_id: str = Field(min_length=1, max_length=64)
     snapshot_workspace_cursor: int = Field(ge=0, le=2**63 - 1)
     sessions: list[str]
+    managed_sessions: list[ManagedSessionProjectionResponse]
     tasks: list[str]
     attempts: list[str]
     commands: list[dict[str, Any]]

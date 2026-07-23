@@ -20,11 +20,7 @@ import { isUsableHermesApiSessionId } from "./transcriptHelpers";
 export { PLATFORM_WORKSPACE_ID };
 
 export type ActionReceiptStatus =
-  | "accepted"
-  | "reconciling"
-  | "conflict"
-  | "unavailable"
-  | "outcome_unknown";
+  "accepted" | "reconciling" | "conflict" | "unavailable" | "outcome_unknown";
 
 export type WorkspaceActionReceipt = {
   status: ActionReceiptStatus;
@@ -66,7 +62,11 @@ export function utf8ByteLength(text: string): number {
 
 export function preflightPrompt(prompt: string): string {
   if (typeof prompt !== "string") {
-    throw new WorkspaceClientError("prompt must be a string", 400, "validation");
+    throw new WorkspaceClientError(
+      "prompt must be a string",
+      400,
+      "validation",
+    );
   }
   if (!prompt.trim()) {
     throw new WorkspaceClientError(
@@ -139,7 +139,10 @@ type SameOriginInit = {
   signal?: AbortSignal;
 };
 
-async function sameOriginJson<T>(path: string, init: SameOriginInit = {}): Promise<T> {
+async function sameOriginJson<T>(
+  path: string,
+  init: SameOriginInit = {},
+): Promise<T> {
   const headers: Record<string, string> = {
     accept: "application/json",
   };
@@ -333,11 +336,19 @@ export async function createManagedSession(options?: {
 export async function ensureManagedSession(options?: {
   workspaceId?: string;
   signal?: AbortSignal;
-}): Promise<string> {
+  provisionTimeoutMs?: number;
+  provisionInitialIntervalMs?: number;
+}): Promise<ManagedSessionProjection> {
   const workspaceId = options?.workspaceId ?? PLATFORM_WORKSPACE_ID;
   const existing = loadManagedSessionRef(workspaceId);
   if (existing) {
-    return existing;
+    return waitForManagedSessionReady({
+      workspaceId,
+      sessionRef: existing,
+      signal: options?.signal,
+      timeoutMs: options?.provisionTimeoutMs,
+      initialIntervalMs: options?.provisionInitialIntervalMs,
+    });
   }
   const receipt = await createManagedSession({
     workspaceId,
@@ -364,7 +375,50 @@ export async function ensureManagedSession(options?: {
       receipt.status,
     );
   }
-  return sessionRef;
+  return waitForManagedSessionReady({
+    workspaceId,
+    sessionRef,
+    signal: options?.signal,
+    timeoutMs: options?.provisionTimeoutMs,
+    initialIntervalMs: options?.provisionInitialIntervalMs,
+  });
+}
+
+async function submitReadyTurn(
+  options: {
+    prompt: string;
+    clientActionId?: string;
+    workspaceId?: string;
+    signal?: AbortSignal;
+  },
+  managedSession: ManagedSessionProjection,
+): Promise<WorkspaceActionReceipt> {
+  const prompt = preflightPrompt(options.prompt);
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  const clientActionId = options.clientActionId ?? crypto.randomUUID();
+  const receipt = await sameOriginJson<WorkspaceActionReceipt>(
+    "/api/agent/workspace/submit-turn",
+    {
+      method: "POST",
+      csrf: true,
+      signal: options.signal,
+      body: {
+        workspace_id: workspaceId,
+        managed_session_ref: managedSession.session_ref,
+        client_action_id: clientActionId,
+        prompt,
+      },
+    },
+  );
+  return receipt.hermes_session_id
+    ? receipt
+    : {
+        ...receipt,
+        // The snapshot only admits this identity after exact provisioning
+        // reached ready, so the transcript can bind immediately without
+        // treating the platform-only wm_* reference as a Hermes Session.
+        hermes_session_id: managedSession.hermes_session_id,
+      };
 }
 
 export async function submitTurn(options: {
@@ -376,23 +430,21 @@ export async function submitTurn(options: {
 }): Promise<WorkspaceActionReceipt> {
   const prompt = preflightPrompt(options.prompt);
   const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
-  const managedSessionRef =
-    options.managedSessionRef ?? (await ensureManagedSession({ workspaceId, signal: options.signal }));
-  const clientActionId = options.clientActionId ?? crypto.randomUUID();
-
-  return sameOriginJson<WorkspaceActionReceipt>(
-    "/api/agent/workspace/submit-turn",
+  const managedSession = options.managedSessionRef
+    ? await waitForManagedSessionReady({
+        workspaceId,
+        sessionRef: options.managedSessionRef,
+        signal: options.signal,
+      })
+    : await ensureManagedSession({ workspaceId, signal: options.signal });
+  return submitReadyTurn(
     {
-      method: "POST",
-      csrf: true,
+      prompt,
+      clientActionId: options.clientActionId,
+      workspaceId,
       signal: options.signal,
-      body: {
-        workspace_id: workspaceId,
-        managed_session_ref: managedSessionRef,
-        client_action_id: clientActionId,
-        prompt,
-      },
     },
+    managedSession,
   );
 }
 
@@ -408,13 +460,15 @@ export async function sendComposerTurn(options: {
   preflightPrompt(options.prompt);
   await ensureOwnerSession(options.signal);
   const clientActionId = options.clientActionId ?? crypto.randomUUID();
-  const managedSessionRef = await ensureManagedSession({ signal: options.signal });
-  return submitTurn({
-    prompt: options.prompt,
-    clientActionId,
-    managedSessionRef,
-    signal: options.signal,
-  });
+  const managedSession = await ensureManagedSession({ signal: options.signal });
+  return submitReadyTurn(
+    {
+      prompt: options.prompt,
+      clientActionId,
+      signal: options.signal,
+    },
+    managedSession,
+  );
 }
 
 /**
@@ -571,7 +625,6 @@ export type WorkspaceResultProjection = {
     command_id?: string;
   } | null;
 };
-
 
 export function buildConfirmFormulaSourceAction(input: {
   taskId: string;
@@ -882,6 +935,7 @@ export type WorkspaceSnapshot = {
   owner_user_id?: string;
   snapshot_workspace_cursor?: number;
   sessions?: string[];
+  managed_sessions?: ManagedSessionProjection[];
   commands?: WorkspaceCommandProjection[];
   /** L5b: HQA Task authority ids/objects; empty until projector. */
   tasks?: string[];
@@ -948,6 +1002,195 @@ export async function fetchWorkspaceSnapshot(
   );
 }
 
+export type ManagedSessionProvisionState =
+  "pending" | "leased" | "retryable" | "ready" | "failed";
+
+export type ManagedSessionProjection = {
+  platform_session_id: string;
+  session_ref: string;
+  hermes_session_id: string;
+  provision_state: ManagedSessionProvisionState;
+  web_writable: boolean;
+  attempt_count: number;
+  lease_until?: string | null;
+  retry_at?: string | null;
+  last_error_code?: string | null;
+  provisioned_at?: string | null;
+  parent_session_ref?: string | null;
+  fork_point?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+function abortError(): Error {
+  if (typeof DOMException !== "undefined") {
+    return new DOMException("managed session wait aborted", "AbortError");
+  }
+  const error = new Error("managed session wait aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function managedSessionWaitError(
+  projection: ManagedSessionProjection | null,
+  observed: boolean,
+  observationError: unknown,
+): WorkspaceClientError {
+  if (projection?.provision_state === "retryable") {
+    const retry = projection.retry_at
+      ? `; retry_at=${projection.retry_at}`
+      : "";
+    const reason = projection.last_error_code
+      ? `; last_error=${projection.last_error_code}`
+      : "";
+    return new WorkspaceClientError(
+      `managed session provisioning is retryable${reason}${retry}`,
+      503,
+      "managed_session_provision_retryable",
+    );
+  }
+  if (!observed && observationError == null) {
+    return new WorkspaceClientError(
+      "managed session was not observed before the bounded wait expired",
+      503,
+      "managed_session_not_observed",
+    );
+  }
+  if (observationError != null) {
+    return new WorkspaceClientError(
+      "managed session observation was unavailable before the bounded wait expired",
+      503,
+      "managed_session_observation_unavailable",
+    );
+  }
+  return new WorkspaceClientError(
+    `managed session provisioning timed out in state=${
+      projection?.provision_state ?? "unknown"
+    }`,
+    503,
+    "managed_session_provision_timeout",
+  );
+}
+
+/**
+ * Bounded wait on the existing workspace snapshot. This never clears the
+ * durable session reference, creates a replacement, or starts a private
+ * unbounded poll. Fork lineage therefore cannot be silently discarded.
+ */
+export async function waitForManagedSessionReady(options: {
+  sessionRef: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  initialIntervalMs?: number;
+}): Promise<ManagedSessionProjection> {
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  const timeoutMs = Math.min(
+    30_000,
+    Math.max(1, Math.floor(options.timeoutMs ?? 15_000)),
+  );
+  let intervalMs = Math.min(
+    1_000,
+    Math.max(1, Math.floor(options.initialIntervalMs ?? 100)),
+  );
+  const sessionRef = options.sessionRef.trim();
+  if (!sessionRef.startsWith("session:")) {
+    throw new WorkspaceClientError(
+      "invalid managed session reference",
+      400,
+      "managed_session_ref_invalid",
+    );
+  }
+
+  const bounded = new AbortController();
+  let timedOut = false;
+  const onCallerAbort = () => bounded.abort();
+  options.signal?.addEventListener("abort", onCallerAbort, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    bounded.abort();
+  }, timeoutMs);
+  let last: ManagedSessionProjection | null = null;
+  let observed = false;
+  let observationError: unknown = null;
+
+  try {
+    while (!bounded.signal.aborted) {
+      try {
+        const snapshot = await fetchWorkspaceSnapshot(
+          workspaceId,
+          bounded.signal,
+        );
+        observationError = null;
+        const platformId = sessionRef.slice("session:".length);
+        last =
+          (snapshot.managed_sessions ?? []).find(
+            (item) =>
+              item.session_ref === sessionRef ||
+              item.platform_session_id === platformId,
+          ) ?? null;
+        observed ||= last !== null;
+        if (last?.provision_state === "failed") {
+          const reason = last.last_error_code
+            ? `: ${last.last_error_code}`
+            : "";
+          throw new WorkspaceClientError(
+            `managed session provisioning failed${reason}`,
+            503,
+            "managed_session_provision_failed",
+          );
+        }
+        if (last?.provision_state === "ready") {
+          if (
+            last.web_writable !== true ||
+            !isUsableHermesApiSessionId(last.hermes_session_id)
+          ) {
+            throw new WorkspaceClientError(
+              "managed session ready projection is internally inconsistent",
+              503,
+              "managed_session_ready_contract_invalid",
+            );
+          }
+          return last;
+        }
+      } catch (error) {
+        if (
+          error instanceof WorkspaceClientError &&
+          (error.code === "managed_session_provision_failed" ||
+            error.code === "managed_session_ready_contract_invalid")
+        ) {
+          throw error;
+        }
+        if (bounded.signal.aborted) {
+          break;
+        }
+        observationError = error;
+      }
+
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, intervalMs);
+        bounded.signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      intervalMs = Math.min(1_000, intervalMs * 2);
+    }
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", onCallerAbort);
+  }
+
+  if (options.signal?.aborted && !timedOut) {
+    throw abortError();
+  }
+  throw managedSessionWaitError(last, observed, observationError);
+}
+
 /** Poll durable workspace observation page (L2b-M1; not SSE). */
 export async function fetchWorkspaceFollow(options?: {
   workspaceId?: string;
@@ -961,7 +1204,10 @@ export async function fetchWorkspaceFollow(options?: {
     options?.afterCursor !== null &&
     Number.isFinite(options.afterCursor)
   ) {
-    params.set("after_cursor", String(Math.max(0, Math.floor(options.afterCursor))));
+    params.set(
+      "after_cursor",
+      String(Math.max(0, Math.floor(options.afterCursor))),
+    );
   }
   const query = params.toString();
   const path = `/api/workspace/${encodeURIComponent(workspaceId)}/follow${
@@ -982,7 +1228,9 @@ const TERMINAL_COMMAND_STATES = new Set([
   "outcome_unknown",
 ]);
 
-export function isTerminalCommandState(state: string | null | undefined): boolean {
+export function isTerminalCommandState(
+  state: string | null | undefined,
+): boolean {
   return typeof state === "string" && TERMINAL_COMMAND_STATES.has(state);
 }
 
