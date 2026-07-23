@@ -13,9 +13,13 @@ from quant_system.factors.base import BaseFactor
 from quant_system.factors.library.promoted import (
     agent_candidate_wave2_sceneb_mom20_v3 as agent_candidate_wave2_sceneb_mom20_v3_module,
 )
+from quant_system.factors.library.promoted import (
+    paper_reversal_momentum_proxy_v2 as paper_reversal_momentum_proxy_v2_module,
+)
 
 PROMOTED_FACTORS: tuple[type[BaseFactor], ...] = (
     agent_candidate_wave2_sceneb_mom20_v3_module.AgentCandidateFactor,
+    paper_reversal_momentum_proxy_v2_module.PaperReversalMomentumProxyV2,
 )
 
 __all__ = ["PROMOTED_FACTORS"]
