@@ -70,6 +70,14 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         limit: int,
     ) -> tuple[HermesCommand, ...]: ...
 
+    def mark_run_reconciliation_started(
+        self,
+        *,
+        command_id: UUID,
+        expected_version: int,
+        now: datetime,
+    ) -> HermesCommand: ...
+
     def claim_next_command(
         self,
         *,
@@ -469,6 +477,7 @@ class HermesConnectorWorker:
         if self._run_lifecycle_port is not None:
             required += (
                 "list_commands_for_run_reconciliation",
+                "mark_run_reconciliation_started",
                 "reconcile_outcome_as_delivered",
                 "mark_succeeded",
                 "mark_failed",
@@ -505,7 +514,22 @@ class HermesConnectorWorker:
             # Re-evaluate immediately before every recover/observe operation.
             if not self._fresh_dispatch_gate(command).allow:
                 continue
-            current = command
+            try:
+                # Commit the scheduling turn before upstream I/O. The version
+                # fence prevents duplicate observation by concurrent workers;
+                # the updated-at rotation survives worker restarts.
+                current = ledger.mark_run_reconciliation_started(
+                    command_id=command.command_id,
+                    expected_version=command.version,
+                    now=self._now(),
+                )
+            except (
+                HermesCommandLedgerUnavailable,
+                HermesCommandNotFound,
+                HermesCommandStateConflict,
+                HermesCommandVersionConflict,
+            ):
+                continue
             if current.state == "outcome_unknown" and (
                 not current.hermes_session_id or not current.hermes_run_id
             ):

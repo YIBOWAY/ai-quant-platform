@@ -84,6 +84,7 @@ class _ScriptedLedger:
     rejected: list[tuple[UUID, str]] = None  # type: ignore[assignment]
     timed_out: list[tuple[UUID, str]] = None  # type: ignore[assignment]
     succeeded: list[UUID] = None  # type: ignore[assignment]
+    reconciliation_started: list[UUID] = None  # type: ignore[assignment]
     heartbeat_calls: int = 0
     fail_on: str | None = None  # crash injection point name
 
@@ -93,6 +94,7 @@ class _ScriptedLedger:
         self.rejected = []
         self.timed_out = []
         self.succeeded = []
+        self.reconciliation_started = []
         self._by_id: dict[UUID, HermesCommand] = {c.command_id: c for c in self.queue}
 
     def reconcile_expired_leases(self, *, now, limit):
@@ -100,11 +102,34 @@ class _ScriptedLedger:
         return ExpiredLeaseReconciliation(requeued=(), outcome_unknown=())
 
     def list_commands_for_run_reconciliation(self, *, limit):
-        return tuple(
-            command
-            for command in self._by_id.values()
-            if command.state in {"delivered", "outcome_unknown"}
-        )[:limit]
+        eligible = sorted(
+            (
+                command
+                for command in self._by_id.values()
+                if command.state in {"delivered", "outcome_unknown"}
+            ),
+            key=lambda command: (command.updated_at, command.command_id),
+        )
+        return tuple(eligible[:limit])
+
+    def mark_run_reconciliation_started(
+        self,
+        *,
+        command_id,
+        expected_version,
+        now,
+    ):
+        cmd = self._by_id[command_id]
+        assert cmd.version == expected_version
+        assert cmd.state in {"delivered", "outcome_unknown"}
+        started = replace(
+            cmd,
+            version=cmd.version + 1,
+            updated_at=now,
+        )
+        self._by_id[command_id] = started
+        self.reconciliation_started.append(command_id)
+        return started
 
     def reconcile_outcome_as_delivered(
         self,
@@ -476,6 +501,57 @@ def test_terminal_observation_always_replays_from_zero() -> None:
     assert adapter.observed_cursors == [0]
 
 
+def test_nonterminal_reconciliation_rotates_active_runs_across_cycles() -> None:
+    class RunRecordingAdapter(FakeHermesDispatchAdapter):
+        observed_runs: list[str]
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.observed_runs = []
+
+        def observe(self, *, hermes_session_id, hermes_run_id, after_cursor=0):
+            self.observed_runs.append(hermes_run_id)
+            return super().observe(
+                hermes_session_id=hermes_session_id,
+                hermes_run_id=hermes_run_id,
+                after_cursor=after_cursor,
+            )
+
+    active = [
+        replace(
+            _cmd(client_request_id=f"req-v6-fair-{index}"),
+            state="delivered",  # type: ignore[arg-type]
+            version=4,
+            hermes_session_id="web_managed_fair",
+            hermes_run_id=f"run_fair_{index}",
+        )
+        for index in range(3)
+    ]
+    ledger = _ScriptedLedger(queue=active)
+    adapter = RunRecordingAdapter()
+    ticks = iter(
+        datetime(2026, 7, 21, 12, 0, index, tzinfo=UTC)
+        for index in range(30)
+    )
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        run_lifecycle_port=adapter,
+        reconcile_limit=1,
+        now=lambda: next(ticks),
+    )
+
+    worker.run_once()
+    worker.run_once()
+    worker.run_once()
+
+    assert len(set(adapter.observed_runs)) == 3
+    assert set(ledger.reconciliation_started) == {
+        command.command_id for command in active
+    }
+
+
 def test_closed_fresh_gate_blocks_active_run_network_reconciliation() -> None:
     class RecordingAdapter(FakeHermesDispatchAdapter):
         def __init__(self) -> None:
@@ -513,6 +589,7 @@ def test_closed_fresh_gate_blocks_active_run_network_reconciliation() -> None:
 
     assert adapter.submit_calls == 1
     assert adapter.observe_calls == 0
+    assert ledger.reconciliation_started == []
 
 
 def test_worker_recovers_accept_drop_ack_with_same_identity_and_session() -> None:

@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 from uuid import UUID
 
 import psycopg
@@ -109,6 +110,44 @@ def _create_bound_test_command(
     )
     result = ensure_bound_command(settings, prepared)
     return ledger.get_command(result.command_id)
+
+
+def _deliver_bound_test_command(
+    *,
+    settings: Settings,
+    ledger: HermesCommandLedger,
+    ordinal: int,
+):
+    command = _create_bound_test_command(
+        settings=settings,
+        ledger=ledger,
+        platform_session_id=f"platform-session-reconcile-fair-{ordinal}",
+        client_request_id=f"req-ledger-reconcile-fair-{ordinal}",
+        canonical_request_digest=f"{ordinal:x}" * 64,
+    )
+    now = datetime(2026, 7, 23, 10, ordinal, tzinfo=UTC)
+    claimed = ledger.claim_next_command(
+        worker_id=f"worker-reconcile-fair-{ordinal}",
+        now=now,
+        lease_duration=timedelta(seconds=30),
+    )
+    assert claimed is not None
+    assert claimed.command_id == command.command_id
+    assert claimed.lease_token is not None
+    started = ledger.mark_dispatch_started(
+        command_id=claimed.command_id,
+        expected_version=claimed.version,
+        lease_token=claimed.lease_token,
+        now=now,
+    )
+    return ledger.mark_delivered(
+        command_id=started.command_id,
+        expected_version=started.version,
+        lease_token=claimed.lease_token,
+        now=now,
+        hermes_session_id=f"web_reconcile_fair_{ordinal}",
+        hermes_run_id=f"run_reconcile_fair_{ordinal}",
+    )
 
 
 def _reset_hermes_ledger(database: db.Database) -> None:
@@ -1636,6 +1675,105 @@ def test_delivered_run_can_reach_succeeded_terminal_state_with_evidence() -> Non
             "succeeded",
             {"evidence_digest": "b" * 64},
         )
+    finally:
+        _reset_hermes_ledger(database)
+        db.reset_database_cache()
+
+
+def test_run_reconciliation_touch_persists_fair_rotation_and_audit_event() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+    _reset_hermes_ledger(database)
+    ledger = HermesCommandLedger(settings)
+
+    try:
+        active = [
+            _deliver_bound_test_command(
+                settings=settings,
+                ledger=ledger,
+                ordinal=ordinal,
+            )
+            for ordinal in range(1, 4)
+        ]
+        selected: list[UUID] = []
+
+        for ordinal in range(3):
+            # A reconstructed adapter proves fairness is not an in-process
+            # cursor that resets whenever the daemon restarts.
+            restarted = HermesCommandLedger(settings)
+            page = restarted.list_commands_for_run_reconciliation(limit=1)
+            assert len(page) == 1
+            selected.append(page[0].command_id)
+            touched = restarted.mark_run_reconciliation_started(
+                command_id=page[0].command_id,
+                expected_version=page[0].version,
+                now=datetime(2026, 7, 23, 11, ordinal, tzinfo=UTC),
+            )
+            assert touched.state == page[0].state
+            assert touched.version == page[0].version + 1
+
+        assert set(selected) == {command.command_id for command in active}
+        for command_id in selected:
+            event = ledger.list_command_events(command_id, limit=20)[-1]
+            assert event.event_type == "run_reconciliation_started"
+            assert event.actor == "reconciler"
+            assert event.from_state == event.to_state == "delivered"
+            assert event.event_data == {"phase": "observation_started"}
+    finally:
+        _reset_hermes_ledger(database)
+        db.reset_database_cache()
+
+
+def test_run_reconciliation_touch_fences_concurrent_workers_by_version() -> None:
+    settings = _postgres_settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+    _reset_hermes_ledger(database)
+    ledger = HermesCommandLedger(settings)
+
+    try:
+        delivered = _deliver_bound_test_command(
+            settings=settings,
+            ledger=ledger,
+            ordinal=4,
+        )
+        snapshot = ledger.list_commands_for_run_reconciliation(limit=1)[0]
+        assert snapshot.command_id == delivered.command_id
+        barrier = Barrier(2)
+
+        def begin(worker_ordinal: int) -> str:
+            adapter = HermesCommandLedger(settings)
+            barrier.wait()
+            try:
+                adapter.mark_run_reconciliation_started(
+                    command_id=snapshot.command_id,
+                    expected_version=snapshot.version,
+                    now=datetime(
+                        2026,
+                        7,
+                        23,
+                        12,
+                        worker_ordinal,
+                        tzinfo=UTC,
+                    ),
+                )
+            except HermesCommandVersionConflict:
+                return "fenced"
+            return "started"
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(begin, (1, 2)))
+
+        assert sorted(outcomes) == ["fenced", "started"]
+        events = ledger.list_command_events(delivered.command_id, limit=20)
+        assert [event.event_type for event in events].count(
+            "run_reconciliation_started"
+        ) == 1
     finally:
         _reset_hermes_ledger(database)
         db.reset_database_cache()
