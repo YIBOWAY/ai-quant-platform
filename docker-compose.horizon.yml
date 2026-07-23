@@ -1,0 +1,35 @@
+# Horizon Docker sidecar for the AI news inbox bridge.
+# Writes only under ./data/horizon_inbox (mounted at /inbox).
+# Does NOT connect to Postgres. LLM keys via env_file only (never QS_*).
+#
+# Setup:
+#   cp deploy/horizon/config.example.json data/horizon_config/config.json
+#   # edit data/horizon_config/.env with OPENAI_API_KEY=... (or other provider)
+#   docker compose -f docker-compose.horizon.yml up -d --build
+#
+# Pin: Horizon main @ 1e2fdc7ccb177f33c59aef2082c4093e1e82b22c (2026-07-17)
+
+services:
+  horizon:
+    build:
+      context: ./deploy/horizon
+      args:
+        HORIZON_REF: "1e2fdc7ccb177f33c59aef2082c4093e1e82b22c"
+    container_name: qs-horizon
+    env_file:
+      - ./data/horizon_config/.env
+    environment:
+      - TZ=UTC
+      - HORIZON_INBOX=/inbox
+      - HORIZON_DATA_DIR=/opt/horizon/data
+      - HORIZON_RUN_INTERVAL_SECONDS=${HORIZON_RUN_INTERVAL_SECONDS:-21600}
+      - HORIZON_HOURS=${HORIZON_HOURS:-24}
+    volumes:
+      - ./data/horizon_inbox:/inbox
+      - ./data/horizon_config:/config:ro
+      # Persist upstream summaries / mcp-runs across restarts (no secrets here).
+      - horizon-data:/opt/horizon/data
+    restart: unless-stopped
+
+volumes:
+  horizon-data:
