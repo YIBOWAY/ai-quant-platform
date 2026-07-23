@@ -10,11 +10,11 @@ import {
   formatMoney,
   formatPercent,
   getAgentCandidates,
-  getAiHotItems,
   getBacktests,
   getFactors,
   getLatestBriefIssue,
   getMarketDataHistory,
+  getNewsItems,
   getOptionsDailyScanStatus,
   getPaperAccount,
   getPaperAccountEquityCurve,
@@ -22,7 +22,6 @@ import {
   getRecentRuns,
   getSymbols,
   type AccountPositionResponse,
-  type AiHotItem,
   type MarketDataHistoryResponse,
   type OptionsDailyScanStatusResponse,
   type PaperAccountEquityCurveResponse,
@@ -36,6 +35,7 @@ import {
 } from "@/lib/dashboardRuns";
 import { localizePath } from "@/lib/locale";
 import type { BriefArchivePayload, BriefSourceWatermark } from "@/lib/briefArchive";
+import { buildBriefAiNewsDigest } from "@/lib/briefAiNewsDigest";
 import { briefDateKey } from "@/lib/briefDate";
 import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
@@ -689,7 +689,7 @@ function DigestArticle({
   index,
   text,
 }: {
-  item: AiHotItem;
+  item: BriefArchivePayload["ai_news"][number];
   index: number;
   text: BriefCopy;
 }) {
@@ -755,7 +755,7 @@ export default async function BriefPage() {
     getPaperAccountEquityCurve(7),
     getRecentRuns(8),
     getAgentCandidates(),
-    getAiHotItems({ take: 6 }),
+    getNewsItems({ take: 6, preference: "auto" }),
     getOptionsDailyScanStatus(),
     getMarketDataHistory("SPY", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getMarketDataHistory("QQQ", briefDateKey(marketStart), briefDateKey(today), "1d"),
@@ -789,7 +789,7 @@ export default async function BriefPage() {
     locale,
   });
   const paperWeekReturn = paperCurve.at(-1)?.y;
-  const digestItems = digest.items.slice(0, 6);
+  const { items: digestItems, source: aiNewsSource } = buildBriefAiNewsDigest(digest);
   const archivedIssuePublicId =
     archivedEnvelope.issue.status !== "unavailable" &&
     archivedEnvelope.issue.issue_date === issueDate &&
@@ -880,24 +880,7 @@ export default async function BriefPage() {
       as_of: isoTimestamp(snapshot.asOf),
     })),
     market_note: marketNote,
-    ai_news: digestItems
-      .filter(
-        (item) =>
-          item.id.trim().length > 0 &&
-          item.title.trim().length > 0 &&
-          item.url.trim().length > 0 &&
-          item.source.trim().length > 0,
-      )
-      .map((item) => ({
-        id: item.id,
-        title: item.title,
-        url: item.url,
-        source: item.source,
-        published_at: isoTimestamp(item.published_at),
-        summary: item.summary ?? null,
-        category: item.category ?? null,
-        score: nullableNumber(item.score ?? undefined),
-      })),
+    ai_news: digestItems,
     hermes_log: logEntries.map((entry) => ({
       timestamp: isoTimestamp(entry.timestamp),
       status: entry.status,
@@ -928,15 +911,7 @@ export default async function BriefPage() {
         as_of: isoTimestamp(recentRuns.generated_at),
         detail: recentRuns.apiError ?? candidates.apiError ?? optionsStatus.apiError ?? `${logEntries.length} entries`,
       },
-      {
-        name: "ai_news",
-        status: sourceStatus(
-          digest.apiError,
-          digest.warnings.some((warning) => /cache|stale/i.test(warning)),
-        ),
-        as_of: isoTimestamp(digest.fetched_at),
-        detail: digest.apiError ?? digest.provider,
-      },
+      aiNewsSource,
       ...[
         ["SPY", spyHistory],
         ["QQQ", qqqHistory],

@@ -154,7 +154,10 @@ describe("brief archive API contract", () => {
               name: "ai_news",
               status: "stale",
               as_of: "2026-07-14T08:00:00+08:00",
-              detail: "local cache",
+              detail: "longbridge/cache; stale cache",
+              provider: "longbridge",
+              served_from: "cache",
+              extra_facade_key: "kept-by-passthrough",
             },
           ],
         },
@@ -168,6 +171,12 @@ describe("brief archive API contract", () => {
     expect(archive.payload?.ai_news[0]?.title).toBe("A new model was released");
     expect(archive.payload?.hermes_log[0]?.summary).toBe("run-1");
     expect(archive.sourceWatermark?.sources[0]?.status).toBe("stale");
+    expect(archive.sourceWatermark?.sources[0]?.provider).toBe("longbridge");
+    expect(archive.sourceWatermark?.sources[0]?.served_from).toBe("cache");
+    expect(
+      (archive.sourceWatermark?.sources[0] as { extra_facade_key?: string } | undefined)
+        ?.extra_facade_key,
+    ).toBe("kept-by-passthrough");
   });
 
   it("refuses to present the legacy empty-section placeholder as a real archive", async () => {

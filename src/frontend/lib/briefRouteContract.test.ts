@@ -22,7 +22,7 @@ describe("/brief route contract", () => {
       "getPaperAccountEquityCurve",
       "getRecentRuns",
       "getAgentCandidates",
-      "getAiHotItems",
+      "getNewsItems",
       "getOptionsDailyScanStatus",
       "getMarketDataHistory",
       "getServerLocale",
@@ -31,6 +31,10 @@ describe("/brief route contract", () => {
     ]) {
       expect(source).toContain(getter);
     }
+
+    expect(source).toContain('getNewsItems({ take: 6, preference: "auto" })');
+    expect(source).toContain("buildBriefAiNewsDigest");
+    expect(source).not.toContain("getAiHotItems");
 
     for (const symbol of ["SPY", "QQQ", "SOXX", "IGV"]) {
       expect(source).toContain(`getMarketDataHistory("${symbol}"`);

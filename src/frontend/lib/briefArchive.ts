@@ -211,8 +211,12 @@ const briefSourceWatermarkSchema = z
           status: z.enum(["available", "stale", "unavailable"]),
           as_of: nullableTimestamp,
           detail: z.string().nullable(),
+          /** News facade provider id (e.g. aihot / longbridge); optional for legacy rows. */
+          provider: z.string().min(1).optional(),
+          /** Where the facade served from (primary / failover / cache). */
+          served_from: z.string().min(1).nullable().optional(),
         })
-        .strict(),
+        .passthrough(),
     ),
   })
   .strict();
