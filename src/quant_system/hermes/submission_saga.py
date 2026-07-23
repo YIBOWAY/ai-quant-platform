@@ -4,49 +4,54 @@ Public browser mutation stays OFF. Callers must pass ``mutation_enabled=True``
 explicitly (hermetic tests / future gated BFF). This module never calls Hermes
 or any provider.
 
-Identity derivation (create/fork)
----------------------------------
+Identity and idempotency (create/fork)
+--------------------------------------
 ``platform_session_id`` and ``hermes_session_id`` are deterministic functions of
-the canonical action digest so retries after process death re-register the same
-row. Idempotency of *receipts* is anchored on the command ledger unique key
-``(owner, control_plane_session_id, client_action_id)`` where
-``control_plane_session_id = awctl_{workspace_id}`` (truncated to 200).
+the canonical action digest. The session registry atomically stores the exact
+``(owner, workspace, client_action_id, action_digest)`` creation identity.
+Create/fork are registry mutations, not Hermes work, so they never create a
+dispatchable command-ledger row.
 
 Crash windows
 -------------
-1. After create_command commit, before register_workspace_session:
-   retry sees existing command + matching digest, then completes registration.
-2. After both commit: retry returns the same accepted receipt (created=False).
-3. Same client_action_id / different digest: ledger raises conflict; zero new
+1. Before registry commit: retry attempts the same atomic registration.
+2. After commit but before response: retry returns the same row (created=False).
+3. Same client_action_id / different digest: registry raises conflict; zero new
    session or command rows beyond the original.
 """
 
 from __future__ import annotations
 
 import re
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
 from quant_system.config.settings import Settings
 from quant_system.hermes.agent_workspace_actions import (
+    AcceptCanaryDualVertical,
     AgentWorkspaceActionError,
     BindFactorVerticalB,
     BindOptionsVerticalA,
+    ClosePublicCutover,
+    ConfirmFactorVerticalBGate1,
     ConfirmFactorVerticalBPlan,
     ConfirmFormulaSource,
-    SeedFactorVerticalBGate1,
-    ConfirmFactorVerticalBGate1,
-    SeedFactorVerticalBGate2,
     ConfirmResearchPlan,
     ContinueResearch,
     ConversationTurn,
     CreateManagedSession,
     DecideHermesCommandApproval,
     ForkIntoManagedSession,
+    IssueCanaryGrant,
+    OpenPublicCutover,
     PreparePromotionReview,
     RequestStop,
     ReviewCandidateCAS,
+    RevokeCanaryGrant,
+    SeedFactorVerticalBGate1,
+    SeedFactorVerticalBGate2,
     StartResearch,
     UnsupportedWorkspaceAction,
     UserActionV1,
@@ -57,27 +62,38 @@ from quant_system.hermes.agent_workspace_actions import (
     parse_user_action_v1,
     session_ref,
     strip_session_ref,
-    IssueCanaryGrant,
-    RevokeCanaryGrant,
-    AcceptCanaryDualVertical,
-    OpenPublicCutover,
-    ClosePublicCutover,
 )
 from quant_system.hermes.approval_release_port import (
     ApprovalReleaseError,
     default_approval_release_adapter,
     map_decision_to_release_choice,
 )
-from quant_system.hermes.run_stop_port import (
-    RunStopError,
-    build_layered_stop_receipt,
-    default_run_stop_adapter,
-    strip_run_ref,
+from quant_system.hermes.canary_grant_authority import (
+    CanaryGrantAuthorityError,
+    default_canary_grant_authority,
+)
+from quant_system.hermes.canary_observe import (
+    note_canary_accepted,
+    note_canary_issued,
+    note_canary_revoked,
 )
 from quant_system.hermes.command_approval_authority import (
     CommandApprovalAuthorityError,
     default_command_approval_authority,
 )
+from quant_system.hermes.command_ledger import (
+    ROOT_USER_ID,
+    CreateHermesCommandResult,
+    HermesCommandConflict,
+    HermesCommandLedger,
+    HermesCommandLedgerUnavailable,
+    HermesCommandValidationError,
+)
+from quant_system.hermes.dark_identity_profile import (
+    DarkIdentityProfileError,
+    require_server_managed_session_policy,
+)
+from quant_system.hermes.gate_observe import note_gate_decided, note_gate_raised
 from quant_system.hermes.gate_surface_authority import (
     GateSurfaceAuthorityError,
     default_gate_surface_authority,
@@ -90,31 +106,15 @@ from quant_system.hermes.public_cutover_observe import (
     note_public_cutover_closed,
     note_public_cutover_opened,
 )
-from quant_system.hermes.canary_grant_authority import (
-    CanaryGrantAuthorityError,
-    default_canary_grant_authority,
-)
-from quant_system.hermes.canary_observe import (
-    note_canary_accepted,
-    note_canary_issued,
-    note_canary_revoked,
-)
-
-from quant_system.hermes.gate_observe import note_gate_decided, note_gate_raised
 from quant_system.hermes.result_observe import note_result_raised
-from quant_system.hermes.vertical_binding_authority import (
-    VerticalBindingAuthorityError,
-    default_vertical_binding_authority,
-)
-from quant_system.hermes.command_ledger import (
-    ROOT_USER_ID,
-    CreateHermesCommandResult,
-    HermesCommandConflict,
-    HermesCommandLedger,
-    HermesCommandLedgerUnavailable,
-    HermesCommandValidationError,
+from quant_system.hermes.run_stop_port import (
+    RunStopError,
+    build_layered_stop_receipt,
+    default_run_stop_adapter,
+    strip_run_ref,
 )
 from quant_system.hermes.session_registry import (
+    HermesSessionActionConflict,
     HermesSessionNotWritable,
     HermesSessionRegistryConflict,
     HermesSessionRegistryUnavailable,
@@ -123,6 +123,10 @@ from quant_system.hermes.session_registry import (
     get_workspace_session,
     register_workspace_session,
     require_web_writable_session,
+)
+from quant_system.hermes.vertical_binding_authority import (
+    VerticalBindingAuthorityError,
+    default_vertical_binding_authority,
 )
 
 ReceiptStatus = Literal[
@@ -378,6 +382,19 @@ def _ensure_ready(settings: Settings) -> bool:
     return bool(authorities_ready(settings)["ready"])
 
 
+def _server_managed_session_policy_admitted(
+    *, provider_policy_digest: str, payload_ttl_days: int
+) -> bool:
+    try:
+        require_server_managed_session_policy(
+            provider_policy_digest=provider_policy_digest,
+            payload_ttl_days=payload_ttl_days,
+        )
+    except DarkIdentityProfileError:
+        return False
+    return True
+
+
 def _create_idempotent_command(
     settings: Settings,
     *,
@@ -423,6 +440,17 @@ def submit_create_managed_session(
             mutation_enabled=mutation_enabled,
 )
     _require_root_actor(actor_owner_user_id)
+    if not _server_managed_session_policy_admitted(
+        provider_policy_digest=action.provider_policy_digest,
+        payload_ttl_days=action.payload_ttl_days,
+    ):
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="server_managed_session_policy_required",
+            mutation_enabled=mutation_enabled,
+        )
     if not _ensure_ready(settings):
         return _receipt(
             status="unavailable",
@@ -431,36 +459,6 @@ def submit_create_managed_session(
             reason_code="workspace_authority_unavailable",
             mutation_enabled=mutation_enabled,
 )
-
-    control_session = control_plane_session_id(action.workspace.workspace_id)
-    try:
-        cmd = _create_idempotent_command(
-            settings,
-            platform_session_id=control_session,
-            client_request_id=action.client_action_id,
-            kind="managed_session_create",
-            action_digest=digest,
-            payload_ref=action_payload_ref_for_digest(digest),
-            provider_policy_digest=action.provider_policy_digest,
-        )
-    except SubmissionSagaError as exc:
-        if exc.code == "conflict":
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code="idempotency_digest_conflict",
-                mutation_enabled=mutation_enabled,
-)
-        if exc.code == "unavailable":
-            return _receipt(
-                status="unavailable",
-                action=action,
-                digest=digest,
-                reason_code="authority_unavailable",
-                mutation_enabled=mutation_enabled,
-)
-        raise
 
     platform_session_id = derive_managed_platform_session_id(digest)
     hermes_session_id = derive_managed_hermes_session_id(digest)
@@ -473,24 +471,33 @@ def submit_create_managed_session(
                 workspace_id=action.workspace.workspace_id,
                 kind="web_managed_session",
                 provider_policy_digest=action.provider_policy_digest,
+                payload_ttl_days=action.payload_ttl_days,
+                creation_client_action_id=action.client_action_id,
+                creation_action_digest=digest,
             ),
+        )
+    except HermesSessionActionConflict:
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            reason_code="idempotency_digest_conflict",
+            mutation_enabled=mutation_enabled,
         )
     except HermesSessionRegistryConflict:
         return _receipt(
             status="conflict",
             action=action,
             digest=digest,
-            command_id=str(cmd.command.command_id),
             reason_code="session_identity_conflict",
             mutation_enabled=mutation_enabled,
 )
     except HermesSessionRegistryUnavailable:
-        # Command durable; session not yet — caller should retry same action.
+        # Commit outcome may be unknown; exact retry is registry-idempotent.
         return _receipt(
             status="reconciling",
             action=action,
             digest=digest,
-            command_id=str(cmd.command.command_id),
             platform_session_id=platform_session_id,
             hermes_session_id=hermes_session_id,
             reason_code="session_registry_pending",
@@ -501,7 +508,6 @@ def submit_create_managed_session(
             status="unavailable",
             action=action,
             digest=digest,
-            command_id=str(cmd.command.command_id),
             reason_code="session_registry_validation",
             mutation_enabled=mutation_enabled,
 )
@@ -510,7 +516,6 @@ def submit_create_managed_session(
         status="accepted",
         action=action,
         digest=digest,
-        command_id=str(cmd.command.command_id),
         platform_session_id=record.platform_session_id,
         hermes_session_id=record.hermes_session_id,
         mutation_enabled=mutation_enabled,
@@ -534,6 +539,17 @@ def submit_fork_into_managed_session(
             mutation_enabled=mutation_enabled,
 )
     _require_root_actor(actor_owner_user_id)
+    if not _server_managed_session_policy_admitted(
+        provider_policy_digest=action.new_provider_policy_digest,
+        payload_ttl_days=action.payload_ttl_days,
+    ):
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code="server_managed_session_policy_required",
+            mutation_enabled=mutation_enabled,
+        )
     if not _ensure_ready(settings):
         return _receipt(
             status="unavailable",
@@ -577,36 +593,6 @@ def submit_fork_into_managed_session(
             mutation_enabled=mutation_enabled,
 )
 
-    control_session = control_plane_session_id(action.workspace.workspace_id)
-    try:
-        cmd = _create_idempotent_command(
-            settings,
-            platform_session_id=control_session,
-            client_request_id=action.client_action_id,
-            kind="managed_session_fork",
-            action_digest=digest,
-            payload_ref=action_payload_ref_for_digest(digest),
-            provider_policy_digest=action.new_provider_policy_digest,
-        )
-    except SubmissionSagaError as exc:
-        if exc.code == "conflict":
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code="idempotency_digest_conflict",
-                mutation_enabled=mutation_enabled,
-)
-        if exc.code == "unavailable":
-            return _receipt(
-                status="unavailable",
-                action=action,
-                digest=digest,
-                reason_code="authority_unavailable",
-                mutation_enabled=mutation_enabled,
-)
-        raise
-
     platform_session_id = derive_managed_platform_session_id(digest)
     hermes_session_id = derive_managed_hermes_session_id(digest)
     try:
@@ -621,14 +607,24 @@ def submit_fork_into_managed_session(
                 parent_platform_session_id=source.platform_session_id,
                 fork_point=action.fork_point,
                 provider_policy_digest=action.new_provider_policy_digest,
+                payload_ttl_days=action.payload_ttl_days,
+                creation_client_action_id=action.client_action_id,
+                creation_action_digest=digest,
             ),
+        )
+    except HermesSessionActionConflict:
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            reason_code="idempotency_digest_conflict",
+            mutation_enabled=mutation_enabled,
         )
     except HermesSessionRegistryConflict:
         return _receipt(
             status="conflict",
             action=action,
             digest=digest,
-            command_id=str(cmd.command.command_id),
             reason_code="session_identity_conflict",
             mutation_enabled=mutation_enabled,
 )
@@ -637,7 +633,6 @@ def submit_fork_into_managed_session(
             status="reconciling",
             action=action,
             digest=digest,
-            command_id=str(cmd.command.command_id),
             platform_session_id=platform_session_id,
             hermes_session_id=hermes_session_id,
             reason_code="session_registry_pending",
@@ -648,7 +643,6 @@ def submit_fork_into_managed_session(
             status="unavailable",
             action=action,
             digest=digest,
-            command_id=str(cmd.command.command_id),
             reason_code="session_registry_validation",
             mutation_enabled=mutation_enabled,
 )
@@ -658,7 +652,6 @@ def submit_fork_into_managed_session(
         status="accepted",
         action=action,
         digest=digest,
-        command_id=str(cmd.command.command_id),
         platform_session_id=record.platform_session_id,
         hermes_session_id=record.hermes_session_id,
         mutation_enabled=mutation_enabled,
@@ -877,18 +870,20 @@ def submit_decide_hermes_command_approval(
             )
             command_id = str(cmd.command.command_id)
         except SubmissionSagaError as exc:
-            if exc.code == "conflict":
+            if (
+                exc.code == "conflict"
+                and exc.message
+                and "digest" in exc.message.lower()
+            ):
                 # Same client_action_id / different digest is a true conflict on
-                # the audit rail; challenge already matches action_digest so
-                # treat as accepted with no new command id.
-                if exc.message and "digest" in exc.message.lower():
-                    return _receipt(
-                        status="conflict",
-                        action=action,
-                        digest=digest,
-                        reason_code="idempotency_digest_conflict",
-                        mutation_enabled=mutation_enabled,
-                    )
+                # the audit rail; challenge already matches action_digest.
+                return _receipt(
+                    status="conflict",
+                    action=action,
+                    digest=digest,
+                    reason_code="idempotency_digest_conflict",
+                    mutation_enabled=mutation_enabled,
+                )
             # Authority + release already decided; return accepted without command_id.
             command_id = None
 
@@ -1030,7 +1025,7 @@ def submit_stop_run_request(
     command_id: str | None = None
     if _ensure_ready(settings):
         control_session = control_plane_session_id(action.workspace.workspace_id)
-        try:
+        with suppress(SubmissionSagaError):
             cmd = _create_idempotent_command(
                 settings,
                 platform_session_id=control_session,
@@ -1041,14 +1036,6 @@ def submit_stop_run_request(
                 provider_policy_digest=None,
             )
             command_id = str(cmd.command.command_id)
-        except SubmissionSagaError as exc:
-            # Stop already committed on the hermetic port. A ledger digest
-            # conflict is an audit-rail problem only — do not report conflict
-            # as if the stop failed (Reviewer M1 / same honesty as V7a CAS).
-            if exc.code == "conflict":
-                command_id = None
-            else:
-                command_id = None
 
     return _receipt(
         status=receipt_status,
@@ -1109,13 +1096,11 @@ def submit_confirm_formula_source(
             reason_code=exc.message or "gate_surface_authority_unavailable",
             mutation_enabled=mutation_enabled,
         )
-    try:
+    with suppress(Exception):
         note_gate_decided(
             workspace_id=action.workspace.workspace_id,
             gate=decided,
         )
-    except Exception:
-        pass
     command_id: str | None = None
     if _ensure_ready(settings):
         control_session = control_plane_session_id(action.workspace.workspace_id)
@@ -1191,13 +1176,11 @@ def submit_review_candidate_cas(
             reason_code=exc.message or "gate_surface_authority_unavailable",
             mutation_enabled=mutation_enabled,
         )
-    try:
+    with suppress(Exception):
         note_gate_decided(
             workspace_id=action.workspace.workspace_id,
             gate=decided,
         )
-    except Exception:
-        pass
     command_id: str | None = None
     if _ensure_ready(settings):
         control_session = control_plane_session_id(action.workspace.workspace_id)
@@ -1273,13 +1256,11 @@ def submit_prepare_promotion_review(
             reason_code=exc.message or "gate_surface_authority_unavailable",
             mutation_enabled=mutation_enabled,
         )
-    try:
+    with suppress(Exception):
         note_gate_decided(
             workspace_id=action.workspace.workspace_id,
             gate=decided,
         )
-    except Exception:
-        pass
     command_id: str | None = None
     if _ensure_ready(settings):
         control_session = control_plane_session_id(action.workspace.workspace_id)
@@ -1382,13 +1363,11 @@ def submit_bind_options_vertical_a(
             reason_code=exc.message or "vertical_binding_authority_unavailable",
             mutation_enabled=mutation_enabled,
         )
-    try:
+    with suppress(Exception):
         note_result_raised(
             workspace_id=action.workspace.workspace_id,
             result=outcome.result,
         )
-    except Exception:
-        pass
     command_id: str | None = None
     if _ensure_ready(settings):
         control_session = control_plane_session_id(action.workspace.workspace_id)

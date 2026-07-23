@@ -11,10 +11,10 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol
-
+from typing import Any, Protocol
 
 _STDIN_SOFT_LIMIT = 600_000
 _DEFAULT_TIMEOUT_SECONDS = 15.0
@@ -75,7 +75,7 @@ class IntentPayloadCliSettings:
     extra_env: Mapping[str, str] | None = None
 
     @classmethod
-    def from_settings(cls, settings: object | None = None) -> "IntentPayloadCliSettings":
+    def from_settings(cls, settings: object | None = None) -> IntentPayloadCliSettings:
         """Build from ``Settings.intent_payload`` or safe local defaults."""
         block = None
         if settings is not None:
@@ -433,6 +433,7 @@ class FakeIntentPayloadPort:
                 "provider_policy_digest",
                 "be9265ec683224ba28643b01938dba87d2642944f3a0516ccb9ff0126f872e31",
             ),
+            "ttl_days": body.get("ttl_days"),
             "status": "stored",
         }
         self._store[key] = {
@@ -503,7 +504,7 @@ def intent_payload_input_resolver(
     settings: object | None = None,
     *,
     port: IntentPayloadPort | None = None,
-) -> Callable[["object"], str]:
+) -> Callable[[object], str]:
     """Build a dispatch ``input_resolver`` that bind_resolves via the CLI Port.
 
     ``consumer_ref = command:<ledger_command_id>``. Plaintext exists only inside
