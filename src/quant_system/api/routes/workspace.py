@@ -273,29 +273,32 @@ def workspace_follow_stream(
 
     def event_iter() -> Iterator[str]:
         from quant_system.hermes.approval_observe import (
-            default_approval_observe_journal,
+            ApprovalObserveJournal,
         )
         from quant_system.hermes.gate_observe import (
-            default_gate_observe_journal,
+            GateObserveJournal,
         )
         from quant_system.hermes.result_observe import (
-            default_result_observe_journal,
+            ResultObserveJournal,
         )
         from quant_system.hermes.transcript_observe import (
-            default_transcript_observe_journal,
+            TranscriptObserveJournal,
             hints_from_command_events,
         )
         from quant_system.hermes.vertical_observe import (
-            default_vertical_observe_journal,
+            VerticalObserveJournal,
         )
 
         cursor = start_cursor
         idle = 0
-        journal = default_approval_observe_journal()
-        gate_journal = default_gate_observe_journal()
-        result_journal = default_result_observe_journal()
-        vertical_journal = default_vertical_observe_journal()
-        transcript_journal = default_transcript_observe_journal()
+        # Projection fingerprints are delivery state for this connection, not
+        # process authority. A process-global fingerprint lets the first
+        # browser consume a projection and starves every later subscriber.
+        journal = ApprovalObserveJournal()
+        gate_journal = GateObserveJournal()
+        result_journal = ResultObserveJournal()
+        vertical_journal = VerticalObserveJournal()
+        transcript_journal = TranscriptObserveJournal()
         yield _sse_pack(
             "ready",
             {
