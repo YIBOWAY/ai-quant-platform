@@ -744,3 +744,236 @@ describe("V7g Vertical A ids on spine", () => {
   });
 });
 
+describe("Plan-V6-Token-Stream-M1 transcript hints on spine", () => {
+  beforeEach(() => {
+    fetchWorkspaceSnapshot.mockReset();
+    fetchWorkspaceFollow.mockReset();
+    fetchWorkspaceFollow.mockResolvedValue({
+      events: [],
+      next_cursor: 0,
+      resync_required: false,
+    });
+    vi.stubGlobal("window", {
+      setInterval: (fn: TimerHandler, ms?: number) =>
+        setInterval(fn as () => void, ms) as unknown as number,
+      clearInterval: (id: number) =>
+        clearInterval(id as unknown as NodeJS.Timeout),
+      setTimeout: (fn: TimerHandler, ms?: number) =>
+        setTimeout(fn as () => void, ms) as unknown as number,
+      clearTimeout: (id: number) =>
+        clearTimeout(id as unknown as NodeJS.Timeout),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("emptyState starts with transcriptHints=[] and dirtySeq=0", () => {
+    const s = emptyState();
+    expect(s.transcriptHints).toEqual([]);
+    expect(s.transcriptDirtySeq).toBe(0);
+  });
+
+  it("command events with hermes_session_id bump transcriptDirtySeq", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({ snapshot_workspace_cursor: 0 }),
+    );
+    fetchWorkspaceFollow.mockResolvedValue({
+      events: [
+        evt({
+          event_id: 3,
+          command_id: "c-stream",
+          state: "leased",
+          type: "command.leased",
+          hermes_session_id: "run_stream_1",
+        }),
+      ],
+      after_cursor: 0,
+      next_cursor: 3,
+      resync_required: false,
+    });
+
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {}
+        addEventListener() {}
+        removeEventListener() {}
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: false,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      expect(spine.getState().transcriptDirtySeq).toBe(0);
+      spine.start();
+      await new Promise((r) => setTimeout(r, 40));
+      const s = spine.getState();
+      expect(s.transcriptDirtySeq).toBeGreaterThan(0);
+      expect(s.commands.some((c) => c.command_id === "c-stream")).toBe(true);
+      // No body fields invented on spine
+      expect(s.transcriptHints.every((h) => !("content" in h))).toBe(true);
+    } finally {
+      spine.stop();
+    }
+  });
+
+  it("SSE event:transcript applies body-free hint and bumps dirty", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({ snapshot_workspace_cursor: 0 }),
+    );
+
+    type Handler = (ev: MessageEvent) => void;
+    const handlers: Record<string, Handler[]> = {};
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {}
+        addEventListener(type: string, handler: Handler) {
+          (handlers[type] ||= []).push(handler);
+        }
+        removeEventListener() {}
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: true,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      spine.start();
+      await new Promise((r) => setTimeout(r, 25));
+      const th = handlers["transcript"] || [];
+      expect(th.length).toBeGreaterThan(0);
+      const before = spine.getState().transcriptDirtySeq;
+      for (const h of th) {
+        h({
+          data: JSON.stringify({
+            hermes_session_id: "run_hint_1",
+            phase: "waiting",
+            revision: "run_hint_1|c1|leased|1",
+            transport: "spine-refetch",
+            content: "SMUGGLE_BODY",
+            text: "nope",
+            limitations: [
+              "assistant_body_not_on_follow_spine",
+              "not_provider_token_passthrough",
+              "messages_bff_is_text_authority",
+            ],
+          }),
+        } as MessageEvent);
+      }
+      const s = spine.getState();
+      expect(s.transcriptDirtySeq).toBeGreaterThan(before);
+      expect(s.transcriptHints).toHaveLength(1);
+      expect(s.transcriptHints[0]?.hermes_session_id).toBe("run_hint_1");
+      expect(s.transcriptHints[0]?.phase).toBe("waiting");
+      expect(s.transcriptHints[0]?.transport).toBe("spine-refetch");
+      expect((s.transcriptHints[0] as { content?: string }).content).toBeUndefined();
+    } finally {
+      spine.stop();
+    }
+  });
+
+  it("rejects web_/wm_ transcript hints", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({ snapshot_workspace_cursor: 0 }),
+    );
+    type Handler = (ev: MessageEvent) => void;
+    const handlers: Record<string, Handler[]> = {};
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {}
+        addEventListener(type: string, handler: Handler) {
+          (handlers[type] ||= []).push(handler);
+        }
+        removeEventListener() {}
+      },
+    );
+    const spine = createWorkspaceFollowSpine({
+      preferSse: true,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      spine.start();
+      await new Promise((r) => setTimeout(r, 25));
+      for (const h of handlers["transcript"] || []) {
+        h({
+          data: JSON.stringify({
+            hermes_session_id: "web_bad",
+            phase: "waiting",
+            revision: "x",
+          }),
+        } as MessageEvent);
+        h({
+          data: JSON.stringify({
+            hermes_session_id: "wm_bad",
+            phase: "waiting",
+            revision: "y",
+          }),
+        } as MessageEvent);
+      }
+      expect(spine.getState().transcriptHints).toEqual([]);
+    } finally {
+      spine.stop();
+    }
+  });
+
+  it("same revision does not re-bump dirty", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({ snapshot_workspace_cursor: 0 }),
+    );
+    type Handler = (ev: MessageEvent) => void;
+    const handlers: Record<string, Handler[]> = {};
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {}
+        addEventListener(type: string, handler: Handler) {
+          (handlers[type] ||= []).push(handler);
+        }
+        removeEventListener() {}
+      },
+    );
+    const spine = createWorkspaceFollowSpine({
+      preferSse: true,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      spine.start();
+      await new Promise((r) => setTimeout(r, 25));
+      const payload = {
+        hermes_session_id: "run_dedupe",
+        phase: "waiting",
+        revision: "rev-same",
+      };
+      for (const h of handlers["transcript"] || []) {
+        h({ data: JSON.stringify(payload) } as MessageEvent);
+      }
+      const mid = spine.getState().transcriptDirtySeq;
+      for (const h of handlers["transcript"] || []) {
+        h({ data: JSON.stringify(payload) } as MessageEvent);
+      }
+      expect(spine.getState().transcriptDirtySeq).toBe(mid);
+      // new revision bumps again
+      for (const h of handlers["transcript"] || []) {
+        h({
+          data: JSON.stringify({ ...payload, revision: "rev-next", phase: "final" }),
+        } as MessageEvent);
+      }
+      expect(spine.getState().transcriptDirtySeq).toBeGreaterThan(mid);
+      expect(spine.getState().transcriptHints[0]?.phase).toBe("final");
+    } finally {
+      spine.stop();
+    }
+  });
+});
+

@@ -127,3 +127,158 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Plan-V6-Token-Stream-M1: honest assistant streaming phase (no invented tokens). */
+export type AssistantPhase =
+  | "idle"
+  | "waiting"
+  | "partial"
+  | "final"
+  | "unavailable";
+
+export type TranscriptHint = {
+  hermes_session_id?: string | null;
+  command_id?: string | null;
+  phase?: AssistantPhase | string | null;
+  revision?: string | number | null;
+  transport?: string | null;
+  limitations?: string[] | null;
+  workspace_id?: string | null;
+  mutation_enabled?: boolean;
+};
+
+const TERMINAL_FOR_PHASE = new Set([
+  "delivered",
+  "cancelled",
+  "failed",
+  "rejected",
+  "timed_out",
+  "outcome_unknown",
+]);
+
+/**
+ * Derive assistant phase from command state + messages presence.
+ * Never invents assistant content — only classifies what already exists.
+ */
+export function deriveAssistantPhase(options: {
+  hasActiveSession: boolean;
+  commandState?: string | null;
+  assistantContentLength?: number;
+  messagesReadStatus?: string | null;
+  submitAccepted?: boolean;
+  priorPhase?: AssistantPhase | null;
+}): AssistantPhase {
+  const {
+    hasActiveSession,
+    commandState,
+    assistantContentLength = 0,
+    messagesReadStatus,
+    submitAccepted = false,
+    priorPhase = null,
+  } = options;
+
+  if (
+    messagesReadStatus &&
+    messagesReadStatus !== "available" &&
+    messagesReadStatus !== ""
+  ) {
+    return "unavailable";
+  }
+
+  const state =
+    typeof commandState === "string" ? commandState.trim().toLowerCase() : "";
+  const terminal = state !== "" && TERMINAL_FOR_PHASE.has(state);
+  const hasAssistant = assistantContentLength > 0;
+
+  if (terminal) {
+    // Terminal with or without assistant body is final (failed/cancelled/empty delivered honest).
+    return "final";
+  }
+
+  if (hasAssistant && !terminal) {
+    return "partial";
+  }
+
+  if (submitAccepted || state === "queued" || state === "leased" || state === "running") {
+    return "waiting";
+  }
+
+  if (priorPhase === "waiting" || priorPhase === "partial") {
+    return priorPhase;
+  }
+
+  if (!hasActiveSession) return "idle";
+  return priorPhase === "final" ? "final" : "idle";
+}
+
+/** Total assistant content length (for growth detection). */
+export function assistantContentLength(
+  messages: HermesSessionMessage[] | null | undefined,
+): number {
+  if (!Array.isArray(messages)) return 0;
+  let n = 0;
+  for (const m of messages) {
+    if (m && m.role === "assistant" && typeof m.content === "string") {
+      n += m.content.length;
+    }
+  }
+  return n;
+}
+
+/**
+ * True when next messages extend prior assistant text (prefix/growth) without
+ * requiring a full canvas wipe. Same session assumed by caller.
+ */
+export function assistantTextGrew(
+  prior: HermesSessionMessage[] | null | undefined,
+  next: HermesSessionMessage[] | null | undefined,
+): boolean {
+  const a = assistantContentLength(prior);
+  const b = assistantContentLength(next);
+  return b > a;
+}
+
+/** Strip forbidden body keys from a transcript hint (defense in depth). */
+export function sanitizeTranscriptHint(
+  raw: Record<string, unknown> | null | undefined,
+): TranscriptHint | null {
+  if (!raw || typeof raw !== "object") return null;
+  const sid = raw.hermes_session_id;
+  if (typeof sid !== "string" || !isUsableHermesApiSessionId(sid)) {
+    return null;
+  }
+  const phaseRaw = typeof raw.phase === "string" ? raw.phase.trim().toLowerCase() : "";
+  const phase =
+    phaseRaw === "waiting" ||
+    phaseRaw === "partial" ||
+    phaseRaw === "final" ||
+    phaseRaw === "unavailable"
+      ? (phaseRaw as AssistantPhase)
+      : undefined;
+  return {
+    hermes_session_id: sid.trim(),
+    command_id:
+      typeof raw.command_id === "string" || raw.command_id === null
+        ? (raw.command_id as string | null)
+        : null,
+    phase,
+    revision:
+      typeof raw.revision === "string" || typeof raw.revision === "number"
+        ? raw.revision
+        : null,
+    transport:
+      typeof raw.transport === "string" ? raw.transport : "spine-refetch",
+    limitations: Array.isArray(raw.limitations)
+      ? raw.limitations.filter((x): x is string => typeof x === "string")
+      : [
+          "assistant_body_not_on_follow_spine",
+          "not_provider_token_passthrough",
+          "messages_bff_is_text_authority",
+          "public_write_off",
+        ],
+    workspace_id:
+      typeof raw.workspace_id === "string" ? raw.workspace_id : null,
+    mutation_enabled: Boolean(raw.mutation_enabled),
+  };
+}
+

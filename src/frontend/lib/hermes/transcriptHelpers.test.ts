@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assistantContentLength,
+  assistantTextGrew,
+  deriveAssistantPhase,
   displayableTranscriptMessages,
   isNearBottom,
   isUsableHermesApiSessionId,
   mergePendingUserMessage,
   pickLatestHermesSessionId,
+  sanitizeTranscriptHint,
 } from "./transcriptHelpers";
 
 describe("transcriptHelpers (L3a + L3b)", () => {
@@ -78,5 +82,103 @@ describe("transcriptHelpers (L3a + L3b)", () => {
 
     expect(mergePendingUserMessage([], null)).toEqual([]);
     expect(mergePendingUserMessage([], "   ")).toEqual([]);
+  });
+});
+
+describe("Plan-V6-Token-Stream-M1 phase helpers", () => {
+  it("TC-TS-07 accept → waiting", () => {
+    expect(
+      deriveAssistantPhase({
+        hasActiveSession: false,
+        submitAccepted: true,
+      }),
+    ).toBe("waiting");
+  });
+
+  it("TC-TS-08 delivered + assistant → final", () => {
+    expect(
+      deriveAssistantPhase({
+        hasActiveSession: true,
+        commandState: "delivered",
+        assistantContentLength: 8,
+      }),
+    ).toBe("final");
+  });
+
+  it("TC-TS-09 messages unavailable → unavailable", () => {
+    expect(
+      deriveAssistantPhase({
+        hasActiveSession: true,
+        messagesReadStatus: "unavailable",
+      }),
+    ).toBe("unavailable");
+  });
+
+  it("partial when assistant grows before terminal", () => {
+    expect(
+      deriveAssistantPhase({
+        hasActiveSession: true,
+        commandState: "leased",
+        assistantContentLength: 4,
+      }),
+    ).toBe("partial");
+  });
+
+  it("assistantContentLength and growth", () => {
+    const a = [
+      { id: "1", role: "user" as const, content: "hi" },
+      { id: "2", role: "assistant" as const, content: "ab" },
+    ];
+    const b = [
+      { id: "1", role: "user" as const, content: "hi" },
+      { id: "2", role: "assistant" as const, content: "abcd" },
+    ];
+    expect(assistantContentLength(a)).toBe(2);
+    expect(assistantContentLength(b)).toBe(4);
+    expect(assistantTextGrew(a, b)).toBe(true);
+    expect(assistantTextGrew(b, a)).toBe(false);
+  });
+
+  it("TC-TS-06 sanitize rejects web_/wm_", () => {
+    expect(
+      sanitizeTranscriptHint({
+        hermes_session_id: "web_x",
+        phase: "waiting",
+        revision: "1",
+      }),
+    ).toBeNull();
+    expect(
+      sanitizeTranscriptHint({
+        hermes_session_id: "wm_x",
+        phase: "waiting",
+        revision: "1",
+      }),
+    ).toBeNull();
+    const ok = sanitizeTranscriptHint({
+      hermes_session_id: "run_ok",
+      phase: "waiting",
+      revision: "r1",
+      content: "SMUGGLE",
+      text: "nope",
+    });
+    expect(ok).not.toBeNull();
+    expect(ok!.hermes_session_id).toBe("run_ok");
+    expect((ok as { content?: string }).content).toBeUndefined();
+  });
+
+  it("TC-TS-19 limitations default honesty", () => {
+    const ok = sanitizeTranscriptHint({
+      hermes_session_id: "run_ok",
+      phase: "final",
+      revision: 2,
+    });
+    expect(ok!.limitations).toEqual(
+      expect.arrayContaining([
+        "not_provider_token_passthrough",
+        "messages_bff_is_text_authority",
+        "assistant_body_not_on_follow_spine",
+      ]),
+    );
+    expect(ok!.transport).toBe("spine-refetch");
   });
 });

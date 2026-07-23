@@ -2,8 +2,10 @@
  * L4b-SSE-Follow-M1: shared durable workspace follow spine.
  *
  * Prefer EventSource on GET …/follow/stream; fall back to GET …/follow poll.
- * Command lifecycle + V7d approvals + V7e gates projection — no assistant bodies.
+ * Command lifecycle + V7d approvals + V7e gates + V7f results + V7g vertical
+ * + Plan-V6 transcript **hints** (no assistant bodies on this spine).
  * On resync: snapshot then continue. No dual private approval poll.
+ * Text authority for assistant text: messages BFF (spine-refetch).
  */
 
 import {
@@ -18,6 +20,10 @@ import {
   type WorkspaceSnapshot,
 } from "@/lib/hermes/workspaceClient";
 import { PLATFORM_WORKSPACE_ID } from "@/lib/hermes/darkIdentity";
+import {
+  sanitizeTranscriptHint,
+  type TranscriptHint,
+} from "@/lib/hermes/transcriptHelpers";
 
 export type FollowTransport = "sse" | "poll" | "idle";
 
@@ -44,6 +50,13 @@ export type FollowSpineState = {
   error: string | null;
   observedAt?: string;
   snapshotCursor?: number | null;
+  /**
+   * Plan-V6-Token-Stream-M1: body-free transcript hints from SSE event:transcript
+   * or derived from command lifecycle. Never contains assistant text.
+   */
+  transcriptHints: TranscriptHint[];
+  /** Monotonic dirty counter — transcript panel refetches when this bumps. */
+  transcriptDirtySeq: number;
 };
 
 export type FollowSpineListener = (state: FollowSpineState) => void;
@@ -92,6 +105,8 @@ function emptyState(): FollowSpineState {
     transport: "idle",
     resyncCount: 0,
     error: null,
+    transcriptHints: [],
+    transcriptDirtySeq: 0,
   };
 }
 
@@ -277,12 +292,77 @@ export function createWorkspaceFollowSpine(
   const applyEvents = (events: WorkspaceFollowEvent[]) => {
     if (!events.length) return;
     let commands = state.commands;
+    let dirty = false;
     for (const event of events) {
       commands = applyCommandEvent(commands, event);
+      if (event.hermes_session_id || event.state) {
+        dirty = true;
+      }
     }
     setState({
       commands,
       lastEvents: events,
+      error: null,
+      transcriptDirtySeq: dirty
+        ? state.transcriptDirtySeq + 1
+        : state.transcriptDirtySeq,
+    });
+  };
+
+  /** Plan-V6-M1: apply body-free transcript hints; bump dirty for refetch. */
+  const applyTranscriptHints = (rawHints: unknown) => {
+    if (!Array.isArray(rawHints) || rawHints.length === 0) {
+      // Single hint object form from SSE event:transcript
+      if (rawHints && typeof rawHints === "object" && !Array.isArray(rawHints)) {
+        const one = sanitizeTranscriptHint(rawHints as Record<string, unknown>);
+        if (!one) return;
+        const prior = state.transcriptHints;
+        const same = prior.some(
+          (h) =>
+            h.hermes_session_id === one.hermes_session_id &&
+            String(h.revision ?? "") === String(one.revision ?? ""),
+        );
+        if (same) return;
+        const next = [
+          ...prior.filter((h) => h.hermes_session_id !== one.hermes_session_id),
+          one,
+        ];
+        setState({
+          transcriptHints: next,
+          transcriptDirtySeq: state.transcriptDirtySeq + 1,
+          error: null,
+        });
+      }
+      return;
+    }
+    const cleaned: TranscriptHint[] = [];
+    for (const item of rawHints) {
+      if (!item || typeof item !== "object") continue;
+      const h = sanitizeTranscriptHint(item as Record<string, unknown>);
+      if (h) cleaned.push(h);
+    }
+    if (!cleaned.length) return;
+    let merged = state.transcriptHints.slice();
+    let changed = false;
+    for (const one of cleaned) {
+      const idx = merged.findIndex(
+        (h) => h.hermes_session_id === one.hermes_session_id,
+      );
+      if (idx >= 0) {
+        if (String(merged[idx].revision ?? "") === String(one.revision ?? "")) {
+          continue;
+        }
+        merged[idx] = one;
+        changed = true;
+      } else {
+        merged = [...merged, one];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    setState({
+      transcriptHints: merged,
+      transcriptDirtySeq: state.transcriptDirtySeq + 1,
       error: null,
     });
   };
@@ -449,7 +529,11 @@ export function createWorkspaceFollowSpine(
           ? snap.snapshot_workspace_cursor
           : state.cursor;
       // Never rewind: missing snapshot cursor keeps prior head.
-      setState({ cursor: Math.max(state.cursor, snapCursor) });
+      // Plan-V6: explicit resync may advance messages off-spine — nudge refetch once.
+      setState({
+        cursor: Math.max(state.cursor, snapCursor),
+        transcriptDirtySeq: state.transcriptDirtySeq + 1,
+      });
       // Restart transport from new cursor.
       restartTransport();
     } catch (error) {
@@ -626,6 +710,15 @@ export function createWorkspaceFollowSpine(
         /* ignore malformed */
       }
     };
+    const onTranscript = (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(String(ev.data)) as Record<string, unknown>;
+        // Single hint per event:transcript frame (no body fields).
+        applyTranscriptHints(data);
+      } catch {
+        /* ignore malformed */
+      }
+    };
     const onCursor = (ev: MessageEvent) => {
       try {
         const data = JSON.parse(String(ev.data)) as { next_cursor?: number };
@@ -678,6 +771,7 @@ export function createWorkspaceFollowSpine(
     es.addEventListener("gates", onGates);
     es.addEventListener("results", onResults);
     es.addEventListener("vertical", onVertical);
+    es.addEventListener("transcript", onTranscript);
     es.addEventListener("cursor", onCursor);
     es.addEventListener("resync", onResync);
     es.addEventListener("reconnect", onReconnect);

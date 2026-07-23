@@ -58,6 +58,8 @@ export function WorkspaceFollowProvider({
     transport: "idle",
     resyncCount: 0,
     error: null,
+    transcriptHints: [],
+    transcriptDirtySeq: 0,
   }));
   const spineRef = useRef<WorkspaceFollowSpine | null>(null);
   const seenDeliveredRef = useRef<Set<string>>(new Set());
@@ -148,6 +150,8 @@ export function useWorkspaceFollow(): WorkspaceFollowContextValue {
         transport: "idle",
         resyncCount: 0,
         error: null,
+        transcriptHints: [],
+        transcriptDirtySeq: 0,
       },
       spine: null,
     };

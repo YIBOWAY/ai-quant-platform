@@ -8,6 +8,7 @@ import {
   displayId,
 } from "@/lib/hermes/workbenchA11y";
 import type { HermesSessionMessage } from "@/lib/hermes/workspaceClient";
+import type { AssistantPhase } from "@/lib/hermes/transcriptHelpers";
 
 export type TranscriptCanvasProps = {
   messages: HermesSessionMessage[];
@@ -20,6 +21,10 @@ export type TranscriptCanvasProps = {
   hermesSessionId?: string | null;
   /** Local optimistic user bubble id marker (styling only). */
   pendingMessageId?: string;
+  /** Plan-V6-M1 honest phase (no fake tokens). */
+  assistantPhase?: AssistantPhase;
+  /** Always spine-refetch for M1 (not provider-token). */
+  transport?: "spine-refetch" | string;
 };
 
 /**
@@ -34,6 +39,9 @@ export function TranscriptCanvas({
   className = "",
   hermesSessionId = null,
   pendingMessageId = "local-pending-user",
+  assistantPhase = "idle",
+  transport = "spine-refetch",
+
 }: TranscriptCanvasProps) {
   const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
 
@@ -56,6 +64,9 @@ export function TranscriptCanvas({
         className={`rounded-lg border border-border-subtle bg-bg-surface px-3 py-4 ${className}`}
         data-hermes-session-empty
         data-hermes-transcript-empty
+        data-hermes-token-stream="v6-m1"
+        data-hermes-assistant-phase={assistantPhase}
+        data-hermes-transcript-transport={transport}
       >
         <p className="font-body-sm text-text-secondary">{resolvedEmpty}</p>
         {hermesSessionId ? (
@@ -76,6 +87,9 @@ export function TranscriptCanvas({
       aria-relevant="additions"
       className={`space-y-3 ${className}`}
       data-hermes-transcript-canvas
+      data-hermes-token-stream="v6-m1"
+      data-hermes-assistant-phase={assistantPhase}
+      data-hermes-transcript-transport={transport}
     >
       {hermesSessionId ? (
         <SessionChip
@@ -128,6 +142,22 @@ export function TranscriptCanvas({
           );
         })}
       </ol>
+      {(assistantPhase === "waiting" || assistantPhase === "partial") && (
+        <p
+          className="mt-2 font-body-sm text-text-secondary"
+          data-hermes-assistant-streaming-note
+          data-hermes-assistant-phase={assistantPhase}
+        >
+          {assistantPhase === "waiting"
+            ? isZh
+              ? "等待助手回复（spine 驱动刷新；非 provider token 直通）"
+              : "Waiting for assistant (spine-refetch; not provider-token passthrough)"
+            : isZh
+              ? "助手正文增长中（messages BFF 权威；follow 无 body）"
+              : "Assistant text growing (messages BFF authority; no body on follow)"}
+        </p>
+      )}
+
       {omittedCount > 0 ? (
         <p
           className="font-body-sm text-text-secondary"

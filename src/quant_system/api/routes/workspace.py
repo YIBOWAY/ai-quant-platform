@@ -161,7 +161,13 @@ def workspace_follow_stream(
     max_ticks: int | None = Query(default=None, ge=1, le=_SSE_MAX_TICKS_CEILING),
     poll_seconds: float | None = Query(default=None, ge=0.0, le=5.0),
 ) -> StreamingResponse:
-    """Server-Sent Events over workspace follow pages (command lifecycle only)."""
+    """Server-Sent Events over workspace follow pages.
+
+    Command lifecycle + approvals/gates/results/vertical_ids + Plan-V6
+    transcript **hints only**. Assistant bodies never ride this stream;
+    text authority remains GET /api/hermes/sessions/{id}/messages
+    (spine-refetch, not provider-token passthrough).
+    """
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     workspace = _workspace(settings)
     actor = _actor(owner.owner_user_id)
@@ -186,6 +192,10 @@ def workspace_follow_stream(
         from quant_system.hermes.vertical_observe import (
             default_vertical_observe_journal,
         )
+        from quant_system.hermes.transcript_observe import (
+            default_transcript_observe_journal,
+            hints_from_command_events,
+        )
 
         cursor = start_cursor
         idle = 0
@@ -193,6 +203,7 @@ def workspace_follow_stream(
         gate_journal = default_gate_observe_journal()
         result_journal = default_result_observe_journal()
         vertical_journal = default_vertical_observe_journal()
+        transcript_journal = default_transcript_observe_journal()
         yield _sse_pack(
             "ready",
             {
@@ -201,7 +212,7 @@ def workspace_follow_stream(
                 "mutation_enabled": mutation_enabled,
                 "transport": "sse",
                 # Honest scope marker for FE/docs (V7d–V7g).
-                "scope": "command_lifecycle+approvals+gates+results+vertical_ids",
+                "scope": "command_lifecycle+approvals+gates+results+vertical_ids+transcript_hints",
             },
         )
         for _tick in range(tick_limit):
@@ -480,6 +491,23 @@ def workspace_follow_stream(
                             "mutation_enabled": public.get("mutation_enabled"),
                         },
                     )
+                    emitted = True
+            # Plan-V6-Token-Stream-M1: body-free transcript hints derived from
+            # command events that carry hermes_session_id. Never advances the
+            # durable command cursor; never includes assistant text.
+            cmd_events = public.get("events") or []
+            if isinstance(cmd_events, list) and cmd_events:
+                hints = hints_from_command_events(
+                    workspace_id=workspace_id,
+                    events=cmd_events,  # type: ignore[arg-type]
+                    mutation_enabled=bool(public.get("mutation_enabled")),
+                )
+                t_changed = transcript_journal.take_hints_if_changed(
+                    workspace_id, hints
+                )
+                if t_changed is not None:
+                    for hint in t_changed:
+                        yield _sse_pack("transcript", dict(hint))
                     emitted = True
             if emitted:
                 idle = 0
