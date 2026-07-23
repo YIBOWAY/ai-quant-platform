@@ -360,6 +360,56 @@ def test_schema_fingerprint_detects_postgres_schema_semantics() -> None:
                         conn.execute(f"DROP SCHEMA IF EXISTS {db.SCHEMA}")
 
 
+@pytest.mark.pg
+def test_schema_fingerprint_is_stable_when_identical_fk_is_recreated() -> None:
+    url = _postgres_test_url()
+    database = db.Database(url, connect_timeout=1, failure_cooldown_seconds=0)
+    suffix = uuid.uuid4().hex[:12]
+    parent_name = f"schema_fp_parent_{suffix}"
+    child_name = f"schema_fp_child_{suffix}"
+    constraint_name = f"schema_fp_parent_fk_{suffix}"
+    parent = f'{db.SCHEMA}."{parent_name}"'
+    child = f'{db.SCHEMA}."{child_name}"'
+    schema_preexisted = True
+
+    try:
+        with psycopg.connect(url, connect_timeout=1, autocommit=True) as conn:
+            schema_preexisted = (
+                conn.execute(
+                    "SELECT 1 FROM pg_namespace WHERE nspname = %s",
+                    (db.SCHEMA,),
+                ).fetchone()
+                is not None
+            )
+            conn.execute(f"CREATE SCHEMA IF NOT EXISTS {db.SCHEMA}")
+            conn.execute(f"CREATE TABLE {parent} (id BIGINT PRIMARY KEY)")
+            conn.execute(f"CREATE TABLE {child} (parent_id BIGINT)")
+            conn.execute(
+                f'ALTER TABLE {child} ADD CONSTRAINT "{constraint_name}" '
+                f"FOREIGN KEY (parent_id) REFERENCES {parent}(id)"
+            )
+
+        baseline = db.schema_fingerprint(database)
+
+        with psycopg.connect(url, connect_timeout=1, autocommit=True) as conn:
+            conn.execute(
+                f'ALTER TABLE {child} DROP CONSTRAINT "{constraint_name}"'
+            )
+            conn.execute(
+                f'ALTER TABLE {child} ADD CONSTRAINT "{constraint_name}" '
+                f"FOREIGN KEY (parent_id) REFERENCES {parent}(id)"
+            )
+
+        assert db.schema_fingerprint(database) == baseline
+    finally:
+        with psycopg.connect(url, connect_timeout=1, autocommit=True) as conn:
+            conn.execute(f"DROP TABLE IF EXISTS {child} CASCADE")
+            conn.execute(f"DROP TABLE IF EXISTS {parent} CASCADE")
+            if not schema_preexisted:
+                with suppress(psycopg.errors.DependentObjectsStillExist):
+                    conn.execute(f"DROP SCHEMA IF EXISTS {db.SCHEMA}")
+
+
 def test_successful_migration_reports_runtime_gate_release_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -433,6 +433,7 @@ fingerprint_rows(kind, identity, definition) AS (
     FROM pg_trigger AS trigger_row
     JOIN pg_class AS c ON c.oid = trigger_row.tgrelid
     JOIN target_schema AS s ON s.oid = c.relnamespace
+    WHERE NOT trigger_row.tgisinternal
 
     UNION ALL
 
