@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>F1 Full-state prototype · Hermes Workbench</title>
+  <link rel="stylesheet" href="./prototype.css" />
+</head>
+<body>
+  <!-- Review chrome: outside simulated product; cannot be mistaken for live session -->
+  <div class="review-chrome" data-review-chrome>
+    <div class="proto-banner">
+      <span class="proto-badge" id="proto-data-label">prototype data</span>
+      <p>
+        本地 F1 全状态交互原型 · 仅 <code>fetch("./states/*.json")</code> + DOM ·
+        不提交表单 · 不访问生产 API / Hermes / tasks。视觉基线：F0 direction-a v3 finance/crypto trading desk。
+      </p>
+    </div>
+
+    <div class="review-row" role="toolbar" aria-label="研究生命周期 walkthrough">
+      <span class="label">Walkthrough</span>
+      <button type="button" data-walk="0" aria-current="step">1 提出目标</button>
+      <button type="button" data-walk="1">2 结构化计划</button>
+      <button type="button" data-walk="2">3 Gate 1</button>
+      <button type="button" data-walk="3">4 Streaming</button>
+      <button type="button" data-walk="4">5 completed_degraded</button>
+      <button type="button" data-walk="5">6 Gate 2</button>
+      <button type="button" data-walk="6">7 Gate 3</button>
+      <button type="button" id="walk-next" class="btn-primary">下一步 →</button>
+      <span class="walk-meta" id="walk-meta">step 1/7 · goal</span>
+    </div>
+
+    <div class="review-row" role="toolbar" aria-label="状态表面切换">
+      <span class="label">Surface</span>
+      <button type="button" data-surface="home" aria-pressed="true">Home</button>
+      <button type="button" data-surface="conversation" aria-pressed="false">Conversation</button>
+      <button type="button" data-surface="tasks" aria-pressed="false">Tasks</button>
+      <button type="button" data-surface="approvals" aria-pressed="false">Approvals</button>
+      <button type="button" data-surface="results" aria-pressed="false">Results</button>
+    </div>
+
+    <div class="review-row" role="toolbar" aria-label="状态目录" id="state-toolbar">
+      <span class="label">State</span>
+      <!-- filled by JS from catalogs -->
+    </div>
+  </div>
+
+  <div class="safety" role="status">
+    仅模拟 · 实盘交易已禁用 · 熔断开关 开 · 接口 OK
+  </div>
+
+  <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <main class="prototype" id="workbench">
+    <header class="top-bar" aria-label="Hermes 交易台顶栏">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <strong>Hermes</strong>
+          <span>Research COO</span>
+        </div>
+      </div>
+      <nav class="top-nav desktop-only" aria-label="Hermes 主导航">
+        <button type="button" class="nav-item" data-nav="home" aria-current="page">
+          今日
+          <span class="badge" id="nav-badge-home" hidden>0</span>
+        </button>
+        <button type="button" class="nav-item" data-nav="conversation">对话</button>
+        <button type="button" class="nav-item" data-nav="tasks">任务</button>
+        <button type="button" class="nav-item" data-nav="approvals">
+          审批
+          <span class="badge" id="nav-badge-approvals" hidden>0</span>
+        </button>
+        <button type="button" class="nav-item" data-nav="results">结果</button>
+      </nav>
+      <div class="sys-chips" aria-label="系统状态">
+        <span class="sys-chip"><span class="dot" aria-hidden="true"></span>API OK</span>
+        <span class="sys-chip"><span class="dot" aria-hidden="true"></span>paper</span>
+        <span class="sys-chip warn"><span class="dot" aria-hidden="true"></span>kill on</span>
+      </div>
+    </header>
+
+    <div class="main-col main-stage">
+      <div class="mobile-tabs" role="navigation" aria-label="移动端分区">
+        <button type="button" data-nav="home" aria-current="page">今日</button>
+        <button type="button" data-nav="conversation">对话</button>
+        <button type="button" data-nav="tasks">任务</button>
+        <button type="button" data-nav="approvals">审批</button>
+        <button type="button" data-nav="results">结果</button>
+      </div>
+
+      <div id="view-root">
+        <!-- rendered by JS -->
+      </div>
+
+      <section class="composer-dock" aria-label="Hermes conversation">
+        <div class="composer">
+          <label class="sr-only" for="composer-input">和 Hermes 对话</label>
+          <textarea id="composer-input" aria-label="和 Hermes 对话" disabled>真实 Hermes 写入能力尚未通过</textarea>
+          <div class="composer-actions">
+            <p class="composer-note" id="composer-note">本原型使用本地 catalog · 不向 Hermes / tasks / provider 提交。</p>
+            <button type="button" class="btn btn-primary" id="composer-send" disabled>发送</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Modal: approval exact summary -->
+  <div class="modal-root" id="modal-root" hidden>
+    <div class="modal-backdrop" data-modal-close tabindex="-1"></div>
+    <div
+      class="modal-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+      tabindex="-1"
+      id="modal-dialog"
+    >
+      <h2 id="modal-title">准确摘要 · Exact manifest summary</h2>
+      <p class="approval-lead" id="modal-lead"></p>
+      <div class="field-grid" id="modal-fields"></div>
+      <p class="long-error" id="modal-long-error"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-modal-close id="modal-close-btn">关闭</button>
+        <button type="button" class="btn btn-warn" disabled title="本原型不开放 CAS 批准">批准（未开放）</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var CATALOGS = {
+        home: null,
+        conversation: null,
+        tasks: null,
+        approvals: null,
+        results: null
+      };
+
+      var SURFACE_FILES = {
+        home: "./states/home.json",
+        conversation: "./states/conversation.json",
+        tasks: "./states/tasks.json",
+        approvals: "./states/approvals.json",
+        results: "./states/results.json"
+      };
+
+      var WALKTHROUGH = [
+        {
+          id: "goal",
+          label: "提出目标",
+          surface: "home",
+          state: "empty",
+          announce: "Walkthrough：提出研究目标。"
+        },
+        {
+          id: "plan",
+          label: "结构化计划",
+          surface: "conversation",
+          state: "streaming",
+          announce: "Walkthrough：Hermes 结构化计划。",
+          mode: "plan"
+        },
+        {
+          id: "gate1",
+          label: "Gate 1",
+          surface: "tasks",
+          state: "waiting_gate",
+          announce: "Walkthrough：Gate 1 公式/计划确认。",
+          mode: "gate1"
+        },
+        {
+          id: "streaming",
+          label: "Streaming",
+          surface: "conversation",
+          state: "streaming",
+          announce: "Walkthrough：流式执行，真实事件标签。",
+          mode: "streaming"
+        },
+        {
+          id: "completed_degraded",
+          label: "completed_degraded",
+          surface: "results",
+          state: "partial",
+          announce: "Walkthrough：结果 completed_degraded。",
+          mode: "result"
+        },
+        {
+          id: "gate2",
+          label: "Gate 2",
+          surface: "approvals",
+          state: "available",
+          announce: "Walkthrough：Gate 2 准确 manifest 摘要。",
+          mode: "gate2"
+        },
+        {
+          id: "gate3",
+          label: "Gate 3",
+          surface: "approvals",
+          state: "approved",
+          announce: "Walkthrough：Gate 3 范围 diff 摘要。",
+          mode: "gate3"
+        }
+      ];
+
+      var state = {
+        surface: "home",
+        stateId: "normal",
+        walkIndex: 0,
+        mode: null,
+        lastFocus: null
+      };
+
+      function byId(id) {
+        return document.getElementById(id);
+      }
+
+      function announce(msg) {
+        var region = byId("live-region");
+        if (!region) return;
+        region.textContent = "";
+        window.setTimeout(function () {
+          region.textContent = msg;
+        }, 20);
+      }
+
+      function pillClass(statusText) {
+        var s = (statusText || "").toLowerCase();
+        if (/fail|danger|mismatch|missing|offline|reject/.test(s)) return "pill pill-danger";
+        if (/warn|degrad|stale|pending|partial|quota|audit|wait|stop|reconcil|expir|loading|sending|queued|stream|fallback/.test(s)) {
+          return "pill pill-warn";
+        }
+        if (/ok|healthy|approved|completed(?!_degraded)|success|normal|available/.test(s) && !/degrad/.test(s)) {
+          return "pill pill-ok";
+        }
+        if (/hermes|stream|composition|fallback/.test(s)) return "pill pill-hermes";
+        return "pill pill-neutral";
+      }
+
+      function escapeHtml(str) {
+        return String(str == null ? "" : str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function findState(surface, id) {
+        var cat = CATALOGS[surface];
+        if (!cat || !cat.states) return null;
+        for (var i = 0; i < cat.states.length; i++) {
+          if (cat.states[i].id === id) return cat.states[i];
+        }
+        return cat.states[0] || null;
+      }
+
+      function techHtml(items) {
+        if (!items || !items.length) return "";
+        var lines = items.map(function (t) {
+          return escapeHtml(t.label) + ": " + escapeHtml(t.value);
+        }).join("\n");
+        return (
+          '<details class="tech"><summary>技术详情 / Technical detail</summary>' +
+          '<code class="tech-block">' + lines + "</code></details>"
+        );
+      }
+
+      function actionsHtml(actions, context) {
+        if (!actions || !actions.length) return "";
+        var html = '<div class="card-actions">';
+        actions.forEach(function (a) {
+          var disabled = a.disabled ? " disabled" : "";
+          var cls = a.id && a.id.indexOf("approve") >= 0 ? "btn btn-warn" : "btn";
+          if (a.id === "view-summary" || a.id === "approval-1" || a.id === "open-gate2") {
+            cls = "btn btn-warn";
+          }
+          html +=
+            '<button type="button" class="' +
+            cls +
+            '" data-action="' +
+            escapeHtml(a.id) +
+            '" data-context="' +
+            escapeHtml(context || "") +
+            '"' +
+            disabled +
+            ">" +
+            escapeHtml(a.label) +
+            "</button>";
+        });
+        html += "</div>";
+        return html;
+      }
+
+      function renderHome(s) {
+        var attention = (s.attention && s.attention[0]) || null;
+        var auto = s.automation || {};
+        var recent = s.recent_result;
+        var kpiAction =
+          attention
+            ? '<div class="kpi warn"><p class="k">需要行动</p><p class="v">' +
+              escapeHtml(attention.title || "Attention") +
+              '</p><p class="s">' +
+              escapeHtml(attention.detail || s.status_text) +
+              "</p></div>"
+            : '<div class="kpi"><p class="k">需要行动</p><p class="v">无</p><p class="s">No attention items</p></div>';
+
+        var autoLabel =
+          auto.healthy != null
+            ? auto.healthy + " / " + auto.total
+            : auto.label || "—";
+
+        var recentV = recent ? recent.status : "—";
+        var recentS = recent ? recent.title : s.summary_en || "No recent result";
+
+        var attCard = "";
+        if (attention) {
+          attCard =
+            '<article class="card attention-card">' +
+            "<h2>" +
+            escapeHtml(attention.title) +
+            "</h2>" +
+            "<p>" +
+            escapeHtml(attention.detail || s.summary) +
+            "</p>" +
+            (attention.id
+              ? '<p class="id-mono">' + escapeHtml(attention.id) + "</p>"
+              : "") +
+            actionsHtml(s.actions, "home") +
+            "</article>";
+        } else {
+          attCard =
+            '<article class="card state-panel">' +
+            '<p class="empty-art">' +
+            escapeHtml(s.summary) +
+            "</p>" +
+            "<p>" +
+            escapeHtml(s.summary_en || "") +
+            "</p>" +
+            actionsHtml(s.actions, "home") +
+            '<p class="long-error">' +
+            escapeHtml(s.long_error || "") +
+            "</p>" +
+            techHtml(s.technical) +
+            "</article>";
+        }
+
+        var autoEx = (auto.exceptions && auto.exceptions[0]) || null;
+        var autoMeta =
+          '<dl class="meta-grid">' +
+          "<div><dt>job</dt><dd>" +
+          escapeHtml(autoEx ? autoEx.jobId : "all") +
+          "</dd></div>" +
+          "<div><dt>health</dt><dd>" +
+          escapeHtml(String(autoLabel)) +
+          "</dd></div>" +
+          "<div><dt>status</dt><dd>" +
+          escapeHtml(autoEx ? autoEx.status : "healthy") +
+          "</dd></div></dl>";
+        var autoCard =
+          '<article class="card"><div class="auto-row"><div class="left"><h2>' +
+          escapeHtml(auto.label || "自动化") +
+          "</h2><p>" +
+          escapeHtml(
+            autoEx
+              ? autoEx.reason
+              : auto.label_en || "All jobs healthy"
+          ) +
+          '</p></div>' +
+          (autoEx
+            ? '<span class="' +
+              pillClass(autoEx.status) +
+              '">' +
+              escapeHtml(autoEx.status)
+            : '<span class="pill pill-ok">healthy') +
+          "</span></div>" +
+          autoMeta +
+          techHtml(
+            autoEx
+              ? [{ label: "job", value: autoEx.jobId }, { label: "status", value: autoEx.status }]
+              : s.technical
+          ) +
+          "</article>";
+
+        var resultMeta = recent
+          ? '<dl class="meta-grid">' +
+            "<div><dt>status</dt><dd>" +
+            escapeHtml(recent.status || "—") +
+            "</dd></div>" +
+            "<div><dt>window</dt><dd>2019-01 → 2025-12</dd></div>" +
+            "<div><dt>limit</dt><dd>no eligibility upgrade</dd></div></dl>"
+          : "";
+        var resultCard =
+          '<article class="card"><h2>最近结果</h2>' +
+          (recent
+            ? '<p class="title" style="color:var(--text);font-weight:500;margin:0 0 6px;font-size:13px">' +
+              escapeHtml(recent.title) +
+              '</p><p><span class="' +
+              pillClass(recent.status_text || recent.status) +
+              '">' +
+              escapeHtml(recent.status_text || recent.status) +
+              "</span></p>" +
+              resultMeta
+            : "<p>" + escapeHtml(s.summary_en || "No recent result") + "</p>") +
+          "</article>";
+
+        var watchStrip =
+          '<section class="watch-strip" aria-label="值守摘要" id="side-panel">' +
+          '<h2 class="watch-label">值守</h2>' +
+          '<div class="watch-item"><strong>安全</strong><span>仅全局顶栏展示 · 此处不重复 paper/live/kill</span></div>' +
+          '<div class="watch-item"><strong>原型</strong><span>prototype data · ' +
+          escapeHtml(state.surface) +
+          "/" +
+          escapeHtml(state.stateId) +
+          "</span></div>" +
+          '<div class="watch-item"><strong>当前状态</strong><span>' +
+          escapeHtml(s.status_text || "—") +
+          "</span></div>" +
+          '<div class="watch-item"><strong>Walkthrough</strong><span>' +
+          escapeHtml(
+            WALKTHROUGH[state.walkIndex]
+              ? WALKTHROUGH[state.walkIndex].label
+              : "—"
+          ) +
+          "</span></div></section>";
+
+        return (
+          '<div class="mobile-order-status">' +
+          '<header class="ops-header">' +
+          '<p class="eyebrow">7 月 13 日 · 今日 · Home</p>' +
+          '<h1 class="lede" id="today-title">' +
+          escapeHtml(s.title) +
+          "</h1>" +
+          '<p class="lede-en">' +
+          escapeHtml(s.title_en || "") +
+          "</p>" +
+          '<div class="status-row" aria-label="运行态势">' +
+          '<span class="' +
+          pillClass(s.status_text) +
+          '">' +
+          escapeHtml(s.status_text) +
+          "</span></div></header>" +
+          '<div class="kpi-strip" aria-label="关键指标">' +
+          kpiAction +
+          '<div class="kpi"><p class="k">自动化健康</p><p class="v">' +
+          escapeHtml(String(autoLabel)) +
+          '</p><p class="s">' +
+          escapeHtml(auto.label_en || "") +
+          "</p></div>" +
+          '<div class="kpi"><p class="k">最近结果</p><p class="v mono">' +
+          escapeHtml(String(recentV)) +
+          '</p><p class="s">' +
+          escapeHtml(recentS) +
+          "</p></div></div></div>" +
+          '<div class="content content-a mobile-order-plan">' +
+          '<div class="desk-stack">' +
+          attCard +
+          '<div class="two-up">' +
+          autoCard +
+          resultCard +
+          "</div>" +
+          (attention
+            ? '<p class="long-error">' + escapeHtml(s.long_error || "") + "</p>"
+            : "") +
+          watchStrip +
+          "</div></div>"
+        );
+      }
+
+      function renderConversation(s, mode) {
+        var msgs = s.messages || [];
+        var events = s.events || [];
+        var thread = msgs
+          .map(function (m) {
+            var cls = m.role === "user" ? "msg user" : "msg";
+            return (
+              '<div class="' +
+              cls +
+              '"><p class="who">' +
+              escapeHtml(m.who) +
+              "</p><p>" +
+              escapeHtml(m.text) +
+              "</p></div>"
+            );
+          })
+          .join("");
+
+        var planBlock = "";
+        if (mode === "plan" || mode === "streaming" || mode === "gate1") {
+          planBlock =
+            '<article class="card plan-card">' +
+            "<h2>Hermes 结构化计划 · Structured plan</h2>" +
+            "<p>目标：总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。</p>" +
+            '<ul class="plan-steps">' +
+            '<li><span class="n">01</span><span>假设：momentum_20d_reversal 对 AAPL 的风险调整收益</span></li>' +
+            '<li><span class="n">02</span><span>窗口：2019-01 → 2025-12 · universe=[AAPL]</span></li>' +
+            '<li><span class="n">03</span><span>门禁：Gate 1 计划确认 → 执行 → Gate 2 CAS → Gate 3 diff</span></li>' +
+            '<li><span class="n">04</span><span>plan_version=1 · plan_hash=planhash-aapl-risk-v1-9c2e</span></li>' +
+            "</ul>" +
+            techHtml([
+              { label: "plan_version", value: "1" },
+              { label: "plan_hash", value: "planhash-aapl-risk-v1-9c2e" }
+            ]) +
+            "</article>";
+        }
+
+        var eventBlock = "";
+        if (events.length) {
+          eventBlock =
+            '<ul class="event-list" aria-label="执行事件">' +
+            events
+              .map(function (e) {
+                return (
+                  "<li><span class=\"ev-label\">" +
+                  escapeHtml(e.label) +
+                  '</span><span class="ev-detail">' +
+                  escapeHtml(e.detail) +
+                  "</span></li>"
+                );
+              })
+              .join("") +
+            "</ul>";
+        }
+
+        return (
+          '<div class="mobile-order-status"><header class="ops-header">' +
+          '<p class="eyebrow">执行编排 · Conversation</p>' +
+          '<h1 class="lede">' +
+          escapeHtml(s.title) +
+          "</h1>" +
+          '<p class="lede-en">' +
+          escapeHtml(s.title_en || "") +
+          "</p>" +
+          '<div class="exec-banner" role="status">' +
+          '<span class="' +
+          pillClass(s.status_text) +
+          '">' +
+          escapeHtml(s.status_text) +
+          "</span>" +
+          "<span>" +
+          escapeHtml(s.summary) +
+          "</span></div></header></div>" +
+          '<div class="content content-a">' +
+          '<div class="mobile-order-conversation"><div class="thread">' +
+          thread +
+          "</div>" +
+          eventBlock +
+          actionsHtml(s.actions, "conversation") +
+          "</div>" +
+          '<div class="mobile-order-plan">' +
+          planBlock +
+          "</div>" +
+          '<p class="long-error">' +
+          escapeHtml(s.long_error || "") +
+          "</p>" +
+          techHtml(s.technical) +
+          "</div>"
+        );
+      }
+
+      function renderTasks(s, mode) {
+        var task = s.task || {};
+        var gate1Extra = "";
+        if (mode === "gate1" || s.id === "waiting_gate") {
+          gate1Extra =
+            '<article class="card approval-hero" style="margin-top:12px">' +
+            '<span class="pill pill-warn">Gate 1 · formula / plan confirmation</span>' +
+            "<h2>确认计划与公式摘要</h2>" +
+            '<p class="approval-lead">计划变化会产生新 plan_version / plan_hash，旧确认立即失效。聊天里说「同意」不能形成 Gate 1。</p>' +
+            '<div class="field-grid">' +
+            '<div class="field"><label>Plan version</label><div class="val">' +
+            escapeHtml(task.plan_version || "1") +
+            '</div></div>' +
+            '<div class="field"><label>Plan hash</label><div class="val">' +
+            escapeHtml(task.plan_hash || "planhash-aapl-risk-v1-9c2e") +
+            '</div></div>' +
+            '<div class="field"><label>Formula summary</label><div class="val">momentum_20d_reversal on AAPL with risk overlays</div></div>' +
+            "</div>" +
+            '<div class="card-actions">' +
+            '<button type="button" class="btn btn-primary" data-action="confirm-gate1">确认计划（原型演示）</button>' +
+            '<button type="button" class="btn" data-action="reject-gate1">拒绝</button>' +
+            "</div></article>";
+        }
+
+        return (
+          '<div class="mobile-order-status"><header class="ops-header">' +
+          '<p class="eyebrow">研究任务 · Tasks</p>' +
+          '<h1 class="lede">' +
+          escapeHtml(s.title) +
+          "</h1>" +
+          '<p class="lede-en">' +
+          escapeHtml(s.title_en || "") +
+          "</p>" +
+          '<div class="status-row"><span class="' +
+          pillClass(s.status_text) +
+          '">' +
+          escapeHtml(s.status_text) +
+          "</span></div></header></div>" +
+          '<div class="content content-a mobile-order-plan">' +
+          '<article class="card state-panel">' +
+          "<h2>Task</h2>" +
+          '<p class="id-mono">' +
+          escapeHtml(task.id || "—") +
+          "</p>" +
+          "<p>" +
+          escapeHtml(s.summary) +
+          "</p>" +
+          "<p>" +
+          escapeHtml(s.summary_en || "") +
+          "</p>" +
+          (task.goal
+            ? "<p style=\"margin-top:10px\"><strong>Goal</strong> · " +
+              escapeHtml(task.goal) +
+              "</p>"
+            : "") +
+          actionsHtml(s.actions, "tasks") +
+          gate1Extra +
+          '<p class="long-error">' +
+          escapeHtml(s.long_error || "") +
+          "</p>" +
+          techHtml(s.technical) +
+          "</article></div>"
+        );
+      }
+
+      function renderApprovals(s, mode) {
+        var a = s.approval || {};
+        if (mode === "gate3" || (s.id === "approved" && state.mode === "gate3")) {
+          return (
+            '<div class="mobile-order-status"><header class="ops-header">' +
+            '<p class="eyebrow">Gate 3 · scoped promotion diff</p>' +
+            '<h1 class="lede">范围 diff 摘要 · 人类 git 审阅才算完成</h1>' +
+            '<p class="lede-en">Platform prepares isolated managed review worktree only — never commits.</p>' +
+            '<div class="status-row"><span class="pill pill-hermes">Gate 3 · promote-candidate payload</span></div></header></div>' +
+            '<div class="content content-a mobile-order-result">' +
+            '<article class="gate3-diff">' +
+            "<header><h2>四字段 payload · {promotion_id, worktree, patch, manifest}</h2>" +
+            '<p class="result-sub">candidate-id + expected-digest + base-commit · status/cleanup 用 --promotion-id</p></header>' +
+            '<div class="diff-body">' +
+            '<span class="diff-meta">promotion_id: promo-aapl-momentum-2026-07-13-01\n' +
+            "worktree: .git/hermes-promotions/promo-aapl-momentum-2026-07-13-01\n" +
+            "base_commit: 67ed590fix(frontend): correct F0 direction-a…\n" +
+            "manifest: factor-momentum_20d_reversal-323b045e4b\n" +
+            "expected_digest: 323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c\n\n</span>" +
+            '<span class="diff-add">+ # momentum_20d_reversal\n' +
+            "+ def factor(close, window=20):\n" +
+            "+     return -close.pct_change(window)\n\n</span>" +
+            '<span class="diff-meta"># Human must: git diff review + commit. Abandon is explicit.\n' +
+            "# This shell never commits. prototype data only.</span>" +
+            "</div></article>" +
+            '<div class="card-actions" style="margin-top:12px">' +
+            '<button type="button" class="btn" disabled>提交（未开放）</button>' +
+            '<button type="button" class="btn btn-warn" data-action="view-summary">查看绑定 manifest</button>' +
+            "</div>" +
+            '<p class="long-error">' +
+            escapeHtml(s.long_error || "") +
+            "</p>" +
+            techHtml(s.technical) +
+            "</div>"
+          );
+        }
+
+        return (
+          '<div class="mobile-order-status"><header class="ops-header">' +
+          '<p class="eyebrow">研究审批 · Gate 2 CAS</p>' +
+          '<h1 class="lede">' +
+          escapeHtml(s.title) +
+          "</h1>" +
+          '<p class="lede-en">' +
+          escapeHtml(s.title_en || "") +
+          "</p></header></div>" +
+          '<div class="content content-a mobile-order-plan">' +
+          '<section class="approval-hero" aria-labelledby="approval-title">' +
+          '<span class="' +
+          pillClass(s.status_text) +
+          '">' +
+          escapeHtml(s.status_text) +
+          "</span>" +
+          '<h2 id="approval-title">' +
+          escapeHtml(a.label_zh || "研究审批项") +
+          " / " +
+          escapeHtml(a.label_en || "Research approval item") +
+          "</h2>" +
+          '<p class="approval-lead">' +
+          escapeHtml(s.summary) +
+          "</p>" +
+          '<p class="approval-lead">' +
+          escapeHtml(s.summary_en || "") +
+          "</p>" +
+          '<div class="field-grid">' +
+          '<div class="field"><label>Candidate ID</label><div class="val">' +
+          escapeHtml(a.candidate_id || "—") +
+          '</div></div>' +
+          '<div class="field"><label>Expected status</label><div class="val">' +
+          escapeHtml(a.expected_status || "—") +
+          '</div></div>' +
+          '<div class="field"><label>Manifest digest</label><div class="val">' +
+          escapeHtml(a.manifest_digest || "—") +
+          '</div></div>' +
+          '<div class="field"><label>Integrity</label><div class="val">' +
+          escapeHtml(a.integrity_state || "—") +
+          "</div></div></div>" +
+          actionsHtml(s.actions, "approvals") +
+          '<p class="long-error">' +
+          escapeHtml(s.long_error || "") +
+          "</p>" +
+          techHtml(s.technical) +
+          "</section></div>"
+        );
+      }
+
+      function renderResults(s) {
+        var r = s.result;
+        if (!r) {
+          return (
+            '<div class="mobile-order-status"><header class="ops-header">' +
+            '<p class="eyebrow">结果 · Results</p>' +
+            '<h1 class="lede">' +
+            escapeHtml(s.title) +
+            "</h1>" +
+            '<p class="lede-en">' +
+            escapeHtml(s.title_en || "") +
+            "</p>" +
+            '<div class="status-row"><span class="' +
+            pillClass(s.status_text) +
+            '">' +
+            escapeHtml(s.status_text) +
+            "</span></div></header></div>" +
+            '<div class="content content-a mobile-order-result">' +
+            '<article class="card state-panel"><p>' +
+            escapeHtml(s.summary) +
+            "</p><p>" +
+            escapeHtml(s.summary_en || "") +
+            "</p>" +
+            actionsHtml(s.actions, "results") +
+            '<p class="long-error">' +
+            escapeHtml(s.long_error || "") +
+            "</p>" +
+            techHtml(s.technical) +
+            "</article></div>"
+          );
+        }
+
+        var metrics = (r.metrics || [])
+          .map(function (m) {
+            return (
+              '<div class="metric"><p class="k">' +
+              escapeHtml(m.k) +
+              '</p><p class="v">' +
+              escapeHtml(m.v) +
+              "</p></div>"
+            );
+          })
+          .join("");
+
+        return (
+          '<div class="mobile-order-status"><header class="ops-header">' +
+          '<p class="eyebrow">结果 · factor / backtest / experiment</p>' +
+          '<h1 class="lede">' +
+          escapeHtml(s.title) +
+          "</h1>" +
+          '<p class="lede-en">' +
+          escapeHtml(s.title_en || "") +
+          "</p></header></div>" +
+          '<div class="content content-a mobile-order-result">' +
+          '<article class="result-sheet" aria-labelledby="result-title">' +
+          "<header><div><h2 id=\"result-title\">" +
+          escapeHtml(r.title) +
+          '</h2><p class="result-sub">' +
+          escapeHtml(r.kind || "") +
+          '</p></div><span class="' +
+          pillClass(s.status_text) +
+          '">' +
+          escapeHtml(s.status_text) +
+          "</span></header>" +
+          '<div class="result-body">' +
+          '<div class="metric-row">' +
+          metrics +
+          "</div>" +
+          '<p class="result-note">' +
+          escapeHtml(s.summary) +
+          " " +
+          escapeHtml(s.summary_en || "") +
+          (r.candidate_id
+            ? ' · <span class="id-mono">' + escapeHtml(r.candidate_id) + "</span>"
+            : "") +
+          "</p>" +
+          actionsHtml(s.actions, "results") +
+          '<p class="long-error">' +
+          escapeHtml(s.long_error || "") +
+          "</p>" +
+          techHtml(s.technical) +
+          "</div></article></div>"
+        );
+      }
+
+      function updateComposer(s) {
+        var input = byId("composer-input");
+        var note = byId("composer-note");
+        var send = byId("composer-send");
+        var c = (s && s.composer) || {
+          enabled: false,
+          placeholder: "真实 Hermes 写入能力尚未通过",
+          note: "本原型使用本地 catalog · 不向 Hermes / tasks / provider 提交。"
+        };
+        if (input) {
+          input.disabled = !c.enabled;
+          input.value = c.placeholder || "";
+        }
+        if (note) note.textContent = c.note || "";
+        if (send) send.disabled = true;
+      }
+
+      function updateSide(s) {
+        /* 值守 is rendered inside home desk-stack; other surfaces skip permanent rail */
+        var panel = byId("side-panel");
+        if (!panel || !s) return;
+        var items = panel.querySelectorAll(".watch-item span");
+        if (items.length >= 4) {
+          items[1].textContent =
+            "prototype data · " + state.surface + "/" + state.stateId;
+          items[2].textContent = s.status_text || "—";
+          items[3].textContent = WALKTHROUGH[state.walkIndex]
+            ? WALKTHROUGH[state.walkIndex].label
+            : "—";
+        }
+      }
+
+      function updateNav() {
+        document.querySelectorAll("[data-nav]").forEach(function (btn) {
+          var on = btn.getAttribute("data-nav") === state.surface;
+          if (on) btn.setAttribute("aria-current", "page");
+          else btn.removeAttribute("aria-current");
+        });
+
+        document.querySelectorAll("[data-surface]").forEach(function (btn) {
+          var on = btn.getAttribute("data-surface") === state.surface;
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+
+        var homeBadge = byId("nav-badge-home");
+        var apprBadge = byId("nav-badge-approvals");
+        var hs = findState("home", state.surface === "home" ? state.stateId : "normal");
+        var attCount =
+          hs && hs.attention ? hs.attention.length : state.surface === "home" ? 0 : 1;
+        if (homeBadge) {
+          if (state.surface === "home" && state.stateId === "normal") {
+            homeBadge.hidden = false;
+            homeBadge.textContent = "1";
+          } else if (state.surface === "home" && state.stateId === "degraded") {
+            homeBadge.hidden = false;
+            homeBadge.textContent = "2";
+          } else {
+            homeBadge.hidden = true;
+          }
+        }
+        if (apprBadge) {
+          var show =
+            state.surface === "approvals" &&
+            (state.stateId === "available" || state.stateId === "stale");
+          apprBadge.hidden = !show && state.walkIndex < 5;
+          if (state.walkIndex >= 5 && state.walkIndex < 6) {
+            apprBadge.hidden = false;
+            apprBadge.textContent = "1";
+          } else if (show) {
+            apprBadge.hidden = false;
+            apprBadge.textContent = "1";
+          }
+        }
+      }
+
+      function rebuildStateToolbar() {
+        var bar = byId("state-toolbar");
+        if (!bar) return;
+        var cat = CATALOGS[state.surface];
+        bar.innerHTML = "";
+        var sp = document.createElement("span");
+        sp.className = "label";
+        sp.textContent = "State";
+        bar.appendChild(sp);
+        if (!cat) return;
+        cat.states.forEach(function (st) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.setAttribute("data-state-id", st.id);
+          btn.setAttribute(
+            "aria-pressed",
+            st.id === state.stateId ? "true" : "false"
+          );
+          btn.textContent = st.id;
+          btn.addEventListener("click", function () {
+            state.mode = null;
+            setSurfaceState(state.surface, st.id, true);
+          });
+          bar.appendChild(btn);
+        });
+      }
+
+      function render() {
+        var s = findState(state.surface, state.stateId);
+        var root = byId("view-root");
+        if (!root) return;
+        if (!s) {
+          root.innerHTML =
+            '<div class="content content-a"><p class="boot-error">Missing state ' +
+            escapeHtml(state.surface) +
+            "/" +
+            escapeHtml(state.stateId) +
+            "</p></div>";
+          return;
+        }
+
+        var mode = state.mode;
+        var html = "";
+        if (state.surface === "home") html = renderHome(s);
+        else if (state.surface === "conversation") html = renderConversation(s, mode);
+        else if (state.surface === "tasks") html = renderTasks(s, mode);
+        else if (state.surface === "approvals") html = renderApprovals(s, mode);
+        else if (state.surface === "results") html = renderResults(s);
+
+        root.innerHTML = html;
+        updateComposer(s);
+        updateSide(s);
+        updateNav();
+        rebuildStateToolbar();
+        bindActionButtons();
+      }
+
+      function setSurfaceState(surface, stateId, announceChange) {
+        state.surface = surface;
+        state.stateId = stateId;
+        render();
+        if (announceChange) {
+          var s = findState(surface, stateId);
+          var msg =
+            (s && s.announcements && s.announcements[0]) ||
+            "状态 " + surface + " / " + stateId;
+          announce(msg);
+        }
+      }
+
+      function setWalk(index, fromUser) {
+        if (index < 0) index = 0;
+        if (index > WALKTHROUGH.length - 1) index = WALKTHROUGH.length - 1;
+        state.walkIndex = index;
+        var step = WALKTHROUGH[index];
+        state.mode = step.mode || null;
+        state.surface = step.surface;
+        state.stateId = step.state;
+
+        document.querySelectorAll("[data-walk]").forEach(function (btn) {
+          var i = Number(btn.getAttribute("data-walk"));
+          if (i === index) btn.setAttribute("aria-current", "step");
+          else btn.removeAttribute("aria-current");
+        });
+
+        var meta = byId("walk-meta");
+        if (meta) {
+          meta.textContent =
+            "step " +
+            (index + 1) +
+            "/" +
+            WALKTHROUGH.length +
+            " · " +
+            step.id;
+        }
+
+        var next = byId("walk-next");
+        if (next) {
+          next.textContent =
+            index >= WALKTHROUGH.length - 1 ? "重新开始" : "下一步 →";
+        }
+
+        render();
+        if (fromUser) announce(step.announce);
+      }
+
+      function openModal(fromEl) {
+        var s = findState("approvals", state.surface === "approvals" ? state.stateId : "available");
+        if (!s) s = findState("approvals", "available");
+        var a = (s && s.approval) || {};
+        state.lastFocus = fromEl || document.activeElement;
+
+        byId("modal-lead").textContent =
+          "Gate 2 绑定摘要（prototype data）。人类须手填 candidate-id + expected-digest + expected-status=pending + note；本壳不代填。";
+        byId("modal-fields").innerHTML =
+          '<div class="field"><label>Candidate ID</label><div class="val">' +
+          escapeHtml(a.candidate_id || "factor-momentum_20d_reversal-323b045e4b") +
+          '</div></div>' +
+          '<div class="field"><label>Expected status</label><div class="val">' +
+          escapeHtml(a.expected_status || "pending") +
+          '</div></div>' +
+          '<div class="field"><label>Manifest digest</label><div class="val">' +
+          escapeHtml(
+            a.manifest_digest ||
+              "323b045e4b7a91c0e2d84f1a6b0c9d3e5f7a8b1c2d3e4f5a6b7c8d9e0f1a2b3c"
+          ) +
+          '</div></div>' +
+          '<div class="field"><label>Integrity</label><div class="val">' +
+          escapeHtml(a.integrity_state || "verified") +
+          "</div></div>";
+        byId("modal-long-error").textContent = (s && s.long_error) || "";
+
+        var root = byId("modal-root");
+        root.hidden = false;
+        var dialog = byId("modal-dialog");
+        window.setTimeout(function () {
+          dialog.focus();
+        }, 0);
+        announce("已打开准确摘要对话框。");
+      }
+
+      function closeModal() {
+        var root = byId("modal-root");
+        if (root.hidden) return;
+        root.hidden = true;
+        announce("已关闭准确摘要对话框。");
+        var el = state.lastFocus;
+        state.lastFocus = null;
+        if (el && typeof el.focus === "function") {
+          window.setTimeout(function () {
+            el.focus();
+          }, 0);
+        }
+      }
+
+      function bindActionButtons() {
+        document.querySelectorAll("[data-action]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var id = btn.getAttribute("data-action");
+            if (
+              id === "view-summary" ||
+              id === "approval-1" ||
+              id === "open-gate2" ||
+              id === "refresh-summary" ||
+              id === "recheck"
+            ) {
+              openModal(btn);
+              return;
+            }
+            if (id === "open-approvals" || id === "open-gate2") {
+              setSurfaceState("approvals", "available", true);
+              return;
+            }
+            if (id === "open-result") {
+              setSurfaceState("results", "partial", true);
+              return;
+            }
+            if (id === "open-gate1" || id === "confirm-gate1") {
+              setWalk(3, true);
+              return;
+            }
+            if (id === "start-goal") {
+              setWalk(1, true);
+              return;
+            }
+            if (id === "open-gate3") {
+              setWalk(6, true);
+              return;
+            }
+            announce("原型动作 " + id + " · 无网络副作用。");
+          });
+        });
+      }
+
+      function bindChrome() {
+        document.querySelectorAll("[data-walk]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            setWalk(Number(btn.getAttribute("data-walk")), true);
+          });
+        });
+
+        var next = byId("walk-next");
+        if (next) {
+          next.addEventListener("click", function () {
+            if (state.walkIndex >= WALKTHROUGH.length - 1) setWalk(0, true);
+            else setWalk(state.walkIndex + 1, true);
+          });
+        }
+
+        document.querySelectorAll("[data-surface]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var surface = btn.getAttribute("data-surface");
+            var cat = CATALOGS[surface];
+            var def = cat ? cat.default_state : "normal";
+            state.mode = null;
+            setSurfaceState(surface, def, true);
+          });
+        });
+
+        document.querySelectorAll("[data-nav]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var surface = btn.getAttribute("data-nav");
+            var cat = CATALOGS[surface];
+            var def = cat ? cat.default_state : "normal";
+            state.mode = null;
+            setSurfaceState(surface, def, true);
+          });
+        });
+
+        document.querySelectorAll("[data-modal-close]").forEach(function (el) {
+          el.addEventListener("click", closeModal);
+        });
+
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") closeModal();
+        });
+
+        // Prevent any form submit if added later
+        document.addEventListener(
+          "submit",
+          function (e) {
+            e.preventDefault();
+            announce("原型禁止表单提交。");
+          },
+          true
+        );
+
+        var send = byId("composer-send");
+        if (send) {
+          send.addEventListener("click", function (e) {
+            e.preventDefault();
+            announce("发送已禁用 · prototype data only。");
+          });
+        }
+      }
+
+      function loadCatalogs() {
+        var keys = Object.keys(SURFACE_FILES);
+        return Promise.all(
+          keys.map(function (k) {
+            return fetch(SURFACE_FILES[k], { cache: "no-store" })
+              .then(function (res) {
+                if (!res.ok) throw new Error("HTTP " + res.status + " for " + SURFACE_FILES[k]);
+                return res.json();
+              })
+              .then(function (json) {
+                CATALOGS[k] = json;
+              });
+          })
+        );
+      }
+
+      function boot() {
+        bindChrome();
+        loadCatalogs()
+          .then(function () {
+            // Start on home/normal (desk baseline), walkthrough available separately
+            state.surface = "home";
+            state.stateId = "normal";
+            state.walkIndex = 0;
+            // Sync walk buttons without forcing empty home until user starts walk
+            document.querySelectorAll("[data-walk]").forEach(function (btn) {
+              btn.removeAttribute("aria-current");
+            });
+            var meta = byId("walk-meta");
+            if (meta) meta.textContent = "ready · click Walkthrough step 1 or 下一步";
+            render();
+            announce("F1 原型已加载本地状态目录。prototype data。");
+          })
+          .catch(function (err) {
+            var root = byId("view-root");
+            if (root) {
+              root.innerHTML =
+                '<div class="content content-a"><div class="boot-error" role="alert">' +
+                "无法加载本地 states JSON。请通过本地 HTTP 打开本目录（不要用 file://）。" +
+                "<br/><code>" +
+                escapeHtml(String(err && err.message ? err.message : err)) +
+                "</code></div></div>";
+            }
+            announce("状态目录加载失败。");
+          });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", boot);
+      } else {
+        boot();
+      }
+    })();
+  </script>
+</body>
+</html>

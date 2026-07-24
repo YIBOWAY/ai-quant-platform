@@ -12,3 +12,4 @@ class HealthResponse(BaseModel):
     data_provider: dict[str, Any]
     futu_opend: dict[str, Any]
     database: dict[str, Any]
+    hermes_command_ledger: dict[str, Any]

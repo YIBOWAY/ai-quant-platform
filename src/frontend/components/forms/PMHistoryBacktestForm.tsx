@@ -11,14 +11,13 @@ import type {
   PredictionMarketCollectResponse,
   PredictionMarketTimeseriesBacktestRunResponse,
 } from "@/lib/api";
+import { TerminalToolbarButton, terminalInputClass } from "@/components/ui/primitives";
 import { API_BASE_URL, ApiClientError, apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 
 const fieldLabel = "flex flex-col gap-1 font-body-sm text-text-primary";
-const selectClass =
-  "rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary";
-const inputClass =
-  "rounded-lg border border-border-subtle bg-bg-surface px-2 py-2 font-data-mono text-text-primary";
+const selectClass = terminalInputClass;
+const inputClass = terminalInputClass;
 
 const copy = {
   en: {
@@ -297,14 +296,14 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
             </div>
           </div>
           {collectError ? <p className="mt-3 font-body-sm text-danger">{collectError}</p> : null}
-          <button
-            className="mt-4 rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          <TerminalToolbarButton
+            className="mt-4 h-9"
             disabled={!isHydrated || collectMutation.isPending}
             onClick={() => void collectForm.handleSubmit((values) => collectMutation.mutate(values))()}
-            type="button"
+            tone="info"
           >
             {collectMutation.isPending ? text.collecting : text.collectSnapshots}
-          </button>
+          </TerminalToolbarButton>
 
           {collectResult ? (
             <div className="mt-4 rounded-lg border border-border-subtle bg-bg-surface p-3">
@@ -383,14 +382,14 @@ export function PMHistoryBacktestForm({ locale = "en" }: { locale?: "en" | "zh" 
             </div>
           </div>
           {backtestError ? <p className="mt-3 font-body-sm text-danger">{backtestError}</p> : null}
-          <button
-            className="mt-4 rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+          <TerminalToolbarButton
+            className="mt-4 h-9"
             disabled={!isHydrated || backtestMutation.isPending}
             onClick={() => void backtestForm.handleSubmit((values) => backtestMutation.mutate(values))()}
-            type="button"
+            tone="info"
           >
             {backtestMutation.isPending ? text.replaying : text.runReplay}
-          </button>
+          </TerminalToolbarButton>
         </form>
       </div>
 

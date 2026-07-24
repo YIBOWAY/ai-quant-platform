@@ -23,7 +23,14 @@ import type {
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { buildBuySideOptionsPayload } from "@/lib/buySideOptionsPayload";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
-import { Card, MetricStat, SectionTitle, StatusPill } from "@/components/ui/primitives";
+import {
+  Card,
+  MetricStat,
+  SectionTitle,
+  StatusPill,
+  TerminalToolbarButton,
+  terminalInputClass,
+} from "@/components/ui/primitives";
 import { useIsHydrated } from "@/lib/hydration";
 
 const copy = {
@@ -522,13 +529,14 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
               {text.error}: {mutation.error.message}
             </div>
           ) : null}
-          <button
-            className="w-full rounded-lg bg-accent-success px-4 py-3 font-body-sm font-semibold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+          <TerminalToolbarButton
+            className="h-11 w-full justify-center"
             disabled={!hydrated || mutation.isPending}
+            tone="info"
             type="submit"
           >
             {mutation.isPending ? text.running : text.run}
-          </button>
+          </TerminalToolbarButton>
         </form>
       </aside>
 
@@ -539,7 +547,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
         </Card>
 
         <section className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-          <MetricStat label={text.spot} value={money(result?.thesis.spot_price)} tone="success" />
+          <MetricStat label={text.spot} value={money(result?.thesis.spot_price)} tone="neutral" />
           <MetricStat label={text.dataSource} value={result ? text.dataSourceValue : text.noMarketData} />
           <MetricStat label={text.timestamp} value={result?.generated_at ?? result?.thesis.as_of_date ?? text.noMarketData} />
           <MetricStat label={text.earnings} value={text.noMarketData} />
@@ -619,7 +627,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
 }
 
 const inputClass =
-  "w-full rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-sm text-text-primary outline-none focus:border-accent-success";
+  `${terminalInputClass} w-full text-sm`;
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (

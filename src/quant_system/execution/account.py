@@ -4,9 +4,10 @@ import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from quant_system.execution.models import ExecutionFill, OrderSide
+from quant_system.trading_kernel import roll_position_on_fill
 
 DEFAULT_ACCOUNT_ID = "default"
 DEFAULT_INITIAL_CASH = 1_000_000.0
@@ -97,6 +98,10 @@ class PaperAccount(BaseModel):
     base_currency: str = "USD"
     initial_cash: float = DEFAULT_INITIAL_CASH
     cash: float = DEFAULT_INITIAL_CASH
+    # Total account cash remains in ``cash`` for legacy/manual/rebalance paths.
+    # ``sleeve_cash`` is the internal allocation book for Paper Strategy Sleeves:
+    # manual cash plus per-sleeve allocated cash must come from the same account.
+    sleeve_cash: dict[str, float] = Field(default_factory=dict)
     realized_pnl: float = 0.0
     kill_switch: bool = False
     positions: dict[str, AccountPosition] = Field(default_factory=dict)
@@ -121,6 +126,7 @@ class PaperAccount(BaseModel):
             base_currency=base_currency,
             initial_cash=float(initial_cash),
             cash=float(initial_cash),
+            sleeve_cash={"manual": float(initial_cash)},
         )
         account._append_ledger(
             kind="deposit",
@@ -128,6 +134,23 @@ class PaperAccount(BaseModel):
             note=f"open account with {initial_cash:.2f} {base_currency}",
         )
         return account
+
+    @model_validator(mode="after")
+    def _ensure_manual_sleeve_cash(self) -> PaperAccount:
+        if not self.sleeve_cash:
+            self.sleeve_cash = {"manual": float(self.cash)}
+        else:
+            self.sleeve_cash = {
+                str(sleeve_id): float(cash)
+                for sleeve_id, cash in self.sleeve_cash.items()
+            }
+            allocated_cash = sum(
+                cash
+                for sleeve_id, cash in self.sleeve_cash.items()
+                if sleeve_id != "manual"
+            )
+            self.sleeve_cash["manual"] = max(float(self.cash) - allocated_cash, 0.0)
+        return self
 
     # --- read views -------------------------------------------------------
     def position_quantity(self, symbol: str) -> float:
@@ -198,24 +221,32 @@ class PaperAccount(BaseModel):
 
         symbol = fill.symbol.upper()
         position = self.positions.get(symbol, AccountPosition(symbol=symbol))
-        realized_delta = 0.0
 
+        # Numeric position/cash/avg_cost roll comes from the shared pure kernel;
+        # the ledger, source-quantity, and realized-P&L side effects stay here.
+        new_quantity, new_avg_cost, realized_delta, cash_delta = roll_position_on_fill(
+            side=fill.side,
+            position_quantity=position.quantity,
+            position_avg_cost=position.avg_cost,
+            fill_quantity=fill.quantity,
+            fill_price=fill.fill_price,
+            gross_value=fill.gross_value,
+            commission=fill.commission,
+        )
+        position.avg_cost = new_avg_cost
+        position.quantity = new_quantity
+        self.cash += cash_delta
+        self._sync_manual_sleeve_cash(
+            cash_delta,
+            source=source,
+            kind=kind,
+        )
         if fill.side == OrderSide.BUY:
-            total_basis = position.quantity * position.avg_cost
-            total_basis += fill.gross_value + fill.commission
-            new_quantity = position.quantity + fill.quantity
-            position.avg_cost = total_basis / new_quantity if new_quantity > 0 else 0.0
-            position.quantity = new_quantity
             position.source_quantity[source] = (
                 position.source_quantity.get(source, 0.0) + fill.quantity
             )
-            self.cash -= fill.gross_value + fill.commission
         else:  # SELL
-            realized_delta = fill.quantity * (fill.fill_price - position.avg_cost)
-            realized_delta -= fill.commission
             self.realized_pnl += realized_delta
-            position.quantity -= fill.quantity
-            self.cash += fill.gross_value - fill.commission
             self._reduce_source_quantity(position, fill.quantity)
 
         if abs(position.quantity) < 1e-9:
@@ -254,6 +285,20 @@ class PaperAccount(BaseModel):
         # Drop residual rounding so an emptied position has no source dust.
         if position.quantity <= 1e-9:
             position.source_quantity.clear()
+
+    def _sync_manual_sleeve_cash(self, cash_delta: float, *, source: str, kind: str) -> None:
+        if not self._cash_delta_belongs_to_manual_sleeve(source=source, kind=kind):
+            return
+        manual_cash = self.sleeve_cash.get("manual", 0.0) + cash_delta
+        self.sleeve_cash["manual"] = 0.0 if abs(manual_cash) < 1e-9 else manual_cash
+
+    def _cash_delta_belongs_to_manual_sleeve(self, *, source: str, kind: str) -> bool:
+        if kind == "sleeve_execution_fill":
+            return False
+        if source.startswith("strategy:"):
+            sleeve_id = source.removeprefix("strategy:")
+            return sleeve_id not in self.sleeve_cash
+        return True
 
     def record_event(
         self,

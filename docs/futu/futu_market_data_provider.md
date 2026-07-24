@@ -52,7 +52,7 @@ Futu 现已成为股票研究流程的主要美股实时数据提供方。
 | `QS_FUTU_HOST` | `127.0.0.1` | OpenD 主机 |
 | `QS_FUTU_PORT` | `11111` | OpenD API 端口 |
 | `QS_FUTU_MARKET` | `US` | 当前市场范围 |
-| `QS_FUTU_REQUEST_TIMEOUT_SECONDS` | `15` | 请求超时 |
+| `QS_FUTU_REQUEST_TIMEOUT_SECONDS` | `15` | TCP 探针、OpenD 首连与同步查询 deadline |
 | `QS_FUTU_DEFAULT_KLINE_FREQ` | `1d` | 默认 K 线频率 |
 | `QS_FUTU_CACHE_DIR` | `data/futu` | 本地 Futu 缓存目录 |
 | `QS_FUTU_USE_CACHE` | `true` | 启用本地 Futu 期权 DuckDB 缓存 |
@@ -67,6 +67,24 @@ curl "http://127.0.0.1:8765/api/market-data/history?ticker=SPY&start=2024-01-02&
 `15m`、`5m`、`1m`）仅允许 `provider=futu`，并且 OpenD 不可用时不会回退到
 sample 数据；底层 `SampleOHLCVProvider` 与 `TiingoEODProvider` 也会在收到非
 `1d` interval 时直接拒绝。
+
+## 严格多标的 CLI（HQA 只读 seam）
+
+HQA 需要多标的同源价格时不走上述可回退的单标的 API，而调用唯一的严格 leaf：
+
+```powershell
+quant-system data prices --symbol AAPL --symbol SPY --start 2026-01-01 --end 2026-07-10 --provider futu --adjustment qfq --format json
+```
+
+合同固定为 Futu/QFQ/1d，最多 25 个规范化后不重复的美股 symbol，日期必须为
+`YYYY-MM-DD`，窗口最多包含首尾在内 500 个日历日期。它一次创建 quote context、按
+symbol 读取、stdout 只输出一个 JSON 文档；不读 local parquet，不回退 sample、Tiingo
+或 Longbridge，不保存 OHLCV，也不会仅因 provider 构造初始化期权 DuckDB。
+
+失败时 exit 非零并返回
+`{error:{code,provider,provider_code,message}}`。非法请求 exit 2；配置、OpenD 首连、查询、
+provider 或返回合同错误 exit 1。首连和查询都受 `QS_FUTU_REQUEST_TIMEOUT_SECONDS`
+约束，不依赖 HQA 的外层 300 秒兜底。
 
 预期结构：
 

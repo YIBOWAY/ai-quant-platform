@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0",
+  "health": {
+    "status": "offline",
+    "app_name": "AI Quant Research Platform",
+    "environment": "test",
+    "data_provider": {
+      "configured_default": "sample",
+      "tiingo_token_present": false
+    },
+    "futu_opend": {
+      "enabled": false,
+      "reachable": false,
+      "host": "127.0.0.1",
+      "port": 11111,
+      "error": null
+    },
+    "database": {
+      "enabled": false,
+      "reachable": false,
+      "error": null
+    },
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "artifacts": {
+    "schema_version": "1.1",
+    "read_status": "unavailable",
+    "as_of": null,
+    "items": [],
+    "sources": [
+      {
+        "kind": "portfolio_risk",
+        "status": "unavailable",
+        "latest_at": null,
+        "reason_code": "artifact_source_unreadable"
+      },
+      {
+        "kind": "prediction",
+        "status": "unavailable",
+        "latest_at": null,
+        "reason_code": "artifact_source_unreadable"
+      },
+      {
+        "kind": "market_foresight",
+        "status": "unavailable",
+        "latest_at": null,
+        "reason_code": "artifact_source_unreadable"
+      },
+      {
+        "kind": "weekly_review",
+        "status": "unavailable",
+        "latest_at": null,
+        "reason_code": "artifact_source_unreadable"
+      },
+      {
+        "kind": "opportunity_summary",
+        "status": "unavailable",
+        "latest_at": null,
+        "reason_code": "artifact_source_unreadable"
+      },
+      {
+        "kind": "automation_status",
+        "status": "unavailable",
+        "latest_at": null,
+        "reason_code": "artifact_source_unreadable"
+      }
+    ],
+    "warnings": [
+      {
+        "source": "artifact_feed",
+        "code": "artifact_source_unreadable"
+      }
+    ],
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "candidates": {
+    "candidates": [],
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "factors": {
+    "status": 503,
+    "body": {
+      "detail": "fixture_factor_registry_offline"
+    }
+  }
+}

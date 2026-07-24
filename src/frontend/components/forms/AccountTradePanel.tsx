@@ -21,6 +21,7 @@ import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
 import { ArrowRight, RefreshCw } from "lucide-react";
+import { TerminalToolbarButton, ToneBadge } from "@/components/ui/primitives";
 
 type Locale = "en" | "zh";
 
@@ -43,13 +44,14 @@ const copy = {
     submitting: "Submitting...",
     checkPending: "Check Pending Limits",
     checkingPending: "Checking...",
-    rebalanceTitle: "Strategy Rebalance",
-    rebalanceDesc: "Apply a strategy's latest target weights to the account in one click.",
+    rebalanceTitle: "Advanced: Full-Account Rebalance (not a sleeve)",
+    rebalanceDesc:
+      "Legacy whole-account path. It is not a liquidation button or a new sleeve; it directly buys and sells the entire paper account toward the target weights. Strategy Sleeves use the separate signal panel.",
     strategy: "Strategy",
     candidates: "Candidate Symbols",
     topN: "Top N",
     lookback: "Lookback",
-    rebalance: "Rebalance to Strategy",
+    rebalance: "Run full-account buys/sells",
     rebalancing: "Rebalancing...",
     freezeTitle: "Account Freeze",
     freezeDesc: "Freeze blocks all new orders on this paper account. It does not touch live trading.",
@@ -68,7 +70,7 @@ const copy = {
     rebalanceOk: (n: number) => `Rebalanced: ${n} legs filled`,
     rebalanceAborted: (reason: string) => `Rebalance stopped before trading${reason ? `: ${reason}` : ""}`,
     frozenToggle: (v: boolean) => (v ? "Account frozen" : "Account unfrozen"),
-    receiptTitle: "Last rebalance",
+    receiptTitle: "Last full-account rebalance",
     receiptSold: "Sold",
     receiptBought: "Bought",
     receiptNoFills: "No legs filled.",
@@ -104,13 +106,14 @@ const copy = {
     submitting: "提交中...",
     checkPending: "检查挂单",
     checkingPending: "检查中...",
-    rebalanceTitle: "策略再平衡",
-    rebalanceDesc: "一键把某个策略的最新目标权重应用到账户。",
+    rebalanceTitle: "高级：全账户再平衡（非袖珍仓）",
+    rebalanceDesc:
+      "旧的全账户路径。它不是清仓按钮，也不是新建袖珍仓；它会按目标权重直接买卖整个模拟账户。策略袖珍仓请使用独立信号面板。",
     strategy: "策略",
     candidates: "候选标的",
     topN: "持仓数 Top N",
     lookback: "回看窗口",
-    rebalance: "按策略再平衡",
+    rebalance: "执行全账户买卖再平衡",
     rebalancing: "再平衡中...",
     freezeTitle: "账户冻结",
     freezeDesc: "冻结会阻止该模拟账户的所有新订单，不影响（也不存在）实盘交易。",
@@ -129,7 +132,7 @@ const copy = {
     rebalanceOk: (n: number) => `再平衡完成：${n} 笔成交`,
     rebalanceAborted: (reason: string) => `再平衡已在成交前停止${reason ? `：${reason}` : ""}`,
     frozenToggle: (v: boolean) => (v ? "账户已冻结" : "账户已解冻"),
-    receiptTitle: "本次再平衡变化",
+    receiptTitle: "本次全账户再平衡",
     receiptSold: "卖出",
     receiptBought: "买入",
     receiptNoFills: "没有成交。",
@@ -180,7 +183,7 @@ type Receipt = {
 };
 
 const inputClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
+  "rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info";
 const labelClass = "flex flex-col gap-1 font-body-sm text-text-primary";
 
 function formatPrice(value?: number | null) {
@@ -387,18 +390,19 @@ export function AccountTradePanel({
           <span className="font-body-sm text-text-secondary">{text.limitPriceHint}</span>
         </label>
         {manualError ? <p className="font-body-sm text-danger">{manualError}</p> : null}
-        <button
-          className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || killSwitch || manualMutation.isPending}
           type="submit"
+          tone="info"
         >
           {manualMutation.isPending ? text.submitting : text.submit}
-        </button>
+        </TerminalToolbarButton>
         </fieldset>
       </form>
 
-      <button
-        className="flex items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/10 px-4 py-2 font-body-sm font-semibold text-info disabled:cursor-not-allowed disabled:opacity-50"
+      <TerminalToolbarButton
+        className="h-9"
         disabled={
           !isHydrated ||
           killSwitch ||
@@ -406,14 +410,14 @@ export function AccountTradePanel({
           processPendingMutation.isPending
         }
         onClick={() => processPendingMutation.mutate()}
-        type="button"
+        tone="info"
       >
         <RefreshCw size={15} />
         {processPendingMutation.isPending ? text.checkingPending : text.checkPending}
         {pendingOrderCount > 0 ? (
-          <span className="font-data-mono text-xs">({pendingOrderCount})</span>
-        ) : null}
-      </button>
+            <span className="font-data-mono text-xs">({pendingOrderCount})</span>
+          ) : null}
+      </TerminalToolbarButton>
 
       <form
         className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4"
@@ -462,13 +466,14 @@ export function AccountTradePanel({
           </label>
         </div>
         {rebalanceError ? <p className="font-body-sm text-danger">{rebalanceError}</p> : null}
-        <button
-          className="rounded-lg border border-accent-success bg-accent-success/10 px-4 py-2 font-body-sm font-semibold text-accent-success disabled:cursor-not-allowed disabled:opacity-50"
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || killSwitch || rebalanceMutation.isPending}
           type="submit"
+          tone="warning"
         >
           {rebalanceMutation.isPending ? text.rebalancing : text.rebalance}
-        </button>
+        </TerminalToolbarButton>
         </fieldset>
       </form>
 
@@ -523,17 +528,19 @@ export function AccountTradePanel({
           <h2 className="font-label-caps text-text-primary">{text.freezeTitle}</h2>
           <p className="mt-1 font-body-sm text-text-secondary">{text.freezeDesc}</p>
         </div>
-        <div className={`font-data-mono ${killSwitch ? "text-danger" : "text-accent-success"}`}>
-          {killSwitch ? text.frozen : text.active}
+        <div>
+          <ToneBadge tone={killSwitch ? "danger" : "success"}>
+            {killSwitch ? text.frozen : text.active}
+          </ToneBadge>
         </div>
-        <button
-          className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-2 font-body-sm text-warning disabled:opacity-50"
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || freezeMutation.isPending}
           onClick={() => freezeMutation.mutate(!killSwitch)}
-          type="button"
+          tone="warning"
         >
           {killSwitch ? text.unfreeze : text.freeze}
-        </button>
+        </TerminalToolbarButton>
       </div>
     </div>
   );

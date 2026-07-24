@@ -1,0 +1,5082 @@
+{
+  "name": "quant-system",
+  "description": "本项目是一个本地优先的量化研究、回测、纸面交易、只读市场数据与期权研究平台，包含 FastAPI 后端、Next.js 前端、研究工作流、策略注册、风险与执行模拟模块。 Note: this project has over 100 source files; consider scoping analysis to a subdirectory for faster results.",
+  "languages": [
+    "code-workspace",
+    "config",
+    "css",
+    "html",
+    "javascript",
+    "json",
+    "jsonl",
+    "markdown",
+    "powershell",
+    "python",
+    "shell",
+    "sql",
+    "toml",
+    "typescript",
+    "yaml"
+  ],
+  "frameworks": [
+    "FastAPI",
+    "Uvicorn",
+    "Pydantic",
+    "Pytest",
+    "Next.js",
+    "React",
+    "Tailwind CSS",
+    "Vitest",
+    "Playwright"
+  ],
+  "files": [
+    {
+      "path": ".env.example",
+      "language": "config",
+      "sizeLines": 111,
+      "fileCategory": "config"
+    },
+    {
+      "path": "AGENTS.md",
+      "language": "markdown",
+      "sizeLines": 423,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "AI-assisted_quant_research_and_paper-trading_platform.code-workspace",
+      "language": "code-workspace",
+      "sizeLines": 7,
+      "fileCategory": "code"
+    },
+    {
+      "path": "CONTEXT.md",
+      "language": "markdown",
+      "sizeLines": 49,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/database_cache_plan.md",
+      "language": "markdown",
+      "sizeLines": 174,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_0_architecture.md",
+      "language": "markdown",
+      "sizeLines": 194,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_1_architecture.md",
+      "language": "markdown",
+      "sizeLines": 213,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_11_architecture.md",
+      "language": "markdown",
+      "sizeLines": 48,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_12_architecture.md",
+      "language": "markdown",
+      "sizeLines": 236,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_13_architecture.md",
+      "language": "markdown",
+      "sizeLines": 133,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_2_architecture.md",
+      "language": "markdown",
+      "sizeLines": 214,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_3_architecture.md",
+      "language": "markdown",
+      "sizeLines": 225,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_4_architecture.md",
+      "language": "markdown",
+      "sizeLines": 219,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_5_architecture.md",
+      "language": "markdown",
+      "sizeLines": 182,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_7_architecture.md",
+      "language": "markdown",
+      "sizeLines": 140,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_8_architecture.md",
+      "language": "markdown",
+      "sizeLines": 112,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/architecture/phase_9_api_architecture.md",
+      "language": "markdown",
+      "sizeLines": 70,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/audits/API_AUDIT.md",
+      "language": "markdown",
+      "sizeLines": 135,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/audits/FIX_PLAN.md",
+      "language": "markdown",
+      "sizeLines": 326,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/audits/FRONTEND_BACKEND_AUDIT.md",
+      "language": "markdown",
+      "sizeLines": 106,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md",
+      "language": "markdown",
+      "sizeLines": 77,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/audits/MARKET_DATA_SOURCE_AUDIT.md",
+      "language": "markdown",
+      "sizeLines": 148,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/audits/project_assessment_2026-06-11.html",
+      "language": "html",
+      "sizeLines": 511,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "docs/audits/README.md",
+      "language": "markdown",
+      "sizeLines": 603,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/audits/remediation_goal_protocol.md",
+      "language": "markdown",
+      "sizeLines": 275,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/audits/UI_FUNCTION_MATRIX.md",
+      "language": "markdown",
+      "sizeLines": 149,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/blog/bbs_boway_quant_platform_intro.md",
+      "language": "markdown",
+      "sizeLines": 70,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/frontend_refactor_2026-06-11_delivery.md",
+      "language": "markdown",
+      "sizeLines": 89,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_0_5_full_platform_check.md",
+      "language": "markdown",
+      "sizeLines": 140,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_0_delivery.md",
+      "language": "markdown",
+      "sizeLines": 134,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_1_delivery.md",
+      "language": "markdown",
+      "sizeLines": 150,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_10_fix_delivery.md",
+      "language": "markdown",
+      "sizeLines": 193,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_11_delivery.md",
+      "language": "markdown",
+      "sizeLines": 125,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_12_delivery.md",
+      "language": "markdown",
+      "sizeLines": 173,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_13_delivery.md",
+      "language": "markdown",
+      "sizeLines": 132,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_14_delivery.md",
+      "language": "markdown",
+      "sizeLines": 184,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_2_delivery.md",
+      "language": "markdown",
+      "sizeLines": 184,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_3_delivery.md",
+      "language": "markdown",
+      "sizeLines": 152,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_4_delivery.md",
+      "language": "markdown",
+      "sizeLines": 150,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_5_delivery.md",
+      "language": "markdown",
+      "sizeLines": 145,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_7_delivery.md",
+      "language": "markdown",
+      "sizeLines": 102,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_8_delivery.md",
+      "language": "markdown",
+      "sizeLines": 124,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_9_api_delivery.md",
+      "language": "markdown",
+      "sizeLines": 129,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/delivery/phase_9_frontend_api_integration.md",
+      "language": "markdown",
+      "sizeLines": 114,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/design/ai_news_integration_plan.md",
+      "language": "markdown",
+      "sizeLines": 561,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/design/frontend_workflow_usability_review_2026-06-07.md",
+      "language": "markdown",
+      "sizeLines": 540,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/design/paper_strategy_sleeves_plan.md",
+      "language": "markdown",
+      "sizeLines": 518,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/design/paper_trading_position_map_redesign.md",
+      "language": "markdown",
+      "sizeLines": 289,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_0_execution.md",
+      "language": "markdown",
+      "sizeLines": 171,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_1_execution.md",
+      "language": "markdown",
+      "sizeLines": 153,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_10_execution.md",
+      "language": "markdown",
+      "sizeLines": 104,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_11_execution.md",
+      "language": "markdown",
+      "sizeLines": 84,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_12_execution.md",
+      "language": "markdown",
+      "sizeLines": 194,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_13_execution.md",
+      "language": "markdown",
+      "sizeLines": 143,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_13_scheduler_setup.md",
+      "language": "markdown",
+      "sizeLines": 99,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_14_execution.md",
+      "language": "markdown",
+      "sizeLines": 103,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_2_execution.md",
+      "language": "markdown",
+      "sizeLines": 109,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_3_execution.md",
+      "language": "markdown",
+      "sizeLines": 118,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_4_execution.md",
+      "language": "markdown",
+      "sizeLines": 148,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_5_execution.md",
+      "language": "markdown",
+      "sizeLines": 114,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_7_execution.md",
+      "language": "markdown",
+      "sizeLines": 123,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_8_execution.md",
+      "language": "markdown",
+      "sizeLines": 94,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/execution/phase_9_api_execution.md",
+      "language": "markdown",
+      "sizeLines": 104,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/frontend/design_brief.md",
+      "language": "markdown",
+      "sizeLines": 495,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/frontend/frontend_chinese_version.md",
+      "language": "markdown",
+      "sizeLines": 91,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/frontend/optimization_log.md",
+      "language": "markdown",
+      "sizeLines": 365,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/frontend/optimization_plan.md",
+      "language": "markdown",
+      "sizeLines": 305,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/frontend/usability_issues_verified.md",
+      "language": "markdown",
+      "sizeLines": 570,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/futu/futu_environment_setup.md",
+      "language": "markdown",
+      "sizeLines": 241,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/futu/futu_frontend_backend_integration_report.md",
+      "language": "markdown",
+      "sizeLines": 145,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/futu/futu_integration_design.md",
+      "language": "markdown",
+      "sizeLines": 539,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/futu/futu_market_data_provider.md",
+      "language": "markdown",
+      "sizeLines": 112,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/futu/futu_options_data_provider.md",
+      "language": "markdown",
+      "sizeLines": 219,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/futu/futu_troubleshooting.md",
+      "language": "markdown",
+      "sizeLines": 100,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/guides/backtester.md",
+      "language": "markdown",
+      "sizeLines": 127,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/guides/experiments.md",
+      "language": "markdown",
+      "sizeLines": 139,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/guides/factor-lab.md",
+      "language": "markdown",
+      "sizeLines": 137,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/guides/paper-trading.md",
+      "language": "markdown",
+      "sizeLines": 134,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/guides/position-map.md",
+      "language": "markdown",
+      "sizeLines": 95,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/guides/README.md",
+      "language": "markdown",
+      "sizeLines": 23,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/guides/strategy-catalog.md",
+      "language": "markdown",
+      "sizeLines": 156,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/INDEX.md",
+      "language": "markdown",
+      "sizeLines": 243,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_0_learning.md",
+      "language": "markdown",
+      "sizeLines": 143,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_1_learning.md",
+      "language": "markdown",
+      "sizeLines": 127,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_10_learning.md",
+      "language": "markdown",
+      "sizeLines": 89,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_11_learning.md",
+      "language": "markdown",
+      "sizeLines": 39,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_12_learning.md",
+      "language": "markdown",
+      "sizeLines": 129,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_13_learning.md",
+      "language": "markdown",
+      "sizeLines": 39,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_2_learning.md",
+      "language": "markdown",
+      "sizeLines": 104,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_3_learning.md",
+      "language": "markdown",
+      "sizeLines": 156,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_4_learning.md",
+      "language": "markdown",
+      "sizeLines": 132,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_5_learning.md",
+      "language": "markdown",
+      "sizeLines": 135,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_7_learning.md",
+      "language": "markdown",
+      "sizeLines": 135,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_8_learning.md",
+      "language": "markdown",
+      "sizeLines": 163,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/phase_9_api_learning.md",
+      "language": "markdown",
+      "sizeLines": 43,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/research_registry_pipeline_2026_06_02.md",
+      "language": "markdown",
+      "sizeLines": 153,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/learning/ui_workflow_questions_2026_06_02.md",
+      "language": "markdown",
+      "sizeLines": 204,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/options/buyside_strategy_learning.md",
+      "language": "markdown",
+      "sizeLines": 254,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/options/local_alphagbm_tools.md",
+      "language": "markdown",
+      "sizeLines": 374,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/options/options_screener_api.md",
+      "language": "markdown",
+      "sizeLines": 116,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/options/options_screener_learning.md",
+      "language": "markdown",
+      "sizeLines": 164,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/options/options_screener_review_2026_05_03.md",
+      "language": "markdown",
+      "sizeLines": 141,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/options/phase_13_options_radar_codex_prompt.md",
+      "language": "markdown",
+      "sizeLines": 300,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/OVERVIEW.md",
+      "language": "markdown",
+      "sizeLines": 123,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/phases/phase_11_design_spec.md",
+      "language": "markdown",
+      "sizeLines": 301,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/phases/phase_11_next_roadmap.md",
+      "language": "markdown",
+      "sizeLines": 42,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/phases/phase_12_design_spec.md",
+      "language": "markdown",
+      "sizeLines": 237,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/phases/phase_13_design_spec.md",
+      "language": "markdown",
+      "sizeLines": 105,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/phases/phase14_multi_sub.md",
+      "language": "markdown",
+      "sizeLines": 1173,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/polymarket/polymarket_charts_and_metrics.md",
+      "language": "markdown",
+      "sizeLines": 79,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/polymarket/polymarket_history_collection.md",
+      "language": "markdown",
+      "sizeLines": 117,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/polymarket/polymarket_read_only_integration.md",
+      "language": "markdown",
+      "sizeLines": 80,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/polymarket/polymarket_safety_boundaries.md",
+      "language": "markdown",
+      "sizeLines": 30,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/polymarket/polymarket_strategy_backtest_learning.md",
+      "language": "markdown",
+      "sizeLines": 31,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/polymarket/polymarket_timeseries_backtest_learning.md",
+      "language": "markdown",
+      "sizeLines": 82,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/polymarket/polymarket_troubleshooting.md",
+      "language": "markdown",
+      "sizeLines": 83,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/replications/reversal_momentum_replication.md",
+      "language": "markdown",
+      "sizeLines": 107,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-25-phase-0-implementation.md",
+      "language": "markdown",
+      "sizeLines": 57,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/SYSTEM_DESIGN_RESEARCH.md",
+      "language": "markdown",
+      "sizeLines": 1378,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "environment.yml",
+      "language": "yaml",
+      "sizeLines": 10,
+      "fileCategory": "config"
+    },
+    {
+      "path": "pyproject.toml",
+      "language": "toml",
+      "sizeLines": 59,
+      "fileCategory": "config"
+    },
+    {
+      "path": "README_zh.md",
+      "language": "markdown",
+      "sizeLines": 370,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "README.md",
+      "language": "markdown",
+      "sizeLines": 504,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "scripts/backup_api_runs.py",
+      "language": "python",
+      "sizeLines": 82,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/check_api_keys.py",
+      "language": "python",
+      "sizeLines": 217,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/cleanup_api_run_duckdb.py",
+      "language": "python",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/dev-stop.ps1",
+      "language": "powershell",
+      "sizeLines": 42,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/dev.ps1",
+      "language": "powershell",
+      "sizeLines": 168,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/README.md",
+      "language": "markdown",
+      "sizeLines": 47,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "scripts/refresh_earnings_calendar.py",
+      "language": "python",
+      "sizeLines": 82,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/refresh_options_universe.py",
+      "language": "python",
+      "sizeLines": 220,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/refresh_vix_history.py",
+      "language": "python",
+      "sizeLines": 87,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/register_options_radar_task.ps1",
+      "language": "powershell",
+      "sizeLines": 27,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/run_options_radar.ps1",
+      "language": "powershell",
+      "sizeLines": 32,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/run_spy_qqq_phase5_full_check.py",
+      "language": "python",
+      "sizeLines": 340,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/sql/001_runs_index.sql",
+      "language": "sql",
+      "sizeLines": 30,
+      "fileCategory": "data"
+    },
+    {
+      "path": "scripts/start_phase9_full_stack.ps1",
+      "language": "powershell",
+      "sizeLines": 113,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/stop_phase9_full_stack.ps1",
+      "language": "powershell",
+      "sizeLines": 16,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/verify_futu_connection.py",
+      "language": "python",
+      "sizeLines": 184,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/verify.ps1",
+      "language": "powershell",
+      "sizeLines": 57,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/verify.sh",
+      "language": "shell",
+      "sizeLines": 27,
+      "fileCategory": "script"
+    },
+    {
+      "path": "src/frontend/.env.example",
+      "language": "config",
+      "sizeLines": 2,
+      "fileCategory": "config"
+    },
+    {
+      "path": "src/frontend/app/agent-studio/page.tsx",
+      "language": "typescript",
+      "sizeLines": 280,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/backtest/[runId]/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/backtest/[runId]/page.tsx",
+      "language": "typescript",
+      "sizeLines": 287,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/backtest/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/backtest/page.tsx",
+      "language": "typescript",
+      "sizeLines": 380,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/data-explorer/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/data-explorer/page.tsx",
+      "language": "typescript",
+      "sizeLines": 327,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/docs/reversal-momentum/page.tsx",
+      "language": "typescript",
+      "sizeLines": 101,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/error.tsx",
+      "language": "typescript",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/experiments/page.tsx",
+      "language": "typescript",
+      "sizeLines": 161,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/factor-lab/[runId]/page.tsx",
+      "language": "typescript",
+      "sizeLines": 269,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/factor-lab/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/factor-lab/page.tsx",
+      "language": "typescript",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/globals.css",
+      "language": "css",
+      "sizeLines": 140,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "src/frontend/app/layout.tsx",
+      "language": "typescript",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/options-buyside/page.tsx",
+      "language": "typescript",
+      "sizeLines": 13,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/options-radar/[symbol]/page.tsx",
+      "language": "typescript",
+      "sizeLines": 103,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/options-radar/page.tsx",
+      "language": "typescript",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/options-screener/page.tsx",
+      "language": "typescript",
+      "sizeLines": 13,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/options-tools/page.tsx",
+      "language": "typescript",
+      "sizeLines": 13,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/order-book/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/order-book/page.tsx",
+      "language": "typescript",
+      "sizeLines": 211,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/page.tsx",
+      "language": "typescript",
+      "sizeLines": 491,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/paper-trading/[runId]/page.tsx",
+      "language": "typescript",
+      "sizeLines": 181,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/paper-trading/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/paper-trading/page.tsx",
+      "language": "typescript",
+      "sizeLines": 894,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/position-map/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/position-map/page.tsx",
+      "language": "typescript",
+      "sizeLines": 623,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/replications/[runId]/page.tsx",
+      "language": "typescript",
+      "sizeLines": 50,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/replications/page.tsx",
+      "language": "typescript",
+      "sizeLines": 29,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/app/settings/page.tsx",
+      "language": "typescript",
+      "sizeLines": 155,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/AccountRefreshControl.tsx",
+      "language": "typescript",
+      "sizeLines": 52,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/CandlestickChart.tsx",
+      "language": "typescript",
+      "sizeLines": 210,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/DataPreviewTable.tsx",
+      "language": "typescript",
+      "sizeLines": 117,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/DataSourceBadge.tsx",
+      "language": "typescript",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/EmptyState.tsx",
+      "language": "typescript",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/EquityComparisonChart.tsx",
+      "language": "typescript",
+      "sizeLines": 121,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/ErrorBanner.tsx",
+      "language": "typescript",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/FactorRunCharts.tsx",
+      "language": "typescript",
+      "sizeLines": 160,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/AccountTradePanel.tsx",
+      "language": "typescript",
+      "sizeLines": 540,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/AgentTaskForm.tsx",
+      "language": "typescript",
+      "sizeLines": 301,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/BacktestForm.tsx",
+      "language": "typescript",
+      "sizeLines": 528,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/BuySideOptionsAssistant.tsx",
+      "language": "typescript",
+      "sizeLines": 1143,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/DataExplorerControls.tsx",
+      "language": "typescript",
+      "sizeLines": 164,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/ExperimentRunForm.tsx",
+      "language": "typescript",
+      "sizeLines": 253,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/ExperimentTabs.tsx",
+      "language": "typescript",
+      "sizeLines": 573,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/FactorLabControls.tsx",
+      "language": "typescript",
+      "sizeLines": 163,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/FactorLabDashboard.tsx",
+      "language": "typescript",
+      "sizeLines": 417,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/FactorRunForm.tsx",
+      "language": "typescript",
+      "sizeLines": 156,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/FutuProviderHint.tsx",
+      "language": "typescript",
+      "sizeLines": 37,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/OptionsRadarSymbolLive.tsx",
+      "language": "typescript",
+      "sizeLines": 178,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/OptionsRadarView.tsx",
+      "language": "typescript",
+      "sizeLines": 922,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/OptionsScreenerForm.tsx",
+      "language": "typescript",
+      "sizeLines": 790,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/OptionsToolsWorkbench.tsx",
+      "language": "typescript",
+      "sizeLines": 1278,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/PaperRunForm.tsx",
+      "language": "typescript",
+      "sizeLines": 251,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/PendingOrderCancelButton.tsx",
+      "language": "typescript",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/PMHistoryBacktestForm.tsx",
+      "language": "typescript",
+      "sizeLines": 474,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/PMRunForm.tsx",
+      "language": "typescript",
+      "sizeLines": 242,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/PredictionMarketDataControls.tsx",
+      "language": "typescript",
+      "sizeLines": 87,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/forms/StrategyCatalogWorkbench.tsx",
+      "language": "typescript",
+      "sizeLines": 804,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/InfoTip.tsx",
+      "language": "typescript",
+      "sizeLines": 168,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/LoadingSkeleton.tsx",
+      "language": "typescript",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/LocaleProvider.tsx",
+      "language": "typescript",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/LocaleToggle.tsx",
+      "language": "typescript",
+      "sizeLines": 40,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/Providers.tsx",
+      "language": "typescript",
+      "sizeLines": 29,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/RouteLoading.tsx",
+      "language": "typescript",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/SafetyStrip.tsx",
+      "language": "typescript",
+      "sizeLines": 48,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/Sidebar.tsx",
+      "language": "typescript",
+      "sizeLines": 239,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/TopBar.tsx",
+      "language": "typescript",
+      "sizeLines": 139,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/ui/primitives.tsx",
+      "language": "typescript",
+      "sizeLines": 182,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/components/ui/Tabs.tsx",
+      "language": "typescript",
+      "sizeLines": 59,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/eslint.config.mjs",
+      "language": "javascript",
+      "sizeLines": 7,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/hooks/use-mobile.ts",
+      "language": "typescript",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/accountRebalanceStrategies.test.ts",
+      "language": "typescript",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/accountRebalanceStrategies.ts",
+      "language": "typescript",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/api.test.ts",
+      "language": "typescript",
+      "sizeLines": 102,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/api.ts",
+      "language": "typescript",
+      "sizeLines": 1941,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/apiClient.test.ts",
+      "language": "typescript",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/apiClient.ts",
+      "language": "typescript",
+      "sizeLines": 115,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/buySideOptionsPayload.test.ts",
+      "language": "typescript",
+      "sizeLines": 86,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/buySideOptionsPayload.ts",
+      "language": "typescript",
+      "sizeLines": 91,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/equity.test.ts",
+      "language": "typescript",
+      "sizeLines": 27,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/equity.ts",
+      "language": "typescript",
+      "sizeLines": 56,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/experimentRunPayload.test.ts",
+      "language": "typescript",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/experimentRunPayload.ts",
+      "language": "typescript",
+      "sizeLines": 57,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/experimentSummary.test.ts",
+      "language": "typescript",
+      "sizeLines": 48,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/experimentSummary.ts",
+      "language": "typescript",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/factorLabHandoff.test.ts",
+      "language": "typescript",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/factorLabHandoff.ts",
+      "language": "typescript",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/hydration.ts",
+      "language": "typescript",
+      "sizeLines": 13,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/locale.ts",
+      "language": "typescript",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/optionsToolsLive.test.ts",
+      "language": "typescript",
+      "sizeLines": 201,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/optionsToolsLive.ts",
+      "language": "typescript",
+      "sizeLines": 406,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/runSource.test.ts",
+      "language": "typescript",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/runSource.ts",
+      "language": "typescript",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/serverApi.ts",
+      "language": "typescript",
+      "sizeLines": 4,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/serverLocale.ts",
+      "language": "typescript",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/strategyPayload.test.ts",
+      "language": "typescript",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/strategyPayload.ts",
+      "language": "typescript",
+      "sizeLines": 32,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/lib/utils.ts",
+      "language": "typescript",
+      "sizeLines": 6,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/middleware.ts",
+      "language": "typescript",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/next-env.d.ts",
+      "language": "typescript",
+      "sizeLines": 6,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/next.config.ts",
+      "language": "typescript",
+      "sizeLines": 27,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/package.json",
+      "language": "json",
+      "sizeLines": 48,
+      "fileCategory": "config"
+    },
+    {
+      "path": "src/frontend/playwright.config.ts",
+      "language": "typescript",
+      "sizeLines": 120,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/postcss.config.mjs",
+      "language": "javascript",
+      "sizeLines": 9,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/README.md",
+      "language": "markdown",
+      "sizeLines": 45,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "src/frontend/scripts/capture-after-screenshots.mjs",
+      "language": "javascript",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/experiments-workbench.spec.ts",
+      "language": "typescript",
+      "sizeLines": 141,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/locale-toggle.spec.ts",
+      "language": "typescript",
+      "sizeLines": 32,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/navigation-layout.spec.ts",
+      "language": "typescript",
+      "sizeLines": 80,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/options-tools-and-charts.spec.ts",
+      "language": "typescript",
+      "sizeLines": 97,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/phase10-smoke.spec.ts",
+      "language": "typescript",
+      "sizeLines": 163,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/phase13-radar-smoke.spec.ts",
+      "language": "typescript",
+      "sizeLines": 205,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/phase14-buyside-smoke.spec.ts",
+      "language": "typescript",
+      "sizeLines": 174,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/position-map.spec.ts",
+      "language": "typescript",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/reversal-momentum-replication.spec.ts",
+      "language": "typescript",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tests/e2e/run-detail-routes.spec.ts",
+      "language": "typescript",
+      "sizeLines": 139,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/frontend/tsconfig.json",
+      "language": "json",
+      "sizeLines": 28,
+      "fileCategory": "config"
+    },
+    {
+      "path": "src/frontend/vitest.config.ts",
+      "language": "typescript",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/__init__.py",
+      "language": "python",
+      "sizeLines": 4,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/__main__.py",
+      "language": "python",
+      "sizeLines": 4,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/__init__.py",
+      "language": "python",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/audit.py",
+      "language": "python",
+      "sizeLines": 28,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/candidate_pool.py",
+      "language": "python",
+      "sizeLines": 133,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/llm/__init__.py",
+      "language": "python",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/llm/base.py",
+      "language": "python",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/llm/openai_client.py",
+      "language": "python",
+      "sizeLines": 81,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/llm/stub.py",
+      "language": "python",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/models.py",
+      "language": "python",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/runner.py",
+      "language": "python",
+      "sizeLines": 135,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/safety.py",
+      "language": "python",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/tools.py",
+      "language": "python",
+      "sizeLines": 114,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/workflows/__init__.py",
+      "language": "python",
+      "sizeLines": 13,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/workflows/experiment_design.py",
+      "language": "python",
+      "sizeLines": 48,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/workflows/factor_proposal.py",
+      "language": "python",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/workflows/leakage_audit.py",
+      "language": "python",
+      "sizeLines": 54,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/agent/workflows/result_summary.py",
+      "language": "python",
+      "sizeLines": 66,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/bootstrap.py",
+      "language": "python",
+      "sizeLines": 29,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/dependencies.py",
+      "language": "python",
+      "sizeLines": 34,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/errors.py",
+      "language": "python",
+      "sizeLines": 28,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/agent.py",
+      "language": "python",
+      "sizeLines": 136,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/backtest.py",
+      "language": "python",
+      "sizeLines": 179,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/benchmark.py",
+      "language": "python",
+      "sizeLines": 51,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/data.py",
+      "language": "python",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/experiments.py",
+      "language": "python",
+      "sizeLines": 130,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/factors.py",
+      "language": "python",
+      "sizeLines": 157,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/health.py",
+      "language": "python",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/market_data.py",
+      "language": "python",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/options_radar.py",
+      "language": "python",
+      "sizeLines": 417,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/options.py",
+      "language": "python",
+      "sizeLines": 634,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/paper.py",
+      "language": "python",
+      "sizeLines": 580,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/prediction_market.py",
+      "language": "python",
+      "sizeLines": 477,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/replications.py",
+      "language": "python",
+      "sizeLines": 140,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/runs.py",
+      "language": "python",
+      "sizeLines": 55,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/settings.py",
+      "language": "python",
+      "sizeLines": 14,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/strategies.py",
+      "language": "python",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/routes/universes.py",
+      "language": "python",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/safety/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/safety/masking.py",
+      "language": "python",
+      "sizeLines": 25,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/safety/middleware.py",
+      "language": "python",
+      "sizeLines": 75,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/agent.py",
+      "language": "python",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/backtest.py",
+      "language": "python",
+      "sizeLines": 151,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/benchmark.py",
+      "language": "python",
+      "sizeLines": 10,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/catalog.py",
+      "language": "python",
+      "sizeLines": 14,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/common.py",
+      "language": "python",
+      "sizeLines": 100,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/data.py",
+      "language": "python",
+      "sizeLines": 14,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/experiments.py",
+      "language": "python",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/factors.py",
+      "language": "python",
+      "sizeLines": 135,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/health.py",
+      "language": "python",
+      "sizeLines": 14,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/market_data.py",
+      "language": "python",
+      "sizeLines": 29,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/options_radar.py",
+      "language": "python",
+      "sizeLines": 85,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/options.py",
+      "language": "python",
+      "sizeLines": 239,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/paper.py",
+      "language": "python",
+      "sizeLines": 218,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/prediction_market.py",
+      "language": "python",
+      "sizeLines": 137,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/replications.py",
+      "language": "python",
+      "sizeLines": 29,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/runs.py",
+      "language": "python",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/schemas/settings.py",
+      "language": "python",
+      "sizeLines": 9,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/api/server.py",
+      "language": "python",
+      "sizeLines": 414,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/__init__.py",
+      "language": "python",
+      "sizeLines": 14,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/benchmark.py",
+      "language": "python",
+      "sizeLines": 34,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/broker.py",
+      "language": "python",
+      "sizeLines": 79,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/engine.py",
+      "language": "python",
+      "sizeLines": 230,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/metrics.py",
+      "language": "python",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/models.py",
+      "language": "python",
+      "sizeLines": 99,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/order_generation.py",
+      "language": "python",
+      "sizeLines": 90,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/pipeline.py",
+      "language": "python",
+      "sizeLines": 393,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/portfolio.py",
+      "language": "python",
+      "sizeLines": 43,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/reporting.py",
+      "language": "python",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/storage.py",
+      "language": "python",
+      "sizeLines": 55,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/backtest/strategy.py",
+      "language": "python",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/cli.py",
+      "language": "python",
+      "sizeLines": 1924,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/config/__init__.py",
+      "language": "python",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/config/settings.py",
+      "language": "python",
+      "sizeLines": 477,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/core/__init__.py",
+      "language": "python",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/core/interfaces.py",
+      "language": "python",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/__init__.py",
+      "language": "python",
+      "sizeLines": 16,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/pipeline.py",
+      "language": "python",
+      "sizeLines": 104,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/provider_factory.py",
+      "language": "python",
+      "sizeLines": 177,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/providers/__init__.py",
+      "language": "python",
+      "sizeLines": 11,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/providers/base.py",
+      "language": "python",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/providers/csv.py",
+      "language": "python",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/providers/futu.py",
+      "language": "python",
+      "sizeLines": 713,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/providers/sample.py",
+      "language": "python",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/providers/tiingo.py",
+      "language": "python",
+      "sizeLines": 122,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/schema.py",
+      "language": "python",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/storage.py",
+      "language": "python",
+      "sizeLines": 106,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/data/validation.py",
+      "language": "python",
+      "sizeLines": 137,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/__init__.py",
+      "language": "python",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/account_service.py",
+      "language": "python",
+      "sizeLines": 775,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/account_storage.py",
+      "language": "python",
+      "sizeLines": 287,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/account.py",
+      "language": "python",
+      "sizeLines": 314,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/broker.py",
+      "language": "python",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/models.py",
+      "language": "python",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/order_manager.py",
+      "language": "python",
+      "sizeLines": 120,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/paper_broker.py",
+      "language": "python",
+      "sizeLines": 138,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/pipeline.py",
+      "language": "python",
+      "sizeLines": 522,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/portfolio.py",
+      "language": "python",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/price_source.py",
+      "language": "python",
+      "sizeLines": 330,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/reporting.py",
+      "language": "python",
+      "sizeLines": 54,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/execution/storage.py",
+      "language": "python",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/experiments/__init__.py",
+      "language": "python",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/experiments/config.py",
+      "language": "python",
+      "sizeLines": 63,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/experiments/models.py",
+      "language": "python",
+      "sizeLines": 93,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/experiments/reporting.py",
+      "language": "python",
+      "sizeLines": 61,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/experiments/runner.py",
+      "language": "python",
+      "sizeLines": 407,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/experiments/scoring.py",
+      "language": "python",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/experiments/storage.py",
+      "language": "python",
+      "sizeLines": 84,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/experiments/sweep.py",
+      "language": "python",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/experiments/walk_forward.py",
+      "language": "python",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/__init__.py",
+      "language": "python",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/base.py",
+      "language": "python",
+      "sizeLines": 107,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/evaluation.py",
+      "language": "python",
+      "sizeLines": 123,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/examples.py",
+      "language": "python",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/lab.py",
+      "language": "python",
+      "sizeLines": 310,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/library/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/library/alpha101.py",
+      "language": "python",
+      "sizeLines": 335,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/pipeline.py",
+      "language": "python",
+      "sizeLines": 253,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/registry.py",
+      "language": "python",
+      "sizeLines": 57,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/reporting.py",
+      "language": "python",
+      "sizeLines": 135,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/factors/storage.py",
+      "language": "python",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/logging/__init__.py",
+      "language": "python",
+      "sizeLines": 4,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/logging/setup.py",
+      "language": "python",
+      "sizeLines": 88,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/__init__.py",
+      "language": "python",
+      "sizeLines": 11,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/buy_side_decision.py",
+      "language": "python",
+      "sizeLines": 536,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/buy_side_metrics.py",
+      "language": "python",
+      "sizeLines": 628,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/buy_side_scenarios.py",
+      "language": "python",
+      "sizeLines": 286,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/buy_side_strategy.py",
+      "language": "python",
+      "sizeLines": 605,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/data_refresh.py",
+      "language": "python",
+      "sizeLines": 354,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/earnings_calendar.py",
+      "language": "python",
+      "sizeLines": 48,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/iv_history.py",
+      "language": "python",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/local_research.py",
+      "language": "python",
+      "sizeLines": 909,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/local_tools.py",
+      "language": "python",
+      "sizeLines": 913,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/market_regime.py",
+      "language": "python",
+      "sizeLines": 162,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/models.py",
+      "language": "python",
+      "sizeLines": 410,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/option_data.py",
+      "language": "python",
+      "sizeLines": 204,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/radar_storage.py",
+      "language": "python",
+      "sizeLines": 105,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/radar.py",
+      "language": "python",
+      "sizeLines": 251,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/rate_limiter.py",
+      "language": "python",
+      "sizeLines": 99,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/sample_provider.py",
+      "language": "python",
+      "sizeLines": 126,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/scan_lock.py",
+      "language": "python",
+      "sizeLines": 71,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/screener.py",
+      "language": "python",
+      "sizeLines": 663,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/universe.py",
+      "language": "python",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/options/vix_data.py",
+      "language": "python",
+      "sizeLines": 253,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/__init__.py",
+      "language": "python",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/backtest.py",
+      "language": "python",
+      "sizeLines": 254,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/charts.py",
+      "language": "python",
+      "sizeLines": 365,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/collector.py",
+      "language": "python",
+      "sizeLines": 212,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/data/__init__.py",
+      "language": "python",
+      "sizeLines": 4,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/data/base.py",
+      "language": "python",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/data/polymarket_readonly.py",
+      "language": "python",
+      "sizeLines": 406,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/data/polymarket_stub.py",
+      "language": "python",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/data/sample_provider.py",
+      "language": "python",
+      "sizeLines": 118,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/execution_threshold.py",
+      "language": "python",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/instruments.py",
+      "language": "python",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/models.py",
+      "language": "python",
+      "sizeLines": 131,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/optimizer/__init__.py",
+      "language": "python",
+      "sizeLines": 4,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/optimizer/base.py",
+      "language": "python",
+      "sizeLines": 10,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/optimizer/greedy_stub.py",
+      "language": "python",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/optimizer/lp_stub.py",
+      "language": "python",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/orderbook.py",
+      "language": "python",
+      "sizeLines": 28,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/partial_fill.py",
+      "language": "python",
+      "sizeLines": 27,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/pipeline.py",
+      "language": "python",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/provider_factory.py",
+      "language": "python",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/reporting.py",
+      "language": "python",
+      "sizeLines": 161,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/scanners/__init__.py",
+      "language": "python",
+      "sizeLines": 6,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/scanners/outcome_set_consistency.py",
+      "language": "python",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/scanners/yes_no_arbitrage.py",
+      "language": "python",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/settlement.py",
+      "language": "python",
+      "sizeLines": 11,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/storage.py",
+      "language": "python",
+      "sizeLines": 264,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/prediction_market/timeseries_backtest.py",
+      "language": "python",
+      "sizeLines": 455,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/replication/__init__.py",
+      "language": "python",
+      "sizeLines": 2,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/replication/reversal_momentum.py",
+      "language": "python",
+      "sizeLines": 377,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/risk/__init__.py",
+      "language": "python",
+      "sizeLines": 7,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/risk/defaults.py",
+      "language": "python",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/risk/engine.py",
+      "language": "python",
+      "sizeLines": 149,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/risk/models.py",
+      "language": "python",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/storage/__init__.py",
+      "language": "python",
+      "sizeLines": 2,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/storage/artifacts.py",
+      "language": "python",
+      "sizeLines": 35,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/storage/database.py",
+      "language": "python",
+      "sizeLines": 163,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/storage/options_cache.py",
+      "language": "python",
+      "sizeLines": 379,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/storage/runs_repository.py",
+      "language": "python",
+      "sizeLines": 193,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/strategies/__init__.py",
+      "language": "python",
+      "sizeLines": 11,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/strategies/registry.py",
+      "language": "python",
+      "sizeLines": 148,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/universe/__init__.py",
+      "language": "python",
+      "sizeLines": 11,
+      "fileCategory": "code"
+    },
+    {
+      "path": "src/quant_system/universe/registry.py",
+      "language": "python",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/conftest.py",
+      "language": "python",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/fixtures/prediction_market/sample_snapshot.jsonl",
+      "language": "jsonl",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_agent_phase7.py",
+      "language": "python",
+      "sizeLines": 170,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_agent_llm_config.py",
+      "language": "python",
+      "sizeLines": 43,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_agent.py",
+      "language": "python",
+      "sizeLines": 117,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_backtest.py",
+      "language": "python",
+      "sizeLines": 456,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_cors.py",
+      "language": "python",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_data_provider_param.py",
+      "language": "python",
+      "sizeLines": 162,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_data.py",
+      "language": "python",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_errors.py",
+      "language": "python",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_experiments.py",
+      "language": "python",
+      "sizeLines": 271,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_factors.py",
+      "language": "python",
+      "sizeLines": 330,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_health.py",
+      "language": "python",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_market_data_futu.py",
+      "language": "python",
+      "sizeLines": 213,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_not_found_errors.py",
+      "language": "python",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_options_buy_side.py",
+      "language": "python",
+      "sizeLines": 256,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_options_futu.py",
+      "language": "python",
+      "sizeLines": 182,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_options_local_tools.py",
+      "language": "python",
+      "sizeLines": 294,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_options_radar.py",
+      "language": "python",
+      "sizeLines": 500,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_paper_account.py",
+      "language": "python",
+      "sizeLines": 575,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_paper.py",
+      "language": "python",
+      "sizeLines": 307,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_prediction_market.py",
+      "language": "python",
+      "sizeLines": 290,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_replications.py",
+      "language": "python",
+      "sizeLines": 75,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_response_models.py",
+      "language": "python",
+      "sizeLines": 397,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_runs_recent.py",
+      "language": "python",
+      "sizeLines": 53,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_safety.py",
+      "language": "python",
+      "sizeLines": 232,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_api_strategy_universe_catalog.py",
+      "language": "python",
+      "sizeLines": 34,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_backtest_broker_portfolio.py",
+      "language": "python",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_backtest_engine_depth.py",
+      "language": "python",
+      "sizeLines": 193,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_backtest_engine_metrics.py",
+      "language": "python",
+      "sizeLines": 94,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_backtest_storage_reporting_cli.py",
+      "language": "python",
+      "sizeLines": 70,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_backtest_strategy_orders.py",
+      "language": "python",
+      "sizeLines": 143,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_backup_api_runs_script.py",
+      "language": "python",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_cleanup_api_run_duckdb_script.py",
+      "language": "python",
+      "sizeLines": 116,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_cli_market_regime.py",
+      "language": "python",
+      "sizeLines": 43,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_cli.py",
+      "language": "python",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_data_futu_provider.py",
+      "language": "python",
+      "sizeLines": 622,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_data_pipeline_cli.py",
+      "language": "python",
+      "sizeLines": 134,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_data_sample_provider.py",
+      "language": "python",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_data_schema.py",
+      "language": "python",
+      "sizeLines": 35,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_data_storage.py",
+      "language": "python",
+      "sizeLines": 34,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_data_tiingo_provider.py",
+      "language": "python",
+      "sizeLines": 142,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_data_validation.py",
+      "language": "python",
+      "sizeLines": 60,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_database_connection.py",
+      "language": "python",
+      "sizeLines": 60,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_database.py",
+      "language": "python",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_environment_file.py",
+      "language": "python",
+      "sizeLines": 28,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_experiment_config_sweep.py",
+      "language": "python",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_experiment_runner_cli.py",
+      "language": "python",
+      "sizeLines": 129,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_experiment_scoring.py",
+      "language": "python",
+      "sizeLines": 88,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_experiment_walk_forward.py",
+      "language": "python",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_factor_evaluation.py",
+      "language": "python",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_factor_storage_reporting_cli.py",
+      "language": "python",
+      "sizeLines": 120,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_factors_alpha101.py",
+      "language": "python",
+      "sizeLines": 282,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_factors_examples.py",
+      "language": "python",
+      "sizeLines": 104,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_factors_pipeline.py",
+      "language": "python",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_factors_registry.py",
+      "language": "python",
+      "sizeLines": 55,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_account_trade_panel_limit_order_copy.py",
+      "language": "python",
+      "sizeLines": 10,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_agent_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 9,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_backend_response_type_exports.py",
+      "language": "python",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_backtest_benchmark_source.py",
+      "language": "python",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_backtest_form_order_constraints.py",
+      "language": "python",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_buy_side_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_catalog_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_dashboard_recent_runs.py",
+      "language": "python",
+      "sizeLines": 16,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_data_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_e2e_config.py",
+      "language": "python",
+      "sizeLines": 173,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_e2e_sandbox_paths.py",
+      "language": "python",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_options_radar_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_options_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_options_screener_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 41,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_options_tools_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 290,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_paper_account_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 74,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_paper_replay_safety.py",
+      "language": "python",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_paper_trading_offline_state.py",
+      "language": "python",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_prediction_market_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 97,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_replication_persistence_contract.py",
+      "language": "python",
+      "sizeLines": 37,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_run_response_type_contract.py",
+      "language": "python",
+      "sizeLines": 85,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_frontend_topbar_navigation_contract.py",
+      "language": "python",
+      "sizeLines": 14,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_interfaces.py",
+      "language": "python",
+      "sizeLines": 61,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_llm_factory.py",
+      "language": "python",
+      "sizeLines": 52,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_logging_setup.py",
+      "language": "python",
+      "sizeLines": 40,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_buy_side_cli.py",
+      "language": "python",
+      "sizeLines": 85,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_buy_side_decision.py",
+      "language": "python",
+      "sizeLines": 215,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_buy_side_metrics.py",
+      "language": "python",
+      "sizeLines": 146,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_buy_side_models.py",
+      "language": "python",
+      "sizeLines": 127,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_buy_side_scenarios.py",
+      "language": "python",
+      "sizeLines": 226,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_buy_side_strategy.py",
+      "language": "python",
+      "sizeLines": 167,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_cache_cli.py",
+      "language": "python",
+      "sizeLines": 123,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_cache.py",
+      "language": "python",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_daily_scan_cli.py",
+      "language": "python",
+      "sizeLines": 239,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_data_refresh.py",
+      "language": "python",
+      "sizeLines": 104,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_earnings_calendar.py",
+      "language": "python",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_iv_history.py",
+      "language": "python",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_local_tools.py",
+      "language": "python",
+      "sizeLines": 397,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_market_regime.py",
+      "language": "python",
+      "sizeLines": 50,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_option_data.py",
+      "language": "python",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_radar.py",
+      "language": "python",
+      "sizeLines": 261,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_rate_limiter.py",
+      "language": "python",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_screener.py",
+      "language": "python",
+      "sizeLines": 600,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_universe.py",
+      "language": "python",
+      "sizeLines": 62,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_options_vix_data.py",
+      "language": "python",
+      "sizeLines": 199,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_order_generation_threshold_alignment.py",
+      "language": "python",
+      "sizeLines": 43,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_order_manager_paper_broker.py",
+      "language": "python",
+      "sizeLines": 163,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_paper_account.py",
+      "language": "python",
+      "sizeLines": 668,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_paper_price_source.py",
+      "language": "python",
+      "sizeLines": 374,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_paper_trading_pipeline_cli.py",
+      "language": "python",
+      "sizeLines": 145,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_phase5_full_check_script.py",
+      "language": "python",
+      "sizeLines": 40,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_prediction_market_backtest_phase11.py",
+      "language": "python",
+      "sizeLines": 119,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_prediction_market_collector_phase12.py",
+      "language": "python",
+      "sizeLines": 84,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_prediction_market_phase8.py",
+      "language": "python",
+      "sizeLines": 150,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_prediction_market_provider_phase11.py",
+      "language": "python",
+      "sizeLines": 257,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_prediction_market_reports_phase11.py",
+      "language": "python",
+      "sizeLines": 43,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_prediction_market_storage_phase11.py",
+      "language": "python",
+      "sizeLines": 58,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_prediction_market_timeseries_phase12.py",
+      "language": "python",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_provider_factory.py",
+      "language": "python",
+      "sizeLines": 234,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_reversal_momentum_replication.py",
+      "language": "python",
+      "sizeLines": 126,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_risk_defaults.py",
+      "language": "python",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_risk_engine_phase5.py",
+      "language": "python",
+      "sizeLines": 111,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_runs_repository_postgres.py",
+      "language": "python",
+      "sizeLines": 122,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_runs_repository.py",
+      "language": "python",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_scripts_readme.py",
+      "language": "python",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_settings_futu_alias.py",
+      "language": "python",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_settings_llm_alias.py",
+      "language": "python",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_settings_options_radar.py",
+      "language": "python",
+      "sizeLines": 50,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_settings_prediction_market_phase11.py",
+      "language": "python",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_settings.py",
+      "language": "python",
+      "sizeLines": 122,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_signal_paper_trading_integration.py",
+      "language": "python",
+      "sizeLines": 120,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_storage_artifacts.py",
+      "language": "python",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_strategy_universe_registry.py",
+      "language": "python",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_verify_scripts.py",
+      "language": "python",
+      "sizeLines": 40,
+      "fileCategory": "code"
+    }
+  ],
+  "totalFiles": 581,
+  "filteredByIgnore": 5,
+  "estimatedComplexity": "very-large",
+  "importMap": {
+    ".env.example": [],
+    "AGENTS.md": [],
+    "AI-assisted_quant_research_and_paper-trading_platform.code-workspace": [],
+    "CONTEXT.md": [],
+    "docs/architecture/database_cache_plan.md": [],
+    "docs/architecture/phase_0_architecture.md": [],
+    "docs/architecture/phase_1_architecture.md": [],
+    "docs/architecture/phase_11_architecture.md": [],
+    "docs/architecture/phase_12_architecture.md": [],
+    "docs/architecture/phase_13_architecture.md": [],
+    "docs/architecture/phase_2_architecture.md": [],
+    "docs/architecture/phase_3_architecture.md": [],
+    "docs/architecture/phase_4_architecture.md": [],
+    "docs/architecture/phase_5_architecture.md": [],
+    "docs/architecture/phase_7_architecture.md": [],
+    "docs/architecture/phase_8_architecture.md": [],
+    "docs/architecture/phase_9_api_architecture.md": [],
+    "docs/audits/API_AUDIT.md": [],
+    "docs/audits/FIX_PLAN.md": [],
+    "docs/audits/FRONTEND_BACKEND_AUDIT.md": [],
+    "docs/audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md": [],
+    "docs/audits/MARKET_DATA_SOURCE_AUDIT.md": [],
+    "docs/audits/project_assessment_2026-06-11.html": [],
+    "docs/audits/README.md": [],
+    "docs/audits/remediation_goal_protocol.md": [],
+    "docs/audits/UI_FUNCTION_MATRIX.md": [],
+    "docs/blog/bbs_boway_quant_platform_intro.md": [],
+    "docs/delivery/frontend_refactor_2026-06-11_delivery.md": [],
+    "docs/delivery/phase_0_5_full_platform_check.md": [],
+    "docs/delivery/phase_0_delivery.md": [],
+    "docs/delivery/phase_1_delivery.md": [],
+    "docs/delivery/phase_10_fix_delivery.md": [],
+    "docs/delivery/phase_11_delivery.md": [],
+    "docs/delivery/phase_12_delivery.md": [],
+    "docs/delivery/phase_13_delivery.md": [],
+    "docs/delivery/phase_14_delivery.md": [],
+    "docs/delivery/phase_2_delivery.md": [],
+    "docs/delivery/phase_3_delivery.md": [],
+    "docs/delivery/phase_4_delivery.md": [],
+    "docs/delivery/phase_5_delivery.md": [],
+    "docs/delivery/phase_7_delivery.md": [],
+    "docs/delivery/phase_8_delivery.md": [],
+    "docs/delivery/phase_9_api_delivery.md": [],
+    "docs/delivery/phase_9_frontend_api_integration.md": [],
+    "docs/design/ai_news_integration_plan.md": [],
+    "docs/design/frontend_workflow_usability_review_2026-06-07.md": [],
+    "docs/design/paper_strategy_sleeves_plan.md": [],
+    "docs/design/paper_trading_position_map_redesign.md": [],
+    "docs/execution/phase_0_execution.md": [],
+    "docs/execution/phase_1_execution.md": [],
+    "docs/execution/phase_10_execution.md": [],
+    "docs/execution/phase_11_execution.md": [],
+    "docs/execution/phase_12_execution.md": [],
+    "docs/execution/phase_13_execution.md": [],
+    "docs/execution/phase_13_scheduler_setup.md": [],
+    "docs/execution/phase_14_execution.md": [],
+    "docs/execution/phase_2_execution.md": [],
+    "docs/execution/phase_3_execution.md": [],
+    "docs/execution/phase_4_execution.md": [],
+    "docs/execution/phase_5_execution.md": [],
+    "docs/execution/phase_7_execution.md": [],
+    "docs/execution/phase_8_execution.md": [],
+    "docs/execution/phase_9_api_execution.md": [],
+    "docs/frontend/design_brief.md": [],
+    "docs/frontend/frontend_chinese_version.md": [],
+    "docs/frontend/optimization_log.md": [],
+    "docs/frontend/optimization_plan.md": [],
+    "docs/frontend/usability_issues_verified.md": [],
+    "docs/futu/futu_environment_setup.md": [],
+    "docs/futu/futu_frontend_backend_integration_report.md": [],
+    "docs/futu/futu_integration_design.md": [],
+    "docs/futu/futu_market_data_provider.md": [],
+    "docs/futu/futu_options_data_provider.md": [],
+    "docs/futu/futu_troubleshooting.md": [],
+    "docs/guides/backtester.md": [],
+    "docs/guides/experiments.md": [],
+    "docs/guides/factor-lab.md": [],
+    "docs/guides/paper-trading.md": [],
+    "docs/guides/position-map.md": [],
+    "docs/guides/README.md": [],
+    "docs/guides/strategy-catalog.md": [],
+    "docs/INDEX.md": [],
+    "docs/learning/phase_0_learning.md": [],
+    "docs/learning/phase_1_learning.md": [],
+    "docs/learning/phase_10_learning.md": [],
+    "docs/learning/phase_11_learning.md": [],
+    "docs/learning/phase_12_learning.md": [],
+    "docs/learning/phase_13_learning.md": [],
+    "docs/learning/phase_2_learning.md": [],
+    "docs/learning/phase_3_learning.md": [],
+    "docs/learning/phase_4_learning.md": [],
+    "docs/learning/phase_5_learning.md": [],
+    "docs/learning/phase_7_learning.md": [],
+    "docs/learning/phase_8_learning.md": [],
+    "docs/learning/phase_9_api_learning.md": [],
+    "docs/learning/research_registry_pipeline_2026_06_02.md": [],
+    "docs/learning/ui_workflow_questions_2026_06_02.md": [],
+    "docs/options/buyside_strategy_learning.md": [],
+    "docs/options/local_alphagbm_tools.md": [],
+    "docs/options/options_screener_api.md": [],
+    "docs/options/options_screener_learning.md": [],
+    "docs/options/options_screener_review_2026_05_03.md": [],
+    "docs/options/phase_13_options_radar_codex_prompt.md": [],
+    "docs/OVERVIEW.md": [],
+    "docs/phases/phase_11_design_spec.md": [],
+    "docs/phases/phase_11_next_roadmap.md": [],
+    "docs/phases/phase_12_design_spec.md": [],
+    "docs/phases/phase_13_design_spec.md": [],
+    "docs/phases/phase14_multi_sub.md": [],
+    "docs/polymarket/polymarket_charts_and_metrics.md": [],
+    "docs/polymarket/polymarket_history_collection.md": [],
+    "docs/polymarket/polymarket_read_only_integration.md": [],
+    "docs/polymarket/polymarket_safety_boundaries.md": [],
+    "docs/polymarket/polymarket_strategy_backtest_learning.md": [],
+    "docs/polymarket/polymarket_timeseries_backtest_learning.md": [],
+    "docs/polymarket/polymarket_troubleshooting.md": [],
+    "docs/replications/reversal_momentum_replication.md": [],
+    "docs/superpowers/plans/2026-04-25-phase-0-implementation.md": [],
+    "docs/SYSTEM_DESIGN_RESEARCH.md": [],
+    "environment.yml": [],
+    "pyproject.toml": [],
+    "README_zh.md": [],
+    "README.md": [],
+    "scripts/backup_api_runs.py": [],
+    "scripts/check_api_keys.py": [],
+    "scripts/cleanup_api_run_duckdb.py": [],
+    "scripts/dev-stop.ps1": [],
+    "scripts/dev.ps1": [],
+    "scripts/README.md": [],
+    "scripts/refresh_earnings_calendar.py": [],
+    "scripts/refresh_options_universe.py": [],
+    "scripts/refresh_vix_history.py": [],
+    "scripts/register_options_radar_task.ps1": [],
+    "scripts/run_options_radar.ps1": [],
+    "scripts/run_spy_qqq_phase5_full_check.py": [],
+    "scripts/sql/001_runs_index.sql": [],
+    "scripts/start_phase9_full_stack.ps1": [],
+    "scripts/stop_phase9_full_stack.ps1": [],
+    "scripts/verify_futu_connection.py": [],
+    "scripts/verify.ps1": [],
+    "scripts/verify.sh": [],
+    "src/frontend/.env.example": [],
+    "src/frontend/app/agent-studio/page.tsx": [
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/AgentTaskForm.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/backtest/[runId]/loading.tsx": [
+      "src/frontend/components/RouteLoading.tsx"
+    ],
+    "src/frontend/app/backtest/[runId]/page.tsx": [
+      "src/frontend/components/DataPreviewTable.tsx",
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/components/EquityComparisonChart.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/equity.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/backtest/loading.tsx": [
+      "src/frontend/components/RouteLoading.tsx"
+    ],
+    "src/frontend/app/backtest/page.tsx": [
+      "src/frontend/components/DataPreviewTable.tsx",
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/components/EquityComparisonChart.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/BacktestForm.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/equity.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/runSource.ts",
+      "src/frontend/lib/serverApi.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/data-explorer/loading.tsx": [
+      "src/frontend/components/RouteLoading.tsx"
+    ],
+    "src/frontend/app/data-explorer/page.tsx": [
+      "src/frontend/components/CandlestickChart.tsx",
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/DataExplorerControls.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/docs/reversal-momentum/page.tsx": [
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/error.tsx": [],
+    "src/frontend/app/experiments/page.tsx": [
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/ExperimentRunForm.tsx",
+      "src/frontend/components/forms/ExperimentTabs.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/factor-lab/[runId]/page.tsx": [
+      "src/frontend/components/DataPreviewTable.tsx",
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/FactorRunCharts.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/factor-lab/loading.tsx": [
+      "src/frontend/components/RouteLoading.tsx"
+    ],
+    "src/frontend/app/factor-lab/page.tsx": [
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/FactorLabDashboard.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/runSource.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/globals.css": [],
+    "src/frontend/app/layout.tsx": [
+      "src/frontend/app/globals.css",
+      "src/frontend/components/LocaleProvider.tsx",
+      "src/frontend/components/Providers.tsx",
+      "src/frontend/components/SafetyStrip.tsx",
+      "src/frontend/components/Sidebar.tsx",
+      "src/frontend/components/TopBar.tsx",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/options-buyside/page.tsx": [
+      "src/frontend/components/forms/BuySideOptionsAssistant.tsx",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/options-radar/[symbol]/page.tsx": [
+      "src/frontend/components/DataPreviewTable.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/OptionsRadarSymbolLive.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/options-radar/page.tsx": [
+      "src/frontend/components/forms/OptionsRadarView.tsx",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/options-screener/page.tsx": [
+      "src/frontend/components/forms/OptionsScreenerForm.tsx",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/options-tools/page.tsx": [
+      "src/frontend/components/forms/OptionsToolsWorkbench.tsx",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/order-book/loading.tsx": [
+      "src/frontend/components/RouteLoading.tsx"
+    ],
+    "src/frontend/app/order-book/page.tsx": [
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/PMHistoryBacktestForm.tsx",
+      "src/frontend/components/forms/PMRunForm.tsx",
+      "src/frontend/components/forms/PredictionMarketDataControls.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/page.tsx": [
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/runSource.ts",
+      "src/frontend/lib/serverApi.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/paper-trading/[runId]/page.tsx": [
+      "src/frontend/components/DataPreviewTable.tsx",
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/serverApi.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/paper-trading/loading.tsx": [
+      "src/frontend/components/RouteLoading.tsx"
+    ],
+    "src/frontend/app/paper-trading/page.tsx": [
+      "src/frontend/components/DataPreviewTable.tsx",
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/AccountTradePanel.tsx",
+      "src/frontend/components/forms/PaperRunForm.tsx",
+      "src/frontend/components/forms/PendingOrderCancelButton.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/components/ui/Tabs.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/runSource.ts",
+      "src/frontend/lib/serverApi.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/position-map/loading.tsx": [
+      "src/frontend/components/RouteLoading.tsx"
+    ],
+    "src/frontend/app/position-map/page.tsx": [
+      "src/frontend/components/AccountRefreshControl.tsx",
+      "src/frontend/components/DataPreviewTable.tsx",
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/runSource.ts",
+      "src/frontend/lib/serverApi.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/replications/[runId]/page.tsx": [
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/StrategyCatalogWorkbench.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/serverApi.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/replications/page.tsx": [
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/forms/StrategyCatalogWorkbench.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/serverApi.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/app/settings/page.tsx": [
+      "src/frontend/components/ErrorBanner.tsx",
+      "src/frontend/components/LocaleToggle.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/components/AccountRefreshControl.tsx": [],
+    "src/frontend/components/CandlestickChart.tsx": [
+      "src/frontend/lib/api.ts"
+    ],
+    "src/frontend/components/DataPreviewTable.tsx": [
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/lib/api.ts"
+    ],
+    "src/frontend/components/DataSourceBadge.tsx": [],
+    "src/frontend/components/EmptyState.tsx": [],
+    "src/frontend/components/EquityComparisonChart.tsx": [],
+    "src/frontend/components/ErrorBanner.tsx": [],
+    "src/frontend/components/FactorRunCharts.tsx": [
+      "src/frontend/lib/api.ts"
+    ],
+    "src/frontend/components/forms/AccountTradePanel.tsx": [
+      "src/frontend/lib/accountRebalanceStrategies.ts",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/AgentTaskForm.tsx": [
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/BacktestForm.tsx": [
+      "src/frontend/components/forms/FutuProviderHint.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/BuySideOptionsAssistant.tsx": [
+      "src/frontend/components/InfoTip.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/buySideOptionsPayload.ts",
+      "src/frontend/lib/hydration.ts"
+    ],
+    "src/frontend/components/forms/DataExplorerControls.tsx": [
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/ExperimentRunForm.tsx": [
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/experimentRunPayload.ts",
+      "src/frontend/lib/hydration.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/ExperimentTabs.tsx": [
+      "src/frontend/components/EmptyState.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/components/ui/Tabs.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/experimentRunPayload.ts",
+      "src/frontend/lib/experimentSummary.ts",
+      "src/frontend/lib/hydration.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/FactorLabControls.tsx": [
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/FactorLabDashboard.tsx": [
+      "src/frontend/components/DataPreviewTable.tsx",
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/forms/FactorLabControls.tsx",
+      "src/frontend/components/forms/FactorRunForm.tsx",
+      "src/frontend/components/InfoTip.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/components/ui/Tabs.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/factorLabHandoff.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/FactorRunForm.tsx": [
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/FutuProviderHint.tsx": [
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/OptionsRadarSymbolLive.tsx": [
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts"
+    ],
+    "src/frontend/components/forms/OptionsRadarView.tsx": [
+      "src/frontend/components/InfoTip.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/OptionsScreenerForm.tsx": [
+      "src/frontend/components/InfoTip.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/OptionsToolsWorkbench.tsx": [
+      "src/frontend/components/InfoTip.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/optionsToolsLive.ts"
+    ],
+    "src/frontend/components/forms/PaperRunForm.tsx": [
+      "src/frontend/components/forms/FutuProviderHint.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts"
+    ],
+    "src/frontend/components/forms/PendingOrderCancelButton.tsx": [
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts"
+    ],
+    "src/frontend/components/forms/PMHistoryBacktestForm.tsx": [
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts"
+    ],
+    "src/frontend/components/forms/PMRunForm.tsx": [
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts"
+    ],
+    "src/frontend/components/forms/PredictionMarketDataControls.tsx": [
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/forms/StrategyCatalogWorkbench.tsx": [
+      "src/frontend/components/DataPreviewTable.tsx",
+      "src/frontend/components/DataSourceBadge.tsx",
+      "src/frontend/components/forms/FutuProviderHint.tsx",
+      "src/frontend/components/ui/primitives.tsx",
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts",
+      "src/frontend/lib/hydration.ts",
+      "src/frontend/lib/locale.ts",
+      "src/frontend/lib/strategyPayload.ts"
+    ],
+    "src/frontend/components/InfoTip.tsx": [],
+    "src/frontend/components/LoadingSkeleton.tsx": [],
+    "src/frontend/components/LocaleProvider.tsx": [
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/LocaleToggle.tsx": [
+      "src/frontend/components/LocaleProvider.tsx",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/Providers.tsx": [],
+    "src/frontend/components/RouteLoading.tsx": [],
+    "src/frontend/components/SafetyStrip.tsx": [
+      "src/frontend/lib/serverApi.ts",
+      "src/frontend/lib/serverLocale.ts"
+    ],
+    "src/frontend/components/Sidebar.tsx": [
+      "src/frontend/components/LocaleProvider.tsx",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/TopBar.tsx": [
+      "src/frontend/components/LocaleProvider.tsx",
+      "src/frontend/components/LocaleToggle.tsx",
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/components/ui/primitives.tsx": [],
+    "src/frontend/components/ui/Tabs.tsx": [],
+    "src/frontend/eslint.config.mjs": [],
+    "src/frontend/hooks/use-mobile.ts": [],
+    "src/frontend/lib/accountRebalanceStrategies.test.ts": [
+      "src/frontend/lib/accountRebalanceStrategies.ts",
+      "src/frontend/lib/api.ts"
+    ],
+    "src/frontend/lib/accountRebalanceStrategies.ts": [
+      "src/frontend/lib/api.ts"
+    ],
+    "src/frontend/lib/api.test.ts": [
+      "src/frontend/lib/api.ts"
+    ],
+    "src/frontend/lib/api.ts": [],
+    "src/frontend/lib/apiClient.test.ts": [
+      "src/frontend/lib/apiClient.ts"
+    ],
+    "src/frontend/lib/apiClient.ts": [],
+    "src/frontend/lib/buySideOptionsPayload.test.ts": [
+      "src/frontend/lib/buySideOptionsPayload.ts"
+    ],
+    "src/frontend/lib/buySideOptionsPayload.ts": [],
+    "src/frontend/lib/equity.test.ts": [
+      "src/frontend/lib/equity.ts"
+    ],
+    "src/frontend/lib/equity.ts": [],
+    "src/frontend/lib/experimentRunPayload.test.ts": [
+      "src/frontend/lib/experimentRunPayload.ts"
+    ],
+    "src/frontend/lib/experimentRunPayload.ts": [
+      "src/frontend/lib/apiClient.ts"
+    ],
+    "src/frontend/lib/experimentSummary.test.ts": [
+      "src/frontend/lib/experimentSummary.ts"
+    ],
+    "src/frontend/lib/experimentSummary.ts": [],
+    "src/frontend/lib/factorLabHandoff.test.ts": [
+      "src/frontend/lib/factorLabHandoff.ts"
+    ],
+    "src/frontend/lib/factorLabHandoff.ts": [
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/lib/hydration.ts": [],
+    "src/frontend/lib/locale.ts": [],
+    "src/frontend/lib/optionsToolsLive.test.ts": [
+      "src/frontend/lib/optionsToolsLive.ts"
+    ],
+    "src/frontend/lib/optionsToolsLive.ts": [
+      "src/frontend/lib/api.ts",
+      "src/frontend/lib/apiClient.ts"
+    ],
+    "src/frontend/lib/runSource.test.ts": [
+      "src/frontend/lib/runSource.ts"
+    ],
+    "src/frontend/lib/runSource.ts": [],
+    "src/frontend/lib/serverApi.ts": [
+      "src/frontend/lib/api.ts"
+    ],
+    "src/frontend/lib/serverLocale.ts": [
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/lib/strategyPayload.test.ts": [
+      "src/frontend/lib/strategyPayload.ts"
+    ],
+    "src/frontend/lib/strategyPayload.ts": [],
+    "src/frontend/lib/utils.ts": [],
+    "src/frontend/middleware.ts": [
+      "src/frontend/lib/locale.ts"
+    ],
+    "src/frontend/next-env.d.ts": [],
+    "src/frontend/next.config.ts": [],
+    "src/frontend/package.json": [],
+    "src/frontend/playwright.config.ts": [],
+    "src/frontend/postcss.config.mjs": [],
+    "src/frontend/README.md": [],
+    "src/frontend/scripts/capture-after-screenshots.mjs": [],
+    "src/frontend/tests/e2e/experiments-workbench.spec.ts": [],
+    "src/frontend/tests/e2e/locale-toggle.spec.ts": [],
+    "src/frontend/tests/e2e/navigation-layout.spec.ts": [],
+    "src/frontend/tests/e2e/options-tools-and-charts.spec.ts": [],
+    "src/frontend/tests/e2e/phase10-smoke.spec.ts": [],
+    "src/frontend/tests/e2e/phase13-radar-smoke.spec.ts": [],
+    "src/frontend/tests/e2e/phase14-buyside-smoke.spec.ts": [],
+    "src/frontend/tests/e2e/position-map.spec.ts": [],
+    "src/frontend/tests/e2e/reversal-momentum-replication.spec.ts": [],
+    "src/frontend/tests/e2e/run-detail-routes.spec.ts": [],
+    "src/frontend/tsconfig.json": [],
+    "src/frontend/vitest.config.ts": [],
+    "src/quant_system/__init__.py": [],
+    "src/quant_system/__main__.py": [
+      "src/quant_system/cli.py"
+    ],
+    "src/quant_system/agent/__init__.py": [
+      "src/quant_system/agent/models.py",
+      "src/quant_system/agent/runner.py"
+    ],
+    "src/quant_system/agent/audit.py": [
+      "src/quant_system/agent/models.py"
+    ],
+    "src/quant_system/agent/candidate_pool.py": [
+      "src/quant_system/agent/models.py"
+    ],
+    "src/quant_system/agent/llm/__init__.py": [
+      "src/quant_system/agent/llm/base.py",
+      "src/quant_system/agent/llm/openai_client.py",
+      "src/quant_system/agent/llm/stub.py",
+      "src/quant_system/config/settings.py"
+    ],
+    "src/quant_system/agent/llm/base.py": [],
+    "src/quant_system/agent/llm/openai_client.py": [],
+    "src/quant_system/agent/llm/stub.py": [],
+    "src/quant_system/agent/models.py": [],
+    "src/quant_system/agent/runner.py": [
+      "src/quant_system/agent/audit.py",
+      "src/quant_system/agent/candidate_pool.py",
+      "src/quant_system/agent/llm/base.py",
+      "src/quant_system/agent/llm/stub.py",
+      "src/quant_system/agent/models.py",
+      "src/quant_system/agent/workflows/__init__.py",
+      "src/quant_system/agent/workflows/experiment_design.py",
+      "src/quant_system/agent/workflows/factor_proposal.py",
+      "src/quant_system/agent/workflows/leakage_audit.py",
+      "src/quant_system/agent/workflows/result_summary.py"
+    ],
+    "src/quant_system/agent/safety.py": [
+      "src/quant_system/agent/models.py"
+    ],
+    "src/quant_system/agent/tools.py": [
+      "src/quant_system/agent/llm/base.py",
+      "src/quant_system/experiments/models.py",
+      "src/quant_system/factors/registry.py"
+    ],
+    "src/quant_system/agent/workflows/__init__.py": [
+      "src/quant_system/agent/workflows/__init__.py",
+      "src/quant_system/agent/workflows/experiment_design.py",
+      "src/quant_system/agent/workflows/factor_proposal.py",
+      "src/quant_system/agent/workflows/leakage_audit.py",
+      "src/quant_system/agent/workflows/result_summary.py"
+    ],
+    "src/quant_system/agent/workflows/experiment_design.py": [
+      "src/quant_system/agent/audit.py",
+      "src/quant_system/agent/candidate_pool.py",
+      "src/quant_system/agent/llm/base.py",
+      "src/quant_system/agent/models.py",
+      "src/quant_system/agent/tools.py",
+      "src/quant_system/experiments/models.py"
+    ],
+    "src/quant_system/agent/workflows/factor_proposal.py": [
+      "src/quant_system/agent/audit.py",
+      "src/quant_system/agent/candidate_pool.py",
+      "src/quant_system/agent/llm/base.py",
+      "src/quant_system/agent/models.py",
+      "src/quant_system/agent/tools.py"
+    ],
+    "src/quant_system/agent/workflows/leakage_audit.py": [
+      "src/quant_system/agent/audit.py",
+      "src/quant_system/agent/candidate_pool.py",
+      "src/quant_system/agent/llm/base.py",
+      "src/quant_system/agent/models.py",
+      "src/quant_system/agent/tools.py"
+    ],
+    "src/quant_system/agent/workflows/result_summary.py": [
+      "src/quant_system/agent/audit.py",
+      "src/quant_system/agent/candidate_pool.py",
+      "src/quant_system/agent/llm/base.py",
+      "src/quant_system/agent/models.py",
+      "src/quant_system/agent/tools.py"
+    ],
+    "src/quant_system/api/__init__.py": [],
+    "src/quant_system/api/bootstrap.py": [
+      "src/quant_system/config/settings.py"
+    ],
+    "src/quant_system/api/dependencies.py": [
+      "src/quant_system/config/settings.py"
+    ],
+    "src/quant_system/api/errors.py": [
+      "src/quant_system/data/provider_factory.py"
+    ],
+    "src/quant_system/api/routes/__init__.py": [],
+    "src/quant_system/api/routes/agent.py": [
+      "src/quant_system/agent/llm/__init__.py",
+      "src/quant_system/agent/runner.py",
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/agent.py",
+      "src/quant_system/api/schemas/common.py"
+    ],
+    "src/quant_system/api/routes/backtest.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/backtest.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/backtest/pipeline.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/storage/runs_repository.py"
+    ],
+    "src/quant_system/api/routes/benchmark.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/benchmark.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/backtest/benchmark.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/data/providers/sample.py"
+    ],
+    "src/quant_system/api/routes/data.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/api/schemas/data.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/data/providers/sample.py",
+      "src/quant_system/data/storage.py"
+    ],
+    "src/quant_system/api/routes/experiments.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/api/schemas/experiments.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/experiments/runner.py"
+    ],
+    "src/quant_system/api/routes/factors.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/api/schemas/factors.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/factors/lab.py",
+      "src/quant_system/factors/pipeline.py",
+      "src/quant_system/factors/registry.py",
+      "src/quant_system/storage/runs_repository.py"
+    ],
+    "src/quant_system/api/routes/health.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/schemas/health.py"
+    ],
+    "src/quant_system/api/routes/market_data.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/api/schemas/market_data.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/data/providers/futu.py",
+      "src/quant_system/data/providers/sample.py"
+    ],
+    "src/quant_system/api/routes/options_radar.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/schemas/options_radar.py",
+      "src/quant_system/data/providers/futu.py",
+      "src/quant_system/options/data_refresh.py",
+      "src/quant_system/options/earnings_calendar.py",
+      "src/quant_system/options/market_regime.py",
+      "src/quant_system/options/models.py",
+      "src/quant_system/options/radar_storage.py",
+      "src/quant_system/options/radar.py",
+      "src/quant_system/options/rate_limiter.py",
+      "src/quant_system/options/sample_provider.py",
+      "src/quant_system/options/scan_lock.py",
+      "src/quant_system/options/universe.py"
+    ],
+    "src/quant_system/api/routes/options.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/api/schemas/options_radar.py",
+      "src/quant_system/api/schemas/options.py",
+      "src/quant_system/data/providers/futu.py",
+      "src/quant_system/options/buy_side_decision.py",
+      "src/quant_system/options/local_research.py",
+      "src/quant_system/options/local_tools.py",
+      "src/quant_system/options/market_regime.py",
+      "src/quant_system/options/models.py",
+      "src/quant_system/options/screener.py"
+    ],
+    "src/quant_system/api/routes/paper.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/api/schemas/paper.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/execution/account_service.py",
+      "src/quant_system/execution/account_storage.py",
+      "src/quant_system/execution/account.py",
+      "src/quant_system/execution/pipeline.py",
+      "src/quant_system/execution/price_source.py",
+      "src/quant_system/storage/runs_repository.py",
+      "src/quant_system/strategies/registry.py"
+    ],
+    "src/quant_system/api/routes/prediction_market.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/api/schemas/prediction_market.py",
+      "src/quant_system/prediction_market/backtest.py",
+      "src/quant_system/prediction_market/charts.py",
+      "src/quant_system/prediction_market/collector.py",
+      "src/quant_system/prediction_market/data/polymarket_readonly.py",
+      "src/quant_system/prediction_market/execution_threshold.py",
+      "src/quant_system/prediction_market/optimizer/greedy_stub.py",
+      "src/quant_system/prediction_market/pipeline.py",
+      "src/quant_system/prediction_market/provider_factory.py",
+      "src/quant_system/prediction_market/reporting.py",
+      "src/quant_system/prediction_market/storage.py",
+      "src/quant_system/prediction_market/timeseries_backtest.py"
+    ],
+    "src/quant_system/api/routes/replications.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/errors.py",
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/api/schemas/replications.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/data/providers/futu.py",
+      "src/quant_system/replication/reversal_momentum.py"
+    ],
+    "src/quant_system/api/routes/runs.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/schemas/runs.py",
+      "src/quant_system/storage/runs_repository.py"
+    ],
+    "src/quant_system/api/routes/settings.py": [
+      "src/quant_system/api/dependencies.py",
+      "src/quant_system/api/safety/masking.py",
+      "src/quant_system/api/schemas/settings.py"
+    ],
+    "src/quant_system/api/routes/strategies.py": [
+      "src/quant_system/api/schemas/catalog.py",
+      "src/quant_system/strategies/registry.py"
+    ],
+    "src/quant_system/api/routes/universes.py": [
+      "src/quant_system/api/schemas/catalog.py",
+      "src/quant_system/universe/registry.py"
+    ],
+    "src/quant_system/api/safety/__init__.py": [],
+    "src/quant_system/api/safety/masking.py": [],
+    "src/quant_system/api/safety/middleware.py": [
+      "src/quant_system/config/settings.py"
+    ],
+    "src/quant_system/api/schemas/__init__.py": [],
+    "src/quant_system/api/schemas/agent.py": [],
+    "src/quant_system/api/schemas/backtest.py": [],
+    "src/quant_system/api/schemas/benchmark.py": [],
+    "src/quant_system/api/schemas/catalog.py": [
+      "src/quant_system/strategies/registry.py",
+      "src/quant_system/universe/registry.py"
+    ],
+    "src/quant_system/api/schemas/common.py": [],
+    "src/quant_system/api/schemas/data.py": [],
+    "src/quant_system/api/schemas/experiments.py": [
+      "src/quant_system/experiments/models.py"
+    ],
+    "src/quant_system/api/schemas/factors.py": [
+      "src/quant_system/factors/base.py",
+      "src/quant_system/universe/registry.py"
+    ],
+    "src/quant_system/api/schemas/health.py": [],
+    "src/quant_system/api/schemas/market_data.py": [],
+    "src/quant_system/api/schemas/options_radar.py": [],
+    "src/quant_system/api/schemas/options.py": [
+      "src/quant_system/options/models.py"
+    ],
+    "src/quant_system/api/schemas/paper.py": [],
+    "src/quant_system/api/schemas/prediction_market.py": [
+      "src/quant_system/prediction_market/backtest.py",
+      "src/quant_system/prediction_market/models.py",
+      "src/quant_system/prediction_market/timeseries_backtest.py"
+    ],
+    "src/quant_system/api/schemas/replications.py": [],
+    "src/quant_system/api/schemas/runs.py": [],
+    "src/quant_system/api/schemas/settings.py": [],
+    "src/quant_system/api/server.py": [
+      "src/quant_system/api/bootstrap.py",
+      "src/quant_system/api/routes/__init__.py",
+      "src/quant_system/api/routes/agent.py",
+      "src/quant_system/api/routes/backtest.py",
+      "src/quant_system/api/routes/benchmark.py",
+      "src/quant_system/api/routes/data.py",
+      "src/quant_system/api/routes/experiments.py",
+      "src/quant_system/api/routes/factors.py",
+      "src/quant_system/api/routes/health.py",
+      "src/quant_system/api/routes/market_data.py",
+      "src/quant_system/api/routes/options_radar.py",
+      "src/quant_system/api/routes/options.py",
+      "src/quant_system/api/routes/paper.py",
+      "src/quant_system/api/routes/prediction_market.py",
+      "src/quant_system/api/routes/replications.py",
+      "src/quant_system/api/routes/runs.py",
+      "src/quant_system/api/routes/strategies.py",
+      "src/quant_system/api/routes/universes.py",
+      "src/quant_system/api/safety/middleware.py",
+      "src/quant_system/config/settings.py",
+      "src/quant_system/logging/__init__.py",
+      "src/quant_system/logging/setup.py",
+      "src/quant_system/options/data_refresh.py",
+      "src/quant_system/options/radar_storage.py",
+      "src/quant_system/options/scan_lock.py"
+    ],
+    "src/quant_system/backtest/__init__.py": [
+      "src/quant_system/backtest/engine.py",
+      "src/quant_system/backtest/models.py",
+      "src/quant_system/backtest/strategy.py"
+    ],
+    "src/quant_system/backtest/benchmark.py": [
+      "src/quant_system/backtest/metrics.py"
+    ],
+    "src/quant_system/backtest/broker.py": [
+      "src/quant_system/backtest/models.py",
+      "src/quant_system/backtest/portfolio.py"
+    ],
+    "src/quant_system/backtest/engine.py": [
+      "src/quant_system/backtest/broker.py",
+      "src/quant_system/backtest/metrics.py",
+      "src/quant_system/backtest/models.py",
+      "src/quant_system/backtest/order_generation.py",
+      "src/quant_system/backtest/portfolio.py",
+      "src/quant_system/backtest/strategy.py"
+    ],
+    "src/quant_system/backtest/metrics.py": [],
+    "src/quant_system/backtest/models.py": [],
+    "src/quant_system/backtest/order_generation.py": [
+      "src/quant_system/backtest/models.py",
+      "src/quant_system/backtest/portfolio.py"
+    ],
+    "src/quant_system/backtest/pipeline.py": [
+      "src/quant_system/backtest/benchmark.py",
+      "src/quant_system/backtest/engine.py",
+      "src/quant_system/backtest/metrics.py",
+      "src/quant_system/backtest/models.py",
+      "src/quant_system/backtest/reporting.py",
+      "src/quant_system/backtest/storage.py",
+      "src/quant_system/backtest/strategy.py",
+      "src/quant_system/config/settings.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/experiments/models.py",
+      "src/quant_system/experiments/scoring.py",
+      "src/quant_system/factors/pipeline.py",
+      "src/quant_system/factors/registry.py",
+      "src/quant_system/strategies/registry.py",
+      "src/quant_system/universe/registry.py"
+    ],
+    "src/quant_system/backtest/portfolio.py": [
+      "src/quant_system/backtest/models.py"
+    ],
+    "src/quant_system/backtest/reporting.py": [
+      "src/quant_system/backtest/metrics.py",
+      "src/quant_system/backtest/models.py"
+    ],
+    "src/quant_system/backtest/storage.py": [
+      "src/quant_system/backtest/metrics.py",
+      "src/quant_system/storage/artifacts.py"
+    ],
+    "src/quant_system/backtest/strategy.py": [
+      "src/quant_system/backtest/models.py"
+    ],
+    "src/quant_system/cli.py": [
+      "src/quant_system/__init__.py",
+      "src/quant_system/agent/llm/base.py",
+      "src/quant_system/agent/llm/stub.py",
+      "src/quant_system/agent/runner.py",
+      "src/quant_system/backtest/pipeline.py",
+      "src/quant_system/config/settings.py",
+      "src/quant_system/data/pipeline.py",
+      "src/quant_system/data/providers/futu.py",
+      "src/quant_system/execution/pipeline.py",
+      "src/quant_system/experiments/config.py",
+      "src/quant_system/experiments/runner.py",
+      "src/quant_system/factors/lab.py",
+      "src/quant_system/factors/pipeline.py",
+      "src/quant_system/factors/registry.py",
+      "src/quant_system/logging/setup.py",
+      "src/quant_system/options/buy_side_decision.py",
+      "src/quant_system/options/data_refresh.py",
+      "src/quant_system/options/earnings_calendar.py",
+      "src/quant_system/options/market_regime.py",
+      "src/quant_system/options/models.py",
+      "src/quant_system/options/radar_storage.py",
+      "src/quant_system/options/radar.py",
+      "src/quant_system/options/rate_limiter.py",
+      "src/quant_system/options/sample_provider.py",
+      "src/quant_system/options/scan_lock.py",
+      "src/quant_system/options/universe.py",
+      "src/quant_system/prediction_market/charts.py",
+      "src/quant_system/prediction_market/collector.py",
+      "src/quant_system/prediction_market/data/sample_provider.py",
+      "src/quant_system/prediction_market/execution_threshold.py",
+      "src/quant_system/prediction_market/optimizer/greedy_stub.py",
+      "src/quant_system/prediction_market/pipeline.py",
+      "src/quant_system/prediction_market/provider_factory.py",
+      "src/quant_system/prediction_market/reporting.py",
+      "src/quant_system/prediction_market/storage.py",
+      "src/quant_system/prediction_market/timeseries_backtest.py",
+      "src/quant_system/storage/options_cache.py"
+    ],
+    "src/quant_system/config/__init__.py": [
+      "src/quant_system/config/settings.py"
+    ],
+    "src/quant_system/config/settings.py": [],
+    "src/quant_system/core/__init__.py": [
+      "src/quant_system/core/interfaces.py"
+    ],
+    "src/quant_system/core/interfaces.py": [],
+    "src/quant_system/data/__init__.py": [
+      "src/quant_system/data/pipeline.py",
+      "src/quant_system/data/schema.py",
+      "src/quant_system/data/storage.py",
+      "src/quant_system/data/validation.py"
+    ],
+    "src/quant_system/data/pipeline.py": [
+      "src/quant_system/config/settings.py",
+      "src/quant_system/data/providers/sample.py",
+      "src/quant_system/data/providers/tiingo.py",
+      "src/quant_system/data/storage.py",
+      "src/quant_system/data/validation.py"
+    ],
+    "src/quant_system/data/provider_factory.py": [
+      "src/quant_system/config/settings.py",
+      "src/quant_system/data/providers/base.py",
+      "src/quant_system/data/providers/futu.py",
+      "src/quant_system/data/providers/sample.py",
+      "src/quant_system/data/providers/tiingo.py",
+      "src/quant_system/data/storage.py"
+    ],
+    "src/quant_system/data/providers/__init__.py": [
+      "src/quant_system/data/providers/csv.py",
+      "src/quant_system/data/providers/futu.py",
+      "src/quant_system/data/providers/sample.py",
+      "src/quant_system/data/providers/tiingo.py"
+    ],
+    "src/quant_system/data/providers/base.py": [],
+    "src/quant_system/data/providers/csv.py": [
+      "src/quant_system/data/schema.py"
+    ],
+    "src/quant_system/data/providers/futu.py": [
+      "src/quant_system/data/schema.py",
+      "src/quant_system/storage/options_cache.py"
+    ],
+    "src/quant_system/data/providers/sample.py": [
+      "src/quant_system/data/schema.py"
+    ],
+    "src/quant_system/data/providers/tiingo.py": [
+      "src/quant_system/data/schema.py"
+    ],
+    "src/quant_system/data/schema.py": [],
+    "src/quant_system/data/storage.py": [
+      "src/quant_system/data/schema.py",
+      "src/quant_system/data/validation.py"
+    ],
+    "src/quant_system/data/validation.py": [
+      "src/quant_system/data/schema.py"
+    ],
+    "src/quant_system/execution/__init__.py": [
+      "src/quant_system/execution/models.py",
+      "src/quant_system/execution/order_manager.py",
+      "src/quant_system/execution/paper_broker.py",
+      "src/quant_system/execution/portfolio.py"
+    ],
+    "src/quant_system/execution/account_service.py": [
+      "src/quant_system/config/settings.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/execution/account.py",
+      "src/quant_system/execution/models.py",
+      "src/quant_system/execution/paper_broker.py",
+      "src/quant_system/execution/portfolio.py",
+      "src/quant_system/execution/price_source.py",
+      "src/quant_system/factors/pipeline.py"
+    ],
+    "src/quant_system/execution/account_storage.py": [
+      "src/quant_system/execution/account.py"
+    ],
+    "src/quant_system/execution/account.py": [
+      "src/quant_system/execution/models.py"
+    ],
+    "src/quant_system/execution/broker.py": [
+      "src/quant_system/execution/models.py"
+    ],
+    "src/quant_system/execution/models.py": [],
+    "src/quant_system/execution/order_manager.py": [
+      "src/quant_system/execution/broker.py",
+      "src/quant_system/execution/models.py",
+      "src/quant_system/risk/engine.py",
+      "src/quant_system/risk/models.py"
+    ],
+    "src/quant_system/execution/paper_broker.py": [
+      "src/quant_system/execution/models.py",
+      "src/quant_system/execution/portfolio.py"
+    ],
+    "src/quant_system/execution/pipeline.py": [
+      "src/quant_system/backtest/models.py",
+      "src/quant_system/backtest/strategy.py",
+      "src/quant_system/config/settings.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/execution/models.py",
+      "src/quant_system/execution/order_manager.py",
+      "src/quant_system/execution/paper_broker.py",
+      "src/quant_system/execution/portfolio.py",
+      "src/quant_system/execution/reporting.py",
+      "src/quant_system/execution/storage.py",
+      "src/quant_system/factors/pipeline.py",
+      "src/quant_system/risk/engine.py",
+      "src/quant_system/risk/models.py"
+    ],
+    "src/quant_system/execution/portfolio.py": [
+      "src/quant_system/execution/models.py"
+    ],
+    "src/quant_system/execution/price_source.py": [
+      "src/quant_system/config/settings.py",
+      "src/quant_system/data/provider_factory.py"
+    ],
+    "src/quant_system/execution/reporting.py": [],
+    "src/quant_system/execution/storage.py": [
+      "src/quant_system/storage/artifacts.py"
+    ],
+    "src/quant_system/experiments/__init__.py": [
+      "src/quant_system/experiments/config.py",
+      "src/quant_system/experiments/models.py",
+      "src/quant_system/experiments/runner.py"
+    ],
+    "src/quant_system/experiments/config.py": [
+      "src/quant_system/experiments/models.py"
+    ],
+    "src/quant_system/experiments/models.py": [],
+    "src/quant_system/experiments/reporting.py": [
+      "src/quant_system/experiments/models.py"
+    ],
+    "src/quant_system/experiments/runner.py": [
+      "src/quant_system/backtest/engine.py",
+      "src/quant_system/backtest/metrics.py",
+      "src/quant_system/backtest/models.py",
+      "src/quant_system/backtest/strategy.py",
+      "src/quant_system/config/settings.py",
+      "src/quant_system/data/providers/base.py",
+      "src/quant_system/data/providers/sample.py",
+      "src/quant_system/experiments/config.py",
+      "src/quant_system/experiments/models.py",
+      "src/quant_system/experiments/reporting.py",
+      "src/quant_system/experiments/scoring.py",
+      "src/quant_system/experiments/storage.py",
+      "src/quant_system/experiments/sweep.py",
+      "src/quant_system/experiments/walk_forward.py",
+      "src/quant_system/factors/pipeline.py",
+      "src/quant_system/factors/registry.py"
+    ],
+    "src/quant_system/experiments/scoring.py": [
+      "src/quant_system/experiments/models.py"
+    ],
+    "src/quant_system/experiments/storage.py": [
+      "src/quant_system/experiments/models.py",
+      "src/quant_system/storage/artifacts.py"
+    ],
+    "src/quant_system/experiments/sweep.py": [
+      "src/quant_system/experiments/models.py"
+    ],
+    "src/quant_system/experiments/walk_forward.py": [
+      "src/quant_system/experiments/models.py"
+    ],
+    "src/quant_system/factors/__init__.py": [
+      "src/quant_system/factors/base.py",
+      "src/quant_system/factors/examples.py",
+      "src/quant_system/factors/registry.py"
+    ],
+    "src/quant_system/factors/base.py": [],
+    "src/quant_system/factors/evaluation.py": [],
+    "src/quant_system/factors/examples.py": [
+      "src/quant_system/factors/base.py"
+    ],
+    "src/quant_system/factors/lab.py": [
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/experiments/models.py",
+      "src/quant_system/experiments/walk_forward.py",
+      "src/quant_system/factors/evaluation.py",
+      "src/quant_system/factors/pipeline.py",
+      "src/quant_system/factors/registry.py",
+      "src/quant_system/universe/registry.py"
+    ],
+    "src/quant_system/factors/library/__init__.py": [],
+    "src/quant_system/factors/library/alpha101.py": [
+      "src/quant_system/factors/base.py"
+    ],
+    "src/quant_system/factors/pipeline.py": [
+      "src/quant_system/config/settings.py",
+      "src/quant_system/data/provider_factory.py",
+      "src/quant_system/factors/base.py",
+      "src/quant_system/factors/evaluation.py",
+      "src/quant_system/factors/registry.py",
+      "src/quant_system/factors/reporting.py",
+      "src/quant_system/factors/storage.py"
+    ],
+    "src/quant_system/factors/registry.py": [
+      "src/quant_system/factors/base.py",
+      "src/quant_system/factors/examples.py"
+    ],
+    "src/quant_system/factors/reporting.py": [],
+    "src/quant_system/factors/storage.py": [
+      "src/quant_system/storage/artifacts.py"
+    ],
+    "src/quant_system/logging/__init__.py": [
+      "src/quant_system/logging/setup.py"
+    ],
+    "src/quant_system/logging/setup.py": [
+      "src/quant_system/logging/__init__.py"
+    ],
+    "src/quant_system/options/__init__.py": [
+      "src/quant_system/options/option_data.py",
+      "src/quant_system/options/screener.py"
+    ],
+    "src/quant_system/options/buy_side_decision.py": [
+      "src/quant_system/options/buy_side_metrics.py",
+      "src/quant_system/options/buy_side_scenarios.py",
+      "src/quant_system/options/buy_side_strategy.py",
+      "src/quant_system/options/market_regime.py",
+      "src/quant_system/options/models.py"
+    ],
+    "src/quant_system/options/buy_side_metrics.py": [
+      "src/quant_system/options/models.py"
+    ],
+    "src/quant_system/options/buy_side_scenarios.py": [
+      "src/quant_system/options/models.py"
+    ],
+    "src/quant_system/options/buy_side_strategy.py": [
+      "src/quant_system/options/buy_side_metrics.py",
+      "src/quant_system/options/market_regime.py",
+      "src/quant_system/options/models.py"
+    ],
+    "src/quant_system/options/data_refresh.py": [
+      "src/quant_system/options/universe.py",
+      "src/quant_system/options/vix_data.py"
+    ],
+    "src/quant_system/options/earnings_calendar.py": [],
+    "src/quant_system/options/iv_history.py": [],
+    "src/quant_system/options/local_research.py": [
+      "src/quant_system/options/local_tools.py"
+    ],
+    "src/quant_system/options/local_tools.py": [],
+    "src/quant_system/options/market_regime.py": [],
+    "src/quant_system/options/models.py": [],
+    "src/quant_system/options/option_data.py": [],
+    "src/quant_system/options/radar_storage.py": [
+      "src/quant_system/options/models.py",
+      "src/quant_system/options/radar.py"
+    ],
+    "src/quant_system/options/radar.py": [
+      "src/quant_system/options/earnings_calendar.py",
+      "src/quant_system/options/iv_history.py",
+      "src/quant_system/options/market_regime.py",
+      "src/quant_system/options/models.py",
+      "src/quant_system/options/screener.py",
+      "src/quant_system/options/universe.py"
+    ],
+    "src/quant_system/options/rate_limiter.py": [],
+    "src/quant_system/options/sample_provider.py": [
+      "src/quant_system/data/schema.py"
+    ],
+    "src/quant_system/options/scan_lock.py": [],
+    "src/quant_system/options/screener.py": [
+      "src/quant_system/data/providers/futu.py",
+      "src/quant_system/options/market_regime.py",
+      "src/quant_system/options/models.py"
+    ],
+    "src/quant_system/options/universe.py": [],
+    "src/quant_system/options/vix_data.py": [
+      "src/quant_system/logging/__init__.py"
+    ],
+    "src/quant_system/prediction_market/__init__.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/backtest.py": [
+      "src/quant_system/prediction_market/data/base.py",
+      "src/quant_system/prediction_market/models.py",
+      "src/quant_system/prediction_market/pipeline.py",
+      "src/quant_system/prediction_market/scanners/outcome_set_consistency.py",
+      "src/quant_system/prediction_market/scanners/yes_no_arbitrage.py"
+    ],
+    "src/quant_system/prediction_market/charts.py": [
+      "src/quant_system/prediction_market/backtest.py",
+      "src/quant_system/prediction_market/timeseries_backtest.py"
+    ],
+    "src/quant_system/prediction_market/collector.py": [
+      "src/quant_system/prediction_market/data/base.py",
+      "src/quant_system/prediction_market/models.py",
+      "src/quant_system/prediction_market/storage.py"
+    ],
+    "src/quant_system/prediction_market/data/__init__.py": [
+      "src/quant_system/prediction_market/data/base.py",
+      "src/quant_system/prediction_market/data/sample_provider.py"
+    ],
+    "src/quant_system/prediction_market/data/base.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/data/polymarket_readonly.py": [
+      "src/quant_system/prediction_market/models.py",
+      "src/quant_system/prediction_market/storage.py"
+    ],
+    "src/quant_system/prediction_market/data/polymarket_stub.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/data/sample_provider.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/execution_threshold.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/instruments.py": [],
+    "src/quant_system/prediction_market/models.py": [],
+    "src/quant_system/prediction_market/optimizer/__init__.py": [
+      "src/quant_system/prediction_market/optimizer/base.py",
+      "src/quant_system/prediction_market/optimizer/greedy_stub.py"
+    ],
+    "src/quant_system/prediction_market/optimizer/base.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/optimizer/greedy_stub.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/optimizer/lp_stub.py": [
+      "src/quant_system/prediction_market/models.py",
+      "src/quant_system/prediction_market/optimizer/greedy_stub.py"
+    ],
+    "src/quant_system/prediction_market/orderbook.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/partial_fill.py": [],
+    "src/quant_system/prediction_market/pipeline.py": [
+      "src/quant_system/prediction_market/data/base.py",
+      "src/quant_system/prediction_market/execution_threshold.py",
+      "src/quant_system/prediction_market/models.py",
+      "src/quant_system/prediction_market/optimizer/base.py",
+      "src/quant_system/prediction_market/scanners/outcome_set_consistency.py",
+      "src/quant_system/prediction_market/scanners/yes_no_arbitrage.py"
+    ],
+    "src/quant_system/prediction_market/provider_factory.py": [
+      "src/quant_system/config/settings.py",
+      "src/quant_system/prediction_market/data/base.py",
+      "src/quant_system/prediction_market/data/polymarket_readonly.py",
+      "src/quant_system/prediction_market/data/sample_provider.py"
+    ],
+    "src/quant_system/prediction_market/reporting.py": [
+      "src/quant_system/prediction_market/backtest.py",
+      "src/quant_system/prediction_market/models.py",
+      "src/quant_system/prediction_market/timeseries_backtest.py"
+    ],
+    "src/quant_system/prediction_market/scanners/__init__.py": [
+      "src/quant_system/prediction_market/scanners/outcome_set_consistency.py",
+      "src/quant_system/prediction_market/scanners/yes_no_arbitrage.py"
+    ],
+    "src/quant_system/prediction_market/scanners/outcome_set_consistency.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/scanners/yes_no_arbitrage.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/settlement.py": [],
+    "src/quant_system/prediction_market/storage.py": [
+      "src/quant_system/prediction_market/models.py"
+    ],
+    "src/quant_system/prediction_market/timeseries_backtest.py": [
+      "src/quant_system/prediction_market/execution_threshold.py",
+      "src/quant_system/prediction_market/models.py",
+      "src/quant_system/prediction_market/pipeline.py",
+      "src/quant_system/prediction_market/scanners/outcome_set_consistency.py",
+      "src/quant_system/prediction_market/scanners/yes_no_arbitrage.py",
+      "src/quant_system/prediction_market/storage.py"
+    ],
+    "src/quant_system/replication/__init__.py": [],
+    "src/quant_system/replication/reversal_momentum.py": [
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/backtest/metrics.py"
+    ],
+    "src/quant_system/risk/__init__.py": [
+      "src/quant_system/risk/defaults.py",
+      "src/quant_system/risk/engine.py",
+      "src/quant_system/risk/models.py"
+    ],
+    "src/quant_system/risk/defaults.py": [],
+    "src/quant_system/risk/engine.py": [
+      "src/quant_system/execution/models.py",
+      "src/quant_system/risk/models.py"
+    ],
+    "src/quant_system/risk/models.py": [],
+    "src/quant_system/storage/__init__.py": [],
+    "src/quant_system/storage/artifacts.py": [],
+    "src/quant_system/storage/database.py": [
+      "src/quant_system/logging/__init__.py"
+    ],
+    "src/quant_system/storage/options_cache.py": [],
+    "src/quant_system/storage/runs_repository.py": [
+      "src/quant_system/api/schemas/common.py",
+      "src/quant_system/logging/__init__.py",
+      "src/quant_system/storage/database.py"
+    ],
+    "src/quant_system/strategies/__init__.py": [
+      "src/quant_system/strategies/registry.py"
+    ],
+    "src/quant_system/strategies/registry.py": [],
+    "src/quant_system/universe/__init__.py": [
+      "src/quant_system/universe/registry.py"
+    ],
+    "src/quant_system/universe/registry.py": [],
+    "tests/conftest.py": [],
+    "tests/fixtures/prediction_market/sample_snapshot.jsonl": [],
+    "tests/test_agent_phase7.py": [],
+    "tests/test_api_agent_llm_config.py": [],
+    "tests/test_api_agent.py": [],
+    "tests/test_api_backtest.py": [],
+    "tests/test_api_cors.py": [],
+    "tests/test_api_data_provider_param.py": [],
+    "tests/test_api_data.py": [],
+    "tests/test_api_errors.py": [],
+    "tests/test_api_experiments.py": [],
+    "tests/test_api_factors.py": [],
+    "tests/test_api_health.py": [],
+    "tests/test_api_market_data_futu.py": [],
+    "tests/test_api_not_found_errors.py": [],
+    "tests/test_api_options_buy_side.py": [],
+    "tests/test_api_options_futu.py": [],
+    "tests/test_api_options_local_tools.py": [],
+    "tests/test_api_options_radar.py": [],
+    "tests/test_api_paper_account.py": [],
+    "tests/test_api_paper.py": [],
+    "tests/test_api_prediction_market.py": [],
+    "tests/test_api_replications.py": [],
+    "tests/test_api_response_models.py": [],
+    "tests/test_api_runs_recent.py": [],
+    "tests/test_api_safety.py": [],
+    "tests/test_api_strategy_universe_catalog.py": [],
+    "tests/test_backtest_broker_portfolio.py": [],
+    "tests/test_backtest_engine_depth.py": [],
+    "tests/test_backtest_engine_metrics.py": [],
+    "tests/test_backtest_storage_reporting_cli.py": [],
+    "tests/test_backtest_strategy_orders.py": [],
+    "tests/test_backup_api_runs_script.py": [],
+    "tests/test_cleanup_api_run_duckdb_script.py": [],
+    "tests/test_cli_market_regime.py": [],
+    "tests/test_cli.py": [],
+    "tests/test_data_futu_provider.py": [],
+    "tests/test_data_pipeline_cli.py": [],
+    "tests/test_data_sample_provider.py": [],
+    "tests/test_data_schema.py": [],
+    "tests/test_data_storage.py": [],
+    "tests/test_data_tiingo_provider.py": [],
+    "tests/test_data_validation.py": [],
+    "tests/test_database_connection.py": [],
+    "tests/test_database.py": [],
+    "tests/test_environment_file.py": [],
+    "tests/test_experiment_config_sweep.py": [],
+    "tests/test_experiment_runner_cli.py": [],
+    "tests/test_experiment_scoring.py": [],
+    "tests/test_experiment_walk_forward.py": [],
+    "tests/test_factor_evaluation.py": [],
+    "tests/test_factor_storage_reporting_cli.py": [],
+    "tests/test_factors_alpha101.py": [],
+    "tests/test_factors_examples.py": [],
+    "tests/test_factors_pipeline.py": [],
+    "tests/test_factors_registry.py": [],
+    "tests/test_frontend_account_trade_panel_limit_order_copy.py": [],
+    "tests/test_frontend_agent_response_type_contract.py": [],
+    "tests/test_frontend_backend_response_type_exports.py": [],
+    "tests/test_frontend_backtest_benchmark_source.py": [],
+    "tests/test_frontend_backtest_form_order_constraints.py": [],
+    "tests/test_frontend_buy_side_response_type_contract.py": [],
+    "tests/test_frontend_catalog_response_type_contract.py": [],
+    "tests/test_frontend_dashboard_recent_runs.py": [],
+    "tests/test_frontend_data_response_type_contract.py": [],
+    "tests/test_frontend_e2e_config.py": [],
+    "tests/test_frontend_e2e_sandbox_paths.py": [],
+    "tests/test_frontend_options_radar_response_type_contract.py": [],
+    "tests/test_frontend_options_response_type_contract.py": [],
+    "tests/test_frontend_options_screener_response_type_contract.py": [],
+    "tests/test_frontend_options_tools_response_type_contract.py": [],
+    "tests/test_frontend_paper_account_response_type_contract.py": [],
+    "tests/test_frontend_paper_replay_safety.py": [],
+    "tests/test_frontend_paper_trading_offline_state.py": [],
+    "tests/test_frontend_prediction_market_response_type_contract.py": [],
+    "tests/test_frontend_replication_persistence_contract.py": [],
+    "tests/test_frontend_run_response_type_contract.py": [],
+    "tests/test_frontend_topbar_navigation_contract.py": [],
+    "tests/test_interfaces.py": [],
+    "tests/test_llm_factory.py": [],
+    "tests/test_logging_setup.py": [],
+    "tests/test_options_buy_side_cli.py": [],
+    "tests/test_options_buy_side_decision.py": [],
+    "tests/test_options_buy_side_metrics.py": [],
+    "tests/test_options_buy_side_models.py": [],
+    "tests/test_options_buy_side_scenarios.py": [],
+    "tests/test_options_buy_side_strategy.py": [],
+    "tests/test_options_cache_cli.py": [],
+    "tests/test_options_cache.py": [],
+    "tests/test_options_daily_scan_cli.py": [],
+    "tests/test_options_data_refresh.py": [],
+    "tests/test_options_earnings_calendar.py": [],
+    "tests/test_options_iv_history.py": [],
+    "tests/test_options_local_tools.py": [],
+    "tests/test_options_market_regime.py": [],
+    "tests/test_options_option_data.py": [],
+    "tests/test_options_radar.py": [],
+    "tests/test_options_rate_limiter.py": [],
+    "tests/test_options_screener.py": [],
+    "tests/test_options_universe.py": [],
+    "tests/test_options_vix_data.py": [],
+    "tests/test_order_generation_threshold_alignment.py": [],
+    "tests/test_order_manager_paper_broker.py": [],
+    "tests/test_paper_account.py": [],
+    "tests/test_paper_price_source.py": [],
+    "tests/test_paper_trading_pipeline_cli.py": [],
+    "tests/test_phase5_full_check_script.py": [
+      "scripts/run_spy_qqq_phase5_full_check.py"
+    ],
+    "tests/test_prediction_market_backtest_phase11.py": [],
+    "tests/test_prediction_market_collector_phase12.py": [],
+    "tests/test_prediction_market_phase8.py": [],
+    "tests/test_prediction_market_provider_phase11.py": [],
+    "tests/test_prediction_market_reports_phase11.py": [],
+    "tests/test_prediction_market_storage_phase11.py": [],
+    "tests/test_prediction_market_timeseries_phase12.py": [],
+    "tests/test_provider_factory.py": [],
+    "tests/test_reversal_momentum_replication.py": [],
+    "tests/test_risk_defaults.py": [],
+    "tests/test_risk_engine_phase5.py": [],
+    "tests/test_runs_repository_postgres.py": [],
+    "tests/test_runs_repository.py": [],
+    "tests/test_scripts_readme.py": [],
+    "tests/test_settings_futu_alias.py": [],
+    "tests/test_settings_llm_alias.py": [],
+    "tests/test_settings_options_radar.py": [],
+    "tests/test_settings_prediction_market_phase11.py": [],
+    "tests/test_settings.py": [],
+    "tests/test_signal_paper_trading_integration.py": [],
+    "tests/test_storage_artifacts.py": [],
+    "tests/test_strategy_universe_registry.py": [],
+    "tests/test_verify_scripts.py": []
+  }
+}

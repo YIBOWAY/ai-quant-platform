@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 
 import pandas as pd
@@ -104,10 +105,21 @@ def test_futu_provider_converts_history_kline_to_canonical_schema() -> None:
     assert frame.loc[0, "symbol"] == "AAPL"
     assert frame.loc[0, "provider"] == "futu"
     assert frame.loc[0, "interval"] == "1d"
+    assert frame.loc[0, "price_adjustment"] == "qfq"
     assert frame.loc[0, "close"] == 183.73
     assert fake_context.calls[0]["code"] == "US.AAPL"
+    assert fake_context.calls[0]["autype"] == "QFQ"
     assert fake_context.calls[0]["session"] == "NONE"
     assert fake_context.closed is True
+
+
+def test_futu_provider_constructor_does_not_create_option_cache(tmp_path) -> None:
+    cache_path = tmp_path / "nested" / "options.duckdb"
+
+    FutuMarketDataProvider(option_quotes_cache_path=cache_path)
+
+    assert not cache_path.exists()
+    assert not cache_path.parent.exists()
 
 
 def test_futu_provider_uses_all_session_for_intraday_requests() -> None:
@@ -165,6 +177,62 @@ def test_futu_provider_reports_unavailable_opend() -> None:
 
     with pytest.raises(FutuProviderError, match="unable to connect to OpenD"):
         provider.fetch_ohlcv(["AAPL"], start="2024-01-02", end="2024-01-02")
+
+
+def test_futu_provider_enforces_request_timeout_without_worker_thread() -> None:
+    data = pd.DataFrame(
+        [
+            {
+                "time_key": "2024-01-02 00:00:00",
+                "open": 185.22,
+                "high": 186.50,
+                "low": 181.99,
+                "close": 183.73,
+                "volume": 82488674,
+            }
+        ]
+    )
+
+    class SlowContext(_FakeContext):
+        def request_history_kline(self, code: str, **kwargs):
+            time.sleep(0.15)
+            return 0, data, None
+
+    context = SlowContext()
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: context,
+        sdk_loader=_sdk,
+        request_timeout_seconds=0.01,
+    )
+
+    started = time.monotonic()
+    with pytest.raises(FutuProviderError) as excinfo:
+        provider.fetch_ohlcv(["AAPL"], start="2024-01-02", end="2024-01-02")
+    elapsed = time.monotonic() - started
+
+    assert excinfo.value.code == "provider_timeout"
+    assert elapsed < 0.1
+    assert context.closed is True
+
+
+def test_futu_provider_bounds_context_factory_creation() -> None:
+    def slow_context_factory(_host: str, _port: int):
+        time.sleep(0.15)
+        return _FakeContext()
+
+    provider = FutuMarketDataProvider(
+        context_factory=slow_context_factory,
+        sdk_loader=_sdk,
+        request_timeout_seconds=0.01,
+    )
+
+    started = time.monotonic()
+    with pytest.raises(FutuProviderError) as excinfo:
+        provider.fetch_ohlcv(["AAPL"], start="2024-01-02", end="2024-01-02")
+    elapsed = time.monotonic() - started
+
+    assert excinfo.value.code == "provider_timeout"
+    assert elapsed < 0.1
 
 
 def test_futu_provider_rejects_unsupported_interval() -> None:

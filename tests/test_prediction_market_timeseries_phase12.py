@@ -28,10 +28,13 @@ def test_prediction_market_timeseries_backtest_has_stable_fixture_metrics(tmp_pa
     assert result.metrics.market_count == 2
     assert result.metrics.snapshot_count == 3
     assert result.metrics.market_snapshot_count == 6
-    assert result.metrics.opportunity_count == 8
-    assert result.metrics.simulated_trade_count == 6
-    assert result.metrics.cumulative_estimated_profit == pytest.approx(110.0)
-    assert [item.opportunity_count for item in result.daily_summary] == [3, 3, 2]
+    # The sample seed places three candidate edges exactly on the 200 bps line
+    # (0.42+0.56 and 0.28+0.34+0.36 both sum to 0.98). The scanners include on
+    # edge_bps >= min_edge_bps, so all three legitimately qualify -> 9 / 7 / 120.
+    assert result.metrics.opportunity_count == 9
+    assert result.metrics.simulated_trade_count == 7
+    assert result.metrics.cumulative_estimated_profit == pytest.approx(120.0)
+    assert [item.opportunity_count for item in result.daily_summary] == [3, 3, 3]
     assert result.sensitivity[-1].cumulative_estimated_profit == pytest.approx(90.0)
 
 

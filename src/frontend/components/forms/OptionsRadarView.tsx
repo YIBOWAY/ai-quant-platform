@@ -22,6 +22,7 @@ import type {
 } from "@/lib/api";
 import { getOptionsRadarDates } from "@/lib/api";
 import { apiPost, apiRequest } from "@/lib/apiClient";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
@@ -31,10 +32,12 @@ import {
   PageHeader,
   SectionTitle,
   StatusPill,
+  TerminalSplitShell,
+  TerminalToolbarButton,
+  terminalInputClass,
 } from "@/components/ui/primitives";
 
-const selectClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-text-primary";
+const selectClass = terminalInputClass;
 
 // Maps radar column index to a glossary term so headers can show a hint.
 const headingTips: Record<number, GlossaryKey> = {
@@ -332,10 +335,11 @@ export function OptionsRadarView({
   }, [scanMutation.isPending, scanStartedAt]);
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[360px_1fr] overflow-hidden bg-bg-base text-text-primary">
-      <aside className="flex min-h-0 flex-col overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
+    <TerminalSplitShell
+      sidebar={
+        <>
         <div className="flex items-center gap-2">
-          <Radar className="text-accent-success" size={18} />
+          <Radar className="text-info" size={18} />
           <h1 className="font-headline-lg text-text-primary">{text.title}</h1>
         </div>
         <p className="mt-1 font-label-caps uppercase text-text-secondary">{text.eyebrow}</p>
@@ -405,37 +409,40 @@ export function OptionsRadarView({
               value={top}
             />
           </label>
-          <button
-            className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:opacity-50"
+          <TerminalToolbarButton
+            className="h-10 w-full justify-center"
             disabled={!hydrated || scanMutation.isPending}
             onClick={() => scanMutation.mutate()}
+            tone="info"
             type="button"
           >
             <RefreshCw className="mr-2 inline" size={16} />
             {scanMutation.isPending ? text.running : text.runSample}
-          </button>
+          </TerminalToolbarButton>
           <div className="grid grid-cols-2 gap-2">
-            <button
-              className="rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:opacity-50"
+            <TerminalToolbarButton
+              className="h-10 justify-center px-4"
               disabled={!hydrated || datesQuery.isFetching || scanQuery.isFetching}
               onClick={() => {
                 void datesQuery.refetch();
                 void scanQuery.refetch();
               }}
+              tone="neutral"
               type="button"
             >
               <RefreshCw className="mr-2 inline" size={16} />
               {text.refresh}
-            </button>
-            <button
-              className="rounded-lg border border-accent-success/40 px-4 py-2 font-body-sm font-semibold text-accent-success disabled:opacity-50"
+            </TerminalToolbarButton>
+            <TerminalToolbarButton
+              className="h-10 justify-center px-4"
               disabled={!hydrated || !csv || candidates.length === 0}
               onClick={exportCsv}
+              tone="info"
               type="button"
             >
               <Download className="mr-2 inline" size={16} />
               {text.export}
-            </button>
+            </TerminalToolbarButton>
           </div>
           {scanMutation.error instanceof Error ? (
             <div className="rounded-lg border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
@@ -449,7 +456,7 @@ export function OptionsRadarView({
           ) : null}
           <div className="mt-1 rounded-lg border border-border-subtle bg-bg-surface-muted">
             <button
-              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left font-label-caps text-text-secondary"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left font-label-caps text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
               onClick={() => setAdvancedOpen((open) => !open)}
               type="button"
             >
@@ -462,7 +469,7 @@ export function OptionsRadarView({
                 <label className="flex flex-col gap-1 font-body-sm">
                   {text.refreshSource}
                   <select
-                    className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-text-primary"
+                    className={selectClass}
                     onChange={(event) => setRefreshSource(event.target.value)}
                     value={refreshSource}
                   >
@@ -475,33 +482,36 @@ export function OptionsRadarView({
                   </select>
                 </label>
                 <div className="mt-3 grid grid-cols-1 gap-2">
-                  <button
-                    className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
+                  <TerminalToolbarButton
+                    className="h-10 w-full justify-center"
                     disabled={!hydrated || refreshMutation.isPending}
                     onClick={() => refreshMutation.mutate("universe")}
+                    tone="neutral"
                     type="button"
                   >
                     <RefreshCw className="mr-2 inline" size={16} />
                     {text.refreshUniverse}
-                  </button>
-                  <button
-                    className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
+                  </TerminalToolbarButton>
+                  <TerminalToolbarButton
+                    className="h-10 w-full justify-center"
                     disabled={!hydrated || refreshMutation.isPending}
                     onClick={() => refreshMutation.mutate("earnings")}
+                    tone="neutral"
                     type="button"
                   >
                     <RefreshCw className="mr-2 inline" size={16} />
                     {text.refreshEarnings}
-                  </button>
-                  <button
-                    className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary disabled:opacity-50"
+                  </TerminalToolbarButton>
+                  <TerminalToolbarButton
+                    className="h-10 w-full justify-center"
                     disabled={!hydrated || refreshMutation.isPending}
                     onClick={() => refreshMutation.mutate("vix")}
+                    tone="neutral"
                     type="button"
                   >
                     <RefreshCw className="mr-2 inline" size={16} />
                     {text.refreshVix}
-                  </button>
+                  </TerminalToolbarButton>
                 </div>
                 {refreshStatus ? (
                   <div className="mt-3 rounded-lg border border-accent-success/40 bg-accent-success/10 p-2 font-body-sm text-accent-success">
@@ -517,8 +527,10 @@ export function OptionsRadarView({
             ) : null}
           </div>
         </form>
-      </aside>
-      <main className="flex min-w-0 flex-col gap-4 overflow-y-auto p-5">
+        </>
+      }
+      sidebarClassName="p-4 lg:w-[360px]"
+    >
         <PageHeader
           eyebrow={text.eyebrow}
           title={text.title}
@@ -584,7 +596,7 @@ export function OptionsRadarView({
           </div>
         ) : null}
         <section className="grid grid-cols-3 gap-3">
-          <MetricStat label={text.rows} value={String(candidates.length)} tone="success" />
+          <MetricStat label={text.rows} value={String(candidates.length)} tone="neutral" />
           <MetricStat label={text.scanned} value={String(scanQuery.data?.scanned_tickers ?? 0)} />
           <MetricStat
             label={text.failed}
@@ -646,14 +658,14 @@ export function OptionsRadarView({
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-3">
                           <button
-                            className="text-info"
+                            className="rounded-md text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
                             onClick={() => setExpanded(expanded === candidate.symbol ? null : candidate.symbol)}
                             type="button"
                           >
                             {text.details}
                           </button>
                           <Link
-                            className="inline-flex items-center gap-1 text-accent-success"
+                            className="inline-flex items-center gap-1 rounded-md text-info hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
                             href={localizePath(`/options-radar/${candidate.ticker}?date=${scanQuery.data?.run_date ?? activeDate}&expiry=${candidate.expiry}&option_type=${candidate.strategy === "sell_put" ? "PUT" : "CALL"}`, locale)}
                           >
                             {text.openChain}
@@ -676,8 +688,7 @@ export function OptionsRadarView({
           </div>
           )}
         </Card>
-      </main>
-    </div>
+    </TerminalSplitShell>
   );
 }
 
@@ -794,7 +805,11 @@ function ScheduledTaskStatusCard({
         </div>
         {response?.exists && status ? (
           <div className="flex flex-wrap items-center gap-2 font-data-mono text-xs text-text-secondary">
-            {status.provider ? <span>{text.taskProvider}: {status.provider}</span> : null}
+            {status.provider ? (
+              <span className="flex items-center gap-1.5">
+                {text.taskProvider}: <DataSourceBadge source={status.provider} />
+              </span>
+            ) : null}
             {candidateCount !== null ? (
               <span>{text.taskCandidateCount}: {candidateCount}</span>
             ) : null}

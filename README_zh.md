@@ -2,7 +2,24 @@
 
 本地优先的量化研究、回测、模拟交易、只读行情与期权研究平台。
 
-当前项目交付至 Phase 14，主要功能包括：
+Phase 0-14 文档描述已经交付的历史能力层，不是当前实现队列。先读
+[docs/INDEX.md](docs/INDEX.md)。HQA Slice 9A-9G、只读 mini 9H Hermes 产物架与
+完整 9H 自动化/通知均已完成。D-31 Wave 3 也已交付 official API 会话读取、
+PostgreSQL transport ledger、仅对账的 connector-worker 框架，以及只读 Unified
+Results 目录/详情。这里没有真实 chat 写桥：prompt/provider、审批 mutation、精确
+Hermes Run 关联、完整结果切流和旧页退休仍受独立证据门阻断。9E 是 HQA 本地带锁的
+prediction event ledger，复用但
+不修改平台代码或 schema。9D 新增严格只读的 `data prices` JSON seam：只接受
+显式 Futu、QFQ、1d，最多 25 个标的和 500 个含首尾日历日期，不回退到
+sample/local/Tiingo/Longbridge。HQA 组合风险 v2 以 previous UTC date 为 `end`、
+`end-400 days` 为 `start`，先做全局日期 inner join 再计算收益，至少需要 60 个对齐收益；只报告
+逐仓相对 SPY 的 beta 与持仓两两 correlation，不计算 aggregate beta、VaR 或阈值
+verdict。2026-07-11 真实验收得到 274 个对齐收益，AAPL beta 为
+`0.8576599678`；平台全量为 1027 passed、15 skipped，20 个受观察状态/缓存文件的
+bytes、mtime、hash 均未变化。[前端渐进改造与 Hermes 集成计划](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
+保留为 Slice 0-8 交付记录与 UI backlog；跨仓产品路线仍由
+`/Users/sunyibo/programs/Hermes-quant-agent` 管理。
+本仓库是该 Hermes 工作流的量化领域后端，不再独立扩张 Phase 15 产品路线。
 
 - 美股及 ETF 历史数据流水线。
 - 因子研究、因子实验室诊断（2026-06-11 起真实数据优先：默认 `futu`，数据源/股票池/择时标的/基准可在界面调整，可保存因子研究运行，并可预填发送至回测器）、策略/股票池注册、回测、实验和模拟交易。
@@ -12,20 +29,23 @@
 - 富途 OpenD 只读美股及期权数据。
 - 期权收入筛选器（Options Income Screener）、期权雷达（Options Radar）、买方期权助手（Buy-Side Options Assistant）。
 - 本地 AlphaGBM 风格期权工具箱及本地富途期权报价缓存。
+- AI HOT 只读新闻研究流，支持精选/全部动态、分类/关键词/时间窗筛选、日报和原文链接。
 - 策略目录：包含 reversal/momentum 论文复现、已注册的横截面 Top-N 回测策略、均值回归 Top-N 策略。
 - reversal/momentum 复现运行会以 `replication-*` 形式本地持久化，并提供专门详情页。
 - 回测引擎控制项：再平衡频率（每根 K 线 / 每周 / 每月）、单标的权重上限、提供行业映射时的 API 层面行业上限、以及按标的的收益归因。
-- 可选 PostgreSQL 运行索引（覆盖本地回测/因子/模拟交易运行记录）。
+- 可选 PostgreSQL 运行/新闻缓存，以及 brief、AI 日报和 paper account 业务事实；
+  paper account 明确区分 `file` / `mirror` / `canonical` 三种模式。
 
 本项目**不包含**实盘交易、券商下单、钱包连接、签名、富途账户解锁或真实订单提交。
 
 ## 快速开始
 
-在已有的 conda 环境中安装 Python 依赖：
+创建并激活 uv 管理的 `ai-quant` 虚拟环境，然后安装 Python 依赖：
 
 ```powershell
-conda activate ai-quant
-python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev]"
+uv venv ai-quant --python 3.11
+.\ai-quant\Scripts\Activate.ps1
+uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev,prediction_market]"
 ```
 
 安装前端依赖：
@@ -38,7 +58,7 @@ npm install
 启动后端：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
@@ -48,7 +68,7 @@ CLI 后端入口会把结构化 JSONL 运行日志写入
 等效的直接 FastAPI 命令：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
@@ -86,11 +106,14 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 
 | 页面 | 用途 |
 |---|---|
+| `/hermes` | 可回滚默认首页；展示 Today、任务、只读审批与 Unified Results 预览，只有一个安全条，composer 始终禁用。 |
+| `/hermes/sessions` | 通过服务端 official API adapter GET-only 读取本机 Hermes 已保存会话；key 不下发浏览器，也不消耗 provider 额度。 |
+| `/hermes/results` | 汇总平台运行、实验、候选、HQA 产物及 exact run-link 的只读目录/详情；预览可见但 `unifiedResultsCutoverAccepted=false`。 |
 | `/data-explorer` | 美股历史数据查看器。 |
-| `/factor-lab` | 因子健康与择时诊断（横截面 / 择时两个标签页）；数据源/股票池/择时标的/基准可在侧栏调整（默认 `futu`），并可保存因子研究运行、预填发送至回测器。 |
+| `/factor-lab` | 当前因子诊断面；HQA 工作台落地后应降级为 run/detail 分析面。 |
 | `/backtest` | 运行策略、股票池、因子加权及基准回测。 |
-| `/replications` | 已注册研究策略的策略目录。 |
-| `/replications/[runId]` | 已落盘的 reversal/momentum 复现运行详情。 |
+| `/strategies` | 已注册研究策略的策略目录。 |
+| `/strategies/[runId]` | 已落盘的 reversal/momentum 复现运行详情。 |
 | `/docs/reversal-momentum` | 论文复现的前端可读笔记。 |
 | `/experiments` | 运行可选数据源的实验扫描，可显式开启滚动验证折，查看被测试的固定因子组合，并将最佳参数和同一数据源发送至回测。 |
 | `/paper-trading` | 持久模拟账户（手动下单 + 策略一键再平衡）＋历史回放（研究）。 |
@@ -100,8 +123,9 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 | `/options-radar/[symbol]` | 单标的雷达下钻与实时期权链加载。 |
 | `/options-tools` | 本地 AlphaGBM 风格期权工具箱。 |
 | `/options-buyside` | 买方期权策略助手。 |
-| `/order-book` | 只读预测市场研究页面。 |
-| `/agent-studio` | AI 研究助手候选流程。 |
+| `/ai-news` | AI HOT 只读新闻研究流，含精选/全部动态、分类/关键词/时间窗筛选、日报和原文链接，不触发策略、回测或模拟账户。 |
+| `/polymarket` | 只读预测市场研究页面。 |
+| `/agent-studio` | 过渡期只读候选检查面；仅展示源码与 exact digest-bound review，不提供 task/审批 mutation。页面级 redirect gate 存在但默认关闭。 |
 | `/settings` | 脱敏后的本地设置。 |
 
 股票数据端点只接受显式 `provider=sample|futu|tiingo`。未知 provider，
@@ -110,6 +134,21 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 回退到明确标注的 sample 响应。
 代码默认值和 `.env.example` 均使用 `QS_DEFAULT_DATA_PROVIDER="futu"`；只有在
 明确做离线流程测试时才改为 `sample`。
+
+## 异步回测任务
+
+`POST /api/backtests/run` 默认保持历史同步 `200 BacktestRunResponse` 路径。
+设置 `QS_BACKTEST_JOBS_ENABLED=true` 后，它会立即返回
+`202 BacktestJobStateResponse`，其中 `poll_url` 指向
+`GET /api/backtests/jobs/{run_id}`，任务完成后才暴露 `result_url`。
+`POST /api/backtests/jobs/{run_id}/cancel` 可取消排队任务，并在回测流水线阶段之间
+协作取消运行中的任务。
+
+本地 runner 是进程内 `ThreadPoolExecutor`，默认
+`QS_BACKTEST_JOBS_MAX_WORKERS=1`。API 关闭时最多等待
+`QS_BACKTEST_JOBS_SHUTDOWN_TIMEOUT_SECONDS=5`；超过该时间仍未停止的任务会被标记为
+cancelled。启动时，遗留的 queued / running / cancelling metadata 会被标记为 failed，
+因为本地 runner 不是可恢复的分布式队列。
 
 界面支持中英双语。使用顶栏语言切换按钮，或直接访问带语言前缀的路径，如
 `/en/options-radar` 和 `/zh/options-radar`。语言选择也会存储在 `qs_lang` cookie
@@ -129,9 +168,20 @@ Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 验证连接：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python scripts/verify_futu_connection.py
 ```
+
+供机器消费的严格多标的 QFQ 日线命令：
+
+```powershell
+quant-system data prices --symbol AAPL --symbol SPY --start 2026-01-01 --end 2026-07-10 --provider futu --adjustment qfq --format json
+```
+
+该 leaf 的 stdout 恰好只有一个 JSON 文档，不读取 local/sample fallback，不保存 OHLCV，
+也不会仅因 provider 构造就初始化期权 DuckDB。日期必须为 `YYYY-MM-DD`，窗口最多包含
+首尾在内 500 个日期；配置、请求、OpenD 首连或查询失败均以 typed JSON + 非零 exit
+返回。`QS_FUTU_REQUEST_TIMEOUT_SECONDS` 同时约束首连和查询 deadline。
 
 **重要约束**：
 
@@ -140,14 +190,58 @@ python scripts/verify_futu_connection.py
 - 不进行下单。
 - 不进行券商执行。
 
+## 只读 Hermes 产物架
+
+`GET /api/hermes/artifacts?limit=20` 只读 HQA 可重建、版本化的
+`artifacts/hermes-feed/manifest.v1.json`。schema 1.0 精确包含三种来源
+（`portfolio_risk`、`prediction`、`market_foresight`）；schema 1.1 精确包含六种，
+再加入 `weekly_review`、`opportunity_summary` 与 `automation_status`。`/hermes`
+会展示全部六类产物。平台不解析 HQA 原始 JSONL、不写 HQA 状态，也不会启用
+Composer 或调用 `POST /api/agent/tasks`。
+
+catalog 会稳定返回 `available`、`empty`、`degraded` 或 `unavailable`，校验 manifest
+并限制文件大小，不向 API 暴露本地路径或原始异常。配置项为：
+
+```text
+QS_HERMES_ARTIFACT_FEED_PATH=/absolute/path/to/manifest.v1.json
+QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS=10800
+QS_HERMES_ARTIFACT_MAX_FUTURE_CLOCK_SKEW_SECONDS=300
+QS_HERMES_ARTIFACT_MAX_MANIFEST_BYTES=4194304
+```
+
+默认路径指向同级 `Hermes-quant-agent` 仓库。某一来源可以合法地为 `empty`，
+其他来源卡片仍可保持健康。完整 9H 的调度与外发投递运行在 HQA；平台仍只是只读
+消费者，没有新增 Hermes scheduler、outbound worker、POST route 或数据库 migration。
+
 交互式期权页面包含短期进程内缓存、本地 DuckDB 支持的富途期权报价缓存，以及针对富途限频响应的单次重试。宽泛的每日扫描仍应计划执行，并在富途限速下预计运行较慢。
 
-## 可选 PostgreSQL 运行索引
+## 可选 PostgreSQL 业务事实
 
-回测、因子和模拟交易运行记录始终写入本地文件
-`data/api_runs/<kind>/<run_id>/`。你可以选择将这三类运行索引到 PostgreSQL 中以加速历史列表查询。
-reversal/momentum 复现运行也会写入 `data/api_runs/replications/<run_id>/`，但暂不进入可选 PostgreSQL run index。
-该功能**默认关闭**；当数据库关闭或无法访问时，所有已索引端点自动回退到文件系统读取。
+回测、因子、paper-run 和 reversal/momentum 复现 artifact 仍保存在
+`data/api_runs/<kind>/<run_id>/`；PostgreSQL 只索引这些运行记录。同一个可选数据库
+还保存 AI HOT 缓存、不可变 brief 快照、owner-scoped AI 日报和持久 paper account
+的模拟账本/当前状态，不保存券商凭证或真实订单。`QS_DATABASE_ENABLED` 默认
+`false`，paper mode 默认 `file`。
+
+paper account 有三种显式模式：
+
+- `file`（默认）：本地 `account.json` 是事实源。
+- `mirror`：文件仍是事实源，API/CLI/operations 写文件后 best-effort 镜像到
+  PostgreSQL；数据库失败不回滚文件写入，但会返回 warning。
+- `canonical`：PostgreSQL 是 load/open/save/reset 的事实源；数据库不可用时
+  mutation fail closed，factory 不会静默切回文件模式；如果 canonical 中没有账户，
+  普通 GET/写请求返回 `409 paper_account_bootstrap_required`，不会在空库新建替代账户。
+
+所有 paper account 入口共用 repository factory。account ID 会统一校验，repository key
+也必须与载荷 account ID 一致。API snapshot 与
+`quant-system paper account-show --format text|json` 共用
+`PaperAccountSnapshotReader`：file/mirror 缺账户时不会创建目录、锁文件或账户，canonical
+则返回显式 bootstrap error；主文件损坏时只读路径最多读取有效备份，不会重命名或修复
+磁盘文件。
+API 额外返回 `storage_mode`、`stale`、`warnings` 和结构化 `reconciliation`：
+它通过摘要 hash 对账 raw、账户物化列、完整 ledger、positions、pending orders 和
+最新 snapshot 的状态/内部一致性/freshness，
+状态为 `in_sync` / `different` / `unavailable` / `not_applicable`。
 
 通过本地 Docker 容器启用：
 
@@ -162,18 +256,49 @@ QS_DATABASE_ENABLED=true
 QS_DATABASE_URL="postgresql://quant:quantpass@127.0.0.1:5432/quantplatform"
 QS_DATABASE_CONNECT_TIMEOUT_SECONDS=1
 QS_DATABASE_AUTO_MIGRATE=true
+QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 ```
 
-后端启动时会在后台线程中运行索引迁移/回填：创建 `quant_system.runs` 表，回填已有的文件运行记录，
-并清理文件已被删除的索引行。如果 PostgreSQL 不可用，首次探测很短，后续失败请求在短暂的冷却窗口内
-继续从本地文件读取；健康的 PostgreSQL 短连接可以并发执行。可通过以下命令检查：
+后端启动时按文件名字典序应用 `scripts/sql/*.sql`。003/004 migration 会创建 11 张
+业务表：root 用户、brief issue/snapshot/source、AI 日报，以及 paper account 的账户、
+账本、挂单、当前持仓和持仓快照六张表。005 新增 Hermes transport ledger 的 schema
+元数据、command、event、outbox 与 exact run link 五张表。加上 001 的 run index 与 002
+的两张 AI 新闻缓存表，五份 migration 共定义 19 张 `quant_system` 表。系统不维护通用
+`schema_migrations` 台账，而是按文件名幂等重放 SQL。启动流程还会回填运行索引，并清理对应文件
+已删除的索引行。如果 PostgreSQL 不可用，
+首次探测很短，后续失败请求在短暂的冷却窗口内继续从本地文件或实时上游读取；健康的 PostgreSQL
+短连接可以并发执行。可通过以下命令检查：
 
 ```powershell
 curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
 ```
 
-`psycopg` 驱动随 `api` extra 一起安装。数据库仅存储研究运行元数据；连接 URL 在 `/api/settings`
-中已脱敏。详见 [docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md)。
+`psycopg` 驱动随 `api` extra 一起安装；连接 URL 在 `/api/settings` 中已脱敏。
+brief archive 的 generate/latest/by-public-id 路径只读取已落库快照，数据库不可用时
+明确失败，不伪造历史。详见
+[docs/architecture/database_cache_plan.md](docs/architecture/database_cache_plan.md)。
+
+## AI 新闻研究流
+
+`/ai-news` 是 AI HOT 公共端点的本地 FastAPI 代理。前端只调用
+`/api/news/aihot/*`；后端负责发送 AI HOT API 所需的浏览器式 User-Agent、解析响应、
+归一化错误，并保留 research-only 安全字段。
+
+可选配置：
+
+```text
+QS_AIHOT_ENABLED=true
+QS_AIHOT_BASE_URL="https://aihot.virxact.com"
+QS_AIHOT_TIMEOUT_SECONDS=8
+QS_AIHOT_CACHE_TTL_SECONDS=120
+QS_AIHOT_USER_AGENT="Mozilla/5.0 ..."
+```
+
+当 `QS_DATABASE_ENABLED=true` 时，成功的新闻流请求会镜像到
+`quant_system.ai_news_items`。如果 AI HOT 暂时不可用，items 端点可以返回匹配缓存并显示 warning。
+该页面不会生成交易信号、启动回测、修改模拟账户或调用任何券商交易 API。详见
+[docs/guides/ai-news.md](docs/guides/ai-news.md) 与
+[docs/design/ai_news_integration_plan.md](docs/design/ai_news_integration_plan.md)。
 
 ## 模拟账户
 
@@ -209,7 +334,7 @@ curl http://127.0.0.1:8765/api/health   # database.reachable 应为 true
 定时自动再平衡（例如通过 Windows 任务计划程序）：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system paper rebalance --account default --strategy cross_sectional_top_n
 ```
 
@@ -217,12 +342,55 @@ quant-system paper rebalance --account default --strategy cross_sectional_top_n
 [docs/guides/paper-trading.md](docs/guides/paper-trading.md) 与
 [docs/design/paper_trading_position_map_redesign.md](docs/design/paper_trading_position_map_redesign.md)。
 
+### Paper Strategy Sleeves
+
+Paper Strategy Sleeves 是持久模拟账户的下一层分账模型：一个账户下区分
+manual sleeve 和多个 strategy sleeve，各自拥有现金分配和 lot 归属。当前已落地
+后端基础、API contract、daily signal、`/paper-trading` 工作区，以及手动
+next-open 纸面执行：
+
+- `src/quant_system/execution/paper_strategy_sleeves.py`：`StrategyConfig`、
+  `StrategySleeve`、`SleeveLot`、`StrategySignal`、`SleeveLotBook`。
+- `src/quant_system/execution/paper_strategy_sleeve_storage.py`：本地事实来源存储，
+  路径为 `data/api_runs/paper_strategy_sleeves/`。
+- `PaperAccount.sleeve_cash`：账内现金分配簿；`PaperAccount.cash` 继续作为旧账户路径的总现金字段。
+- 后端 API 已覆盖策略配置创建 / 列表 / 版本，以及 sleeve 创建 / 列表 / 详情 / daily signal /
+  pause / resume / stop：`/api/paper/strategy-configs` 与
+  `/api/paper/strategy-sleeves`。
+- daily signal 可通过
+  `POST /api/paper/strategy-sleeves/{id}/signals` 或
+  `quant-system paper strategies generate-signal --sleeve <id>` 手动触发。
+- `/paper-trading` 实时账户页已包含 Strategy Sleeves 工作区：可以创建
+  strategy config、开设 signal-only / allocated sleeve、生成信号、暂停 /
+  恢复 / 停止 sleeve，并对 allocated sleeve 显式创建/处理一次性 pending
+  execution plan。
+- 手动执行入口包括 `POST /api/paper/strategy-sleeves/{id}/executions`、
+  `POST /api/paper/strategy-sleeves/executions/process`、
+  `GET /api/paper/strategy-sleeves/ops/status`、
+  `quant-system paper strategies create-execution` 和
+  `quant-system paper strategies execute-pending` / `execute-due` / `ops-status`。
+  strategy GET/status 现在只做观察，绝不隐式对账或改写文件；crash journal 请显式运行
+  `quant-system paper strategies recover-pending` 恢复。
+- Slice 9G 新增独立的精确因果审计命令：
+  `quant-system paper strategies observations --from-date 2026-07-01
+  --to-date 2026-07-12 --signal-id <signal_id> --limit 200 --format json`。
+  它只提供有界、纯只读 CLI 事实；没有 HTTP route，不访问 account/provider，不做恢复、
+  mutation、调度或 missed-opportunity 判断。
+
+尚未实现：常驻/调度式自动执行、near-close 模拟成交和 lot transfer。生成信号不会
+自动成交，FastAPI 进程也不会启动常驻策略调度器。现有
+`POST /api/paper/account/rebalance` 仍是全账户再平衡，不是 Strategy Sleeves
+入口；当账户存在真实 sleeve-owned lot 时会被拒绝。详见
+[docs/design/paper_strategy_sleeves_plan.md](docs/design/paper_strategy_sleeves_plan.md)、
+[docs/design/paper_strategy_sleeves_mvp3_operations_plan.md](docs/design/paper_strategy_sleeves_mvp3_operations_plan.md) 与
+[docs/execution/paper_strategy_sleeves.md](docs/execution/paper_strategy_sleeves.md)。
+
 ## 因子实验室刷新
 
 自 2026-06-11 起，因子实验室界面默认使用真实数据（`provider=futu`），数据源/股票池/择时标的/基准可在侧栏调整，并支持可保存的因子研究运行。自 2026-06-15 起，查询卡还可以把当前数据源、股票池、基准和因子 ID 预填发送至回测器；该链接不会自动运行回测。下面的 CLI 用于从后端或计划任务刷新其本地诊断缓存：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system factor refresh-lab --provider sample --universe-id etf --symbol QQQ --benchmark-symbol QQQ
 ```
 
@@ -239,10 +407,14 @@ quant-system factor refresh-lab --provider sample --universe-id etf --symbol QQQ
 http://127.0.0.1:3001/options-screener
 ```
 
+该页面提供保守 / 平衡 / 激进预设，以及最低期权中间价、标的平均成交量、市值等质量过滤器。
+`min_market_cap=0` 表示不启用市值硬过滤。结果默认隐藏 `Avoid` 合约；排查筛选原因时可打开
+“显示避开合约” / `include_rejected=true`。备注列会说明合约被降级或过滤的原因。
+
 每日卖方期权雷达：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system options daily-scan --top 10
 ```
 
@@ -269,7 +441,7 @@ http://127.0.0.1:3001/options-tools
 买方助手调试 CLI：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bullish --target-price 220 --target-date 2026-12-31
 ```
 
@@ -286,7 +458,7 @@ http://127.0.0.1:3001/options-buyside
 预测市场模块为只读研究：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system prediction-market collect --provider sample --duration 0 --limit 10
 quant-system prediction-market timeseries-backtest --provider sample
 ```
@@ -298,7 +470,7 @@ quant-system prediction-market timeseries-backtest --provider sample
 本地一键检查：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 .\scripts\verify.ps1
 ```
 
@@ -309,7 +481,7 @@ conda activate ai-quant
 仅后端：
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system doctor
 python -m pytest -q
 ruff check src/quant_system tests
@@ -335,9 +507,18 @@ npx playwright test --config playwright.config.ts --workers=1
 
 从这里开始：
 
-- [docs/OVERVIEW.md](docs/OVERVIEW.md)
 - [docs/INDEX.md](docs/INDEX.md)
-- [docs/SYSTEM_DESIGN_RESEARCH.md](docs/SYSTEM_DESIGN_RESEARCH.md)
+- [docs/OVERVIEW.md](docs/OVERVIEW.md)
+- [前序前端/Hermes Slice 0-8 记录](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
+- [本地存储与 PostgreSQL 状态](docs/architecture/database_cache_plan.md)
+
+`docs/SYSTEM_DESIGN_RESEARCH.md`、phase 交付记录和 audits 是历史设计/证据，不是
+当前待办队列。
+
+当前交接：D-31 3A/3B 与只读 3E-A 已交付并通过本机验收；3C 只是
+reconcile-only 框架，不是 command dispatch。3D chat 正确 fail closed；3F 只有默认关闭的
+Agent Studio redirect 机制。后续必须逐项关闭显式写端 blocker，或在旧页切流前证明
+完整 parity，不能从历史 backlog 自动续做。
 
 当前期权相关文档：
 
@@ -351,6 +532,11 @@ npx playwright test --config playwright.config.ts --workers=1
 论文复现：
 
 - [docs/replications/reversal_momentum_replication.md](docs/replications/reversal_momentum_replication.md)
+
+AI 新闻：
+
+- [docs/guides/ai-news.md](docs/guides/ai-news.md)
+- [docs/design/ai_news_integration_plan.md](docs/design/ai_news_integration_plan.md)
 
 本地缓存方案及当前状态：
 

@@ -1,5 +1,6 @@
 .env
 .venv/
+ai-quant/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -8,6 +9,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+/node_modules/
 .worktrees/
 worktrees/
 /logs/
@@ -19,13 +21,19 @@ worktrees/
 *.pdf
 
 # Local agent / IDE config
+.codex/
 .claude/
 .agents/
 .codegraph/
+.mcp.json
 .omo/
 .sisyphus/
 .superpowers/
 Microsoft/
+
+# Local OS/tool scratch
+.DS_Store
+.understand-anything/.trash-*/
 
 # Local Futu / FastAPI / Next.js dev logs
 .futu-ui-backend.err.log
@@ -34,10 +42,12 @@ Microsoft/
 *.log
 
 # Playwright run artefacts
+test-results/
 src/frontend/test-results/
 src/frontend/playwright-report/
 .playwright-cli/
 .playwright-mcp/
+.firecrawl/
 src/frontend/.tmp/
 
 # Local scratch / benchmark artefacts

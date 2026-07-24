@@ -72,12 +72,13 @@ class DataSettings(BaseSettings):
 
 
 class DatabaseSettings(BaseSettings):
-    """Optional PostgreSQL index over file-based run artifacts.
+    """Optional PostgreSQL mirrors for local research metadata.
 
-    Disabled by default. When enabled and reachable, list endpoints read the run
-    index from PostgreSQL and run endpoints index new runs into it; otherwise the
-    API transparently falls back to scanning the filesystem. The URL is held as a
-    secret so it is masked in the settings dump (it carries a password).
+    Disabled by default. When enabled and reachable, run list endpoints can use
+    the run index, new runs are indexed best-effort, and AI News items can be
+    cached for stale fallback. Otherwise the API transparently falls back to
+    files/live upstreams. The URL is held as a secret so it is masked in the
+    settings dump (it carries a password).
     """
 
     model_config = SettingsConfigDict(
@@ -89,7 +90,10 @@ class DatabaseSettings(BaseSettings):
     enabled: bool = False
     url: SecretStr | None = None
     connect_timeout_seconds: int = Field(default=1, gt=0)
-    auto_migrate: bool = True
+    # V1.1 fail-closed: startup never auto-applies migrations. New migrations are
+    # applied only via the explicit `quant-system migrate --apply --allow <file>`
+    # command under a separate authorization (never implicitly at boot).
+    auto_migrate: bool = False
 
     @field_serializer("url", when_used="json")
     def serialize_database_url(self, value: SecretStr | None) -> str | None:
@@ -107,6 +111,7 @@ class PaperAccountSettings(BaseSettings):
 
     auto_process_pending_orders_enabled: bool = True
     auto_process_interval_seconds: float = Field(default=30.0, gt=0)
+    db_mode: Literal["file", "mirror", "canonical"] = "file"
 
 
 class ApiKeySettings(BaseSettings):
@@ -329,6 +334,92 @@ class LLMSettings(BaseSettings):
         return "**********" if value else None
 
 
+DEFAULT_AIHOT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
+
+class AiHotSettings(BaseSettings):
+    """Read-only AI HOT public news feed settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_AIHOT_ENABLED"),
+    )
+    base_url: str = Field(
+        default="https://aihot.virxact.com",
+        validation_alias=AliasChoices("QS_AIHOT_BASE_URL"),
+        min_length=1,
+    )
+    timeout_seconds: int = Field(
+        default=8,
+        validation_alias=AliasChoices("QS_AIHOT_TIMEOUT_SECONDS"),
+        gt=0,
+    )
+    cache_ttl_seconds: int = Field(
+        default=120,
+        validation_alias=AliasChoices("QS_AIHOT_CACHE_TTL_SECONDS"),
+        ge=0,
+    )
+    user_agent: str = Field(
+        default=DEFAULT_AIHOT_USER_AGENT,
+        validation_alias=AliasChoices("QS_AIHOT_USER_AGENT"),
+        min_length=1,
+    )
+
+
+class NewsSettings(BaseSettings):
+    """AI News source preference and failover policy."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="", extra="ignore", populate_by_name=True
+    )
+    source_preference: Literal["auto", "aihot", "horizon"] = Field(
+        default="auto",
+        validation_alias=AliasChoices("QS_NEWS_SOURCE_PREFERENCE"),
+    )
+    failover_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_NEWS_FAILOVER_ENABLED"),
+    )
+
+
+class HorizonSettings(BaseSettings):
+    """Local Horizon inbox feed settings for AI News bridge."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="", extra="ignore", populate_by_name=True
+    )
+    enabled: bool = Field(default=True, validation_alias=AliasChoices("QS_HORIZON_ENABLED"))
+    inbox_dir: str = Field(
+        default=str(Path(__file__).resolve().parents[3] / "data" / "horizon_inbox"),
+        validation_alias=AliasChoices("QS_HORIZON_INBOX_DIR"),
+        min_length=1,
+    )
+    max_age_seconds: int = Field(
+        default=129_600,
+        validation_alias=AliasChoices("QS_HORIZON_MAX_AGE_SECONDS"),
+        gt=0,
+    )
+    provider_beta: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("QS_HORIZON_PROVIDER_BETA"),
+    )
+    ingest_on_read: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("QS_HORIZON_INGEST_ON_READ"),
+    )
+
+
 class PredictionMarketSettings(BaseSettings):
     """Read-only prediction market research settings."""
 
@@ -417,6 +508,109 @@ class PredictionMarketSettings(BaseSettings):
         return self
 
 
+class BacktestJobSettings(BaseSettings):
+    """Lightweight in-process async backtest job settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_BACKTEST_JOBS_",
+        extra="ignore",
+    )
+
+    enabled: bool = False
+    max_workers: int = Field(default=1, ge=1, le=8)
+    shutdown_timeout_seconds: float = Field(default=5.0, ge=0.0, le=300.0)
+
+
+class HermesArtifactSettings(BaseSettings):
+    """Read-only access to the HQA materialized artifact feed."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_HERMES_ARTIFACT_",
+        extra="ignore",
+    )
+
+    feed_path: Path = (
+        Path(__file__).resolve().parents[4]
+        / "Hermes-quant-agent"
+        / "artifacts"
+        / "hermes-feed"
+        / "manifest.v1.json"
+    )
+    freshness_budget_seconds: int = Field(default=10_800, gt=0)
+    max_future_clock_skew_seconds: int = Field(default=300, ge=0, le=86_400)
+    max_manifest_bytes: int = Field(default=4 * 1024 * 1024, gt=0)
+
+
+class HermesGatewaySettings(BaseSettings):
+    """Fail-closed, server-side access to the local Hermes API Server.
+
+    This credential authorizes the full upstream API, so browser code must
+    never receive it.  Session reads stay GET-only; supervised dispatch uses a
+    separate POST path with its own timeout and explicit ephemeral allow.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_HERMES_GATEWAY_",
+        extra="ignore",
+    )
+
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:8642"
+    api_key_file: Path | None = None
+    timeout_seconds: float = Field(default=2.0, gt=0, le=30, allow_inf_nan=False)
+    # Real /v1/runs can take tens of seconds; keep read timeout short separately.
+    dispatch_timeout_seconds: float = Field(default=120.0, gt=0, le=600, allow_inf_nan=False)
+    # Local Hermes 0.18.x may omit durable. True = allow POST /v1/runs anyway.
+    allow_ephemeral_runs: bool = True
+    max_response_bytes: int = Field(default=4 * 1024 * 1024, ge=4096, le=16 * 1024 * 1024)
+    max_messages: int = Field(default=200, ge=1, le=1000)
+
+
+class LocalMutationSettings(BaseSettings):
+    """Local single-user mutation / composer gate (default OFF).
+
+    Opening this does **not** enable live trading. Trading stays behind
+    ``SafetySettings`` (kill_switch / paper / dry_run). This flag only unlocks
+    the authenticated local BFF mutation path for research composer / workspace
+    act on loopback.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_LOCAL_MUTATION_",
+        extra="ignore",
+    )
+
+    enabled: bool = False
+    # When true and schemas+dispatch are ready, surface chat_write_ready locally.
+    composer_open: bool = False
+
+
+class IntentPayloadSettings(BaseSettings):
+    """Subprocess Port to HQA ``intent_payload_cli`` (L2a-Send).
+
+    Platform must not import ``hqa``. BFF uses ``put``; the supervised worker
+    uses ``bind_resolve``. Defaults point at the sibling Hermes-quant-agent
+    checkout and its venv when present.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_INTENT_PAYLOAD_",
+        extra="ignore",
+    )
+
+    # Empty → Port picks sibling HQA .venv/bin/python, else sys.executable.
+    python_executable: Path | None = None
+    hqa_root: Path = (
+        Path(__file__).resolve().parents[4] / "Hermes-quant-agent"
+    )
+    timeout_seconds: float = Field(default=15.0, gt=0, le=300, allow_inf_nan=False)
+
+
 class Settings(BaseSettings):
     """Application-level settings."""
 
@@ -430,11 +624,14 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "paper", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     api_cors_origins: list[str] = Field(
+        # First loopback origin becomes LocalSessionPolicy.accepted_origin
+        # (owner cookie/CSRF gate). Prefer the real FE default port 3001 so
+        # Next same-origin rewrites on :3001 are not workspace_forbidden.
         default_factory=lambda: [
-            "http://127.0.0.1:3000",
             "http://127.0.0.1:3001",
-            "http://localhost:3000",
+            "http://127.0.0.1:3000",
             "http://localhost:3001",
+            "http://localhost:3000",
         ]
     )
     safety: SafetySettings = Field(default_factory=SafetySettings)
@@ -445,9 +642,17 @@ class Settings(BaseSettings):
     futu: FutuSettings = Field(default_factory=FutuSettings)
     options_radar: OptionsRadarSettings = Field(default_factory=OptionsRadarSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    aihot: AiHotSettings = Field(default_factory=AiHotSettings)
+    news: NewsSettings = Field(default_factory=NewsSettings)
+    horizon: HorizonSettings = Field(default_factory=HorizonSettings)
     prediction_market: PredictionMarketSettings = Field(
         default_factory=PredictionMarketSettings
     )
+    backtest_jobs: BacktestJobSettings = Field(default_factory=BacktestJobSettings)
+    hermes_artifacts: HermesArtifactSettings = Field(default_factory=HermesArtifactSettings)
+    hermes_gateway: HermesGatewaySettings = Field(default_factory=HermesGatewaySettings)
+    local_mutation: LocalMutationSettings = Field(default_factory=LocalMutationSettings)
+    intent_payload: IntentPayloadSettings = Field(default_factory=IntentPayloadSettings)
 
 
 # Note on env loading:

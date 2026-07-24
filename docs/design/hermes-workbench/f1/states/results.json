@@ -1,0 +1,124 @@
+{
+  "schema_version": "1.0",
+  "surface": "results",
+  "default_state": "partial",
+  "states": [
+    {
+      "id": "loading",
+      "title": "正在加载结果合成视图…",
+      "title_en": "Loading result composition…",
+      "status": "loading",
+      "status_text": "loading · 加载中 / Fetching artifacts",
+      "summary": "正在读取 factor / backtest / experiment 投影。",
+      "summary_en": "Reading factor / backtest / experiment projections.",
+      "announcements": ["结果状态 loading。"],
+      "actions": [],
+      "result": null,
+      "long_error": "RESULT_LOADING_HINT: composition fetch for run research-aapl-risk-plan-2026-07-13-0912 exceeded soft budget 8s; sources=[artifact_shelf,experiment_projection,backtest_summary]; UI keeps skeleton with non-color loading status and must not flash a success sheet from stale cache without revalidation.",
+      "technical": [
+        { "label": "source", "value": "artifact_shelf" },
+        { "label": "run", "value": "research-aapl-risk-plan-2026-07-13-0912" }
+      ]
+    },
+    {
+      "id": "partial",
+      "title": "AAPL 风险与新因子计划",
+      "title_en": "AAPL risk and new factor plan",
+      "status": "partial",
+      "status_text": "partial · completed_degraded · 结果可阅读但不授予交易资格",
+      "summary": "结果可阅读，但不授予 paper/live 资格。关联审批项仍为 pending。",
+      "summary_en": "Result is readable but grants neither paper nor live eligibility. Linked approval remains pending.",
+      "announcements": ["结果状态 partial：completed_degraded。"],
+      "actions": [
+        { "id": "open-gate2", "label": "查看 Gate 2 摘要", "label_en": "View Gate 2 summary" },
+        { "id": "open-tech", "label": "技术详情", "label_en": "Technical detail" }
+      ],
+      "result": {
+        "title": "AAPL 风险与新因子计划",
+        "kind": "factor · backtest · experiment composition",
+        "run_status": "completed_degraded",
+        "metrics": [
+          { "k": "因子", "v": "momentum_20d_reversal" },
+          { "k": "回测窗口", "v": "2019-01 → 2025-12" },
+          { "k": "限制", "v": "degraded feed" }
+        ],
+        "candidate_id": "factor-momentum_20d_reversal-323b045e4b",
+        "limitations": ["degraded feed", "series gap", "charts truncated"]
+      },
+      "long_error": "RESULT_PARTIAL_DETAIL: run=research-aapl-risk-plan-2026-07-13-0912 status=completed_degraded limitations=[degraded_feed,series_gap,charts_truncated] metrics_partial=true promotion_eligibility=false linked_candidate=factor-momentum_20d_reversal-323b045e4b approval_status=pending; readable composition must never be mistaken for an approved trading signal.",
+      "technical": [
+        { "label": "artifact", "value": "research-aapl-risk-plan-2026-07-13-0912" },
+        { "label": "source", "value": "9H feed" },
+        { "label": "run_status", "value": "completed_degraded" }
+      ]
+    },
+    {
+      "id": "no_data",
+      "title": "无可展示结果",
+      "title_en": "No displayable result",
+      "status": "no_data",
+      "status_text": "no_data · 无数据 / Empty result set",
+      "summary": "当前过滤条件下没有 factor/backtest/experiment 合成结果。",
+      "summary_en": "No factor/backtest/experiment composition under the current filters.",
+      "announcements": ["结果状态 no_data。"],
+      "actions": [
+        { "id": "clear-filters", "label": "清除过滤", "label_en": "Clear filters" }
+      ],
+      "result": null,
+      "long_error": "RESULT_NO_DATA_DETAIL: query window=2026-07-13 kinds=[factor,backtest,experiment] matched=0; this is distinct from source_missing — feeds responded 200 with empty sets; do not render fabricated demo charts or placeholder sharpe values.",
+      "technical": [
+        { "label": "matched", "value": "0" },
+        { "label": "window", "value": "2026-07-13" }
+      ]
+    },
+    {
+      "id": "audit_warning",
+      "title": "结果可读，但审计证据不完整",
+      "title_en": "Result readable with incomplete audit evidence",
+      "status": "audit_warning",
+      "status_text": "audit_warning · 审计警告 / Incomplete audit trail",
+      "summary": "主结果可展示，但部分审计链缺失；禁止据此完成 Gate 3。",
+      "summary_en": "Primary result is displayable but audit chain is incomplete; Gate 3 must not complete on this evidence.",
+      "announcements": ["结果状态 audit_warning：审计证据不完整。"],
+      "actions": [
+        { "id": "view-audit", "label": "查看审计缺口", "label_en": "View audit gaps" }
+      ],
+      "result": {
+        "title": "AAPL 风险与新因子计划",
+        "kind": "factor · backtest · experiment composition",
+        "run_status": "completed_degraded",
+        "metrics": [
+          { "k": "因子", "v": "momentum_20d_reversal" },
+          { "k": "回测窗口", "v": "2019-01 → 2025-12" },
+          { "k": "审计", "v": "gap: bridge_journal" }
+        ],
+        "candidate_id": "factor-momentum_20d_reversal-323b045e4b",
+        "limitations": ["audit gap", "degraded feed"]
+      },
+      "long_error": "RESULT_AUDIT_WARNING_DETAIL: missing_evidence=[bridge_journal_seq_gap,experiment_stable_id_unbound] run=research-aapl-risk-plan-2026-07-13-0912; Gate 3 promote-candidate is blocked until audit chain is complete; human must not treat UI readability as audit parity with legacy pages.",
+      "technical": [
+        { "label": "audit", "value": "incomplete" },
+        { "label": "missing", "value": "bridge_journal_seq_gap,experiment_stable_id_unbound" }
+      ]
+    },
+    {
+      "id": "source_missing",
+      "title": "结果源不可用",
+      "title_en": "Result source unavailable",
+      "status": "source_missing",
+      "status_text": "source_missing · 源缺失 / Upstream source unavailable",
+      "summary": "artifact shelf 或投影源不可达。不同于空结果。",
+      "summary_en": "Artifact shelf or projection source unreachable. Distinct from an empty result set.",
+      "announcements": ["结果状态 source_missing。"],
+      "actions": [
+        { "id": "retry-fetch", "label": "重试加载", "label_en": "Retry load" }
+      ],
+      "result": null,
+      "long_error": "RESULT_SOURCE_MISSING_DETAIL: GET artifact_shelf failed with upstream_unavailable host=127.0.0.1 correlation=res-src-2026-07-13-0918; empty-state UI is incorrect here — show source_missing with retry; do not invent completed_degraded metrics from conversation text alone.",
+      "technical": [
+        { "label": "source", "value": "artifact_shelf" },
+        { "label": "error", "value": "upstream_unavailable" }
+      ]
+    }
+  ]
+}

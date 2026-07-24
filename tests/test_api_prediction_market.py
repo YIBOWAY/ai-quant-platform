@@ -217,13 +217,13 @@ def test_prediction_market_timeseries_backtest_returns_charts_and_result(
     assert response.status_code == 200
     payload = response.json()
     assert payload["run_id"]
-    assert payload["metrics"]["opportunity_count"] == 8
+    assert payload["metrics"]["opportunity_count"] == 9
     assert payload["chart_index"]["charts"]
     assert payload["report_url"].endswith("/artifacts/report.md")
 
     detail = client.get(f"/api/prediction-market/timeseries-backtest/{payload['run_id']}")
     assert detail.status_code == 200
-    assert detail.json()["result"]["metrics"]["simulated_trade_count"] == 6
+    assert detail.json()["result"]["metrics"]["simulated_trade_count"] == 7
 
     chart_path = detail.json()["chart_index"]["charts"][0]["url"]
     chart_response = client.get(chart_path)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ from quant_system.experiments.storage import LocalExperimentStorage
 from quant_system.experiments.sweep import expand_parameter_grid
 from quant_system.experiments.walk_forward import build_walk_forward_splits
 from quant_system.factors.pipeline import compute_factor_pipeline
-from quant_system.factors.registry import build_default_factor_registry
+from quant_system.factors.registry import FactorRegistry, build_default_factor_registry
 
 
 class ExperimentResult(BaseModel):
@@ -87,10 +88,10 @@ def run_experiment(
     output_dir: str | Path | None = None,
     provider: HistoricalDataProvider | None = None,
     data_source: str = "sample",
+    factor_registry: FactorRegistry | None = None,
 ) -> ExperimentResult:
     now_utc = datetime.now(UTC)
     created_at = now_utc.isoformat()
-    experiment_id = f"{config.experiment_name}-{now_utc.strftime('%Y%m%dT%H%M%SZ')}"
     active_provider = provider or SampleOHLCVProvider()
     ohlcv = active_provider.fetch_ohlcv(config.symbols, start=config.start, end=config.end)
     combinations = expand_parameter_grid(config.sweep)
@@ -103,11 +104,16 @@ def run_experiment(
             combination=combination,
             ohlcv=ohlcv,
             created_at=created_at,
+            factor_registry=factor_registry,
         )
         runs.append(run)
         fold_records.extend(folds)
 
-    storage = _build_storage(output_dir, experiment_id=experiment_id)
+    experiment_id, storage = _reserve_experiment_storage(
+        output_dir=output_dir,
+        experiment_name=config.experiment_name,
+        now_utc=now_utc,
+    )
     config_path = storage.save_config(config)
     runs_frame = pd.DataFrame([run.flat_record() for run in runs])
     runs_path = storage.save_frame(
@@ -167,12 +173,34 @@ def run_experiment(
     )
 
 
+def _new_experiment_id(experiment_name: str, now_utc: datetime) -> str:
+    """Allocate a per-invocation artifact identity, including concurrent calls."""
+    timestamp = now_utc.strftime("%Y%m%dT%H%M%S%fZ")
+    return f"{experiment_name}-{timestamp}-{secrets.token_hex(6)}"
+
+
+def _reserve_experiment_storage(
+    *,
+    output_dir: str | Path | None,
+    experiment_name: str,
+    now_utc: datetime,
+) -> tuple[str, LocalExperimentStorage]:
+    """Reserve a unique artifact namespace; never reuse or overwrite one."""
+    for _attempt in range(32):
+        experiment_id = _new_experiment_id(experiment_name, now_utc)
+        storage = _build_storage(output_dir, experiment_id=experiment_id)
+        if storage.reserve_namespace():
+            return experiment_id, storage
+    raise RuntimeError("could not reserve a unique experiment artifact namespace")
+
+
 def _run_combination(
     *,
     config: ExperimentConfig,
     combination: ParameterCombination,
     ohlcv: pd.DataFrame,
     created_at: str,
+    factor_registry: FactorRegistry | None = None,
 ) -> tuple[ExperimentRunSummary, list[dict[str, Any]]]:
     if config.walk_forward.enabled:
         return _run_walk_forward_combination(
@@ -180,6 +208,7 @@ def _run_combination(
             combination=combination,
             ohlcv=ohlcv,
             created_at=created_at,
+            factor_registry=factor_registry,
         )
 
     metrics = _run_single_backtest(
@@ -187,6 +216,7 @@ def _run_combination(
         combination=combination,
         ohlcv=ohlcv,
         signal_filter=None,
+        factor_registry=factor_registry,
     )
     return (
         _summary_from_metrics(
@@ -205,6 +235,7 @@ def _run_walk_forward_combination(
     combination: ParameterCombination,
     ohlcv: pd.DataFrame,
     created_at: str,
+    factor_registry: FactorRegistry | None = None,
 ) -> tuple[ExperimentRunSummary, list[dict[str, Any]]]:
     timestamps = ohlcv["timestamp"].drop_duplicates().sort_values()
     splits = build_walk_forward_splits(timestamps, config.walk_forward)
@@ -219,6 +250,7 @@ def _run_walk_forward_combination(
                 & (ohlcv["timestamp"] <= split.validation_end)
             ],
             signal_filter=split,
+            factor_registry=factor_registry,
         )
         fold_metrics.append(metrics)
         record = _fold_record(combination=combination, split=split, metrics=metrics)
@@ -242,10 +274,11 @@ def _run_single_backtest(
     combination: ParameterCombination,
     ohlcv: pd.DataFrame,
     signal_filter: WalkForwardSplit | None,
+    factor_registry: FactorRegistry | None = None,
 ) -> PerformanceMetrics:
     lookback = int(combination.parameters.get("lookback", 20))
     top_n = int(combination.parameters.get("top_n", 3))
-    factors = _create_factors(config, lookback=lookback)
+    factors = _create_factors(config, lookback=lookback, registry=factor_registry)
     factor_results = compute_factor_pipeline(ohlcv, factors=factors)
     score_frame = build_multifactor_score_frame(factor_results, config.factor_blend)
 
@@ -275,10 +308,15 @@ def _run_single_backtest(
     return BacktestEngine(backtest_config).run(backtest_ohlcv, strategy).metrics
 
 
-def _create_factors(config: ExperimentConfig, *, lookback: int):
-    registry = build_default_factor_registry()
+def _create_factors(
+    config: ExperimentConfig,
+    *,
+    lookback: int,
+    registry: FactorRegistry | None = None,
+):
+    active_registry = registry or build_default_factor_registry()
     return [
-        registry.create(factor.factor_id, lookback=lookback)
+        active_registry.create(factor.factor_id, lookback=lookback)
         for factor in config.factor_blend.factors
     ]
 
@@ -377,6 +415,11 @@ def _build_agent_summary(
             "end": config.end,
         },
         "walk_forward": config.walk_forward.model_dump(mode="json"),
+        "candidate_binding": (
+            config.candidate_binding.model_dump(mode="json")
+            if config.candidate_binding is not None
+            else None
+        ),
         "best_run_id": best_run.run_id if best_run else None,
         "runs": [run.model_dump(mode="json") for run in runs],
         "notes": [

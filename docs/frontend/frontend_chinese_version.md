@@ -84,8 +84,8 @@ http://127.0.0.1:3001
   预期的语言。
 - 从 `/zh/backtest`、`/zh/paper-trading` 和 `/zh/position-map` 进入时，运行详情
   链接保留 `/zh/...` 前缀，且详情页的返回链接回到本地化的列表页。
-- 在 `/zh/order-book` 上提交控件后，浏览器仍停留在
-  `/zh/order-book?...`。
+- 在 `/zh/polymarket` 上提交控件后，浏览器仍停留在
+  `/zh/polymarket?...`。
 - 两种语言下布局均保持完整。
 - 按钮仍然触发相同的后端调用。
 - 安全文案在两种语言下均存在。

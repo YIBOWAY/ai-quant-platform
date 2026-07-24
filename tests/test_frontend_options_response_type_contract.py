@@ -2,7 +2,9 @@ from pathlib import Path
 
 OPTIONS_LIVE_COMPONENTS = [
     Path("src/frontend/components/forms/OptionsRadarSymbolLive.tsx"),
-    Path("src/frontend/components/forms/OptionsToolsWorkbench.tsx"),
+    # Live option-chain handling for the tools workbench was extracted into this
+    # helper; the workbench itself no longer references OptionsChainResponse.
+    Path("src/frontend/lib/optionsToolsLive.ts"),
 ]
 
 

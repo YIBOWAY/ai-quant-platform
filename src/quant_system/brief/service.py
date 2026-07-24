@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+import secrets
+from datetime import date
+
+from quant_system.brief.models import (
+    BriefArchivePayload,
+    BriefIssueEnvelope,
+    BriefSourceWatermark,
+)
+from quant_system.brief.repository import BriefRepository
+
+_TOKEN_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+
+class BriefSnapshotMismatch(ValueError):
+    """Raised before persistence when request and snapshot identities differ."""
+
+
+class BriefService:
+    def __init__(self, repository: BriefRepository) -> None:
+        self._repository = repository
+
+    def generate_issue(
+        self,
+        *,
+        issue_date: date | None,
+        locale: str,
+        payload: BriefArchivePayload,
+        source_watermark: BriefSourceWatermark,
+    ) -> BriefIssueEnvelope:
+        active_date = issue_date or payload.issue_date
+        normalized_locale = locale.strip() or "zh"
+        if payload.issue_date != active_date:
+            raise BriefSnapshotMismatch(
+                "brief request issue_date must match payload issue_date"
+            )
+        if payload.locale != normalized_locale:
+            raise BriefSnapshotMismatch("brief request locale must match payload locale")
+        return self._repository.create_snapshot(
+            issue_date=active_date,
+            locale=normalized_locale,
+            public_id=_new_public_id(active_date),
+            payload=payload.model_dump(mode="json"),
+            source_watermark=source_watermark.model_dump(mode="json"),
+        )
+
+    def get_issue(self, public_id: str) -> BriefIssueEnvelope:
+        return self._repository.get_latest_by_public_id(public_id)
+
+    def get_latest_issue(
+        self,
+        *,
+        locale: str,
+        issue_date: date | None = None,
+    ) -> BriefIssueEnvelope:
+        normalized_locale = locale.strip() or "zh"
+        return self._repository.get_latest(
+            locale=normalized_locale,
+            issue_date=issue_date,
+        )
+
+def _new_public_id(issue_date: date) -> str:
+    token = "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(6))
+    return f"brf_{issue_date:%Y%m%d}_{token}"

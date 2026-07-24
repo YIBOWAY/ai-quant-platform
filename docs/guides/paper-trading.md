@@ -29,7 +29,38 @@
 
 ### A. 模拟账户
 
-账户是一个**持久实体**（`src/quant_system/execution/account.py` 的 `PaperAccount`）：现金 + 持仓（含均价 `avg_cost`）+ 已实现盈亏 + 一条完整审计账本。账户状态与账本一起落盘在 `<data>/api_runs/paper_account/default/account.json`，最新持仓另存为 `positions_snapshot.parquet`，跨请求、跨重启持续存在。
+账户是一个**持久实体**（`src/quant_system/execution/account.py` 的 `PaperAccount`）：现金 + 持仓（含均价 `avg_cost`）+ 已实现盈亏 + 一条完整审计账本。具体事实源由 `QS_PAPER_ACCOUNT_DB_MODE` 决定：默认 `file` 写
+`<data>/api_runs/paper_account/default/account.json` 与 `positions_snapshot.parquet`；
+`mirror` 先写同一文件事实源、再 best-effort 写 PostgreSQL；`canonical` 以 PostgreSQL
+为事实源，数据库不可用时 mutation fail closed；canonical 缺账户时普通 GET/写请求
+返回 `paper_account_bootstrap_required`，必须先显式 backfill/reconciliation。所有 API、
+CLI 和 operations 路径共用同一个 repository factory，不会静默换模式。
+
+账户响应会附带 `storage_mode`、`stale`、`warnings` 和 `reconciliation`。对账结果
+会检查 raw account、账户物化列、完整 ledger、positions、pending orders，以及最新
+snapshot 的 state/integrity/freshness：
+snapshot metadata 必须与 ledger/pending/position counts 一致，source 也必须属于当前
+repository/backfill 的已知 provenance，而不是“只要非空就算有效”。
+file 模式是 `not_applicable`，mirror 比较文件与数据库，canonical 比较数据库 raw 与
+materialized tables。它只是诊断证据，不会自动把账户切到 canonical。
+
+**纯只读账户快照**：API 使用 `GET /api/paper/account/snapshot`，CLI/Hermes 使用
+`quant-system paper account-show --account default --format json`。默认 text 输出仍保留，
+但两种 CLI 格式和 API 都先经 repository factory 与 `PaperAccountSnapshotReader`，不会
+维护第二套简化账户 JSON。业务 envelope 固定为
+`{account_id, account_exists, account}`；HTTP middleware 追加的 `safety` 只是 transport
+footer，不属于 CLI/domain payload。
+
+- file/mirror 缺账户返回 `account_exists=false, account=null`；canonical 缺账户返回
+  `paper_account_bootstrap_required`，不会静默从文件恢复。
+- canonical 数据库不可达返回 `paper_account_database_unavailable`；mirror 数据库不可达
+  仍返回 file-authoritative account，但以 `stale/reconciliation/warnings` 明确降级。
+- 有效 backup 可读时返回 `paper_account_primary_corrupt_using_backup` 且不修复主文件；
+  主备份都不可读时返回 `paper_account_storage_corrupt`，不会伪装成 missing。
+- 当前行情不可用时只为观察估值使用 `avg_cost_fallback`，并附
+  `paper_account_price_unavailable`；它不是实时价，也不会用于订单成交。
+- `positions_snapshot.parquet` 与 PostgreSQL position audit snapshot 都是派生保存/审计
+  产物，不是当前快照事实源。snapshot 读取不拿 mutation lock、不开户、不改文件。
 
 **手动下单**（`POST /api/paper/account/orders`）：
 - 选标的、买/卖、按**数量（股）**或**金额（美元）**下单（二选一），可选**限价**。
@@ -44,12 +75,36 @@
 - 再平衡只接受 Futu / Tiingo 等真实历史数据；sample 演示策略历史不能改变持续账户。
 - 生成计划前，当前持仓和目标标的都必须有有限且大于 0 的纸面价格；缺价或无效价格会整体中止，不会静默跳过某个卖出/买入腿。
 - **原子性保证**：再平衡先在账户副本上**全量试算**，只有"所有腿都能成交"才提交到真实账户；只要有一腿被拒，**整体中止、不动账户**（不会出现"卖光了却买不进、变成全现金"），并如实返回 `aborted=true`。
+- 这条路径仍是**旧的全账户再平衡**，不是 Paper Strategy Sleeves 入口。它不是清仓按钮，也不是新建袖珍仓；它会按整个账户持仓与目标求差并直接买卖整个模拟账户，不能复用这条路径冒充 sleeve。
+- 如果账户里已经有真实 sleeve-owned lot，后端会拒绝这条旧路径并返回 `409 strategy_sleeve_positions_present`；这样它不会绕过 sleeve lot book 去卖策略袖珍仓的持仓。
+
+**Paper Strategy Sleeves 当前状态**：
+- 2026-06-26 已完成后端基础、API contract 与 daily signal 生成：版本化 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal`、本地存储、`sleeve_cash` 现金分配簿、`SleeveLotBook` lot 隔离，以及 `/api/paper/strategy-configs` / `/api/paper/strategy-sleeves` / `POST /api/paper/strategy-sleeves/{id}/signals`。
+- 2026-06-27 已完成 MVP-2 第一切片：`StrategyExecutionPlan` / `StrategyExecutionOrder` / `StrategyExecutionFill` 后端模型、`executions.jsonl` 本地持久化、`GET /api/paper/strategy-sleeves/{id}` 返回 executions，以及 `POST /api/paper/strategy-sleeves/{id}/executions` 从已生成 signal 创建 pending execution plan。
+- 2026-06-27 已完成 MVP-2 第二/第三切片：`paper_strategy_execution_service.py` 可以处理 next-open pending plan，按 sleeve cash/lot/source 隔离更新模拟账户；`POST /api/paper/strategy-sleeves/executions/process`、`quant-system paper strategies create-execution`、`quant-system paper strategies execute-pending` 已可手动触发。
+- 2026-06-27 已完成 MVP-2 第四切片：`/paper-trading` 的「策略袖珍仓」面板会展示每个 sleeve 的最新 execution state，并提供「创建计划」与「处理待执行」两个一次性纸面执行按钮。
+- 2026-06-29 已完成 MVP-2 第五切片：真实 Futu/OpenD opt-in 测试覆盖 signal 生成和 next-open paper execution processor；创建 execution plan 未显式传 `target_date` 时，会默认使用本地运行日期；处理 pending execution 未显式传 `target_date` 时，只处理本地运行日期对应的 due plan。
+- MVP-3 execution journal 与 crash recovery 已完成安全分缝：所有 GET、sleeve list/detail 和
+  `ops-status --format json` 都严格只读，只观察并报告 pending/corrupt journal；它们不会
+  finalize、discard 或改写任何文件。只有显式 `paper strategies recover-pending` 或其他
+  命名 mutation 路径才会在锁内执行恢复。
+- 共享 operations runner 只供显式变更命令复用。可用的一次性命令包括
+  `quant-system paper strategies generate-due-signals`、`execute-due`、`execute-pending` 与
+  `recover-pending`；`ops-status --format json` 只是 scheduler-safe 只读状态 seam。
+- 9G 的精确行动审计使用独立 CLI：`quant-system paper strategies observations
+  --from-date <YYYY-MM-DD> --to-date <YYYY-MM-DD> --signal-id <id> --limit 200
+  --format json`。它返回 bounded signal/execution facts 与质量水位，不创建 HTTP route、
+  不做恢复或 mutation，也不负责判断 missed。
+- 手动 signal CLI 已可用：`quant-system paper strategies generate-signal --sleeve <id>`。
+- `/paper-trading` 的「策略袖珍仓」工作区已可用：可以创建 strategy config，开设 `signal_only` 或 `allocated` sleeve，在页面内生成 sleeve signal，并暂停 / 恢复 / 停止 sleeve。新建 strategy config 的活跃名称必须唯一；同名历史配置会在下拉里追加短 id 区分。`allocated` 模式会从手动现金通道划拨模拟现金；`signal_only` 不移动现金。
+- 已有 Mac LaunchAgent 模板和 runbook，但尚未默认启用常驻自动成交调度。页面执行按钮和 CLI `execute-due` 都只是显式的一次性本地纸面动作：先从已生成 signal 创建 pending execution plan，再处理目标日期到期的 plan；不会复用旧全账户再平衡路径，也不会触碰真实交易接口。Mac 常驻方向会用 LaunchAgent 管本地服务/one-shot 命令，而不是新增真实交易通路。
+- 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md)、[MVP-2 执行计划](../design/paper_strategy_sleeves_mvp2_plan.md)、[MVP-3 运维与自动化计划](../design/paper_strategy_sleeves_mvp3_operations_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。
 
-**账本、恢复与重置**：每一笔成交、拒单、未成交、冻结、再平衡中止都写入账本（`GET /api/paper/account/ledger`，最新在前）。`account.json` 覆盖前会保留 `account.json.bak`；如果主账户 JSON 损坏，读取时会把损坏文件保留为 `account.corrupt-*.json`，并优先从有效备份恢复。没有可用备份时才会重新开账户。账户保存只使用带重试的原子替换；替换持续失败时旧文件保持不变，保存显式失败，不会退化成普通文本覆盖。重置（`POST /api/paper/account/reset`）会先把旧账户**归档**到 `archive/` 再开新账户。
+**账本、恢复与重置**：每一笔成交、拒单、未成交、冻结、再平衡中止都写入账本（`GET /api/paper/account/ledger`，最新在前）。在 file/mirror 模式下，`account.json` 覆盖前会保留 `account.json.bak`；如果主账户 JSON 损坏，纯读取只返回有效备份与 warning、绝不移动文件，随后持锁的变更路径才会把损坏主文件保留为 `account.corrupt-*.json` 并恢复。账户保存只使用带重试的原子替换；重置会先归档旧文件。canonical 模式不伪造文件 archive，重置直接在 PostgreSQL 写入新的 reset 事件和审计快照。
 
-并发安全：网页请求会在进程内串行，网页与 CLI / 定时任务之间还会使用账户锁文件串行；定时再平衡与手动下单同时发生也不会丢记录。
+并发安全：网页请求会在进程内串行；file/mirror 通过账户锁文件协调 CLI / 定时任务，canonical 使用 PostgreSQL advisory lock。定时再平衡与手动下单不能绕过所选 repository。
 
 模拟账户 API 的领域错误会返回结构化 `detail.code` / `detail.message`，便于前端精确展示：
 
@@ -59,10 +114,13 @@
 - `unsupported_account_rebalance_strategy`：策略存在，但不允许进入持续账户再平衡。
 - `unknown_account_rebalance_strategy`：请求了不存在的账户再平衡策略。
 - `replay_kill_switch_enabled` / `global_kill_switch_enabled`：历史回放被回放安全锁或全局安全锁拒绝。
+- `paper_account_bootstrap_required`：canonical 库缺账户，必须显式 backfill/reconcile。
+- `paper_account_database_unavailable`：canonical 数据库不可读，查询不回退文件。
+- `paper_account_storage_corrupt`：所选事实源存在但不可安全解码，查询 fail closed。
 
 ### B. 历史回放（`POST /api/paper/run`，在「历史回放（研究）」标签页）
 
-逐 bar 回放：因子信号 → `ScoreSignalStrategy` 目标权重 → 先卖后买生成订单 → 风控 → 模拟撮合（次 bar 开盘价）。产出订单 / 成交 / 风控触发 parquet + 报告，列在运行索引里。标签页内：左侧 360px 卡是回放表单（`PaperRunForm`，默认 `SPY,QQQ` + `futu` + 截至今天的滚动 180 天窗口；安全锁开关常开，点它弹出说明对话框），右侧是最新运行指标、运行历史表（可切换显示被隐藏的 sample 运行）、成交 / 订单生命周期 / 风控触发明细表。当一次运行 0 成交且风控触发 > 0 时，页面会显示「全局安全锁拦截了订单」的解释卡。注意它受**全局** `QS_KILL_SWITCH` 约束（默认开 → 该路径会拦截订单），这条与上面的账户级冻结是两回事。
+逐 bar 回放：因子信号 → `ScoreSignalStrategy` 目标权重 → 先卖后买生成订单 → 风控 → 模拟撮合（次 bar 开盘价）。产出订单 / 成交 / 风控触发 parquet + 报告，列在运行索引里。标签页内：左侧 360px 卡是回放表单（`PaperRunForm`，默认 `SPY,QQQ` + `futu` + 截至当前运行日的滚动 180 天窗口；安全锁开关常开，点它弹出说明对话框），右侧是最新运行指标、运行历史表（可切换显示被隐藏的 sample 运行）、成交 / 订单生命周期 / 风控触发明细表。当一次运行 0 成交且风控触发 > 0 时，页面会显示「全局安全锁拦截了订单」的解释卡。注意它受**全局** `QS_KILL_SWITCH` 约束（默认开 → 该路径会拦截订单），这条与上面的账户级冻结是两回事。
 
 ---
 
@@ -97,9 +155,12 @@
 | 可用现金 available_cash | 总现金扣除待处理买入限价单预留后的现金 |
 | 持仓数 | 当前持有的不同标的数量 |
 | avg_cost 均价 | 建仓加权成本（含买入手续费），卖出时据此结算已实现盈亏 |
-| price_kind | 报价来源：`futu_snapshot`（实时）/ `last_close`（最近收盘） |
+| price_kind | 报价来源：`futu_snapshot`（实时）/ `last_close`（最近收盘）/ `avg_cost_fallback`（仅观察降级，不是市场价） |
 | source_breakdown | 该持仓中「手动 / 策略」各自占比 |
 | aborted | 再平衡是否因某腿被拒而整体中止 |
+| storage_mode | 当前 repository 模式：`file` / `mirror` / `canonical` |
+| stale / warnings | reconciliation 发现差异或数据库不可达时的诊断状态 |
+| reconciliation | 结构化 expected/actual 摘要、hash 与 typed differences |
 
 ---
 
@@ -107,6 +168,7 @@
 
 - 暂不支持做空 / 杠杆（先支持多头 + 卖出已持有）；负持仓未开放。
 - 暂为单一账户（`default`）、单一币种（USD）；数据模型已为多账户预留 `account_id`。
+- 当前运行环境仍是默认 `file`；canonical 是已实现能力，不代表已经完成 live 切换。
 - 历史回放路径仍受全局 `QS_KILL_SWITCH` 约束，与账户级冻结互不相同，别混淆。
 - 期权 / 预测市场不纳入这个现货账户。
 
@@ -124,11 +186,15 @@
 
 - 账户模型 / 账本：`src/quant_system/execution/account.py`
 - 账户持久化：`src/quant_system/execution/account_storage.py`
+- 统一账户观察快照：`src/quant_system/execution/account_snapshot.py`
+- repository contract/factory：`src/quant_system/execution/account_repository.py`、`account_repository_factory.py`
+- PostgreSQL/mirror repository：`src/quant_system/execution/account_postgres_repository.py`、`account_dual_write_repository.py`
 - 取价（Futu 快照→最近收盘）：`src/quant_system/execution/price_source.py`
 - 下单 / 再平衡服务：`src/quant_system/execution/account_service.py`
 - 撮合 / 风控（复用）：`src/quant_system/execution/paper_broker.py`、`order_manager.py`、`src/quant_system/risk/engine.py`
 - API：`src/quant_system/api/routes/paper.py`、`src/quant_system/api/schemas/paper.py`
 - 策略再平衡能力声明：`src/quant_system/strategies/registry.py`（`supports_account_rebalance`）
-- CLI 定时再平衡：`src/quant_system/cli.py`（`paper rebalance` / `paper account-show`）
-- 前端：`src/frontend/app/paper-trading/page.tsx`、`src/frontend/components/forms/AccountTradePanel.tsx`、`src/frontend/lib/accountRebalanceStrategies.ts`
+- Strategy Sleeves 后端基础、信号生成、pending execution 与 ops runner：`src/quant_system/execution/paper_strategy_sleeves.py`、`src/quant_system/execution/paper_strategy_sleeve_storage.py`、`src/quant_system/execution/paper_strategy_signal_service.py`、`src/quant_system/execution/paper_strategy_execution_service.py`、`src/quant_system/execution/paper_strategy_operations.py`
+- CLI：`src/quant_system/cli.py`（`paper rebalance` / `paper account-show` / `paper strategies generate-signal` / `paper strategies create-execution` / `paper strategies execute-pending`）
+- 前端：`src/frontend/app/paper-trading/page.tsx`、`src/frontend/components/forms/AccountTradePanel.tsx`、`src/frontend/components/forms/PaperStrategySleevesPanel.tsx`、`src/frontend/lib/api.ts`、`src/frontend/lib/accountRebalanceStrategies.ts`
 - 历史回放（旧路径）：`src/quant_system/execution/pipeline.py`

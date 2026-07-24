@@ -6,7 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
-from quant_system.config.settings import PaperAccountSettings, SafetySettings, Settings
+from quant_system.config.settings import (
+    DatabaseSettings,
+    PaperAccountSettings,
+    SafetySettings,
+    Settings,
+)
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.price_source import PricedQuote
 
@@ -146,6 +151,418 @@ def test_ledger_records_orders_newest_first(tmp_path, stub_prices) -> None:
     assert symbols[0] == "MSFT"
 
 
+def test_account_activity_groups_tabs_from_ledger(tmp_path, stub_prices) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    filled = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 5},
+    )
+    assert filled.status_code == 200
+    queued = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "MSFT", "side": "buy", "quantity": 3, "limit_price": 50.0},
+    )
+    assert queued.status_code == 200
+    queued_order_id = queued.json()["order"]["order_id"]
+
+    activity = client.get("/api/paper/account/activity").json()
+    assert activity["account"]["positions"][0]["symbol"] == "AAPL"
+    assert activity["pending_order_total"] == 1
+    assert activity["pending_orders"][0]["order_id"] == queued_order_id
+    assert activity["order_history_total"] >= 1
+    assert activity["order_history"][0]["status"] == "filled"
+    assert activity["order_history"][0]["symbol"] == "AAPL"
+    assert activity["balance_history_total"] >= 2
+    assert activity["balance_history"][0]["cash_after"] == pytest.approx(999_000.0)
+    assert activity["trade_log_total"] >= activity["balance_history_total"]
+
+    cancelled = client.post(f"/api/paper/account/orders/{queued_order_id}/cancel")
+    assert cancelled.status_code == 200
+    after_cancel = client.get("/api/paper/account/activity").json()
+    assert after_cancel["pending_order_total"] == 0
+    assert after_cancel["order_history"][0]["status"] == "cancelled"
+    assert after_cancel["order_history"][0]["order_id"] == queued_order_id
+
+
+def test_account_equity_curve_does_not_open_missing_account(tmp_path, stub_prices) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/paper/account/equity-curve")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_exists"] is False
+    assert payload["points"] == []
+    assert PaperAccountStorage(tmp_path / "api_runs").load() is None
+
+
+def test_account_snapshot_does_not_open_missing_account(tmp_path, stub_prices) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/paper/account/snapshot")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_exists"] is False
+    assert payload["account"] is None
+    assert PaperAccountStorage(tmp_path / "api_runs").load() is None
+
+
+def test_account_snapshot_reads_existing_account(tmp_path, stub_prices) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 3},
+    )
+
+    response = client.get("/api/paper/account/snapshot")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_exists"] is True
+    account = payload["account"]
+    assert account["account_id"] == "default"
+    assert account["positions"][0]["symbol"] == "AAPL"
+    assert account["positions"][0]["quantity"] == pytest.approx(3)
+
+
+def test_account_repository_factory_selects_configured_mode(tmp_path) -> None:
+    from quant_system.execution.account_dual_write_repository import (
+        DualWritePaperAccountRepository,
+    )
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+    from quant_system.execution.account_repository_factory import (
+        build_paper_account_repository,
+    )
+
+    file_repository = build_paper_account_repository(
+        tmp_path,
+        settings=Settings(paper_account=PaperAccountSettings(db_mode="file")),
+    )
+    mirror_repository = build_paper_account_repository(
+        tmp_path,
+        settings=Settings(paper_account=PaperAccountSettings(db_mode="mirror")),
+    )
+    canonical_repository = build_paper_account_repository(
+        tmp_path,
+        settings=Settings(paper_account=PaperAccountSettings(db_mode="canonical")),
+    )
+
+    assert isinstance(file_repository, PaperAccountStorage)
+    assert isinstance(mirror_repository, DualWritePaperAccountRepository)
+    assert isinstance(canonical_repository, PostgresPaperAccountRepository)
+    assert not isinstance(canonical_repository, PaperAccountStorage)
+    assert canonical_repository.source == "api_canonical"
+
+
+def test_paper_account_canonical_mode_rejects_mutation_when_db_unavailable(
+    tmp_path,
+    stub_prices,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+
+    class UnavailablePostgres(PostgresPaperAccountRepository):
+        def available_for_mutation(self) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        UnavailablePostgres,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(enabled=False, url=None),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 1},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "paper_account_database_unavailable"
+
+    reset_response = client.post(
+        "/api/paper/account/reset",
+        json={"initial_cash": 1000.0},
+    )
+    assert reset_response.status_code == 503
+    assert reset_response.json()["detail"]["code"] == "paper_account_database_unavailable"
+
+
+def test_paper_account_canonical_mode_maps_midflight_save_failure_to_503(
+    tmp_path,
+    stub_prices,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account import PaperAccount
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+
+    class FlakyPostgres(PostgresPaperAccountRepository):
+        def available_for_mutation(self) -> bool:
+            return True
+
+        def load_or_open(self, *, initial_cash: float = 1_000_000.0):
+            return PaperAccount.open_new(
+                account_id=self.account_id,
+                initial_cash=initial_cash,
+            )
+
+        def save(self, account, **_kwargs):
+            raise RuntimeError(
+                "PostgreSQL database is unavailable for paper account canonical save"
+            )
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        FlakyPostgres,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(enabled=True, url="postgresql://user:pass@localhost:5432/tmp"),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 1},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "paper_account_database_unavailable"
+
+
+def test_paper_account_canonical_get_open_maps_db_failure_to_503(
+    tmp_path,
+    stub_prices,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+
+    class FailingLoadOpen(PostgresPaperAccountRepository):
+        def load_or_open(self, *, initial_cash: float = 1_000_000.0):
+            raise RuntimeError("PostgreSQL database is unavailable for paper account load")
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        FailingLoadOpen,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(enabled=False, url=None),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+    response = client.get("/api/paper/account")
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "paper_account_database_unavailable"
+
+
+def test_paper_account_canonical_get_missing_requires_explicit_bootstrap(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+    from quant_system.execution.account_repository import (
+        PaperAccountBootstrapRequired,
+    )
+
+    class MissingCanonical(PostgresPaperAccountRepository):
+        @contextlib.contextmanager
+        def mutation_lock(self, **_kwargs):
+            yield
+
+        def load_or_open(self, *, initial_cash: float = 1_000_000.0):
+            del initial_cash
+            raise PaperAccountBootstrapRequired(self.account_id)
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        MissingCanonical,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(
+            enabled=True,
+            url="postgresql://user:pass@localhost:5432/tmp",
+        ),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.get("/api/paper/account")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "paper_account_bootstrap_required"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/api/paper/account",
+        "/api/paper/account/activity",
+        "/api/paper/account/ledger",
+    ],
+)
+def test_paper_account_canonical_get_maps_corrupt_raw_to_stable_503(
+    tmp_path,
+    monkeypatch,
+    endpoint,
+) -> None:
+    from quant_system.execution import account_repository_factory
+    from quant_system.execution.account_postgres_repository import (
+        PostgresPaperAccountRepository,
+    )
+    from quant_system.execution.account_repository import PaperAccountStorageCorrupt
+
+    class CorruptCanonical(PostgresPaperAccountRepository):
+        @contextlib.contextmanager
+        def mutation_lock(self, **_kwargs):
+            yield
+
+        def load_or_open(self, *, initial_cash: float = 1_000_000.0):
+            del initial_cash
+            raise PaperAccountStorageCorrupt(self.account_id)
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        CorruptCanonical,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(
+            enabled=True,
+            url="postgresql://user:pass@localhost:5432/tmp",
+        ),
+        paper_account=PaperAccountSettings(db_mode="canonical"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "paper_account_storage_corrupt"
+
+
+def test_mirror_mode_order_response_stays_file_canonical_when_postgres_fails(
+    tmp_path,
+    stub_prices,
+    monkeypatch,
+) -> None:
+    from quant_system.execution import account_repository_factory
+
+    failures: list[str] = []
+
+    class FailingPostgresRepository:
+        def __init__(
+            self,
+            *,
+            settings,
+            account_id: str = "default",
+            source: str = "api_dual_write",
+        ) -> None:
+            self.settings = settings
+            self.account_id = account_id
+            self.source = source
+
+        def save(self, account, **_kwargs):
+            failures.append(account.account_id)
+            raise RuntimeError("mirror database unavailable")
+
+    monkeypatch.setattr(
+        account_repository_factory,
+        "PostgresPaperAccountRepository",
+        FailingPostgresRepository,
+        raising=False,
+    )
+    settings = Settings(
+        database=DatabaseSettings(enabled=False, url=None),
+        paper_account=PaperAccountSettings(db_mode="mirror"),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 2},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"order", "account", "safety"}
+    assert payload["account"]["storage_mode"] == "mirror"
+    assert payload["account"]["stale"] is True
+    assert set(payload["account"]["warnings"]) >= {
+        "paper_account_db_mirror_unavailable",
+        "paper_account_reconciliation_unavailable",
+    }
+    assert payload["account"]["reconciliation"]["status"] == "unavailable"
+    assert payload["account"]["positions"][0]["quantity"] == pytest.approx(2)
+    assert failures == ["default", "default"]
+
+    persisted = PaperAccountStorage(tmp_path / "api_runs").load()
+    assert persisted is not None
+    assert persisted.positions["AAPL"].quantity == pytest.approx(2)
+
+
+def test_account_equity_curve_replays_ledger_and_current_mark(
+    tmp_path,
+    stub_prices,
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    client.post(
+        "/api/paper/account/orders",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 100},
+    )
+    stub_prices["AAPL"] = 210.0
+
+    response = client.get("/api/paper/account/equity-curve")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_exists"] is True
+    assert payload["account_id"] == "default"
+    assert payload["total"] == 3
+    assert [point["source"] for point in payload["points"]] == [
+        "ledger",
+        "ledger",
+        "current_quote",
+    ]
+    deposit, fill, current = payload["points"]
+    assert deposit["event_kind"] == "deposit"
+    assert deposit["equity"] == pytest.approx(1_000_000.0)
+    assert fill["event_kind"] == "fill"
+    assert fill["symbol"] == "AAPL"
+    assert fill["quantity"] == pytest.approx(100.0)
+    assert fill["market_value"] == pytest.approx(20_000.0)
+    assert fill["equity"] == pytest.approx(1_000_000.0)
+    assert current["event_kind"] == "current"
+    assert current["price_source"]["kind"] == "futu_snapshot"
+    assert current["market_value"] == pytest.approx(21_000.0)
+    assert current["equity"] == pytest.approx(1_001_000.0)
+
+
 def test_rebalance_applies_strategy_targets_to_account(tmp_path, stub_prices, monkeypatch) -> None:
     # Stub the strategy target computation so the rebalance is deterministic and
     # offline (no factor pipeline / provider needed).
@@ -175,6 +592,12 @@ def test_rebalance_applies_strategy_targets_to_account(tmp_path, stub_prices, mo
     assert by_symbol["AAPL"]["source_breakdown"]["strategy:cross_sectional_top_n"] == pytest.approx(
         1.0
     )
+
+    repeat = client.post(
+        "/api/paper/account/rebalance",
+        json={"strategy_id": "cross_sectional_top_n", "symbols": ["AAPL", "MSFT"], "top_n": 2},
+    )
+    assert repeat.status_code == 200
 
 
 def test_paper_run_still_works_alongside_account(tmp_path, stub_prices) -> None:
@@ -388,9 +811,7 @@ def test_persistent_account_rebalance_rejects_sample_history(tmp_path, stub_pric
     assert response.status_code == 422
 
 
-def test_account_rebalance_rejects_strategy_without_account_support(
-    tmp_path, stub_prices
-) -> None:
+def test_account_rebalance_rejects_strategy_without_account_support(tmp_path, stub_prices) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 
     response = client.post(
@@ -412,12 +833,19 @@ def test_concurrent_orders_do_not_lose_updates(tmp_path, stub_prices) -> None:
     import threading
 
     client = TestClient(create_app(output_dir=tmp_path))
+    responses = []
+    errors = []
 
     def buy() -> None:
-        client.post(
-            "/api/paper/account/orders",
-            json={"symbol": "MSFT", "side": "buy", "quantity": 1},
-        )
+        try:
+            responses.append(
+                client.post(
+                    "/api/paper/account/orders",
+                    json={"symbol": "MSFT", "side": "buy", "quantity": 1},
+                )
+            )
+        except Exception as exc:
+            errors.append(exc)
 
     threads = [threading.Thread(target=buy) for _ in range(12)]
     for t in threads:
@@ -425,6 +853,9 @@ def test_concurrent_orders_do_not_lose_updates(tmp_path, stub_prices) -> None:
     for t in threads:
         t.join()
 
+    assert errors == []
+    assert len(responses) == 12
+    assert all(response.status_code == 200 for response in responses)
     account = client.get("/api/paper/account").json()
     msft = [p for p in account["positions"] if p["symbol"] == "MSFT"]
     assert msft and msft[0]["quantity"] == pytest.approx(12)
@@ -438,9 +869,7 @@ def test_rapid_resets_archive_each_account(tmp_path, stub_prices) -> None:
             json={"symbol": "AAPL", "side": "buy", "quantity": 1},
         )
         client.post("/api/paper/account/reset", json={"initial_cash": 1_000_000})
-    archive = list(
-        (tmp_path / "api_runs" / "paper_account" / "default" / "archive").glob("*.json")
-    )
+    archive = list((tmp_path / "api_runs" / "paper_account" / "default" / "archive").glob("*.json"))
     assert len(archive) == 3
 
 
@@ -521,6 +950,7 @@ def test_rebalance_aborts_without_mutation_when_a_leg_is_rejected(
         call_count["n"] += 1
         # The trial run calls _execute_single for each leg; reject the first BUY.
         from quant_system.execution.models import OrderSide
+
         if side == OrderSide.BUY and call_count["n"] <= 2:
             return OrderOutcome(
                 status="rejected",

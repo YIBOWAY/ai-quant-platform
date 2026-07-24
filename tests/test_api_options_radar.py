@@ -168,8 +168,17 @@ def test_api_startup_schedules_options_radar_catchup_when_enabled(
         def start(self) -> None:
             scheduled.append(self.args)
 
+    class NoopThread:
+        def join(self, timeout=None) -> None:
+            return None
+
     monkeypatch.setattr(api_server, "_options_radar_startup_catchup_run_date", lambda: run_date)
     monkeypatch.setattr(api_server, "_run_options_radar_startup_catchup", lambda *_args: None)
+    monkeypatch.setattr(
+        api_server,
+        "_start_backtest_job_reconciliation",
+        lambda _runner: NoopThread(),
+    )
     monkeypatch.setattr(api_server.threading, "Thread", FakeThread)
 
     with TestClient(create_app(settings=settings, output_dir=tmp_path)):
@@ -231,7 +240,7 @@ def test_api_startup_skips_options_radar_catchup_when_snapshot_is_current(
 ) -> None:
     from quant_system.api import server as api_server
 
-    run_date = datetime.now(UTC).date().isoformat()
+    run_date = api_server._options_radar_startup_catchup_run_date(datetime.now(UTC))
     _write_sample_snapshot(tmp_path, run_date)
     settings = Settings(
         options_radar=OptionsRadarSettings(
@@ -245,6 +254,15 @@ def test_api_startup_skips_options_radar_catchup_when_snapshot_is_current(
         def __init__(self, **_kwargs) -> None:
             raise AssertionError("startup catch-up should not be scheduled")
 
+    class NoopThread:
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(
+        api_server,
+        "_start_backtest_job_reconciliation",
+        lambda _runner: NoopThread(),
+    )
     monkeypatch.setattr(api_server.threading, "Thread", FakeThread)
 
     with TestClient(create_app(settings=settings, output_dir=tmp_path)):

@@ -2,7 +2,19 @@
 
 本仓库是一个**本地优先**的 AI 量化研究与模拟交易平台。它面向研究、测试、报告与只读行情分析而构建，**不是实盘交易平台**。
 
-当前状态：Phase 14 已交付；在初始交付之后，又新增了本地期权工具、雷达下钻、运行详情页、实验回顾，以及本地 Futu 期权报价缓存等内容。
+Phase 0-14 是已交付的历史能力层，不是当前开发路线。HQA Slice 9A-9G、只读
+mini 9H、完整 9H 自动化/通知与 D-31 Wave 2 的 Scene-B 三道 Gate 均已完成；
+promotion commit `524e791` 已合入。平台随后交付了 official Hermes API 的只读
+session list/detail/messages BFF 与 `/hermes/sessions` 观察面，但没有开放 chat write。
+[前端渐进改造与 Hermes 集成计划](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
+保留 Slice 0-8 记录与未来 UI backlog；恢复该 backlog 前必须先做新的产品决定并另立
+独立 bite-sized plan。9E 位于 HQA；它复用 9D 的 `data prices`
+严格只读 Futu/QFQ/1d JSON seam（25 个标的、500 个
+含首尾日历日期上限，无其他 provider 或 local fallback）；HQA v2 以 previous UTC date
+为 `end`、`end-400 days` 为 `start`，经全局日期 inner join 和至少 60 个对齐收益，输出逐仓 beta 与持仓两两
+correlation，不输出 aggregate beta、VaR 或阈值 verdict。当前进度先看
+[INDEX.md](INDEX.md)，
+不要从旧 phase 文档的标题或 checkbox 推断。
 
 ## 它能做什么
 
@@ -10,7 +22,7 @@
 
 - 读取真实的美股与 ETF 历史数据。
 - 在因子实验室查看横截面与择时诊断（2026-06-11 起默认 `futu` 真实数据，数据源/股票池/择时标的/基准可在侧栏调整），并可保存因子研究运行。
-- 运行策略、universe、因子权重与基准回测。
+- 运行策略、universe、因子权重与基准回测；长回测可通过 opt-in 本地 async jobs 轮询与取消。
 - 从 API 读取已注册的策略目录与股票 universe 目录。
 - 运行可选数据源（`sample` / `futu` / `tiingo`）的实验扫描并存储结果；结果页会只读展示被扫描的固定因子组合。
 - 在持久模拟账户（初始 100 万美元）里手动买卖美股，或让策略一键再平衡，并在持仓地图查看。
@@ -19,7 +31,7 @@
 期权研究：
 
 - 读取 Futu 美股期权链与报价快照。
-- 运行单标的期权卖方收益筛选器（Options Income Screener）。
+- 运行单标的期权卖方收益筛选器（Options Income Screener），并通过质量过滤、`Avoid` 审计开关和备注列查看评级原因。
 - 在本地 universe 上运行每日期权雷达（Options Radar）扫描。
 - 从雷达 UI 刷新本地的雷达 universe、财报与 VIX 缓存；默认使用公开数据源，sample 数据仅作为明确的测试源。
 - 查看单标的雷达候选，并可选地加载实时期权链。
@@ -34,11 +46,38 @@
 - 运行回放式时间序列回测。
 - 生成报告与图表。
 
-AI 研究助手：
+Hermes 与 AI 研究工作流：
 
-- 生成候选因子、实验配置与报告。
-- 将候选项存入评审池。
-- 任何内容晋级前都必须经过人工评审。
+- Hermes 会话负责生成研究源码/产物；平台负责确定性摄入、候选池、人工审批、
+  一次性研究回测和 promote diff。
+- `/brief` 提供动态晨报和不可变归档；`/hermes` 通过只读
+  `GET /api/hermes/artifacts` 展示风险、预测、推演、周报、机会与自动化状态。
+- `/hermes/sessions` 通过平台 API/BFF 读取 official Hermes API Server 上已保存的
+  本机会话；session list/detail/messages 均为 server-side GET-only。Hermes Bearer key
+  留在 owner-only 文件中，不进入浏览器。health、capabilities 和 session reads 不执行
+  prompt、不调用 provider，也不消耗 Hermes 配置的 provider 额度。
+- 平台兼容 schema 1.0 的精确三来源合同与 schema 1.1 的精确六来源合同；whole-feed
+  freshness budget 是 10800 秒。
+- 9G 由 HQA 本地 JSONL opportunity ledger 负责；平台只提供 CLI-only、file-backed 的
+  `paper strategies observations` 精确行动事实。9G 没有新增平台数据库表、HTTP route、
+  `/hermes` 卡片或调度器。
+- 完整 9H 的 scheduler 与 outbound delivery 位于 HQA；平台没有为此新增 scheduler、
+  outbound worker、POST route 或数据库 migration。
+- Hermes session-read 增量同样没有新增数据库 migration，也没有把上游会话复制到
+  PostgreSQL。旧 TUI gateway contract 已漂移并 fail closed；official API Server 是当前
+  主读取链路。
+- 平台不复活 LLM runner，不把 disabled composer 伪装成可执行任务面。
+- `chat_write`、Hermes approval mutation、统一动态 Results 和旧研究页 redirects 仍为
+  hard-off。Approvals 页面只展示证据，`approvalMutations=false`。
+- 任何候选晋级前都必须经过人工评审；常驻 paper/live 路径不加载 candidate 文件。
+
+AI 行业资讯：
+
+- 浏览 AI HOT 精选或全部新闻流。
+- 按分类、关键词和时间窗筛选，查看日报和近期日报归档。
+- 打开原文链接核对来源。
+- 当可选 PostgreSQL 启用且已有缓存时，上游暂时失败可显示本地缓存并标注 warning。
+- 资讯页面只用于研究阅读，不生成交易信号，不触发策略、回测或模拟账户。
 
 ## 它不能做什么
 
@@ -95,6 +134,8 @@ http://127.0.0.1:3001
 - [实验管理 Experiments](guides/experiments.md)
 - [模拟交易 Paper Trading](guides/paper-trading.md)
 - [持仓地图 Position Map](guides/position-map.md)
+- [AI 新闻研究流 AI News](guides/ai-news.md)
+- [Hermes 会话读取、密钥边界与故障排查](guides/hermes-sessions.md)
 
 模拟交易与持仓地图的设计与实现记录（单一 100 万模拟账户、策略一键再平衡 + 手动美股下单、统一持仓地图，**阶段 1-5 已实现**）：
 
@@ -104,13 +145,16 @@ http://127.0.0.1:3001
 
 ## 新贡献者阅读顺序
 
-1. [README.md](../README.md)
-2. [INDEX.md](INDEX.md)
-3. [SYSTEM_DESIGN_RESEARCH.md](SYSTEM_DESIGN_RESEARCH.md)
-4. [execution/phase_13_execution.md](execution/phase_13_execution.md)
-5. [delivery/phase_13_delivery.md](delivery/phase_13_delivery.md)
-6. [execution/phase_14_execution.md](execution/phase_14_execution.md)
-7. [delivery/phase_14_delivery.md](delivery/phase_14_delivery.md)
+1. [INDEX.md](INDEX.md) — 当前主线和文档分类。
+2. [README.md](../README.md) — 启动、稳定能力和安全边界。
+3. HQA `docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` 与
+   `docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md`（已交付记录）。
+4. [前序 Slice 0-8 记录](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)。
+5. [数据库/存储架构](architecture/database_cache_plan.md)。
+6. 改到具体功能时再读对应 `guides/`、`execution/` 和测试。
+
+`SYSTEM_DESIGN_RESEARCH.md`、Phase 0-15、delivery 和 audit 文档是设计/交付历史，
+需要追溯决策时再读，不作为“下一步”入口。
 
 期权方向，另读：
 
@@ -118,6 +162,24 @@ http://127.0.0.1:3001
 - [options/options_screener_learning.md](options/options_screener_learning.md)
 - [options/buyside_strategy_learning.md](options/buyside_strategy_learning.md)
 
-下一步数据库/缓存方向，请读：
+当前数据库/缓存实现，请读：
 
 - [architecture/database_cache_plan.md](architecture/database_cache_plan.md)
+
+## 当前交接
+
+HQA 9A-9G、mini/full 9H、Scene-B final→Gate 3、official Hermes session-read、
+PostgreSQL transport ledger 与只读 Unified Results 已完成。V5 dark supervised dispatch
+与 V6 本地 dark enablement（2026-07-21）已把真实 loopback `/v1/runs` adapter、CLI
+supervised mode、provider smoke 与 settings-gated local mutation/composer 打开。
+**L2a-Send（2026-07-22）** 接上 composite `submit-turn` → Intent Payload Store →
+ledger → worker bind/resolve → Hermes（live `L2a-pong`）。**L2b-Observe（2026-07-22）**
+接上 command-aware snapshot/follow 与 delivered 后 messages 预览。交易 kill_switch 与
+approval mutation / Results cutover / 旧页 retirement / **public** composer 仍关闭。
+Plan-V6 完整 transcript UI / SSE 仍未完成。
+
+Migration 005–007 已 live；L2a claim 扩展见 `008_l2a_conversation_turn_claim.sql`。
+connector worker 默认 `reconcile_only`。`--mode supervised_dispatch` 自动构建
+`HttpHermesDispatchAdapter`（ephemeral runs 可开）。空队列检查不调用 LLM；不要用
+Hermes cron 反复询问“有没有新任务”。完整 public composer 仍需 V8 与剩余 Plan-V6 UI
+（Attempt observe 全链、approval exact binding、stop reconciliation、SSE）。

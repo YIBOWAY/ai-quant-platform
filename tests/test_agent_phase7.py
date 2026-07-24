@@ -2,9 +2,13 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
-from quant_system.agent.candidate_pool import CandidatePool
+from quant_system.agent.candidate_pool import (
+    CandidatePool,
+    CandidateReviewStateStaleError,
+)
 from quant_system.agent.llm.stub import StubLLMClient
 from quant_system.agent.runner import AgentRunner
 from quant_system.agent.safety import SafetyGate
@@ -37,7 +41,7 @@ def test_safety_gate_default_denies_promotion(tmp_path) -> None:
         content="class CandidateFactor:\n    pass\n",
     )
 
-    gate = SafetyGate(pool.candidates_dir)
+    gate = SafetyGate(tmp_path)
 
     assert gate.allow_promotion(artifact.candidate_id) is False
 
@@ -47,13 +51,13 @@ def test_safety_gate_rejects_path_traversal_candidate_id(tmp_path) -> None:
     outside_dir.mkdir(parents=True)
     (outside_dir / "approved.lock").write_text("not a candidate", encoding="utf-8")
 
-    gate = SafetyGate(Path(tmp_path, "agent", "candidates"))
+    gate = SafetyGate(tmp_path)
 
     assert gate.allow_promotion("../escape") is False
 
 
 def test_audit_log_records_all_steps(tmp_path) -> None:
-    result = AgentRunner(output_dir=tmp_path, llm=StubLLMClient()).propose_factor(
+    result = AgentRunner(agent_output_dir=tmp_path, llm=StubLLMClient()).propose_factor(
         goal="low-vol momentum",
         universe=["SPY", "QQQ"],
     )
@@ -74,7 +78,7 @@ def test_factor_proposal_does_not_exec_generated_code(tmp_path, monkeypatch) -> 
 
     monkeypatch.setattr(os, "system", fail_if_called)
 
-    artifact = AgentRunner(output_dir=tmp_path, llm=MaliciousLLM()).propose_factor(
+    artifact = AgentRunner(agent_output_dir=tmp_path, llm=MaliciousLLM()).propose_factor(
         goal="try to execute shell",
         universe=["SPY"],
     )
@@ -84,7 +88,7 @@ def test_factor_proposal_does_not_exec_generated_code(tmp_path, monkeypatch) -> 
 
 
 def test_candidate_metadata_safety_block(tmp_path) -> None:
-    artifact = AgentRunner(output_dir=tmp_path, llm=StubLLMClient()).propose_factor(
+    artifact = AgentRunner(agent_output_dir=tmp_path, llm=StubLLMClient()).propose_factor(
         goal="low-vol momentum",
         universe=["SPY", "QQQ"],
     )
@@ -108,14 +112,19 @@ def test_review_approve_creates_lock_only(tmp_path) -> None:
             "low-vol momentum",
             "--universe",
             "SPY,QQQ",
-            "--output-dir",
+            "--agent-output-dir",
             str(tmp_path),
         ],
     )
     assert proposal.exit_code == 0
-    candidate_dirs = list(Path(tmp_path, "agent", "candidates").iterdir())
+    candidate_dirs = [
+        p
+        for p in Path(tmp_path, "agent", "candidates").iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+    ]
     assert len(candidate_dirs) == 1
     candidate_id = candidate_dirs[0].name
+    digest = CandidatePool(tmp_path).get(candidate_id).manifest_digest
 
     review = runner.invoke(
         app,
@@ -128,7 +137,11 @@ def test_review_approve_creates_lock_only(tmp_path) -> None:
             "approve",
             "--note",
             "manual review passed",
-            "--output-dir",
+            "--expected-digest",
+            digest,
+            "--expected-status",
+            "pending",
+            "--agent-output-dir",
             str(tmp_path),
         ],
     )
@@ -136,6 +149,44 @@ def test_review_approve_creates_lock_only(tmp_path) -> None:
     assert review.exit_code == 0
     assert Path(tmp_path, "agent", "candidates", candidate_id, "approved.lock").exists()
     assert candidate_id not in build_default_factor_registry().factor_ids()
+
+
+def test_review_final_decision_is_immutable(tmp_path) -> None:
+    pool = CandidatePool(tmp_path)
+    artifact = pool.write_candidate(
+        task_id="task-approve-reject",
+        goal="candidate factor",
+        artifact_type="factor",
+        filename="factor.py.candidate",
+        content="class CandidateFactor:\n    pass\n",
+    )
+    candidate_dir = pool.candidates_dir / artifact.candidate_id
+    gate = SafetyGate(tmp_path)
+    digest = artifact.manifest_digest or ""
+
+    pool.review(
+        candidate_id=artifact.candidate_id,
+        decision="approve",
+        note="looks safe",
+        expected_manifest_digest=digest,
+        expected_status="pending",
+    )
+    assert gate.allow_promotion(artifact.candidate_id) is True
+    approved_bytes = (candidate_dir / "approved.lock").read_bytes()
+
+    with pytest.raises(CandidateReviewStateStaleError):
+        pool.review(
+            candidate_id=artifact.candidate_id,
+            decision="reject",
+            note="revoked",
+            expected_manifest_digest=digest,
+            expected_status="pending",
+        )
+
+    assert (candidate_dir / "approved.lock").read_bytes() == approved_bytes
+    assert not (candidate_dir / "rejected.lock").exists()
+    assert gate.allow_promotion(artifact.candidate_id) is True
+    assert pool.list_for_read()[0].status == "approved"
 
 
 def test_stub_llm_is_deterministic() -> None:
@@ -158,7 +209,7 @@ def test_stub_llm_is_deterministic() -> None:
 
 
 def test_propose_experiment_outputs_valid_experiment_config(tmp_path) -> None:
-    artifact = AgentRunner(output_dir=tmp_path, llm=StubLLMClient()).propose_experiment(
+    artifact = AgentRunner(agent_output_dir=tmp_path, llm=StubLLMClient()).propose_experiment(
         goal="test a momentum and volatility blend",
         universe=["SPY", "QQQ"],
     )

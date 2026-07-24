@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
-from quant_system.api.dependencies import ApiRunsDirDep, OutputDirDep, SettingsDep
+from quant_system.api.dependencies import (
+    ApiRunsDirDep,
+    OutputDirDep,
+    SettingsDep,
+)
 from quant_system.api.errors import not_found_404, provider_unavailable_400
 from quant_system.api.schemas.common import (
     make_run_id,
@@ -22,18 +26,37 @@ from quant_system.api.schemas.factors import (
 from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.factors.lab import build_factor_lab_dashboard
 from quant_system.factors.pipeline import run_factor_research
-from quant_system.factors.registry import build_default_factor_registry
-from quant_system.storage.runs_repository import index_run, list_run_metadatas
+from quant_system.factors.registry import build_factor_registry
+from quant_system.storage.runs_repository import list_run_metadatas, persist_run
 
 router = APIRouter()
 
 
 @router.get("/factors", response_model=FactorCatalogResponse)
-def list_factors() -> dict:
-    registry = build_default_factor_registry()
+def list_factors(
+    request: Request,
+) -> dict:
+    if "include_candidates" in request.query_params:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "candidate_bulk_loading_disabled",
+                "message": (
+                    "Use an exact candidate ID and expected digest in the "
+                    "one-shot research CLI."
+                ),
+            },
+        )
+    # Catalog GETs execute only built-in/promoted registry code. Candidate
+    # source is never imported by a read endpoint.
+    registry = build_factor_registry()
+    origins = registry.origins()
     return {
         "factors": [
-            metadata.model_dump(mode="json")
+            {
+                **metadata.model_dump(mode="json"),
+                "origin": origins[metadata.factor_id],
+            }
             for metadata in registry.list_metadata()
         ]
     }
@@ -82,13 +105,7 @@ def run_factor(
             "report": str(result.report_path),
         },
     }
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "metadata.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    index_run("factor", metadata, run_dir, settings)
-    return metadata
+    return persist_run(run_dir, "factor", metadata, settings=settings)
 
 
 
@@ -139,6 +156,8 @@ def factor_lab_dashboard(
             status_code=400,
             detail={"code": "invalid_factor_lab_request", "message": str(exc)},
         ) from exc
+    except DataProviderUnavailableError as exc:
+        raise provider_unavailable_400(exc) from exc
 
 
 @router.get("/factors/{run_id}", response_model=FactorRunDetailResponse)

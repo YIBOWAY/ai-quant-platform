@@ -185,7 +185,7 @@ export function ExperimentTabs({ detail, experiment, locale = "en" }: Experiment
           </div>
           {bestRun ? (
             <Link
-              className="shrink-0 rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
+              className="inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/5 px-3 font-body-sm text-info transition-colors hover:bg-bg-surface"
               href={backtestHref}
             >
               {text.sendToBacktest}

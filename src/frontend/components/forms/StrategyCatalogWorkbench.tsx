@@ -14,7 +14,14 @@ import {
 import { toast } from "sonner";
 import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
-import { Card, MetricStat, PageHeader, SectionTitle } from "@/components/ui/primitives";
+import {
+  Card,
+  MetricStat,
+  PageHeader,
+  SectionTitle,
+  TerminalSplitShell,
+  TerminalToolbarButton,
+} from "@/components/ui/primitives";
 import type {
   FactorMetadata,
   PreviewRecord,
@@ -24,6 +31,7 @@ import type {
 } from "@/lib/api";
 import { formatPercent } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
+import { isBacktestJobState, waitForBacktestJob } from "@/lib/backtestJobs";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath, type Locale } from "@/lib/locale";
 import { asStringArray, buildStrategyPayload } from "@/lib/strategyPayload";
@@ -254,7 +262,10 @@ export function StrategyCatalogWorkbench({
         payload.strategy_id = strategy.id;
       }
       const response = await apiPost<StrategyRunResponse>(strategy.run_endpoint, payload);
-      setResult(response);
+      const completedResponse = isBacktestJobState(response)
+        ? await waitForBacktestJob(response)
+        : response;
+      setResult(completedResponse);
       toast.success(text.finished(strategy.name));
     } catch (requestError) {
       setError(
@@ -270,8 +281,9 @@ export function StrategyCatalogWorkbench({
   }
 
   return (
-    <main className="flex h-full min-h-0 bg-bg-base">
-      <aside className="flex h-full w-[360px] shrink-0 flex-col overflow-y-auto border-r border-border-subtle bg-bg-surface p-4">
+    <TerminalSplitShell
+      sidebar={
+        <>
         <h2 className="font-headline-lg text-text-primary">{text.title}</h2>
         <p className="mt-2 font-body-sm text-text-secondary">{text.subtitle}</p>
 
@@ -352,18 +364,20 @@ export function StrategyCatalogWorkbench({
               ) : null}
             </div>
           ) : null}
-          <button
-            className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+          <TerminalToolbarButton
+            className="h-9"
             disabled={!isHydrated || pending}
             onClick={() => void submit()}
-            type="button"
+            tone="info"
           >
             {pending ? text.running : text.run}
-          </button>
+          </TerminalToolbarButton>
         </section>
-      </aside>
+        </>
+      }
+      sidebarClassName="p-4 lg:w-[360px]"
+    >
 
-      <section className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
         <PageHeader
           eyebrow={text.eyebrow}
           title={strategy?.name ?? text.title}
@@ -387,7 +401,7 @@ export function StrategyCatalogWorkbench({
               {result?.run_id && strategy?.result_type === "replication" ? (
                 <Link
                   className="rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-info"
-                  href={localizePath(`/replications/${String(result.run_id)}`, locale)}
+                  href={localizePath(`/strategies/${String(result.run_id)}`, locale)}
                 >
                   {text.openReplication}
                 </Link>
@@ -486,8 +500,7 @@ export function StrategyCatalogWorkbench({
             <SectionTitle title={text.noResultTitle} hint={text.noResult} />
           </Card>
         )}
-      </section>
-    </main>
+    </TerminalSplitShell>
   );
 }
 

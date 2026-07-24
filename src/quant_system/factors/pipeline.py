@@ -51,7 +51,11 @@ def compute_factor_pipeline(
     )
 
 
-def build_factor_signal_frame(factor_results: pd.DataFrame) -> pd.DataFrame:
+def build_factor_signal_frame(
+    factor_results: pd.DataFrame,
+    *,
+    weights: dict[str, float] | None = None,
+) -> pd.DataFrame:
     """Combine factor values into a per-symbol score frame.
 
     Each factor is z-scored cross-sectionally at every ``signal_ts`` so that
@@ -90,7 +94,18 @@ def build_factor_signal_frame(factor_results: pd.DataFrame) -> pd.DataFrame:
         if column not in {"symbol", "signal_ts", "tradeable_ts"}
     ]
     wide[factor_columns] = wide[factor_columns].fillna(0.0)
-    wide["score"] = wide[factor_columns].mean(axis=1)
+    active_weights = {
+        factor_id: float(weight)
+        for factor_id, weight in (weights or {}).items()
+        if factor_id in factor_columns and float(weight) != 0.0
+    }
+    if active_weights:
+        denominator = sum(abs(weight) for weight in active_weights.values())
+        wide["score"] = sum(
+            wide[factor_id] * weight for factor_id, weight in active_weights.items()
+        ) / denominator
+    else:
+        wide["score"] = wide[factor_columns].mean(axis=1)
     return wide.sort_values(["signal_ts", "symbol"], ignore_index=True)
 
 

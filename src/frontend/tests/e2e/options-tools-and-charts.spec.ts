@@ -1,5 +1,90 @@
 import { expect, test } from "@playwright/test";
 
+async function installOptionsMarketFixtures(page: import("@playwright/test").Page) {
+  const expiry = "2026-07-17";
+  await page.route("**/api/options/snapshot/*", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        ticker: "AAPL",
+        source: "playwright-fixture",
+        price: 200,
+        nearest_expiry: expiry,
+        atm_iv: 0.28,
+        hv_30d: 0.22,
+        iv_rank: 55,
+        iv_percentile: 60,
+        iv_rank_source: "fixture",
+        vrp: 0.06,
+        vrp_level: "Normal",
+        assumptions: ["Playwright fixture for local options-tool smoke tests."],
+      }),
+    });
+  });
+  await page.route("**/api/options/chain?**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ticker: "AAPL",
+        source: "playwright-fixture",
+        expiration: expiry,
+        option_type: "ALL",
+        contracts: [
+          {
+            symbol: "AAPL260717C00195000",
+            option_type: "CALL",
+            expiry,
+            strike: 195,
+            bid: 8.2,
+            ask: 8.6,
+            implied_volatility: 0.3,
+            delta: 0.61,
+            volume: 1200,
+            open_interest: 5000,
+          },
+          {
+            symbol: "AAPL260717C00200000",
+            option_type: "CALL",
+            expiry,
+            strike: 200,
+            bid: 5.2,
+            ask: 5.6,
+            implied_volatility: 0.28,
+            delta: 0.52,
+            volume: 1500,
+            open_interest: 6200,
+          },
+          {
+            symbol: "AAPL260717C00210000",
+            option_type: "CALL",
+            expiry,
+            strike: 210,
+            bid: 2.3,
+            ask: 2.6,
+            implied_volatility: 0.29,
+            delta: 0.34,
+            volume: 900,
+            open_interest: 4100,
+          },
+          {
+            symbol: "AAPL260717P00200000",
+            option_type: "PUT",
+            expiry,
+            strike: 200,
+            bid: 4.8,
+            ask: 5.1,
+            implied_volatility: 0.29,
+            delta: -0.47,
+            volume: 1100,
+            open_interest: 5800,
+          },
+        ],
+      }),
+    });
+  });
+}
+
 test.describe("options tools and real chart surfaces", () => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
 
@@ -48,6 +133,7 @@ test.describe("options tools and real chart surfaces", () => {
   });
 
   test("options tools page exposes the local AlphaGBM toolbox", async ({ page }) => {
+    await installOptionsMarketFixtures(page);
     await page.goto("/options-tools", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("networkidle");
 

@@ -8,8 +8,20 @@ from quant_system.factors.base import FactorMetadata
 from quant_system.universe.registry import UniverseDefinition
 
 
+class FactorCatalogItem(FactorMetadata):
+    """Factor metadata plus catalog provenance.
+
+    ``origin`` is additive and always present: ``builtin`` for example factors
+    and ``promoted`` for code-reviewed promoted-library factors. Candidate
+    source is never imported by the catalog GET; exact candidate research is a
+    separate CLI-only flow bound to candidate ID plus manifest digest.
+    """
+
+    origin: Literal["builtin", "promoted"]
+
+
 class FactorCatalogResponse(BaseModel):
-    factors: list[FactorMetadata]
+    factors: list[FactorCatalogItem]
 
 
 class FactorRunSummary(BaseModel):
@@ -43,6 +55,9 @@ class FactorRunPathsResponse(BaseModel):
 
 class FactorRunResponse(BaseModel):
     run_id: str
+    kind: str = "factor"
+    status: str = "completed"
+    created_at: str | None = None
     source: str
     row_count: int
     signal_count: int

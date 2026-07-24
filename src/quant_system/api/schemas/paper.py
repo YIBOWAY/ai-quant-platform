@@ -1,14 +1,262 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class PaperRunSummary(BaseModel):
     id: str
     source: str | None = None
     summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyConfigResponse(BaseModel):
+    strategy_config_id: str
+    version: int
+    name: str
+    description: str = ""
+    strategy_id: str
+    universe_id: str | None = None
+    symbols: list[str] = Field(default_factory=list)
+    factor_ids: list[str] = Field(default_factory=list)
+    weights: dict[str, float] = Field(default_factory=dict)
+    lookback: int
+    top_n: int
+    rebalance_frequency: str
+    max_weight_per_symbol: float
+    min_order_value: float
+    data_provider: str
+    execution_timing: str
+    created_at: str
+    updated_at: str
+    archived: bool = False
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategySleeveResponse(BaseModel):
+    sleeve_id: str
+    account_id: str
+    strategy_config_id: str
+    strategy_config_version: int
+    mode: Literal["signal_only", "allocated"]
+    status: Literal["running", "paused", "stopped"]
+    initial_allocated_cash: float
+    cash: float
+    created_at: str
+    updated_at: str
+    paused_at: str | None = None
+    stopped_at: str | None = None
+    stop_reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SleeveLotResponse(BaseModel):
+    lot_id: str
+    account_id: str
+    sleeve_id: str
+    symbol: str
+    quantity: float
+    avg_cost: float
+    opened_at: str
+    updated_at: str
+    source: str
+
+
+class StrategySignalResponse(BaseModel):
+    signal_id: str
+    sleeve_id: str
+    strategy_config_id: str
+    strategy_config_version: int
+    signal_date: str
+    generated_at: str
+    data_provider: str
+    data_as_of: str | None = None
+    target_weights: dict[str, float] = Field(default_factory=dict)
+    proposed_orders: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    status: Literal["generated", "data_unavailable", "invalid"]
+    execution_blocked_reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyExecutionOrderResponse(BaseModel):
+    symbol: str
+    side: str
+    target_weight: float | None = None
+    current_value: float | None = None
+    target_value: float | None = None
+    notional_delta: float | None = None
+    reference_price: float | None = None
+    estimated_quantity: float | None = None
+    reason: str | None = None
+    account_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyExecutionFillResponse(BaseModel):
+    fill_id: str
+    symbol: str
+    side: str
+    quantity: float
+    price: float
+    gross_value: float
+    price_kind: str
+    filled_at: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyExecutionPlanResponse(BaseModel):
+    execution_id: str
+    sleeve_id: str
+    account_id: str
+    signal_id: str
+    strategy_config_id: str
+    strategy_config_version: int
+    execution_window: str
+    target_date: str | None = None
+    created_at: str
+    updated_at: str
+    status: Literal[
+        "pending",
+        "filled",
+        "partially_filled",
+        "skipped",
+        "blocked",
+        "missed_window",
+        "failed",
+        "cancelled",
+    ]
+    blocked_reason: str | None = None
+    orders: list[StrategyExecutionOrderResponse] = Field(default_factory=list)
+    fills: list[StrategyExecutionFillResponse] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyConfigCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    strategy_id: str
+    universe_id: str | None = None
+    symbols: list[str] = Field(default_factory=list)
+    factor_ids: list[str] = Field(default_factory=list)
+    weights: dict[str, float] = Field(default_factory=dict)
+    lookback: int = Field(default=20, gt=0)
+    top_n: int = Field(default=3, gt=0)
+    rebalance_frequency: str = "daily"
+    max_weight_per_symbol: float = Field(default=1.0, gt=0)
+    min_order_value: float = Field(default=0.0, ge=0)
+    data_provider: Literal["futu", "tiingo"] = "futu"
+    execution_timing: str = "next_open"
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyConfigMutationResponse(BaseModel):
+    config: StrategyConfigResponse
+
+
+class StrategyConfigsResponse(BaseModel):
+    configs: list[StrategyConfigResponse]
+
+
+class StrategySleeveCreateRequest(BaseModel):
+    strategy_config_id: str
+    strategy_config_version: int | None = Field(default=None, ge=1)
+    mode: Literal["signal_only", "allocated"]
+    allocated_cash: float = Field(default=0.0, ge=0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategySleevesResponse(BaseModel):
+    sleeves: list[StrategySleeveResponse]
+
+
+class StrategySleeveDetailResponse(BaseModel):
+    sleeve: StrategySleeveResponse
+    lots: list[SleeveLotResponse]
+    signals: list[StrategySignalResponse]
+    executions: list[StrategyExecutionPlanResponse] = Field(default_factory=list)
+
+
+class StrategySleeveStopRequest(BaseModel):
+    reason: str | None = None
+
+
+class StrategySignalGenerateRequest(BaseModel):
+    signal_date: str | None = None
+    history_days: int = Field(default=180, gt=0)
+
+
+class StrategySignalMutationResponse(BaseModel):
+    signal: StrategySignalResponse
+
+
+class StrategyExecutionCreateRequest(BaseModel):
+    signal_id: str
+    execution_window: Literal["next_open"] = "next_open"
+    target_date: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("target_date")
+    @classmethod
+    def validate_target_date(cls, value: str | None) -> str | None:
+        return _validate_iso_date(value)
+
+
+class StrategyExecutionMutationResponse(BaseModel):
+    execution: StrategyExecutionPlanResponse
+
+
+class StrategyExecutionProcessRequest(BaseModel):
+    sleeve_id: str | None = None
+    execution_window: Literal["next_open"] = "next_open"
+    target_date: str | None = None
+    limit: int = Field(default=50, gt=0, le=500)
+
+    @field_validator("target_date")
+    @classmethod
+    def validate_target_date(cls, value: str | None) -> str | None:
+        return _validate_iso_date(value)
+
+
+class StrategyExecutionProcessResponse(BaseModel):
+    processed_count: int
+    filled_count: int
+    blocked_count: int
+    executions: list[StrategyExecutionPlanResponse]
+    account: PaperAccountResponse
+
+
+class StrategyOpsStatusPayload(BaseModel):
+    target_date: str
+    sleeve_count: int
+    pending_sleeve_count: int
+    running_sleeve_count: int
+    pending_execution_count: int
+    pending_due_count: int
+    filled_count: int
+    blocked_count: int
+    recovery_required_count: int
+    pending_journal_count: int
+    corrupt_journal_count: int
+
+
+class StrategyOpsStatusResponse(BaseModel):
+    status: StrategyOpsStatusPayload
+
+
+def _validate_iso_date(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("target_date must be an ISO date in YYYY-MM-DD format") from exc
+    return parsed.isoformat()
 
 
 class PaperRunsResponse(BaseModel):
@@ -37,6 +285,9 @@ class PaperRunPathsResponse(BaseModel):
 
 class PaperRunResponse(BaseModel):
     run_id: str
+    kind: str = "paper"
+    status: str = "completed"
+    created_at: str | None = None
     source: str
     signal_count: int
     order_count: int
@@ -83,6 +334,25 @@ class PaperAccountPriceSourceResponse(BaseModel):
     as_of: str | None = None
 
 
+class PaperAccountReconciliationDifferenceResponse(BaseModel):
+    field: str
+    expected: Any = None
+    actual: Any = None
+
+
+class PaperAccountReconciliationResponse(BaseModel):
+    status: Literal["in_sync", "different", "unavailable", "not_applicable"]
+    account_id: str
+    source: str
+    target: str | None = None
+    checked_at: str
+    expected_summary: dict[str, Any] = Field(default_factory=dict)
+    actual_summary: dict[str, Any] = Field(default_factory=dict)
+    differences: list[PaperAccountReconciliationDifferenceResponse] = Field(
+        default_factory=list
+    )
+
+
 class PaperAccountResponse(BaseModel):
     account_id: str
     base_currency: str
@@ -102,6 +372,46 @@ class PaperAccountResponse(BaseModel):
     pending_orders: list[PendingAccountOrderResponse]
     created_at: str
     updated_at: str
+    storage_mode: Literal["file", "mirror", "canonical"] | None = None
+    stale: bool = False
+    warnings: list[str] = Field(default_factory=list)
+    reconciliation: PaperAccountReconciliationResponse | None = None
+
+
+class PaperAccountEquityCurvePointResponse(BaseModel):
+    timestamp: str
+    equity: float
+    cash: float
+    market_value: float
+    realized_pnl: float
+    source: Literal["ledger", "current_quote"]
+    event_id: str | None = None
+    event_kind: str | None = None
+    symbol: str | None = None
+    side: str | None = None
+    quantity: float | None = None
+    price: float | None = None
+    price_source: PaperAccountPriceSourceResponse
+
+
+class PaperAccountEquityCurveResponse(BaseModel):
+    account_id: str
+    account_exists: bool
+    total: int
+    limit: int
+    offset: int
+    points: list[PaperAccountEquityCurvePointResponse]
+
+
+class PaperAccountSnapshotResponse(BaseModel):
+    account_id: str
+    account_exists: bool
+    account: PaperAccountResponse | None = None
+
+
+class StrategySleeveMutationResponse(BaseModel):
+    sleeve: StrategySleeveResponse
+    account: PaperAccountResponse
 
 
 class PaperAccountOrderOutcomeResponse(BaseModel):
@@ -162,6 +472,49 @@ class PaperLedgerResponse(BaseModel):
     limit: int
     offset: int
     entries: list[LedgerEntryResponse]
+
+
+class PaperAccountOrderHistoryRowResponse(BaseModel):
+    event_id: str
+    order_id: str | None = None
+    timestamp: str
+    status: str
+    kind: str
+    source: str
+    symbol: str | None = None
+    side: str | None = None
+    quantity: float | None = None
+    price: float | None = None
+    gross_value: float | None = None
+    commission: float = 0.0
+    price_kind: str | None = None
+    realized_pnl_delta: float = 0.0
+    cash_after: float | None = None
+    note: str | None = None
+
+
+class PaperAccountBalanceHistoryRowResponse(BaseModel):
+    event_id: str
+    timestamp: str
+    kind: str
+    source: str
+    cash_after: float
+    cash_delta: float
+    note: str | None = None
+
+
+class PaperAccountActivityResponse(BaseModel):
+    account: PaperAccountResponse
+    pending_orders: list[PendingAccountOrderResponse]
+    order_history: list[PaperAccountOrderHistoryRowResponse]
+    balance_history: list[PaperAccountBalanceHistoryRowResponse]
+    trade_log: list[LedgerEntryResponse]
+    pending_order_total: int
+    order_history_total: int
+    balance_history_total: int
+    trade_log_total: int
+    limit: int
+    offset: int
 
 
 PaperRunRecord = dict[str, Any]

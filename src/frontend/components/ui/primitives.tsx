@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 /**
  * Shared UI primitives for the quant platform frontend.
@@ -8,8 +8,8 @@ import type { ReactNode } from "react";
  * Design system (anchor: Linear spacing/motion + Bloomberg Terminal density):
  * - Surfaces: hairline borders (border-border-subtle), no drop shadows.
  * - Radius: rounded-lg (8px) uniformly.
- * - Accent: a single brand green (accent-success / #00C896). Status colors
- *   (warning/danger/info) are reserved for genuine state, never decoration.
+ * - Semantic color: success/danger are reserved for genuine financial or
+ *   safety outcomes; info/neutral carry active navigation and generic actions.
  * - Data is monospace (font-data-mono); labels are uppercase caps (font-label-caps).
  * - Spacing rhythm: 4 / 8 / 12 / 16 / 24 (Tailwind 1/2/3/4/6).
  *
@@ -43,20 +43,32 @@ const toneSurfaceTint: Record<Tone, string> = {
   info: "bg-info/5",
 };
 
+export const terminalInputClass =
+  "rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50";
+
+export const terminalInputCompactClass =
+  "rounded-lg border border-border-subtle bg-bg-base px-2 py-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50";
+
+export const terminalFilterInputClass =
+  "h-8 rounded-lg border border-border-subtle bg-bg-base px-2 font-data-mono text-text-primary outline-none transition-colors focus:border-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50";
+
 /** A bordered surface. The base building block for every panel. */
+type CardProps = Omit<ComponentPropsWithoutRef<"div">, "children"> & {
+  children: ReactNode;
+  tone?: Tone;
+  padded?: boolean;
+};
+
 export function Card({
   children,
   tone = "neutral",
   className = "",
   padded = true,
-}: {
-  children: ReactNode;
-  tone?: Tone;
-  className?: string;
-  padded?: boolean;
-}) {
+  ...divProps
+}: CardProps) {
   return (
     <div
+      {...divProps}
       className={`rounded-lg border ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${
         padded ? "p-4" : ""
       } ${className}`}
@@ -115,7 +127,7 @@ export function SectionTitle({
         <h2 className="font-label-caps text-text-primary">{title}</h2>
         {hint ? <p className="mt-1 font-body-sm text-text-secondary">{hint}</p> : null}
       </div>
-      {right}
+      {right ? <div className="shrink-0">{right}</div> : null}
     </div>
   );
 }
@@ -178,5 +190,141 @@ export function StatusPill({
       <span className="opacity-70">{label}</span>
       <span className="font-bold">{value}</span>
     </span>
+  );
+}
+
+export type TerminalTableColumn = {
+  label: ReactNode;
+  align?: "left" | "right" | "center";
+  className?: string;
+  title?: string;
+};
+
+const alignClass: Record<NonNullable<TerminalTableColumn["align"]>, string> = {
+  left: "text-left",
+  right: "text-right",
+  center: "text-center",
+};
+
+/** Dense, internally scrolling data table for terminal-style operational pages. */
+export function TerminalTable({
+  columns,
+  children,
+  minWidth = "880px",
+  className = "",
+}: {
+  columns: TerminalTableColumn[];
+  children: ReactNode;
+  minWidth?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`overflow-hidden rounded-lg border border-border-subtle bg-bg-surface ${className}`}>
+      <div
+        aria-label="Scrollable data table"
+        className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+        data-terminal-table-scroll="true"
+        tabIndex={0}
+      >
+        <table className="w-full border-collapse text-left" style={{ minWidth }}>
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {columns.map((column, index) => (
+                <th
+                  className={`px-3 py-2.5 font-label-caps ${alignClass[column.align ?? "left"]} ${column.className ?? ""}`}
+                  key={`${String(column.label)}-${index}`}
+                  title={column.title}
+                >
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">{children}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Compact semantic badge shared by terminal tables, feeds, and status strips. */
+export function ToneBadge({
+  children,
+  tone = "neutral",
+  title,
+}: {
+  children: ReactNode;
+  tone?: Tone;
+  title?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex max-w-full items-center rounded-md border px-2 py-1 font-data-mono text-[10px] uppercase leading-none ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]}`}
+      title={title}
+    >
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+/** Responsive workbench shell: stacked and page-scrollable on mobile, split on desktop. */
+export function TerminalSplitShell({
+  sidebar,
+  children,
+  className = "",
+  sidebarClassName = "",
+  mainClassName = "",
+}: {
+  sidebar: ReactNode;
+  children: ReactNode;
+  className?: string;
+  sidebarClassName?: string;
+  mainClassName?: string;
+}) {
+  return (
+    <div
+      className={`flex h-full min-h-0 flex-col overflow-y-auto bg-bg-base text-text-primary lg:flex-row lg:overflow-hidden ${className}`}
+      data-terminal-split-shell="true"
+    >
+      <aside
+        className={`flex shrink-0 flex-col border-b border-border-subtle bg-bg-surface lg:h-full lg:overflow-y-auto lg:border-b-0 lg:border-r ${sidebarClassName}`}
+      >
+        {sidebar}
+      </aside>
+      <section className={`flex min-w-0 flex-1 flex-col gap-4 p-5 lg:overflow-y-auto ${mainClassName}`}>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+/** Small toolbar action matching the terminal surface contract. */
+export function TerminalToolbarButton({
+  children,
+  className = "",
+  disabled,
+  onClick,
+  tone = "neutral",
+  title,
+  type = "button",
+}: {
+  children: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  onClick?: () => void;
+  tone?: Tone;
+  title?: string;
+  type?: "button" | "submit";
+}) {
+  return (
+    <button
+      className={`inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border px-3 font-body-sm transition-colors hover:bg-bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]} ${className}`}
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      type={type}
+    >
+      {children}
+    </button>
   );
 }

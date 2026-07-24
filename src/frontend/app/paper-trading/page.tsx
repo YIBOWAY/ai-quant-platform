@@ -6,6 +6,8 @@ import { SyntheticMetricsWarning } from "@/components/DataSourceBadge";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { AccountTradePanel } from "@/components/forms/AccountTradePanel";
 import { PaperRunForm } from "@/components/forms/PaperRunForm";
+import { PaperStrategyOpsPanel } from "@/components/forms/PaperStrategyOpsPanel";
+import { PaperStrategySleevesPanel } from "@/components/forms/PaperStrategySleevesPanel";
 import { PendingOrderCancelButton } from "@/components/forms/PendingOrderCancelButton";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
@@ -18,9 +20,13 @@ import {
   getPaperAccountLedger,
   getPaperRunDetail,
   getPaperRuns,
+  getPaperStrategyConfigs,
+  getPaperStrategySleeveDetail,
+  getPaperStrategySleeves,
   getStrategies,
 } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
+import { resolvePaperAccountAvailableCash } from "@/lib/paperAccountState";
 import { isSampleSource } from "@/components/DataSourceBadge";
 import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
 import { getCachedHealth } from "@/lib/serverApi";
@@ -31,7 +37,7 @@ const copy = {
     pageEyebrow: "Paper trading",
     pageTitle: "Paper Trading",
     pageSubtitle:
-      "Left tab: the one persistent simulated account (manual orders + strategy rebalances). Right tab: historical replay research that never touches the account.",
+      "Live account: manual orders, Strategy Sleeves, and advanced full-account controls. Historical replay stays separate and never touches the account.",
     finalEquity: "Final Equity",
     orders: "Orders",
     riskBreaches: "Risk Breaches",
@@ -61,7 +67,8 @@ const copy = {
     historyResultsTitle: "Historical Replay Results",
     historyResultsDesc: "Saved results from the latest research replay. They do not change the persistent account.",
     accountTitle: "Paper Account",
-    accountDesc: "One persistent account. Manual orders and strategy rebalances both land here.",
+    accountDesc:
+      "One persistent account with manual cash, Strategy Sleeves allocations, and advanced full-account controls reconciled here.",
     accountUnavailable: "Account unreachable — values hidden until the backend responds.",
     accountValue: "Account Value",
     accountCash: "Available Cash",
@@ -85,9 +92,13 @@ const copy = {
     sharesUnit: "sh",
     invested: "Invested",
     priceSource: "Prices",
+    marketValue: "Market Value",
+    avgCost: "Avg Cost",
+    lastPrice: "Last",
+    sourceMix: "Source Mix",
     weight: "weight",
     pnl: "P&L",
-    tradeActions: "Trade & Rebalance",
+    tradeActions: "Manual & Advanced Actions",
     ledgerTitle: "Recent Activity",
     ledgerDesc: "Latest ledger entries from orders and rebalances.",
     ledgerEmptyTitle: "No activity yet",
@@ -131,7 +142,7 @@ const copy = {
     pageEyebrow: "模拟交易",
     pageTitle: "模拟交易",
     pageSubtitle:
-      "左侧标签：唯一的持续模拟账户（手动下单 + 策略再平衡）。右侧标签：不触碰账户的历史回放研究。",
+      "实时账户：手动下单、策略袖珍仓和高级全账户控制。历史回放保持隔离，不触碰账户。",
     finalEquity: "最终权益",
     orders: "订单",
     riskBreaches: "风控触发",
@@ -161,7 +172,7 @@ const copy = {
     historyResultsTitle: "历史回放结果",
     historyResultsDesc: "最近一次研究回放保存的结果，不会改变持续模拟账户。",
     accountTitle: "模拟账户",
-    accountDesc: "单一持续账户。手动下单与策略再平衡都汇入这里。",
+    accountDesc: "单一持续账户，手动现金、策略袖珍仓划拨和高级全账户控制都会在这里对账。",
     accountUnavailable: "账户接口不可达——在后端恢复前隐藏数值，避免误读。",
     accountValue: "账户净值",
     accountCash: "可用现金",
@@ -185,9 +196,13 @@ const copy = {
     sharesUnit: "股",
     invested: "已投资",
     priceSource: "报价",
+    marketValue: "市值",
+    avgCost: "均价",
+    lastPrice: "现价",
+    sourceMix: "来源拆分",
     weight: "权重",
     pnl: "盈亏",
-    tradeActions: "交易与再平衡",
+    tradeActions: "手动与高级账户动作",
     ledgerTitle: "最近流水",
     ledgerDesc: "下单与再平衡产生的最新账本记录。",
     ledgerEmptyTitle: "暂无流水",
@@ -234,18 +249,26 @@ type PaperTradingProps = {
 
 export default async function PaperTrading({ searchParams }: PaperTradingProps) {
   const params = (await searchParams) ?? {};
-  const [account, ledger, health, paperRuns, strategies, locale] = await Promise.all([
+  const [account, ledger, health, paperRuns, strategies, strategyConfigs, strategySleeves, locale] =
+    await Promise.all([
     getPaperAccount(),
     getPaperAccountLedger(8),
     getCachedHealth(),
     getPaperRuns(),
     getStrategies(),
+    getPaperStrategyConfigs(),
+    getPaperStrategySleeves(),
     getServerLocale(params),
   ]);
   const text = copy[locale];
   const includeSample = shouldIncludeSampleRuns(params);
   const latestRun = selectDisplayRun(paperRuns.paper_runs, includeSample);
-  const detail = latestRun ? await getPaperRunDetail(latestRun.id) : null;
+  const [detail, sleeveDetails] = await Promise.all([
+    latestRun ? getPaperRunDetail(latestRun.id) : Promise.resolve(null),
+    Promise.all(
+      strategySleeves.sleeves.map((sleeve) => getPaperStrategySleeveDetail(sleeve.sleeve_id)),
+    ),
+  ]);
   const latest = latestRun?.summary;
   const accountDown = Boolean(account.apiError);
   const ledgerDown = Boolean(ledger.apiError);
@@ -260,7 +283,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
     : paperRuns.paper_runs.filter((run) => !isSampleSource(run.source));
 
   const liveTab = (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
       <div className="space-y-6">
         <AccountSummary
           account={account}
@@ -269,18 +292,30 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
           positive={accountPnlPositive}
           text={text}
         />
-        <HoldingsPanel
-          account={account}
+        <PaperStrategyOpsPanel accountDown={accountDown} locale={locale} />
+        <PaperStrategySleevesPanel
+          accountAvailableCash={resolvePaperAccountAvailableCash(account)}
           accountDown={accountDown}
+          configs={strategyConfigs.configs}
           locale={locale}
-          text={text}
+          sleeveDetails={sleeveDetails}
+          sleeves={strategySleeves.sleeves}
+          strategies={strategies.strategies}
         />
-        <PendingOrdersPanel
-          account={account}
-          accountDown={accountDown}
-          locale={locale}
-          text={text}
-        />
+        <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
+          <HoldingsPanel
+            account={account}
+            accountDown={accountDown}
+            locale={locale}
+            text={text}
+          />
+          <PendingOrdersPanel
+            account={account}
+            accountDown={accountDown}
+            locale={locale}
+            text={text}
+          />
+        </div>
         <LedgerPanel
           entries={ledger.entries}
           ledgerDown={ledgerDown}
@@ -288,7 +323,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
           text={text}
         />
       </div>
-      <Card padded className="h-fit">
+      <Card padded className="h-fit xl:sticky xl:top-0">
         <h2 className="mb-3 flex items-center gap-2 font-label-caps text-text-primary">
           <Activity className="text-accent-success" size={16} /> {text.tradeActions}
         </h2>
@@ -416,7 +451,16 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
     <div className="flex h-full flex-col gap-4 overflow-y-auto bg-bg-base p-4 lg:p-6">
       <ErrorBanner
         locale={locale}
-        messages={[account.apiError, ledger.apiError, health.apiError, paperRuns.apiError, detail?.apiError]}
+        messages={[
+          account.apiError,
+          ledger.apiError,
+          health.apiError,
+          paperRuns.apiError,
+          strategyConfigs.apiError,
+          strategySleeves.apiError,
+          detail?.apiError,
+          ...sleeveDetails.map((sleeveDetail) => sleeveDetail.apiError),
+        ]}
       />
       <PageHeader
         eyebrow={text.pageEyebrow}
@@ -753,7 +797,9 @@ function HoldingRow({
   text: (typeof copy)["en"] | (typeof copy)["zh"];
 }) {
   const pnlPositive = position.unrealized_pnl >= 0;
-  const weightPct = Math.max(0, Math.min(1, position.weight)) * 100;
+  const isLong = position.quantity >= 0;
+  const weightPct = Math.max(0, Math.min(1, Math.abs(position.weight))) * 100;
+  const barWidthPct = Math.max(weightPct, 2);
   let manualShare = 0;
   for (const [source, share] of Object.entries(position.source_breakdown)) {
     if (source === "manual") manualShare += share;
@@ -768,38 +814,69 @@ function HoldingRow({
         : `${text.strategy} ${(strategyShare * 100).toFixed(0)}% · ${text.manual} ${(manualShare * 100).toFixed(0)}%`;
 
   return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface-muted/40 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="font-data-mono font-bold text-text-primary">{position.symbol}</span>
-          <span className="truncate font-data-mono text-xs text-text-secondary">
-            {position.quantity.toLocaleString(undefined, { maximumFractionDigits: 2 })} @ {position.avg_cost.toFixed(2)}
-          </span>
-          <span
-            className={`shrink-0 rounded-lg border px-1.5 py-0.5 font-data-mono text-[10px] uppercase ${
-              manualShare >= 0.999
-                ? "border-info/40 bg-info/10 text-info"
-                : "border-accent-success/40 bg-accent-success/10 text-accent-success"
-            }`}
-            title={sourceLabel}
-          >
-            {sourceLabel}
-          </span>
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-3">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-data-mono text-base font-bold text-text-primary">{position.symbol}</span>
+            <span className={`font-label-caps ${isLong ? "text-text-secondary" : "text-danger"}`}>
+              {position.quantity.toLocaleString(undefined, { maximumFractionDigits: 2 })} {text.sharesUnit}
+            </span>
+            <span
+              className={`shrink-0 rounded-full border px-2 py-0.5 font-data-mono text-[10px] uppercase ${
+                manualShare >= 0.999
+                  ? "border-info/40 bg-info/10 text-info"
+                  : "border-accent-success/40 bg-accent-success/10 text-accent-success"
+              }`}
+              title={sourceLabel}
+            >
+              {sourceLabel}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 font-data-mono text-xs sm:grid-cols-3">
+            <span className="text-text-secondary">
+              {text.avgCost} <span className="text-text-primary">{position.avg_cost.toFixed(2)}</span>
+            </span>
+            <span className="text-text-secondary">
+              {text.lastPrice} <span className="text-text-primary">{position.last_price.toFixed(2)}</span>
+            </span>
+            <span className="text-text-secondary">
+              {text.weight} <span className="text-text-primary">{weightPct.toFixed(1)}%</span>
+            </span>
+          </div>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="font-data-mono text-sm text-text-primary">{formatMoney(position.market_value)}</div>
+        <div className="shrink-0 text-left md:text-right">
+          <div className="font-label-caps text-text-secondary">{text.marketValue}</div>
+          <div className="font-data-mono text-sm font-bold text-text-primary">
+            {formatMoney(position.market_value)}
+          </div>
           <div className={`font-data-mono text-xs ${pnlPositive ? "text-accent-success" : "text-danger"}`}>
             {text.pnl} {pnlPositive ? "+" : ""}{formatMoney(position.unrealized_pnl)}
           </div>
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-surface-muted">
-          <div className="h-full rounded-full bg-accent-success" style={{ width: `${weightPct}%` }} />
+
+      <div className="mt-3 space-y-1">
+        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-bg-surface-muted" title={sourceLabel}>
+          <div className="flex h-full" style={{ width: `${barWidthPct}%` }}>
+            {strategyShare > 0 ? (
+              <div
+                className={isLong ? "h-full bg-accent-success" : "h-full bg-danger"}
+                style={{ width: `${strategyShare * 100}%` }}
+              />
+            ) : null}
+            {manualShare > 0 ? (
+              <div
+                className={isLong ? "h-full bg-info" : "h-full bg-danger/60"}
+                style={{ width: `${manualShare * 100}%` }}
+              />
+            ) : null}
+          </div>
         </div>
-        <span className="font-data-mono text-[10px] text-text-secondary">
-          {text.weight} {weightPct.toFixed(1)}%
-        </span>
+        <div className="flex flex-wrap items-center justify-between gap-2 font-label-caps text-[10px] text-text-secondary">
+          <span>{text.sourceMix}</span>
+          <span>{text.strategy} {(strategyShare * 100).toFixed(0)}% · {text.manual} {(manualShare * 100).toFixed(0)}%</span>
+        </div>
       </div>
     </div>
   );

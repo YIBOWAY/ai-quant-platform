@@ -28,6 +28,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
 
     expected = {
         "/api/health": "HealthResponse",
+        "/api/hermes/artifacts": "HermesArtifactFeedResponse",
         "/api/symbols": "SymbolsResponse",
         "/api/ohlcv": "OHLCVResponse",
         "/api/market-data/history": "MarketDataHistoryResponse",
@@ -53,7 +54,9 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
         "/api/backtests/{run_id}": "BacktestDetailResponse",
         "/api/paper": "PaperRunsResponse",
         "/api/paper/account": "PaperAccountResponse",
+        "/api/paper/account/equity-curve": "PaperAccountEquityCurveResponse",
         "/api/paper/account/ledger": "PaperLedgerResponse",
+        "/api/paper/account/snapshot": "PaperAccountSnapshotResponse",
         "/api/agent/candidates": "AgentCandidatesResponse",
         "/api/agent/candidates/{candidate_id}": "AgentCandidateDetailResponse",
         "/api/experiments": "ExperimentsResponse",
@@ -81,6 +84,8 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "database" in components["HealthResponse"]["properties"]
     assert "metadata" in components["MarketDataHistoryResponse"]["properties"]
     assert "has_api_key" in components["AgentLLMConfigResponse"]["properties"]
+    assert "read_status" in components["HermesArtifactFeedResponse"]["properties"]
+    assert "items" in components["HermesArtifactFeedResponse"]["properties"]
     assert "dates" in components["OptionsDailyScanDatesResponse"]["properties"]
     assert "status" in components["OptionsDailyScanStatusResponse"]["properties"]
     assert "candidates" in components["OptionsDailyScanResponse"]["properties"]
@@ -95,8 +100,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "markets" in components["PredictionMarketMarketsResponse"]["properties"]
     assert "result" in components["PredictionMarketBacktestResultResponse"]["properties"]
     assert (
-        "report_url"
-        in components["PredictionMarketTimeseriesBacktestResultResponse"]["properties"]
+        "report_url" in components["PredictionMarketTimeseriesBacktestResultResponse"]["properties"]
     )
     assert "backtests" in components["BacktestsResponse"]["properties"]
     assert "BacktestRunTimingsResponse" in components
@@ -117,6 +121,35 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "positions" in components["PaperAccountResponse"]["properties"]
     assert "reserved_cash" in components["PaperAccountResponse"]["properties"]
     assert "available_cash" in components["PaperAccountResponse"]["properties"]
+    props = components["PaperAccountResponse"]["properties"]
+    assert "storage_mode" in props
+    assert "stale" in props
+    assert "warnings" in props
+    assert "reconciliation" in props
+    required = components["PaperAccountResponse"].get("required") or []
+    assert "storage_mode" not in required
+    assert "stale" not in required
+    assert "warnings" not in required
+    assert "reconciliation" not in required
+    storage_mode = props["storage_mode"]
+    # optional nullable enum / anyOf depending on pydantic version
+    enum_values = storage_mode.get("enum")
+    if enum_values is None and "anyOf" in storage_mode:
+        for item in storage_mode["anyOf"]:
+            if "enum" in item:
+                enum_values = item["enum"]
+                break
+    if enum_values is not None:
+        assert set(enum_values) >= {"file", "mirror", "canonical"}
+    assert "points" in components["PaperAccountEquityCurveResponse"]["properties"]
+    assert "account" in components["PaperAccountSnapshotResponse"]["properties"]
+    snapshot_responses = openapi["paths"]["/api/paper/account/snapshot"]["get"]["responses"]
+    assert snapshot_responses["409"]["description"] == (
+        "Canonical paper account requires explicit bootstrap."
+    )
+    assert snapshot_responses["503"]["description"] == (
+        "Paper account storage or canonical database is unavailable."
+    )
     assert "reserved_quantity" in components["PendingAccountOrderResponse"]["properties"]
     assert "entries" in components["PaperLedgerResponse"]["properties"]
     assert "candidates" in components["AgentCandidatesResponse"]["properties"]
@@ -179,13 +212,11 @@ def test_prediction_market_post_routes_publish_response_models(tmp_path) -> None
     assert "candidate_id" in components["PredictionMarketCandidateResponse"]["properties"]
     assert "candidates" in components["PredictionMarketScanResponse"]["properties"]
     assert "iteration_count" in components["PredictionMarketCollectResponse"]["properties"]
-    assert "proposed_trades" in components[
-        "PredictionMarketDryArbitrageResponse"
-    ]["properties"]
+    assert "proposed_trades" in components["PredictionMarketDryArbitrageResponse"]["properties"]
     assert "metrics" in components["PredictionMarketBacktestRunResponse"]["properties"]
-    assert "history_dir" in components[
-        "PredictionMarketTimeseriesBacktestRunResponse"
-    ]["properties"]
+    assert (
+        "history_dir" in components["PredictionMarketTimeseriesBacktestRunResponse"]["properties"]
+    )
 
 
 def test_agent_post_routes_publish_response_models(tmp_path) -> None:
@@ -206,6 +237,110 @@ def test_agent_post_routes_publish_response_models(tmp_path) -> None:
     components = openapi["components"]["schemas"]
     assert "metadata" in components["AgentTaskResponse"]["properties"]
     assert "registration" in components["AgentReviewResponse"]["properties"]
+    review_req = components["AgentReviewRequest"]["properties"]
+    assert "expected_manifest_digest" in review_req
+    assert "expected_status" in review_req
+    assert components["AgentReviewRequest"]["required"] == [
+        "decision",
+        "note",
+        "expected_manifest_digest",
+        "expected_status",
+    ]
+    candidate_summary = components["CandidateSummary"]["properties"]
+    candidate_fields = (
+        "candidate_id",
+        "artifact_type",
+        "goal",
+        "universe",
+        "status",
+        "integrity_state",
+        "manifest_digest",
+        "observed_manifest_digest",
+        "approval_binding",
+        "approval_enabled",
+        "integrity_error_code",
+    )
+    for field in candidate_fields:
+        assert field in candidate_summary
+    assert components["CandidateSummary"]["required"] == list(candidate_fields)
+    assert candidate_summary["status"]["anyOf"][0]["enum"] == [
+        "pending",
+        "approved",
+        "rejected",
+    ]
+    assert candidate_summary["integrity_state"]["enum"] == [
+        "verified",
+        "migration_required",
+        "corrupt",
+    ]
+    assert candidate_summary["approval_binding"]["anyOf"][0]["enum"] == [
+        "pending",
+        "approved",
+        "rejected",
+        "legacy_unbound",
+    ]
+    detail = components["AgentCandidateDetailResponse"]["properties"]
+    detail_fields = (
+        "candidate_id",
+        "metadata",
+        "source_preview",
+        "audit",
+        "reviews",
+        "integrity_state",
+        "manifest_digest",
+        "observed_manifest_digest",
+        "approval_binding",
+        "approval_enabled",
+        "integrity_error_code",
+        "status",
+    )
+    for field in detail_fields:
+        assert field in detail
+    assert components["AgentCandidateDetailResponse"]["required"] == list(detail_fields)
+    assert detail["integrity_state"]["enum"] == [
+        "verified",
+        "migration_required",
+        "corrupt",
+    ]
+    assert detail["approval_binding"]["anyOf"][0]["enum"] == [
+        "pending",
+        "approved",
+        "rejected",
+        "legacy_unbound",
+    ]
+    assert detail["status"]["anyOf"][0]["enum"] == [
+        "pending",
+        "approved",
+        "rejected",
+    ]
+
+
+def test_brief_archive_routes_publish_response_models(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    openapi = client.get("/openapi.json").json()
+
+    get_schema = openapi["paths"]["/api/brief/issues/{public_id}"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    post_schema = openapi["paths"]["/api/brief/issues/generate"]["post"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    latest_schema = openapi["paths"]["/api/brief/issues/latest"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+
+    assert get_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
+    assert post_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
+    assert latest_schema == {"$ref": "#/components/schemas/BriefIssueEnvelopeResponse"}
+
+    components = openapi["components"]["schemas"]
+    assert "issue" in components["BriefIssueEnvelopeResponse"]["properties"]
+    assert "snapshot" in components["BriefIssueEnvelopeResponse"]["properties"]
+    assert "warnings" in components["BriefIssueEnvelopeResponse"]["properties"]
+    assert "public_id" in components["BriefIssueResponse"]["properties"]
+    assert "version" in components["BriefSnapshotResponse"]["properties"]
+    assert "payload" in components["BriefSnapshotResponse"]["properties"]
 
 
 def test_options_radar_post_routes_publish_response_models(tmp_path) -> None:
@@ -237,9 +372,9 @@ def test_options_screener_post_route_publishes_response_model(tmp_path) -> None:
 
     openapi = client.get("/openapi.json").json()
 
-    response_schema = openapi["paths"]["/api/options/screener"]["post"]["responses"][
-        "200"
-    ]["content"]["application/json"]["schema"]
+    response_schema = openapi["paths"]["/api/options/screener"]["post"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
     assert response_schema == {"$ref": "#/components/schemas/OptionsScreenerResult"}
 
     components = openapi["components"]["schemas"]
@@ -268,10 +403,7 @@ def test_options_local_tools_post_routes_publish_response_models(tmp_path) -> No
     components = openapi["components"]["schemas"]
     assert "delta" in components["OptionsGreeksResponse"]["properties"]
     assert "charm" in components["OptionsGreeksResponse"]["properties"]
-    assert (
-        "implied_volatility"
-        in components["OptionsImpliedVolatilityResponse"]["properties"]
-    )
+    assert "implied_volatility" in components["OptionsImpliedVolatilityResponse"]["properties"]
     assert "pnl_at_expiry" in components["OptionsSimulationResponse"]["properties"]
     assert "scenarios" in components["OptionsSimulationResponse"]["properties"]
     assert "template_id" in components["OptionsStrategyBuildResponse"]["properties"]
@@ -330,10 +462,7 @@ def test_options_monitoring_post_routes_publish_response_models(tmp_path) -> Non
 
     components = openapi["components"]["schemas"]
     assert "watchlist" in components["OptionsWatchlistResponse"]["properties"]
-    assert (
-        "triggered_alerts"
-        in components["OptionsAlertsEvaluationResponse"]["properties"]
-    )
+    assert "triggered_alerts" in components["OptionsAlertsEvaluationResponse"]["properties"]
     assert "health_score" in components["OptionsResearchHealthCheckResponse"]["properties"]
     assert "missing_thesis" in components["OptionsResearchHealthCheckResponse"]["properties"]
 
@@ -347,9 +476,7 @@ def test_research_run_post_routes_publish_response_models(tmp_path) -> None:
         "/api/factors/run": "FactorRunResponse",
         "/api/backtests/run": "BacktestRunResponse",
         "/api/experiments/run": "ExperimentRunResponse",
-        "/api/replications/reversal-momentum/run": (
-            "ReversalMomentumReplicationRunResponse"
-        ),
+        "/api/replications/reversal-momentum/run": ("ReversalMomentumReplicationRunResponse"),
     }
     for path, model_name in expected.items():
         response_schema = openapi["paths"][path]["post"]["responses"]["200"]["content"][
@@ -357,17 +484,17 @@ def test_research_run_post_routes_publish_response_models(tmp_path) -> None:
         ]["schema"]
         assert response_schema == {"$ref": f"#/components/schemas/{model_name}"}
 
+    backtest_accepted_schema = openapi["paths"]["/api/backtests/run"]["post"]["responses"]["202"][
+        "content"
+    ]["application/json"]["schema"]
+    assert backtest_accepted_schema == {"$ref": "#/components/schemas/BacktestJobStateResponse"}
+
     components = openapi["components"]["schemas"]
     assert "signal_count" in components["FactorRunResponse"]["properties"]
     assert "trade_count" in components["BacktestRunResponse"]["properties"]
     assert "best_run_id" in components["ExperimentRunResponse"]["properties"]
-    assert (
-        "monthly_returns"
-        in components["ReversalMomentumReplicationRunResponse"]["properties"]
-    )
-    assert "artifact_path" in components[
-        "ReversalMomentumReplicationRunResponse"
-    ]["properties"]
+    assert "monthly_returns" in components["ReversalMomentumReplicationRunResponse"]["properties"]
+    assert "artifact_path" in components["ReversalMomentumReplicationRunResponse"]["properties"]
 
 
 def test_paper_post_routes_publish_response_models(tmp_path) -> None:

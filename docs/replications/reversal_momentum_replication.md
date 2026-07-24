@@ -34,7 +34,7 @@ UI 还会报告一个本地的复合策略，融合反转排名与动量排名�
 前端：
 
 ```text
-http://127.0.0.1:3001/replications
+http://127.0.0.1:3001/strategies
 ```
 
 后端：
@@ -67,12 +67,13 @@ data/api_runs/replications/<run_id>/result.json
 前端运行完成后会显示 **Open replication / 打开复现**，进入：
 
 ```text
-http://127.0.0.1:3001/replications/<run_id>
+http://127.0.0.1:3001/strategies/<run_id>
 ```
 
 该详情页读取 `GET /api/replications/reversal-momentum/{run_id}`，并复用策略目录的
-指标卡、权益曲线、方法学、诊断、月度收益和持仓表渲染。复现 run 目前不写入可选
-PostgreSQL run index；文件目录和详情接口是事实来源。
+指标卡、权益曲线、方法学、诊断、月度收益和持仓表渲染。复现 run 的文件目录仍是
+事实来源；启用可选 PostgreSQL 本地镜像时，运行记录会 best-effort 写入 run index /
+recent mirror，数据库不可用时不影响详情页复看。
 
 ## 数据说明
 

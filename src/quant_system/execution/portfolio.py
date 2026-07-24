@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from quant_system.execution.models import ExecutionFill, OrderSide
+from quant_system.execution.models import ExecutionFill
+from quant_system.trading_kernel import apply_fill_to_portfolio
 
 
 class PaperPortfolio:
@@ -30,13 +31,8 @@ class PaperPortfolio:
         return self.cash + self.market_value(prices)
 
     def apply_fill(self, fill: ExecutionFill) -> None:
-        symbol = fill.symbol.upper()
-        current = self.position(symbol)
-        if fill.side == OrderSide.BUY:
-            self.cash -= fill.gross_value + fill.commission
-            self.positions[symbol] = current + fill.quantity
-        else:
-            self.cash += fill.gross_value - fill.commission
-            self.positions[symbol] = current - fill.quantity
-        if abs(self.positions.get(symbol, 0.0)) < 1e-10:
-            self.positions.pop(symbol, None)
+        # Delegate the cash/position arithmetic to the shared pure kernel so the
+        # backtest and paper portfolios cannot drift apart.
+        self.positions, self.cash = apply_fill_to_portfolio(
+            self.positions, self.cash, fill
+        )

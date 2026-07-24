@@ -44,7 +44,7 @@ if (-not $PythonExe) {
 $env:PYTHONPATH = (Join-Path $Root "src")
 
 Invoke-Step "Python version" @($PythonExe, "-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 'Python 3.11+ required; run: conda activate ai-quant')")
-Invoke-Step "Ruff" @("ruff", "check", "src/quant_system", "tests")
+Invoke-Step "Ruff" @($PythonExe, "-m", "ruff", "check", "src/quant_system", "tests")
 Invoke-Step "Pytest" @($PythonExe, "-m", "pytest", "-q")
 Invoke-Step "Frontend lint" @("npm", "--prefix", "src/frontend", "run", "lint")
 Invoke-Step "Frontend type-check" @("npm", "--prefix", "src/frontend", "run", "type-check")

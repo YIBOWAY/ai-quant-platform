@@ -1,28 +1,31 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 /*
  * QUANTUM_CORE design tokens — single source of truth.
  *
- * Palette: design brief (docs/frontend/design_brief.md) — dark, blue-based,
- * one brand accent (#00C896). Linear/Vercel density, Bloomberg-terminal data
- * voice. No Material-3 palette: the legacy M3 names below are COMPAT ALIASES
+ * Palette: warm terminal dark — a near-black research shell blended with the
+ * Hermes editorial page tone, dense table contrast, and restrained status
+ * colors. No Material-3 palette: the legacy M3 names below are COMPAT ALIASES
  * mapped onto this palette so older class names resolve to the same colors.
  */
 @theme {
   /* ---- Canonical palette ---- */
-  --color-bg-base: #0B1220;          /* page background */
-  --color-bg-surface: #111827;       /* cards, tables, panels */
-  --color-bg-surface-muted: #1F2937; /* inputs, nested panels, hover */
-  --color-border-subtle: #1F2937;    /* hairline borders */
+  --color-bg-base: #12110E;          /* page background */
+  --color-bg-sidebar: #1C1B20;       /* navigation shell: lighter, same family */
+  --color-bg-sidebar-muted: #25242A; /* sidebar hover / selected states */
+  --color-bg-surface: #181714;       /* cards, tables, panels */
+  --color-bg-surface-muted: #23211C; /* inputs, nested panels, hover */
+  --color-border-subtle: #302C25;    /* hairline borders */
 
-  --color-text-primary: #F1F5F9;
-  --color-text-secondary: #94A3B8;
-  --color-text-mono: #E5E7EB;
+  --color-text-primary: #E7E0D3;
+  --color-text-secondary: #9B9488;
+  --color-text-mono: #D8D1C4;
 
-  --color-accent-success: #00C896;   /* the one brand accent */
-  --color-warning: #F59E0B;
-  --color-danger: #FF4D4F;
-  --color-info: #60A5FA;
+  --color-accent-success: #089981;   /* trading gain / genuine success */
+  --color-warning: #F0B90B;
+  --color-danger: #F23645;
+  --color-info: #5EA2FF;
 
   /* ---- Compat aliases (legacy class names -> canonical palette) ----
      Kept so `bg-base`, `bg-surface`, `bg-surface-muted`, `text-primary`,
@@ -30,26 +33,53 @@
      across older components resolve to the SAME palette instead of the
      removed Material-3 greens (or silently rendering nothing). Prefer the
      canonical names in new code. */
-  --color-base: #0B1220;
-  --color-background: #0B1220;
-  --color-surface: #111827;
-  --color-surface-dim: #0B1220;
-  --color-surface-bright: #1F2937;
-  --color-surface-muted: #1F2937;
-  --color-surface-container-lowest: #0B1220;
-  --color-surface-container-low: #161E2E;
-  --color-surface-container: #1F2937;
-  --color-surface-container-high: #283548;
-  --color-surface-container-highest: #283548;
-  --color-on-surface: #F1F5F9;
-  --color-on-background: #F1F5F9;
-  --color-outline: #283548;
-  --color-outline-variant: #1F2937;
-  --color-primary: #00C896;
-  --color-on-primary: #04221A;
-  --color-secondary: #60A5FA;
-  --color-error: #FF4D4F;
-  --color-data-mono: #E5E7EB;
+  --color-base: #12110E;
+  --color-background: #12110E;
+  --color-sidebar: #1C1B20;
+  --color-sidebar-muted: #25242A;
+  --color-surface: #181714;
+  --color-surface-dim: #12110E;
+  --color-surface-bright: #23211C;
+  --color-surface-muted: #23211C;
+  --color-surface-container-lowest: #12110E;
+  --color-surface-container-low: #181714;
+  --color-surface-container: #1E1C18;
+  --color-surface-container-high: #23211C;
+  --color-surface-container-highest: #302C25;
+  --color-on-surface: #E7E0D3;
+  --color-on-background: #E7E0D3;
+  --color-outline: #302C25;
+  --color-outline-variant: #23211C;
+  --color-primary: #089981;
+  --color-on-primary: #041D18;
+  --color-secondary: #5EA2FF;
+  --color-error: #F23645;
+  --color-data-mono: #D8D1C4;
+
+  /* ---- Editorial paper / Hermes stream additions ---- */
+  --color-paper-ink: var(--color-bg-base);
+  --color-paper-surface: var(--color-bg-surface);
+  --color-paper-surface-muted: var(--color-bg-surface-muted);
+  --color-ink: #EDE7DA;
+  --color-ink-secondary: #A39E92;
+  --color-editorial-rule: #3A3733;
+  --color-editorial-accent: #7B8FD0;
+  --color-editorial-up: #2E9E6A;
+  --color-editorial-down: #C84A52;
+  --color-hermes: #9085E9;
+  --color-hermes-glow: rgba(144, 133, 233, 0.4);
+  --color-hermes-attention: #F0B90B;
+  --color-hermes-canvas: #17171C;
+  --color-stream-bg: #17171C;
+  --color-stream-surface: #1F1F27;
+  --color-stream-surface-2: #262631;
+  --spacing-rail-width: 208px;
+  --spacing-right-panel: 340px;
+  --spacing-stream-max: 720px;
+  --spacing-editorial-column: 1120px;
+  --spacing-hermes-composer-min: 64px;
+  --spacing-hermes-content-max: 1180px;
+  --radius-editorial: 2px;
 
   /* ---- Layout spacings ---- */
   --spacing-safety-strip-height: 36px;
@@ -67,6 +97,7 @@
   --font-code-sm: var(--font-mono, 'JetBrains Mono'), monospace;
   --font-body-md: var(--font-sans, 'Inter'), sans-serif;
   --font-headline-lg: var(--font-sans, 'Inter'), sans-serif;
+  --font-editorial-serif: var(--font-serif), var(--font-serif-sc), Georgia, 'Songti SC', serif;
 }
 
 html {
@@ -130,11 +161,51 @@ select option {
   letter-spacing: -0.01em;
   font-weight: 600;
 }
+.font-editorial-display {
+  font-family: var(--font-editorial-serif);
+  font-size: 46px;
+  line-height: 54px;
+  letter-spacing: 0;
+  font-weight: 700;
+}
+.font-editorial-body {
+  font-family: var(--font-editorial-serif);
+  font-size: 21px;
+  line-height: 32px;
+  font-weight: 400;
+}
+.font-editorial-caps {
+  font-family: var(--font-editorial-serif);
+  font-size: 13px;
+  line-height: 18px;
+  font-style: italic;
+  font-weight: 400;
+}
 
 @layer utilities {
   .text-label-caps {
     font-size: 11px;
     line-height: 16px;
     letter-spacing: 0.05em;
+  }
+}
+
+/* Global shell / Hermes a11y contracts: 44px targets, focus ring, reduced motion */
+.app-touch-target {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+:where(a[href], button, input, select, textarea, summary, [role="button"]):focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

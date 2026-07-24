@@ -2,6 +2,8 @@ from pydantic import ValidationError
 
 from quant_system.config.settings import (
     ApiKeySettings,
+    DatabaseSettings,
+    HermesArtifactSettings,
     PaperAccountSettings,
     SafetySettings,
     Settings,
@@ -38,6 +40,52 @@ def test_paper_account_auto_processor_defaults_to_enabled(monkeypatch) -> None:
 
     assert settings.auto_process_pending_orders_enabled is True
     assert settings.auto_process_interval_seconds == 30.0
+    assert settings.db_mode == "file"
+
+
+def test_database_auto_migrate_defaults_to_false_fail_closed(monkeypatch) -> None:
+    # V1.1 stop-the-line: startup must never auto-apply migrations by default.
+    monkeypatch.delenv("QS_DATABASE_AUTO_MIGRATE", raising=False)
+    assert DatabaseSettings().auto_migrate is False
+
+
+def test_paper_account_settings_expose_db_mode() -> None:
+    assert PaperAccountSettings(db_mode="mirror").db_mode == "mirror"
+    assert PaperAccountSettings(db_mode="canonical").db_mode == "canonical"
+
+    try:
+        PaperAccountSettings(db_mode="invalid")
+    except ValidationError as exc:
+        assert "db_mode" in str(exc)
+    else:
+        raise AssertionError("paper account db_mode should reject unknown modes")
+
+
+def test_hermes_artifact_settings_accept_env_overrides(monkeypatch, tmp_path) -> None:
+    feed_path = tmp_path / "manifest.v1.json"
+    monkeypatch.setenv("QS_HERMES_ARTIFACT_FEED_PATH", str(feed_path))
+    monkeypatch.setenv("QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS", "120")
+    monkeypatch.setenv(
+        "QS_HERMES_ARTIFACT_MAX_FUTURE_CLOCK_SKEW_SECONDS", "30"
+    )
+    monkeypatch.setenv("QS_HERMES_ARTIFACT_MAX_MANIFEST_BYTES", "2048")
+
+    settings = HermesArtifactSettings()
+
+    assert settings.feed_path == feed_path
+    assert settings.freshness_budget_seconds == 120
+    assert settings.max_future_clock_skew_seconds == 30
+    assert settings.max_manifest_bytes == 2048
+
+
+def test_hermes_artifact_feed_defaults_to_three_hour_freshness_budget(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS", raising=False)
+
+    settings = HermesArtifactSettings()
+
+    assert settings.freshness_budget_seconds == 10_800
 
 
 def test_live_trading_requires_manual_confirmation_phrase() -> None:

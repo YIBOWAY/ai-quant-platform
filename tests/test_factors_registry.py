@@ -4,8 +4,10 @@ from quant_system.factors.examples import MomentumFactor
 from quant_system.factors.pipeline import build_default_factors
 from quant_system.factors.registry import FactorRegistry, build_default_factor_registry
 
+_PROMOTED_FACTOR_ID = "agent_candidate_wave2_sceneb_mom20_v3"
 
-def test_default_registry_contains_phase_2_example_factors() -> None:
+
+def test_default_registry_contains_examples_and_promoted_factors() -> None:
     registry = build_default_factor_registry()
 
     assert set(registry.factor_ids()) == {
@@ -14,6 +16,7 @@ def test_default_registry_contains_phase_2_example_factors() -> None:
         "liquidity",
         "rsi",
         "macd",
+        _PROMOTED_FACTOR_ID,
     }
     assert registry.create("momentum", lookback=5).lookback == 5
 
@@ -37,6 +40,7 @@ def test_registry_lists_metadata_without_exposing_implementation_details() -> No
         "liquidity",
         "rsi",
         "macd",
+        _PROMOTED_FACTOR_ID,
     ]
     assert all(item.lookback > 0 for item in metadata)
 

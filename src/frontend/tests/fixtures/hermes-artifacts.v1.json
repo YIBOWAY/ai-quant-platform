@@ -1,0 +1,237 @@
+{
+  "schema_version": "1.1",
+  "read_status": "available",
+  "as_of": "2026-07-01T08:00:00Z",
+  "items": [
+    {
+      "id": "e2e-weekly-2026-W27",
+      "kind": "weekly_review",
+      "occurred_at": "2026-07-01T07:59:00Z",
+      "quality": "available",
+      "status": "available",
+      "data": {
+        "week_id": "2026-W27",
+        "period_start": "2026-06-24T00:00:00Z",
+        "period_end": "2026-07-01T00:00:00Z",
+        "safety_alert_count": 1,
+        "unique_signal_count": 3,
+        "review_draft_count": 2,
+        "review_confirmed_count": 1,
+        "prediction_created_count": 0,
+        "prediction_scored_count": 0,
+        "prediction_hit_count": 0,
+        "mean_direction_brier": null,
+        "opportunity_observed_count": 4,
+        "opportunity_missed_count": 1,
+        "opportunity_coverage_unknown_count": 1,
+        "limitations": ["hermetic_e2e_fixture"],
+        "proposal_only": true,
+        "trading_allowed": false
+      }
+    },
+    {
+      "id": "e2e-opportunity-2026-W27",
+      "kind": "opportunity_summary",
+      "occurred_at": "2026-07-01T07:58:00Z",
+      "quality": "available",
+      "status": "available",
+      "data": {
+        "window_start": "2026-06-24T00:00:00Z",
+        "window_end": "2026-07-01T00:00:00Z",
+        "total_count": 4,
+        "resolution_counts": {
+          "open": 1,
+          "deferred": 0,
+          "acted": 1,
+          "action_failed": 0,
+          "declined": 0,
+          "missed": 1,
+          "expired_coverage_unknown": 1,
+          "not_actionable": 0,
+          "unknown": 0
+        },
+        "miss_reason_counts": {
+          "no_decision": 1,
+          "act_without_action": 0,
+          "defer_expired": 0
+        },
+        "proposal_only": true,
+        "trading_allowed": false
+      }
+    },
+    {
+      "id": "e2e-automation-latest",
+      "kind": "automation_status",
+      "occurred_at": "2026-07-01T07:57:00Z",
+      "quality": "degraded",
+      "status": "degraded",
+      "data": {
+        "checked_at": "2026-07-01T07:57:00Z",
+      "overall_status": "degraded",
+      "jobs": [
+        {
+          "job_id": "daily_close",
+          "expected_schedule": "15 8 * * 2-6",
+          "timezone": "Asia/Shanghai",
+          "freshness_budget_seconds": 108000,
+          "last_attempt_at": null,
+          "last_success_at": null,
+          "fresh_until": null,
+          "status": "never_run",
+          "reason_code": "never_run",
+          "last_run_id": null,
+          "notification_status": "not_required"
+        },
+        {
+          "job_id": "freshness",
+          "expected_schedule": "17 */2 * * *",
+          "timezone": "Asia/Shanghai",
+          "freshness_budget_seconds": 10800,
+          "last_attempt_at": null,
+          "last_success_at": null,
+          "fresh_until": null,
+          "status": "never_run",
+          "reason_code": "never_run",
+          "last_run_id": null,
+          "notification_status": "not_required"
+        },
+        {
+            "job_id": "weekly",
+            "expected_schedule": "0 9 * * 0",
+            "timezone": "Asia/Shanghai",
+            "freshness_budget_seconds": 691200,
+            "last_attempt_at": null,
+            "last_success_at": null,
+            "fresh_until": null,
+            "status": "never_run",
+            "reason_code": "never_run",
+            "last_run_id": null,
+          "notification_status": "not_required"
+        },
+        {
+          "job_id": "notification_drain",
+          "expected_schedule": "*/15 * * * *",
+          "timezone": "Asia/Shanghai",
+          "freshness_budget_seconds": 1800,
+          "last_attempt_at": null,
+          "last_success_at": null,
+          "fresh_until": null,
+          "status": "never_run",
+          "reason_code": "never_run",
+          "last_run_id": null,
+          "notification_status": "not_required"
+        }
+        ],
+        "proposal_only": true,
+        "trading_allowed": false
+      }
+    },
+    {
+      "id": "e2e-foresight-aapl",
+      "kind": "market_foresight",
+      "occurred_at": "2026-07-01T07:55:00Z",
+      "quality": "available",
+      "status": "candidate",
+      "data": {
+        "run_id": "e2e-foresight-run",
+        "summary": "AAPL flat through 2026-07-18",
+        "candidate_count": 1,
+        "candidates": [
+          {
+            "id": "e2e-mfp-aapl",
+            "symbol": "AAPL",
+            "direction": "flat",
+            "confidence": 0.55,
+            "horizon_date": "2026-07-18",
+            "falsifier": "The first eligible close leaves the flat band.",
+            "rationale": "Hermetic browser fixture; not investment advice.",
+            "entry_session_date": "2026-06-30",
+            "entry_close": 310.0,
+            "provider": "futu",
+            "adjustment": "qfq",
+            "proposal_only": true,
+            "requires_human_confirmation": true,
+            "trading_allowed": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "e2e-prediction-aapl",
+      "kind": "prediction",
+      "occurred_at": "2026-07-01T07:50:00Z",
+      "quality": "available",
+      "status": "scored",
+      "data": {
+        "prediction_id": "e2e-prediction-aapl",
+        "state": "scored",
+        "symbol": "AAPL",
+        "direction": "up",
+        "confidence": 0.7,
+        "horizon_date": "2026-06-30",
+        "rationale": "Hermetic scored-prediction fixture.",
+        "outcome_return": 0.02,
+        "direction_brier": 0.09
+      }
+    },
+    {
+      "id": "e2e-risk-default",
+      "kind": "portfolio_risk",
+      "occurred_at": "2026-07-01T07:45:00Z",
+      "quality": "available",
+      "status": "available",
+      "data": {
+        "account_id": "default",
+        "currency": "USD",
+        "gross_value": 310.0,
+        "gross_pct_equity": 0.00031,
+        "largest_symbol": "AAPL",
+        "top1_gross_pct": 1.0,
+        "historical_status": "available",
+        "benchmark": "SPY",
+        "betas": [],
+        "reason_codes": [],
+        "limitations": ["hermetic_e2e_fixture"]
+      }
+    }
+  ],
+  "sources": [
+    {
+      "kind": "portfolio_risk",
+      "status": "available",
+      "latest_at": "2026-07-01T07:45:00Z",
+      "reason_code": null
+    },
+    {
+      "kind": "prediction",
+      "status": "available",
+      "latest_at": "2026-07-01T07:50:00Z",
+      "reason_code": null
+    },
+    {
+      "kind": "market_foresight",
+      "status": "available",
+      "latest_at": "2026-07-01T07:55:00Z",
+      "reason_code": null
+    },
+    {
+      "kind": "weekly_review",
+      "status": "available",
+      "latest_at": "2026-07-01T07:59:00Z",
+      "reason_code": null
+    },
+    {
+      "kind": "opportunity_summary",
+      "status": "available",
+      "latest_at": "2026-07-01T07:58:00Z",
+      "reason_code": null
+    },
+    {
+      "kind": "automation_status",
+      "status": "available",
+      "latest_at": "2026-07-01T07:57:00Z",
+      "reason_code": null
+    }
+  ],
+  "warnings": []
+}

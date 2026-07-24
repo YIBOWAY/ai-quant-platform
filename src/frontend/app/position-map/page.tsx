@@ -1,19 +1,27 @@
 import Link from "next/link";
-import { ArrowRight, BriefcaseBusiness, Layers, ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
+import {
+  ArrowRight,
+  BriefcaseBusiness,
+  Layers,
+  ShieldCheck,
+} from "lucide-react";
 import { AccountRefreshControl } from "@/components/AccountRefreshControl";
-import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
-import { Card, MetricStat, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
+import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import {
   formatMoney,
   getBacktestDetail,
   getBacktests,
-  getPaperAccount,
-  getPaperAccountLedger,
+  getPaperAccountActivity,
   type AccountPositionView,
   type LedgerEntryView,
+  type PaperAccountActivityResponse,
+  type PaperAccountBalanceHistoryRowResponse,
+  type PaperAccountOrderHistoryRowResponse,
+  type PendingAccountOrderView,
   type PreviewRecord,
 } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
@@ -28,6 +36,19 @@ const copy = {
     subtitle:
       "One persistent simulated account: equity vs the funded base, cash, per-symbol exposure with strategy/manual attribution, and the audit ledger.",
     openPaperTrading: "Trade / Rebalance",
+    accountSelector: "default paper account",
+    positionsTab: "Positions",
+    ordersTab: "Orders",
+    orderHistoryTab: "Order History",
+    balanceHistoryTab: "Balance History",
+    tradeLogTab: "Trade Log",
+    accountBalance: "Account Balance",
+    netValue: "Net Value",
+    realizedPnl: "Realized P&L",
+    accountMargin: "Account Margin",
+    availableFunds: "Available Funds",
+    orderMargin: "Order Margin",
+    marginBuffer: "Margin Buffer",
     accountValue: "Account Value",
     pnl: "Total P&L",
     cash: "Available Cash",
@@ -54,7 +75,41 @@ const copy = {
     accountFrozen: "frozen",
     positionsTitle: "Account Positions",
     positionsDesc: "Live holdings with average cost, current price, weight and unrealized P&L.",
+    ordersTitle: "Open Orders",
+    ordersDesc: "Pending paper limit orders with reserved cash or reserved quantity.",
+    orderHistoryTitle: "Order History",
+    orderHistoryDesc: "Completed and cancelled paper-account order events from the ledger.",
+    balanceHistoryTitle: "Balance History",
+    balanceHistoryDesc: "Cash movement reconstructed from the append-only account ledger.",
+    tradeLogTitle: "Trade Log",
+    tradeLogDesc: "Complete account ledger: deposits, fills, cancellations, freezes and sleeve events.",
     noPositionRowsDesc: "No account positions yet.",
+    noOrdersTitle: "No open orders",
+    noOrdersDesc: "Pending limit orders will appear here until they fill or are cancelled.",
+    noOrderHistoryTitle: "No order history",
+    noOrderHistoryDesc: "Filled and cancelled paper orders will appear here.",
+    noBalanceHistoryTitle: "No balance history",
+    noBalanceHistoryDesc: "Cash movements will appear after the account opens or mutates.",
+    noTradeLogTitle: "No trade log",
+    noTradeLogDesc: "Ledger events will appear here once the paper account records activity.",
+    product: "Product",
+    buySell: "Buy/Sell",
+    quantity: "Qty",
+    avgFill: "Avg Fill",
+    latestPrice: "Last",
+    unrealizedPct: "Unrealized %",
+    tradeValue: "Trade Value",
+    sourceLabel: "Source",
+    time: "Time",
+    orderId: "Order ID",
+    status: "Status",
+    limitPrice: "Limit",
+    reserved: "Reserved",
+    lastCheck: "Last Check",
+    event: "Event",
+    cashDelta: "Cash Δ",
+    cashAfterShort: "Cash After",
+    note: "Note",
     ledgerTitle: "Account Activity",
     ledgerDesc: "Latest ledger entries — every order, rebalance and reset is recorded here.",
     ledgerEmptyTitle: "No activity yet",
@@ -68,6 +123,15 @@ const copy = {
       fee: "Fee",
       freeze: "Freeze",
       unfreeze: "Unfreeze",
+      order_cancelled: "Cancelled",
+      sleeve_cash_allocated: "Sleeve cash",
+      sleeve_execution_fill: "Sleeve fill",
+    } as Record<string, string>,
+    statusLabels: {
+      pending: "Pending",
+      filled: "Filled",
+      cancelled: "Cancelled",
+      event: "Event",
     } as Record<string, string>,
     side: { BUY: "Buy", SELL: "Sell" } as Record<string, string>,
     cashAfter: "cash after",
@@ -100,6 +164,19 @@ const copy = {
     subtitle:
       "单一持续模拟账户：净值对比初始本金、现金、按标的的暴露（策略/手动归因），以及完整账本流水。",
     openPaperTrading: "去下单 / 再平衡",
+    accountSelector: "默认模拟账户",
+    positionsTab: "持仓",
+    ordersTab: "订单",
+    orderHistoryTab: "订单历史",
+    balanceHistoryTab: "余额历史",
+    tradeLogTab: "交易日志",
+    accountBalance: "账户余额",
+    netValue: "净值",
+    realizedPnl: "已实现损益",
+    accountMargin: "账户保证金",
+    availableFunds: "可用资金",
+    orderMargin: "订单保证金",
+    marginBuffer: "保证金缓冲",
     accountValue: "账户净值",
     pnl: "总盈亏",
     cash: "可用现金",
@@ -126,7 +203,41 @@ const copy = {
     accountFrozen: "已冻结",
     positionsTitle: "账户持仓",
     positionsDesc: "实时持仓：均价、现价、权重与未实现盈亏。",
+    ordersTitle: "当前订单",
+    ordersDesc: "尚未成交的模拟限价单，以及冻结的现金或数量。",
+    orderHistoryTitle: "订单历史",
+    orderHistoryDesc: "来自账户账本的已成交、已取消订单事件。",
+    balanceHistoryTitle: "余额历史",
+    balanceHistoryDesc: "从追加式账户账本重建的现金变化。",
+    tradeLogTitle: "交易日志",
+    tradeLogDesc: "完整账户账本：入金、成交、取消、冻结与袖珍仓事件。",
     noPositionRowsDesc: "账户暂无持仓。",
+    noOrdersTitle: "暂无当前订单",
+    noOrdersDesc: "等待成交的限价单会显示在这里，直到成交或取消。",
+    noOrderHistoryTitle: "暂无订单历史",
+    noOrderHistoryDesc: "模拟订单成交或取消后会显示在这里。",
+    noBalanceHistoryTitle: "暂无余额历史",
+    noBalanceHistoryDesc: "账户打开或发生变化后，现金流水会显示在这里。",
+    noTradeLogTitle: "暂无交易日志",
+    noTradeLogDesc: "模拟账户记录账本事件后会显示在这里。",
+    product: "商品",
+    buySell: "买/卖方",
+    quantity: "数量",
+    avgFill: "平均成交价",
+    latestPrice: "最新价",
+    unrealizedPct: "未实现损益%",
+    tradeValue: "交易值",
+    sourceLabel: "来源",
+    time: "时间",
+    orderId: "订单号",
+    status: "状态",
+    limitPrice: "限价",
+    reserved: "冻结",
+    lastCheck: "最近检查",
+    event: "事件",
+    cashDelta: "现金变化",
+    cashAfterShort: "余额",
+    note: "备注",
     ledgerTitle: "账户流水",
     ledgerDesc: "最近的账本记录——每一笔下单、再平衡与重置都在这里留痕。",
     ledgerEmptyTitle: "暂无流水",
@@ -140,6 +251,15 @@ const copy = {
       fee: "费用",
       freeze: "冻结",
       unfreeze: "解冻",
+      order_cancelled: "已取消",
+      sleeve_cash_allocated: "袖珍仓现金",
+      sleeve_execution_fill: "袖珍仓成交",
+    } as Record<string, string>,
+    statusLabels: {
+      pending: "等待",
+      filled: "已成交",
+      cancelled: "已取消",
+      event: "事件",
     } as Record<string, string>,
     side: { BUY: "买入", SELL: "卖出" } as Record<string, string>,
     cashAfter: "余额",
@@ -172,82 +292,171 @@ type PositionMapPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type AccountTab = "positions" | "orders" | "order-history" | "balance-history" | "trade-log";
+
+const accountTabs: AccountTab[] = ["positions", "orders", "order-history", "balance-history", "trade-log"];
+
+function resolveAccountTab(value: string | string[] | undefined): AccountTab {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return accountTabs.includes(raw as AccountTab) ? (raw as AccountTab) : "positions";
+}
+
+function accountTabHref(tab: AccountTab, locale: "en" | "zh") {
+  const path = tab === "positions" ? "/position-map" : `/position-map?tab=${tab}`;
+  return localizePath(path, locale);
+}
+
 export default async function PositionMapPage({ searchParams }: PositionMapPageProps) {
   const params = (await searchParams) ?? {};
   const locale = await getServerLocale(params);
   const text = copy[locale];
-  const [account, ledger, backtests, health] = await Promise.all([
-    getPaperAccount(),
-    getPaperAccountLedger(12),
+  const activeTab = resolveAccountTab(params.tab);
+  const [activity, backtests, health] = await Promise.all([
+    getPaperAccountActivity(200),
     getBacktests(),
     getCachedHealth(),
   ]);
+  const account = activity.account;
+  const ledger = {
+    apiError: activity.apiError,
+    entries: activity.trade_log.slice(0, 12),
+    total: activity.trade_log_total,
+  };
   const includeSample = shouldIncludeSampleRuns(params);
   const latestBacktest = selectDisplayRun(backtests.backtests, includeSample);
   const backtestDetail = latestBacktest ? await getBacktestDetail(latestBacktest.id) : null;
   const backtestExposure = latestExposure(backtestDetail?.positions ?? []);
 
-  const accountDown = Boolean(account.apiError);
+  const accountDown = Boolean(activity.apiError || account.apiError);
   const positions = [...account.positions].sort(
     (a, b) => Math.abs(b.market_value) - Math.abs(a.market_value),
   );
   const grossInvested = positions.reduce((sum, p) => sum + Math.abs(p.market_value), 0);
-  const pnlPositive = account.pnl_abs >= 0;
   const priceSourceLabel = text.priceKinds[account.price_source.kind] ?? account.price_source.kind;
+  const marginBuffer = account.equity > 0 ? account.available_cash / account.equity : 0;
 
   return (
-    <div className="flex h-full flex-1 flex-col gap-4 overflow-y-auto bg-bg-base p-4 lg:p-6">
+    <div className="flex h-full flex-1 flex-col overflow-y-auto bg-bg-base text-text-primary">
       <ErrorBanner
         locale={locale}
-        messages={[account.apiError, ledger.apiError, backtests.apiError, health.apiError, backtestDetail?.apiError]}
+        messages={[activity.apiError, account.apiError, backtests.apiError, health.apiError, backtestDetail?.apiError]}
       />
 
-      <PageHeader
-        eyebrow={text.eyebrow}
-        icon={<Layers size={18} className="text-accent-success" />}
-        title={text.title}
-        subtitle={text.subtitle}
-        actions={
-          <>
+      <header className="border-b border-border-subtle bg-bg-surface px-4 py-4 lg:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-text-secondary">
+              <Layers size={18} className="text-text-primary" />
+              <span className="font-label-caps uppercase">{text.eyebrow}</span>
+            </div>
+            <h1 className="mt-1 font-headline-xl text-text-primary">{text.title}</h1>
+            <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">{text.subtitle}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <AccountRefreshControl locale={locale} />
             <Link
-              className="flex items-center gap-1.5 rounded-lg border border-accent-success/40 bg-accent-success/10 px-3 py-1.5 font-body-sm text-accent-success transition-colors hover:bg-accent-success/20"
+              className="flex items-center gap-1.5 rounded-full border border-border-subtle bg-bg-surface-muted px-3 py-1.5 font-body-sm text-text-primary transition-colors hover:border-text-secondary/50 hover:bg-bg-surface"
               href={localizePath("/paper-trading", locale)}
             >
               <BriefcaseBusiness size={14} />
               {text.openPaperTrading}
             </Link>
-          </>
-        }
-      />
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-4 xl:flex-row xl:items-center">
+          <div className="inline-flex min-w-[220px] items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-base px-3 py-2 text-text-primary">
+            <span className="min-w-0 truncate font-body-md">{accountDown ? text.accountSelector : account.account_id}</span>
+            <span className="font-data-mono text-xs uppercase text-text-secondary">{account.base_currency}</span>
+          </div>
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-8 gap-y-3 md:grid-cols-4 2xl:grid-cols-8">
+            <TerminalMetric
+              label={text.accountBalance}
+              value={accountDown ? "--" : formatMoney(account.cash)}
+            />
+            <TerminalMetric label={text.netValue} value={accountDown ? "--" : formatMoney(account.equity)} />
+            <TerminalMetric
+              label={text.realizedPnl}
+              value={accountDown ? "--" : signedMoney(account.realized_pnl)}
+              tone={accountDown ? "neutral" : pnlTone(account.realized_pnl)}
+            />
+            <TerminalMetric
+              label={text.unrealized}
+              value={accountDown ? "--" : signedMoney(account.unrealized_pnl)}
+              tone={accountDown ? "neutral" : pnlTone(account.unrealized_pnl)}
+            />
+            <TerminalMetric
+              label={text.accountMargin}
+              value={accountDown ? "--" : formatMoney(grossInvested)}
+            />
+            <TerminalMetric
+              label={text.availableFunds}
+              value={accountDown ? "--" : formatMoney(account.available_cash)}
+            />
+            <TerminalMetric
+              label={text.orderMargin}
+              value={accountDown ? "--" : formatMoney(account.reserved_cash)}
+            />
+            <TerminalMetric
+              label={text.marginBuffer}
+              value={accountDown ? "--" : `${(marginBuffer * 100).toFixed(2)}%`}
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <nav className="flex flex-wrap gap-2" aria-label={text.positionsTitle}>
+            <TradingTab
+              active={activeTab === "positions"}
+              href={accountTabHref("positions", locale)}
+              label={`${text.positionsTab} ${positions.length}`}
+            />
+            <TradingTab
+              active={activeTab === "orders"}
+              href={accountTabHref("orders", locale)}
+              label={`${text.ordersTab} ${activity.pending_order_total}`}
+            />
+            <TradingTab
+              active={activeTab === "order-history"}
+              href={accountTabHref("order-history", locale)}
+              label={text.orderHistoryTab}
+            />
+            <TradingTab
+              active={activeTab === "balance-history"}
+              href={accountTabHref("balance-history", locale)}
+              label={text.balanceHistoryTab}
+            />
+            <TradingTab
+              active={activeTab === "trade-log"}
+              href={accountTabHref("trade-log", locale)}
+              label={text.tradeLogTab}
+            />
+          </nav>
+          <div className="flex items-center gap-2 text-text-secondary">
+            <span className="hidden items-center gap-1.5 font-data-mono text-[10px] uppercase sm:flex">
+              {text.priceSource}: {priceSourceLabel}
+              {account.price_source.as_of ? ` · ${text.asOf} ${formatTimestamp(account.price_source.as_of)}` : ""}
+            </span>
+          </div>
+        </div>
+      </header>
 
       {accountDown ? (
-        <Card tone="danger" padded>
+        <Card tone="danger" padded className="m-4 lg:m-6">
           <p className="font-body-sm text-danger">{text.accountUnavailable}</p>
         </Card>
       ) : null}
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <MetricStat label={text.accountValue} value={accountDown ? "--" : formatMoney(account.equity)} />
-        <MetricStat
-          label={text.pnl}
-          value={accountDown ? "--" : `${pnlPositive ? "+" : ""}${formatMoney(account.pnl_abs)}`}
-          delta={accountDown ? undefined : `${(account.pnl_pct * 100).toFixed(2)}%`}
-          tone={accountDown ? "neutral" : pnlPositive ? "success" : "danger"}
+      <main className="flex flex-col gap-4 p-4 lg:p-6">
+        <AccountActivityPanel
+          accountDown={accountDown}
+          activeTab={activeTab}
+          activity={activity}
+          positions={positions}
+          text={text}
         />
-        <MetricStat label={text.cash} value={accountDown ? "--" : formatMoney(account.available_cash)} />
-        <MetricStat
-          label={text.invested}
-          value={accountDown ? "--" : `${(account.invested_pct * 100).toFixed(1)}%`}
-        />
-        <MetricStat
-          label={text.unrealized}
-          value={accountDown ? "--" : `${account.unrealized_pnl >= 0 ? "+" : ""}${formatMoney(account.unrealized_pnl)}`}
-          tone={accountDown ? "neutral" : account.unrealized_pnl >= 0 ? "success" : "danger"}
-        />
-      </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+        <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
         <div className="flex min-w-0 flex-col gap-4">
           <Card padded>
             <SectionTitle
@@ -288,7 +497,7 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
                 description={text.noPositionsDesc}
                 action={
                   <Link
-                    className="flex items-center gap-1.5 rounded-lg border border-accent-success/40 bg-accent-success/10 px-3 py-1.5 font-body-sm text-accent-success transition-colors hover:bg-accent-success/20"
+                    className="flex items-center gap-1.5 rounded-lg border border-info/40 bg-info/10 px-3 py-1.5 font-body-sm text-info transition-colors hover:bg-info/20"
                     href={localizePath("/paper-trading", locale)}
                   >
                     {text.goTrade}
@@ -298,33 +507,6 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
               />
             )}
           </Card>
-
-          <DataPreviewTable
-            columns={[
-              "symbol",
-              "quantity",
-              "avg_cost",
-              "last_price",
-              "weight",
-              "market_value",
-              "unrealized_pnl",
-              "source",
-              "price_kind",
-            ]}
-            columnLabels={text.columns}
-            columnTips={{
-              price_kind: text.tips.price_kind,
-              source: text.tips.source,
-              weight: text.tips.weight,
-            }}
-            description={text.positionsDesc}
-            emptyDescription={text.noPositionRowsDesc}
-            emptyTitle={text.positionsTitle}
-            locale={locale}
-            maxRows={30}
-            rows={positionTableRows(positions, text)}
-            title={text.positionsTitle}
-          />
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
@@ -376,9 +558,9 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
             <p className="mt-3 font-body-sm text-text-secondary">{text.paperBadge}</p>
           </Card>
         </div>
-      </section>
+        </section>
 
-      <section>
+        <section>
         <Card padded>
           <SectionTitle
             title={text.comparisonTitle}
@@ -418,9 +600,494 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
             <EmptyState title={text.comparisonTitle} description={text.noBacktestDesc} />
           )}
         </Card>
-      </section>
+        </section>
+      </main>
     </div>
   );
+}
+
+type PositionCopy = (typeof copy)["en"] | (typeof copy)["zh"];
+type Tone = "neutral" | "success" | "danger";
+
+function TerminalMetric({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: Tone;
+}) {
+  const toneStyle =
+    tone === "success"
+      ? { color: "var(--color-accent-success)" }
+      : tone === "danger"
+        ? { color: "var(--color-danger)" }
+        : undefined;
+  return (
+    <div className="min-w-0">
+      <div className="whitespace-nowrap font-label-caps text-text-secondary">{label}</div>
+      <div
+        className="mt-1 whitespace-nowrap font-data-mono text-base font-semibold tabular-nums text-text-primary"
+        style={toneStyle}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function TradingTab({
+  label,
+  active = false,
+  href,
+}: {
+  label: string;
+  active?: boolean;
+  href: string;
+}) {
+  return (
+    <Link
+      aria-current={active ? "page" : undefined}
+      className={`inline-flex h-9 items-center rounded-full px-4 font-body-md transition-colors ${
+        active
+          ? "bg-text-primary text-bg-base"
+          : "bg-bg-surface-muted text-text-secondary hover:bg-border-subtle hover:text-text-primary"
+      }`}
+      href={href}
+    >
+      {label}
+    </Link>
+  );
+}
+
+function AccountActivityPanel({
+  accountDown,
+  activeTab,
+  activity,
+  positions,
+  text,
+}: {
+  accountDown: boolean;
+  activeTab: AccountTab;
+  activity: PaperAccountActivityResponse;
+  positions: AccountPositionView[];
+  text: PositionCopy;
+}) {
+  if (activeTab === "orders") {
+    return <OrdersPanel accountDown={accountDown} orders={activity.pending_orders} text={text} />;
+  }
+  if (activeTab === "order-history") {
+    return (
+      <OrderHistoryPanel
+        accountDown={accountDown}
+        rows={activity.order_history}
+        text={text}
+        total={activity.order_history_total}
+      />
+    );
+  }
+  if (activeTab === "balance-history") {
+    return (
+      <BalanceHistoryPanel
+        accountDown={accountDown}
+        rows={activity.balance_history}
+        text={text}
+        total={activity.balance_history_total}
+      />
+    );
+  }
+  if (activeTab === "trade-log") {
+    return (
+      <TradeLogPanel
+        accountDown={accountDown}
+        rows={activity.trade_log}
+        text={text}
+        total={activity.trade_log_total}
+      />
+    );
+  }
+  return <PositionsTradingPanel accountDown={accountDown} positions={positions} text={text} />;
+}
+
+function PositionsTradingPanel({
+  accountDown,
+  positions,
+  text,
+}: {
+  accountDown: boolean;
+  positions: AccountPositionView[];
+  text: PositionCopy;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+        <div>
+          <h2 className="font-label-caps text-text-primary">{text.positionsTitle}</h2>
+          <p className="mt-1 font-body-sm text-text-secondary">{text.positionsDesc}</p>
+        </div>
+        <span className="font-data-mono text-[10px] uppercase text-text-secondary">
+          {positions.length} {text.positionsTab}
+        </span>
+      </div>
+      {accountDown ? (
+        <p className="py-10 text-center font-body-sm text-text-secondary">{text.accountUnavailable}</p>
+      ) : positions.length === 0 ? (
+        <EmptyState title={text.noPositionsTitle} description={text.noPositionsDesc} />
+      ) : (
+        <div className="overflow-x-auto" data-position-table-scroll="true">
+          <table className="w-full min-w-[980px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+                {[
+                  text.product,
+                  text.buySell,
+                  text.quantity,
+                  text.avgFill,
+                  text.latestPrice,
+                  text.unrealized,
+                  text.unrealizedPct,
+                  text.tradeValue,
+                  text.sourceLabel,
+                ].map((heading, index) => (
+                  <th
+                    className={`px-4 py-3 font-label-caps ${
+                      index >= 2 && index <= 7 ? "text-right" : ""
+                    }`}
+                    key={heading}
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="font-data-mono text-sm text-text-primary">
+              {positions.map((position) => (
+                <PositionTradingRow key={position.symbol} position={position} text={text} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AccountPanelShell({
+  accountDown,
+  children,
+  countLabel,
+  description,
+  emptyDescription,
+  emptyTitle,
+  hasRows,
+  title,
+}: {
+  accountDown: boolean;
+  children: ReactNode;
+  countLabel: string;
+  description: string;
+  emptyDescription: string;
+  emptyTitle: string;
+  hasRows: boolean;
+  title: string;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+        <div>
+          <h2 className="font-label-caps text-text-primary">{title}</h2>
+          <p className="mt-1 font-body-sm text-text-secondary">{description}</p>
+        </div>
+        <span className="font-data-mono text-[10px] uppercase text-text-secondary">{countLabel}</span>
+      </div>
+      {accountDown ? (
+        <p className="py-10 text-center font-body-sm text-text-secondary">{emptyDescription}</p>
+      ) : hasRows ? (
+        children
+      ) : (
+        <EmptyState title={emptyTitle} description={emptyDescription} />
+      )}
+    </section>
+  );
+}
+
+function OrdersPanel({
+  accountDown,
+  orders,
+  text,
+}: {
+  accountDown: boolean;
+  orders: PendingAccountOrderView[];
+  text: PositionCopy;
+}) {
+  return (
+    <AccountPanelShell
+      accountDown={accountDown}
+      countLabel={`${orders.length} ${text.ordersTab}`}
+      description={text.ordersDesc}
+      emptyDescription={accountDown ? text.accountUnavailable : text.noOrdersDesc}
+      emptyTitle={text.noOrdersTitle}
+      hasRows={orders.length > 0}
+      title={text.ordersTitle}
+    >
+      <div className="overflow-x-auto" data-position-table-scroll="true">
+        <table className="w-full min-w-[980px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {[text.time, text.orderId, text.product, text.buySell, text.quantity, text.limitPrice, text.reserved, text.lastCheck].map(
+                (heading, index) => (
+                  <th className={`px-4 py-3 font-label-caps ${index >= 4 && index <= 6 ? "text-right" : ""}`} key={heading}>
+                    {heading}
+                  </th>
+                ),
+              )}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">
+            {orders.map((order) => (
+              <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={order.order_id}>
+                <td className="px-4 py-3 text-text-secondary">{formatTimestamp(order.created_at)}</td>
+                <td className="px-4 py-3 text-text-secondary">{shortId(order.order_id)}</td>
+                <td className="px-4 py-3 font-semibold">{order.symbol}</td>
+                <td className={order.side.toLowerCase() === "buy" ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
+                  {formatSide(order.side, text)}
+                </td>
+                <NumericCell>{formatQuantity(order.quantity)}</NumericCell>
+                <NumericCell>{formatPrice(order.limit_price)}</NumericCell>
+                <NumericCell>{formatReserved(order)}</NumericCell>
+                <td className="px-4 py-3 text-text-secondary">
+                  {order.last_checked_at ? formatTimestamp(order.last_checked_at) : "--"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </AccountPanelShell>
+  );
+}
+
+function OrderHistoryPanel({
+  accountDown,
+  rows,
+  text,
+  total,
+}: {
+  accountDown: boolean;
+  rows: PaperAccountOrderHistoryRowResponse[];
+  text: PositionCopy;
+  total: number;
+}) {
+  return (
+    <AccountPanelShell
+      accountDown={accountDown}
+      countLabel={`${total} ${text.orderHistoryTab}`}
+      description={text.orderHistoryDesc}
+      emptyDescription={accountDown ? text.accountUnavailable : text.noOrderHistoryDesc}
+      emptyTitle={text.noOrderHistoryTitle}
+      hasRows={rows.length > 0}
+      title={text.orderHistoryTitle}
+    >
+      <div className="overflow-x-auto" data-position-table-scroll="true">
+        <table className="w-full min-w-[1120px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {[text.time, text.status, text.orderId, text.product, text.buySell, text.quantity, text.avgFill, text.tradeValue, text.sourceLabel].map(
+                (heading, index) => (
+                  <th className={`px-4 py-3 font-label-caps ${index >= 5 && index <= 7 ? "text-right" : ""}`} key={heading}>
+                    {heading}
+                  </th>
+                ),
+              )}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">
+            {rows.map((row) => (
+              <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={row.event_id}>
+                <td className="px-4 py-3 text-text-secondary">{formatTimestamp(row.timestamp)}</td>
+                <td className="px-4 py-3">
+                  <StatusBadge label={statusLabel(row.status, text)} status={row.status} />
+                </td>
+                <td className="px-4 py-3 text-text-secondary">{row.order_id ? shortId(row.order_id) : "--"}</td>
+                <td className="px-4 py-3 font-semibold">{row.symbol ?? "--"}</td>
+                <td className={row.side?.toLowerCase() === "buy" ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
+                  {formatSide(row.side, text)}
+                </td>
+                <NumericCell>{formatMaybeQuantity(row.quantity)}</NumericCell>
+                <NumericCell>{formatMaybePrice(row.price)}</NumericCell>
+                <NumericCell>{formatMaybeMoney(row.gross_value)}</NumericCell>
+                <td className="px-4 py-3 text-text-secondary">{row.source}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </AccountPanelShell>
+  );
+}
+
+function BalanceHistoryPanel({
+  accountDown,
+  rows,
+  text,
+  total,
+}: {
+  accountDown: boolean;
+  rows: PaperAccountBalanceHistoryRowResponse[];
+  text: PositionCopy;
+  total: number;
+}) {
+  return (
+    <AccountPanelShell
+      accountDown={accountDown}
+      countLabel={`${total} ${text.balanceHistoryTab}`}
+      description={text.balanceHistoryDesc}
+      emptyDescription={accountDown ? text.accountUnavailable : text.noBalanceHistoryDesc}
+      emptyTitle={text.noBalanceHistoryTitle}
+      hasRows={rows.length > 0}
+      title={text.balanceHistoryTitle}
+    >
+      <div className="overflow-x-auto" data-position-table-scroll="true">
+        <table className="w-full min-w-[860px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {[text.time, text.event, text.cashDelta, text.cashAfterShort, text.sourceLabel, text.note].map((heading, index) => (
+                <th className={`px-4 py-3 font-label-caps ${index === 2 || index === 3 ? "text-right" : ""}`} key={heading}>
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">
+            {rows.map((row) => {
+              const tone = pnlTone(row.cash_delta);
+              const toneClass =
+                tone === "success" ? "text-accent-success" : tone === "danger" ? "text-danger" : "text-text-primary";
+              return (
+                <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={row.event_id}>
+                  <td className="px-4 py-3 text-text-secondary">{formatTimestamp(row.timestamp)}</td>
+                  <td className="px-4 py-3">{eventLabel(row.kind, text)}</td>
+                  <NumericCell className={toneClass}>{signedMoney(row.cash_delta)}</NumericCell>
+                  <NumericCell>{formatMoney(row.cash_after)}</NumericCell>
+                  <td className="px-4 py-3 text-text-secondary">{row.source}</td>
+                  <td className="max-w-[360px] truncate px-4 py-3 text-text-secondary">{row.note || "--"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </AccountPanelShell>
+  );
+}
+
+function TradeLogPanel({
+  accountDown,
+  rows,
+  text,
+  total,
+}: {
+  accountDown: boolean;
+  rows: LedgerEntryView[];
+  text: PositionCopy;
+  total: number;
+}) {
+  return (
+    <AccountPanelShell
+      accountDown={accountDown}
+      countLabel={`${total} ${text.tradeLogTab}`}
+      description={text.tradeLogDesc}
+      emptyDescription={accountDown ? text.accountUnavailable : text.noTradeLogDesc}
+      emptyTitle={text.noTradeLogTitle}
+      hasRows={rows.length > 0}
+      title={text.tradeLogTitle}
+    >
+      <div className="overflow-x-auto" data-position-table-scroll="true">
+        <table className="w-full min-w-[1120px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
+              {[text.time, text.event, text.product, text.buySell, text.quantity, text.avgFill, text.cashAfterShort, text.note].map(
+                (heading, index) => (
+                  <th className={`px-4 py-3 font-label-caps ${index >= 4 && index <= 6 ? "text-right" : ""}`} key={heading}>
+                    {heading}
+                  </th>
+                ),
+              )}
+            </tr>
+          </thead>
+          <tbody className="font-data-mono text-sm text-text-primary">
+            {rows.map((row) => (
+              <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={row.entry_id}>
+                <td className="px-4 py-3 text-text-secondary">{formatTimestamp(row.timestamp)}</td>
+                <td className="px-4 py-3">{eventLabel(row.kind, text)}</td>
+                <td className="px-4 py-3 font-semibold">{row.symbol ?? "--"}</td>
+                <td className={row.side?.toLowerCase() === "buy" ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
+                  {formatSide(row.side, text)}
+                </td>
+                <NumericCell>{formatMaybeQuantity(row.quantity)}</NumericCell>
+                <NumericCell>{formatMaybePrice(row.price)}</NumericCell>
+                <NumericCell>{formatMaybeMoney(row.cash_after)}</NumericCell>
+                <td className="max-w-[360px] truncate px-4 py-3 text-text-secondary">{row.note || "--"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </AccountPanelShell>
+  );
+}
+
+function PositionTradingRow({ position, text }: { position: AccountPositionView; text: PositionCopy }) {
+  const isLong = position.quantity >= 0;
+  const pnl = pnlTone(position.unrealized_pnl);
+  const pnlClass =
+    pnl === "success" ? "text-accent-success" : pnl === "danger" ? "text-danger" : "text-text-primary";
+  const costBasis = Math.abs(position.quantity) * position.avg_cost;
+  const pnlPct = costBasis > 0 ? position.unrealized_pnl / costBasis : 0;
+  const source = positionSourceLabel(position, text);
+  const sourceTone =
+    source === text.strategy
+      ? "border-accent-success/30 bg-accent-success/10 text-accent-success"
+      : source === text.manual
+        ? "border-border-subtle bg-bg-surface-muted text-text-secondary"
+        : "border-warning/30 bg-warning/10 text-warning";
+
+  return (
+    <tr
+      className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45"
+      data-position-row="true"
+    >
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-surface-muted font-data-mono text-[10px] uppercase text-text-secondary">
+            {position.symbol.slice(0, 2)}
+          </span>
+          <span className="rounded-md bg-bg-surface-muted px-2.5 py-1 font-data-mono font-semibold text-text-primary">
+            {position.symbol}
+          </span>
+        </div>
+      </td>
+      <td className={isLong ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
+        {isLong ? text.long : text.short}
+      </td>
+      <NumericCell>{formatQuantity(position.quantity)}</NumericCell>
+      <NumericCell>{formatPrice(position.avg_cost)}</NumericCell>
+      <NumericCell>{formatPrice(position.last_price)}</NumericCell>
+      <NumericCell className={pnlClass}>{signedMoney(position.unrealized_pnl)}</NumericCell>
+      <NumericCell className={pnlClass}>{signedPct(pnlPct)}</NumericCell>
+      <NumericCell>{formatMoney(Math.abs(position.market_value))}</NumericCell>
+      <td className="px-4 py-3">
+        <span className={`inline-flex rounded-full border px-2 py-0.5 font-data-mono text-[10px] uppercase ${sourceTone}`}>
+          {source}
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+function NumericCell({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <td className={`px-4 py-3 text-right tabular-nums ${className}`}>{children}</td>;
 }
 
 function ExposureBar({
@@ -490,7 +1157,7 @@ function LedgerRow({
   text,
 }: {
   entry: LedgerEntryView;
-  text: (typeof copy)["en"] | (typeof copy)["zh"];
+  text: PositionCopy;
 }) {
   const kindLabel = text.kind[entry.kind] ?? entry.kind;
   const sideLabel = entry.side ? (text.side[entry.side.toUpperCase()] ?? entry.side) : null;
@@ -539,31 +1206,6 @@ function LedgerRow({
   );
 }
 
-function positionTableRows(
-  rows: AccountPositionView[],
-  text: (typeof copy)["en"] | (typeof copy)["zh"],
-) {
-  return rows.map((row) => {
-    let manualShare = 0;
-    for (const [source, share] of Object.entries(row.source_breakdown)) {
-      if (source === "manual") manualShare += share;
-    }
-    const source =
-      manualShare >= 0.999 ? text.manual : manualShare <= 0.001 ? text.strategy : text.mixed;
-    return {
-      symbol: row.symbol,
-      quantity: Number(row.quantity.toFixed(4)),
-      avg_cost: Number(row.avg_cost.toFixed(2)),
-      last_price: Number(row.last_price.toFixed(2)),
-      weight: `${(Math.max(0, Math.min(1, row.weight)) * 100).toFixed(1)}%`,
-      market_value: Number(row.market_value.toFixed(2)),
-      unrealized_pnl: Number(row.unrealized_pnl.toFixed(2)),
-      source,
-      price_kind: text.priceKinds[row.price_kind] ?? row.price_kind,
-    };
-  });
-}
-
 function formatTimestamp(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.valueOf())) {
@@ -571,6 +1213,98 @@ function formatTimestamp(value: string) {
   }
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
+function positionSourceLabel(row: AccountPositionView, text: PositionCopy) {
+  let manualShare = 0;
+  for (const [source, share] of Object.entries(row.source_breakdown)) {
+    if (source === "manual") manualShare += share;
+  }
+  if (manualShare >= 0.999) {
+    return text.manual;
+  }
+  if (manualShare <= 0.001) {
+    return text.strategy;
+  }
+  return text.mixed;
+}
+
+function pnlTone(value: number): Tone {
+  if (!Number.isFinite(value) || value === 0) {
+    return "neutral";
+  }
+  return value > 0 ? "success" : "danger";
+}
+
+function signedMoney(value: number) {
+  return `${value >= 0 ? "+" : ""}${formatMoney(value)}`;
+}
+
+function signedPct(value: number) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
+}
+
+function formatPrice(value: number) {
+  return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : "--";
+}
+
+function formatQuantity(value: number) {
+  return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "--";
+}
+
+function formatMaybeQuantity(value: number | null | undefined) {
+  return typeof value === "number" ? formatQuantity(value) : "--";
+}
+
+function formatMaybePrice(value: number | null | undefined) {
+  return typeof value === "number" ? formatPrice(value) : "--";
+}
+
+function formatMaybeMoney(value: number | null | undefined) {
+  return typeof value === "number" ? formatMoney(value) : "--";
+}
+
+function formatReserved(order: PendingAccountOrderView) {
+  if (order.reserved_cash > 0) {
+    return formatMoney(order.reserved_cash);
+  }
+  if (order.reserved_quantity > 0) {
+    return formatQuantity(order.reserved_quantity);
+  }
+  return "--";
+}
+
+function formatSide(side: string | null | undefined, text: PositionCopy) {
+  if (!side) {
+    return "--";
+  }
+  const key = side.toUpperCase();
+  return text.side[key] ?? side;
+}
+
+function shortId(id: string) {
+  return id.length > 12 ? `${id.slice(0, 8)}...` : id;
+}
+
+function statusLabel(status: string, text: PositionCopy) {
+  return text.statusLabels[status] ?? status;
+}
+
+function eventLabel(kind: string, text: PositionCopy) {
+  return text.kind[kind] ?? kind;
+}
+
+function StatusBadge({ label, status }: { label: string; status: string }) {
+  const tone =
+    status === "filled"
+      ? "border-accent-success/30 bg-accent-success/10 text-accent-success"
+      : status === "cancelled"
+        ? "border-danger/30 bg-danger/10 text-danger"
+        : "border-border-subtle bg-bg-surface-muted text-text-secondary";
+  return <span className={`inline-flex rounded-full border px-2 py-0.5 font-data-mono text-[10px] uppercase ${tone}`}>{label}</span>;
 }
 
 type BacktestExposureRow = {

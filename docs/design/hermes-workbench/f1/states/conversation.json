@@ -1,0 +1,273 @@
+{
+  "schema_version": "1.0",
+  "surface": "conversation",
+  "default_state": "streaming",
+  "states": [
+    {
+      "id": "sending",
+      "title": "消息发送中",
+      "title_en": "Sending message",
+      "status": "sending",
+      "status_text": "sending · 发送中 / Outbound in flight",
+      "summary": "用户目标已进入本地队列，等待 Hermes Run 接受。",
+      "summary_en": "User goal entered the local queue; waiting for Hermes Run acceptance.",
+      "announcements": ["对话状态 sending：目标已提交到本地队列。"],
+      "actions": [
+        { "id": "cancel-send", "label": "取消发送", "label_en": "Cancel send" }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "who": "你 · 09:12",
+          "text": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。"
+        }
+      ],
+      "events": [
+        { "label": "client.enqueue", "detail": "idempotency_key=msg-2026-07-13-0912-01" }
+      ],
+      "long_error": "CONVERSATION_SENDING_STALL_HINT: outbound message remained in sending for >8s without run_accepted; correlation_id=corr-aapl-risk-0912 transport=loopback BFF; do not double-submit; do not fall back to /api/agent/tasks; preserve exact user text and client idempotency key msg-2026-07-13-0912-01 for recovery.",
+      "technical": [
+        { "label": "phase", "value": "outbound" },
+        { "label": "idempotency_key", "value": "msg-2026-07-13-0912-01" }
+      ]
+    },
+    {
+      "id": "queued",
+      "title": "已排队，等待 Hermes 编排",
+      "title_en": "Queued; waiting for Hermes orchestration",
+      "status": "queued",
+      "status_text": "queued · 排队中 / Awaiting run slot",
+      "summary": "Run 已创建但尚未开始流式事件。",
+      "summary_en": "Run created but streaming events have not started.",
+      "announcements": ["对话状态 queued：等待 run slot。"],
+      "actions": [
+        { "id": "stop-run", "label": "请求停止", "label_en": "Request stop" }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "who": "你 · 09:12",
+          "text": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。"
+        },
+        {
+          "role": "system",
+          "who": "系统事件",
+          "text": "run research-aapl-risk-plan-2026-07-13-0912 · status=queued"
+        }
+      ],
+      "events": [
+        { "label": "run.created", "detail": "run_id=research-aapl-risk-plan-2026-07-13-0912" },
+        { "label": "run.queued", "detail": "queue_position=1" }
+      ],
+      "long_error": "CONVERSATION_QUEUED_BACKPRESSURE: run_id=research-aapl-risk-plan-2026-07-13-0912 queue_position=1 estimated_wait_ms=unknown provider_policy=locked; UI must show honest queued status text and must not animate fake token progress while no SSE frames arrive.",
+      "technical": [
+        { "label": "run_id", "value": "research-aapl-risk-plan-2026-07-13-0912" },
+        { "label": "queue_position", "value": "1" }
+      ]
+    },
+    {
+      "id": "streaming",
+      "title": "流式执行中",
+      "title_en": "Streaming execution",
+      "status": "streaming",
+      "status_text": "streaming · 执行中 / Live event stream",
+      "summary": "Hermes 正在输出结构化计划与执行事件；仅展示真实事件标签。",
+      "summary_en": "Hermes is emitting structured plan and execution events; only real event labels are shown.",
+      "announcements": ["对话状态 streaming：实时事件流已连接。"],
+      "actions": [
+        { "id": "stop-run", "label": "请求停止", "label_en": "Request stop" }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "who": "你 · 09:12",
+          "text": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。"
+        },
+        {
+          "role": "assistant",
+          "who": "Hermes · 09:12 · streaming",
+          "text": "已锁定 provider policy。正在生成因子假设、回测窗口与人工门禁检查清单…"
+        }
+      ],
+      "events": [
+        { "label": "run.started", "detail": "provider=locked" },
+        { "label": "plan.drafted", "detail": "plan_version=1" },
+        { "label": "tool.factor_probe", "detail": "symbol=AAPL" },
+        { "label": "stream.delta", "detail": "tokens=partial" }
+      ],
+      "long_error": "CONVERSATION_STREAMING_FRAME_GAP: last_event=tool.factor_probe elapsed_ms=14220 without stream.delta; reconnect policy=bounded; UI continues showing last honest event labels [run.started, plan.drafted, tool.factor_probe] and must not invent completion percentages or fake chart fills during the gap.",
+      "technical": [
+        { "label": "run_id", "value": "research-aapl-risk-plan-2026-07-13-0912" },
+        { "label": "transport", "value": "SSE" },
+        { "label": "last_event", "value": "tool.factor_probe" }
+      ]
+    },
+    {
+      "id": "reconnecting",
+      "title": "流式连接中断，正在重连",
+      "title_en": "Stream interrupted; reconnecting",
+      "status": "reconnecting",
+      "status_text": "reconnecting · 重连中 / Transport recovery",
+      "summary": "SSE 断开；使用 correlation 恢复，不重复提交目标。",
+      "summary_en": "SSE disconnected; recovering via correlation without resubmitting the goal.",
+      "announcements": ["对话状态 reconnecting：正在恢复事件流。"],
+      "actions": [
+        { "id": "stop-run", "label": "请求停止", "label_en": "Request stop" }
+      ],
+      "messages": [
+        {
+          "role": "system",
+          "who": "系统事件",
+          "text": "transport.disconnect · attempting resume from last_event_id=evt-0042"
+        }
+      ],
+      "events": [
+        { "label": "transport.disconnect", "detail": "code=network_idle" },
+        { "label": "transport.resume", "detail": "last_event_id=evt-0042" }
+      ],
+      "long_error": "CONVERSATION_RECONNECT_DETAIL: SSE closed with network_idle after event evt-0042; resume_token=rt-research-aapl-risk-plan-2026-07-13-0912 attempt=2/5 backoff_ms=1600; bridge journal append-only; client must not create a second run for the same user goal text.",
+      "technical": [
+        { "label": "last_event_id", "value": "evt-0042" },
+        { "label": "attempt", "value": "2/5" }
+      ]
+    },
+    {
+      "id": "stopping",
+      "title": "停止请求已接受",
+      "title_en": "Stop request accepted",
+      "status": "stopping",
+      "status_text": "stopping · 停止中 / Stop in progress",
+      "summary": "用户请求停止；等待 run 进入 stopped 或 final 事件。",
+      "summary_en": "User requested stop; waiting for run to reach stopped or a final event.",
+      "announcements": ["对话状态 stopping：停止请求处理中。"],
+      "actions": [],
+      "messages": [
+        {
+          "role": "system",
+          "who": "系统事件",
+          "text": "run.stop_requested · awaiting terminal state"
+        }
+      ],
+      "events": [
+        { "label": "run.stop_requested", "detail": "by=user" }
+      ],
+      "long_error": "CONVERSATION_STOPPING_WAIT: stop_requested at 2026-07-13T09:14:02Z but no terminal frame yet; grace_ms=30000; UI disables further stop spam, keeps last partial transcript, and must not mark completed until a terminal status arrives.",
+      "technical": [
+        { "label": "run_id", "value": "research-aapl-risk-plan-2026-07-13-0912" },
+        { "label": "stop", "value": "requested" }
+      ]
+    },
+    {
+      "id": "reconciling",
+      "title": "正在对账执行结果",
+      "title_en": "Reconciling execution outcome",
+      "status": "reconciling",
+      "status_text": "reconciling · 对账中 / Outcome reconciliation",
+      "summary": "流已结束，正在与 HQA task ledger / bridge journal 对账。",
+      "summary_en": "Stream ended; reconciling against HQA task ledger / bridge journal.",
+      "announcements": ["对话状态 reconciling：正在对账最终状态。"],
+      "actions": [],
+      "messages": [
+        {
+          "role": "assistant",
+          "who": "Hermes · reconciling",
+          "text": "执行流已结束。正在核对 artifact 与审批项绑定…"
+        }
+      ],
+      "events": [
+        { "label": "run.stream_end", "detail": "reason=complete" },
+        { "label": "ledger.reconcile", "detail": "task=research-aapl-risk-plan" }
+      ],
+      "long_error": "CONVERSATION_RECONCILE_SLOW: stream_end received but ledger.reconcile exceeded 10s; bridge_journal_seq=11842 candidate_binding=pending; UI stays in reconciling with non-color status text and must not promote completed_degraded until reconcile returns a terminal mapping.",
+      "technical": [
+        { "label": "bridge_journal_seq", "value": "11842" },
+        { "label": "phase", "value": "ledger.reconcile" }
+      ]
+    },
+    {
+      "id": "failed",
+      "title": "对话执行失败",
+      "title_en": "Conversation run failed",
+      "status": "failed",
+      "status_text": "failed · 失败 / Terminal failure",
+      "summary": "无合法 artifact；不能用聊天总结伪装成功。",
+      "summary_en": "No valid artifact; chat summary must not be presented as success.",
+      "announcements": ["对话状态 failed：执行失败，无合法 artifact。"],
+      "actions": [
+        { "id": "retry-goal", "label": "用同一目标重试", "label_en": "Retry same goal" }
+      ],
+      "messages": [
+        {
+          "role": "assistant",
+          "who": "Hermes · failed",
+          "text": "执行失败：因子探针在 universe 校验阶段中止。未写入可推广 candidate。"
+        }
+      ],
+      "events": [
+        { "label": "run.failed", "detail": "code=FACTOR_PROBE_UNIVERSE" }
+      ],
+      "long_error": "CONVERSATION_FAILED_DETAIL: code=FACTOR_PROBE_UNIVERSE message=\"universe [AAPL] failed secondary listing check against options_universe snapshot 2026-07-12T18:00:00Z\" run_id=research-aapl-risk-plan-2026-07-13-0912 artifact_written=false candidate_written=false promotion_eligibility=false; long operator copy retained for support without elevating trading rights.",
+      "technical": [
+        { "label": "error_code", "value": "FACTOR_PROBE_UNIVERSE" },
+        { "label": "artifact_written", "value": "false" }
+      ]
+    },
+    {
+      "id": "quota",
+      "title": "提供商配额耗尽",
+      "title_en": "Provider quota exhausted",
+      "status": "quota",
+      "status_text": "quota · 配额耗尽 / Provider quota",
+      "summary": "当前锁定 provider 达到配额；需显式 fallback 或等待重置。",
+      "summary_en": "Locked provider hit quota; explicit fallback or wait for reset required.",
+      "announcements": ["对话状态 quota：提供商配额耗尽。"],
+      "actions": [
+        { "id": "choose-fallback", "label": "选择显式 fallback", "label_en": "Choose explicit fallback" }
+      ],
+      "messages": [
+        {
+          "role": "system",
+          "who": "系统事件",
+          "text": "provider.quota_exceeded · policy remains locked until user chooses fallback"
+        }
+      ],
+      "events": [
+        { "label": "provider.quota_exceeded", "detail": "provider=locked" }
+      ],
+      "long_error": "CONVERSATION_QUOTA_DETAIL: provider_policy=locked remaining_tokens=0 reset_at=2026-07-13T16:00:00Z; automatic silent provider switch is forbidden; UI must require explicit fallback selection and keep the original goal text unmodified for the next authorized attempt.",
+      "technical": [
+        { "label": "provider_policy", "value": "locked" },
+        { "label": "remaining_tokens", "value": "0" }
+      ]
+    },
+    {
+      "id": "fallback",
+      "title": "已切换到显式 fallback provider",
+      "title_en": "Switched to explicit fallback provider",
+      "status": "fallback",
+      "status_text": "fallback · 显式降级 / Explicit provider fallback",
+      "summary": "用户确认 fallback 后继续；原 policy 变更写入审计。",
+      "summary_en": "Continuing after user-confirmed fallback; policy change is audited.",
+      "announcements": ["对话状态 fallback：已使用显式 fallback provider。"],
+      "actions": [
+        { "id": "continue-run", "label": "继续执行", "label_en": "Continue run" }
+      ],
+      "messages": [
+        {
+          "role": "system",
+          "who": "系统事件",
+          "text": "provider.fallback_selected · audit recorded"
+        }
+      ],
+      "events": [
+        { "label": "provider.fallback_selected", "detail": "from=locked to=fallback" }
+      ],
+      "long_error": "CONVERSATION_FALLBACK_AUDIT: user selected explicit fallback at 2026-07-13T09:15:44Z from_policy=locked to_policy=fallback reason=quota_exceeded audit_id=audit-provider-fallback-2026-07-13-0915; subsequent streaming must re-announce provider identity and must not claim original policy still holds.",
+      "technical": [
+        { "label": "from_policy", "value": "locked" },
+        { "label": "to_policy", "value": "fallback" },
+        { "label": "audit_id", "value": "audit-provider-fallback-2026-07-13-0915" }
+      ]
+    }
+  ]
+}

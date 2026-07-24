@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from time import perf_counter
 
@@ -62,6 +63,15 @@ class BacktestRunResult(BaseModel):
     timings_ms: dict[str, float] = Field(default_factory=dict)
 
 
+class BacktestCancelledError(RuntimeError):
+    """Raised when a cooperative backtest cancellation is observed."""
+
+
+def _raise_if_cancelled(cancel_event: threading.Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise BacktestCancelledError("Backtest job was cancelled.")
+
+
 def run_backtest(
     *,
     symbols: list[str],
@@ -86,9 +96,11 @@ def run_backtest(
     sector_cap: float | None = None,
     sector_map: dict[str, str] | None = None,
     settings: Settings | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> BacktestRunResult:
     total_start = perf_counter()
     active_settings = settings or load_settings()
+    _raise_if_cancelled(cancel_event)
     resolved_symbols = _resolve_symbols(symbols=symbols, universe_id=universe_id)
     resolved_strategy_id = _resolve_strategy_id(strategy_id)
     resolved_factor_ids = _resolve_factor_ids(factor_ids)
@@ -98,6 +110,7 @@ def run_backtest(
     }
     ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
     resolved_benchmark_symbol = benchmark_symbol.upper().strip() or "SPY"
+    _raise_if_cancelled(cancel_event)
     fetch_start = perf_counter()
     try:
         ohlcv = ohlcv_provider.fetch_ohlcv(resolved_symbols, start=start, end=end)
@@ -111,6 +124,7 @@ def run_backtest(
             raise DataProviderUnavailableError(provider, exc.__class__.__name__) from exc
         raise
     data_fetch_ms = _elapsed_ms(fetch_start)
+    _raise_if_cancelled(cancel_event)
 
     engine_start = perf_counter()
     factors = _create_factors(resolved_factor_ids, lookback=lookback)
@@ -140,9 +154,11 @@ def run_backtest(
     benchmark_curve = build_benchmark_curve(benchmark_ohlcv, symbol=resolved_benchmark_symbol)
     benchmark_metrics = calculate_benchmark_metrics(benchmark_curve)
     engine_ms = _elapsed_ms(engine_start)
+    _raise_if_cancelled(cancel_event)
 
     persist_start = perf_counter()
     storage = _build_storage(output_dir, settings=active_settings)
+    _raise_if_cancelled(cancel_event)
     equity_curve_path = storage.save_frame(
         result.equity_curve,
         filename="equity_curve.parquet",
@@ -153,6 +169,7 @@ def run_backtest(
         filename="trade_blotter.parquet",
         table_name="backtest_trade_blotter",
     )
+    _raise_if_cancelled(cancel_event)
     orders_path = storage.save_frame(
         result.orders,
         filename="orders.parquet",
@@ -163,6 +180,7 @@ def run_backtest(
         filename="positions.parquet",
         table_name="backtest_positions",
     )
+    _raise_if_cancelled(cancel_event)
     attribution_path = storage.save_frame(
         result.attribution,
         filename="attribution.parquet",

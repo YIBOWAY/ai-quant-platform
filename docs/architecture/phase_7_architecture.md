@@ -1,5 +1,9 @@
 # Phase 7 架构文档
 
+> 历史文档提示（2026-07-03）：HQA D-19 已将因子源码生成职责收归
+> `/Users/sunyibo/programs/Hermes-quant-agent`。新 Scene-B 流程不要走
+> 平台 `--llm openai`；使用 `agent propose-factor --source-file <path>`。
+
 ## 当前阶段系统架构
 
 Phase 7 增加 AI 研究助手。它只做研究辅助：读实验摘要、列出已有因子、生成候选因子源码、生成候选实验配置、生成报告和检查清单。
@@ -31,7 +35,7 @@ flowchart TD
 
 ### `llm/`
 
-`LLMClient` 是协议接口。默认 `StubLLMClient` 完全离线、确定性输出，测试不依赖 API key。`OpenAIClient` 只有在 CLI 显式传 `--llm openai` 且存在 `QS_OPENAI_API_KEY` 时才构造。
+`LLMClient` 是协议接口。默认 `StubLLMClient` 完全离线、确定性输出，测试不依赖 API key。历史 Phase 7 曾支持显式平台 OpenAI client；HQA Scene-B 新流程不再从平台侧调用真实 LLM，而是接收 Hermes 会话生成的 source file。
 
 ### `tools.py`
 

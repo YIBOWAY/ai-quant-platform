@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from math import isfinite
 from pathlib import Path
 
 import pandas as pd
@@ -26,6 +25,7 @@ from quant_system.factors.pipeline import (
 )
 from quant_system.risk.engine import RiskEngine
 from quant_system.risk.models import RiskContext, RiskLimits
+from quant_system.trading_kernel import plan_rebalance
 
 
 class PaperTradingRunResult(BaseModel):
@@ -325,46 +325,31 @@ def _generate_rebalance_requests(
     prices: dict[str, float],
     min_order_value: float,
 ) -> list[OrderRequest]:
+    # Thin adapter over the shared pure kernel. Same rules as the persistent
+    # account and backtest, with sells-before-buys ordering and no caps /
+    # whole-share flooring (identical to the prior signal-replay behavior).
     normalized_prices = {symbol.upper(): float(price) for symbol, price in prices.items()}
     target_map = {target.symbol.upper(): float(target.target_weight) for target in targets}
-    symbols = sorted(set(portfolio.positions).union(target_map))
-    missing_prices = [
-        symbol
-        for symbol in symbols
-        if symbol not in normalized_prices
-        or normalized_prices[symbol] <= 0
-        or not isfinite(normalized_prices[symbol])
-    ]
-    if missing_prices:
-        raise ValueError(
-            "missing order generation price for " + ", ".join(missing_prices)
-        )
     equity = portfolio.equity(normalized_prices)
-    requests: list[OrderRequest] = []
-
-    for symbol in symbols:
-        price = normalized_prices[symbol]
-        current_value = portfolio.position(symbol) * price
-        target_value = target_map.get(symbol, 0.0) * equity
-        value_delta = target_value - current_value
-        if abs(value_delta) < min_order_value:
-            continue
-        side = OrderSide.BUY if value_delta > 0 else OrderSide.SELL
-        quantity = abs(value_delta) / price
-        if quantity <= 0:
-            continue
-        requests.append(
-            OrderRequest(
-                timestamp=timestamp,
-                symbol=symbol,
-                side=side,
-                quantity=quantity,
-                limit_price=price,
-                reason="signal_rebalance_to_target_weight",
-            )
+    intents = plan_rebalance(
+        holdings=portfolio.positions,
+        target_weights=target_map,
+        prices=normalized_prices,
+        equity=equity,
+        min_order_value=min_order_value,
+        sells_first=True,
+    )
+    return [
+        OrderRequest(
+            timestamp=timestamp,
+            symbol=intent.symbol,
+            side=OrderSide(intent.side.value),
+            quantity=intent.quantity,
+            limit_price=intent.price,
+            reason="signal_rebalance_to_target_weight",
         )
-
-    return sorted(requests, key=lambda request: 0 if request.side == OrderSide.SELL else 1)
+        for intent in intents
+    ]
 
 
 def _build_risk_context(

@@ -19,6 +19,7 @@ from quant_system.data.provider_factory import (
     build_ohlcv_provider,
 )
 from quant_system.experiments.runner import run_sample_experiment
+from quant_system.storage.runs_repository import persist_run
 
 router = APIRouter()
 
@@ -76,20 +77,44 @@ def run_experiment(
             detail={"code": "experiment_run_failed", "message": str(exc)},
         ) from exc
     experiment_id = result.config_path.parent.name
-    return {
-        "experiment_id": experiment_id,
+    paths = {
+        "config": str(result.config_path),
+        "runs": str(result.runs_path),
+        "folds": str(result.folds_path),
+        "agent_summary": str(result.agent_summary_path),
+        "report": str(result.report_path),
+    }
+    metadata = {
+        "run_id": experiment_id,
         "raw_experiment_id": result.experiment_id,
         "provider": request.provider,
         "source": result.data_source,
         "run_count": result.run_count,
         "best_run_id": result.best_run_id,
-        "paths": {
-            "config": str(result.config_path),
-            "runs": str(result.runs_path),
-            "folds": str(result.folds_path),
-            "agent_summary": str(result.agent_summary_path),
-            "report": str(result.report_path),
-        },
+        "paths": paths,
+    }
+    # Experiments keep their own output_dir/experiments/<id>/ layout (a different
+    # storage abstraction than the api_runs run index), so they are persisted with
+    # the shared atomic writer + unified metadata schema but are NOT indexed into
+    # the optional Postgres run index (kind not in KIND_DIRS).
+    persisted = persist_run(
+        result.config_path.parent,
+        "experiment",
+        metadata,
+        settings=settings,
+        index=False,
+    )
+    return {
+        "experiment_id": experiment_id,
+        "raw_experiment_id": result.experiment_id,
+        "kind": persisted["kind"],
+        "status": persisted["status"],
+        "created_at": persisted["created_at"],
+        "provider": request.provider,
+        "source": result.data_source,
+        "run_count": result.run_count,
+        "best_run_id": result.best_run_id,
+        "paths": paths,
     }
 
 

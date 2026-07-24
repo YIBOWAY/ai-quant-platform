@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -8,7 +8,13 @@ from pydantic import BaseModel, Field
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.errors import not_found_404
-from quant_system.api.schemas.common import make_run_id, read_json, resolve_run_dir
+from quant_system.api.schemas.common import (
+    RunStatus,
+    make_run_id,
+    read_json,
+    resolve_run_dir,
+    write_json_atomic,
+)
 from quant_system.api.schemas.replications import (
     ReversalMomentumReplicationDetailResponse,
     ReversalMomentumReplicationRunResponse,
@@ -16,6 +22,7 @@ from quant_system.api.schemas.replications import (
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.data.providers.futu import FutuProviderError
 from quant_system.replication.reversal_momentum import build_reversal_momentum_replication
+from quant_system.storage.runs_repository import persist_run
 
 router = APIRouter()
 
@@ -96,15 +103,18 @@ def run_reversal_momentum_replication(
         "warnings": result.get("warnings", []),
         "paths": paths,
     }
-    run_dir.mkdir(parents=True, exist_ok=True)
-    result_path.write_text(
-        json.dumps(result, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    metadata_path.write_text(
-        json.dumps(metadata, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    # Publish result.json before metadata/index visibility so recent-runs/detail
+    # never expose a completed replication without its required result artifact.
+    created_at = datetime.now(UTC).isoformat()
+    core_fields = {
+        "kind": "replication",
+        "status": RunStatus.COMPLETED.value,
+        "created_at": created_at,
+    }
+    result.update(core_fields)
+    metadata.update(core_fields)
+    write_json_atomic(result_path, result)
+    persist_run(run_dir, "replication", metadata, settings=settings)
     return result
 
 

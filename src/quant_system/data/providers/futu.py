@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import signal
 import socket
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -68,7 +70,7 @@ class FutuMarketDataProvider:
         *,
         host: str = "127.0.0.1",
         port: int = 11111,
-        request_timeout_seconds: int = 15,
+        request_timeout_seconds: float = 15,
         context_factory: ContextFactory | None = None,
         sdk_loader: SdkLoader = _default_sdk_loader,
         rate_limit_retry_seconds: float = 30.5,
@@ -78,17 +80,21 @@ class FutuMarketDataProvider:
     ) -> None:
         self.host = host
         self.port = port
+        if request_timeout_seconds <= 0:
+            raise ValueError("request_timeout_seconds must be positive")
         self.request_timeout_seconds = request_timeout_seconds
         self._context_factory = context_factory
         self._sdk_loader = sdk_loader
         self.rate_limit_retry_seconds = rate_limit_retry_seconds
         self.rate_limit_max_retries = rate_limit_max_retries
         self._sleep_func = sleep_func
-        self._option_quotes_database_cache = (
-            OptionQuotesCache(option_quotes_cache_path)
-            if option_quotes_cache_path is not None
-            else None
+        # OptionQuotesCache creates its DuckDB/schema in __init__. Keep plain
+        # OHLCV and snapshot reads observational by constructing that cache
+        # only when an option-quote cache operation is actually requested.
+        self._option_quotes_cache_path = (
+            Path(option_quotes_cache_path) if option_quotes_cache_path is not None else None
         )
+        self._option_quotes_database_cache: OptionQuotesCache | None = None
         self.last_option_quotes_cache_status = "disabled"
         self.last_option_quotes_cache_error: str | None = None
 
@@ -376,7 +382,7 @@ class FutuMarketDataProvider:
         last_error: FutuProviderError | None = None
         for attempt in range(self.rate_limit_max_retries + 1):
             try:
-                result = action()
+                result = self._run_with_request_timeout(action)
             except Exception as exc:
                 raise FutuProviderError(
                     "provider_timeout",
@@ -404,7 +410,8 @@ class FutuMarketDataProvider:
         if self._context_factory is None:
             try:
                 with socket.create_connection(
-                    (self.host, self.port), timeout=2.0
+                    (self.host, self.port),
+                    timeout=min(2.0, float(self.request_timeout_seconds)),
                 ):
                     pass
             except OSError as exc:
@@ -414,13 +421,67 @@ class FutuMarketDataProvider:
                 ) from exc
         try:
             if self._context_factory is not None:
-                return self._context_factory(self.host, self.port)
-            return sdk.OpenQuoteContext(host=self.host, port=self.port)
+                context = self._run_with_request_timeout(
+                    lambda: self._context_factory(self.host, self.port)
+                )
+            else:
+                context = self._run_with_request_timeout(
+                    lambda: sdk.OpenQuoteContext(
+                        host=self.host,
+                        port=self.port,
+                        is_async_connect=True,
+                    )
+                )
+            self._configure_context_timeout(context)
+            return context
+        except TimeoutError as exc:
+            raise FutuProviderError(
+                "provider_timeout",
+                f"OpenD context creation timed out for {self.host}:{self.port}",
+            ) from exc
+        except FutuProviderError:
+            raise
         except Exception as exc:
             raise FutuProviderError(
                 "opend_unavailable",
                 f"unable to connect to OpenD at {self.host}:{self.port}",
             ) from exc
+
+    def _configure_context_timeout(self, context: Any) -> None:
+        """Apply the configured deadline to the Futu SDK's synchronous waits."""
+        connect_timeout = getattr(context, "set_sync_query_connect_timeout", None)
+        if callable(connect_timeout):
+            connect_timeout(self.request_timeout_seconds)
+        if hasattr(context, "_query_timeout"):
+            context._query_timeout = self.request_timeout_seconds
+
+    def _run_with_request_timeout(
+        self,
+        action: Callable[[], Any],
+    ) -> Any:
+        """Bound a synchronous SDK action without spawning an orphan worker."""
+        if (
+            threading.current_thread() is not threading.main_thread()
+            or not hasattr(signal, "setitimer")
+        ):
+            return action()
+        previous_timer = signal.getitimer(signal.ITIMER_REAL)
+        if previous_timer[0] > 0:
+            # Do not steal a process-wide alarm owned by the caller. Real Futu
+            # contexts are still bounded by `_query_timeout` above.
+            return action()
+        previous_handler = signal.getsignal(signal.SIGALRM)
+
+        def raise_timeout(_signum: int, _frame: Any) -> None:
+            raise TimeoutError("Futu request deadline exceeded")
+
+        signal.signal(signal.SIGALRM, raise_timeout)
+        signal.setitimer(signal.ITIMER_REAL, self.request_timeout_seconds)
+        try:
+            return action()
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous_handler)
 
     def _option_quotes_cache_key(
         self,
@@ -482,10 +543,11 @@ class FutuMarketDataProvider:
         self,
         key: OptionQuotesCacheKey,
     ) -> pd.DataFrame | None:
-        if self._option_quotes_database_cache is None:
+        cache = self._get_option_quotes_database_cache()
+        if cache is None:
             return None
         try:
-            return self._option_quotes_database_cache.read_option_quotes(key)
+            return cache.read_option_quotes(key)
         except Exception as exc:  # pragma: no cover - cache should fail open
             self.last_option_quotes_cache_error = f"{type(exc).__name__}: {exc}"
             return None
@@ -495,16 +557,26 @@ class FutuMarketDataProvider:
         key: OptionQuotesCacheKey,
         frame: pd.DataFrame,
     ) -> None:
-        if self._option_quotes_database_cache is None:
+        cache = self._get_option_quotes_database_cache()
+        if cache is None:
             return
         try:
-            self._option_quotes_database_cache.write_option_quotes(
+            cache.write_option_quotes(
                 key,
                 frame,
                 ttl_seconds=self.option_quotes_cache_ttl_seconds,
             )
         except Exception as exc:  # pragma: no cover - cache should fail open
             self.last_option_quotes_cache_error = f"{type(exc).__name__}: {exc}"
+
+    def _get_option_quotes_database_cache(self) -> OptionQuotesCache | None:
+        if self._option_quotes_cache_path is None:
+            return None
+        if self._option_quotes_database_cache is None:
+            self._option_quotes_database_cache = OptionQuotesCache(
+                self._option_quotes_cache_path
+            )
+        return self._option_quotes_database_cache
 
     def _fetch_symbol_rows(
         self,
@@ -553,6 +625,7 @@ class FutuMarketDataProvider:
                         "volume": item["volume"],
                         "event_ts": item["time_key"],
                         "knowledge_ts": fetched_at,
+                        "price_adjustment": "qfq",
                     }
                 )
             if page_req_key is None:

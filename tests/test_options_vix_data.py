@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import sys
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from quant_system.options import vix_data
 from quant_system.options.market_regime import compute_vix_regime
 from quant_system.options.vix_data import (
     fetch_cboe_index_history,
@@ -46,6 +48,37 @@ def _payload(timestamps: list[int], closes: list[float | None]) -> dict:
                 }
             ],
         }
+    }
+
+
+def test_default_http_get_uses_declared_httpx_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, object] = {}
+
+    class _FakeHttpx:
+        @staticmethod
+        def get(url, **kwargs):
+            calls["url"] = url
+            calls["kwargs"] = kwargs
+            return _FakeResponse(200, _payload([1_700_000_000], [15.5]))
+
+    monkeypatch.setitem(sys.modules, "requests", None)
+    monkeypatch.setitem(sys.modules, "httpx", _FakeHttpx)
+
+    http_get = vix_data._default_http_get()
+    response = http_get(
+        "https://example.test/chart",
+        params={"period1": 1},
+        headers={"Accept": "application/json"},
+        timeout=2.0,
+    )
+
+    assert response.status_code == 200
+    assert calls["url"] == "https://example.test/chart"
+    assert calls["kwargs"] == {
+        "follow_redirects": True,
+        "params": {"period1": 1},
+        "headers": {"Accept": "application/json"},
+        "timeout": 2.0,
     }
 
 

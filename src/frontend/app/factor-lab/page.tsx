@@ -1,4 +1,5 @@
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { HermesParityBanner } from "@/components/HermesParityBanner";
 import { isSampleSource } from "@/components/DataSourceBadge";
 import { FactorLabDashboard } from "@/components/forms/FactorLabDashboard";
 import { getFactorLabDashboard, getFactorRuns, getUniverses } from "@/lib/api";
@@ -59,6 +60,9 @@ export default async function FactorLab({ searchParams }: FactorLabProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-base">
+      <div className="shrink-0 px-5 pt-4">
+        <HermesParityBanner locale={locale} />
+      </div>
       <ErrorBanner locale={locale} messages={[dashboard.apiError, factorRuns.apiError, universes.apiError]} />
       <FactorLabDashboard
         controlsInitial={{ provider, universeId, symbol, benchmarkSymbol, start, end, lookback, forceRefresh }}

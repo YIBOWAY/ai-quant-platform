@@ -10,14 +10,13 @@ import type {
   PredictionMarketBacktestRunResponse,
   PredictionMarketRunResponse,
 } from "@/lib/api";
+import { TerminalToolbarButton, terminalInputClass } from "@/components/ui/primitives";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 
 const fieldLabel = "flex flex-col gap-1 font-body-sm text-text-primary";
-const selectClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-text-primary";
-const inputClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
+const selectClass = terminalInputClass;
+const inputClass = terminalInputClass;
 
 const copy = {
   en: {
@@ -179,30 +178,30 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
       </form>
       {error ? <p className="mt-3 font-body-sm text-danger">{error}</p> : null}
       <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          className="rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || mutation.isPending}
           onClick={() => submit("scan")}
-          type="button"
+          tone="neutral"
         >
           {mutation.isPending ? text.running : text.runScanner}
-        </button>
-        <button
-          className="rounded-lg border border-border-subtle px-4 py-2 font-body-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        </TerminalToolbarButton>
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || mutation.isPending}
           onClick={() => submit("dry-arbitrage")}
-          type="button"
+          tone="info"
         >
           {mutation.isPending ? text.running : text.generateDryArb}
-        </button>
-        <button
-          className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+        </TerminalToolbarButton>
+        <TerminalToolbarButton
+          className="h-9"
           disabled={!isHydrated || mutation.isPending}
           onClick={() => submit("backtest")}
-          type="button"
+          tone="info"
         >
           {mutation.isPending ? text.running : text.runQuasiBacktest}
-        </button>
+        </TerminalToolbarButton>
       </div>
       {backtestResult ? (
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">

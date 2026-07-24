@@ -1,3 +1,30 @@
+import {
+  buildBriefIssuePath,
+  buildBriefIssueListPath,
+  buildLatestBriefIssuePath,
+  type BriefIssue,
+  type BriefIssueEnvelope,
+  type BriefIssueListResponse,
+  type BriefSnapshot,
+} from "./briefArchive";
+import type { components as GeneratedApiComponents } from "./api.generated";
+import {
+  normalizeCandidateDetailResponse,
+  normalizeCandidateListResponse,
+} from "./hermes/candidateReadModel";
+import {
+  isHermesResultKind,
+  isHermesResultResourceId,
+} from "./hermes/resultsTypes";
+import {
+  normalizeHermesResultDetailResponse,
+  normalizeHermesResultsResponse,
+} from "./hermes/resultsReadModel";
+import type {
+  HermesResultKind,
+  HermesResultsQuery,
+} from "./hermes/resultsTypes";
+
 export type SafetyFooter = {
   dry_run: boolean;
   paper_trading: boolean;
@@ -10,6 +37,11 @@ export type ApiEnvelope = {
   safety?: SafetyFooter;
   apiError?: string;
 };
+
+export type BriefIssueResponse = BriefIssue;
+export type BriefSnapshotResponse = BriefSnapshot;
+export type BriefIssueEnvelopeResponse = BriefIssueEnvelope;
+export type { BriefIssueListResponse };
 
 export type ErrorResponse = {
   detail: string;
@@ -35,6 +67,14 @@ export type HealthResponse = ApiEnvelope & {
     enabled: boolean;
     reachable?: boolean;
     error?: string | null;
+  };
+  hermes_command_ledger: {
+    database_configured: boolean;
+    schema_ready: boolean;
+    schema_version: number | null;
+    workflow_binding_schema_ready: boolean;
+    workflow_binding_schema_version: number | null;
+    mutation_enabled: boolean;
   };
 };
 
@@ -189,6 +229,16 @@ export type BacktestRunMetricsResponse = {
   max_drawdown: number;
 };
 
+export type BacktestPerformanceMetricsResponse = {
+  total_return: number;
+  annualized_return: number;
+  volatility: number;
+  sharpe: number;
+  max_drawdown: number;
+  turnover: number;
+  attribution: Array<Record<string, number | string>>;
+};
+
 export type BacktestRunBenchmarkResponse = {
   symbol: string;
   source: string;
@@ -207,8 +257,19 @@ export type BacktestRunPathsResponse = {
   report: string;
 };
 
+export type BacktestRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelling"
+  | "cancelled";
+
 export type BacktestRunResponse = ApiEnvelope & {
   run_id: string;
+  kind: "backtest";
+  status: "completed";
+  created_at?: string | null;
   source: string;
   trade_count: number;
   order_count: number;
@@ -220,6 +281,19 @@ export type BacktestRunResponse = ApiEnvelope & {
   benchmark: BacktestRunBenchmarkResponse;
   paths: BacktestRunPathsResponse;
 };
+
+export type BacktestJobStateResponse = ApiEnvelope & {
+  run_id: string;
+  kind: "backtest";
+  status: BacktestRunStatus;
+  created_at?: string | null;
+  updated_at?: string | null;
+  poll_url: string;
+  result_url?: string | null;
+  error?: Record<string, unknown> | null;
+};
+
+export type BacktestRunResultResponse = BacktestRunResponse | BacktestJobStateResponse;
 
 export type BenchmarkMetrics = {
   total_return: number;
@@ -296,6 +370,7 @@ export type StrategiesResponse = StrategyCatalogResponse;
 
 export type StrategyRunResponse =
   | BacktestRunResponse
+  | BacktestJobStateResponse
   | ReversalMomentumReplicationRunResponse;
 
 export type UniverseDefinition = {
@@ -438,7 +513,7 @@ export type PaperRunDetailResponse = ApiEnvelope & {
   risk_breaches: PreviewRecord[];
 };
 
-export type RecentRunKind = "backtest" | "factor" | "paper";
+export type RecentRunKind = "backtest" | "factor" | "paper" | "replication";
 
 export type RecentRun = {
   kind: RecentRunKind;
@@ -492,6 +567,23 @@ export type PaperAccountPriceSourceResponse = {
   as_of: string | null;
 };
 
+export type PaperAccountReconciliationDifferenceResponse = {
+  field: string;
+  expected: unknown;
+  actual: unknown;
+};
+
+export type PaperAccountReconciliationResponse = {
+  status: "in_sync" | "different" | "unavailable" | "not_applicable";
+  account_id: string;
+  source: string;
+  target: string | null;
+  checked_at: string;
+  expected_summary: Record<string, unknown>;
+  actual_summary: Record<string, unknown>;
+  differences: PaperAccountReconciliationDifferenceResponse[];
+};
+
 export type PaperAccountResponse = ApiEnvelope & {
   account_id: string;
   base_currency: string;
@@ -511,6 +603,16 @@ export type PaperAccountResponse = ApiEnvelope & {
   pending_orders: PendingAccountOrderResponse[];
   created_at: string;
   updated_at: string;
+  storage_mode?: "file" | "mirror" | "canonical" | null;
+  stale?: boolean;
+  warnings?: string[];
+  reconciliation?: PaperAccountReconciliationResponse | null;
+};
+
+export type PaperAccountSnapshotResponse = ApiEnvelope & {
+  account_id: string;
+  account_exists: boolean;
+  account: PaperAccountResponse | null;
 };
 
 export type PaperAccountOrderOutcomeResponse = {
@@ -553,6 +655,207 @@ export type PaperAccountRebalanceResponse = ApiEnvelope & {
   account: PaperAccountResponse;
 };
 
+export type PaperStrategyConfigResponse = {
+  strategy_config_id: string;
+  version: number;
+  name: string;
+  description: string;
+  strategy_id: string;
+  universe_id?: string | null;
+  symbols: string[];
+  factor_ids: string[];
+  weights: Record<string, number>;
+  lookback: number;
+  top_n: number;
+  rebalance_frequency: string;
+  max_weight_per_symbol: number;
+  min_order_value: number;
+  data_provider: string;
+  execution_timing: string;
+  created_at: string;
+  updated_at: string;
+  archived: boolean;
+  tags: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategyConfigMutationResponse = ApiEnvelope & {
+  config: PaperStrategyConfigResponse;
+};
+
+export type PaperStrategyConfigsResponse = ApiEnvelope & {
+  configs: PaperStrategyConfigResponse[];
+};
+
+export type PaperStrategySleeveMode = "signal_only" | "allocated";
+export type PaperStrategySleeveStatus = "running" | "paused" | "stopped";
+
+export type PaperStrategySleeveResponse = {
+  sleeve_id: string;
+  account_id: string;
+  strategy_config_id: string;
+  strategy_config_version: number;
+  mode: PaperStrategySleeveMode;
+  status: PaperStrategySleeveStatus;
+  initial_allocated_cash: number;
+  cash: number;
+  created_at: string;
+  updated_at: string;
+  paused_at?: string | null;
+  stopped_at?: string | null;
+  stop_reason?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategySleeveMutationResponse = ApiEnvelope & {
+  sleeve: PaperStrategySleeveResponse;
+  account: PaperAccountResponse;
+};
+
+export type PaperStrategySleevesResponse = ApiEnvelope & {
+  sleeves: PaperStrategySleeveResponse[];
+};
+
+export type PaperStrategySleeveLotResponse = {
+  lot_id: string;
+  account_id: string;
+  sleeve_id: string;
+  symbol: string;
+  quantity: number;
+  avg_cost: number;
+  opened_at: string;
+  updated_at: string;
+  source: string;
+};
+
+export type PaperStrategySignalResponse = {
+  signal_id: string;
+  sleeve_id: string;
+  strategy_config_id: string;
+  strategy_config_version: number;
+  signal_date: string;
+  generated_at: string;
+  data_provider: string;
+  data_as_of?: string | null;
+  target_weights: Record<string, number>;
+  proposed_orders: Array<Record<string, unknown>>;
+  warnings: string[];
+  status: "generated" | "data_unavailable" | "invalid";
+  execution_blocked_reason?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategySignalMutationResponse = ApiEnvelope & {
+  signal: PaperStrategySignalResponse;
+};
+
+export type PaperStrategyExecutionStatus =
+  | "pending"
+  | "filled"
+  | "partially_filled"
+  | "skipped"
+  | "blocked"
+  | "missed_window"
+  | "failed"
+  | "cancelled";
+
+export type PaperStrategyExecutionOrderResponse = {
+  symbol: string;
+  side: string;
+  target_weight?: number | null;
+  current_value?: number | null;
+  target_value?: number | null;
+  notional_delta?: number | null;
+  reference_price?: number | null;
+  estimated_quantity?: number | null;
+  reason?: string | null;
+  account_id?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategyExecutionFillResponse = {
+  fill_id: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  price: number;
+  gross_value: number;
+  price_kind: string;
+  filled_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategyExecutionPlanResponse = {
+  execution_id: string;
+  sleeve_id: string;
+  account_id: string;
+  signal_id: string;
+  strategy_config_id: string;
+  strategy_config_version: number;
+  execution_window: string;
+  target_date?: string | null;
+  created_at: string;
+  updated_at: string;
+  status: PaperStrategyExecutionStatus;
+  blocked_reason?: string | null;
+  orders: PaperStrategyExecutionOrderResponse[];
+  fills: PaperStrategyExecutionFillResponse[];
+  warnings: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type PaperStrategyExecutionMutationResponse = ApiEnvelope & {
+  execution: PaperStrategyExecutionPlanResponse;
+};
+
+export type PaperStrategyExecutionProcessResponse = ApiEnvelope & {
+  processed_count: number;
+  filled_count: number;
+  blocked_count: number;
+  executions: PaperStrategyExecutionPlanResponse[];
+  account: PaperAccountResponse;
+};
+
+export type PaperStrategySleeveDetailResponse = ApiEnvelope & {
+  sleeve: PaperStrategySleeveResponse;
+  lots: PaperStrategySleeveLotResponse[];
+  signals: PaperStrategySignalResponse[];
+  executions: PaperStrategyExecutionPlanResponse[];
+};
+
+export type PaperStrategyOpsStatus = {
+  target_date: string;
+  sleeve_count: number;
+  pending_sleeve_count: number;
+  running_sleeve_count: number;
+  pending_execution_count: number;
+  pending_due_count: number;
+  filled_count: number;
+  blocked_count: number;
+  recovery_required_count: number;
+  pending_journal_count: number;
+  corrupt_journal_count: number;
+};
+
+export type StrategyConfigResponse = PaperStrategyConfigResponse;
+export type StrategySleeveResponse = PaperStrategySleeveResponse;
+export type SleeveLotResponse = PaperStrategySleeveLotResponse;
+export type StrategySignalResponse = PaperStrategySignalResponse;
+export type StrategyExecutionOrderResponse = PaperStrategyExecutionOrderResponse;
+export type StrategyExecutionFillResponse = PaperStrategyExecutionFillResponse;
+export type StrategyExecutionPlanResponse = PaperStrategyExecutionPlanResponse;
+export type StrategyConfigMutationResponse = PaperStrategyConfigMutationResponse;
+export type StrategyConfigsResponse = PaperStrategyConfigsResponse;
+export type StrategySleevesResponse = PaperStrategySleevesResponse;
+export type StrategySleeveDetailResponse = PaperStrategySleeveDetailResponse;
+export type StrategySignalMutationResponse = PaperStrategySignalMutationResponse;
+export type StrategyExecutionMutationResponse = PaperStrategyExecutionMutationResponse;
+export type StrategyExecutionProcessResponse = PaperStrategyExecutionProcessResponse;
+export type StrategyOpsStatusResponse = ApiEnvelope & {
+  status: PaperStrategyOpsStatus;
+};
+export type StrategySleeveMutationResponse = PaperStrategySleeveMutationResponse;
+
 export type LedgerEntryResponse = {
   entry_id: string;
   timestamp: string;
@@ -577,6 +880,74 @@ export type PaperLedgerResponse = ApiEnvelope & {
   limit: number;
   offset: number;
   entries: LedgerEntryResponse[];
+};
+
+export type PaperAccountOrderHistoryRowResponse = {
+  event_id: string;
+  order_id?: string | null;
+  timestamp: string;
+  status: string;
+  kind: string;
+  source: string;
+  symbol?: string | null;
+  side?: string | null;
+  quantity?: number | null;
+  price?: number | null;
+  gross_value?: number | null;
+  commission?: number;
+  price_kind?: string | null;
+  realized_pnl_delta?: number;
+  cash_after?: number | null;
+  note?: string | null;
+};
+
+export type PaperAccountBalanceHistoryRowResponse = {
+  event_id: string;
+  timestamp: string;
+  kind: string;
+  source: string;
+  cash_after: number;
+  cash_delta: number;
+  note?: string | null;
+};
+
+export type PaperAccountActivityResponse = ApiEnvelope & {
+  account: PaperAccountResponse;
+  pending_orders: PendingAccountOrderResponse[];
+  order_history: PaperAccountOrderHistoryRowResponse[];
+  balance_history: PaperAccountBalanceHistoryRowResponse[];
+  trade_log: LedgerEntryResponse[];
+  pending_order_total: number;
+  order_history_total: number;
+  balance_history_total: number;
+  trade_log_total: number;
+  limit: number;
+  offset: number;
+};
+
+export type PaperAccountEquityCurvePointResponse = {
+  timestamp: string;
+  equity: number;
+  cash: number;
+  market_value: number;
+  realized_pnl: number;
+  source: "ledger" | "current_quote";
+  event_id?: string | null;
+  event_kind?: string | null;
+  symbol?: string | null;
+  side?: string | null;
+  quantity?: number | null;
+  price?: number | null;
+  price_source: PaperAccountPriceSourceResponse;
+};
+
+export type PaperAccountEquityCurveResponse = ApiEnvelope & {
+  account_id: string;
+  account_exists: boolean;
+  total: number;
+  limit: number;
+  offset: number;
+  points: PaperAccountEquityCurvePointResponse[];
 };
 
 export type ExperimentSummary = {
@@ -618,36 +989,59 @@ export type ExperimentDetailResponse = ApiEnvelope & {
   folds: PreviewRecord[];
 };
 
-export type CandidateSummary = {
-  candidate_id: string;
-  artifact_type: string;
-  status: string;
-  goal?: string;
-};
+type HermesSchemas = GeneratedApiComponents["schemas"];
 
-export type AgentCandidatesResponse = ApiEnvelope & {
-  candidates: CandidateSummary[];
-};
+export type CandidateSummary = HermesSchemas["CandidateSummary"];
+export type HermesArtifact = HermesSchemas["HermesArtifactItemResponse"];
+export type HermesArtifactKind =
+  HermesSchemas["HermesArtifactSourceResponse"]["kind"];
+export type HermesArtifactQuality = HermesArtifact["quality"];
+export type HermesPortfolioRiskArtifactData =
+  HermesSchemas["HermesPortfolioRiskData"];
+export type HermesPredictionArtifactData = HermesSchemas["HermesPredictionData"];
+export type HermesForesightCandidateData =
+  HermesSchemas["HermesForesightCandidate"];
+export type HermesMarketForesightArtifactData =
+  HermesSchemas["HermesMarketForesightData"];
+export type HermesWeeklyReviewArtifactData =
+  HermesSchemas["HermesWeeklyReviewData"];
+export type HermesOpportunitySummaryArtifactData =
+  HermesSchemas["HermesOpportunitySummaryData"];
+export type HermesAutomationStatusArtifactData =
+  HermesSchemas["HermesAutomationStatusData"];
+export type HermesArtifactSource =
+  HermesSchemas["HermesArtifactSourceResponse"];
+export type HermesArtifactWarning =
+  HermesSchemas["HermesArtifactWarningResponse"];
+export type HermesArtifactShelfEnvelope = ApiEnvelope &
+  HermesSchemas["HermesArtifactFeedResponse"];
 
-export type AgentCandidateDetailResponse = ApiEnvelope & {
-  candidate_id: string;
-  metadata: Record<string, unknown>;
-  source_preview: string;
-  audit: string[];
-  reviews: string[];
-};
+export type AgentCandidatesResponse = ApiEnvelope &
+  HermesSchemas["AgentCandidatesResponse"];
+
+export type AgentCandidateDetailResponse = ApiEnvelope &
+  HermesSchemas["AgentCandidateDetailResponse"];
 
 export type AgentTaskResponse = ApiEnvelope & {
   candidate_id: string;
   status: string;
   path: string;
   metadata: Record<string, unknown>;
+  manifest_digest?: string | null;
 };
 
 export type AgentReviewResponse = ApiEnvelope & {
   candidate_id: string;
   decision: "approve" | "reject";
   registration: "manual_required";
+  manifest_digest?: string | null;
+};
+
+export type AgentReviewRequest = {
+  decision: "approve" | "reject";
+  note: string;
+  expected_manifest_digest: string;
+  expected_status: "pending";
 };
 
 export type AgentLLMConfigResponse = ApiEnvelope & {
@@ -1419,9 +1813,133 @@ export type OptionsDailyScanSymbolResponse = ApiEnvelope & {
 
 export type OptionsRadarSymbolResponse = OptionsDailyScanSymbolResponse;
 
+export type AiHotResearchSafety = {
+  research_only: boolean;
+  not_investment_advice: boolean;
+  does_not_trigger_trading: boolean;
+  verify_original_source: boolean;
+};
+
+export type NewsPreference = "auto" | "aihot" | "horizon";
+export type NewsServedFrom = "primary" | "failover" | "cache" | "forced";
+
+export type NewsFailoverStatus = {
+  auto_enabled?: boolean;
+  order?: string[];
+};
+
+export type AiHotItem = {
+  id: string;
+  title: string;
+  title_en?: string | null;
+  url: string;
+  source: string;
+  published_at?: string | null;
+  summary?: string | null;
+  category?: string | null;
+  score?: number | null;
+  selected?: boolean | null;
+  raw?: Record<string, unknown>;
+};
+
+export type AiHotItemResponse = AiHotItem;
+
+export type AiHotItemsResponse = ApiEnvelope & {
+  provider: "aihot" | string;
+  provider_beta: boolean;
+  fetched_at: string;
+  count: number;
+  has_next: boolean;
+  next_cursor?: string | null;
+  items: AiHotItem[];
+  warnings: string[];
+  research_safety: AiHotResearchSafety;
+  preference?: NewsPreference | string;
+  served_from?: NewsServedFrom;
+};
+
+export type AiHotDailyResponse = ApiEnvelope & {
+  provider: "aihot" | string;
+  provider_beta: boolean;
+  fetched_at: string;
+  date: string;
+  generated_at?: string | null;
+  window_start?: string | null;
+  window_end?: string | null;
+  lead?: Record<string, unknown> | null;
+  sections: Array<Record<string, unknown>>;
+  flashes: Array<Record<string, unknown>>;
+  warnings: string[];
+  research_safety: AiHotResearchSafety;
+  raw?: Record<string, unknown>;
+  preference?: NewsPreference | string;
+  served_from?: NewsServedFrom;
+};
+
+export type AiHotDailyIndex = {
+  date: string;
+  generated_at?: string | null;
+  lead_title?: string | null;
+  raw?: Record<string, unknown>;
+};
+
+export type AiHotDailyIndexResponse = AiHotDailyIndex;
+
+export type AiHotDailiesResponse = ApiEnvelope & {
+  provider: "aihot" | string;
+  provider_beta: boolean;
+  fetched_at: string;
+  count: number;
+  items: AiHotDailyIndex[];
+  warnings: string[];
+  research_safety: AiHotResearchSafety;
+  preference?: NewsPreference | string;
+  served_from?: NewsServedFrom;
+};
+
+export type AiHotStatusResponse = ApiEnvelope & {
+  provider: "aihot" | string;
+  provider_beta: boolean;
+  enabled: boolean;
+  base_url: string;
+  timeout_seconds: number;
+  cache_ttl_seconds: number;
+  last_error?: Record<string, unknown> | null;
+  warnings: string[];
+  research_safety: AiHotResearchSafety;
+  /** Aggregated dual-source status (§6.5); optional for forward compat. */
+  preference_default?: NewsPreference | string;
+  research_only?: boolean;
+  providers?: Record<string, unknown>;
+  failover?: NewsFailoverStatus;
+};
+
+export type NewsStatusResponse = AiHotStatusResponse;
+
 export type SettingsResponse = ApiEnvelope & {
   settings?: Record<string, unknown>;
 };
+
+export type HermesGatewayWarningResponse =
+  HermesSchemas["HermesGatewayWarningResponse"];
+export type HermesGatewayWarning = HermesGatewayWarningResponse;
+export type HermesGatewayStatusResponse = ApiEnvelope &
+  HermesSchemas["HermesGatewayStatusResponse"];
+export type HermesSessionSummaryResponse =
+  HermesSchemas["HermesSessionSummaryResponse"];
+export type HermesSessionSummary = HermesSessionSummaryResponse;
+export type HermesSessionsResponse = ApiEnvelope &
+  HermesSchemas["HermesSessionsResponse"];
+export type HermesSessionDetailResponse = ApiEnvelope &
+  HermesSchemas["HermesSessionDetailResponse"];
+export type HermesMessageResponse = HermesSchemas["HermesMessageResponse"];
+export type HermesSessionMessage = HermesMessageResponse;
+export type HermesSessionMessagesResponse = ApiEnvelope &
+  HermesSchemas["HermesSessionMessagesResponse"];
+export type HermesResultsResponse = ApiEnvelope &
+  HermesSchemas["HermesResultsResponse"];
+export type HermesResultDetailResponse = ApiEnvelope &
+  HermesSchemas["HermesResultDetailResponse"];
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 
@@ -1431,6 +1949,13 @@ const FALLBACK_SAFETY: SafetyFooter = {
   live_trading_enabled: false,
   kill_switch: true,
   bind_address: "127.0.0.1",
+};
+
+const AIHOT_RESEARCH_SAFETY: AiHotResearchSafety = {
+  research_only: true,
+  not_investment_advice: true,
+  does_not_trigger_trading: true,
+  verify_original_source: true,
 };
 
 async function apiGet<T extends ApiEnvelope>(path: string, fallback: T): Promise<T> {
@@ -1492,6 +2017,14 @@ export function getHealth() {
       configured_default: "unknown",
       tiingo_token_present: false,
     },
+    hermes_command_ledger: {
+      database_configured: false,
+      schema_ready: false,
+      schema_version: null,
+      workflow_binding_schema_ready: false,
+      workflow_binding_schema_version: null,
+      mutation_enabled: false,
+    },
     safety: FALLBACK_SAFETY,
   });
 }
@@ -1500,6 +2033,191 @@ export function getSettings() {
   return apiGet<SettingsResponse>("/api/settings", {
     safety: FALLBACK_SAFETY,
   });
+}
+
+export function getBriefIssue(publicId: string) {
+  return apiGet<BriefIssueEnvelopeResponse>(buildBriefIssuePath(publicId), {
+    issue: {
+      issue_id: "",
+      public_id: publicId,
+      issue_date: "",
+      locale: "",
+      status: "unavailable",
+    },
+    snapshot: {
+      snapshot_id: "",
+      version: 0,
+      payload: {},
+      source_watermark: {},
+    },
+    warnings: ["Brief archive issue is unavailable."],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getLatestBriefIssue(query: { locale?: string } = {}) {
+  const locale = query.locale ?? "zh";
+  return apiGet<BriefIssueEnvelopeResponse>(buildLatestBriefIssuePath(locale), {
+    issue: {
+      issue_id: "",
+      public_id: "",
+      issue_date: "",
+      locale,
+      status: "unavailable",
+    },
+    snapshot: {
+      snapshot_id: "",
+      version: 0,
+      payload: {},
+      source_watermark: {},
+    },
+    warnings: ["Brief archive issue is unavailable."],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getBriefIssueList(query: { locale?: string; limit?: number; offset?: number } = {}) {
+  const locale = query.locale ?? "zh";
+  const limit = query.limit ?? 30;
+  const offset = query.offset ?? 0;
+  return apiGet<BriefIssueListResponse>(buildBriefIssueListPath(locale, limit, offset), {
+    items: [],
+    total: 0,
+    limit,
+    offset,
+  });
+}
+
+export type AiHotItemsQuery = {
+  mode?: "selected" | "all";
+  category?: string;
+  q?: string;
+  since?: string;
+  cursor?: string;
+  take?: number;
+  preference?: NewsPreference;
+};
+
+export type NewsItemsQuery = AiHotItemsQuery;
+
+export function getNewsItems(query: NewsItemsQuery = {}) {
+  const params = new URLSearchParams();
+  params.set("mode", query.mode ?? "selected");
+  if (query.category) {
+    params.set("category", query.category);
+  }
+  if (query.q) {
+    params.set("q", query.q);
+  }
+  if (query.since) {
+    params.set("since", query.since);
+  }
+  if (query.cursor) {
+    params.set("cursor", query.cursor);
+  }
+  if (query.preference) {
+    params.set("preference", query.preference);
+  }
+  params.set("take", String(query.take ?? 50));
+  return apiGet<AiHotItemsResponse>(`/api/news/items?${params.toString()}`, {
+    provider: "aihot",
+    provider_beta: true,
+    fetched_at: "",
+    count: 0,
+    has_next: false,
+    next_cursor: null,
+    items: [],
+    warnings: ["AI news feed is unavailable."],
+    research_safety: AIHOT_RESEARCH_SAFETY,
+    preference: query.preference ?? "auto",
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getNewsDaily(date?: string, preference?: NewsPreference) {
+  const params = new URLSearchParams();
+  if (date) {
+    params.set("date", date);
+  }
+  if (preference) {
+    params.set("preference", preference);
+  }
+  const query = params.toString();
+  return apiGet<AiHotDailyResponse>(`/api/news/daily${query ? `?${query}` : ""}`, {
+    provider: "aihot",
+    provider_beta: true,
+    fetched_at: "",
+    date: date ?? "",
+    generated_at: null,
+    window_start: null,
+    window_end: null,
+    lead: null,
+    sections: [],
+    flashes: [],
+    warnings: ["AI news daily report is unavailable."],
+    research_safety: AIHOT_RESEARCH_SAFETY,
+    raw: {},
+    preference: preference ?? "auto",
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getNewsDailies(take = 14, preference?: NewsPreference) {
+  const params = new URLSearchParams({ take: String(take) });
+  if (preference) {
+    params.set("preference", preference);
+  }
+  return apiGet<AiHotDailiesResponse>(`/api/news/dailies?${params.toString()}`, {
+    provider: "aihot",
+    provider_beta: true,
+    fetched_at: "",
+    count: 0,
+    items: [],
+    warnings: ["AI news daily archive is unavailable."],
+    research_safety: AIHOT_RESEARCH_SAFETY,
+    preference: preference ?? "auto",
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+/** Local-only status fallback — does not invent a live probe. */
+export function getNewsStatus() {
+  return apiGet<NewsStatusResponse>("/api/news/status", {
+    provider: "aihot",
+    provider_beta: true,
+    enabled: false,
+    base_url: "",
+    timeout_seconds: 0,
+    cache_ttl_seconds: 0,
+    last_error: null,
+    warnings: ["AI news status is unavailable."],
+    research_safety: AIHOT_RESEARCH_SAFETY,
+    preference_default: "auto",
+    research_only: true,
+    providers: {},
+    failover: { auto_enabled: false, order: [] },
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+/** @deprecated Prefer getNewsItems — aliases the neutral /api/news/* facade. */
+export function getAiHotItems(query: AiHotItemsQuery = {}) {
+  return getNewsItems(query);
+}
+
+/** @deprecated Prefer getNewsDaily — aliases the neutral /api/news/* facade. */
+export function getAiHotDaily(date?: string) {
+  return getNewsDaily(date);
+}
+
+/** @deprecated Prefer getNewsDailies — aliases the neutral /api/news/* facade. */
+export function getAiHotDailies(take = 14) {
+  return getNewsDailies(take);
+}
+
+/** @deprecated Prefer getNewsStatus — aliases the neutral /api/news/* facade. */
+export function getAiHotStatus() {
+  return getNewsStatus();
 }
 
 export function getSymbols() {
@@ -1792,6 +2510,83 @@ export function getPaperAccountLedger(limit = 50, offset = 0) {
   });
 }
 
+export function getPaperAccountActivity(limit = 200, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return apiGet<PaperAccountActivityResponse>(`/api/paper/account/activity?${params.toString()}`, {
+    account: FALLBACK_ACCOUNT,
+    pending_orders: [],
+    order_history: [],
+    balance_history: [],
+    trade_log: [],
+    pending_order_total: 0,
+    order_history_total: 0,
+    balance_history_total: 0,
+    trade_log_total: 0,
+    limit,
+    offset,
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getPaperAccountEquityCurve(days = 7, limit = 200, offset = 0) {
+  const params = new URLSearchParams({
+    days: String(days),
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return apiGet<PaperAccountEquityCurveResponse>(
+    `/api/paper/account/equity-curve?${params.toString()}`,
+    {
+      account_id: "default",
+      account_exists: false,
+      total: 0,
+      limit,
+      offset,
+      points: [],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+}
+
+export function getPaperStrategyConfigs() {
+  return apiGet<PaperStrategyConfigsResponse>("/api/paper/strategy-configs", {
+    configs: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getPaperStrategySleeves() {
+  return apiGet<PaperStrategySleevesResponse>("/api/paper/strategy-sleeves", {
+    sleeves: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getPaperStrategySleeveDetail(sleeveId: string) {
+  return apiGet<PaperStrategySleeveDetailResponse>(
+    `/api/paper/strategy-sleeves/${encodeURIComponent(sleeveId)}`,
+    {
+      sleeve: {
+        sleeve_id: sleeveId,
+        account_id: "default",
+        strategy_config_id: "",
+        strategy_config_version: 1,
+        mode: "signal_only",
+        status: "stopped",
+        initial_allocated_cash: 0,
+        cash: 0,
+        created_at: "",
+        updated_at: "",
+        metadata: {},
+      },
+      lots: [],
+      signals: [],
+      executions: [],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+}
+
 export function getExperiments() {
   return apiGet<ExperimentsResponse>("/api/experiments", {
     experiments: [],
@@ -1809,22 +2604,191 @@ export function getExperimentDetail(experimentId: string) {
   });
 }
 
-export function getAgentCandidates() {
-  return apiGet<AgentCandidatesResponse>("/api/agent/candidates", {
+export async function getAgentCandidates() {
+  const response = await apiGet<AgentCandidatesResponse>("/api/agent/candidates", {
     candidates: [],
+    safety: FALLBACK_SAFETY,
+  });
+  return normalizeCandidateListResponse(response);
+}
+
+export function getHermesArtifacts(limit = 20) {
+  const safeLimit = Math.min(50, Math.max(1, Math.trunc(limit)));
+  return apiGet<HermesArtifactShelfEnvelope>(`/api/hermes/artifacts?limit=${safeLimit}`, {
+    schema_version: "1.0",
+    read_status: "unavailable",
+    as_of: null,
+    items: [],
+    sources: [],
+    warnings: [{ source: "artifact_feed", code: "api_unavailable" }],
     safety: FALLBACK_SAFETY,
   });
 }
 
-export function getAgentCandidateDetail(candidateId: string) {
-  return apiGet<AgentCandidateDetailResponse>(`/api/agent/candidates/${candidateId}`, {
-    candidate_id: candidateId,
-    metadata: {},
-    source_preview: "",
-    audit: [],
-    reviews: [],
+export async function getHermesResults(query: HermesResultsQuery = {}) {
+  const limit = Number.isFinite(query.limit)
+    ? Math.min(100, Math.max(1, Math.trunc(query.limit as number)))
+    : 20;
+  const offset = Number.isFinite(query.offset)
+    ? Math.min(10_000, Math.max(0, Math.trunc(query.offset as number)))
+    : 0;
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (query.kind) params.set("kind", query.kind);
+  const status = query.status?.trim();
+  if (status && status.length <= 128) params.set("status", status);
+  if (query.source) params.set("source", query.source);
+  const search = query.search?.trim();
+  if (search && search.length <= 256) params.set("search", search);
+
+  const response = await apiGet<HermesResultsResponse>(
+    `/api/hermes/results?${params.toString()}`,
+    {
+      read_status: "unavailable",
+      total: null,
+      total_is_exact: false,
+      limit,
+      offset,
+      has_more: false,
+      items: [],
+      sources: [],
+      warnings: [
+        {
+          source: "results_catalog",
+          code: "api_unavailable",
+          kind: null,
+          resource_id: null,
+        },
+      ],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+  return normalizeHermesResultsResponse(response, { limit, offset });
+}
+
+export async function getHermesResultDetail(
+  kind: HermesResultKind,
+  resourceId: string,
+) {
+  if (!isHermesResultKind(kind) || !isHermesResultResourceId(resourceId)) {
+    return {
+      read_status: "unavailable",
+      item: null,
+      resource: null,
+      warnings: [
+        {
+          source: "results_catalog",
+          code: "invalid_result_identity",
+          kind: null,
+          resource_id: null,
+        },
+      ],
+      safety: FALLBACK_SAFETY,
+      apiError: "invalid_result_identity",
+    } satisfies HermesResultDetailResponse;
+  }
+  const response = await apiGet<HermesResultDetailResponse>(
+    `/api/hermes/results/${encodeURIComponent(kind)}/${encodeURIComponent(resourceId)}`,
+    {
+      read_status: "unavailable",
+      item: null,
+      resource: null,
+      warnings: [
+        {
+          source: "results_catalog",
+          code: "api_unavailable",
+          kind,
+          resource_id: resourceId,
+        },
+      ],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+  return normalizeHermesResultDetailResponse(response, { kind, resourceId });
+}
+
+export function getHermesGatewayStatus() {
+  return apiGet<HermesGatewayStatusResponse>("/api/hermes/gateway", {
+    read_status: "unavailable",
+    connected: false,
+    model: null,
+    session_api_available: false,
+    chat_write_ready: false,
+    features: {},
+    upstream_blockers: ["api_unavailable"],
+    platform_delivery_blockers: ["api_unavailable"],
+    blockers: ["api_unavailable"],
+    warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
     safety: FALLBACK_SAFETY,
   });
+}
+
+export function getHermesSessions(limit = 50, offset = 0) {
+  const safeLimit = Math.min(200, Math.max(1, Math.trunc(limit)));
+  const safeOffset = Math.min(1_000_000, Math.max(0, Math.trunc(offset)));
+  return apiGet<HermesSessionsResponse>(
+    `/api/hermes/sessions?limit=${safeLimit}&offset=${safeOffset}`,
+    {
+      read_status: "unavailable",
+      sessions: [],
+      limit: safeLimit,
+      offset: safeOffset,
+      has_more: false,
+      warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+}
+
+export function getHermesSessionDetail(sessionId: string) {
+  const encodedId = encodeURIComponent(sessionId);
+  return apiGet<HermesSessionDetailResponse>(`/api/hermes/sessions/${encodedId}`, {
+    read_status: "unavailable",
+    session: null,
+    warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getHermesSessionMessages(sessionId: string) {
+  const encodedId = encodeURIComponent(sessionId);
+  return apiGet<HermesSessionMessagesResponse>(
+    `/api/hermes/sessions/${encodedId}/messages`,
+    {
+      read_status: "unavailable",
+      session_id: sessionId,
+      messages: [],
+      omitted_message_count: 0,
+      warnings: [{ code: "api_unavailable", message: "Platform BFF unavailable" }],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+}
+
+export async function getAgentCandidateDetail(candidateId: string) {
+  const encodedCandidateId = encodeURIComponent(candidateId);
+  const response = await apiGet<AgentCandidateDetailResponse>(
+    `/api/agent/candidates/${encodedCandidateId}`,
+    {
+      candidate_id: candidateId,
+      metadata: null,
+      source_preview: null,
+      audit: [],
+      reviews: [],
+      evidence_truncated: false,
+      integrity_state: "corrupt",
+      manifest_digest: null,
+      observed_manifest_digest: null,
+      approval_binding: null,
+      approval_enabled: false,
+      integrity_error_code: "api_unavailable",
+      status: null,
+      safety: FALLBACK_SAFETY,
+    },
+  );
+  return normalizeCandidateDetailResponse(response, candidateId);
 }
 
 export function getAgentLlmConfig() {
@@ -1863,6 +2827,15 @@ export function getPredictionMarkets(
 export function getOptionsRadarDates() {
   return apiGet<OptionsRadarDatesResponse>("/api/options/daily-scan/dates", {
     dates: [],
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getOptionsDailyScanStatus() {
+  return apiGet<OptionsDailyScanStatusResponse>("/api/options/daily-scan/status", {
+    exists: false,
+    status_path: "",
+    status: null,
     safety: FALLBACK_SAFETY,
   });
 }

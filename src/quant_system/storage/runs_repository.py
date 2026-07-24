@@ -1,10 +1,10 @@
-"""Run index repository: PostgreSQL-first reads with filesystem fallback.
+"""Run index repository with PostgreSQL as an optional metadata mirror.
 
 The file artifacts under ``data/api_runs/<kind>/<run_id>/metadata.json`` stay the
 source of truth. When the optional PostgreSQL index is enabled and reachable,
-list endpoints read from it (fast, ordered, no directory scan) and run endpoints
-index each new run into it. Any database error degrades silently to the existing
-filesystem behaviour, so the API never depends on the database being up.
+run endpoints mirror each new run into it. Any database error degrades silently
+to the existing filesystem behaviour, so the API never depends on the database
+being up.
 """
 
 from __future__ import annotations
@@ -15,7 +15,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from quant_system.api.schemas.common import sorted_metadata_paths
+from quant_system.api.schemas.common import (
+    RunStatus,
+    sorted_metadata_paths,
+    write_json_atomic,
+)
 from quant_system.storage.database import SCHEMA, get_database
 
 if TYPE_CHECKING:
@@ -25,7 +29,12 @@ log = logging.getLogger(__name__)
 
 # Run kinds that follow the shared api_runs/<dir>/<run_id>/metadata.json layout,
 # mapped to their on-disk directory name (note: paper dir is "paper", not "papers").
-KIND_DIRS = {"backtest": "backtests", "factor": "factors", "paper": "paper"}
+KIND_DIRS = {
+    "backtest": "backtests",
+    "factor": "factors",
+    "paper": "paper",
+    "replication": "replications",
+}
 INDEXED_KINDS = tuple(KIND_DIRS)
 
 
@@ -39,6 +48,45 @@ def _created_at_from_run_id(run_id: str) -> str | None:
             except ValueError:
                 continue
     return None
+
+
+def persist_run(
+    run_dir: Path,
+    kind: str,
+    payload: dict[str, Any],
+    *,
+    settings: Settings,
+    status: RunStatus = RunStatus.COMPLETED,
+    index: bool = True,
+) -> dict[str, Any]:
+    """Write a run's ``metadata.json`` atomically under a unified schema.
+
+    Every run producer (backtest / paper / factor / experiment / replication)
+    routes its metadata through here so the on-disk ``metadata.json`` always
+    carries the shared core fields — ``run_id``, ``kind``, ``status`` and
+    ``created_at`` — alongside its kind-specific fields. The filesystem stays
+    the source of truth; the optional PostgreSQL index is updated as a best-effort
+    mirror when ``index`` is true and the kind is indexable.
+
+    ``payload`` is not mutated; the merged metadata dict (with core fields
+    filled in) is returned so the caller can echo it back in the HTTP response.
+    The run_id defaults to the run directory name when absent, and created_at is
+    derived from the run_id timestamp, then falls back to now.
+    """
+    run_dir = Path(run_dir)
+    metadata = dict(payload)
+    run_id = str(metadata.get("run_id") or run_dir.name)
+    metadata["run_id"] = run_id
+    metadata["kind"] = kind
+    metadata["status"] = RunStatus(status).value
+    if not metadata.get("created_at"):
+        metadata["created_at"] = (
+            _created_at_from_run_id(run_id) or datetime.now(UTC).isoformat()
+        )
+    write_json_atomic(run_dir / "metadata.json", metadata)
+    if index and kind in KIND_DIRS:
+        index_run(kind, metadata, run_dir, settings)
+    return metadata
 
 
 def index_run(
@@ -96,9 +144,17 @@ def _db_metadatas(kind: str, settings: Settings) -> list[dict[str, Any]] | None:
         return None
 
 
-def _fs_metadatas(root: Path) -> list[dict[str, Any]]:
+def _metadata_path_is_publishable(kind: str | None, path: Path) -> bool:
+    if kind == "replication":
+        return (path.parent / "result.json").exists()
+    return True
+
+
+def _fs_metadatas(root: Path, *, kind: str | None = None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for path in sorted_metadata_paths(root):
+        if not _metadata_path_is_publishable(kind, path):
+            continue
         try:
             out.append(json.loads(path.read_text(encoding="utf-8")))
         except Exception as exc:  # noqa: BLE001 - skip unreadable run
@@ -114,9 +170,13 @@ def list_run_metadatas(kind: str, root: Path, settings: Settings) -> list[dict[s
     running visible immediately instead of waiting for the next startup sync.
     """
     db_rows = _db_metadatas(kind, settings)
-    paths = sorted_metadata_paths(root)
+    paths = [
+        path
+        for path in sorted_metadata_paths(root)
+        if _metadata_path_is_publishable(kind, path)
+    ]
     if db_rows is None:
-        return _fs_metadatas(root)
+        return _fs_metadatas(root, kind=kind)
 
     db_by_id = {
         str(metadata.get("run_id")): metadata
@@ -126,13 +186,13 @@ def list_run_metadatas(kind: str, root: Path, settings: Settings) -> list[dict[s
     out: list[dict[str, Any]] = []
     for path in paths:
         run_id = path.parent.name
-        metadata = db_by_id.get(run_id)
-        if metadata is not None:
-            out.append(metadata)
-            continue
         try:
             out.append(json.loads(path.read_text(encoding="utf-8")))
-        except Exception as exc:  # noqa: BLE001 - skip unreadable run
+        except Exception as exc:  # noqa: BLE001 - DB mirror is fallback only
+            metadata = db_by_id.get(run_id)
+            if metadata is not None:
+                out.append(metadata)
+                continue
             log.warning("skipping unreadable metadata %s: %s", path, exc)
     return out
 
@@ -179,7 +239,7 @@ def sync_filesystem_to_index(api_runs_dir: Path, settings: Settings) -> int:
     indexed = 0
     for kind, dirname in KIND_DIRS.items():
         root = api_runs_dir / dirname
-        present = _fs_metadatas(root)
+        present = _fs_metadatas(root, kind=kind)
         present_ids = {str(m.get("run_id")) for m in present if m.get("run_id")}
         # _fs_metadatas is newest-first; insert oldest-first so indexed_at
         # increases with run recency and ties order newest-first on read.

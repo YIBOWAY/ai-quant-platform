@@ -9,7 +9,7 @@ export function RouteLoading({ label }: { label?: string }) {
       <div className="text-center">
         <div
           aria-label={label ?? "Loading"}
-          className="mb-4 inline-block h-10 w-10 animate-spin rounded-full border-4 border-accent-success border-t-transparent"
+          className="mb-4 inline-block h-10 w-10 animate-spin rounded-full border-4 border-info border-t-transparent"
           role="status"
         />
         {label ? <div className="font-body-sm text-text-secondary">{label}</div> : null}

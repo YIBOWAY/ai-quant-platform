@@ -1,0 +1,220 @@
+{
+  "schema_version": "1.0",
+  "surface": "tasks",
+  "default_state": "running",
+  "states": [
+    {
+      "id": "queued",
+      "title": "研究任务已排队",
+      "title_en": "Research task queued",
+      "status": "queued",
+      "status_text": "queued · 排队 / Waiting to start",
+      "summary": "HQA task ledger 已登记，等待执行槽位。",
+      "summary_en": "Registered in HQA task ledger; waiting for an execution slot.",
+      "announcements": ["任务状态 queued。"],
+      "actions": [
+        { "id": "open-task", "label": "查看任务", "label_en": "Open task" }
+      ],
+      "task": {
+        "id": "task-research-aapl-risk-plan-2026-07-13",
+        "goal": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。",
+        "gate": null
+      },
+      "long_error": "TASK_QUEUED_DETAIL: task_id=task-research-aapl-risk-plan-2026-07-13 ledger_seq=9021 queue_reason=provider_slot dependency_run=none; long wait does not authorize bypass of Gate 1/2/3 or paper/live paths.",
+      "technical": [
+        { "label": "task_id", "value": "task-research-aapl-risk-plan-2026-07-13" },
+        { "label": "ledger_seq", "value": "9021" }
+      ]
+    },
+    {
+      "id": "running",
+      "title": "研究任务执行中",
+      "title_en": "Research task running",
+      "status": "running",
+      "status_text": "running · 执行中 / Active research task",
+      "summary": "结构化计划已生成；工具调用进行中。",
+      "summary_en": "Structured plan generated; tool calls in progress.",
+      "announcements": ["任务状态 running。"],
+      "actions": [
+        { "id": "request-stop", "label": "请求停止", "label_en": "Request stop" }
+      ],
+      "task": {
+        "id": "task-research-aapl-risk-plan-2026-07-13",
+        "goal": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。",
+        "gate": null,
+        "plan_version": "1"
+      },
+      "long_error": "TASK_RUNNING_SLOW_TOOL: tool=factor_probe elapsed_ms=48000 symbol=AAPL still non-terminal; task remains running with honest status text; UI must not display synthetic percent-complete bars derived from wall-clock alone.",
+      "technical": [
+        { "label": "task_id", "value": "task-research-aapl-risk-plan-2026-07-13" },
+        { "label": "plan_version", "value": "1" },
+        { "label": "active_tool", "value": "factor_probe" }
+      ]
+    },
+    {
+      "id": "waiting_gate",
+      "title": "任务等待人工门禁",
+      "title_en": "Task waiting on human gate",
+      "status": "waiting_gate",
+      "status_text": "waiting_gate · 等待门禁 / Human gate required",
+      "summary": "需要 Gate 1 计划/公式确认后才能继续确定性执行。",
+      "summary_en": "Gate 1 plan/formula confirmation required before deterministic execution continues.",
+      "announcements": ["任务状态 waiting_gate：需要 Gate 1 确认。"],
+      "actions": [
+        { "id": "open-gate1", "label": "打开 Gate 1 确认", "label_en": "Open Gate 1 confirmation" }
+      ],
+      "task": {
+        "id": "task-research-aapl-risk-plan-2026-07-13",
+        "goal": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。",
+        "gate": "gate1",
+        "plan_hash": "planhash-aapl-risk-v1-9c2e",
+        "plan_version": "1"
+      },
+      "long_error": "TASK_WAITING_GATE1_DETAIL: gate=1 plan_version=1 plan_hash=planhash-aapl-risk-v1-9c2e formula_summary=\"momentum_20d_reversal on AAPL with risk overlays\" expires=session_bound; chat text agreement is not a gate; only dedicated same-origin Gate 1 mutation with canonical payload hash may advance.",
+      "technical": [
+        { "label": "gate", "value": "1" },
+        { "label": "plan_hash", "value": "planhash-aapl-risk-v1-9c2e" },
+        { "label": "plan_version", "value": "1" }
+      ]
+    },
+    {
+      "id": "stop_requested",
+      "title": "已请求停止任务",
+      "title_en": "Task stop requested",
+      "status": "stop_requested",
+      "status_text": "stop_requested · 停止已请求 / Stop accepted",
+      "summary": "停止信号已写入 ledger，等待执行器确认。",
+      "summary_en": "Stop signal written to ledger; awaiting executor confirmation.",
+      "announcements": ["任务状态 stop_requested。"],
+      "actions": [],
+      "task": {
+        "id": "task-research-aapl-risk-plan-2026-07-13",
+        "goal": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。",
+        "gate": null
+      },
+      "long_error": "TASK_STOP_REQUESTED_DETAIL: stop_token=stop-2026-07-13-0914-aapl written to ledger_seq=9044; executor ack outstanding; partial artifacts remain non-authoritative until terminal stopped/failed/completed mapping arrives.",
+      "technical": [
+        { "label": "stop_token", "value": "stop-2026-07-13-0914-aapl" },
+        { "label": "ledger_seq", "value": "9044" }
+      ]
+    },
+    {
+      "id": "reconciling",
+      "title": "任务结果对账中",
+      "title_en": "Task outcome reconciling",
+      "status": "reconciling",
+      "status_text": "reconciling · 对账 / Mapping terminal outcome",
+      "summary": "执行结束，正在映射 artifact、candidate 与最终状态。",
+      "summary_en": "Execution ended; mapping artifacts, candidates, and terminal status.",
+      "announcements": ["任务状态 reconciling。"],
+      "actions": [],
+      "task": {
+        "id": "task-research-aapl-risk-plan-2026-07-13",
+        "goal": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。",
+        "gate": null
+      },
+      "long_error": "TASK_RECONCILE_DETAIL: task_id=task-research-aapl-risk-plan-2026-07-13 awaiting candidate bind factor-momentum_20d_reversal-323b045e4b digest re-check; UI must not show approved/promoted while reconciling.",
+      "technical": [
+        { "label": "phase", "value": "artifact_candidate_bind" },
+        { "label": "candidate", "value": "factor-momentum_20d_reversal-323b045e4b" }
+      ]
+    },
+    {
+      "id": "completed",
+      "title": "研究任务已完成",
+      "title_en": "Research task completed",
+      "status": "completed",
+      "status_text": "completed · 完成 / Terminal success",
+      "summary": "合法 artifact 已就绪；交易资格仍未授予。",
+      "summary_en": "Valid artifact ready; trading eligibility still not granted.",
+      "announcements": ["任务状态 completed。"],
+      "actions": [
+        { "id": "open-result", "label": "查看结果", "label_en": "Open result" }
+      ],
+      "task": {
+        "id": "task-research-aapl-risk-plan-2026-07-13",
+        "goal": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。",
+        "gate": "gate2_pending",
+        "result_status": "completed"
+      },
+      "long_error": "TASK_COMPLETED_NOTE: completed does not imply paper/live eligibility; candidate factor-momentum_20d_reversal-323b045e4b may still require Gate 2 CAS and Gate 3 human git review before any promotion commit.",
+      "technical": [
+        { "label": "result_status", "value": "completed" },
+        { "label": "eligibility", "value": "none" }
+      ]
+    },
+    {
+      "id": "partial",
+      "title": "任务部分完成（降级）",
+      "title_en": "Task partially completed (degraded)",
+      "status": "partial",
+      "status_text": "partial · 部分完成 / completed_degraded mapping",
+      "summary": "存在合法 artifact 与 limitations；映射为 completed_degraded。",
+      "summary_en": "Valid artifact with limitations; mapped to completed_degraded.",
+      "announcements": ["任务状态 partial：completed_degraded。"],
+      "actions": [
+        { "id": "open-result", "label": "查看降级结果", "label_en": "Open degraded result" },
+        { "id": "open-gate2", "label": "查看 Gate 2 摘要", "label_en": "View Gate 2 summary" }
+      ],
+      "task": {
+        "id": "task-research-aapl-risk-plan-2026-07-13",
+        "goal": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。",
+        "gate": "gate2_pending",
+        "result_status": "completed_degraded"
+      },
+      "long_error": "TASK_PARTIAL_DETAIL: mapped_status=completed_degraded limitations=[degraded_feed,series_gap] artifact=research-aapl-risk-plan-2026-07-13-0912 charts_truncated=true metrics_partial=true; without verifiable artifact this would be failed instead of partial.",
+      "technical": [
+        { "label": "result_status", "value": "completed_degraded" },
+        { "label": "limitation", "value": "degraded feed" }
+      ]
+    },
+    {
+      "id": "failed",
+      "title": "研究任务失败",
+      "title_en": "Research task failed",
+      "status": "failed",
+      "status_text": "failed · 失败 / Terminal failure",
+      "summary": "无可验证 artifact；任务失败。",
+      "summary_en": "No verifiable artifact; task failed.",
+      "announcements": ["任务状态 failed。"],
+      "actions": [
+        { "id": "open-error", "label": "查看失败详情", "label_en": "View failure detail" }
+      ],
+      "task": {
+        "id": "task-research-aapl-risk-plan-2026-07-13",
+        "goal": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。",
+        "gate": null,
+        "result_status": "failed"
+      },
+      "long_error": "TASK_FAILED_DETAIL: error_code=FACTOR_PROBE_UNIVERSE task_id=task-research-aapl-risk-plan-2026-07-13 artifact_written=false candidate_written=false; operator may retry with revised universe only through a new authorized research path, never by mutating historical ledger rows.",
+      "technical": [
+        { "label": "error_code", "value": "FACTOR_PROBE_UNIVERSE" },
+        { "label": "artifact_written", "value": "false" }
+      ]
+    },
+    {
+      "id": "stopped",
+      "title": "研究任务已停止",
+      "title_en": "Research task stopped",
+      "status": "stopped",
+      "status_text": "stopped · 已停止 / User-stopped terminal",
+      "summary": "用户停止已确认；部分输出不作为成功结果。",
+      "summary_en": "User stop confirmed; partial output is not a success result.",
+      "announcements": ["任务状态 stopped。"],
+      "actions": [
+        { "id": "restart-goal", "label": "重新提出目标", "label_en": "Propose goal again" }
+      ],
+      "task": {
+        "id": "task-research-aapl-risk-plan-2026-07-13",
+        "goal": "总结 AAPL 风险与新因子计划，并标出是否触及人工门禁。",
+        "gate": null,
+        "result_status": "stopped"
+      },
+      "long_error": "TASK_STOPPED_DETAIL: stop confirmed at 2026-07-13T09:14:33Z by user; partial transcript retained for audit only; no candidate approval path opened; restart requires a new task id and fresh Gate 1 if plan changes.",
+      "technical": [
+        { "label": "result_status", "value": "stopped" },
+        { "label": "partial_authoritative", "value": "false" }
+      ]
+    }
+  ]
+}

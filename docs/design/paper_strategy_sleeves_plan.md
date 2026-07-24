@@ -1,6 +1,9 @@
 # Paper Strategy Sleeves MVP-1 设计文档
 
-> 状态：设计草案，待实现。  
+> 状态：MVP-1 第一切片后端基础已实现（2026-06-26）：领域模型 / API schema /
+> 本地文件存储 / cash 与 lot 分账基础已经落地；第二切片 API contract 已实现；
+> 第三切片 daily signal 生成 / 手动 CLI / opt-in 真实 Futu 测试已实现；
+> 第四切片 `/paper-trading` 前端 UX redesign 已实现；自动执行仍待后续切片实现。
 > 日期：2026-06-15。  
 > 命名说明：本文的 **MVP-1** 指「Paper Strategy Sleeves」这条新业务线的第一实施阶段，**不是**项目历史阶段地图里的 Phase 1「数据层 MVP」。后续实现和提交信息应避免写成 `Phase 1`，统一写 `Paper Strategy Sleeves MVP-1`。
 
@@ -14,10 +17,14 @@
 
 ## 2. 当前代码事实
 
-这些事实来自当前代码阅读，后续实现前仍需以代码为准复核。
+这些事实来自代码阅读；2026-06-26 后端基础切片已更新其中一部分，但后续实现前仍需以代码为准复核。
 
-- `PaperAccount` 当前只有一份 `cash`，没有 sleeve 级现金。
+- `PaperAccount.cash` 仍是旧账户路径使用的总现金字段；2026-06-26 起新增
+  `sleeve_cash` 作为 Strategy Sleeves 的账内现金分配簿。旧全账户 rebalance
+  语义不依赖该字段。
 - `AccountPosition.source_quantity` 可以记录持仓来源占比，例如 `manual` 或 `strategy:<id>`，但当前卖出时按来源比例扣减，不能表达「只卖某个 sleeve 的 lot」。
+  2026-06-26 起新增 `SleeveLot` / `SleeveLotBook` 基础模型用于后续 sleeve 级 lot
+  隔离；旧聚合持仓模型尚未改为按 sleeve lot 执行撮合。
 - `PaperAccountService.rebalance_to_strategy()` 当前按整个账户权益计算目标，并把目标标的与账户全部现有持仓都纳入再平衡。
 - Futu 行情提供方已支持 `5m` K 线；但账户策略再平衡链路当前没有传 `interval`，实际仍走默认 `1d`。
 - 现有文件存储和运行索引方向是：本地文件为事实来源，PostgreSQL 只是可选索引。
@@ -313,9 +320,12 @@ CLI 不能只存在于代码里。新增或改名时必须同步更新：
 
 ## 12. 前端 MVP-1
 
-MVP-1 只做最小入口，不做全页面重设计。
+按 2026-06-26 用户反馈，前端第四切片从“最小入口”升级为
+`/paper-trading` 的 Strategy Sleeves UX Redesign。该切片已经落地：
+实时账户标签页现在包含独立的「策略袖珍仓」工作区，并把旧全账户
+rebalance 明确标为高级全账户路径。
 
-在 `/paper-trading` 的实时账户标签页加入 `Strategy Sleeves` 区域：
+`/paper-trading` 的实时账户标签页已加入 `Strategy Sleeves` 区域：
 
 - sleeve 名称
 - 模式：`signal-only` / `allocated`
@@ -323,33 +333,42 @@ MVP-1 只做最小入口，不做全页面重设计。
 - allocated cash
 - 最新信号时间
 - 最新信号摘要
+- 创建 strategy config
 - 创建 signal-only sleeve
 - 创建 allocated sleeve（分配现金）
+- 在页面内生成 sleeve signal
 - 暂停/恢复
 - 更多操作：停止，默认保留持仓
 
 UI 原则：
 
-- 主操作只放暂停/恢复。
-- 停止类操作放入更多操作。
+- 主工作区展示 strategy config / sleeve / 最新 signal。
+- 手动下单和高级全账户 rebalance 保留在右侧账户动作区。
+- 旧 `POST /api/paper/account/rebalance` 只能作为 advanced full-account path
+  展示，不能被包装成 Strategy Sleeves 入口。
 - 清仓类操作不在 MVP-1。
-- 不展示复杂交易工作台。
+- 不展示自动成交工作台。
 - 不弱化 paper-only / no live trading 安全文案。
 
 ## 13. 后续 UX Redesign 阶段
 
-前端大改不属于 MVP-1。单独设阶段：
+前端大改原计划不属于 MVP-1，但第四切片已按用户反馈提前落地为：
 
 **Paper Strategy Sleeves UX Redesign**
 
-推荐时机：MVP-1 完成后，MVP-2 自动执行设计定稿前后。
+当前已完成的目标：
 
-目标定位：
+- `/paper-trading` 信息架构重排为 account / Strategy Sleeves / manual &
+  advanced actions。
+- Strategy Sleeves 工作区支持 config 创建、signal-only / allocated sleeve
+  创建、manual signal 生成、pause / resume / stop。
+- 旧全账户 rebalance 文案和布局明确标为 advanced full-account path。
 
-- 研究流水线管理台为主。
-- 交易工作台为辅。
+后续 UX refinement 可在 MVP-2 自动执行设计定稿后继续，但不得提前展示
+自动成交为已可用能力。
 
-这个阶段应使用前端设计 skills 做 2-3 个信息架构/设计方案，再选定一个落到现有 Next.js / Tailwind 代码。
+这个阶段继续沿用现有 Next.js / Tailwind 设计系统：hairline border、
+8px radius、Inter + JetBrains Mono、状态色只表达真实状态。
 
 设计必须表达清楚：
 
@@ -368,9 +387,17 @@ research -> backtest -> signal-only -> allocated sleeve -> pseudo-live execution
 
 交易按钮保持克制。实现后用 Playwright 做桌面和移动端截图验证。
 
-## 14. MVP-2 自动执行方向
+## 14. MVP-2 / MVP-3 执行与运维方向
 
-MVP-2 才进入自动成交。
+MVP-2 进入手动 pseudo-live paper execution：从已生成的 signal 创建
+pending execution plan，再通过 API/CLI/UI 显式处理到期的 `next_open` plan。
+它不是常驻自动成交。
+
+2026-06-27 起，MVP-2 的详细实施计划单独维护在
+[Paper Strategy Sleeves MVP-2 Implementation Plan](paper_strategy_sleeves_mvp2_plan.md)。
+2026-06-29 起，MVP-3 的运维与自动化计划单独维护在
+[Paper Strategy Sleeves MVP-3 Operations & Automation Plan](paper_strategy_sleeves_mvp3_operations_plan.md)。
+本文只保留方向和边界，后续实现以对应阶段文档为准。
 
 默认路径：
 
@@ -385,7 +412,9 @@ near-close 方向：
 - 在下一交易日收盘前约 5 分钟用真实 snapshot 或 5m bar 模拟成交。
 - 若错过窗口，记录 `missed_window`，不事后用历史 5m K 线补造成交。
 
-第一版自动化建议使用 CLI + Windows Task Scheduler，而不是把常驻调度器放进 FastAPI 进程。
+第一版自动化建议使用 CLI + host scheduler（`launchd` / cron / Windows
+Task Scheduler / 后续 Codex automation），而不是把常驻调度器放进 FastAPI
+进程。MVP-3 必须先补执行 journal / recovery，再做 unattended scheduling。
 
 ## 15. 账户级风险方向
 
@@ -413,37 +442,58 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
    - 新增 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal` 的后端模型。
    - 明确枚举：`signal_only` / `allocated`、`running` / `paused` / `stopped`、`generated` / `data_unavailable` / `invalid`。
    - 明确哪些字段属于交易逻辑字段，哪些字段可原地编辑。
+   - **2026-06-26 已完成第一切片**：模型位于
+     `src/quant_system/execution/paper_strategy_sleeves.py`，API response schema 位于
+     `src/quant_system/api/schemas/paper.py`。
 
 2. **本地文件存储**
    - 新增 strategy config、sleeve、signal 的读写模块。
    - 文件仍是 source of truth。
    - 写入需要保持原子性；失败时不能留下半写状态。
+   - **2026-06-26 已完成第一切片**：存储模块位于
+     `src/quant_system/execution/paper_strategy_sleeve_storage.py`，写入
+     `data/api_runs/paper_strategy_sleeves/`。
 
 3. **账户分账能力**
    - 为 `manual` 和 strategy sleeve 建立现金/lot 分账语义。
    - allocated 创建时从账户可用现金划拨到 sleeve cash。
    - 不改动旧 `/api/paper/account/rebalance` 的行为。
    - 策略路径不能按比例卖出 `source_quantity`，必须能定位到自己的 sleeve lot。
+   - **2026-06-26 已完成第一切片基础**：`PaperAccount.sleeve_cash` 记录 manual 与
+     strategy sleeve 的现金分配；`SleeveLotBook` 能隔离同 symbol 的多 sleeve lot。
+     旧 `/api/paper/account/rebalance` 仍保留全账户语义，尚未接入 sleeve lot 执行。
 
 4. **策略信号生成服务**
    - 从保存的 `StrategyConfig` 生成 daily signal。
    - MVP-1 只写入 `StrategySignal`，不产生实际 fill。
    - `paused` sleeve 可以写入观察信号，但必须标记 `execution_blocked_reason=sleeve_paused`，且不能写 pending order。
    - 数据不可用时写 `data_unavailable`，不使用 sample/fallback 合成数据。
+   - **2026-06-26 已完成第三切片**：服务位于
+     `src/quant_system/execution/paper_strategy_signal_service.py`，API 路径为
+     `POST /api/paper/strategy-sleeves/{id}/signals`，CLI 为
+     `quant-system paper strategies generate-signal --sleeve <id>`。
 
 5. **API contract**
    - 新增 strategy config 和 strategy sleeve API。
    - 保持旧全账户 rebalance 为 legacy/advanced。
    - mutation 路径沿用账户锁或同等互斥机制，避免现金划拨并发写冲突。
+   - **2026-06-26 已完成第二切片**：已实现 config 创建 / 列表 / 版本，
+     sleeve 创建 / 列表 / 详情 / pause / resume / stop；allocated 创建复用
+     paper account 进程内锁和文件锁。
 
 ### 16.2 可并行工作
 
 基础层稳定后，这些工作可以相对独立推进。
 
-- **CLI**：实现 config-create、sleeve-create、generate-signal、sleeve-show。
-- **前端最小入口**：在 `/paper-trading` 加 Strategy Sleeves 区域，调用已稳定 API。
-- **用户指南更新**：补 `docs/guides/paper-trading.md` 的用户心智说明。
-- **执行文档更新**：等 CLI/API 可运行后，再写 `docs/execution/paper_strategy_sleeves.md`。
+- **CLI**：`generate-signal` 已完成；config-create、sleeve-create、sleeve-show
+  仍待后续实现。
+- **前端 UX redesign**：2026-06-26 已完成第四切片。页面入口为
+  `src/frontend/components/forms/PaperStrategySleevesPanel.tsx`，挂载在
+  `/paper-trading` live account tab。
+- **用户指南更新**：`docs/guides/paper-trading.md` 已说明 Strategy Sleeves
+  用户心智、可用 UI 操作与自动成交边界。
+- **执行文档更新**：`docs/execution/paper_strategy_sleeves.md` 已记录后端基础、
+  API、manual signal CLI 和 `/paper-trading` 前端工作区状态。
 
 ### 16.3 验证闭环
 
@@ -455,7 +505,10 @@ MVP-1 不做复杂账户级风险优化，但需要保留扩展方向。
 - 普通手动卖出不卖 strategy sleeve lot；超过 manual lot 可卖数量时应拒绝。
 - paused sleeve 可继续生成观察信号，但不能生成可执行计划或 pending order。
 - sample/fallback 数据不能进入 allocated 信号或后续执行路径。
-- legacy full-account rebalance 仍保持原行为，且不会被 UI 当作新 sleeve 主入口。
+- 第三切片已包含 opt-in 真实 Futu/OpenD 集成测试，使用 `futu_opend`
+  pytest marker 和 `QS_TEST_FUTU_OPEND=1`，且只允许 read-only OHLCV。
+- legacy full-account rebalance 不会被 UI 当作新 sleeve 主入口；当账户中已有
+  actual sleeve-owned lot 时，API 会拒绝该旧路径以保护 sleeve lot 隔离。
 
 ## 17. 测试与验收
 
@@ -479,7 +532,7 @@ MVP-1 需要测试：
 文档验收：
 
 - `docs/design/paper_strategy_sleeves_plan.md` 存在并说明 MVP-1 非目标。
-- `docs/execution/paper_strategy_sleeves.md` 记录 CLI 命令。
+- `docs/execution/paper_strategy_sleeves.md` 记录当前实现状态；CLI/API 可运行后再补正式命令。
 - `docs/guides/paper-trading.md` 说明 Strategy Sleeves 的用户心智。
 - `docs/INDEX.md` 有入口。
 
@@ -498,12 +551,21 @@ MVP-1 需要测试：
 | 2026-06-15 | MVP-1 不做完整自动成交，不做前端大改。 |
 | 2026-06-15 | 后续前端大改单独命名为 Paper Strategy Sleeves UX Redesign，使用前端 skills 做多方案设计。 |
 | 2026-06-16 | `paused` sleeve 仍可记录观察信号，但不能生成可执行计划或 pending order。 |
+| 2026-06-26 | 第二切片已实现 StrategyConfig / StrategySleeve API contract，但 CLI、signal generation、前端和自动执行仍待后续切片。 |
+| 2026-06-26 | 第三切片必须同时包含 mock/provider 单测和 opt-in 真实 Futu/OpenD read-only 集成测试；正常 CI 不默认打 OpenD。 |
+| 2026-06-26 | 第三切片已实现 daily signal generation、`POST /signals`、`paper strategies generate-signal`，但仍不做 pending order、fill 或自动成交。 |
+| 2026-06-26 | 第四切片按用户反馈升级为 Paper Strategy Sleeves UX Redesign，不再只是最小面板。 |
+| 2026-06-29 | MVP-2 已形成手动 pending execution / next-open processor / UI execution state；MVP-3 从 execution journal、recovery、scheduler-safe CLI 和 ops status 开始，不从 FastAPI 常驻调度器开始。 |
 
 ## 19. 相关代码入口
 
 | 关注点 | 当前入口 |
 |---|---|
 | 持久账户模型 | `src/quant_system/execution/account.py` |
+| Strategy Sleeves 领域模型 / 分账基础 | `src/quant_system/execution/paper_strategy_sleeves.py` |
+| Strategy Sleeves 本地存储 | `src/quant_system/execution/paper_strategy_sleeve_storage.py` |
+| Strategy Sleeves 信号生成 | `src/quant_system/execution/paper_strategy_signal_service.py` |
+| Strategy Sleeves 执行处理 | `src/quant_system/execution/paper_strategy_execution_service.py` |
 | 账户持久化 | `src/quant_system/execution/account_storage.py` |
 | 账户服务 | `src/quant_system/execution/account_service.py` |
 | 账户取价 | `src/quant_system/execution/price_source.py` |

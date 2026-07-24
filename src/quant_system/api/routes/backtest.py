@@ -2,60 +2,61 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import JSONResponse
 
-from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
+from quant_system.api.dependencies import ApiRunsDirDep, BacktestJobRunnerDep, SettingsDep
 from quant_system.api.errors import not_found_404, provider_unavailable_400
+from quant_system.api.jobs.backtest_jobs import execute_backtest_run
 from quant_system.api.schemas.backtest import (
     BacktestDetailResponse,
+    BacktestJobStateResponse,
     BacktestRunRequest,
     BacktestRunResponse,
     BacktestsResponse,
 )
 from quant_system.api.schemas.common import (
+    RunStatus,
     make_run_id,
     read_json,
     read_parquet_records,
     resolve_run_dir,
 )
-from quant_system.backtest.pipeline import run_backtest as execute_backtest
 from quant_system.data.provider_factory import DataProviderUnavailableError
-from quant_system.storage.runs_repository import index_run, list_run_metadatas
+from quant_system.storage.runs_repository import list_run_metadatas, persist_run
 
 router = APIRouter()
 
 
-@router.post("/backtests/run", response_model=BacktestRunResponse)
+@router.post(
+    "/backtests/run",
+    response_model=BacktestRunResponse,
+    status_code=status.HTTP_200_OK,
+    responses={status.HTTP_202_ACCEPTED: {"model": BacktestJobStateResponse}},
+)
 def run_backtest(
     request: BacktestRunRequest,
     api_runs_dir: ApiRunsDirDep,
     settings: SettingsDep,
-) -> dict:
+    backtest_job_runner: BacktestJobRunnerDep,
+) -> dict | JSONResponse:
+    if settings.backtest_jobs.enabled:
+        try:
+            payload = backtest_job_runner.submit(request)
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "backtest_job_runner_unavailable", "message": str(exc)},
+            ) from exc
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=payload)
+
     run_id = make_run_id("backtest")
     run_dir = api_runs_dir / "backtests" / run_id
     try:
-        result = execute_backtest(
-            symbols=request.symbols,
-            start=request.start,
-            end=request.end,
-            output_dir=run_dir,
-            lookback=request.lookback,
-            top_n=request.top_n,
-            initial_cash=request.initial_cash,
-            commission_bps=request.commission_bps,
-            slippage_bps=request.slippage_bps,
-            min_order_value=request.min_order_value,
-            whole_share_orders=request.whole_share_orders,
-            provider=request.provider,
-            strategy_id=request.strategy_id,
-            universe_id=request.universe_id,
-            factor_ids=request.factor_ids,
-            weights=request.weights,
-            benchmark_symbol=request.benchmark_symbol,
-            rebalance_frequency=request.rebalance_frequency,
-            max_weight_per_symbol=request.max_weight_per_symbol,
-            sector_cap=request.sector_cap,
-            sector_map=request.sector_map,
+        metadata = execute_backtest_run(
+            request=request,
+            run_id=run_id,
+            run_dir=run_dir,
             settings=settings,
         )
     except (KeyError, ValueError) as exc:
@@ -65,66 +66,11 @@ def run_backtest(
         ) from exc
     except DataProviderUnavailableError as exc:
         raise provider_unavailable_400(exc) from exc
-    metadata = {
-        "run_id": run_id,
-        "source": result.source,
-        "trade_count": result.trade_count,
-        "order_count": result.order_count,
-        "warnings": result.warnings,
-        "timings_ms": result.timings_ms,
-        "request": {
-            "symbols": result.symbols,
-            "start": request.start,
-            "end": request.end,
-            "provider": request.provider,
-            "strategy_id": result.strategy_id,
-            "universe_id": result.universe_id,
-            "factor_ids": result.factor_ids,
-            "weights": result.weights,
-            "benchmark_symbol": result.benchmark_symbol,
-            "lookback": request.lookback,
-            "top_n": request.top_n,
-            "initial_cash": request.initial_cash,
-            "commission_bps": request.commission_bps,
-            "slippage_bps": request.slippage_bps,
-            "min_order_value": request.min_order_value,
-            "whole_share_orders": request.whole_share_orders,
-            "rebalance_frequency": request.rebalance_frequency,
-            "max_weight_per_symbol": request.max_weight_per_symbol,
-            "sector_cap": request.sector_cap,
-            "sector_map": request.sector_map,
-        },
-        "metrics": {
-            "total_return": result.total_return,
-            "sharpe": result.sharpe,
-            "max_drawdown": result.max_drawdown,
-        },
-        "attribution": result.attribution,
-        "benchmark": {
-            "symbol": result.benchmark_symbol,
-            "source": result.benchmark_source,
-            "metrics": result.benchmark_metrics.model_dump(),
-        },
-        "paths": {
-            "equity_curve": str(result.equity_curve_path),
-            "trade_blotter": str(result.trade_blotter_path),
-            "orders": str(result.orders_path),
-            "positions": str(result.positions_path),
-            "attribution": str(result.attribution_path),
-            "metrics": str(result.metrics_path),
-            "benchmark_curve": str(result.benchmark_curve_path),
-            "benchmark_metrics": str(result.benchmark_metrics_path),
-            "report": str(result.report_path),
-        },
-    }
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "metadata.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    index_run("backtest", metadata, run_dir, settings)
-    return metadata
+    return persist_run(run_dir, "backtest", metadata, settings=settings)
 
+
+def _is_completed_backtest_metadata(metadata: dict) -> bool:
+    return metadata.get("status", RunStatus.COMPLETED.value) == RunStatus.COMPLETED.value
 
 
 @router.get("/backtests", response_model=BacktestsResponse)
@@ -137,8 +83,25 @@ def list_backtests(api_runs_dir: ApiRunsDirDep, settings: SettingsDep) -> dict:
             "metrics": metadata.get("metrics", {}),
         }
         for metadata in list_run_metadatas("backtest", root, settings)
+        if _is_completed_backtest_metadata(metadata)
     ]
     return {"backtests": backtests}
+
+
+@router.get("/backtests/jobs/{run_id}", response_model=BacktestJobStateResponse)
+def backtest_job(run_id: str, backtest_job_runner: BacktestJobRunnerDep) -> dict:
+    try:
+        return backtest_job_runner.status(run_id)
+    except FileNotFoundError as exc:
+        raise not_found_404("backtest job", run_id) from exc
+
+
+@router.post("/backtests/jobs/{run_id}/cancel", response_model=BacktestJobStateResponse)
+def cancel_backtest_job(run_id: str, backtest_job_runner: BacktestJobRunnerDep) -> dict:
+    try:
+        return backtest_job_runner.cancel(run_id)
+    except FileNotFoundError as exc:
+        raise not_found_404("backtest job", run_id) from exc
 
 
 @router.get("/backtests/{run_id}", response_model=BacktestDetailResponse)
@@ -148,6 +111,11 @@ def backtest_detail(run_id: str, api_runs_dir: ApiRunsDirDep) -> dict:
     if not metadata_path.exists():
         raise not_found_404("backtest", run_id)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if not _is_completed_backtest_metadata(metadata):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "backtest_not_completed", "status": metadata.get("status")},
+        )
     benchmark_metadata = metadata.get("benchmark", {})
     request = metadata.get("request", {})
     benchmark_metrics = read_json_if_exists(run_dir / "backtests" / "benchmark_metrics.json")

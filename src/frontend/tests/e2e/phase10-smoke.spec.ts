@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+
+const apiBase = `http://127.0.0.1:${process.env.PW_BACKEND_PORT ?? "8765"}`;
 
 test.beforeEach(() => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
@@ -12,7 +14,7 @@ const routes = [
   "/experiments",
   "/paper-trading",
   "/agent-studio",
-  "/order-book",
+  "/polymarket",
   "/position-map",
   "/settings",
   "/options-screener?lang=zh",
@@ -41,7 +43,7 @@ async function waitForEnabledButton(page: Page, name: string | RegExp) {
   return button;
 }
 
-async function clickAndWaitForPost(page: Page, buttonName: string, urlPart: string) {
+async function clickAndWaitForPost(page: Page, buttonName: string | RegExp, urlPart: string) {
   const button = await waitForEnabledButton(page, buttonName);
   const [response] = await Promise.all([
     page.waitForResponse(
@@ -56,6 +58,23 @@ async function clickAndWaitForPost(page: Page, buttonName: string, urlPart: stri
 async function expectRunIdVisible(page: Page, runId: string) {
   await page.waitForLoadState("networkidle");
   await expect(page.getByText(runId)).toBeVisible({ timeout: 45_000 });
+}
+
+async function selectAllProviderControls(page: Page, value: "sample" | "polymarket") {
+  const controls = page.getByLabel("Provider");
+  const count = await controls.count();
+  for (let index = 0; index < count; index += 1) {
+    const control = controls.nth(index);
+    if ((await control.locator(`option[value="${value}"]`).count()) > 0) {
+      await control.selectOption(value);
+    }
+  }
+}
+
+async function isFutuOpenDReachable(request: APIRequestContext) {
+  const response = await request.get(`${apiBase}/api/health`);
+  const payload = (await response.json()) as { futu_opend?: { reachable?: boolean } };
+  return payload.futu_opend?.reachable !== false;
 }
 
 // The replay form lives behind the "Historical Replay" tab; retry the click
@@ -74,7 +93,7 @@ test("data explorer and backtest workflow buttons submit", async ({ page }) => {
   await page.getByRole("button", { name: "Load" }).click();
   await expect(page).toHaveURL(/data-explorer/);
 
-  await page.goto("/backtest");
+  await page.goto("/backtest?provider=sample&include_sample=1");
   const backtestResponse = await clickAndWaitForPost(page, "Run Backtest", "/api/backtests/run");
   expect(backtestResponse.status()).toBe(200);
   const backtestPayload = (await backtestResponse.json()) as { run_id: string };
@@ -83,7 +102,7 @@ test("data explorer and backtest workflow buttons submit", async ({ page }) => {
 });
 
 test("factor lab renders its research panels", async ({ page }) => {
-  await page.goto("/factor-lab");
+  await page.goto("/factor-lab?provider=sample&include_sample=1");
   await expect(page.getByRole("heading", { name: "Factor Lab" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Cross-Sectional Health" })).toBeVisible();
   await openTab(page, "Single-Ticker Timing");
@@ -102,37 +121,75 @@ test("paper replay safety lock disables submit and shows safety copy", async ({ 
   await expect(page.getByRole("button", { name: "Run Paper Trading" })).toBeDisabled();
 });
 
-test("agent task workflow submits and renders candidate details", async ({ page }) => {
-  test.setTimeout(90_000);
+test("legacy agent studio is read-only and points to Hermes", async ({ page }) => {
   await page.goto("/agent-studio");
-  const agentResponse = await clickAndWaitForPost(page, "Run task", "/api/agent/tasks");
-  expect(agentResponse.status()).toBe(200);
-  const agentPayload = (await agentResponse.json()) as { candidate_id: string };
-  await expectRunIdVisible(page, agentPayload.candidate_id);
-  await expect(page.getByRole("heading", { name: "Source Preview" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent Studio · Read-only" })).toBeVisible();
+  await expect(page.getByText(/Task submission and approve\/reject controls are intentionally unavailable/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run task" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open Hermes workbench" })).toHaveAttribute(
+    "href",
+    "/en/hermes",
+  );
 });
 
 test("prediction market workflow buttons submit", async ({ page }) => {
   test.setTimeout(120_000);
-  await page.goto("/order-book");
-  await page.getByLabel("Provider").first().selectOption("sample");
-  expect((await clickAndWaitForPost(page, "Run scanner", "/api/prediction-market/scan")).status()).toBe(200);
-  expect((await clickAndWaitForPost(page, "Generate dry arbitrage", "/api/prediction-market/dry-arbitrage")).status()).toBe(200);
-  expect((await clickAndWaitForPost(page, "Run quasi-backtest", "/api/prediction-market/backtest")).status()).toBe(200);
-  await expect(page.getByText("Opportunities")).toBeVisible();
-  expect((await clickAndWaitForPost(page, "Collect snapshots", "/api/prediction-market/collect")).status()).toBe(200);
+  await page.goto("/polymarket?provider=sample&cache_mode=prefer_cache&limit=6");
+  await selectAllProviderControls(page, "sample");
+  expect(
+    (
+      await clickAndWaitForPost(
+        page,
+        /^(Run scanner|运行扫描器)$/,
+        "/api/prediction-market/scan",
+      )
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await clickAndWaitForPost(
+        page,
+        /^(Generate dry arbitrage|生成模拟套利)$/,
+        "/api/prediction-market/dry-arbitrage",
+      )
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await clickAndWaitForPost(
+        page,
+        /^(Run quasi-backtest|运行准回测)$/,
+        "/api/prediction-market/backtest",
+      )
+    ).status(),
+  ).toBe(200);
+  await expect(page.getByText(/^(Opportunities|机会数)$/)).toBeVisible();
+  expect(
+    (
+      await clickAndWaitForPost(
+        page,
+        /^(Collect snapshots|采集快照)$/,
+        "/api/prediction-market/collect",
+      )
+    ).status(),
+  ).toBe(200);
   const timeseriesResponse = await clickAndWaitForPost(
     page,
-    "Run historical replay",
+    /^(Run historical replay|运行历史回放)$/,
     "/api/prediction-market/timeseries-backtest",
   );
   expect(timeseriesResponse.status()).toBe(200);
-  await expect(page.getByText("Historical Snapshot Replay")).toBeVisible();
-  await expect(page.getByText("Estimated profit", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^(Historical Snapshot Replay|历史快照回放)$/)).toBeVisible();
+  await expect(page.getByText(/^(Estimated profit|预计收益)$/)).toBeVisible();
   await expect(page.getByAltText("Daily Opportunity Count")).toBeVisible();
 });
 
-test("options screener scans the DTE window without manual expiration selection", async ({ page }) => {
+test("options screener scans the DTE window without manual expiration selection", async ({
+  page,
+  request,
+}) => {
   test.setTimeout(90_000);
 
   await page.goto("/options-screener?lang=zh");
@@ -145,6 +202,12 @@ test("options screener scans the DTE window without manual expiration selection"
   );
   await page.getByRole("button", { name: "开始分析" }).click();
   const response = await responsePromise;
+  if (!(await isFutuOpenDReachable(request))) {
+    expect(response.status()).toBe(503);
+    await expect(page.getByText(/\[opend_unavailable\]/)).toBeVisible();
+    await expect(page.getByText(/unable to connect to OpenD/)).toBeVisible();
+    return;
+  }
   expect(response.status()).toBe(200);
   await expect(page.getByText("扫描到期日")).toBeVisible({ timeout: 45_000 });
   await expect(page.getByText("候选合约", { exact: true })).toBeVisible();
@@ -156,7 +219,7 @@ test("factor lab and strategy catalog render Chinese labels", async ({ page }) =
   await expect(page.getByRole("heading", { name: "因子实验室" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "横截面体检" })).toBeVisible();
 
-  await page.goto("/zh/replications");
+  await page.goto("/zh/strategies");
   await page.waitForLoadState("networkidle");
   await expect(page.getByRole("heading", { name: "策略目录" })).toBeVisible();
   await expect(page.getByLabel("策略")).toBeVisible();

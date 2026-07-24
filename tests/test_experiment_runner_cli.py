@@ -1,12 +1,65 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 from typer.testing import CliRunner
 
 from quant_system.cli import app
+from quant_system.experiments import runner as runner_module
+from quant_system.experiments.models import (
+    CandidateResearchBinding,
+    ExperimentConfig,
+    FactorBlendConfig,
+    FactorWeight,
+)
+from quant_system.experiments.runner import run_experiment
 
 runner = CliRunner()
+
+
+def test_experiment_ids_are_unique_even_when_the_clock_is_identical() -> None:
+    now = datetime(2026, 7, 14, 12, 0, 0, tzinfo=UTC)
+
+    identities = {
+        runner_module._new_experiment_id("factor-repro-candidate", now)
+        for _ in range(32)
+    }
+
+    assert len(identities) == 32
+    assert all(
+        identity.startswith("factor-repro-candidate-20260714T120000000000Z-")
+        for identity in identities
+    )
+
+
+def test_experiment_namespace_collision_retries_without_overwrite(
+    tmp_path, monkeypatch
+) -> None:
+    now = datetime(2026, 7, 14, 12, 0, 0, tzinfo=UTC)
+    collision = "factor-repro-candidate-20260714T120000000000Z-aaaaaaaaaaaa"
+    unique = "factor-repro-candidate-20260714T120000000000Z-bbbbbbbbbbbb"
+    collision_dir = tmp_path / "experiments" / collision.replace("-", "_")
+    collision_dir.mkdir(parents=True)
+    marker = collision_dir / "keep.txt"
+    marker.write_text("do not overwrite\n", encoding="utf-8")
+    identities = iter([collision, unique])
+    monkeypatch.setattr(
+        runner_module,
+        "_new_experiment_id",
+        lambda _name, _now: next(identities),
+    )
+
+    experiment_id, storage = runner_module._reserve_experiment_storage(
+        output_dir=tmp_path,
+        experiment_name="factor-repro-candidate",
+        now_utc=now,
+    )
+
+    assert experiment_id == unique
+    assert storage.experiments_dir.is_dir()
+    assert storage.reports_dir.is_dir()
+    assert marker.read_text(encoding="utf-8") == "do not overwrite\n"
 
 
 def test_experiment_run_sample_cli_generates_comparison_and_agent_summary(tmp_path) -> None:
@@ -127,3 +180,30 @@ def test_experiment_run_config_cli_uses_json_config_and_walk_forward(tmp_path) -
     assert {"fold_id", "train_start", "validation_start", "validation_end"}.issubset(
         folds.columns
     )
+
+
+def test_candidate_binding_is_persisted_in_config_and_agent_summary(tmp_path) -> None:
+    binding = CandidateResearchBinding(
+        candidate_id="cand-receipt",
+        manifest_digest="c" * 64,
+        factor_id="momentum",
+    )
+    config = ExperimentConfig(
+        experiment_name="candidate-receipt",
+        symbols=["SPY", "QQQ"],
+        start="2024-01-02",
+        end="2024-02-15",
+        factor_blend=FactorBlendConfig(
+            factors=[FactorWeight(factor_id="momentum")]
+        ),
+        candidate_binding=binding,
+    )
+
+    result = run_experiment(config, output_dir=tmp_path)
+
+    persisted_config = json.loads(result.config_path.read_text(encoding="utf-8"))
+    agent_summary = json.loads(
+        result.agent_summary_path.read_text(encoding="utf-8")
+    )
+    assert persisted_config["candidate_binding"] == binding.model_dump()
+    assert agent_summary["candidate_binding"] == binding.model_dump()

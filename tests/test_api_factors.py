@@ -172,6 +172,34 @@ def test_factor_run_rejects_explicit_provider_fetch_failure(
     assert not (tmp_path / "api_runs" / "factors").exists()
 
 
+def test_factor_lab_rejects_explicit_provider_fetch_failure(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(
+        data=_isolated_data_settings(tmp_path),
+        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token")),
+    )
+
+    def fail_fetch(self, symbols, *, start, end, interval="1d"):
+        raise RuntimeError("tiingo offline")
+
+    monkeypatch.setattr(
+        "quant_system.data.provider_factory.TiingoEODProvider.fetch_ohlcv",
+        fail_fetch,
+    )
+    client = TestClient(
+        create_app(settings=settings, output_dir=tmp_path),
+        raise_server_exceptions=False,
+    )
+
+    response = client.get("/api/factors/lab?provider=tiingo")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "provider_unavailable"
+    assert response.json()["detail"]["provider"] == "tiingo"
+
+
 def test_factor_run_records_single_symbol_warning(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 

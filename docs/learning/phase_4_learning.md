@@ -90,6 +90,9 @@ walk-forward 是一种滚动验证方式。
 - `src/quant_system/experiments/storage.py`：保存配置、结果、folds 和 AI 摘要。
 - `src/quant_system/experiments/reporting.py`：生成实验对比报告。
 - `src/quant_system/cli.py`：提供 `experiment run-sample` 和 `experiment run-config`。
+  `run-config` 默认只使用已注册因子；若要纳入人工批准的 Agent 候选因子，
+  需要显式传 `--include-approved-candidates`，并可用 `--candidates-dir` 指向
+  非默认候选目录。
 
 ## 常见错误
 

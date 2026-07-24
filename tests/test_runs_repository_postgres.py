@@ -94,7 +94,14 @@ def test_postgres_run_index_backfills_lists_updates_and_prunes(tmp_path: Path) -
 
         rows = rr.list_run_metadatas("backtest", root, settings)
         assert rows[0]["run_id"] == second["run_id"]
+        assert rows[0]["source"] == "sample"
+
+        second_metadata_path = root / second["run_id"] / "metadata.json"
+        second_metadata_path.write_text("{broken-json", encoding="utf-8")
+        rows = rr.list_run_metadatas("backtest", root, settings)
+        assert rows[0]["run_id"] == second["run_id"]
         assert rows[0]["source"] == "tiingo"
+        second_metadata_path.write_text(json.dumps(updated), encoding="utf-8")
 
         for path in (root / first["run_id"]).iterdir():
             path.unlink()

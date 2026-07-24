@@ -149,6 +149,39 @@ def test_source_breakdown_merges_manual_and_strategy() -> None:
     assert breakdown["strategy:cross_sectional_top_n"] == pytest.approx(0.4)
 
 
+def test_manual_sleeve_cash_tracks_manual_and_legacy_strategy_fills() -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    account.sleeve_cash = {"manual": 75_000.0, "sleeve-abc": 25_000.0}
+
+    account.apply_fill(_fill("AAPL", OrderSide.BUY, 10, 100.0), source="manual")
+    account.apply_fill(
+        _fill("MSFT", OrderSide.BUY, 5, 200.0),
+        source="strategy:cross_sectional_top_n",
+        kind="rebalance_fill",
+    )
+    account.apply_fill(
+        _fill("NVDA", OrderSide.BUY, 2, 500.0),
+        source="strategy:sleeve-abc",
+        kind="sleeve_execution_fill",
+    )
+
+    assert account.cash == pytest.approx(97_000.0)
+    assert account.sleeve_cash["manual"] == pytest.approx(73_000.0)
+    assert account.sleeve_cash["sleeve-abc"] == pytest.approx(25_000.0)
+
+
+def test_stale_manual_sleeve_cash_is_recomputed_on_load() -> None:
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    payload = account.model_dump(mode="json")
+    payload["cash"] = 120_000.0
+    payload["sleeve_cash"] = {"manual": 50_000.0, "sleeve-abc": 25_000.0}
+
+    restored = PaperAccount.model_validate(payload)
+
+    assert restored.sleeve_cash["manual"] == pytest.approx(95_000.0)
+    assert restored.sleeve_cash["sleeve-abc"] == pytest.approx(25_000.0)
+
+
 def test_manual_order_via_service_updates_account() -> None:
     account = PaperAccount.open_new(initial_cash=1_000_000.0)
     service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 200.0}))
@@ -193,9 +226,7 @@ def test_unfavorable_limit_order_is_queued() -> None:
 
 def test_pending_buy_limit_order_reserves_cash() -> None:
     account = PaperAccount.open_new(initial_cash=1_000.0)
-    service = PaperAccountService(
-        price_source=_StubPriceSource({"AAPL": 200.0, "MSFT": 500.0})
-    )
+    service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 200.0, "MSFT": 500.0}))
 
     pending = service.place_manual_order(
         account,
@@ -624,6 +655,62 @@ def test_storage_recovers_valid_backup_when_account_file_is_corrupt(tmp_path) ->
     corrupt_files = list(storage.account_dir.glob("account.corrupt-*.json"))
     assert len(corrupt_files) == 1
     assert corrupt_files[0].read_text(encoding="utf-8") == "{not-json"
+
+
+def test_storage_load_uses_backup_without_mutating_corrupt_primary(tmp_path) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    original = PaperAccount.open_new(initial_cash=100_000.0)
+    original.record_event(kind="note", note="read-only backup")
+    storage.save(original)
+    storage.account_backup_path.write_text(
+        storage.account_path.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    storage.account_path.write_text("{not-json", encoding="utf-8")
+    before = {
+        path.name: path.read_bytes() for path in storage.account_dir.iterdir() if path.is_file()
+    }
+
+    account = storage.load()
+
+    after = {
+        path.name: path.read_bytes() for path in storage.account_dir.iterdir() if path.is_file()
+    }
+    assert account is not None
+    assert account.cash == pytest.approx(100_000.0)
+    assert before == after
+    assert storage.account_path.read_text(encoding="utf-8") == "{not-json"
+    assert list(storage.account_dir.glob("account.corrupt-*.json")) == []
+    assert storage.last_warning == "paper_account_primary_corrupt_using_backup"
+
+
+def test_storage_load_rejects_account_id_mismatch_as_corrupt_without_writes(
+    tmp_path,
+) -> None:
+    storage = PaperAccountStorage(tmp_path, account_id="expected-account")
+    foreign_account = PaperAccount.open_new(account_id="foreign-account")
+    storage.account_dir.mkdir(parents=True)
+    storage.account_path.write_text(
+        json.dumps(foreign_account.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+    before = storage.account_path.read_bytes()
+
+    account = storage.load()
+
+    assert account is None
+    assert storage.last_warning == "paper_account_storage_corrupt"
+    assert storage.account_path.read_bytes() == before
+
+
+def test_storage_save_rejects_account_id_mismatch_before_writing(tmp_path) -> None:
+    storage = PaperAccountStorage(tmp_path, account_id="expected-account")
+    foreign_account = PaperAccount.open_new(account_id="foreign-account")
+
+    with pytest.raises(ValueError, match="account id mismatch"):
+        storage.save(foreign_account)
+
+    assert not storage.account_dir.exists()
 
 
 def test_storage_save_keeps_existing_account_when_atomic_replace_fails(

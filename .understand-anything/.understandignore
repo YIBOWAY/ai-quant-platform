@@ -1,0 +1,79 @@
+# .understandignore — patterns for files/dirs to exclude from analysis
+# Syntax: same as .gitignore (globs, # comments, ! negation, trailing / for dirs)
+# Lines below are suggestions — uncomment to activate.
+# Use ! prefix to force-include something excluded by defaults.
+#
+# Built-in defaults (always excluded unless negated):
+#   node_modules/, .git/, dist/, build/, obj/, *.lock, *.min.js, etc.
+#
+
+.understand-anything/
+.agents/
+/data/
+/logs/
+/reports/
+/output/
+.claude/
+.codegraph/
+.omo/
+.sisyphus/
+.superpowers/
+
+# --- From .gitignore (uncomment to exclude) ---
+
+# .env
+# *.py[cod]
+# .pytest_cache/
+# .ruff_cache/
+# .mypy_cache/
+# *.egg-info/
+# .worktrees/
+# worktrees/
+# /logs/
+# /data/
+# /reports/
+# /output/
+# .claude/
+# .agents/
+# .codegraph/
+# .omo/
+# .sisyphus/
+# .superpowers/
+# Microsoft/
+# .futu-ui-backend.err.log
+# .futu-ui-backend.out.log
+# .futu-ui-frontend.log
+# src/frontend/test-results/
+# src/frontend/playwright-report/
+# .playwright-cli/
+# .playwright-mcp/
+# src/frontend/.tmp/
+# .tmp/
+# quantum-core-algorithmic-trading-platform.zip
+# src/quantum-core-algorithmic-trading-platform.zip
+# *.tsbuildinfo
+
+# --- Detected directories (uncomment to exclude) ---
+
+# docs/
+# scripts/
+# tests/
+
+# --- Test file patterns (uncomment to exclude) ---
+
+# JS / TS
+# *.test.*
+# *.spec.*
+# *.snap
+# C# / .NET
+# **/*Tests.cs
+# **/*Test.cs
+# **/*Fixture.cs
+# **/*.Tests.csproj
+# Java / Kotlin
+# **/src/test/**
+# **/*Test.java
+# **/*IT.java
+# **/*Spec.kt
+# Go
+# **/*_test.go

@@ -7,14 +7,21 @@ import { useForm, useWatch, type FieldError } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import type {
+  BacktestJobStateResponse,
   BacktestRunResponse,
   FactorMetadata,
   StrategyMetadata,
   UniverseDefinition,
 } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
+import { isBacktestJobState, waitForBacktestJob } from "@/lib/backtestJobs";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
+import {
+  TerminalToolbarButton,
+  terminalInputClass,
+  terminalInputCompactClass,
+} from "@/components/ui/primitives";
 import { FutuUnavailableHint, futuOptionLabel } from "./FutuProviderHint";
 
 type Locale = "en" | "zh";
@@ -169,10 +176,8 @@ function recentDefaults(): BacktestFormValues {
   };
 }
 
-const inputClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
-const inputClassCompact =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-2 py-2 font-data-mono text-text-primary";
+const inputClass = terminalInputClass;
+const inputClassCompact = terminalInputCompactClass;
 const fieldsetClass = "flex flex-col gap-3 rounded-lg border border-border-subtle p-3";
 const legendClass = "px-1 font-label-caps text-text-secondary";
 
@@ -202,7 +207,7 @@ export function BacktestForm({
     defaultValues: defaults,
   });
   const mutation = useMutation({
-    mutationFn: (values: BacktestFormValues) => {
+    mutationFn: async (values: BacktestFormValues) => {
       const { max_weight_per_symbol, ...rest } = values;
       const body: Record<string, unknown> = {
         ...rest,
@@ -213,7 +218,11 @@ export function BacktestForm({
       if (maxWeight !== undefined) {
         body.max_weight_per_symbol = maxWeight;
       }
-      return apiPost<BacktestRunResponse>("/api/backtests/run", body);
+      const payload = await apiPost<BacktestRunResponse | BacktestJobStateResponse>(
+        "/api/backtests/run",
+        body,
+      );
+      return isBacktestJobState(payload) ? waitForBacktestJob(payload) : payload;
     },
     onSuccess: (payload) => {
       toast.success(text.created(payload.run_id));
@@ -434,13 +443,14 @@ export function BacktestForm({
       </fieldset>
 
       {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-      <button
-        className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+      <TerminalToolbarButton
+        className="h-9"
         disabled={!isHydrated || mutation.isPending}
         type="submit"
+        tone="info"
       >
         {mutation.isPending ? text.running : text.runBacktest}
-      </button>
+      </TerminalToolbarButton>
     </form>
   );
 }

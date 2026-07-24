@@ -11,16 +11,18 @@ and avoid claiming completion without running the relevant checks.
 src/quant_system/
   api/                    Local FastAPI API and route modules.
   backtest/               Equity backtest engine and reports.
+  brief/                  Deterministic daily-brief snapshots and repository.
   config/                 Settings, paths, safety flags, provider config.
   data/                   Equity market data providers and schemas.
   execution/              Paper account (persistent), paper trading replay,
                           order manager, paper broker, price source.
   experiments/            Experiment configs, storage, summaries.
   factors/                Factor definitions, registry, pipeline.
+  news/                   Read-only AI HOT news client, models, optional cache.
   options/                Futu read-only options research modules.
   prediction_market/      Read-only Polymarket / prediction market research.
   risk/                   Risk limits and checks.
-  storage/                DuckDB options cache + optional PostgreSQL run index.
+  storage/                DuckDB cache + PostgreSQL migrations/helpers/run index.
   strategies/             Strategy metadata registry (catalog entries).
 
 src/frontend/
@@ -38,221 +40,270 @@ docs/
   futu/                   Futu read-only market data docs.
   options/                Options screener / radar docs.
   polymarket/             Prediction market docs.
+  superpowers/plans/      Active implementation plan and historical plan inputs.
 
 tests/                    Python unit and API tests.
 scripts/                  Local verification and refresh scripts.
-scripts/sql/              Plain SQL migrations for the optional run index.
+scripts/sql/              Plain SQL migrations for optional local PostgreSQL mirrors.
 data/                     Local cache, fixtures, generated research outputs.
 ```
 
-## Backtest Strategy Registry
+## Hermes Integration Route
 
-Backtest-engine strategies are dispatched by `strategy_id` in
-`src/quant_system/backtest/pipeline.py` (`_BACKTEST_STRATEGY_BUILDERS`). To add a
-runnable backtest strategy: register metadata in
-`src/quant_system/strategies/registry.py` with `result_type="backtest"` and add a
-builder entry in the pipeline. It then appears automatically in the Backtester
-and Strategy Catalog. Currently runnable: `cross_sectional_top_n`,
-`mean_reversion_top_n`. `reversal_momentum` is `result_type="replication"` and
-runs through its own endpoint.
+- This repository is the domain backend for
+  `/Users/sunyibo/programs/Hermes-quant-agent`.
+- The active cross-repo roadmap lives in
+  `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`.
+- HQA Slices 9A-9G, the read-only mini 9H artifact shelf, full 9H
+  automation/notifications, and D-31 Wave 2 Scene-B are delivered. The real
+  Scene-B flow completed final receipt -> Gate 3 prepare -> human diff/commit ->
+  reviewed/cleanup, and promoted commit `524e791` is merged. The professional
+  Hermes default shell now includes an official-API persisted-session read
+  surface (`sessionRead=true`) through a server-side GET-only BFF. D-31 Wave 3
+  has also delivered migration 005's durable command/event/outbox/run-link
+  ledger, a deterministic **reconcile-only** connector-worker framework, and
+  the read-only Unified Results catalog/detail UI. This does not prove command
+  dispatch: real Hermes chat/provider evidence, Hermes approval mutations,
+  exact Hermes-run links, full results cutover, and legacy-page retirement
+  remain blocked behind independent evidence gates.
+  Slice 9E lives in HQA and reuses Slice 9D's price seam. Slice 9D's
+  `data prices` seam is strictly read-only Futu/QFQ/1d JSON, capped at 25
+  symbols and 500 calendar days, with no sample/local/Tiingo/Longbridge
+  fallback. The platform 2026-07-08 frontend plan is the Slice 0-8 record and
+  future UI backlog.
+- The platform consumes Hermes feed schema 1.0 with exactly three sources and
+  schema 1.1 with exactly six: risk, prediction, foresight, weekly review,
+  opportunity summary, and automation status. Whole-feed freshness is 10,800
+  seconds. Full 9H scheduling and outbound delivery live in HQA; this platform
+  has no Hermes scheduler, outbound worker, new POST route, or new database
+  migration for that slice.
+- The HQA 2026-07-07 Phase 1a-4 plan is superseded implementation material.
+  Do not follow its task templates directly.
+- `docs/phases/phase_15_iteration_roadmap.md` is reference material only; do
+  not continue it as a standalone product roadmap.
+- Candidate factors must not reach resident paper/live paths from `.candidate`
+  files. One-shot research backtests may explicitly load approved candidates;
+  paper sleeve allocation requires promoted, registered, tested factor code.
+- Canonical candidate root is `resolve_candidates_dir(resolve_agent_output_dir())`.
+  Default agent output is the repo-anchored absolute path
+  `<repo>/data/agent_run`; candidates live under
+  `<repo>/data/agent_run/agent/candidates`. Override only via
+  `QS_AGENT_OUTPUT_DIR` (or explicit injectable/CLI agent-output root). Process
+  CWD and `QS_DATA_DIR` never relocate the candidate pool. API, CLI, one-shot
+  loader, migration, and Gate 3 all share that resolver.
+- Candidate reads surface mutually exclusive integrity states: `verified`,
+  `migration_required`, and `corrupt`. `legacy_unbound` is non-authority:
+  it never authorizes one-shot load, approval, or promotion. Until a separate
+  human authorizes `agent migrate-candidates --apply` with an explicit
+  `--backup-dir`, each new real migration stays dry-run-only. One bounded Wave 2
+  migration was explicitly authorized and applied; that authorization does not
+  carry forward to future candidates or conflicts.
+- Gate 2 review is expected-digest plus `expected_status=pending` CAS with a
+  non-empty note. HQA must pass human-supplied
+  `candidate-id + expected-digest + expected-status=pending + note` and must
+  never refetch/substitute observed values during approve.
+- Scene-B Gate 1 is enforced in HQA, not inferred from a platform review: HQA
+  persists the exact reviewed source digest/confirmation and binds it to the
+  returned candidate ID plus manifest digest before its Gate 2 caller can
+  approve. External source ingestion reads binary bytes, round-trips them
+  unchanged into the candidate, and returns a verified `source_sha256` that HQA
+  must match before binding. The raw platform review API is a Gate 2 primitive
+  only; `agent list-candidates` is diagnostic and emits no approval command.
+- Gate 3 public prepare requires `--candidate-id`, `--expected-digest`, and
+  `--base-commit`; stdout is the four-field
+  `{promotion_id, worktree, patch, manifest}` payload. Status/cleanup locate
+  state only by `--promotion-id`; destructive cleanup needs durable reviewed-
+  commit evidence or explicit `--abandon`. Prepare materializes only into an
+  isolated managed review worktree and never commits, merges, pushes, or
+  mutates unrelated main-worktree dirt. Active status must safe-read and hash
+  the prepared patch, re-attest the exact three-file bytes/modes/dirty set/Git
+  diff, and return manifest/patch/candidate/base/path provenance. A drifted
+  prepared workspace is never reported as awaiting human commit.
+- Experiment runs allocate `<name>-<UTC microseconds>-<12hex>` identities and
+  atomically reserve both experiment and report directories. Collision means
+  retry, never reuse or overwrite. Scene-B receipts must bind persisted config,
+  summary and report to that unique namespace and reject synthetic providers.
+- Later frontend convergence should fold `/factor-lab`, `/backtest`,
+  `/experiments`, and `/agent-studio` into the Hermes workbench only after
+  approval and result-evidence parity. The delivered Hermes Approvals surface
+  is read-only (`approvalMutations=false`); mutations stay disabled until a
+  bridge/approval plan lands.
+  The retained `/agent-studio` route is also read-only candidate inspection:
+  it must not mount `AgentTaskForm` or expose task/review controls.
+- The current Hermes transport is the official API Server on explicit HTTP
+  loopback (default `127.0.0.1:8642`), not the drifted old TUI contract. The
+  session pages read through the platform API/BFF and must never receive the
+  full-authority Hermes Bearer key. The key is loaded server-side from an
+  owner-only regular file. Loopback is a network boundary, not OS-user auth;
+  while this local platform has no user authentication, bind it only to
+  `127.0.0.1`/`::1`. Health/capability/session reads do not call a provider.
+- Migration 005 now provides the PostgreSQL command/event/outbox/run-link
+  ledger and schema metadata, including tested claim/lease/heartbeat primitives.
+  Migration 006 is a separate exact workflow-binding schema; until its live
+  readiness and the HQA authority binding are verified, every claim path must
+  fail closed. Its presence in source never authorizes the runnable worker to
+  claim or dispatch.
+  **Live 006/007 applied 2026-07-21** on `quantplatform` after explicit authorization
+  (backup + idempotent replay + readiness evidence in
+  `docs/audits/2026-07-21-v4-live-migrate-006-007.md`). Do **not** treat schema
+  readiness as write authorization. V4 006 is Scheme A:
+  `UNIQUE(attempt_id)` + `UNIQUE(task_id, attempt_number)`; readiness refuses the
+  obsolete `UNIQUE(task_id)`-only shape. Additive 007 is the session registry.
+  `hermes/composer_readiness.py` is the single blocker/readiness surface.
+  **Public** write standing default OFF (V8-M6 hermetic G7/G8 surface ACCEPT@a2953cb; operator open is explicit; full V8 release stamp still requires fresh auth; `release_authorized=false`). Local single-user may open
+  `QS_LOCAL_MUTATION_ENABLED` / `QS_LOCAL_MUTATION_COMPOSER_OPEN` (and FE
+  `QS_HERMES_CHAT_ENABLED` draft) under the trading kill switch — that is local
+  dark enablement, not public cutover and not Plan-V6 full-UI acceptance.
+  Typed `research.*` actions remain fail-closed for browser research submit until
+  their Gate; L2a uses `conversation_turn` + payload ref claim path (migration
+  `008_l2a_conversation_turn_claim.sql`) instead of putting prompts on `/act`.
+  Cross-repo status (2026-07-23): V0 formal DONE (`release_authorized=false`),
+  V1 code DONE / V1.2A live role+RLS PARTIAL, V2 source accepted / live durable
+  OFF, V3 HQA dark install DONE, **V4 live schema ACCEPT**, **V5 dark
+  claim/dispatch ACCEPT**, **V6 local dark enablement ACCEPT**, **L2a-Send
+  M1+M2 ACCEPT**, **L2b-Observe M1+M2 ACCEPT**, **L3a-Transcript M1 ACCEPT**,
+  **L3b-Transcript-Polish M1 ACCEPT**, **L4a-Task-Drawer M1 ACCEPT** (command
+  Activity from workspace `commands[]`; Task/Attempt authority still empty),
+  **L4b-SSE-Follow M1 ACCEPT** (BFF `GET …/follow/stream` + shared FE follow
+  spine; SSE preferred / poll fallback; Activity consumes spine; no assistant
+  bodies on follow), **L5a-Hermes-Approval-Observe M1 ACCEPT** (snapshot
+  `approvals=[]` + `command_approval=unavailable`; Composer waits on shared
+  spine; read-only Approvals panel; no allow/deny write; ≠ Gate 1/2/3),
+  **L5b-Authority-Projection M1 ACCEPT** (honest empty Task/Attempt/Run/result
+  slots + health on spine; read-only Authority panel; no invented HQA rows),
+  **L5c-Workbench-A11y M1 ACCEPT** (FE-only shell a11y: workbench region landmark,
+  responsive pad, collapse/long-id contracts, composer focus-visible;
+  marker `data-hermes-workbench-a11y=l5c-m1`; no mutation routes).
+  **V7a–V7g-A-M1 ACCEPT** (exact allow_once|deny CAS + hermetic respond_approval release/signal + hermetic Run-scoped stop with §5.5 layered receipt + durable approval projector + Domain Gate 1/2/3 surfaces + typed results on spine + hermetic Vertical A options bind → Task/Attempt/Run + typed result → completed|completed_degraded; sample/real fail-closed; no always-allow; Gates ≠ command-approval ≠ results; no Task invention from conversation.turn; no catalog-on-spine; zero live Futu/orders). Next: V7g-A-M2 live Futu RO → V7g-B;
+  full operator V8 release stamp still closed (`release_authorized=false`; standing public default OFF). See HQA `docs/README.md`, L2a ADR, and platform audits
+  `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
+  `docs/audits/2026-07-21-v6-local-off-to-on.md`.
+  Connector worker CLI **defaults to `reconcile_only`** (LISTEN/NOTIFY + scan +
+  expired-lease). `--mode supervised_dispatch` claims with a real
+  `HttpHermesDispatchAdapter` (or injected port in tests). Empty queue must
+  never call an LLM. Do not implement Hermes cron prompt polling as a queue.
+  Platform must never `import hqa`; Intent Payload Store I/O goes through the
+  subprocess CLI port (`QS_INTENT_PAYLOAD_*`). Owner gate is loopback cookie +
+  CSRF only; default `accepted_origin` is first CORS entry
+  (`http://127.0.0.1:3001` — FE port). FE workspace client uses same-origin
+  `/api/*` rewrites, not absolute `:8765` with credentials omit. Messages ids
+  must be Hermes API sessions (`run_…`); never registry `web_` / workspace `wm_`.
 
-Persistent paper-account rebalancing is a narrower capability. A strategy must
-set `supports_account_rebalance=true` in `strategies/registry.py` before
-`POST /api/paper/account/rebalance` and `AccountTradePanel` will offer it. Keep
-that flag false for research replications or strategies whose account execution
-path has not been implemented and tested.
 
-Factor development is code-first. Do not add a frontend expression builder for
-ad-hoc factor formulas; implement and test new factor logic in
-`src/quant_system/factors/`, register it in the backend factor registry, and let
-Factor Lab, Backtester, and Strategy Catalog consume the registered metadata.
+## Core Engineering Rules
 
-Backtest sector caps are API/code-level controls and must be paired with a
-`sector_map`; requests that set `sector_cap` without `sector_map` are rejected.
-The frontend Backtester exposes the safer per-symbol cap only.
+### Data, research, and factors
 
-Backtest order realism controls are explicit and default-compatible:
-`min_order_value` defaults to `0`, and `whole_share_orders` defaults to `false`.
-When whole-share mode is enabled, both generated order quantities and
-cash-constrained partial fills are floored to whole shares.
+- Explicit providers are strict: `sample`, `futu`, or `tiingo`. An unavailable
+  requested real provider must fail clearly, never silently become sample.
+- Factor development is code-first. Register backend factor code; do not add a
+  free-form frontend expression builder.
+- A runnable backtest strategy needs both registry metadata and a pipeline
+  builder. Paper-account rebalance support is a separate, explicit capability.
+- Candidate files may be loaded only for explicit one-shot research after
+  digest-bound approval re-verification. Resident paper/live paths use
+  promoted, registered, tested factors only.
+- Hermes generates source artifacts. The platform may ingest/review/promote
+  them deterministically, but must not revive a platform-side LLM runner.
+  Candidate publication is immutable after atomic publish; same-ID retries are
+  idempotent only for the same manifest digest.
 
-Reversal/momentum replication runs (`result_type="replication"`) persist under
-`data/api_runs/replications/<run_id>/` as `metadata.json` + `result.json`.
-`POST /api/replications/reversal-momentum/run` returns a `replication-*`
-`run_id`; `GET /api/replications/reversal-momentum/{run_id}` and the frontend
-route `/replications/[runId]` read it back. These runs are file-persisted but
-are not part of the optional PostgreSQL run index, whose schema currently
-covers only backtest/factor/paper kinds.
+### Storage and PostgreSQL
 
-## Experiments Provider Semantics
+- Research run artifacts remain file-backed under `data/api_runs/`; optional
+  PostgreSQL run rows are an index, not a replacement for their artifacts.
+- All paper-account API, CLI, and operations paths must use
+  `build_paper_account_repository`; never instantiate a storage backend to
+  bypass the selected `file` / `mirror` / `canonical` mode.
+- Mirror writes are best effort and file-authoritative. Canonical mode is
+  database-authoritative and must fail closed for mutations when PostgreSQL is
+  unavailable. A missing canonical account requires explicit backfill; ordinary
+  GET/mutation paths must not bootstrap a replacement account. Never silently
+  change modes.
+- Repository `load` is observational. Corrupt-file preservation/restoration
+  belongs to a locked mutation path, never an unlocked snapshot/CLI read.
+- API/CLI/HQA paper-account observations must use `PaperAccountSnapshotReader`
+  through the repository factory; do not read account JSON, Parquet snapshots,
+  or PostgreSQL audit snapshots as an alternate current-account source.
+- Treat `PaperAccount.ledger` as the account event fact. Migrations/backfills
+  must preserve ledger, pending orders, current positions, ownership, and
+  audit snapshots rather than copying only cash/positions.
+- SQL migrations live in `scripts/sql/`, run in lexical order, and must be
+  idempotent. Default tests must not access the user's database; PostgreSQL
+  integration tests require an explicit throwaway `QS_TEST_DATABASE_URL`.
 
-`POST /api/experiments/run` accepts `provider=sample|futu|tiingo`. The
-frontend defaults to `futu`, and the backend builds the provider through
-`build_ohlcv_provider`; an explicitly unavailable real provider returns
-`400 provider_unavailable` instead of silently falling back to sample data. The
-actual source is persisted to `agent_summary.data.source`, and `/experiments`
-"Send to Backtest" preserves that source when constructing the `/backtest`
-link. Old experiments without `data.source` are treated as `sample`. The run
-request also accepts a `walk_forward` object (`enabled`, `train_bars`,
-`validation_bars`, `step_bars`); the frontend keeps it off by default and only
-generates `walk_forward_folds.parquet` when the user explicitly enables
-Walk-forward folds. Experiment detail cards also render
-`experiment_config.factor_blend` as a read-only "Strategy under test" summary;
-this makes the fixed factor blend visible but does not add UI-side strategy
-editing.
+### Paper and execution safety
 
-Equity data provider overrides are intentionally strict. `build_ohlcv_provider`
-only accepts explicit `sample`, `futu`, or `tiingo` requests. Unknown explicit
-providers, and unavailable explicit real providers, must return
-`400 provider_unavailable`; they must not silently fall back to `sample`. Default
-provider fallback may still use a clearly labelled sample response for read-only
-market-data viewing when no provider override was supplied.
+- Persistent paper-account mutations use real market prices only: Futu first,
+  then an explicitly real cached/last-close source. Never fill with sample data.
+- The persistent-account freeze and global replay kill switch are different
+  controls; do not conflate them.
+- Strategy-sleeve signals do not auto-execute. Preserve cash/lot ownership,
+  journal/recovery semantics, and explicit processing gates.
+- `paper strategies observations` is a CLI-only, bounded fact read. It must not
+  enter account repository/provider/recovery paths, mutate files, or compute
+  whether an HQA opportunity was missed.
+- No paper feature authorizes broker/live execution.
 
-## Optional PostgreSQL Run Index
+### Frontend and Hermes
 
-Backtest/factor/paper runs are file-based under `data/api_runs/`. An optional
-PostgreSQL index (`storage/database.py`, `storage/runs_repository.py`,
-`scripts/sql/001_runs_index.sql`) speeds up listing. Off by default; controlled
-by `QS_DATABASE_ENABLED` / `QS_DATABASE_URL` / `QS_DATABASE_CONNECT_TIMEOUT_SECONDS`
-/ `QS_DATABASE_AUTO_MIGRATE`; default connect timeout is 1 second. Startup
-migration/backfill runs in a background thread, healthy short-lived connections
-may proceed concurrently, failed probes enter a short cooldown, and list endpoints
-must keep falling back to the filesystem when the database is off, slow, or
-unreachable. Tests must not touch a real database
-(`tests/conftest.py` forces it off). Never run `npm run build` while the
-frontend dev server is running — they share `src/frontend/.next` and the build
-corrupts the dev server.
+- Follow the active slice in the frontend/Hermes plan. Old P0-P4 templates are
+  archived inputs, not executable instructions.
+- `lib/navConfig.ts` is the navigation route/order source of truth. Keep copy
+  localized in the rendering components unless the active plan changes it.
+- `/hermes` is the reversible default read-only COO workbench backed by
+  `GET /api/hermes/artifacts` and the candidate read API. It renders Today,
+  Tasks, Approvals, Results, risk, prediction, foresight, weekly, opportunity,
+  and automation facts. `/hermes/sessions` additionally reads persisted Hermes
+  sessions through the official-API GET-only BFF. There is no
+  `POST /api/agent/tasks`, fake async job, approval mutation, or enabled
+  composer.
+- Keep `sessionRead=true` observational. The read-only Unified Results
+  preview/catalog is visible, while `unifiedResultsCutoverAccepted=false`;
+  `chat`, `execution`, `approvalMutations`, and `legacyRedirects` remain hard
+  false until their independent evidence gates land. Read
+  `docs/guides/hermes-sessions.md` before touching the bridge or deployment.
+- “Read-only AI news” means no research/trading/account mutation; successful
+  AI HOT GETs intentionally best-effort update the optional news item/fetch
+  cache. `/brief` live rendering may therefore contact AI HOT and write cache
+  rows even though it never creates a brief snapshot without the explicit save
+  action.
+- Keep `/factor-lab` and the read-only `/agent-studio` inspection route until
+  approval and evidence parity is proven; do not delete deep links or restore
+  legacy Agent Studio mutations. A page-scoped Agent Studio redirect may exist
+  only as an independently reversible, default-off gate
+  (`QS_HERMES_AGENT_STUDIO_REDIRECT_ENABLED=true`); do not enable it or any
+  global legacy redirect without exact parity evidence and user approval.
+- Server reads use the existing `lib/api.ts` pattern; client mutations use
+  `lib/apiClient.ts` / TanStack Query. Preserve additive API compatibility.
 
-## Paper Account (Interactive Auto + Manual Trading)
+### Deep references
 
-Separate from the immutable historical-replay runs (`POST /api/paper/run`),
-there is a single **persistent paper account** funded at $1,000,000. Manual
-orders and strategy rebalances both land in the same account and are reflected
-on the Position Map.
-
-- Account model + append-only ledger: `src/quant_system/execution/account.py`
-  (`PaperAccount`, `AccountPosition` with `avg_cost`, `LedgerEntry`). The account
-  snapshot and its complete audit ledger are persisted together.
-- Persistence: `src/quant_system/execution/account_storage.py` writes
-  `data/api_runs/paper_account/<account_id>/account.json` +
-  `positions_snapshot.parquet` (atomic write with retry; no non-atomic
-  overwrite fallback), keeps `account.json.bak` before overwrites, restores a
-  valid backup if the main JSON is corrupt, preserves corrupt files as
-  `account.corrupt-*.json`, and archives on reset.
-- Pricing: `src/quant_system/execution/price_source.py` (`PaperPriceSource`) —
-  Futu real-time snapshot first (`fetch_market_snapshots`), falls back to the
-  most recent real historical close from local cache / Tiingo when OpenD is
-  down, and never uses sample/demo prices. `price_kind` (`futu_snapshot` /
-  `last_close`) flows to the ledger and UI.
-- Service: `src/quant_system/execution/account_service.py` — manual orders and
-  strategy rebalance share one `OrderRequest -> RiskEngine -> PaperBroker ->
-  account.apply_fill` primitive. Rebalance is plan-then-commit: it dry-runs the
-  whole plan on a deep copy and aborts with no mutation if any leg is rejected
-  (prevents "sold everything then failed to buy"). Every current holding and
-  target symbol must have a finite positive paper price before a rebalance plan
-  can be built; missing or invalid prices abort instead of silently skipping a
-  leg.
-- API (`src/quant_system/api/routes/paper.py`): `GET /api/paper/account`,
-  `POST /api/paper/account/orders` (quantity or notional, optional limit),
-  `POST /api/paper/account/orders/process` (check queued paper limit orders),
-  `POST /api/paper/account/orders/{order_id}/cancel` (cancel one queued limit order),
-  `POST /api/paper/account/rebalance`, `POST /api/paper/account/reset`,
-  `POST /api/paper/account/kill-switch`, `GET /api/paper/account/ledger`.
-  All mutating routes serialize per account in-process and share a filesystem
-  lock with CLI/scheduled rebalance processes.
-- Manual limit orders that do not meet the current paper price are persisted in
-  `PaperAccount.pending_orders`, surfaced on `/paper-trading`, and can be
-  rechecked through `POST /api/paper/account/orders/process` or cancelled via
-  `POST /api/paper/account/orders/{order_id}/cancel`. Pending buy limits reserve
-  cash at `quantity * limit_price`; pending sell limits reserve share quantity,
-  so later manual or strategy orders cannot double-spend the same buying power
-  or position. The API starts a lightweight background worker by default
-  (`QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED=true`,
-  `QS_PAPER_ACCOUNT_AUTO_PROCESS_INTERVAL_SECONDS=30`) that processes existing
-  pending orders through the same locked `process_pending_orders` path; tests
-  force it off. If the current paper price still misses the limit, processing
-  also checks real daily OHLCV high/low ranges for complete days after the
-  order's last check/creation and before the current check date, then fills
-  touched orders at the original limit price. This backfill never uses sample
-  data and does not infer same-day intraday ordering.
-- CLI: `quant-system paper rebalance --account default --strategy <id>` (for
-  scheduled auto-rebalance; exits non-zero on abort/failure) and
-  `quant-system paper account-show`.
-- Frontend: account summary + `AccountTradePanel` (manual ticket, one-click
-  rebalance, real freeze toggle) on `/paper-trading`; account-driven
-  `/position-map` (`src/frontend/components/AccountRefreshControl.tsx` for
-  optional 30s auto-refresh).
-- Account-level kill switch (default OFF, user-toggleable) freezes only this
-  paper account. It is distinct from the global `QS_KILL_SWITCH` that gates the
-  legacy `POST /api/paper/run` replay path — do not conflate them.
-- Persistent-account fills and strategy rebalances must use real market data:
-  Futu snapshots first, then a real local/Tiingo close. Never use synthetic
-  sample prices or sample strategy history to mutate the account.
-
-## Options Module Notes
-
-Current options work is split into sell-side and buy-side research modules:
-
-- Sell-side single-ticker screener: `src/quant_system/options/screener.py`.
-- Sell-side cross-ticker radar: `src/quant_system/options/radar.py`.
-- Radar refresh helpers: `src/quant_system/options/data_refresh.py`.
-- Buy-side contracts and scenario data: `src/quant_system/options/models.py`.
-- Buy-side contract diagnostics: `src/quant_system/options/buy_side_metrics.py`.
-- Buy-side candidate generation: `src/quant_system/options/buy_side_strategy.py`.
-- Buy-side scenario lab: `src/quant_system/options/buy_side_scenarios.py`.
-- Local AlphaGBM-style tools and research helpers:
-  `src/quant_system/options/local_tools.py` and
-  `src/quant_system/options/local_research.py`.
-- Durable local option quote cache:
-  `src/quant_system/storage/options_cache.py`.
-- Scheduled sell-side radar CLI: `quant-system options daily-task` refreshes
-  the universe, earnings calendar, and VIX history before running
-  `run_options_radar`; `scripts/run_options_radar.ps1` is the Windows Task
-  Scheduler entrypoint and writes `daily_task_status.json` next to radar
-  snapshots. `GET /api/options/daily-scan/status` exposes that file and
-  `/options-radar` shows the latest scheduled-task status. Optional startup
-  catch-up is controlled by `QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=false` by
-  default; when enabled, API startup first refreshes the local universe,
-  earnings calendar, and VIX inputs, then runs a background daily-scan catch-up
-  only if the latest regular US market session radar snapshot is missing.
-  Weekend and regular full-day US market holidays target the prior session;
-  ad-hoc exchange closures and half-days remain a scheduler/operator concern.
-  CLI scans, API-triggered scans, scheduled `daily-task`, and startup catch-up
-  share `options_radar_scan.lock` in the radar output directory; lock conflicts
-  fail API/CLI scans fast and make startup catch-up skip without overwriting
-  `daily_task_status.json`.
-- Buy-side decision API: `POST /api/options/buy-side/assistant`.
-- Buy-side debug CLI: `quant-system options buyside-screen`.
-- Buy-side frontend page: `src/frontend/app/options-buyside/page.tsx` (main
-  component `src/frontend/components/forms/BuySideOptionsAssistant.tsx`,
-  bilingual en/zh, route `/options-buyside`).
-- Local tools frontend page: `src/frontend/app/options-tools/page.tsx` (main
-  component `src/frontend/components/forms/OptionsToolsWorkbench.tsx`).
-- Radar symbol drilldown page: `src/frontend/app/options-radar/[symbol]/page.tsx`.
-
-Buy-side Phase 14 ships with backend logic, API, CLI, and frontend wiring.
-Keep pure decision modules free of live data calls; only the API/CLI layer
-may call the existing read-only Futu quote provider.
-
-Futu options calls can hit OpenD pacing limits. The provider has a short-lived
-in-process option-chain cache plus one read-only retry for typed `rate_limited`
-responses. It also has a local DuckDB-backed option quote cache under
-`data/futu/options_cache.duckdb` when `QS_FUTU_USE_CACHE=true`. Follow
-`docs/architecture/database_cache_plan.md` for cache status and remaining
-storage work.
+| Area | Read before changing |
+|---|---|
+| Current route/status | `docs/INDEX.md` and the active frontend/Hermes plan |
+| Storage/PostgreSQL | `docs/architecture/database_cache_plan.md` |
+| Paper account | `docs/guides/paper-trading.md` |
+| Strategy sleeves | `docs/execution/paper_strategy_sleeves.md` |
+| Backtests/strategies | `docs/guides/backtester.md`, `docs/guides/strategy-catalog.md` |
+| AI News | `docs/guides/ai-news.md` |
+| Futu/options | `docs/futu/`, `docs/options/` |
+| Prediction markets | `docs/polymarket/` |
 
 ## Environment
 
-Use the existing conda environment for Python commands:
+Use the uv-managed `ai-quant` virtual environment for Python commands:
 
 ```powershell
-conda activate ai-quant
+uv venv ai-quant --python 3.11
+.\ai-quant\Scripts\Activate.ps1
+uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[api,dev,prediction_market]"
 ```
 
-When installing Python packages, prefer the Tsinghua mirror:
+When installing additional Python packages, prefer uv with the Tsinghua mirror:
 
 ```powershell
-python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple ...
+uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple ...
 ```
 
 ## Run Backend
@@ -260,7 +311,7 @@ python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple ...
 Preferred CLI wrapper:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 quant-system serve --host 127.0.0.1 --port 8765
 ```
 
@@ -270,7 +321,7 @@ This writes structured backend JSONL logs to
 Equivalent direct FastAPI start:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
@@ -304,7 +355,7 @@ http://127.0.0.1:3001
 One-command local verification:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 .\scripts\verify.ps1
 ```
 
@@ -316,14 +367,14 @@ frontend dev server is stopped.
 Backend tests:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 python -m pytest -q
 ```
 
 Backend lint:
 
 ```powershell
-conda activate ai-quant
+.\ai-quant\Scripts\Activate.ps1
 ruff check src/quant_system tests
 ```
 
@@ -361,7 +412,7 @@ cd src/frontend
 $env:PW_E2E="1"
 $env:PW_BACKEND_PORT="8766"
 $env:PW_FRONTEND_PORT="3002"
-$env:QUANT_API_COMMAND="D:\anaconda3\envs\ai-quant\python.exe -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8766"
+$env:QUANT_API_COMMAND=".\ai-quant\Scripts\python.exe -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port 8766"
 npx playwright test --config playwright.config.ts --workers=1
 ```
 

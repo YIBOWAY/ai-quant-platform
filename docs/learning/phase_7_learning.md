@@ -1,5 +1,9 @@
 # Phase 7 学习文档
 
+> 历史文档提示（2026-07-03）：HQA D-19 已将因子源码生成职责收归
+> `/Users/sunyibo/programs/Hermes-quant-agent`。新 Scene-B 流程不要走
+> 平台 `--llm openai`；使用 `agent propose-factor --source-file <path>`。
+
 ## 当前阶段核心概念
 
 Phase 7 的核心不是让 AI 自动交易，而是让 AI 帮助研究流程变快，同时把风险限制在候选区。
@@ -60,7 +64,8 @@ Stub LLM 是一个不联网、不花钱、输出固定的假 LLM。
 - 让本地 smoke test 不依赖 API key。
 - 让 Agent 工作流先验证工程链路。
 
-真实 LLM 只能通过显式 `--llm openai` 选择。
+历史 Phase 7 曾允许显式平台 LLM；HQA Scene-B 新流程不再这样做，而是由
+Hermes 会话生成源码并通过 `--source-file` 交给平台。
 
 ## 常见错误
 
@@ -109,7 +114,7 @@ Phase 8 的 prediction market 模块也要沿用同样的边界：
 3. **成本可控**：新人接手项目跑 smoke test 不应该花钱。
 4. **接口收敛**：先把 `LLMClient` Protocol 定死，再让 OpenAIClient / Anthropic / 本地 vllm 都来适配；如果默认是 OpenAI，Protocol 容易被 OpenAI 的 quirk 污染（比如 `tool_calls`、`function_call`、`response_format` 这些不通用的字段）。
 
-代价：stub 输出的"候选因子代码"非常机械（基本上是模板替换），看起来像 AI 偷懒了 —— 这是已知 trade-off。要看真实质量必须显式 `--llm openai`。
+代价：stub 输出的"候选因子代码"非常机械（基本上是模板替换），看起来像 AI 偷懒了 —— 这是已知 trade-off。HQA 新流程下，要看真实质量应在 Hermes 会话内生成源码，再用 `agent propose-factor --source-file <path>` 导入平台。
 
 ### Prompt Injection 防御的 3 道防线
 
@@ -132,4 +137,3 @@ Phase 8 的 prediction market 模块也要沿用同样的边界：
 2. **不可逆**：`FactorRegistry` 一旦注册，后续 experiment / backtest / paper trading 都会去读它；如果 candidate 有 lookahead bias，污染会沿着所有 phase 扩散。
 
 所以 approve 只写 `approved.lock`，相当于给候选盖一个 "人类初审通过" 的章。真要进 registry 还要走：改名 → 加入 `tests/test_factors_<name>.py` → 跑全测 → 在 `registry.py` 显式 register。这个手工步骤不是麻烦，是**保护**。
-

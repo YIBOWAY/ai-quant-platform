@@ -1,5 +1,8 @@
 import json
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -15,20 +18,63 @@ def test_playwright_backend_uses_isolated_test_environment() -> None:
     assert 'QS_ENVIRONMENT: "test"' in backend_block
     assert 'QS_DATABASE_ENABLED: "false"' in backend_block
     assert 'QS_DATABASE_AUTO_MIGRATE: "false"' in backend_block
+    assert 'QS_AIHOT_ENABLED: "false"' in backend_block
+    assert "QS_HERMES_ARTIFACT_FEED_PATH: hermesArtifactFixture" in backend_block
+    assert "QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS" in backend_block
     assert "QS_API_CORS_ORIGINS: JSON.stringify(e2eCorsOrigins)" in backend_block
     assert "frontendUrl" in backend_block
     assert 'const e2eDataRoot = path.join(frontendRoot, ".tmp", "e2e-data")' in config
     assert "QS_DATA_DIR: e2eDataRoot" in backend_block
+    assert 'QS_AGENT_OUTPUT_DIR: path.join(e2eDataRoot, "agent-output")' in backend_block
     assert 'QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet")' in backend_block
     assert 'QS_DUCKDB_PATH: path.join(e2eDataRoot, "quant_system.duckdb")' in backend_block
     assert (
-        'QS_OPTIONS_RADAR_OUTPUT_DIR: path.join(e2eDataRoot, "options_scans")'
-        in backend_block
+        'QS_OPTIONS_RADAR_OUTPUT_DIR: path.join( e2eDataRoot, "options_scans", )'
+        in compact_backend_block
     )
     assert "QS_OPTIONS_RADAR_UNIVERSE_PATH" in compact_backend_block
     assert "QS_OPTIONS_RADAR_EARNINGS_CALENDAR_PATH" in compact_backend_block
     assert "QS_OPTIONS_RADAR_VIX_HISTORY_PATH" in compact_backend_block
     assert "QS_DATABASE_ENABLED" not in frontend_block
+
+
+def test_hermes_e2e_fixture_covers_all_read_only_artifact_kinds() -> None:
+    fixture = json.loads(
+        Path("src/frontend/tests/fixtures/hermes-artifacts.v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    spec = Path("src/frontend/tests/e2e/hermes-artifacts.spec.ts").read_text(
+        encoding="utf-8"
+    )
+
+    expected_kinds = {
+        "portfolio_risk",
+        "prediction",
+        "market_foresight",
+        "weekly_review",
+        "opportunity_summary",
+        "automation_status",
+    }
+    assert fixture["schema_version"] == "1.1"
+    assert {item["kind"] for item in fixture["items"]} == expected_kinds
+    assert {source["kind"] for source in fixture["sources"]} == expected_kinds
+    candidate = next(
+        item for item in fixture["items"] if item["kind"] == "market_foresight"
+    )["data"]["candidates"][0]
+    assert candidate["proposal_only"] is True
+    assert candidate["requires_human_confirmation"] is True
+    assert candidate["trading_allowed"] is False
+    for kind in ("weekly_review", "opportunity_summary", "automation_status"):
+        data = next(item for item in fixture["items"] if item["kind"] == kind)[
+            "data"
+        ]
+        assert data["proposal_only"] is True
+        assert data["trading_allowed"] is False
+    assert 'page.goto("/zh/hermes")' in spec
+    for visible_text in ("周报复盘", "机会复盘", "自动化状态"):
+        assert visible_text in spec
+    assert "toBeDisabled()" in spec
 
 
 def test_frontend_dev_defaults_to_project_ports() -> None:
@@ -50,13 +96,62 @@ def test_frontend_dev_defaults_to_project_ports() -> None:
     assert 'const frontendPort = readPort("PW_FRONTEND_PORT", 3001)' in playwright_config
     assert "baseURL: frontendUrl" in playwright_config
     assert "const e2eCorsOrigins = Array.from(" in playwright_config
-    assert "frontendPort === 3001" in playwright_config
+    assert "const frontendCommand = buildFrontendCommand(frontendPort)" in playwright_config
+    assert "port === 3001" in playwright_config
     assert '? "npm run dev"' in playwright_config
-    assert ': `npx next dev --hostname 127.0.0.1 --port ${frontendPort}`' in playwright_config
+    assert ': `npx next dev --hostname 127.0.0.1 --port ${port}`' in playwright_config
     assert 'url: `${backendUrl}/api/health`' in playwright_config
     assert "url: frontendUrl" in playwright_config
     assert "NEXT_PUBLIC_QUANT_API_BASE_URL: backendUrl" in playwright_config
     assert 'command: "npm run dev -- --hostname 127.0.0.1 --port 3001"' not in playwright_config
+
+
+def test_playwright_frontend_uses_an_isolated_workspace() -> None:
+    config = Path("src/frontend/playwright.config.ts").read_text(encoding="utf-8")
+
+    assert "const frontendCommand = buildFrontendCommand(frontendPort)" in config
+    assert "node scripts/prepare-e2e-workspace.mjs ${port}" in config
+    assert 'cd ".tmp/e2e-frontend-${port}"' in config
+    assert "cwd: frontendRoot" in config
+    assert "cwd: e2eFrontendRoot" not in config
+    assert "prepareE2EFrontend" not in config
+
+
+def test_e2e_workspace_preparer_refreshes_stale_copy_without_touching_source() -> None:
+    frontend = Path("src/frontend").resolve()
+    port = 60_000 + os.getpid() % 5_000
+    workspace = frontend / ".tmp" / f"e2e-frontend-{port}"
+    guarded_sources = [frontend / "next-env.d.ts", frontend / "tsconfig.json"]
+    before = {path: path.read_bytes() for path in guarded_sources}
+
+    try:
+        shutil.rmtree(workspace, ignore_errors=True)
+        subprocess.run(
+            ["node", "scripts/prepare-e2e-workspace.mjs", str(port)],
+            cwd=frontend,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert (workspace / "node_modules").exists()
+        assert (workspace / ".source-fingerprint").is_file()
+
+        (workspace / "next.config.ts").write_text("stale", encoding="utf-8")
+        (workspace / ".source-fingerprint").write_text("stale", encoding="utf-8")
+        subprocess.run(
+            ["node", "scripts/prepare-e2e-workspace.mjs", str(port)],
+            cwd=frontend,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert (workspace / "next.config.ts").read_bytes() == (
+            frontend / "next.config.ts"
+        ).read_bytes()
+        assert {path: path.read_bytes() for path in guarded_sources} == before
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
 
 
 def test_dev_scripts_use_project_ports_and_docker_database_probe() -> None:

@@ -83,7 +83,7 @@
 
 - `src/quant_system/prediction_market/**`
 - `src/quant_system/api/routes/prediction_market.py`
-- `src/frontend/app/order-book/**`
+- `src/frontend/app/polymarket/**`
 
 这些模块的功能必须保持不变。
 

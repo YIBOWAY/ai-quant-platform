@@ -1,25 +1,30 @@
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
+from quant_system.config.settings import ApiKeySettings, DataSettings, Settings
+
+
+def _sample_settings() -> Settings:
+    return Settings(
+        data=DataSettings(default_data_provider="sample"),
+        api_keys=ApiKeySettings(tiingo_api_token=None),
+    )
 
 
 def test_symbols_returns_sample_symbols_when_no_local_cache(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=_sample_settings(), output_dir=tmp_path))
 
     response = client.get("/api/symbols")
 
     assert response.status_code == 200
     payload = response.json()
     assert {"SPY", "QQQ"}.issubset(set(payload["symbols"]))
-    # The default-symbols basket reflects whichever provider is active. With
-    # a Tiingo token configured the source is reported as "tiingo (default
-    # basket)"; otherwise it falls back to "sample".
-    assert payload["source"] in {"sample", "tiingo (default basket)", "futu (default basket)"}
+    assert payload["source"] == "sample"
     assert payload["safety"]["live_trading_enabled"] is False
 
 
 def test_ohlcv_returns_sample_timeseries(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=_sample_settings(), output_dir=tmp_path))
 
     response = client.get(
         "/api/ohlcv",
@@ -36,7 +41,7 @@ def test_ohlcv_returns_sample_timeseries(tmp_path) -> None:
 
 
 def test_ohlcv_rejects_missing_symbol(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=_sample_settings(), output_dir=tmp_path))
 
     response = client.get("/api/ohlcv", params={"start": "2024-01-02", "end": "2024-01-08"})
 

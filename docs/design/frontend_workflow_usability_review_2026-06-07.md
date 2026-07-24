@@ -236,7 +236,7 @@
 
 ### 4.3.4 研报复现完成后没有“打开测试”
 
-> **2026-06-15 后续状态**：已处理。`POST /api/replications/reversal-momentum/run` 会返回 `replication-*` `run_id`，写入 `data/api_runs/replications/<run_id>/metadata.json` 与 `result.json`；`GET /api/replications/reversal-momentum/{run_id}` 可重新读取，前端显示“打开复现”并跳转到 `/replications/{run_id}`。复现 run 暂不写入可选 PostgreSQL run index。
+> **2026-06-15 后续状态**：已处理。`POST /api/replications/reversal-momentum/run` 会返回 `replication-*` `run_id`，写入 `data/api_runs/replications/<run_id>/metadata.json` 与 `result.json`；`GET /api/replications/reversal-momentum/{run_id}` 可重新读取，前端显示“打开复现”。**2026-06-23 后续状态**：前端详情路径已从 `/replications/{run_id}` 正名为 `/strategies/{run_id}`，旧路径 redirect 兼容；启用可选 PostgreSQL 本地镜像时，复现 run 会 best-effort 写入 run index / recent mirror。
 
 当时研报复现接口直接返回结果，但不会保存为一个可打开的运行记录，也不会返回 `run_id`。通用策略目录只有收到 `run_id` 才显示“打开回测”，因此按钮不会出现。
 

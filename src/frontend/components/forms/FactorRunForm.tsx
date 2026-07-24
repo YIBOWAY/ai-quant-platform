@@ -10,6 +10,11 @@ import type { FactorRunResponse } from "@/lib/api";
 import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath, type Locale } from "@/lib/locale";
+import {
+  TerminalToolbarButton,
+  terminalInputClass,
+  terminalInputCompactClass,
+} from "@/components/ui/primitives";
 
 const factorSchema = z.object({
   symbols: z.string().min(1, "Enter at least one symbol"),
@@ -71,10 +76,8 @@ function recentDefaults(): FactorFormValues {
   };
 }
 
-const inputClass =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-data-mono text-text-primary";
-const inputClassCompact =
-  "rounded-lg border border-border-subtle bg-bg-surface-muted px-2 py-2 font-data-mono text-text-primary";
+const inputClass = terminalInputClass;
+const inputClassCompact = terminalInputCompactClass;
 
 export function FactorRunForm({ locale = "en" }: { locale?: Locale }) {
   const text = copy[locale];
@@ -144,13 +147,14 @@ export function FactorRunForm({ locale = "en" }: { locale?: Locale }) {
         </label>
       </div>
       {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-      <button
-        className="rounded-lg bg-accent-success px-4 py-2 font-body-sm font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+      <TerminalToolbarButton
+        className="h-9"
         disabled={!isHydrated || mutation.isPending}
         type="submit"
+        tone="info"
       >
         {mutation.isPending ? text.running : text.runFactor}
-      </button>
+      </TerminalToolbarButton>
     </form>
   );
 }

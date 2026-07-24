@@ -30,17 +30,17 @@ export function AccountRefreshControl({ locale = "en" }: { locale?: Locale }) {
   return (
     <div className="flex items-center gap-2">
       <button
-        className="flex items-center gap-1 rounded-lg border border-border-subtle px-3 py-2 font-body-sm text-text-primary"
+        className="flex items-center gap-1 rounded-full border border-border-subtle bg-bg-surface-muted px-3 py-1.5 font-body-sm text-text-primary transition-colors hover:border-text-secondary/50 hover:bg-bg-surface"
         onClick={() => router.refresh()}
         type="button"
       >
         <RefreshCw size={14} /> {text.refresh}
       </button>
       <button
-        className={`rounded-lg border px-3 py-2 font-body-sm ${
+        className={`rounded-full border px-3 py-1.5 font-body-sm transition-colors ${
           auto
-            ? "border-accent-success bg-accent-success/10 text-accent-success"
-            : "border-border-subtle text-text-secondary"
+            ? "border-border-subtle bg-bg-surface-muted text-text-primary"
+            : "border-border-subtle bg-bg-surface-muted text-text-secondary hover:border-text-secondary/50 hover:bg-bg-surface"
         }`}
         onClick={() => setAuto((v) => !v)}
         type="button"

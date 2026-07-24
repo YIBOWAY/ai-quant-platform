@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
+import { TerminalToolbarButton, terminalFilterInputClass } from "@/components/ui/primitives";
 import { localizePath } from "@/lib/locale";
 
 const copy = {
@@ -38,8 +39,7 @@ export function PredictionMarketDataControls({
     defaultValues: initial,
   });
 
-  const fieldClass =
-    "h-8 rounded-lg border border-border-subtle bg-bg-surface-muted px-2 font-data-mono text-data-mono text-text-primary outline-none focus:border-accent-success/60";
+  const fieldClass = terminalFilterInputClass;
   const labelClass =
     "flex flex-col gap-1 font-label-caps text-[10px] uppercase text-text-secondary";
 
@@ -48,7 +48,7 @@ export function PredictionMarketDataControls({
       className="flex flex-wrap items-end gap-3"
       onSubmit={form.handleSubmit((values) => {
         const params = new URLSearchParams(values);
-        router.push(localizePath(`/order-book?${params.toString()}`, locale));
+        router.push(localizePath(`/polymarket?${params.toString()}`, locale));
       })}
     >
       <label className={labelClass}>
@@ -76,12 +76,9 @@ export function PredictionMarketDataControls({
           {...form.register("limit")}
         />
       </label>
-      <button
-        className="h-8 rounded-lg bg-accent-success px-4 font-body-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
-        type="submit"
-      >
+      <TerminalToolbarButton className="h-8" type="submit" tone="info">
         {text.load}
-      </button>
+      </TerminalToolbarButton>
     </form>
   );
 }

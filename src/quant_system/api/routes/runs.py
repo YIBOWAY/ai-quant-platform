@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
+from quant_system.api.schemas.common import RunStatus
 from quant_system.api.schemas.runs import RecentRunsResponse
 from quant_system.storage.runs_repository import (
     KIND_DIRS,
@@ -24,6 +25,12 @@ def _sort_key(item: dict[str, Any]) -> tuple[str, str, str]:
     return (str(created_at or ""), str(item.get("kind", "")), run_id)
 
 
+def _is_publishable_recent_run(kind: str, metadata: dict[str, Any]) -> bool:
+    if kind == "backtest":
+        return metadata.get("status", RunStatus.COMPLETED.value) == RunStatus.COMPLETED.value
+    return True
+
+
 @router.get("/runs/recent", response_model=RecentRunsResponse)
 def recent_runs(
     api_runs_dir: ApiRunsDirDep,
@@ -34,6 +41,8 @@ def recent_runs(
     for kind, dirname in KIND_DIRS.items():
         root = api_runs_dir / dirname
         for metadata in list_run_metadatas(kind, root, settings):
+            if not _is_publishable_recent_run(kind, metadata):
+                continue
             run_id = str(metadata.get("run_id", ""))
             if not run_id:
                 continue

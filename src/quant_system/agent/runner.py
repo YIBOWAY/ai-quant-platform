@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from quant_system.agent.audit import AgentAuditLog
 from quant_system.agent.candidate_pool import CandidatePool
@@ -30,19 +30,38 @@ def _task_id(task_type: AgentTaskType, subject: str) -> str:
 
 
 class AgentRunner:
-    def __init__(self, *, output_dir: str | Path, llm: LLMClient | None = None) -> None:
-        self.output_dir = Path(output_dir)
+    def __init__(
+        self,
+        *,
+        agent_output_dir: str | Path,
+        result_output_dir: str | Path | None = None,
+        llm: LLMClient | None = None,
+    ) -> None:
+        self.agent_output_dir = Path(agent_output_dir)
+        # Experiment/result reads are a separately named root. Never fall back
+        # from general data into the candidate root, or the reverse.
+        self.result_output_dir = (
+            Path(result_output_dir)
+            if result_output_dir is not None
+            else self.agent_output_dir
+        )
         self.llm = llm or StubLLMClient()
-        self.candidates = CandidatePool(self.output_dir)
+        self.candidates = CandidatePool(self.agent_output_dir)
 
-    def propose_factor(self, *, goal: str, universe: list[str]) -> CandidateArtifact:
+    def propose_factor(
+        self,
+        *,
+        goal: str,
+        universe: list[str],
+        metadata_extra: dict[str, Any] | None = None,
+    ) -> CandidateArtifact:
         task = AgentTask(
             task_id=_task_id(AgentTaskType.FACTOR_PROPOSAL, goal),
             task_type=AgentTaskType.FACTOR_PROPOSAL,
             goal=goal,
             universe=universe,
         )
-        audit = AgentAuditLog(self.output_dir, task_id=task.task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task.task_id)
         audit.record("task", task.model_dump(mode="json"))
         return factor_proposal.run(
             llm=self.llm,
@@ -51,6 +70,7 @@ class AgentRunner:
             task=task,
             goal=goal,
             universe=universe,
+            metadata_extra=metadata_extra,
         )
 
     def propose_experiment(self, *, goal: str, universe: list[str]) -> CandidateArtifact:
@@ -60,7 +80,7 @@ class AgentRunner:
             goal=goal,
             universe=universe,
         )
-        audit = AgentAuditLog(self.output_dir, task_id=task.task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task.task_id)
         audit.record("task", task.model_dump(mode="json"))
         return experiment_design.run(
             llm=self.llm,
@@ -78,14 +98,14 @@ class AgentRunner:
             goal=f"summarize {experiment_id}",
             experiment_id=experiment_id,
         )
-        audit = AgentAuditLog(self.output_dir, task_id=task.task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task.task_id)
         audit.record("task", task.model_dump(mode="json"))
         return result_summary.run(
             llm=self.llm,
             audit=audit,
             candidates=self.candidates,
             task=task,
-            output_dir=self.output_dir,
+            output_dir=self.result_output_dir,
             experiment_id=experiment_id,
         )
 
@@ -96,7 +116,7 @@ class AgentRunner:
             goal=f"leakage audit {factor_id}",
             factor_id=factor_id,
         )
-        audit = AgentAuditLog(self.output_dir, task_id=task.task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task.task_id)
         audit.record("task", task.model_dump(mode="json"))
         return leakage_audit.run(
             llm=self.llm,
@@ -107,7 +127,9 @@ class AgentRunner:
         )
 
     def list_candidates(self) -> list[dict]:
-        return self.candidates.list_candidates()
+        return [
+            item.model_dump(mode="json") for item in self.candidates.list_for_read()
+        ]
 
     def review(
         self,
@@ -115,21 +137,51 @@ class AgentRunner:
         candidate_id: str,
         decision: Literal["approve", "reject"],
         note: str,
+        expected_manifest_digest: str,
+        expected_status: Literal["pending"],
     ) -> ReviewRecord:
+        # Validate CAS inputs before any audit/root IO so invalid IDs leave
+        # zero writes (shared with CandidatePool.review preconditions).
+        from quant_system.agent.candidate_manifest import _validate_candidate_id
+        from quant_system.agent.candidate_pool import (
+            _validate_digest,
+            _validate_note,
+        )
+
+        candidate_id = _validate_candidate_id(candidate_id)
+        expected_manifest_digest = _validate_digest(expected_manifest_digest)
+        note = _validate_note(note)
+        if expected_status != "pending":
+            from quant_system.agent.candidate_fs import CandidateIntegrityError
+
+            raise CandidateIntegrityError(
+                "expected_status must be the literal 'pending'"
+            )
+        if decision not in {"approve", "reject"}:
+            from quant_system.agent.candidate_fs import CandidateIntegrityError
+
+            raise CandidateIntegrityError("decision must be approve or reject")
+
         task_id = _task_id(AgentTaskType.REVIEW, candidate_id)
-        audit = AgentAuditLog(self.output_dir, task_id=task_id)
+        audit = AgentAuditLog(self.agent_output_dir, task_id=task_id)
+        # Record CAS values before mutation; never re-list to derive them.
         audit.record(
             "task",
             {
                 "task_id": task_id,
                 "task_type": AgentTaskType.REVIEW.value,
                 "candidate_id": candidate_id,
+                "expected_manifest_digest": expected_manifest_digest,
+                "expected_status": expected_status,
+                "decision": decision,
             },
         )
         record = self.candidates.review(
             candidate_id=candidate_id,
             decision=decision,
             note=note,
+            expected_manifest_digest=expected_manifest_digest,
+            expected_status=expected_status,
         )
         audit.record("review_recorded", record.model_dump(mode="json"))
         return record

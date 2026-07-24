@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "health": {
+    "status": "ok",
+    "app_name": "AI Quant Research Platform",
+    "environment": "test",
+    "data_provider": {
+      "configured_default": "sample",
+      "tiingo_token_present": false
+    },
+    "futu_opend": {
+      "enabled": false,
+      "reachable": false,
+      "host": "127.0.0.1",
+      "port": 11111,
+      "error": null
+    },
+    "database": {
+      "enabled": false,
+      "reachable": false,
+      "error": null
+    },
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "artifacts": {
+    "schema_version": "1.1",
+    "read_status": "empty",
+    "as_of": null,
+    "items": [],
+    "sources": [],
+    "warnings": [
+      {
+        "source": "artifact_feed",
+        "code": "feed_not_built"
+      }
+    ],
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "candidates": {
+    "candidates": [],
+    "safety": {
+      "dry_run": true,
+      "paper_trading": true,
+      "live_trading_enabled": false,
+      "kill_switch": true,
+      "bind_address": "127.0.0.1"
+    }
+  },
+  "factors": {
+    "status": 200,
+    "body": {
+      "factors": []
+    }
+  }
+}

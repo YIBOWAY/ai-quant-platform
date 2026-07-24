@@ -5,8 +5,15 @@ import { SyntheticMetricsWarning } from "@/components/DataSourceBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { EquityComparisonChart } from "@/components/EquityComparisonChart";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { HermesParityBanner } from "@/components/HermesParityBanner";
 import { BacktestForm, type BacktestFormInitialValues } from "@/components/forms/BacktestForm";
-import { Card, MetricStat, PageHeader, SectionTitle } from "@/components/ui/primitives";
+import {
+  Card,
+  MetricStat,
+  PageHeader,
+  SectionTitle,
+  TerminalSplitShell,
+} from "@/components/ui/primitives";
 import {
   formatPercent,
   getBacktestDetail,
@@ -141,45 +148,48 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
   const comparisonRows = normalizeEquity(detail?.equity_curve ?? [], benchmark?.equity_curve);
 
   return (
-    <div className="flex h-full flex-1 overflow-hidden bg-bg-base">
-      <aside className="flex h-full w-[320px] flex-col overflow-y-auto border-r border-border-subtle bg-bg-surface">
-        <div className="border-b border-border-subtle p-4">
-          <h2 className="font-headline-lg text-text-primary">{text.configTitle}</h2>
-        </div>
-        <div className="flex flex-col gap-4 p-4">
-          <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
-            <div className="font-label-caps text-text-secondary">{text.latestRun}</div>
-            <div className="mt-2 truncate font-data-mono text-text-primary">
-              {latest?.id ?? text.noBacktest}
-            </div>
-            {latest?.source ? (
-              <div className="mt-2">
-                <DataSourceBadge source={latest.source} />
-              </div>
-            ) : null}
-            {latest ? (
-              <Link
-                aria-label={text.openAria(latest.id)}
-                className="mt-3 inline-flex rounded-lg border border-border-subtle px-3 py-1.5 font-body-sm text-info"
-                href={localizePath(`/backtest/${latest.id}`, locale)}
-              >
-                {text.openRun}
-              </Link>
-            ) : null}
+    <TerminalSplitShell
+      sidebar={
+        <>
+          <div className="border-b border-border-subtle p-4">
+            <h2 className="font-headline-lg text-text-primary">{text.configTitle}</h2>
           </div>
-          <BacktestForm
-            factors={factors.factors}
-            initialValues={initialValues}
-            locale={locale}
-            strategies={strategies.strategies}
-            universes={universes.universes}
-            futuReachable={futuReachable}
-          />
-        </div>
-      </aside>
-
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
-        <PageHeader eyebrow={text.eyebrow} title={text.title} subtitle={text.subtitle} />
+          <div className="flex flex-col gap-4 p-4">
+            <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
+              <div className="font-label-caps text-text-secondary">{text.latestRun}</div>
+              <div className="mt-2 truncate font-data-mono text-text-primary">
+                {latest?.id ?? text.noBacktest}
+              </div>
+              {latest?.source ? (
+                <div className="mt-2">
+                  <DataSourceBadge source={latest.source} />
+                </div>
+              ) : null}
+              {latest ? (
+                <Link
+                  aria-label={text.openAria(latest.id)}
+                  className="mt-3 inline-flex rounded-lg border border-border-subtle px-3 py-1.5 font-body-sm text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+                  href={localizePath(`/backtest/${latest.id}`, locale)}
+                >
+                  {text.openRun}
+                </Link>
+              ) : null}
+            </div>
+            <BacktestForm
+              factors={factors.factors}
+              initialValues={initialValues}
+              locale={locale}
+              strategies={strategies.strategies}
+              universes={universes.universes}
+              futuReachable={futuReachable}
+            />
+          </div>
+        </>
+      }
+      sidebarClassName="lg:w-[320px]"
+    >
+      <HermesParityBanner locale={locale} />
+      <PageHeader eyebrow={text.eyebrow} title={text.title} subtitle={text.subtitle} />
         <ErrorBanner
           messages={[
             backtests.apiError,
@@ -309,8 +319,7 @@ export default async function Backtest({ searchParams }: BacktestPageProps) {
             emptyDescription={text.ordersEmptyDesc}
           />
         </section>
-      </div>
-    </div>
+    </TerminalSplitShell>
   );
 }
 

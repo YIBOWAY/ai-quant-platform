@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/EmptyState";
+import { TerminalTable } from "@/components/ui/primitives";
 import type { PreviewRecord } from "@/lib/api";
 
 type DataPreviewTableProps = {
@@ -74,44 +75,35 @@ export function DataPreviewTable({
           {counter}
         </span>
       </div>
-      <div className="overflow-auto">
-        <table className="w-full border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-subtle">
-              {resolvedColumns.map((column) => (
-                <th
-                  key={column}
-                  className={`pb-2 pr-3 font-label-caps text-text-secondary ${
-                    numericColumns.has(column) ? "text-right" : ""
-                  } ${columnTips?.[column] ? "cursor-help underline decoration-dotted decoration-border-subtle underline-offset-4" : ""}`}
-                  title={columnTips?.[column]}
+      <TerminalTable
+        columns={resolvedColumns.map((column) => ({
+          label: columnLabels?.[column] ?? column,
+          align: numericColumns.has(column) ? "right" : "left",
+          className: columnTips?.[column]
+            ? "cursor-help underline decoration-dotted decoration-border-subtle underline-offset-4"
+            : "",
+          title: columnTips?.[column],
+        }))}
+        minWidth={`${Math.max(resolvedColumns.length * 136, 720)}px`}
+      >
+        {visibleRows.map((row, index) => (
+          <tr key={`${title}-${index}`} className="border-b border-border-subtle/50 last:border-b-0 hover:bg-bg-surface-muted/45">
+            {resolvedColumns.map((column) => (
+              <td
+                key={`${title}-${index}-${column}`}
+                className={`px-3 py-2.5 align-top ${numericColumns.has(column) ? "text-right" : ""}`}
+              >
+                <span
+                  className={`block max-w-56 truncate ${numericColumns.has(column) ? "tabular-nums" : ""}`}
+                  title={formatValue(row[column])}
                 >
-                  {columnLabels?.[column] ?? column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="font-data-mono text-xs text-text-primary">
-            {visibleRows.map((row, index) => (
-              <tr key={`${title}-${index}`} className="border-b border-border-subtle/40">
-                {resolvedColumns.map((column) => (
-                  <td
-                    key={`${title}-${index}-${column}`}
-                    className={`py-2 pr-3 align-top ${numericColumns.has(column) ? "text-right" : ""}`}
-                  >
-                    <span
-                      className={`block max-w-56 truncate ${numericColumns.has(column) ? "tabular-nums" : ""}`}
-                      title={formatValue(row[column])}
-                    >
-                      {formatValue(row[column])}
-                    </span>
-                  </td>
-                ))}
-              </tr>
+                  {formatValue(row[column])}
+                </span>
+              </td>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </tr>
+        ))}
+      </TerminalTable>
     </section>
   );
 }

@@ -1,0 +1,50 @@
+import { ErrorBanner } from "@/components/ErrorBanner";
+import { StrategyCatalogWorkbench } from "@/components/forms/StrategyCatalogWorkbench";
+import {
+  getFactors,
+  getReversalMomentumReplicationDetail,
+  getStrategies,
+  getUniverses,
+} from "@/lib/api";
+import type { ReversalMomentumReplicationRunResponse } from "@/lib/api";
+import { getCachedHealth } from "@/lib/serverApi";
+import { getServerLocale } from "@/lib/serverLocale";
+
+type StrategyRunDetailPageProps = {
+  params: Promise<{ runId: string }>;
+};
+
+export default async function StrategyRunDetailPage({
+  params,
+}: StrategyRunDetailPageProps) {
+  const locale = await getServerLocale();
+  const runId = (await params)?.runId ?? "";
+  const [detail, strategies, universes, factors, health] = await Promise.all([
+    getReversalMomentumReplicationDetail(runId),
+    getStrategies(),
+    getUniverses(),
+    getFactors(),
+    getCachedHealth(),
+  ]);
+  const futuReachable = health.futu_opend?.reachable !== false;
+  const initialResult = Object.keys(detail.result ?? {}).length
+    ? (detail.result as ReversalMomentumReplicationRunResponse)
+    : null;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-bg-base">
+      <ErrorBanner
+        messages={[detail.apiError, strategies.apiError, universes.apiError, factors.apiError]}
+      />
+      <StrategyCatalogWorkbench
+        factors={factors.factors}
+        locale={locale}
+        strategies={strategies.strategies}
+        universes={universes.universes}
+        futuReachable={futuReachable}
+        initialStrategyId="reversal_momentum"
+        initialResult={initialResult}
+      />
+    </div>
+  );
+}

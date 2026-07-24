@@ -81,6 +81,9 @@ class BacktestRunPathsResponse(BaseModel):
 
 class BacktestRunResponse(BaseModel):
     run_id: str
+    kind: str = "backtest"
+    status: str = "completed"
+    created_at: str | None = None
     source: str
     trade_count: int
     order_count: int
@@ -91,6 +94,17 @@ class BacktestRunResponse(BaseModel):
     attribution: list[dict[str, Any]]
     benchmark: BacktestRunBenchmarkResponse
     paths: BacktestRunPathsResponse
+
+
+class BacktestJobStateResponse(BaseModel):
+    run_id: str
+    kind: str = "backtest"
+    status: Literal["queued", "running", "completed", "failed", "cancelling", "cancelled"]
+    created_at: str | None = None
+    updated_at: str | None = None
+    poll_url: str
+    result_url: str | None = None
+    error: dict[str, Any] | None = None
 
 
 BacktestRecord = dict[str, Any]

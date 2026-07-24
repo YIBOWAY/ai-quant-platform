@@ -13,14 +13,30 @@ helpers.
 | `verify.ps1` | Run the standard local verification suite on Windows. Skips frontend build unless `-Build` is passed. |
 | `verify.sh` | Unix shell equivalent for the standard verification suite. |
 
+## macOS Local Services
+
+| Script | Purpose |
+| --- | --- |
+| `run_quant_backend.sh` | LaunchAgent target for the localhost FastAPI backend on `127.0.0.1:8765`. |
+| `run_quant_frontend.sh` | LaunchAgent target for the built Next.js frontend on `127.0.0.1:3001`. Requires `npm --prefix src/frontend run build` first. |
+| `run_paper_strategy_sleeves.sh` | LaunchAgent/CLI wrapper for one-shot Paper Strategy Sleeves ops commands (`ops-status`, `generate-due-signals`, `execute-due`). |
+| `install_paper_strategy_sleeves_launchagent.sh` | Render and bootstrap user-level macOS LaunchAgents under `~/Library/LaunchAgents/`; does not use sudo. |
+| `uninstall_paper_strategy_sleeves_launchagent.sh` | Boot out and remove the rendered user-level LaunchAgents. |
+
+See `docs/execution/paper_strategy_sleeves_launchd.md` before installing. The
+backend/frontend jobs are long-running local services; strategy-sleeve jobs are
+one-shot paper commands.
+
 ## Data And Maintenance
 
 | Script | Purpose |
 | --- | --- |
 | `backup_api_runs.py` | Zip `data/api_runs/` research and paper-account artifacts with a manifest, excluding secrets, DuckDB files, and locks. |
+| `export_openapi.py` | Dump the FastAPI OpenAPI schema to stdout; the frontend `npm run generate:api-types` pipeline consumes it to regenerate `src/frontend/lib/api.generated.ts`. |
 | `cleanup_api_run_duckdb.py` | Report or remove obsolete per-run DuckDB copies under `data/api_runs/`; does not touch ingest/cache DuckDB files. |
 | `check_api_keys.py` | Local-only smoke test for configured read-only provider keys. It does not print secret values. |
 | `verify_futu_connection.py` | Read-only Futu OpenD connectivity check. |
+| `verify_tiingo_adjustment.py` | Operator / external gate: with a real Tiingo token, validate that a known split window is adjusted (no split-sized discontinuity). Prints SKIP and exits 0 without a token; never part of pytest. |
 
 ## Options Radar Operations
 
@@ -45,3 +61,6 @@ helpers.
 | Path | Purpose |
 | --- | --- |
 | `sql/001_runs_index.sql` | Optional PostgreSQL run-index migration. The file-based `data/api_runs/` artifacts remain the source of truth. |
+| `sql/002_ai_news_cache.sql` | Optional PostgreSQL AI HOT item cache and fetch-audit migration for read-only `/ai-news` stale fallback. |
+| `sql/003_app_users_brief_ai_reports.sql` | Optional PostgreSQL root user, brief issue/snapshot/source, and AI daily report tables. Brief archive APIs and AI daily fallback are wired. |
+| `sql/004_paper_account_tables.sql` | Optional PostgreSQL paper account mirror tables for explicit `account.json` backfill and `QS_PAPER_ACCOUNT_DB_MODE=mirror` API/CLI dual-write. File storage remains canonical until the later DB-canonical slice. |

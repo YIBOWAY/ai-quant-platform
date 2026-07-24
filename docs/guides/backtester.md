@@ -54,7 +54,7 @@
 13. **整股下单 Whole-share orders**：默认关闭以兼容历史研究结果。勾选后，订单生成和现金不足的部分成交都会向下取整到整股，可减少 `0.0071` 股这类噪声订单。
 14. **再平衡频率 Rebalance**：`every_bar`（默认）/ `weekly` / `monthly`。
 15. **单标的上限 Max weight / name**：可选，留空表示不限制；填则须在 0–1 之间。
-16. 点 **运行回测 Run Backtest**：前端 POST 到 `/api/backtests/run`，成功后 toast 提示 `回测已创建：<run_id>` 并跳转到 `/backtest/<run_id>` 详情页。
+16. 点 **运行回测 Run Backtest**：前端 POST 到 `/api/backtests/run`。默认后端仍同步返回完整 `BacktestRunResponse`；若设置 `QS_BACKTEST_JOBS_ENABLED=true`，后端会先返回 `202` job state，前端按 `poll_url` 轮询到 `completed` 后再跳转到 `/backtest/<run_id>` 详情页。
 
 > 表单里**没有** `sector_cap` / `sector_map` 入口（行业上限），但后端 schema 和引擎都支持。要用只能直接调 API。
 
@@ -124,4 +124,4 @@
 - 绩效与归因汇总：`src/quant_system/backtest/metrics.py`
 - 基准曲线：`src/quant_system/backtest/benchmark.py`
 - 配置与数据模型：`src/quant_system/backtest/models.py`（`BacktestConfig` / `Order` / `Fill` / `TargetWeight` / `RebalanceFrequency`）
-- API 路由与请求 schema：`src/quant_system/api/routes/backtest.py`、`src/quant_system/api/schemas/backtest.py`
+- API 路由、job runner 与请求 schema：`src/quant_system/api/routes/backtest.py`、`src/quant_system/api/jobs/backtest_jobs.py`、`src/quant_system/api/schemas/backtest.py`

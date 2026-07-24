@@ -49,6 +49,7 @@ testpaths = ["tests"]
 addopts = "-q"
 markers = [
   "pg: PostgreSQL integration tests that require QS_TEST_DATABASE_URL",
+  "futu_opend: read-only Futu/OpenD integration tests that require QS_TEST_FUTU_OPEND=1",
 ]
 
 [tool.ruff]

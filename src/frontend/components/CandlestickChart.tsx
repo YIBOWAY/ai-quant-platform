@@ -10,34 +10,37 @@ import {
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef } from "react";
 import type { OhlcvRow } from "@/lib/api";
+import { terminalChartTheme, type ChartTheme } from "@/lib/chartTokens";
 
 type CandlestickChartProps = {
   rows: OhlcvRow[];
   /** Optional fixed height in px. When omitted the chart fills its parent. */
   height?: number;
   locale?: "en" | "zh";
+  theme?: ChartTheme;
 };
 
-// Chart colors follow the design tokens in globals.css (accent / danger / info
-// / bg-surface). lightweight-charts needs literal values, so they are mirrored
-// here — keep in sync with @theme.
-const CHART_COLORS = {
-  background: "#111827",
-  text: "#94A3B8",
-  grid: "rgba(148, 163, 184, 0.10)",
-  border: "rgba(148, 163, 184, 0.22)",
-  up: "#00C896",
-  down: "#FF4D4F",
-  volumeUp: "rgba(0, 200, 150, 0.32)",
-  volumeDown: "rgba(255, 77, 79, 0.32)",
-};
-
-export function CandlestickChart({ rows, height: fixedHeight, locale = "en" }: CandlestickChartProps) {
+export function CandlestickChart({
+  rows,
+  height: fixedHeight,
+  locale = "en",
+  theme = terminalChartTheme,
+}: CandlestickChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const chartData = useMemo(() => normalizeRows(rows), [rows]);
+  const chartData = useMemo(
+    () => normalizeRows(rows, theme.volumeUp, theme.volumeDown),
+    [rows, theme.volumeUp, theme.volumeDown],
+  );
+  const latestThemeRef = useRef(theme);
+  const latestChartDataRef = useRef(chartData);
+
+  useEffect(() => {
+    latestThemeRef.current = theme;
+    latestChartDataRef.current = chartData;
+  });
 
   useEffect(() => {
     const host = chartHostRef.current;
@@ -50,18 +53,18 @@ export function CandlestickChart({ rows, height: fixedHeight, locale = "en" }: C
       height: fixedHeight ?? Math.max(host.clientHeight, 240),
       width: host.clientWidth,
       layout: {
-        background: { color: CHART_COLORS.background },
-        textColor: CHART_COLORS.text,
+        background: { color: terminalChartTheme.background },
+        textColor: terminalChartTheme.text,
       },
       grid: {
-        vertLines: { color: CHART_COLORS.grid },
-        horzLines: { color: CHART_COLORS.grid },
+        vertLines: { color: terminalChartTheme.grid },
+        horzLines: { color: terminalChartTheme.grid },
       },
       rightPriceScale: {
-        borderColor: CHART_COLORS.border,
+        borderColor: terminalChartTheme.border,
       },
       timeScale: {
-        borderColor: CHART_COLORS.border,
+        borderColor: terminalChartTheme.border,
         timeVisible: false,
       },
       crosshair: {
@@ -69,15 +72,15 @@ export function CandlestickChart({ rows, height: fixedHeight, locale = "en" }: C
       },
     });
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: CHART_COLORS.up,
-      downColor: CHART_COLORS.down,
-      borderUpColor: CHART_COLORS.up,
-      borderDownColor: CHART_COLORS.down,
-      wickUpColor: CHART_COLORS.up,
-      wickDownColor: CHART_COLORS.down,
+      upColor: terminalChartTheme.up,
+      downColor: terminalChartTheme.down,
+      borderUpColor: terminalChartTheme.up,
+      borderDownColor: terminalChartTheme.down,
+      wickUpColor: terminalChartTheme.up,
+      wickDownColor: terminalChartTheme.down,
     });
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      color: CHART_COLORS.volumeUp,
+      color: terminalChartTheme.volumeUp,
       priceFormat: { type: "volume" },
       priceScaleId: "",
     });
@@ -90,6 +93,8 @@ export function CandlestickChart({ rows, height: fixedHeight, locale = "en" }: C
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
+    applyThemeToChart(chart, candleSeries, volumeSeries, latestThemeRef.current);
+    applyChartDataToChart(chart, candleSeries, volumeSeries, latestChartDataRef.current);
 
     // Drive both width AND height from the host element's real box, so the
     // chart fills whatever space its flex parent gives it.
@@ -114,16 +119,30 @@ export function CandlestickChart({ rows, height: fixedHeight, locale = "en" }: C
   }, [fixedHeight]);
 
   useEffect(() => {
-    // setData asserts on unsorted/duplicate times; normalizeRows guarantees
-    // ordering, but guard anyway so a data edge case can never blank the app.
-    try {
-      chartRef.current?.timeScale().applyOptions({ timeVisible: chartData.intraday });
-      candleSeriesRef.current?.setData(chartData.candles);
-      volumeSeriesRef.current?.setData(chartData.volume);
-      chartRef.current?.timeScale().fitContent();
-    } catch (error) {
-      console.error("CandlestickChart setData failed", error);
-    }
+    const currentTheme: CandlestickTheme = {
+      background: theme.background,
+      text: theme.text,
+      grid: theme.grid,
+      border: theme.border,
+      up: theme.up,
+      down: theme.down,
+      volumeUp: theme.volumeUp,
+      volumeDown: theme.volumeDown,
+    };
+    applyThemeToChart(chartRef.current, candleSeriesRef.current, volumeSeriesRef.current, currentTheme);
+  }, [
+    theme.background,
+    theme.text,
+    theme.grid,
+    theme.border,
+    theme.up,
+    theme.down,
+    theme.volumeUp,
+    theme.volumeDown,
+  ]);
+
+  useEffect(() => {
+    applyChartDataToChart(chartRef.current, candleSeriesRef.current, volumeSeriesRef.current, chartData);
   }, [chartData]);
 
   if (!rows.length) {
@@ -152,7 +171,66 @@ export function CandlestickChart({ rows, height: fixedHeight, locale = "en" }: C
   );
 }
 
-function normalizeRows(rows: OhlcvRow[]) {
+type CandlestickChartData = ReturnType<typeof normalizeRows>;
+type CandlestickTheme = Pick<
+  ChartTheme,
+  "background" | "text" | "grid" | "border" | "up" | "down" | "volumeUp" | "volumeDown"
+>;
+
+function applyThemeToChart(
+  chart: IChartApi | null,
+  candleSeries: ISeriesApi<"Candlestick"> | null,
+  volumeSeries: ISeriesApi<"Histogram"> | null,
+  theme: CandlestickTheme,
+) {
+  chart?.applyOptions({
+    layout: {
+      background: { color: theme.background },
+      textColor: theme.text,
+    },
+    grid: {
+      vertLines: { color: theme.grid },
+      horzLines: { color: theme.grid },
+    },
+    rightPriceScale: {
+      borderColor: theme.border,
+    },
+    timeScale: {
+      borderColor: theme.border,
+    },
+  });
+  candleSeries?.applyOptions({
+    upColor: theme.up,
+    downColor: theme.down,
+    borderUpColor: theme.up,
+    borderDownColor: theme.down,
+    wickUpColor: theme.up,
+    wickDownColor: theme.down,
+  });
+  volumeSeries?.applyOptions({
+    color: theme.volumeUp,
+  });
+}
+
+function applyChartDataToChart(
+  chart: IChartApi | null,
+  candleSeries: ISeriesApi<"Candlestick"> | null,
+  volumeSeries: ISeriesApi<"Histogram"> | null,
+  chartData: CandlestickChartData,
+) {
+  // setData asserts on unsorted/duplicate times; normalizeRows guarantees
+  // ordering, but guard anyway so a data edge case can never blank the app.
+  try {
+    chart?.timeScale().applyOptions({ timeVisible: chartData.intraday });
+    candleSeries?.setData(chartData.candles);
+    volumeSeries?.setData(chartData.volume);
+    chart?.timeScale().fitContent();
+  } catch (error) {
+    console.error("CandlestickChart setData failed", error);
+  }
+}
+
+function normalizeRows(rows: OhlcvRow[], volumeUp: string, volumeDown: string) {
   // Daily bars can use the date string; intraday bars MUST use epoch seconds,
   // otherwise multiple bars of one day collapse onto the same time key and
   // lightweight-charts throws ("data must be asc ordered by time").
@@ -192,7 +270,7 @@ function normalizeRows(rows: OhlcvRow[]) {
   const volume = deduped.map(({ row, time }) => ({
     time,
     value: row.volume,
-    color: row.close >= row.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown,
+    color: row.close >= row.open ? volumeUp : volumeDown,
   }));
   return { candles, volume, intraday };
 }
