@@ -22,7 +22,8 @@ import type { Locale } from "@/lib/locale";
 export type HermesLocalChatBoundaryProps = {
   locale: Locale;
   deliveryState: HermesDeliveryState;
-  children: ReactNode;
+  /** Today page content rendered below the workspace panels. */
+  children?: ReactNode;
   composer: {
     label: string;
     placeholder: string;
@@ -72,21 +73,32 @@ export function HermesLocalChatBoundary({
                   deliveryState={deliveryState}
                   locale={locale}
                 />
-                {chatOpen ? <WorkbenchTranscriptPanel locale={locale} /> : null}
                 {chatOpen ? (
-                  <WorkbenchCommandActivityPanel locale={locale} />
-                ) : null}
-                {chatOpen ? (
-                  <WorkbenchCommandApprovalsPanel locale={locale} />
-                ) : null}
-                {chatOpen ? (
-                  <WorkbenchGateSurfacesPanel locale={locale} />
-                ) : null}
-                {chatOpen ? (
-                  <WorkbenchTypedResultsPanel locale={locale} />
-                ) : null}
-                {chatOpen ? (
-                  <WorkbenchAuthorityProjectionPanel locale={locale} />
+                  /*
+                   * UI-2 Direction A active state: transcript main column +
+                   * 320px context rail (approvals → activity → results →
+                   * gates → authority) at ≥1100px; single column below.
+                   * Panel internals, copy, and data-hermes-* markers are
+                   * unchanged — only the layout container moves.
+                   */
+                  <div
+                    className="grid min-w-0 grid-cols-1 gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_320px] min-[1100px]:items-start"
+                    data-hermes-active-grid
+                  >
+                    <div className="min-w-0" data-hermes-active-main>
+                      <WorkbenchTranscriptPanel locale={locale} />
+                    </div>
+                    <aside
+                      className="flex min-w-0 flex-col gap-4 min-[1100px]:sticky min-[1100px]:top-4"
+                      data-hermes-active-rail
+                    >
+                      <WorkbenchCommandApprovalsPanel locale={locale} />
+                      <WorkbenchCommandActivityPanel locale={locale} />
+                      <WorkbenchTypedResultsPanel locale={locale} />
+                      <WorkbenchGateSurfacesPanel locale={locale} />
+                      <WorkbenchAuthorityProjectionPanel locale={locale} />
+                    </aside>
+                  </div>
                 ) : null}
                 {children}
               </div>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
 import { hermesRouteHref } from "@/lib/hermes/routes";
 import type { Locale } from "@/lib/locale";
@@ -22,6 +23,17 @@ export function HermesInternalNav({ locale }: HermesInternalNavProps) {
   const pathname = usePathname();
   const activePath = splitLocalePath(pathname).pathname;
   const text = hermesWorkbenchCopy(locale);
+
+  // UI-2: tab switches land at the top of the internal scroll region so the
+  // user never stays mid-page wondering whether anything changed. The tab row
+  // itself already stays visible (scroll happens inside the region below it).
+  useEffect(() => {
+    document
+      .querySelectorAll<HTMLElement>("[data-page-scroll-region]")
+      .forEach((node) => {
+        node.scrollTop = 0;
+      });
+  }, [activePath]);
 
   const entries: NavEntry[] = [
     {
