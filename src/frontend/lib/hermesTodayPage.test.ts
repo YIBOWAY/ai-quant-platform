@@ -3,11 +3,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HermesResultsResponse } from "@/lib/api";
-import { healthyArtifacts } from "@/lib/hermes/viewModelFixtures";
+import {
+  gatewayFixture,
+  healthyArtifacts,
+} from "@/lib/hermes/viewModelFixtures";
 
 const api = vi.hoisted(() => ({
   getAgentCandidates: vi.fn(),
   getHermesArtifacts: vi.fn(),
+  getHermesGatewayStatus: vi.fn(),
   getHermesResults: vi.fn(),
 }));
 
@@ -21,6 +25,10 @@ vi.mock("@/lib/serverLocale", () => ({
 }));
 
 import HermesWorkbenchPage from "@/app/hermes/page";
+import {
+  HermesTodayOverviewSection,
+  HermesTodaySecondarySection,
+} from "@/app/hermes/today-sections";
 
 const platformResults = {
   read_status: "available",
@@ -52,22 +60,45 @@ const platformResults = {
   warnings: [],
 } as unknown as HermesResultsResponse;
 
-describe("Hermes Today server page", () => {
+describe("Hermes Today server page (UI-1 Direction A)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.getAgentCandidates.mockResolvedValue({ candidates: [] });
     api.getHermesArtifacts.mockResolvedValue(healthyArtifacts);
+    api.getHermesGatewayStatus.mockResolvedValue(gatewayFixture());
     api.getHermesResults.mockResolvedValue(platformResults);
   });
 
-  it("loads and renders a five-item GET-only unified-results preview", async () => {
+  it("renders both Suspense boundaries with chunked skeleton fallbacks", async () => {
     const page = await HermesWorkbenchPage();
     const html = renderToStaticMarkup(createElement(() => page));
 
-    expect(api.getHermesResults).toHaveBeenCalledWith({ limit: 5, offset: 0 });
+    expect(html).toContain('data-hermes-today-skeleton="overview"');
+    expect(html).toContain('data-hermes-today-skeleton="secondary"');
+  });
+
+  it("overview boundary fetches candidates + artifacts + gateway in parallel", async () => {
+    const section = await HermesTodayOverviewSection({ locale: "zh" });
+    const html = renderToStaticMarkup(createElement(() => section));
+
     expect(api.getAgentCandidates).toHaveBeenCalledOnce();
     expect(api.getHermesArtifacts).toHaveBeenCalledOnce();
+    expect(api.getHermesGatewayStatus).toHaveBeenCalledOnce();
+    expect(html).toContain('data-testid="hermes-today-state"');
+    expect(html).toContain("Hermes 在线");
+    expect(html).toContain("自动化");
+  });
+
+  it("secondary boundary renders the merged five-item results list and automation lane", async () => {
+    const section = await HermesTodaySecondarySection({ locale: "zh" });
+    const html = renderToStaticMarkup(createElement(() => section));
+
+    expect(api.getHermesResults).toHaveBeenCalledWith({ limit: 5, offset: 0 });
     expect(html).toContain("AAPL 页面接线回测");
-    expect(html).toContain("HQA 结论产物");
+    expect(html).toContain("最近结果");
+    expect(html).toContain("/zh/hermes/results/backtest/backtest-wave3-page");
+    expect(html).toContain("自动化 4/4 正常");
+    // Automation renders exactly once (no artifact-card duplicate).
+    expect(html.match(/data-hermes-automation-summary/g)).toHaveLength(1);
   });
 });
