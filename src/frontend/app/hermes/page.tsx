@@ -1,20 +1,25 @@
-import { HermesTodayView } from "@/components/hermes/today";
+import { Suspense } from "react";
 import {
-  getAgentCandidates,
-  getHermesArtifacts,
-  getHermesResults,
-} from "@/lib/api";
-import { buildHermesTodayModel } from "@/lib/hermes/viewModel";
+  HermesTodayOverviewSection,
+  HermesTodaySecondarySection,
+} from "./today-sections";
+import {
+  TodayOverviewSkeleton,
+  TodaySecondarySkeleton,
+} from "@/components/hermes/today";
 import { getServerLocale } from "@/lib/serverLocale";
 
 export default async function HermesWorkbenchPage() {
   const locale = await getServerLocale();
-  const [candidates, artifacts, results] = await Promise.all([
-    getAgentCandidates(),
-    getHermesArtifacts(),
-    getHermesResults({ limit: 5, offset: 0 }),
-  ]);
-  const model = buildHermesTodayModel({ candidates, artifacts, results });
 
-  return <HermesTodayView artifacts={artifacts} locale={locale} model={model} />;
+  return (
+    <div className="flex flex-col gap-5 sm:gap-6">
+      <Suspense fallback={<TodayOverviewSkeleton locale={locale} />}>
+        <HermesTodayOverviewSection locale={locale} />
+      </Suspense>
+      <Suspense fallback={<TodaySecondarySkeleton locale={locale} />}>
+        <HermesTodaySecondarySection locale={locale} />
+      </Suspense>
+    </div>
+  );
 }

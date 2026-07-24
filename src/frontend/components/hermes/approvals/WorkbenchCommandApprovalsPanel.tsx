@@ -23,7 +23,8 @@ export type WorkbenchCommandApprovalsPanelProps = {
 const DECIDE_BTN_CLASS =
   "app-touch-target inline-flex items-center justify-center rounded border border-border-subtle bg-bg-elevated px-3 font-body-sm text-text-primary transition-colors hover:bg-bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none";
 
-function canDecide(row: WorkspaceApprovalProjection): boolean {
+/** V7a decide gate: full CAS binding required before any control renders. */
+export function canDecideCommandApproval(row: WorkspaceApprovalProjection): boolean {
   const status = (row.status || row.expected_status || "pending").toLowerCase();
   if (status !== "pending") return false;
   if (!row.approval_id) return false;
@@ -32,6 +33,8 @@ function canDecide(row: WorkspaceApprovalProjection): boolean {
   if (!row.expires_at) return false;
   return true;
 }
+
+const canDecide = canDecideCommandApproval;
 
 /**
  * V7d: optimistic hide only while the spine still shows the row as pending.

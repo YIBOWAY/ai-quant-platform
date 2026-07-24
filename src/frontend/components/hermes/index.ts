@@ -26,15 +26,21 @@ export { WorkbenchTypedResultsPanel } from "./results/WorkbenchTypedResultsPanel
 export type { WorkbenchGateSurfacesPanelProps } from "./gates/WorkbenchGateSurfacesPanel";
 export {
   HermesTodayView,
-  AttentionSummary,
-  AutomationSummary,
-  RecentResults,
+  TodayAttention,
+  TodayAutomation,
+  TodayGreeting,
+  TodayResults,
+  TodayRunning,
+  TodayStatusLine,
 } from "./today";
 export type {
   HermesTodayViewProps,
-  AttentionSummaryProps,
-  AutomationSummaryProps,
-  RecentResultsProps,
+  TodayAttentionProps,
+  TodayAutomationProps,
+  TodayGreetingProps,
+  TodayResultsProps,
+  TodayRunningProps,
+  TodayStatusLineProps,
 } from "./today";
 export {
   ArtifactFeed,

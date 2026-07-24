@@ -1,6 +1,7 @@
 import type {
   HermesArtifactShelfEnvelope,
   HermesAutomationStatusArtifactData,
+  HermesGatewayStatusResponse,
 } from "@/lib/api";
 import type { HermesCandidateReadItem } from "./types";
 
@@ -201,4 +202,23 @@ export function noArtifacts(
     sources: [],
     warnings: [{ source: "artifact_feed", code: "api_unavailable" }],
   } satisfies HermesArtifactShelfEnvelope;
+}
+
+/** UI-1 Direction A: GET /api/hermes/gateway fixture (fail-closed friendly). */
+export function gatewayFixture(
+  overrides: Partial<HermesGatewayStatusResponse> = {},
+): HermesGatewayStatusResponse {
+  return {
+    read_status: "available",
+    connected: true,
+    model: "fixture-model",
+    session_api_available: true,
+    chat_write_ready: false,
+    features: {},
+    upstream_blockers: [],
+    platform_delivery_blockers: [],
+    blockers: [],
+    warnings: [],
+    ...overrides,
+  } as HermesGatewayStatusResponse;
 }

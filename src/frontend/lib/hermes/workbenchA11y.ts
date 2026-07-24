@@ -43,4 +43,4 @@ export const COLLAPSE_TOGGLE_CLASS =
 
 /** Content column padding that stays usable at 390px and roomy at 1440. */
 export const WORKBENCH_CONTENT_PAD_CLASS =
-  "mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:gap-4 lg:p-6";
+  "mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-3 p-3 pb-[calc(var(--spacing-hermes-composer-min)+2rem)] sm:gap-4 sm:p-4 sm:pb-[calc(var(--spacing-hermes-composer-min)+2.5rem)] lg:gap-4 lg:p-6 lg:pb-[calc(var(--spacing-hermes-composer-min)+3rem)]";

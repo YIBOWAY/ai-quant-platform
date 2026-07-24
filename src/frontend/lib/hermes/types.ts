@@ -1,6 +1,7 @@
 import type {
   AgentCandidatesResponse,
   HermesArtifactShelfEnvelope,
+  HermesGatewayStatusResponse,
   HermesResultsResponse,
 } from "@/lib/api";
 
@@ -73,6 +74,54 @@ export type HermesTodayModelInput = {
   artifacts: HermesArtifactShelfEnvelope;
   candidates: AgentCandidatesResponse;
   results: HermesResultsResponse;
+};
+
+/**
+ * UI-1 Direction A: normalized Hermes gateway posture for the status line.
+ * readStatus is fail-closed normalized (unknown raw values → unavailable).
+ */
+export type HermesGatewaySummary = {
+  readStatus: "available" | "degraded" | "unavailable";
+  connected: boolean;
+  /** available + connected — the only posture shown as "online". */
+  online: boolean;
+  blockers: string[];
+  warningCodes: string[];
+};
+
+/** UI-1 Direction A: aggregated artifact-source posture for the status line. */
+export type HermesSourceRollup = {
+  total: number;
+  available: number;
+  degraded: number;
+  unavailable: number;
+  status: "available" | "degraded" | "unavailable" | "empty";
+};
+
+export type HermesGreetingSlot = "morning" | "afternoon" | "evening";
+
+/**
+ * UI-1 Direction A overview model (greeting + status line + attention +
+ * running + technical). Derived without the results catalog so the overview
+ * Suspense boundary stays independent; the results section carries its own
+ * read_status honestly.
+ */
+export type HermesTodayOverviewModel = {
+  state: HermesTodayModel["state"];
+  greetingSlot: HermesGreetingSlot;
+  attention: HermesAttentionItem[];
+  automation: HermesAutomationSummary;
+  gateway: HermesGatewaySummary;
+  sources: HermesSourceRollup;
+  technical: HermesTechnicalSource[];
+};
+
+export type HermesTodayOverviewModelInput = {
+  artifacts: HermesArtifactShelfEnvelope;
+  candidates: AgentCandidatesResponse;
+  gateway: HermesGatewayStatusResponse;
+  /** Clock injection for deterministic greeting tests. */
+  now?: Date;
 };
 
 export type HermesDeliveryState =
