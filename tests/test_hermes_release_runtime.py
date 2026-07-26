@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -49,9 +48,19 @@ def _clean_repo(tmp_path: Path) -> Path:
             '{"scripts":{"test":"vitest run"},"type":"module"}\n',
             encoding="utf-8",
         )
+        vitest = frontend / "node_modules" / ".bin" / "vitest"
+        vitest.parent.mkdir(parents=True)
+        vitest.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        vitest.chmod(0o755)
     _git(repo, "add", "runtime.py")
     if tmp_path.name == "platform":
-        _git(repo, "add", "src/frontend/package.json")
+        _git(
+            repo,
+            "add",
+            "-f",
+            "src/frontend/package.json",
+            "src/frontend/node_modules/.bin/vitest",
+        )
     _git(repo, "commit", "-qm", "runtime")
     return repo
 
@@ -262,12 +271,17 @@ def _release_evidence_payload(
         }[name]
         now = datetime.now(UTC)
         if name == "frontend":
-            pnpm = shutil.which("pnpm")
-            assert pnpm is not None
-            executable = Path(pnpm).resolve()
+            executable = (
+                runtime_roots[runtime_name]
+                / "src"
+                / "frontend"
+                / "node_modules"
+                / ".bin"
+                / "vitest"
+            ).resolve()
             argv = [
                 str(executable),
-                "test",
+                "run",
                 "--reporter=junit",
                 f"--outputFile=/tmp/{name}.junit.xml.tmp",
             ]
