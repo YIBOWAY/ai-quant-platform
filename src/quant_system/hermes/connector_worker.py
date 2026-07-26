@@ -113,6 +113,7 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         lease_token: UUID,
         now: datetime,
         hermes_session_id: str,
+        resolved_hermes_session_id: str,
         hermes_run_id: str,
     ) -> HermesCommand: ...
 
@@ -155,6 +156,7 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         expected_version: int,
         now: datetime,
         hermes_session_id: str,
+        resolved_hermes_session_id: str,
         hermes_run_id: str,
         evidence_digest: str,
     ) -> HermesCommand: ...
@@ -166,6 +168,7 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         expected_version: int,
         now: datetime,
         hermes_session_id: str,
+        resolved_hermes_session_id: str,
         hermes_run_id: str,
         evidence_digest: str,
     ) -> HermesCommand: ...
@@ -177,6 +180,7 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         expected_version: int,
         now: datetime,
         hermes_session_id: str,
+        resolved_hermes_session_id: str,
         hermes_run_id: str,
         evidence_digest: str,
         error_code: str,
@@ -189,6 +193,7 @@ class CommandClaimLedger(CommandLeaseReconciler, Protocol):
         expected_version: int,
         now: datetime,
         hermes_session_id: str,
+        resolved_hermes_session_id: str,
         hermes_run_id: str,
         evidence_digest: str,
     ) -> HermesCommand: ...
@@ -540,7 +545,9 @@ class HermesConnectorWorker:
             ):
                 continue
             if current.state == "outcome_unknown" and (
-                not current.hermes_session_id or not current.hermes_run_id
+                not current.hermes_session_id
+                or not current.resolved_hermes_session_id
+                or not current.hermes_run_id
             ):
                 current = self._recover_unknown_outcome(ledger, current, port)
                 if current.state == "delivered":
@@ -548,18 +555,34 @@ class HermesConnectorWorker:
             if (
                 current.state not in {"delivered", "outcome_unknown"}
                 or not current.hermes_session_id
+                or not current.resolved_hermes_session_id
                 or not current.hermes_run_id
             ):
                 continue
             try:
+                registry_session_id = self._managed_session_resolver(
+                    current
+                )
+                if (
+                    registry_session_id is not None
+                    and registry_session_id != current.hermes_session_id
+                ):
+                    continue
+                conversation_session_id = current.hermes_session_id
                 observation = port.observe(
-                    hermes_session_id=current.hermes_session_id,
+                    conversation_hermes_session_id=conversation_session_id,
+                    hermes_session_id=current.resolved_hermes_session_id,
                     hermes_run_id=current.hermes_run_id,
                     # Until a durable platform cursor is introduced, replay from
                     # zero and let command-version CAS deduplicate the fold.
                     after_cursor=0,
                 )
             except Exception:  # noqa: BLE001 - observation failure is nonterminal
+                continue
+            if conversation_session_id is not None and (
+                observation.conversation_hermes_session_id
+                or observation.hermes_session_id
+            ) != conversation_session_id:
                 continue
             if self._record_terminal_observation(ledger, current, observation):
                 terminal_count += 1
@@ -582,10 +605,18 @@ class HermesConnectorWorker:
             not result.is_success
             or not result.hermes_session_id
             or not result.hermes_run_id
-            or result.hermes_session_id != request.hermes_session_id
+            or (
+                request.hermes_session_id is not None
+                and (
+                result.conversation_hermes_session_id
+                or result.hermes_session_id
+                )
+                != request.hermes_session_id
+            )
         ):
             return command
         evidence = result.evidence_digest or evidence_digest_for(
+            conversation_hermes_session_id=request.hermes_session_id,
             hermes_session_id=result.hermes_session_id,
             hermes_run_id=result.hermes_run_id,
             outcome="recovered",
@@ -595,7 +626,8 @@ class HermesConnectorWorker:
                 command_id=command.command_id,
                 expected_version=command.version,
                 now=self._now(),
-                hermes_session_id=result.hermes_session_id,
+                hermes_session_id=request.hermes_session_id,
+                resolved_hermes_session_id=result.hermes_session_id,
                 hermes_run_id=result.hermes_run_id,
                 evidence_digest=evidence,
             )
@@ -617,7 +649,10 @@ class HermesConnectorWorker:
             not observation.is_terminal
             or not observation.replay_complete
             or not observation.evidence_digest
-            or observation.hermes_session_id != command.hermes_session_id
+            or observation.conversation_hermes_session_id
+            != command.hermes_session_id
+            or observation.hermes_session_id
+            != command.resolved_hermes_session_id
             or observation.hermes_run_id != command.hermes_run_id
         ):
             return False
@@ -625,7 +660,8 @@ class HermesConnectorWorker:
             "command_id": command.command_id,
             "expected_version": command.version,
             "now": self._now(),
-            "hermes_session_id": observation.hermes_session_id,
+            "hermes_session_id": command.hermes_session_id,
+            "resolved_hermes_session_id": observation.hermes_session_id,
             "hermes_run_id": observation.hermes_run_id,
             "evidence_digest": observation.evidence_digest,
         }
@@ -824,6 +860,24 @@ class HermesConnectorWorker:
             lease_token=claimed.lease_token,
             request=request,
         )
+        if (
+            result.is_success
+            and request.hermes_session_id is not None
+            and (
+                result.conversation_hermes_session_id
+                or result.hermes_session_id
+            )
+            != request.hermes_session_id
+        ):
+            # Hermes may have accepted a Run, so this is an unknown outcome,
+            # never a definitive rejection. Recovery reuses the same command
+            # idempotency key and can only bind an exact lineage receipt.
+            result = HermesDispatchResult(
+                kind="transport_error",
+                error_code="run_identity_mismatch",
+                provider_call_count=result.provider_call_count,
+                network_attempted=result.network_attempted,
+            )
 
         return self._record_dispatch_result(
             ledger=ledger,
@@ -941,7 +995,11 @@ class HermesConnectorWorker:
                     expected_version=started.version,
                     lease_token=lease_token,
                     now=self._now(),
-                    hermes_session_id=result.hermes_session_id,
+                    hermes_session_id=(
+                        result.conversation_hermes_session_id
+                        or result.hermes_session_id
+                    ),
+                    resolved_hermes_session_id=result.hermes_session_id,
                     hermes_run_id=result.hermes_run_id,
                 )
                 return {

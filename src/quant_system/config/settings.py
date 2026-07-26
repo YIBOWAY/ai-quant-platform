@@ -649,6 +649,36 @@ class AgentV02ReleaseSettings(BaseSettings):
     )
 
 
+class CandidateAdmissionSettings(BaseSettings):
+    """Deny-only operator inputs for the private Agent v0.2 candidate phase.
+
+    ``enabled`` can only veto admission.  It never grants command dispatch by
+    itself; durable PostgreSQL admission, exact evidence, clean runtimes, and
+    the command-side candidate binding are independent requirements.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_AGENT_V02_CANDIDATE_",
+        extra="ignore",
+    )
+
+    enabled: bool = False
+    ttl_seconds: int = Field(default=900, ge=1, le=1800)
+    preflight_evidence_file: Path = (
+        Path(__file__).resolve().parents[3]
+        / "data"
+        / "_runtime"
+        / "agent-v0.2-candidate-evidence.json"
+    )
+    final_evidence_file: Path = (
+        Path(__file__).resolve().parents[3]
+        / "data"
+        / "_runtime"
+        / "agent-v0.2-release-evidence.json"
+    )
+
+
 class IntentPayloadSettings(BaseSettings):
     """Subprocess Port to HQA ``intent_payload_cli`` (L2a-Send).
 
@@ -714,6 +744,9 @@ class Settings(BaseSettings):
     local_mutation: LocalMutationSettings = Field(default_factory=LocalMutationSettings)
     agent_v02_release: AgentV02ReleaseSettings = Field(
         default_factory=AgentV02ReleaseSettings
+    )
+    candidate_admission: CandidateAdmissionSettings = Field(
+        default_factory=CandidateAdmissionSettings
     )
     intent_payload: IntentPayloadSettings = Field(default_factory=IntentPayloadSettings)
 

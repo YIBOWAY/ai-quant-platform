@@ -73,8 +73,75 @@ class PublicCutoverResponse(_WorkspaceSchema):
     close_reason: str | None = None
 
 
+class DurablePublicCutoverResponse(_WorkspaceSchema):
+    """Canonical PostgreSQL release cutover fact.
+
+    This projection deliberately carries no legacy M6 build/acceptance fields
+    and makes no current composer-readiness claim.
+    """
+
+    authority_source: Literal["postgres_release_authority"]
+    kind: Literal["agent_v0_2.release.public_cutover"]
+    cutover_id: str = Field(min_length=1, max_length=200)
+    cutover_ref: str = Field(
+        pattern=r"^cutover:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+    )
+    stamp_id: str = Field(min_length=1, max_length=200)
+    route: Literal["/hermes"]
+    release_digest: str = Field(pattern=_DIGEST)
+    cutover_digest: str = Field(pattern=_DIGEST)
+    status: Literal["open", "closed"]
+    public_flag_open: bool
+    opened_at: str = Field(min_length=1, max_length=64)
+    closed_at: str | None = Field(default=None, min_length=1, max_length=64)
+    close_reason: str | None = Field(default=None, min_length=1, max_length=2000)
+    candidate_admission_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
+    candidate_admission_digest: str | None = Field(default=None, pattern=_DIGEST)
+    candidate_acceptance_digest: str | None = Field(default=None, pattern=_DIGEST)
+    evidence_set_id: str | None = Field(default=None, min_length=1, max_length=200)
+    evidence_set_digest: str | None = Field(default=None, pattern=_DIGEST)
+    final_order_snapshot_digest: str | None = Field(default=None, pattern=_DIGEST)
+    paper_authority_epoch: int | None = Field(default=None, ge=1, le=2**63 - 1)
+
+
 class GateProjectionResponse(_WorkspaceSchema):
     gate_id: str
+    attempt_ref: str | None = Field(
+        default=None,
+        pattern=r"^attempt:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$",
+    )
+    command_id: str | None = Field(
+        default=None,
+        pattern=(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12}$"
+        ),
+    )
+    command_ref: str | None = Field(
+        default=None,
+        pattern=(
+            r"^command:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12}$"
+        ),
+    )
+    hermes_session_id: str | None = Field(default=None, min_length=1, max_length=255)
+    hermes_run_id: str | None = Field(default=None, min_length=1, max_length=255)
+    hqa_run_ref: str | None = Field(
+        default=None,
+        pattern=r"^run:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$",
+    )
+    hqa_gate_ref: str | None = Field(
+        default=None,
+        pattern=r"^gate:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$",
+    )
+    managed_session_ref: str | None = Field(
+        default=None,
+        pattern=r"^session:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$",
+    )
     gate_kind: Literal["gate1", "gate2", "gate3"]
     kind: Literal[
         "gate1.formula_source",
@@ -86,12 +153,16 @@ class GateProjectionResponse(_WorkspaceSchema):
         "confirmed",
         "reviewed",
         "prepared",
+        "completed",
+        "outcome_unknown",
         "rejected",
         "expired",
     ]
     expected_status: str
     task_id: str | None = None
     task_ref: str | None = None
+    source_file_ref: str | None = Field(default=None, max_length=4096)
+    universe: str | None = Field(default=None, max_length=2000)
     reviewed_source_sha256: str | None = None
     candidate_id: str | None = None
     candidate_ref: str | None = None
@@ -99,9 +170,62 @@ class GateProjectionResponse(_WorkspaceSchema):
     final_backtest_receipt_id: str | None = None
     final_backtest_receipt_ref: str | None = None
     base_commit: str | None = None
+    hqa_receipt_ref: str | None = Field(default=None, max_length=200)
+    hqa_receipt_digest: str | None = Field(default=None, pattern=_DIGEST)
+    promotion_id: str | None = Field(
+        default=None,
+        pattern=r"^promo-[0-9a-f]{32}(?:-r(?:[2-9]|[1-9][0-9]+))?$",
+    )
+    worktree: str | None = Field(default=None, max_length=4096)
+    patch: str | None = Field(default=None, max_length=4096)
+    manifest: str | None = Field(default=None, max_length=4096)
+    human_git_commit_required: bool | None = None
+    auto_commit: Literal[False] | None = None
+    reviewed_commit: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{40}$",
+    )
+    task_version: int | None = Field(default=None, ge=1, le=2**63 - 1)
+    task_status: Literal["completed"] | None = None
+    task_terminal_outcome: Literal["completed"] | None = None
+    attempt_status: Literal["completed"] | None = None
+    attempt_terminal_outcome: Literal["completed"] | None = None
+    domain_gate_outcome: Literal["passed"] | None = None
+    provider_evidence_ref: str | None = Field(
+        default=None,
+        pattern=r"^provider-evidence:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$",
+    )
+    workflow_audit_status: Literal["consistent"] | None = None
+    workflow_audit_ref: str | None = Field(
+        default=None,
+        pattern=r"^workflow-audit:[0-9a-f]{64}$",
+    )
+    workflow_audit_digest: str | None = Field(default=None, pattern=_DIGEST)
+    hqa_completion_receipt_ref: str | None = Field(
+        default=None,
+        pattern=r"^hqa-paper-completion:[0-9a-f]{32}$",
+    )
+    hqa_completion_receipt_digest: str | None = Field(
+        default=None,
+        pattern=_DIGEST,
+    )
     expires_at: str | None = None
     note: str | None = None
     decided_at: str | None = None
+
+
+class Gate1SourceEvidenceResponse(_WorkspaceSchema):
+    """Exact, digest-verified source bytes for an owner-reviewed Gate 1."""
+
+    schema_version: Literal["1.0"]
+    gate_id: str = Field(min_length=1, max_length=200)
+    workspace_id: str = Field(min_length=1, max_length=200)
+    source_file_ref: str = Field(min_length=1, max_length=4096)
+    reviewed_source_sha256: str = Field(pattern=_DIGEST)
+    observed_source_sha256: str = Field(pattern=_DIGEST)
+    byte_length: int = Field(ge=1, le=1_048_576)
+    media_type: Literal["text/x-python; charset=utf-8"]
+    source_utf8: str = Field(min_length=1, max_length=1_048_576)
 
 
 class ManagedSessionProjectionResponse(_WorkspaceSchema):
@@ -127,6 +251,37 @@ class ManagedSessionProjectionResponse(_WorkspaceSchema):
     updated_at: str | None = Field(default=None, max_length=64)
 
 
+class OptionsRequestResponse(_WorkspaceSchema):
+    action_digest: str = Field(pattern=_DIGEST)
+    admission_digest: str = Field(pattern=_DIGEST)
+    admission_id: str = Field(min_length=1, max_length=200)
+    client_action_id: str = Field(min_length=1, max_length=200)
+    domain_request_id: str = Field(min_length=1, max_length=200)
+    domain_request_ref: str = Field(pattern=r"^options-request:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+    expiry: str = Field(min_length=1, max_length=200)
+    recovery_action: (
+        Literal[
+            "follow_workspace",
+            "operator_reconcile_no_provider_replay",
+        ]
+        | None
+    )
+    state: Literal["awaiting_run", "completed", "outcome_unknown"]
+    strike: float = Field(gt=0, allow_inf_nan=False)
+    ticker: str = Field(min_length=1, max_length=32)
+    created_at: str = Field(min_length=1, max_length=64)
+    claim_id: str | None = Field(default=None, min_length=1, max_length=200)
+    session_ref: str | None = Field(
+        default=None,
+        pattern=r"^session:[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$",
+    )
+    run_ref: str | None = Field(
+        default=None,
+        pattern=r"^run:[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$",
+    )
+    result_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+
 class WorkspaceSnapshotResponse(_WorkspaceSchema):
     workspace: WorkspaceRefResponse
     owner_user_id: str = Field(min_length=1, max_length=64)
@@ -138,10 +293,11 @@ class WorkspaceSnapshotResponse(_WorkspaceSchema):
     commands: list[dict[str, Any]]
     runs: list[str]
     results: list[dict[str, Any]]
+    options_requests: list[OptionsRequestResponse] = Field(default_factory=list)
     approvals: list[dict[str, Any]]
     gates: list[GateProjectionResponse]
     canary_grants: list[CanaryGrantResponse]
-    public_cutovers: list[PublicCutoverResponse]
+    public_cutovers: list[PublicCutoverResponse | DurablePublicCutoverResponse]
     authority_health: dict[str, str]
     mutation_enabled: bool
     observed_at: str = Field(min_length=1, max_length=64)
@@ -157,8 +313,11 @@ class WorkspaceFollowResponse(_WorkspaceSchema):
     approvals: list[dict[str, Any]] | None = None
     gates: list[GateProjectionResponse] | None = None
     canary_grants: list[CanaryGrantResponse] | None = None
-    public_cutovers: list[PublicCutoverResponse] | None = None
+    public_cutovers: (
+        list[PublicCutoverResponse | DurablePublicCutoverResponse] | None
+    ) = None
     results: list[dict[str, Any]] | None = None
+    options_requests: list[OptionsRequestResponse] | None = None
     tasks: list[str] | None = None
     attempts: list[str] | None = None
     runs: list[str] | None = None
@@ -181,18 +340,25 @@ class WorkspaceAuthoritiesResponse(_WorkspaceSchema):
     dark_dispatch_schema_ready: bool
     dark_dispatch_ready: bool
     connector_liveness_ready: bool
+    run_control_outcome_ready: bool
     connector_liveness_reason: str
     connector_worker_id: str | None
     connector_mode: str | None
     connector_heartbeat_age_seconds: float | None
+    admission_mode: Literal["closed", "candidate", "release"]
     release_authorized: bool
     release_blockers: list[str]
+    final_release_blockers: list[str]
     release_stamp_id: str | None
     public_cutover_id: str | None
+    candidate_admission_id: str | None
+    candidate_admission_digest: str | None
+    candidate_chat_write_ready: bool
     release_event_cursor: int = Field(ge=0, le=2**63 - 1)
     mutation_enabled: bool
     local_chat_write_ready: bool
     composer_write_ready: bool
+    public_write_authorized: bool
     public_chat_write_ready: bool
     chat_write_ready: bool
     platform_delivery_blockers: list[str]
@@ -224,6 +390,19 @@ class WorkspaceActionReceiptResponse(_WorkspaceSchema):
     attempt_id: str | None = None
     result_id: str | None = None
     terminal_status: str | None = None
+    domain_request_id: str | None = Field(default=None, min_length=1, max_length=200)
+    domain_request_ref: str | None = Field(
+        default=None,
+        pattern=r"^options-request:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$",
+    )
+    domain_request_status: (
+        Literal[
+            "awaiting_run",
+            "completed",
+            "outcome_unknown",
+        ]
+        | None
+    ) = None
     gate_id: str | None = None
     grant_id: str | None = None
     grant_digest: str | None = Field(default=None, pattern=_DIGEST)
@@ -250,8 +429,10 @@ class CompositeTurnReceiptResponse(WorkspaceActionReceiptResponse):
 __all__ = [
     "CanaryGrantResponse",
     "CompositeTurnReceiptResponse",
+    "DurablePublicCutoverResponse",
     "DualVerticalAcceptanceResponse",
     "GateProjectionResponse",
+    "OptionsRequestResponse",
     "PublicCutoverResponse",
     "WorkspaceActionReceiptResponse",
     "WorkspaceAuthoritiesResponse",

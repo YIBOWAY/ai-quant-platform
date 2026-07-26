@@ -87,6 +87,51 @@ def _provision_test_login(
     conn.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(group), sql.Identifier(login)))
 
 
+def _insert_ready_managed_session(
+    conn: psycopg.Connection,
+    *,
+    platform_session_id: str,
+    owner_user_id: str,
+) -> None:
+    creation_digest = hashlib.sha256(
+        f"{owner_user_id}:{platform_session_id}".encode()
+    ).hexdigest()
+    conn.execute(
+        """
+        INSERT INTO quant_system.hermes_workspace_sessions (
+            platform_session_id,
+            hermes_session_id,
+            workspace_id,
+            owner_user_id,
+            kind,
+            provider_policy_digest,
+            writer,
+            payload_ttl_days,
+            creation_client_action_id,
+            creation_action_digest,
+            provision_state,
+            provisioning_receipt_digest,
+            provisioned_at
+        )
+        VALUES (
+            %s, %s, %s, %s, 'web_managed_session', %s,
+            'web_control_plane', 7, %s, %s, 'ready', %s,
+            clock_timestamp()
+        )
+        """,
+        (
+            platform_session_id,
+            f"web_{creation_digest[:40]}",
+            f"workspace-{platform_session_id}",
+            owner_user_id,
+            PROVIDER_POLICY_DIGEST,
+            f"create-{platform_session_id}",
+            creation_digest,
+            hashlib.sha256(f"receipt:{platform_session_id}".encode()).hexdigest(),
+        ),
+    )
+
+
 def test_v4r_migration_provisions_roles_rls_and_safe_runtime_probe() -> None:
     admin_url = _test_url()
     admin_settings = _settings(admin_url)
@@ -274,6 +319,13 @@ def test_runtime_and_readonly_roles_are_root_scoped_and_cannot_escalate() -> Non
     runtime_command_id = str(uuid.uuid4())
     denied_runtime_command_id = str(uuid.uuid4())
     other_owner = "10000000-0000-0000-0000-000000000001"
+    session_suffix = uuid.uuid4().hex[:12]
+    session_ids = {
+        "root": f"v4r-root-{session_suffix}",
+        "other": f"v4r-other-{session_suffix}",
+        "runtime": f"v4r-runtime-{session_suffix}",
+        "denied": f"v4r-denied-{session_suffix}",
+    }
 
     try:
         with database.connect() as conn:
@@ -297,6 +349,17 @@ def test_runtime_and_readonly_roles_are_root_scoped_and_cannot_escalate() -> Non
                 """,
                 (other_owner, "v4r-other-owner"),
             )
+            for marker, owner in (
+                ("root", "00000000-0000-0000-0000-000000000001"),
+                ("other", other_owner),
+                ("runtime", "00000000-0000-0000-0000-000000000001"),
+                ("denied", other_owner),
+            ):
+                _insert_ready_managed_session(
+                    conn,
+                    platform_session_id=session_ids[marker],
+                    owner_user_id=owner,
+                )
             for command_id, owner, marker in (
                 (root_command_id, "00000000-0000-0000-0000-000000000001", "root"),
                 (other_command_id, other_owner, "other"),
@@ -312,7 +375,7 @@ def test_runtime_and_readonly_roles_are_root_scoped_and_cannot_escalate() -> Non
                     (
                         command_id,
                         owner,
-                        f"v4r-{marker}-session",
+                        session_ids[marker],
                         f"v4r-{marker}-request",
                         "a" * 64,
                         f"platform-payload://sha256/{'b' * 64}",
@@ -336,29 +399,34 @@ def test_runtime_and_readonly_roles_are_root_scoped_and_cannot_escalate() -> Non
                     command_id, owner_user_id, platform_session_id,
                     client_request_id, kind, canonical_request_digest,
                     payload_ref
-                ) VALUES (%s, %s, 'v4r-runtime-session', 'v4r-runtime-request',
+                ) VALUES (%s, %s, %s, 'v4r-runtime-request',
                           'conversation_turn', %s, %s)
                 """,
                 (
                     runtime_command_id,
                     "00000000-0000-0000-0000-000000000001",
+                    session_ids["runtime"],
                     "c" * 64,
                     f"platform-payload://sha256/{'d' * 64}",
                 ),
             )
-            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with pytest.raises(
+                psycopg.errors.RaiseException,
+                match="conversation turn requires an exact managed session",
+            ):
                 conn.execute(
                     """
                     INSERT INTO quant_system.hermes_commands (
                         command_id, owner_user_id, platform_session_id,
                         client_request_id, kind, canonical_request_digest,
                         payload_ref
-                    ) VALUES (%s, %s, 'v4r-denied-session',
+                    ) VALUES (%s, %s, %s,
                               'v4r-denied-request', 'conversation_turn', %s, %s)
                     """,
                     (
                         denied_runtime_command_id,
                         other_owner,
+                        session_ids["denied"],
                         "e" * 64,
                         f"platform-payload://sha256/{'f' * 64}",
                     ),
@@ -396,6 +464,25 @@ def test_runtime_and_readonly_roles_are_root_scoped_and_cannot_escalate() -> Non
                         denied_runtime_command_id,
                     ],
                 ),
+            )
+            conn.execute(
+                """
+                ALTER TABLE quant_system.hermes_workspace_sessions
+                DISABLE TRIGGER trg_hermes_workspace_session_immutability
+                """
+            )
+            conn.execute(
+                """
+                DELETE FROM quant_system.hermes_workspace_sessions
+                WHERE platform_session_id = ANY(%s)
+                """,
+                (list(session_ids.values()),),
+            )
+            conn.execute(
+                """
+                ALTER TABLE quant_system.hermes_workspace_sessions
+                ENABLE ALWAYS TRIGGER trg_hermes_workspace_session_immutability
+                """
             )
             conn.execute("DELETE FROM quant_system.app_users WHERE id = %s", (other_owner,))
             _drop_test_login(conn, RUNTIME_LOGIN)

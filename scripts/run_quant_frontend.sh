@@ -109,6 +109,6 @@ fi
 chmod 600 "$LOG_PATH"
 cd "$FRONTEND_DIR"
 
-exec > >(tee -a "$LOG_PATH") 2>&1
+exec >>"$LOG_PATH" 2>&1
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] starting frontend-next"
 exec "$NEXT_BIN" start -H 127.0.0.1 -p 3001

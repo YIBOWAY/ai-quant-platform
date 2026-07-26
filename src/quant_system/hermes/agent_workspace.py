@@ -26,6 +26,24 @@ from quant_system.hermes.agent_workspace_actions import (
     parse_user_action_v1,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID
+from quant_system.hermes.gateway_client import (
+    HermesRunControlError,
+    HermesRunControlPort,
+    OfficialHermesRunControlClient,
+)
+from quant_system.hermes.paper_gate_authority import PaperGateAuthority
+from quant_system.hermes.paper_gate_port import (
+    SubprocessPaperGatePort,
+    build_subprocess_paper_gate_port,
+)
+from quant_system.hermes.public_cutover_observe import (
+    DurablePublicCutoverReader,
+    project_durable_workspace_public_cutovers,
+)
+from quant_system.hermes.release_authority import ReleaseAuthority
+from quant_system.hermes.run_control_outcome_authority import (
+    RunControlOutcomeAuthority,
+)
 from quant_system.hermes.submission_saga import (
     ActionReceipt,
     SubmissionSagaError,
@@ -125,6 +143,9 @@ class WorkspaceSnapshot:
     runs: tuple[str, ...]
     # V7f: typed result projections (objects). Empty honest; never bare invented Task rows.
     results: tuple[dict[str, object], ...]
+    # Production Vertical-A domain requests. These are provider-free seed facts,
+    # not transport Commands, HQA Tasks/Attempts, Hermes Runs, or Results.
+    options_requests: tuple[dict[str, object], ...]
     # L5a/V7a/V7d: Hermes command-approval challenges from hermetic authority
     # (pending + recent decided). Empty is honest; never invent Gate 1/2/3 rows.
     approvals: tuple[dict[str, object], ...]
@@ -149,6 +170,7 @@ class WorkspaceSnapshot:
             "commands": [dict(item) for item in self.commands],
             "runs": list(self.runs),
             "results": [dict(item) if isinstance(item, dict) else item for item in self.results],
+            "options_requests": [dict(item) for item in self.options_requests],
             "approvals": [dict(item) for item in self.approvals],
             "gates": [dict(item) for item in self.gates],
             "canary_grants": [dict(item) for item in self.canary_grants],
@@ -179,6 +201,8 @@ class EventPage:
     public_cutovers: tuple[dict[str, object], ...] | None = None
     # V7f: optional typed results projection (separate from gates/approvals).
     results: tuple[dict[str, object], ...] | None = None
+    # Production Vertical-A domain request projection.
+    options_requests: tuple[dict[str, object], ...] | None = None
     # V7g-A-M1: optional Task/Attempt/Run id lists on follow (same as snapshot).
     tasks: tuple[str, ...] | None = None
     attempts: tuple[str, ...] | None = None
@@ -204,6 +228,8 @@ class EventPage:
             payload["public_cutovers"] = [dict(item) for item in self.public_cutovers]
         if self.results is not None:
             payload["results"] = [dict(item) for item in self.results]
+        if self.options_requests is not None:
+            payload["options_requests"] = [dict(item) for item in self.options_requests]
         if self.tasks is not None:
             payload["tasks"] = list(self.tasks)
         if self.attempts is not None:
@@ -229,11 +255,54 @@ class PlatformAgentWorkspace:
         *,
         mutation_enabled: bool = False,
         hermetic_authorities: bool = False,
+        vertical_a_authority: object | None = None,
+        release_cutover_reader: DurablePublicCutoverReader | None = None,
     ) -> None:
         self._settings = settings
         # Public path hard-defaults False. Tests may flip these independently.
         self._mutation_enabled = bool(mutation_enabled)
         self._hermetic_authorities = bool(hermetic_authorities)
+        if self._hermetic_authorities:
+            if release_cutover_reader is not None:
+                raise ValueError(
+                    "hermetic workspace cannot mount the production release projection"
+                )
+            self._release_cutover_reader = None
+            self._vertical_a_authority = vertical_a_authority
+            self._paper_gate_authority: PaperGateAuthority | None = None
+            self._paper_gate_port: SubprocessPaperGatePort | None = None
+            self._run_control_adapter: HermesRunControlPort | None = None
+            self._run_control_outcome_authority: RunControlOutcomeAuthority | None = None
+        else:
+            # Read-only seam: the BFF always gets the canonical PostgreSQL
+            # ReleaseAuthority. Tests may supply a reader, never a writer.
+            self._release_cutover_reader = (
+                release_cutover_reader or ReleaseAuthority(settings)
+            )
+            if vertical_a_authority is not None:
+                raise ValueError(
+                    "production Vertical-A authority is settings-built and cannot be injected"
+                )
+            from quant_system.hermes.vertical_a_durable_authority import (
+                build_postgres_vertical_a_authority,
+            )
+
+            self._vertical_a_authority = build_postgres_vertical_a_authority(settings)
+            # Production `/act` uses only the settings-built durable PostgreSQL
+            # authority and fixed HQA subprocess port. Neither dependency is
+            # injectable through the HTTP/BFF factory.
+            self._paper_gate_authority = PaperGateAuthority(settings)
+            self._paper_gate_port = build_subprocess_paper_gate_port(settings)
+            self._run_control_adapter = (
+                OfficialHermesRunControlClient(settings.hermes_gateway)
+                if settings.hermes_gateway.enabled
+                else None
+            )
+            self._run_control_outcome_authority = (
+                RunControlOutcomeAuthority(settings)
+                if settings.hermes_gateway.enabled
+                else None
+            )
 
     @property
     def mutation_enabled(self) -> bool:
@@ -286,6 +355,13 @@ class PlatformAgentWorkspace:
                 mutation_enabled=self._mutation_enabled,
                 actor_owner_user_id=owner,
                 allow_hermetic_authorities=self._hermetic_authorities,
+                run_control_adapter=self._run_control_adapter,
+                run_control_outcome_authority=(
+                    self._run_control_outcome_authority
+                ),
+                vertical_a_authority=self._vertical_a_authority,
+                paper_gate_authority=self._paper_gate_authority,
+                paper_gate_port=self._paper_gate_port,
             )
         except SubmissionSagaError:
             raise
@@ -356,7 +432,12 @@ class PlatformAgentWorkspace:
                 ):
                     health[authority_name] = "unavailable"
 
-        process_projection = self._authority_spine_projections(workspace_id)
+        hermes_run_ids = self._workspace_hermes_run_ids(workspace_id)
+        process_projection = self._authority_spine_projections(
+            workspace_id,
+            hermes_run_ids=hermes_run_ids,
+        )
+        health.update(process_projection["authority_health"])  # type: ignore[arg-type]
 
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
@@ -369,6 +450,7 @@ class PlatformAgentWorkspace:
             commands=tuple(commands),
             runs=process_projection["runs"],  # type: ignore[arg-type]
             results=process_projection["results"],  # type: ignore[arg-type]
+            options_requests=process_projection["options_requests"],  # type: ignore[arg-type]
             approvals=process_projection["approvals"],  # type: ignore[arg-type]
             gates=process_projection["gates"],  # type: ignore[arg-type]
             canary_grants=process_projection["canary_grants"],  # type: ignore[arg-type]
@@ -378,12 +460,19 @@ class PlatformAgentWorkspace:
             observed_at=observed_at,
         )
 
-    def _authority_spine_projections(self, workspace_id: str) -> dict[str, object]:
+    def _authority_spine_projections(
+        self,
+        workspace_id: str,
+        *,
+        hermes_run_ids: tuple[str, ...] | None = (),
+    ) -> dict[str, object]:
         """Project explicitly mounted V7/V8 contract-test authorities.
 
-        With the production default, every restart-volatile projection is empty
-        and reports unavailable.  Durable session/command rows remain on their
-        separate PostgreSQL projection and are unaffected.
+        With the production default, restart-volatile projections are empty
+        and unavailable. Public cutovers are the exception: they project only
+        the durable PostgreSQL ReleaseAuthority's current + historical facts.
+        Durable session/command rows remain on their separate PostgreSQL
+        projection and are unaffected.
         """
         authority_names = (
             "command_approval",
@@ -391,6 +480,7 @@ class PlatformAgentWorkspace:
             "gate_2",
             "gate_3",
             "result",
+            "options_request",
             "task",
             "attempt",
             "run",
@@ -398,16 +488,114 @@ class PlatformAgentWorkspace:
             "public_cutover",
         )
         if not self._hermetic_authorities:
+            durable_health = {name: "unavailable" for name in authority_names}
+            durable_health["provider"] = "dark"
+            durable_health["hermes_gateway"] = (
+                "dark"
+                if self._run_control_adapter is None
+                else "unavailable"
+            )
+            gates: tuple[dict[str, object], ...] = ()
+            results: tuple[dict[str, object], ...] = ()
+            options_requests: tuple[dict[str, object], ...] = ()
+            approvals: tuple[dict[str, object], ...] = ()
+            tasks: tuple[str, ...] = ()
+            attempts: tuple[str, ...] = ()
+            runs: tuple[str, ...] = ()
+            release_projection = project_durable_workspace_public_cutovers(
+                self._settings,
+                workspace_id,
+                authority=self._release_cutover_reader,
+            )
+            durable_health["public_cutover"] = release_projection.health
+            try:
+                gates = tuple(
+                    self._paper_gate_authority.list_observed(workspace_id)
+                    if self._paper_gate_authority is not None
+                    else ()
+                )
+            except Exception:
+                pass
+            else:
+                tasks = tuple(
+                    sorted(
+                        {
+                            str(row["task_ref"])
+                            for row in gates
+                            if isinstance(row.get("task_ref"), str)
+                        }
+                    )
+                )
+                attempts = tuple(
+                    sorted(
+                        {
+                            str(row["attempt_ref"])
+                            for row in gates
+                            if isinstance(row.get("attempt_ref"), str)
+                        }
+                    )
+                )
+                runs = tuple(
+                    sorted(
+                        {
+                            str(row["hqa_run_ref"])
+                            for row in gates
+                            if isinstance(row.get("hqa_run_ref"), str)
+                        }
+                    )
+                )
+                durable_health.update(
+                    {
+                        "gate_1": "ready",
+                        "gate_2": "ready",
+                        "gate_3": "ready",
+                        "task": "ready",
+                        "attempt": "ready",
+                        "run": "ready",
+                    }
+                )
+            if self._vertical_a_authority is not None:
+                try:
+                    projection = self._vertical_a_authority.project_workspace(  # type: ignore[attr-defined]
+                        workspace_id
+                    )
+                except Exception:
+                    pass
+                else:
+                    durable_health.update(
+                        {
+                            "options_request": "ready",
+                            "result": "ready",
+                            "provider": projection.provider_health,
+                        }
+                    )
+                    results = projection.results
+                    options_requests = projection.options_requests
+            if (
+                self._run_control_adapter is not None
+                and hermes_run_ids is not None
+            ):
+                try:
+                    approvals = self._run_control_adapter.pending_approvals(
+                        hermes_run_ids
+                    )
+                except HermesRunControlError:
+                    durable_health["command_approval"] = "unavailable"
+                    durable_health["hermes_gateway"] = "unavailable"
+                else:
+                    durable_health["command_approval"] = "ready"
+                    durable_health["hermes_gateway"] = "ready"
             return {
-                "approvals": (),
-                "gates": (),
+                "approvals": approvals,
+                "gates": gates,
                 "canary_grants": (),
-                "public_cutovers": (),
-                "results": (),
-                "tasks": (),
-                "attempts": (),
-                "runs": (),
-                "authority_health": {name: "unavailable" for name in authority_names},
+                "public_cutovers": release_projection.rows,
+                "results": results,
+                "options_requests": options_requests,
+                "tasks": tasks,
+                "attempts": attempts,
+                "runs": runs,
+                "authority_health": durable_health,
             }
 
         from quant_system.hermes.approval_observe import project_workspace_approvals
@@ -429,6 +617,7 @@ class PlatformAgentWorkspace:
             "canary_grants": tuple(project_workspace_canary_grants(workspace_id)),
             "public_cutovers": tuple(project_workspace_public_cutovers(workspace_id)),
             "results": tuple(project_workspace_results(workspace_id)),
+            "options_requests": (),
             "tasks": tuple(task_ids_for_spine(workspace_id)),
             "attempts": tuple(attempt_ids_for_spine(workspace_id)),
             "runs": tuple(run_ids_for_spine(workspace_id)),
@@ -462,7 +651,10 @@ class PlatformAgentWorkspace:
         mutation_on = bool(self._mutation_enabled or ready.get("mutation_enabled"))
         # Explicit contract-test projections attach even when durable command
         # events require resync. Production defaults to empty/unavailable.
-        proj = self._authority_spine_projections(workspace_id)
+        proj = self._authority_spine_projections(
+            workspace_id,
+            hermes_run_ids=self._workspace_hermes_run_ids(workspace_id),
+        )
         supplemental_health = dict(proj["authority_health"])  # type: ignore[arg-type]
 
         def _set_database_health(available: bool) -> None:
@@ -503,6 +695,7 @@ class PlatformAgentWorkspace:
                 canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
                 public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
+                options_requests=proj["options_requests"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
                 runs=proj["runs"],  # type: ignore[arg-type]
@@ -534,6 +727,7 @@ class PlatformAgentWorkspace:
                 canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
                 public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
+                options_requests=proj["options_requests"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
                 runs=proj["runs"],  # type: ignore[arg-type]
@@ -552,6 +746,7 @@ class PlatformAgentWorkspace:
                 canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
                 public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
+                options_requests=proj["options_requests"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
                 runs=proj["runs"],  # type: ignore[arg-type]
@@ -569,6 +764,7 @@ class PlatformAgentWorkspace:
             canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
             public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
             results=proj["results"],  # type: ignore[arg-type]
+            options_requests=proj["options_requests"],  # type: ignore[arg-type]
             tasks=proj["tasks"],  # type: ignore[arg-type]
             attempts=proj["attempts"],  # type: ignore[arg-type]
             runs=proj["runs"],  # type: ignore[arg-type]
@@ -589,6 +785,67 @@ class PlatformAgentWorkspace:
             (workspace_id, ROOT_USER_ID),
         ).fetchall()
         return [str(row[0]) for row in rows]
+
+    def _workspace_hermes_run_ids(
+        self,
+        workspace_id: str,
+    ) -> tuple[str, ...] | None:
+        """Read the newest bounded Run set that can still await Web control.
+
+        ``None`` means PostgreSQL was unavailable.  It is intentionally
+        distinct from a healthy empty tuple so approval health cannot be
+        reported ready-empty during a database outage.
+        """
+
+        from quant_system.hermes.submission_saga import control_plane_session_id
+        from quant_system.storage.database import SCHEMA
+
+        database = get_database(self._settings)
+        if database is None:
+            return None
+        try:
+            with database.connect() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT recent.hermes_run_id
+                    FROM (
+                        SELECT
+                            command.hermes_run_id,
+                            MAX(command.created_at) AS latest_created_at
+                        FROM {SCHEMA}.hermes_commands AS command
+                        LEFT JOIN
+                            {SCHEMA}.hermes_workspace_sessions AS session
+                          ON session.owner_user_id =
+                                command.owner_user_id
+                         AND session.platform_session_id =
+                                command.platform_session_id
+                        WHERE command.owner_user_id = %s
+                          AND command.hermes_run_id IS NOT NULL
+                          AND command.state IN (
+                                'delivered',
+                                'outcome_unknown'
+                          )
+                          AND (
+                                command.platform_session_id = %s
+                                OR session.workspace_id = %s
+                          )
+                        GROUP BY command.hermes_run_id
+                        ORDER BY
+                            latest_created_at DESC,
+                            command.hermes_run_id DESC
+                        LIMIT 64
+                    ) AS recent
+                    ORDER BY recent.hermes_run_id
+                    """,
+                    (
+                        ROOT_USER_ID,
+                        control_plane_session_id(workspace_id),
+                        workspace_id,
+                    ),
+                ).fetchall()
+        except Exception:
+            return None
+        return tuple(str(row[0]) for row in rows)
 
     def _collect_workspace_projection(
         self, workspace_id: str
@@ -875,12 +1132,14 @@ def build_platform_agent_workspace(
     *,
     mutation_enabled: bool = False,
     hermetic_authorities: bool = False,
+    vertical_a_authority: object | None = None,
 ) -> PlatformAgentWorkspace:
     """Build a workspace; the production BFF leaves hermetic authorities off."""
     return PlatformAgentWorkspace(
         settings,
         mutation_enabled=mutation_enabled,
         hermetic_authorities=hermetic_authorities,
+        vertical_a_authority=vertical_a_authority,
     )
 
 

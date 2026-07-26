@@ -52,6 +52,24 @@ data/                     Local cache, fixtures, generated research outputs.
 
 - This repository is the domain backend for
   `/Users/sunyibo/programs/Hermes-quant-agent`.
+- **Agent v0.2 final-source addendum (2026-07-26):** the current release
+  branch contains migrations 016–024, private candidate admission and sealed
+  real-flow evidence, PostgreSQL-only release/cutover authority, managed
+  external-session exact-message fork with selected plus Hermes-resolved
+  lineage, durable conversation-root/resolved-run-tip identity, crash-safe
+  approval/stop outcomes, natural-language paper research entry, and browser
+  Gate 1 exact-source review. The dated V4–V8 notes below are historical
+  provenance, not the current queue. Apply 016–024 only in order after backup and isolated
+  replay. Never infer live migration, connector, candidate, stamp, cutover or
+  `chat_write_ready` state from this file: query PostgreSQL metadata, runtime
+  identities, the effective release gate and health in the current operator
+  window. Public cutover is never a prerequisite for private candidate E2E.
+  Release order is full/focused tests -> live migration -> sealed test
+  preflight -> private candidate -> connector -> real browser flows -> verified
+  evidence -> candidate accept -> release stamp/cutover -> smoke/rollback.
+  Throughout this product slice, `paper_trading=true`,
+  `live_trading_enabled=false`, `kill_switch=true`, and zero orders are
+  invariant.
 - The active cross-repo roadmap lives in
   `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`.
 - HQA Slices 9A-9G, the read-only mini 9H artifact shelf, full 9H

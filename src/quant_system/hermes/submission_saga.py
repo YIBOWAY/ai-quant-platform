@@ -100,6 +100,19 @@ from quant_system.hermes.gate_surface_authority import (
     GateSurfaceAuthorityError,
     default_gate_surface_authority,
 )
+from quant_system.hermes.gateway_client import (
+    HermesRunControlError,
+    HermesRunControlPort,
+)
+from quant_system.hermes.paper_gate_authority import (
+    PaperGateAuthority,
+    PaperGateAuthorityConflict,
+    PaperGateAuthorityError,
+    PaperGateAuthorityUnavailable,
+    PaperGateAuthorityValidationError,
+    PaperGateExecutionPort,
+    PaperGateReceipt,
+)
 from quant_system.hermes.public_cutover_authority import (
     PublicCutoverAuthorityError,
     default_public_cutover_authority,
@@ -109,9 +122,14 @@ from quant_system.hermes.public_cutover_observe import (
     note_public_cutover_opened,
 )
 from quant_system.hermes.result_observe import note_result_raised
+from quant_system.hermes.run_control_outcome_authority import (
+    RunControlOutcomeAuthority,
+    RunControlOutcomeError,
+)
 from quant_system.hermes.run_stop_port import (
     RunStopError,
     RunStopPort,
+    StopResult,
     build_layered_stop_receipt,
     default_run_stop_adapter,
     strip_run_ref,
@@ -127,10 +145,14 @@ from quant_system.hermes.session_registry import (
     register_workspace_session,
     require_web_writable_session,
 )
+from quant_system.hermes.vertical_a_durable_authority import (
+    PostgresVerticalAAuthority,
+)
 from quant_system.hermes.vertical_binding_authority import (
     VerticalBindingAuthorityError,
     default_vertical_binding_authority,
 )
+from quant_system.storage.database import SCHEMA, get_database
 
 ReceiptStatus = Literal[
     "accepted",
@@ -197,6 +219,12 @@ class ActionReceipt:
     attempt_id: str | None = None
     result_id: str | None = None
     terminal_status: str | None = None
+    # Production Vertical-A domain request. This is not a transport Command,
+    # HQA Task/Attempt, Hermes Run, or completed result.
+    domain_request_id: str | None = None
+    domain_request_status: str | None = None
+    domain_admission_id: str | None = None
+    domain_admission_digest: str | None = None
     # V7g-B-M3: optional Gate1 id after vertical.factor_b.gate1_seed.
     gate_id: str | None = None
     # V8-M5: optional canary grant identity (issue/revoke/accept).
@@ -248,6 +276,11 @@ class ActionReceipt:
             payload["result_id"] = self.result_id
         if self.terminal_status is not None:
             payload["terminal_status"] = self.terminal_status
+        if self.domain_request_id is not None:
+            payload["domain_request_id"] = self.domain_request_id
+            payload["domain_request_ref"] = f"options-request:{self.domain_request_id}"
+        if self.domain_request_status is not None:
+            payload["domain_request_status"] = self.domain_request_status
         if self.gate_id is not None:
             payload["gate_id"] = self.gate_id
         if self.grant_id is not None:
@@ -355,6 +388,10 @@ def _receipt(
     attempt_id: str | None = None,
     result_id: str | None = None,
     terminal_status: str | None = None,
+    domain_request_id: str | None = None,
+    domain_request_status: str | None = None,
+    domain_admission_id: str | None = None,
+    domain_admission_digest: str | None = None,
     gate_id: str | None = None,
     grant_id: str | None = None,
     grant_digest: str | None = None,
@@ -383,6 +420,10 @@ def _receipt(
         attempt_id=attempt_id,
         result_id=result_id,
         terminal_status=terminal_status,
+        domain_request_id=domain_request_id,
+        domain_request_status=domain_request_status,
+        domain_admission_id=domain_admission_id,
+        domain_admission_digest=domain_admission_digest,
         gate_id=gate_id,
         grant_id=grant_id,
         grant_digest=grant_digest,
@@ -453,6 +494,86 @@ def _create_idempotent_command(
         raise SubmissionSagaError("validation", str(exc)) from exc
     except HermesCommandLedgerUnavailable as exc:
         raise SubmissionSagaError("unavailable", str(exc)) from exc
+
+
+def _workspace_owns_run(
+    settings: Settings,
+    *,
+    workspace_id: str,
+    run_id: str,
+) -> bool:
+    """Verify one exact workspace→managed command→Hermes Run binding.
+
+    Production approval/stop must not turn a caller-supplied Run identifier
+    into ambient bearer authority. Only a Run already bound to a durable
+    workspace command is addressable. Database failure is unavailable, never
+    an authorization miss or a permissive fallback.
+    """
+
+    control_session = control_plane_session_id(workspace_id)
+    database = get_database(settings)
+    if database is None:
+        raise SubmissionSagaError(
+            "unavailable",
+            "workspace Run authority requires PostgreSQL",
+        )
+    try:
+        with database.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT 1
+                FROM {SCHEMA}.hermes_commands AS command
+                LEFT JOIN {SCHEMA}.hermes_workspace_sessions AS session
+                  ON session.owner_user_id = command.owner_user_id
+                 AND session.platform_session_id =
+                        command.platform_session_id
+                WHERE command.owner_user_id = %s
+                  AND command.hermes_run_id = %s
+                  AND command.state IN (
+                        'delivered',
+                        'outcome_unknown',
+                        'succeeded',
+                        'failed',
+                        'cancelled'
+                  )
+                  AND (
+                        (
+                            session.workspace_id = %s
+                            AND session.kind = 'web_managed_session'
+                        )
+                        OR command.platform_session_id = %s
+                  )
+                LIMIT 1
+                """,
+                (ROOT_USER_ID, run_id, workspace_id, control_session),
+            ).fetchone()
+    except Exception as exc:  # database adapter errors stay secret-free
+        raise SubmissionSagaError(
+            "unavailable",
+            "workspace Run authority is unavailable",
+        ) from exc
+    return row is not None
+
+
+def _create_control_command_before_effect(
+    settings: Settings,
+    *,
+    workspace_id: str,
+    client_action_id: str,
+    kind: str,
+    action_digest: str,
+) -> CreateHermesCommandResult:
+    """Commit exact idempotency identity before any external Run mutation."""
+
+    return _create_idempotent_command(
+        settings,
+        platform_session_id=control_plane_session_id(workspace_id),
+        client_request_id=client_action_id,
+        kind=kind,
+        action_digest=action_digest,
+        payload_ref=action_payload_ref_for_digest(action_digest),
+        provider_policy_digest=None,
+    )
 
 
 def submit_create_managed_session(
@@ -800,6 +921,228 @@ def submit_conversation_turn(
     )
 
 
+def _submit_production_approval(
+    settings: Settings,
+    action: DecideHermesCommandApproval,
+    *,
+    digest: str,
+    mutation_enabled: bool,
+    adapter: HermesRunControlPort,
+    outcome_authority: RunControlOutcomeAuthority,
+) -> ActionReceipt:
+    try:
+        run_id = strip_run_ref(action.run_ref)
+    except RunStopError as exc:
+        raise SubmissionSagaError("validation", exc.message) from exc
+    challenge_id = action.approval_ref.removeprefix("approval:")
+    if not _ensure_ready(settings) or not outcome_authority.ready():
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            run_id=run_id,
+            reason_code="workspace_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        owns_run = _workspace_owns_run(
+            settings,
+            workspace_id=action.workspace.workspace_id,
+            run_id=run_id,
+        )
+    except SubmissionSagaError as exc:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            run_id=run_id,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+        )
+    if not owns_run:
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            run_id=run_id,
+            reason_code="run_workspace_binding_mismatch",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        control = _create_control_command_before_effect(
+            settings,
+            workspace_id=action.workspace.workspace_id,
+            client_action_id=action.client_action_id,
+            kind="hermes_command_approval_decide",
+            action_digest=digest,
+        )
+    except SubmissionSagaError as exc:
+        return _receipt(
+            status="conflict" if exc.code == "conflict" else "unavailable",
+            action=action,
+            digest=digest,
+            run_id=run_id,
+            reason_code=(
+                "idempotency_digest_conflict"
+                if exc.code == "conflict"
+                else "workspace_authority_unavailable"
+            ),
+            mutation_enabled=mutation_enabled,
+        )
+    command_id = str(control.command.command_id)
+    try:
+        prior = outcome_authority.read(
+            command_id=command_id,
+            action_digest=digest,
+            action_kind="hermes_command_approval_decide",
+            target_run_id=run_id,
+        )
+    except RunControlOutcomeError as exc:
+        return _receipt(
+            status=("conflict" if exc.code == "run_control_outcome_conflict" else "unavailable"),
+            action=action,
+            digest=digest,
+            command_id=command_id,
+            run_id=run_id,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+        )
+    if prior is not None and prior.status != "outcome_unknown":
+        return _receipt(
+            status="accepted" if prior.status == "succeeded" else "conflict",
+            action=action,
+            digest=digest,
+            command_id=command_id,
+            run_id=run_id,
+            reason_code=prior.reason_code,
+            mutation_enabled=mutation_enabled,
+        )
+
+    try:
+        result = adapter.respond_approval_exact(
+            run_id,
+            choice=map_decision_to_release_choice(action.decision),
+            challenge_id=challenge_id,
+            action_digest=action.command_digest,
+            expected_status=action.expected_status,
+            expected_expires_at=action.expected_expires_at,
+        )
+    except ApprovalReleaseError as exc:
+        raise SubmissionSagaError("validation", exc.message) from exc
+    except HermesRunControlError as exc:
+        if exc.code == "run_control_validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code in {
+            "approval_exact_binding_conflict",
+            "approval_challenge_invalid",
+            "approval_not_active",
+            "approval_not_pending",
+            "run_control_conflict",
+            "run_not_found",
+        }:
+            status: ReceiptStatus = "conflict"
+            durable_status = "conflict"
+        elif exc.code in {
+            "transport_error",
+            "outcome_unknown",
+            "upstream_unavailable",
+        }:
+            status = "reconciling"
+            durable_status = "outcome_unknown"
+        else:
+            if prior is not None:
+                return _receipt(
+                    status="reconciling",
+                    action=action,
+                    digest=digest,
+                    command_id=command_id,
+                    run_id=run_id,
+                    reason_code=prior.reason_code,
+                    mutation_enabled=mutation_enabled,
+                )
+            return _receipt(
+                status="unavailable",
+                action=action,
+                digest=digest,
+                command_id=command_id,
+                run_id=run_id,
+                reason_code=exc.code,
+                mutation_enabled=mutation_enabled,
+            )
+        try:
+            outcome_authority.finalize(
+                command_id=command_id,
+                action_digest=digest,
+                action_kind="hermes_command_approval_decide",
+                target_run_id=run_id,
+                status=durable_status,  # type: ignore[arg-type]
+                reason_code=exc.code,
+                external_status=None,
+            )
+        except RunControlOutcomeError:
+            status = "outcome_unknown"
+        return _receipt(
+            status=status,
+            action=action,
+            digest=digest,
+            command_id=command_id,
+            run_id=run_id,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+        )
+
+    if result.waiter_signal_status == "unknown":
+        with suppress(RunControlOutcomeError):
+            outcome_authority.finalize(
+                command_id=command_id,
+                action_digest=digest,
+                action_kind="hermes_command_approval_decide",
+                target_run_id=run_id,
+                status="outcome_unknown",
+                reason_code="approval_signal_unknown",
+                external_status="committed",
+                external_idempotent_replay=result.idempotent_replay,
+            )
+        return _receipt(
+            status="reconciling",
+            action=action,
+            digest=digest,
+            command_id=command_id,
+            run_id=run_id,
+            reason_code="approval_signal_unknown",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        outcome_authority.finalize(
+            command_id=command_id,
+            action_digest=digest,
+            action_kind="hermes_command_approval_decide",
+            target_run_id=run_id,
+            status="succeeded",
+            reason_code=None,
+            external_status="committed",
+            external_idempotent_replay=result.idempotent_replay,
+        )
+    except RunControlOutcomeError:
+        return _receipt(
+            status="outcome_unknown",
+            action=action,
+            digest=digest,
+            command_id=command_id,
+            run_id=run_id,
+            reason_code="run_control_outcome_unavailable",
+            mutation_enabled=mutation_enabled,
+        )
+    return _receipt(
+        status="accepted",
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        run_id=run_id,
+        mutation_enabled=mutation_enabled,
+    )
+
+
 def submit_decide_hermes_command_approval(
     settings: Settings,
     action: DecideHermesCommandApproval,
@@ -808,6 +1151,8 @@ def submit_decide_hermes_command_approval(
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
     approval_authority: CommandApprovalAuthority | None = None,
     approval_release_adapter: ApprovalReleasePort | None = None,
+    run_control_adapter: HermesRunControlPort | None = None,
+    run_control_outcome_authority: RunControlOutcomeAuthority | None = None,
 ) -> ActionReceipt:
     """V7a+V7b: exact CAS decide then hermetic respond_approval release/signal.
 
@@ -829,6 +1174,23 @@ def submit_decide_hermes_command_approval(
             mutation_enabled=mutation_enabled,
         )
     _require_root_actor(actor_owner_user_id)
+    if run_control_adapter is not None:
+        if run_control_outcome_authority is None:
+            return _receipt(
+                status="unavailable",
+                action=action,
+                digest=digest,
+                reason_code="run_control_outcome_authority_unavailable",
+                mutation_enabled=mutation_enabled,
+            )
+        return _submit_production_approval(
+            settings,
+            action,
+            digest=digest,
+            mutation_enabled=mutation_enabled,
+            adapter=run_control_adapter,
+            outcome_authority=run_control_outcome_authority,
+        )
 
     authority = approval_authority or default_command_approval_authority()
     try:
@@ -924,6 +1286,288 @@ def submit_decide_hermes_command_approval(
     )
 
 
+def _unknown_stop_receipt(
+    action: RequestStop,
+    *,
+    digest: str,
+    run_id: str,
+    command_id: str | None,
+    reason_code: str,
+    mutation_enabled: bool,
+    status: ReceiptStatus = "reconciling",
+) -> ActionReceipt:
+    layers = build_layered_stop_receipt(
+        stop=None,
+        hermes_run_layer="unknown",
+        attempt_ref=action.attempt_ref,
+        platform_job_ref=action.platform_job_ref,
+        transport_unknown=True,
+    )
+    return _receipt(
+        status=status,
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        run_id=run_id,
+        reason_code=reason_code,
+        mutation_enabled=mutation_enabled,
+        stop_layers=layers.to_public_dict(),
+    )
+
+
+def _submit_production_stop(
+    settings: Settings,
+    action: RequestStop,
+    *,
+    digest: str,
+    run_id: str,
+    mutation_enabled: bool,
+    adapter: HermesRunControlPort,
+    outcome_authority: RunControlOutcomeAuthority,
+) -> ActionReceipt:
+    if not _ensure_ready(settings) or not outcome_authority.ready():
+        return _unknown_stop_receipt(
+            action,
+            digest=digest,
+            run_id=run_id,
+            command_id=None,
+            reason_code="workspace_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+            status="unavailable",
+        )
+    try:
+        owns_run = _workspace_owns_run(
+            settings,
+            workspace_id=action.workspace.workspace_id,
+            run_id=run_id,
+        )
+    except SubmissionSagaError as exc:
+        return _unknown_stop_receipt(
+            action,
+            digest=digest,
+            run_id=run_id,
+            command_id=None,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+            status="unavailable",
+        )
+    if not owns_run:
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            run_id=run_id,
+            reason_code="run_workspace_binding_mismatch",
+            mutation_enabled=mutation_enabled,
+        )
+    try:
+        control = _create_control_command_before_effect(
+            settings,
+            workspace_id=action.workspace.workspace_id,
+            client_action_id=action.client_action_id,
+            kind="run_stop_request",
+            action_digest=digest,
+        )
+    except SubmissionSagaError as exc:
+        if exc.code == "conflict":
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                run_id=run_id,
+                reason_code="idempotency_digest_conflict",
+                mutation_enabled=mutation_enabled,
+            )
+        return _unknown_stop_receipt(
+            action,
+            digest=digest,
+            run_id=run_id,
+            command_id=None,
+            reason_code="workspace_authority_unavailable",
+            mutation_enabled=mutation_enabled,
+            status="unavailable",
+        )
+    command_id = str(control.command.command_id)
+    try:
+        prior = outcome_authority.read(
+            command_id=command_id,
+            action_digest=digest,
+            action_kind="run_stop_request",
+            target_run_id=run_id,
+        )
+    except RunControlOutcomeError as exc:
+        return _unknown_stop_receipt(
+            action,
+            digest=digest,
+            run_id=run_id,
+            command_id=command_id,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+            status=("conflict" if exc.code == "run_control_outcome_conflict" else "unavailable"),
+        )
+    if prior is not None and prior.status == "conflict":
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            command_id=command_id,
+            run_id=run_id,
+            reason_code=prior.reason_code,
+            mutation_enabled=mutation_enabled,
+        )
+    if prior is not None and prior.status == "succeeded":
+        replay_stop = StopResult(
+            run_id=run_id,
+            status=prior.external_status or "stopped",
+            idempotent_replay=True,
+        )
+        replay_layers = build_layered_stop_receipt(
+            stop=replay_stop,
+            hermes_run_layer="already_terminal",
+            attempt_ref=action.attempt_ref,
+            platform_job_ref=action.platform_job_ref,
+        )
+        return _receipt(
+            status="accepted",
+            action=action,
+            digest=digest,
+            command_id=command_id,
+            run_id=run_id,
+            mutation_enabled=mutation_enabled,
+            stop_layers=replay_layers.to_public_dict(),
+        )
+    try:
+        result = adapter.stop(run_id)
+    except HermesRunControlError as exc:
+        if exc.code == "run_control_validation":
+            raise SubmissionSagaError("validation", exc.message) from exc
+        if exc.code in {
+            "transport_error",
+            "outcome_unknown",
+            "upstream_unavailable",
+        }:
+            with suppress(RunControlOutcomeError):
+                outcome_authority.finalize(
+                    command_id=command_id,
+                    action_digest=digest,
+                    action_kind="run_stop_request",
+                    target_run_id=run_id,
+                    status="outcome_unknown",
+                    reason_code=exc.code,
+                    external_status=None,
+                )
+            return _unknown_stop_receipt(
+                action,
+                digest=digest,
+                run_id=run_id,
+                command_id=command_id,
+                reason_code=exc.code,
+                mutation_enabled=mutation_enabled,
+            )
+        if exc.code in {"run_not_found", "run_control_conflict"}:
+            try:
+                outcome_authority.finalize(
+                    command_id=command_id,
+                    action_digest=digest,
+                    action_kind="run_stop_request",
+                    target_run_id=run_id,
+                    status="conflict",
+                    reason_code=exc.code,
+                    external_status=None,
+                )
+            except RunControlOutcomeError:
+                return _unknown_stop_receipt(
+                    action,
+                    digest=digest,
+                    run_id=run_id,
+                    command_id=command_id,
+                    reason_code="run_control_outcome_unavailable",
+                    mutation_enabled=mutation_enabled,
+                    status="outcome_unknown",
+                )
+            return _receipt(
+                status="conflict",
+                action=action,
+                digest=digest,
+                command_id=command_id,
+                run_id=run_id,
+                reason_code=exc.code,
+                mutation_enabled=mutation_enabled,
+            )
+        if prior is not None:
+            return _unknown_stop_receipt(
+                action,
+                digest=digest,
+                run_id=run_id,
+                command_id=command_id,
+                reason_code=prior.reason_code or "outcome_unknown",
+                mutation_enabled=mutation_enabled,
+            )
+        return _unknown_stop_receipt(
+            action,
+            digest=digest,
+            run_id=run_id,
+            command_id=command_id,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+            status="unavailable",
+        )
+
+    if result.status in {"queued", "accepted", "running"}:
+        hermes_layer = "requested"
+    elif result.idempotent_replay:
+        hermes_layer = "already_terminal"
+    else:
+        hermes_layer = "confirmed"
+    layers = build_layered_stop_receipt(
+        stop=result,
+        hermes_run_layer=hermes_layer,  # type: ignore[arg-type]
+        attempt_ref=action.attempt_ref,
+        platform_job_ref=action.platform_job_ref,
+    )
+    accepted = layers.overall in {"stopped", "already_terminal"}
+    reason_code = (
+        None
+        if accepted
+        else (
+            "stop_reconciliation_required"
+            if layers.overall == "requested"
+            else "stop_layers_reconciling"
+        )
+    )
+    try:
+        outcome_authority.finalize(
+            command_id=command_id,
+            action_digest=digest,
+            action_kind="run_stop_request",
+            target_run_id=run_id,
+            status="succeeded" if accepted else "outcome_unknown",
+            reason_code=reason_code,
+            external_status=result.status,
+            external_idempotent_replay=result.idempotent_replay,
+        )
+    except RunControlOutcomeError:
+        return _unknown_stop_receipt(
+            action,
+            digest=digest,
+            run_id=run_id,
+            command_id=command_id,
+            reason_code="run_control_outcome_unavailable",
+            mutation_enabled=mutation_enabled,
+            status="outcome_unknown",
+        )
+    return _receipt(
+        status="accepted" if accepted else "reconciling",
+        action=action,
+        digest=digest,
+        command_id=command_id,
+        run_id=result.run_id,
+        reason_code=reason_code,
+        mutation_enabled=mutation_enabled,
+        stop_layers=layers.to_public_dict(),
+    )
+
+
 def submit_stop_run_request(
     settings: Settings,
     action: RequestStop,
@@ -931,6 +1575,8 @@ def submit_stop_run_request(
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
     stop_adapter: RunStopPort | None = None,
+    run_control_adapter: HermesRunControlPort | None = None,
+    run_control_outcome_authority: RunControlOutcomeAuthority | None = None,
 ) -> ActionReceipt:
     """V7c: hermetic Run-scoped stop with plan §5.5 layered receipt.
 
@@ -958,6 +1604,27 @@ def submit_stop_run_request(
         run_id = strip_run_ref(action.run_ref)
     except RunStopError as exc:
         raise SubmissionSagaError("validation", exc.message) from exc
+
+    if run_control_adapter is not None:
+        if run_control_outcome_authority is None:
+            return _unknown_stop_receipt(
+                action,
+                digest=digest,
+                run_id=run_id,
+                command_id=None,
+                reason_code="run_control_outcome_authority_unavailable",
+                mutation_enabled=mutation_enabled,
+                status="unavailable",
+            )
+        return _submit_production_stop(
+            settings,
+            action,
+            digest=digest,
+            run_id=run_id,
+            mutation_enabled=mutation_enabled,
+            adapter=run_control_adapter,
+            outcome_authority=run_control_outcome_authority,
+        )
 
     adapter = stop_adapter or default_run_stop_adapter()
     identity = adapter.remember_request(
@@ -1075,14 +1742,92 @@ def submit_stop_run_request(
     )
 
 
+def _submit_durable_paper_gate_action(
+    action: ConfirmFormulaSource | ReviewCandidateCAS | PreparePromotionReview,
+    *,
+    digest: str,
+    mutation_enabled: bool,
+    authority: PaperGateAuthority,
+    port: PaperGateExecutionPort,
+) -> ActionReceipt:
+    """Execute one pre-registered Gate without manufacturing workflow facts.
+
+    The durable authority owns claim/replay/finalization.  In particular, an
+    ``outcome_unknown`` receipt is terminal for this action identity: the BFF
+    exposes reconciliation rather than blindly invoking HQA again.
+    """
+
+    try:
+        receipt: PaperGateReceipt = authority.execute_action(
+            action,
+            action_digest=digest,
+            port=port,
+        )
+    except PaperGateAuthorityValidationError as exc:
+        raise SubmissionSagaError("validation", exc.message) from exc
+    except PaperGateAuthorityConflict as exc:
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+        )
+    except PaperGateAuthorityUnavailable as exc:
+        if exc.code in {
+            "paper_gate_finalization_outcome_unknown",
+            "paper_gate_invalid_hqa_receipt",
+        }:
+            status: ReceiptStatus = "outcome_unknown"
+        elif exc.code == "paper_gate_action_in_progress":
+            status = "reconciling"
+        else:
+            status = "unavailable"
+        return _receipt(
+            status=status,
+            action=action,
+            digest=digest,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+        )
+    except PaperGateAuthorityError as exc:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+        )
+
+    if receipt.status in {"confirmed", "reviewed", "prepared"}:
+        status = "accepted"
+    elif receipt.status == "outcome_unknown":
+        status = "outcome_unknown"
+    elif receipt.status == "rejected":
+        status = "conflict"
+    else:
+        status = "unavailable"
+    return _receipt(
+        status=status,
+        action=action,
+        digest=digest,
+        gate_id=receipt.gate_id,
+        platform_session_id=strip_session_ref(receipt.managed_session_ref),
+        reason_code=receipt.reason_code,
+        mutation_enabled=mutation_enabled,
+    )
+
+
 def submit_confirm_formula_source(
     settings: Settings,
     action: ConfirmFormulaSource,
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    paper_gate_authority: PaperGateAuthority | None = None,
+    paper_gate_port: PaperGateExecutionPort | None = None,
 ) -> ActionReceipt:
-    """V7e Gate 1: hermetic formula-source confirm CAS (not command-approval)."""
+    """Gate 1 formula-source confirm (durable production or explicit hermetic)."""
     digest = canonical_action_digest(action)
     if not mutation_enabled:
         return _receipt(
@@ -1093,6 +1838,14 @@ def submit_confirm_formula_source(
             mutation_enabled=mutation_enabled,
         )
     _require_root_actor(actor_owner_user_id)
+    if paper_gate_authority is not None and paper_gate_port is not None:
+        return _submit_durable_paper_gate_action(
+            action,
+            digest=digest,
+            mutation_enabled=mutation_enabled,
+            authority=paper_gate_authority,
+            port=paper_gate_port,
+        )
     authority = default_gate_surface_authority()
     try:
         decided = authority.confirm_formula_source(
@@ -1160,8 +1913,10 @@ def submit_review_candidate_cas(
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    paper_gate_authority: PaperGateAuthority | None = None,
+    paper_gate_port: PaperGateExecutionPort | None = None,
 ) -> ActionReceipt:
-    """V7e Gate 2: hermetic candidate review CAS (no-refetch)."""
+    """Gate 2 exact candidate review CAS (no-refetch/no-substitution)."""
     digest = canonical_action_digest(action)
     if not mutation_enabled:
         return _receipt(
@@ -1172,6 +1927,14 @@ def submit_review_candidate_cas(
             mutation_enabled=mutation_enabled,
         )
     _require_root_actor(actor_owner_user_id)
+    if paper_gate_authority is not None and paper_gate_port is not None:
+        return _submit_durable_paper_gate_action(
+            action,
+            digest=digest,
+            mutation_enabled=mutation_enabled,
+            authority=paper_gate_authority,
+            port=paper_gate_port,
+        )
     authority = default_gate_surface_authority()
     try:
         decided = authority.review_candidate(
@@ -1240,8 +2003,10 @@ def submit_prepare_promotion_review(
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    paper_gate_authority: PaperGateAuthority | None = None,
+    paper_gate_port: PaperGateExecutionPort | None = None,
 ) -> ActionReceipt:
-    """V7e Gate 3: hermetic prepare only — never performs a Git commit."""
+    """Gate 3 promotion-review prepare only — never performs a Git commit."""
     digest = canonical_action_digest(action)
     if not mutation_enabled:
         return _receipt(
@@ -1252,6 +2017,14 @@ def submit_prepare_promotion_review(
             mutation_enabled=mutation_enabled,
         )
     _require_root_actor(actor_owner_user_id)
+    if paper_gate_authority is not None and paper_gate_port is not None:
+        return _submit_durable_paper_gate_action(
+            action,
+            digest=digest,
+            mutation_enabled=mutation_enabled,
+            authority=paper_gate_authority,
+            port=paper_gate_port,
+        )
     authority = default_gate_surface_authority()
     try:
         decided = authority.prepare_promotion_review(
@@ -1320,6 +2093,7 @@ def submit_bind_options_vertical_a(
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    vertical_a_authority: object | None = None,
 ) -> ActionReceipt:
     """V7g-A: Vertical A options research bind (hermetic + live Futu RO).
 
@@ -1336,7 +2110,57 @@ def submit_bind_options_vertical_a(
             mutation_enabled=mutation_enabled,
         )
     _require_root_actor(actor_owner_user_id)
-    authority = default_vertical_binding_authority()
+    authority = vertical_a_authority or default_vertical_binding_authority()
+    if isinstance(authority, PostgresVerticalAAuthority):
+        try:
+            seeded = authority.seed_options_vertical_a(
+                workspace_id=action.workspace.workspace_id,
+                client_action_id=action.client_action_id,
+                action_digest=digest,
+                ticker=action.ticker,
+                goal_note=action.goal_note,
+                expiry=action.expiry,
+                strike=action.strike,
+                include_provider_evidence=action.include_provider_evidence,
+                provider_mode=action.provider_mode,
+                auth_envelope=action.auth_envelope,
+            )
+        except VerticalBindingAuthorityError as exc:
+            if exc.code == "validation":
+                raise SubmissionSagaError("validation", exc.message) from exc
+            if exc.code == "conflict":
+                return _receipt(
+                    status="conflict",
+                    action=action,
+                    digest=digest,
+                    reason_code=exc.message,
+                    mutation_enabled=mutation_enabled,
+                )
+            return _receipt(
+                status="unavailable",
+                action=action,
+                digest=digest,
+                reason_code=exc.code,
+                mutation_enabled=mutation_enabled,
+            )
+        state_status: ReceiptStatus
+        if seeded.state == "completed":
+            state_status = "accepted"
+        elif seeded.state == "outcome_unknown":
+            state_status = "outcome_unknown"
+        else:
+            state_status = "reconciling"
+        return _receipt(
+            status=state_status,
+            action=action,
+            digest=digest,
+            domain_request_id=seeded.domain_request_id,
+            domain_request_status=seeded.state,
+            domain_admission_id=seeded.admission_id,
+            domain_admission_digest=seeded.admission_digest,
+            result_id=seeded.result_id,
+            mutation_enabled=mutation_enabled,
+        )
     try:
         outcome = authority.bind_options_vertical_a(
             workspace_id=action.workspace.workspace_id,
@@ -2370,6 +3194,11 @@ def submit_action(
     approval_authority: CommandApprovalAuthority | None = None,
     approval_release_adapter: ApprovalReleasePort | None = None,
     stop_adapter: RunStopPort | None = None,
+    run_control_adapter: HermesRunControlPort | None = None,
+    run_control_outcome_authority: RunControlOutcomeAuthority | None = None,
+    vertical_a_authority: object | None = None,
+    paper_gate_authority: PaperGateAuthority | None = None,
+    paper_gate_port: PaperGateExecutionPort | None = None,
 ) -> ActionReceipt:
     """Dispatch one closed action through the crash-safe submission path."""
     if isinstance(action, dict):
@@ -2391,11 +3220,41 @@ def submit_action(
         and approval_release_adapter is not None
     )
     explicitly_injected_stop_port = type(parsed) is RequestStop and stop_adapter is not None
+    production_run_control = (
+        type(parsed) in {DecideHermesCommandApproval, RequestStop}
+        and run_control_adapter is not None
+    )
+    explicitly_injected_vertical_a = (
+        type(parsed) is BindOptionsVerticalA
+        and vertical_a_authority is not None
+        and isinstance(vertical_a_authority, PostgresVerticalAAuthority)
+    )
+    durable_paper_gate_action = type(parsed) in {
+        ConfirmFormulaSource,
+        ReviewCandidateCAS,
+        PreparePromotionReview,
+    }
+    explicitly_injected_paper_gate = (
+        durable_paper_gate_action
+        and paper_gate_authority is not None
+        and paper_gate_port is not None
+    )
+    if durable_paper_gate_action and ((paper_gate_authority is None) != (paper_gate_port is None)):
+        return _receipt(
+            status="unavailable",
+            action=parsed,
+            digest=canonical_action_digest(parsed),
+            reason_code="paper_gate_adapter_misconfigured",
+            mutation_enabled=mutation_enabled,
+        )
     if (
         mutation_enabled
         and not allow_hermetic_authorities
         and not explicitly_injected_approval_ports
         and not explicitly_injected_stop_port
+        and not production_run_control
+        and not explicitly_injected_vertical_a
+        and not explicitly_injected_paper_gate
         and type(parsed) in _PROCESS_LOCAL_AUTHORITY_ACTIONS
     ):
         public_cutover_action = type(parsed) in _PUBLIC_CUTOVER_ACTIONS
@@ -2403,7 +3262,11 @@ def submit_action(
             status="unavailable",
             action=parsed,
             digest=canonical_action_digest(parsed),
-            reason_code="canonical_authority_adapter_unavailable",
+            reason_code=(
+                "release_operator_cli_required"
+                if public_cutover_action
+                else "canonical_authority_adapter_unavailable"
+            ),
             mutation_enabled=mutation_enabled,
             canary_honesty=type(parsed) in _CANARY_ACTIONS,
             public_cutover_honesty=public_cutover_action,
@@ -2439,6 +3302,8 @@ def submit_action(
             actor_owner_user_id=actor_owner_user_id,
             approval_authority=approval_authority,
             approval_release_adapter=approval_release_adapter,
+            run_control_adapter=run_control_adapter,
+            run_control_outcome_authority=run_control_outcome_authority,
         )
     if type(parsed) is RequestStop:
         return submit_stop_run_request(
@@ -2447,6 +3312,8 @@ def submit_action(
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
             stop_adapter=stop_adapter,
+            run_control_adapter=run_control_adapter,
+            run_control_outcome_authority=run_control_outcome_authority,
         )
     if type(parsed) is ConfirmFormulaSource:
         return submit_confirm_formula_source(
@@ -2454,6 +3321,8 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            paper_gate_authority=paper_gate_authority,
+            paper_gate_port=paper_gate_port,
         )
     if type(parsed) is ReviewCandidateCAS:
         return submit_review_candidate_cas(
@@ -2461,6 +3330,8 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            paper_gate_authority=paper_gate_authority,
+            paper_gate_port=paper_gate_port,
         )
     if type(parsed) is PreparePromotionReview:
         return submit_prepare_promotion_review(
@@ -2468,6 +3339,8 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            paper_gate_authority=paper_gate_authority,
+            paper_gate_port=paper_gate_port,
         )
     if type(parsed) is BindOptionsVerticalA:
         return submit_bind_options_vertical_a(
@@ -2475,6 +3348,7 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            vertical_a_authority=vertical_a_authority,
         )
     if type(parsed) is BindFactorVerticalB:
         return submit_bind_factor_vertical_b(

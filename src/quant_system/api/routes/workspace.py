@@ -32,6 +32,7 @@ from quant_system.api.safety.mutation_rate_limit import (
 )
 from quant_system.api.schemas.workspace import (
     CompositeTurnReceiptResponse,
+    Gate1SourceEvidenceResponse,
     WorkspaceActionReceiptResponse,
     WorkspaceAuthoritiesResponse,
     WorkspaceFollowResponse,
@@ -53,6 +54,15 @@ from quant_system.hermes.composite_turn_submit import (
     parse_submit_turn_body,
     submit_composite_turn,
 )
+from quant_system.hermes.paper_gate_authority import (
+    PaperGateAuthority,
+    PaperGateAuthorityConflict,
+    PaperGateAuthorityError,
+    PaperGateNotFound,
+)
+from quant_system.hermes.paper_gate_source_evidence import (
+    PaperGateSourceEvidenceError,
+)
 from quant_system.hermes.submission_saga import SubmissionSagaError
 
 router = APIRouter()
@@ -68,6 +78,12 @@ _RELEASE_ROLLBACK_ACTION_KINDS = frozenset(
         "public.cutover.close",
         "v8.public.cutover.close",
         "v8.canary.grant.revoke",
+    }
+)
+_OPERATOR_RELEASE_ACTION_KINDS = frozenset(
+    {
+        "public.cutover.open",
+        "public.cutover.close",
     }
 )
 
@@ -106,6 +122,12 @@ def _is_release_rollback_action(action: dict[str, Any]) -> bool:
         kind == "hermes.command_approval.decide"
         and action.get("decision") == "deny"
     )
+
+
+def _is_operator_release_action(action: dict[str, Any]) -> bool:
+    """Legacy browser cutover acts only return an operator-CLI-required receipt."""
+
+    return action.get("kind") in _OPERATOR_RELEASE_ACTION_KINDS
 
 
 def _require_effective_release(settings: SettingsDep) -> None:
@@ -170,6 +192,54 @@ def workspace_snapshot(
             detail={"code": "validation", "message": str(exc) or "validation"},
         ) from exc
     return snap.to_public_dict()
+
+
+@router.get(
+    "/workspace/{workspace_id}/gates/{gate_id}/source",
+    response_model=Gate1SourceEvidenceResponse,
+)
+def workspace_gate1_source_evidence(
+    workspace_id: str,
+    gate_id: str,
+    settings: SettingsDep,
+    owner: OwnerSessionDep,
+) -> dict[str, object]:
+    """Read exact Gate 1 bytes from its durable owner/workspace binding.
+
+    ``owner`` is intentionally consumed even though the single-user authority
+    already binds its database rows to ROOT_USER_ID.  The browser cannot pass a
+    path or digest, and this GET performs no workflow mutation.
+    """
+
+    del owner
+    try:
+        return PaperGateAuthority(settings).get_gate1_source_evidence(
+            workspace_id=workspace_id,
+            gate_id=gate_id,
+        )
+    except PaperGateNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    except PaperGateAuthorityConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    except PaperGateSourceEvidenceError as exc:
+        status = 409 if exc.code == "paper_gate_source_digest_mismatch" else 422
+        if exc.code == "paper_gate_source_unavailable":
+            status = 503
+        raise HTTPException(
+            status_code=status,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    except PaperGateAuthorityError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
 
 
 @router.get(
@@ -719,7 +789,7 @@ def workspace_act(
                 },
             )
 
-    if not _is_release_rollback_action(raw):
+    if not _is_release_rollback_action(raw) and not _is_operator_release_action(raw):
         _require_effective_release(settings)
 
     try:

@@ -679,6 +679,7 @@ def test_hermes_results_exposes_only_exact_ledger_run_links(
         platform_resource_id=experiment_id,
         relation="output",
         hermes_session_id="hermes-session-exact",
+        resolved_hermes_session_id="hermes-session-exact-tip",
         hermes_run_id="hermes-run-exact",
         link_digest=hermes_run_link_digest(
             command_id=command_id,
@@ -686,6 +687,7 @@ def test_hermes_results_exposes_only_exact_ledger_run_links(
             platform_resource_id=experiment_id,
             relation="output",
             hermes_session_id="hermes-session-exact",
+            resolved_hermes_session_id="hermes-session-exact-tip",
             hermes_run_id="hermes-run-exact",
             source_event_id="event-exact-001",
         ),
@@ -730,10 +732,11 @@ def test_hermes_results_exposes_only_exact_ledger_run_links(
     assert calls == [("experiment", experiment_id)]
     assert item["run_links"] == [
         {
-            "command_id": "00000000-0000-0000-0000-000000000011",
-            "relation": "output",
-            "hermes_session_id": "hermes-session-exact",
-            "hermes_run_id": "hermes-run-exact",
+                "command_id": "00000000-0000-0000-0000-000000000011",
+                "relation": "output",
+                "hermes_session_id": "hermes-session-exact",
+                "resolved_hermes_session_id": "hermes-session-exact-tip",
+                "hermes_run_id": "hermes-run-exact",
             "link_digest": link.link_digest,
             "source_event_id": "event-exact-001",
             "observed_at": "2026-07-15T05:01:00Z",
@@ -1386,6 +1389,7 @@ def test_exact_run_links_report_truncation_instead_of_silent_partial_truth(
         platform_resource_id=run_id,
         relation="output",
         hermes_session_id="session-with-many-links",
+        resolved_hermes_session_id="session-with-many-links-tip",
         hermes_run_id="run-with-many-links",
         link_digest=hermes_run_link_digest(
             command_id=command_id,
@@ -1393,6 +1397,7 @@ def test_exact_run_links_report_truncation_instead_of_silent_partial_truth(
             platform_resource_id=run_id,
             relation="output",
             hermes_session_id="session-with-many-links",
+            resolved_hermes_session_id="session-with-many-links-tip",
             hermes_run_id="run-with-many-links",
             source_event_id=None,
         ),

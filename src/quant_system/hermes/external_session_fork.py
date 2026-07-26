@@ -158,6 +158,7 @@ def submit_external_session_fork(
     *,
     hermes_session_id: str,
     fork_point: str,
+    new_provider_policy_digest: str,
     client_action_id: str,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str,
@@ -176,6 +177,11 @@ def submit_external_session_fork(
         raise ExternalSessionForkError(
             "actor_invalid",
             "only the local root owner may fork an external session",
+        )
+    if new_provider_policy_digest != PROVIDER_POLICY_DIGEST:
+        raise ExternalSessionForkError(
+            "provider_policy_not_admitted",
+            "the explicitly selected provider policy is not admitted",
         )
 
     _require_session_resources(gateway)
@@ -234,7 +240,7 @@ def submit_external_session_fork(
         source_session_ref=session_ref(observed.platform_session_id),
         source_channel=source_channel,
         fork_point=fork_point,
-        new_provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        new_provider_policy_digest=new_provider_policy_digest,
         payload_ttl_days=STORE_TTL_DAYS,
     )
     return submit_fork_into_managed_session(

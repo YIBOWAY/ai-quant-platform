@@ -246,6 +246,10 @@ def test_submit_uses_strict_hqa_cli_and_preserves_managed_session(
                 {
                     "ok": True,
                     "run_id": "run_durable_1",
+                    "session_id": "web_managed_1",
+                    "requested_session_id": "web_managed_1",
+                    "conversation_session_id": "web_managed_1",
+                    "resolved_session_id": "web_managed_1",
                     "created": True,
                     "idempotency_key": (
                         "platform-command:00000000-0000-4000-8000-000000000001"
@@ -285,6 +289,55 @@ def test_submit_uses_strict_hqa_cli_and_preserves_managed_session(
     assert request_body["input"] == "hello managed thread"
 
 
+def test_submit_receipt_preserves_conversation_root_and_run_tip(
+    tmp_path: Path,
+) -> None:
+    python = tmp_path / "python"
+    python.touch(mode=0o700)
+    hqa_root = tmp_path / "hqa"
+    hqa_root.mkdir()
+
+    def runner(argv, **_kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "run_id": "run_compressed_1",
+                    "session_id": "web_tip",
+                    "requested_session_id": "web_managed_1",
+                    "conversation_session_id": "web_managed_1",
+                    "resolved_session_id": "web_tip",
+                    "created": False,
+                    "idempotency_key": (
+                        "platform-command:00000000-0000-4000-8000-000000000001"
+                    ),
+                }
+            ).encode(),
+            stderr=b"",
+        )
+
+    port = SubprocessHermesRunLifecyclePort(
+        cli_settings=HermesRunCliSettings(
+            python_executable=python,
+            hqa_root=hqa_root,
+            base_url="http://127.0.0.1:8642",
+            api_key=None,
+            timeout_seconds=5.0,
+        ),
+        input_resolver=fixed_input_resolver("continue"),
+        runner=runner,
+    )
+
+    result = port.submit_or_recover(_request())
+
+    assert result.kind == "recovered"
+    assert result.conversation_hermes_session_id == "web_managed_1"
+    assert result.hermes_session_id == "web_tip"
+    assert result.hermes_run_id == "run_compressed_1"
+
+
 def test_observe_requires_gapless_replay_and_returns_terminal_evidence(
     tmp_path: Path,
 ) -> None:
@@ -302,7 +355,9 @@ def test_observe_requires_gapless_replay_and_returns_terminal_evidence(
             payload = {
                 "ok": True,
                 "run_id": "run_durable_2",
-                "session_id": "web_managed_2",
+                "session_id": "web_tip_2",
+                "conversation_session_id": "web_managed_2",
+                "resolved_session_id": "web_tip_2",
                 "status": "succeeded",
                 "actual_policy": {"model": "gpt-5", "provider": "openai"},
                 "usage": {"input_tokens": 9, "output_tokens": 3},
@@ -350,13 +405,16 @@ def test_observe_requires_gapless_replay_and_returns_terminal_evidence(
     )
 
     observation = port.observe(
-        hermes_session_id="web_managed_2",
+        conversation_hermes_session_id="web_managed_2",
+        hermes_session_id="web_tip_2",
         hermes_run_id="run_durable_2",
         after_cursor=0,
     )
 
     assert operations == ["status", "events"]
     assert observation.status == "succeeded"
+    assert observation.conversation_hermes_session_id == "web_managed_2"
+    assert observation.hermes_session_id == "web_tip_2"
     assert observation.replay_complete is True
     assert observation.next_cursor == 2
     assert observation.evidence_digest is not None

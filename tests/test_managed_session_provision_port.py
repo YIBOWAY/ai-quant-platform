@@ -102,7 +102,10 @@ def test_fork_requires_exact_source_resolution_and_preserve_source(
                     "preserve_source": True,
                     "created": False,
                     "recovered": True,
-                    "session": {"id": SESSION_ID},
+                    "session": {
+                        "id": SESSION_ID,
+                        "parent_session_id": source_id,
+                    },
                 }
             ).encode(),
             stderr=b"",
@@ -119,6 +122,91 @@ def test_fork_requires_exact_source_resolution_and_preserve_source(
     assert receipt.resolved_source_session_id == source_id
     assert receipt.preserve_source is True
     assert receipt.recovered is True
+
+
+def test_fork_accepts_canonical_parent_for_compressed_selected_source(
+    tmp_path: Path,
+) -> None:
+    source_id = "discord-source-compressed"
+    resolved_source_id = "discord-source-active-tip"
+
+    def runner(argv, **_kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "session_id": SESSION_ID,
+                    "action_digest": ACTION_DIGEST,
+                    "source_session_id": source_id,
+                    "resolved_source_session_id": resolved_source_id,
+                    "fork_point": "message:23",
+                    "preserve_source": True,
+                    "created": True,
+                    "recovered": False,
+                    "session": {
+                        "id": SESSION_ID,
+                        "source": "api_server",
+                        "parent_session_id": resolved_source_id,
+                    },
+                }
+            ).encode(),
+            stderr=b"",
+        )
+
+    receipt = _port(tmp_path, runner).fork_session(
+        source_session_id=source_id,
+        session_id=SESSION_ID,
+        fork_point="message:23",
+        action_digest=ACTION_DIGEST,
+    )
+
+    assert receipt.source_session_id == source_id
+    assert receipt.resolved_source_session_id == resolved_source_id
+
+
+def test_fork_rejects_child_parent_drift_from_canonical_resolution(
+    tmp_path: Path,
+) -> None:
+    source_id = "discord-source-compressed"
+
+    def runner(argv, **_kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "session_id": SESSION_ID,
+                    "action_digest": ACTION_DIGEST,
+                    "source_session_id": source_id,
+                    "resolved_source_session_id": "discord-source-active-tip",
+                    "fork_point": "message:23",
+                    "preserve_source": True,
+                    "created": True,
+                    "recovered": False,
+                    "session": {
+                        "id": SESSION_ID,
+                        "parent_session_id": "discord-source-unexpected-tip",
+                    },
+                }
+            ).encode(),
+            stderr=b"",
+        )
+
+    with pytest.raises(
+        ManagedSessionProvisionError,
+        match="managed Hermes Session provisioning failed",
+    ) as caught:
+        _port(tmp_path, runner).fork_session(
+            source_session_id=source_id,
+            session_id=SESSION_ID,
+            fork_point="message:23",
+            action_digest=ACTION_DIGEST,
+        )
+
+    assert caught.value.code == "session_cli_fork_identity_mismatch"
 
 
 @pytest.mark.parametrize(

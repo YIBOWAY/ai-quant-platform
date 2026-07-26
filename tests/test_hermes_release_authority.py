@@ -50,9 +50,10 @@ def _ensure_test_database(url: str) -> None:
     maintenance = dict(params)
     maintenance["dbname"] = "postgres"
     with psycopg.connect(make_conninfo(**maintenance), autocommit=True) as conn:
-        if conn.execute(
-            "SELECT 1 FROM pg_database WHERE datname = %s", (dbname,)
-        ).fetchone() is None:
+        if (
+            conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname,)).fetchone()
+            is None
+        ):
             conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))
 
 
@@ -126,17 +127,43 @@ def _reset(database: db.Database) -> None:
         for table, names in trigger_names.items():
             for trigger_name in names:
                 conn.execute(
-                    sql.SQL(
-                        "ALTER TABLE quant_system.{} ENABLE ALWAYS TRIGGER {}"
-                    ).format(
+                    sql.SQL("ALTER TABLE quant_system.{} ENABLE ALWAYS TRIGGER {}").format(
                         sql.Identifier(table),
                         sql.Identifier(trigger_name),
                     )
                 )
 
 
+def _recreate_test_database(settings: Settings) -> None:
+    secret = settings.database.url
+    assert secret is not None
+    url = secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+    parameters = conninfo_to_dict(url)
+    database_name = parameters.get("dbname")
+    assert database_name is not None
+    maintenance = dict(parameters)
+    maintenance["dbname"] = "postgres"
+    db.reset_database_cache()
+    with psycopg.connect(
+        make_conninfo(**maintenance),
+        autocommit=True,
+    ) as conn:
+        conn.execute(
+            """
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = %s
+              AND pid <> pg_backend_pid()
+            """,
+            (database_name,),
+        )
+        conn.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(database_name)))
+        conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
+
+
 def _authority() -> tuple[ReleaseAuthority, db.Database]:
     settings = _settings()
+    _recreate_test_database(settings)
     db.reset_database_cache()
     database = db.get_database(settings)
     assert database is not None
@@ -145,8 +172,9 @@ def _authority() -> tuple[ReleaseAuthority, db.Database]:
     return ReleaseAuthority(settings), database
 
 
-def test_release_authority_migration_is_replay_safe_and_ready() -> None:
+def test_legacy_release_authority_is_replay_safe_but_not_hardened_ready() -> None:
     settings = _settings()
+    _recreate_test_database(settings)
     db.reset_database_cache()
     database = db.get_database(settings)
     assert database is not None
@@ -156,18 +184,17 @@ def test_release_authority_migration_is_replay_safe_and_ready() -> None:
         only=("012_agent_v0_2_release_authority.sql",),
     )
     with database.connect() as conn:
-        assert release_authority_schema_is_ready_on_connection(conn) is True
+        assert release_authority_schema_is_ready_on_connection(conn) is False
     db.reset_database_cache()
 
 
 def test_release_authority_requires_the_constrained_runtime_role() -> None:
     admin_settings = _settings()
+    _recreate_test_database(admin_settings)
     admin_url = admin_settings.database.url
     assert admin_url is not None
     plain_admin_url = (
-        admin_url.get_secret_value()
-        if hasattr(admin_url, "get_secret_value")
-        else str(admin_url)
+        admin_url.get_secret_value() if hasattr(admin_url, "get_secret_value") else str(admin_url)
     )
     db.reset_database_cache()
     database = db.get_database(admin_settings)
@@ -175,37 +202,29 @@ def test_release_authority_requires_the_constrained_runtime_role() -> None:
     db.run_migrations(database, only=RELEASE_MIGRATIONS)
     with database.connect() as conn:
         for role_name in ("quant_migrator", "quant_runtime", "quant_readonly"):
-            if conn.execute(
-                "SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,)
-            ).fetchone() is None:
+            if (
+                conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,)).fetchone()
+                is None
+            ):
                 conn.execute(
                     sql.SQL(
                         "CREATE ROLE {} NOLOGIN NOSUPERUSER NOCREATEDB "
                         "NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
                     ).format(sql.Identifier(role_name))
                 )
-        if conn.execute(
-            "SELECT 1 FROM pg_roles WHERE rolname = %s", (RUNTIME_LOGIN,)
-        ).fetchone() is not None:
-            conn.execute(
-                sql.SQL("DROP OWNED BY {}").format(sql.Identifier(RUNTIME_LOGIN))
-            )
-            conn.execute(
-                sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN))
-            )
+        if (
+            conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (RUNTIME_LOGIN,)).fetchone()
+            is not None
+        ):
+            conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(RUNTIME_LOGIN)))
+            conn.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN)))
         conn.execute(
-            sql.SQL(
-                "CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD {}"
-            ).format(
+            sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD {}").format(
                 sql.Identifier(RUNTIME_LOGIN),
                 sql.Literal(RUNTIME_PASSWORD),
             )
         )
-        conn.execute(
-            sql.SQL("GRANT quant_runtime TO {}").format(
-                sql.Identifier(RUNTIME_LOGIN)
-            )
-        )
+        conn.execute(sql.SQL("GRANT quant_runtime TO {}").format(sql.Identifier(RUNTIME_LOGIN)))
 
     # Replay after roles exist installs/repairs exact FORCE-RLS policy and grants.
     db.run_migrations(
@@ -227,17 +246,13 @@ def test_release_authority_requires_the_constrained_runtime_role() -> None:
     )
     try:
         db.reset_database_cache()
-        assert release_authority_runtime_security_ready(runtime_settings) is True
+        assert release_authority_runtime_security_ready(runtime_settings) is False
     finally:
         db.reset_database_cache()
         database = db.Database(plain_admin_url, connect_timeout=1)
         with database.connect() as conn:
-            conn.execute(
-                sql.SQL("DROP OWNED BY {}").format(sql.Identifier(RUNTIME_LOGIN))
-            )
-            conn.execute(
-                sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN))
-            )
+            conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(RUNTIME_LOGIN)))
+            conn.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN)))
         db.reset_database_cache()
 
 
@@ -264,9 +279,7 @@ def _issue_request(
 
 def test_release_request_has_no_caller_supplied_build_digest() -> None:
     assert "build_digest" not in inspect.signature(CreateReleaseStampRequest).parameters
-    assert "release_digest" not in inspect.signature(
-        CreateReleaseStampRequest
-    ).parameters
+    assert "release_digest" not in inspect.signature(CreateReleaseStampRequest).parameters
 
 
 def test_release_stamp_cutover_idempotency_and_restart_visibility() -> None:
@@ -299,9 +312,7 @@ def test_release_stamp_cutover_idempotency_and_restart_visibility() -> None:
         cutover_request = CreatePublicCutoverRequest(
             **cutover_payload,
             client_action_id="cutover-open-1",
-            action_digest=canonical_release_action_digest(
-                "public_cutover.open", cutover_payload
-            ),
+            action_digest=canonical_release_action_digest("public_cutover.open", cutover_payload),
         )
         cutover_receipt = authority.create_public_cutover(
             cutover_request, now=NOW, cutover_id="cutover-1"
@@ -323,9 +334,7 @@ def test_release_stamp_cutover_idempotency_and_restart_visibility() -> None:
 def test_one_active_release_and_first_action_receipt_are_frozen() -> None:
     authority, database = _authority()
     try:
-        first = authority.create_release_stamp(
-            _issue_request(), now=NOW, stamp_id="stamp-1"
-        )
+        first = authority.create_release_stamp(_issue_request(), now=NOW, stamp_id="stamp-1")
         with pytest.raises(ReleaseAuthorityConflict, match="action"):
             authority.create_release_stamp(
                 _issue_request(
@@ -463,6 +472,11 @@ def test_rollback_remains_callable_and_facts_are_append_only() -> None:
         )
         assert authority.active_release_stamp("workspace-root") is None
         assert authority.open_public_cutover("workspace-root") is None
+        history = authority.list_public_cutovers("workspace-root")
+        assert len(history) == 1
+        assert history[0].cutover_id == "cutover-1"
+        assert history[0].status == "closed"
+        assert history[0].close_reason == "operator rollback"
         assert authority.current_event_cursor("workspace-root") == 4
 
         with (
@@ -470,8 +484,7 @@ def test_rollback_remains_callable_and_facts_are_append_only() -> None:
             database.connect() as conn,
         ):
             conn.execute(
-                "DELETE FROM quant_system.agent_v02_release_events "
-                "WHERE workspace_id = %s",
+                "DELETE FROM quant_system.agent_v02_release_events WHERE workspace_id = %s",
                 ("workspace-root",),
             )
     finally:

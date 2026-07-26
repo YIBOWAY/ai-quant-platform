@@ -16,8 +16,10 @@ import {
   PROVIDER_POLICY_DIGEST,
 } from "./darkIdentity";
 import { isUsableHermesApiSessionId } from "./transcriptHelpers";
+import type { WorkspacePublicCutoverResponse } from "../api";
 
 export { PLATFORM_WORKSPACE_ID };
+export type { WorkspacePublicCutoverResponse } from "../api";
 
 export type ActionReceiptStatus =
   "accepted" | "reconciling" | "conflict" | "unavailable" | "outcome_unknown";
@@ -296,6 +298,99 @@ export function saveManagedSessionRef(
   store.setItem(`${MANAGED_SESSION_STORAGE_KEY}:${workspaceId}`, sessionRef);
 }
 
+/**
+ * Resolve the composer selection synchronously at click time. A deep-link is
+ * read from the live URL so React effect timing can never turn it into the
+ * "no active session" create/recover path.
+ */
+export function resolveComposerHermesSessionId(
+  activeHermesSessionId?: string | null,
+  locationSearch?: string,
+): string | null {
+  const search =
+    locationSearch ??
+    (typeof window !== "undefined" &&
+    typeof window.location?.search === "string"
+      ? window.location.search
+      : "");
+  const deepLinkValues = new URLSearchParams(search).getAll(
+    "hermes_session_id",
+  );
+  if (deepLinkValues.length > 1) {
+    throw new WorkspaceClientError(
+      "multiple Hermes session deep-links are ambiguous",
+      400,
+      "composer_session_selection_ambiguous",
+    );
+  }
+  const deepLinkedHermesSessionId = deepLinkValues[0] ?? null;
+  if (
+    deepLinkedHermesSessionId != null &&
+    (deepLinkedHermesSessionId !== deepLinkedHermesSessionId.trim() ||
+      !isUsableHermesApiSessionId(deepLinkedHermesSessionId))
+  ) {
+    throw new WorkspaceClientError(
+      "Hermes session deep-link is invalid",
+      400,
+      "composer_session_deep_link_invalid",
+    );
+  }
+  if (
+    activeHermesSessionId != null &&
+    (activeHermesSessionId !== activeHermesSessionId.trim() ||
+      !isUsableHermesApiSessionId(activeHermesSessionId))
+  ) {
+    throw new WorkspaceClientError(
+      "active Hermes session is invalid",
+      400,
+      "active_hermes_session_invalid",
+    );
+  }
+  if (
+    deepLinkedHermesSessionId != null &&
+    activeHermesSessionId != null &&
+    deepLinkedHermesSessionId !== activeHermesSessionId
+  ) {
+    throw new WorkspaceClientError(
+      "active transcript and Hermes session deep-link disagree; wait for the selected session to bind before sending",
+      409,
+      "composer_session_selection_mismatch",
+    );
+  }
+  return deepLinkedHermesSessionId ?? activeHermesSessionId ?? null;
+}
+
+/** Keep receipt/follow observations pinned to the submitted Hermes Session. */
+export function requireSameComposerHermesSession(
+  selectedHermesSessionId: string | null | undefined,
+  observedHermesSessionId?: string | null,
+): string {
+  if (
+    selectedHermesSessionId == null ||
+    selectedHermesSessionId !== selectedHermesSessionId.trim() ||
+    !isUsableHermesApiSessionId(selectedHermesSessionId)
+  ) {
+    throw new WorkspaceClientError(
+      "selected managed Hermes session identity is missing",
+      503,
+      "composer_selected_session_missing",
+    );
+  }
+  if (
+    observedHermesSessionId != null &&
+    (observedHermesSessionId !== observedHermesSessionId.trim() ||
+      !isUsableHermesApiSessionId(observedHermesSessionId) ||
+      observedHermesSessionId !== selectedHermesSessionId)
+  ) {
+    throw new WorkspaceClientError(
+      "command follow observation does not match the submitted Hermes session",
+      503,
+      "composer_follow_session_mismatch",
+    );
+  }
+  return selectedHermesSessionId;
+}
+
 const MANAGED_SESSION_PROVISION_STATES = new Set<ManagedSessionProvisionState>([
   "pending",
   "leased",
@@ -364,6 +459,75 @@ export function latestManagedSessionProjection(
   }
   assertManagedSessionProjectionIdentity(latest);
   return latest;
+}
+
+/**
+ * Resolve one already-selected Hermes Session to its unique managed Web row.
+ * This path never consults sessionStorage, selects "latest", or creates a
+ * replacement lineage: observed external/history sessions require a fork.
+ */
+export async function resolveManagedSessionForHermesSession(options: {
+  hermesSessionId: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+}): Promise<ManagedSessionProjection> {
+  const hermesSessionId = options.hermesSessionId;
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  if (
+    hermesSessionId !== hermesSessionId.trim() ||
+    !isUsableHermesApiSessionId(hermesSessionId)
+  ) {
+    throw new WorkspaceClientError(
+      "active Hermes session id is invalid",
+      400,
+      "active_hermes_session_invalid",
+    );
+  }
+
+  const snapshot = await fetchWorkspaceSnapshot(workspaceId, options.signal);
+  if (!Array.isArray(snapshot.managed_sessions)) {
+    throw new WorkspaceClientError(
+      "managed session projection is unavailable; refusing session fallback",
+      503,
+      "managed_session_projection_unavailable",
+    );
+  }
+  const matches = snapshot.managed_sessions.filter(
+    (projection) => projection.hermes_session_id === hermesSessionId,
+  );
+  if (matches.length === 0) {
+    throw new WorkspaceClientError(
+      "This Hermes session is read-only in Web. Explicitly fork it to a managed session before sending.",
+      409,
+      "managed_session_explicit_fork_required",
+    );
+  }
+  if (matches.length !== 1) {
+    throw new WorkspaceClientError(
+      "active Hermes session maps to multiple managed session references",
+      503,
+      "managed_session_identity_ambiguous",
+    );
+  }
+
+  const matched = matches[0];
+  assertManagedSessionProjectionIdentity(matched);
+  const ready = managedSessionProjectionIsReady(matched)
+    ? matched
+    : await waitForManagedSessionReady({
+        workspaceId,
+        sessionRef: matched.session_ref,
+        signal: options.signal,
+      });
+  if (ready.hermes_session_id !== hermesSessionId) {
+    throw new WorkspaceClientError(
+      "managed session identity changed while waiting for readiness",
+      503,
+      "managed_session_identity_changed",
+    );
+  }
+  saveManagedSessionRef(ready.session_ref, workspaceId);
+  return ready;
 }
 
 export async function createManagedSession(options?: {
@@ -486,13 +650,14 @@ export type ForkHermesSessionResult = {
 
 /**
  * Explicitly fork one authoritative Hermes message into a new managed Web
- * session. Source identity, channel, provider policy, and TTL remain
- * server-owned; the browser sends only the immutable attempt id + cursor.
+ * session. Source identity/channel/TTL remain server-owned. The browser must
+ * explicitly confirm and send the one admitted immutable provider policy.
  */
 export async function forkHermesSessionToManaged(options: {
   hermesSessionId: string;
   clientActionId: string;
   forkPoint: string;
+  newProviderPolicyDigest: string;
   signal?: AbortSignal;
   provisionTimeoutMs?: number;
   provisionInitialIntervalMs?: number;
@@ -501,6 +666,7 @@ export async function forkHermesSessionToManaged(options: {
   const hermesSessionId = options.hermesSessionId;
   const clientActionId = options.clientActionId;
   const forkPoint = options.forkPoint;
+  const newProviderPolicyDigest = options.newProviderPolicyDigest;
   if (
     hermesSessionId !== hermesSessionId.trim() ||
     !isUsableHermesApiSessionId(hermesSessionId)
@@ -525,6 +691,13 @@ export async function forkHermesSessionToManaged(options: {
       "validation",
     );
   }
+  if (newProviderPolicyDigest !== PROVIDER_POLICY_DIGEST) {
+    throw new WorkspaceClientError(
+      "selected provider policy is not admitted for managed Web sessions",
+      409,
+      "provider_policy_not_admitted",
+    );
+  }
 
   await ensureOwnerSession(options.signal);
   const receipt = await sameOriginJson<WorkspaceActionReceipt>(
@@ -538,6 +711,7 @@ export async function forkHermesSessionToManaged(options: {
       body: {
         client_action_id: clientActionId,
         fork_point: forkPoint,
+        new_provider_policy_digest: newProviderPolicyDigest,
       },
     },
   );
@@ -628,6 +802,20 @@ async function submitReadyTurn(
       },
     },
   );
+  if (
+    (receipt.session_ref != null &&
+      receipt.session_ref !== managedSession.session_ref) ||
+    (receipt.platform_session_id != null &&
+      receipt.platform_session_id !== managedSession.platform_session_id) ||
+    (receipt.hermes_session_id != null &&
+      receipt.hermes_session_id !== managedSession.hermes_session_id)
+  ) {
+    throw new WorkspaceClientError(
+      "submit receipt does not match the selected managed Hermes session",
+      503,
+      "composer_receipt_session_mismatch",
+    );
+  }
   return receipt.hermes_session_id
     ? receipt
     : {
@@ -673,12 +861,24 @@ export async function submitTurn(options: {
 export async function sendComposerTurn(options: {
   prompt: string;
   clientActionId?: string;
+  activeHermesSessionId: string | null | undefined;
   signal?: AbortSignal;
 }): Promise<WorkspaceActionReceipt> {
   preflightPrompt(options.prompt);
+  // Capture the selection before the first await so navigation/effect timing
+  // cannot change which transcript this click targets.
+  const selectedHermesSessionId = resolveComposerHermesSessionId(
+    options.activeHermesSessionId,
+  );
   await ensureOwnerSession(options.signal);
   const clientActionId = options.clientActionId ?? crypto.randomUUID();
-  const managedSession = await ensureManagedSession({ signal: options.signal });
+  const managedSession =
+    selectedHermesSessionId != null
+      ? await resolveManagedSessionForHermesSession({
+          hermesSessionId: selectedHermesSessionId,
+          signal: options.signal,
+        })
+      : await ensureManagedSession({ signal: options.signal });
   return submitReadyTurn(
     {
       prompt: options.prompt,
@@ -779,11 +979,21 @@ export async function decideHermesCommandApproval(
 export type WorkspaceGateProjection = {
   gate_id: string;
   gate_kind: "gate1" | "gate2" | "gate3" | string;
+  attempt_ref?: string | null;
+  command_id?: string | null;
+  command_ref?: string | null;
+  hermes_session_id?: string | null;
+  hermes_run_id?: string | null;
+  hqa_run_ref?: string | null;
+  hqa_gate_ref?: string | null;
+  managed_session_ref?: string | null;
   kind?: string | null;
   status?: string | null;
   expected_status?: string | null;
   task_id?: string | null;
   task_ref?: string | null;
+  source_file_ref?: string | null;
+  universe?: string | null;
   reviewed_source_sha256?: string | null;
   candidate_id?: string | null;
   candidate_ref?: string | null;
@@ -791,10 +1001,145 @@ export type WorkspaceGateProjection = {
   final_backtest_receipt_id?: string | null;
   final_backtest_receipt_ref?: string | null;
   base_commit?: string | null;
+  hqa_receipt_ref?: string | null;
+  hqa_receipt_digest?: string | null;
+  promotion_id?: string | null;
+  worktree?: string | null;
+  patch?: string | null;
+  manifest?: string | null;
+  human_git_commit_required?: boolean | null;
+  auto_commit?: false | null;
+  reviewed_commit?: string | null;
+  task_version?: number | null;
+  task_status?: "completed" | null;
+  task_terminal_outcome?: "completed" | null;
+  attempt_status?: "completed" | null;
+  attempt_terminal_outcome?: "completed" | null;
+  domain_gate_outcome?: "passed" | null;
+  provider_evidence_ref?: string | null;
+  workflow_audit_status?: "consistent" | null;
+  workflow_audit_ref?: string | null;
+  workflow_audit_digest?: string | null;
+  hqa_completion_receipt_ref?: string | null;
+  hqa_completion_receipt_digest?: string | null;
   expires_at?: string | null;
   note?: string | null;
   decided_at?: string | null;
 };
+
+export type Gate1SourceEvidence = {
+  schema_version: "1.0";
+  gate_id: string;
+  workspace_id: string;
+  source_file_ref: string;
+  reviewed_source_sha256: string;
+  observed_source_sha256: string;
+  client_verified_sha256: string;
+  byte_length: number;
+  media_type: "text/x-python; charset=utf-8";
+  source_utf8: string;
+};
+
+type Gate1SourceEvidenceWire = Omit<
+  Gate1SourceEvidence,
+  "client_verified_sha256"
+>;
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(
+    "",
+  );
+}
+
+/** Independently re-hash exact UTF-8 bytes in the browser before review. */
+export async function verifyGate1SourceEvidence(
+  wire: Gate1SourceEvidenceWire,
+  expected: {
+    workspaceId: string;
+    gateId: string;
+    reviewedSourceSha256: string;
+  },
+): Promise<Gate1SourceEvidence> {
+  if (
+    wire.schema_version !== "1.0" ||
+    wire.workspace_id !== expected.workspaceId ||
+    wire.gate_id !== expected.gateId ||
+    wire.reviewed_source_sha256 !== expected.reviewedSourceSha256 ||
+    wire.observed_source_sha256 !== expected.reviewedSourceSha256 ||
+    wire.media_type !== "text/x-python; charset=utf-8" ||
+    typeof wire.source_file_ref !== "string" ||
+    !wire.source_file_ref.startsWith("/") ||
+    !Number.isInteger(wire.byte_length) ||
+    wire.byte_length < 1 ||
+    wire.byte_length > 1_048_576 ||
+    typeof wire.source_utf8 !== "string" ||
+    !wire.source_utf8
+  ) {
+    throw new WorkspaceClientError(
+      "Gate 1 source evidence does not match the durable challenge",
+      409,
+      "paper_gate_source_evidence_mismatch",
+    );
+  }
+  const payload = new TextEncoder().encode(wire.source_utf8);
+  if (payload.byteLength !== wire.byte_length) {
+    throw new WorkspaceClientError(
+      "Gate 1 source byte length changed in transit",
+      409,
+      "paper_gate_source_evidence_mismatch",
+    );
+  }
+  if (!globalThis.crypto?.subtle) {
+    throw new WorkspaceClientError(
+      "browser SHA-256 verifier is unavailable",
+      503,
+      "paper_gate_source_verifier_unavailable",
+    );
+  }
+  const clientDigest = bytesToHex(
+    new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", payload)),
+  );
+  if (clientDigest !== expected.reviewedSourceSha256) {
+    throw new WorkspaceClientError(
+      "Gate 1 source failed independent browser SHA-256 verification",
+      409,
+      "paper_gate_source_digest_mismatch",
+    );
+  }
+  return {
+    ...wire,
+    client_verified_sha256: clientDigest,
+  };
+}
+
+export async function fetchGate1SourceEvidence(options: {
+  gateId: string;
+  reviewedSourceSha256: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+}): Promise<Gate1SourceEvidence> {
+  await ensureOwnerSession(options.signal);
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(options.gateId)) {
+    throw new WorkspaceClientError("gate_id is invalid", 400, "validation");
+  }
+  if (!/^[0-9a-f]{64}$/.test(options.reviewedSourceSha256)) {
+    throw new WorkspaceClientError(
+      "reviewed_source_sha256 must be lowercase SHA-256",
+      400,
+      "validation",
+    );
+  }
+  const wire = await sameOriginJson<Gate1SourceEvidenceWire>(
+    `/api/workspace/${encodeURIComponent(workspaceId)}/gates/${encodeURIComponent(options.gateId)}/source`,
+    { method: "GET", signal: options.signal },
+  );
+  return verifyGate1SourceEvidence(wire, {
+    workspaceId,
+    gateId: options.gateId,
+    reviewedSourceSha256: options.reviewedSourceSha256,
+  });
+}
 
 /** V7f: typed result projection on snapshot/follow spine (not bare id). */
 export type WorkspaceResultProjection = {
@@ -1167,6 +1512,8 @@ export type WorkspaceSnapshot = {
   approvals?: WorkspaceApprovalProjection[];
   /** V7e: Domain Gate 1/2/3 surfaces; never mixed into approvals[]. */
   gates?: WorkspaceGateProjection[];
+  /** Production projection: legacy hermetic rows or canonical PG release rows. */
+  public_cutovers?: WorkspacePublicCutoverResponse[];
   authority_health?: Record<string, string>;
   mutation_enabled?: boolean;
   observed_at?: string;
@@ -1203,6 +1550,8 @@ export type WorkspaceEventPage = {
   gates?: WorkspaceGateProjection[];
   /** V7f: typed results projection on follow pages. */
   results?: WorkspaceResultProjection[];
+  /** Canonical public-cutover facts; follow may omit when unchanged. */
+  public_cutovers?: WorkspacePublicCutoverResponse[];
   /** V7g: Task/Attempt/Run id lists on follow pages (not only snapshot). */
   tasks?: string[];
   attempts?: string[];

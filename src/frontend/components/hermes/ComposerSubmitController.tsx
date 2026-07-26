@@ -16,6 +16,7 @@ import {
   fetchLatestAssistantText,
   isTerminalCommandState,
   previewAssistantText,
+  requireSameComposerHermesSession,
   sendComposerTurn,
 } from "@/lib/hermes/workspaceClient";
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
@@ -149,6 +150,7 @@ export function ComposerSubmitController({
   const [retryAttempt, setRetryAttempt] = useState<ComposerAttempt | null>(null);
   const pollAbortRef = useRef<AbortController | null>(null);
   const activeSession = useOptionalActiveHermesSession();
+  const activeHermesSessionId = activeSession?.hermesSessionId;
   const bindSession = activeSession?.setActiveHermesSession;
   const setPendingUserText = activeSession?.setPendingUserText;
   const { state: followState, spine } = useWorkspaceFollow();
@@ -181,6 +183,7 @@ export function ComposerSubmitController({
         const receipt = await sendComposerTurn({
           prompt,
           clientActionId,
+          activeHermesSessionId,
           signal: pollAbort.signal,
         });
         setStatusText(
@@ -222,8 +225,9 @@ export function ComposerSubmitController({
 
         // L5a: after accept (or outcome_unknown with a command id), wait on spine.
         if (receipt.command_id && !pollAbort.signal.aborted) {
-          let earlyHermesSessionId: string | null =
-            receipt.hermes_session_id ?? null;
+          const submittedHermesSessionId = requireSameComposerHermesSession(
+            receipt.hermes_session_id,
+          );
 
           // Immediate match from shared spine snapshot (no private GET).
           const existing = followState.commands.find(
@@ -237,14 +241,15 @@ export function ComposerSubmitController({
                 existing.hermes_run_id,
               ),
             );
-            if (existing.hermes_session_id) {
-              earlyHermesSessionId = existing.hermes_session_id;
-            }
+            const observedHermesSessionId = requireSameComposerHermesSession(
+              submittedHermesSessionId,
+              existing.hermes_session_id,
+            );
             if (isTerminalCommandState(existing.state)) {
               setRetryAttempt(null);
               if (existing.state === "succeeded") {
                 await surfaceAssistantPreview({
-                  hermesSessionId: earlyHermesSessionId,
+                  hermesSessionId: observedHermesSessionId,
                   commandId: receipt.command_id,
                   hermesRunId: existing.hermes_run_id ?? null,
                   signal: pollAbort.signal,
@@ -291,6 +296,10 @@ export function ComposerSubmitController({
               (command) => command.command_id === receipt.command_id,
             ) ??
             null;
+          const followedHermesSessionId = requireSameComposerHermesSession(
+            submittedHermesSessionId,
+            observed?.hermes_session_id,
+          );
           const terminalState = observed?.state ?? null;
           const lifecycle = formatLifecycleStatus(
             terminalState ?? "queued",
@@ -310,8 +319,7 @@ export function ComposerSubmitController({
           if (terminalState === "succeeded") {
             setRetryAttempt(null);
             await surfaceAssistantPreview({
-              hermesSessionId:
-                observed?.hermes_session_id ?? earlyHermesSessionId,
+              hermesSessionId: followedHermesSessionId,
               commandId: receipt.command_id,
               hermesRunId: observed?.hermes_run_id ?? null,
               signal: pollAbort.signal,
@@ -352,6 +360,7 @@ export function ComposerSubmitController({
     },
     [
       networkSubmit,
+      activeHermesSessionId,
       bindSession,
       setPendingUserText,
       spine,

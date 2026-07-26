@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 
 import {
   COLLAPSE_TOGGLE_CLASS,
@@ -9,17 +10,27 @@ import {
 } from "@/lib/hermes/workbenchA11y";
 import {
   confirmFormulaSource,
+  fetchGate1SourceEvidence,
   preparePromotionReview,
   reviewCandidateCAS,
+  type Gate1SourceEvidence,
   type WorkspaceActionReceipt,
   type WorkspaceGateProjection,
   WorkspaceClientError,
 } from "@/lib/hermes/workspaceClient";
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
+import { hermesRouteHref } from "@/lib/hermes/routes";
 import type { Locale } from "@/lib/locale";
 
 export type WorkbenchGateSurfacesPanelProps = {
   locale: Locale;
+};
+
+type Gate1ReviewState = {
+  loading: boolean;
+  acknowledged: boolean;
+  evidence?: Gate1SourceEvidence;
+  error?: string;
 };
 
 const ACT_BTN_CLASS =
@@ -110,6 +121,9 @@ export function WorkbenchGateSurfacesPanel({
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({});
   const [consumedIds, setConsumedIds] = useState<Record<string, true>>({});
+  const [gate1Reviews, setGate1Reviews] = useState<
+    Record<string, Gate1ReviewState>
+  >({});
 
   const gates = useMemo(() => {
     const raw = Array.isArray(follow.gates) ? follow.gates : [];
@@ -122,6 +136,48 @@ export function WorkbenchGateSurfacesPanel({
   const mutationOn = follow.mutationEnabled === true;
   const showEmpty = health && gates.length === 0;
 
+  const onLoadGate1Source = useCallback(
+    async (row: WorkspaceGateProjection) => {
+      const digest = row.reviewed_source_sha256 || "";
+      if (
+        (row.gate_kind || "").toLowerCase() !== "gate1" ||
+        !/^[0-9a-f]{64}$/.test(digest)
+      ) {
+        return;
+      }
+      setGate1Reviews((previous) => ({
+        ...previous,
+        [row.gate_id]: { loading: true, acknowledged: false },
+      }));
+      try {
+        const evidence = await fetchGate1SourceEvidence({
+          gateId: row.gate_id,
+          reviewedSourceSha256: digest,
+        });
+        setGate1Reviews((previous) => ({
+          ...previous,
+          [row.gate_id]: {
+            loading: false,
+            acknowledged: false,
+            evidence,
+          },
+        }));
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Gate 1 source review failed";
+        setGate1Reviews((previous) => ({
+          ...previous,
+          [row.gate_id]: {
+            loading: false,
+            acknowledged: false,
+            error: message,
+          },
+        }));
+      }
+    },
+    [],
+  );
+
   const onAct = useCallback(
     async (row: WorkspaceGateProjection) => {
       if (!canActGate(row) || !mutationOn || busyId) return;
@@ -130,6 +186,21 @@ export function WorkbenchGateSurfacesPanel({
       setLastReceipt(null);
       const kind = (row.gate_kind || "").toLowerCase();
       const note = (noteDraft[row.gate_id] || "").trim();
+      const gate1Review = gate1Reviews[row.gate_id];
+      if (
+        kind === "gate1" &&
+        (!gate1Review?.acknowledged ||
+          gate1Review.evidence?.client_verified_sha256 !==
+            row.reviewed_source_sha256)
+      ) {
+        setLastError(
+          isZh
+            ? "请先在网页中加载、核对并确认精确源码字节"
+            : "Load, verify, and acknowledge the exact source bytes first",
+        );
+        setBusyId(null);
+        return;
+      }
       if (gateRequiresHumanNote(row) && !note) {
         setLastError(
           isZh ? "确认备注必填" : "Confirmation note is required",
@@ -187,7 +258,7 @@ export function WorkbenchGateSurfacesPanel({
         setBusyId(null);
       }
     },
-    [busyId, isZh, mutationOn, noteDraft],
+    [busyId, gate1Reviews, isZh, mutationOn, noteDraft],
   );
 
   return (
@@ -241,8 +312,8 @@ export function WorkbenchGateSurfacesPanel({
         >
           <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
             {isZh
-              ? "Domain Gate 1/2/3：与 command-approval 分离。Gate 1 绑定 task+source SHA-256+note；Gate 2 绑定 candidate+digest+pending；Gate 3 仅 prepare（不 Git commit）。无 always-allow。空列表诚实。"
-              : "Domain Gate 1/2/3: separate from command-approval. Gate 1 binds task+source SHA-256+note; Gate 2 binds candidate+digest+pending; Gate 3 prepare-only (no Git commit). No always-allow. Empty is honest."}
+              ? "Domain Gate 1/2/3：与 command-approval 分离。Gate 1/2 保持同一计划 Attempt；Gate 3 必须进入 ContinueResearch 的新 Attempt/Run，且仅 prepare（不 Git commit）。无 always-allow。"
+              : "Domain Gate 1/2/3: separate from command-approval. Gates 1/2 stay on the plan Attempt; Gate 3 must use a new ContinueResearch Attempt/Run and is prepare-only (no Git commit). No always-allow."}
           </p>
 
           {lastError ? (
@@ -275,10 +346,20 @@ export function WorkbenchGateSurfacesPanel({
           ) : (
             <ul className="divide-y divide-border-subtle" data-hermes-gates-list>
               {gates.map((row) => {
-                const actionable = canActGate(row) && mutationOn;
                 const kind = (row.gate_kind || "").toLowerCase();
+                const actionable = canActGate(row) && mutationOn;
                 const needsNote = gateRequiresHumanNote(row);
-                const noteReady = !needsNote || Boolean((noteDraft[row.gate_id] || "").trim());
+                const noteReady =
+                  !needsNote ||
+                  Boolean((noteDraft[row.gate_id] || "").trim());
+                const gate1Review = gate1Reviews[row.gate_id];
+                const gate1ReviewReady =
+                  kind !== "gate1" ||
+                  Boolean(
+                    gate1Review?.acknowledged &&
+                      gate1Review.evidence?.client_verified_sha256 ===
+                        row.reviewed_source_sha256,
+                  );
                 return (
                   <li
                     className="space-y-2 px-3 py-3"
@@ -307,19 +388,171 @@ export function WorkbenchGateSurfacesPanel({
                         task: {row.task_ref || row.task_id}
                       </p>
                     ) : null}
+                    {row.attempt_ref ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        attempt: {row.attempt_ref}
+                      </p>
+                    ) : null}
+                    {row.hqa_run_ref ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        HQA run: {row.hqa_run_ref}
+                      </p>
+                    ) : null}
+                    {row.hermes_session_id ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        Hermes session: {row.hermes_session_id}
+                      </p>
+                    ) : null}
+                    {row.hermes_run_id ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        Hermes run: {row.hermes_run_id}
+                      </p>
+                    ) : null}
+                    {row.command_ref || row.command_id ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        command: {row.command_ref || row.command_id}
+                      </p>
+                    ) : null}
                     {row.candidate_ref || row.candidate_id ? (
                       <p className="font-data-mono text-[11px] text-text-secondary break-all">
                         candidate: {row.candidate_ref || row.candidate_id}
                       </p>
                     ) : null}
-                    {row.reviewed_source_sha256 ? (
+                    {kind === "gate1" && row.source_file_ref ? (
                       <p className="font-data-mono text-[11px] text-text-secondary break-all">
-                        source: {displayId(row.reviewed_source_sha256)}
+                        source file: {row.source_file_ref}
+                      </p>
+                    ) : null}
+                    {kind === "gate1" && row.universe ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        universe: {row.universe}
+                      </p>
+                    ) : null}
+                    {row.reviewed_source_sha256 ? (
+                      <p
+                        className="font-data-mono text-[11px] text-text-secondary break-all"
+                        data-hermes-gate-source-sha256
+                      >
+                        source SHA-256: {row.reviewed_source_sha256}
                       </p>
                     ) : null}
                     {row.expected_digest ? (
-                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
-                        digest: {displayId(row.expected_digest)}
+                      <p
+                        className="font-data-mono text-[11px] text-text-secondary break-all"
+                        data-hermes-gate-candidate-digest
+                      >
+                        candidate digest: {row.expected_digest}
+                      </p>
+                    ) : null}
+                    {kind === "gate1" && isPending(row) ? (
+                      <div
+                        className="space-y-2 rounded border border-warning/40 bg-warning/5 p-2"
+                        data-hermes-gate-review-guidance="gate1"
+                      >
+                        <p className="font-body-sm text-text-secondary">
+                          {isZh
+                            ? "确认前必须在此处加载精确源码。浏览器会独立重算完整 SHA-256；只填写备注不构成审阅证据。"
+                            : "Load the exact source here before confirming. The browser independently recomputes the full SHA-256; a note alone is not review evidence."}
+                        </p>
+                        <button
+                          className={ACT_BTN_CLASS}
+                          data-hermes-gate-source-load
+                          disabled={gate1Review?.loading === true}
+                          onClick={() => void onLoadGate1Source(row)}
+                          type="button"
+                        >
+                          {gate1Review?.loading
+                            ? isZh
+                              ? "加载并校验中…"
+                              : "Loading and verifying…"
+                            : gate1Review?.evidence
+                              ? isZh
+                                ? "重新加载精确源码"
+                                : "Reload exact source"
+                              : isZh
+                                ? "加载精确源码"
+                                : "Load exact source"}
+                        </button>
+                        {gate1Review?.error ? (
+                          <p
+                            className="font-body-sm text-danger"
+                            data-hermes-gate-source-error
+                            role="alert"
+                          >
+                            {gate1Review.error}
+                          </p>
+                        ) : null}
+                        {gate1Review?.evidence ? (
+                          <div
+                            className="space-y-2"
+                            data-hermes-gate-source-evidence
+                          >
+                            <p
+                              className="font-data-mono text-[11px] text-success break-all"
+                              data-hermes-gate-source-client-sha256
+                            >
+                              browser verified SHA-256:{" "}
+                              {gate1Review.evidence.client_verified_sha256}
+                            </p>
+                            <pre
+                              aria-label={
+                                isZh
+                                  ? "Gate 1 精确源码"
+                                  : "Gate 1 exact source"
+                              }
+                              className="max-h-96 overflow-auto rounded border border-border-subtle bg-bg-elevated p-3 text-left font-data-mono text-xs text-text-primary whitespace-pre"
+                              data-hermes-gate-source-bytes
+                              tabIndex={0}
+                            >
+                              {gate1Review.evidence.source_utf8}
+                            </pre>
+                            <label className="flex items-start gap-2 font-body-sm text-text-primary">
+                              <input
+                                checked={gate1Review.acknowledged}
+                                data-hermes-gate-source-acknowledge
+                                onChange={(event) =>
+                                  setGate1Reviews((previous) => ({
+                                    ...previous,
+                                    [row.gate_id]: {
+                                      ...gate1Review,
+                                      acknowledged: event.target.checked,
+                                    },
+                                  }))
+                                }
+                                type="checkbox"
+                              />
+                              <span>
+                                {isZh
+                                  ? "我已阅读上方精确源码，并核对浏览器计算的完整 SHA-256。"
+                                  : "I reviewed the exact source above and checked the browser-computed full SHA-256."}
+                              </span>
+                            </label>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {kind === "gate2" &&
+                    isPending(row) &&
+                    (row.candidate_id || row.candidate_ref) ? (
+                      <p
+                        className="rounded border border-warning/40 bg-warning/5 p-2 font-body-sm text-text-secondary"
+                        data-hermes-gate-review-guidance="gate2"
+                      >
+                        {isZh
+                          ? "批准前请在只读证据页检查候选源码、审计记录和完整 digest；证据页不会自动提交 Gate 2。"
+                          : "Before approving, inspect candidate source, audit records, and the full digest in the read-only evidence page; that page never submits Gate 2 automatically."}{" "}
+                        <Link
+                          className="font-semibold text-info underline underline-offset-2"
+                          href={hermesRouteHref("approvals", locale, {
+                            candidate:
+                              row.candidate_id ||
+                              row.candidate_ref?.replace(/^candidate:/, ""),
+                          })}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          {isZh ? "打开候选证据" : "Open candidate evidence"}
+                        </Link>
                       </p>
                     ) : null}
                     {row.base_commit ? (
@@ -336,6 +569,74 @@ export function WorkbenchGateSurfacesPanel({
                       <p className="font-data-mono text-[11px] text-text-secondary">
                         decided: {row.decided_at}
                       </p>
+                    ) : null}
+                    {kind === "gate3" &&
+                    (row.promotion_id ||
+                      row.worktree ||
+                      row.patch ||
+                      row.manifest) ? (
+                      <div
+                        className="space-y-1 rounded border border-warning/40 bg-warning/5 p-2"
+                        data-hermes-gate-review-materials
+                      >
+                        <p className="font-body-sm text-text-primary">
+                          {row.status === "completed"
+                            ? isZh
+                              ? "论文流程已完成：人工 commit、Task/Attempt terminal 与 Gate 3 passed 均已绑定"
+                              : "Paper flow completed: human commit, terminal Task/Attempt, and passed Gate 3 are bound"
+                            : row.human_git_commit_required
+                            ? isZh
+                              ? "晋升材料已准备；仍需人工审阅 diff 并 Git commit"
+                              : "Promotion materials are ready; human diff review and Git commit are still required"
+                            : isZh
+                              ? "晋升审阅材料"
+                              : "Promotion review materials"}
+                        </p>
+                        {row.promotion_id ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            promotion: {row.promotion_id}
+                          </p>
+                        ) : null}
+                        {row.worktree ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            worktree: {row.worktree}
+                          </p>
+                        ) : null}
+                        {row.patch ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            patch: {row.patch}
+                          </p>
+                        ) : null}
+                        {row.manifest ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            manifest: {row.manifest}
+                          </p>
+                        ) : null}
+                        <p className="font-body-sm text-text-secondary">
+                          {row.reviewed_commit
+                            ? isZh
+                              ? `已审阅 commit：${row.reviewed_commit}`
+                              : `Reviewed commit: ${row.reviewed_commit}`
+                            : isZh
+                              ? "尚无 reviewed_commit；prepared 不等于 Gate 3 完成。"
+                              : "No reviewed_commit yet; prepared is not Gate 3 completion."}
+                        </p>
+                        {row.provider_evidence_ref ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            provider evidence: {row.provider_evidence_ref}
+                          </p>
+                        ) : null}
+                        {row.workflow_audit_ref ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            workflow audit: {row.workflow_audit_ref}
+                          </p>
+                        ) : null}
+                        {row.hqa_completion_receipt_ref ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            completion receipt: {row.hqa_completion_receipt_ref}
+                          </p>
+                        ) : null}
+                      </div>
                     ) : null}
 
                     {actionable ? (
@@ -362,7 +663,11 @@ export function WorkbenchGateSurfacesPanel({
                         <button
                           className={ACT_BTN_CLASS}
                           data-hermes-gate-act-btn
-                          disabled={busyId === row.gate_id || !noteReady}
+                          disabled={
+                            busyId === row.gate_id ||
+                            !noteReady ||
+                            !gate1ReviewReady
+                          }
                           onClick={() => void onAct(row)}
                           type="button"
                         >

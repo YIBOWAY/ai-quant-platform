@@ -96,6 +96,7 @@ BEGIN
        AND NEW.provision_next_attempt_at IS NULL
        AND NEW.provision_last_error_code IS NULL
        AND NEW.provisioning_receipt_digest IS NULL
+       AND NEW.resolved_source_session_id IS NULL
        AND NEW.provisioned_at IS NULL
     THEN
         NULL;
@@ -112,6 +113,7 @@ BEGIN
                 AND NEW.provision_next_attempt_at IS NOT NULL
                 AND NEW.provision_last_error_code IS NOT NULL
                 AND NEW.provisioning_receipt_digest IS NULL
+                AND NEW.resolved_source_session_id IS NULL
                 AND NEW.provisioned_at IS NULL
             )
             OR
@@ -120,6 +122,17 @@ BEGIN
                 AND NEW.provision_next_attempt_at IS NULL
                 AND NEW.provision_last_error_code IS NULL
                 AND NEW.provisioning_receipt_digest IS NOT NULL
+                AND (
+                    (
+                        NEW.parent_platform_session_id IS NULL
+                        AND NEW.resolved_source_session_id IS NULL
+                    )
+                    OR
+                    (
+                        NEW.parent_platform_session_id IS NOT NULL
+                        AND NEW.resolved_source_session_id IS NOT NULL
+                    )
+                )
                 AND NEW.provisioned_at IS NOT NULL
             )
             OR
@@ -128,6 +141,7 @@ BEGIN
                 AND NEW.provision_next_attempt_at IS NULL
                 AND NEW.provision_last_error_code IS NOT NULL
                 AND NEW.provisioning_receipt_digest IS NULL
+                AND NEW.resolved_source_session_id IS NULL
                 AND NEW.provisioned_at IS NULL
             )
        )
@@ -157,6 +171,16 @@ _SESSION_CREATION_ACTION_CONSTRAINT = (
     "'^[A-Za-z0-9][A-Za-z0-9._:-]*$'::text) AND "
     "(creation_action_digest IS NOT NULL) AND "
     "(creation_action_digest ~ '^[0-9a-f]{64}$'::text))))"
+)
+_SESSION_RESOLVED_SOURCE_CONSTRAINT = (
+    "CHECK (((resolved_source_session_id IS NULL) OR "
+    "((kind = 'web_managed_session'::text) AND "
+    "(parent_platform_session_id IS NOT NULL) AND "
+    "(provision_state = 'ready'::text) AND "
+    "((char_length(resolved_source_session_id) >= 1) AND "
+    "(char_length(resolved_source_session_id) <= 255)) AND "
+    "(resolved_source_session_id ~ "
+    "'^[A-Za-z0-9][A-Za-z0-9._:-]*$'::text))))"
 )
 SessionKind = Literal["observed_external_session", "web_managed_session"]
 SessionWriter = Literal["external_channel", "web_control_plane"]
@@ -209,6 +233,7 @@ class WorkspaceSessionRecord:
     source_channel: str | None
     parent_platform_session_id: str | None
     fork_point: str | None
+    resolved_source_session_id: str | None
     provider_policy_digest: str | None
     payload_ttl_days: int | None
     creation_client_action_id: str | None
@@ -389,6 +414,7 @@ def _row_to_record(row: tuple[object, ...]) -> WorkspaceSessionRecord:
         provisioned_at=row[22],  # type: ignore[arg-type]
         created_at=row[23],  # type: ignore[arg-type]
         updated_at=row[24],  # type: ignore[arg-type]
+        resolved_source_session_id=(str(row[25]) if row[25] is not None else None),
     )
 
 
@@ -417,7 +443,8 @@ _SELECT_COLUMNS = """
     provisioning_receipt_digest,
     provisioned_at,
     created_at,
-    updated_at
+    updated_at,
+    resolved_source_session_id
 """
 
 _PROVISION_UPDATE_COLUMNS = (
@@ -430,6 +457,7 @@ _PROVISION_UPDATE_COLUMNS = (
     "provision_next_attempt_at",
     "provision_last_error_code",
     "provisioning_receipt_digest",
+    "resolved_source_session_id",
     "provisioned_at",
 )
 
@@ -525,6 +553,25 @@ def session_registry_schema_is_ready_on_connection(conn: psycopg.Connection) -> 
                   AND index.indisvalid
                   AND index.indisready
                   AND pg_get_indexdef(index.indexrelid) = %s
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_attribute
+                WHERE attrelid = %s::regclass
+                  AND attname = 'resolved_source_session_id'
+                  AND atttypid = 'text'::regtype
+                  AND NOT attnotnull
+                  AND NOT attisdropped
+            ),
+            EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname =
+                    'ck_hermes_workspace_session_resolved_source'
+                  AND conrelid = %s::regclass
+                  AND contype = 'c'
+                  AND convalidated
+                  AND pg_get_constraintdef(oid) = %s
             )
         """,
         (
@@ -545,6 +592,9 @@ def session_registry_schema_is_ready_on_connection(conn: psycopg.Connection) -> 
                 "(owner_user_id, workspace_id, creation_client_action_id) "
                 "WHERE (creation_client_action_id IS NOT NULL)"
             ),
+            f"{SCHEMA}.hermes_workspace_sessions",
+            f"{SCHEMA}.hermes_workspace_sessions",
+            _SESSION_RESOLVED_SOURCE_CONSTRAINT,
         ),
     ).fetchone()
     if required is None or not all(bool(value) for value in required):
@@ -554,7 +604,7 @@ def session_registry_schema_is_ready_on_connection(conn: psycopg.Connection) -> 
         """
         SELECT
             (
-                SELECT count(*) = 10
+                SELECT count(*) = 11
                 FROM pg_attribute
                 WHERE attrelid = %s::regclass
                   AND attname = ANY(%s)
@@ -592,6 +642,7 @@ def session_registry_schema_is_ready_on_connection(conn: psycopg.Connection) -> 
                 "provision_next_attempt_at",
                 "provision_last_error_code",
                 "provisioning_receipt_digest",
+                "resolved_source_session_id",
                 "provisioned_at",
             ],
             f"{SCHEMA}.hermes_workspace_sessions",

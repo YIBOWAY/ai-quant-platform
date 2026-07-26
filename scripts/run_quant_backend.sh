@@ -111,7 +111,7 @@ fi
 chmod 600 "$LOG_PATH"
 cd "$ROOT"
 
-exec > >(tee -a "$LOG_PATH") 2>&1
+exec >>"$LOG_PATH" 2>&1
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] starting backend-api"
 # Equivalent to: quant-system serve --host 127.0.0.1 --port 8765
 exec "$PYTHON" -m quant_system.cli serve --host 127.0.0.1 --port 8765

@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { PROVIDER_POLICY_DIGEST } from "./darkIdentity";
 import { ensureSessionForkAttempt } from "./sessionForkAttempt";
 
 describe("session fork attempt", () => {
-  it("reuses one immutable id and cursor for retries of the same selection", () => {
+  it("reuses one immutable id, cursor, and policy for retries", () => {
     const createId = vi.fn(() => "11111111-1111-4111-8111-111111111111");
     const first = ensureSessionForkAttempt(
       null,
       {
         hermesSessionId: "agent:main:discord",
         forkPoint: "message:42",
+        providerPolicyDigest: PROVIDER_POLICY_DIGEST,
       },
       createId,
     );
@@ -18,6 +20,7 @@ describe("session fork attempt", () => {
       {
         hermesSessionId: "agent:main:discord",
         forkPoint: "message:42",
+        providerPolicyDigest: PROVIDER_POLICY_DIGEST,
       },
       createId,
     );
@@ -28,6 +31,7 @@ describe("session fork attempt", () => {
       clientActionId: "11111111-1111-4111-8111-111111111111",
       hermesSessionId: "agent:main:discord",
       forkPoint: "message:42",
+      providerPolicyDigest: PROVIDER_POLICY_DIGEST,
     });
     expect(Object.isFrozen(first)).toBe(true);
   });
@@ -42,6 +46,7 @@ describe("session fork attempt", () => {
       {
         hermesSessionId: "agent:main:discord",
         forkPoint: "message:42",
+        providerPolicyDigest: PROVIDER_POLICY_DIGEST,
       },
       createId,
     );
@@ -50,6 +55,7 @@ describe("session fork attempt", () => {
       {
         hermesSessionId: "agent:main:discord",
         forkPoint: "message:43",
+        providerPolicyDigest: PROVIDER_POLICY_DIGEST,
       },
       createId,
     );

@@ -189,8 +189,9 @@ def _seed_run_link(database: db.Database) -> str:
             """
             INSERT INTO quant_system.hermes_run_links (
                 link_id, command_id, platform_resource_type, platform_resource_id,
-                relation, hermes_session_id, hermes_run_id, link_digest, observed_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+                relation, hermes_session_id, resolved_hermes_session_id,
+                hermes_run_id, link_digest, observed_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             """,
             (
                 link_id,
@@ -198,6 +199,7 @@ def _seed_run_link(database: db.Database) -> str:
                 "research_task",
                 f"resource-{marker}",
                 "output",
+                f"hermes-session-{marker}",
                 f"hermes-session-{marker}",
                 f"hermes-run-{marker}",
                 digest,

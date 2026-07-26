@@ -49,6 +49,7 @@ class HermesResultRunLink(_HermesResultReadModel):
     command_id: str = Field(min_length=1, max_length=64)
     relation: Literal["input", "output", "context"]
     hermes_session_id: str = Field(min_length=1, max_length=256)
+    resolved_hermes_session_id: str = Field(min_length=1, max_length=256)
     hermes_run_id: str = Field(min_length=1, max_length=256)
     link_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_event_id: str | None = Field(default=None, min_length=1, max_length=256)

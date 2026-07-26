@@ -51,6 +51,7 @@ from quant_system.hermes.submission_saga import (
     submit_action,
 )
 from quant_system.storage import database as db
+from tests.postgres_reset import truncate_with_fk_dependents
 
 pytestmark = pytest.mark.pg
 
@@ -100,68 +101,22 @@ def _postgres_settings() -> Settings:
 
 
 def _reset_authorities(database: db.Database) -> None:
-    with database.connect() as conn, conn.transaction():
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_workflow_bindings "
-            "DISABLE TRIGGER USER"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events DISABLE TRIGGER USER"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links DISABLE TRIGGER USER"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_workspace_sessions DISABLE TRIGGER USER"
-        )
-        conn.execute(
-            """
-            TRUNCATE TABLE
-                quant_system.hermes_command_workflow_bindings,
-                quant_system.hermes_run_links,
-                quant_system.hermes_outbox,
-                quant_system.hermes_command_events,
-                quant_system.hermes_commands,
-                quant_system.hermes_workspace_sessions
-            RESTART IDENTITY
-            """
-        )
-        for trigger_name in (
-            "trg_hermes_workflow_binding_validate",
-            "trg_hermes_workflow_binding_append_only",
-            "trg_hermes_workflow_binding_append_only_truncate",
-        ):
-            conn.execute(
-                "ALTER TABLE quant_system.hermes_command_workflow_bindings "
-                f"ENABLE ALWAYS TRIGGER {trigger_name}"
-            )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only_truncate"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only_truncate"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_workspace_sessions "
-            "ENABLE ALWAYS TRIGGER trg_hermes_workspace_session_immutability"
-        )
+    truncate_with_fk_dependents(
+        database,
+        (
+            "quant_system.hermes_command_workflow_bindings",
+            "quant_system.hermes_run_links",
+            "quant_system.hermes_outbox",
+            "quant_system.hermes_command_events",
+            "quant_system.hermes_commands",
+            "quant_system.hermes_workspace_sessions",
+        ),
+    )
 
 
 def _count_rows(database: db.Database) -> tuple[int, int]:
     with database.connect() as conn:
-        commands = conn.execute(
-            "SELECT count(*) FROM quant_system.hermes_commands"
-        ).fetchone()
+        commands = conn.execute("SELECT count(*) FROM quant_system.hermes_commands").fetchone()
         sessions = conn.execute(
             "SELECT count(*) FROM quant_system.hermes_workspace_sessions"
         ).fetchone()
@@ -195,9 +150,9 @@ def _prepare(settings: Settings) -> db.Database:
             conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(RUNTIME_LOGIN)))
             conn.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN)))
         conn.execute(
-            sql.SQL(
-                "CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD {}"
-            ).format(sql.Identifier(RUNTIME_LOGIN), sql.Literal(RUNTIME_PASSWORD))
+            sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD {}").format(
+                sql.Identifier(RUNTIME_LOGIN), sql.Literal(RUNTIME_PASSWORD)
+            )
         )
         conn.execute(
             sql.SQL("GRANT {} TO {}").format(
@@ -376,7 +331,8 @@ def test_mutation_enabled_create_is_idempotent_by_digest() -> None:
     assert (commands2, sessions2) == (0, 1)
 
     record = get_workspace_session(
-        settings, platform_session_id=first.platform_session_id  # type: ignore[arg-type]
+        settings,
+        platform_session_id=first.platform_session_id,  # type: ignore[arg-type]
     )
     assert record.kind == "web_managed_session"
     assert record.provider_policy_digest == PROVIDER_POLICY_DIGEST
@@ -402,9 +358,7 @@ def test_fork_creates_managed_without_mutating_external() -> None:
             source_channel="discord",
         ),
     )
-    before = get_workspace_session(
-        settings, platform_session_id=external.platform_session_id
-    )
+    before = get_workspace_session(settings, platform_session_id=external.platform_session_id)
 
     fork = ForkIntoManagedSession(
         client_action_id="act-fork-1",
@@ -430,9 +384,7 @@ def test_fork_creates_managed_without_mutating_external() -> None:
     assert after_external.updated_at == before.updated_at
     assert after_external.provider_policy_digest is None
 
-    managed = get_workspace_session(
-        settings, platform_session_id=receipt.platform_session_id
-    )
+    managed = get_workspace_session(settings, platform_session_id=receipt.platform_session_id)
     assert managed.kind == "web_managed_session"
     assert managed.parent_platform_session_id == external.platform_session_id
     assert managed.fork_point == "message:42"
@@ -604,9 +556,7 @@ def test_snapshot_lists_sessions_and_follow_lifecycle() -> None:
     ready = authorities_ready(settings)
     effective = bool(ready.get("mutation_enabled"))
     assert closed_snap.mutation_enabled is effective
-    assert closed_snap.authority_health["mutation"] == (
-        "enabled" if effective else "disabled"
-    )
+    assert closed_snap.authority_health["mutation"] == ("enabled" if effective else "disabled")
 
 
 def test_snapshot_projects_managed_session_provisioning_truth(monkeypatch) -> None:

@@ -2,7 +2,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { HermesSessionForkController } from "@/components/hermes/sessions/HermesSessionForkController";
+import {
+  canSubmitSessionFork,
+  HermesSessionForkController,
+  HermesSessionForkPolicyConfirmation,
+} from "@/components/hermes/sessions/HermesSessionForkController";
+import { PROVIDER_POLICY_DIGEST } from "@/lib/hermes/darkIdentity";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -26,6 +31,37 @@ const messages = [
 ];
 
 describe("HermesSessionForkController", () => {
+  it("requires an explicit immutable openai / gpt-5 policy confirmation", () => {
+    expect(
+      canSubmitSessionFork({
+        busy: false,
+        policyConfirmed: false,
+        selectedForkPoint: "message:42",
+      }),
+    ).toBe(false);
+    expect(
+      canSubmitSessionFork({
+        busy: false,
+        policyConfirmed: true,
+        selectedForkPoint: "message:42",
+      }),
+    ).toBe(true);
+
+    const html = renderToStaticMarkup(
+      createElement(HermesSessionForkPolicyConfirmation, {
+        checked: false,
+        disabled: false,
+        isZh: false,
+        onChange: vi.fn(),
+      }),
+    );
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain("min-h-11");
+    expect(html).toContain("openai / gpt-5");
+    expect(html).toContain(PROVIDER_POLICY_DIGEST);
+    expect(html).toContain("data-hermes-session-fork-policy-confirmation");
+  });
+
   it("shows one accessible 44px action only for an eligible authoritative message", () => {
     const html = renderToStaticMarkup(
       createElement(HermesSessionForkController, {

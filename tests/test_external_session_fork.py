@@ -115,6 +115,7 @@ def test_external_fork_registers_authoritative_source_and_delegates_exact_action
         _Gateway(),
         hermes_session_id="discord-session-1",
         fork_point="message:41",
+        new_provider_policy_digest=PROVIDER_POLICY_DIGEST,
         client_action_id="fork-browser-1",
         mutation_enabled=True,
         actor_owner_user_id=ROOT_USER_ID,
@@ -139,6 +140,33 @@ def test_external_fork_registers_authoritative_source_and_delegates_exact_action
         "mutation_enabled": True,
         "actor_owner_user_id": ROOT_USER_ID,
     }
+
+
+def test_external_fork_rejects_unadmitted_explicit_provider_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        fork_module,
+        "register_workspace_session",
+        lambda *_args, **_kwargs: pytest.fail("must fail before registry mutation"),
+    )
+
+    with pytest.raises(
+        ExternalSessionForkError,
+        match="explicitly selected provider policy",
+    ) as caught:
+        submit_external_session_fork(
+            SimpleNamespace(),
+            _Gateway(),
+            hermes_session_id="discord-session-1",
+            fork_point="message:41",
+            new_provider_policy_digest="0" * 64,
+            client_action_id="fork-browser-policy-drift",
+            mutation_enabled=True,
+            actor_owner_user_id=ROOT_USER_ID,
+        )
+
+    assert caught.value.code == "provider_policy_not_admitted"
 
 
 @pytest.mark.parametrize(
@@ -174,6 +202,7 @@ def test_external_fork_maps_persisted_non_api_sources(
         _Gateway(source=source),
         hermes_session_id="historical-session-1",
         fork_point="message:41",
+        new_provider_policy_digest=PROVIDER_POLICY_DIGEST,
         client_action_id="fork-browser-2",
         mutation_enabled=True,
         actor_owner_user_id=ROOT_USER_ID,
@@ -202,6 +231,7 @@ def test_external_fork_rejects_non_external_or_unclassified_source(
             _Gateway(source=source),
             hermes_session_id="not-external",
             fork_point="message:41",
+            new_provider_policy_digest=PROVIDER_POLICY_DIGEST,
             client_action_id="fork-browser-3",
             mutation_enabled=True,
             actor_owner_user_id=ROOT_USER_ID,
@@ -234,6 +264,7 @@ def test_external_fork_rejects_cursor_without_authoritative_message(
             _Gateway(messages=messages),
             hermes_session_id="discord-session-1",
             fork_point="message:41",
+            new_provider_policy_digest=PROVIDER_POLICY_DIGEST,
             client_action_id="fork-browser-4",
             mutation_enabled=True,
             actor_owner_user_id=ROOT_USER_ID,
@@ -259,6 +290,7 @@ def test_external_fork_requires_advertised_session_resources(
             gateway,
             hermes_session_id="discord-session-1",
             fork_point="message:41",
+            new_provider_policy_digest=PROVIDER_POLICY_DIGEST,
             client_action_id="fork-browser-5",
             mutation_enabled=True,
             actor_owner_user_id=ROOT_USER_ID,

@@ -84,4 +84,11 @@ def _hermes_command_ledger_status(settings: SettingsDep) -> dict[str, Any]:
         "mutation_enabled": bool(ready["mutation_enabled"]),
         "composer_write_ready": bool(ready["composer_write_ready"]),
         "chat_write_ready": bool(ready["chat_write_ready"]),
+        # Durable PostgreSQL ReleaseAuthority observation. These raw
+        # identities remain visible while writes are fail-closed so operators
+        # can distinguish "no cutover" from unrelated composer blockers.
+        "release_authorized": bool(ready["release_authorized"]),
+        "release_stamp_id": ready["release_stamp_id"],
+        "public_cutover_id": ready["public_cutover_id"],
+        "release_event_cursor": ready["release_event_cursor"],
     }

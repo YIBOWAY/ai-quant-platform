@@ -49,6 +49,10 @@ def test_health_returns_safety_snapshot(tmp_path) -> None:
         "mutation_enabled": False,
         "composer_write_ready": False,
         "chat_write_ready": False,
+        "release_authorized": False,
+        "release_stamp_id": None,
+        "public_cutover_id": None,
+        "release_event_cursor": 0,
     }
 
 

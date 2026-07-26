@@ -27,6 +27,7 @@ from quant_system.hermes.session_registry import (
 )
 from quant_system.hermes.submission_saga import submit_create_managed_session
 from quant_system.storage import database as db
+from tests.postgres_reset import truncate_with_fk_dependents
 
 pytestmark = pytest.mark.pg
 
@@ -141,13 +142,11 @@ def _postgres_settings() -> Settings:
 
 
 def _reset_sessions(database: db.Database) -> None:
-    with database.connect() as conn, conn.transaction():
-        conn.execute("ALTER TABLE quant_system.hermes_workspace_sessions DISABLE TRIGGER USER")
-        conn.execute("TRUNCATE TABLE quant_system.hermes_workspace_sessions")
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_workspace_sessions "
-            "ENABLE ALWAYS TRIGGER trg_hermes_workspace_session_immutability"
-        )
+    truncate_with_fk_dependents(
+        database,
+        ("quant_system.hermes_workspace_sessions",),
+        restart_identity=False,
+    )
 
 
 def test_session_registry_migration_is_ready_and_repeatable() -> None:
@@ -273,6 +272,7 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
         )
         assert created is True
         assert external.web_writable is False
+        assert external.resolved_source_session_id is None
         again, created_again = register_workspace_session(
             settings,
             RegisterWorkspaceSession(
@@ -302,6 +302,7 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
         assert managed_created is True
         assert managed.provisioning_state == "pending"
         assert managed.web_writable is False
+        assert managed.resolved_source_session_id is None
 
         forked, fork_created = register_workspace_session(
             settings,
@@ -321,6 +322,7 @@ def test_register_external_and_managed_sessions_with_idempotency_and_fork() -> N
         )
         assert fork_created is True
         assert forked.parent_platform_session_id == "ext-session-001"
+        assert forked.resolved_source_session_id is None
         with pytest.raises(HermesSessionNotWritable):
             require_web_writable_session(settings, platform_session_id="web-session-001")
     finally:

@@ -23,6 +23,7 @@ from quant_system.hermes.session_registry import (
     require_web_writable_session,
 )
 from quant_system.storage import database as db
+from tests.postgres_reset import truncate_with_fk_dependents
 
 pytestmark = pytest.mark.pg
 
@@ -68,13 +69,11 @@ def _settings() -> Settings:
 
 
 def _reset_sessions(database: db.Database) -> None:
-    with database.connect() as conn, conn.transaction():
-        conn.execute("ALTER TABLE quant_system.hermes_workspace_sessions DISABLE TRIGGER USER")
-        conn.execute("TRUNCATE TABLE quant_system.hermes_workspace_sessions")
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_workspace_sessions "
-            "ENABLE ALWAYS TRIGGER trg_hermes_workspace_session_immutability"
-        )
+    truncate_with_fk_dependents(
+        database,
+        ("quant_system.hermes_workspace_sessions",),
+        restart_identity=False,
+    )
 
 
 @dataclass
@@ -103,6 +102,7 @@ class RecordingPort:
 class ForkRecordingPort:
     calls: list[tuple[str, str, str, str]] = field(default_factory=list)
     receipt_source_override: str | None = None
+    resolved_source_override: str | None = None
 
     def ensure_session(self, **_kwargs) -> ManagedSessionProvisionReceipt:
         raise AssertionError("fork provisioning must not ensure a root")
@@ -123,7 +123,9 @@ class ForkRecordingPort:
             created=True,
             recovered=False,
             source_session_id=receipt_source,
-            resolved_source_session_id=receipt_source,
+            resolved_source_session_id=(
+                self.resolved_source_override or receipt_source
+            ),
             fork_point=fork_point,
             preserve_source=True,
         )
@@ -231,6 +233,7 @@ def test_registered_root_is_not_writable_until_exact_receipt_is_durable() -> Non
         )
         assert persisted.provisioning_state == "ready"
         assert persisted.provisioning_receipt_digest is not None
+        assert persisted.resolved_source_session_id is None
         assert (
             require_web_writable_session(
                 settings,
@@ -300,6 +303,67 @@ def test_fork_binds_real_parent_session_and_exact_message_point() -> None:
         )
         assert ready.provisioning_state == "ready"
         assert ready.parent_platform_session_id == parent.platform_session_id
+        assert ready.resolved_source_session_id == parent.hermes_session_id
+    finally:
+        _reset_sessions(database)
+        db.reset_database_cache()
+
+
+def test_fork_persists_selected_source_and_compression_resolved_parent() -> None:
+    settings = _settings()
+    db.reset_database_cache()
+    database = db.get_database(settings)
+    assert database is not None
+    db.run_migrations(database)
+    _reset_sessions(database)
+    port = ForkRecordingPort(
+        resolved_source_override="discord-session-active-compression-tip"
+    )
+
+    try:
+        parent, _ = register_workspace_session(
+            settings,
+            RegisterWorkspaceSession(
+                platform_session_id="external-compressed-parent",
+                hermes_session_id="discord-session-compressed-root",
+                workspace_id="workspace-root",
+                kind="observed_external_session",
+                source_channel="discord",
+            ),
+        )
+        register_workspace_session(
+            settings,
+            RegisterWorkspaceSession(
+                platform_session_id="wm-provision-compressed-fork",
+                hermes_session_id=FORK_SESSION_ID,
+                workspace_id="workspace-root",
+                kind="web_managed_session",
+                source_channel="discord",
+                parent_platform_session_id=parent.platform_session_id,
+                fork_point="message:23",
+                provider_policy_digest=PROVIDER_POLICY_DIGEST,
+                payload_ttl_days=7,
+                creation_client_action_id="provision-compressed-fork",
+                creation_action_digest=FORK_ACTION_DIGEST,
+            ),
+        )
+
+        result = ManagedSessionProvisioner(
+            settings=settings,
+            port=port,
+        ).provision_next(worker_id="provisioner-compressed-fork")
+
+        assert result.outcome == "ready"
+        ready = get_workspace_session(
+            settings,
+            platform_session_id="wm-provision-compressed-fork",
+        )
+        assert ready.parent_platform_session_id == parent.platform_session_id
+        assert ready.fork_point == "message:23"
+        assert ready.resolved_source_session_id == (
+            "discord-session-active-compression-tip"
+        )
+        assert port.calls[0][0] == "discord-session-compressed-root"
     finally:
         _reset_sessions(database)
         db.reset_database_cache()

@@ -157,4 +157,64 @@ describe("gate surfaces helpers (V7e)", () => {
       ),
     ).toBe(false);
   });
+
+  it("keeps exact Gate 1 review material and Gate 2 digest in the panel source", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(
+      new URL(
+        "../../components/hermes/gates/WorkbenchGateSurfacesPanel.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(source).toContain("row.source_file_ref");
+    expect(source).toContain("row.universe");
+    expect(source).toContain("source SHA-256: {row.reviewed_source_sha256}");
+    expect(source).toContain("candidate digest: {row.expected_digest}");
+    expect(source).toContain("data-hermes-gate-source-load");
+    expect(source).toContain("data-hermes-gate-source-bytes");
+    expect(source).toContain("data-hermes-gate-source-acknowledge");
+    expect(source).toContain("client_verified_sha256");
+    expect(source).toContain("Open candidate evidence");
+    expect(source).not.toContain(
+      "source: {displayId(row.reviewed_source_sha256)}",
+    );
+    expect(source).not.toContain("digest: {displayId(row.expected_digest)}");
+  });
+
+  it("independently hashes Gate 1 UTF-8 source and rejects substituted bytes", async () => {
+    const { verifyGate1SourceEvidence, WorkspaceClientError } = await import(
+      "@/lib/hermes/workspaceClient"
+    );
+    const exactDigest =
+      "e13df8c44af5dea1e412403910b99cc5a48f2ccbf68a66b3374d6ab9cef9fc65";
+    const wire = {
+      schema_version: "1.0" as const,
+      gate_id: "paper-gate-1",
+      workspace_id: "workspace-root",
+      source_file_ref: "/safe/reversal.py",
+      reviewed_source_sha256: exactDigest,
+      observed_source_sha256: exactDigest,
+      byte_length: 10,
+      media_type: "text/x-python; charset=utf-8" as const,
+      source_utf8: "VALUE = 1\n",
+    };
+    const verified = await verifyGate1SourceEvidence(wire, {
+      workspaceId: "workspace-root",
+      gateId: "paper-gate-1",
+      reviewedSourceSha256: exactDigest,
+    });
+    expect(verified.client_verified_sha256).toBe(exactDigest);
+
+    await expect(
+      verifyGate1SourceEvidence(
+        { ...wire, source_utf8: "VALUE = 2\n" },
+        {
+          workspaceId: "workspace-root",
+          gateId: "paper-gate-1",
+          reviewedSourceSha256: exactDigest,
+        },
+      ),
+    ).rejects.toBeInstanceOf(WorkspaceClientError);
+  });
 });

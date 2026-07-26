@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { TranscriptCanvas } from "@/components/hermes/transcript/TranscriptCanvas";
 import { Card } from "@/components/ui/primitives";
 import { useOptionalActiveHermesSession } from "@/lib/hermes/activeSession";
+import { PROVIDER_POLICY_DIGEST } from "@/lib/hermes/darkIdentity";
 import {
   ensureSessionForkAttempt,
   type SessionForkAttempt,
@@ -41,6 +42,56 @@ type ForkPhase =
 const ACTION_CLASS =
   "app-touch-target inline-flex min-h-11 items-center justify-center rounded-lg border px-3 font-body-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none";
 
+export function canSubmitSessionFork(options: {
+  busy: boolean;
+  policyConfirmed: boolean;
+  selectedForkPoint: string | null;
+}): boolean {
+  return (
+    !options.busy &&
+    options.policyConfirmed &&
+    typeof options.selectedForkPoint === "string" &&
+    /^message:[1-9][0-9]*$/.test(options.selectedForkPoint)
+  );
+}
+
+export function HermesSessionForkPolicyConfirmation({
+  checked,
+  disabled,
+  isZh,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  isZh: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div
+      className="mt-4 rounded-lg border border-info/30 bg-info/5 p-3"
+      data-hermes-session-fork-policy-confirmation
+    >
+      <label className="flex min-h-11 items-start gap-3 font-body-sm text-text-primary">
+        <input
+          checked={checked}
+          className="mt-1 size-4 shrink-0 accent-info"
+          disabled={disabled}
+          onChange={(event) => onChange(event.currentTarget.checked)}
+          type="checkbox"
+        />
+        <span>
+          {isZh
+            ? "我确认新会话将使用唯一且不可变的 provider policy：openai / gpt-5。"
+            : "I confirm the new session will use the only admitted immutable provider policy: openai / gpt-5."}
+        </span>
+      </label>
+      <p className="mt-2 break-all font-data-mono text-[11px] text-text-secondary">
+        {isZh ? "Policy 摘要" : "Policy digest"}: {PROVIDER_POLICY_DIGEST}
+      </p>
+    </div>
+  );
+}
+
 function forkErrorCopy(error: unknown, isZh: boolean): string {
   const code =
     error instanceof WorkspaceClientError ? error.code ?? "" : "";
@@ -68,6 +119,10 @@ function forkErrorCopy(error: unknown, isZh: boolean): string {
     source_session_registry_unavailable: [
       "源会话注册表暂时不可用。源会话未被修改，可重试同一次操作。",
       "The source-session registry is unavailable. The source session was not changed; retry the same attempt.",
+    ],
+    provider_policy_not_admitted: [
+      "所确认的 provider policy 已不再被服务器允许。请重新加载后再次确认；系统不会替换 policy。",
+      "The confirmed provider policy is no longer server-admitted. Reload and confirm again; no policy will be substituted.",
     ],
     managed_session_provision_retryable: [
       "新会话暂时未就绪。可使用完全相同的操作重试。",
@@ -137,6 +192,7 @@ export function HermesSessionForkController({
     null,
   );
   const [attempt, setAttempt] = useState<SessionForkAttempt | null>(null);
+  const [providerPolicyConfirmed, setProviderPolicyConfirmed] = useState(false);
   const [phase, setPhase] = useState<ForkPhase>("idle");
   const [lastReceipt, setLastReceipt] =
     useState<WorkspaceActionReceipt | null>(null);
@@ -175,6 +231,7 @@ export function HermesSessionForkController({
       setSelectedForkPoint((prior) => {
         if (prior !== forkPoint) {
           setAttempt(null);
+          setProviderPolicyConfirmed(false);
         }
         return forkPoint;
       });
@@ -197,6 +254,7 @@ export function HermesSessionForkController({
           hermesSessionId: nextAttempt.hermesSessionId,
           clientActionId: nextAttempt.clientActionId,
           forkPoint: nextAttempt.forkPoint,
+          newProviderPolicyDigest: nextAttempt.providerPolicyDigest,
           signal: controller.signal,
           onReceipt: (receipt) => {
             setLastReceipt(receipt);
@@ -230,10 +288,23 @@ export function HermesSessionForkController({
   );
 
   const confirm = useCallback(() => {
-    if (!selectedForkPoint || busy) return;
+    if (
+      !selectedForkPoint ||
+      !canSubmitSessionFork({
+        busy,
+        policyConfirmed: providerPolicyConfirmed,
+        selectedForkPoint,
+      })
+    ) {
+      return;
+    }
     const nextAttempt = ensureSessionForkAttempt(
       attempt,
-      { hermesSessionId, forkPoint: selectedForkPoint },
+      {
+        hermesSessionId,
+        forkPoint: selectedForkPoint,
+        providerPolicyDigest: PROVIDER_POLICY_DIGEST,
+      },
     );
     setAttempt(nextAttempt);
     void runAttempt(nextAttempt);
@@ -241,6 +312,7 @@ export function HermesSessionForkController({
     attempt,
     busy,
     hermesSessionId,
+    providerPolicyConfirmed,
     runAttempt,
     selectedForkPoint,
   ]);
@@ -254,12 +326,18 @@ export function HermesSessionForkController({
     if (busy) return;
     setSelectedForkPoint(null);
     setAttempt(null);
+    setProviderPolicyConfirmed(false);
     setLastReceipt(null);
     setErrorText(null);
     setPhase("idle");
   }, [busy]);
 
   const status = statusCopy(phase, isZh, lastReceipt);
+  const confirmDisabled = !canSubmitSessionFork({
+    busy,
+    policyConfirmed: providerPolicyConfirmed,
+    selectedForkPoint,
+  });
 
   return (
     <section
@@ -355,6 +433,13 @@ export function HermesSessionForkController({
               : "A new server-managed Web session will be created. This source session and the selected fork point remain unchanged."}
           </p>
 
+          <HermesSessionForkPolicyConfirmation
+            checked={providerPolicyConfirmed}
+            disabled={busy || attempt != null}
+            isZh={isZh}
+            onChange={setProviderPolicyConfirmed}
+          />
+
           <div className="mt-4 flex flex-wrap gap-2">
             {phase === "error" && attempt ? (
               <button
@@ -370,7 +455,7 @@ export function HermesSessionForkController({
               <button
                 className={`${ACTION_CLASS} border-info/40 bg-info/10 text-info hover:bg-info/15`}
                 data-hermes-session-fork-confirm-action
-                disabled={busy}
+                disabled={confirmDisabled}
                 onClick={confirm}
                 type="button"
               >

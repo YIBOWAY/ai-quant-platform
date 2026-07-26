@@ -57,7 +57,7 @@ router = APIRouter()
 
 
 class HermesForkToManagedRequest(BaseModel):
-    """Closed browser body; authority-bearing source facts remain server-owned."""
+    """Closed browser body with an explicit immutable policy selection."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -70,6 +70,11 @@ class HermesForkToManagedRequest(BaseModel):
         min_length=9,
         max_length=256,
         pattern=r"^message:[1-9][0-9]*$",
+    )
+    new_provider_policy_digest: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
     )
 
 
@@ -483,6 +488,7 @@ def hermes_session_fork_to_managed(
             gateway,
             hermes_session_id=safe_session_id,
             fork_point=body.fork_point,
+            new_provider_policy_digest=body.new_provider_policy_digest,
             client_action_id=body.client_action_id,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=owner.owner_user_id,
@@ -500,6 +506,7 @@ def hermes_session_fork_to_managed(
             "session_identity_mismatch": 409,
             "source_session_not_external": 409,
             "source_session_identity_conflict": 409,
+            "provider_policy_not_admitted": 409,
             "session_resources_unavailable": 503,
             "source_session_registry_unavailable": 503,
         }.get(exc.code, 503)

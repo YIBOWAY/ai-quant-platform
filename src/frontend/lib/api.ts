@@ -1942,6 +1942,8 @@ export type HermesSessionSummaryResponse =
 export type HermesSessionSummary = HermesSessionSummaryResponse;
 export type HermesSessionsResponse = ApiEnvelope &
   HermesSchemas["HermesSessionsResponse"];
+export type HermesExternalSessionForkContextResponse =
+  HermesSchemas["HermesExternalSessionForkContextResponse"];
 export type HermesSessionDetailResponse = ApiEnvelope &
   HermesSchemas["HermesSessionDetailResponse"];
 export type HermesMessageResponse = HermesSchemas["HermesMessageResponse"];
@@ -1969,8 +1971,17 @@ export type CanaryGrantResponse =
   GeneratedApiComponents["schemas"]["CanaryGrantResponse"];
 export type PublicCutoverResponse =
   GeneratedApiComponents["schemas"]["PublicCutoverResponse"];
+export type DurablePublicCutoverResponse =
+  GeneratedApiComponents["schemas"]["DurablePublicCutoverResponse"];
+export type WorkspacePublicCutoverResponse = NonNullable<
+  GeneratedApiComponents["schemas"]["WorkspaceSnapshotResponse"]["public_cutovers"]
+>[number];
 export type GateProjectionResponse =
   GeneratedApiComponents["schemas"]["GateProjectionResponse"];
+export type Gate1SourceEvidenceResponse =
+  GeneratedApiComponents["schemas"]["Gate1SourceEvidenceResponse"];
+export type OptionsRequestResponse =
+  GeneratedApiComponents["schemas"]["OptionsRequestResponse"];
 export type ManagedSessionProjectionResponse =
   GeneratedApiComponents["schemas"]["ManagedSessionProjectionResponse"];
 export type WorkspaceSnapshotResponse =

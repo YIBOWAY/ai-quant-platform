@@ -195,7 +195,18 @@ class SubprocessHermesRunLifecyclePort:
 
         run_id = document.get("run_id")
         created = document.get("created")
-        if not _is_identifier(run_id) or type(created) is not bool:
+        requested_session_id = document.get("requested_session_id")
+        conversation_session_id = document.get("conversation_session_id")
+        resolved_session_id = document.get("resolved_session_id")
+        receipt_session_id = document.get("session_id")
+        if (
+            not _is_identifier(run_id)
+            or type(created) is not bool
+            or requested_session_id != session_id
+            or conversation_session_id != session_id
+            or not _is_identifier(resolved_session_id)
+            or receipt_session_id != resolved_session_id
+        ):
             return HermesDispatchResult(
                 kind="transport_error",
                 error_code="run_cli_invalid_receipt",
@@ -203,10 +214,12 @@ class SubprocessHermesRunLifecyclePort:
         outcome = "accepted" if created else "recovered"
         return HermesDispatchResult(
             kind=outcome,
-            hermes_session_id=str(session_id),
+            conversation_hermes_session_id=str(conversation_session_id),
+            hermes_session_id=str(resolved_session_id),
             hermes_run_id=str(run_id),
             evidence_digest=evidence_digest_for(
-                hermes_session_id=str(session_id),
+                conversation_hermes_session_id=str(conversation_session_id),
+                hermes_session_id=str(resolved_session_id),
                 hermes_run_id=str(run_id),
                 outcome=outcome,
             ),
@@ -215,12 +228,17 @@ class SubprocessHermesRunLifecyclePort:
     def observe(
         self,
         *,
+        conversation_hermes_session_id: str | None = None,
         hermes_session_id: str,
         hermes_run_id: str,
         after_cursor: int = 0,
     ) -> HermesRunObservation:
+        expected_conversation_session_id = (
+            conversation_hermes_session_id or hermes_session_id
+        )
         if (
-            not _is_identifier(hermes_session_id)
+            not _is_identifier(expected_conversation_session_id)
+            or not _is_identifier(hermes_session_id)
             or not _is_identifier(hermes_run_id)
             or isinstance(after_cursor, bool)
             or after_cursor < 0
@@ -238,9 +256,19 @@ class SubprocessHermesRunLifecyclePort:
         if (
             status_document.get("run_id") != hermes_run_id
             or status_document.get("session_id") != hermes_session_id
+            or status_document.get("resolved_session_id", hermes_session_id)
+            != hermes_session_id
+            or status_document.get(
+                "conversation_session_id",
+                hermes_session_id,
+            )
+            != expected_conversation_session_id
             or events_document.get("run_id") != hermes_run_id
         ):
             return _unknown_observation(
+                conversation_hermes_session_id=(
+                    expected_conversation_session_id
+                ),
                 hermes_session_id=hermes_session_id,
                 hermes_run_id=hermes_run_id,
                 after_cursor=after_cursor,
@@ -269,6 +297,9 @@ class SubprocessHermesRunLifecyclePort:
             )
         if status == "outcome_unknown" or not replay_complete:
             return _unknown_observation(
+                conversation_hermes_session_id=(
+                    expected_conversation_session_id
+                ),
                 hermes_session_id=hermes_session_id,
                 hermes_run_id=hermes_run_id,
                 after_cursor=(
@@ -289,6 +320,9 @@ class SubprocessHermesRunLifecyclePort:
         }
         return HermesRunObservation(
             status=status,
+            conversation_hermes_session_id=(
+                expected_conversation_session_id
+            ),
             hermes_session_id=hermes_session_id,
             hermes_run_id=hermes_run_id,
             evidence_digest=_evidence_digest(evidence),
@@ -591,6 +625,7 @@ def _validate_event_replay(
 
 def _unknown_observation(
     *,
+    conversation_hermes_session_id: str,
     hermes_session_id: str,
     hermes_run_id: str,
     after_cursor: int,
@@ -598,6 +633,7 @@ def _unknown_observation(
 ) -> HermesRunObservation:
     return HermesRunObservation(
         status="outcome_unknown",
+        conversation_hermes_session_id=conversation_hermes_session_id,
         hermes_session_id=hermes_session_id,
         hermes_run_id=hermes_run_id,
         error_code=error_code,

@@ -134,6 +134,7 @@ describe("workspaceFollowSpine helpers (L4b)", () => {
   it("emptyState carries honest empty approvals (L5a)", () => {
     const s = emptyState();
     expect(s.approvals).toEqual([]);
+    expect(s.publicCutovers).toEqual([]);
     expect(s.commands).toEqual([]);
   });
 
@@ -224,6 +225,47 @@ describe("snapshot reconcile authority slots (L5b)", () => {
       expect(s.authorityHealth.command_approval).toBe("unavailable");
       expect(s.snapshotCursor).toBe(7);
       expect(fetchWorkspaceSnapshot).toHaveBeenCalled();
+    } finally {
+      spine.stop();
+    }
+  });
+
+  it("preserves canonical durable public-cutover rows from snapshot", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({
+        public_cutovers: [
+          {
+            authority_source: "postgres_release_authority",
+            cutover_digest: "c".repeat(64),
+            cutover_id: "cutover-release-1",
+            cutover_ref: "cutover:cutover-release-1",
+            kind: "agent_v0_2.release.public_cutover",
+            opened_at: "2026-07-25T00:00:00Z",
+            public_flag_open: true,
+            release_digest: "d".repeat(64),
+            route: "/hermes",
+            stamp_id: "stamp-release-1",
+            status: "open",
+          },
+        ],
+        authority_health: {
+          ...EMPTY_AUTHORITY_HEALTH,
+          public_cutover: "ready",
+        },
+      }),
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: false,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      await spine.resyncNow();
+      const row = spine.getState().publicCutovers[0];
+      expect(row?.kind).toBe("agent_v0_2.release.public_cutover");
+      expect(row?.cutover_id).toBe("cutover-release-1");
+      expect(spine.getState().authorityHealth.public_cutover).toBe("ready");
     } finally {
       spine.stop();
     }

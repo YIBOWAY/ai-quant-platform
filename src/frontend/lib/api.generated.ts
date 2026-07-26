@@ -2101,6 +2101,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace/{workspace_id}/gates/{gate_id}/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workspace Gate1 Source Evidence
+         * @description Read exact Gate 1 bytes from its durable owner/workspace binding.
+         *
+         *     ``owner`` is intentionally consumed even though the single-user authority
+         *     already binds its database rows to ROOT_USER_ID.  The browser cannot pass a
+         *     path or digest, and this GET performs no workflow mutation.
+         */
+        get: operations["workspace_gate1_source_evidence_api_workspace__workspace_id__gates__gate_id__source_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace/{workspace_id}/snapshot": {
         parameters: {
             query?: never;
@@ -3510,6 +3534,12 @@ export interface components {
             cutover_id?: string | null;
             /** Cutover Ref */
             cutover_ref?: string | null;
+            /** Domain Request Id */
+            domain_request_id?: string | null;
+            /** Domain Request Ref */
+            domain_request_ref?: string | null;
+            /** Domain Request Status */
+            domain_request_status?: ("awaiting_run" | "completed" | "outcome_unknown") | null;
             /** Gate Id */
             gate_id?: string | null;
             /** Grant Digest */
@@ -3610,6 +3640,67 @@ export interface components {
              * @constant
              */
             release_authorized: false;
+        };
+        /**
+         * DurablePublicCutoverResponse
+         * @description Canonical PostgreSQL release cutover fact.
+         *
+         *     This projection deliberately carries no legacy M6 build/acceptance fields
+         *     and makes no current composer-readiness claim.
+         */
+        DurablePublicCutoverResponse: {
+            /**
+             * Authority Source
+             * @constant
+             */
+            authority_source: "postgres_release_authority";
+            /** Candidate Acceptance Digest */
+            candidate_acceptance_digest?: string | null;
+            /** Candidate Admission Digest */
+            candidate_admission_digest?: string | null;
+            /** Candidate Admission Id */
+            candidate_admission_id?: string | null;
+            /** Close Reason */
+            close_reason?: string | null;
+            /** Closed At */
+            closed_at?: string | null;
+            /** Cutover Digest */
+            cutover_digest: string;
+            /** Cutover Id */
+            cutover_id: string;
+            /** Cutover Ref */
+            cutover_ref: string;
+            /** Evidence Set Digest */
+            evidence_set_digest?: string | null;
+            /** Evidence Set Id */
+            evidence_set_id?: string | null;
+            /** Final Order Snapshot Digest */
+            final_order_snapshot_digest?: string | null;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "agent_v0_2.release.public_cutover";
+            /** Opened At */
+            opened_at: string;
+            /** Paper Authority Epoch */
+            paper_authority_epoch?: number | null;
+            /** Public Flag Open */
+            public_flag_open: boolean;
+            /** Release Digest */
+            release_digest: string;
+            /**
+             * Route
+             * @constant
+             */
+            route: "/hermes";
+            /** Stamp Id */
+            stamp_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "closed";
         };
         /** ExperimentDetailResponse */
         ExperimentDetailResponse: {
@@ -4015,16 +4106,60 @@ export interface components {
             /** Runs */
             runs: components["schemas"]["FactorRunSummary"][];
         };
+        /**
+         * Gate1SourceEvidenceResponse
+         * @description Exact, digest-verified source bytes for an owner-reviewed Gate 1.
+         */
+        Gate1SourceEvidenceResponse: {
+            /** Byte Length */
+            byte_length: number;
+            /** Gate Id */
+            gate_id: string;
+            /**
+             * Media Type
+             * @constant
+             */
+            media_type: "text/x-python; charset=utf-8";
+            /** Observed Source Sha256 */
+            observed_source_sha256: string;
+            /** Reviewed Source Sha256 */
+            reviewed_source_sha256: string;
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "1.0";
+            /** Source File Ref */
+            source_file_ref: string;
+            /** Source Utf8 */
+            source_utf8: string;
+            /** Workspace Id */
+            workspace_id: string;
+        };
         /** GateProjectionResponse */
         GateProjectionResponse: {
+            /** Attempt Ref */
+            attempt_ref?: string | null;
+            /** Attempt Status */
+            attempt_status?: "completed" | null;
+            /** Attempt Terminal Outcome */
+            attempt_terminal_outcome?: "completed" | null;
+            /** Auto Commit */
+            auto_commit?: false | null;
             /** Base Commit */
             base_commit?: string | null;
             /** Candidate Id */
             candidate_id?: string | null;
             /** Candidate Ref */
             candidate_ref?: string | null;
+            /** Command Id */
+            command_id?: string | null;
+            /** Command Ref */
+            command_ref?: string | null;
             /** Decided At */
             decided_at?: string | null;
+            /** Domain Gate Outcome */
+            domain_gate_outcome?: "passed" | null;
             /** Expected Digest */
             expected_digest?: string | null;
             /** Expected Status */
@@ -4042,24 +4177,72 @@ export interface components {
              * @enum {string}
              */
             gate_kind: "gate1" | "gate2" | "gate3";
+            /** Hermes Run Id */
+            hermes_run_id?: string | null;
+            /** Hermes Session Id */
+            hermes_session_id?: string | null;
+            /** Hqa Completion Receipt Digest */
+            hqa_completion_receipt_digest?: string | null;
+            /** Hqa Completion Receipt Ref */
+            hqa_completion_receipt_ref?: string | null;
+            /** Hqa Gate Ref */
+            hqa_gate_ref?: string | null;
+            /** Hqa Receipt Digest */
+            hqa_receipt_digest?: string | null;
+            /** Hqa Receipt Ref */
+            hqa_receipt_ref?: string | null;
+            /** Hqa Run Ref */
+            hqa_run_ref?: string | null;
+            /** Human Git Commit Required */
+            human_git_commit_required?: boolean | null;
             /**
              * Kind
              * @enum {string}
              */
             kind: "gate1.formula_source" | "gate2.candidate" | "gate3.promotion_review";
+            /** Managed Session Ref */
+            managed_session_ref?: string | null;
+            /** Manifest */
+            manifest?: string | null;
             /** Note */
             note?: string | null;
+            /** Patch */
+            patch?: string | null;
+            /** Promotion Id */
+            promotion_id?: string | null;
+            /** Provider Evidence Ref */
+            provider_evidence_ref?: string | null;
+            /** Reviewed Commit */
+            reviewed_commit?: string | null;
             /** Reviewed Source Sha256 */
             reviewed_source_sha256?: string | null;
+            /** Source File Ref */
+            source_file_ref?: string | null;
             /**
              * Status
              * @enum {string}
              */
-            status: "pending" | "confirmed" | "reviewed" | "prepared" | "rejected" | "expired";
+            status: "pending" | "confirmed" | "reviewed" | "prepared" | "completed" | "outcome_unknown" | "rejected" | "expired";
             /** Task Id */
             task_id?: string | null;
             /** Task Ref */
             task_ref?: string | null;
+            /** Task Status */
+            task_status?: "completed" | null;
+            /** Task Terminal Outcome */
+            task_terminal_outcome?: "completed" | null;
+            /** Task Version */
+            task_version?: number | null;
+            /** Universe */
+            universe?: string | null;
+            /** Workflow Audit Digest */
+            workflow_audit_digest?: string | null;
+            /** Workflow Audit Ref */
+            workflow_audit_ref?: string | null;
+            /** Workflow Audit Status */
+            workflow_audit_status?: "consistent" | null;
+            /** Worktree */
+            worktree?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5393,6 +5576,44 @@ export interface components {
             status: string;
             /** Warning */
             warning?: string | null;
+        };
+        /** OptionsRequestResponse */
+        OptionsRequestResponse: {
+            /** Action Digest */
+            action_digest: string;
+            /** Admission Digest */
+            admission_digest: string;
+            /** Admission Id */
+            admission_id: string;
+            /** Claim Id */
+            claim_id?: string | null;
+            /** Client Action Id */
+            client_action_id: string;
+            /** Created At */
+            created_at: string;
+            /** Domain Request Id */
+            domain_request_id: string;
+            /** Domain Request Ref */
+            domain_request_ref: string;
+            /** Expiry */
+            expiry: string;
+            /** Recovery Action */
+            recovery_action: ("follow_workspace" | "operator_reconcile_no_provider_replay") | null;
+            /** Result Id */
+            result_id?: string | null;
+            /** Run Ref */
+            run_ref?: string | null;
+            /** Session Ref */
+            session_ref?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "awaiting_run" | "completed" | "outcome_unknown";
+            /** Strike */
+            strike: number;
+            /** Ticker */
+            ticker: string;
         };
         /** OptionsResearchHealthCheckResponse */
         OptionsResearchHealthCheckResponse: {
@@ -7661,6 +7882,12 @@ export interface components {
             cutover_id?: string | null;
             /** Cutover Ref */
             cutover_ref?: string | null;
+            /** Domain Request Id */
+            domain_request_id?: string | null;
+            /** Domain Request Ref */
+            domain_request_ref?: string | null;
+            /** Domain Request Status */
+            domain_request_status?: ("awaiting_run" | "completed" | "outcome_unknown") | null;
             /** Gate Id */
             gate_id?: string | null;
             /** Grant Digest */
@@ -7712,6 +7939,17 @@ export interface components {
         };
         /** WorkspaceAuthoritiesResponse */
         WorkspaceAuthoritiesResponse: {
+            /**
+             * Admission Mode
+             * @enum {string}
+             */
+            admission_mode: "closed" | "candidate" | "release";
+            /** Candidate Admission Digest */
+            candidate_admission_digest: string | null;
+            /** Candidate Admission Id */
+            candidate_admission_id: string | null;
+            /** Candidate Chat Write Ready */
+            candidate_chat_write_ready: boolean;
             /** Chat Write Ready */
             chat_write_ready: boolean;
             /** Command Ledger Schema Ready */
@@ -7736,6 +7974,8 @@ export interface components {
             dark_dispatch_ready: boolean;
             /** Dark Dispatch Schema Ready */
             dark_dispatch_schema_ready: boolean;
+            /** Final Release Blockers */
+            final_release_blockers: string[];
             /** Local Chat Write Ready */
             local_chat_write_ready: boolean;
             /** Mutation Enabled */
@@ -7748,6 +7988,8 @@ export interface components {
             public_chat_write_ready: boolean;
             /** Public Cutover Id */
             public_cutover_id: string | null;
+            /** Public Write Authorized */
+            public_write_authorized: boolean;
             /** Ready */
             ready: boolean;
             /** Release Authorized */
@@ -7803,8 +8045,10 @@ export interface components {
             mutation_enabled: boolean;
             /** Next Cursor */
             next_cursor?: number | null;
+            /** Options Requests */
+            options_requests?: components["schemas"]["OptionsRequestResponse"][] | null;
             /** Public Cutovers */
-            public_cutovers?: components["schemas"]["PublicCutoverResponse"][] | null;
+            public_cutovers?: (components["schemas"]["PublicCutoverResponse"] | components["schemas"]["DurablePublicCutoverResponse"])[] | null;
             /** Recovery Action */
             recovery_action?: string | null;
             /** Results */
@@ -7849,10 +8093,12 @@ export interface components {
             mutation_enabled: boolean;
             /** Observed At */
             observed_at: string;
+            /** Options Requests */
+            options_requests?: components["schemas"]["OptionsRequestResponse"][];
             /** Owner User Id */
             owner_user_id: string;
             /** Public Cutovers */
-            public_cutovers: components["schemas"]["PublicCutoverResponse"][];
+            public_cutovers: (components["schemas"]["PublicCutoverResponse"] | components["schemas"]["DurablePublicCutoverResponse"])[];
             /** Results */
             results: {
                 [key: string]: unknown;
@@ -11727,6 +11973,38 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_gate1_source_evidence_api_workspace__workspace_id__gates__gate_id__source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                gate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gate1SourceEvidenceResponse"];
                 };
             };
             /** @description Validation Error */

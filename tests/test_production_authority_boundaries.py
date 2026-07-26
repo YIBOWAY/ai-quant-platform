@@ -201,7 +201,17 @@ def test_default_workspace_rejects_process_local_mutations(
     receipt = workspace.act(str(ROOT_USER_ID), action)
 
     assert receipt.status == "unavailable"
-    assert receipt.reason_code == "canonical_authority_adapter_unavailable"
+    if action["kind"] == "gate1.formula_source.confirm":
+        # Paper Gates now have a production PostgreSQL authority + strict HQA
+        # port. With database disabled this is an honest durable-authority
+        # outage, not a fallback to the process-local test authority.
+        assert receipt.reason_code == "paper_gate_authority_unavailable"
+    elif action["kind"] == "public.cutover.open":
+        # Production cutover mutation has one control plane: the PostgreSQL
+        # ReleaseAuthority operator CLI, never this legacy browser action.
+        assert receipt.reason_code == "release_operator_cli_required"
+    else:
+        assert receipt.reason_code == "canonical_authority_adapter_unavailable"
     assert receipt.command_id is None
     assert receipt.task_id is None
     assert receipt.attempt_id is None

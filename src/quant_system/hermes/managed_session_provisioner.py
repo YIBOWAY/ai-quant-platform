@@ -39,6 +39,7 @@ from quant_system.storage.database import (
 
 _ACTION_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _SESSION_ID_RE = re.compile(r"^web_[0-9a-f]{40}$")
+_HERMES_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$")
 _WORKER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 _FORK_POINT_RE = re.compile(r"^message:[1-9][0-9]*$")
 _ERROR_CODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
@@ -299,7 +300,7 @@ class ManagedSessionProvisioner:
 
         try:
             receipt, expected_source_session_id = self._call_port(claimed)
-            receipt_digest = _validate_and_digest_receipt(
+            receipt_digest, resolved_source_session_id = _validate_and_digest_receipt(
                 claimed,
                 receipt,
                 expected_source_session_id=expected_source_session_id,
@@ -328,6 +329,7 @@ class ManagedSessionProvisioner:
                 worker_id=worker_id,
                 now=observed_now,
                 receipt_digest=receipt_digest,
+                resolved_source_session_id=resolved_source_session_id,
             )
         except (DatabaseUnavailable, psycopg.Error):
             return ManagedSessionProvisionResult(
@@ -410,6 +412,7 @@ class ManagedSessionProvisioner:
                     provision_next_attempt_at = NULL,
                     provision_last_error_code = NULL,
                     provisioning_receipt_digest = NULL,
+                    resolved_source_session_id = NULL,
                     provisioned_at = NULL
                 FROM candidate
                 WHERE session.platform_session_id =
@@ -503,6 +506,7 @@ class ManagedSessionProvisioner:
         worker_id: str,
         now: datetime,
         receipt_digest: str,
+        resolved_source_session_id: str | None,
     ) -> WorkspaceSessionRecord | None:
         database = get_database(self.settings)
         if database is None:
@@ -519,6 +523,7 @@ class ManagedSessionProvisioner:
                     provision_next_attempt_at = NULL,
                     provision_last_error_code = NULL,
                     provisioning_receipt_digest = %s,
+                    resolved_source_session_id = %s,
                     provisioned_at = %s
                 WHERE platform_session_id = %s
                   AND owner_user_id = %s
@@ -530,6 +535,7 @@ class ManagedSessionProvisioner:
                 """,
                 (
                     receipt_digest,
+                    resolved_source_session_id,
                     now,
                     claimed.platform_session_id,
                     ROOT_USER_ID,
@@ -574,6 +580,7 @@ class ManagedSessionProvisioner:
                         provision_next_attempt_at = %s,
                         provision_last_error_code = %s,
                         provisioning_receipt_digest = NULL,
+                        resolved_source_session_id = NULL,
                         provisioned_at = NULL
                     WHERE platform_session_id = %s
                       AND owner_user_id = %s
@@ -646,7 +653,7 @@ def _validate_and_digest_receipt(
     receipt: ManagedSessionProvisionReceipt,
     *,
     expected_source_session_id: str | None,
-) -> str:
+) -> tuple[str, str | None]:
     action_digest = claimed.creation_action_digest
     if (
         action_digest is None
@@ -675,9 +682,12 @@ def _validate_and_digest_receipt(
                 retryable=False,
             )
     else:
+        resolved_source_session_id = receipt.resolved_source_session_id
         if (
             receipt.source_session_id != expected_source_session_id
-            or receipt.resolved_source_session_id != receipt.source_session_id
+            or type(resolved_source_session_id) is not str
+            or _HERMES_ID_RE.fullmatch(resolved_source_session_id) is None
+            or resolved_source_session_id == claimed.hermes_session_id
             or receipt.fork_point != claimed.fork_point
             or receipt.preserve_source is not True
         ):
@@ -695,7 +705,7 @@ def _validate_and_digest_receipt(
         "session_id": receipt.session_id,
         "source_session_id": receipt.source_session_id,
     }
-    return hashlib.sha256(
+    digest = hashlib.sha256(
         json.dumps(
             evidence,
             sort_keys=True,
@@ -704,6 +714,7 @@ def _validate_and_digest_receipt(
             allow_nan=False,
         ).encode("utf-8")
     ).hexdigest()
+    return digest, receipt.resolved_source_session_id
 
 
 def _receipt_from_document(
@@ -755,11 +766,17 @@ def _receipt_from_document(
             created=created,
             recovered=recovered,
         )
+    resolved_source_session_id = document.get("resolved_source_session_id")
+    session = document["session"]
     if (
         document.get("source_session_id") != source_session_id
-        or document.get("resolved_source_session_id") != source_session_id
+        or type(resolved_source_session_id) is not str
+        or _HERMES_ID_RE.fullmatch(resolved_source_session_id) is None
+        or resolved_source_session_id == session_id
         or document.get("fork_point") != fork_point
         or document.get("preserve_source") is not True
+        or session.get("id") != session_id
+        or session.get("parent_session_id") != resolved_source_session_id
     ):
         raise ManagedSessionProvisionError(
             "session_cli_fork_identity_mismatch",
@@ -771,7 +788,7 @@ def _receipt_from_document(
         created=created,
         recovered=recovered,
         source_session_id=source_session_id,
-        resolved_source_session_id=source_session_id,
+        resolved_source_session_id=resolved_source_session_id,
         fork_point=fork_point,
         preserve_source=True,
     )

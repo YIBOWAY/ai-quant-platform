@@ -12,7 +12,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal, Protocol
 
 DispatchOutcomeKind = Literal[
@@ -74,6 +74,9 @@ class HermesDispatchRequest:
 @dataclass(frozen=True)
 class HermesDispatchResult:
     kind: DispatchOutcomeKind
+    # Stable managed Session identity owned by the workspace registry.
+    conversation_hermes_session_id: str | None = None
+    # Exact compression tip bound to the immutable Hermes Run.
     hermes_session_id: str | None = None
     hermes_run_id: str | None = None
     error_code: str | None = None
@@ -99,6 +102,7 @@ class HermesRunObservation:
     status: RunLifecycleStatus
     hermes_session_id: str
     hermes_run_id: str
+    conversation_hermes_session_id: str | None = None
     evidence_digest: str | None = None
     error_code: str | None = None
     next_cursor: int = 0
@@ -123,6 +127,7 @@ class RunLifecyclePort(HermesDispatchPort, Protocol):
     def observe(
         self,
         *,
+        conversation_hermes_session_id: str | None = None,
         hermes_session_id: str,
         hermes_run_id: str,
         after_cursor: int = 0,
@@ -134,12 +139,17 @@ def evidence_digest_for(
     hermes_session_id: str,
     hermes_run_id: str,
     outcome: str,
+    conversation_hermes_session_id: str | None = None,
 ) -> str:
     payload = {
         "hermes_run_id": hermes_run_id,
         "hermes_session_id": hermes_session_id,
         "outcome": outcome,
     }
+    if conversation_hermes_session_id is not None:
+        payload["conversation_hermes_session_id"] = (
+            conversation_hermes_session_id
+        )
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -226,9 +236,15 @@ class FakeHermesDispatchAdapter:
             # Recovered identity — no second Run, no provider burn by default.
             return HermesDispatchResult(
                 kind="recovered",
+                conversation_hermes_session_id=(
+                    request.hermes_session_id or session_id
+                ),
                 hermes_session_id=session_id,
                 hermes_run_id=run_id,
                 evidence_digest=evidence_digest_for(
+                    conversation_hermes_session_id=(
+                        request.hermes_session_id or session_id
+                    ),
                     hermes_session_id=session_id,
                     hermes_run_id=run_id,
                     outcome="recovered",
@@ -251,9 +267,15 @@ class FakeHermesDispatchAdapter:
 
         return HermesDispatchResult(
             kind="accepted",
+            conversation_hermes_session_id=(
+                request.hermes_session_id or session_id
+            ),
             hermes_session_id=session_id,
             hermes_run_id=run_id,
             evidence_digest=evidence_digest_for(
+                conversation_hermes_session_id=(
+                    request.hermes_session_id or session_id
+                ),
                 hermes_session_id=session_id,
                 hermes_run_id=run_id,
                 outcome="accepted",
@@ -267,17 +289,28 @@ class FakeHermesDispatchAdapter:
     def observe(
         self,
         *,
+        conversation_hermes_session_id: str | None = None,
         hermes_session_id: str,
         hermes_run_id: str,
         after_cursor: int = 0,
     ) -> HermesRunObservation:
         observation = self._observations.get(hermes_run_id)
         if observation is not None:
+            if observation.conversation_hermes_session_id is None:
+                return replace(
+                    observation,
+                    conversation_hermes_session_id=(
+                        conversation_hermes_session_id or hermes_session_id
+                    ),
+                )
             return observation
         return HermesRunObservation(
             status="accepted",
             hermes_session_id=hermes_session_id,
             hermes_run_id=hermes_run_id,
+            conversation_hermes_session_id=(
+                conversation_hermes_session_id or hermes_session_id
+            ),
             next_cursor=max(0, after_cursor),
             replay_complete=True,
         )

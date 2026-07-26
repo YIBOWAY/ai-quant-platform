@@ -16,6 +16,7 @@ import {
   type WorkspaceCommandProjection,
   type WorkspaceFollowEvent,
   type WorkspaceGateProjection,
+  type WorkspacePublicCutoverResponse,
   type WorkspaceResultProjection,
   type WorkspaceSnapshot,
 } from "@/lib/hermes/workspaceClient";
@@ -34,6 +35,8 @@ export type FollowSpineState = {
   approvals: WorkspaceApprovalProjection[];
   /** V7e: Domain Gate 1/2/3 surfaces from snapshot (never in approvals[]). */
   gates: WorkspaceGateProjection[];
+  /** Canonical PG release rows (or explicit legacy test rows) from the spine. */
+  publicCutovers: WorkspacePublicCutoverResponse[];
   /** L5b: authority id slots from snapshot (honest empty until projectors). */
   tasks: string[];
   attempts: string[];
@@ -95,6 +98,7 @@ function emptyState(): FollowSpineState {
     commands: [],
     approvals: [],
     gates: [],
+    publicCutovers: [],
     tasks: [],
     attempts: [],
     runs: [],
@@ -445,6 +449,24 @@ export function createWorkspaceFollowSpine(
     setState(patch);
   };
 
+  const applyPublicCutoversProjection = (
+    publicCutovers: WorkspacePublicCutoverResponse[] | undefined,
+    authorityHealth?: Record<string, string> | undefined,
+  ) => {
+    if (!Array.isArray(publicCutovers)) return;
+    const patch: Partial<FollowSpineState> = {
+      publicCutovers: [...publicCutovers],
+      error: null,
+    };
+    if (authorityHealth && typeof authorityHealth === "object") {
+      patch.authorityHealth = {
+        ...state.authorityHealth,
+        ...authorityHealth,
+      };
+    }
+    setState(patch);
+  };
+
   /** V7g: Task/Attempt/Run id lists on poll/SSE (not only snapshot). Empty honest. */
   const applyVerticalIdsProjection = (
     tasks: string[] | undefined,
@@ -490,6 +512,9 @@ export function createWorkspaceFollowSpine(
     const commands = mergeSnapshotCommands(snap);
     const approvals = Array.isArray(snap.approvals) ? [...snap.approvals] : [];
     const gates = Array.isArray(snap.gates) ? [...snap.gates] : [];
+    const publicCutovers = Array.isArray(snap.public_cutovers)
+      ? [...snap.public_cutovers]
+      : [];
     const tasks = asIdList(snap.tasks);
     const attempts = asIdList(snap.attempts);
     const runs = asIdList(snap.runs);
@@ -506,6 +531,7 @@ export function createWorkspaceFollowSpine(
       commands,
       approvals,
       gates,
+      publicCutovers,
       tasks,
       attempts,
       runs,
@@ -562,6 +588,10 @@ export function createWorkspaceFollowSpine(
       // V7d–V7g: follow pages may carry approvals + gates + results + vertical ids.
       applyApprovalsProjection(page.approvals, page.authority_health);
       applyGatesProjection(page.gates, page.authority_health);
+      applyPublicCutoversProjection(
+        page.public_cutovers,
+        page.authority_health,
+      );
       applyResultsProjection(page.results, page.authority_health);
       applyVerticalIdsProjection(
         page.tasks,

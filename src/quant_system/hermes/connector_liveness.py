@@ -108,6 +108,7 @@ class ConnectorLivenessProbe:
     mode: str | None
     runtime_digest: str | None
     status: str | None
+    started_at: datetime | None
     heartbeat_at: datetime | None
     heartbeat_age_seconds: float | None
     session_lock_held: bool
@@ -197,6 +198,7 @@ def _empty_probe(reason: str) -> ConnectorLivenessProbe:
         mode=None,
         runtime_digest=None,
         status=None,
+        started_at=None,
         heartbeat_at=None,
         heartbeat_age_seconds=None,
         session_lock_held=False,
@@ -230,6 +232,7 @@ def evaluate_connector_liveness(
         "mode": record.mode,
         "runtime_digest": record.runtime_digest,
         "status": record.status,
+        "started_at": _validate_timestamp(record.started_at, "started_at"),
         "heartbeat_at": heartbeat_at,
         "heartbeat_age_seconds": heartbeat_age,
         "session_lock_held": bool(session_lock_held),

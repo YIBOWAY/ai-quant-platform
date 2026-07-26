@@ -172,6 +172,27 @@ def test_client_calls_only_allowlisted_gets_and_keeps_bearer_server_side(
                     "platform": "hermes-agent",
                     "model": "codex-local",
                     "contract_version": 1,
+                    "runtime": {
+                        "instance_id": "a" * 32,
+                        "started_at": "2026-07-24T08:09:10.123456Z",
+                        "pid": 12345,
+                        "build": {
+                            "schema_version": 1,
+                            "source": "git_worktree",
+                            "ready": True,
+                            "root_realpath": "/reviewed/hermes",
+                            "module_realpath": (
+                                "/reviewed/hermes/gateway/platforms/api_server.py"
+                            ),
+                            "entrypoint_sha256": "b" * 64,
+                            "commit": "c" * 40,
+                            "tree": "d" * 40,
+                            "clean": True,
+                            "digest": "e" * 64,
+                            "secret": "must-not-escape",
+                        },
+                        "secret": "must-not-escape",
+                    },
                     "features": {
                         "session_resources": True,
                         "run_submission": True,
@@ -238,6 +259,25 @@ def test_client_calls_only_allowlisted_gets_and_keeps_bearer_server_side(
     assert capabilities["features"]["session_resources"] is True
     assert capabilities["features"]["managed_run_sessions"] is True
     assert capabilities["contract_version"] == 1
+    assert capabilities["runtime"] == {
+        "instance_id": "a" * 32,
+        "started_at": "2026-07-24T08:09:10.123456Z",
+        "pid": 12345,
+        "build": {
+            "schema_version": 1,
+            "source": "git_worktree",
+            "ready": True,
+            "root_realpath": "/reviewed/hermes",
+            "module_realpath": (
+                "/reviewed/hermes/gateway/platforms/api_server.py"
+            ),
+            "entrypoint_sha256": "b" * 64,
+            "commit": "c" * 40,
+            "tree": "d" * 40,
+            "clean": True,
+            "digest": "e" * 64,
+        },
+    }
     assert capabilities["managed_session_contract"] == {
         "history_authority": "hermes_session_db",
         "fork_mode": "preserve_source_exact_message_cursor",

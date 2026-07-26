@@ -20,6 +20,7 @@ import {
   preflightPrompt,
   previewAssistantText,
   readCsrfToken,
+  requireSameComposerHermesSession,
   sendComposerTurn,
   submitTurn,
   utf8ByteLength,
@@ -47,6 +48,23 @@ describe("workspaceClient preflight", () => {
     expect(readCsrfToken("qs_aw_csrf=token-abc; other=1")).toBe("token-abc");
     expect(readCsrfToken("other=1")).toBeNull();
   });
+
+  it("keeps follow observations on the submitted Hermes session", () => {
+    const selected = "web_" + "a".repeat(40);
+    expect(requireSameComposerHermesSession(selected, null)).toBe(selected);
+    expect(requireSameComposerHermesSession(selected, selected)).toBe(selected);
+    expect(() =>
+      requireSameComposerHermesSession(
+        selected,
+        "web_" + "b".repeat(40),
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "composer_follow_session_mismatch",
+        status: 503,
+      }),
+    );
+  });
 });
 
 describe("sendComposerTurn", () => {
@@ -55,7 +73,92 @@ describe("sendComposerTurn", () => {
     vi.restoreAllMocks();
   });
 
-  it("bootstraps owner, creates session, then submit-turn with four fields + CSRF", async () => {
+  function readyManagedSession(
+    platformSessionId: string,
+    hermesSessionId: string,
+  ) {
+    return {
+      platform_session_id: platformSessionId,
+      session_ref: `session:${platformSessionId}`,
+      hermes_session_id: hermesSessionId,
+      provision_state: "ready",
+      web_writable: true,
+      attempt_count: 1,
+    };
+  }
+
+  function installSessionSelectionHarness(options: {
+    locationSearch?: string;
+    storedSessionRef?: string | null;
+    managedSessions: ReturnType<typeof readyManagedSession>[];
+    receiptHermesSessionId?: string;
+    deferOwner?: boolean;
+  }) {
+    const location = { search: options.locationSearch ?? "" };
+    const submittedRefs: string[] = [];
+    const mutationPaths: string[] = [];
+    let releaseOwner = () => {};
+    const ownerGate = options.deferOwner
+      ? new Promise<void>((resolve) => {
+          releaseOwner = resolve;
+        })
+      : Promise.resolve();
+
+    vi.stubGlobal("document", { cookie: "qs_aw_csrf=csrf-selection-token" });
+    vi.stubGlobal("window", {
+      location,
+      sessionStorage: {
+        getItem: () => options.storedSessionRef ?? null,
+        setItem: vi.fn(),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (method !== "GET") {
+          mutationPaths.push(url);
+        }
+        if (url === "/api/auth/owner/session" && method === "GET") {
+          await ownerGate;
+          return new Response(JSON.stringify({ session_id: "owner-session" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (url.endsWith("/snapshot") && method === "GET") {
+          return new Response(
+            JSON.stringify({
+              authority_health: { session_registry: "ready" },
+              managed_sessions: options.managedSessions,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url === "/api/agent/workspace/submit-turn" && method === "POST") {
+          const body = JSON.parse(String(init?.body)) as {
+            client_action_id: string;
+            managed_session_ref: string;
+          };
+          submittedRefs.push(body.managed_session_ref);
+          return new Response(
+            JSON.stringify({
+              status: "accepted",
+              client_action_id: body.client_action_id,
+              command_id: "cmd-selection",
+              hermes_session_id: options.receiptHermesSessionId,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${method} ${url}`);
+      }),
+    );
+    return { location, mutationPaths, releaseOwner, submittedRefs };
+  }
+
+  it("with no active session bootstraps, creates, then submits with four fields + CSRF", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     let csrfCookie = "";
     let managedSessionCreated = false;
@@ -200,6 +303,7 @@ describe("sendComposerTurn", () => {
     const receipt = await sendComposerTurn({
       prompt: "Reply with exactly: L2a-pong",
       clientActionId: "intent-fe-0001",
+      activeHermesSessionId: null,
     });
 
     expect(receipt.status).toBe("accepted");
@@ -219,6 +323,128 @@ describe("sendComposerTurn", () => {
       `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot`,
       "/api/agent/workspace/submit-turn",
     ]);
+  });
+
+  it("submits the active Hermes session through its exact managed ref instead of stored B", async () => {
+    const activeHermesSessionId = "web_" + "a".repeat(40);
+    const storedHermesSessionId = "web_" + "b".repeat(40);
+    const { submittedRefs } = installSessionSelectionHarness({
+      storedSessionRef: "session:wm_b",
+      managedSessions: [
+        readyManagedSession("wm_a", activeHermesSessionId),
+        readyManagedSession("wm_b", storedHermesSessionId),
+      ],
+    });
+
+    const receipt = await sendComposerTurn({
+      prompt: "write only to active A",
+      clientActionId: "active-a-turn",
+      activeHermesSessionId,
+    });
+
+    expect(submittedRefs).toEqual(["session:wm_a"]);
+    expect(receipt.hermes_session_id).toBe(activeHermesSessionId);
+  });
+
+  it("uses the current deep-link on the first click before active-session effect binding", async () => {
+    const deepLinkedHermesSessionId = "web_" + "c".repeat(40);
+    const storedHermesSessionId = "web_" + "d".repeat(40);
+    const { submittedRefs } = installSessionSelectionHarness({
+      locationSearch: `?hermes_session_id=${encodeURIComponent(
+        deepLinkedHermesSessionId,
+      )}`,
+      storedSessionRef: "session:wm_stored",
+      managedSessions: [
+        readyManagedSession("wm_deep_link", deepLinkedHermesSessionId),
+        readyManagedSession("wm_stored", storedHermesSessionId),
+      ],
+    });
+
+    const receipt = await sendComposerTurn({
+      prompt: "first click stays on the deep link",
+      clientActionId: "deep-link-first-click",
+      activeHermesSessionId: null,
+    });
+
+    expect(submittedRefs).toEqual(["session:wm_deep_link"]);
+    expect(receipt.hermes_session_id).toBe(deepLinkedHermesSessionId);
+  });
+
+  it("captures the click-time deep-link before awaiting owner-session I/O", async () => {
+    const clickHermesSessionId = "web_" + "7".repeat(40);
+    const storedHermesSessionId = "web_" + "8".repeat(40);
+    const { location, releaseOwner, submittedRefs } =
+      installSessionSelectionHarness({
+        deferOwner: true,
+        locationSearch: `?hermes_session_id=${encodeURIComponent(
+          clickHermesSessionId,
+        )}`,
+        storedSessionRef: "session:wm_stored_after_click",
+        managedSessions: [
+          readyManagedSession("wm_click", clickHermesSessionId),
+          readyManagedSession(
+            "wm_stored_after_click",
+            storedHermesSessionId,
+          ),
+        ],
+      });
+
+    const pending = sendComposerTurn({
+      prompt: "capture the selected session synchronously",
+      clientActionId: "click-time-deep-link",
+      activeHermesSessionId: null,
+    });
+    location.search = "";
+    releaseOwner();
+    const receipt = await pending;
+
+    expect(submittedRefs).toEqual(["session:wm_click"]);
+    expect(receipt.hermes_session_id).toBe(clickHermesSessionId);
+  });
+
+  it("requires an explicit fork for an external active session and never writes stored B", async () => {
+    const externalHermesSessionId = "agent:main:discord-history";
+    const storedHermesSessionId = "web_" + "e".repeat(40);
+    const { mutationPaths } = installSessionSelectionHarness({
+      storedSessionRef: "session:wm_b",
+      managedSessions: [
+        readyManagedSession("wm_b", storedHermesSessionId),
+      ],
+    });
+
+    await expect(
+      sendComposerTurn({
+        prompt: "must not drift to stored B",
+        clientActionId: "external-a-turn",
+        activeHermesSessionId: externalHermesSessionId,
+      }),
+    ).rejects.toMatchObject({
+      code: "managed_session_explicit_fork_required",
+      status: 409,
+    });
+    expect(mutationPaths).toEqual([]);
+  });
+
+  it("fails closed when the submit receipt claims a different Hermes session", async () => {
+    const activeHermesSessionId = "web_" + "f".repeat(40);
+    const wrongHermesSessionId = "web_" + "0".repeat(40);
+    installSessionSelectionHarness({
+      managedSessions: [
+        readyManagedSession("wm_active", activeHermesSessionId),
+      ],
+      receiptHermesSessionId: wrongHermesSessionId,
+    });
+
+    await expect(
+      sendComposerTurn({
+        prompt: "receipt must stay on active session",
+        clientActionId: "receipt-mismatch-turn",
+        activeHermesSessionId,
+      }),
+    ).rejects.toMatchObject({
+      code: "composer_receipt_session_mismatch",
+      status: 503,
+    });
   });
 
   it("recovers the latest ready server managed session without duplicate creation", async () => {
@@ -485,9 +711,9 @@ describe("sendComposerTurn", () => {
   it("fails closed on empty prompt before any network", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    await expect(sendComposerTurn({ prompt: "  " })).rejects.toThrow(
-      /non-empty/,
-    );
+    await expect(
+      sendComposerTurn({ prompt: "  ", activeHermesSessionId: null }),
+    ).rejects.toThrow(/non-empty/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -530,6 +756,7 @@ describe("forkHermesSessionToManaged", () => {
         hermesSessionId: "agent:main:discord",
         clientActionId: "fork-attempt-invalid",
         forkPoint: " message:42",
+        newProviderPolicyDigest: PROVIDER_POLICY_DIGEST,
       }),
     ).rejects.toMatchObject({
       code: "validation",
@@ -540,10 +767,29 @@ describe("forkHermesSessionToManaged", () => {
         hermesSessionId: "agent:main:discord",
         clientActionId: "fork-attempt-invalid",
         forkPoint: "message:display-id",
+        newProviderPolicyDigest: PROVIDER_POLICY_DIGEST,
       }),
     ).rejects.toMatchObject({
       code: "validation",
       status: 400,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects any provider policy except the explicitly admitted immutable digest", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      forkHermesSessionToManaged({
+        hermesSessionId: "agent:main:discord",
+        clientActionId: "fork-policy-invalid",
+        forkPoint: "message:42",
+        newProviderPolicyDigest: "0".repeat(64),
+      }),
+    ).rejects.toMatchObject({
+      code: "provider_policy_not_admitted",
+      status: 409,
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -585,6 +831,7 @@ describe("forkHermesSessionToManaged", () => {
           expect(JSON.parse(String(init?.body))).toEqual({
             client_action_id: "fork-attempt-0001",
             fork_point: "message:42",
+            new_provider_policy_digest: PROVIDER_POLICY_DIGEST,
           });
           return new Response(
             JSON.stringify({
@@ -629,6 +876,7 @@ describe("forkHermesSessionToManaged", () => {
       hermesSessionId: "agent:main:discord",
       clientActionId: "fork-attempt-0001",
       forkPoint: "message:42",
+      newProviderPolicyDigest: PROVIDER_POLICY_DIGEST,
       provisionInitialIntervalMs: 1,
     });
 
@@ -717,6 +965,7 @@ describe("forkHermesSessionToManaged", () => {
       hermesSessionId: "agent:main:discord",
       clientActionId: "fork-attempt-reconcile",
       forkPoint: "message:88",
+      newProviderPolicyDigest: PROVIDER_POLICY_DIGEST,
       provisionInitialIntervalMs: 1,
       onReceipt,
     });

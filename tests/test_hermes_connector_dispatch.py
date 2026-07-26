@@ -34,6 +34,7 @@ from quant_system.hermes.workflow_binding import (
     workflow_preparation_digest,
 )
 from quant_system.storage import database as db
+from tests.postgres_reset import truncate_with_fk_dependents
 
 
 def _cmd(
@@ -138,6 +139,7 @@ class _ScriptedLedger:
         expected_version,
         now,
         hermes_session_id,
+        resolved_hermes_session_id,
         hermes_run_id,
         evidence_digest,
     ):
@@ -148,6 +150,7 @@ class _ScriptedLedger:
             state="delivered",  # type: ignore[arg-type]
             version=cmd.version + 1,
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=resolved_hermes_session_id,
             hermes_run_id=hermes_run_id,
             last_error_code=None,
         )
@@ -161,12 +164,17 @@ class _ScriptedLedger:
         expected_version,
         now,
         hermes_session_id,
+        resolved_hermes_session_id,
         hermes_run_id,
         evidence_digest,
     ):
         cmd = self._by_id[command_id]
         assert cmd.version == expected_version
         assert cmd.hermes_session_id == hermes_session_id
+        assert (
+            cmd.resolved_hermes_session_id
+            == resolved_hermes_session_id
+        )
         assert cmd.hermes_run_id == hermes_run_id
         terminal = replace(
             cmd,
@@ -271,6 +279,7 @@ class _ScriptedLedger:
         lease_token,
         now,
         hermes_session_id,
+        resolved_hermes_session_id,
         hermes_run_id,
     ):
         if self.fail_on == "after_hermes_before_pg_link":
@@ -286,6 +295,7 @@ class _ScriptedLedger:
             lease_token=None,
             lease_until=None,
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=resolved_hermes_session_id,
             hermes_run_id=hermes_run_id,
         )
         self._by_id[command_id] = delivered
@@ -475,9 +485,17 @@ def test_terminal_observation_always_replays_from_zero() -> None:
             super().__init__()
             self.observed_cursors = []
 
-        def observe(self, *, hermes_session_id, hermes_run_id, after_cursor=0):
+        def observe(
+            self,
+            *,
+            conversation_hermes_session_id=None,
+            hermes_session_id,
+            hermes_run_id,
+            after_cursor=0,
+        ):
             self.observed_cursors.append(after_cursor)
             return super().observe(
+                conversation_hermes_session_id=conversation_hermes_session_id,
                 hermes_session_id=hermes_session_id,
                 hermes_run_id=hermes_run_id,
                 after_cursor=after_cursor,
@@ -509,9 +527,17 @@ def test_nonterminal_reconciliation_rotates_active_runs_across_cycles() -> None:
             super().__init__()
             self.observed_runs = []
 
-        def observe(self, *, hermes_session_id, hermes_run_id, after_cursor=0):
+        def observe(
+            self,
+            *,
+            conversation_hermes_session_id=None,
+            hermes_session_id,
+            hermes_run_id,
+            after_cursor=0,
+        ):
             self.observed_runs.append(hermes_run_id)
             return super().observe(
+                conversation_hermes_session_id=conversation_hermes_session_id,
                 hermes_session_id=hermes_session_id,
                 hermes_run_id=hermes_run_id,
                 after_cursor=after_cursor,
@@ -521,9 +547,10 @@ def test_nonterminal_reconciliation_rotates_active_runs_across_cycles() -> None:
         replace(
             _cmd(client_request_id=f"req-v6-fair-{index}"),
             state="delivered",  # type: ignore[arg-type]
-            version=4,
-            hermes_session_id="web_managed_fair",
-            hermes_run_id=f"run_fair_{index}",
+                version=4,
+                hermes_session_id="web_managed_fair",
+                resolved_hermes_session_id="web_managed_fair",
+                hermes_run_id=f"run_fair_{index}",
         )
         for index in range(3)
     ]
@@ -558,9 +585,17 @@ def test_closed_fresh_gate_blocks_active_run_network_reconciliation() -> None:
             super().__init__()
             self.observe_calls = 0
 
-        def observe(self, *, hermes_session_id, hermes_run_id, after_cursor=0):
+        def observe(
+            self,
+            *,
+            conversation_hermes_session_id=None,
+            hermes_session_id,
+            hermes_run_id,
+            after_cursor=0,
+        ):
             self.observe_calls += 1
             return super().observe(
+                conversation_hermes_session_id=conversation_hermes_session_id,
                 hermes_session_id=hermes_session_id,
                 hermes_run_id=hermes_run_id,
                 after_cursor=after_cursor,
@@ -619,6 +654,90 @@ def test_worker_recovers_accept_drop_ack_with_same_identity_and_session() -> Non
     assert recovered.hermes_run_id is not None
     assert adapter.submit_calls == 2
     assert adapter.provider_calls == 1
+
+
+def test_worker_recovers_ack_loss_and_observes_exact_compressed_run_tip() -> None:
+    """The conversation root stays stable while one Run remains bound to its tip."""
+
+    conversation_root = "web_managed_compression_root"
+    resolved_tip = "web_managed_compression_tip"
+    run_id = "run_compression_ack_loss"
+
+    class CompressionAckLossAdapter:
+        def __init__(self) -> None:
+            self.submit_calls = 0
+            self.observe_calls: list[tuple[str | None, str, str]] = []
+
+        def submit_or_recover(
+            self, request: HermesDispatchRequest
+        ) -> HermesDispatchResult:
+            self.submit_calls += 1
+            assert request.hermes_session_id == conversation_root
+            if self.submit_calls == 1:
+                return HermesDispatchResult(
+                    kind="timeout",
+                    error_code="hermes_response_timeout",
+                )
+            return HermesDispatchResult(
+                kind="recovered",
+                conversation_hermes_session_id=conversation_root,
+                hermes_session_id=resolved_tip,
+                hermes_run_id=run_id,
+                evidence_digest="e" * 64,
+            )
+
+        def observe(
+            self,
+            *,
+            conversation_hermes_session_id=None,
+            hermes_session_id,
+            hermes_run_id,
+            after_cursor=0,
+        ) -> HermesRunObservation:
+            assert after_cursor == 0
+            self.observe_calls.append(
+                (
+                    conversation_hermes_session_id,
+                    hermes_session_id,
+                    hermes_run_id,
+                )
+            )
+            return HermesRunObservation(
+                status="succeeded",
+                conversation_hermes_session_id=conversation_root,
+                hermes_session_id=resolved_tip,
+                hermes_run_id=run_id,
+                evidence_digest="f" * 64,
+                next_cursor=4,
+                replay_complete=True,
+            )
+
+    cmd = _cmd(client_request_id="req-v6-compression-ack-loss")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = CompressionAckLossAdapter()
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        run_lifecycle_port=adapter,
+        managed_session_resolver=lambda _command: conversation_root,
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    first = worker.run_once()
+    assert first.dispatch_unknown_count == 1
+
+    second = worker.run_once()
+    terminal = ledger._by_id[cmd.command_id]
+
+    assert second.recovered_count == 1
+    assert second.terminal_count == 1
+    assert terminal.state == "succeeded"
+    assert terminal.hermes_session_id == conversation_root
+    assert terminal.resolved_hermes_session_id == resolved_tip
+    assert terminal.hermes_run_id == run_id
+    assert adapter.submit_calls == 2
+    assert adapter.observe_calls == [(conversation_root, resolved_tip, run_id)]
 
 
 def test_same_client_request_id_in_two_sessions_uses_distinct_upstream_keys() -> None:
@@ -1043,48 +1162,16 @@ def _pg_settings() -> Settings:
 
 
 def _reset_ledger(database: db.Database) -> None:
-    with database.connect() as conn, conn.transaction():
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_workflow_bindings DISABLE TRIGGER USER"
-        )
-        conn.execute("ALTER TABLE quant_system.hermes_command_events DISABLE TRIGGER USER")
-        conn.execute("ALTER TABLE quant_system.hermes_run_links DISABLE TRIGGER USER")
-        conn.execute(
-            """
-            TRUNCATE TABLE
-                quant_system.hermes_command_workflow_bindings,
-                quant_system.hermes_run_links,
-                quant_system.hermes_outbox,
-                quant_system.hermes_command_events,
-                quant_system.hermes_commands
-            RESTART IDENTITY
-            """
-        )
-        for trigger_name in (
-            "trg_hermes_workflow_binding_validate",
-            "trg_hermes_workflow_binding_append_only",
-            "trg_hermes_workflow_binding_append_only_truncate",
-        ):
-            conn.execute(
-                "ALTER TABLE quant_system.hermes_command_workflow_bindings "
-                f"ENABLE ALWAYS TRIGGER {trigger_name}"
-            )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only_truncate"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only_truncate"
-        )
+    truncate_with_fk_dependents(
+        database,
+        (
+            "quant_system.hermes_command_workflow_bindings",
+            "quant_system.hermes_run_links",
+            "quant_system.hermes_outbox",
+            "quant_system.hermes_command_events",
+            "quant_system.hermes_commands",
+        ),
+    )
 
 
 def _bound_command(

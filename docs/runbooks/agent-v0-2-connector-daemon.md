@@ -27,11 +27,14 @@ the supervised liveness generation, so it can never make Web chat ready.
 ## Prerequisites
 
 Do not install the LaunchAgent until migrations through
-`014_agent_v02_connector_liveness.sql` are live and the restricted runtime
+`024_agent_v02_run_control_outcome.sql` are live and the restricted runtime
 database login is configured. The Platform, HQA and Hermes runtime checkouts
 must be clean commits because the daemon binds its generation to the exact
 Platform Git runtime digest. Hermes must expose the managed Session and durable
-Run capability contract on loopback.
+Run capability contract on loopback. Migration 023 binds each Run to the stable
+conversation root and its immutable resolved compression tip; migration 024
+persists approval/stop external outcomes before an exact replay may be treated
+as terminal.
 
 The release gate distinguishes durable operator/drift facts from uncertainty.
 An operator-closed stamp/cutover, runtime identity mismatch, schema fingerprint

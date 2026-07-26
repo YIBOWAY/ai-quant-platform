@@ -106,6 +106,7 @@ class HermesCommand:
     last_error_code: str | None
     created_at: datetime
     updated_at: datetime
+    resolved_hermes_session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +134,7 @@ class HermesRunLink:
     source_event_id: str | None
     observed_at: datetime
     created_at: datetime
+    resolved_hermes_session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -168,6 +170,7 @@ class HermesCommandEvent:
     error_code: str | None
     event_data: dict[str, object]
     occurred_at: datetime
+    resolved_hermes_session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -185,8 +188,27 @@ class HermesOutboxEntry:
 class HermesCommandLedger:
     """Transactional repository for command, event, outbox, and run-link facts."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        claim_candidate_admission_id: str | None = None,
+        claim_release_only: bool = False,
+    ) -> None:
+        if (
+            claim_candidate_admission_id is not None
+            and _SESSION_ID_RE.fullmatch(claim_candidate_admission_id) is None
+        ):
+            raise HermesCommandValidationError(
+                "invalid claim_candidate_admission_id"
+            )
+        if claim_candidate_admission_id is not None and claim_release_only:
+            raise HermesCommandValidationError(
+                "candidate and final-release claim scopes are exclusive"
+            )
         self._settings = settings
+        self._claim_candidate_admission_id = claim_candidate_admission_id
+        self._claim_release_only = bool(claim_release_only)
 
     def create_command(
         self,
@@ -580,12 +602,38 @@ class HermesCommandLedger:
                 #   2) L2a chat path — conversation_turn with store-mapped
                 #      platform-payload://sha256/<digest> and a policy digest
                 #      (Intent Payload Store is body authority; no binding row)
+                claim_scope_sql = ""
+                claim_scope_params: tuple[object, ...] = ()
+                if self._claim_candidate_admission_id is not None:
+                    claim_scope_sql = f"""
+                      AND hermes_commands.candidate_admission_id = %s
+                      AND EXISTS (
+                          SELECT 1
+                          FROM {SCHEMA}.agent_v02_candidate_admissions
+                              AS candidate_admission
+                          WHERE candidate_admission.admission_id =
+                                hermes_commands.candidate_admission_id
+                            AND candidate_admission.owner_user_id =
+                                hermes_commands.owner_user_id
+                            AND candidate_admission.status = 'open'
+                            AND candidate_admission.expires_at >
+                                clock_timestamp()
+                      )
+                    """
+                    claim_scope_params = (
+                        self._claim_candidate_admission_id,
+                    )
+                elif self._claim_release_only:
+                    claim_scope_sql = (
+                        "\n AND hermes_commands.candidate_admission_id IS NULL"
+                    )
                 candidate = conn.execute(
                     f"""
                     SELECT command_id, version
                     FROM {SCHEMA}.hermes_commands
                     WHERE owner_user_id = %s
                       AND state = 'queued'
+                      {claim_scope_sql}
                       AND EXISTS (
                           SELECT 1
                           FROM {SCHEMA}.hermes_workflow_binding_meta AS binding_meta
@@ -630,7 +678,7 @@ class HermesCommandLedger:
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
                     """,
-                    (ROOT_USER_ID,),
+                    (ROOT_USER_ID, *claim_scope_params),
                 ).fetchone()
                 if candidate is None:
                     return None
@@ -651,6 +699,7 @@ class HermesCommandLedger:
                       AND owner_user_id = %s
                       AND version = %s
                       AND state = 'queued'
+                      {claim_scope_sql}
                       AND (
                           EXISTS (
                               SELECT 1
@@ -690,6 +739,7 @@ class HermesCommandLedger:
                         command_id,
                         ROOT_USER_ID,
                         previous_version,
+                        *claim_scope_params,
                     ),
                 ).fetchone()
                 if row is None:
@@ -889,12 +939,17 @@ class HermesCommandLedger:
         now: datetime,
         hermes_session_id: str,
         hermes_run_id: str,
+        resolved_hermes_session_id: str | None = None,
     ) -> HermesCommand:
         """Bind authoritative Hermes IDs after a dispatched request is accepted."""
         _validate_expected_version(expected_version)
         _validate_aware_datetime(now, field="now")
+        resolved_hermes_session_id = (
+            resolved_hermes_session_id or hermes_session_id
+        )
         _validate_hermes_ids(
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=resolved_hermes_session_id,
             hermes_run_id=hermes_run_id,
         )
         database = self._require_ready_database()
@@ -917,6 +972,7 @@ class HermesCommandLedger:
                         lease_token = NULL,
                         lease_until = NULL,
                         hermes_session_id = %s,
+                        resolved_hermes_session_id = %s,
                         hermes_run_id = %s,
                         last_error_code = NULL,
                         updated_at = clock_timestamp()
@@ -931,6 +987,7 @@ class HermesCommandLedger:
                     """,
                     (
                         hermes_session_id,
+                        resolved_hermes_session_id,
                         hermes_run_id,
                         command_id,
                         ROOT_USER_ID,
@@ -1261,6 +1318,7 @@ class HermesCommandLedger:
         hermes_session_id: str,
         hermes_run_id: str,
         evidence_digest: str,
+        resolved_hermes_session_id: str | None = None,
     ) -> HermesCommand:
         """Record an authoritative successful terminal outcome for an exact Run."""
         return self._mark_run_terminal(
@@ -1268,6 +1326,9 @@ class HermesCommandLedger:
             expected_version=expected_version,
             now=now,
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=(
+                resolved_hermes_session_id or hermes_session_id
+            ),
             hermes_run_id=hermes_run_id,
             evidence_digest=evidence_digest,
             terminal_state="succeeded",
@@ -1284,6 +1345,7 @@ class HermesCommandLedger:
         hermes_run_id: str,
         evidence_digest: str,
         error_code: str,
+        resolved_hermes_session_id: str | None = None,
     ) -> HermesCommand:
         """Record an authoritative failed terminal outcome for an exact Run."""
         return self._mark_run_terminal(
@@ -1291,6 +1353,9 @@ class HermesCommandLedger:
             expected_version=expected_version,
             now=now,
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=(
+                resolved_hermes_session_id or hermes_session_id
+            ),
             hermes_run_id=hermes_run_id,
             evidence_digest=evidence_digest,
             terminal_state="failed",
@@ -1306,6 +1371,7 @@ class HermesCommandLedger:
         hermes_session_id: str,
         hermes_run_id: str,
         evidence_digest: str,
+        resolved_hermes_session_id: str | None = None,
     ) -> HermesCommand:
         """Record an authoritative cancelled/stopped outcome for an exact Run."""
 
@@ -1314,6 +1380,9 @@ class HermesCommandLedger:
             expected_version=expected_version,
             now=now,
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=(
+                resolved_hermes_session_id or hermes_session_id
+            ),
             hermes_run_id=hermes_run_id,
             evidence_digest=evidence_digest,
             terminal_state="cancelled",
@@ -1329,12 +1398,17 @@ class HermesCommandLedger:
         hermes_session_id: str,
         hermes_run_id: str,
         evidence_digest: str,
+        resolved_hermes_session_id: str | None = None,
     ) -> HermesCommand:
         """Bind a recovered active Run without replaying the original dispatch."""
         _validate_expected_version(expected_version)
         _validate_aware_datetime(now, field="now")
+        resolved_hermes_session_id = (
+            resolved_hermes_session_id or hermes_session_id
+        )
         _validate_hermes_ids(
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=resolved_hermes_session_id,
             hermes_run_id=hermes_run_id,
         )
         _validate_digest(evidence_digest, field="evidence_digest")
@@ -1347,6 +1421,7 @@ class HermesCommandLedger:
                     SET state = 'delivered',
                         version = version + 1,
                         hermes_session_id = %s,
+                        resolved_hermes_session_id = %s,
                         hermes_run_id = %s,
                         last_error_code = NULL,
                         updated_at = clock_timestamp()
@@ -1355,16 +1430,22 @@ class HermesCommandLedger:
                       AND version = %s
                       AND state = 'outcome_unknown'
                       AND (hermes_session_id IS NULL OR hermes_session_id = %s)
+                      AND (
+                            resolved_hermes_session_id IS NULL
+                            OR resolved_hermes_session_id = %s
+                      )
                       AND (hermes_run_id IS NULL OR hermes_run_id = %s)
                     RETURNING {_COMMAND_COLUMNS}
                     """,
                     (
                         hermes_session_id,
+                        resolved_hermes_session_id,
                         hermes_run_id,
                         command_id,
                         ROOT_USER_ID,
                         expected_version,
                         hermes_session_id,
+                        resolved_hermes_session_id,
                         hermes_run_id,
                     ),
                 ).fetchone()
@@ -1409,6 +1490,7 @@ class HermesCommandLedger:
         expected_version: int,
         now: datetime,
         hermes_session_id: str,
+        resolved_hermes_session_id: str,
         hermes_run_id: str,
         evidence_digest: str,
         terminal_state: Literal["succeeded", "failed", "cancelled"],
@@ -1418,6 +1500,7 @@ class HermesCommandLedger:
         _validate_aware_datetime(now, field="now")
         _validate_hermes_ids(
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=resolved_hermes_session_id,
             hermes_run_id=hermes_run_id,
         )
         _validate_digest(evidence_digest, field="evidence_digest")
@@ -1450,7 +1533,14 @@ class HermesCommandLedger:
                 if (
                     current.hermes_session_id is not None
                     and current.hermes_session_id != hermes_session_id
-                ) or (current.hermes_run_id is not None and current.hermes_run_id != hermes_run_id):
+                ) or (
+                    current.resolved_hermes_session_id is not None
+                    and current.resolved_hermes_session_id
+                    != resolved_hermes_session_id
+                ) or (
+                    current.hermes_run_id is not None
+                    and current.hermes_run_id != hermes_run_id
+                ):
                     raise HermesCommandConflict(
                         "terminal evidence names a different Hermes Session/Run"
                     )
@@ -1464,6 +1554,7 @@ class HermesCommandLedger:
                         lease_token = NULL,
                         lease_until = NULL,
                         hermes_session_id = %s,
+                        resolved_hermes_session_id = %s,
                         hermes_run_id = %s,
                         last_error_code = %s,
                         updated_at = clock_timestamp()
@@ -1475,6 +1566,7 @@ class HermesCommandLedger:
                     (
                         terminal_state,
                         hermes_session_id,
+                        resolved_hermes_session_id,
                         hermes_run_id,
                         error_code,
                         command_id,
@@ -1643,14 +1735,19 @@ class HermesCommandLedger:
         link_digest: str,
         source_event_id: str | None,
         observed_at: datetime,
+        resolved_hermes_session_id: str | None = None,
     ) -> RecordHermesRunLinkResult:
         """Persist one immutable, exact platform-resource-to-Hermes-Run fact."""
         _validate_expected_version(expected_version)
+        resolved_hermes_session_id = (
+            resolved_hermes_session_id or hermes_session_id
+        )
         _validate_run_link_fields(
             platform_resource_type=platform_resource_type,
             platform_resource_id=platform_resource_id,
             relation=relation,
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=resolved_hermes_session_id,
             hermes_run_id=hermes_run_id,
             source_event_id=source_event_id,
             observed_at=observed_at,
@@ -1661,6 +1758,7 @@ class HermesCommandLedger:
             platform_resource_id=platform_resource_id,
             relation=relation,
             hermes_session_id=hermes_session_id,
+            resolved_hermes_session_id=resolved_hermes_session_id,
             hermes_run_id=hermes_run_id,
             source_event_id=source_event_id,
         )
@@ -1695,6 +1793,8 @@ class HermesCommandLedger:
                     )
                 if (
                     command.hermes_session_id != hermes_session_id
+                    or command.resolved_hermes_session_id
+                    != resolved_hermes_session_id
                     or command.hermes_run_id != hermes_run_id
                 ):
                     raise HermesCommandConflict(
@@ -1709,12 +1809,16 @@ class HermesCommandLedger:
                         platform_resource_id,
                         relation,
                         hermes_session_id,
+                        resolved_hermes_session_id,
                         hermes_run_id,
                         link_digest,
                         source_event_id,
                         observed_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s
+                    )
                     ON CONFLICT (
                         command_id,
                         platform_resource_type,
@@ -1730,6 +1834,7 @@ class HermesCommandLedger:
                         platform_resource_id,
                         relation,
                         hermes_session_id,
+                        resolved_hermes_session_id,
                         hermes_run_id,
                         link_digest,
                         source_event_id,
@@ -1764,6 +1869,8 @@ class HermesCommandLedger:
                 existing = _run_link_from_row(existing_row)
                 if (
                     existing.hermes_session_id != hermes_session_id
+                    or existing.resolved_hermes_session_id
+                    != resolved_hermes_session_id
                     or existing.hermes_run_id != hermes_run_id
                     or existing.link_digest != link_digest
                     or existing.source_event_id != source_event_id
@@ -1870,6 +1977,7 @@ class HermesCommandLedger:
                                links.platform_resource_id,
                                links.relation,
                                links.hermes_session_id,
+                               links.resolved_hermes_session_id,
                                links.hermes_run_id,
                                links.link_digest,
                                links.source_event_id,
@@ -1895,6 +2003,7 @@ class HermesCommandLedger:
                            platform_resource_id,
                            relation,
                            hermes_session_id,
+                           resolved_hermes_session_id,
                            hermes_run_id,
                            link_digest,
                            source_event_id,
@@ -1915,7 +2024,7 @@ class HermesCommandLedger:
         except (DatabaseUnavailable, psycopg.Error) as exc:
             raise HermesCommandLedgerUnavailable(str(exc)) from exc
         for row in rows:
-            link = _run_link_from_row(row[:11])
+            link = _run_link_from_row(row[:12])
             pages[(link.platform_resource_type, link.platform_resource_id)].append(link)
         return {
             resource: HermesRunLinkPage(
@@ -2083,6 +2192,7 @@ _COMMAND_COLUMNS = """
     lease_until,
     dispatch_started_at,
     hermes_session_id,
+    resolved_hermes_session_id,
     hermes_run_id,
     last_error_code,
     created_at,
@@ -2096,6 +2206,7 @@ _RUN_LINK_COLUMNS = """
     platform_resource_id,
     relation,
     hermes_session_id,
+    resolved_hermes_session_id,
     hermes_run_id,
     link_digest,
     source_event_id,
@@ -2119,6 +2230,7 @@ _COMMAND_EVENT_COLUMNS = """
     lease_until,
     dispatch_started_at,
     hermes_session_id,
+    resolved_hermes_session_id,
     hermes_run_id,
     error_code,
     event_data,
@@ -2196,6 +2308,13 @@ _REQUIRED_LEDGER_COLUMN_SIGNATURES = frozenset(
             None,
         ),
         ("hermes_commands", "hermes_session_id", "text", False, None),
+        (
+            "hermes_commands",
+            "resolved_hermes_session_id",
+            "text",
+            False,
+            None,
+        ),
         ("hermes_commands", "hermes_run_id", "text", False, None),
         ("hermes_commands", "last_error_code", "text", False, None),
         (
@@ -2257,6 +2376,13 @@ _REQUIRED_LEDGER_COLUMN_SIGNATURES = frozenset(
             None,
         ),
         ("hermes_command_events", "hermes_session_id", "text", False, None),
+        (
+            "hermes_command_events",
+            "resolved_hermes_session_id",
+            "text",
+            False,
+            None,
+        ),
         ("hermes_command_events", "hermes_run_id", "text", False, None),
         ("hermes_command_events", "error_code", "text", False, None),
         (
@@ -2317,6 +2443,13 @@ _REQUIRED_LEDGER_COLUMN_SIGNATURES = frozenset(
         ("hermes_run_links", "platform_resource_id", "text", True, None),
         ("hermes_run_links", "relation", "text", True, None),
         ("hermes_run_links", "hermes_session_id", "text", True, None),
+        (
+            "hermes_run_links",
+            "resolved_hermes_session_id",
+            "text",
+            True,
+            None,
+        ),
         ("hermes_run_links", "hermes_run_id", "text", True, None),
         (
             "hermes_run_links",
@@ -2569,6 +2702,14 @@ _REQUIRED_LEDGER_CONSTRAINT_SIGNATURES = frozenset(
             "CHECK (hermes_run_id IS NULL OR hermes_session_id IS NOT NULL)",
         ),
         (
+            "hermes_commands",
+            "ck_hermes_commands_run_requires_resolved_tip",
+            "c",
+            True,
+            "CHECK (hermes_run_id IS NULL OR hermes_session_id IS NOT NULL "
+            "AND resolved_hermes_session_id IS NOT NULL)",
+        ),
+        (
             "hermes_command_events",
             "hermes_command_events_pkey",
             "p",
@@ -2629,6 +2770,14 @@ _REQUIRED_LEDGER_CONSTRAINT_SIGNATURES = frozenset(
         ),
         (
             "hermes_command_events",
+            "ck_hermes_command_events_run_requires_resolved_tip",
+            "c",
+            True,
+            "CHECK (hermes_run_id IS NULL OR hermes_session_id IS NOT NULL "
+            "AND resolved_hermes_session_id IS NOT NULL)",
+        ),
+        (
+            "hermes_command_events",
             "ck_hermes_command_events_data_object",
             "c",
             True,
@@ -2668,8 +2817,8 @@ _REQUIRED_LEDGER_CONSTRAINT_SIGNATURES = frozenset(
             "hermes_run_links_hermes_session_id_hermes_run_id_platform_r_key",
             "u",
             True,
-            "UNIQUE (hermes_session_id, hermes_run_id, platform_resource_type, "
-            "platform_resource_id, relation)",
+            "UNIQUE (hermes_session_id, resolved_hermes_session_id, "
+            "hermes_run_id, platform_resource_type, platform_resource_id, relation)",
         ),
         (
             "hermes_run_links",
@@ -2730,7 +2879,11 @@ _REQUIRED_LEDGER_INDEX_SIGNATURES = frozenset(
             True,
             True,
             True,
-            ("hermes_session_id", "hermes_run_id"),
+            (
+                "hermes_session_id",
+                "resolved_hermes_session_id",
+                "hermes_run_id",
+            ),
             "hermes_run_id IS NOT NULL",
         ),
         (
@@ -2800,7 +2953,11 @@ _REQUIRED_LEDGER_INDEX_SIGNATURES = frozenset(
             True,
             True,
             False,
-            ("hermes_session_id", "hermes_run_id"),
+            (
+                "hermes_session_id",
+                "resolved_hermes_session_id",
+                "hermes_run_id",
+            ),
             None,
         ),
     }
@@ -3153,9 +3310,21 @@ def _validate_aware_datetime(value: datetime, *, field: str) -> None:
         raise HermesCommandValidationError(f"{field} must be timezone-aware")
 
 
-def _validate_hermes_ids(*, hermes_session_id: str, hermes_run_id: str) -> None:
+def _validate_hermes_ids(
+    *,
+    hermes_session_id: str,
+    hermes_run_id: str,
+    resolved_hermes_session_id: str | None = None,
+) -> None:
     if _HERMES_ID_RE.fullmatch(hermes_session_id) is None:
         raise HermesCommandValidationError("invalid hermes_session_id")
+    if (
+        resolved_hermes_session_id is not None
+        and _HERMES_ID_RE.fullmatch(resolved_hermes_session_id) is None
+    ):
+        raise HermesCommandValidationError(
+            "invalid resolved_hermes_session_id"
+        )
     if _HERMES_ID_RE.fullmatch(hermes_run_id) is None:
         raise HermesCommandValidationError("invalid hermes_run_id")
 
@@ -3199,6 +3368,7 @@ def _validate_run_link_fields(
     platform_resource_id: str,
     relation: str,
     hermes_session_id: str,
+    resolved_hermes_session_id: str,
     hermes_run_id: str,
     source_event_id: str | None,
     observed_at: datetime,
@@ -3208,6 +3378,7 @@ def _validate_run_link_fields(
         platform_resource_id=platform_resource_id,
         relation=relation,
         hermes_session_id=hermes_session_id,
+        resolved_hermes_session_id=resolved_hermes_session_id,
         hermes_run_id=hermes_run_id,
         source_event_id=source_event_id,
     )
@@ -3220,6 +3391,7 @@ def _validate_run_link_identity(
     platform_resource_id: str,
     relation: str,
     hermes_session_id: str,
+    resolved_hermes_session_id: str,
     hermes_run_id: str,
     source_event_id: str | None,
 ) -> None:
@@ -3231,6 +3403,7 @@ def _validate_run_link_identity(
         raise HermesCommandValidationError("invalid run-link relation")
     _validate_hermes_ids(
         hermes_session_id=hermes_session_id,
+        resolved_hermes_session_id=resolved_hermes_session_id,
         hermes_run_id=hermes_run_id,
     )
     if source_event_id is not None and _SOURCE_EVENT_ID_RE.fullmatch(source_event_id) is None:
@@ -3246,13 +3419,18 @@ def hermes_run_link_digest(
     hermes_session_id: str,
     hermes_run_id: str,
     source_event_id: str | None,
+    resolved_hermes_session_id: str | None = None,
 ) -> str:
     """Return the canonical SHA-256 for an exact cross-system identity link."""
+    resolved_hermes_session_id = (
+        resolved_hermes_session_id or hermes_session_id
+    )
     _validate_run_link_identity(
         platform_resource_type=platform_resource_type,
         platform_resource_id=platform_resource_id,
         relation=relation,
         hermes_session_id=hermes_session_id,
+        resolved_hermes_session_id=resolved_hermes_session_id,
         hermes_run_id=hermes_run_id,
         source_event_id=source_event_id,
     )
@@ -3261,10 +3439,11 @@ def hermes_run_link_digest(
             "command_id": str(command_id),
             "hermes_run_id": hermes_run_id,
             "hermes_session_id": hermes_session_id,
+            "resolved_hermes_session_id": resolved_hermes_session_id,
             "platform_resource_id": platform_resource_id,
             "platform_resource_type": platform_resource_type,
             "relation": relation,
-            "schema": "hermes-run-link-v1",
+            "schema": "hermes-run-link-v2",
             "source_event_id": source_event_id,
         },
         ensure_ascii=False,
@@ -3294,10 +3473,13 @@ def _command_from_row(row: tuple[object, ...]) -> HermesCommand:
         lease_until=cast(datetime | None, row[15]),
         dispatch_started_at=cast(datetime | None, row[16]),
         hermes_session_id=str(row[17]) if row[17] is not None else None,
-        hermes_run_id=str(row[18]) if row[18] is not None else None,
-        last_error_code=str(row[19]) if row[19] is not None else None,
-        created_at=cast(datetime, row[20]),
-        updated_at=cast(datetime, row[21]),
+        resolved_hermes_session_id=(
+            str(row[18]) if row[18] is not None else None
+        ),
+        hermes_run_id=str(row[19]) if row[19] is not None else None,
+        last_error_code=str(row[20]) if row[20] is not None else None,
+        created_at=cast(datetime, row[21]),
+        updated_at=cast(datetime, row[22]),
     )
 
 
@@ -3336,10 +3518,13 @@ def _command_event_from_row(row: tuple[object, ...]) -> HermesCommandEvent:
         lease_until=cast(datetime | None, row[12]),
         dispatch_started_at=cast(datetime | None, row[13]),
         hermes_session_id=str(row[14]) if row[14] is not None else None,
-        hermes_run_id=str(row[15]) if row[15] is not None else None,
-        error_code=str(row[16]) if row[16] is not None else None,
-        event_data=dict(cast(dict[str, object], row[17])),
-        occurred_at=cast(datetime, row[18]),
+        resolved_hermes_session_id=(
+            str(row[15]) if row[15] is not None else None
+        ),
+        hermes_run_id=str(row[16]) if row[16] is not None else None,
+        error_code=str(row[17]) if row[17] is not None else None,
+        event_data=dict(cast(dict[str, object], row[18])),
+        occurred_at=cast(datetime, row[19]),
     )
 
 
@@ -3364,11 +3549,12 @@ def _run_link_from_row(row: tuple[object, ...]) -> HermesRunLink:
         platform_resource_id=str(row[3]),
         relation=cast(RunLinkRelation, str(row[4])),
         hermes_session_id=str(row[5]),
-        hermes_run_id=str(row[6]),
-        link_digest=str(row[7]),
-        source_event_id=str(row[8]) if row[8] is not None else None,
-        observed_at=cast(datetime, row[9]),
-        created_at=cast(datetime, row[10]),
+        resolved_hermes_session_id=str(row[6]),
+        hermes_run_id=str(row[7]),
+        link_digest=str(row[8]),
+        source_event_id=str(row[9]) if row[9] is not None else None,
+        observed_at=cast(datetime, row[10]),
+        created_at=cast(datetime, row[11]),
     )
 
 
@@ -3398,13 +3584,14 @@ def _append_snapshot_event(
             lease_until,
             dispatch_started_at,
             hermes_session_id,
+            resolved_hermes_session_id,
             hermes_run_id,
             error_code,
             event_data
         )
         VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         """,
         (
@@ -3422,6 +3609,7 @@ def _append_snapshot_event(
             command.lease_until,
             command.dispatch_started_at,
             command.hermes_session_id,
+            command.resolved_hermes_session_id,
             command.hermes_run_id,
             command.last_error_code,
             Jsonb(event_data or {}),

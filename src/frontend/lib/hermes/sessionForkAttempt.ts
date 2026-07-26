@@ -1,6 +1,7 @@
 export type SessionForkSelection = Readonly<{
   hermesSessionId: string;
   forkPoint: string;
+  providerPolicyDigest: string;
 }>;
 
 export type SessionForkAttempt = Readonly<
@@ -12,7 +13,7 @@ export type SessionForkAttempt = Readonly<
 /**
  * Return the existing immutable attempt for an unchanged selection. The
  * caller may retry transport/provision observation without minting a new
- * idempotency key or drifting to a different message cursor.
+ * idempotency key or drifting to a different message cursor/provider policy.
  */
 export function ensureSessionForkAttempt(
   existing: SessionForkAttempt | null,
@@ -21,7 +22,8 @@ export function ensureSessionForkAttempt(
 ): SessionForkAttempt {
   if (
     existing?.hermesSessionId === selection.hermesSessionId &&
-    existing.forkPoint === selection.forkPoint
+    existing.forkPoint === selection.forkPoint &&
+    existing.providerPolicyDigest === selection.providerPolicyDigest
   ) {
     return existing;
   }
@@ -29,5 +31,6 @@ export function ensureSessionForkAttempt(
     clientActionId: createId(),
     hermesSessionId: selection.hermesSessionId,
     forkPoint: selection.forkPoint,
+    providerPolicyDigest: selection.providerPolicyDigest,
   });
 }

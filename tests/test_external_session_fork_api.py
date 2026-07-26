@@ -20,7 +20,10 @@ from quant_system.config.settings import (
     Settings,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID
-from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
+from quant_system.hermes.dark_identity_profile import (
+    PLATFORM_WORKSPACE_ID,
+    PROVIDER_POLICY_DIGEST,
+)
 from quant_system.hermes.submission_saga import ActionReceipt
 
 ORIGIN = "http://127.0.0.1:3001"
@@ -75,6 +78,7 @@ def _body(**overrides: object) -> dict[str, object]:
     body: dict[str, object] = {
         "client_action_id": "fork-browser-1",
         "fork_point": "message:41",
+        "new_provider_policy_digest": PROVIDER_POLICY_DIGEST,
     }
     body.update(overrides)
     return body
@@ -202,6 +206,7 @@ def test_external_fork_route_delegates_only_selected_session_and_cursor(
             "gateway": ANY,
             "hermes_session_id": SESSION_ID,
             "fork_point": "message:41",
+            "new_provider_policy_digest": PROVIDER_POLICY_DIGEST,
             "client_action_id": "fork-browser-1",
             "mutation_enabled": True,
             "actor_owner_user_id": ROOT_USER_ID,
@@ -214,7 +219,7 @@ def test_external_fork_route_delegates_only_selected_session_and_cursor(
     [
         _body(fork_point="message:0"),
         _body(fork_point="cursor:41"),
-        _body(extra="browser-must-not-supply-policy"),
+        _body(extra="unexpected-browser-field"),
     ],
 )
 def test_external_fork_route_rejects_non_exact_or_extra_body(

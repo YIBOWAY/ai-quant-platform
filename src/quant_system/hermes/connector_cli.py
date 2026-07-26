@@ -16,6 +16,10 @@ from uuid import UUID
 import typer
 
 from quant_system.config.settings import load_settings
+from quant_system.hermes.candidate_admission_cli import candidate_app
+from quant_system.hermes.candidate_admission_gate import (
+    current_candidate_decision,
+)
 from quant_system.hermes.command_ledger import (
     HermesCommandConflict,
     HermesCommandLedger,
@@ -42,6 +46,7 @@ from quant_system.hermes.managed_session_provisioner import (
     ManagedSessionProvisionResult,
     SubprocessManagedSessionProvisionPort,
 )
+from quant_system.hermes.paper_gate_cli import paper_gate_app
 from quant_system.hermes.release_cli import release_app
 from quant_system.hermes.release_runtime import (
     ReleaseRuntimeProbeError,
@@ -54,6 +59,7 @@ from quant_system.hermes.run_lifecycle_port import (
     build_subprocess_run_lifecycle_port,
 )
 from quant_system.hermes.session_registry import require_web_writable_session
+from quant_system.hermes.vertical_a_cli import app as vertical_a_app
 from quant_system.hermes.workflow_binding import (
     PreparedWorkflowCommand,
     ensure_bound_command,
@@ -192,11 +198,7 @@ class ConnectorRuntime:
         except Exception as exc:  # noqa: BLE001 - the boundary stays secret-free
             self._compatibility_failures += 1
             retryable = isinstance(exc, HermesRunPortError) and exc.retryable
-            error_code = (
-                exc.code
-                if isinstance(exc, HermesRunPortError)
-                else "run_cli_unavailable"
-            )
+            error_code = exc.code if isinstance(exc, HermesRunPortError) else "run_cli_unavailable"
             limit = self.compatibility_failure_limit if retryable else 1
             if self._compatibility_failures >= limit:
                 self._liveness_state = "compatibility_lost"
@@ -205,9 +207,7 @@ class ConnectorRuntime:
                 mode=self.worker.mode,
                 requeued_count=0,
                 outcome_unknown_count=0,
-                capability_read_status=(
-                    "unavailable" if retryable else "degraded"
-                ),
+                capability_read_status=("unavailable" if retryable else "degraded"),
             )
             return ConnectorRuntimeCycle(
                 cycle=cycle,
@@ -254,13 +254,9 @@ class ConnectorRuntime:
             heartbeat_thread.join(timeout=min(2.0, self.heartbeat_interval_seconds + 0.25))
         if self.liveness_lease is not None:
             try:
-                stopped = self.liveness_lease.stop(
-                    reason=_safe_stop_reason(reason)
-                )
+                stopped = self.liveness_lease.stop(reason=_safe_stop_reason(reason))
                 self._liveness_state = (
-                    "stopped"
-                    if stopped.status == "stopped"
-                    else "stop_unconfirmed"
+                    "stopped" if stopped.status == "stopped" else "stop_unconfirmed"
                 )
             except Exception:  # noqa: BLE001 - cleanup is already fail-closed
                 self._liveness_state = "stop_unconfirmed"
@@ -296,7 +292,6 @@ def build_connector_runtime(
         stop_requested=stop_event.is_set,
     )
     worker_kwargs: dict = {
-        "ledger": HermesCommandLedger(settings),
         "capability_probe": None,
         "reconcile_limit": reconcile_limit,
         "mode": mode,
@@ -306,6 +301,42 @@ def build_connector_runtime(
     liveness_lease: ConnectorLivenessLease | None = None
     compatibility_probe: Callable[[], object] | None = None
     heartbeat_interval = 5.0
+    claim_candidate_admission_id: str | None = None
+    claim_candidate_admission_digest: str | None = None
+    claim_release_only = False
+
+    if mode == "supervised_dispatch":
+        try:
+            initial_release = current_release_decision(settings)
+        except Exception:  # noqa: BLE001 - exact admission is required below
+            initial_release = None
+        if initial_release is not None and initial_release.chat_write_ready is True:
+            claim_release_only = True
+        else:
+            try:
+                initial_candidate = current_candidate_decision(
+                    settings,
+                    require_connector=False,
+                )
+            except Exception:  # noqa: BLE001
+                initial_candidate = None
+            if (
+                initial_candidate is None
+                or initial_candidate.dispatch_ready is not True
+                or initial_candidate.admission_id is None
+                or initial_candidate.admission_digest is None
+            ):
+                raise ConnectorRuntimeUnavailable(
+                    "supervised connector has no exact release or candidate admission"
+                )
+            claim_candidate_admission_id = initial_candidate.admission_id
+            claim_candidate_admission_digest = initial_candidate.admission_digest
+
+    worker_kwargs["ledger"] = HermesCommandLedger(
+        settings,
+        claim_candidate_admission_id=claim_candidate_admission_id,
+        claim_release_only=claim_release_only,
+    )
 
     def _network_gate() -> DispatchGateDecision:
         if stop_event.is_set():
@@ -313,6 +344,34 @@ def build_connector_runtime(
                 allow=False,
                 reason="connector_liveness_lost",
                 retryable=True,
+            )
+        if claim_candidate_admission_id is not None:
+            try:
+                candidate = current_candidate_decision(
+                    settings,
+                    require_connector=False,
+                )
+            except Exception:  # noqa: BLE001
+                candidate = None
+            if (
+                candidate is None
+                or candidate.dispatch_ready is not True
+                or candidate.admission_id != claim_candidate_admission_id
+                or candidate.admission_digest != claim_candidate_admission_digest
+            ):
+                blocker = (
+                    candidate.blockers[0]
+                    if candidate is not None and candidate.blockers
+                    else "candidate_gate_closed"
+                )
+                return DispatchGateDecision(
+                    allow=False,
+                    reason=_safe_runtime_code(blocker),
+                    retryable=False,
+                )
+            return DispatchGateDecision(
+                allow=True,
+                reason="candidate_ready",
             )
         try:
             decision = current_release_decision(settings)
@@ -323,11 +382,7 @@ def build_connector_runtime(
                 retryable=True,
             )
         if decision.chat_write_ready is not True:
-            blocker = (
-                decision.blockers[0]
-                if decision.blockers
-                else "release_gate_closed"
-            )
+            blocker = decision.blockers[0] if decision.blockers else "release_gate_closed"
             return DispatchGateDecision(
                 allow=False,
                 reason=_safe_runtime_code(blocker),
@@ -370,9 +425,7 @@ def build_connector_runtime(
                 mode=mode,
                 runtime_digest=runtime_digest,
             )
-            max_age = float(
-                settings.agent_v02_release.connector_heartbeat_max_age_seconds
-            )
+            max_age = float(settings.agent_v02_release.connector_heartbeat_max_age_seconds)
             heartbeat_interval = max(0.25, min(5.0, max_age / 3.0))
         except (
             ConnectorLivenessError,
@@ -418,14 +471,7 @@ def build_connector_runtime(
 
 def _safe_runtime_code(value: object) -> str:
     text = value if type(value) is str else "runtime_gate_closed"
-    if (
-        not text
-        or len(text) > 200
-        or any(
-            not (char.isalnum() or char in "._:-")
-            for char in text
-        )
-    ):
+    if not text or len(text) > 200 or any(not (char.isalnum() or char in "._:-") for char in text):
         return "runtime_gate_closed"
     return text
 
@@ -453,8 +499,7 @@ def _release_blocker_is_retryable(value: object) -> bool:
     if blocker.startswith("hermes_feature_") and blocker.endswith("_unready"):
         return False
     if blocker.startswith("hermes_durable_") and (
-        blocker.endswith("_unready")
-        or blocker == "hermes_durable_contract_unavailable"
+        blocker.endswith("_unready") or blocker == "hermes_durable_contract_unavailable"
     ):
         return False
     return blocker not in {
@@ -480,9 +525,7 @@ def _provision_projection(
         "platform_session_id": result.platform_session_id,
         "hermes_session_id": result.hermes_session_id,
         "error_code": (
-            _safe_runtime_code(result.error_code)
-            if result.error_code is not None
-            else None
+            _safe_runtime_code(result.error_code) if result.error_code is not None else None
         ),
     }
 
@@ -529,6 +572,9 @@ workflow_binding_app = typer.Typer(
 )
 hermes_app.add_typer(workflow_binding_app, name="workflow-binding")
 hermes_app.add_typer(release_app, name="release")
+hermes_app.add_typer(candidate_app, name="candidate")
+hermes_app.add_typer(paper_gate_app, name="paper-gate")
+hermes_app.add_typer(vertical_a_app, name="vertical-a")
 
 _WORKFLOW_BINDING_STDIN_LIMIT = 16 * 1024
 _PG_BIGINT_MAX = 9_223_372_036_854_775_807
@@ -802,14 +848,10 @@ def connector_worker_command(
     if once and max_cycles is not None:
         raise typer.BadParameter("--max-cycles cannot be combined with --once")
     if mode not in {"reconcile_only", "supervised_dispatch"}:
-        raise typer.BadParameter(
-            "--mode must be reconcile_only or supervised_dispatch"
-        )
+        raise typer.BadParameter("--mode must be reconcile_only or supervised_dispatch")
     if fixed_input is not None and mode != "supervised_dispatch":
         raise typer.BadParameter("--fixed-input requires --mode supervised_dispatch")
-    if fixed_input is not None and (
-        not fixed_input or len(fixed_input.encode("utf-8")) > 16_384
-    ):
+    if fixed_input is not None and (not fixed_input or len(fixed_input.encode("utf-8")) > 16_384):
         raise typer.BadParameter("--fixed-input must be non-empty and <= 16KiB")
 
     runtime: ConnectorRuntime | None = None

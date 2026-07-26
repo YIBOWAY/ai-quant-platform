@@ -799,6 +799,9 @@ def _run_link_payload(
         platform_resource_id=link.platform_resource_id,
         relation=link.relation,
         hermes_session_id=link.hermes_session_id,
+        resolved_hermes_session_id=(
+            link.resolved_hermes_session_id or link.hermes_session_id
+        ),
         hermes_run_id=link.hermes_run_id,
         source_event_id=link.source_event_id,
     )
@@ -810,6 +813,9 @@ def _run_link_payload(
         "command_id": str(link.command_id),
         "relation": link.relation,
         "hermes_session_id": link.hermes_session_id,
+        "resolved_hermes_session_id": (
+            link.resolved_hermes_session_id or link.hermes_session_id
+        ),
         "hermes_run_id": link.hermes_run_id,
         "link_digest": link.link_digest,
         "source_event_id": link.source_event_id,

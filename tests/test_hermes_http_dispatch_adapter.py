@@ -76,7 +76,15 @@ def test_accepts_ephemeral_run_when_durable_absent(tmp_path: Path) -> None:
         body = json.loads(request.content.decode("utf-8"))
         assert body["input"] == "Reply with exactly: pong"
         assert body["session_id"] == "web_deadbeef"
-        assert "metadata" in body
+        assert body["metadata"] == {
+            "command_id": "00000000-0000-4000-8000-000000000001",
+            "kind": "research_chat",
+            "client_request_id": "client-req-smoke-0001",
+            "platform_session_id": "wm_deadbeef",
+            "canonical_request_digest": "a" * 64,
+            "payload_ref": "hqa-payload:sha256:" + ("b" * 64),
+            "source": "platform.http_hermes_dispatch_adapter",
+        }
         return httpx.Response(
             200,
             json={
