@@ -8,6 +8,7 @@
     "start": "next start",
     "test": "vitest run",
     "generate:api-types": "node scripts/generate-api-types.mjs",
+    "check:api-types": "npm run generate:api-types && git diff --exit-code -- lib/api.generated.ts",
     "lint": "eslint app components lib tests playwright.config.ts eslint.config.mjs next.config.ts",
     "type-check": "tsc --noEmit",
     "clean": "next clean",

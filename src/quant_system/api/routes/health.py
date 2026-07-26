@@ -84,6 +84,16 @@ def _hermes_command_ledger_status(settings: SettingsDep) -> dict[str, Any]:
         "mutation_enabled": bool(ready["mutation_enabled"]),
         "composer_write_ready": bool(ready["composer_write_ready"]),
         "chat_write_ready": bool(ready["chat_write_ready"]),
+        "admission_mode": ready["admission_mode"],
+        "admission_workspace_id": ready["admission_workspace_id"],
+        "configured_release_workspace_id": (ready["configured_release_workspace_id"]),
+        "candidate_admission_id": ready["candidate_admission_id"],
+        "candidate_admission_digest": ready["candidate_admission_digest"],
+        "connector_liveness_ready": bool(ready["connector_liveness_ready"]),
+        "connector_liveness_reason": ready["connector_liveness_reason"],
+        "connector_worker_id": ready["connector_worker_id"],
+        "connector_mode": ready["connector_mode"],
+        "connector_heartbeat_age_seconds": (ready["connector_heartbeat_age_seconds"]),
         # Durable PostgreSQL ReleaseAuthority observation. These raw
         # identities remain visible while writes are fail-closed so operators
         # can distinguish "no cutover" from unrelated composer blockers.

@@ -610,6 +610,97 @@ describe("V7e Domain Gate surfaces on spine", () => {
       spine.stop();
     }
   });
+
+  it("event:gates applies same-status continuation enrichment", async () => {
+    fetchWorkspaceSnapshot.mockResolvedValue(
+      baseSnapshot({
+        snapshot_workspace_cursor: 3,
+        gates: [
+          {
+            gate_id: "paper-gate-continuation",
+            gate_kind: "gate1",
+            status: "confirmed",
+            task_id: "paper-reversal",
+            reviewed_source_sha256: "a".repeat(64),
+            kind: "gate1.formula_source",
+          },
+        ],
+        authority_health: {
+          ...EMPTY_AUTHORITY_HEALTH,
+          gate_1: "ready",
+          gate_2: "ready",
+          gate_3: "ready",
+        },
+      }),
+    );
+    vi.stubGlobal("window", {
+      setInterval: (fn: TimerHandler, ms?: number) =>
+        setInterval(fn as () => void, ms) as unknown as number,
+      clearInterval: (id: number) =>
+        clearInterval(id as unknown as NodeJS.Timeout),
+      setTimeout: (fn: TimerHandler, ms?: number) =>
+        setTimeout(fn as () => void, ms) as unknown as number,
+      clearTimeout: (id: number) =>
+        clearTimeout(id as unknown as NodeJS.Timeout),
+    });
+    type Handler = (ev: MessageEvent) => void;
+    const handlers: Record<string, Handler[]> = {};
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        close() {}
+        addEventListener(type: string, handler: Handler) {
+          (handlers[type] ||= []).push(handler);
+        }
+        removeEventListener() {}
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: true,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    try {
+      spine.start();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(spine.getState().gates[0]?.task_version).toBeUndefined();
+      const gateHandlers = handlers["gates"] || [];
+      expect(gateHandlers.length).toBeGreaterThan(0);
+      for (const handler of gateHandlers) {
+        handler({
+          data: JSON.stringify({
+            gates: [
+              {
+                gate_id: "paper-gate-continuation",
+                gate_kind: "gate1",
+                status: "confirmed",
+                task_id: "paper-reversal",
+                reviewed_source_sha256: "a".repeat(64),
+                kind: "gate1.formula_source",
+                task_version: 8,
+                gate1_confirmation_id: `gate1-${"d".repeat(32)}`,
+              },
+            ],
+            authority_health: {
+              gate_1: "ready",
+              gate_2: "ready",
+              gate_3: "ready",
+            },
+          }),
+        } as MessageEvent);
+      }
+
+      expect(spine.getState().gates[0]).toMatchObject({
+        gate_id: "paper-gate-continuation",
+        status: "confirmed",
+        task_version: 8,
+        gate1_confirmation_id: `gate1-${"d".repeat(32)}`,
+      });
+    } finally {
+      spine.stop();
+    }
+  });
 });
 
 describe("V7g Vertical A ids on spine", () => {

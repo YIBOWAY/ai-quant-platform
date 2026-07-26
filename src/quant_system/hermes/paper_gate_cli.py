@@ -17,6 +17,7 @@ from quant_system.config.settings import load_settings
 from quant_system.hermes.paper_gate_authority import (
     PaperGateAuthority,
     PaperGateAuthorityError,
+    PaperGateAuthorityUnavailable,
     RegisterPaperGateChallenge,
     RegisterPaperGateCompletion,
 )
@@ -176,17 +177,31 @@ def register_command() -> None:
 
 @paper_gate_app.command("show")
 def show_command() -> None:
-    """Show one exact durable Gate by id."""
+    """Show one exact durable Gate in its bound Workspace and Session."""
 
     def _show() -> Mapping[str, object]:
-        document = _stdin_object(exact_fields=frozenset({"gate_id"}))
-        if set(document) != {"gate_id"} or type(document["gate_id"]) is not str:
-            raise PaperGateCliInputError("show requires exactly string gate_id")
-        return {
-            "gate": PaperGateAuthority(load_settings()).get_operator_record(
-                str(document["gate_id"])
+        required = frozenset(
+            {
+                "gate_id",
+                "platform_session_id",
+                "workspace_id",
+            }
+        )
+        document = _stdin_object(exact_fields=required)
+        if set(document) != required or any(type(document[field]) is not str for field in required):
+            raise PaperGateCliInputError(
+                "show requires exactly string gate_id, workspace_id, and platform_session_id"
             )
-        }
+        record = PaperGateAuthority(load_settings()).get_operator_record(str(document["gate_id"]))
+        if (
+            record.get("workspace_id") != document["workspace_id"]
+            or record.get("platform_session_id") != document["platform_session_id"]
+        ):
+            raise PaperGateAuthorityUnavailable(
+                "paper gate continuation context does not match",
+                code="paper_gate_context_mismatch",
+            )
+        return {"gate": record}
 
     _run("show", _show)
 

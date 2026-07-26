@@ -22,6 +22,7 @@ class _Record:
             "command_id": COMMAND_ID,
             "command_ref": f"command:{COMMAND_ID}",
             "gate_id": self.gate_id,
+            "platform_session_id": "platform-session",
             "registered_expected_status": None,
             "reviewed_commit": None,
             "workspace_id": "workspace-root",
@@ -131,7 +132,10 @@ def test_strict_json_cli_register_show_and_list(
     shown = runner.invoke(
         paper_gate_cli.paper_gate_app,
         ["show"],
-        input='{"gate_id":"gate-one"}',
+        input=(
+            '{"gate_id":"gate-one","platform_session_id":"platform-session",'
+            '"workspace_id":"workspace-root"}'
+        ),
     )
     assert shown.exit_code == 0
     assert json.loads(shown.stdout)["gate"]["reviewed_commit"] is None
@@ -167,7 +171,12 @@ def test_strict_json_cli_rejects_unknown_trailing_and_missing(
     trailing = runner.invoke(
         paper_gate_cli.paper_gate_app,
         ["show"],
-        input='{"gate_id":"gate-one"} {"gate_id":"gate-two"}',
+        input=(
+            '{"gate_id":"gate-one","platform_session_id":"platform-session",'
+            '"workspace_id":"workspace-root"} '
+            '{"gate_id":"gate-two","platform_session_id":"platform-session",'
+            '"workspace_id":"workspace-root"}'
+        ),
     )
     assert trailing.exit_code == 2
     assert json.loads(trailing.stdout)["error_code"] == ("paper_gate_cli_invalid_input")
@@ -175,7 +184,11 @@ def test_strict_json_cli_rejects_unknown_trailing_and_missing(
     duplicate = runner.invoke(
         paper_gate_cli.paper_gate_app,
         ["show"],
-        input='{"gate_id":"gate-one","gate_id":"gate-two"}',
+        input=(
+            '{"gate_id":"gate-one","gate_id":"gate-two",'
+            '"platform_session_id":"platform-session",'
+            '"workspace_id":"workspace-root"}'
+        ),
     )
     assert duplicate.exit_code == 2
     assert json.loads(duplicate.stdout)["error_code"] == ("paper_gate_cli_invalid_input")
@@ -212,7 +225,35 @@ def test_show_missing_has_distinct_recovery_code(monkeypatch) -> None:
     result = runner.invoke(
         paper_gate_cli.paper_gate_app,
         ["show"],
-        input='{"gate_id":"missing"}',
+        input=(
+            '{"gate_id":"missing","platform_session_id":"platform-session",'
+            '"workspace_id":"workspace-root"}'
+        ),
     )
     assert result.exit_code == 2
     assert json.loads(result.stdout)["error_code"] == "paper_gate_not_found"
+
+
+def test_show_fails_closed_on_workspace_or_session_substitution(monkeypatch) -> None:
+    monkeypatch.setattr(paper_gate_cli, "PaperGateAuthority", _Authority)
+    monkeypatch.setattr(paper_gate_cli, "load_settings", object)
+
+    for document in (
+        {
+            "gate_id": "gate-one",
+            "platform_session_id": "platform-session",
+            "workspace_id": "other-workspace",
+        },
+        {
+            "gate_id": "gate-one",
+            "platform_session_id": "other-session",
+            "workspace_id": "workspace-root",
+        },
+    ):
+        result = runner.invoke(
+            paper_gate_cli.paper_gate_app,
+            ["show"],
+            input=json.dumps(document),
+        )
+        assert result.exit_code == 2
+        assert json.loads(result.stdout)["error_code"] == ("paper_gate_context_mismatch")

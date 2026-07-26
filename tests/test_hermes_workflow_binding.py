@@ -664,15 +664,18 @@ def test_workflow_binding_migration_rejects_duplicate_legacy_identity_data(
 
         assert workflow_binding_schema_version(settings) is None
         with database.connect() as conn:
-            assert conn.execute(
-                """
+            assert (
+                conn.execute(
+                    """
                 SELECT count(*),
                        count(DISTINCT task_id),
                        count(DISTINCT attempt_id),
                        count(DISTINCT (task_id, attempt_number))
                 FROM quant_system.hermes_command_workflow_bindings
                 """
-            ).fetchone() == expected_distinct
+                ).fetchone()
+                == expected_distinct
+            )
     finally:
         _reset_workflow_ledger(database)
         db.run_migrations(database)
@@ -1354,19 +1357,29 @@ def test_legacy_event_append_only_function_drift_fails_closed_and_replay_restore
             "schema_ready": False,
             "schema_version": None,
             "workflow_binding_schema_ready": False,
-                "workflow_binding_schema_version": None,
-                "session_registry_schema_ready": True,
-                "session_registry_schema_version": 3,
-                "agent_workspace_authorities_ready": False,
-                "research_binding_ready": False,
-                "mutation_enabled": False,
-                "composer_write_ready": False,
-                "chat_write_ready": False,
-                "release_authorized": False,
-                "release_stamp_id": None,
-                "public_cutover_id": None,
-                "release_event_cursor": 0,
-            }
+            "workflow_binding_schema_version": None,
+            "session_registry_schema_ready": True,
+            "session_registry_schema_version": 3,
+            "agent_workspace_authorities_ready": False,
+            "research_binding_ready": False,
+            "mutation_enabled": False,
+            "composer_write_ready": False,
+            "chat_write_ready": False,
+            "admission_mode": "closed",
+            "admission_workspace_id": "ws-local-main",
+            "configured_release_workspace_id": "ws-local-main",
+            "candidate_admission_id": None,
+            "candidate_admission_digest": None,
+            "connector_liveness_ready": False,
+            "connector_liveness_reason": "connector_liveness_unavailable",
+            "connector_worker_id": None,
+            "connector_mode": None,
+            "connector_heartbeat_age_seconds": None,
+            "release_authorized": False,
+            "release_stamp_id": None,
+            "public_cutover_id": None,
+            "release_event_cursor": 0,
+        }
         with pytest.raises(
             HermesCommandLedgerUnavailable,
             match="schema version is not ready",

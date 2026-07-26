@@ -7,6 +7,7 @@ import {
 } from "./darkIdentity";
 import {
   WorkspaceClientError,
+  confirmFormulaSource,
   ensureManagedSession,
   ensureOwnerSession,
   fetchHermesSessionMessages,
@@ -18,8 +19,10 @@ import {
   latestAssistantText,
   pollCommandUntilTerminal,
   preflightPrompt,
+  preparePromotionReview,
   previewAssistantText,
   readCsrfToken,
+  reviewCandidateCAS,
   requireSameComposerHermesSession,
   sendComposerTurn,
   submitTurn,
@@ -64,6 +67,222 @@ describe("workspaceClient preflight", () => {
         status: 503,
       }),
     );
+  });
+});
+
+describe("paper Gate receipt exactness", () => {
+  const gate1ConfirmationId = `gate1-${"a".repeat(32)}`;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function installReceipt(response: Record<string, unknown>) {
+    vi.stubGlobal("document", { cookie: "qs_aw_csrf=csrf-gate-token" });
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "/api/auth/owner/session" && method === "GET") {
+          return new Response(
+            JSON.stringify({
+              session_id: "owner-session",
+              mutation_enabled: true,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (
+          url === `/api/workspace/${PLATFORM_WORKSPACE_ID}/act` &&
+          method === "POST"
+        ) {
+          return new Response(JSON.stringify(response), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        throw new Error(`unexpected fetch ${method} ${url}`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  function gate1Receipt(overrides: Record<string, unknown> = {}) {
+    return {
+      status: "accepted",
+      client_action_id: "gate1-action",
+      gate_id: "paper-gate-1",
+      task_version: 8,
+      gate1_confirmation_id: gate1ConfirmationId,
+      ...overrides,
+    };
+  }
+
+  async function callGate1() {
+    return confirmFormulaSource({
+      taskId: "paper-reversal",
+      reviewedSourceSha256: "b".repeat(64),
+      confirmationNote: "Reviewed exact source.",
+      clientActionId: "gate1-action",
+      expectedGateId: "paper-gate-1",
+    });
+  }
+
+  it("accepts an exactly bound Gate 1 continuation receipt", async () => {
+    installReceipt(gate1Receipt());
+
+    await expect(callGate1()).resolves.toMatchObject({
+      client_action_id: "gate1-action",
+      gate_id: "paper-gate-1",
+      task_version: 8,
+      gate1_confirmation_id: gate1ConfirmationId,
+    });
+  });
+
+  it.each([
+    [
+      "client action",
+      { client_action_id: "substituted-action" },
+      "paper_gate_receipt_identity_mismatch",
+    ],
+    [
+      "Gate",
+      { gate_id: "paper-gate-other" },
+      "paper_gate_receipt_identity_mismatch",
+    ],
+  ])("rejects a substituted %s receipt", async (_label, override, code) => {
+    installReceipt(gate1Receipt(override));
+
+    await expect(callGate1()).rejects.toMatchObject({ status: 503, code });
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["zero", 0],
+    ["fractional", 8.5],
+    ["unsafe", Number.MAX_SAFE_INTEGER + 1],
+  ])(
+    "rejects an accepted Gate receipt with %s task_version",
+    async (_label, value) => {
+      installReceipt(gate1Receipt({ task_version: value }));
+
+      await expect(callGate1()).rejects.toMatchObject({
+        status: 503,
+        code: "paper_gate_receipt_continuation_invalid",
+      });
+    },
+  );
+
+  it.each([
+    ["missing", undefined],
+    ["malformed", "gate1-not-a-digest"],
+  ])(
+    "rejects an accepted Gate 1 receipt with %s confirmation",
+    async (_label, value) => {
+      installReceipt(gate1Receipt({ gate1_confirmation_id: value }));
+
+      await expect(callGate1()).rejects.toMatchObject({
+        status: 503,
+        code: "paper_gate_receipt_continuation_invalid",
+      });
+    },
+  );
+
+  it("requires Gate 2 to preserve the projected Gate 1 confirmation", async () => {
+    installReceipt({
+      status: "accepted",
+      client_action_id: "gate2-action",
+      gate_id: "paper-gate-2",
+      task_version: 9,
+      gate1_confirmation_id: `gate1-${"c".repeat(32)}`,
+    });
+
+    await expect(
+      reviewCandidateCAS({
+        candidateId: "paper-reversal",
+        expectedDigest: "d".repeat(64),
+        note: "Reviewed exact candidate.",
+        clientActionId: "gate2-action",
+        expectedGateId: "paper-gate-2",
+        expectedGate1ConfirmationId: gate1ConfirmationId,
+      }),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: "paper_gate_receipt_continuation_mismatch",
+    });
+  });
+
+  it("accepts Gate 3 only with its projected Gate 1 confirmation", async () => {
+    installReceipt({
+      status: "accepted",
+      client_action_id: "gate3-action",
+      gate_id: "paper-gate-3",
+      task_version: 11,
+      gate1_confirmation_id: gate1ConfirmationId,
+    });
+
+    await expect(
+      preparePromotionReview({
+        candidateId: "paper-reversal",
+        expectedDigest: "e".repeat(64),
+        finalBacktestReceiptId: "final-receipt",
+        baseCommit: "f".repeat(40),
+        clientActionId: "gate3-action",
+        expectedGateId: "paper-gate-3",
+        expectedGate1ConfirmationId: gate1ConfirmationId,
+      }),
+    ).resolves.toMatchObject({
+      gate_id: "paper-gate-3",
+      task_version: 11,
+      gate1_confirmation_id: gate1ConfirmationId,
+    });
+  });
+
+  it("rejects Gate 3 when its receipt changes the Gate 1 continuation", async () => {
+    installReceipt({
+      status: "accepted",
+      client_action_id: "gate3-action",
+      gate_id: "paper-gate-3",
+      task_version: 11,
+      gate1_confirmation_id: `gate1-${"c".repeat(32)}`,
+    });
+
+    await expect(
+      preparePromotionReview({
+        candidateId: "paper-reversal",
+        expectedDigest: "e".repeat(64),
+        finalBacktestReceiptId: "final-receipt",
+        baseCommit: "f".repeat(40),
+        clientActionId: "gate3-action",
+        expectedGateId: "paper-gate-3",
+        expectedGate1ConfirmationId: gate1ConfirmationId,
+      }),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: "paper_gate_receipt_continuation_mismatch",
+    });
+  });
+
+  it("rejects an invalid projected continuation before Gate 2 network access", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      reviewCandidateCAS({
+        candidateId: "paper-reversal",
+        expectedDigest: "d".repeat(64),
+        note: "Reviewed exact candidate.",
+        clientActionId: "gate2-action",
+        expectedGateId: "paper-gate-2",
+        expectedGate1ConfirmationId: "",
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: "validation",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

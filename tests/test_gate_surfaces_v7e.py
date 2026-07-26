@@ -294,6 +294,31 @@ def test_gates_fingerprint_changes_on_decide() -> None:
     assert third[0]["status"] == "reviewed"
 
 
+def test_gates_fingerprint_changes_when_continuation_handles_arrive() -> None:
+    journal = default_gate_observe_journal()
+    initial = [
+        {
+            "gate_id": "g1-continuation",
+            "gate_kind": "gate1",
+            "status": "confirmed",
+            "reviewed_source_sha256": DIGEST,
+            "task_version": None,
+            "gate1_confirmation_id": None,
+        }
+    ]
+    enriched = [
+        {
+            **initial[0],
+            "task_version": 8,
+            "gate1_confirmation_id": "gate1-" + ("d" * 32),
+        }
+    ]
+
+    assert journal.take_gates_if_changed(WS, initial) == initial
+    assert journal.take_gates_if_changed(WS, initial) is None
+    assert journal.take_gates_if_changed(WS, enriched) == enriched
+
+
 def test_project_gate_public_never_looks_like_approval() -> None:
     row = project_gate_public(
         {

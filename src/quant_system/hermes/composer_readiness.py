@@ -26,6 +26,7 @@ from quant_system.hermes.candidate_admission_gate import (
 )
 from quant_system.hermes.command_ledger import command_ledger_schema_version
 from quant_system.hermes.connector_liveness import ConnectorLivenessAuthority
+from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
 from quant_system.hermes.release_runtime import (
     current_release_decision,
     runtime_identity_observation,
@@ -90,17 +91,23 @@ def _dedupe(items: list[str]) -> list[str]:
 def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
     final_blockers: list[str] = []
     release = None
-    try:
-        release = current_release_decision(settings)
-        final_blockers.extend(str(item) for item in release.blockers)
-    except Exception:  # noqa: BLE001 - admission probes always fail closed
-        final_blockers.append("effective_release_gate_unavailable")
+    release_workspace_id = settings.agent_v02_release.workspace_id
+    workspace_profile_ready = release_workspace_id == PLATFORM_WORKSPACE_ID
+    if not workspace_profile_ready:
+        final_blockers.append("release_workspace_profile_mismatch")
+    else:
+        try:
+            release = current_release_decision(settings)
+            final_blockers.extend(str(item) for item in release.blockers)
+        except Exception:  # noqa: BLE001 - admission probes always fail closed
+            final_blockers.append("effective_release_gate_unavailable")
 
     connector = None
     release_ready = bool(release is not None and release.ready)
     candidate = None
     if (
-        not release_ready
+        workspace_profile_ready
+        and not release_ready
         and settings.candidate_admission.enabled is True
     ):
         try:
@@ -112,19 +119,15 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
             candidate = None
 
     candidate_ready = bool(candidate is not None and candidate.ready)
-    admission_mode = (
-        "release"
-        if release_ready
-        else ("candidate" if candidate_ready else "closed")
-    )
+    admission_mode = "release" if release_ready else ("candidate" if candidate_ready else "closed")
     blockers: list[str] = []
-    if release_ready or candidate is None:
+    if not workspace_profile_ready:
+        blockers.extend(final_blockers)
+    elif release_ready or candidate is None:
         if not release_ready:
             blockers.extend(final_blockers)
         try:
-            platform_digest = runtime_identity_observation(
-                settings
-            ).platform_runtime_digest
+            platform_digest = runtime_identity_observation(settings).platform_runtime_digest
             max_age = float(
                 getattr(
                     settings.agent_v02_release,
@@ -151,11 +154,7 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
         or (candidate is not None and candidate.connector_ready)
     )
     ordered = tuple(_dedupe(blockers))
-    ready = (
-        (release_ready or candidate_ready)
-        and connector_ready
-        and not ordered
-    )
+    ready = (release_ready or candidate_ready) and connector_ready and not ordered
     return _EffectiveAdmission(
         release_ready=release_ready,
         candidate_ready=candidate_ready,
@@ -174,16 +173,8 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
             if release is not None and release.public_cutover_id is not None
             else None
         ),
-        candidate_admission_id=(
-            None
-            if candidate is None
-            else candidate.admission_id
-        ),
-        candidate_admission_digest=(
-            None
-            if candidate is None
-            else candidate.admission_digest
-        ),
+        candidate_admission_id=(None if candidate is None else candidate.admission_id),
+        candidate_admission_digest=(None if candidate is None else candidate.admission_digest),
         release_event_cursor=(
             int(release.event_cursor)
             if release is not None
@@ -204,11 +195,7 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
         connector_worker_id=(
             str(connector.worker_id)
             if connector is not None and connector.worker_id is not None
-            else (
-                None
-                if candidate is None
-                else candidate.connector_worker_id
-            )
+            else (None if candidate is None else candidate.connector_worker_id)
         ),
         connector_mode=(
             str(connector.mode)
@@ -221,13 +208,8 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
         ),
         connector_heartbeat_age_seconds=(
             float(connector.heartbeat_age_seconds)
-            if connector is not None
-            and connector.heartbeat_age_seconds is not None
-            else (
-                None
-                if candidate is None
-                else candidate.connector_heartbeat_age_seconds
-            )
+            if connector is not None and connector.heartbeat_age_seconds is not None
+            else (None if candidate is None else candidate.connector_heartbeat_age_seconds)
         ),
     )
 
@@ -278,9 +260,7 @@ def _authority_readiness_projection(
     schema_ready = ledger_ready and session_ready
     research_schema_ready = schema_ready and binding_ready
     runtime_security_ready = hermes_runtime_security_ready(settings)
-    run_control_outcome_ready = (
-        run_control_outcome_runtime_security_ready(settings)
-    )
+    run_control_outcome_ready = run_control_outcome_runtime_security_ready(settings)
     write_authority_ready = schema_ready and runtime_security_ready
     mutation_on = _local_mutation_enabled(settings)
 
@@ -304,21 +284,20 @@ def _authority_readiness_projection(
         "connector_liveness_reason": admission.connector_reason,
         "connector_worker_id": admission.connector_worker_id,
         "connector_mode": admission.connector_mode,
-        "connector_heartbeat_age_seconds": (
-            admission.connector_heartbeat_age_seconds
-        ),
+        "connector_heartbeat_age_seconds": (admission.connector_heartbeat_age_seconds),
         "release_authorized": admission.release_ready,
         "release_blockers": list(admission.blockers),
-        "final_release_blockers": list(
-            admission.final_release_blockers
-        ),
+        "final_release_blockers": list(admission.final_release_blockers),
         "release_stamp_id": admission.release_stamp_id,
         "public_cutover_id": admission.public_cutover_id,
         "admission_mode": admission.admission_mode,
+        # The Web Chat identity is a fixed product contract. Project both it
+        # and the operator-configured release value so a mismatch is
+        # diagnosable without opening a write path.
+        "admission_workspace_id": PLATFORM_WORKSPACE_ID,
+        "configured_release_workspace_id": (settings.agent_v02_release.workspace_id),
         "candidate_admission_id": admission.candidate_admission_id,
-        "candidate_admission_digest": (
-            admission.candidate_admission_digest
-        ),
+        "candidate_admission_digest": (admission.candidate_admission_digest),
         "candidate_chat_write_ready": admission.candidate_ready,
         "release_event_cursor": admission.release_event_cursor,
         "mutation_enabled": mutation_on,
@@ -350,11 +329,7 @@ def authority_readiness(
 
 
 def _platform_blockers(admission: _EffectiveAdmission) -> list[str]:
-    return [
-        blocker
-        for blocker in admission.blockers
-        if not blocker.startswith("hermes_")
-    ]
+    return [blocker for blocker in admission.blockers if not blocker.startswith("hermes_")]
 
 
 def platform_delivery_blockers(
@@ -376,14 +351,8 @@ def chat_write_blockers(
     """Return a compatibility envelope backed by current runtime facts."""
 
     admission = _effective_admission(settings, fresh=fresh)
-    upstream = [
-        blocker for blocker in admission.blockers if blocker.startswith("hermes_")
-    ]
-    platform = [
-        blocker
-        for blocker in admission.blockers
-        if not blocker.startswith("hermes_")
-    ]
+    upstream = [blocker for blocker in admission.blockers if blocker.startswith("hermes_")]
+    platform = [blocker for blocker in admission.blockers if not blocker.startswith("hermes_")]
     return {
         "upstream_blockers": upstream,
         "platform_delivery_blockers": platform,

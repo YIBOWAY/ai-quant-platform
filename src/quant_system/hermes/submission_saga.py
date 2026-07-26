@@ -227,6 +227,9 @@ class ActionReceipt:
     domain_admission_digest: str | None = None
     # V7g-B-M3: optional Gate1 id after vertical.factor_b.gate1_seed.
     gate_id: str | None = None
+    # Durable paper-workflow continuation handles from the exact HQA receipt.
+    task_version: int | None = None
+    gate1_confirmation_id: str | None = None
     # V8-M5: optional canary grant identity (issue/revoke/accept).
     grant_id: str | None = None
     grant_digest: str | None = None
@@ -283,6 +286,10 @@ class ActionReceipt:
             payload["domain_request_status"] = self.domain_request_status
         if self.gate_id is not None:
             payload["gate_id"] = self.gate_id
+        if self.task_version is not None:
+            payload["task_version"] = self.task_version
+        if self.gate1_confirmation_id is not None:
+            payload["gate1_confirmation_id"] = self.gate1_confirmation_id
         if self.grant_id is not None:
             payload["grant_id"] = self.grant_id
         if self.grant_digest is not None:
@@ -393,6 +400,8 @@ def _receipt(
     domain_admission_id: str | None = None,
     domain_admission_digest: str | None = None,
     gate_id: str | None = None,
+    task_version: int | None = None,
+    gate1_confirmation_id: str | None = None,
     grant_id: str | None = None,
     grant_digest: str | None = None,
     canary_ref: str | None = None,
@@ -425,6 +434,8 @@ def _receipt(
         domain_admission_id=domain_admission_id,
         domain_admission_digest=domain_admission_digest,
         gate_id=gate_id,
+        task_version=task_version,
+        gate1_confirmation_id=gate1_confirmation_id,
         grant_id=grant_id,
         grant_digest=grant_digest,
         canary_ref=canary_ref,
@@ -1812,6 +1823,8 @@ def _submit_durable_paper_gate_action(
         action=action,
         digest=digest,
         gate_id=receipt.gate_id,
+        task_version=receipt.task_version,
+        gate1_confirmation_id=receipt.gate1_confirmation_id,
         platform_session_id=strip_session_ref(receipt.managed_session_ref),
         reason_code=receipt.reason_code,
         mutation_enabled=mutation_enabled,

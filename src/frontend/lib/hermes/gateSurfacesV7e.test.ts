@@ -64,6 +64,7 @@ describe("gate surfaces helpers (V7e)", () => {
           expected_digest: "b".repeat(64),
           final_backtest_receipt_id: "r1",
           base_commit: "c".repeat(40),
+          gate1_confirmation_id: `gate1-${"d".repeat(32)}`,
         }),
       ),
     ).toBe(true);
@@ -76,9 +77,34 @@ describe("gate surfaces helpers (V7e)", () => {
           expected_digest: "b".repeat(64),
           final_backtest_receipt_id: "r1",
           base_commit: "short",
+          gate1_confirmation_id: `gate1-${"d".repeat(32)}`,
         }),
       ),
     ).toBe(false);
+  });
+
+  it("canActGate Gate 2/3 requires the exact Gate 1 continuation", () => {
+    expect(
+      canActGate(
+        gate({
+          gate_id: "g2",
+          gate_kind: "gate2",
+          candidate_id: "c1",
+          expected_digest: "b".repeat(64),
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      canActGate(
+        gate({
+          gate_id: "g2",
+          gate_kind: "gate2",
+          candidate_id: "c1",
+          expected_digest: "b".repeat(64),
+          gate1_confirmation_id: `gate1-${"d".repeat(32)}`,
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("filterGatesForPanel hides only while still pending after consume", () => {
@@ -175,6 +201,10 @@ describe("gate surfaces helpers (V7e)", () => {
     expect(source).toContain("data-hermes-gate-source-bytes");
     expect(source).toContain("data-hermes-gate-source-acknowledge");
     expect(source).toContain("client_verified_sha256");
+    expect(source).toContain("expectedGateId: row.gate_id");
+    expect(source).toContain(
+      "expectedGate1ConfirmationId: row.gate1_confirmation_id ||",
+    );
     expect(source).toContain("Open candidate evidence");
     expect(source).not.toContain(
       "source: {displayId(row.reviewed_source_sha256)}",

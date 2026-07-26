@@ -262,6 +262,71 @@ def test_candidate_is_db_clocked_idempotent_and_server_binds_chat() -> None:
     assert claimed.command_id == created_command.command.command_id
 
 
+def test_candidate_never_claims_a_web_command_from_another_workspace() -> None:
+    settings, database = _prepare()
+    authority = CandidateAdmissionAuthority(
+        settings,
+        database=database,
+        schema_fingerprint_reader=lambda _database: SCHEMA_DIGEST,
+    )
+    opened = authority.open(
+        _open_request(action_id="candidate-workspace-open"),
+        admission_id="candidate_workspace_test",
+    )
+    creation_digest = "a" * 64
+    session, created = register_workspace_session(
+        settings,
+        RegisterWorkspaceSession(
+            platform_session_id="wm_candidate_wrong_workspace",
+            hermes_session_id=f"web_{creation_digest[:40]}",
+            workspace_id="ws-local-main",
+            kind="web_managed_session",
+            provider_policy_digest=PROVIDER_POLICY_DIGEST,
+            payload_ttl_days=STORE_TTL_DAYS,
+            creation_client_action_id="candidate-wrong-workspace-session",
+            creation_action_digest=creation_digest,
+        ),
+    )
+    assert created is True
+    ledger = HermesCommandLedger(
+        settings,
+        claim_candidate_admission_id=opened.admission_id,
+    )
+    command = ledger.create_command(
+        platform_session_id=session.platform_session_id,
+        client_request_id="candidate-wrong-workspace-turn",
+        kind="conversation_turn",
+        canonical_request_digest="b" * 64,
+        payload_ref=f"platform-payload://sha256/{'c' * 64}",
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
+    ).command
+
+    with database.connect() as conn:
+        bound = conn.execute(
+            """
+            SELECT
+                session_row.candidate_admission_id,
+                command_row.candidate_admission_id
+            FROM quant_system.hermes_workspace_sessions AS session_row
+            JOIN quant_system.hermes_commands AS command_row
+              ON command_row.platform_session_id =
+                 session_row.platform_session_id
+            WHERE command_row.command_id = %s
+            """,
+            (command.command_id,),
+        ).fetchone()
+
+    assert bound == (None, None)
+    assert (
+        ledger.claim_next_command(
+            worker_id="candidate-wrong-workspace-worker",
+            now=datetime.now(UTC),
+            lease_duration=timedelta(seconds=30),
+        )
+        is None
+    )
+
+
 def test_accept_requires_no_nonterminal_candidate_command() -> None:
     settings, database = _prepare()
     authority = CandidateAdmissionAuthority(

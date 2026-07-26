@@ -45,6 +45,9 @@ export type WorkspaceActionReceipt = {
   attempt_id?: string;
   result_id?: string;
   terminal_status?: string;
+  gate_id?: string;
+  task_version?: number;
+  gate1_confirmation_id?: string;
 };
 
 export class WorkspaceClientError extends Error {
@@ -1074,6 +1077,7 @@ export type WorkspaceGateProjection = {
   source_file_ref?: string | null;
   universe?: string | null;
   reviewed_source_sha256?: string | null;
+  gate1_confirmation_id?: string | null;
   candidate_id?: string | null;
   candidate_ref?: string | null;
   expected_digest?: string | null;
@@ -1375,14 +1379,109 @@ export function buildPreparePromotionReviewAction(input: {
   };
 }
 
+type PaperGateReceiptKind = "gate1" | "gate2" | "gate3";
+
+const PAPER_GATE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const GATE1_CONFIRMATION_ID_RE = /^gate1-[0-9a-f]{32}$/;
+
+function requireExpectedPaperGateId(value: string): string {
+  if (!PAPER_GATE_ID_RE.test(value)) {
+    throw new WorkspaceClientError(
+      "expected_gate_id must be an exact paper Gate identifier",
+      400,
+      "validation",
+    );
+  }
+  return value;
+}
+
+function requireExpectedGate1ConfirmationId(value: string): string {
+  if (!GATE1_CONFIRMATION_ID_RE.test(value)) {
+    throw new WorkspaceClientError(
+      "expected_gate1_confirmation_id must be an exact Gate 1 continuation",
+      400,
+      "validation",
+    );
+  }
+  return value;
+}
+
+/**
+ * Treat the BFF response as untrusted input. A successful paper Gate mutation
+ * is usable only when it proves the exact action/Gate identity and returns a
+ * durable, valid Task continuation. Gate 2/3 must preserve the Gate 1 lineage
+ * projected to the user before the mutation.
+ */
+function validatePaperGateReceipt(
+  receipt: unknown,
+  expected: {
+    kind: PaperGateReceiptKind;
+    clientActionId: string;
+    gateId: string;
+    gate1ConfirmationId?: string;
+  },
+): WorkspaceActionReceipt {
+  if (
+    receipt === null ||
+    typeof receipt !== "object" ||
+    (receipt as WorkspaceActionReceipt).client_action_id !==
+      expected.clientActionId ||
+    (receipt as WorkspaceActionReceipt).gate_id !== expected.gateId
+  ) {
+    throw new WorkspaceClientError(
+      "paper Gate receipt does not match the immutable action and Gate",
+      503,
+      "paper_gate_receipt_identity_mismatch",
+    );
+  }
+
+  const exactReceipt = receipt as WorkspaceActionReceipt;
+  if (exactReceipt.status !== "accepted") {
+    return exactReceipt;
+  }
+  if (
+    !Number.isSafeInteger(exactReceipt.task_version) ||
+    (exactReceipt.task_version ?? 0) < 1
+  ) {
+    throw new WorkspaceClientError(
+      "accepted paper Gate receipt has no valid Task continuation",
+      503,
+      "paper_gate_receipt_continuation_invalid",
+    );
+  }
+  if (
+    typeof exactReceipt.gate1_confirmation_id !== "string" ||
+    !GATE1_CONFIRMATION_ID_RE.test(exactReceipt.gate1_confirmation_id)
+  ) {
+    throw new WorkspaceClientError(
+      "accepted paper Gate receipt has no valid Gate 1 continuation",
+      503,
+      "paper_gate_receipt_continuation_invalid",
+    );
+  }
+  if (
+    expected.kind !== "gate1" &&
+    exactReceipt.gate1_confirmation_id !== expected.gate1ConfirmationId
+  ) {
+    throw new WorkspaceClientError(
+      "paper Gate receipt changed the reviewed Gate 1 continuation",
+      503,
+      "paper_gate_receipt_continuation_mismatch",
+    );
+  }
+  return exactReceipt;
+}
+
 export async function confirmFormulaSource(options: {
   taskId: string;
   reviewedSourceSha256: string;
   confirmationNote: string;
+  expectedGateId: string;
   clientActionId?: string;
   workspaceId?: string;
   signal?: AbortSignal;
 }): Promise<WorkspaceActionReceipt> {
+  const expectedGateId = requireExpectedPaperGateId(options.expectedGateId);
   await ensureOwnerSession(options.signal);
   const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
   const clientActionId = options.clientActionId ?? crypto.randomUUID();
@@ -1393,7 +1492,7 @@ export async function confirmFormulaSource(options: {
     clientActionId,
     workspaceId,
   });
-  return sameOriginJson<WorkspaceActionReceipt>(
+  const receipt = await sameOriginJson<unknown>(
     `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
     {
       method: "POST",
@@ -1402,16 +1501,27 @@ export async function confirmFormulaSource(options: {
       body: { action },
     },
   );
+  return validatePaperGateReceipt(receipt, {
+    kind: "gate1",
+    clientActionId,
+    gateId: expectedGateId,
+  });
 }
 
 export async function reviewCandidateCAS(options: {
   candidateId: string;
   expectedDigest: string;
   note: string;
+  expectedGateId: string;
+  expectedGate1ConfirmationId: string;
   clientActionId?: string;
   workspaceId?: string;
   signal?: AbortSignal;
 }): Promise<WorkspaceActionReceipt> {
+  const expectedGateId = requireExpectedPaperGateId(options.expectedGateId);
+  const expectedGate1ConfirmationId = requireExpectedGate1ConfirmationId(
+    options.expectedGate1ConfirmationId,
+  );
   await ensureOwnerSession(options.signal);
   const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
   const clientActionId = options.clientActionId ?? crypto.randomUUID();
@@ -1422,7 +1532,7 @@ export async function reviewCandidateCAS(options: {
     clientActionId,
     workspaceId,
   });
-  return sameOriginJson<WorkspaceActionReceipt>(
+  const receipt = await sameOriginJson<unknown>(
     `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
     {
       method: "POST",
@@ -1431,6 +1541,12 @@ export async function reviewCandidateCAS(options: {
       body: { action },
     },
   );
+  return validatePaperGateReceipt(receipt, {
+    kind: "gate2",
+    clientActionId,
+    gateId: expectedGateId,
+    gate1ConfirmationId: expectedGate1ConfirmationId,
+  });
 }
 
 export async function preparePromotionReview(options: {
@@ -1438,10 +1554,16 @@ export async function preparePromotionReview(options: {
   expectedDigest: string;
   finalBacktestReceiptId: string;
   baseCommit: string;
+  expectedGateId: string;
+  expectedGate1ConfirmationId: string;
   clientActionId?: string;
   workspaceId?: string;
   signal?: AbortSignal;
 }): Promise<WorkspaceActionReceipt> {
+  const expectedGateId = requireExpectedPaperGateId(options.expectedGateId);
+  const expectedGate1ConfirmationId = requireExpectedGate1ConfirmationId(
+    options.expectedGate1ConfirmationId,
+  );
   await ensureOwnerSession(options.signal);
   const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
   const clientActionId = options.clientActionId ?? crypto.randomUUID();
@@ -1453,7 +1575,7 @@ export async function preparePromotionReview(options: {
     clientActionId,
     workspaceId,
   });
-  return sameOriginJson<WorkspaceActionReceipt>(
+  const receipt = await sameOriginJson<unknown>(
     `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
     {
       method: "POST",
@@ -1462,6 +1584,12 @@ export async function preparePromotionReview(options: {
       body: { action },
     },
   );
+  return validatePaperGateReceipt(receipt, {
+    kind: "gate3",
+    clientActionId,
+    gateId: expectedGateId,
+    gate1ConfirmationId: expectedGate1ConfirmationId,
+  });
 }
 
 /** V7g-A-M1: hermetic Vertical A options research bind (fixture only). */

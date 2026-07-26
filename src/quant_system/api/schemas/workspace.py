@@ -5,6 +5,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 _DIGEST = r"^[0-9a-f]{64}$"
+# Public JSON is consumed by JavaScript. Keep exact CAS handles inside the
+# largest integer that JSON.parse can preserve without rounding.
+_JS_MAX_SAFE_INTEGER = 2**53 - 1
 
 
 class _WorkspaceSchema(BaseModel):
@@ -83,9 +86,7 @@ class DurablePublicCutoverResponse(_WorkspaceSchema):
     authority_source: Literal["postgres_release_authority"]
     kind: Literal["agent_v0_2.release.public_cutover"]
     cutover_id: str = Field(min_length=1, max_length=200)
-    cutover_ref: str = Field(
-        pattern=r"^cutover:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
-    )
+    cutover_ref: str = Field(pattern=r"^cutover:[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
     stamp_id: str = Field(min_length=1, max_length=200)
     route: Literal["/hermes"]
     release_digest: str = Field(pattern=_DIGEST)
@@ -164,6 +165,10 @@ class GateProjectionResponse(_WorkspaceSchema):
     source_file_ref: str | None = Field(default=None, max_length=4096)
     universe: str | None = Field(default=None, max_length=2000)
     reviewed_source_sha256: str | None = None
+    gate1_confirmation_id: str | None = Field(
+        default=None,
+        pattern=r"^gate1-[0-9a-f]{32}$",
+    )
     candidate_id: str | None = None
     candidate_ref: str | None = None
     expected_digest: str | None = None
@@ -185,7 +190,11 @@ class GateProjectionResponse(_WorkspaceSchema):
         default=None,
         pattern=r"^[0-9a-f]{40}$",
     )
-    task_version: int | None = Field(default=None, ge=1, le=2**63 - 1)
+    task_version: int | None = Field(
+        default=None,
+        ge=1,
+        le=_JS_MAX_SAFE_INTEGER,
+    )
     task_status: Literal["completed"] | None = None
     task_terminal_outcome: Literal["completed"] | None = None
     attempt_status: Literal["completed"] | None = None
@@ -313,9 +322,7 @@ class WorkspaceFollowResponse(_WorkspaceSchema):
     approvals: list[dict[str, Any]] | None = None
     gates: list[GateProjectionResponse] | None = None
     canary_grants: list[CanaryGrantResponse] | None = None
-    public_cutovers: (
-        list[PublicCutoverResponse | DurablePublicCutoverResponse] | None
-    ) = None
+    public_cutovers: list[PublicCutoverResponse | DurablePublicCutoverResponse] | None = None
     results: list[dict[str, Any]] | None = None
     options_requests: list[OptionsRequestResponse] | None = None
     tasks: list[str] | None = None
@@ -346,6 +353,8 @@ class WorkspaceAuthoritiesResponse(_WorkspaceSchema):
     connector_mode: str | None
     connector_heartbeat_age_seconds: float | None
     admission_mode: Literal["closed", "candidate", "release"]
+    admission_workspace_id: str
+    configured_release_workspace_id: str
     release_authorized: bool
     release_blockers: list[str]
     final_release_blockers: list[str]
@@ -404,6 +413,15 @@ class WorkspaceActionReceiptResponse(_WorkspaceSchema):
         | None
     ) = None
     gate_id: str | None = None
+    task_version: int | None = Field(
+        default=None,
+        ge=1,
+        le=_JS_MAX_SAFE_INTEGER,
+    )
+    gate1_confirmation_id: str | None = Field(
+        default=None,
+        pattern=r"^gate1-[0-9a-f]{32}$",
+    )
     grant_id: str | None = None
     grant_digest: str | None = Field(default=None, pattern=_DIGEST)
     canary_ref: str | None = None

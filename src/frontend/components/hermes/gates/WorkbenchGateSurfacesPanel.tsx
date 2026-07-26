@@ -60,7 +60,12 @@ export function canActGate(row: WorkspaceGateProjection): boolean {
   if (kind === "gate2") {
     const dig = row.expected_digest || "";
     const cand = row.candidate_id || row.candidate_ref || "";
-    return Boolean(cand) && /^[0-9a-f]{64}$/.test(dig);
+    const confirmation = row.gate1_confirmation_id || "";
+    return (
+      Boolean(cand) &&
+      /^[0-9a-f]{64}$/.test(dig) &&
+      /^gate1-[0-9a-f]{32}$/.test(confirmation)
+    );
   }
   if (kind === "gate3") {
     const dig = row.expected_digest || "";
@@ -68,11 +73,13 @@ export function canActGate(row: WorkspaceGateProjection): boolean {
     const receipt =
       row.final_backtest_receipt_id || row.final_backtest_receipt_ref || "";
     const base = row.base_commit || "";
+    const confirmation = row.gate1_confirmation_id || "";
     return (
       Boolean(cand) &&
       Boolean(receipt) &&
       /^[0-9a-f]{64}$/.test(dig) &&
-      /^[0-9a-f]{40}$/.test(base)
+      /^[0-9a-f]{40}$/.test(base) &&
+      /^gate1-[0-9a-f]{32}$/.test(confirmation)
     );
   }
   return false;
@@ -215,12 +222,15 @@ export function WorkbenchGateSurfacesPanel({
             taskId: row.task_id || row.task_ref || "",
             reviewedSourceSha256: row.reviewed_source_sha256 || "",
             confirmationNote: note,
+            expectedGateId: row.gate_id,
           });
         } else if (kind === "gate2") {
           receipt = await reviewCandidateCAS({
             candidateId: row.candidate_id || row.candidate_ref || "",
             expectedDigest: row.expected_digest || "",
             note,
+            expectedGateId: row.gate_id,
+            expectedGate1ConfirmationId: row.gate1_confirmation_id || "",
           });
         } else if (kind === "gate3") {
           receipt = await preparePromotionReview({
@@ -231,6 +241,8 @@ export function WorkbenchGateSurfacesPanel({
               row.final_backtest_receipt_ref ||
               "",
             baseCommit: row.base_commit || "",
+            expectedGateId: row.gate_id,
+            expectedGate1ConfirmationId: row.gate1_confirmation_id || "",
           });
         } else {
           setLastError("unknown gate_kind");
@@ -388,6 +400,17 @@ export function WorkbenchGateSurfacesPanel({
                         task: {row.task_ref || row.task_id}
                       </p>
                     ) : null}
+                    {row.task_version ? (
+                      <p
+                        className="font-data-mono text-[11px] text-text-secondary break-all"
+                        data-hermes-gate-task-version
+                      >
+                        {isZh
+                          ? "此 Gate 绑定的 Task version"
+                          : "Gate-bound task version"}
+                        : {row.task_version}
+                      </p>
+                    ) : null}
                     {row.attempt_ref ? (
                       <p className="font-data-mono text-[11px] text-text-secondary break-all">
                         attempt: {row.attempt_ref}
@@ -434,6 +457,14 @@ export function WorkbenchGateSurfacesPanel({
                         data-hermes-gate-source-sha256
                       >
                         source SHA-256: {row.reviewed_source_sha256}
+                      </p>
+                    ) : null}
+                    {row.gate1_confirmation_id ? (
+                      <p
+                        className="font-data-mono text-[11px] text-text-secondary break-all"
+                        data-hermes-gate1-confirmation-id
+                      >
+                        Gate 1 confirmation: {row.gate1_confirmation_id}
                       </p>
                     ) : null}
                     {row.expected_digest ? (

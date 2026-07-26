@@ -203,7 +203,8 @@ class GateObserveJournal:
             )
             parts.append(
                 f"{row.get('gate_id')}:{row.get('gate_kind')}:{row.get('status')}:"
-                f"{row.get('decided_at')}:{binding}"
+                f"{row.get('decided_at')}:{binding}:"
+                f"{row.get('task_version')}:{row.get('gate1_confirmation_id')}"
             )
         return "|".join(parts)
 

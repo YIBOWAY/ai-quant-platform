@@ -101,6 +101,23 @@ _PUBLIC_KIND = {
     "gate2": "gate2.candidate",
     "gate3": "gate3.promotion_review",
 }
+_GATE_ACTION_KIND = {
+    "gate1": "gate1_formula_source_confirm",
+    "gate2": "gate2_candidate_review",
+    "gate3": "gate3_promotion_review_prepare",
+}
+_GATE_OPERATION = {
+    "gate1": "confirm-formula",
+    "gate2": "approve",
+    "gate3": "promote",
+}
+_TERMINAL_ACTION_STATE = {
+    "confirmed": "succeeded",
+    "reviewed": "succeeded",
+    "prepared": "succeeded",
+    "rejected": "failed",
+    "outcome_unknown": "outcome_unknown",
+}
 
 _CHALLENGE_COLUMNS = """
     gate_id,
@@ -535,6 +552,8 @@ class PaperGateChallengeRecord:
         }
         if self.reviewed_source_sha256 is not None:
             payload["reviewed_source_sha256"] = self.reviewed_source_sha256
+        if self.gate1_confirmation_id is not None:
+            payload["gate1_confirmation_id"] = self.gate1_confirmation_id
         if self.source_file_ref is not None:
             payload["source_file_ref"] = self.source_file_ref
         if self.universe is not None:
@@ -642,6 +661,7 @@ class PaperGateReceipt:
     occurred_at: datetime
     hqa_receipt_ref: str | None = None
     hqa_receipt_digest: str | None = None
+    task_version: int | None = None
     gate1_confirmation_id: str | None = None
     promotion_id: str | None = None
     worktree: str | None = None
@@ -673,6 +693,7 @@ class PaperGateReceipt:
             "promotion_id": self.promotion_id,
             "reason_code": self.reason_code,
             "status": self.status,
+            "task_version": self.task_version,
             "workspace_id": self.workspace_id,
             "worktree": self.worktree,
         }
@@ -946,6 +967,7 @@ def _gate_public_projection(
     *,
     action_state: str | None = None,
     action_error: str | None = None,
+    action_receipt: PaperGateReceipt | None = None,
     completion: PaperGateCompletionRecord | None = None,
     operator: bool = False,
 ) -> dict[str, object]:
@@ -960,6 +982,57 @@ def _gate_public_projection(
             action_error=action_error,
         )
     )
+    if action_receipt is not None:
+        expected_action_kind = _GATE_ACTION_KIND[gate.gate_kind]
+        expected_operation = _GATE_OPERATION[gate.gate_kind]
+        expected_action_state = _TERMINAL_ACTION_STATE.get(action_receipt.status)
+        expected_task_version = gate.expected_task_version + (
+            2 if expected_operation == "promote" else 1
+        )
+        expected_hqa_operation_id = (
+            _hqa_operation_id(
+                workspace_id=gate.workspace_id,
+                action_kind=expected_action_kind,
+                client_action_id=gate.decided_client_action_id,
+                action_digest=gate.decided_action_digest,
+            )
+            if gate.decided_client_action_id is not None and gate.decided_action_digest is not None
+            else None
+        )
+        if (
+            expected_action_state is None
+            or action_state != expected_action_state
+            or action_receipt.operation != expected_operation
+            or action_receipt.gate_id != gate.gate_id
+            or action_receipt.gate_kind != gate.gate_kind
+            or action_receipt.workspace_id != gate.workspace_id
+            or action_receipt.status != gate.status
+            or action_receipt.client_action_id != gate.decided_client_action_id
+            or action_receipt.action_digest != gate.decided_action_digest
+            or action_receipt.hqa_operation_id != expected_hqa_operation_id
+            or action_receipt.managed_session_ref != f"session:{gate.platform_session_id}"
+            or action_receipt.hqa_receipt_ref != gate.hqa_receipt_ref
+            or action_receipt.hqa_receipt_digest != gate.hqa_receipt_digest
+            or action_receipt.gate1_confirmation_id != gate.gate1_confirmation_id
+            or action_receipt.promotion_id != gate.promotion_id
+            or action_receipt.worktree != gate.worktree_ref
+            or action_receipt.patch != gate.patch_ref
+            or action_receipt.manifest != gate.manifest_ref
+            or action_receipt.reason_code != action_error
+            or (
+                action_state == "succeeded"
+                and action_receipt.task_version is not None
+                and action_receipt.task_version != expected_task_version
+            )
+        ):
+            raise PaperGateAuthorityUnavailable(
+                "stored paper gate action receipt does not match its challenge"
+            )
+        if action_state == "succeeded" and action_receipt.task_version is not None:
+            payload["task_version"] = action_receipt.task_version
+    elif gate.status == "pending" and action_state is None:
+        # Registration already CAS-verified this exact Workflow snapshot.
+        payload["task_version"] = gate.expected_task_version
     if completion is not None:
         payload.update(
             {
@@ -1014,6 +1087,9 @@ def _receipt_from_payload(
                 if payload.get("hqa_receipt_digest") is None
                 else str(payload["hqa_receipt_digest"])
             ),
+            task_version=(
+                None if payload.get("task_version") is None else payload["task_version"]  # type: ignore[arg-type]
+            ),
             gate1_confirmation_id=(
                 None
                 if payload.get("gate1_confirmation_id") is None
@@ -1047,6 +1123,14 @@ def _receipt_from_payload(
             "outcome_unknown",
         }
         or _MANAGED_SESSION_REF_RE.fullmatch(receipt.managed_session_ref) is None
+        or (
+            receipt.task_version is not None
+            and (
+                type(receipt.task_version) is not int
+                or receipt.task_version < 1
+                or receipt.task_version > 2**63 - 1
+            )
+        )
     ):
         raise PaperGateAuthorityUnavailable("stored paper gate receipt is invalid")
     return receipt
@@ -2961,7 +3045,8 @@ class PaperGateAuthority:
                     SELECT
                         {_QUALIFIED_CHALLENGE_COLUMNS},
                         action.action_state,
-                        action.last_error_code
+                        action.last_error_code,
+                        action.receipt
                     FROM {SCHEMA}.agent_v02_paper_gate_challenges AS challenge
                     LEFT JOIN {SCHEMA}.agent_v02_paper_gate_actions AS action
                       ON action.gate_id = challenge.gate_id
@@ -2997,6 +3082,14 @@ class PaperGateAuthority:
                         if row[len(_CHALLENGE_COLUMN_NAMES) + 1] is None
                         else str(row[len(_CHALLENGE_COLUMN_NAMES) + 1])
                     ),
+                    action_receipt=(
+                        None
+                        if row[len(_CHALLENGE_COLUMN_NAMES) + 2] is None
+                        else _receipt_from_payload(
+                            row[len(_CHALLENGE_COLUMN_NAMES) + 2],
+                            replay=True,
+                        )
+                    ),
                     completion=completions.get(str(row[0])),
                 )
                 for row in rows
@@ -3018,7 +3111,8 @@ class PaperGateAuthority:
                     SELECT
                         {_QUALIFIED_CHALLENGE_COLUMNS},
                         action.action_state,
-                        action.last_error_code
+                        action.last_error_code,
+                        action.receipt
                     FROM {SCHEMA}.agent_v02_paper_gate_challenges AS challenge
                     LEFT JOIN {SCHEMA}.agent_v02_paper_gate_actions AS action
                       ON action.gate_id = challenge.gate_id
@@ -3049,6 +3143,14 @@ class PaperGateAuthority:
                     None
                     if row[len(_CHALLENGE_COLUMN_NAMES) + 1] is None
                     else str(row[len(_CHALLENGE_COLUMN_NAMES) + 1])
+                ),
+                action_receipt=(
+                    None
+                    if row[len(_CHALLENGE_COLUMN_NAMES) + 2] is None
+                    else _receipt_from_payload(
+                        row[len(_CHALLENGE_COLUMN_NAMES) + 2],
+                        replay=True,
+                    )
                 ),
                 completion=(
                     None if completion_row is None else _completion_from_row(completion_row)
@@ -3271,6 +3373,7 @@ class PaperGateAuthority:
                             hqa_operation_id=str(existing[4]),
                             managed_session_ref=(f"session:{challenge.platform_session_id}"),
                             occurred_at=clock,
+                            gate1_confirmation_id=(challenge.gate1_confirmation_id),
                             reason_code=("paper_gate_interrupted_outcome_unknown"),
                         )
                         challenge_updated = conn.execute(
@@ -3568,6 +3671,8 @@ class PaperGateAuthority:
             and type(receipt_digest) is str
             and _DIGEST_RE.fullmatch(receipt_digest) is not None
             and receipt_digest == _canonical_hqa_receipt_digest(response)
+            and type(response.get("task_version")) is int
+            and 1 <= response["task_version"] <= 2**63 - 1
         )
         if claim.operation == "confirm-formula":
             valid = valid and (
@@ -3682,6 +3787,7 @@ class PaperGateAuthority:
                     occurred_at=clock,
                     hqa_receipt_ref=str(response["hqa_receipt_ref"]),
                     hqa_receipt_digest=str(response["hqa_receipt_digest"]),
+                    task_version=int(response["task_version"]),
                     gate1_confirmation_id=(
                         str(response["gate1_confirmation_id"])
                         if claim.operation == "confirm-formula"
@@ -3801,6 +3907,7 @@ class PaperGateAuthority:
                     hqa_operation_id=claim.hqa_operation_id,
                     managed_session_ref=(f"session:{claim.challenge.platform_session_id}"),
                     occurred_at=clock,
+                    gate1_confirmation_id=(claim.challenge.gate1_confirmation_id),
                     reason_code=reason_code,
                 )
                 challenge_updated = conn.execute(

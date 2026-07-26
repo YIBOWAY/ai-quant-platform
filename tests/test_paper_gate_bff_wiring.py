@@ -11,6 +11,7 @@ from quant_system.api.routes import workspace as workspace_routes
 from quant_system.api.schemas.workspace import (
     Gate1SourceEvidenceResponse,
     GateProjectionResponse,
+    WorkspaceActionReceiptResponse,
     WorkspaceFollowResponse,
     WorkspaceSnapshotResponse,
 )
@@ -129,6 +130,8 @@ class _RecordingAuthority:
             hqa_operation_id="pgate-0123456789abcdef0123456789abcdef",
             managed_session_ref="session:managed-paper-session",
             occurred_at=datetime.now(UTC),
+            task_version=8,
+            gate1_confirmation_id=("gate1-" + "a" * 32 if operation == "confirm-formula" else None),
             reason_code=(
                 "paper_gate_outcome_unknown" if self.status == "outcome_unknown" else None
             ),
@@ -156,12 +159,34 @@ def test_production_paper_gate_actions_use_durable_authority(
     assert receipt.gate_id == f"pgate-{_operation}"
     assert receipt.platform_session_id == "managed-paper-session"
     assert receipt.to_public_dict()["session_ref"] == ("session:managed-paper-session")
+    assert receipt.task_version == 8
+    if _operation == "confirm-formula":
+        assert receipt.gate1_confirmation_id == "gate1-" + "a" * 32
+    wire_receipt = WorkspaceActionReceiptResponse.model_validate(receipt.to_public_dict())
+    assert wire_receipt.task_version == 8
+    assert wire_receipt.gate1_confirmation_id == receipt.gate1_confirmation_id
     assert receipt.command_id is None
     assert len(authority.calls) == 1
     called_action, called_digest, called_port = authority.calls[0]
     assert called_action.client_action_id == document["client_action_id"]  # type: ignore[attr-defined]
     assert called_digest == receipt.action_digest
     assert called_port is port
+
+
+def test_public_gate_task_version_rejects_javascript_rounding() -> None:
+    payload = WorkspaceActionReceiptResponse.model_validate(
+        submit_action(
+            _settings(),
+            _documents()[0][0],
+            mutation_enabled=True,
+            paper_gate_authority=_RecordingAuthority(status="confirmed"),  # type: ignore[arg-type]
+            paper_gate_port=_Port(),  # type: ignore[arg-type]
+        ).to_public_dict()
+    ).model_dump()
+    payload["task_version"] = 2**53
+
+    with pytest.raises(ValueError):
+        WorkspaceActionReceiptResponse.model_validate(payload)
 
 
 def test_outcome_unknown_is_reconciliation_not_blind_retry() -> None:
@@ -433,9 +458,7 @@ def test_production_snapshot_projects_only_durable_paper_gates(
     validated_snapshot = WorkspaceSnapshotResponse.model_validate(snapshot.to_public_dict())
     assert validated_snapshot.gates[0].hqa_gate_ref == "gate:hqa-paper-gate"
     assert validated_snapshot.gates[0].managed_session_ref == ("session:managed-paper-session")
-    assert validated_snapshot.gates[0].source_file_ref == (
-        "/tmp/paper-reversal-factor.py"
-    )
+    assert validated_snapshot.gates[0].source_file_ref == ("/tmp/paper-reversal-factor.py")
     assert validated_snapshot.gates[0].universe == "Global equities"
 
     follow = workspace.follow(

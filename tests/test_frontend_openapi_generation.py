@@ -23,6 +23,10 @@ def test_frontend_declares_openapi_type_generation_contract(tmp_path) -> None:
     package = json.loads(PACKAGE_JSON.read_text(encoding="utf-8"))
 
     assert package["scripts"]["generate:api-types"] == "node scripts/generate-api-types.mjs"
+    assert package["scripts"]["check:api-types"] == (
+        "npm run generate:api-types && git diff --exit-code -- "
+        "lib/api.generated.ts"
+    )
     assert "openapi-typescript" in package["devDependencies"]
 
     generated = GENERATED_TYPES.read_text(encoding="utf-8")

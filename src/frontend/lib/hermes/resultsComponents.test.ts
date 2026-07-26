@@ -375,6 +375,7 @@ describe("UnifiedResultDetail", () => {
           command_id: "cmd-01HQA",
           relation: "output",
           hermes_session_id: "session-local-42",
+          resolved_hermes_session_id: "session-local-42",
           hermes_run_id: "run-hermes-99",
           link_digest:
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

@@ -3540,6 +3540,8 @@ export interface components {
             domain_request_ref?: string | null;
             /** Domain Request Status */
             domain_request_status?: ("awaiting_run" | "completed" | "outcome_unknown") | null;
+            /** Gate1 Confirmation Id */
+            gate1_confirmation_id?: string | null;
             /** Gate Id */
             gate_id?: string | null;
             /** Grant Digest */
@@ -3592,6 +3594,8 @@ export interface components {
             } | null;
             /** Task Id */
             task_id?: string | null;
+            /** Task Version */
+            task_version?: number | null;
             /** Terminal Status */
             terminal_status?: string | null;
             /** V2 Durable Live */
@@ -4170,6 +4174,8 @@ export interface components {
             final_backtest_receipt_id?: string | null;
             /** Final Backtest Receipt Ref */
             final_backtest_receipt_ref?: string | null;
+            /** Gate1 Confirmation Id */
+            gate1_confirmation_id?: string | null;
             /** Gate Id */
             gate_id: string;
             /**
@@ -4469,13 +4475,15 @@ export interface components {
         };
         /**
          * HermesForkToManagedRequest
-         * @description Closed browser body; authority-bearing source facts remain server-owned.
+         * @description Closed browser body with an explicit immutable policy selection.
          */
         HermesForkToManagedRequest: {
             /** Client Action Id */
             client_action_id: string;
             /** Fork Point */
             fork_point: string;
+            /** New Provider Policy Digest */
+            new_provider_policy_digest: string;
         };
         /** HermesGatewayStatusResponse */
         HermesGatewayStatusResponse: {
@@ -4804,6 +4812,8 @@ export interface components {
              * @enum {string}
              */
             relation: "input" | "output" | "context";
+            /** Resolved Hermes Session Id */
+            resolved_hermes_session_id: string;
             /** Source Event Id */
             source_event_id?: string | null;
         };
@@ -7888,6 +7898,8 @@ export interface components {
             domain_request_ref?: string | null;
             /** Domain Request Status */
             domain_request_status?: ("awaiting_run" | "completed" | "outcome_unknown") | null;
+            /** Gate1 Confirmation Id */
+            gate1_confirmation_id?: string | null;
             /** Gate Id */
             gate_id?: string | null;
             /** Grant Digest */
@@ -7931,6 +7943,8 @@ export interface components {
             } | null;
             /** Task Id */
             task_id?: string | null;
+            /** Task Version */
+            task_version?: number | null;
             /** Terminal Status */
             terminal_status?: string | null;
             /** V2 Durable Live */
@@ -7944,6 +7958,8 @@ export interface components {
              * @enum {string}
              */
             admission_mode: "closed" | "candidate" | "release";
+            /** Admission Workspace Id */
+            admission_workspace_id: string;
             /** Candidate Admission Digest */
             candidate_admission_digest: string | null;
             /** Candidate Admission Id */
@@ -7960,6 +7976,8 @@ export interface components {
             composer_open: boolean;
             /** Composer Write Ready */
             composer_write_ready: boolean;
+            /** Configured Release Workspace Id */
+            configured_release_workspace_id: string;
             /** Connector Heartbeat Age Seconds */
             connector_heartbeat_age_seconds: number | null;
             /** Connector Liveness Ready */
@@ -8004,6 +8022,8 @@ export interface components {
             research_binding_ready: boolean;
             /** Research Binding Schema Ready */
             research_binding_schema_ready: boolean;
+            /** Run Control Outcome Ready */
+            run_control_outcome_ready: boolean;
             /** Runtime Security Ready */
             runtime_security_ready: boolean;
             /** Schema Ready */

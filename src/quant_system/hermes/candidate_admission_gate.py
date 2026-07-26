@@ -19,6 +19,7 @@ from quant_system.hermes.candidate_evidence_v3 import (
 from quant_system.hermes.connector_liveness import (
     ConnectorLivenessAuthority,
 )
+from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
 from quant_system.hermes.release_runtime import (
     current_release_decision,
     runtime_identity_observation,
@@ -56,6 +57,17 @@ def current_candidate_decision(
     additionally requires the generation to be live and to have started no
     earlier than the candidate admission.
     """
+
+    if settings.agent_v02_release.workspace_id != PLATFORM_WORKSPACE_ID:
+        return CandidateAdmissionDecision(
+            ready=False,
+            dispatch_ready=False,
+            connector_ready=False,
+            admission_id=None,
+            admission_digest=None,
+            blockers=("release_workspace_profile_mismatch",),
+            record=None,
+        )
 
     blockers: list[str] = []
     if settings.candidate_admission.enabled is not True:

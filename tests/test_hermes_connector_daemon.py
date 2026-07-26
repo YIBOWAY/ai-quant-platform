@@ -4,6 +4,8 @@ import threading
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from quant_system.hermes import connector_cli
 from quant_system.hermes.connector_worker import (
     DispatchGateDecision,
@@ -220,7 +222,7 @@ def test_supervised_builder_wires_one_durable_port_and_fresh_gate(
     events: list[str] = []
     settings = SimpleNamespace(
         agent_v02_release=SimpleNamespace(
-            workspace_id="workspace-root",
+            workspace_id="ws-local-main",
             connector_heartbeat_max_age_seconds=30.0,
         )
     )
@@ -228,9 +230,12 @@ def test_supervised_builder_wires_one_durable_port_and_fresh_gate(
     ledger = SimpleNamespace(reconcile_expired_leases=lambda **_kwargs: None)
     run_port = SimpleNamespace(
         cli_settings=object(),
-        require_compatible_capabilities=lambda: events.append(
-            "compatibility_preflight"
-        ),
+        require_compatible_capabilities=lambda: events.append("compatibility_preflight"),
+        capabilities=lambda: {
+            "features": {
+                "session_resources": True,
+            },
+        },
     )
     session_port = object()
     provisioner = _Provisioner(events)
@@ -311,6 +316,7 @@ def test_supervised_builder_wires_one_durable_port_and_fresh_gate(
     assert events[:2] == ["compatibility_preflight", "liveness_acquire"]
     assert runtime.worker._dispatch_adapter is run_port  # noqa: SLF001
     assert runtime.worker._run_lifecycle_port is run_port  # noqa: SLF001
+    assert runtime.worker._probe_capabilities() == "available"  # noqa: SLF001
     assert runtime.provisioner is provisioner
     first = runtime.network_gate()
     second = runtime.network_gate()
@@ -351,12 +357,36 @@ def test_supervised_builder_wires_one_durable_port_and_fresh_gate(
     assert lease.stop_reasons == ["test_complete"]
 
 
-def test_supervised_builder_never_acquires_liveness_for_broken_hqa(
+def test_supervised_builder_rejects_release_workspace_outside_web_chat_profile(
     monkeypatch,
 ) -> None:
     settings = SimpleNamespace(
         agent_v02_release=SimpleNamespace(
             workspace_id="workspace-root",
+        )
+    )
+    monkeypatch.setattr(connector_cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(
+        connector_cli,
+        "get_database",
+        lambda _settings: pytest.fail(
+            "workspace mismatch must fail before database or liveness I/O"
+        ),
+    )
+
+    with pytest.raises(
+        connector_cli.ConnectorRuntimeUnavailable,
+        match="release workspace",
+    ):
+        connector_cli.build_connector_runtime(mode="supervised_dispatch")
+
+
+def test_supervised_builder_never_acquires_liveness_for_broken_hqa(
+    monkeypatch,
+) -> None:
+    settings = SimpleNamespace(
+        agent_v02_release=SimpleNamespace(
+            workspace_id="ws-local-main",
             connector_heartbeat_max_age_seconds=30.0,
         )
     )

@@ -17,10 +17,12 @@ from quant_system.api.safety.local_session import (
 from quant_system.api.safety.mutation_rate_limit import OwnerMutationRateLimiter
 from quant_system.api.server import create_app
 from quant_system.config.settings import (
+    AgentV02ReleaseSettings,
     HermesGatewaySettings,
     LocalMutationSettings,
     Settings,
 )
+from quant_system.hermes import composer_readiness as readiness_module
 from quant_system.hermes.dark_identity_profile import (
     PLATFORM_WORKSPACE_ID,
     PROVIDER_POLICY_DIGEST,
@@ -58,9 +60,7 @@ def _admit_hermetic_bff_release(monkeypatch) -> None:
 def _settings(*, mutation: bool = False) -> Settings:
     return Settings(
         hermes_gateway=HermesGatewaySettings(enabled=False),
-        local_mutation=LocalMutationSettings(
-            enabled=mutation, composer_open=mutation
-        ),
+        local_mutation=LocalMutationSettings(enabled=mutation, composer_open=mutation),
         api_cors_origins=[
             ORIGIN,
             "http://127.0.0.1:3000",
@@ -163,6 +163,55 @@ def test_submit_turn_rejects_unknown_workspace(tmp_path: Path) -> None:
     assert response.status_code == 400, response.text
 
 
+def test_submit_turn_fails_before_payload_io_on_release_workspace_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        workspace_routes,
+        "composer_readiness_snapshot",
+        readiness_module.composer_readiness_snapshot,
+    )
+    monkeypatch.setattr(
+        readiness_module,
+        "current_release_decision",
+        lambda _settings: pytest.fail("workspace mismatch must fail before release authority I/O"),
+    )
+    settings = Settings(
+        agent_v02_release=AgentV02ReleaseSettings(
+            workspace_id="workspace-root",
+        ),
+        hermes_gateway=HermesGatewaySettings(enabled=False),
+        local_mutation=LocalMutationSettings(
+            enabled=True,
+            composer_open=True,
+        ),
+        api_cors_origins=[ORIGIN],
+    )
+    app = create_app(
+        settings=settings,
+        output_dir=tmp_path,
+        bind_address="127.0.0.1",
+    )
+    port = FakeIntentPayloadPort()
+    app.state.services["intent_payload_port"] = port
+    client = TestClient(app)
+    boot = _bootstrap(client, tmp_path)
+    headers = {**_browser_headers(), CSRF_HEADER_NAME: boot["csrf"]}
+
+    response = client.post(
+        "/api/agent/workspace/submit-turn",
+        json=_body(),
+        headers=headers,
+    )
+
+    assert response.status_code == 503, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "agent_v02_release_not_ready"
+    assert "release_workspace_profile_mismatch" in detail["blockers"]
+    assert port.puts == []
+
+
 def test_submit_turn_happy_path_with_fake_port_and_mocked_turn(
     tmp_path: Path,
 ) -> None:
@@ -203,8 +252,8 @@ def test_submit_turn_has_an_independent_owner_route_budget(
     tmp_path: Path,
 ) -> None:
     client = _client(tmp_path, mutation=True)
-    client.app.state.services["owner_mutation_rate_limiter"] = (
-        OwnerMutationRateLimiter(max_requests=1, window_seconds=60)
+    client.app.state.services["owner_mutation_rate_limiter"] = OwnerMutationRateLimiter(
+        max_requests=1, window_seconds=60
     )
     boot = _bootstrap(client, tmp_path)
     headers = {**_browser_headers(), CSRF_HEADER_NAME: boot["csrf"]}
@@ -289,12 +338,8 @@ def test_v8_m2_bff_double_post_same_body_stable_payload(tmp_path: Path) -> None:
         "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
         return_value=receipt,
     ):
-        r1 = client.post(
-            "/api/agent/workspace/submit-turn", json=body, headers=headers
-        )
-        r2 = client.post(
-            "/api/agent/workspace/submit-turn", json=body, headers=headers
-        )
+        r1 = client.post("/api/agent/workspace/submit-turn", json=body, headers=headers)
+        r2 = client.post("/api/agent/workspace/submit-turn", json=body, headers=headers)
     assert r1.status_code == 200, r1.text
     assert r2.status_code == 200, r2.text
     j1, j2 = r1.json(), r2.json()
@@ -326,12 +371,8 @@ def test_v8_m2_bff_same_id_different_prompt_409(tmp_path: Path) -> None:
         "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
         return_value=receipt,
     ) as turn:
-        r1 = client.post(
-            "/api/agent/workspace/submit-turn", json=body_a, headers=headers
-        )
-        r2 = client.post(
-            "/api/agent/workspace/submit-turn", json=body_b, headers=headers
-        )
+        r1 = client.post("/api/agent/workspace/submit-turn", json=body_a, headers=headers)
+        r2 = client.post("/api/agent/workspace/submit-turn", json=body_b, headers=headers)
     assert r1.status_code == 200, r1.text
     assert r2.status_code == 409, r2.text
     detail = r2.json()["detail"]

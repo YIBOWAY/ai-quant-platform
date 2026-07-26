@@ -624,7 +624,7 @@ class AgentV02ReleaseSettings(BaseSettings):
     )
 
     workspace_id: str = Field(
-        default="workspace-root",
+        default="ws-local-main",
         min_length=1,
         max_length=200,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",

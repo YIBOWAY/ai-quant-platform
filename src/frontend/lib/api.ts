@@ -87,6 +87,16 @@ export type HealthResponse = ApiEnvelope & {
     workflow_binding_schema_ready: boolean;
     workflow_binding_schema_version: number | null;
     mutation_enabled: boolean;
+    admission_mode?: "closed" | "candidate" | "release";
+    admission_workspace_id?: string;
+    configured_release_workspace_id?: string;
+    candidate_admission_id?: string | null;
+    candidate_admission_digest?: string | null;
+    connector_liveness_ready?: boolean;
+    connector_liveness_reason?: string;
+    connector_worker_id?: string | null;
+    connector_mode?: string | null;
+    connector_heartbeat_age_seconds?: number | null;
   };
 };
 

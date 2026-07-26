@@ -39,6 +39,7 @@ from quant_system.hermes.connector_worker import (
     HermesConnectorWorker,
     PostgresCommandWakeupWaiter,
 )
+from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
 from quant_system.hermes.dispatch_adapter import fixed_input_resolver
 from quant_system.hermes.intent_payload_port import intent_payload_input_resolver
 from quant_system.hermes.managed_session_provisioner import (
@@ -281,6 +282,13 @@ def build_connector_runtime(
     production fallback; ``dispatch_adapter`` remains an explicit test seam.
     """
     settings = load_settings()
+    if (
+        mode == "supervised_dispatch"
+        and settings.agent_v02_release.workspace_id != PLATFORM_WORKSPACE_ID
+    ):
+        raise ConnectorRuntimeUnavailable(
+            "supervised connector release workspace does not match the Web Chat profile"
+        )
     database = get_database(settings)
     if database is None:
         raise ConnectorRuntimeUnavailable(
@@ -406,6 +414,7 @@ def build_connector_runtime(
                 # contract before this generation may advertise liveness.
                 run_port.require_compatible_capabilities()
                 compatibility_probe = run_port.require_compatible_capabilities
+                worker_kwargs["capability_probe"] = run_port.capabilities
                 dispatch_adapter = run_port
                 worker_kwargs["run_lifecycle_port"] = run_port
                 session_port = SubprocessManagedSessionProvisionPort(

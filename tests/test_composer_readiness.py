@@ -5,11 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.safety.local_session import issue_bootstrap_token
 from quant_system.api.server import create_app
 from quant_system.config.settings import (
+    AgentV02ReleaseSettings,
     HermesGatewaySettings,
     LocalMutationSettings,
     Settings,
@@ -24,6 +26,7 @@ from quant_system.hermes.composer_readiness import (
 )
 
 ORIGIN = "http://127.0.0.1:3001"
+
 
 def _settings() -> Settings:
     return Settings(
@@ -146,9 +149,7 @@ def test_workspace_authorities_composite_snapshot(tmp_path: Path) -> None:
     assert "local_mutation_disabled" in body["platform_delivery_blockers"]
     assert "active_release_stamp_missing" in body["platform_delivery_blockers"]
     assert "connector_liveness_unavailable" in body["platform_delivery_blockers"]
-    assert "research_workflow_submission_unavailable" not in body[
-        "platform_delivery_blockers"
-    ]
+    assert "research_workflow_submission_unavailable" not in body["platform_delivery_blockers"]
 
 
 def test_local_mutation_settings_clear_only_the_deny_only_mutation_flag() -> None:
@@ -176,18 +177,10 @@ def test_local_dark_readiness_never_promotes_public_chat_or_hides_upstream(
 ) -> None:
     """Local operator enablement and public V8 release are separate gates."""
 
-    monkeypatch.setattr(
-        readiness_module, "command_ledger_schema_version", lambda _settings: 1
-    )
-    monkeypatch.setattr(
-        readiness_module, "session_registry_schema_version", lambda _settings: 1
-    )
-    monkeypatch.setattr(
-        readiness_module, "workflow_binding_schema_version", lambda _settings: 1
-    )
-    monkeypatch.setattr(
-        readiness_module, "hermes_runtime_security_ready", lambda _settings: True
-    )
+    monkeypatch.setattr(readiness_module, "command_ledger_schema_version", lambda _settings: 1)
+    monkeypatch.setattr(readiness_module, "session_registry_schema_version", lambda _settings: 1)
+    monkeypatch.setattr(readiness_module, "workflow_binding_schema_version", lambda _settings: 1)
+    monkeypatch.setattr(readiness_module, "hermes_runtime_security_ready", lambda _settings: True)
     settings = Settings(
         hermes_gateway=HermesGatewaySettings(enabled=False),
         local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
@@ -212,18 +205,10 @@ def test_local_dark_readiness_never_promotes_public_chat_or_hides_upstream(
 def test_local_flags_cannot_clear_runtime_security_or_public_cutover_blockers(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(
-        readiness_module, "command_ledger_schema_version", lambda _settings: 1
-    )
-    monkeypatch.setattr(
-        readiness_module, "session_registry_schema_version", lambda _settings: 1
-    )
-    monkeypatch.setattr(
-        readiness_module, "workflow_binding_schema_version", lambda _settings: 1
-    )
-    monkeypatch.setattr(
-        readiness_module, "hermes_runtime_security_ready", lambda _settings: False
-    )
+    monkeypatch.setattr(readiness_module, "command_ledger_schema_version", lambda _settings: 1)
+    monkeypatch.setattr(readiness_module, "session_registry_schema_version", lambda _settings: 1)
+    monkeypatch.setattr(readiness_module, "workflow_binding_schema_version", lambda _settings: 1)
+    monkeypatch.setattr(readiness_module, "hermes_runtime_security_ready", lambda _settings: False)
     settings = Settings(
         local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
         api_cors_origins=[ORIGIN],
@@ -242,19 +227,11 @@ def _patch_effective_runtime(
     connector_ready: bool,
     connector_reason: str = "ready",
 ) -> None:
-    monkeypatch.setattr(
-        readiness_module, "command_ledger_schema_version", lambda _settings: 3
-    )
-    monkeypatch.setattr(
-        readiness_module, "session_registry_schema_version", lambda _settings: 3
-    )
+    monkeypatch.setattr(readiness_module, "command_ledger_schema_version", lambda _settings: 3)
+    monkeypatch.setattr(readiness_module, "session_registry_schema_version", lambda _settings: 3)
     # Ordinary chat must not depend on the research-only Task/Attempt binding.
-    monkeypatch.setattr(
-        readiness_module, "workflow_binding_schema_version", lambda _settings: None
-    )
-    monkeypatch.setattr(
-        readiness_module, "hermes_runtime_security_ready", lambda _settings: True
-    )
+    monkeypatch.setattr(readiness_module, "workflow_binding_schema_version", lambda _settings: None)
+    monkeypatch.setattr(readiness_module, "hermes_runtime_security_ready", lambda _settings: True)
     monkeypatch.setattr(
         readiness_module,
         "current_release_decision",
@@ -320,6 +297,35 @@ def test_effective_release_and_live_connector_open_ordinary_chat_without_researc
     )
 
 
+def test_release_workspace_must_match_the_fixed_web_chat_profile(
+    monkeypatch,
+) -> None:
+    _patch_effective_runtime(
+        monkeypatch,
+        release_ready=True,
+        connector_ready=True,
+    )
+    monkeypatch.setattr(
+        readiness_module,
+        "current_release_decision",
+        lambda _settings: pytest.fail("workspace mismatch must fail before release authority I/O"),
+    )
+    settings = Settings(
+        agent_v02_release=AgentV02ReleaseSettings(
+            workspace_id="workspace-root",
+        ),
+        local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
+        api_cors_origins=[ORIGIN],
+    )
+
+    ready = authority_readiness(settings, fresh=True)
+    blockers = platform_delivery_blockers(settings, fresh=True)
+
+    assert ready["chat_write_ready"] is False
+    assert ready["composer_write_ready"] is False
+    assert "release_workspace_profile_mismatch" in blockers
+
+
 def test_effective_release_never_opens_when_supervised_connector_is_not_live(
     monkeypatch,
 ) -> None:
@@ -360,9 +366,7 @@ def test_effective_release_blockers_are_reported_without_obsolete_static_gaps(
     envelope = chat_write_blockers(settings, fresh=True)
 
     assert envelope["upstream_blockers"] == []
-    assert envelope["platform_delivery_blockers"] == [
-        "release_evidence_digest_mismatch"
-    ]
+    assert envelope["platform_delivery_blockers"] == ["release_evidence_digest_mismatch"]
     assert envelope["blockers"] == ["release_evidence_digest_mismatch"]
     assert "run_submission_not_idempotent" not in envelope["blockers"]
 

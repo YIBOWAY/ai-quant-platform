@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -29,6 +29,7 @@ from quant_system.hermes.paper_gate_authority import (
     PaperGateAuthorityValidationError,
     RegisterPaperGateChallenge,
     RegisterPaperGateCompletion,
+    _gate_public_projection,
     paper_gate_runtime_security_is_ready_on_connection,
     paper_gate_schema_is_ready_on_connection,
 )
@@ -120,9 +121,7 @@ def _test_url() -> str:
 
 
 def _admin_test_url() -> str:
-    url = os.environ.get("QS_TEST_DATABASE_ADMIN_URL") or os.environ.get(
-        "QS_TEST_DATABASE_URL"
-    )
+    url = os.environ.get("QS_TEST_DATABASE_ADMIN_URL") or os.environ.get("QS_TEST_DATABASE_URL")
     if not url:
         pytest.skip("set a PostgreSQL test admin URL for paper Gate tests")
     dbname = psycopg.conninfo.conninfo_to_dict(url).get("dbname")
@@ -732,7 +731,7 @@ def test_durable_gate_chain_calls_exact_hqa_ports_and_replays_after_restart(
         "final_backtest_report_digest": "b" * 64,
     }
 
-    authority.register_challenge(
+    registered_gate1 = authority.register_challenge(
         RegisterPaperGateChallenge(
             gate_id="paper-g1-" + os.urandom(4).hex(),
             gate_kind="gate1",
@@ -765,6 +764,43 @@ def test_durable_gate_chain_calls_exact_hqa_ports_and_replays_after_restart(
     )
     assert gate1.status == "confirmed"
     assert gate1.hqa_receipt_ref.startswith("hqa-paper-gate:")
+    finalized_gate1 = replace(
+        registered_gate1,
+        status="confirmed",
+        gate1_confirmation_id=gate1.gate1_confirmation_id,
+        hqa_receipt_ref=gate1.hqa_receipt_ref,
+        hqa_receipt_digest=gate1.hqa_receipt_digest,
+        decided_action_kind="gate1_formula_source_confirm",
+        decided_client_action_id=gate1.client_action_id,
+        decided_action_digest=gate1.action_digest,
+        decided_at=gate1.occurred_at,
+    )
+    assert (
+        _gate_public_projection(
+            finalized_gate1,
+            action_state="succeeded",
+            action_receipt=gate1,
+        )["task_version"]
+        == 8
+    )
+    for substituted_receipt in (
+        replace(gate1, operation="approve"),
+        replace(gate1, client_action_id="substituted-action"),
+        replace(gate1, action_digest="f" * 64),
+        replace(gate1, managed_session_ref="session:substituted"),
+        replace(gate1, hqa_receipt_digest="f" * 64),
+        replace(gate1, gate1_confirmation_id="gate1-" + "f" * 32),
+        replace(gate1, task_version=9),
+    ):
+        with pytest.raises(
+            PaperGateAuthorityUnavailable,
+            match="does not match its challenge",
+        ):
+            _gate_public_projection(
+                finalized_gate1,
+                action_state="succeeded",
+                action_receipt=substituted_receipt,
+            )
     assert port.calls[0] == (
         "confirm-formula",
         {
@@ -968,6 +1004,10 @@ def test_durable_gate_chain_calls_exact_hqa_ports_and_replays_after_restart(
         "reviewed",
         "completed",
     ]
+    assert observed[0]["gate1_confirmation_id"] == gate1.gate1_confirmation_id
+    assert observed[0]["task_version"] == 8
+    assert observed[1]["gate1_confirmation_id"] == gate1.gate1_confirmation_id
+    assert observed[1]["task_version"] == 9
     assert observed[2]["reviewed_commit"] == "4" * 40
     assert observed[2]["workflow_audit_status"] == "consistent"
     assert observed[2]["human_git_commit_required"] is False
@@ -986,6 +1026,105 @@ def test_durable_gate_chain_calls_exact_hqa_ports_and_replays_after_restart(
     assert "I reviewed the exact source bytes." not in storage_text
     assert "Reviewed exact candidate and manifest." not in storage_text
     assert "class ReversalFactor" not in storage_text
+
+
+def test_gate2_rejection_preserves_continuation_identity_for_restart_show(
+    tmp_path: Path,
+) -> None:
+    authority = _authority()
+    workspace = "paper-gate2-reject-" + os.urandom(5).hex()
+    platform_session_id, hermes_session_id = _managed_session(workspace)
+    source_file = tmp_path / "rejected-gate2-source.py"
+    source_file.write_text("def signal(x):\n    return -x\n", encoding="utf-8")
+    gate1_run_id = "run-paper-gate2-reject-g1"
+    gate2_run_id = "run-paper-gate2-reject-g2"
+    gate1_command_id = _succeeded_command(platform_session_id, gate1_run_id)
+    gate2_command_id = _succeeded_command(platform_session_id, gate2_run_id)
+    gate1_id = "paper-g1-" + os.urandom(4).hex()
+    authority.register_challenge(
+        RegisterPaperGateChallenge(
+            gate_id=gate1_id,
+            gate_kind="gate1",
+            workspace_id=workspace,
+            task_ref="task:paper-gate2-reject",
+            expected_task_version=1,
+            attempt_ref="attempt:paper-2",
+            hqa_gate_ref="gate:paper-gate2-reject",
+            platform_session_id=platform_session_id,
+            hermes_session_id=hermes_session_id,
+            command_id=gate1_command_id,
+            hermes_run_id=gate1_run_id,
+            source_file_ref=str(source_file),
+            universe="US ETFs",
+            reviewed_source_sha256=SOURCE,
+        )
+    )
+    gate1_action = ConfirmFormulaSource(
+        client_action_id="paper-gate2-reject-confirm",
+        workspace=WorkspaceRef(workspace),
+        task_ref="task:paper-gate2-reject",
+        reviewed_source_sha256=SOURCE,
+        confirmation_note="Reviewed exact source.",
+    )
+    gate1 = authority.execute_action(
+        gate1_action,
+        action_digest=canonical_action_digest(gate1_action),
+        port=_FakePort([]),
+    )
+    assert gate1.gate1_confirmation_id is not None
+
+    gate2_id = "paper-g2-" + os.urandom(4).hex()
+    authority.register_challenge(
+        RegisterPaperGateChallenge(
+            gate_id=gate2_id,
+            gate_kind="gate2",
+            workspace_id=workspace,
+            task_ref="task:paper-gate2-reject",
+            expected_task_version=2,
+            attempt_ref="attempt:paper-2",
+            hqa_gate_ref="gate:paper-gate2-reject",
+            platform_session_id=platform_session_id,
+            hermes_session_id=hermes_session_id,
+            command_id=gate2_command_id,
+            hermes_run_id=gate2_run_id,
+            parent_gate_id=gate1_id,
+            reviewed_source_sha256=SOURCE,
+            gate1_confirmation_id=gate1.gate1_confirmation_id,
+            candidate_id="factor-paper-gate2-reject",
+            expected_digest=CANDIDATE,
+            expected_status="pending",
+        )
+    )
+    gate2_action = ReviewCandidateCAS(
+        client_action_id="paper-gate2-reject-review",
+        workspace=WorkspaceRef(workspace),
+        candidate_ref="candidate:factor-paper-gate2-reject",
+        expected_digest=CANDIDATE,
+        expected_status="pending",
+        note="Reject through the fixed port.",
+    )
+
+    class _RejectPort:
+        def execute(self, _operation, _request):
+            raise PaperGatePortError(
+                "paper_gate_candidate_rejected",
+                "rejected",
+                retryable=False,
+            )
+
+    receipt = authority.execute_action(
+        gate2_action,
+        action_digest=canonical_action_digest(gate2_action),
+        port=_RejectPort(),
+    )
+    assert receipt.status == "rejected"
+    assert receipt.gate1_confirmation_id == gate1.gate1_confirmation_id
+
+    recovered = _authority().get_operator_record(gate2_id)
+    assert recovered["status"] == "rejected"
+    assert recovered["gate1_confirmation_id"] == gate1.gate1_confirmation_id
+    assert recovered["expected_task_version"] == 2
+    assert "task_version" not in recovered
 
 
 def test_action_digest_conflict_and_expired_lease_recover_as_unknown(
