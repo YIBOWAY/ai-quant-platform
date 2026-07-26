@@ -191,6 +191,21 @@ export type OwnerSessionView = {
   csrf_header?: string;
 };
 
+export function isOwnerSessionReady(
+  session: OwnerSessionView | null | undefined,
+): session is OwnerSessionView & {
+  session_id: string;
+  mutation_enabled: true;
+  security_ready: true;
+} {
+  return Boolean(
+    session?.session_id &&
+      session.mutation_enabled === true &&
+      session.security_ready === true &&
+      readCsrfToken(),
+  );
+}
+
 /** GET session; returns null when unauthenticated (401/403). */
 export async function getOwnerSession(
   signal?: AbortSignal,
@@ -211,8 +226,10 @@ export async function getOwnerSession(
   }
 }
 
-const OWNER_BOOTSTRAP_INSTRUCTION =
-  "Owner session required. Run `quant-system owner-bootstrap-token` in the backend terminal, then paste the one-time token here.";
+export const OWNER_BOOTSTRAP_COMMAND =
+  "./ai-quant/bin/quant-system owner-bootstrap-token";
+export const OWNER_BOOTSTRAP_INSTRUCTION =
+  `Owner session required. From the Platform release checkout root, run \`${OWNER_BOOTSTRAP_COMMAND}\` in the backend terminal, then paste the one-time token here.`;
 
 export async function bootstrapOwnerSession(
   bootstrapToken: string,
@@ -235,11 +252,11 @@ export async function bootstrapOwnerSession(
       signal,
     },
   );
-  if (!bootstrapped.session_id && !readCsrfToken()) {
+  if (!isOwnerSessionReady(bootstrapped)) {
     throw new WorkspaceClientError(
-      "owner bootstrap did not establish session cookies",
+      "owner bootstrap did not establish a secure mutation-ready session",
       503,
-      "unavailable",
+      "owner_session_not_ready",
     );
   }
   return bootstrapped;
@@ -248,28 +265,22 @@ export async function bootstrapOwnerSession(
 /**
  * Ensure an owner loopback session exists. First bootstrap is an explicit
  * operator action: the browser never asks an unauthenticated HTTP route to
- * disclose the owner-only token file.
+ * disclose the owner-only token file. The workbench owns the accessible inline
+ * bootstrap form; this low-level client must never depend on window.prompt(),
+ * which is unavailable in embedded browsers and is not a recoverable UI.
  */
 export async function ensureOwnerSession(
   signal?: AbortSignal,
 ): Promise<OwnerSessionView> {
   const existing = await getOwnerSession(signal);
-  if (existing?.session_id) {
+  if (isOwnerSessionReady(existing)) {
     return existing;
   }
-
-  const presented =
-    typeof window !== "undefined" && typeof window.prompt === "function"
-      ? window.prompt(OWNER_BOOTSTRAP_INSTRUCTION)
-      : null;
-  if (!presented) {
-    throw new WorkspaceClientError(
-      OWNER_BOOTSTRAP_INSTRUCTION,
-      401,
-      "owner_bootstrap_required",
-    );
-  }
-  return bootstrapOwnerSession(presented, signal);
+  throw new WorkspaceClientError(
+    OWNER_BOOTSTRAP_INSTRUCTION,
+    401,
+    "owner_bootstrap_required",
+  );
 }
 
 function sessionStorageOrMemory(): Storage | null {

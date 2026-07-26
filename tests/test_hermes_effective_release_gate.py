@@ -310,6 +310,20 @@ def test_gate_requeries_the_accepted_candidate_on_every_evaluation() -> None:
     assert authority.candidate_binding_reads == 2
 
 
+def test_accepted_candidate_without_stamp_is_not_a_stamp_binding_mismatch() -> None:
+    authority = _Authority()
+    authority.stamp = None
+    authority.cutover = None
+
+    decision = _gate(authority=authority).evaluate("workspace-root")
+
+    assert decision.ready is False
+    assert "active_release_stamp_missing" in decision.blockers
+    assert "open_public_cutover_missing" in decision.blockers
+    assert "release_stamp_candidate_binding_mismatch" not in decision.blockers
+    assert authority.candidate_binding_reads == 1
+
+
 def test_gate_rejects_candidate_stamp_and_cutover_epoch_binding_drift() -> None:
     stale_candidate = replace(
         _candidate_binding(),

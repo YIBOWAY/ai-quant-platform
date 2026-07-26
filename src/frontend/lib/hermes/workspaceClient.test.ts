@@ -7,6 +7,7 @@ import {
 } from "./darkIdentity";
 import {
   WorkspaceClientError,
+  bootstrapOwnerSession,
   confirmFormulaSource,
   ensureManagedSession,
   ensureOwnerSession,
@@ -29,6 +30,124 @@ import {
   utf8ByteLength,
   waitForManagedSessionReady,
 } from "./workspaceClient";
+
+describe("owner bootstrap", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("exchanges the one-time token only through same-origin POST and never stores it", async () => {
+    const setItem = vi.fn();
+    vi.stubGlobal("window", {
+      sessionStorage: { setItem },
+    });
+    vi.stubGlobal("document", {
+      cookie: "qs_aw_csrf=csrf-bootstrap-live",
+    });
+    const token = "t".repeat(40);
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.method).toBe("POST");
+        expect(init?.credentials).toBe("same-origin");
+        expect(JSON.parse(String(init?.body))).toEqual({
+          bootstrap_token: token,
+        });
+        return new Response(
+          JSON.stringify({
+            session_id: "owner-session-live",
+            mutation_enabled: true,
+            security_ready: true,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const session = await bootstrapOwnerSession(token);
+
+    expect(session.session_id).toBe("owner-session-live");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(setItem).not.toHaveBeenCalled();
+  });
+
+  it("rejects a session cookie that is not mutation and security ready", async () => {
+    vi.stubGlobal("document", {
+      cookie: "qs_aw_csrf=csrf-bootstrap-not-ready",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              session_id: "owner-session-not-ready",
+              mutation_enabled: false,
+              security_ready: true,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    await expect(
+      bootstrapOwnerSession("n".repeat(40)),
+    ).rejects.toMatchObject({
+      code: "owner_session_not_ready",
+      status: 503,
+    });
+  });
+
+  it("does not authorize an otherwise-ready owner session without its CSRF cookie", async () => {
+    vi.stubGlobal("document", { cookie: "" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              session_id: "owner-session-without-csrf",
+              mutation_enabled: true,
+              security_ready: true,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    await expect(ensureOwnerSession()).rejects.toMatchObject({
+      code: "owner_bootstrap_required",
+      status: 401,
+    });
+  });
+
+  it("keeps the caller on the explicit recovery path after a rejected token", async () => {
+    const setItem = vi.fn();
+    vi.stubGlobal("window", {
+      sessionStorage: { setItem },
+    });
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            detail: {
+              code: "owner_bootstrap_invalid",
+              message: "bootstrap token is invalid",
+            },
+          }),
+          { status: 401, headers: { "content-type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(bootstrapOwnerSession("x".repeat(40))).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(setItem).not.toHaveBeenCalled();
+  });
+});
 
 describe("workspaceClient preflight", () => {
   it("rejects empty / whitespace prompts", () => {
@@ -89,6 +208,7 @@ describe("paper Gate receipt exactness", () => {
             JSON.stringify({
               session_id: "owner-session",
               mutation_enabled: true,
+              security_ready: true,
             }),
             { status: 200, headers: { "content-type": "application/json" } },
           );
@@ -341,10 +461,17 @@ describe("sendComposerTurn", () => {
         }
         if (url === "/api/auth/owner/session" && method === "GET") {
           await ownerGate;
-          return new Response(JSON.stringify({ session_id: "owner-session" }), {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({
+              session_id: "owner-session",
+              mutation_enabled: true,
+              security_ready: true,
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
         }
         if (url.endsWith("/snapshot") && method === "GET") {
           return new Response(
@@ -377,9 +504,9 @@ describe("sendComposerTurn", () => {
     return { location, mutationPaths, releaseOwner, submittedRefs };
   }
 
-  it("with no active session bootstraps, creates, then submits with four fields + CSRF", async () => {
+  it("with an authorized owner creates a managed session, then submits four fields + CSRF", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
-    let csrfCookie = "";
+    const csrfCookie = "qs_aw_csrf=csrf-live-token";
     let managedSessionCreated = false;
     const memory = new Map<string, string>();
 
@@ -393,7 +520,6 @@ describe("sendComposerTurn", () => {
       },
     });
     vi.stubGlobal("window", {
-      prompt: vi.fn(() => "t".repeat(40)),
       sessionStorage: {
         getItem: (key: string) => memory.get(key) ?? null,
         setItem: (key: string, value: string) => {
@@ -412,23 +538,10 @@ describe("sendComposerTurn", () => {
 
         if (url.endsWith("/api/auth/owner/session") && method === "GET") {
           return new Response(
-            JSON.stringify({ detail: { code: "auth", message: "no" } }),
-            {
-              status: 401,
-              headers: { "content-type": "application/json" },
-            },
-          );
-        }
-        if (url.endsWith("/api/auth/owner/bootstrap")) {
-          expect(JSON.parse(String(init?.body))).toEqual({
-            bootstrap_token: "t".repeat(40),
-          });
-          csrfCookie = "qs_aw_csrf=csrf-live-token";
-          return new Response(
             JSON.stringify({
               session_id: "sess-1",
-              csrf_token: "csrf-live-token",
               mutation_enabled: true,
+              security_ready: true,
             }),
             { status: 200, headers: { "content-type": "application/json" } },
           );
@@ -536,7 +649,6 @@ describe("sendComposerTurn", () => {
     );
     expect(paths).toEqual([
       "/api/auth/owner/session",
-      "/api/auth/owner/bootstrap",
       `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot`,
       `/api/workspace/${PLATFORM_WORKSPACE_ID}/act`,
       `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot`,
@@ -936,8 +1048,9 @@ describe("sendComposerTurn", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not bootstrap or disclose a token when the operator cancels", async () => {
-    vi.stubGlobal("window", { prompt: vi.fn(() => null) });
+  it("requires the inline owner bootstrap flow without invoking prompt()", async () => {
+    const prompt = vi.fn(() => "must-not-be-read");
+    vi.stubGlobal("window", { prompt });
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -957,6 +1070,7 @@ describe("sendComposerTurn", () => {
       status: 401,
     });
     expect(fetch).toHaveBeenCalledTimes(1);
+    expect(prompt).not.toHaveBeenCalled();
   });
 });
 
@@ -1034,7 +1148,11 @@ describe("forkHermesSessionToManaged", () => {
         const method = (init?.method ?? "GET").toUpperCase();
         if (url === "/api/auth/owner/session" && method === "GET") {
           return new Response(
-            JSON.stringify({ session_id: "owner-session", mutation_enabled: true }),
+            JSON.stringify({
+              session_id: "owner-session",
+              mutation_enabled: true,
+              security_ready: true,
+            }),
             { status: 200, headers: { "content-type": "application/json" } },
           );
         }
@@ -1135,10 +1253,17 @@ describe("forkHermesSessionToManaged", () => {
         const url = String(input);
         const method = (init?.method ?? "GET").toUpperCase();
         if (url === "/api/auth/owner/session" && method === "GET") {
-          return new Response(JSON.stringify({ session_id: "owner-session" }), {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({
+              session_id: "owner-session",
+              mutation_enabled: true,
+              security_ready: true,
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
         }
         if (url.endsWith("/forks-to-managed") && method === "POST") {
           return new Response(

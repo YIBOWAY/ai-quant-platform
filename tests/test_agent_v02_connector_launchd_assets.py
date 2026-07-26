@@ -72,6 +72,33 @@ def _write_fake_python(path: Path, capture: Path) -> Path:
     return path
 
 
+def _write_eio_launchctl(
+    tmp_path: Path,
+    *,
+    always_fail: bool,
+) -> tuple[Path, Path]:
+    launchctl_log = tmp_path / "launchctl.log"
+    state_file = tmp_path / "launchctl-bootstrap.count"
+    launchctl = tmp_path / "launchctl"
+    failure_condition = "true" if always_fail else '[[ "$attempt" -eq 1 ]]'
+    launchctl.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$*" >> "{launchctl_log}"\n'
+        '[[ "${1:-}" == "bootstrap" ]] || exit 0\n'
+        "attempt=0\n"
+        f'[[ ! -f "{state_file}" ]] || attempt="$(cat "{state_file}")"\n'
+        "attempt=$((attempt + 1))\n"
+        f'printf "%s\\n" "$attempt" > "{state_file}"\n'
+        f"if {failure_condition}; then\n"
+        '  echo "Bootstrap failed: 5: Input/output error" >&2\n'
+        "  exit 5\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o700)
+    return launchctl, launchctl_log
+
+
 def test_launchagent_is_supervised_without_fixed_smoke_input() -> None:
     wrapper = (ROOT / "scripts" / "run_agent_v02_connector.sh").read_text(
         encoding="utf-8"
@@ -341,3 +368,82 @@ def test_installer_checks_before_launchd_mutation_and_is_replay_safe(
         assert log.is_file()
         assert not log.is_symlink()
         assert stat.S_IMODE(log.stat().st_mode) == 0o600
+
+
+def test_connector_installer_retries_transient_launchctl_bootstrap_eio(
+    tmp_path: Path,
+) -> None:
+    release_root, _, installer = _copy_connector_assets(tmp_path)
+    env_file = _write_connector_env(release_root)
+    python = _write_fake_python(tmp_path / "python", tmp_path / "python.log")
+    launchctl, launchctl_log = _write_eio_launchctl(
+        tmp_path,
+        always_fail=False,
+    )
+    plutil = tmp_path / "plutil"
+    plutil.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    plutil.chmod(0o700)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = subprocess.run(
+        [str(installer)],
+        cwd=release_root,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "QS_AGENT_V02_CONNECTOR_ENV_FILE": str(env_file),
+            "QS_AGENT_V02_CONNECTOR_PYTHON": str(python),
+            "QS_LAUNCHCTL_BIN": str(launchctl),
+            "QS_PLUTIL_BIN": str(plutil),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = launchctl_log.read_text(encoding="utf-8")
+    assert calls.count("bootout ") == 1
+    assert calls.count("bootstrap ") == 2
+    assert result.stderr.count("launchctl_bootstrap_eio") == 1
+
+
+def test_connector_installer_exhausts_bounded_eio_retries_and_fails(
+    tmp_path: Path,
+) -> None:
+    release_root, _, installer = _copy_connector_assets(tmp_path)
+    env_file = _write_connector_env(release_root)
+    python = _write_fake_python(tmp_path / "python", tmp_path / "python.log")
+    launchctl, launchctl_log = _write_eio_launchctl(
+        tmp_path,
+        always_fail=True,
+    )
+    plutil = tmp_path / "plutil"
+    plutil.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    plutil.chmod(0o700)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = subprocess.run(
+        [str(installer)],
+        cwd=release_root,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "QS_AGENT_V02_CONNECTOR_ENV_FILE": str(env_file),
+            "QS_AGENT_V02_CONNECTOR_PYTHON": str(python),
+            "QS_LAUNCHCTL_BIN": str(launchctl),
+            "QS_PLUTIL_BIN": str(plutil),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    calls = launchctl_log.read_text(encoding="utf-8")
+    assert calls.count("bootout ") == 1
+    assert calls.count("bootstrap ") == 5
+    assert "Bootstrap failed: 5: Input/output error" in result.stderr
+    assert "launchctl_bootstrap_eio_exhausted" in result.stderr

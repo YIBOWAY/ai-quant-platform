@@ -196,6 +196,7 @@ describe("run.stop.request workspace action", () => {
             JSON.stringify({
               session_id: "owner-stop",
               mutation_enabled: true,
+              security_ready: true,
             }),
             { status: 200, headers: { "content-type": "application/json" } },
           );
@@ -245,10 +246,17 @@ describe("run.stop.request workspace action", () => {
       async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url === "/api/auth/owner/session") {
-          return new Response(JSON.stringify({ session_id: "owner-stop" }), {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({
+              session_id: "owner-stop",
+              mutation_enabled: true,
+              security_ready: true,
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
         }
         return new Response(
           JSON.stringify({

@@ -114,6 +114,7 @@ describe("decideHermesCommandApproval network", () => {
             session_id: "sess-v7a",
             csrf_token: "csrf-v7a-token",
             mutation_enabled: true,
+            security_ready: true,
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
@@ -214,4 +215,3 @@ describe("V7d filterApprovalsForPanel (consumedIds vs decided)", () => {
     expect(filterApprovalsForPanel([pending], {})).toHaveLength(1);
   });
 });
-

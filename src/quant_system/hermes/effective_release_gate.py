@@ -479,30 +479,35 @@ class EffectiveReleaseGate:
                     "accepted_candidate_evidence_binding_mismatch",
                 )
 
-            stamp_binding_matches = (
-                stamp is not None
-                and stamp.candidate_admission_id == candidate_binding.admission_id
-                and stamp.candidate_admission_digest == candidate_binding.admission_digest
-                and stamp.candidate_acceptance_digest == candidate_binding.acceptance_digest
-                and stamp.evidence_set_id == candidate_binding.evidence_set_id
-                and stamp.evidence_set_digest == candidate_binding.evidence_set_digest
-                and stamp.final_order_snapshot_digest
-                == candidate_binding.final_order_snapshot_digest
-                and stamp.paper_authority_epoch == candidate_binding.paper_authority_epoch
-                and stamp.evidence_digest == candidate_binding.final_evidence_digest
-                and stamp.platform_runtime_digest == candidate_binding.platform_runtime_digest
-                and stamp.hqa_runtime_digest == candidate_binding.hqa_runtime_digest
-                and stamp.hermes_runtime_digest == candidate_binding.hermes_runtime_digest
-                and stamp.database_schema_fingerprint
-                == candidate_binding.database_schema_fingerprint
-                and stamp.workspace_id == candidate_binding.workspace_id
-                and stamp.route == candidate_binding.route
-            )
-            if not stamp_binding_matches:
-                self._append(
-                    blockers,
-                    "release_stamp_candidate_binding_mismatch",
+            if stamp is not None:
+                stamp_binding_matches = (
+                    stamp.candidate_admission_id == candidate_binding.admission_id
+                    and stamp.candidate_admission_digest
+                    == candidate_binding.admission_digest
+                    and stamp.candidate_acceptance_digest
+                    == candidate_binding.acceptance_digest
+                    and stamp.evidence_set_id == candidate_binding.evidence_set_id
+                    and stamp.evidence_set_digest == candidate_binding.evidence_set_digest
+                    and stamp.final_order_snapshot_digest
+                    == candidate_binding.final_order_snapshot_digest
+                    and stamp.paper_authority_epoch
+                    == candidate_binding.paper_authority_epoch
+                    and stamp.evidence_digest == candidate_binding.final_evidence_digest
+                    and stamp.platform_runtime_digest
+                    == candidate_binding.platform_runtime_digest
+                    and stamp.hqa_runtime_digest == candidate_binding.hqa_runtime_digest
+                    and stamp.hermes_runtime_digest
+                    == candidate_binding.hermes_runtime_digest
+                    and stamp.database_schema_fingerprint
+                    == candidate_binding.database_schema_fingerprint
+                    and stamp.workspace_id == candidate_binding.workspace_id
+                    and stamp.route == candidate_binding.route
                 )
+                if not stamp_binding_matches:
+                    self._append(
+                        blockers,
+                        "release_stamp_candidate_binding_mismatch",
+                    )
 
         try:
             capability = self._hermes_capability_probe()

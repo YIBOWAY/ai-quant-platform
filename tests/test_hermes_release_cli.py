@@ -9,8 +9,15 @@ from typer.testing import CliRunner
 
 from quant_system.cli import app
 from quant_system.hermes import release_cli
+from quant_system.hermes.candidate_admission_authority import (
+    AcceptedCandidateReleaseBinding,
+)
 from quant_system.hermes.effective_release_gate import (
     EffectiveReleaseDecision,
+    EffectiveReleaseGate,
+    HermesDurableCapabilityObservation,
+    LocalReleaseFlags,
+    ReleaseEvidenceObservation,
     RuntimeIdentityObservation,
 )
 from quant_system.hermes.release_authority import (
@@ -22,6 +29,7 @@ from quant_system.hermes.release_authority import (
     ReleaseAuthorityReceipt,
     ReleaseStampRecord,
     canonical_release_action_digest,
+    canonical_release_stamp_digest,
 )
 
 runner = CliRunner()
@@ -31,6 +39,11 @@ HQA = "2" * 64
 HERMES = "3" * 64
 SCHEMA = "4" * 64
 EVIDENCE = "5" * 64
+ADMISSION = "8" * 64
+ACCEPTANCE = "9" * 64
+EVIDENCE_SET = "a" * 64
+FINAL_ORDER = "b" * 64
+PAPER_EPOCH = 17
 
 
 def _decision(
@@ -343,6 +356,204 @@ def test_open_stamp_derives_all_authority_digests_from_live_observations(
     assert payload["receipt"]["resource_id"] == "release_01"
     assert payload["receipt"]["resource_digest"] == "9" * 64
     assert payload["receipt"]["status"] == "active"
+    assert payload["decision"]["blockers"] == ["open_public_cutover_missing"]
+
+
+def test_effective_status_allows_cli_open_stamp_for_accepted_candidate(
+    monkeypatch,
+) -> None:
+    candidate = AcceptedCandidateReleaseBinding(
+        admission_id="candidate-1",
+        workspace_id="workspace-root",
+        route="/hermes",
+        admission_digest=ADMISSION,
+        acceptance_digest=ACCEPTANCE,
+        platform_runtime_digest=PLATFORM,
+        hqa_runtime_digest=HQA,
+        hermes_runtime_digest=HERMES,
+        database_schema_fingerprint=SCHEMA,
+        final_evidence_digest=EVIDENCE,
+        evidence_set_id="evidence-set-1",
+        evidence_set_digest=EVIDENCE_SET,
+        final_order_snapshot_digest=FINAL_ORDER,
+        paper_authority_epoch=PAPER_EPOCH,
+    )
+
+    class Authority:
+        stamp: ReleaseStampRecord | None = None
+
+        def active_release_stamp(self, _workspace_id):
+            return self.stamp
+
+        def open_public_cutover(self, _workspace_id):
+            return None
+
+        def accepted_candidate_release_binding(self, workspace_id, admission_id):
+            assert workspace_id == candidate.workspace_id
+            assert admission_id == candidate.admission_id
+            return candidate
+
+        def current_event_cursor(self, _workspace_id):
+            return 12
+
+        def create_release_stamp(self, request):
+            opened_at = NOW
+            release_digest = canonical_release_stamp_digest(
+                stamp_id="release-prod-style",
+                workspace_id=request.workspace_id,
+                route=request.route,
+                platform_runtime_digest=request.platform_runtime_digest,
+                hqa_runtime_digest=request.hqa_runtime_digest,
+                hermes_runtime_digest=request.hermes_runtime_digest,
+                database_schema_fingerprint=SCHEMA,
+                evidence_digest=request.evidence_digest,
+                opened_at=opened_at,
+                candidate_admission_id=candidate.admission_id,
+                candidate_admission_digest=candidate.admission_digest,
+                candidate_acceptance_digest=candidate.acceptance_digest,
+                evidence_set_id=candidate.evidence_set_id,
+                evidence_set_digest=candidate.evidence_set_digest,
+                final_order_snapshot_digest=candidate.final_order_snapshot_digest,
+                paper_authority_epoch=candidate.paper_authority_epoch,
+            )
+            self.stamp = ReleaseStampRecord(
+                stamp_id="release-prod-style",
+                workspace_id=request.workspace_id,
+                route=request.route,
+                platform_runtime_digest=request.platform_runtime_digest,
+                hqa_runtime_digest=request.hqa_runtime_digest,
+                hermes_runtime_digest=request.hermes_runtime_digest,
+                database_schema_fingerprint=SCHEMA,
+                evidence_digest=request.evidence_digest,
+                release_digest=release_digest,
+                status="active",
+                opened_at=opened_at,
+                closed_at=None,
+                close_reason=None,
+                candidate_admission_id=candidate.admission_id,
+                candidate_admission_digest=candidate.admission_digest,
+                candidate_acceptance_digest=candidate.acceptance_digest,
+                evidence_set_id=candidate.evidence_set_id,
+                evidence_set_digest=candidate.evidence_set_digest,
+                final_order_snapshot_digest=candidate.final_order_snapshot_digest,
+                paper_authority_epoch=candidate.paper_authority_epoch,
+            )
+            return ReleaseAuthorityReceipt(
+                operation="release.open",
+                workspace_id=request.workspace_id,
+                client_action_id=request.client_action_id,
+                action_digest=request.action_digest,
+                resource_id=self.stamp.stamp_id,
+                resource_digest=self.stamp.release_digest,
+                status="active",
+                event_cursor=12,
+                occurred_at=NOW,
+            )
+
+    authority = Authority()
+    gate = EffectiveReleaseGate(
+        authority=authority,
+        local_flags_probe=lambda: LocalReleaseFlags(
+            mutation_enabled=True,
+            composer_open=True,
+            hermes_gateway_enabled=True,
+            kill_switch_enabled=True,
+            live_trading_enabled=False,
+            candidate_admission_enabled=True,
+        ),
+        runtime_identity_probe=lambda: RuntimeIdentityObservation(
+            platform_runtime_digest=PLATFORM,
+            hqa_runtime_digest=HQA,
+            hermes_runtime_digest=HERMES,
+        ),
+        database_schema_fingerprint_probe=lambda: SCHEMA,
+        release_evidence_probe=lambda: ReleaseEvidenceObservation(
+            digest=EVIDENCE,
+            platform_runtime_digest=PLATFORM,
+            hqa_runtime_digest=HQA,
+            hermes_runtime_digest=HERMES,
+            contract="agent-v0.2-release-evidence/v4",
+            candidate_admission_id=candidate.admission_id,
+            candidate_admission_digest=candidate.admission_digest,
+            evidence_set_id=candidate.evidence_set_id,
+            evidence_set_digest=candidate.evidence_set_digest,
+            final_order_snapshot_digest=candidate.final_order_snapshot_digest,
+        ),
+        runtime_role_readiness_probe=lambda: True,
+        authority_schema_readiness_probe=lambda: True,
+        hermes_capability_probe=lambda: HermesDurableCapabilityObservation(
+            runtime_digest=HERMES,
+            observed_at=NOW,
+            payload={
+                "contract_version": 1,
+                "features": {
+                    "session_resources": True,
+                    "run_submission": True,
+                    "run_events_sse": True,
+                    "run_status": True,
+                    "run_approval_response": True,
+                    "run_stop": True,
+                    "managed_run_sessions": True,
+                },
+                "managed_session_contract": {
+                    "history_authority": "hermes_session_db",
+                    "fork_mode": "preserve_source_exact_message_cursor",
+                },
+                "durable": {
+                    name: {
+                        "supported": True,
+                        "grounded": True,
+                        "evidence": f"store.transactional_probe:{name}",
+                    }
+                    for name in (
+                        "idempotency",
+                        "event_replay",
+                        "approval_cas",
+                        "idempotent_stop",
+                        "restart_reconcile",
+                        "run_evidence",
+                    )
+                },
+            },
+        ),
+        now=lambda: NOW,
+    )
+    before = gate.evaluate("workspace-root")
+    assert before.blockers == (
+        "active_release_stamp_missing",
+        "open_public_cutover_missing",
+    )
+    monkeypatch.setattr(
+        release_cli,
+        "build_release_cli_runtime",
+        lambda: _runtime(
+            authority=authority,
+            status_probe=lambda: gate.evaluate("workspace-root"),
+        ),
+    )
+    status_result = runner.invoke(app, ["hermes", "release", "status"])
+    assert status_result.exit_code == 0, status_result.stdout
+    assert json.loads(status_result.stdout)["decision"]["blockers"] == [
+        "active_release_stamp_missing",
+        "open_public_cutover_missing",
+    ]
+
+    result = runner.invoke(
+        app,
+        [
+            "hermes",
+            "release",
+            "open-stamp",
+            "--note",
+            "accepted evidence reviewed",
+            "--client-action-id",
+            "operator-open-production-style",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["receipt"]["resource_id"] == "release-prod-style"
     assert payload["decision"]["blockers"] == ["open_public_cutover_missing"]
 
 

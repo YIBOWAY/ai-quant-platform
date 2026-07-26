@@ -42,6 +42,95 @@ def _write_bash_node_shim(tmp_path: Path) -> Path:
     return node_bin
 
 
+def _prepare_stack_installer(
+    tmp_path: Path,
+) -> tuple[Path, Path, Path, dict[str, str]]:
+    release_root = tmp_path / "release"
+    scripts_dir = release_root / "scripts"
+    launchd_dir = scripts_dir / "launchd"
+    launchd_dir.mkdir(parents=True)
+    for name in (
+        "run_quant_backend.sh",
+        "run_quant_frontend.sh",
+        "install_agent_v02_stack_launchagents.sh",
+    ):
+        target = scripts_dir / name
+        shutil.copy2(ROOT / "scripts" / name, target)
+        target.chmod(target.stat().st_mode | stat.S_IXUSR)
+    for name in (
+        "com.aiquant.backend.plist.template",
+        "com.aiquant.frontend.plist.template",
+    ):
+        shutil.copy2(ROOT / "scripts" / "launchd" / name, launchd_dir / name)
+
+    (release_root / "src" / "quant_system").mkdir(parents=True)
+    build_id = release_root / "src" / "frontend" / ".next" / "BUILD_ID"
+    build_id.parent.mkdir(parents=True)
+    build_id.write_text("release-build\n", encoding="utf-8")
+    env_file = release_root / "data" / "_runtime" / "agent-v0.2-backend.env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("QS_DATABASE_AUTO_MIGRATE=false\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    frontend_env_file = _write_frontend_env(release_root)
+
+    main_root = tmp_path / "main"
+    python = main_root / "ai-quant" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    python.chmod(0o700)
+    next_bin = main_root / "src" / "frontend" / "node_modules" / ".bin" / "next"
+    next_bin.parent.mkdir(parents=True)
+    next_bin.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    next_bin.chmod(0o700)
+    node_bin = _write_bash_node_shim(tmp_path)
+
+    home = tmp_path / "home"
+    home.mkdir()
+    return (
+        release_root,
+        scripts_dir / "install_agent_v02_stack_launchagents.sh",
+        home,
+        {
+            **os.environ,
+            "HOME": str(home),
+            "QS_MAIN_REPO_ROOT": str(main_root),
+            "QS_AGENT_V02_BACKEND_ENV_FILE": str(env_file),
+            "QS_AGENT_V02_FRONTEND_ENV_FILE": str(frontend_env_file),
+            "QS_QUANT_FRONTEND_NODE_BIN": str(node_bin),
+        },
+    )
+
+
+def _write_eio_launchctl(
+    tmp_path: Path,
+    *,
+    always_fail: bool,
+) -> tuple[Path, Path]:
+    launchctl_log = tmp_path / "launchctl.log"
+    state_dir = tmp_path / "launchctl-state"
+    state_dir.mkdir()
+    launchctl = tmp_path / "launchctl"
+    failure_condition = "true" if always_fail else '[[ "$attempt" -eq 1 ]]'
+    launchctl.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$*" >> "{launchctl_log}"\n'
+        '[[ "${1:-}" == "bootstrap" ]] || exit 0\n'
+        f'STATE_DIR="{state_dir}"\n'
+        'state="$STATE_DIR/${3##*/}.count"\n'
+        'attempt=0\n'
+        '[[ ! -f "$state" ]] || attempt="$(cat "$state")"\n'
+        'attempt=$((attempt + 1))\n'
+        'printf "%s\\n" "$attempt" > "$state"\n'
+        f"if {failure_condition}; then\n"
+        '  echo "Bootstrap failed: 5: Input/output error" >&2\n'
+        "  exit 5\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o700)
+    return launchctl, launchctl_log
+
+
 def test_backend_check_uses_release_source_with_main_repo_python(
     tmp_path: Path,
 ) -> None:
@@ -465,6 +554,59 @@ def test_stack_installer_is_replay_safe_and_never_installs_strategy_jobs(
         "frontend-next.launchd.err.log",
     ):
         assert stat.S_IMODE((logs_dir / name).stat().st_mode) == 0o600
+
+
+def test_stack_installer_retries_transient_launchctl_bootstrap_eio(
+    tmp_path: Path,
+) -> None:
+    release_root, installer, _, run_env = _prepare_stack_installer(tmp_path)
+    launchctl, launchctl_log = _write_eio_launchctl(
+        tmp_path,
+        always_fail=False,
+    )
+    run_env["QS_LAUNCHCTL_BIN"] = str(launchctl)
+
+    result = subprocess.run(
+        [str(installer)],
+        cwd=release_root,
+        env=run_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = launchctl_log.read_text(encoding="utf-8")
+    assert calls.count("bootout ") == 2
+    assert calls.count("bootstrap ") == 4
+    assert result.stderr.count("launchctl_bootstrap_eio") == 2
+
+
+def test_stack_installer_exhausts_bounded_eio_retries_and_fails(
+    tmp_path: Path,
+) -> None:
+    release_root, installer, _, run_env = _prepare_stack_installer(tmp_path)
+    launchctl, launchctl_log = _write_eio_launchctl(
+        tmp_path,
+        always_fail=True,
+    )
+    run_env["QS_LAUNCHCTL_BIN"] = str(launchctl)
+
+    result = subprocess.run(
+        [str(installer)],
+        cwd=release_root,
+        env=run_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    calls = launchctl_log.read_text(encoding="utf-8")
+    assert calls.count("bootout ") == 1
+    assert calls.count("bootstrap ") == 5
+    assert "Bootstrap failed: 5: Input/output error" in result.stderr
+    assert "launchctl_bootstrap_eio_exhausted" in result.stderr
 
 
 def test_stack_uninstaller_removes_only_backend_and_frontend(
