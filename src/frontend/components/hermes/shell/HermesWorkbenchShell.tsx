@@ -16,7 +16,7 @@ import type { Locale } from "@/lib/locale";
 
 export type HermesWorkbenchShellProps = {
   locale: Locale;
-  /** Static delivery fact only — never a live capability probe. */
+  /** User-facing admission state resolved from operator policy and backend readiness. */
   deliveryState?: HermesDeliveryState;
   /** Live backend release admission. The env flag remains deny-only. */
   chatWriteReady?: boolean;

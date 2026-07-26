@@ -67,12 +67,12 @@ const en: HermesWorkbenchCopy = {
   },
   capability: {
     blocked_in_this_slice: {
-      title: "Hermes write capabilities are not connected in this delivery",
-      body: "Chat, execution, full unified-results cutover, and legacy redirects stay off. This is a fixed delivery fact for this slice, not a live gateway probe.",
+      title: "Hermes chat is currently unavailable",
+      body: "The composer is locked because this installation has not passed its current write admission. Read-only sessions and results remain available; the composer opens automatically when admission is ready.",
     },
     local_mutation_authorized: {
-      title: "Local mutation path is authorized on this install",
-      body: "Composer can submit on the single-user loopback path via L2a-Send (owner cookie + CSRF + submit-turn). Live trading stays behind kill_switch/paper/dry_run. Public chat write cutover remains closed.",
+      title: "Hermes chat is ready",
+      body: "This installation may submit through the managed Hermes Session path (owner cookie + CSRF + submit-turn). Trading remains constrained by kill_switch, paper, and dry_run.",
     },
   },
   labels: {
@@ -102,9 +102,9 @@ const en: HermesWorkbenchCopy = {
   },
   composer: {
     label: "Talk with Hermes",
-    placeholder: "Hermes write capability is not connected in this delivery",
-    placeholderOpen: "Message Hermes… (local dark; 16 KiB max)",
-    unavailable: "Composer cannot submit research tasks in this delivery",
+    placeholder: "Hermes chat is currently unavailable",
+    placeholderOpen: "Message Hermes… (16 KiB max)",
+    unavailable: "The composer cannot submit while write admission is closed",
     sendDisabled: "Send (disabled)",
     sendEnabled: "Send",
     retrySame: "Retry same send",
@@ -122,12 +122,12 @@ const zh: HermesWorkbenchCopy = {
   },
   capability: {
     blocked_in_this_slice: {
-      title: "本交付未连接 Hermes 写入能力",
-      body: "对话、执行、完整统一结果切换与旧重定向保持关闭。这是本切片的固定交付事实，不是实时网关探测结果。",
+      title: "Hermes 对话当前不可用",
+      body: "当前安装尚未通过写入准入，因此撰写区保持锁定。只读会话和结果仍可使用；准入就绪后撰写区会自动开放。",
     },
     local_mutation_authorized: {
-      title: "本机已授权本地 mutation 路径",
-      body: "单用户 loopback 下撰写区可通过 L2a-Send 提交（owner cookie + CSRF + submit-turn）。实盘交易仍受 kill_switch / paper / dry_run 约束。公开 chat 写入切换仍关闭。",
+      title: "Hermes 对话已就绪",
+      body: "当前安装可通过受管 Hermes Session 路径提交（owner cookie + CSRF + submit-turn）。交易仍受 kill_switch、paper 和 dry_run 约束。",
     },
   },
   labels: {
@@ -156,9 +156,9 @@ const zh: HermesWorkbenchCopy = {
   },
   composer: {
     label: "和 Hermes 对话",
-    placeholder: "真实 Hermes 写入能力尚未通过",
-    placeholderOpen: "给 Hermes 发消息…（本机 dark；上限 16 KiB）",
-    unavailable: "本交付中撰写区不能提交研究任务",
+    placeholder: "Hermes 对话当前不可用",
+    placeholderOpen: "给 Hermes 发消息…（上限 16 KiB）",
+    unavailable: "写入准入关闭时，撰写区不能提交研究任务",
     sendDisabled: "发送（已禁用）",
     sendEnabled: "发送",
     retrySame: "重试同一次发送",

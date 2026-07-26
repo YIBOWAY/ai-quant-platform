@@ -8,7 +8,8 @@ import type {
  * chat defaults off; set QS_HERMES_CHAT_ENABLED=true only on the authorized
  * local single-user path (paired with QS_LOCAL_MUTATION_* on the API).
  * execution / approvalMutations / unifiedResultsCutoverAccepted / legacyRedirects
- * stay hard false. deliveryState is a versioned delivery fact, never a live probe.
+ * stay hard false. The final admission state also reflects the backend's
+ * persistent write-readiness observation.
  */
 export function hermesFeatureFlags(
   env: { [key: string]: string | undefined } = process.env,

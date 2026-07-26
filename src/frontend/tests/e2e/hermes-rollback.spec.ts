@@ -57,7 +57,7 @@ test("@rollback desktop and mobile home entries are Dashboard; Hermes stays sepa
       .click();
     await expect(page).toHaveURL(/\/zh\/hermes$/);
     await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
-    await expect(page.getByText("本交付未连接 Hermes 写入能力")).toBeVisible();
+    await expect(page.getByText("Hermes 对话当前不可用")).toBeVisible();
 
     await page
       .getByTestId("desktop-sidebar")

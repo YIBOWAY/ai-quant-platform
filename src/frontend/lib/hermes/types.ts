@@ -82,7 +82,7 @@ export type HermesDeliveryState =
 export type HermesFeatureFlags = {
   shell: boolean;
   sessionRead: true;
-  /** Local single-user unlock via QS_HERMES_CHAT_ENABLED; public cutover still off. */
+  /** Operator deny switch; backend admission still decides whether chat opens. */
   chat: boolean;
   execution: false;
   approvalMutations: false;

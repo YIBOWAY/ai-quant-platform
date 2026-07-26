@@ -29,7 +29,7 @@ test("@real-backend-smoke Hermes shell renders safety chrome and disabled compos
   await expect(page.getByRole("status").filter({ hasText: "仅模拟" })).toHaveCount(1);
   await expect(page.getByRole("navigation", { name: "Hermes 工作台" })).toBeVisible();
   await expect(page.getByRole("link", { name: "今日" })).toBeVisible();
-  await expect(page.getByText("本交付未连接 Hermes 写入能力")).toBeVisible();
+  await expect(page.getByText("Hermes 对话当前不可用")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
   expect(externalRequests).toEqual([]);
 });
@@ -197,7 +197,7 @@ test("@combined-fixture Hermes workbench shell keeps a single safety strip and d
   await expect(page.locator("main [data-global-safety-strip]")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Hermes 工作台" })).toBeVisible();
   await expect(page.getByRole("link", { name: "今日" })).toBeVisible();
-  await expect(page.getByText("本交付未连接 Hermes 写入能力")).toBeVisible();
+  await expect(page.getByText("Hermes 对话当前不可用")).toBeVisible();
   await expect(page.getByTestId("hermes-capability-notice")).toHaveAttribute(
     "data-delivery-state",
     "blocked_in_this_slice",
