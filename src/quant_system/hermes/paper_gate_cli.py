@@ -21,11 +21,32 @@ from quant_system.hermes.paper_gate_authority import (
     RegisterPaperGateChallenge,
     RegisterPaperGateCompletion,
 )
+from quant_system.hermes.paper_run_attestation import (
+    AttestPaperRun,
+    PaperRunAttestationAuthority,
+    PaperRunAttestationError,
+)
 
 _CONTRACT = "agent-v0.2-paper-gate-cli/v1"
 _MAX_STDIN_BYTES = 64 * 1024
 _REGISTER_FIELDS = frozenset(RegisterPaperGateChallenge.__dataclass_fields__)
 _COMPLETE_FIELDS = frozenset(RegisterPaperGateCompletion.__dataclass_fields__)
+_ATTEST_FIELDS = frozenset(
+    {
+        "command_id",
+        "hermes_run_id",
+        "hermes_session_id",
+        "mode",
+        "platform_session_id",
+        "workspace_id",
+    }
+)
+_RETRYABLE_ERROR_CODES = frozenset(
+    {
+        "paper_gate_authority_unavailable",
+        "paper_run_attestation_unavailable",
+    }
+)
 
 paper_gate_app = typer.Typer(
     help=(
@@ -110,9 +131,11 @@ def _run(operation: str, callback: Callable[[], Mapping[str, object]]) -> None:
             }
         )
         raise typer.Exit(code=2) from None
-    except (TypeError, PaperGateAuthorityError) as exc:
+    except (TypeError, PaperGateAuthorityError, PaperRunAttestationError) as exc:
         code = (
-            exc.code if isinstance(exc, PaperGateAuthorityError) else "paper_gate_cli_invalid_input"
+            exc.code
+            if isinstance(exc, PaperGateAuthorityError | PaperRunAttestationError)
+            else "paper_gate_cli_invalid_input"
         )
         _emit(
             {
@@ -123,7 +146,7 @@ def _run(operation: str, callback: Callable[[], Mapping[str, object]]) -> None:
                 "operation": operation,
             }
         )
-        raise typer.Exit(code=2) from None
+        raise typer.Exit(code=1 if code in _RETRYABLE_ERROR_CODES else 2) from None
     except Exception as exc:  # noqa: BLE001 - fixed port fails closed
         _emit(
             {
@@ -173,6 +196,26 @@ def register_command() -> None:
         return {"gate": record.to_operator_dict()}
 
     _run("register", _register)
+
+
+@paper_gate_app.command("attest-run")
+def attest_run_command() -> None:
+    """Attest one exact Platform Command/Hermes Run binding, read-only."""
+
+    def _attest() -> Mapping[str, object]:
+        document = _stdin_object(exact_fields=_ATTEST_FIELDS)
+        if set(document) != _ATTEST_FIELDS:
+            missing = _ATTEST_FIELDS - set(document)
+            raise PaperGateCliInputError(
+                "attest-run stdin JSON is missing fields: "
+                + ",".join(sorted(missing))
+            )
+        attestation = PaperRunAttestationAuthority(load_settings()).attest(
+            AttestPaperRun(**document)  # type: ignore[arg-type]
+        )
+        return {"attestation": attestation}
+
+    _run("attest-run", _attest)
 
 
 @paper_gate_app.command("show")

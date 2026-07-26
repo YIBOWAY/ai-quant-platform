@@ -8,6 +8,9 @@ from typer.testing import CliRunner
 
 from quant_system.hermes import paper_gate_cli
 from quant_system.hermes.paper_gate_authority import PaperGateNotFound
+from quant_system.hermes.paper_run_attestation import (
+    PaperRunAttestationUnavailable,
+)
 
 runner = CliRunner()
 COMMAND_ID = "11111111-1111-4111-8111-111111111111"
@@ -65,6 +68,39 @@ class _Authority:
     def list_observed(self, workspace_id: str) -> list[dict[str, object]]:
         assert workspace_id == "workspace-root"
         return [{"gate_id": "gate-one", "workspace_id": workspace_id}]
+
+
+class _AttestationAuthority:
+    requests: list[object] = []
+
+    def __init__(self, _settings: object) -> None:
+        pass
+
+    def attest(self, request: Any) -> dict[str, object]:
+        self.requests.append(request)
+        return {
+            "actual_model": "test-model",
+            "actual_provider": "test-provider",
+            "attestation_ref": "paper-run-attestation:" + "a" * 64,
+            "command_id": request.command_id,
+            "command_state": "succeeded",
+            "evidence_digest": "a" * 64,
+            "hermes_run_id": request.hermes_run_id,
+            "hermes_runtime_instance_id": "b" * 32,
+            "hermes_runtime_started_at": "2026-07-26T00:00:00.000000Z",
+            "hermes_session_id": request.hermes_session_id,
+            "hqa_run_ref": f"run:{request.hermes_run_id}",
+            "mode": request.mode,
+            "output_digest": "c" * 64,
+            "platform_session_id": request.platform_session_id,
+            "provider_evidence_ref": (
+                "provider-evidence:paper-run-" + "a" * 64
+            ),
+            "resolved_hermes_session_id": request.hermes_session_id,
+            "schema_version": 1,
+            "terminal_event_ref": "hermes-event:terminal-test",
+            "workspace_id": request.workspace_id,
+        }
 
 
 def _register_document() -> dict[str, object]:
@@ -149,6 +185,98 @@ def test_strict_json_cli_register_show_and_list(
     assert json.loads(listed.stdout)["gates"][0]["gate_id"] == "gate-one"
 
 
+def test_strict_json_cli_attest_run_is_registered_and_read_only(
+    monkeypatch,
+) -> None:
+    _AttestationAuthority.requests.clear()
+    monkeypatch.setattr(
+        paper_gate_cli,
+        "PaperRunAttestationAuthority",
+        _AttestationAuthority,
+    )
+    monkeypatch.setattr(paper_gate_cli, "load_settings", object)
+    document = {
+        "command_id": COMMAND_ID,
+        "hermes_run_id": "run-paper-plan",
+        "hermes_session_id": "web_managed-one",
+        "mode": "subject",
+        "platform_session_id": "platform-session",
+        "workspace_id": "workspace-root",
+    }
+
+    result = runner.invoke(
+        paper_gate_cli.paper_gate_app,
+        ["attest-run"],
+        input=json.dumps(document),
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "attestation": {
+            "actual_model": "test-model",
+            "actual_provider": "test-provider",
+            "attestation_ref": "paper-run-attestation:" + "a" * 64,
+            "command_id": COMMAND_ID,
+            "command_state": "succeeded",
+            "evidence_digest": "a" * 64,
+            "hermes_run_id": "run-paper-plan",
+            "hermes_runtime_instance_id": "b" * 32,
+            "hermes_runtime_started_at": "2026-07-26T00:00:00.000000Z",
+            "hermes_session_id": "web_managed-one",
+            "hqa_run_ref": "run:run-paper-plan",
+            "mode": "subject",
+            "output_digest": "c" * 64,
+            "platform_session_id": "platform-session",
+            "provider_evidence_ref": (
+                "provider-evidence:paper-run-" + "a" * 64
+            ),
+            "resolved_hermes_session_id": "web_managed-one",
+            "schema_version": 1,
+            "terminal_event_ref": "hermes-event:terminal-test",
+            "workspace_id": "workspace-root",
+        },
+        "contract": "agent-v0.2-paper-gate-cli/v1",
+        "ok": True,
+        "operation": "attest-run",
+    }
+    assert len(_AttestationAuthority.requests) == 1
+
+
+def test_attest_run_unavailable_is_a_retryable_process_failure(
+    monkeypatch,
+) -> None:
+    class _Unavailable:
+        def __init__(self, _settings: object) -> None:
+            pass
+
+        def attest(self, _request: Any) -> dict[str, object]:
+            raise PaperRunAttestationUnavailable("temporary observer outage")
+
+    monkeypatch.setattr(paper_gate_cli, "PaperRunAttestationAuthority", _Unavailable)
+    monkeypatch.setattr(paper_gate_cli, "load_settings", object)
+
+    result = runner.invoke(
+        paper_gate_cli.paper_gate_app,
+        ["attest-run"],
+        input=json.dumps(
+            {
+                "command_id": COMMAND_ID,
+                "hermes_run_id": "run-paper-plan",
+                "hermes_session_id": "web_managed-one",
+                "mode": "subject",
+                "platform_session_id": "platform-session",
+                "workspace_id": "workspace-root",
+            }
+        ),
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["error_code"] == (
+        "paper_run_attestation_unavailable"
+    )
+
+
 def test_strict_json_cli_rejects_unknown_trailing_and_missing(
     monkeypatch,
 ) -> None:
@@ -217,6 +345,17 @@ def test_strict_json_cli_rejects_unknown_trailing_and_missing(
     )
     assert rejected_completion.exit_code == 2
     assert _Authority.completed == []
+
+    invalid_attestation = runner.invoke(
+        paper_gate_cli.paper_gate_app,
+        ["attest-run"],
+        input='{"mode":"subject"}',
+    )
+    assert invalid_attestation.exit_code == 2
+    assert (
+        json.loads(invalid_attestation.stdout)["error_code"]
+        == "paper_gate_cli_invalid_input"
+    )
 
 
 def test_show_missing_has_distinct_recovery_code(monkeypatch) -> None:
