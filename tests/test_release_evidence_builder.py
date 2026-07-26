@@ -37,6 +37,7 @@ from quant_system.hermes.test_execution_evidence import (
 from quant_system.hermes.test_execution_evidence import (
     parse_junit_counts,
     validate_argv,
+    validate_test_execution_receipt,
 )
 
 
@@ -253,6 +254,99 @@ def test_run_suite_executes_without_shell_and_seals_recomputable_receipt(
     assert {stat.S_IMODE(path.stat().st_mode) for path in output_dir.iterdir()} == {0o600}
 
 
+@pytest.mark.parametrize("runner_name", ["uv", "pnpm"])
+def test_sealed_absolute_runner_receipt_validates_without_runner_on_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runner_name: str,
+) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+    runner_path = tmp_path / "approved-bin" / runner_name
+    runner_path.parent.mkdir()
+    runner_target = runner_path.with_name(f"{runner_name}.real")
+    runner_target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    runner_target.chmod(0o700)
+    runner_path.symlink_to(runner_target.name)
+    runner = str(runner_path)
+    monkeypatch.setenv(
+        "PATH",
+        f"{runner_path.parent}{os.pathsep}{os.environ.get('PATH', '')}",
+    )
+    if runner_name == "uv":
+        name = "platform"
+        cwd = roots["platform"]
+        argv = (
+            runner,
+            "run",
+            "--frozen",
+            "--extra",
+            "dev",
+            "pytest",
+            "tests",
+            "--junitxml={junit}",
+        )
+        junit_prefix = "--junitxml="
+    else:
+        name = "frontend"
+        cwd = roots["platform"] / "src/frontend"
+        argv = (
+            runner,
+            "vitest",
+            "run",
+            "--reporter=junit",
+            "--outputFile={junit}",
+        )
+        junit_prefix = "--outputFile="
+
+    def execute_with_passing_junit(
+        executed_argv: tuple[str, ...],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        timeout_seconds: int,
+    ) -> tuple[int, bytes]:
+        del cwd, env, timeout_seconds
+        target = Path(
+            next(
+                argument.split("=", 1)[1]
+                for argument in executed_argv
+                if argument.startswith(junit_prefix)
+            )
+        )
+        target.write_bytes(
+            b'<testsuite tests="1" failures="0" errors="0" skipped="0">'
+            b'<testcase name="release"/></testsuite>'
+        )
+        target.chmod(0o600)
+        return 0, b"passed\n"
+
+    monkeypatch.setattr(
+        release_evidence_builder,
+        "_execute_bounded",
+        execute_with_passing_junit,
+    )
+    result = run_test_suite(
+        name=name,
+        argv=argv,
+        output_dir=output_dir,
+        runtime_roots=roots,
+        cwd=cwd,
+    )
+
+    monkeypatch.setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+    validated = validate_test_execution_receipt(
+        result.receipt_path,
+        expected_name=name,
+        expected_runtime=runtime,
+        expected_runtime_roots=roots,
+    )
+
+    assert validated.executable_path == Path(runner).resolve()
+    assert validated.argv[0] == runner
+
+
 def test_run_suite_seals_large_but_bounded_full_suite_junit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -368,6 +462,56 @@ def test_run_suite_rejects_unapproved_executable_or_suite_cwd(
             output_dir=output_dir,
             runtime_roots=roots,
             cwd=roots["platform"] / "src/frontend",
+        )
+
+    assert not list(output_dir.iterdir())
+
+
+@pytest.mark.parametrize("runner_name", ["uv", "pnpm"])
+def test_execution_plan_rejects_absolute_runner_name_spoof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runner_name: str,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+    spoofed_runner = tmp_path / "untrusted" / runner_name
+    spoofed_runner.parent.mkdir()
+    spoofed_runner.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    spoofed_runner.chmod(0o700)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+    if runner_name == "uv":
+        name = "platform"
+        cwd = roots["platform"]
+        argv = (
+            str(spoofed_runner),
+            "run",
+            "--frozen",
+            "--extra",
+            "dev",
+            "pytest",
+            "tests",
+            "--junitxml={junit}",
+        )
+    else:
+        name = "frontend"
+        cwd = roots["platform"] / "src/frontend"
+        argv = (
+            str(spoofed_runner),
+            "vitest",
+            "run",
+            "--reporter=junit",
+            "--outputFile={junit}",
+        )
+
+    with pytest.raises(EvidenceBuildError, match="approved suite runner"):
+        run_test_suite(
+            name=name,
+            argv=argv,
+            output_dir=output_dir,
+            runtime_roots=roots,
+            cwd=cwd,
         )
 
     assert not list(output_dir.iterdir())

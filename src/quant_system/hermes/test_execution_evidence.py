@@ -366,6 +366,7 @@ def _validate_execution_policy(
     cwd: object,
     executable: object,
     require_junit_placeholder: bool,
+    require_environment_runner_resolution: bool,
 ) -> tuple[str, str, Path, str]:
     cwd_document = _exact_mapping(
         cwd,
@@ -394,10 +395,12 @@ def _validate_execution_policy(
     )
     executable_realpath = executable_document["realpath"]
     executable_digest = executable_document["sha256"]
+    argv_executable = Path(argv[0]).expanduser()
     if (
         not isinstance(executable_realpath, str)
         or not Path(executable_realpath).is_absolute()
         or str(Path(executable_realpath).resolve()) != executable_realpath
+        or not argv_executable.is_absolute()
         or not isinstance(executable_digest, str)
         or _HEX_DIGEST_RE.fullmatch(executable_digest) is None
         or _hash_regular_file(
@@ -405,7 +408,7 @@ def _validate_execution_policy(
             field="executable",
         )
         != executable_digest
-        or Path(argv[0]).expanduser().resolve() != Path(executable_realpath)
+        or argv_executable.resolve() != Path(executable_realpath)
     ):
         raise TestExecutionEvidenceError("test receipt executable identity is invalid")
 
@@ -414,24 +417,36 @@ def _validate_execution_policy(
         _PYTHON_EXECUTABLE_RE.fullmatch(executable_name) is not None
     )
     executable_path = Path(executable_realpath)
-    approved_uv = shutil.which("uv")
-    approved_pnpm = shutil.which("pnpm")
+    approved_uv = (
+        shutil.which("uv") if require_environment_runner_resolution else None
+    )
+    approved_pnpm = (
+        shutil.which("pnpm") if require_environment_runner_resolution else None
+    )
+    uv_identity_is_approved = (
+        approved_uv is not None and executable_path == Path(approved_uv).resolve()
+        if require_environment_runner_resolution
+        else argv_executable.name == "uv"
+    )
+    pnpm_identity_is_approved = (
+        approved_pnpm is not None and executable_path == Path(approved_pnpm).resolve()
+        if require_environment_runner_resolution
+        else argv_executable.name == "pnpm"
+    )
     is_pytest_script = (
         executable_name == "pytest"
         and executable_path.parent.name == "bin"
         and executable_path.parent.parent == Path(str(cwd_realpath)) / ".venv"
     )
     is_uv_pytest = (
-        approved_uv is not None
-        and executable_path == Path(approved_uv).resolve()
+        uv_identity_is_approved
         and len(argv) >= 6
         and argv[1:5] == ("run", "--frozen", "--extra", "dev")
         and argv[5] == "pytest"
     )
     is_pnpm_vitest = (
         name == "frontend"
-        and approved_pnpm is not None
-        and executable_path == Path(approved_pnpm).resolve()
+        and pnpm_identity_is_approved
         and len(argv) >= 2
         and argv[1] in {"test", "vitest"}
         and (argv[1] != "vitest" or (len(argv) >= 3 and argv[2] == "run"))
@@ -543,6 +558,7 @@ def validate_execution_plan(
         cwd=cwd_document,
         executable=executable_document,
         require_junit_placeholder=True,
+        require_environment_runner_resolution=True,
     )
     return cwd_document, executable_document
 
@@ -954,6 +970,7 @@ def validate_test_execution_receipt(
         cwd=receipt["cwd"],
         executable=receipt["executable"],
         require_junit_placeholder=False,
+        require_environment_runner_resolution=False,
     )
 
     runtime = _runtime_document(receipt["runtime"])
