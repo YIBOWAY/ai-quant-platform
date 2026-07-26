@@ -57,8 +57,10 @@ data/                     Local cache, fixtures, generated research outputs.
   real-flow evidence, PostgreSQL-only release/cutover authority, managed
   external-session exact-message fork with selected plus Hermes-resolved
   lineage, durable conversation-root/resolved-run-tip identity, crash-safe
-  approval/stop outcomes, natural-language paper research entry, and browser
-  Gate 1 exact-source review. The dated V4–V8 notes below are historical
+  approval/stop outcomes, a browser Run-stop control with same-action replay,
+  natural-language paper research entry, and browser Gate 1 exact-source
+  review. Full-suite JUnit evidence has a separate bounded 8 MiB allowance;
+  logs, receipts and manifests remain capped at 4 MiB. The dated V4–V8 notes below are historical
   provenance, not the current queue. Apply 016–024 only in order after backup and isolated
   replay. Never infer live migration, connector, candidate, stamp, cutover or
   `chat_write_ready` state from this file: query PostgreSQL metadata, runtime

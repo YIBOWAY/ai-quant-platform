@@ -83,6 +83,7 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _FORK_POINT_RE = re.compile(r"^message:[1-9][0-9]*$")
 _SAFE_FILE_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,199}\.(?:json|log|xml)$")
 _MAX_FILE_BYTES = 4 * 1024 * 1024
+_MAX_JUNIT_BYTES = 8 * 1024 * 1024
 _MAX_TEST_OUTPUT_BYTES = 4 * 1024 * 1024
 
 
@@ -350,6 +351,7 @@ def _safe_output_directory(
 
 
 def _read_existing(dir_fd: int, name: str) -> bytes | None:
+    maximum_bytes = _MAX_JUNIT_BYTES if name.endswith(".xml") else _MAX_FILE_BYTES
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(name, flags, dir_fd=dir_fd)
@@ -367,10 +369,10 @@ def _read_existing(dir_fd: int, name: str) -> bytes | None:
             raise EvidenceBuildConflict(f"evidence target {name} is not operator-owned")
         if os.name != "nt" and stat.S_IMODE(info.st_mode) != 0o600:
             raise EvidenceBuildConflict(f"evidence target {name} must have mode 0600")
-        if info.st_size > _MAX_FILE_BYTES:
+        if info.st_size > maximum_bytes:
             raise EvidenceBuildConflict(f"evidence target {name} has an invalid size")
         chunks: list[bytes] = []
-        remaining = _MAX_FILE_BYTES + 1
+        remaining = maximum_bytes + 1
         while remaining:
             chunk = os.read(fd, min(64 * 1024, remaining))
             if not chunk:
@@ -378,7 +380,7 @@ def _read_existing(dir_fd: int, name: str) -> bytes | None:
             chunks.append(chunk)
             remaining -= len(chunk)
         content = b"".join(chunks)
-        if len(content) > _MAX_FILE_BYTES:
+        if len(content) > maximum_bytes:
             raise EvidenceBuildConflict(f"evidence target {name} has an invalid size")
         after = os.fstat(fd)
         if (
@@ -399,7 +401,8 @@ def _read_existing(dir_fd: int, name: str) -> bytes | None:
 
 
 def _write_once(dir_fd: int, name: str, content: bytes) -> bool:
-    if _SAFE_FILE_RE.fullmatch(name) is None or len(content) > _MAX_FILE_BYTES:
+    maximum_bytes = _MAX_JUNIT_BYTES if name.endswith(".xml") else _MAX_FILE_BYTES
+    if _SAFE_FILE_RE.fullmatch(name) is None or len(content) > maximum_bytes:
         raise EvidenceBuildError("evidence output file is invalid")
     existing = _read_existing(dir_fd, name)
     if existing is not None:
@@ -584,11 +587,11 @@ def _read_temporary_junit(directory_fd: int, name: str) -> bytes:
             or info.st_nlink != 1
             or (hasattr(os, "geteuid") and info.st_uid != os.geteuid())
             or (os.name != "nt" and stat.S_IMODE(info.st_mode) != 0o600)
-            or not 0 < info.st_size <= _MAX_FILE_BYTES
+            or not 0 < info.st_size <= _MAX_JUNIT_BYTES
         ):
             raise EvidenceBuildError("test suite did not produce safe JUnit XML")
         chunks: list[bytes] = []
-        remaining = _MAX_FILE_BYTES + 1
+        remaining = _MAX_JUNIT_BYTES + 1
         while remaining:
             chunk = os.read(fd, min(64 * 1024, remaining))
             if not chunk:
@@ -596,7 +599,7 @@ def _read_temporary_junit(directory_fd: int, name: str) -> bytes:
             chunks.append(chunk)
             remaining -= len(chunk)
         content = b"".join(chunks)
-        if not content or len(content) > _MAX_FILE_BYTES:
+        if not content or len(content) > _MAX_JUNIT_BYTES:
             raise EvidenceBuildError("test suite did not produce bounded JUnit XML")
         after = os.fstat(fd)
         if (

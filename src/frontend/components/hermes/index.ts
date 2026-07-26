@@ -21,6 +21,8 @@ export { WorkbenchCommandApprovalsPanel } from "./approvals/WorkbenchCommandAppr
 export type { WorkbenchCommandApprovalsPanelProps } from "./approvals/WorkbenchCommandApprovalsPanel";
 export { WorkbenchAuthorityProjectionPanel } from "./authority/WorkbenchAuthorityProjectionPanel";
 export type { WorkbenchAuthorityProjectionPanelProps } from "./authority/WorkbenchAuthorityProjectionPanel";
+export { WorkbenchRunStopPanel } from "./run-control/WorkbenchRunStopPanel";
+export type { WorkbenchRunStopPanelProps } from "./run-control/WorkbenchRunStopPanel";
 export { WorkbenchGateSurfacesPanel } from "./gates/WorkbenchGateSurfacesPanel";
 export { WorkbenchTypedResultsPanel } from "./results/WorkbenchTypedResultsPanel";
 export type { WorkbenchGateSurfacesPanelProps } from "./gates/WorkbenchGateSurfacesPanel";

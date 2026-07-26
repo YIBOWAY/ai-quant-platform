@@ -253,6 +253,65 @@ def test_run_suite_executes_without_shell_and_seals_recomputable_receipt(
     assert {stat.S_IMODE(path.stat().st_mode) for path in output_dir.iterdir()} == {0o600}
 
 
+def test_run_suite_seals_large_but_bounded_full_suite_junit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+    junit = (
+        b'<testsuite tests="1" failures="0" errors="0" skipped="0">'
+        b'<testcase name="'
+        + (b"x" * (4 * 1024 * 1024))
+        + b'"/></testsuite>'
+    )
+    assert 4 * 1024 * 1024 < len(junit) < 8 * 1024 * 1024
+
+    def execute_with_large_junit(
+        argv: tuple[str, ...],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        timeout_seconds: int,
+    ) -> tuple[int, bytes]:
+        del cwd, env, timeout_seconds
+        target = Path(
+            next(
+                arg.split("=", 1)[1]
+                for arg in argv
+                if arg.startswith("--junitxml=")
+            )
+        )
+        target.write_bytes(junit)
+        target.chmod(0o600)
+        return 0, b""
+
+    monkeypatch.setattr(
+        release_evidence_builder,
+        "_execute_bounded",
+        execute_with_large_junit,
+    )
+    result = run_test_suite(
+        name="platform",
+        argv=(
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests",
+            "--junitxml={junit}",
+        ),
+        output_dir=output_dir,
+        runtime_roots=roots,
+        cwd=roots["platform"],
+    )
+
+    assert result.passed == 1
+    assert result.failed == 0
+    assert result.junit_path.stat().st_size == len(junit)
+    assert stat.S_IMODE(result.junit_path.stat().st_mode) == 0o600
+
+
 def test_run_suite_rejects_unapproved_executable_or_suite_cwd(
     tmp_path: Path,
 ) -> None:

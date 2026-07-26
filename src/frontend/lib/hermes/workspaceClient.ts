@@ -975,6 +975,85 @@ export async function decideHermesCommandApproval(
   );
 }
 
+export type RequestHermesRunStopInput = {
+  runId: string;
+  clientActionId?: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+};
+
+export function buildRequestRunStopAction(input: {
+  runId: string;
+  clientActionId: string;
+  workspaceId: string;
+}): Record<string, unknown> {
+  const runId = input.runId.startsWith("run:")
+    ? input.runId.slice("run:".length)
+    : input.runId;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/.test(runId)) {
+    throw new WorkspaceClientError(
+      "valid Hermes run_id required",
+      400,
+      "validation",
+    );
+  }
+  return {
+    schema_version: 1,
+    kind: "run.stop.request",
+    client_action_id: input.clientActionId,
+    workspace: { workspace_id: input.workspaceId },
+    run_ref: `run:${runId}`,
+    // Run is the only proven authority on this surface. Never invent layers.
+    task_ref: null,
+    attempt_ref: null,
+    platform_job_ref: null,
+  };
+}
+
+/**
+ * Request stop for one exact Hermes Run through the owner-gated workspace BFF.
+ * Callers retry an unknown outcome with the same clientActionId.
+ */
+export async function requestHermesRunStop(
+  options: RequestHermesRunStopInput,
+): Promise<WorkspaceActionReceipt> {
+  await ensureOwnerSession(options.signal);
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  const clientActionId = options.clientActionId ?? crypto.randomUUID();
+  const action = buildRequestRunStopAction({
+    runId: options.runId,
+    clientActionId,
+    workspaceId,
+  });
+  const receipt = await sameOriginJson<WorkspaceActionReceipt>(
+    `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
+    {
+      method: "POST",
+      csrf: true,
+      signal: options.signal,
+      body: { action },
+    },
+  );
+  if (receipt.client_action_id !== clientActionId) {
+    throw new WorkspaceClientError(
+      "stop receipt does not match the immutable attempt",
+      503,
+      "stop_receipt_identity_mismatch",
+    );
+  }
+  if (
+    typeof receipt.run_id === "string" &&
+    receipt.run_id !== action.run_ref?.toString().slice("run:".length)
+  ) {
+    throw new WorkspaceClientError(
+      "stop receipt does not match the exact Hermes Run",
+      503,
+      "stop_receipt_run_mismatch",
+    );
+  }
+  return receipt;
+}
+
 /** V7e: Domain Gate 1/2/3 projection — never shares command-approval shape. */
 export type WorkspaceGateProjection = {
   gate_id: string;

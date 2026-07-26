@@ -34,7 +34,10 @@ _UTC_TIMESTAMP_RE = re.compile(
 _SAFE_SUITE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_RECEIPT_BYTES = 1024 * 1024
 _MAX_OUTPUT_BYTES = 4 * 1024 * 1024
-_MAX_JUNIT_BYTES = 4 * 1024 * 1024
+# The Platform's full 2.6k-case JUnit document is currently ~4.6 MiB because
+# parameterized node IDs are evidence too. Keep a separate, still-bounded
+# allowance instead of widening logs, receipts, or release manifests.
+_MAX_JUNIT_BYTES = 8 * 1024 * 1024
 _MAX_ARGV_ITEMS = 64
 _MAX_ARG_BYTES = 4096
 _MAX_ARGV_BYTES = 32 * 1024
