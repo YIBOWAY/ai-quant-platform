@@ -65,11 +65,30 @@ resolve_next() {
   fail "next_executable_not_found"
 }
 
+resolve_node() {
+  local candidate path_node
+  path_node="$(command -v node 2>/dev/null || true)"
+  for candidate in \
+    "${QS_QUANT_FRONTEND_NODE_BIN:-}" \
+    "$path_node" \
+    "$HOME/.local/bin/node" \
+    "/opt/homebrew/bin/node" \
+    "/usr/local/bin/node" \
+    "/usr/bin/node"; do
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+  fail "node_executable_not_found"
+}
+
 load_frontend_env
 MAIN_ROOT="$(discover_main_root)"
 [[ -d "$MAIN_ROOT" ]] || fail "main_repo_missing"
 [[ -f "$FRONTEND_DIR/.next/BUILD_ID" ]] || fail "release_build_missing"
 NEXT_BIN="$(resolve_next)"
+NODE_BIN="$(resolve_node)"
 MAIN_NODE_MODULES="$MAIN_ROOT/src/frontend/node_modules"
 if [[ -d "$MAIN_NODE_MODULES" ]]; then
   export NODE_PATH="$MAIN_NODE_MODULES${NODE_PATH:+:$NODE_PATH}"
@@ -88,8 +107,10 @@ esac
 case "${1:-}" in
   --check)
     [[ "$#" -eq 1 ]] || fail "unexpected_arguments"
-    "$NEXT_BIN" --version >/dev/null || fail "next_runtime_check_failed"
-    printf 'frontend_ready=true release_root=%s next=%s\n' "$ROOT" "$NEXT_BIN"
+    "$NODE_BIN" "$NEXT_BIN" --version >/dev/null ||
+      fail "next_runtime_check_failed"
+    printf 'frontend_ready=true release_root=%s node=%s next=%s\n' \
+      "$ROOT" "$NODE_BIN" "$NEXT_BIN"
     exit 0
     ;;
   "")
@@ -111,4 +132,4 @@ cd "$FRONTEND_DIR"
 
 exec >>"$LOG_PATH" 2>&1
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] starting frontend-next"
-exec "$NEXT_BIN" start -H 127.0.0.1 -p 3001
+exec "$NODE_BIN" "$NEXT_BIN" start -H 127.0.0.1 -p 3001

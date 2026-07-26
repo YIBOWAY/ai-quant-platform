@@ -25,7 +25,7 @@ def test_mac_local_service_wrappers_bind_to_localhost_and_keep_logs() -> None:
     assert "QS_API_BIND_ADDRESS=127.0.0.1" in backend
     assert "backend-api.launchd.log" in backend
     assert "NEXT_PUBLIC_QUANT_API_BASE_URL" in frontend
-    assert 'exec "$NEXT_BIN" start -H 127.0.0.1 -p 3001' in frontend
+    assert 'exec "$NODE_BIN" "$NEXT_BIN" start -H 127.0.0.1 -p 3001' in frontend
     assert "release_build_missing" in frontend
     assert "frontend-next.launchd.log" in frontend
     assert "npm run dev" not in frontend

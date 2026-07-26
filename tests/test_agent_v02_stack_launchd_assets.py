@@ -31,6 +31,17 @@ def _write_frontend_env(release_root: Path, *, mode: int = 0o600) -> Path:
     return env_file
 
 
+def _write_bash_node_shim(tmp_path: Path) -> Path:
+    node_bin = tmp_path / "node-shim"
+    node_bin.write_text(
+        "#!/bin/sh\n"
+        'exec /bin/bash "$@"\n',
+        encoding="utf-8",
+    )
+    node_bin.chmod(0o700)
+    return node_bin
+
+
 def test_backend_check_uses_release_source_with_main_repo_python(
     tmp_path: Path,
 ) -> None:
@@ -150,6 +161,7 @@ def test_frontend_check_uses_release_build_with_main_repo_next(
     next_bin.parent.mkdir(parents=True)
     next_bin.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     next_bin.chmod(0o700)
+    node_bin = _write_bash_node_shim(tmp_path)
 
     result = subprocess.run(
         [str(script), "--check"],
@@ -158,6 +170,7 @@ def test_frontend_check_uses_release_build_with_main_repo_next(
             **os.environ,
             "QS_MAIN_REPO_ROOT": str(main_root),
             "QS_AGENT_V02_FRONTEND_ENV_FILE": str(env_file),
+            "QS_QUANT_FRONTEND_NODE_BIN": str(node_bin),
         },
         text=True,
         capture_output=True,
@@ -168,6 +181,57 @@ def test_frontend_check_uses_release_build_with_main_repo_next(
     assert "frontend_ready=true" in result.stdout
     assert f"release_root={release_root}" in result.stdout
     assert f"next={next_bin}" in result.stdout
+
+
+def test_frontend_check_resolves_node_outside_launchd_minimal_path(
+    tmp_path: Path,
+) -> None:
+    release_root, script = _copy_script(tmp_path, "run_quant_frontend.sh")
+    env_file = _write_frontend_env(release_root)
+    build_id = release_root / "src" / "frontend" / ".next" / "BUILD_ID"
+    build_id.parent.mkdir(parents=True)
+    build_id.write_text("release-build\n", encoding="utf-8")
+
+    main_root = tmp_path / "main"
+    next_bin = main_root / "src" / "frontend" / "node_modules" / ".bin" / "next"
+    next_bin.parent.mkdir(parents=True)
+    next_bin.write_text(
+        "#!/usr/bin/env node\n"
+        "throw new Error('the fake node executable must run this file');\n",
+        encoding="utf-8",
+    )
+    next_bin.chmod(0o700)
+
+    home = tmp_path / "home"
+    node_bin = home / ".local" / "bin" / "node"
+    node_bin.parent.mkdir(parents=True)
+    node_bin.write_text(
+        "#!/bin/sh\n"
+        'test "$1" = "$QS_EXPECTED_NEXT_BIN" || exit 91\n'
+        'test "$2" = "--version" || exit 92\n',
+        encoding="utf-8",
+    )
+    node_bin.chmod(0o700)
+
+    result = subprocess.run(
+        [str(script), "--check"],
+        cwd=release_root,
+        env={
+            "HOME": str(home),
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "QS_MAIN_REPO_ROOT": str(main_root),
+            "QS_AGENT_V02_FRONTEND_ENV_FILE": str(env_file),
+            "QS_EXPECTED_NEXT_BIN": str(next_bin),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "frontend_ready=true" in result.stdout
+    assert f"next={next_bin}" in result.stdout
+    assert f"node={node_bin}" in result.stdout
 
 
 def test_frontend_rejects_non_owner_only_env_before_start(
@@ -257,22 +321,36 @@ def test_frontend_start_serves_release_build_with_main_repo_modules(
     next_bin = main_modules / ".bin" / "next"
     next_bin.parent.mkdir(parents=True)
     next_bin.write_text(
-        "#!/usr/bin/env bash\n"
+        "#!/usr/bin/env node\n"
+        "throw new Error('the fake node executable must run this file');\n",
+        encoding="utf-8",
+    )
+    next_bin.chmod(0o700)
+
+    home = tmp_path / "home"
+    node_bin = home / ".local" / "bin" / "node"
+    node_bin.parent.mkdir(parents=True)
+    node_bin.write_text(
+        "#!/bin/sh\n"
+        'test "$1" = "$QS_EXPECTED_NEXT_BIN" || exit 91\n'
+        "shift\n"
         'printf "cwd=%s\\n" "$PWD"\n'
         'printf "node_path=%s\\n" "$NODE_PATH"\n'
         'printf "hermes_chat=%s\\n" "$QS_HERMES_CHAT_ENABLED"\n'
         'printf "args=%s\\n" "$*"\n',
         encoding="utf-8",
     )
-    next_bin.chmod(0o700)
+    node_bin.chmod(0o700)
 
     result = subprocess.run(
         [str(script)],
         cwd=release_root,
         env={
-            **os.environ,
+            "HOME": str(home),
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "QS_MAIN_REPO_ROOT": str(main_root),
             "QS_AGENT_V02_FRONTEND_ENV_FILE": str(env_file),
+            "QS_EXPECTED_NEXT_BIN": str(next_bin),
         },
         text=True,
         capture_output=True,
@@ -332,6 +410,7 @@ def test_stack_installer_is_replay_safe_and_never_installs_strategy_jobs(
     next_bin.parent.mkdir(parents=True)
     next_bin.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     next_bin.chmod(0o700)
+    node_bin = _write_bash_node_shim(tmp_path)
 
     launchctl_log = tmp_path / "launchctl.log"
     launchctl = tmp_path / "launchctl"
@@ -349,6 +428,7 @@ def test_stack_installer_is_replay_safe_and_never_installs_strategy_jobs(
         "QS_MAIN_REPO_ROOT": str(main_root),
         "QS_AGENT_V02_BACKEND_ENV_FILE": str(env_file),
         "QS_AGENT_V02_FRONTEND_ENV_FILE": str(frontend_env_file),
+        "QS_QUANT_FRONTEND_NODE_BIN": str(node_bin),
         "QS_LAUNCHCTL_BIN": str(launchctl),
     }
 
