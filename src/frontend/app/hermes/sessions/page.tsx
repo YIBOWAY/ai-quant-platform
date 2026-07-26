@@ -40,9 +40,9 @@ export default async function HermesSessionsPage() {
         />
         <StatusPill label="Hermes model" value={gateway.model ?? "--"} />
         <StatusPill
-          label={isZh ? "对话写端" : "Chat write"}
-          value={isZh ? "安全关闭" : "Safely closed"}
-          tone="warning"
+          label={isZh ? "本页" : "This page"}
+          value={isZh ? "只读记录" : "Read-only records"}
+          tone="info"
         />
       </Card>
 
