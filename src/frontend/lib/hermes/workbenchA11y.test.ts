@@ -150,7 +150,30 @@ describe("workbenchA11y (L5c)", () => {
     expect(composer).toContain("focus-visible:outline");
     expect(composer).toContain("aria-label={label}");
     expect(composer).toContain("aria-label={sendLabel}");
+    expect(composer).toContain("aria-label={newSessionLabel}");
+    expect(composer).toContain("onStartNewSession");
+    expect(composer).toContain("MessageSquarePlus");
+    expect(composer).toContain("newSessionButtonRef.current?.focus()");
+    expect(composer).toContain("rounded-md bg-bg-base");
+    expect(composer).toContain('aria-atomic="true"');
     expect(composer).toContain('role="status"');
+
+    const controller = readFileSync(
+      path.join(
+        process.cwd(),
+        "components/hermes/ComposerSubmitController.tsx",
+      ),
+      "utf8",
+    );
+    expect(controller).toContain("managedSessionIsReadyForHermesSession");
+    expect(controller).toContain('"read_only"');
+    expect(controller).toContain("sessionCanSubmit");
+    expect(controller).toContain(
+      'const sessionCanSubmit = assessedState === "writable"',
+    );
+    expect(controller).toContain("focusComposerWhenWritableRef");
+    expect(controller).toContain('assessedState === "empty"');
+    expect(controller).toContain("freshManagedSessionErrorCopy");
 
     const canvas = readFileSync(
       path.join(

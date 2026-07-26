@@ -1,33 +1,59 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { ComposerDock } from "@/components/hermes/ComposerDock";
 import type { ComposerDockProps } from "@/components/hermes/ComposerDock";
 import { useOptionalActiveHermesSession } from "@/lib/hermes/activeSession";
 import {
+  canRetryComposerAttempt,
   createComposerAttempt,
   retryComposerAttempt,
   shouldRetainComposerAttemptAfterError,
   type ComposerAttempt,
+  type SessionBoundComposerAttempt,
 } from "@/lib/hermes/composerAttempt";
+import { freshManagedSessionErrorCopy } from "@/lib/hermes/managedSessionPresentation";
+import { activateReadyManagedHermesSession } from "@/lib/hermes/sessionForkNavigation";
 import {
   WorkspaceClientError,
   fetchLatestAssistantText,
+  fetchWorkspaceSnapshot,
   isTerminalCommandState,
+  managedSessionIsReadyForHermesSession,
   previewAssistantText,
   requireSameComposerHermesSession,
+  resolveComposerHermesSessionId,
   sendComposerTurn,
+  startFreshManagedSession,
 } from "@/lib/hermes/workspaceClient";
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
 import { waitForCommandTerminalOnSpine } from "@/lib/hermes/workspaceFollowSpine";
+import type { Locale } from "@/lib/locale";
 
 export type ComposerSubmitControllerProps = Omit<
   ComposerDockProps,
-  "onSubmitPrompt" | "onRetry" | "statusText" | "busy"
+  | "onSubmitPrompt"
+  | "onRetry"
+  | "onStartNewSession"
+  | "statusText"
+  | "busy"
 > & {
   /** When false, dock stays visual-only even if allowSubmit is true. */
   networkSubmit?: boolean;
+  locale?: Locale;
+  emptySessionText?: string;
+  newSessionCreatingText?: string;
+  newSessionReadyText?: string;
+  readOnlySessionText?: string;
+  sessionCheckingText?: string;
+  sessionValidationUnavailableText?: string;
+};
+
+type SessionWriteAssessment = {
+  sessionId: string | null;
+  state: "checking" | "empty" | "writable" | "read_only" | "unavailable";
 };
 
 function shortCommandId(commandId?: string | null): string {
@@ -143,12 +169,29 @@ export function ComposerSubmitController({
   networkSubmit = false,
   allowSubmit = false,
   disabled = true,
+  locale = "en",
+  emptySessionText = "Start a new blank conversation before sending.",
+  newSessionCreatingText = "Creating a new managed conversation…",
+  newSessionReadyText = "New managed conversation ready.",
+  readOnlySessionText = "This session is read-only. Fork a specific message to continue its context, or start a new blank conversation.",
+  sessionCheckingText = "Checking whether this session can accept messages…",
+  sessionValidationUnavailableText = "Session write access could not be verified. Sending remains locked; start a new blank conversation or check local backend health.",
   ...dockProps
 }: ComposerSubmitControllerProps) {
   const [statusText, setStatusText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [retryAttempt, setRetryAttempt] = useState<ComposerAttempt | null>(null);
+  const [retryAttempt, setRetryAttempt] =
+    useState<SessionBoundComposerAttempt | null>(null);
+  const [newSessionAttemptActive, setNewSessionAttemptActive] = useState(false);
+  const [sessionAssessment, setSessionAssessment] =
+    useState<SessionWriteAssessment>({
+      sessionId: null,
+      state: "checking",
+    });
   const pollAbortRef = useRef<AbortController | null>(null);
+  const newSessionActionIdRef = useRef<string | null>(null);
+  const focusComposerWhenWritableRef = useRef<string | null>(null);
+  const router = useRouter();
   const activeSession = useOptionalActiveHermesSession();
   const activeHermesSessionId = activeSession?.hermesSessionId;
   const bindSession = activeSession?.setActiveHermesSession;
@@ -161,6 +204,45 @@ export function ComposerSubmitController({
       pollAbortRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const sessionId = activeHermesSessionId?.trim() || null;
+    if (!sessionId) {
+      // Give a same-commit deep-link binder one frame to establish the exact
+      // URL-selected session before enabling an empty-session composer.
+      const frame = window.requestAnimationFrame(() => {
+        setSessionAssessment({ sessionId: null, state: "empty" });
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const controller = new AbortController();
+    void fetchWorkspaceSnapshot(undefined, controller.signal)
+      .then((snapshot) => {
+        if (controller.signal.aborted) return;
+        const writable = managedSessionIsReadyForHermesSession(
+          snapshot,
+          sessionId,
+        );
+        setSessionAssessment({
+          sessionId,
+          state: writable ? "writable" : "read_only",
+        });
+        if (
+          writable &&
+          focusComposerWhenWritableRef.current === sessionId
+        ) {
+          focusComposerWhenWritableRef.current = null;
+          window.requestAnimationFrame(() => {
+            document.getElementById("hermes-composer-draft")?.focus();
+          });
+        }
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setSessionAssessment({ sessionId, state: "unavailable" });
+      });
+    return () => controller.abort();
+  }, [activeHermesSessionId]);
 
   const submitAttempt = useCallback(
     async (attempt: ComposerAttempt) => {
@@ -179,7 +261,11 @@ export function ComposerSubmitController({
 
       setBusy(true);
       setStatusText("Submitting…");
+      let selectedHermesSessionId: string | null = null;
       try {
+        selectedHermesSessionId = resolveComposerHermesSessionId(
+          activeHermesSessionId,
+        );
         const receipt = await sendComposerTurn({
           prompt,
           clientActionId,
@@ -193,8 +279,20 @@ export function ComposerSubmitController({
             receipt.reason_code,
           ),
         );
+        const submittedHermesSessionId = requireSameComposerHermesSession(
+          receipt.hermes_session_id,
+        );
+        if (selectedHermesSessionId) {
+          requireSameComposerHermesSession(
+            selectedHermesSessionId,
+            submittedHermesSessionId,
+          );
+        }
         if (receipt.status === "outcome_unknown") {
-          setRetryAttempt(attempt);
+          setRetryAttempt({
+            attempt,
+            hermesSessionId: submittedHermesSessionId,
+          });
         } else {
           setRetryAttempt(null);
         }
@@ -225,10 +323,6 @@ export function ComposerSubmitController({
 
         // L5a: after accept (or outcome_unknown with a command id), wait on spine.
         if (receipt.command_id && !pollAbort.signal.aborted) {
-          const submittedHermesSessionId = requireSameComposerHermesSession(
-            receipt.hermes_session_id,
-          );
-
           // Immediate match from shared spine snapshot (no private GET).
           const existing = followState.commands.find(
             (c) => c.command_id === receipt.command_id,
@@ -313,7 +407,10 @@ export function ComposerSubmitController({
           );
 
           if (terminalState === "outcome_unknown") {
-            setRetryAttempt(attempt);
+            setRetryAttempt({
+              attempt,
+              hermesSessionId: followedHermesSessionId,
+            });
           }
 
           if (terminalState === "succeeded") {
@@ -336,8 +433,14 @@ export function ComposerSubmitController({
         if (pollAbort.signal.aborted) {
           return;
         }
-        if (shouldRetainComposerAttemptAfterError(error)) {
-          setRetryAttempt(attempt);
+        if (
+          shouldRetainComposerAttemptAfterError(error) &&
+          selectedHermesSessionId
+        ) {
+          setRetryAttempt({
+            attempt,
+            hermesSessionId: selectedHermesSessionId,
+          });
         } else {
           setRetryAttempt(null);
         }
@@ -377,24 +480,124 @@ export function ComposerSubmitController({
     [submitAttempt],
   );
 
+  const onStartNewSession = useCallback(async () => {
+    if (!networkSubmit) {
+      throw new WorkspaceClientError(
+        "network submit is not enabled on this shell",
+        403,
+        "forbidden",
+      );
+    }
+    pollAbortRef.current?.abort();
+    pollAbortRef.current = null;
+    const clientActionId =
+      newSessionActionIdRef.current ?? crypto.randomUUID();
+    newSessionActionIdRef.current = clientActionId;
+    setNewSessionAttemptActive(true);
+    setBusy(true);
+    setStatusText(newSessionCreatingText);
+    try {
+      const { managedSession } = await startFreshManagedSession({
+        clientActionId,
+      });
+      const hermesSessionId = requireSameComposerHermesSession(
+        managedSession.hermes_session_id,
+      );
+      focusComposerWhenWritableRef.current = hermesSessionId;
+      activateReadyManagedHermesSession({
+        hermesSessionId,
+        locale,
+        bindHermesSession: (readySessionId) => {
+          bindSession?.({ hermesSessionId: readySessionId });
+        },
+        navigate: (href) => router.push(href),
+      });
+      setPendingUserText?.(null);
+      setRetryAttempt(null);
+      newSessionActionIdRef.current = null;
+      setNewSessionAttemptActive(false);
+      setStatusText(newSessionReadyText);
+    } catch (error) {
+      const localized = freshManagedSessionErrorCopy(error, locale);
+      setStatusText(localized);
+      throw new Error(localized);
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    bindSession,
+    locale,
+    networkSubmit,
+    newSessionCreatingText,
+    newSessionReadyText,
+    router,
+    setPendingUserText,
+  ]);
+
+  const selectedSessionId = activeHermesSessionId?.trim() || null;
+  const assessedState =
+    sessionAssessment.sessionId === selectedSessionId
+      ? sessionAssessment.state
+      : "checking";
+  // An empty workbench must establish one explicit, durable Session first.
+  // Otherwise a first-turn durable accept followed by response loss has no
+  // exact Session identity on which to offer a safe same-action retry.
+  const sessionCanSubmit = assessedState === "writable";
+  const baseControlsEnabled = networkSubmit && allowSubmit && !disabled;
+  const retryEligible = canRetryComposerAttempt(
+    retryAttempt,
+    selectedSessionId,
+    sessionCanSubmit,
+  );
   const onRetry = useCallback(() => {
-    if (!retryAttempt) return Promise.resolve();
-    return submitAttempt(retryComposerAttempt(retryAttempt));
-  }, [retryAttempt, submitAttempt]);
+    if (
+      !canRetryComposerAttempt(
+        retryAttempt,
+        selectedSessionId,
+        sessionCanSubmit,
+      )
+    ) {
+      setRetryAttempt(null);
+      return Promise.resolve();
+    }
+    return submitAttempt(retryComposerAttempt(retryAttempt.attempt));
+  }, [
+    retryAttempt,
+    selectedSessionId,
+    sessionCanSubmit,
+    submitAttempt,
+  ]);
+  const sessionStatusText =
+    assessedState === "checking"
+      ? sessionCheckingText
+      : assessedState === "empty"
+        ? emptySessionText
+      : assessedState === "read_only"
+        ? readOnlySessionText
+        : assessedState === "unavailable"
+          ? sessionValidationUnavailableText
+          : null;
+  const effectiveStatusText =
+    newSessionAttemptActive && statusText
+      ? statusText
+      : sessionStatusText ?? statusText;
 
   return (
     <ComposerDock
       {...dockProps}
       allowSubmit={allowSubmit}
       busy={busy}
-      disabled={disabled}
-      onSubmitPrompt={networkSubmit && allowSubmit && !disabled ? onSubmitPrompt : undefined}
-      onRetry={
-        retryAttempt && networkSubmit && allowSubmit && !disabled
-          ? onRetry
-          : undefined
+      disabled={disabled || !sessionCanSubmit}
+      onStartNewSession={
+        baseControlsEnabled ? onStartNewSession : undefined
       }
-      statusText={statusText}
+      onSubmitPrompt={
+        baseControlsEnabled && sessionCanSubmit ? onSubmitPrompt : undefined
+      }
+      onRetry={
+        retryEligible && baseControlsEnabled ? onRetry : undefined
+      }
+      statusText={effectiveStatusText}
     />
   );
 }

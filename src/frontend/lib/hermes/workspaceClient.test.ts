@@ -17,7 +17,9 @@ import {
   forkHermesSessionToManaged,
   isTerminalCommandState,
   latestManagedSessionProjection,
+  latestReadyManagedSessionProjection,
   latestAssistantText,
+  managedSessionIsReadyForHermesSession,
   pollCommandUntilTerminal,
   preflightPrompt,
   preparePromotionReview,
@@ -26,6 +28,7 @@ import {
   reviewCandidateCAS,
   requireSameComposerHermesSession,
   sendComposerTurn,
+  startFreshManagedSession,
   submitTurn,
   utf8ByteLength,
   waitForManagedSessionReady,
@@ -504,15 +507,343 @@ describe("sendComposerTurn", () => {
     return { location, mutationPaths, releaseOwner, submittedRefs };
   }
 
+  it("starts an explicit fresh root session instead of restoring older history", async () => {
+    const oldHermesSessionId = "web_" + "1".repeat(40);
+    // Produced independently by Python
+    // json.dumps(action, sort_keys=True, separators=(",", ":")) + SHA-256.
+    const actionDigest =
+      "0a38a14e8bce1122063f3ab7163bbd0c7ccb55535edabfb22626e67f1b9a96ac";
+    const newPlatformSessionId = `wm_${actionDigest.slice(0, 32)}`;
+    const newSessionRef = `session:${newPlatformSessionId}`;
+    const newHermesSessionId = `web_${actionDigest.slice(0, 40)}`;
+    const calls: Array<{ url: string; method: string }> = [];
+    const stored = new Map<string, string>([
+      [
+        "qs.hermes.l2a.managed_session_ref:" + PLATFORM_WORKSPACE_ID,
+        "session:wm_old",
+      ],
+    ]);
+    vi.stubGlobal("document", {
+      cookie: "qs_aw_csrf=csrf-new-conversation",
+    });
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => stored.set(key, value),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        calls.push({ url, method });
+        if (url === "/api/auth/owner/session" && method === "GET") {
+          return new Response(
+            JSON.stringify({
+              session_id: "owner-new-conversation",
+              mutation_enabled: true,
+              security_ready: true,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (
+          url === `/api/workspace/${PLATFORM_WORKSPACE_ID}/act` &&
+          method === "POST"
+        ) {
+          const body = JSON.parse(String(init?.body)) as {
+            action: Record<string, unknown>;
+          };
+          expect(body.action.client_action_id).toBe(
+            "new-conversation-attempt",
+          );
+          expect(body.action).toEqual({
+            schema_version: 1,
+            kind: "managed_session.create",
+            client_action_id: "new-conversation-attempt",
+            workspace: { workspace_id: PLATFORM_WORKSPACE_ID },
+            provider_policy_digest: PROVIDER_POLICY_DIGEST,
+            payload_ttl_days: 7,
+          });
+          return new Response(
+            JSON.stringify({
+              status: "accepted",
+              client_action_id: "new-conversation-attempt",
+              action_digest: actionDigest,
+              workspace: { workspace_id: PLATFORM_WORKSPACE_ID },
+              platform_session_id: newPlatformSessionId,
+              session_ref: newSessionRef,
+              hermes_session_id: newHermesSessionId,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (
+          url === `/api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot` &&
+          method === "GET"
+        ) {
+          return new Response(
+            JSON.stringify({
+              authority_health: { session_registry: "ready" },
+              managed_sessions: [
+                readyManagedSession("wm_old", oldHermesSessionId),
+                readyManagedSession(
+                  newPlatformSessionId,
+                  newHermesSessionId,
+                ),
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${method} ${url}`);
+      }),
+    );
+
+    const result = await startFreshManagedSession({
+      clientActionId: "new-conversation-attempt",
+    });
+
+    expect(result.receipt.action_digest).toBe(actionDigest);
+    expect(result.managedSession.platform_session_id).toBe(
+      newPlatformSessionId,
+    );
+    expect(result.managedSession.hermes_session_id).toBe(newHermesSessionId);
+    expect(
+      stored.get(
+        "qs.hermes.l2a.managed_session_ref:" + PLATFORM_WORKSPACE_ID,
+      ),
+    ).toBe(newSessionRef);
+    expect(calls.map(({ method, url }) => `${method} ${url}`)).toEqual([
+      "GET /api/auth/owner/session",
+      `POST /api/workspace/${PLATFORM_WORKSPACE_ID}/act`,
+      `GET /api/workspace/${PLATFORM_WORKSPACE_ID}/snapshot`,
+    ]);
+  });
+
+  it("rejects a fresh-session receipt that changes the action identity", async () => {
+    vi.stubGlobal("document", {
+      cookie: "qs_aw_csrf=csrf-new-conversation-mismatch",
+    });
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: () => null,
+        setItem: vi.fn(),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "/api/auth/owner/session" && method === "GET") {
+          return new Response(
+            JSON.stringify({
+              session_id: "owner-new-conversation-mismatch",
+              mutation_enabled: true,
+              security_ready: true,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            status: "accepted",
+            client_action_id: "different-attempt",
+            platform_session_id: "wm_wrong",
+            session_ref: "session:wm_wrong",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    await expect(
+      startFreshManagedSession({
+        clientActionId: "expected-attempt",
+      }),
+    ).rejects.toMatchObject({
+      code: "managed_session_create_receipt_identity_mismatch",
+      status: 503,
+    });
+  });
+
+  it.each([
+    [
+      "canonical digest",
+      { action_digest: "f".repeat(64) },
+      "managed_session_create_receipt_digest_mismatch",
+    ],
+    [
+      "platform session",
+      { platform_session_id: "wm_" + "f".repeat(32) },
+      "managed_session_create_receipt_session_identity_mismatch",
+    ],
+    [
+      "session reference",
+      { session_ref: "session:wm_" + "f".repeat(32) },
+      "managed_session_create_receipt_session_identity_mismatch",
+    ],
+    [
+      "Hermes session",
+      { hermes_session_id: "web_" + "f".repeat(40) },
+      "managed_session_create_receipt_session_identity_mismatch",
+    ],
+  ])(
+    "rejects a create receipt that substitutes its %s",
+    async (_label, override, expectedCode) => {
+      const actionDigest =
+        "3d60206bf4eecfc0d2cd9a7078e49f66fb813fa7b056e67fce47da21f13015e8";
+      const platformSessionId = `wm_${actionDigest.slice(0, 32)}`;
+      const sessionRef = `session:${platformSessionId}`;
+      const hermesSessionId = `web_${actionDigest.slice(0, 40)}`;
+      const setItem = vi.fn();
+      vi.stubGlobal("document", {
+        cookie: "qs_aw_csrf=csrf-create-substitution",
+      });
+      vi.stubGlobal("window", {
+        sessionStorage: {
+          getItem: () => null,
+          setItem,
+        },
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = (init?.method ?? "GET").toUpperCase();
+          if (url === "/api/auth/owner/session" && method === "GET") {
+            return new Response(
+              JSON.stringify({
+                session_id: "owner-create-substitution",
+                mutation_enabled: true,
+                security_ready: true,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          }
+          if (
+            url === `/api/workspace/${PLATFORM_WORKSPACE_ID}/act` &&
+            method === "POST"
+          ) {
+            return new Response(
+              JSON.stringify({
+                status: "accepted",
+                client_action_id: "expected-attempt",
+                action_digest: actionDigest,
+                workspace: { workspace_id: PLATFORM_WORKSPACE_ID },
+                platform_session_id: platformSessionId,
+                session_ref: sessionRef,
+                hermes_session_id: hermesSessionId,
+                ...override,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          }
+          throw new Error(`unexpected fetch ${method} ${url}`);
+        }),
+      );
+
+      await expect(
+        startFreshManagedSession({
+          clientActionId: "expected-attempt",
+        }),
+      ).rejects.toMatchObject({
+        code: expectedCode,
+        status: 503,
+      });
+      expect(setItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a ready projection whose Hermes id is not derived from the create digest", async () => {
+    const actionDigest =
+      "3d60206bf4eecfc0d2cd9a7078e49f66fb813fa7b056e67fce47da21f13015e8";
+    const platformSessionId = `wm_${actionDigest.slice(0, 32)}`;
+    const sessionRef = `session:${platformSessionId}`;
+    const hermesSessionId = `web_${actionDigest.slice(0, 40)}`;
+    vi.stubGlobal("document", {
+      cookie: "qs_aw_csrf=csrf-create-projection",
+    });
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: () => null,
+        setItem: vi.fn(),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "/api/auth/owner/session" && method === "GET") {
+          return new Response(
+            JSON.stringify({
+              session_id: "owner-create-projection",
+              mutation_enabled: true,
+              security_ready: true,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url.endsWith("/act") && method === "POST") {
+          return new Response(
+            JSON.stringify({
+              status: "accepted",
+              client_action_id: "expected-attempt",
+              action_digest: actionDigest,
+              workspace: { workspace_id: PLATFORM_WORKSPACE_ID },
+              platform_session_id: platformSessionId,
+              session_ref: sessionRef,
+              hermes_session_id: hermesSessionId,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url.endsWith("/snapshot") && method === "GET") {
+          return new Response(
+            JSON.stringify({
+              managed_sessions: [
+                readyManagedSession(
+                  platformSessionId,
+                  "web_" + "f".repeat(40),
+                ),
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected fetch ${method} ${url}`);
+      }),
+    );
+
+    await expect(
+      startFreshManagedSession({
+        clientActionId: "expected-attempt",
+      }),
+    ).rejects.toMatchObject({
+      code: "managed_session_create_projection_mismatch",
+      status: 503,
+    });
+  });
+
   it("with an authorized owner creates a managed session, then submits four fields + CSRF", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const csrfCookie = "qs_aw_csrf=csrf-live-token";
     let managedSessionCreated = false;
     const memory = new Map<string, string>();
+    const actionDigest =
+      "654c510d29594e37971ede085b33aa878b91ac8401a74aa70d4f799724f0197b";
+    const platformSessionId = `wm_${actionDigest.slice(0, 32)}`;
+    const sessionRef = `session:${platformSessionId}`;
+    const hermesSessionId = `web_${actionDigest.slice(0, 40)}`;
 
     // Node vitest env: stub minimal browser globals used by the client.
+    const subtle = globalThis.crypto.subtle;
     vi.stubGlobal("crypto", {
       randomUUID: () => "11111111-1111-4111-8111-111111111111",
+      subtle,
     });
     vi.stubGlobal("document", {
       get cookie() {
@@ -563,8 +894,11 @@ describe("sendComposerTurn", () => {
             JSON.stringify({
               status: "accepted",
               client_action_id: body.action.client_action_id,
-              platform_session_id: "wm_managed_1",
-              session_ref: "session:wm_managed_1",
+              action_digest: actionDigest,
+              workspace: { workspace_id: PLATFORM_WORKSPACE_ID },
+              platform_session_id: platformSessionId,
+              session_ref: sessionRef,
+              hermes_session_id: hermesSessionId,
               mutation_enabled: true,
             }),
             { status: 200, headers: { "content-type": "application/json" } },
@@ -577,10 +911,10 @@ describe("sendComposerTurn", () => {
               authority_health: { session_registry: "ready" },
               managed_sessions: managedSessionCreated
                 ? [
-                    {
-                      platform_session_id: "wm_managed_1",
-                      session_ref: "session:wm_managed_1",
-                      hermes_session_id: "web_" + "a".repeat(40),
+                  {
+                      platform_session_id: platformSessionId,
+                      session_ref: sessionRef,
+                      hermes_session_id: hermesSessionId,
                       provision_state: "ready",
                       web_writable: true,
                       attempt_count: 1,
@@ -613,7 +947,7 @@ describe("sendComposerTurn", () => {
             "workspace_id",
           ]);
           expect(body.workspace_id).toBe(PLATFORM_WORKSPACE_ID);
-          expect(body.managed_session_ref).toBe("session:wm_managed_1");
+          expect(body.managed_session_ref).toBe(sessionRef);
           expect(body.prompt).toBe("Reply with exactly: L2a-pong");
           return new Response(
             JSON.stringify({
@@ -640,7 +974,7 @@ describe("sendComposerTurn", () => {
 
     expect(receipt.status).toBe("accepted");
     expect(receipt.command_id).toBeTruthy();
-    expect(receipt.hermes_session_id).toBe("web_" + "a".repeat(40));
+    expect(receipt.hermes_session_id).toBe(hermesSessionId);
     expect(receipt.payload_ref).toMatch(/^payload:sha256:/);
     expect(receipt).not.toHaveProperty("prompt");
 
@@ -847,6 +1181,87 @@ describe("sendComposerTurn", () => {
         status: 503,
       }),
     );
+  });
+
+  it("restores only the newest exact ready managed session, never a command run id", () => {
+    const newestHermesSessionId = "web_" + "4".repeat(40);
+    const recovered = latestReadyManagedSessionProjection({
+      managed_sessions: [
+        {
+          platform_session_id: "wm_older",
+          session_ref: "session:wm_older",
+          hermes_session_id: "run_historical_command",
+          provision_state: "ready",
+          web_writable: true,
+          attempt_count: 1,
+        },
+        {
+          platform_session_id: "wm_newest",
+          session_ref: "session:wm_newest",
+          hermes_session_id: newestHermesSessionId,
+          provision_state: "ready",
+          web_writable: true,
+          attempt_count: 1,
+        },
+      ],
+    });
+
+    expect(recovered?.platform_session_id).toBe("wm_newest");
+    expect(recovered?.hermes_session_id).toBe(newestHermesSessionId);
+  });
+
+  it("does not fall back when the newest managed lineage is not ready", () => {
+    expect(
+      latestReadyManagedSessionProjection({
+        managed_sessions: [
+          {
+            platform_session_id: "wm_older_ready",
+            session_ref: "session:wm_older_ready",
+            hermes_session_id: "web_" + "5".repeat(40),
+            provision_state: "ready",
+            web_writable: true,
+            attempt_count: 1,
+          },
+          {
+            platform_session_id: "wm_newest_pending",
+            session_ref: "session:wm_newest_pending",
+            hermes_session_id: "web_" + "6".repeat(40),
+            provision_state: "pending",
+            web_writable: false,
+            attempt_count: 0,
+          },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("locks an external history session while admitting one exact ready managed row", () => {
+    const managedHermesSessionId = "web_" + "7".repeat(40);
+    const snapshot = {
+      managed_sessions: [
+        {
+          platform_session_id: "wm_exact",
+          session_ref: "session:wm_exact",
+          hermes_session_id: managedHermesSessionId,
+          provision_state: "ready" as const,
+          web_writable: true,
+          attempt_count: 1,
+        },
+      ],
+    };
+
+    expect(
+      managedSessionIsReadyForHermesSession(
+        snapshot,
+        "20260708_233821_737dc8b8",
+      ),
+    ).toBe(false);
+    expect(
+      managedSessionIsReadyForHermesSession(
+        snapshot,
+        managedHermesSessionId,
+      ),
+    ).toBe(true);
   });
 
   it("waits through pending provisioning before the first submit", async () => {

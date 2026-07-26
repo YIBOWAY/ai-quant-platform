@@ -891,12 +891,28 @@ class PlatformAgentWorkspace:
                         fork_point,
                         created_at,
                         updated_at
-                    FROM {SCHEMA}.hermes_workspace_sessions
-                    WHERE workspace_id = %s
-                      AND owner_user_id = %s
-                      AND kind = 'web_managed_session'
-                    ORDER BY created_at ASC
-                    LIMIT 200
+                    FROM (
+                        SELECT
+                            platform_session_id,
+                            hermes_session_id,
+                            provision_state,
+                            provision_attempt_count,
+                            provision_lease_until,
+                            provision_next_attempt_at,
+                            provision_last_error_code,
+                            provisioned_at,
+                            parent_platform_session_id,
+                            fork_point,
+                            created_at,
+                            updated_at
+                        FROM {SCHEMA}.hermes_workspace_sessions
+                        WHERE workspace_id = %s
+                          AND owner_user_id = %s
+                          AND kind = 'web_managed_session'
+                        ORDER BY created_at DESC, platform_session_id DESC
+                        LIMIT 200
+                    ) AS newest_managed_sessions
+                    ORDER BY created_at ASC, platform_session_id ASC
                     """,
                     (workspace_id, ROOT_USER_ID),
                 ).fetchall()

@@ -12,7 +12,6 @@ import {
   isNearBottom,
   isUsableHermesApiSessionId,
   mergePendingUserMessage,
-  pickLatestHermesSessionId,
   type AssistantPhase,
   type QuietRefetchScheduler,
 } from "@/lib/hermes/transcriptHelpers";
@@ -21,6 +20,7 @@ import {
   fetchHermesSessionMessages,
   fetchWorkspaceSnapshot,
   isTerminalCommandState,
+  latestReadyManagedSessionProjection,
   type HermesSessionMessage,
 } from "@/lib/hermes/workspaceClient";
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
@@ -102,8 +102,9 @@ export function WorkbenchTranscriptPanel({
   const hermesSessionIdRef = useRef<string | null>(hermesSessionId);
   hermesSessionIdRef.current = hermesSessionId;
 
-  // Bootstrap: if composer has not bound a session yet, pick latest command's
-  // hermes_session_id from workspace snapshot (local dark observe).
+  // Bootstrap only from the newest exact ready Web-managed registry row.
+  // Commands may carry historical run_* identities that are readable but are
+  // not writable managed-session authority.
   useEffect(() => {
     if (hermesSessionId) return;
     let cancelled = false;
@@ -112,12 +113,11 @@ export function WorkbenchTranscriptPanel({
       try {
         const snap = await fetchWorkspaceSnapshot(undefined, ac.signal);
         if (cancelled) return;
-        const picked = pickLatestHermesSessionId(snap.commands);
-        if (!picked) return;
+        const managed = latestReadyManagedSessionProjection(snap);
+        if (!managed) return;
         // onlyIfEmpty: late snapshot must not clobber a deliver-time bind.
         setActiveHermesSession({
-          hermesSessionId: picked.hermesSessionId,
-          commandId: picked.commandId,
+          hermesSessionId: managed.hermes_session_id,
           onlyIfEmpty: true,
         });
       } catch {

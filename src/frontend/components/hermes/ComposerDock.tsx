@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, type FormEvent } from "react";
-import { RotateCcw, Send } from "lucide-react";
+import { useRef, useState, type FormEvent } from "react";
+import { MessageSquarePlus, RotateCcw, Send } from "lucide-react";
 
 export type ComposerDockProps = {
   /**
@@ -32,6 +32,9 @@ export type ComposerDockProps = {
   /** Explicit exact-id retry for an indeterminate prior attempt. */
   onRetry?: () => void | Promise<void>;
   retryLabel?: string;
+  /** Explicitly create a new root Web-managed conversation. */
+  onStartNewSession?: () => void | Promise<void>;
+  newSessionLabel?: string;
 };
 
 /**
@@ -50,10 +53,13 @@ export function ComposerDock({
   busy = false,
   onRetry,
   retryLabel = "Retry same send",
+  onStartNewSession,
+  newSessionLabel = "New conversation",
 }: ComposerDockProps) {
   const [draft, setDraft] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const newSessionButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const networkWired = typeof onSubmitPrompt === "function";
   const submitEnabled =
@@ -92,8 +98,28 @@ export function ComposerDock({
     }
   }
 
+  async function handleStartNewSession() {
+    if (!onStartNewSession || busy || submitting) return;
+    setLocalError(null);
+    setSubmitting(true);
+    try {
+      await onStartNewSession();
+    } catch (error) {
+      setLocalError(
+        error instanceof Error ? error.message : "New conversation failed",
+      );
+      window.requestAnimationFrame(() => {
+        newSessionButtonRef.current?.focus();
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const hint = !allowSubmit || disabled
-    ? unavailableHint
+    ? statusText
+      ? null
+      : unavailableHint
     : !networkWired
       ? "Composer draft unlocked; network submit handler not wired."
       : null;
@@ -106,6 +132,21 @@ export function ComposerDock({
         className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-2"
         onSubmit={handleSubmit}
       >
+        {onStartNewSession ? (
+          <div className="flex justify-end">
+            <button
+              aria-label={newSessionLabel}
+              className="app-touch-target inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-bg-base px-2.5 py-1.5 font-body-sm text-text-primary transition-colors hover:bg-bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+              disabled={busy || submitting}
+              onClick={() => void handleStartNewSession()}
+              ref={newSessionButtonRef}
+              type="button"
+            >
+              <MessageSquarePlus aria-hidden="true" size={15} />
+              {newSessionLabel}
+            </button>
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
           <label className="sr-only" htmlFor="hermes-composer-draft">
             {label}
@@ -140,29 +181,28 @@ export function ComposerDock({
         {hint ? (
           <p className="font-body-sm text-text-secondary">{hint}</p>
         ) : null}
-        {displayStatus ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <p
-              className={`font-body-sm ${localError ? "text-danger" : "text-text-secondary"}`}
-              data-testid="hermes-composer-status"
-              role="status"
+        <div className="flex flex-wrap items-center gap-2">
+          <p
+            aria-atomic="true"
+            className={`font-body-sm ${localError ? "rounded-md bg-bg-base px-2 py-1 text-danger" : "text-text-secondary"}`}
+            data-testid="hermes-composer-status"
+            role="status"
+          >
+            {displayStatus ?? ""}
+          </p>
+          {onRetry ? (
+            <button
+              aria-label={retryLabel}
+              className="app-touch-target inline-flex items-center gap-1 rounded-md border border-border-subtle bg-bg-surface-muted px-2 py-1 font-body-sm text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
+              disabled={busy || submitting}
+              onClick={() => void handleRetry()}
+              type="button"
             >
-              {displayStatus}
-            </p>
-            {onRetry ? (
-              <button
-                aria-label={retryLabel}
-                className="app-touch-target inline-flex items-center gap-1 rounded-md border border-border-subtle bg-bg-surface-muted px-2 py-1 font-body-sm text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
-                disabled={busy || submitting}
-                onClick={() => void handleRetry()}
-                type="button"
-              >
-                <RotateCcw aria-hidden="true" size={14} />
-                {retryLabel}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+              <RotateCcw aria-hidden="true" size={14} />
+              {retryLabel}
+            </button>
+          ) : null}
+        </div>
       </form>
     </div>
   );

@@ -476,6 +476,63 @@ export function latestManagedSessionProjection(
 }
 
 /**
+ * Restore only the newest exact managed lineage when it is writable and
+ * fully provisioned. A pending/failed newest row is authoritative and must
+ * not cause fallback to an older conversation.
+ */
+export function latestReadyManagedSessionProjection(
+  snapshot: Pick<WorkspaceSnapshot, "managed_sessions">,
+): ManagedSessionProjection | null {
+  const latest = latestManagedSessionProjection(snapshot);
+  if (!latest || latest.provision_state !== "ready") {
+    return null;
+  }
+  managedSessionProjectionIsReady(latest);
+  return latest;
+}
+
+/**
+ * Fail-closed UI preflight for one explicitly selected Hermes Session.
+ * External/history-only sessions have no exact managed row and remain
+ * readable, but the composer must stay locked until the user forks them or
+ * explicitly starts a blank managed conversation.
+ */
+export function managedSessionIsReadyForHermesSession(
+  snapshot: Pick<WorkspaceSnapshot, "managed_sessions">,
+  hermesSessionId: string,
+): boolean {
+  if (!isUsableHermesApiSessionId(hermesSessionId)) {
+    return false;
+  }
+  if (!Array.isArray(snapshot.managed_sessions)) {
+    throw new WorkspaceClientError(
+      "managed session projection is unavailable",
+      503,
+      "managed_session_projection_unavailable",
+    );
+  }
+  const matches = snapshot.managed_sessions.filter(
+    (projection) => projection.hermes_session_id === hermesSessionId,
+  );
+  if (matches.length === 0) {
+    return false;
+  }
+  if (matches.length !== 1) {
+    throw new WorkspaceClientError(
+      "selected Hermes session maps to multiple managed session references",
+      503,
+      "managed_session_identity_ambiguous",
+    );
+  }
+  const matched = matches[0];
+  assertManagedSessionProjectionIdentity(matched);
+  if (matched.provision_state !== "ready") {
+    return false;
+  }
+  return managedSessionProjectionIsReady(matched);
+}
+
+/**
  * Resolve one already-selected Hermes Session to its unique managed Web row.
  * This path never consults sessionStorage, selects "latest", or creates a
  * replacement lineage: observed external/history sessions require a fork.
@@ -544,6 +601,92 @@ export async function resolveManagedSessionForHermesSession(options: {
   return ready;
 }
 
+type ManagedSessionCreateActionV1 = {
+  schema_version: 1;
+  kind: "managed_session.create";
+  client_action_id: string;
+  workspace: { workspace_id: string };
+  provider_policy_digest: string;
+  payload_ttl_days: number;
+};
+
+/**
+ * Match Python's json.dumps(..., sort_keys=True, separators=(",", ":"))
+ * for the strict JSON values admitted by UserActionV1. Python's default
+ * ensure_ascii=True is intentional here: the browser digest must remain
+ * byte-for-byte identical even if validation later rejects a non-ASCII value.
+ */
+function pythonCanonicalJson(value: unknown): string {
+  if (value === null) return "null";
+  if (value === true) return "true";
+  if (value === false) return "false";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new WorkspaceClientError(
+        "managed session create action is not strict JSON",
+        400,
+        "managed_session_create_action_invalid",
+      );
+    }
+    return JSON.stringify(value);
+  }
+  if (typeof value === "string") {
+    let encoded = '"';
+    for (let index = 0; index < value.length; index += 1) {
+      const code = value.charCodeAt(index);
+      if (code === 0x22) encoded += '\\"';
+      else if (code === 0x5c) encoded += "\\\\";
+      else if (code === 0x08) encoded += "\\b";
+      else if (code === 0x0c) encoded += "\\f";
+      else if (code === 0x0a) encoded += "\\n";
+      else if (code === 0x0d) encoded += "\\r";
+      else if (code === 0x09) encoded += "\\t";
+      else if (code < 0x20 || code >= 0x7f) {
+        encoded += `\\u${code.toString(16).padStart(4, "0")}`;
+      } else {
+        encoded += value[index];
+      }
+    }
+    return `${encoded}"`;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => pythonCanonicalJson(item)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const entries = Object.keys(record)
+      .sort()
+      .map(
+        (key) =>
+          `${pythonCanonicalJson(key)}:${pythonCanonicalJson(record[key])}`,
+      );
+    return `{${entries.join(",")}}`;
+  }
+  throw new WorkspaceClientError(
+    "managed session create action is not strict JSON",
+    400,
+    "managed_session_create_action_invalid",
+  );
+}
+
+async function canonicalManagedSessionCreateDigest(
+  action: ManagedSessionCreateActionV1,
+): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    throw new WorkspaceClientError(
+      "browser SHA-256 verifier is unavailable",
+      503,
+      "managed_session_create_digest_verifier_unavailable",
+    );
+  }
+  const payload = new TextEncoder().encode(pythonCanonicalJson(action));
+  return bytesToHex(
+    new Uint8Array(
+      await globalThis.crypto.subtle.digest("SHA-256", payload),
+    ),
+  );
+}
+
 export async function createManagedSession(options?: {
   workspaceId?: string;
   clientActionId?: string;
@@ -551,33 +694,152 @@ export async function createManagedSession(options?: {
 }): Promise<WorkspaceActionReceipt> {
   const workspaceId = options?.workspaceId ?? PLATFORM_WORKSPACE_ID;
   const clientActionId = options?.clientActionId ?? crypto.randomUUID();
+  const action: ManagedSessionCreateActionV1 = {
+    schema_version: 1,
+    kind: "managed_session.create",
+    client_action_id: clientActionId,
+    workspace: { workspace_id: workspaceId },
+    provider_policy_digest: PROVIDER_POLICY_DIGEST,
+    payload_ttl_days: PAYLOAD_TTL_DAYS,
+  };
+  const expectedActionDigest =
+    await canonicalManagedSessionCreateDigest(action);
   const receipt = await sameOriginJson<WorkspaceActionReceipt>(
     `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
     {
       method: "POST",
       csrf: true,
       signal: options?.signal,
-      body: {
-        action: {
-          schema_version: 1,
-          kind: "managed_session.create",
-          client_action_id: clientActionId,
-          workspace: { workspace_id: workspaceId },
-          provider_policy_digest: PROVIDER_POLICY_DIGEST,
-          payload_ttl_days: PAYLOAD_TTL_DAYS,
-        },
-      },
+      body: { action },
     },
   );
+  if (receipt.client_action_id !== clientActionId) {
+    throw new WorkspaceClientError(
+      "managed session create receipt does not match the immutable attempt",
+      503,
+      "managed_session_create_receipt_identity_mismatch",
+    );
+  }
+  if (receipt.workspace?.workspace_id !== workspaceId) {
+    throw new WorkspaceClientError(
+      "managed session create receipt does not match the local workspace",
+      503,
+      "managed_session_create_receipt_workspace_mismatch",
+    );
+  }
+  if (
+    typeof receipt.action_digest !== "string" ||
+    !/^[0-9a-f]{64}$/.test(receipt.action_digest)
+  ) {
+    throw new WorkspaceClientError(
+      "managed session create receipt is missing its canonical action digest",
+      503,
+      "managed_session_create_receipt_digest_invalid",
+    );
+  }
+  if (receipt.action_digest !== expectedActionDigest) {
+    throw new WorkspaceClientError(
+      "managed session create receipt digest does not match the exact submitted action",
+      503,
+      "managed_session_create_receipt_digest_mismatch",
+    );
+  }
+  if (receipt.status !== "accepted" && receipt.status !== "reconciling") {
+    throw new WorkspaceClientError(
+      receipt.reason_code ||
+        `managed session create returned status=${receipt.status}`,
+      receipt.status === "conflict" ? 409 : 503,
+      receipt.status,
+    );
+  }
+  const expectedPlatformSessionId = `wm_${expectedActionDigest.slice(0, 32)}`;
+  const expectedSessionRef = `session:${expectedPlatformSessionId}`;
+  const expectedHermesSessionId = `web_${expectedActionDigest.slice(0, 40)}`;
+  if (
+    receipt.platform_session_id !== expectedPlatformSessionId ||
+    receipt.session_ref !== expectedSessionRef ||
+    receipt.hermes_session_id !== expectedHermesSessionId
+  ) {
+    throw new WorkspaceClientError(
+      "managed session create receipt identity is not derived from the exact action digest",
+      503,
+      "managed_session_create_receipt_session_identity_mismatch",
+    );
+  }
+  saveManagedSessionRef(expectedSessionRef, workspaceId);
+  return receipt;
+}
+
+export type FreshManagedSessionResult = {
+  receipt: WorkspaceActionReceipt;
+  managedSession: ManagedSessionProjection;
+};
+
+function assertManagedSessionCreateProjection(
+  receipt: WorkspaceActionReceipt,
+  managedSession: ManagedSessionProjection,
+): void {
+  const actionDigest = receipt.action_digest as string;
+  const expectedPlatformSessionId = `wm_${actionDigest.slice(0, 32)}`;
+  const expectedSessionRef = `session:${expectedPlatformSessionId}`;
+  const expectedHermesSessionId = `web_${actionDigest.slice(0, 40)}`;
+  if (
+    receipt.platform_session_id !== expectedPlatformSessionId ||
+    receipt.session_ref !== expectedSessionRef ||
+    receipt.hermes_session_id !== expectedHermesSessionId ||
+    managedSession.platform_session_id !== expectedPlatformSessionId ||
+    managedSession.session_ref !== expectedSessionRef ||
+    managedSession.hermes_session_id !== expectedHermesSessionId
+  ) {
+    throw new WorkspaceClientError(
+      "managed session provisioning observation changed create identity",
+      503,
+      "managed_session_create_projection_mismatch",
+    );
+  }
+}
+
+/**
+ * Explicit "new conversation" path. Unlike ensureManagedSession(), this never
+ * restores an older lineage or silently substitutes the latest transcript.
+ * The caller owns one stable client_action_id so an unknown network outcome
+ * can be retried without creating a second root session.
+ */
+export async function startFreshManagedSession(options: {
+  clientActionId: string;
+  workspaceId?: string;
+  signal?: AbortSignal;
+  provisionTimeoutMs?: number;
+  provisionInitialIntervalMs?: number;
+}): Promise<FreshManagedSessionResult> {
+  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
+  await ensureOwnerSession(options.signal);
+  const receipt = await createManagedSession({
+    workspaceId,
+    clientActionId: options.clientActionId,
+    signal: options.signal,
+  });
   const sessionRef =
     receipt.session_ref ??
     (receipt.platform_session_id
       ? `session:${receipt.platform_session_id}`
       : null);
-  if (sessionRef) {
-    saveManagedSessionRef(sessionRef, workspaceId);
+  if (!sessionRef) {
+    throw new WorkspaceClientError(
+      "managed session create returned no durable session reference",
+      503,
+      "managed_session_create_ref_missing",
+    );
   }
-  return receipt;
+  const managedSession = await waitForManagedSessionReady({
+    workspaceId,
+    sessionRef,
+    signal: options.signal,
+    timeoutMs: options.provisionTimeoutMs,
+    initialIntervalMs: options.provisionInitialIntervalMs,
+  });
+  assertManagedSessionCreateProjection(receipt, managedSession);
+  return { receipt, managedSession };
 }
 
 /**
@@ -648,13 +910,15 @@ export async function ensureManagedSession(options?: {
       receipt.status,
     );
   }
-  return waitForManagedSessionReady({
+  const managedSession = await waitForManagedSessionReady({
     workspaceId,
     sessionRef,
     signal: options?.signal,
     timeoutMs: options?.provisionTimeoutMs,
     initialIntervalMs: options?.provisionInitialIntervalMs,
   });
+  assertManagedSessionCreateProjection(receipt, managedSession);
+  return managedSession;
 }
 
 export type ForkHermesSessionResult = {

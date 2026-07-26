@@ -130,10 +130,44 @@ export function HermesLocalChatBoundary({
                 <ComposerSubmitController
                   allowSubmit
                   disabled={false}
+                  emptySessionText={
+                    isZh
+                      ? "发送前请先点击“新建空白对话”，建立一个可恢复的受管 Web 会话。"
+                      : "Select “New blank conversation” before sending so the Web session has a recoverable identity."
+                  }
                   label={composer.label}
+                  locale={locale}
                   networkSubmit
+                  newSessionCreatingText={
+                    isZh
+                      ? "正在创建新的受管 Web 对话…"
+                      : "Creating a new managed Web conversation…"
+                  }
+                  newSessionLabel={
+                    isZh ? "新建空白对话" : "New blank conversation"
+                  }
+                  newSessionReadyText={
+                    isZh
+                      ? "新的受管 Web 对话已就绪。"
+                      : "New managed Web conversation ready."
+                  }
                   placeholder={composer.placeholderOpen}
+                  readOnlySessionText={
+                    isZh
+                      ? "当前会话仅供阅读。要继承上下文，请在“会话记录”中从具体消息创建分支；要开始独立会话，请点击“新建空白对话”。"
+                      : "This session is read-only. To preserve its context, fork from a specific message in Sessions; to start independently, select “New blank conversation”."
+                  }
                   sendLabel={composer.sendEnabled}
+                  sessionCheckingText={
+                    isZh
+                      ? "正在核验当前会话是否允许发送…"
+                      : "Checking whether this session can accept messages…"
+                  }
+                  sessionValidationUnavailableText={
+                    isZh
+                      ? "无法核验当前会话的写入权限，发送保持锁定。你可以新建空白对话，或检查本机后端健康状态。"
+                      : "Session write access could not be verified, so sending remains locked. Start a blank conversation or check local backend health."
+                  }
                   retryLabel={composer.retrySame}
                   unavailableHint={composer.unavailable}
                 />

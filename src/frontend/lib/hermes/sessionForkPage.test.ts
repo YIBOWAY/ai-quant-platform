@@ -62,6 +62,8 @@ describe("Hermes session detail fork wiring", () => {
     const html = renderToStaticMarkup(createElement(() => page));
 
     expect(html).toContain("Continue from here");
+    expect(html).toContain("data-hermes-session-deep-link");
+    expect(html).toContain('data-hermes-session-id="agent:main:discord"');
     expect(html).toContain('data-hermes-fork-point="message:77"');
     expect(html).not.toContain(
       'data-hermes-fork-point="message:display-id-is-not-the-cursor"',

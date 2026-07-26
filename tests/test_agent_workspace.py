@@ -634,6 +634,68 @@ def test_snapshot_projects_managed_session_provisioning_truth(monkeypatch) -> No
     assert snap.to_public_dict()["managed_sessions"] == projected
 
 
+def test_snapshot_projects_the_newest_200_managed_sessions(monkeypatch) -> None:
+    settings = _postgres_settings()
+    _prepare(settings)
+    records = []
+    for index in range(205):
+        action = CreateManagedSession(
+            client_action_id=f"act-snap-window-{index:03d}",
+            workspace=WorkspaceRef(workspace_id=WORKSPACE_ID),
+            provider_policy_digest=PROVIDER_POLICY_DIGEST,
+            payload_ttl_days=7,
+        )
+        action_digest = canonical_action_digest(action)
+        record, created = register_workspace_session(
+            settings,
+            RegisterWorkspaceSession(
+                platform_session_id=derive_managed_platform_session_id(
+                    action_digest
+                ),
+                hermes_session_id=derive_managed_hermes_session_id(
+                    action_digest
+                ),
+                workspace_id=WORKSPACE_ID,
+                kind="web_managed_session",
+                provider_policy_digest=action.provider_policy_digest,
+                payload_ttl_days=action.payload_ttl_days,
+                creation_client_action_id=action.client_action_id,
+                creation_action_digest=action_digest,
+            ),
+        )
+        assert created is True
+        records.append(record)
+
+    monkeypatch.setattr(
+        "quant_system.hermes.agent_workspace.authorities_ready",
+        lambda _settings: {
+            "command_ledger_schema_ready": True,
+            "session_registry_schema_ready": True,
+            "workflow_binding_schema_ready": True,
+            "research_binding_ready": True,
+            "ready": True,
+            "mutation_enabled": False,
+            "composer_write_ready": False,
+            "chat_write_ready": False,
+        },
+    )
+    workspace = build_platform_agent_workspace(settings, mutation_enabled=True)
+    actor = ActorRef(owner_user_id=str(ROOT_USER_ID))
+
+    snap = workspace.snapshot(actor, WorkspaceRef(workspace_id=WORKSPACE_ID))
+    projected_ids = [
+        item["platform_session_id"] for item in snap.managed_sessions
+    ]
+
+    assert len(projected_ids) == 200
+    assert projected_ids == [
+        record.platform_session_id for record in records[-200:]
+    ]
+    assert {
+        record.platform_session_id for record in records[:5]
+    }.isdisjoint(projected_ids)
+
+
 def test_submit_action_document_path_and_unsupported_kind() -> None:
     settings = _postgres_settings()
     _prepare(settings)

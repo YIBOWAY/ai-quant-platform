@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { HermesSessionForkController } from "@/components/hermes/sessions/HermesSessionForkController";
+import { HermesSessionDeepLinkBinder } from "@/components/hermes/sessions/HermesSessionDeepLinkBinder";
 import { HermesSessionLatestAnchor } from "@/components/hermes/sessions/HermesSessionLatestAnchor";
 import { Card } from "@/components/ui/primitives";
 import { getHermesSessionDetail, getHermesSessionMessages } from "@/lib/api";
@@ -33,6 +34,7 @@ export default async function HermesSessionDetailPage({
       data-hermes-session-detail={sessionId}
       aria-labelledby="hermes-session-detail-title"
     >
+      <HermesSessionDeepLinkBinder hermesSessionId={sessionId} />
       <header
         className="sticky top-0 z-20 -mx-2 space-y-2 border-b border-border-subtle bg-[var(--color-hermes-canvas)] px-2 pb-3 pt-1 shadow-[0_8px_16px_rgba(0,0,0,0.18)]"
         data-hermes-session-context

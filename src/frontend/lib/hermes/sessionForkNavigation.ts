@@ -7,14 +7,16 @@ import type { Locale } from "@/lib/locale";
  * transcript and composer bind before navigation, while the query parameter
  * makes the same binding recoverable after reload.
  */
-export function activateReadyHermesFork(options: {
+export function activateReadyManagedHermesSession(options: {
   hermesSessionId: string;
   locale: Locale;
   bindHermesSession: (hermesSessionId: string) => void;
   navigate: (href: string) => void;
 }): string {
   if (!isUsableHermesApiSessionId(options.hermesSessionId)) {
-    throw new Error("ready fork is missing a usable Hermes child session id");
+    throw new Error(
+      "ready managed session is missing a usable Hermes session id",
+    );
   }
   const hermesSessionId = options.hermesSessionId.trim();
   const href = hermesHomeHref(options.locale, {
@@ -24,3 +26,6 @@ export function activateReadyHermesFork(options: {
   options.navigate(href);
   return href;
 }
+
+/** Backward-compatible fork-specific name for the shared ready-session handoff. */
+export const activateReadyHermesFork = activateReadyManagedHermesSession;
