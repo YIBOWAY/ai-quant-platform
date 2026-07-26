@@ -81,6 +81,12 @@ _PAPER_RUN_ATTESTATION_RE = re.compile(r"^paper-run-attestation:([0-9a-f]{64})$"
 _READY_SESSION_FUNCTION_BODY_SHA256 = (
     "ec95128ab07f6eecda0b831087bc02d76dd27fd2b05e1aca1d45bd3b90ae3a11"
 )
+_COMPLETION_BINDING_FUNCTION_BODY_SHA256 = (
+    "c463d0db22734a7dc3b39db3535f9d1b8e3b53411bf40c4e2b1e66b53844990e"
+)
+_RESEARCH_LINEAGE_FUNCTION_BODY_SHA256 = (
+    "f16e398a466d28565468e1f4e854001ad34a82b31c6d2288ca98d78f8433a88d"
+)
 # The port permits a 300-second subprocess deadline. A second caller must
 # never expire a still-running HQA mutation, so the durable lease includes a
 # fixed 30-second finalization margin.
@@ -168,7 +174,10 @@ _CHALLENGE_COLUMNS = """
     decided_action_digest,
     decided_at,
     created_at,
-    updated_at
+    updated_at,
+    research_claim_digest,
+    research_start_payload_digest,
+    research_continue_payload_digest
 """
 _QUALIFIED_CHALLENGE_COLUMNS = ",\n".join(
     f"challenge.{name.strip()}" for name in _CHALLENGE_COLUMNS.split(",") if name.strip()
@@ -224,7 +233,7 @@ _COMPLETION_COLUMNS = """
     completion_evidence,
     created_at
 """
-_COMPLETION_EVIDENCE_FIELDS = frozenset(
+_COMPLETION_EVIDENCE_V1_FIELDS = frozenset(
     {
         "schema_version",
         "task_ref",
@@ -266,6 +275,13 @@ _COMPLETION_EVIDENCE_FIELDS = frozenset(
         "workflow_audit_status",
         "workflow_audit_ref",
         "workflow_audit_digest",
+    }
+)
+_COMPLETION_EVIDENCE_V2_FIELDS = _COMPLETION_EVIDENCE_V1_FIELDS | frozenset(
+    {
+        "research_claim_digest",
+        "research_start_payload_digest",
+        "research_continue_payload_digest",
     }
 )
 _COMPLETION_COLUMN_NAMES = tuple(
@@ -328,6 +344,9 @@ class RegisterPaperGateChallenge:
     hermes_run_id: str | None = None
     hqa_run_ref: str | None = None
     provider_evidence_ref: str | None = None
+    research_claim_digest: str | None = None
+    research_start_payload_digest: str | None = None
+    research_continue_payload_digest: str | None = None
     subject_command_id: str | None = None
     subject_hermes_run_id: str | None = None
     subject_run_attestation_ref: str | None = None
@@ -474,6 +493,9 @@ class PaperGateChallengeRecord:
     hermes_run_id: str | None
     hqa_run_ref: str | None
     provider_evidence_ref: str | None
+    research_claim_digest: str | None
+    research_start_payload_digest: str | None
+    research_continue_payload_digest: str | None
     subject_command_id: UUID | None
     subject_hermes_run_id: str | None
     subject_run_attestation_ref: str | None
@@ -542,6 +564,9 @@ class PaperGateChallengeRecord:
             "hermes_run_id": self.hermes_run_id,
             "hqa_run_ref": self.hqa_run_ref,
             "provider_evidence_ref": self.provider_evidence_ref,
+            "research_claim_digest": self.research_claim_digest,
+            "research_start_payload_digest": self.research_start_payload_digest,
+            "research_continue_payload_digest": self.research_continue_payload_digest,
             "kind": _PUBLIC_KIND[self.gate_kind],
             "status": status,
             "expected_status": "pending" if status == "pending" else status,
@@ -627,6 +652,9 @@ class PaperGateChallengeRecord:
                 "subject_run_attestation_ref": self.subject_run_attestation_ref,
                 "subject_run_attestation_digest": (self.subject_run_attestation_digest),
                 "provider_evidence_ref": self.provider_evidence_ref,
+                "research_claim_digest": self.research_claim_digest,
+                "research_start_payload_digest": self.research_start_payload_digest,
+                "research_continue_payload_digest": self.research_continue_payload_digest,
                 "final_backtest_provider": self.final_backtest_provider,
                 "final_backtest_receipt_digest": (self.final_backtest_receipt_digest),
                 "final_backtest_config_ref": self.final_backtest_config_ref,
@@ -822,6 +850,18 @@ def _record_from_row(row: tuple[object, ...]) -> PaperGateChallengeRecord:
         hermes_run_id=_optional_row_text(values["hermes_run_id"]),
         hqa_run_ref=_optional_row_text(values["hqa_run_ref"]),
         provider_evidence_ref=_optional_row_text(values["provider_evidence_ref"]),
+        research_claim_digest=_optional_row_text(
+            values["research_claim_digest"],
+            strip=True,
+        ),
+        research_start_payload_digest=_optional_row_text(
+            values["research_start_payload_digest"],
+            strip=True,
+        ),
+        research_continue_payload_digest=_optional_row_text(
+            values["research_continue_payload_digest"],
+            strip=True,
+        ),
         subject_command_id=(
             None
             if values["subject_command_id"] is None
@@ -1329,6 +1369,7 @@ def paper_gate_schema_is_ready_on_connection(
         (challenge_table, "ck_agent_v02_paper_gate_kind_shape", "c"),
         (challenge_table, "fk_agent_v02_paper_gate_subject_command", "f"),
         (challenge_table, "ck_agent_v02_paper_gate_run_attestation", "c"),
+        (challenge_table, "ck_agent_v02_paper_gate_research_lineage", "c"),
         (
             action_table,
             "agent_v02_paper_gate_actions_action_digest_check",
@@ -1501,6 +1542,11 @@ def paper_gate_schema_is_ready_on_connection(
             "guard_agent_v02_paper_gate_challenge",
             "before update",
         ),
+        "trg_agent_v02_paper_research_lineage": (
+            challenge_table,
+            "require_agent_v02_paper_research_lineage",
+            "before insert or update",
+        ),
         "trg_agent_v02_paper_gate_challenge_delete": (
             challenge_table,
             "reject_agent_v02_paper_gate_delete",
@@ -1612,6 +1658,7 @@ def paper_gate_schema_is_ready_on_connection(
     completion_function = conn.execute(
         """
         SELECT
+            function_record.prosrc,
             function_record.provolatile,
             function_record.prosecdef,
             pg_get_userbyid(function_record.proowner)
@@ -1625,7 +1672,42 @@ def paper_gate_schema_is_ready_on_connection(
         """,
         (SCHEMA,),
     ).fetchone()
-    if completion_function != ("s", False, "quant_migrator"):
+    if (
+        completion_function is None
+        or hashlib.sha256(
+            " ".join(str(completion_function[0]).split()).lower().encode("utf-8")
+        ).hexdigest()
+        != _COMPLETION_BINDING_FUNCTION_BODY_SHA256
+        or completion_function[1:] != ("s", False, "quant_migrator")
+    ):
+        return False
+    research_lineage_function = conn.execute(
+        """
+        SELECT
+            function_record.prosrc,
+            function_record.provolatile,
+            function_record.prosecdef,
+            pg_get_userbyid(function_record.proowner)
+        FROM pg_proc AS function_record
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = function_record.pronamespace
+        WHERE namespace.nspname = %s
+          AND function_record.proname =
+                'require_agent_v02_paper_research_lineage'
+          AND function_record.pronargs = 0
+        """,
+        (SCHEMA,),
+    ).fetchone()
+    if (
+        research_lineage_function is None
+        or hashlib.sha256(
+            " ".join(str(research_lineage_function[0]).split()).lower().encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        != _RESEARCH_LINEAGE_FUNCTION_BODY_SHA256
+        or research_lineage_function[1:] != ("s", False, "quant_migrator")
+    ):
         return False
 
     expected_indexes = {
@@ -2151,6 +2233,9 @@ class PaperGateAuthority:
                         hermes_run_id,
                         hqa_run_ref,
                         provider_evidence_ref,
+                        research_claim_digest,
+                        research_start_payload_digest,
+                        research_continue_payload_digest,
                         subject_command_id,
                         subject_hermes_run_id,
                         subject_run_attestation_ref,
@@ -2178,7 +2263,7 @@ class PaperGateAuthority:
                         %s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s
+                        %s, %s, %s, %s, %s
                     )
                     RETURNING {_CHALLENGE_COLUMNS}
                     """,
@@ -2197,6 +2282,9 @@ class PaperGateAuthority:
                         values.hermes_run_id,
                         values.hqa_run_ref,
                         values.provider_evidence_ref,
+                        values.research_claim_digest,
+                        values.research_start_payload_digest,
+                        values.research_continue_payload_digest,
                         values.subject_command_id,
                         values.subject_hermes_run_id,
                         values.subject_run_attestation_ref,
@@ -2287,6 +2375,42 @@ class PaperGateAuthority:
             "provider_evidence_ref",
             _PROVIDER_EVIDENCE_RE,
         )
+        research_claim_digest = (
+            None
+            if request.research_claim_digest is None
+            else _digest(
+                request.research_claim_digest,
+                "research_claim_digest",
+            )
+        )
+        research_start_payload_digest = (
+            None
+            if request.research_start_payload_digest is None
+            else _digest(
+                request.research_start_payload_digest,
+                "research_start_payload_digest",
+            )
+        )
+        research_continue_payload_digest = (
+            None
+            if request.research_continue_payload_digest is None
+            else _digest(
+                request.research_continue_payload_digest,
+                "research_continue_payload_digest",
+            )
+        )
+        research_lineage = (
+            research_claim_digest,
+            research_start_payload_digest,
+            research_continue_payload_digest,
+        )
+        legacy_research_lineage = all(value is None for value in research_lineage)
+        initial_research_lineage = (
+            research_claim_digest is not None
+            and research_start_payload_digest is not None
+            and research_continue_payload_digest is None
+        )
+        terminal_research_lineage = all(value is not None for value in research_lineage)
         subject_command_id = (
             None if request.subject_command_id is None else _command_id(request.subject_command_id)
         )
@@ -2435,6 +2559,17 @@ class PaperGateAuthority:
                 and hqa_run_ref is None
                 and all(value is None for value in terminal_fields)
                 and universe is not None
+                and (
+                    (
+                        legacy_research_lineage
+                        and not universe.startswith("research-claim:")
+                    )
+                    or (
+                        initial_research_lineage
+                        and universe
+                        == f"research-claim:sha256:{research_claim_digest}"
+                    )
+                )
                 and source_digest is not None
                 and confirmation is None
                 and candidate is None
@@ -2450,6 +2585,7 @@ class PaperGateAuthority:
                 and all(value is None for value in terminal_fields)
                 and source_file is None
                 and universe is None
+                and (legacy_research_lineage or initial_research_lineage)
                 and source_digest is not None
                 and confirmation is not None
                 and candidate is not None
@@ -2471,6 +2607,7 @@ class PaperGateAuthority:
                 == f"provider-evidence:paper-run-{subject_attestation_digest}"
                 and source_file is None
                 and universe is None
+                and (legacy_research_lineage or terminal_research_lineage)
                 and source_digest is not None
                 and confirmation is not None
                 and candidate is not None
@@ -2494,6 +2631,9 @@ class PaperGateAuthority:
             hermes_run_id=run_id,
             hqa_run_ref=hqa_run_ref,
             provider_evidence_ref=provider_evidence_ref,
+            research_claim_digest=research_claim_digest,
+            research_start_payload_digest=research_start_payload_digest,
+            research_continue_payload_digest=research_continue_payload_digest,
             subject_command_id=subject_command_id,
             subject_hermes_run_id=subject_hermes_run_id,
             subject_run_attestation_ref=subject_attestation_ref,
@@ -2536,6 +2676,11 @@ class PaperGateAuthority:
             and record.hermes_run_id == request.hermes_run_id
             and record.hqa_run_ref == request.hqa_run_ref
             and record.provider_evidence_ref == request.provider_evidence_ref
+            and record.research_claim_digest == request.research_claim_digest
+            and record.research_start_payload_digest
+            == request.research_start_payload_digest
+            and record.research_continue_payload_digest
+            == request.research_continue_payload_digest
             and (None if record.subject_command_id is None else str(record.subject_command_id))
             == request.subject_command_id
             and record.subject_hermes_run_id == request.subject_hermes_run_id
@@ -2631,6 +2776,11 @@ class PaperGateAuthority:
                 and parent.hermes_session_id == request.hermes_session_id
                 and parent.reviewed_source_sha256 == request.reviewed_source_sha256
                 and parent.gate1_confirmation_id == request.gate1_confirmation_id
+                and parent.research_claim_digest == request.research_claim_digest
+                and parent.research_start_payload_digest
+                == request.research_start_payload_digest
+                and parent.research_continue_payload_digest is None
+                and request.research_continue_payload_digest is None
             )
         else:
             gate1_row = conn.execute(
@@ -2670,6 +2820,14 @@ class PaperGateAuthority:
                 and gate1.gate1_confirmation_id == request.gate1_confirmation_id
                 and parent.candidate_id == request.candidate_id
                 and parent.expected_digest == request.expected_digest
+                and gate1.research_claim_digest == request.research_claim_digest
+                and parent.research_claim_digest == request.research_claim_digest
+                and gate1.research_start_payload_digest
+                == request.research_start_payload_digest
+                and parent.research_start_payload_digest
+                == request.research_start_payload_digest
+                and gate1.research_continue_payload_digest is None
+                and parent.research_continue_payload_digest is None
             )
         if not valid:
             raise PaperGateAuthorityConflict("parent Gate exact binding does not match")
@@ -2700,16 +2858,21 @@ class PaperGateAuthority:
         if not isinstance(request.completion_evidence, Mapping):
             raise PaperGateAuthorityValidationError("completion_evidence must be an object")
         evidence = dict(request.completion_evidence)
+        schema_version = evidence.get("schema_version")
+        expected_fields = {
+            "agent-v0.2-paper-completion/v1": _COMPLETION_EVIDENCE_V1_FIELDS,
+            "agent-v0.2-paper-completion/v2": _COMPLETION_EVIDENCE_V2_FIELDS,
+        }.get(schema_version)
         if (
-            any(type(key) is not str for key in evidence)
-            or set(evidence) != _COMPLETION_EVIDENCE_FIELDS
+            expected_fields is None
+            or any(type(key) is not str for key in evidence)
+            or set(evidence) != expected_fields
         ):
             raise PaperGateAuthorityValidationError(
                 "completion_evidence has an invalid exact field set"
             )
         if (
-            evidence.get("schema_version") != "agent-v0.2-paper-completion/v1"
-            or evidence.get("task_status") != "completed"
+            evidence.get("task_status") != "completed"
             or evidence.get("task_terminal_outcome") != "completed"
             or evidence.get("attempt_status") != "completed"
             or evidence.get("attempt_terminal_outcome") != "completed"
@@ -2786,6 +2949,13 @@ class PaperGateAuthority:
             "workflow_audit_digest",
         ):
             _digest(evidence.get(field), f"completion_evidence {field}")
+        if schema_version == "agent-v0.2-paper-completion/v2":
+            for field in (
+                "research_claim_digest",
+                "research_start_payload_digest",
+                "research_continue_payload_digest",
+            ):
+                _digest(evidence.get(field), f"completion_evidence {field}")
         subject_command_id = _command_id(evidence.get("subject_command_id"))
         subject_run_id = _identifier(
             evidence.get("subject_hermes_run_id"),
@@ -2857,9 +3027,31 @@ class PaperGateAuthority:
                 if gate_row is None:
                     raise PaperGateNotFound()
                 gate = _record_from_row(gate_row)
+                completion_schema = evidence["schema_version"]
+                gate_research_lineage = (
+                    gate.research_claim_digest,
+                    gate.research_start_payload_digest,
+                    gate.research_continue_payload_digest,
+                )
+                research_lineage_matches = (
+                    (
+                        completion_schema == "agent-v0.2-paper-completion/v1"
+                        and all(value is None for value in gate_research_lineage)
+                    )
+                    or (
+                        completion_schema == "agent-v0.2-paper-completion/v2"
+                        and gate.research_claim_digest
+                        == evidence["research_claim_digest"]
+                        and gate.research_start_payload_digest
+                        == evidence["research_start_payload_digest"]
+                        and gate.research_continue_payload_digest
+                        == evidence["research_continue_payload_digest"]
+                    )
+                )
                 if (
                     gate.gate_kind != "gate3"
                     or gate.status != "prepared"
+                    or not research_lineage_matches
                     or gate.task_ref != evidence["task_ref"]
                     or gate.attempt_ref != evidence["attempt_ref"]
                     or gate.hqa_gate_ref != evidence["domain_gate_ref"]

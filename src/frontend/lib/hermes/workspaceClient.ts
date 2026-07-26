@@ -441,7 +441,7 @@ function managedSessionProjectionIsReady(
     return false;
   }
   if (
-    projection.web_writable !== true ||
+    typeof projection.web_writable !== "boolean" ||
     !isUsableHermesApiSessionId(projection.hermes_session_id)
   ) {
     throw new WorkspaceClientError(
@@ -450,7 +450,15 @@ function managedSessionProjectionIsReady(
       "managed_session_ready_contract_invalid",
     );
   }
-  return true;
+  return projection.web_writable;
+}
+
+function managedSessionAdmissionMismatch(): WorkspaceClientError {
+  return new WorkspaceClientError(
+    "managed session is ready but belongs to a different write admission",
+    409,
+    "managed_session_admission_mismatch",
+  );
 }
 
 /**
@@ -487,8 +495,7 @@ export function latestReadyManagedSessionProjection(
   if (!latest || latest.provision_state !== "ready") {
     return null;
   }
-  managedSessionProjectionIsReady(latest);
-  return latest;
+  return managedSessionProjectionIsReady(latest) ? latest : null;
 }
 
 /**
@@ -583,6 +590,12 @@ export async function resolveManagedSessionForHermesSession(options: {
 
   const matched = matches[0];
   assertManagedSessionProjectionIdentity(matched);
+  if (
+    matched.provision_state === "ready" &&
+    !managedSessionProjectionIsReady(matched)
+  ) {
+    throw managedSessionAdmissionMismatch();
+  }
   const ready = managedSessionProjectionIsReady(matched)
     ? matched
     : await waitForManagedSessionReady({
@@ -876,6 +889,9 @@ export async function ensureManagedSession(options?: {
     saveManagedSessionRef(recovered.session_ref, workspaceId);
     if (managedSessionProjectionIsReady(recovered)) {
       return recovered;
+    }
+    if (recovered.provision_state === "ready") {
+      throw managedSessionAdmissionMismatch();
     }
     return waitForManagedSessionReady({
       workspaceId,
@@ -2058,6 +2074,7 @@ export type ManagedSessionProjection = {
   platform_session_id: string;
   session_ref: string;
   hermes_session_id: string;
+  candidate_admission_id?: string | null;
   provision_state: ManagedSessionProvisionState;
   web_writable: boolean;
   attempt_count: number;
@@ -2192,6 +2209,12 @@ export async function waitForManagedSessionReady(options: {
         if (last) {
           assertManagedSessionProjectionIdentity(last);
         }
+        if (
+          last?.provision_state === "ready" &&
+          !managedSessionProjectionIsReady(last)
+        ) {
+          throw managedSessionAdmissionMismatch();
+        }
         if (last && managedSessionProjectionIsReady(last)) {
           return last;
         }
@@ -2199,6 +2222,7 @@ export async function waitForManagedSessionReady(options: {
         if (
           error instanceof WorkspaceClientError &&
           (error.code === "managed_session_provision_failed" ||
+            error.code === "managed_session_admission_mismatch" ||
             error.code === "managed_session_projection_invalid" ||
             error.code === "managed_session_ready_contract_invalid")
         ) {

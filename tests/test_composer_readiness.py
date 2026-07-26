@@ -12,6 +12,7 @@ from quant_system.api.safety.local_session import issue_bootstrap_token
 from quant_system.api.server import create_app
 from quant_system.config.settings import (
     AgentV02ReleaseSettings,
+    CandidateAdmissionSettings,
     HermesGatewaySettings,
     LocalMutationSettings,
     Settings,
@@ -243,6 +244,10 @@ def _patch_effective_runtime(
             chat_write_ready=release_ready,
             release_stamp_id="stamp-1" if release_ready else None,
             public_cutover_id="cutover-1" if release_ready else None,
+            candidate_admission_id=(
+                "candidate-release-1" if release_ready else None
+            ),
+            candidate_admission_digest=("c" * 64 if release_ready else None),
             event_cursor=17,
         ),
     )
@@ -288,6 +293,8 @@ def test_effective_release_and_live_connector_open_ordinary_chat_without_researc
     assert ready["write_authority_ready"] is True
     assert ready["connector_liveness_ready"] is True
     assert ready["release_authorized"] is True
+    assert ready["candidate_admission_id"] == "candidate-release-1"
+    assert ready["candidate_admission_digest"] == "c" * 64
     assert ready["chat_write_ready"] is True
     assert ready["composer_write_ready"] is True
     assert ready["public_chat_write_ready"] is True
@@ -295,6 +302,84 @@ def test_effective_release_and_live_connector_open_ordinary_chat_without_researc
         settings,
         fresh=True,
     )
+
+
+def test_candidate_and_release_split_brain_closes_composer(
+    monkeypatch,
+) -> None:
+    _patch_effective_runtime(
+        monkeypatch,
+        release_ready=True,
+        connector_ready=True,
+    )
+    monkeypatch.setattr(
+        readiness_module,
+        "current_candidate_decision",
+        lambda _settings, *, require_connector: SimpleNamespace(
+            ready=True,
+            connector_ready=True,
+            connector_worker_id="candidate-worker",
+            connector_heartbeat_age_seconds=0.25,
+            admission_id="candidate-replacement-open",
+            admission_digest="d" * 64,
+            blockers=(),
+        ),
+    )
+    settings = Settings(
+        candidate_admission=CandidateAdmissionSettings(
+            enabled=True,
+            ttl_seconds=120,
+        ),
+        local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
+        api_cors_origins=[ORIGIN],
+    )
+
+    ready = authority_readiness(settings, fresh=True)
+
+    assert ready["release_authorized"] is True
+    assert ready["candidate_admission_id"] is None
+    assert ready["candidate_admission_digest"] is None
+    assert ready["chat_write_ready"] is False
+    assert ready["composer_write_ready"] is False
+    assert "candidate_release_split_brain" in platform_delivery_blockers(
+        settings,
+        fresh=True,
+    )
+
+
+def test_release_closes_when_candidate_authority_cannot_exclude_split_brain(
+    monkeypatch,
+) -> None:
+    _patch_effective_runtime(
+        monkeypatch,
+        release_ready=True,
+        connector_ready=True,
+    )
+
+    def unavailable_candidate(_settings, *, require_connector):
+        raise RuntimeError("candidate authority unavailable")
+
+    monkeypatch.setattr(
+        readiness_module,
+        "current_candidate_decision",
+        unavailable_candidate,
+    )
+    settings = Settings(
+        candidate_admission=CandidateAdmissionSettings(
+            enabled=True,
+            ttl_seconds=120,
+        ),
+        local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
+        api_cors_origins=[ORIGIN],
+    )
+
+    ready = authority_readiness(settings, fresh=True)
+    blockers = platform_delivery_blockers(settings, fresh=True)
+
+    assert ready["release_authorized"] is True
+    assert ready["candidate_admission_id"] is None
+    assert ready["chat_write_ready"] is False
+    assert "candidate_authority_unavailable" in blockers
 
 
 def test_release_workspace_must_match_the_fixed_web_chat_profile(
@@ -388,10 +473,14 @@ def test_fresh_composer_snapshot_uses_one_consistent_admission_observation(
         return SimpleNamespace(
             ready=ready,
             blockers=() if ready else ("active_release_stamp_missing",),
-            release_stamp_id="stamp-1" if ready else None,
-            public_cutover_id="cutover-1" if ready else None,
-            event_cursor=calls,
-        )
+                release_stamp_id="stamp-1" if ready else None,
+                public_cutover_id="cutover-1" if ready else None,
+                candidate_admission_id=(
+                    "candidate-release-1" if ready else None
+                ),
+                candidate_admission_digest=("c" * 64 if ready else None),
+                event_cursor=calls,
+            )
 
     monkeypatch.setattr(
         readiness_module,

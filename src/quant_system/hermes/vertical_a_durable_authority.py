@@ -1377,6 +1377,7 @@ class PostgresVerticalAAuthority:
             "delta": quote.delta,
             "expiry": quote.expiry,
             "iv": quote.iv,
+            "raw_symbol": quote.raw_symbol,
             "strike": quote.strike,
             "ticker": quote.ticker,
         }

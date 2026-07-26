@@ -16,6 +16,23 @@ Apply database migrations only through the explicit operator migration
 command. Backend startup rejects `QS_DATABASE_AUTO_MIGRATE=true`; startup is
 never a migration authority.
 
+For the final hardening window, first inspect the live migration metadata and
+prepare a restore-tested backup. Apply any missing 016–024 prerequisites in
+order, then preserve this operator sequence:
+
+```text
+backup -> migration 025 -> migration 026 -> service restart -> live E2E
+```
+
+Migration 025 fences managed Session/Command writes to the current
+paper-authority epoch and exact candidate/release generation. Migration 026
+seals the HQA research claim/start/continue digests and enforces claim-less v1
+versus exact-lineage v2 completion. Do not infer either migration's live state
+from this runbook, and do not start the backend, frontend or connector between
+025 and 026. After 026, restart the Platform stack and connector before any
+candidate-bound live browser flow so no old process reports a stale schema or
+release decision.
+
 Build the frontend in the release checkout:
 
 ```bash

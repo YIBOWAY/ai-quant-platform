@@ -17,6 +17,7 @@ const IDENTITY_CODES = new Set([
   "managed_session_create_receipt_workspace_mismatch",
   "managed_session_create_ref_invalid",
   "managed_session_create_ref_missing",
+  "managed_session_admission_mismatch",
   "managed_session_identity_ambiguous",
   "managed_session_projection_invalid",
   "managed_session_ready_contract_invalid",

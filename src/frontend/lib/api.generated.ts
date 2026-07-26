@@ -5065,6 +5065,8 @@ export interface components {
         ManagedSessionProjectionResponse: {
             /** Attempt Count */
             attempt_count: number;
+            /** Candidate Admission Id */
+            candidate_admission_id?: string | null;
             /** Created At */
             created_at?: string | null;
             /** Fork Point */

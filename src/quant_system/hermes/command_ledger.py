@@ -883,8 +883,8 @@ class HermesCommandLedger:
                     UPDATE {SCHEMA}.hermes_commands
                     SET version = version + 1,
                         attempt_count = attempt_count + 1,
-                        dispatch_started_at = clock_timestamp(),
-                        updated_at = clock_timestamp()
+                        dispatch_started_at = statement_timestamp(),
+                        updated_at = statement_timestamp()
                     WHERE command_id = %s
                       AND owner_user_id = %s
                       AND state = 'leased'

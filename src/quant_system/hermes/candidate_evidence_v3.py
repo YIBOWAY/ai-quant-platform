@@ -131,6 +131,7 @@ class CandidateEvidenceReferences:
     paper_gate3_id: str
     reviewed_commit: str
     approval_command_id: str
+    stop_source_command_id: str
     stop_command_id: str
 
 
@@ -1504,6 +1505,12 @@ class CandidateEvidenceV3Authority:
                 "candidate_evidence_control_command_missing",
                 "exact candidate-window approval/stop commands are unavailable",
             )
+        target_run_ids = {
+            str(controls[control_id][6]["target_run_id"])
+            for control_id in control_ids
+            if isinstance(controls[control_id][6], Mapping)
+            and isinstance(controls[control_id][6].get("target_run_id"), str)
+        }
         for control_id, row in controls.items():
             receipt = row[6]
             if (
@@ -1527,7 +1534,8 @@ class CandidateEvidenceV3Authority:
                 command.command_id::text,
                 command.hermes_run_id,
                 command.state,
-                command.resolved_hermes_session_id
+                command.resolved_hermes_session_id,
+                command.payload_ref
             FROM {SCHEMA}.hermes_commands AS command
             JOIN {SCHEMA}.hermes_workspace_sessions AS session
               ON session.owner_user_id = command.owner_user_id
@@ -1537,6 +1545,7 @@ class CandidateEvidenceV3Authority:
               AND command.candidate_admission_id = %s
               AND command.kind = 'conversation_turn'
               AND command.hermes_run_id IS NOT NULL
+              AND command.hermes_run_id = ANY(%s)
               AND command.state IN ('succeeded', 'failed', 'cancelled')
               AND session.workspace_id = %s
               AND session.kind = 'web_managed_session'
@@ -1547,6 +1556,7 @@ class CandidateEvidenceV3Authority:
             (
                 ROOT_USER_ID,
                 refs.admission_id,
+                list(target_run_ids),
                 workspace_id,
                 refs.admission_id,
             ),
@@ -1556,6 +1566,15 @@ class CandidateEvidenceV3Authority:
             or len(run_rows) > 64
             or len({str(row[1]) for row in run_rows}) != len(run_rows)
             or any(not isinstance(row[3], str) for row in run_rows)
+            or any(
+                not isinstance(row[4], str)
+                or not str(row[4]).startswith("platform-payload://sha256/")
+                or _DIGEST_RE.fullmatch(
+                    str(row[4]).removeprefix("platform-payload://sha256/")
+                )
+                is None
+                for row in run_rows
+            )
         ):
             raise CandidateEvidenceV3Error(
                 "candidate_evidence_control_run_missing",
@@ -1602,6 +1621,7 @@ class CandidateEvidenceV3Authority:
             raw_run_id,
             platform_state,
             resolved_session_id,
+            payload_ref,
         ) in run_rows:
             run_id = str(raw_run_id)
             events = event_logs[run_id]
@@ -1648,6 +1668,7 @@ class CandidateEvidenceV3Authority:
             if (
                 "run.stop_requested" in event_names
                 and platform_state == "cancelled"
+                and str(target_command_id) == refs.stop_source_command_id
                 and run_id
                 == controls[refs.stop_command_id][6]["target_run_id"]
             ):
@@ -1688,6 +1709,16 @@ class CandidateEvidenceV3Authority:
                             "platform_command_id": str(target_command_id),
                             "platform_command_state": "cancelled",
                             "post_restart_instance_id": instance_after,
+                            "source_hqa_payload_ref": (
+                                "payload:sha256:"
+                                + str(payload_ref).removeprefix(
+                                    "platform-payload://sha256/"
+                                )
+                            ),
+                            "source_payload_digest": str(payload_ref).removeprefix(
+                                "platform-payload://sha256/"
+                            ),
+                            "source_payload_ref": str(payload_ref),
                         }
                     )
                     stop_matches.append(stop)
@@ -1826,7 +1857,11 @@ class CandidateEvidenceV3Authority:
                 command.state,
                 command.kind,
                 command.client_request_id,
-                command.canonical_request_digest
+                command.canonical_request_digest,
+                request.ticker,
+                request.expiry,
+                request.strike,
+                provider.field_summary
             FROM {SCHEMA}.agent_v02_vertical_a_requests AS request
             JOIN {SCHEMA}.agent_v02_vertical_a_claims AS claim
               ON claim.request_id = request.request_id
@@ -1886,6 +1921,25 @@ class CandidateEvidenceV3Authority:
                 "candidate_evidence_options_missing",
                 "exact live Futu read-only Vertical-A result is unavailable",
             )
+        if not isinstance(row[26], Mapping):
+            raise CandidateEvidenceV3Error(
+                "candidate_evidence_options_contract_mismatch",
+                "Futu provider field summary is not a durable object",
+            )
+        field_summary = {str(key): value for key, value in row[26].items()}
+        raw_symbol = field_summary.get("raw_symbol")
+        expiry = str(row[24])
+        strike = float(row[25])
+        expected_raw_symbol = (
+            f"US.{str(row[23]).upper()}"
+            f"{expiry[2:4]}{expiry[5:7]}{expiry[8:10]}"
+            f"P{int(round(strike * 1000)):06d}"
+        )
+        if raw_symbol != expected_raw_symbol:
+            raise CandidateEvidenceV3Error(
+                "candidate_evidence_options_contract_mismatch",
+                "Futu provider receipt does not bind the exact requested PUT contract",
+            )
         return {
             "admission_digest": str(row[6]).strip(),
             "capture_digest": str(row[7]).strip(),
@@ -1906,6 +1960,7 @@ class CandidateEvidenceV3Authority:
             "provider_receipt_digest": str(row[13]).strip(),
             "provider_receipt_id": str(row[10]),
             "provider_request_id": str(row[12]),
+            "raw_contract_symbol": expected_raw_symbol,
             "request_id": str(row[0]),
             "result_id": str(row[14]),
             "result_payload_digest": str(row[17]).strip(),
@@ -1971,7 +2026,8 @@ class CandidateEvidenceV3Authority:
                 completion.workflow_audit_ref,
                 completion.workflow_audit_digest,
                 completion.attempt_completion_event_id,
-                completion.task_completion_event_id
+                completion.task_completion_event_id,
+                completion.completion_evidence
             FROM {SCHEMA}.agent_v02_paper_gate_challenges AS gate3
             JOIN {SCHEMA}.agent_v02_paper_gate_challenges AS gate2
               ON gate2.gate_id = gate3.parent_gate_id
@@ -2103,6 +2159,34 @@ class CandidateEvidenceV3Authority:
         task_ref = str(row[16])
         workflow = self._hqa_probe("show", ("--task-ref", task_ref))
         audit = self._hqa_probe("audit", ())
+        completion_evidence = row[51]
+        if (
+            not isinstance(completion_evidence, Mapping)
+            or completion_evidence.get("schema_version")
+            != "agent-v0.2-paper-completion/v2"
+        ):
+            raise CandidateEvidenceV3Error(
+                "candidate_evidence_research_claim_missing",
+                "paper completion does not bind the sealed research claim",
+            )
+        try:
+            research_claim_digest = _digest(
+                completion_evidence.get("research_claim_digest"),
+                "completion research_claim_digest",
+            )
+            research_start_payload_digest = _digest(
+                completion_evidence.get("research_start_payload_digest"),
+                "completion research_start_payload_digest",
+            )
+            research_continue_payload_digest = _digest(
+                completion_evidence.get("research_continue_payload_digest"),
+                "completion research_continue_payload_digest",
+            )
+        except CandidateEvidenceV3Error as exc:
+            raise CandidateEvidenceV3Error(
+                "candidate_evidence_research_claim_missing",
+                "paper completion research claim lineage is invalid",
+            ) from exc
         attempts = workflow.get("attempts")
         plan_attempts = (
             [
@@ -2138,10 +2222,19 @@ class CandidateEvidenceV3Authority:
             or workflow.get("gate1_source_digest") != str(row[2]).strip()
             or workflow.get("gate1_candidate_ref") != f"candidate:{row[6]}"
             or workflow.get("gate1_manifest_digest") != str(row[7]).strip()
+            or workflow.get("research_claim_digest") != research_claim_digest
             or row[24] not in workflow.get("gate3_refs", [])
             or f"result:{row[11]}" not in workflow.get("result_refs", [])
             or len(plan_attempts) != 1
             or len(research_attempts) != 1
+            or plan_attempts[0].get("research_claim_digest")
+            != research_claim_digest
+            or plan_attempts[0].get("payload_digest")
+            != research_start_payload_digest
+            or research_attempts[0].get("research_claim_digest")
+            != research_claim_digest
+            or research_attempts[0].get("payload_digest")
+            != research_continue_payload_digest
             or research_attempts[0].get("terminal_outcome") != "completed"
             or research_attempts[0].get("domain_gate_outcome") != "passed"
             or row[45] not in research_attempts[0].get("provider_evidence_refs", [])
@@ -2202,6 +2295,9 @@ class CandidateEvidenceV3Authority:
             "attempt_terminal_outcome": str(row[43]),
             "domain_gate_outcome": str(row[44]),
             "provider_evidence_ref": str(row[45]),
+            "research_claim_digest": research_claim_digest,
+            "research_start_payload_digest": research_start_payload_digest,
+            "research_continue_payload_digest": research_continue_payload_digest,
             "workflow_audit_ref": str(row[47]),
             "workflow_audit_digest": str(row[48]).strip(),
             "attempt_completion_event_id": str(row[49]),
@@ -2235,6 +2331,7 @@ class CandidateEvidenceV3Authority:
             ("options_request_id", refs.options_request_id),
             ("paper_gate3_id", refs.paper_gate3_id),
             ("approval_command_id", refs.approval_command_id),
+            ("stop_source_command_id", refs.stop_source_command_id),
             ("stop_command_id", refs.stop_command_id),
         ):
             _identifier(value, field)

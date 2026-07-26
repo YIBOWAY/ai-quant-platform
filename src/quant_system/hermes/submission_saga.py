@@ -136,6 +136,8 @@ from quant_system.hermes.run_stop_port import (
 )
 from quant_system.hermes.session_registry import (
     HermesSessionActionConflict,
+    HermesSessionAdmissionClosed,
+    HermesSessionAdmissionMismatch,
     HermesSessionNotWritable,
     HermesSessionRegistryConflict,
     HermesSessionRegistryUnavailable,
@@ -143,6 +145,7 @@ from quant_system.hermes.session_registry import (
     RegisterWorkspaceSession,
     get_workspace_session,
     register_workspace_session,
+    require_current_session_admission,
     require_web_writable_session,
 )
 from quant_system.hermes.vertical_a_durable_authority import (
@@ -885,6 +888,27 @@ def submit_conversation_turn(
             digest=digest,
             platform_session_id=platform_session_id,
             reason_code="session_workspace_mismatch",
+            mutation_enabled=mutation_enabled,
+        )
+
+    try:
+        require_current_session_admission(settings, session)
+    except HermesSessionAdmissionClosed:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            platform_session_id=platform_session_id,
+            reason_code="candidate_admission_closed",
+            mutation_enabled=mutation_enabled,
+        )
+    except HermesSessionAdmissionMismatch:
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            platform_session_id=platform_session_id,
+            reason_code="managed_session_admission_mismatch",
             mutation_enabled=mutation_enabled,
         )
 

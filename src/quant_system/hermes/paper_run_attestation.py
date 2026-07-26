@@ -51,7 +51,7 @@ _READY_SESSION_FUNCTION_BODY_SHA256 = (
     "ec95128ab07f6eecda0b831087bc02d76dd27fd2b05e1aca1d45bd3b90ae3a11"
 )
 _COMPLETION_BINDING_FUNCTION_BODY_SHA256 = (
-    "61038b3f3f57ed4566d13b79d1b2eadfec61a7ea0a080a12f16040cb6c5108d3"
+    "c463d0db22734a7dc3b39db3535f9d1b8e3b53411bf40c4e2b1e66b53844990e"
 )
 
 PaperRunAttestationMode = Literal["invocation", "subject"]

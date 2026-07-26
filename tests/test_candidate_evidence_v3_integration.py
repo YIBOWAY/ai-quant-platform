@@ -112,6 +112,8 @@ MIGRATIONS = (
     "022_agent_v02_resolved_fork_lineage.sql",
     "023_agent_v02_resolved_run_tip.sql",
     "024_agent_v02_run_control_outcome.sql",
+    "025_agent_v02_release_session_binding.sql",
+    "026_agent_v02_paper_research_claim_lineage.sql",
 )
 REQUIRED_FLOW_NAMES = (
     "web_chat_multi_turn",
@@ -202,6 +204,9 @@ class _Scenario:
     paper_gate3_command_id: str
     hqa_run_ref: str
     provider_evidence_ref: str
+    research_claim_digest: str
+    research_start_payload_digest: str
+    research_continue_payload_digest: str
     workflow_audit: dict[str, object]
 
 
@@ -702,6 +707,8 @@ def _seed_scenario(
     environment: _DatabaseEnvironment,
     *,
     compressed_fork: bool = False,
+    options_raw_symbol: str = "US.AAPL261218P200000",
+    options_strike: float = 200.0,
 ) -> _Scenario:
     suffix = uuid4().hex[:12]
     workspace_id = f"candidate-evidence-{suffix}"
@@ -817,7 +824,7 @@ def _seed_scenario(
         label=f"paper-subject-{suffix}",
     )
     stopped_run_id = f"stopped-run-{suffix}"
-    _complete_command(
+    stopped_source_command_id = _complete_command(
         environment,
         admission_id=admission_id,
         platform_session_id=web_platform_session_id,
@@ -905,7 +912,7 @@ def _seed_scenario(
         ticker="AAPL",
         goal_note="live read-only AAPL options evidence",
         expiry="2026-12-18",
-        strike=200.0,
+        strike=options_strike,
         include_provider_evidence=True,
         provider_mode="live_futu_ro",
         auth_envelope=authorization,
@@ -928,12 +935,13 @@ def _seed_scenario(
             as_of=datetime.now(UTC),
             ticker="AAPL",
             expiry="2026-12-18",
-            strike=200.0,
+            strike=options_strike,
             bid=5.1,
             ask=5.3,
             delta=-0.23,
             iv=0.31,
             apr=0.14,
+            raw_symbol=options_raw_symbol,
             evidence=(
                 "provider:futu",
                 f"request_id:futu-ro-{suffix}",
@@ -948,6 +956,9 @@ def _seed_scenario(
     task_ref = f"task:paper-{suffix}"
     plan_attempt_ref = "attempt:integration-plan"
     research_attempt_ref = "attempt:integration-research"
+    research_claim_digest = _digest(f"paper-research-claim:{suffix}")
+    research_start_payload_digest = _digest(f"paper-research-start:{suffix}")
+    research_continue_payload_digest = _digest(f"paper-research-continue:{suffix}")
     source_digest = _digest(f"paper-source:{suffix}")
     candidate_id = f"factor-{suffix}"
     candidate_digest = _digest(f"paper-candidate:{suffix}")
@@ -985,7 +996,9 @@ def _seed_scenario(
             hermes_run_id=paper_gate1_run_id,
             parent_gate_id=None,
             source_file_ref=f"/tmp/{candidate_id}.py",
-            universe="Global equities",
+            universe=f"research-claim:sha256:{research_claim_digest}",
+            research_claim_digest=research_claim_digest,
+            research_start_payload_digest=research_start_payload_digest,
             reviewed_source_sha256=source_digest,
         )
     )
@@ -1016,6 +1029,8 @@ def _seed_scenario(
             command_id=paper_gate2_command_id,
             hermes_run_id=paper_gate2_run_id,
             parent_gate_id=gate1_id,
+            research_claim_digest=research_claim_digest,
+            research_start_payload_digest=research_start_payload_digest,
             reviewed_source_sha256=source_digest,
             gate1_confirmation_id=gate1.gate1_confirmation_id,
             candidate_id=candidate_id,
@@ -1051,6 +1066,9 @@ def _seed_scenario(
             hermes_run_id=paper_gate3_run_id,
             hqa_run_ref=hqa_run_ref,
             provider_evidence_ref=provider_evidence_ref,
+            research_claim_digest=research_claim_digest,
+            research_start_payload_digest=research_start_payload_digest,
+            research_continue_payload_digest=research_continue_payload_digest,
             subject_command_id=paper_subject_command_id,
             subject_hermes_run_id=paper_subject_run_id,
             subject_run_attestation_ref=(
@@ -1113,7 +1131,7 @@ def _seed_scenario(
         ).encode("utf-8")
     ).hexdigest()
     completion_evidence = {
-        "schema_version": "agent-v0.2-paper-completion/v1",
+        "schema_version": "agent-v0.2-paper-completion/v2",
         "task_ref": task_ref,
         "task_version": 7,
         "task_status": "completed",
@@ -1157,6 +1175,9 @@ def _seed_scenario(
         "workflow_audit_status": "consistent",
         "workflow_audit_ref": f"workflow-audit:{workflow_audit_digest}",
         "workflow_audit_digest": workflow_audit_digest,
+        "research_claim_digest": research_claim_digest,
+        "research_start_payload_digest": research_start_payload_digest,
+        "research_continue_payload_digest": research_continue_payload_digest,
     }
     completion_digest = hashlib.sha256(
         json.dumps(
@@ -1306,6 +1327,7 @@ def _seed_scenario(
             "gate1_source_digest": source_digest,
             "gate1_candidate_ref": f"candidate:{candidate_id}",
             "gate1_manifest_digest": candidate_digest,
+            "research_claim_digest": research_claim_digest,
             "gate3_refs": [gate3_hqa_ref],
             "result_refs": [f"result:{final_backtest_receipt_id}"],
             "attempts": [
@@ -1314,6 +1336,8 @@ def _seed_scenario(
                     "gate3_refs": [],
                     "run_ref": "run:paper-plan",
                     "submission_command_ref": (f"command:{paper_gate1_command_id}"),
+                    "payload_digest": research_start_payload_digest,
+                    "research_claim_digest": research_claim_digest,
                 },
                 {
                     "attempt_ref": research_attempt_ref,
@@ -1323,6 +1347,8 @@ def _seed_scenario(
                     "terminal_outcome": "completed",
                     "domain_gate_outcome": "passed",
                     "provider_evidence_refs": [provider_evidence_ref],
+                    "payload_digest": research_continue_payload_digest,
+                    "research_claim_digest": research_claim_digest,
                 },
             ],
         }
@@ -1350,6 +1376,7 @@ def _seed_scenario(
         paper_gate3_id=gate3_id,
         reviewed_commit=reviewed_commit,
         approval_command_id=approval_control_command_id,
+        stop_source_command_id=stopped_source_command_id,
         stop_command_id=stop_control_command_id,
     )
     authority = CandidateEvidenceV3Authority(
@@ -1385,6 +1412,9 @@ def _seed_scenario(
         paper_gate3_command_id=paper_gate3_command_id,
         hqa_run_ref=hqa_run_ref,
         provider_evidence_ref=provider_evidence_ref,
+        research_claim_digest=research_claim_digest,
+        research_start_payload_digest=research_start_payload_digest,
+        research_continue_payload_digest=research_continue_payload_digest,
         workflow_audit=workflow_audit,
     )
 
@@ -1434,6 +1464,7 @@ def _correct_hqa_probe(
         "gate1_source_digest": scenario.source_digest,
         "gate1_candidate_ref": f"candidate:{scenario.candidate_id}",
         "gate1_manifest_digest": scenario.candidate_digest,
+        "research_claim_digest": scenario.research_claim_digest,
         "gate3_refs": [scenario.gate3_hqa_ref],
         "result_refs": [f"result:{scenario.final_backtest_receipt_id}"],
         "attempts": [
@@ -1442,6 +1473,8 @@ def _correct_hqa_probe(
                 "gate3_refs": [],
                 "run_ref": "run:paper-plan",
                 "submission_command_ref": "command:plan-placeholder",
+                "payload_digest": scenario.research_start_payload_digest,
+                "research_claim_digest": scenario.research_claim_digest,
             },
             {
                 "attempt_ref": "attempt:integration-research",
@@ -1451,6 +1484,8 @@ def _correct_hqa_probe(
                 "terminal_outcome": "completed",
                 "domain_gate_outcome": "passed",
                 "provider_evidence_refs": [scenario.provider_evidence_ref],
+                "payload_digest": scenario.research_continue_payload_digest,
+                "research_claim_digest": scenario.research_claim_digest,
             },
         ],
     }
@@ -1810,6 +1845,28 @@ def test_complete_canonical_fact_set_is_verified_and_idempotent(
         "options_vertical_live_futu_ro",
         "paper_factor_gate_1_2_3_via_hermes",
     }
+    options_flow = verified.facts["flows"]["options_vertical_live_futu_ro"]  # type: ignore[index]
+    assert options_flow["raw_contract_symbol"] == "US.AAPL261218P200000"
+    chat_flow = verified.facts["flows"]["web_chat_multi_turn"]  # type: ignore[index]
+    stop_evidence = chat_flow["run_stop_recovery"]
+    source_payload_digest = stop_evidence["source_payload_digest"]
+    assert stop_evidence["source_payload_ref"] == (
+        f"platform-payload://sha256/{source_payload_digest}"
+    )
+    assert stop_evidence["source_hqa_payload_ref"] == (
+        f"payload:sha256:{source_payload_digest}"
+    )
+    paper_flow = verified.facts["flows"]["paper_factor_gate_1_2_3_via_hermes"]  # type: ignore[index]
+    assert paper_flow["research_claim_digest"] == scenario.research_claim_digest
+    assert (
+        paper_flow["research_start_payload_digest"]
+        == scenario.research_start_payload_digest
+    )
+    assert (
+        paper_flow["research_continue_payload_digest"]
+        == scenario.research_continue_payload_digest
+    )
+    assert "prompt" not in stop_evidence
     with database_environment.runtime.connect() as conn:
         stored = conn.execute(
             """
@@ -1830,6 +1887,65 @@ def test_complete_canonical_fact_set_is_verified_and_idempotent(
         True,
         "agent-v0.2-candidate-evidence-facts/v1",
     )
+
+
+def test_candidate_evidence_rejects_wrong_futu_raw_contract_symbol(
+    database_environment: _DatabaseEnvironment,
+) -> None:
+    scenario = _seed_scenario(
+        database_environment,
+        options_raw_symbol="US.AAPL261218P210000",
+    )
+    _capture_valid_restart(scenario)
+
+    with pytest.raises(CandidateEvidenceV3Error) as rejected:
+        scenario.authority.verify_and_store(scenario.refs)
+
+    assert (
+        rejected.value.code
+        == "candidate_evidence_options_contract_mismatch"
+    )
+
+
+@pytest.mark.parametrize(
+    ("strike", "raw_symbol"),
+    (
+        (95.0, "US.AAPL261218P095000"),
+        (9.5, "US.AAPL261218P009500"),
+    ),
+)
+def test_candidate_evidence_accepts_canonical_low_strike_symbol(
+    database_environment: _DatabaseEnvironment,
+    strike: float,
+    raw_symbol: str,
+) -> None:
+    scenario = _seed_scenario(
+        database_environment,
+        options_strike=strike,
+        options_raw_symbol=raw_symbol,
+    )
+    _capture_valid_restart(scenario)
+
+    verified = scenario.authority.verify_and_store(scenario.refs)
+
+    options_flow = verified.facts["flows"]["options_vertical_live_futu_ro"]  # type: ignore[index]
+    assert options_flow["raw_contract_symbol"] == raw_symbol
+
+
+def test_candidate_evidence_rejects_substituted_stop_source_command(
+    database_environment: _DatabaseEnvironment,
+) -> None:
+    scenario = _seed_scenario(database_environment)
+    _capture_valid_restart(scenario)
+    substituted = replace(
+        scenario.refs,
+        stop_source_command_id=scenario.refs.web_command_ids[0],
+    )
+
+    with pytest.raises(CandidateEvidenceV3Error) as rejected:
+        scenario.authority.verify_and_store(substituted)
+
+    assert rejected.value.code == "candidate_evidence_control_flow_mismatch"
 
 
 def test_candidate_evidence_binds_selected_and_compression_resolved_fork_lineage(
@@ -2081,6 +2197,54 @@ def test_fake_command_run_gate_promotion_and_hqa_facts_are_rejected(
     with pytest.raises(CandidateEvidenceV3Error) as hqa:
         wrong_hqa.verify_and_store(scenario.refs)
     assert hqa.value.code == "candidate_evidence_hqa_audit_mismatch"
+
+    def mismatched_research_claim(
+        operation: str,
+        arguments: tuple[str, ...] | list[str],
+    ) -> dict[str, object]:
+        result = _correct_hqa_probe(scenario, operation, arguments)
+        if operation == "show":
+            result["research_claim_digest"] = "f" * 64
+        return result
+
+    wrong_claim = CandidateEvidenceV3Authority(
+        database_environment.settings,
+        database=database_environment.runtime,
+        gateway=scenario.gateway,
+        hqa_probe=mismatched_research_claim,
+        promotion_probe=lambda promotion_id: _correct_promotion_probe(
+            scenario,
+            promotion_id,
+        ),
+    )
+    with pytest.raises(CandidateEvidenceV3Error) as claim:
+        wrong_claim.verify_and_store(scenario.refs)
+    assert claim.value.code == "candidate_evidence_hqa_audit_mismatch"
+
+    def mismatched_research_payload(
+        operation: str,
+        arguments: tuple[str, ...] | list[str],
+    ) -> dict[str, object]:
+        result = _correct_hqa_probe(scenario, operation, arguments)
+        if operation == "show":
+            attempts = result["attempts"]
+            assert isinstance(attempts, list)
+            attempts[1]["payload_digest"] = "0" * 64
+        return result
+
+    wrong_payload = CandidateEvidenceV3Authority(
+        database_environment.settings,
+        database=database_environment.runtime,
+        gateway=scenario.gateway,
+        hqa_probe=mismatched_research_payload,
+        promotion_probe=lambda promotion_id: _correct_promotion_probe(
+            scenario,
+            promotion_id,
+        ),
+    )
+    with pytest.raises(CandidateEvidenceV3Error) as payload:
+        wrong_payload.verify_and_store(scenario.refs)
+    assert payload.value.code == "candidate_evidence_hqa_audit_mismatch"
 
 
 @pytest.mark.parametrize(

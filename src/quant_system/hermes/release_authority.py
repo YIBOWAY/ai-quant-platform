@@ -1216,8 +1216,33 @@ class ReleaseAuthority:
     ) -> None:
         conn.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (f"quant_system:agent_v02_admission:{workspace_id}",),
+        )
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
             (f"quant_system:agent_v02_release:{workspace_id}",),
         )
+
+    @staticmethod
+    def _candidate_schema_presence(
+        conn: psycopg.Connection,
+    ) -> tuple[bool, bool]:
+        row = conn.execute(
+            """
+            SELECT
+                to_regclass(
+                    'quant_system.agent_v02_candidate_admissions'
+                ) IS NOT NULL,
+                to_regclass(
+                    'quant_system.agent_v02_candidate_evidence_sets'
+                ) IS NOT NULL
+            """
+        ).fetchone()
+        if row is None:
+            raise ReleaseAuthorityUnavailable(
+                "candidate schema presence probe returned no row"
+            )
+        return bool(row[0]), bool(row[1])
 
     @staticmethod
     def _expected_action(
@@ -1374,6 +1399,24 @@ class ReleaseAuthority:
                 )
                 if replay is not None:
                     return replay
+                candidate_table_exists, evidence_table_exists = (
+                    self._candidate_schema_presence(conn)
+                )
+                if candidate_table_exists:
+                    open_candidate = conn.execute(
+                        f"""
+                        SELECT admission_id
+                        FROM {SCHEMA}.agent_v02_candidate_admissions
+                        WHERE workspace_id = %s
+                          AND status = 'open'
+                          AND expires_at > clock_timestamp()
+                        """,
+                        (workspace_id,),
+                    ).fetchone()
+                    if open_candidate is not None:
+                        raise ReleaseAuthorityConflict(
+                            "release stamp requires zero open candidate admissions"
+                        )
                 active = conn.execute(
                     f"""
                     SELECT stamp_id
@@ -1384,18 +1427,9 @@ class ReleaseAuthority:
                 ).fetchone()
                 if active is not None:
                     raise ReleaseAuthorityConflict("workspace already has an active release stamp")
-                candidate_schema = conn.execute(
-                    """
-                    SELECT
-                        to_regclass(
-                            'quant_system.agent_v02_candidate_admissions'
-                        ) IS NOT NULL
-                        AND to_regclass(
-                            'quant_system.agent_v02_candidate_evidence_sets'
-                        ) IS NOT NULL
-                    """
-                ).fetchone()
-                candidate_evidence_is_authoritative = candidate_schema == (True,)
+                candidate_evidence_is_authoritative = (
+                    candidate_table_exists and evidence_table_exists
+                )
                 hardening_installed = self._hardening_installed(conn)
                 candidate_binding: AcceptedCandidateReleaseBinding | None = None
                 if (
@@ -1678,6 +1712,24 @@ class ReleaseAuthority:
                 )
                 if replay is not None:
                     return replay
+                candidate_table_exists, _evidence_table_exists = (
+                    self._candidate_schema_presence(conn)
+                )
+                if candidate_table_exists:
+                    open_candidate = conn.execute(
+                        f"""
+                        SELECT admission_id
+                        FROM {SCHEMA}.agent_v02_candidate_admissions
+                        WHERE workspace_id = %s
+                          AND status = 'open'
+                          AND expires_at > clock_timestamp()
+                        """,
+                        (workspace_id,),
+                    ).fetchone()
+                    if open_candidate is not None:
+                        raise ReleaseAuthorityConflict(
+                            "public cutover requires zero open candidate admissions"
+                        )
                 stamp_columns = self._stamp_columns(conn)
                 row = conn.execute(
                     f"""

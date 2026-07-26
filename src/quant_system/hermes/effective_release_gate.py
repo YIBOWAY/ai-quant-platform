@@ -114,6 +114,8 @@ class EffectiveReleaseDecision:
     event_cursor: int
     local_mutation_requested: bool
     local_composer_requested: bool
+    candidate_admission_id: str | None = None
+    candidate_admission_digest: str | None = None
 
     def to_public_dict(self) -> dict[str, object]:
         return {
@@ -131,6 +133,8 @@ class EffectiveReleaseDecision:
             "event_cursor": self.event_cursor,
             "local_mutation_requested": self.local_mutation_requested,
             "local_composer_requested": self.local_composer_requested,
+            "candidate_admission_id": self.candidate_admission_id,
+            "candidate_admission_digest": self.candidate_admission_digest,
         }
 
 
@@ -598,6 +602,12 @@ class EffectiveReleaseGate:
             event_cursor=cursor,
             local_mutation_requested=flags.mutation_enabled is True,
             local_composer_requested=flags.composer_open is True,
+            candidate_admission_id=(
+                stamp.candidate_admission_id if stamp is not None else None
+            ),
+            candidate_admission_digest=(
+                stamp.candidate_admission_digest if stamp is not None else None
+            ),
         )
 
 

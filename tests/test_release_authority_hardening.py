@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from threading import Event
+from threading import Barrier, Event
 from uuid import uuid4
 
 import psycopg
@@ -24,12 +24,21 @@ from quant_system.config.settings import (
 from quant_system.hermes.candidate_admission_authority import (
     AcceptCandidateAdmissionRequest,
     CandidateAdmissionAuthority,
+    CandidateAdmissionConflict,
     CandidateAdmissionReceipt,
     CandidateAdmissionUnavailable,
     OpenCandidateAdmissionRequest,
     canonical_candidate_action_digest,
 )
-from quant_system.hermes.command_ledger import ROOT_USER_ID
+from quant_system.hermes.command_ledger import (
+    ROOT_USER_ID,
+    HermesCommandLedger,
+    HermesCommandLedgerUnavailable,
+)
+from quant_system.hermes.dark_identity_profile import (
+    PROVIDER_POLICY_DIGEST,
+    STORE_TTL_DAYS,
+)
 from quant_system.hermes.effective_release_gate import (
     EffectiveReleaseGate,
     HermesDurableCapabilityObservation,
@@ -41,10 +50,15 @@ from quant_system.hermes.release_authority import (
     CreatePublicCutoverRequest,
     CreateReleaseStampRequest,
     ReleaseAuthority,
+    ReleaseAuthorityConflict,
     ReleaseAuthorityUnavailable,
     canonical_release_action_digest,
     release_authority_runtime_security_ready,
     release_authority_schema_is_ready_on_connection,
+)
+from quant_system.hermes.session_registry import (
+    RegisterWorkspaceSession,
+    register_workspace_session,
 )
 from quant_system.storage import database as db
 from tests.postgres_reset import isolated_test_database_url
@@ -97,7 +111,11 @@ def hardening_database() -> Iterator[tuple[Settings, db.Database, str]]:
         yield settings, database, isolated_url
 
 
-def _open_request(workspace_id: str) -> OpenCandidateAdmissionRequest:
+def _open_request(
+    workspace_id: str,
+    *,
+    generation: str = "default",
+) -> OpenCandidateAdmissionRequest:
     payload = {
         "baseline_order_snapshot_digest": ORDERS,
         "database_schema_fingerprint": SCHEMA_DIGEST,
@@ -121,7 +139,7 @@ def _open_request(workspace_id: str) -> OpenCandidateAdmissionRequest:
         baseline_order_snapshot_digest=ORDERS,
         ttl_seconds=120,
         note=str(payload["note"]),
-        client_action_id=f"open-{workspace_id}",
+        client_action_id=f"open-{workspace_id}-{generation}",
         action_digest=canonical_candidate_action_digest(
             "candidate.open",
             payload,
@@ -268,6 +286,7 @@ def _seed_open_candidate_with_evidence(
     database: db.Database,
     *,
     workspace_id: str = WORKSPACE,
+    generation: str = "default",
 ) -> tuple[
     CandidateAdmissionAuthority,
     CandidateAdmissionReceipt,
@@ -278,12 +297,16 @@ def _seed_open_candidate_with_evidence(
         database=database,
         schema_fingerprint_reader=lambda _database: SCHEMA_DIGEST,
     )
-    token = hashlib.sha256(workspace_id.encode("utf-8")).hexdigest()
+    token = hashlib.sha256(
+        f"{workspace_id}\0{generation}".encode()
+    ).hexdigest()
     opened = authority.open(
-        _open_request(workspace_id),
+        _open_request(workspace_id, generation=generation),
         admission_id=f"candidate-{token[:16]}",
     )
-    evidence_digest = hashlib.sha256(f"evidence\0{workspace_id}".encode()).hexdigest()
+    evidence_digest = hashlib.sha256(
+        f"evidence\0{workspace_id}\0{generation}".encode()
+    ).hexdigest()
     evidence_set_id = f"evidence-{token[:16]}"
     with database.connect() as conn, conn.transaction():
         fork_flow = _seed_exact_fork_lineage(
@@ -532,6 +555,369 @@ def test_020_is_replay_safe_ready_and_refuses_future_schema_downgrade(
             WHERE singleton IS TRUE
             """
         ).fetchone() == (2,)
+
+
+def test_post_release_managed_session_binds_accepted_candidate(
+    hardening_database: tuple[Settings, db.Database, str],
+) -> None:
+    settings, database, admin_url = hardening_database
+    candidate_authority, opened, accept_request = (
+        _seed_open_candidate_with_evidence(settings, database)
+    )
+    accepted = candidate_authority.accept(accept_request)
+    assert accepted.status == "accepted"
+
+    release_authority = ReleaseAuthority(
+        settings,
+        database=database,
+        schema_fingerprint_reader=lambda _database: SCHEMA_DIGEST,
+    )
+    stamp = release_authority.create_release_stamp(
+        _release_request(WORKSPACE),
+        now=datetime.now(UTC) + timedelta(seconds=1),
+        stamp_id="release-session-binding-stamp",
+    )
+    release_authority.create_public_cutover(
+        _cutover_request(
+            WORKSPACE,
+            stamp_id=stamp.resource_id,
+            release_digest=stamp.resource_digest,
+        ),
+        now=datetime.now(UTC) + timedelta(seconds=2),
+        cutover_id="release-session-binding-cutover",
+    )
+
+    creation_digest = hashlib.sha256(b"post-release-session").hexdigest()
+    with _runtime_login_url(admin_url, database) as runtime_url:
+        runtime_settings = Settings(
+            database=DatabaseSettings(
+                enabled=True,
+                url=runtime_url,
+                auto_migrate=False,
+                connect_timeout_seconds=2,
+            ),
+            candidate_admission=CandidateAdmissionSettings(
+                enabled=True,
+                ttl_seconds=120,
+            ),
+        )
+        db.reset_database_cache()
+        session, created = register_workspace_session(
+            runtime_settings,
+            RegisterWorkspaceSession(
+                platform_session_id="wm_post_release_binding",
+                hermes_session_id=f"web_{creation_digest[:40]}",
+                workspace_id=WORKSPACE,
+                kind="web_managed_session",
+                provider_policy_digest=PROVIDER_POLICY_DIGEST,
+                payload_ttl_days=STORE_TTL_DAYS,
+                creation_client_action_id="post-release-session-create",
+                creation_action_digest=creation_digest,
+            ),
+        )
+
+    assert created is True
+    assert session.candidate_admission_id == opened.admission_id
+    command = HermesCommandLedger(settings).create_command(
+        platform_session_id=session.platform_session_id,
+        client_request_id="post-release-session-turn",
+        kind="conversation_turn",
+        canonical_request_digest="c" * 64,
+        payload_ref=f"platform-payload://sha256/{'d' * 64}",
+        provider_policy_digest=PROVIDER_POLICY_DIGEST,
+    ).command
+    with database.connect() as conn:
+        release_command_binding = conn.execute(
+            """
+            SELECT candidate_admission_id
+            FROM quant_system.hermes_commands
+            WHERE command_id = %s
+            """,
+            (command.command_id,),
+        ).fetchone()
+    assert release_command_binding == (None,)
+    db.reset_database_cache()
+
+
+def test_public_cutover_refuses_an_open_replacement_candidate(
+    hardening_database: tuple[Settings, db.Database, str],
+) -> None:
+    settings, database, _admin_url = hardening_database
+    candidate_authority, _first, first_accept = (
+        _seed_open_candidate_with_evidence(
+            settings,
+            database,
+            generation="first",
+        )
+    )
+    assert candidate_authority.accept(first_accept).status == "accepted"
+
+    release_authority = ReleaseAuthority(
+        settings,
+        database=database,
+        schema_fingerprint_reader=lambda _database: SCHEMA_DIGEST,
+    )
+    stamp = release_authority.create_release_stamp(
+        _release_request(WORKSPACE),
+        now=datetime.now(UTC) + timedelta(seconds=1),
+        stamp_id="release-before-replacement-candidate",
+    )
+    replacement = candidate_authority.open(
+        _open_request(WORKSPACE, generation="replacement"),
+        admission_id="candidate-replacement-open",
+    )
+    assert replacement.status == "open"
+
+    with pytest.raises(
+        ReleaseAuthorityConflict,
+        match="zero open candidate admissions",
+    ):
+        release_authority.create_public_cutover(
+            _cutover_request(
+                WORKSPACE,
+                stamp_id=stamp.resource_id,
+                release_digest=stamp.resource_digest,
+            ),
+            now=datetime.now(UTC) + timedelta(seconds=2),
+            cutover_id="cutover-must-not-split",
+        )
+
+    assert release_authority.open_public_cutover(WORKSPACE) is None
+    assert candidate_authority.active(WORKSPACE) is not None
+
+
+def test_candidate_open_and_public_cutover_race_has_exactly_one_winner(
+    hardening_database: tuple[Settings, db.Database, str],
+) -> None:
+    settings, database, _admin_url = hardening_database
+    candidate_authority, _first, first_accept = (
+        _seed_open_candidate_with_evidence(
+            settings,
+            database,
+            generation="race-first",
+        )
+    )
+    assert candidate_authority.accept(first_accept).status == "accepted"
+    release_authority = ReleaseAuthority(
+        settings,
+        database=database,
+        schema_fingerprint_reader=lambda _database: SCHEMA_DIGEST,
+    )
+    stamp = release_authority.create_release_stamp(
+        _release_request(WORKSPACE),
+        now=datetime.now(UTC) + timedelta(seconds=1),
+        stamp_id="release-admission-race",
+    )
+    ready = Barrier(2)
+
+    def open_candidate() -> bool:
+        ready.wait(timeout=3)
+        try:
+            candidate_authority.open(
+                _open_request(WORKSPACE, generation="race-replacement"),
+                admission_id="candidate-admission-race",
+            )
+        except CandidateAdmissionConflict:
+            return False
+        return True
+
+    def open_cutover() -> bool:
+        ready.wait(timeout=3)
+        try:
+            release_authority.create_public_cutover(
+                _cutover_request(
+                    WORKSPACE,
+                    stamp_id=stamp.resource_id,
+                    release_digest=stamp.resource_digest,
+                ),
+                now=datetime.now(UTC) + timedelta(seconds=2),
+                cutover_id="cutover-admission-race",
+            )
+        except ReleaseAuthorityConflict:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        candidate_result = executor.submit(open_candidate)
+        cutover_result = executor.submit(open_cutover)
+        outcomes = (
+            candidate_result.result(timeout=10),
+            cutover_result.result(timeout=10),
+        )
+
+    assert sum(outcomes) == 1
+    assert not (
+        candidate_authority.active(WORKSPACE) is not None
+        and release_authority.open_public_cutover(WORKSPACE) is not None
+    )
+
+
+def test_release_close_serializes_with_conversation_turn_insert(
+    hardening_database: tuple[Settings, db.Database, str],
+) -> None:
+    settings, database, _admin_url = hardening_database
+    candidate_authority, _opened, accept_request = (
+        _seed_open_candidate_with_evidence(settings, database)
+    )
+    assert candidate_authority.accept(accept_request).status == "accepted"
+
+    release_authority = ReleaseAuthority(
+        settings,
+        database=database,
+        schema_fingerprint_reader=lambda _database: SCHEMA_DIGEST,
+    )
+    stamp = release_authority.create_release_stamp(
+        _release_request(WORKSPACE),
+        now=datetime.now(UTC) + timedelta(seconds=1),
+        stamp_id="release-close-race-stamp",
+    )
+    cutover = release_authority.create_public_cutover(
+        _cutover_request(
+            WORKSPACE,
+            stamp_id=stamp.resource_id,
+            release_digest=stamp.resource_digest,
+        ),
+        now=datetime.now(UTC) + timedelta(seconds=2),
+        cutover_id="release-close-race-cutover",
+    )
+
+    creation_digest = hashlib.sha256(b"release-close-race-session").hexdigest()
+    session, _created = register_workspace_session(
+        settings,
+        RegisterWorkspaceSession(
+            platform_session_id="wm_release_close_race",
+            hermes_session_id=f"web_{creation_digest[:40]}",
+            workspace_id=WORKSPACE,
+            kind="web_managed_session",
+            provider_policy_digest=PROVIDER_POLICY_DIGEST,
+            payload_ttl_days=STORE_TTL_DAYS,
+            creation_client_action_id="release-close-race-session-create",
+            creation_action_digest=creation_digest,
+        ),
+    )
+
+    insert_started = Event()
+
+    def insert_turn() -> str:
+        insert_started.set()
+        try:
+            HermesCommandLedger(settings).create_command(
+                platform_session_id=session.platform_session_id,
+                client_request_id="release-close-race-turn",
+                kind="conversation_turn",
+                canonical_request_digest="f" * 64,
+                payload_ref=f"platform-payload://sha256/{'a' * 64}",
+                provider_policy_digest=PROVIDER_POLICY_DIGEST,
+            )
+        except HermesCommandLedgerUnavailable as exc:
+            return str(exc)
+        return "accepted"
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with database.connect() as close_conn, close_conn.transaction():
+            close_conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"quant_system:agent_v02_release:{WORKSPACE}",),
+            )
+            close_conn.execute(
+                """
+                UPDATE quant_system.agent_v02_public_cutovers
+                SET status = 'closed',
+                    closed_at = clock_timestamp(),
+                    close_reason = 'concurrent rollback drill'
+                WHERE cutover_id = %s
+                  AND cutover_digest = %s
+                  AND status = 'open'
+                """,
+                (cutover.resource_id, cutover.resource_digest),
+            )
+            future = executor.submit(insert_turn)
+            assert insert_started.wait(timeout=2)
+            with pytest.raises(FutureTimeoutError):
+                future.result(timeout=0.25)
+        outcome = future.result(timeout=5)
+
+    assert "exact release" in outcome or "not writable" in outcome
+    with database.connect() as conn:
+        assert conn.execute(
+            """
+            SELECT count(*)
+            FROM quant_system.hermes_commands
+            WHERE client_request_id = 'release-close-race-turn'
+            """
+        ).fetchone() == (0,)
+
+
+def test_release_command_trigger_rejects_session_from_prior_accepted_candidate(
+    hardening_database: tuple[Settings, db.Database, str],
+) -> None:
+    settings, database, _url = hardening_database
+    candidate_authority, first, first_accept = (
+        _seed_open_candidate_with_evidence(
+            settings,
+            database,
+            generation="first",
+        )
+    )
+    assert candidate_authority.accept(first_accept).status == "accepted"
+    with database.connect() as conn:
+        stale_session_row = conn.execute(
+            """
+            SELECT platform_session_id
+            FROM quant_system.hermes_workspace_sessions
+            WHERE candidate_admission_id = %s
+              AND kind = 'web_managed_session'
+            LIMIT 1
+            """,
+            (first.admission_id,),
+        ).fetchone()
+    assert stale_session_row is not None
+    stale_session_id = str(stale_session_row[0])
+
+    candidate_authority, second, second_accept = (
+        _seed_open_candidate_with_evidence(
+            settings,
+            database,
+            generation="second",
+        )
+    )
+    assert candidate_authority.accept(second_accept).status == "accepted"
+
+    release_authority = ReleaseAuthority(
+        settings,
+        database=database,
+        schema_fingerprint_reader=lambda _database: SCHEMA_DIGEST,
+    )
+    stamp = release_authority.create_release_stamp(
+        _release_request(WORKSPACE),
+        now=datetime.now(UTC) + timedelta(seconds=1),
+        stamp_id="release-second-candidate-stamp",
+    )
+    release_authority.create_public_cutover(
+        _cutover_request(
+            WORKSPACE,
+            stamp_id=stamp.resource_id,
+            release_digest=stamp.resource_digest,
+        ),
+        now=datetime.now(UTC) + timedelta(seconds=2),
+        cutover_id="release-second-candidate-cutover",
+    )
+    active_stamp = release_authority.active_release_stamp(WORKSPACE)
+    assert active_stamp is not None
+    assert active_stamp.candidate_admission_id == second.admission_id
+
+    with pytest.raises(
+        HermesCommandLedgerUnavailable,
+        match="exact release session",
+    ):
+        HermesCommandLedger(settings).create_command(
+            platform_session_id=stale_session_id,
+            client_request_id="stale-candidate-release-turn",
+            kind="conversation_turn",
+            canonical_request_digest="d" * 64,
+            payload_ref=f"platform-payload://sha256/{'e' * 64}",
+            provider_policy_digest=PROVIDER_POLICY_DIGEST,
+        )
 
 
 def test_every_paper_authority_insert_update_delete_advances_the_epoch(

@@ -69,9 +69,12 @@ def test_project_managed_session_public_is_bounded_and_honest() -> None:
             "provisioned_at": None,
             "parent_platform_session_id": "wm_parent",
             "fork_point": "message:7",
+            "candidate_admission_id": "candidate-test",
             "created_at": now,
             "updated_at": now,
-        }
+        },
+        admitted_candidate_admission_id="candidate-test",
+        chat_write_ready=True,
     )
 
     assert projection == {
@@ -80,6 +83,7 @@ def test_project_managed_session_public_is_bounded_and_honest() -> None:
         "hermes_session_id": "web_" + ("a" * 40),
         "provision_state": "retryable",
         "web_writable": False,
+        "candidate_admission_id": "candidate-test",
         "attempt_count": 2,
         "lease_until": None,
         "retry_at": "2026-07-24T12:00:00.000000Z",
@@ -108,6 +112,7 @@ def test_project_managed_session_public_only_marks_ready_as_writable() -> None:
         "provisioned_at": datetime(2026, 7, 24, 12, 0, 0, tzinfo=UTC),
         "parent_platform_session_id": None,
         "fork_point": None,
+        "candidate_admission_id": "candidate-ready",
         "created_at": datetime(2026, 7, 24, 11, 59, 0, tzinfo=UTC),
         "updated_at": datetime(2026, 7, 24, 12, 0, 0, tzinfo=UTC),
     }
@@ -117,10 +122,36 @@ def test_project_managed_session_public_only_marks_ready_as_writable() -> None:
             "provision_state": state,
             "provisioned_at": None,
         }
-        assert project_managed_session_public(row)["web_writable"] is False
+        assert (
+            project_managed_session_public(
+                row,
+                admitted_candidate_admission_id="candidate-ready",
+                chat_write_ready=True,
+            )["web_writable"]
+            is False
+        )
 
-    ready = project_managed_session_public({**base, "provision_state": "ready"})
+    ready = project_managed_session_public(
+        {**base, "provision_state": "ready"},
+        admitted_candidate_admission_id="candidate-ready",
+        chat_write_ready=True,
+    )
     assert ready["web_writable"] is True
+
+    stale = project_managed_session_public(
+        {**base, "provision_state": "ready"},
+        admitted_candidate_admission_id="candidate-replacement",
+        chat_write_ready=True,
+    )
+    assert stale["candidate_admission_id"] == "candidate-ready"
+    assert stale["web_writable"] is False
+
+    closed = project_managed_session_public(
+        {**base, "provision_state": "ready"},
+        admitted_candidate_admission_id="candidate-ready",
+        chat_write_ready=False,
+    )
+    assert closed["web_writable"] is False
 
 
 def test_project_event_public_joins_command_identity() -> None:
@@ -166,12 +197,22 @@ def test_follow_resync_and_terminal() -> None:
 
 
 @pytest.mark.pg
-def test_snapshot_commands_are_objects_and_follow_emits_lifecycle() -> None:
+def test_snapshot_commands_are_objects_and_follow_emits_lifecycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Requires QS_TEST_DATABASE_URL; reuses agent_workspace fixture helpers."""
     import os
 
     if not os.environ.get("QS_TEST_DATABASE_URL"):
         pytest.skip("set QS_TEST_DATABASE_URL to run PostgreSQL integration tests")
+
+    # This L2b projection test predates candidate/release admission and is
+    # intentionally scoped to command snapshot/follow behavior. Production
+    # conversation turns remain guarded by require_current_session_admission.
+    monkeypatch.setattr(
+        "quant_system.hermes.submission_saga.require_current_session_admission",
+        lambda _settings, _session: None,
+    )
 
     from quant_system.hermes.agent_workspace import (
         ActorRef,

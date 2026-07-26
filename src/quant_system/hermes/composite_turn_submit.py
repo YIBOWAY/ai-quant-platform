@@ -35,9 +35,12 @@ from quant_system.hermes.intent_payload_port import (
     build_intent_payload_port,
 )
 from quant_system.hermes.session_registry import (
+    HermesSessionAdmissionClosed,
+    HermesSessionAdmissionMismatch,
     HermesSessionNotWritable,
     HermesSessionRegistryUnavailable,
     HermesSessionRegistryValidationError,
+    require_current_session_admission,
     require_web_writable_session,
 )
 from quant_system.hermes.submission_saga import (
@@ -133,6 +136,30 @@ def _managed_session_ref_for_action(managed_session_ref: str) -> str:
     if managed_session_ref.startswith("session:"):
         return managed_session_ref
     return session_ref(managed_session_ref)
+
+
+def _require_exact_session_admission(
+    settings: Settings,
+    session: object,
+) -> None:
+    """Reject a stale candidate Session before the prompt payload is stored."""
+
+    try:
+        require_current_session_admission(settings, session)
+    except HermesSessionAdmissionClosed as exc:
+        raise CompositeTurnSubmitError(
+            "unavailable",
+            "Agent v0.2 durable write admission is closed",
+            http_status=503,
+            retryable=True,
+        ) from exc
+    except HermesSessionAdmissionMismatch as exc:
+        raise CompositeTurnSubmitError(
+            "managed_session_admission_mismatch",
+            "managed session belongs to a different candidate admission",
+            http_status=409,
+            retryable=False,
+        ) from exc
 
 
 def _map_port_error(exc: IntentPayloadPortError) -> CompositeTurnSubmitError:
@@ -246,6 +273,7 @@ def submit_composite_turn(
             "session_workspace_mismatch",
             http_status=409,
         )
+    _require_exact_session_admission(settings, session)
     try:
         require_server_managed_session_policy(
             provider_policy_digest=session.provider_policy_digest,

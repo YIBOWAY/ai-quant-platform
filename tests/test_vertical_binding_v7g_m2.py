@@ -40,6 +40,7 @@ from quant_system.hermes.vertical_observe import (
 )
 from quant_system.hermes.vertical_ro_provider import (
     FutuReadOnlyOptionsFacade,
+    VerticalRoProviderError,
     adapter_public_surface,
 )
 
@@ -163,7 +164,7 @@ class _FakeInnerOk:
         return pd.DataFrame(
             [
                 {
-                    "symbol": f"{underlying}260815P00180000",
+                    "symbol": f"US.{underlying}260815P180000",
                     "option_type": "PUT",
                     "strike": 180.0,
                     "bid": 3.10,
@@ -187,6 +188,39 @@ class _FakeInnerEmpty:
 
     def fetch_underlying_snapshot(self, symbol: str) -> dict[str, object]:
         return {}
+
+
+class _FakeInnerNearestOrWrongType:
+    def fetch_option_quotes(self, underlying, *, expiration, option_type="ALL"):
+        import pandas as pd
+
+        return pd.DataFrame(
+            [
+                {
+                    "symbol": f"US.{underlying}260815P181000",
+                    "option_type": "PUT",
+                    "strike": 181.0,
+                    "bid": 2.10,
+                    "ask": 2.30,
+                    "delta": -0.20,
+                    "implied_volatility": 0.29,
+                    "expiry": expiration,
+                },
+                {
+                    "symbol": f"US.{underlying}260815P180000",
+                    "option_type": "CALL",
+                    "strike": 180.0,
+                    "bid": 12.10,
+                    "ask": 12.30,
+                    "delta": 0.80,
+                    "implied_volatility": 0.28,
+                    "expiry": expiration,
+                },
+            ]
+        )
+
+    def fetch_underlying_snapshot(self, symbol: str) -> dict[str, object]:
+        return {"symbol": symbol, "last": 190.0}
 
 
 class _FakeInnerTimeout:
@@ -266,6 +300,69 @@ def test_tc_m2_03_empty_provider_degraded_sample() -> None:
     assert "not_live_futu_quote" in lim
     assert "provider_evidence_missing" in lim
     assert not row.get("provider_evidence")
+
+
+def test_futu_facade_rejects_nearest_strike_and_wrong_option_type() -> None:
+    facade = FutuReadOnlyOptionsFacade(_FakeInnerNearestOrWrongType())
+
+    with pytest.raises(VerticalRoProviderError) as error:
+        facade.fetch_option_quote_row(
+            ticker="AAPL",
+            expiry="2026-08-15",
+            strike=180.0,
+            option_type="PUT",
+        )
+
+    assert error.value.code == "provider_contract"
+
+
+@pytest.mark.parametrize(
+    ("strike", "raw_symbol"),
+    (
+        (95.0, "US.AAPL260815P095000"),
+        (9.5, "US.AAPL260815P009500"),
+    ),
+)
+def test_futu_facade_zero_pads_low_strike_contracts(
+    strike: float,
+    raw_symbol: str,
+) -> None:
+    class LowStrikeProvider:
+        def fetch_option_quotes(
+            self,
+            underlying,
+            *,
+            expiration,
+            option_type="ALL",
+        ):
+            import pandas as pd
+
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": raw_symbol,
+                        "option_type": "PUT",
+                        "strike": strike,
+                        "bid": 1.10,
+                        "ask": 1.30,
+                        "delta": -0.20,
+                        "implied_volatility": 0.29,
+                        "expiry": expiration,
+                    }
+                ]
+            )
+
+        def fetch_underlying_snapshot(self, symbol: str) -> dict[str, object]:
+            return {"symbol": symbol, "last": 100.0}
+
+    quote = FutuReadOnlyOptionsFacade(LowStrikeProvider()).fetch_option_quote_row(
+        ticker="AAPL",
+        expiry="2026-08-15",
+        strike=strike,
+        option_type="PUT",
+    )
+
+    assert quote.raw_symbol == raw_symbol
 
 
 # --- TC-M2-04 missing envelope denied at parse ---

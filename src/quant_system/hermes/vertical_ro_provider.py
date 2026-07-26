@@ -122,7 +122,36 @@ def _apr_sell_put(
     return round((mid / base) * (365.0 / dte), 6)
 
 
-def _pick_put_row(frame: Any, *, strike: float | int) -> dict[str, object] | None:
+def _expected_put_symbol(*, ticker: str, expiry: str, strike: float | int) -> str:
+    try:
+        strike_millis = int(round(float(strike) * 1000))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise VerticalRoProviderError(
+            "provider_contract", "requested strike is invalid"
+        ) from exc
+    if strike_millis <= 0:
+        raise VerticalRoProviderError(
+            "provider_contract", "requested strike must be positive"
+        )
+    try:
+        expiry_date = datetime.fromisoformat(expiry[:10])
+    except ValueError as exc:
+        raise VerticalRoProviderError(
+            "provider_contract", "requested expiry is invalid"
+        ) from exc
+    return (
+        f"US.{ticker.upper()}"
+        f"{expiry_date.strftime('%y%m%d')}"
+        f"P{strike_millis:06d}"
+    )
+
+
+def _pick_put_row(
+    frame: Any,
+    *,
+    expected_symbol: str,
+    strike: float | int,
+) -> dict[str, object] | None:
     if frame is None:
         return None
     try:
@@ -133,25 +162,30 @@ def _pick_put_row(frame: Any, *, strike: float | int) -> dict[str, object] | Non
         return None
     try:
         work = frame.copy()
+        if "symbol" not in work.columns:
+            return None
+        symbols = work["symbol"].astype(str).str.strip()
+        work = work[symbols == expected_symbol]
     except Exception:
+        return None
+    if work.empty:
         return None
     if "option_type" in work.columns:
         ot = work["option_type"].astype(str).str.upper()
-        puts = work[ot.str.contains("PUT", na=False)]
-        if not puts.empty:
-            work = puts
+        work = work[ot == "PUT"]
+        if work.empty:
+            return None
     if "strike" not in work.columns:
         return None
     try:
         strikes = work["strike"].astype(float)
         target = float(strike)
-        idx = (strikes - target).abs().idxmin()
-        row = work.loc[idx]
-    except Exception:
-        try:
-            row = work.iloc[0]
-        except Exception:
+        exact = work[(strikes - target).abs() <= 1e-9]
+        if len(exact.index) != 1:
             return None
+        row = exact.iloc[0]
+    except Exception:
+        return None
     return {str(k): row[k] for k in row.index}
 
 
@@ -183,6 +217,11 @@ class FutuReadOnlyOptionsFacade:
     ) -> VerticalRoQuote:
         tkr = ticker.strip().upper()
         exp = expiry.strip()
+        expected_symbol = _expected_put_symbol(
+            ticker=tkr,
+            expiry=exp,
+            strike=strike,
+        )
         as_of_dt = _utc_now()
         as_of = _dt_public(as_of_dt)
         request_seed = f"{tkr}|{exp}|{strike}|{option_type}|{as_of}"
@@ -202,9 +241,16 @@ class FutuReadOnlyOptionsFacade:
                 f"futu RO quote failed: {exc}",
             ) from exc
 
-        row = _pick_put_row(frame, strike=strike)
+        row = _pick_put_row(
+            frame,
+            expected_symbol=expected_symbol,
+            strike=strike,
+        )
         if row is None:
-            raise VerticalRoProviderError("provider_empty", "no option quote row")
+            raise VerticalRoProviderError(
+                "provider_contract",
+                "exact requested PUT contract is absent or ambiguous",
+            )
 
         try:
             bid = _finite_number(row.get("bid"), "bid")
@@ -231,6 +277,11 @@ class FutuReadOnlyOptionsFacade:
             bid=bid, ask=ask, strike=strike_n, expiry=expiry_v, as_of=as_of_dt
         )
         raw_symbol = row.get("symbol")
+        if raw_symbol != expected_symbol:
+            raise VerticalRoProviderError(
+                "provider_contract",
+                "provider row does not match the exact requested PUT contract",
+            )
         evidence = (
             f"provider:{self._provider_label}",
             f"request_id:{request_id}",

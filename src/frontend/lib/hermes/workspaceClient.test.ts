@@ -1235,6 +1235,28 @@ describe("sendComposerTurn", () => {
     ).toBeNull();
   });
 
+  it("treats a ready session from another admission as valid read-only history", () => {
+    const hermesSessionId = "web_" + "8".repeat(40);
+    const snapshot = {
+      managed_sessions: [
+        {
+          platform_session_id: "wm_stale_candidate",
+          session_ref: "session:wm_stale_candidate",
+          hermes_session_id: hermesSessionId,
+          candidate_admission_id: "candidate-revoked",
+          provision_state: "ready" as const,
+          web_writable: false,
+          attempt_count: 1,
+        },
+      ],
+    };
+
+    expect(latestReadyManagedSessionProjection(snapshot)).toBeNull();
+    expect(
+      managedSessionIsReadyForHermesSession(snapshot, hermesSessionId),
+    ).toBe(false);
+  });
+
   it("locks an external history session while admitting one exact ready managed row", () => {
     const managedHermesSessionId = "web_" + "7".repeat(40);
     const snapshot = {
@@ -1418,6 +1440,41 @@ describe("sendComposerTurn", () => {
     ).rejects.toMatchObject({
       code: "managed_session_provision_retryable",
     });
+  });
+
+  it("rejects a ready stale-admission session immediately without polling it as provisioning", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            managed_sessions: [
+              {
+                platform_session_id: "wm_stale_candidate",
+                session_ref: "session:wm_stale_candidate",
+                hermes_session_id: "web_" + "e".repeat(40),
+                candidate_admission_id: "candidate-revoked",
+                provision_state: "ready",
+                web_writable: false,
+                attempt_count: 1,
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      waitForManagedSessionReady({
+        sessionRef: "session:wm_stale_candidate",
+        timeoutMs: 100,
+        initialIntervalMs: 1,
+      }),
+    ).rejects.toMatchObject({
+      code: "managed_session_admission_mismatch",
+      status: 409,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("honors AbortSignal while waiting for provisioning", async () => {

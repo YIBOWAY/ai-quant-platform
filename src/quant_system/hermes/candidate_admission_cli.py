@@ -526,6 +526,13 @@ def verify_evidence_command(
         str,
         typer.Option("--approval-command-id"),
     ],
+    stop_source_command_id: Annotated[
+        str,
+        typer.Option(
+            "--stop-source-command-id",
+            help="Exact conversation command whose Hermes Run was stopped.",
+        ),
+    ],
     stop_command_id: Annotated[
         str,
         typer.Option("--stop-command-id"),
@@ -556,6 +563,7 @@ def verify_evidence_command(
                 paper_gate3_id=paper_gate3_id,
                 reviewed_commit=reviewed_commit,
                 approval_command_id=approval_command_id,
+                stop_source_command_id=stop_source_command_id,
                 stop_command_id=stop_command_id,
             )
         )

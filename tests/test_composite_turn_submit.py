@@ -7,9 +7,14 @@ from unittest.mock import patch
 
 import pytest
 
+from quant_system.hermes.agent_workspace_actions import (
+    ConversationTurn,
+    WorkspaceRef,
+)
 from quant_system.hermes.composite_turn_submit import (
     CompositeTurnRequest,
     CompositeTurnSubmitError,
+    _require_exact_session_admission,
     parse_submit_turn_body,
     submit_composite_turn,
 )
@@ -21,7 +26,13 @@ from quant_system.hermes.intent_payload_port import (
     FakeIntentPayloadPort,
     IntentPayloadPortError,
 )
-from quant_system.hermes.submission_saga import ActionReceipt
+from quant_system.hermes.session_registry import (
+    HermesSessionAdmissionMismatch,
+)
+from quant_system.hermes.submission_saga import (
+    ActionReceipt,
+    submit_conversation_turn,
+)
 
 
 def _request(**overrides: object) -> CompositeTurnRequest:
@@ -61,6 +72,9 @@ def _canonical_managed_session_registry():  # type: ignore[no-untyped-def]
     with patch(
         "quant_system.hermes.composite_turn_submit.require_web_writable_session",
         return_value=_managed_session(),
+    ), patch(
+        "quant_system.hermes.composite_turn_submit._require_exact_session_admission",
+        return_value=None,
     ):
         yield
 
@@ -135,6 +149,81 @@ def test_submit_rejects_non_l2a_workspace() -> None:
         )
     assert exc.value.code == "workspace_not_admitted"
     assert port.puts == []
+
+
+def test_exact_session_admission_rejects_stale_candidate() -> None:
+    with patch(
+        "quant_system.hermes.composer_readiness.composer_readiness_snapshot",
+        return_value={
+            "chat_write_ready": True,
+            "candidate_admission_id": "candidate-current",
+        },
+    ), pytest.raises(CompositeTurnSubmitError) as exc:
+        _require_exact_session_admission(
+            SimpleNamespace(),
+            SimpleNamespace(candidate_admission_id="candidate-revoked"),
+        )
+
+    assert exc.value.code == "managed_session_admission_mismatch"
+    assert exc.value.http_status == 409
+    assert exc.value.retryable is False
+
+
+def test_stale_candidate_rejection_happens_before_payload_put() -> None:
+    port = FakeIntentPayloadPort()
+    with patch(
+        "quant_system.hermes.composite_turn_submit._require_exact_session_admission",
+        side_effect=CompositeTurnSubmitError(
+            "managed_session_admission_mismatch",
+            "stale candidate",
+            http_status=409,
+        ),
+    ), pytest.raises(CompositeTurnSubmitError) as exc:
+        submit_composite_turn(
+            SimpleNamespace(),
+            _request(),
+            mutation_enabled=True,
+            port=port,
+        )
+
+    assert exc.value.code == "managed_session_admission_mismatch"
+    assert port.puts == []
+
+
+def test_raw_conversation_turn_rejects_stale_candidate_before_command_insert() -> None:
+    action = ConversationTurn(
+        client_action_id="raw-stale-candidate-turn",
+        workspace=WorkspaceRef(workspace_id=PLATFORM_WORKSPACE_ID),
+        managed_session_ref="session:managed-1",
+        payload_ref="payload:sha256:" + ("a" * 64),
+        payload_digest="a" * 64,
+    )
+    with (
+        patch(
+            "quant_system.hermes.submission_saga._ensure_ready",
+            return_value=True,
+        ),
+        patch(
+            "quant_system.hermes.submission_saga.require_web_writable_session",
+            return_value=_managed_session(),
+        ),
+        patch(
+            "quant_system.hermes.submission_saga.require_current_session_admission",
+            side_effect=HermesSessionAdmissionMismatch("stale"),
+        ),
+        patch(
+            "quant_system.hermes.submission_saga._create_idempotent_command",
+        ) as create,
+    ):
+        receipt = submit_conversation_turn(
+            SimpleNamespace(),
+            action,
+            mutation_enabled=True,
+        )
+
+    assert receipt.status == "conflict"
+    assert receipt.reason_code == "managed_session_admission_mismatch"
+    create.assert_not_called()
 
 
 def test_happy_path_put_then_turn() -> None:
@@ -514,4 +603,3 @@ def test_v8_m2_port_unavailable_fail_closed_no_turn() -> None:
     assert exc.value.http_status == 503
     assert exc.value.code == "unavailable"
     turn.assert_not_called()
-

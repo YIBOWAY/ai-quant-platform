@@ -53,7 +53,7 @@ data/                     Local cache, fixtures, generated research outputs.
 - This repository is the domain backend for
   `/Users/sunyibo/programs/Hermes-quant-agent`.
 - **Agent v0.2 final-source addendum (2026-07-26):** the current release
-  branch contains migrations 016–024, private candidate admission and sealed
+  branch contains migrations 016–026, private candidate admission and sealed
   real-flow evidence, PostgreSQL-only release/cutover authority, managed
   external-session exact-message fork with selected plus Hermes-resolved
   lineage, durable conversation-root/resolved-run-tip identity, crash-safe
@@ -61,12 +61,24 @@ data/                     Local cache, fixtures, generated research outputs.
   natural-language paper research entry, and browser Gate 1 exact-source
   review. Full-suite JUnit evidence has a separate bounded 8 MiB allowance;
   logs, receipts and manifests remain capped at 4 MiB. The dated V4–V8 notes below are historical
-  provenance, not the current queue. Apply 016–024 only in order after backup and isolated
-  replay. Never infer live migration, connector, candidate, stamp, cutover or
+  provenance, not the current queue. Migration 025 fences new managed
+  Session/Command writes to the current paper-authority epoch plus the active
+  candidate or exact accepted release; migration 026 seals the HQA research
+  claim/start/continue digests through Gate 1/2/3 and separates historical
+  claim-less v1 completion from exact-lineage v2 completion. HQA keeps the
+  title and ordered universe only in its encrypted payload authority, limits
+  claim binding to Attempt 1, re-verifies exact pre-terminal lineage before
+  completion, and accepts only the closed 42-key Platform completion response.
+  This hardening is source + isolated-review APPROVE, not live-apply evidence.
+  Apply 016–026 only in order after backup and isolated replay. Never infer
+  live migration, connector, candidate, stamp, cutover or
   `chat_write_ready` state from this file: query PostgreSQL metadata, runtime
   identities, the effective release gate and health in the current operator
   window. Public cutover is never a prerequisite for private candidate E2E.
-  Release order is full/focused tests -> live migration -> sealed test
+  The final operator window is **backup -> migration 025 -> migration 026 ->
+  service restart -> live E2E**; first apply any missing earlier ladder entries
+  in order. The wider release order is full/focused tests -> live migration ->
+  sealed test
   preflight -> private candidate -> connector -> real browser flows -> verified
   evidence -> candidate accept -> release stamp/cutover -> smoke/rollback.
   Throughout this product slice, `paper_trading=true`,

@@ -55,6 +55,10 @@ def _admit_hermetic_bff_release(monkeypatch) -> None:
             payload_ttl_days=STORE_TTL_DAYS,
         ),
     )
+    monkeypatch.setattr(
+        "quant_system.hermes.composite_turn_submit._require_exact_session_admission",
+        lambda _settings, _session: None,
+    )
 
 
 def _settings(*, mutation: bool = False) -> Settings:

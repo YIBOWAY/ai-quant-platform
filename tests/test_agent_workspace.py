@@ -11,6 +11,7 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
+from quant_system.api.schemas.workspace import WorkspaceSnapshotResponse
 from quant_system.config.settings import DatabaseSettings, Settings
 from quant_system.hermes.agent_workspace import (
     ActorRef,
@@ -60,6 +61,16 @@ DIGEST_C = "c" * 64
 WORKSPACE_ID = PLATFORM_WORKSPACE_ID
 RUNTIME_LOGIN = "aqp_agent_workspace_runtime_test"
 RUNTIME_PASSWORD = "agent-workspace-runtime-test-only"
+
+
+@pytest.fixture(autouse=True)
+def _admit_legacy_workspace_turns(monkeypatch):
+    """V4 workspace tests predate candidate/release admission."""
+
+    monkeypatch.setattr(
+        "quant_system.hermes.submission_saga.require_current_session_admission",
+        lambda _settings, _session: None,
+    )
 
 
 def _ensure_test_database(url: str) -> None:
@@ -618,6 +629,7 @@ def test_snapshot_projects_managed_session_provisioning_truth(monkeypatch) -> No
             "hermes_session_id": record.hermes_session_id,
             "provision_state": "pending",
             "web_writable": False,
+            "candidate_admission_id": None,
             "attempt_count": 0,
             "lease_until": None,
             "retry_at": None,
@@ -632,6 +644,13 @@ def test_snapshot_projects_managed_session_provisioning_truth(monkeypatch) -> No
     assert str(created_at).endswith("Z")
     assert str(updated_at).endswith("Z")
     assert snap.to_public_dict()["managed_sessions"] == projected
+    validated = WorkspaceSnapshotResponse.model_validate(
+        snap.to_public_dict()
+    )
+    assert (
+        validated.managed_sessions[0].candidate_admission_id
+        is None
+    )
 
 
 def test_snapshot_projects_the_newest_200_managed_sessions(monkeypatch) -> None:

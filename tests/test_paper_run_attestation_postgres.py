@@ -25,6 +25,7 @@ from tests.postgres_reset import isolated_test_database_url
 pytestmark = pytest.mark.pg
 
 MIGRATION = "021_agent_v02_paper_run_attestation.sql"
+CLAIM_LINEAGE_MIGRATION = "026_agent_v02_paper_research_claim_lineage.sql"
 
 
 @pytest.fixture
@@ -261,7 +262,10 @@ def test_fresh_migration_ladder_replay_and_exact_current_command_binding(
     attestation_database: tuple[Settings, db.Database, db.Database, str],
 ) -> None:
     settings, admin_database, runtime_database, _url = attestation_database
-    db.run_migrations(admin_database, only=(MIGRATION,))
+    db.run_migrations(
+        admin_database,
+        only=(MIGRATION, CLAIM_LINEAGE_MIGRATION),
+    )
     with runtime_database.connect() as conn:
         assert paper_run_attestation_schema_is_ready_on_connection(conn)
         assert paper_run_attestation_runtime_security_is_ready_on_connection(conn)

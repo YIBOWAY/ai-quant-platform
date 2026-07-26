@@ -363,7 +363,7 @@ class _FakeQuoteProvider:
         return pd.DataFrame(
             [
                 {
-                    "symbol": f"{underlying}261218P00200000",
+                    "symbol": f"US.{underlying}261218P200000",
                     "option_type": option_type,
                     "strike": 200.0,
                     "bid": 5.1,
@@ -513,6 +513,7 @@ def _quote() -> VerticalRoQuote:
         delta=-0.23,
         iv=0.31,
         apr=0.14,
+        raw_symbol="US.AAPL261218P200000",
         evidence=(
             "provider:futu",
             "request_id:futu-request-001",
@@ -823,7 +824,8 @@ def test_pg_two_stage_authority_is_crash_safe_exact_bound_and_restorable() -> No
                        result.hermes_session_id, result.hermes_run_id,
                        zero.orders_created, zero.delta_zero,
                        link.platform_resource_type, link.relation,
-                       link.resolved_hermes_session_id
+                       link.resolved_hermes_session_id,
+                       receipt.field_summary->>'raw_symbol'
                 FROM quant_system.agent_v02_vertical_a_provider_receipts AS receipt
                 JOIN quant_system.agent_v02_vertical_a_results AS result
                   ON result.provider_receipt_id = receipt.provider_receipt_id
@@ -847,6 +849,7 @@ def test_pg_two_stage_authority_is_crash_safe_exact_bound_and_restorable() -> No
             "options_result",
             "output",
             f"{hermes_session_id}-tip",
+            "US.AAPL261218P200000",
         )
 
         with admin_database.connect() as conn:

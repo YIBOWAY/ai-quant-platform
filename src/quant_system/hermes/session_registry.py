@@ -223,6 +223,14 @@ class HermesSessionNotWritable(RuntimeError):
     """Raised when a write is attempted against a non-web-managed session."""
 
 
+class HermesSessionAdmissionClosed(RuntimeError):
+    """Raised when no candidate or final release currently admits writes."""
+
+
+class HermesSessionAdmissionMismatch(RuntimeError):
+    """Raised when a Session belongs to another immutable admission generation."""
+
+
 @dataclass(frozen=True)
 class WorkspaceSessionRecord:
     platform_session_id: str
@@ -251,6 +259,7 @@ class WorkspaceSessionRecord:
     provisioned_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    candidate_admission_id: str | None
 
     @property
     def web_writable(self) -> bool:
@@ -415,6 +424,7 @@ def _row_to_record(row: tuple[object, ...]) -> WorkspaceSessionRecord:
         created_at=row[23],  # type: ignore[arg-type]
         updated_at=row[24],  # type: ignore[arg-type]
         resolved_source_session_id=(str(row[25]) if row[25] is not None else None),
+        candidate_admission_id=(str(row[26]) if row[26] is not None else None),
     )
 
 
@@ -444,7 +454,8 @@ _SELECT_COLUMNS = """
     provisioned_at,
     created_at,
     updated_at,
-    resolved_source_session_id
+    resolved_source_session_id,
+    candidate_admission_id
 """
 
 _PROVISION_UPDATE_COLUMNS = (
@@ -1212,3 +1223,37 @@ def require_web_writable_session(
     if not record.web_writable:
         raise HermesSessionNotWritable("session is not a provisioned web_managed_session")
     return record
+
+
+def require_current_session_admission(
+    settings: Settings,
+    session: WorkspaceSessionRecord | object,
+) -> None:
+    """Require the exact candidate bound by the current candidate/release gate.
+
+    The import is intentionally local: composer readiness reads the session
+    schema version from this module.  Keeping the dependency at call time
+    avoids a module cycle while giving every mutation path one shared check.
+    PostgreSQL remains the final race-safe authority.
+    """
+
+    from quant_system.hermes.composer_readiness import (
+        composer_readiness_snapshot,
+    )
+
+    readiness = composer_readiness_snapshot(settings, fresh=True)
+    if readiness.get("chat_write_ready") is not True:
+        raise HermesSessionAdmissionClosed(
+            "Agent v0.2 durable write admission is closed"
+        )
+    expected = readiness.get("candidate_admission_id")
+    observed = getattr(session, "candidate_admission_id", None)
+    if (
+        not isinstance(expected, str)
+        or not expected
+        or not isinstance(observed, str)
+        or observed != expected
+    ):
+        raise HermesSessionAdmissionMismatch(
+            "managed session belongs to a different candidate admission"
+        )

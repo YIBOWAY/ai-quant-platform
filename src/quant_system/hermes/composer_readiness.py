@@ -105,11 +105,8 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
     connector = None
     release_ready = bool(release is not None and release.ready)
     candidate = None
-    if (
-        workspace_profile_ready
-        and not release_ready
-        and settings.candidate_admission.enabled is True
-    ):
+    candidate_probe_failed = False
+    if workspace_profile_ready and settings.candidate_admission.enabled is True:
         try:
             candidate = current_candidate_decision(
                 settings,
@@ -117,44 +114,84 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
             )
         except Exception:  # noqa: BLE001 - candidate uncertainty closes writes
             candidate = None
+            candidate_probe_failed = True
 
-    candidate_ready = bool(candidate is not None and candidate.ready)
-    admission_mode = "release" if release_ready else ("candidate" if candidate_ready else "closed")
+    active_candidate = bool(
+        candidate is not None
+        and isinstance(candidate.admission_id, str)
+        and candidate.admission_id
+    )
+    admission_split_brain = release_ready and active_candidate
+    candidate_authority_unavailable = bool(
+        release_ready
+        and (
+            candidate_probe_failed
+            or (
+                candidate is not None
+                and "candidate_authority_unavailable" in candidate.blockers
+            )
+        )
+    )
+    candidate_ready = bool(
+        candidate is not None
+        and candidate.ready
+        and not admission_split_brain
+    )
+    admission_mode = (
+        "closed"
+        if admission_split_brain or candidate_authority_unavailable
+        else (
+            "release"
+            if release_ready
+            else ("candidate" if candidate_ready else "closed")
+        )
+    )
     blockers: list[str] = []
-    if not workspace_profile_ready:
-        blockers.extend(final_blockers)
-    elif release_ready or candidate is None:
-        if not release_ready:
+    if admission_split_brain:
+        blockers.append("candidate_release_split_brain")
+    if candidate_authority_unavailable:
+        blockers.append("candidate_authority_unavailable")
+    if not blockers:
+        if not workspace_profile_ready:
             blockers.extend(final_blockers)
-        try:
-            platform_digest = runtime_identity_observation(settings).platform_runtime_digest
-            max_age = float(
-                getattr(
-                    settings.agent_v02_release,
-                    "connector_heartbeat_max_age_seconds",
-                    30.0,
+        elif release_ready or candidate is None:
+            if not release_ready:
+                blockers.extend(final_blockers)
+            try:
+                platform_digest = runtime_identity_observation(settings).platform_runtime_digest
+                max_age = float(
+                    getattr(
+                        settings.agent_v02_release,
+                        "connector_heartbeat_max_age_seconds",
+                        30.0,
+                    )
                 )
-            )
-            connector = ConnectorLivenessAuthority(settings).probe(
-                workspace_id=settings.agent_v02_release.workspace_id,
-                expected_runtime_digest=platform_digest,
-                max_heartbeat_age_seconds=max_age,
-            )
-            if connector.ready is not True:
-                blockers.append(str(connector.reason))
-        except Exception:  # noqa: BLE001 - liveness uncertainty closes writes
-            blockers.append("connector_liveness_unavailable")
-    elif candidate is not None:
-        blockers.extend(str(item) for item in candidate.blockers)
-    else:
-        blockers.extend(final_blockers)
+                connector = ConnectorLivenessAuthority(settings).probe(
+                    workspace_id=settings.agent_v02_release.workspace_id,
+                    expected_runtime_digest=platform_digest,
+                    max_heartbeat_age_seconds=max_age,
+                )
+                if connector.ready is not True:
+                    blockers.append(str(connector.reason))
+            except Exception:  # noqa: BLE001 - liveness uncertainty closes writes
+                blockers.append("connector_liveness_unavailable")
+        elif candidate is not None:
+            blockers.extend(str(item) for item in candidate.blockers)
+        else:
+            blockers.extend(final_blockers)
 
     connector_ready = bool(
         (connector is not None and connector.ready)
         or (candidate is not None and candidate.connector_ready)
     )
     ordered = tuple(_dedupe(blockers))
-    ready = (release_ready or candidate_ready) and connector_ready and not ordered
+    ready = (
+        (release_ready or candidate_ready)
+        and connector_ready
+        and not ordered
+        and not admission_split_brain
+        and not candidate_authority_unavailable
+    )
     return _EffectiveAdmission(
         release_ready=release_ready,
         candidate_ready=candidate_ready,
@@ -173,8 +210,24 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
             if release is not None and release.public_cutover_id is not None
             else None
         ),
-        candidate_admission_id=(None if candidate is None else candidate.admission_id),
-        candidate_admission_digest=(None if candidate is None else candidate.admission_digest),
+        candidate_admission_id=(
+            None
+            if admission_split_brain or candidate_authority_unavailable
+            else (
+                release.candidate_admission_id
+                if release_ready and release is not None
+                else (None if candidate is None else candidate.admission_id)
+            )
+        ),
+        candidate_admission_digest=(
+            None
+            if admission_split_brain or candidate_authority_unavailable
+            else (
+                release.candidate_admission_digest
+                if release_ready and release is not None
+                else (None if candidate is None else candidate.admission_digest)
+            )
+        ),
         release_event_cursor=(
             int(release.event_cursor)
             if release is not None

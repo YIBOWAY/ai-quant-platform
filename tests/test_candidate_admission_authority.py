@@ -20,6 +20,7 @@ from quant_system.hermes.candidate_admission_authority import (
     CandidateAdmissionConflict,
     OpenCandidateAdmissionRequest,
     candidate_admission_runtime_security_is_ready,
+    candidate_admission_schema_is_ready_on_connection,
     canonical_candidate_action_digest,
 )
 from quant_system.hermes.candidate_evidence_v3 import (
@@ -45,6 +46,7 @@ pytestmark = pytest.mark.pg
 
 MIGRATIONS = (
     "003_app_users_brief_ai_reports.sql",
+    "004_paper_account_tables.sql",
     "005_hermes_command_ledger.sql",
     "006_hermes_workflow_binding.sql",
     "007_hermes_session_registry.sql",
@@ -56,10 +58,16 @@ MIGRATIONS = (
     "014_agent_v02_connector_liveness.sql",
     "015_managed_session_provision_authority.sql",
     "016_agent_v02_candidate_admission.sql",
+    "017_agent_v02_vertical_a_authority.sql",
+    "018_agent_v02_paper_gate_bridge.sql",
     "019_agent_v02_candidate_evidence_v3.sql",
+    "020_agent_v02_release_authority_hardening.sql",
+    "021_agent_v02_paper_run_attestation.sql",
     "022_agent_v02_resolved_fork_lineage.sql",
     "023_agent_v02_resolved_run_tip.sql",
     "024_agent_v02_run_control_outcome.sql",
+    "025_agent_v02_release_session_binding.sql",
+    "026_agent_v02_paper_research_claim_lineage.sql",
 )
 WORKSPACE = "workspace-root"
 PLATFORM = "1" * 64
@@ -225,6 +233,7 @@ def test_candidate_is_db_clocked_idempotent_and_server_binds_chat() -> None:
         ),
     )
     assert created is True
+    assert session.candidate_admission_id == first.admission_id
     ledger = HermesCommandLedger(
         settings,
         claim_candidate_admission_id=first.admission_id,
@@ -442,6 +451,7 @@ def test_candidate_authority_requires_constrained_runtime_role() -> None:
         only=(
             "016_agent_v02_candidate_admission.sql",
             "019_agent_v02_candidate_evidence_v3.sql",
+            "025_agent_v02_release_session_binding.sql",
         ),
     )
     runtime_parameters = conninfo_to_dict(admin_url)
@@ -467,6 +477,87 @@ def test_candidate_authority_requires_constrained_runtime_role() -> None:
             conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(RUNTIME_LOGIN)))
             conn.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN)))
         db.reset_database_cache()
+
+
+def test_candidate_readiness_rejects_pre_025_trigger_body() -> None:
+    _settings_value, database = _prepare()
+    with database.connect() as conn:
+        assert candidate_admission_schema_is_ready_on_connection(conn) is True
+
+    db.run_migrations(
+        database,
+        only=("016_agent_v02_candidate_admission.sql",),
+    )
+    with database.connect() as conn:
+        assert candidate_admission_schema_is_ready_on_connection(conn) is False
+
+    db.run_migrations(
+        database,
+        only=("025_agent_v02_release_session_binding.sql",),
+    )
+    with database.connect() as conn:
+        assert candidate_admission_schema_is_ready_on_connection(conn) is False
+
+    db.run_migrations(
+        database,
+        only=(
+            "019_agent_v02_candidate_evidence_v3.sql",
+            "020_agent_v02_release_authority_hardening.sql",
+            "025_agent_v02_release_session_binding.sql",
+        ),
+    )
+    with database.connect() as conn:
+        assert candidate_admission_schema_is_ready_on_connection(conn) is True
+
+
+def test_candidate_readiness_rejects_tampered_025_function_body() -> None:
+    _settings_value, database = _prepare()
+    with database.connect() as conn:
+        assert candidate_admission_schema_is_ready_on_connection(conn) is True
+        conn.execute(
+            """
+            CREATE OR REPLACE FUNCTION
+                quant_system.bind_agent_v02_candidate_command()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            VOLATILE
+            SECURITY INVOKER
+            AS $$
+            BEGIN
+                RETURN NEW;
+            END;
+            $$
+            """
+        )
+        assert candidate_admission_schema_is_ready_on_connection(conn) is False
+
+
+def test_candidate_readiness_rejects_wrong_trigger_target() -> None:
+    _settings_value, database = _prepare()
+    with database.connect() as conn:
+        assert candidate_admission_schema_is_ready_on_connection(conn) is True
+        conn.execute(
+            """
+            DROP TRIGGER trg_hermes_command_candidate_binding
+            ON quant_system.hermes_commands
+            """
+        )
+        conn.execute(
+            """
+            CREATE TRIGGER trg_hermes_command_candidate_binding
+            BEFORE INSERT OR UPDATE
+            ON quant_system.hermes_workspace_sessions
+            FOR EACH ROW
+            EXECUTE FUNCTION quant_system.bind_agent_v02_candidate_command()
+            """
+        )
+        conn.execute(
+            """
+            ALTER TABLE quant_system.hermes_workspace_sessions
+            ENABLE ALWAYS TRIGGER trg_hermes_command_candidate_binding
+            """
+        )
+        assert candidate_admission_schema_is_ready_on_connection(conn) is False
 
 
 def test_candidate_evidence_readiness_rejects_policy_drift() -> None:

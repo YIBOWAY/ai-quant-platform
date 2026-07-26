@@ -53,11 +53,12 @@ def _completion_request(
     promotion_id: str = "promo-" + "8" * 32,
     subject_command_id: str = "10000000-0000-4000-8000-000000000099",
     subject_run_id: str = "paper-research",
+    schema_version: str = "agent-v0.2-paper-completion/v1",
 ) -> RegisterPaperGateCompletion:
     identity_digest = hashlib.sha256(f"{workspace_id}:{gate_id}".encode()).hexdigest()
     subject_attestation_digest = "5" * 64
     evidence = {
-        "schema_version": "agent-v0.2-paper-completion/v1",
+        "schema_version": schema_version,
         "task_ref": "task:paper-1",
         "task_version": task_version,
         "task_status": task_status,
@@ -98,6 +99,14 @@ def _completion_request(
         "workflow_audit_ref": f"workflow-audit:{identity_digest}",
         "workflow_audit_digest": identity_digest,
     }
+    if schema_version == "agent-v0.2-paper-completion/v2":
+        evidence.update(
+            {
+                "research_claim_digest": "c" * 64,
+                "research_start_payload_digest": "d" * 64,
+                "research_continue_payload_digest": "e" * 64,
+            }
+        )
     digest = hashlib.sha256(
         json.dumps(
             evidence,
@@ -187,6 +196,36 @@ def test_completion_contract_accepts_canonical_revision_promotion_id() -> None:
     )
     validated = PaperGateAuthority._validated_completion(request)
     assert validated[4]["promotion_id"] == "promo-" + "8" * 32 + "-r2"
+
+
+def test_completion_contract_accepts_exact_research_claim_lineage_v2() -> None:
+    request = _completion_request(
+        gate_id="paper-g3-claim-v2",
+        workspace_id="paper-claim-v2",
+        task_version=13,
+        schema_version="agent-v0.2-paper-completion/v2",
+    )
+    validated = PaperGateAuthority._validated_completion(request)
+    assert validated[4]["research_claim_digest"] == "c" * 64
+    assert validated[4]["research_start_payload_digest"] == "d" * 64
+    assert validated[4]["research_continue_payload_digest"] == "e" * 64
+
+
+def test_completion_contract_rejects_partial_research_claim_lineage_v2() -> None:
+    request = _completion_request(
+        gate_id="paper-g3-claim-v2-partial",
+        workspace_id="paper-claim-v2-partial",
+        task_version=13,
+        schema_version="agent-v0.2-paper-completion/v2",
+    )
+    evidence = dict(request.completion_evidence)
+    evidence.pop("research_continue_payload_digest")
+    malformed = replace(request, completion_evidence=evidence)
+    with pytest.raises(
+        PaperGateAuthorityValidationError,
+        match="invalid exact field set",
+    ):
+        PaperGateAuthority._validated_completion(malformed)
 
 
 def _settings() -> Settings:

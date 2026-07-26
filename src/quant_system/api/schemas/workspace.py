@@ -241,6 +241,11 @@ class ManagedSessionProjectionResponse(_WorkspaceSchema):
     platform_session_id: str = Field(min_length=1, max_length=200)
     session_ref: str = Field(min_length=9, max_length=220)
     hermes_session_id: str = Field(min_length=1, max_length=255)
+    candidate_admission_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
     provision_state: Literal[
         "pending",
         "leased",

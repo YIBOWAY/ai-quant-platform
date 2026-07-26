@@ -69,13 +69,17 @@ def _public_datetime(value: object) -> str | None:
 
 def project_managed_session_public(
     row: Mapping[str, Any],
+    *,
+    admitted_candidate_admission_id: str | None,
+    chat_write_ready: bool,
 ) -> dict[str, object]:
     """Return bounded browser metadata for one durable managed Session.
 
     This is an observation of the platform registry, not a claim that a
     reserved Hermes Session already exists.  ``web_writable`` becomes true
-    only after the provisioner has bound an exact Hermes receipt and advanced
-    the durable row to ``ready``.
+    only after the provisioner has bound an exact Hermes receipt, advanced
+    the durable row to ``ready``, and the row remains bound to the exact
+    candidate admitted by the current candidate/release gate.
     """
 
     platform_session_id = str(row["platform_session_id"])
@@ -85,12 +89,25 @@ def project_managed_session_public(
         raise ValueError("invalid managed session provision_state")
     parent = row.get("parent_platform_session_id")
     last_error = row.get("provision_last_error_code")
+    candidate_admission_id = row.get("candidate_admission_id")
+    if candidate_admission_id is not None:
+        candidate_admission_id = str(candidate_admission_id)
+    admission_matches = (
+        isinstance(admitted_candidate_admission_id, str)
+        and bool(admitted_candidate_admission_id)
+        and candidate_admission_id == admitted_candidate_admission_id
+    )
     return {
         "platform_session_id": platform_session_id,
         "session_ref": f"session:{platform_session_id}",
         "hermes_session_id": hermes_session_id,
         "provision_state": provision_state,
-        "web_writable": provision_state == "ready",
+        "web_writable": (
+            provision_state == "ready"
+            and chat_write_ready is True
+            and admission_matches
+        ),
+        "candidate_admission_id": candidate_admission_id,
         "attempt_count": max(0, int(row.get("provision_attempt_count") or 0)),
         "lease_until": _public_datetime(row.get("provision_lease_until")),
         "retry_at": _public_datetime(row.get("provision_next_attempt_at")),
@@ -421,7 +438,16 @@ class PlatformAgentWorkspace:
                 commands,
                 cursor,
                 projection_available,
-            ) = self._collect_workspace_projection(workspace_id)
+            ) = self._collect_workspace_projection(
+                workspace_id,
+                admitted_candidate_admission_id=(
+                    str(ready["candidate_admission_id"])
+                    if isinstance(ready.get("candidate_admission_id"), str)
+                    and ready["candidate_admission_id"]
+                    else None
+                ),
+                chat_write_ready=ready.get("chat_write_ready") is True,
+            )
             if not projection_available:
                 for authority_name in (
                     "database",
@@ -848,7 +874,11 @@ class PlatformAgentWorkspace:
         return tuple(str(row[0]) for row in rows)
 
     def _collect_workspace_projection(
-        self, workspace_id: str
+        self,
+        workspace_id: str,
+        *,
+        admitted_candidate_admission_id: str | None,
+        chat_write_ready: bool,
     ) -> tuple[
         list[str],
         list[dict[str, object]],
@@ -890,7 +920,8 @@ class PlatformAgentWorkspace:
                         parent_platform_session_id,
                         fork_point,
                         created_at,
-                        updated_at
+                        updated_at,
+                        candidate_admission_id
                     FROM (
                         SELECT
                             platform_session_id,
@@ -904,7 +935,8 @@ class PlatformAgentWorkspace:
                             parent_platform_session_id,
                             fork_point,
                             created_at,
-                            updated_at
+                            updated_at,
+                            candidate_admission_id
                         FROM {SCHEMA}.hermes_workspace_sessions
                         WHERE workspace_id = %s
                           AND owner_user_id = %s
@@ -931,7 +963,12 @@ class PlatformAgentWorkspace:
                             "fork_point": row[9],
                             "created_at": row[10],
                             "updated_at": row[11],
-                        }
+                            "candidate_admission_id": row[12],
+                        },
+                        admitted_candidate_admission_id=(
+                            admitted_candidate_admission_id
+                        ),
+                        chat_write_ready=chat_write_ready,
                     )
                     for row in managed_rows
                 ]

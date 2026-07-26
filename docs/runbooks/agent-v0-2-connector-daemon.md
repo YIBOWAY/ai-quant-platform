@@ -27,14 +27,37 @@ the supervised liveness generation, so it can never make Web chat ready.
 ## Prerequisites
 
 Do not install the LaunchAgent until migrations through
-`024_agent_v02_run_control_outcome.sql` are live and the restricted runtime
+`026_agent_v02_paper_research_claim_lineage.sql` are live and the restricted runtime
 database login is configured. The Platform, HQA and Hermes runtime checkouts
 must be clean commits because the daemon binds its generation to the exact
 Platform Git runtime digest. Hermes must expose the managed Session and durable
 Run capability contract on loopback. Migration 023 binds each Run to the stable
 conversation root and its immutable resolved compression tip; migration 024
 persists approval/stop external outcomes before an exact replay may be treated
-as terminal.
+as terminal. Migration 025 binds every new managed Session/Command to the
+current paper-authority epoch plus the active candidate or exact accepted
+release, so a paper-authority mutation cannot leave a stale release writable.
+Migration 026 persists only the sealed research claim/start/continue digests:
+Gate 1/2 carry claim+start, Gate 3 adds continue, historical claim-less
+completions remain v1, and claimed completions must use exact-lineage v2.
+
+The corresponding HQA source keeps the paper title and ordered universe only
+inside its encrypted Intent Payload Store. It may bind the sealed claim only to
+Attempt 1, must verify the exact pre-terminal Attempt lineage before terminal
+completion, and must accept only the closed 42-key Platform completion
+response. Source and isolated review are APPROVE; this statement does not prove
+that 025/026 are live or that any candidate, stamp, cutover or connector
+generation is active. Inspect those facts in the current operator window.
+
+The final live upgrade sequence is:
+
+```text
+backup -> migration 025 -> migration 026 -> service restart -> live E2E
+```
+
+If inspection finds an earlier 016–024 migration missing, apply the missing
+ordered prerequisites before 025. Never install or restart the connector
+between 025 and 026.
 
 The release gate distinguishes durable operator/drift facts from uncertainty.
 An operator-closed stamp/cutover, runtime identity mismatch, schema fingerprint

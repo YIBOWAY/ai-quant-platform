@@ -40,6 +40,102 @@ _NONTERMINAL_COMMAND_STATES = (
     "delivered",
     "outcome_unknown",
 )
+_CANDIDATE_TRIGGER_SIGNATURES = {
+    (
+        "trg_agent_v02_candidate_admission_guard",
+        "agent_v02_candidate_admissions",
+        27,
+        "A",
+        "quant_system",
+        "guard_agent_v02_candidate_transition",
+        True,
+        "",
+    ),
+    (
+        "trg_agent_v02_candidate_events_append_only",
+        "agent_v02_candidate_events",
+        27,
+        "A",
+        "quant_system",
+        "reject_agent_v02_candidate_append_only",
+        True,
+        "",
+    ),
+    (
+        "trg_agent_v02_candidate_actions_append_only",
+        "agent_v02_candidate_actions",
+        27,
+        "A",
+        "quant_system",
+        "reject_agent_v02_candidate_append_only",
+        True,
+        "",
+    ),
+    (
+        "trg_hermes_session_candidate_binding",
+        "hermes_workspace_sessions",
+        23,
+        "A",
+        "quant_system",
+        "bind_agent_v02_candidate_session",
+        True,
+        "",
+    ),
+    (
+        "trg_hermes_command_candidate_binding",
+        "hermes_commands",
+        23,
+        "A",
+        "quant_system",
+        "bind_agent_v02_candidate_command",
+        True,
+        "",
+    ),
+}
+_CANDIDATE_FUNCTION_SIGNATURES = {
+    (
+        "bind_agent_v02_candidate_command",
+        "quant_migrator",
+        "plpgsql",
+        False,
+        "v",
+    ),
+    (
+        "bind_agent_v02_candidate_session",
+        "quant_migrator",
+        "plpgsql",
+        False,
+        "v",
+    ),
+    (
+        "guard_agent_v02_candidate_transition",
+        "quant_migrator",
+        "plpgsql",
+        False,
+        "v",
+    ),
+    (
+        "reject_agent_v02_candidate_append_only",
+        "quant_migrator",
+        "plpgsql",
+        False,
+        "v",
+    ),
+}
+_CANDIDATE_FUNCTION_SOURCE_SHA256 = {
+    "bind_agent_v02_candidate_command": (
+        "ac05c8d18b74f389ce35f0dfd0dc157e8fe40cd5db4bc065ac03e1823962fbfd"
+    ),
+    "bind_agent_v02_candidate_session": (
+        "fb0cc0d59493faa7bbf0153a07aa5e4fc30b7eb30de61f999db7912d2ad2fc85"
+    ),
+    "guard_agent_v02_candidate_transition": (
+        "71bf68ecebc77e6adb74db5105d80b67133f28060f06f9cafb2ba1e5a3033972"
+    ),
+    "reject_agent_v02_candidate_append_only": (
+        "9e6e78dc09a82f7826e1ed159f1932881d869a7da81c5bf86f31e1174aa7e995"
+    ),
+}
 
 _ADMISSION_COLUMNS = """
     admission_id,
@@ -469,10 +565,21 @@ def candidate_admission_schema_is_ready_on_connection(
         return False
     triggers = conn.execute(
         """
-        SELECT trigger.tgname, trigger.tgenabled
+        SELECT
+            trigger.tgname,
+            relation.relname,
+            trigger.tgtype,
+            trigger.tgenabled,
+            function_namespace.nspname,
+            procedure.proname,
+            trigger.tgqual IS NULL,
+            trigger.tgattr::text
         FROM pg_trigger trigger
         JOIN pg_class relation ON relation.oid = trigger.tgrelid
         JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        JOIN pg_proc procedure ON procedure.oid = trigger.tgfoid
+        JOIN pg_namespace function_namespace
+          ON function_namespace.oid = procedure.pronamespace
         WHERE namespace.nspname = %s
           AND trigger.tgname = ANY(%s)
           AND NOT trigger.tgisinternal
@@ -488,13 +595,67 @@ def candidate_admission_schema_is_ready_on_connection(
             ],
         ),
     ).fetchall()
-    return {(str(row[0]), str(row[1])) for row in triggers} == {
-        ("trg_agent_v02_candidate_admission_guard", "A"),
-        ("trg_agent_v02_candidate_events_append_only", "A"),
-        ("trg_agent_v02_candidate_actions_append_only", "A"),
-        ("trg_hermes_session_candidate_binding", "A"),
-        ("trg_hermes_command_candidate_binding", "A"),
+    trigger_signatures = {
+        (
+            str(row[0]),
+            str(row[1]),
+            int(row[2]),
+            str(row[3]),
+            str(row[4]),
+            str(row[5]),
+            bool(row[6]),
+            str(row[7]),
+        )
+        for row in triggers
     }
+    if trigger_signatures != _CANDIDATE_TRIGGER_SIGNATURES:
+        return False
+    function_rows = conn.execute(
+        """
+        SELECT
+            procedure.proname,
+            pg_get_userbyid(procedure.proowner),
+            language.lanname,
+            procedure.prosecdef,
+            procedure.provolatile,
+            procedure.prosrc
+        FROM pg_proc AS procedure
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = procedure.pronamespace
+        JOIN pg_language AS language
+          ON language.oid = procedure.prolang
+        WHERE namespace.nspname = %s
+          AND procedure.proname = ANY(%s)
+          AND procedure.pronargs = 0
+          AND procedure.prorettype = 'trigger'::regtype
+        """,
+        (
+            SCHEMA,
+            [
+                "bind_agent_v02_candidate_session",
+                "bind_agent_v02_candidate_command",
+                "guard_agent_v02_candidate_transition",
+                "reject_agent_v02_candidate_append_only",
+            ],
+        ),
+    ).fetchall()
+    function_signatures = {
+        (
+            str(row[0]),
+            str(row[1]),
+            str(row[2]),
+            bool(row[3]),
+            str(row[4]),
+        )
+        for row in function_rows
+    }
+    if function_signatures != _CANDIDATE_FUNCTION_SIGNATURES:
+        return False
+    source_digests = {
+        str(row[0]): hashlib.sha256(str(row[5]).encode("utf-8")).hexdigest()
+        for row in function_rows
+    }
+    return source_digests == _CANDIDATE_FUNCTION_SOURCE_SHA256
 
 
 def candidate_admission_schema_ready(settings: Settings) -> bool:
@@ -644,6 +805,10 @@ class CandidateAdmissionAuthority:
 
     @staticmethod
     def _lock(conn: psycopg.Connection, workspace_id: str) -> None:
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (f"quant_system:agent_v02_admission:{workspace_id}",),
+        )
         conn.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
             (f"agent-v02-candidate:{workspace_id}",),
