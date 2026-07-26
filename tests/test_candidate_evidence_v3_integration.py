@@ -114,6 +114,7 @@ MIGRATIONS = (
     "024_agent_v02_run_control_outcome.sql",
     "025_agent_v02_release_session_binding.sql",
     "026_agent_v02_paper_research_claim_lineage.sql",
+    "027_agent_v02_candidate_ttl_window.sql",
 )
 REQUIRED_FLOW_NAMES = (
     "web_chat_multi_turn",
@@ -425,7 +426,7 @@ def database_environment() -> _DatabaseEnvironment:
         ),
         candidate_admission=CandidateAdmissionSettings(
             enabled=True,
-            ttl_seconds=1800,
+            ttl_seconds=7200,
         ),
         paper_account=PaperAccountSettings(
             db_mode="canonical",
@@ -664,7 +665,7 @@ def _open_candidate(
         "platform_runtime_digest": _digest(f"platform-runtime:{suffix}"),
         "preflight_evidence_digest": _digest(f"preflight:{suffix}"),
         "route": "/hermes",
-        "ttl_seconds": 1800,
+        "ttl_seconds": 7200,
         "workspace_id": workspace_id,
     }
     request = OpenCandidateAdmissionRequest(
@@ -676,7 +677,7 @@ def _open_candidate(
         database_schema_fingerprint=schema_fingerprint,
         preflight_evidence_digest=str(payload["preflight_evidence_digest"]),
         baseline_order_snapshot_digest=baseline.snapshot_digest,
-        ttl_seconds=1800,
+        ttl_seconds=7200,
         note=str(payload["note"]),
         client_action_id=f"candidate-open-{suffix}",
         action_digest=canonical_candidate_action_digest(

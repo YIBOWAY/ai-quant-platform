@@ -70,8 +70,9 @@ _CANDIDATE_EVIDENCE_SCHEMA_SIGNATURES = frozenset(
     {
         # Candidate evidence + resolved lineage, before release hardening 020.
         "576b5df1989c01d38094d96eca3dc3e402dc9f360117619d4415338b5a9d770f",
-        # Full replay through release hardening 020 and resolved lineage 022.
-        "83d1101279db10e1d08ddb0d8404a2d933918c907cd51638a743f734860e77f5",
+        # Full replay through release hardening, resolved lineage, and the
+        # bounded two-hour candidate operator window in migration 027.
+        "810f4c0648f469329f5559f96f907939c88dc79d7684e55ef19fff7924b98a78",
     }
 )
 _CANDIDATE_EVIDENCE_TABLES = (

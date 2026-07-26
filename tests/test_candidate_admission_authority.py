@@ -68,6 +68,7 @@ MIGRATIONS = (
     "024_agent_v02_run_control_outcome.sql",
     "025_agent_v02_release_session_binding.sql",
     "026_agent_v02_paper_research_claim_lineage.sql",
+    "027_agent_v02_candidate_ttl_window.sql",
 )
 WORKSPACE = "workspace-root"
 PLATFORM = "1" * 64
@@ -101,7 +102,7 @@ class _ReadyProvisionPort:
         raise AssertionError("root test Session must not fork")
 
 
-def _settings() -> Settings:
+def _settings(*, ttl_seconds: int = 120) -> Settings:
     url = os.environ.get("QS_TEST_DATABASE_URL")
     if not url:
         pytest.skip("set QS_TEST_DATABASE_URL to run PostgreSQL integration tests")
@@ -128,13 +129,13 @@ def _settings() -> Settings:
         ),
         candidate_admission=CandidateAdmissionSettings(
             enabled=True,
-            ttl_seconds=120,
+            ttl_seconds=ttl_seconds,
         ),
     )
 
 
-def _prepare() -> tuple[Settings, db.Database]:
-    settings = _settings()
+def _prepare(*, ttl_seconds: int = 120) -> tuple[Settings, db.Database]:
+    settings = _settings(ttl_seconds=ttl_seconds)
     url = os.environ.get("QS_TEST_DATABASE_URL")
     assert url is not None
     parameters = conninfo_to_dict(url)
@@ -156,6 +157,7 @@ def _prepare() -> tuple[Settings, db.Database]:
 def _open_request(
     *,
     action_id: str = "candidate-open-1",
+    ttl_seconds: int = 120,
 ) -> OpenCandidateAdmissionRequest:
     payload = {
         "baseline_order_snapshot_digest": ORDERS,
@@ -166,7 +168,7 @@ def _open_request(
         "platform_runtime_digest": PLATFORM,
         "preflight_evidence_digest": PREFLIGHT,
         "route": "/hermes",
-        "ttl_seconds": 120,
+        "ttl_seconds": ttl_seconds,
         "workspace_id": WORKSPACE,
     }
     return OpenCandidateAdmissionRequest(
@@ -178,7 +180,7 @@ def _open_request(
         database_schema_fingerprint=SCHEMA_DIGEST,
         preflight_evidence_digest=PREFLIGHT,
         baseline_order_snapshot_digest=ORDERS,
-        ttl_seconds=120,
+        ttl_seconds=ttl_seconds,
         note="collect exact local browser evidence",
         client_action_id=action_id,
         action_digest=canonical_candidate_action_digest(
@@ -269,6 +271,28 @@ def test_candidate_is_db_clocked_idempotent_and_server_binds_chat() -> None:
     )
     assert claimed is not None
     assert claimed.command_id == created_command.command.command_id
+
+
+def test_candidate_supports_two_hour_operator_evidence_window() -> None:
+    settings, database = _prepare(ttl_seconds=7200)
+    authority = CandidateAdmissionAuthority(
+        settings,
+        database=database,
+        schema_fingerprint_reader=lambda _database: SCHEMA_DIGEST,
+    )
+
+    opened = authority.open(
+        _open_request(
+            action_id="candidate-open-two-hour",
+            ttl_seconds=7200,
+        ),
+        admission_id="candidate_two_hour",
+    )
+
+    assert opened.status == "open"
+    active = authority.active(WORKSPACE)
+    assert active is not None
+    assert (active.expires_at - active.opened_at).total_seconds() == 7200
 
 
 def test_candidate_never_claims_a_web_command_from_another_workspace() -> None:
@@ -507,6 +531,51 @@ def test_candidate_readiness_rejects_pre_025_trigger_body() -> None:
         ),
     )
     with database.connect() as conn:
+        assert candidate_admission_schema_is_ready_on_connection(conn) is True
+
+
+def test_candidate_readiness_requires_two_hour_ttl_constraint() -> None:
+    _settings_value, database = _prepare()
+    with database.connect() as conn:
+        conn.execute(
+            """
+            ALTER TABLE quant_system.agent_v02_candidate_admissions
+                DROP CONSTRAINT ck_agent_v02_candidate_ttl
+            """
+        )
+        conn.execute(
+            """
+            ALTER TABLE quant_system.agent_v02_candidate_admissions
+                ADD CONSTRAINT ck_agent_v02_candidate_ttl
+                CHECK (
+                    expires_at > opened_at
+                    AND expires_at <= opened_at + interval '30 minutes'
+                )
+            """
+        )
+        assert candidate_admission_schema_is_ready_on_connection(conn) is False
+
+    db.run_migrations(
+        database,
+        only=("027_agent_v02_candidate_ttl_window.sql",),
+    )
+    db.run_migrations(
+        database,
+        only=("027_agent_v02_candidate_ttl_window.sql",),
+    )
+    with database.connect() as conn:
+        constraint = conn.execute(
+            """
+            SELECT convalidated, pg_get_constraintdef(oid, true)
+            FROM pg_constraint
+            WHERE conrelid =
+                    'quant_system.agent_v02_candidate_admissions'::regclass
+              AND conname = 'ck_agent_v02_candidate_ttl'
+            """
+        ).fetchone()
+        assert constraint is not None
+        assert constraint[0] is True
+        assert "02:00:00" in str(constraint[1])
         assert candidate_admission_schema_is_ready_on_connection(conn) is True
 
 

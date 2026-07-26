@@ -664,7 +664,12 @@ class CandidateAdmissionSettings(BaseSettings):
     )
 
     enabled: bool = False
-    ttl_seconds: int = Field(default=900, ge=1, le=1800)
+    # A release candidate must survive the complete operator flow: real
+    # multi-turn chat, one supervised restart, provider evidence, browser
+    # decisions, and the paper-reproduction review.  Two hours is still a
+    # deliberately short-lived admission, but avoids turning that honest flow
+    # into a 30-minute race.
+    ttl_seconds: int = Field(default=900, ge=1, le=7200)
     preflight_evidence_file: Path = (
         Path(__file__).resolve().parents[3]
         / "data"

@@ -543,6 +543,33 @@ def candidate_admission_schema_is_ready_on_connection(
     ).fetchone()
     if version != (CANDIDATE_ADMISSION_SCHEMA_VERSION,):
         return False
+    ttl_constraint = conn.execute(
+        """
+        SELECT
+            constraint_record.convalidated,
+            pg_get_constraintdef(constraint_record.oid, true)
+        FROM pg_constraint AS constraint_record
+        WHERE constraint_record.conrelid =
+                'quant_system.agent_v02_candidate_admissions'::regclass
+          AND constraint_record.conname = 'ck_agent_v02_candidate_ttl'
+          AND constraint_record.contype = 'c'
+        """
+    ).fetchone()
+    if ttl_constraint is None or ttl_constraint[0] is not True:
+        return False
+    ttl_definition = " ".join(str(ttl_constraint[1]).split())
+    if (
+        "expires_at > opened_at" not in ttl_definition
+        or "expires_at <=" not in ttl_definition
+        or "opened_at +" not in ttl_definition
+        or re.search(
+            r"'(?:02:00:00|2 hours)'::interval",
+            ttl_definition,
+            flags=re.IGNORECASE,
+        )
+        is None
+    ):
+        return False
     columns = conn.execute(
         """
         SELECT table_name, column_name
@@ -1171,11 +1198,11 @@ class CandidateAdmissionAuthority:
             isinstance(request.ttl_seconds, bool)
             or not isinstance(request.ttl_seconds, int)
             or request.ttl_seconds < 1
-            or request.ttl_seconds > 1800
+            or request.ttl_seconds > 7200
             or request.ttl_seconds != self._settings.candidate_admission.ttl_seconds
         ):
             raise CandidateAdmissionValidationError(
-                "ttl_seconds must equal the configured value in [1, 1800]"
+                "ttl_seconds must equal the configured value in [1, 7200]"
             )
         note = _note(request.note, "note")
         action_id = _identifier(request.client_action_id, "client_action_id")
