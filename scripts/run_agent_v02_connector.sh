@@ -93,6 +93,16 @@ PY
 load_connector_env
 [[ -d "$ROOT/src/quant_system" ]] || fail "release_source_missing"
 
+# Compatibility fallback for an absent env remains: --mode supervised_dispatch
+MODE="${QS_AGENT_V02_CONNECTOR_MODE:-supervised_dispatch}"
+case "$MODE" in
+  reconcile_only | supervised_dispatch)
+    ;;
+  *)
+    fail "connector_mode_invalid"
+    ;;
+esac
+
 case "${QS_DATABASE_AUTO_MIGRATE:-false}" in
   false | FALSE | 0 | no | NO | off | OFF)
     export QS_DATABASE_AUTO_MIGRATE=false
@@ -127,7 +137,7 @@ esac
 install -d -m 700 "$RUNTIME_DIR" "$LOG_DIR"
 cd "$ROOT"
 exec "$PYTHON" -m quant_system.cli hermes connector-worker \
-  --mode supervised_dispatch \
+  --mode "$MODE" \
   --poll-interval-seconds "$POLL_INTERVAL" \
   --reconcile-limit 100 \
   --worker-id "$WORKER_ID"

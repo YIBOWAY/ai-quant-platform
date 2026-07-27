@@ -1,32 +1,40 @@
 # Agent v0.2 Connector Daemon
 
 This user-level macOS LaunchAgent runs the production Agent v0.2 connector from
-the checkout that contains this runbook. It is deliberately different from the
-old dark worker:
+the checkout that contains this runbook. The owner-only environment selects one
+of exactly two modes:
 
-- mode is always `supervised_dispatch`;
-- the production dispatch and Run-observation seam is HQA's subprocess CLI and
-  Hermes' durable `/v1/runs` contract;
+- `reconcile_only` performs `LISTEN/NOTIFY` wakeups, periodic timeout scans, and
+  expired-lease reconciliation. It never claims or dispatches a command and
+  every cycle reports zero provider calls and zero Hermes mutations;
+- `supervised_dispatch` enables the production dispatch and Run-observation
+  seam through HQA's subprocess CLI and Hermes' durable `/v1/runs` contract;
 - before publishing liveness, the daemon invokes the real HQA `capabilities`
-  subprocess and verifies its exact six-operation/write/fork contract plus the
-  grounded Hermes capability receipt against the shared Platform manifest;
+  subprocess in `supervised_dispatch` and verifies its exact
+  six-operation/write/fork contract plus the grounded Hermes capability receipt
+  against the shared Platform manifest;
 - the same short-bounded compatibility probe repeats before every work cycle;
   one permanent contract drift, or three consecutive transient CLI/probe
   failures, requests cooperative shutdown without claiming or provisioning;
-- one pending managed Session is provisioned before each command-claim cycle;
-- the daemon holds the single-active PostgreSQL liveness lease for its complete
-  process lifetime and heartbeats independently of a slow Hermes call;
+- in `supervised_dispatch`, one pending managed Session is provisioned before
+  each command-claim cycle, and the daemon holds the single-active PostgreSQL
+  liveness lease for its complete process lifetime;
 - every new or recovery dispatch re-evaluates the effective durable release
   gate immediately before network use;
 - there is no default or configured fixed prompt;
 - it has no trading/order path and does not change the trading kill switch.
 
-`reconcile_only` remains a manual repair mode. It intentionally does not acquire
-the supervised liveness generation, so it can never make Web chat ready.
+The installed v0.2.2 hardening posture must set
+`QS_AGENT_V02_CONNECTOR_MODE=reconcile_only` explicitly. The legacy absent-env fallback remains `supervised_dispatch`
+solely for the frozen compatibility contract; it is a residual default, not the
+installed safety posture. Never remove the explicit mode from the live
+owner-only environment. Reconcile-only intentionally does not acquire the
+supervised liveness generation, so it can never make Web chat ready.
 
 ## Prerequisites
 
-Do not install the LaunchAgent until migrations through
+The following additional prerequisites apply before selecting
+`supervised_dispatch`. Do not run that mode until migrations through
 `026_agent_v02_paper_research_claim_lineage.sql` are live and the restricted runtime
 database login is configured. The Platform, HQA and Hermes runtime checkouts
 must be clean commits because the daemon binds its generation to the exact
@@ -82,6 +90,7 @@ coordinates, not raw prompts:
 QS_DATABASE_ENABLED=true
 QS_DATABASE_URL=postgresql://quant_app_runtime:REDACTED@127.0.0.1:5432/quantplatform
 QS_DATABASE_AUTO_MIGRATE=false
+QS_AGENT_V02_CONNECTOR_MODE=reconcile_only
 QS_HERMES_GATEWAY_ENABLED=true
 QS_HERMES_GATEWAY_BASE_URL=http://127.0.0.1:8642
 QS_HERMES_GATEWAY_API_KEY_FILE=/Users/you/.hermes/api-server.key
@@ -116,17 +125,19 @@ chmod 600 data/_runtime/agent-v0.2-connector.env
 bash scripts/run_agent_v02_connector.sh --check
 ```
 
-This check sources the protected dotenv, rejects startup migration, verifies
-the configured Python can import `quant_system` and connector configuration
-from this release checkout, and validates the poll/worker settings. It does not
-open PostgreSQL, contact Hermes or a provider, acquire connector liveness, or
-claim work.
+This check sources the protected dotenv, accepts only exact
+`reconcile_only|supervised_dispatch`, rejects startup migration, verifies the
+configured Python can import `quant_system` and connector configuration from
+this release checkout, and validates the poll/worker settings. It does not open
+PostgreSQL, contact Hermes or a provider, acquire connector liveness, or claim
+work.
 
 ## Install or replace
 
-The installer is replay-safe. It runs the same network-free check before
-creating or replacing any LaunchAgent state, validates the plist, boots out an
-older generation when present, then bootstraps this exact template.
+The installer is replay-safe. It runs the same network-free check, including
+the exact mode validation, before creating or replacing any LaunchAgent state,
+validates the plist, boots out an older generation when present, then
+bootstraps this exact template.
 
 ```bash
 chmod 600 data/_runtime/agent-v0.2-connector.env
@@ -143,7 +154,8 @@ data/_runtime/logs/agent-v02-connector.launchd.err.log
 
 Cycle output is bounded NDJSON. It reports command counts, the managed Session
 provisioning outcome, and liveness generation state; it never logs a prompt or
-API key.
+API key. In `reconcile_only`, `claimed_count`, `provider_call_count`, and
+`hermes_mutation_count` must remain zero.
 
 ## Inspect and stop
 
@@ -153,11 +165,12 @@ tail -f data/_runtime/logs/agent-v02-connector.launchd.out.log
 bash scripts/uninstall_agent_v02_connector_launchagent.sh
 ```
 
-SIGTERM/SIGINT requests cooperative shutdown. A normal shutdown records a
-durable `stopped` generation receipt and releases the advisory lock. If the
-database session or heartbeat is lost, the process stops claiming new work;
-the missing advisory lock makes readiness fail closed even if the last durable
-row still said `active`.
+SIGTERM/SIGINT requests cooperative shutdown. A normal supervised shutdown
+records a durable `stopped` generation receipt and releases the advisory lock.
+Reconcile-only has no supervised liveness generation to stop and exits cleanly
+without claiming work. If a supervised database session or heartbeat is lost,
+the process stops claiming new work; the missing advisory lock makes readiness
+fail closed even if the last durable row still said `active`.
 
 Do not use `--once --fixed-input` as a daemon substitute. The CLI rejects that
 prompt-bearing option; supervised dispatch uses only the durable intent-payload
