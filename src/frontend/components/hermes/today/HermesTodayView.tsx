@@ -9,6 +9,10 @@ import { TodayGreeting } from "./TodayGreeting";
 import { TodayRunning } from "./TodayRunning";
 import { TodayStatusLine } from "./TodayStatusLine";
 
+const READ_ONLY_DESK_STATUS =
+  "Read-only research desk prioritizing action, exceptions, and conclusions. Submit remains disabled.";
+const READ_ONLY_DESK_STATUS_ZH = "以行动、异常与结论为先的只读研究工作台。提交仍保持禁用。";
+
 export type HermesTodayViewProps = {
   model: HermesTodayOverviewModel;
   /** Read-only artifact envelope for collapsed source detail. */
@@ -34,6 +38,10 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
       data-testid="hermes-today-state"
     >
       <TodayGreeting locale={locale} model={model} />
+
+      <p className="text-xs text-text-secondary">
+        {locale === "zh" ? READ_ONLY_DESK_STATUS_ZH : READ_ONLY_DESK_STATUS}
+      </p>
 
       <TodayStatusLine locale={locale} model={model} />
 
