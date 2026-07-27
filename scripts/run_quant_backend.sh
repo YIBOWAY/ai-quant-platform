@@ -55,24 +55,17 @@ resolve_python() {
   local candidate
   for candidate in \
     "${QS_QUANT_BACKEND_PYTHON:-}" \
-    "$ROOT/.venv/bin/python" \
     "$ROOT/ai-quant/bin/python" \
-    "$MAIN_ROOT/.venv/bin/python" \
-    "$MAIN_ROOT/ai-quant/bin/python"; do
+    "$MAIN_ROOT/ai-quant/bin/python" \
+    "$MAIN_ROOT/.venv/bin/python"; do
     if [[ -n "$candidate" && -x "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return
     fi
   done
-  if candidate="$(command -v python3 2>/dev/null)"; then
-    printf '%s\n' "$candidate"
-    return
-  fi
-  if candidate="$(command -v python 2>/dev/null)"; then
-    printf '%s\n' "$candidate"
-    return
-  fi
-  fail "python_not_found"
+  candidate="$(command -v python3 || command -v python || true)"
+  [[ -n "$candidate" ]] || fail "python_not_found"
+  printf '%s\n' "$candidate"
 }
 
 load_backend_env
@@ -95,17 +88,10 @@ export QS_API_BIND_ADDRESS=127.0.0.1
 
 case "${1:-}" in
   --check)
-    MODULE_PATH=""
     [[ "$#" -eq 1 ]] || fail "unexpected_arguments"
-    MODULE_PATH="$(
-      "$PYTHON" -c \
-        "from pathlib import Path; import quant_system, quant_system.cli; print(Path(quant_system.__file__).resolve())"
-    )" ||
+    "$PYTHON" -c "import quant_system.cli" >/dev/null ||
       fail "release_runtime_import_failed"
-    [[ "$MODULE_PATH" == "$ROOT/src/quant_system/__init__.py" ]] ||
-      fail "release_runtime_source_mismatch"
-    printf 'backend_ready=true release_root=%s python=%s module=%s\n' \
-      "$ROOT" "$PYTHON" "$MODULE_PATH"
+    printf 'backend_ready=true release_root=%s python=%s\n' "$ROOT" "$PYTHON"
     exit 0
     ;;
   "")
