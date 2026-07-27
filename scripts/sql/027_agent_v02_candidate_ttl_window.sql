@@ -42,6 +42,30 @@ BEGIN
     END IF;
 END $$;
 
+-- Keep an independent, migrator-owned generation marker.  The runtime uses
+-- this marker together with the constraint definition so a current schema
+-- drifted back to the legacy window cannot masquerade as a valid old schema.
+ALTER TABLE quant_system.agent_v02_candidate_admission_meta
+    ADD COLUMN IF NOT EXISTS ttl_ceiling_seconds INTEGER;
+
+ALTER TABLE quant_system.agent_v02_candidate_admission_meta
+    DROP CONSTRAINT IF EXISTS ck_agent_v02_candidate_ttl_ceiling;
+
+UPDATE quant_system.agent_v02_candidate_admission_meta
+SET
+    ttl_ceiling_seconds = 7200,
+    updated_at = clock_timestamp()
+WHERE singleton IS TRUE
+  AND ttl_ceiling_seconds IS DISTINCT FROM 7200;
+
+ALTER TABLE quant_system.agent_v02_candidate_admission_meta
+    ALTER COLUMN ttl_ceiling_seconds SET DEFAULT 7200,
+    ALTER COLUMN ttl_ceiling_seconds SET NOT NULL;
+
+ALTER TABLE quant_system.agent_v02_candidate_admission_meta
+    ADD CONSTRAINT ck_agent_v02_candidate_ttl_ceiling
+    CHECK (ttl_ceiling_seconds = 7200);
+
 ALTER TABLE quant_system.agent_v02_candidate_admissions
     DROP CONSTRAINT IF EXISTS ck_agent_v02_candidate_ttl;
 

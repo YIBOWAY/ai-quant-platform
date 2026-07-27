@@ -32,6 +32,8 @@ CANDIDATE_ADMISSION_SCHEMA_VERSION = 1
 CANDIDATE_ROUTE = "/hermes"
 CandidateStatus = Literal["open", "accepted", "revoked", "expired"]
 
+_LEGACY_TTL_CEILING_SECONDS = 1800
+_CURRENT_TTL_CEILING_SECONDS = 7200
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 _NONTERMINAL_COMMAND_STATES = (
@@ -514,6 +516,8 @@ def _receipt_from_payload(
 
 def candidate_admission_schema_is_ready_on_connection(
     conn: psycopg.Connection,
+    *,
+    required_ttl_seconds: int | None = None,
 ) -> bool:
     tables = (
         "agent_v02_candidate_admission_meta",
@@ -536,12 +540,65 @@ def candidate_admission_schema_is_ready_on_connection(
         return False
     version = conn.execute(
         f"""
-        SELECT schema_version
-        FROM {SCHEMA}.agent_v02_candidate_admission_meta
+        SELECT
+            schema_version,
+            to_jsonb(meta) ? 'ttl_ceiling_seconds',
+            to_jsonb(meta) ->> 'ttl_ceiling_seconds'
+        FROM {SCHEMA}.agent_v02_candidate_admission_meta AS meta
         WHERE singleton IS TRUE
         """
     ).fetchone()
-    if version != (CANDIDATE_ADMISSION_SCHEMA_VERSION,):
+    if version is None or version[0] != CANDIDATE_ADMISSION_SCHEMA_VERSION:
+        return False
+    marker_column = conn.execute(
+        """
+        SELECT data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = %s
+          AND table_name = 'agent_v02_candidate_admission_meta'
+          AND column_name = 'ttl_ceiling_seconds'
+        """,
+        (SCHEMA,),
+    ).fetchone()
+    marker_constraint = conn.execute(
+        """
+        SELECT
+            constraint_record.convalidated,
+            pg_get_constraintdef(constraint_record.oid, true)
+        FROM pg_constraint AS constraint_record
+        WHERE constraint_record.conrelid =
+                'quant_system.agent_v02_candidate_admission_meta'::regclass
+          AND constraint_record.conname =
+                'ck_agent_v02_candidate_ttl_ceiling'
+          AND constraint_record.contype = 'c'
+        """
+    ).fetchone()
+    marker_present = bool(version[1])
+    if marker_present:
+        marker_definition = (
+            "" if marker_constraint is None else " ".join(str(marker_constraint[1]).split())
+        )
+        if (
+            version[2] != str(_CURRENT_TTL_CEILING_SECONDS)
+            or marker_column != ("integer", "NO")
+            or marker_constraint is None
+            or marker_constraint[0] is not True
+            or marker_definition != "CHECK (ttl_ceiling_seconds = 7200)"
+        ):
+            return False
+        ttl_ceiling_seconds = _CURRENT_TTL_CEILING_SECONDS
+        ttl_interval_pattern = r"'(?:02:00:00|2 hours)'::interval"
+    else:
+        if version[2] is not None or marker_column is not None or marker_constraint is not None:
+            return False
+        ttl_ceiling_seconds = _LEGACY_TTL_CEILING_SECONDS
+        ttl_interval_pattern = r"'(?:00:30:00|30 minutes)'::interval"
+    if required_ttl_seconds is not None and (
+        isinstance(required_ttl_seconds, bool)
+        or not isinstance(required_ttl_seconds, int)
+        or required_ttl_seconds < 1
+        or required_ttl_seconds > ttl_ceiling_seconds
+    ):
         return False
     ttl_constraint = conn.execute(
         """
@@ -563,7 +620,7 @@ def candidate_admission_schema_is_ready_on_connection(
         or "expires_at <=" not in ttl_definition
         or "opened_at +" not in ttl_definition
         or re.search(
-            r"'(?:02:00:00|2 hours)'::interval",
+            ttl_interval_pattern,
             ttl_definition,
             flags=re.IGNORECASE,
         )
@@ -691,7 +748,10 @@ def candidate_admission_schema_ready(settings: Settings) -> bool:
         if database is None:
             return False
         with database.connect() as conn:
-            return candidate_admission_schema_is_ready_on_connection(conn)
+            return candidate_admission_schema_is_ready_on_connection(
+                conn,
+                required_ttl_seconds=settings.candidate_admission.ttl_seconds,
+            )
     except (DatabaseUnavailable, psycopg.Error):
         return False
 
@@ -706,7 +766,10 @@ def candidate_admission_runtime_security_is_ready(
         if database is None:
             return False
         with database.connect() as conn:
-            if not candidate_admission_schema_is_ready_on_connection(conn):
+            if not candidate_admission_schema_is_ready_on_connection(
+                conn,
+                required_ttl_seconds=settings.candidate_admission.ttl_seconds,
+            ):
                 return False
             principal = conn.execute(
                 """
@@ -1235,7 +1298,10 @@ class CandidateAdmissionAuthority:
             )
         try:
             with database.connect() as conn, conn.transaction():
-                if not candidate_admission_schema_is_ready_on_connection(conn):
+                if not candidate_admission_schema_is_ready_on_connection(
+                    conn,
+                    required_ttl_seconds=request.ttl_seconds,
+                ):
                     raise CandidateAdmissionUnavailable("candidate admission schema is not ready")
                 self._lock(conn, workspace)
                 clock = self._clock(conn)
