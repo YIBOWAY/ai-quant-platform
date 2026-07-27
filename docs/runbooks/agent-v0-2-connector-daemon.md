@@ -106,7 +106,8 @@ secret-helper diagnostic is copied into launchd logs. Startup always exports
 starts.
 
 The Hermes API key stays in its separate mode-`600` file. Never put prompt
-content or `--fixed-input` in the daemon configuration.
+content in the daemon configuration. The production connector has no
+`--fixed-input` option; it resolves only the exact encrypted intent payload.
 
 Validate the exact checkout before installing:
 
@@ -158,5 +159,6 @@ database session or heartbeat is lost, the process stops claiming new work;
 the missing advisory lock makes readiness fail closed even if the last durable
 row still said `active`.
 
-Do not use `--once --fixed-input` as a daemon substitute. That option is only an
-explicit operator smoke tool and is never present in the wrapper or plist.
+Do not use `--once --fixed-input` as a daemon substitute. The CLI rejects that
+prompt-bearing option; supervised dispatch uses only the durable intent-payload
+port and the option is absent from the wrapper and plist.

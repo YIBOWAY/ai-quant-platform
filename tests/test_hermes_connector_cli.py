@@ -231,8 +231,6 @@ def test_connector_worker_supervised_mode_is_forwarded(monkeypatch) -> None:
             "--once",
             "--mode",
             "supervised_dispatch",
-            "--fixed-input",
-            "Reply with exactly: pong",
             "--worker-id",
             "smoke-worker-1",
         ],
@@ -240,7 +238,6 @@ def test_connector_worker_supervised_mode_is_forwarded(monkeypatch) -> None:
 
     assert result.exit_code == 0, result.stdout
     assert captured["mode"] == "supervised_dispatch"
-    assert captured["fixed_input"] == "Reply with exactly: pong"
     assert captured["worker_id"] == "smoke-worker-1"
     payload = json.loads(result.stdout.strip().splitlines()[0])
     assert payload["mode"] == "supervised_dispatch"
@@ -291,15 +288,18 @@ def test_connector_worker_rejects_invalid_mode() -> None:
     assert result.exit_code != 0
 
 
-def test_connector_worker_fixed_input_requires_supervised_mode() -> None:
+def test_connector_worker_rejects_prompt_bearing_fixed_input_option() -> None:
     result = runner.invoke(
         app,
         [
             "hermes",
             "connector-worker",
             "--once",
+            "--mode",
+            "supervised_dispatch",
             "--fixed-input",
             "hello",
         ],
     )
     assert result.exit_code != 0
+    assert "No such option" in result.output

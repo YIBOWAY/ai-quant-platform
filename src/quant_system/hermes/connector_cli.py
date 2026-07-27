@@ -40,8 +40,10 @@ from quant_system.hermes.connector_worker import (
     PostgresCommandWakeupWaiter,
 )
 from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
-from quant_system.hermes.dispatch_adapter import fixed_input_resolver
-from quant_system.hermes.intent_payload_port import intent_payload_input_resolver
+from quant_system.hermes.intent_payload_port import (
+    IntentPayloadPortError,
+    intent_payload_input_resolver,
+)
 from quant_system.hermes.managed_session_provisioner import (
     ManagedSessionProvisioner,
     ManagedSessionProvisionResult,
@@ -272,7 +274,6 @@ def build_connector_runtime(
     mode: str = "reconcile_only",
     worker_id: str = "connector-worker-1",
     dispatch_adapter=None,
-    fixed_input: str | None = None,
 ) -> ConnectorRuntime:
     """Build a worker from the configured PostgreSQL authority.
 
@@ -401,11 +402,7 @@ def build_connector_runtime(
     if mode == "supervised_dispatch":
         try:
             if dispatch_adapter is None:
-                input_resolver = (
-                    fixed_input_resolver(fixed_input)
-                    if fixed_input is not None
-                    else intent_payload_input_resolver(settings)
-                )
+                input_resolver = intent_payload_input_resolver(settings)
                 run_port = build_subprocess_run_lifecycle_port(
                     settings,
                     input_resolver=input_resolver,
@@ -439,6 +436,7 @@ def build_connector_runtime(
         except (
             ConnectorLivenessError,
             HermesRunPortError,
+            IntentPayloadPortError,
             ReleaseRuntimeProbeError,
             ValueError,
         ) as exc:
@@ -835,16 +833,6 @@ def connector_worker_command(
             ),
         ),
     ] = "reconcile_only",
-    fixed_input: Annotated[
-        str | None,
-        typer.Option(
-            "--fixed-input",
-            help=(
-                "Explicit smoke-only prompt for supervised_dispatch. "
-                "The daemon default resolves the encrypted turn payload."
-            ),
-        ),
-    ] = None,
     worker_id: Annotated[
         str,
         typer.Option(
@@ -858,10 +846,6 @@ def connector_worker_command(
         raise typer.BadParameter("--max-cycles cannot be combined with --once")
     if mode not in {"reconcile_only", "supervised_dispatch"}:
         raise typer.BadParameter("--mode must be reconcile_only or supervised_dispatch")
-    if fixed_input is not None and mode != "supervised_dispatch":
-        raise typer.BadParameter("--fixed-input requires --mode supervised_dispatch")
-    if fixed_input is not None and (not fixed_input or len(fixed_input.encode("utf-8")) > 16_384):
-        raise typer.BadParameter("--fixed-input must be non-empty and <= 16KiB")
 
     runtime: ConnectorRuntime | None = None
     try:
@@ -869,7 +853,6 @@ def connector_worker_command(
             reconcile_limit=reconcile_limit,
             mode=mode,
             worker_id=worker_id,
-            fixed_input=fixed_input,
         )
         with _graceful_stop_signals(runtime):
             if once:
