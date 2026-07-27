@@ -44,10 +44,8 @@ _TOP_LEVEL_FIELDS = {
 
 
 def compatibility_manifest_path() -> Path:
-    return (
-        Path(__file__).resolve().parents[3]
-        / "contracts"
-        / "agent_v02_hermes_compatibility.v1.json"
+    return Path(__file__).resolve().with_name(
+        "agent_v02_hermes_compatibility.v1.json"
     )
 
 

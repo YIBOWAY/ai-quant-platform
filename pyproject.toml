@@ -44,6 +44,9 @@ quant-system = "quant_system.cli:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"quant_system.hermes" = ["agent_v02_hermes_compatibility.v1.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
