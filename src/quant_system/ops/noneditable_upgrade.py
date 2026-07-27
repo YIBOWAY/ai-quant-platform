@@ -83,6 +83,38 @@ def _guarded_argv(argv: list[str]) -> list[str]:
     ]
 
 
+def _uv_sync_argv(uv_path: Path, *, inexact: bool) -> list[str]:
+    """Sync the explicitly active copy-based venv without asking uv to replace it.
+
+    Supplying ``--python <venv>/bin/python`` to ``uv sync`` treats that
+    interpreter as the Python used to create the project environment.  uv may
+    then replace the pre-created ``--copies`` environment with its default
+    symlink-based environment.  ``VIRTUAL_ENV`` and ``--active`` already bind
+    the exact target, so the interpreter selector must stay absent here.
+    """
+
+    command = [
+        str(uv_path),
+        "sync",
+        "--frozen",
+        "--offline",
+    ]
+    if inexact:
+        command.append("--inexact")
+    command.extend(
+        [
+            "--extra",
+            "api",
+            "--no-dev",
+            "--no-editable",
+            "--no-install-project",
+            "--active",
+            "--no-python-downloads",
+        ]
+    )
+    return command
+
+
 def _git_argv(repository_root: Path, *arguments: str) -> list[str]:
     """Return the only admissible, pinned and network-denied Git command."""
 
@@ -1489,23 +1521,7 @@ def verify_noneditable_upgrade(
         upgrade_environment_root,
     )
     baseline_sync = _run(
-        _guarded_argv(
-            [
-                str(uv_path),
-                "sync",
-                "--frozen",
-                "--offline",
-                "--extra",
-                "api",
-                "--no-dev",
-                "--no-editable",
-                "--no-install-project",
-                "--active",
-                "--python",
-                str(upgrade_python),
-                "--no-python-downloads",
-            ]
-        ),
+        _guarded_argv(_uv_sync_argv(uv_path, inexact=False)),
         cwd=baseline_root,
         env=upgrade_environment,
         log_path=output_dir / "baseline-sync.log",
@@ -1580,24 +1596,7 @@ def verify_noneditable_upgrade(
     # historical baseline already contain the final packaging fix.
 
     final_sync = _run(
-        _guarded_argv(
-            [
-                str(uv_path),
-                "sync",
-                "--frozen",
-                "--offline",
-                "--inexact",
-                "--extra",
-                "api",
-                "--no-dev",
-                "--no-editable",
-                "--no-install-project",
-                "--active",
-                "--python",
-                str(upgrade_python),
-                "--no-python-downloads",
-            ]
-        ),
+        _guarded_argv(_uv_sync_argv(uv_path, inexact=True)),
         cwd=final_root,
         env=upgrade_environment,
         log_path=output_dir / "final-sync.log",
@@ -1730,23 +1729,7 @@ def verify_noneditable_upgrade(
     fresh_python = fresh_environment_root / "bin" / "python"
     fresh_environment = _venv_environment(environment, fresh_environment_root)
     fresh_sync = _run(
-        _guarded_argv(
-            [
-                str(uv_path),
-                "sync",
-                "--frozen",
-                "--offline",
-                "--extra",
-                "api",
-                "--no-dev",
-                "--no-editable",
-                "--no-install-project",
-                "--active",
-                "--python",
-                str(fresh_python),
-                "--no-python-downloads",
-            ]
-        ),
+        _guarded_argv(_uv_sync_argv(uv_path, inexact=False)),
         cwd=final_root,
         env=fresh_environment,
         log_path=output_dir / "fresh-final-sync.log",

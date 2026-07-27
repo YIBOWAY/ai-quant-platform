@@ -1203,3 +1203,103 @@ def test_cli_install_binds_exact_python_wheel_entry_point_and_normalized_script(
             expected_wheel=wheel,
             import_probe=probe,
         )
+
+
+def test_uv_sync_preserves_the_precreated_copy_environment(tmp_path: Path) -> None:
+    from quant_system.ops import noneditable_upgrade as upgrade_ops
+
+    command_builder = getattr(upgrade_ops, "_uv_sync_argv", None)
+    assert callable(command_builder), "upgrade rehearsal lacks an active-environment sync builder"
+    uv_value = shutil.which("uv")
+    assert uv_value is not None, "the release verification entry point requires uv"
+    uv = Path(uv_value).resolve(strict=True)
+
+    project = tmp_path / "project"
+    project.mkdir(mode=0o700)
+    (project / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "copy-environment-regression"\n'
+        'version = "0.0.0"\n'
+        'requires-python = ">=3.11,<3.12"\n'
+        "\n"
+        "[project.optional-dependencies]\n"
+        "api = []\n",
+        encoding="utf-8",
+    )
+    (project / "uv.lock").write_text(
+        "version = 1\n"
+        "revision = 3\n"
+        'requires-python = ">=3.11, <3.12"\n'
+        "\n"
+        "[[package]]\n"
+        'name = "copy-environment-regression"\n'
+        'version = "0.0.0"\n'
+        'source = { virtual = "." }\n'
+        "\n"
+        "[package.optional-dependencies]\n"
+        "api = []\n"
+        "\n"
+        "[package.metadata]\n"
+        'provides-extras = ["api"]\n',
+        encoding="utf-8",
+    )
+    environment_root = project / ".venv"
+    created = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            "-m",
+            "venv",
+            "--copies",
+            "--without-pip",
+            str(environment_root),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert created.returncode == 0, created.stderr
+    python = environment_root / "bin" / "python"
+    assert python.is_file()
+    assert not python.is_symlink()
+    before = python.stat()
+
+    private_paths = {
+        name: tmp_path / name for name in ("home", "tmp", "xdg-cache", "pycache", "uv-cache")
+    }
+    for path in private_paths.values():
+        path.mkdir(mode=0o700)
+    environment = {
+        "PATH": os.environ.get("PATH", os.defpath),
+        "HOME": str(private_paths["home"]),
+        "TMPDIR": str(private_paths["tmp"]),
+        "TMP": str(private_paths["tmp"]),
+        "TEMP": str(private_paths["tmp"]),
+        "XDG_CACHE_HOME": str(private_paths["xdg-cache"]),
+        "PYTHONPYCACHEPREFIX": str(private_paths["pycache"]),
+        "UV_CACHE_DIR": str(private_paths["uv-cache"]),
+        "UV_OFFLINE": "1",
+        "UV_NO_CONFIG": "1",
+        "UV_PYTHON_DOWNLOADS": "never",
+        "PIP_NO_INDEX": "1",
+        "PYTHONNOUSERSITE": "1",
+        "VIRTUAL_ENV": str(environment_root),
+    }
+    argv = command_builder(uv, inexact=False)
+    assert "--active" in argv
+    assert "--python" not in argv
+    completed = subprocess.run(
+        ["/usr/bin/sandbox-exec", "-p", upgrade_ops.NETWORK_SANDBOX_PROFILE, *argv],
+        cwd=project,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert python.is_file()
+    assert not python.is_symlink()
+    assert python.resolve() == python
+    assert python.stat().st_ino == before.st_ino
