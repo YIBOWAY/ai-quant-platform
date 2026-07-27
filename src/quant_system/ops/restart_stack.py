@@ -182,6 +182,23 @@ def validate_release_observation(document: object) -> dict[str, object]:
     }
 
 
+def release_authority_facts(observation: object) -> dict[str, object]:
+    if not isinstance(observation, dict) or not isinstance(observation.get("facts"), dict):
+        raise ReleaseOperationError("release authority facts are absent")
+    return dict(observation["facts"])
+
+
+def validate_release_authority_unchanged(
+    expected: object,
+    observed: object,
+) -> dict[str, object]:
+    expected_facts = release_authority_facts(expected)
+    observed_facts = release_authority_facts(observed)
+    if observed_facts != expected_facts:
+        raise ReleaseOperationError("release authority facts changed")
+    return observed_facts
+
+
 def validate_gateway_observation(document: object) -> dict[str, object]:
     if not isinstance(document, dict):
         raise ReleaseOperationError("/api/hermes/gateway response is not an object")
@@ -2082,7 +2099,6 @@ def _capture_live_restart_publication_seal(
     for field in (
         "settings",
         "gateway",
-        "release",
         "schema_fingerprint",
         "command_queue",
         "repository",
@@ -2092,6 +2108,10 @@ def _capture_live_restart_publication_seal(
             raise ReleaseOperationError(
                 f"restart live authority changed during publication seal: {field}"
             )
+    validate_release_authority_unchanged(
+        expected.get("release"),
+        release_observation,
+    )
 
     seal: dict[str, object] = {
         "status": "sealed",
@@ -2354,7 +2374,9 @@ def _complete_activated_restart(
         "processes": post_processes,
         "settings": post["settings"],
         "gateway": post["gateway"],
-        "release": post["release"],
+        "release": {
+            "facts": release_authority_facts(post["release"]),
+        },
         "schema_fingerprint": post["schema_fingerprint"],
         "command_queue": post["command_queue"],
         "repository": asdict(post_identity),
@@ -2564,10 +2586,16 @@ def _reconcile_services_after_rollback(
     for field, observed in (
         ("settings", settings_observation),
         ("gateway", gateway_observation),
-        ("release", release_observation),
     ):
         if observed != pre_activation.get(field):
             errors.append(f"{field}_readiness_changed")
+    try:
+        validate_release_authority_unchanged(
+            pre_activation.get("release"),
+            release_observation,
+        )
+    except ReleaseOperationError:
+        errors.append("release_readiness_changed")
 
     try:
         settings = Settings()
@@ -2822,7 +2850,9 @@ def restart_stack(
                         "processes": recovered_processes,
                         "settings": readiness.get("settings"),
                         "gateway": readiness.get("gateway"),
-                        "release": readiness.get("release"),
+                        "release": {
+                            "facts": release_authority_facts(readiness.get("release")),
+                        },
                         "schema_fingerprint": process_recovery.get("schema_fingerprint"),
                         "command_queue": process_recovery.get("command_queue"),
                         "repository": asdict(identity),
