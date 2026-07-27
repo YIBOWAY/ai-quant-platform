@@ -47,7 +47,9 @@ def _replace_ttl_constraint(
     database: db.Database,
     *,
     interval: str,
+    not_valid: bool = False,
 ) -> None:
+    validation = " NOT VALID" if not_valid else ""
     with database.connect() as conn:
         conn.execute(
             """
@@ -62,7 +64,7 @@ def _replace_ttl_constraint(
                 CHECK (
                     expires_at > opened_at
                     AND expires_at <= opened_at + interval '{interval}'
-                )
+                ){validation}
             """
         )
 
@@ -152,9 +154,44 @@ def test_readiness_recognizes_exact_legacy_and_current_ttl_generations() -> None
         db.reset_database_cache()
 
 
-def test_readiness_rejects_mixed_legacy_and_current_ttl_generations() -> None:
+def test_readiness_recognizes_original_027_and_rejects_mixed_generations() -> None:
     with _database(purpose="ttl-mixed") as database:
         _replace_ttl_constraint(database, interval="2 hours")
+        with database.connect() as conn:
+            assert (
+                candidate_admission_schema_is_ready_on_connection(
+                    conn,
+                    required_ttl_seconds=7200,
+                )
+                is True
+            )
+            assert (
+                candidate_admission_schema_is_ready_on_connection(
+                    conn,
+                    required_ttl_seconds=7201,
+                )
+                is False
+            )
+
+        db.reset_database_cache()
+        assert candidate_admission_schema_ready(_settings(database, ttl_seconds=7200)) is True
+        db.reset_database_cache()
+
+        _replace_ttl_constraint(
+            database,
+            interval="2 hours",
+            not_valid=True,
+        )
+        with database.connect() as conn:
+            assert (
+                candidate_admission_schema_is_ready_on_connection(
+                    conn,
+                    required_ttl_seconds=120,
+                )
+                is False
+            )
+
+        _replace_ttl_constraint(database, interval="1 hour")
         with database.connect() as conn:
             assert (
                 candidate_admission_schema_is_ready_on_connection(

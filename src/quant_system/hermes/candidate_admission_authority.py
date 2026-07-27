@@ -34,6 +34,14 @@ CandidateStatus = Literal["open", "accepted", "revoked", "expired"]
 
 _LEGACY_TTL_CEILING_SECONDS = 1800
 _CURRENT_TTL_CEILING_SECONDS = 7200
+_TTL_CONSTRAINT_CEILINGS = {
+    (
+        "CHECK (expires_at > opened_at AND expires_at <= (opened_at + '00:30:00'::interval))"
+    ): _LEGACY_TTL_CEILING_SECONDS,
+    (
+        "CHECK (expires_at > opened_at AND expires_at <= (opened_at + '02:00:00'::interval))"
+    ): _CURRENT_TTL_CEILING_SECONDS,
+}
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 _NONTERMINAL_COMMAND_STATES = (
@@ -586,20 +594,9 @@ def candidate_admission_schema_is_ready_on_connection(
             or marker_definition != "CHECK (ttl_ceiling_seconds = 7200)"
         ):
             return False
-        ttl_ceiling_seconds = _CURRENT_TTL_CEILING_SECONDS
-        ttl_interval_pattern = r"'(?:02:00:00|2 hours)'::interval"
     else:
         if version[2] is not None or marker_column is not None or marker_constraint is not None:
             return False
-        ttl_ceiling_seconds = _LEGACY_TTL_CEILING_SECONDS
-        ttl_interval_pattern = r"'(?:00:30:00|30 minutes)'::interval"
-    if required_ttl_seconds is not None and (
-        isinstance(required_ttl_seconds, bool)
-        or not isinstance(required_ttl_seconds, int)
-        or required_ttl_seconds < 1
-        or required_ttl_seconds > ttl_ceiling_seconds
-    ):
-        return False
     ttl_constraint = conn.execute(
         """
         SELECT
@@ -615,16 +612,16 @@ def candidate_admission_schema_is_ready_on_connection(
     if ttl_constraint is None or ttl_constraint[0] is not True:
         return False
     ttl_definition = " ".join(str(ttl_constraint[1]).split())
-    if (
-        "expires_at > opened_at" not in ttl_definition
-        or "expires_at <=" not in ttl_definition
-        or "opened_at +" not in ttl_definition
-        or re.search(
-            ttl_interval_pattern,
-            ttl_definition,
-            flags=re.IGNORECASE,
-        )
-        is None
+    ttl_ceiling_seconds = _TTL_CONSTRAINT_CEILINGS.get(ttl_definition)
+    if ttl_ceiling_seconds is None:
+        return False
+    if marker_present and ttl_ceiling_seconds != _CURRENT_TTL_CEILING_SECONDS:
+        return False
+    if required_ttl_seconds is not None and (
+        isinstance(required_ttl_seconds, bool)
+        or not isinstance(required_ttl_seconds, int)
+        or required_ttl_seconds < 1
+        or required_ttl_seconds > ttl_ceiling_seconds
     ):
         return False
     columns = conn.execute(
