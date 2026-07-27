@@ -69,7 +69,7 @@ export function TodayResults({ preview, hqaConclusions, locale }: TodayResultsPr
           <span className="font-data-mono text-xs text-warning">{copy.delayed}</span>
         ) : null}
         <Link
-          className="ml-auto font-body-sm text-text-secondary underline-offset-2 hover:text-info hover:underline"
+          className="app-touch-target -my-[13px] ml-auto inline-flex min-h-[44px] items-center font-body-sm text-text-secondary underline-offset-2 hover:text-info hover:underline"
           href={hermesRouteHref("results", locale)}
         >
           {copy.viewAll}

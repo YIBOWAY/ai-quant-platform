@@ -50,6 +50,13 @@ if (rollbackPort !== null && rollbackPort === backendPort) {
 }
 const backendUrl = `http://127.0.0.1:${backendPort}`;
 const frontendUrl = `http://127.0.0.1:${frontendPort}`;
+const forbiddenProviderProbe = Object.freeze({
+  url: `${backendUrl}/api/health`,
+  allowedForReadiness: false,
+});
+const providerFreeBackendReadinessUrl = requireProviderFreeReadinessUrl(
+  `${backendUrl}/api/hermes/gateway`,
+);
 const rollbackFrontendUrl =
   rollbackPort !== null ? `http://127.0.0.1:${rollbackPort}` : null;
 const e2eCorsOrigins = Array.from(
@@ -72,6 +79,16 @@ const backendCommand = fixtureMode
     `${JSON.stringify(backendPython)} -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port ${backendPort}`);
 const backendReuse = fixtureMode ? false : reuseExistingServer;
 const frontendReuse = fixtureMode || rollbackE2E ? false : reuseExistingServer;
+
+function requireProviderFreeReadinessUrl(candidate: string): string {
+  if (
+    !forbiddenProviderProbe.allowedForReadiness &&
+    candidate === forbiddenProviderProbe.url
+  ) {
+    throw new Error("Playwright backend readiness must not use /api/health");
+  }
+  return candidate;
+}
 
 function buildFrontendCommand(port: number): string {
   const frontendDevCommand =
@@ -172,7 +189,7 @@ function buildWebServers(): WebServerConfig[] | undefined {
     {
       command: backendCommand,
       cwd: repoRoot,
-      url: `${backendUrl}/api/health`,
+      url: providerFreeBackendReadinessUrl,
       reuseExistingServer: backendReuse,
       timeout: 60_000,
       // Fixture server is pure Node and ignores QS_* settings.

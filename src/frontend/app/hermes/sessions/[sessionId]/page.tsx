@@ -26,6 +26,7 @@ export default async function HermesSessionDetailPage({
     detail.read_status === "available" &&
     detail.session !== null &&
     history.read_status === "available";
+  const forkContext = detail.fork_context;
   const displayMessages = displayableTranscriptMessages(history.messages);
 
   return (
@@ -70,8 +71,12 @@ export default async function HermesSessionDetailPage({
                 ? "此会话没有可展示的用户/助手消息。"
                 : "No displayable user/assistant messages."
             }
-            forkEligible={detail.fork_context.eligible === true}
-            forkReasonCode={detail.fork_context.reason_code}
+            forkEligible={forkContext?.eligible === true}
+            forkReasonCode={
+              forkContext
+                ? forkContext.reason_code
+                : "fork_context_unavailable"
+            }
             hermesSessionId={sessionId}
             isZh={isZh}
             locale={locale}
