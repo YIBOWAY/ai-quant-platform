@@ -63,8 +63,13 @@ resolve_python() {
       return
     fi
   done
-  candidate="$(command -v python3 || command -v python || true)"
-  [[ -n "$candidate" ]] || fail "python_not_found"
+  if candidate="$(command -v python3 2>/dev/null)"; then
+    :
+  elif candidate="$(command -v python 2>/dev/null)"; then
+    :
+  else
+    fail "python_not_found"
+  fi
   printf '%s\n' "$candidate"
 }
 

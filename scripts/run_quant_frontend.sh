@@ -67,7 +67,10 @@ resolve_next() {
 
 resolve_node() {
   local candidate path_node
-  path_node="$(command -v node 2>/dev/null || true)"
+  path_node=""
+  if command -v node >/dev/null 2>&1; then
+    path_node="$(command -v node)"
+  fi
   for candidate in \
     "${QS_QUANT_FRONTEND_NODE_BIN:-}" \
     "$path_node" \

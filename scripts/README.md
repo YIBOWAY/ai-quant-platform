@@ -13,6 +13,20 @@ helpers.
 | `verify.ps1` | Run the standard local verification suite on Windows. Skips frontend build unless `-Build` is passed. |
 | `verify.sh` | Unix shell equivalent for the standard verification suite. |
 
+## Agent v0.2.2 Release Hardening
+
+These owner-run entrypoints emit machine-readable evidence into a unique,
+owner-only output directory. They fail closed and do not authorize public write
+or trading.
+
+| Script | Purpose |
+| --- | --- |
+| `verify_agent_v02_postgres_suite.sh` | Create an isolated loopback PostgreSQL cluster, run the authoritative PostgreSQL suite, prove suite-owned roles are removed, and destroy the cluster. |
+| `verify_agent_v02_backup_restore.sh` | Back up and restore the full authoritative PostgreSQL state into an independently created destination cluster, then compare schema, role, and data facts. |
+| `verify_agent_v02_noneditable_upgrade.sh` | Exercise baseline-to-current non-editable installation in isolated Python environments and reject source-tree import leakage. |
+| `verify_agent_v02_zero_effect.sh` | Run the fixed-identity §9.1 blocked paper-replay proof with a durable pre-route claim, exact-byte replay, provider tripwires, and zero effect counters. |
+| `restart_agent_v02_stack.sh` | Build the current clean frontend HEAD, bind the complete `.next` digest to its Git commit/tree, restart only backend/frontend, and verify provider-free `/api/settings` plus `/api/hermes/gateway` readiness while the connector remains `reconcile_only`. |
+
 ## macOS Local Services
 
 | Script | Purpose |
