@@ -98,7 +98,11 @@ def observed_launchctl_last_exit_code(
     return value
 
 
-def validate_settings_observation(document: object) -> dict[str, object]:
+def _validate_settings_observation(
+    document: object,
+    *,
+    require_nested_bind_address: bool,
+) -> dict[str, object]:
     if not isinstance(document, dict):
         raise ReleaseOperationError("/api/settings response is not an object")
     public = document.get("safety")
@@ -106,20 +110,46 @@ def validate_settings_observation(document: object) -> dict[str, object]:
     nested = settings.get("safety") if isinstance(settings, dict) else None
     if not isinstance(public, dict) or not isinstance(nested, dict):
         raise ReleaseOperationError("/api/settings safety projection is absent")
-    required = {
+    common_required = {
         "kill_switch": True,
         "live_trading_enabled": False,
         "dry_run": True,
         "paper_trading": True,
-        "bind_address": "127.0.0.1",
     }
     for layer_name, observed in (("public", public), ("nested", nested)):
-        for name, expected in required.items():
+        for name, expected in common_required.items():
             value = observed.get(name)
-            matches = value == expected if isinstance(expected, str) else value is expected
-            if not matches:
+            if value is not expected:
                 raise ReleaseOperationError(f"/api/settings {layer_name} safety mismatch: {name}")
-    return dict(required)
+    bind_address = "127.0.0.1"
+    if public.get("bind_address") != bind_address:
+        raise ReleaseOperationError("/api/settings public safety mismatch: bind_address")
+    if (require_nested_bind_address or "bind_address" in nested) and nested.get(
+        "bind_address"
+    ) != bind_address:
+        raise ReleaseOperationError("/api/settings nested safety mismatch: bind_address")
+    return {
+        **common_required,
+        "bind_address": bind_address,
+    }
+
+
+def validate_settings_observation(document: object) -> dict[str, object]:
+    """Validate the legacy symmetric settings fixture contract."""
+
+    return _validate_settings_observation(
+        document,
+        require_nested_bind_address=True,
+    )
+
+
+def validate_live_settings_observation(document: object) -> dict[str, object]:
+    """Validate the real API projection without inventing a model bind field."""
+
+    return _validate_settings_observation(
+        document,
+        require_nested_bind_address=False,
+    )
 
 
 def validate_release_observation(document: object) -> dict[str, object]:
@@ -1925,7 +1955,7 @@ def _capture_pre_activation_restart_authority(
         },
         "connector_generation": connector_generation,
         "connector_log": connector_log,
-        "settings": validate_settings_observation(_json_get(SETTINGS_URL)),
+        "settings": validate_live_settings_observation(_json_get(SETTINGS_URL)),
         "gateway": validate_gateway_observation(_json_get(GATEWAY_URL)),
         "release": _release_status(repository_root),
         "schema_fingerprint": schema,
@@ -1996,7 +2026,7 @@ def _capture_live_restart_publication_seal(
 
     _wait_tcp(8765, deadline=deadline)
     _wait_tcp(3001, deadline=deadline)
-    settings_observation = validate_settings_observation(_wait_settings(deadline=deadline))
+    settings_observation = validate_live_settings_observation(_wait_settings(deadline=deadline))
     gateway_observation = validate_gateway_observation(_json_get(GATEWAY_URL))
     processes = {
         "backend": _process_facts(
@@ -2256,7 +2286,7 @@ def _complete_activated_restart(
         raise ReleaseOperationError("connector generation changed after fresh cycle")
     post = {
         **post_processes,
-        "settings": validate_settings_observation(post_settings_raw),
+        "settings": validate_live_settings_observation(post_settings_raw),
         "gateway": validate_gateway_observation(post_gateway_raw),
         "release": _release_status(repository_root),
         "schema_fingerprint": schema_fingerprint(get_database(Settings())),
@@ -2457,7 +2487,7 @@ def _reconcile_services_after_rollback(
     gateway_observation: dict[str, object] | None = None
     release_observation: dict[str, object] | None = None
     try:
-        settings_observation = validate_settings_observation(_wait_settings(deadline=deadline))
+        settings_observation = validate_live_settings_observation(_wait_settings(deadline=deadline))
     except ReleaseOperationError:
         errors.append("settings_readiness_failed")
     try:
