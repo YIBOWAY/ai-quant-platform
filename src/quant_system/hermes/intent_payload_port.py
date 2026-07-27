@@ -10,17 +10,15 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from quant_system.config.runtime_paths import is_unconfigured_runtime_path
+
 _STDIN_SOFT_LIMIT = 600_000
 _DEFAULT_TIMEOUT_SECONDS = 15.0
-_DEFAULT_HQA_ROOT = (
-    Path(__file__).resolve().parents[4] / "Hermes-quant-agent"
-)
 
 
 class IntentPayloadPortError(RuntimeError):
@@ -76,31 +74,28 @@ class IntentPayloadCliSettings:
 
     @classmethod
     def from_settings(cls, settings: object | None = None) -> IntentPayloadCliSettings:
-        """Build from ``Settings.intent_payload`` or safe local defaults."""
+        """Build only from explicit ``Settings.intent_payload`` bindings."""
         block = None
         if settings is not None:
             block = getattr(settings, "intent_payload", None)
 
         python_raw = _settings_field(block, "python_executable", None)
         if python_raw in (None, ""):
-            # Prefer the sibling HQA venv when present; else current interpreter.
-            hqa_guess = _settings_field(block, "hqa_root", None)
-            hqa_root_guess = (
-                _as_path(hqa_guess, field="hqa_root")
-                if hqa_guess not in (None, "")
-                else _DEFAULT_HQA_ROOT
+            raise IntentPayloadPortError(
+                "intent_port_misconfigured",
+                "python_executable is not configured",
+                retryable=False,
             )
-            venv_python = hqa_root_guess / ".venv" / "bin" / "python"
-            python = venv_python if venv_python.is_file() else Path(sys.executable)
-        else:
-            python = _as_path(python_raw, field="python_executable")
+        python = _as_path(python_raw, field="python_executable")
 
         hqa_raw = _settings_field(block, "hqa_root", None)
-        hqa_root = (
-            _as_path(hqa_raw, field="hqa_root")
-            if hqa_raw not in (None, "")
-            else _DEFAULT_HQA_ROOT
-        )
+        hqa_root = _as_path(hqa_raw, field="hqa_root")
+        if is_unconfigured_runtime_path(hqa_root):
+            raise IntentPayloadPortError(
+                "intent_port_misconfigured",
+                "hqa_root is not explicitly configured",
+                retryable=False,
+            )
 
         timeout_raw = _settings_field(block, "timeout_seconds", _DEFAULT_TIMEOUT_SECONDS)
         try:

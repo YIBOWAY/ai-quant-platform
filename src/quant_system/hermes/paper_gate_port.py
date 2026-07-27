@@ -15,11 +15,15 @@ import json
 import os
 import re
 import subprocess
-import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+
+from quant_system.config.runtime_paths import (
+    is_unconfigured_runtime_path,
+    unconfigured_runtime_path,
+)
 
 PaperGateOperation = Literal["confirm-formula", "approve", "promote"]
 
@@ -27,8 +31,6 @@ _OPERATIONS = frozenset({"confirm-formula", "approve", "promote"})
 _STDIN_LIMIT = 64_000
 _STDOUT_LIMIT = 256_000
 _DEFAULT_TIMEOUT_SECONDS = 120.0
-_DEFAULT_HQA_ROOT = Path(__file__).resolve().parents[4] / "Hermes-quant-agent"
-_PLATFORM_ROOT = Path(__file__).resolve().parents[3]
 _SAFE_BASE_ENV = frozenset(
     {
         "HOME",
@@ -69,20 +71,31 @@ class PaperGatePortError(RuntimeError):
 class PaperGateCliSettings:
     python_executable: Path
     hqa_root: Path
-    platform_root: Path = _PLATFORM_ROOT
+    platform_root: Path
     timeout_seconds: float = _DEFAULT_TIMEOUT_SECONDS
 
     @classmethod
     def from_settings(cls, settings: object | None) -> PaperGateCliSettings:
         block = getattr(settings, "intent_payload", None)
         hqa_raw = getattr(block, "hqa_root", None)
-        hqa_root = Path(hqa_raw) if hqa_raw not in (None, "") else _DEFAULT_HQA_ROOT
+        hqa_root = (
+            Path(hqa_raw)
+            if hqa_raw not in (None, "")
+            else unconfigured_runtime_path("hqa-runtime-root")
+        )
         python_raw = getattr(block, "python_executable", None)
-        if python_raw not in (None, ""):
-            python = Path(python_raw)
-        else:
-            candidate = hqa_root / ".venv" / "bin" / "python"
-            python = candidate if candidate.is_file() else Path(sys.executable)
+        python = (
+            Path(python_raw)
+            if python_raw not in (None, "")
+            else unconfigured_runtime_path("hqa-python-executable")
+        )
+        release_block = getattr(settings, "agent_v02_release", None)
+        platform_raw = getattr(release_block, "platform_runtime_root", None)
+        platform_root = (
+            Path(platform_raw)
+            if platform_raw not in (None, "")
+            else unconfigured_runtime_path("platform-runtime-root")
+        )
         timeout_raw = getattr(block, "timeout_seconds", _DEFAULT_TIMEOUT_SECONDS)
         try:
             timeout = float(timeout_raw)
@@ -101,7 +114,7 @@ class PaperGateCliSettings:
         return cls(
             python_executable=python,
             hqa_root=hqa_root,
-            platform_root=_PLATFORM_ROOT,
+            platform_root=platform_root,
             timeout_seconds=timeout,
         )
 
@@ -335,7 +348,10 @@ class SubprocessPaperGatePort:
         platform_root = self.cli_settings.platform_root
         quant_system = platform_root / "ai-quant" / "bin" / "quant-system"
         if (
-            not python.is_file()
+            is_unconfigured_runtime_path(python)
+            or is_unconfigured_runtime_path(hqa_root)
+            or is_unconfigured_runtime_path(platform_root)
+            or not python.is_file()
             or not hqa_root.is_dir()
             or not platform_root.is_dir()
             or not quant_system.is_file()

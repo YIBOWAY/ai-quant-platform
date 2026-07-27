@@ -17,7 +17,8 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 
-from quant_system.config.settings import Settings
+from quant_system.config.runtime_paths import is_unconfigured_runtime_path
+from quant_system.config.settings import AgentV02ReleaseSettings, Settings
 from quant_system.hermes.connector_liveness import (
     connector_liveness_runtime_security_is_ready_on_connection,
 )
@@ -1031,8 +1032,20 @@ def file_sha256(path: Path) -> str:
     return release_evidence_observation(path).digest
 
 
-def platform_runtime_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+def platform_runtime_root(settings: Settings | None = None) -> Path:
+    """Resolve the explicitly configured Platform checkout or fail closed."""
+
+    release_settings = (
+        settings.agent_v02_release
+        if settings is not None
+        else AgentV02ReleaseSettings()
+    )
+    root = Path(release_settings.platform_runtime_root)
+    if is_unconfigured_runtime_path(root) or not root.is_absolute() or not root.is_dir():
+        raise ReleaseRuntimeProbeError(
+            "platform runtime root is not explicitly configured"
+        )
+    return root
 
 
 def _capture_platform_boot_runtime_digest() -> str | None:

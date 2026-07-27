@@ -15,6 +15,8 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from quant_system.config.runtime_paths import unconfigured_runtime_path
+
 LIVE_TRADING_CONFIRMATION_PHRASE = "I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"
 
 
@@ -546,13 +548,7 @@ class HermesArtifactSettings(BaseSettings):
         extra="ignore",
     )
 
-    feed_path: Path = (
-        Path(__file__).resolve().parents[4]
-        / "Hermes-quant-agent"
-        / "artifacts"
-        / "hermes-feed"
-        / "manifest.v1.json"
-    )
+    feed_path: Path = unconfigured_runtime_path("hermes-artifact-feed")
     freshness_budget_seconds: int = Field(default=10_800, gt=0)
     max_future_clock_skew_seconds: int = Field(default=300, ge=0, le=86_400)
     max_manifest_bytes: int = Field(default=4 * 1024 * 1024, gt=0)
@@ -629,12 +625,10 @@ class AgentV02ReleaseSettings(BaseSettings):
         max_length=200,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
-    evidence_file: Path = (
-        Path(__file__).resolve().parents[3]
-        / "data"
-        / "_runtime"
-        / "agent-v0.2-release-evidence.json"
+    platform_runtime_root: Path = unconfigured_runtime_path(
+        "platform-runtime-root"
     )
+    evidence_file: Path = unconfigured_runtime_path("release-evidence-file")
     capability_max_age_seconds: float = Field(
         default=30.0,
         ge=1.0,
@@ -670,17 +664,11 @@ class CandidateAdmissionSettings(BaseSettings):
     # deliberately short-lived admission, but avoids turning that honest flow
     # into a 30-minute race.
     ttl_seconds: int = Field(default=900, ge=1, le=7200)
-    preflight_evidence_file: Path = (
-        Path(__file__).resolve().parents[3]
-        / "data"
-        / "_runtime"
-        / "agent-v0.2-candidate-evidence.json"
+    preflight_evidence_file: Path = unconfigured_runtime_path(
+        "candidate-preflight-evidence-file"
     )
-    final_evidence_file: Path = (
-        Path(__file__).resolve().parents[3]
-        / "data"
-        / "_runtime"
-        / "agent-v0.2-release-evidence.json"
+    final_evidence_file: Path = unconfigured_runtime_path(
+        "candidate-final-evidence-file"
     )
 
 
@@ -688,8 +676,9 @@ class IntentPayloadSettings(BaseSettings):
     """Subprocess Port to HQA ``intent_payload_cli`` (L2a-Send).
 
     Platform must not import ``hqa``. BFF uses ``put``; the supervised worker
-    uses ``bind_resolve``. Defaults point at the sibling Hermes-quant-agent
-    checkout and its venv when present.
+    uses ``bind_resolve``. Both external runtime paths require explicit
+    operator bindings; an installed package never infers them from its own
+    module location.
     """
 
     model_config = SettingsConfigDict(
@@ -698,11 +687,9 @@ class IntentPayloadSettings(BaseSettings):
         extra="ignore",
     )
 
-    # Empty → Port picks sibling HQA .venv/bin/python, else sys.executable.
+    # Both values must be explicitly configured for any subprocess authority.
     python_executable: Path | None = None
-    hqa_root: Path = (
-        Path(__file__).resolve().parents[4] / "Hermes-quant-agent"
-    )
+    hqa_root: Path = unconfigured_runtime_path("hqa-runtime-root")
     timeout_seconds: float = Field(default=15.0, gt=0, le=300, allow_inf_nan=False)
 
 
