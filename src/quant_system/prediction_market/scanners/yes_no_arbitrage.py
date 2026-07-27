@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from quant_system.prediction_market.models import Market, MispricingCandidate, OrderBookSnapshot
 
 
@@ -27,8 +29,8 @@ class YesNoArbitrageScanner:
             if book is None or book.best_ask is None:
                 return []
             prices[name] = book.best_ask.price
-        total = prices["YES"] + prices["NO"]
-        edge_bps = (1.0 - total) * 10_000
+        total = sum((Decimal(str(price)) for price in prices.values()), Decimal(0))
+        edge_bps = float((Decimal(1) - total) * Decimal(10_000))
         if edge_bps < self.min_edge_bps:
             return []
         return [
