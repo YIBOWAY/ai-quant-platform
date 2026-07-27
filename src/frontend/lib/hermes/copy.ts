@@ -54,6 +54,76 @@ export type HermesWorkbenchCopy = {
     sendEnabled: string;
     retrySame: string;
   };
+  /** UI-1 Direction A today-page copy. */
+  today: {
+    greeting: {
+      morning: string;
+      afternoon: string;
+      evening: string;
+    };
+    summary: {
+      allClear: string;
+      normalWithAttention: (count: number) => string;
+      attentionClause: (count: number) => string;
+      degradedPrefix: string;
+      degradedAllClear: string;
+      offline: string;
+      empty: string;
+    };
+    status: {
+      hermesOnline: string;
+      hermesDegraded: string;
+      hermesOffline: string;
+      sourcesLabel: string;
+      sourcesAll: string;
+      sourcesPartial: string;
+      sourcesUnavailable: string;
+      sourcesEmpty: string;
+      automationLabel: string;
+      automationUnavailable: string;
+      ledgerLabel: string;
+      ledgerOk: string;
+      ledgerAttention: string;
+      ledgerUnknown: string;
+      systemStatusLink: string;
+      systemStatusAria: string;
+    };
+    attention: {
+      title: string;
+      gate2Tag: string;
+      approvalOnceTag: string;
+      review: string;
+      viewAutomation: string;
+      openTasks: string;
+      approvalTitle: string;
+      approvalDesc: string;
+      expiresPrefix: string;
+      allowOnce: string;
+      deny: string;
+      submitting: string;
+      candidateFeedUnavailable: string;
+    };
+    running: {
+      title: string;
+      viewAll: string;
+      waitingReceipt: string;
+      attempts: (count: number) => string;
+      startedPrefix: string;
+    };
+    results: {
+      title: string;
+      viewAll: string;
+      delayed: string;
+      unavailable: string;
+      independentFeedNote: string;
+      empty: string;
+    };
+    automation: {
+      title: string;
+      lastSuccessPrefix: string;
+      lastSuccessNever: string;
+    };
+  };
 };
 
 const en: HermesWorkbenchCopy = {
@@ -109,6 +179,79 @@ const en: HermesWorkbenchCopy = {
     sendEnabled: "Send",
     retrySame: "Retry same send",
   },
+  today: {
+    greeting: {
+      morning: "Good morning",
+      afternoon: "Good afternoon",
+      evening: "Good evening",
+    },
+    summary: {
+      allClear: "All clear — nothing needs your attention",
+      normalWithAttention: (count) =>
+        `Systems normal — ${count} item${count === 1 ? "" : "s"} need your attention`,
+      attentionClause: (count) =>
+        `${count} item${count === 1 ? "" : "s"} need your attention`,
+      degradedPrefix: "Systems partially degraded",
+      degradedAllClear: "Systems partially degraded",
+      offline: "Hermes data sources are offline; rendering degraded read-only state",
+      empty: "No research activity yet today",
+    },
+    status: {
+      hermesOnline: "Hermes online",
+      hermesDegraded: "Hermes degraded",
+      hermesOffline: "Hermes offline",
+      sourcesLabel: "Sources",
+      sourcesAll: "all healthy",
+      sourcesPartial: "partially degraded",
+      sourcesUnavailable: "unavailable",
+      sourcesEmpty: "no sources",
+      automationLabel: "Automation",
+      automationUnavailable: "unavailable",
+      ledgerLabel: "Database",
+      ledgerOk: "healthy",
+      ledgerAttention: "attention",
+      ledgerUnknown: "unknown",
+      systemStatusLink: "System status →",
+      systemStatusAria: "Open technical system status details",
+    },
+    attention: {
+      title: "Needs your action",
+      gate2Tag: "Gate 2",
+      approvalOnceTag: "Approval · one-shot",
+      review: "Review",
+      viewAutomation: "View automation",
+      openTasks: "Open tasks",
+      approvalTitle: "Hermes requests a one-shot execution approval",
+      approvalDesc:
+        "A bounded call runs only after your confirmation; nothing is auto-approved.",
+      expiresPrefix: "valid until",
+      allowOnce: "Allow once",
+      deny: "Deny",
+      submitting: "Submitting…",
+      candidateFeedUnavailable: "Candidate source unavailable",
+    },
+    running: {
+      title: "Running",
+      viewAll: "All tasks →",
+      waitingReceipt: "Delivered — waiting for the Hermes receipt",
+      attempts: (count) => `attempt ${count}`,
+      startedPrefix: "started",
+    },
+    results: {
+      title: "Recent results",
+      viewAll: "View all →",
+      delayed: "may be delayed",
+      unavailable: "The result catalog is currently unavailable",
+      independentFeedNote:
+        "Entries below come from the independent read-only artifact feed.",
+      empty: "No new research results yet today.",
+    },
+    automation: {
+      title: "Automation",
+      lastSuccessPrefix: "last success",
+      lastSuccessNever: "no successful run yet",
+    },
+  },
 };
 
 const zh: HermesWorkbenchCopy = {
@@ -163,6 +306,75 @@ const zh: HermesWorkbenchCopy = {
     sendEnabled: "发送",
     retrySame: "重试同一次发送",
   },
+  today: {
+    greeting: {
+      morning: "早上好",
+      afternoon: "下午好",
+      evening: "晚上好",
+    },
+    summary: {
+      allClear: "一切正常，没有需要你处理的事",
+      normalWithAttention: (count) => `系统正常，有 ${count} 件事需要你处理`,
+      attentionClause: (count) => `有 ${count} 件事需要你处理`,
+      degradedPrefix: "系统部分降级",
+      degradedAllClear: "系统部分降级",
+      offline: "Hermes 数据源离线，以下为降级只读呈现",
+      empty: "今天还没有研究活动",
+    },
+    status: {
+      hermesOnline: "Hermes 在线",
+      hermesDegraded: "Hermes 降级",
+      hermesOffline: "Hermes 离线",
+      sourcesLabel: "数据源",
+      sourcesAll: "全部正常",
+      sourcesPartial: "部分降级",
+      sourcesUnavailable: "不可用",
+      sourcesEmpty: "无数据源",
+      automationLabel: "自动化",
+      automationUnavailable: "不可用",
+      ledgerLabel: "数据库",
+      ledgerOk: "正常",
+      ledgerAttention: "异常",
+      ledgerUnknown: "未知",
+      systemStatusLink: "系统状态 →",
+      systemStatusAria: "打开系统技术状态详情",
+    },
+    attention: {
+      title: "待我处理",
+      gate2Tag: "Gate 2",
+      approvalOnceTag: "审批 · 单次",
+      review: "去评审",
+      viewAutomation: "查看自动化",
+      openTasks: "打开任务页",
+      approvalTitle: "Hermes 请求一次执行授权",
+      approvalDesc: "一次受限调用经你确认后才会执行；不会自动放行。",
+      expiresPrefix: "有效至",
+      allowOnce: "允许一次",
+      deny: "拒绝",
+      submitting: "提交中…",
+      candidateFeedUnavailable: "候选源不可用",
+    },
+    running: {
+      title: "运行中",
+      viewAll: "全部任务 →",
+      waitingReceipt: "已送达，等待 Hermes 回执",
+      attempts: (count) => `第 ${count} 次尝试`,
+      startedPrefix: "开始于",
+    },
+    results: {
+      title: "最近结果",
+      viewAll: "查看全部 →",
+      delayed: "可能延迟",
+      unavailable: "结果目录当前不可用",
+      independentFeedNote: "以下条目来自独立的只读产物 feed。",
+      empty: "今天还没有新的研究结果。",
+    },
+    automation: {
+      title: "自动化",
+      lastSuccessPrefix: "上次成功",
+      lastSuccessNever: "尚无成功运行",
+    },
+  },
 };
 
 const byLocale: Record<Locale, HermesWorkbenchCopy> = { en, zh };
@@ -176,4 +388,23 @@ export function hermesCapabilityCopy(
   deliveryState: HermesDeliveryState,
 ): { title: string; body: string } {
   return hermesWorkbenchCopy(locale).capability[deliveryState];
+}
+
+/**
+ * UI-1 Direction A: command kind → human title dictionary. Unknown kinds
+ * pass through unchanged so the event stream never invents a label.
+ */
+export function hermesCommandKindTitle(
+  kind: string | null | undefined,
+  locale: Locale,
+): string {
+  const key = (kind ?? "").trim();
+  const zh: Record<string, string> = {
+    "conversation.turn": "Hermes 对话任务",
+  };
+  const enMap: Record<string, string> = {
+    "conversation.turn": "Hermes conversation turn",
+  };
+  const table = locale === "zh" ? zh : enMap;
+  return table[key] ?? key;
 }

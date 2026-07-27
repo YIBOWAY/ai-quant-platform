@@ -74,3 +74,25 @@ export function isActiveCommandState(state: string | null | undefined): boolean 
   const s = (state || "").trim();
   return s === "queued" || s === "leased";
 }
+
+/**
+ * UI-1 Direction A "Running" lane: in-flight per the demo data contract §2.2 —
+ * terminal = succeeded|cancelled|failed|rejected|timed_out (+ outcome_unknown
+ * as an honest terminal); "delivered" still awaits the Hermes receipt and
+ * therefore remains in-flight. Distinct from the ledger-terminal set in
+ * workspaceClient.isTerminalCommandState, which the submit controller uses.
+ */
+const RUNNING_TERMINAL_STATES = new Set([
+  "succeeded",
+  "cancelled",
+  "failed",
+  "rejected",
+  "timed_out",
+  "outcome_unknown",
+]);
+
+export function isInFlightCommandState(state: string | null | undefined): boolean {
+  const s = (state || "").trim();
+  if (!s) return false;
+  return !RUNNING_TERMINAL_STATES.has(s);
+}

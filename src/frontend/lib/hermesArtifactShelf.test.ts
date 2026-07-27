@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ArtifactShelf, HermesTodayView } from "@/components/hermes";
+import { TodayAutomation, TodayResults } from "@/components/hermes/today";
 import {
   ArtifactFeed,
   artifactFeedReadState,
@@ -11,10 +12,18 @@ import type {
   HermesArtifactShelfEnvelope,
   HermesResultsResponse,
 } from "./api";
-import { buildHermesTodayModel } from "./hermes/viewModel";
+import {
+  buildAutomation,
+  buildHermesTodayOverviewModel,
+  buildHqaConclusions,
+  buildUnifiedResultsPreview,
+  pickLatestAutomation,
+} from "./hermes/viewModel";
 import {
   candidateFixture,
+  gatewayFixture,
   healthyArtifacts,
+  degradedArtifacts,
 } from "./hermes/viewModelFixtures";
 
 const availableShelf = {
@@ -191,8 +200,10 @@ const unavailableUnifiedResults = {
   apiError: "api_unavailable",
 } satisfies HermesResultsResponse;
 
-describe("Hermes Today hierarchy", () => {
-  it("prioritizes action, exceptions, and conclusions over equal-weight shelf cards", () => {
+describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
+  const now = new Date("2026-07-24T01:00:00Z");
+
+  it("greets, aggregates one status line, and keeps the action lane markers", () => {
     const candidates = {
       candidates: [
         candidateFixture({
@@ -210,10 +221,11 @@ describe("Hermes Today hierarchy", () => {
         }),
       ],
     };
-    const model = buildHermesTodayModel({
+    const model = buildHermesTodayOverviewModel({
       artifacts: healthyArtifacts,
       candidates,
-      results: emptyUnifiedResults,
+      gateway: gatewayFixture(),
+      now,
     });
     const html = renderToStaticMarkup(
       createElement(HermesTodayView, {
@@ -223,93 +235,121 @@ describe("Hermes Today hierarchy", () => {
       }),
     );
 
-    expect(html).toContain("自动化 4/4 正常");
-    expect(html).not.toContain("0 9 * * 0</");
-    expect(html).toContain("<details");
+    expect(model.state).toBe("normal");
+    expect(html).toContain("早上好");
+    expect(html).toContain("系统正常，");
+    expect(html).toContain("有 1 件事需要你处理");
+    expect(html).toContain("Hermes 在线");
+    expect(html).toContain('data-hermes-status-item="sources"');
+    expect(html).toContain('data-hermes-status-item="automation"');
+    expect(html).toContain('href="#hermes-technical-details"');
+    expect(html).toContain('id="hermes-technical-details"');
     expect(html).toContain("研究审批项");
+    expect(html).toContain("Gate 2");
     expect(html).toContain('href="/zh/hermes/approvals"');
     expect(html).not.toContain('href="/hermes/approvals"');
-    expect(html).not.toContain("候选</h");
-    expect(html).toContain('data-hermes-automation-summary');
-    expect(html).not.toContain("data-hermes-automation-exception");
+    expect(html).toContain('data-hermes-attention-id="factor-momentum_20d_reversal-323b045e4b"');
     expect(html).toContain('data-testid="hermes-today-brief-entry"');
     expect(html).toContain('href="/zh/brief"');
     expect(html).toContain("每日晨报");
     expect(html).toContain('aria-label="打开每日晨报"');
+    expect(html).toContain('data-testid="hermes-today-state"');
+    expect(html).toContain('data-state="normal"');
+    // Machine digests stay out of the action lane.
+    expect(html).not.toContain("a".repeat(64));
   });
 
-  it("separates unified platform results from HQA conclusion artifacts", () => {
-    const model = buildHermesTodayModel({
-      artifacts: healthyArtifacts,
-      candidates: { candidates: [] },
-      results: availableUnifiedResults,
-    });
+  it("merges recent results into one bounded list with kind tags and detail links", () => {
     const html = renderToStaticMarkup(
-      createElement(HermesTodayView, {
-        model,
-        artifacts: healthyArtifacts,
+      createElement(TodayResults, {
+        preview: buildUnifiedResultsPreview(availableUnifiedResults),
+        hqaConclusions: buildHqaConclusions(healthyArtifacts),
         locale: "zh",
       }),
     );
 
-    expect(html).toContain("最近平台 / 统一结果");
+    expect(html).toContain("最近结果");
     expect(html).toContain("AAPL momentum backtest");
-    expect(html).toContain("backtest-wave3-001");
-    expect(html).toContain("HQA 结论产物");
-    expect(html).not.toContain(">最近结果<");
+    expect(html).toContain("backtest");
+    expect(html).toContain("/zh/hermes/results/backtest/backtest-wave3-001");
+    expect(html).toContain("查看全部");
+    expect(html).toContain('href="/zh/hermes/results"');
+    // One list only — the artifact-feed duplicate preview is not rendered.
+    expect(html).not.toContain("HQA 结论产物");
   });
 
-  it("shows an unknown catalog state without hiding independent HQA conclusions", () => {
-    const model = buildHermesTodayModel({
-      artifacts: healthyArtifacts,
-      candidates: { candidates: [] },
-      results: unavailableUnifiedResults,
-    });
+  it("shows an unknown catalog state in one honest line, then the independent feed", () => {
+    const preview = buildUnifiedResultsPreview(unavailableUnifiedResults);
     const html = renderToStaticMarkup(
-      createElement(HermesTodayView, {
-        model,
-        artifacts: healthyArtifacts,
+      createElement(TodayResults, {
+        preview,
+        hqaConclusions: buildHqaConclusions(healthyArtifacts),
         locale: "zh",
       }),
     );
 
-    expect(model.state).toBe("degraded");
-    expect(model.unifiedResults.total).toBeNull();
-    expect(html).toContain("统一结果状态未知");
-    expect(html).toContain("下方 HQA 结论产物仍以独立只读源为准");
-    expect(html).toContain("HQA 结论产物");
-    expect(html).not.toContain("尚未记录平台或统一结果");
+    expect(preview.total).toBeNull();
+    expect(html).toContain("结果目录当前不可用");
+    expect(html).toContain("api_unavailable");
+    expect(html).toContain("以下条目来自独立的只读产物 feed");
+    expect(html).toContain("data-hermes-result-id");
+    expect(html).not.toContain("今天还没有新的研究结果");
   });
 
   it("does not present a degraded zero-item catalog as known empty", () => {
-    const model = buildHermesTodayModel({
-      artifacts: healthyArtifacts,
-      candidates: { candidates: [] },
-      results: {
-        ...emptyUnifiedResults,
-        read_status: "degraded",
-        warnings: [
-          {
-            source: "platform_runs",
-            code: "source_scan_incomplete",
-            kind: null,
-            resource_id: null,
-          },
-        ],
-      },
+    const preview = buildUnifiedResultsPreview({
+      ...emptyUnifiedResults,
+      read_status: "degraded",
+      warnings: [
+        {
+          source: "platform_runs",
+          code: "source_scan_incomplete",
+          kind: null,
+          resource_id: null,
+        },
+      ],
     });
     const html = renderToStaticMarkup(
-      createElement(HermesTodayView, {
-        model,
-        artifacts: healthyArtifacts,
+      createElement(TodayResults, {
+        preview,
+        hqaConclusions: buildHqaConclusions(healthyArtifacts),
         locale: "zh",
       }),
     );
 
-    expect(model.unifiedResults.total).toBeNull();
+    expect(preview.total).toBeNull();
+    expect(html).toContain("可能延迟");
     expect(html).toContain("统一结果目录已降级");
     expect(html).toContain("source_scan_incomplete");
-    expect(html).not.toContain("尚未记录平台或统一结果");
+    expect(html).not.toContain("今天还没有新的研究结果");
+  });
+
+  it("collapses healthy automation to one row and expands exceptions on demand", () => {
+    const healthy = renderToStaticMarkup(
+      createElement(TodayAutomation, {
+        summary: buildAutomation(healthyArtifacts),
+        artifact: pickLatestAutomation(healthyArtifacts.items),
+        locale: "zh",
+      }),
+    );
+    expect(healthy).toContain("自动化 4/4 正常");
+    expect(healthy).toContain("daily_close · freshness · weekly · notification_drain");
+    expect(healthy).toContain("上次成功");
+    expect(healthy).not.toContain("data-hermes-automation-exception");
+    expect(healthy).not.toContain("0 9 * * 0</");
+
+    const degraded = renderToStaticMarkup(
+      createElement(TodayAutomation, {
+        summary: buildAutomation(degradedArtifacts),
+        artifact: pickLatestAutomation(degradedArtifacts.items),
+        locale: "zh",
+      }),
+    );
+    expect(degraded).toContain("自动化 3/4 正常");
+    expect(degraded).toContain('data-hermes-automation-exception="weekly"');
+    expect(degraded).toContain('open=""');
+    expect(degraded).toContain("<details");
+    expect(degraded).toContain("超过时效窗口");
   });
 });
 

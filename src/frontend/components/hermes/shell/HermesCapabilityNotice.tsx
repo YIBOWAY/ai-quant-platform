@@ -1,3 +1,4 @@
+import { Info } from "lucide-react";
 import { hermesCapabilityCopy } from "@/lib/hermes/copy";
 import type { Locale } from "@/lib/locale";
 import type { HermesDeliveryState } from "@/lib/hermes/types";
@@ -8,8 +9,10 @@ export type HermesCapabilityNoticeProps = {
 };
 
 /**
- * Static delivery-state notice. Does not probe health/gateway/capability APIs
- * and must never repeat the global safety banner.
+ * UI-1 Direction A: static delivery-state notice folded into one small text
+ * line under the shell chrome (was a persistent card). Delivery-state
+ * semantics are preserved verbatim; still not a live capability probe and
+ * never repeats the global safety banner.
  */
 export function HermesCapabilityNotice({
   locale,
@@ -19,12 +22,20 @@ export function HermesCapabilityNotice({
 
   return (
     <section
-      className="rounded-lg border border-border-subtle bg-bg-surface-muted px-4 py-3"
+      className="flex items-start gap-2"
       data-delivery-state={deliveryState}
       data-testid="hermes-capability-notice"
     >
-      <p className="font-body-md font-semibold text-text-primary">{copy.title}</p>
-      <p className="mt-1 font-body-sm text-text-secondary">{copy.body}</p>
+      <Info
+        aria-hidden
+        className="mt-0.5 shrink-0 text-text-secondary"
+        size={14}
+      />
+      <p className="font-body-sm text-text-secondary">
+        <span className="font-semibold text-text-primary">{copy.title}</span>
+        {locale === "zh" ? "。" : ". "}
+        {copy.body}
+      </p>
     </section>
   );
 }

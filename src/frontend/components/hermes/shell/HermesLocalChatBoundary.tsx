@@ -102,25 +102,31 @@ export function HermesLocalChatBoundary({
                     : ""}
                 </p>
                 {authorizedChatOpen ? (
-                  <WorkbenchTranscriptPanel locale={locale} />
-                ) : null}
-                {authorizedChatOpen ? (
-                  <WorkbenchCommandActivityPanel locale={locale} />
-                ) : null}
-                {authorizedChatOpen ? (
-                  <WorkbenchRunStopPanel locale={locale} />
-                ) : null}
-                {authorizedChatOpen ? (
-                  <WorkbenchCommandApprovalsPanel locale={locale} />
-                ) : null}
-                {authorizedChatOpen ? (
-                  <WorkbenchGateSurfacesPanel locale={locale} />
-                ) : null}
-                {authorizedChatOpen ? (
-                  <WorkbenchTypedResultsPanel locale={locale} />
-                ) : null}
-                {authorizedChatOpen ? (
-                  <WorkbenchAuthorityProjectionPanel locale={locale} />
+                  /*
+                   * UI-2 Direction A active state: transcript main column +
+                   * 320px context rail at ≥1100px; single column below.
+                   * Owner/bootstrap admission and every panel's internal
+                   * contract remain unchanged.
+                   */
+                  <div
+                    className="grid min-w-0 grid-cols-1 gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_320px] min-[1100px]:items-start"
+                    data-hermes-active-grid
+                  >
+                    <div className="min-w-0" data-hermes-active-main>
+                      <WorkbenchTranscriptPanel locale={locale} />
+                    </div>
+                    <aside
+                      className="flex min-w-0 flex-col gap-4 min-[1100px]:sticky min-[1100px]:top-4"
+                      data-hermes-active-rail
+                    >
+                      <WorkbenchCommandApprovalsPanel locale={locale} />
+                      <WorkbenchCommandActivityPanel locale={locale} />
+                      <WorkbenchRunStopPanel locale={locale} />
+                      <WorkbenchTypedResultsPanel locale={locale} />
+                      <WorkbenchGateSurfacesPanel locale={locale} />
+                      <WorkbenchAuthorityProjectionPanel locale={locale} />
+                    </aside>
+                  </div>
                 ) : null}
                 {children}
               </div>

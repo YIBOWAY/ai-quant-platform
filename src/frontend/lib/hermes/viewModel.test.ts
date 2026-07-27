@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { AgentCandidatesResponse, HermesResultsResponse } from "@/lib/api";
-import { buildHermesTodayModel, pickLatestAutomation } from "./viewModel";
+import {
+  buildGatewaySummary,
+  buildHermesTodayModel,
+  buildHermesTodayOverviewModel,
+  buildSourceRollup,
+  greetingSlotForHour,
+  pickLatestAutomation,
+} from "./viewModel";
 import {
   candidateFixture,
   degradedArtifacts,
+  gatewayFixture,
   healthyArtifacts,
   noArtifacts,
 } from "./viewModelFixtures";
@@ -324,5 +332,110 @@ describe("buildHermesTodayModel", () => {
       title: "Candidate integrity failed",
       summary: "manifest_digest_mismatch",
     });
+  });
+});
+
+describe("UI-1 Direction A overview derivations", () => {
+  it("normalizes gateway read_status fail-closed and requires connected for online", () => {
+    expect(
+      buildGatewaySummary(gatewayFixture()).online,
+    ).toBe(true);
+    expect(
+      buildGatewaySummary(gatewayFixture({ connected: false })).online,
+    ).toBe(false);
+    const unknown = buildGatewaySummary(
+      gatewayFixture({ read_status: "bogus" } as never),
+    );
+    expect(unknown.readStatus).toBe("unavailable");
+    expect(unknown.online).toBe(false);
+    const blockers = buildGatewaySummary(
+      gatewayFixture({
+        blockers: ["a", "a"],
+        upstream_blockers: ["b"],
+        platform_delivery_blockers: ["b", "c"],
+        warnings: [{ code: "w1", message: "m" }],
+      }),
+    );
+    expect(blockers.blockers).toEqual(["a", "b", "c"]);
+    expect(blockers.warningCodes).toEqual(["w1"]);
+  });
+
+  it("rolls up artifact sources honestly (degraded wins, no sources is empty)", () => {
+    expect(buildSourceRollup(healthyArtifacts)).toMatchObject({
+      total: 2,
+      available: 2,
+      status: "available",
+    });
+    const degradedSources = {
+      ...healthyArtifacts,
+      sources: healthyArtifacts.sources.map((source, index) =>
+        index === 0
+          ? { ...source, status: "degraded" as const, reason_code: "stale" }
+          : source,
+      ),
+    };
+    expect(buildSourceRollup(degradedSources).status).toBe("degraded");
+    expect(buildSourceRollup(noArtifacts("unavailable")).status).toBe(
+      "unavailable",
+    );
+    expect(buildSourceRollup(noArtifacts("empty")).status).toBe("empty");
+  });
+
+  it("maps greeting slots by hour with wraparound", () => {
+    expect(greetingSlotForHour(8)).toBe("morning");
+    expect(greetingSlotForHour(13)).toBe("afternoon");
+    expect(greetingSlotForHour(20)).toBe("evening");
+    expect(greetingSlotForHour(-1)).toBe("evening");
+    expect(greetingSlotForHour(Number.NaN)).toBe("morning");
+  });
+
+  it("derives overview state from gateway, sources, automation, and attention", () => {
+    const base = {
+      candidates: { candidates: [] },
+      artifacts: healthyArtifacts,
+    };
+
+    expect(
+      buildHermesTodayOverviewModel({
+        ...base,
+        gateway: gatewayFixture(),
+        now: new Date("2026-07-24T01:00:00Z"), // 09:00 Asia/Shanghai
+      }),
+    ).toMatchObject({ state: "normal", greetingSlot: "morning" });
+
+    expect(
+      buildHermesTodayOverviewModel({
+        ...base,
+        gateway: gatewayFixture({ read_status: "unavailable", connected: false }),
+      }).state,
+    ).toBe("offline");
+
+    expect(
+      buildHermesTodayOverviewModel({
+        ...base,
+        gateway: gatewayFixture({ read_status: "degraded" }),
+        now: new Date("2026-07-24T11:00:00Z"), // 19:00 Asia/Shanghai
+      }),
+    ).toMatchObject({ state: "degraded", greetingSlot: "evening" });
+
+    // Approval-only attention keeps a normal posture.
+    expect(
+      buildHermesTodayOverviewModel({
+        artifacts: healthyArtifacts,
+        candidates: {
+          candidates: [candidateFixture()],
+        },
+        gateway: gatewayFixture(),
+      }).state,
+    ).toBe("normal");
+
+    // Automation exceptions degrade the overview.
+    expect(
+      buildHermesTodayOverviewModel({
+        artifacts: degradedArtifacts,
+        candidates: { candidates: [] },
+        gateway: gatewayFixture(),
+      }).state,
+    ).toBe("degraded");
   });
 });

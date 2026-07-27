@@ -4,16 +4,22 @@ import type {
   HermesArtifactShelfEnvelope,
   HermesAutomationStatusArtifactData,
   HermesArtifactSource,
+  HermesGatewayStatusResponse,
   HermesResultsResponse,
 } from "@/lib/api";
 import { hermesRoutes } from "./routes";
 import type {
   HermesAttentionItem,
   HermesAutomationSummary,
+  HermesGatewaySummary,
+  HermesGreetingSlot,
   HermesHqaConclusionSummary,
+  HermesSourceRollup,
   HermesTechnicalSource,
   HermesTodayModel,
   HermesTodayModelInput,
+  HermesTodayOverviewModel,
+  HermesTodayOverviewModelInput,
   HermesUnifiedResultsPreview,
 } from "./types";
 
@@ -23,6 +29,9 @@ const KNOWN_JOB_IDS = [
   "weekly",
   "notification_drain",
 ] as const;
+
+/** Fixed four automation job ids (demo data-contract §2.5). */
+export const HERMES_KNOWN_JOB_IDS: readonly string[] = KNOWN_JOB_IDS;
 
 type KnownJobId = (typeof KNOWN_JOB_IDS)[number];
 
@@ -103,7 +112,7 @@ function exceptionAttentionKind(
   return "degraded";
 }
 
-function buildAutomation(
+export function buildAutomation(
   artifacts: HermesArtifactShelfEnvelope,
 ): HermesAutomationSummary {
   if (artifacts.read_status === "unavailable") {
@@ -309,7 +318,7 @@ function resultSummary(item: HermesArtifact): string {
   return item.status;
 }
 
-function buildHqaConclusions(
+export function buildHqaConclusions(
   artifacts: HermesArtifactShelfEnvelope,
 ): HermesHqaConclusionSummary[] {
   return artifacts.items
@@ -340,7 +349,7 @@ function boundedProjectionText(
   return trimmed;
 }
 
-function buildUnifiedResultsPreview(
+export function buildUnifiedResultsPreview(
   results: HermesResultsResponse,
 ): HermesUnifiedResultsPreview {
   const items = results.items.slice(0, 5).map((item) => {
@@ -474,8 +483,7 @@ function deriveState(input: {
  * Pure derivation of the read-only Hermes Today workbench model.
  * No timers, network, or capability probes.
  */
-export function buildHermesTodayModel(input: HermesTodayModelInput): HermesTodayModel {
-  const automation = buildAutomation(input.artifacts);
+export function buildHermesTodayModel(input: HermesTodayModelInput): HermesTodayModel {  const automation = buildAutomation(input.artifacts);
   const attention = sortAttention([
     ...candidateAttention(input.candidates),
     ...automationAttention(input.artifacts, automation),
@@ -498,6 +506,186 @@ export function buildHermesTodayModel(input: HermesTodayModelInput): HermesToday
     automation,
     hqaConclusions,
     unifiedResults,
+    technical,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* UI-1 Direction A: overview derivations (greeting + status line).    */
+/* ------------------------------------------------------------------ */
+
+const GATEWAY_READ_STATUSES = new Set(["available", "degraded", "unavailable"]);
+
+function boundedStrings(value: unknown, maximum: number, maxItems = 8): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const entry of value) {
+    const text = boundedProjectionText(entry, maximum);
+    if (text && !out.includes(text)) out.push(text);
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+/**
+ * Fail-closed normalization of GET /api/hermes/gateway. Unknown or missing
+ * read_status values collapse to "unavailable"; "online" requires both an
+ * available read and connected=true.
+ */
+export function buildGatewaySummary(
+  gateway: HermesGatewayStatusResponse,
+): HermesGatewaySummary {
+  const raw = String(gateway.read_status);
+  const readStatus = (
+    GATEWAY_READ_STATUSES.has(raw) ? raw : "unavailable"
+  ) as HermesGatewaySummary["readStatus"];
+  const connected = gateway.connected === true;
+  const blockers = [
+    ...boundedStrings(gateway.blockers, 128),
+    ...boundedStrings(gateway.upstream_blockers, 128),
+    ...boundedStrings(gateway.platform_delivery_blockers, 128),
+  ].filter((code, index, all) => all.indexOf(code) === index);
+  const warningCodes = Array.isArray(gateway.warnings)
+    ? gateway.warnings
+        .map((warning) => boundedProjectionText(warning?.code, 128))
+        .filter((code): code is string => code !== null)
+        .slice(0, 8)
+    : [];
+  return {
+    readStatus,
+    connected,
+    online: readStatus === "available" && connected,
+    blockers,
+    warningCodes,
+  };
+}
+
+/**
+ * One-line aggregate of artifact shelf sources. Envelope unavailable wins;
+ * any degraded/unavailable source degrades the line; a feed with no sources
+ * is honestly "empty" rather than healthy.
+ */
+export function buildSourceRollup(
+  artifacts: HermesArtifactShelfEnvelope,
+): HermesSourceRollup {
+  const sources = Array.isArray(artifacts.sources) ? artifacts.sources : [];
+  const rollup: HermesSourceRollup = {
+    total: sources.length,
+    available: 0,
+    degraded: 0,
+    unavailable: 0,
+    status: "empty",
+  };
+  for (const source of sources) {
+    const mapped = mapSourceStatus(source.status);
+    if (mapped === "available") rollup.available += 1;
+    else if (mapped === "degraded") rollup.degraded += 1;
+    else rollup.unavailable += 1;
+  }
+  if (artifacts.read_status === "unavailable") {
+    rollup.status = "unavailable";
+  } else if (sources.length === 0) {
+    rollup.status = "empty";
+  } else if (rollup.degraded > 0 || rollup.unavailable > 0) {
+    rollup.status = "degraded";
+  } else {
+    rollup.status = "available";
+  }
+  return rollup;
+}
+
+export function greetingSlotForHour(hour: number): HermesGreetingSlot {
+  if (!Number.isFinite(hour)) return "morning";
+  const normalized = ((Math.trunc(hour) % 24) + 24) % 24;
+  if (normalized < 12) return "morning";
+  if (normalized < 18) return "afternoon";
+  return "evening";
+}
+
+function shanghaiHour(now: Date): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      hour12: false,
+      timeZone: "Asia/Shanghai",
+    }).formatToParts(now);
+    const hour = Number(parts.find((part) => part.type === "hour")?.value);
+    return Number.isFinite(hour) ? hour % 24 : 12;
+  } catch {
+    return 12;
+  }
+}
+
+function deriveOverviewState(input: {
+  artifacts: HermesArtifactShelfEnvelope;
+  attention: HermesAttentionItem[];
+  automation: HermesAutomationSummary;
+  gateway: HermesGatewaySummary;
+}): HermesTodayOverviewModel["state"] {
+  if (
+    input.artifacts.read_status === "unavailable" ||
+    input.gateway.readStatus === "unavailable" ||
+    input.attention.some((item) => item.kind === "offline")
+  ) {
+    return "offline";
+  }
+  // Approval-only attention is healthy desk work, not degradation.
+  const hasSystemDegradation =
+    input.attention.some((item) => item.kind !== "approval") ||
+    input.automation.exceptions.length > 0 ||
+    input.automation.status === "attention" ||
+    input.artifacts.read_status === "degraded" ||
+    input.gateway.readStatus === "degraded" ||
+    (input.gateway.readStatus === "available" && !input.gateway.connected) ||
+    (input.automation.status === "unavailable" &&
+      input.artifacts.read_status !== "empty");
+  if (hasSystemDegradation) {
+    return "degraded";
+  }
+  if (
+    input.artifacts.read_status === "empty" &&
+    input.artifacts.items.length === 0 &&
+    input.attention.length === 0
+  ) {
+    return "empty";
+  }
+  return "normal";
+}
+
+/**
+ * UI-1 Direction A overview derivation. Same attention/automation/technical
+ * inputs as buildHermesTodayModel, plus the gateway status line, and no
+ * dependency on the results catalog (that Suspense boundary is independent).
+ */
+export function buildHermesTodayOverviewModel(
+  input: HermesTodayOverviewModelInput,
+): HermesTodayOverviewModel {
+  const automation = buildAutomation(input.artifacts);
+  const attention = sortAttention([
+    ...candidateAttention(input.candidates),
+    ...automationAttention(input.artifacts, automation),
+    ...offlineAttention(input.artifacts),
+  ]);
+  const technical = buildTechnical(input.artifacts);
+  const gateway = buildGatewaySummary(input.gateway);
+  const sources = buildSourceRollup(input.artifacts);
+  const state = deriveOverviewState({
+    artifacts: input.artifacts,
+    attention,
+    automation,
+    gateway,
+  });
+  const greetingSlot = greetingSlotForHour(
+    shanghaiHour(input.now ?? new Date()),
+  );
+
+  return {
+    state,
+    greetingSlot,
+    attention,
+    automation,
+    gateway,
+    sources,
     technical,
   };
 }
