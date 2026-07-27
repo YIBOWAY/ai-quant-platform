@@ -226,10 +226,11 @@ function applyCommandEvent(
       typeof event.command_version === "number"
         ? event.command_version
         : (prev?.version ?? 1),
-    client_request_id: event.client_request_id ?? prev?.client_request_id ?? null,
-    client_action_id: event.client_action_id ?? prev?.client_action_id ?? null,
+    client_request_id:
+      event.client_request_id ?? prev?.client_request_id ?? undefined,
+    client_action_id: event.client_action_id ?? prev?.client_action_id ?? undefined,
     platform_session_id:
-      event.platform_session_id ?? prev?.platform_session_id ?? null,
+      event.platform_session_id ?? prev?.platform_session_id ?? undefined,
     hermes_session_id: event.hermes_session_id ?? prev?.hermes_session_id ?? null,
     hermes_run_id: event.hermes_run_id ?? prev?.hermes_run_id ?? null,
     last_error_code: event.error_code ?? prev?.last_error_code ?? null,
