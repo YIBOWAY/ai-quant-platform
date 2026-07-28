@@ -54,7 +54,7 @@ from quant_system.ops.common import (
     write_immutable,
 )
 
-SCHEMA_VERSION = "agent-v0.2.2-repository-zero-effect-proof.v5"
+SCHEMA_VERSION = "agent-v0.2.2-repository-zero-effect-proof.v6"
 AUTHORITY_KIND = "immutable_same_identity_zero_effect_journal"
 CLAIM_SCHEMA_VERSION = "agent-v0.2.2-zero-effect-claim.v3"
 SEAL_SCHEMA_VERSION = "agent-v0.2.2-zero-effect-seal.v1"
@@ -63,6 +63,9 @@ DISPOSABLE_ACCOUNT = "agent-v02-zero-effect-disposable-account"
 EXPECTED_BLOCK_CODE = "replay_kill_switch_enabled"
 EXPECTED_RELEASE_CONTRACT = "agent-v0.2-release-cli/v1"
 FIXED_TIME = "2026-01-01T00:00:00+00:00"
+GLOBAL_SWITCH_AUTHORITY = "Settings.safety.kill_switch"
+PAPER_ACCOUNT_SWITCH_AUTHORITY = "PaperAccount.kill_switch"
+REPLAY_REQUEST_SWITCH_AUTHORITY = "PaperRunRequest.enable_kill_switch"
 ROUTE_SANDBOX_PROFILE = (
     "(version 1) (allow default) (deny network*) (deny process-exec) (deny process-fork)"
 )
@@ -123,6 +126,38 @@ def _paper_run_request() -> PaperRunRequest:
         top_n=2,
         max_fill_ratio_per_tick=1.0,
     )
+
+
+def _scoped_switch_observations(
+    *,
+    global_process_value: object,
+    paper_account_value: object,
+    replay_request_value: object,
+) -> list[dict[str, object]]:
+    values = (
+        global_process_value,
+        paper_account_value,
+        replay_request_value,
+    )
+    if any(type(value) is not bool for value in values):
+        raise ReleaseOperationError("switch observation value is not boolean")
+    return [
+        {
+            "switch_scope": "global_process",
+            "authority_reference": GLOBAL_SWITCH_AUTHORITY,
+            "value": global_process_value,
+        },
+        {
+            "switch_scope": "paper_account",
+            "authority_reference": PAPER_ACCOUNT_SWITCH_AUTHORITY,
+            "value": paper_account_value,
+        },
+        {
+            "switch_scope": "replay_request",
+            "authority_reference": REPLAY_REQUEST_SWITCH_AUTHORITY,
+            "value": replay_request_value,
+        },
+    ]
 
 
 def state_namespace_identity(state_dir: Path) -> dict[str, str]:
@@ -211,7 +246,7 @@ def _runtime_digest(root: Path, module_paths: tuple[Path, ...]) -> str:
 
 def _settings_safety_observation(settings: Settings) -> dict[str, object]:
     facts = {
-        "global_switch_authority": "Settings.safety.kill_switch",
+        "global_switch_authority": GLOBAL_SWITCH_AUTHORITY,
         "global_kill_switch": settings.safety.kill_switch,
         "live_trading_authority": "Settings.safety.live_trading_enabled",
         "live_trading_enabled": settings.safety.live_trading_enabled,
@@ -473,7 +508,7 @@ def _account_observation(account: PaperAccount) -> dict[str, object]:
             for entry in account.ledger
         ),
         "position_count": len(account.positions),
-        "paper_account_local_switch_authority": "PaperAccount.kill_switch",
+        "paper_account_local_switch_authority": PAPER_ACCOUNT_SWITCH_AUTHORITY,
         "paper_account_local_kill_switch": account.kill_switch,
     }
 
@@ -1205,6 +1240,17 @@ def _authoritative_receipt(
     execution: dict[str, object],
 ) -> dict[str, object]:
     route_module = Path(paper_routes.__file__).resolve()
+    replay_request = _paper_run_request()
+    preflight_switches = _scoped_switch_observations(
+        global_process_value=settings_preflight["global_kill_switch"],
+        paper_account_value=execution["account_before"]["paper_account_local_kill_switch"],
+        replay_request_value=replay_request.enable_kill_switch,
+    )
+    postflight_switches = _scoped_switch_observations(
+        global_process_value=settings_postflight["global_kill_switch"],
+        paper_account_value=execution["account_after"]["paper_account_local_kill_switch"],
+        replay_request_value=replay_request.enable_kill_switch,
+    )
     body: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "authority_kind": AUTHORITY_KIND,
@@ -1223,22 +1269,24 @@ def _authoritative_receipt(
         "postflight_runtime_identity": postflight_runtime_identity,
         "safety_preflight": {
             **settings_preflight,
-            "paper_account_local_switch_authority": "PaperAccount.kill_switch",
+            "paper_account_local_switch_authority": PAPER_ACCOUNT_SWITCH_AUTHORITY,
             "paper_account_local_kill_switch": execution["account_before"][
                 "paper_account_local_kill_switch"
             ],
-            "replay_switch_authority": "PaperRunRequest.enable_kill_switch",
-            "replay_enable_kill_switch": _paper_run_request().enable_kill_switch,
+            "replay_switch_authority": REPLAY_REQUEST_SWITCH_AUTHORITY,
+            "replay_enable_kill_switch": replay_request.enable_kill_switch,
+            "switch_observations": preflight_switches,
             **release_preflight["facts"],
         },
         "safety_postflight": {
             **settings_postflight,
-            "paper_account_local_switch_authority": "PaperAccount.kill_switch",
+            "paper_account_local_switch_authority": PAPER_ACCOUNT_SWITCH_AUTHORITY,
             "paper_account_local_kill_switch": execution["account_after"][
                 "paper_account_local_kill_switch"
             ],
-            "replay_switch_authority": "PaperRunRequest.enable_kill_switch",
-            "replay_enable_kill_switch": _paper_run_request().enable_kill_switch,
+            "replay_switch_authority": REPLAY_REQUEST_SWITCH_AUTHORITY,
+            "replay_enable_kill_switch": replay_request.enable_kill_switch,
+            "switch_observations": postflight_switches,
             **release_postflight["facts"],
         },
         "release_status_artifacts": {
@@ -1372,6 +1420,23 @@ def _validate_existing_receipt(
     safety_postflight = receipt.get("safety_postflight")
     if not isinstance(safety_preflight, dict) or not isinstance(safety_postflight, dict):
         raise ReleaseOperationError("immutable receipt safety facts are invalid")
+    expected_switches = {
+        "preflight": _scoped_switch_observations(
+            global_process_value=safety_preflight.get("global_kill_switch"),
+            paper_account_value=safety_preflight.get("paper_account_local_kill_switch"),
+            replay_request_value=safety_preflight.get("replay_enable_kill_switch"),
+        ),
+        "postflight": _scoped_switch_observations(
+            global_process_value=safety_postflight.get("global_kill_switch"),
+            paper_account_value=safety_postflight.get("paper_account_local_kill_switch"),
+            replay_request_value=safety_postflight.get("replay_enable_kill_switch"),
+        ),
+    }
+    if (
+        safety_preflight.get("switch_observations") != expected_switches["preflight"]
+        or safety_postflight.get("switch_observations") != expected_switches["postflight"]
+    ):
+        raise ReleaseOperationError("immutable receipt switch scope authority is invalid")
     for field, value in current_settings.items():
         if safety_preflight.get(field) != value or safety_postflight.get(field) != value:
             raise ReleaseOperationError("immutable receipt Settings safety facts drifted")
