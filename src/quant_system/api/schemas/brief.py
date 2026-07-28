@@ -58,3 +58,10 @@ class BriefIssueEnvelopeResponse(BaseModel):
     issue: BriefIssueResponse
     snapshot: BriefSnapshotResponse
     warnings: list[str] = Field(default_factory=list)
+
+
+class BriefIssueListResponse(BaseModel):
+    items: list[BriefIssueResponse] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 30
+    offset: int = 0

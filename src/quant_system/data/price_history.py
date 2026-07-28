@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from quant_system.config.settings import Settings
+from quant_system.data.equity_bar_cache import EquityBarCache
 from quant_system.data.provider_factory import (
     DataProviderUnavailableError,
     build_ohlcv_provider,
@@ -139,6 +141,7 @@ def read_historical_prices(
     interval: str = "1d",
     adjustment: str = "qfq",
     provider_builder: ProviderBuilder = build_ohlcv_provider,
+    cache: EquityBarCache | None = None,
 ) -> HistoricalPriceSnapshot:
     """Read strict multi-symbol Futu QFQ history without storage fallback."""
     if provider != "futu":
@@ -149,6 +152,29 @@ def read_historical_prices(
         raise _invalid_request("historical prices currently require adjustment=qfq")
     normalized_symbols = _normalize_request_symbols(symbols)
     start_date, end_date = _parse_window(start, end)
+
+    if cache is not None:
+        try:
+            cached_frame = cache.read(
+                provider="futu",
+                symbols=normalized_symbols,
+                interval="1d",
+                adjustment="qfq",
+                start=start,
+                end=end,
+            )
+        except Exception:  # noqa: BLE001 - a broken optional cache must not block live Futu
+            cached_frame = None
+        if cached_frame is not None:
+            return _materialize_snapshot(
+                cached_frame,
+                symbols=normalized_symbols,
+                start=start,
+                end=end,
+                start_date=start_date,
+                end_date=end_date,
+                source="futu_cache",
+            )
 
     try:
         active_provider, source = provider_builder(settings, requested="futu")
@@ -180,7 +206,7 @@ def read_historical_prices(
             provider_code=type(exc).__name__,
         ) from exc
 
-    return _materialize_snapshot(
+    snapshot = _materialize_snapshot(
         frame,
         symbols=normalized_symbols,
         start=start,
@@ -189,6 +215,18 @@ def read_historical_prices(
         end_date=end_date,
         source=source,
     )
+    if cache is not None:
+        with suppress(Exception):  # optional cache failure must not replace live Futu
+            cache.write(
+                frame,
+                provider="futu",
+                symbols=normalized_symbols,
+                interval="1d",
+                adjustment="qfq",
+                start=start,
+                end=end,
+            )
+    return snapshot
 
 
 def _materialize_snapshot(

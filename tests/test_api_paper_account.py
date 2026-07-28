@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
 from quant_system.config.settings import (
     DatabaseSettings,
+    FutuSettings,
     PaperAccountSettings,
     SafetySettings,
     Settings,
 )
+from quant_system.data.providers.futu import FutuMarketDataProvider
+from quant_system.execution.account import PaperAccount
 from quant_system.execution.account_storage import PaperAccountStorage
+from quant_system.execution.models import ExecutionFill, OrderSide
 from quant_system.execution.price_source import PricedQuote
 
 
@@ -49,6 +56,113 @@ def stub_prices(monkeypatch) -> dict[str, float]:
         "quant_system.execution.price_source.PaperPriceSource.get_prices", fake_get_prices
     )
     return prices
+
+
+class _HermeticFutuController:
+    def __init__(self) -> None:
+        self.history: dict[str, list[tuple[str, float]]] = {}
+        self.failed_symbols: set[str] = set()
+        self.history_requests: list[tuple[str, str, str]] = []
+        self.context_creations = 0
+        self.context_closes = 0
+        self.sleep_calls: list[float] = []
+        self.network_attempts = 0
+
+    def sdk_loader(self) -> SimpleNamespace:
+        return SimpleNamespace(
+            RET_OK=0,
+            AuType=SimpleNamespace(QFQ="QFQ"),
+            KLType=SimpleNamespace(
+                K_DAY="K_DAY",
+                K_60M="K_60M",
+                K_30M="K_30M",
+                K_15M="K_15M",
+                K_5M="K_5M",
+                K_1M="K_1M",
+            ),
+            Session=SimpleNamespace(ALL="ALL", NONE="NONE"),
+        )
+
+    def context_factory(self, _host: str, _port: int):
+        self.context_creations += 1
+        controller = self
+
+        class HermeticOpenDContext:
+            def request_history_kline(
+                self,
+                symbol,
+                *,
+                start,
+                end,
+                ktype,
+                autype,
+                max_count,
+                page_req_key,
+                session,
+            ):
+                del ktype, autype, max_count, page_req_key, session
+                plain_symbol = symbol.split(".", 1)[-1]
+                controller.history_requests.append((plain_symbol, start, end))
+                if plain_symbol in controller.failed_symbols:
+                    return 1, f"hermetic OpenD failure for {plain_symbol}", None
+                configured = controller.history.get(plain_symbol, [])
+                rows = [
+                    {
+                        "code": symbol,
+                        "time_key": f"{session_date} 16:00:00",
+                        "open": close,
+                        "high": close,
+                        "low": close,
+                        "close": close,
+                        "volume": 1_000.0,
+                    }
+                    for session_date, close in configured
+                    if start <= session_date <= end
+                ]
+                return 0, pd.DataFrame(rows), None
+
+            def set_sync_query_connect_timeout(self, _timeout) -> None:
+                return None
+
+            def close(self) -> None:
+                controller.context_closes += 1
+
+        return HermeticOpenDContext()
+
+    def sleep(self, seconds: float) -> None:
+        self.sleep_calls.append(seconds)
+        raise AssertionError("hermetic Futu tests must not retry or sleep")
+
+
+@pytest.fixture
+def hermetic_futu(monkeypatch) -> _HermeticFutuController:
+    controller = _HermeticFutuController()
+    real_init = FutuMarketDataProvider.__init__
+
+    def hermetic_init(self, *args, **kwargs) -> None:
+        kwargs["context_factory"] = controller.context_factory
+        kwargs["sdk_loader"] = controller.sdk_loader
+        kwargs["rate_limit_max_retries"] = 0
+        kwargs["sleep_func"] = controller.sleep
+        real_init(self, *args, **kwargs)
+
+    def forbidden_network(*_args, **_kwargs):
+        controller.network_attempts += 1
+        raise AssertionError("hermetic Futu tests must not open a network connection")
+
+    monkeypatch.setattr(FutuMarketDataProvider, "__init__", hermetic_init)
+    monkeypatch.setattr(
+        "quant_system.data.providers.futu.socket.create_connection",
+        forbidden_network,
+    )
+    yield controller
+    assert controller.context_creations == controller.context_closes
+    assert controller.sleep_calls == []
+    assert controller.network_attempts == 0
+
+
+def _hermetic_futu_settings() -> Settings:
+    return Settings(futu=FutuSettings(enabled=True, use_cache=False))
 
 
 def test_account_opens_with_one_million(tmp_path, stub_prices) -> None:
@@ -1003,3 +1117,711 @@ def test_rebalance_reports_unavailable_prices_without_server_error(
     detail = response.json()["detail"]
     assert detail["code"] == "price_unavailable"
     assert "no real quote available" in detail["message"]
+
+
+def test_account_performance_rejects_unknown_range(
+    tmp_path,
+    hermetic_futu,
+) -> None:
+    client = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    )
+
+    response = client.get(
+        "/api/paper/account/performance",
+        params={"range": "1y", "granularity": "1d", "benchmarks": "SPY,QQQ"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_account_performance_reports_disabled_futu_without_provider_context(
+    tmp_path,
+    hermetic_futu,
+) -> None:
+    settings = Settings(futu=FutuSettings(enabled=False, use_cache=False))
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.get(
+        "/api/paper/account/performance",
+        params={"range": "7d", "granularity": "1d", "benchmarks": "SPY,QQQ"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    series = {item["id"]: item for item in payload["series"]}
+    assert set(series) == {"paper", "SPY", "QQQ"}
+    assert series["SPY"]["status"] == "unavailable"
+    assert series["SPY"]["error_code"] == "historical_prices_provider_unavailable"
+    assert series["QQQ"]["status"] == "unavailable"
+    assert series["QQQ"]["error_code"] == "historical_prices_provider_unavailable"
+    assert payload["coverage_complete"] is False
+    assert hermetic_futu.context_creations == 0
+
+
+@pytest.mark.parametrize(
+    ("range_key", "now", "expected_start", "expected_end"),
+    [
+        (
+            "1m",
+            datetime(2026, 3, 31, 21, 0, tzinfo=UTC),
+            "2026-02-28",
+            "2026-03-31",
+        ),
+        (
+            "3m",
+            datetime(2026, 7, 31, 21, 0, tzinfo=UTC),
+            "2026-04-30",
+            "2026-07-31",
+        ),
+    ],
+)
+def test_account_performance_uses_calendar_month_boundaries(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+    range_key,
+    now,
+    expected_start,
+    expected_end,
+) -> None:
+    hermetic_futu.history = {
+        "SPY": [(expected_end, 100.0)],
+        "QQQ": [(expected_end, 100.0)],
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: now,
+    )
+    client = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    )
+
+    response = client.get(
+        "/api/paper/account/performance",
+        params={"range": range_key, "granularity": "1d", "benchmarks": "SPY,QQQ"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["range"] == range_key
+    assert payload["requested_start"] == expected_start
+    assert payload["requested_end"] == expected_end
+
+
+def test_account_performance_aligns_paper_spy_and_qqq_on_common_sessions(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    client = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    )
+    assert client.get("/api/paper/account").status_code == 200
+    storage = PaperAccountStorage(tmp_path / "api_runs")
+    account = storage.load()
+    assert account is not None
+    opened_at = "2026-07-20T20:00:00+00:00"
+    account.created_at = opened_at
+    account.updated_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    storage.save(account)
+
+    hermetic_futu.history = {
+        "SPY": [
+            ("2026-07-21", 618.0),
+            ("2026-07-22", 620.0),
+            ("2026-07-23", 626.2),
+            ("2026-07-24", 623.1),
+            ("2026-07-27", 632.4),
+        ],
+        "QQQ": [
+            ("2026-07-21", 548.0),
+            ("2026-07-22", 550.0),
+            ("2026-07-23", 555.5),
+            ("2026-07-24", 561.0),
+            ("2026-07-27", 566.5),
+        ],
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 28, 13, 0, tzinfo=UTC),
+    )
+
+    response = client.get(
+        "/api/paper/account/performance",
+        params={"range": "7d", "granularity": "1d", "benchmarks": "SPY,QQQ"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_exists"] is True
+    assert payload["range"] == "7d"
+    assert payload["granularity"] == "1d"
+    assert payload["requested_start"] == "2026-07-21"
+    assert payload["requested_end"] == "2026-07-27"
+    assert payload["actual_start"] == "2026-07-21"
+    assert payload["actual_end"] == "2026-07-27"
+    assert payload["coverage_complete"] is True
+    series = {item["id"]: item for item in payload["series"]}
+    assert set(series) == {"paper", "SPY", "QQQ"}
+    assert [point["date"] for point in series["paper"]["points"]] == [
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23",
+        "2026-07-24",
+        "2026-07-27",
+    ]
+    assert [point["return_ratio"] for point in series["paper"]["points"]] == [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ]
+    assert series["SPY"]["points"][0]["return_ratio"] == 0.0
+    assert series["SPY"]["points"][-1]["return_ratio"] == pytest.approx(
+        632.4 / 618.0 - 1.0
+    )
+    assert series["QQQ"]["points"][0]["return_ratio"] == 0.0
+    assert series["QQQ"]["points"][-1]["return_ratio"] == pytest.approx(
+        566.5 / 548.0 - 1.0
+    )
+
+
+def test_account_performance_marks_benchmark_partial_when_peer_observes_missing_session(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    client = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    )
+    assert client.get("/api/paper/account").status_code == 200
+    storage = PaperAccountStorage(tmp_path / "api_runs")
+    account = storage.load()
+    assert account is not None
+    opened_at = "2026-07-20T20:00:00+00:00"
+    account.created_at = opened_at
+    account.updated_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    storage.save(account)
+
+    hermetic_futu.history = {
+        "SPY": [
+            ("2026-07-21", 618.0),
+            ("2026-07-22", 620.0),
+            ("2026-07-24", 623.1),
+            ("2026-07-27", 632.4),
+        ],
+        "QQQ": [
+            ("2026-07-21", 548.0),
+            ("2026-07-22", 550.0),
+            ("2026-07-23", 555.5),
+            ("2026-07-24", 561.0),
+            ("2026-07-27", 566.5),
+        ],
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 28, 13, 0, tzinfo=UTC),
+    )
+
+    response = client.get("/api/paper/account/performance")
+
+    assert response.status_code == 200
+    payload = response.json()
+    series = {item["id"]: item for item in payload["series"]}
+    expected_common_dates = [
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-24",
+        "2026-07-27",
+    ]
+    assert series["SPY"]["status"] == "partial"
+    assert series["QQQ"]["status"] == "available"
+    assert [point["date"] for point in series["SPY"]["points"]] == (
+        expected_common_dates
+    )
+    assert [point["date"] for point in series["QQQ"]["points"]] == (
+        expected_common_dates
+    )
+    assert [point["date"] for point in series["paper"]["points"]] == (
+        expected_common_dates
+    )
+    assert payload["coverage_complete"] is False
+
+
+def test_account_performance_shared_missing_open_session_is_incomplete(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000_000.0)
+    opened_at = "2026-07-20T20:00:00+00:00"
+    account.created_at = opened_at
+    account.updated_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    PaperAccountStorage(tmp_path / "api_runs").save(account)
+    shared_rows = [
+        ("2026-07-21", 100.0),
+        ("2026-07-22", 101.0),
+        ("2026-07-24", 102.0),
+        ("2026-07-27", 103.0),
+    ]
+    hermetic_futu.history = {
+        "SPY": shared_rows,
+        "QQQ": shared_rows,
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 28, 13, 0, tzinfo=UTC),
+    )
+
+    response = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    ).get("/api/paper/account/performance")
+
+    assert response.status_code == 200
+    payload = response.json()
+    series = {item["id"]: item for item in payload["series"]}
+    assert series["SPY"]["status"] == "partial"
+    assert series["QQQ"]["status"] == "partial"
+    assert all(
+        point["date"] != "2026-07-23"
+        for item in series.values()
+        for point in item["points"]
+    )
+    assert payload["coverage_complete"] is False
+
+
+def test_account_performance_weekend_and_regular_holiday_are_not_expected_sessions(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000_000.0)
+    opened_at = "2026-06-25T20:00:00+00:00"
+    account.created_at = opened_at
+    account.updated_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    PaperAccountStorage(tmp_path / "api_runs").save(account)
+    expected_sessions = [
+        "2026-06-26",
+        "2026-06-29",
+        "2026-06-30",
+        "2026-07-01",
+        "2026-07-02",
+    ]
+    hermetic_futu.history = {
+        symbol: [
+            (session_date, 100.0 + index)
+            for index, session_date in enumerate(expected_sessions)
+        ]
+        for symbol in ("SPY", "QQQ")
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 6, 13, 0, tzinfo=UTC),
+    )
+
+    response = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    ).get("/api/paper/account/performance")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requested_start"] == "2026-06-26"
+    assert payload["requested_end"] == "2026-07-02"
+    assert payload["actual_start"] == "2026-06-26"
+    assert payload["actual_end"] == "2026-07-02"
+    assert payload["coverage_complete"] is True
+    assert all(
+        [point["date"] for point in item["points"]] == expected_sessions
+        for item in payload["series"]
+    )
+
+
+def test_account_performance_replays_fills_commissions_and_daily_marks(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000_000.0)
+    opened_at = "2026-07-20T20:00:00+00:00"
+    account.created_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    account.apply_fill(
+        ExecutionFill(
+            fill_id="fill-performance",
+            order_id="order-performance",
+            timestamp=pd.Timestamp("2026-07-23T15:00:00Z"),
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            quantity=100.0,
+            fill_price=100.0,
+            gross_value=10_000.0,
+            commission=10.0,
+        ),
+        source="manual",
+        price_kind="futu_snapshot",
+    )
+    fill_at = "2026-07-23T15:00:00+00:00"
+    account.updated_at = fill_at
+    account.ledger[-1] = account.ledger[-1].model_copy(update={"timestamp": fill_at})
+    PaperAccountStorage(tmp_path / "api_runs").save(account)
+
+    closes = {
+        "SPY": [620.0, 626.2, 623.1, 632.4],
+        "QQQ": [550.0, 555.5, 561.0, 566.5],
+        "AAPL": [100.0, 102.0, 105.0, 110.0],
+    }
+    sessions = ["2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27"]
+    hermetic_futu.history = {
+        symbol: list(zip(sessions, values, strict=True))
+        for symbol, values in closes.items()
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 28, 13, 0, tzinfo=UTC),
+    )
+    client = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    )
+
+    response = client.get("/api/paper/account/performance")
+
+    assert response.status_code == 200
+    paper = next(item for item in response.json()["series"] if item["id"] == "paper")
+    assert paper["status"] == "available"
+    assert isinstance(paper["as_of"], str) and paper["as_of"]
+    assert [point["equity"] for point in paper["points"]] == pytest.approx(
+        [1_000_000.0, 1_000_190.0, 1_000_490.0, 1_000_990.0]
+    )
+    assert paper["points"][-1]["return_ratio"] == pytest.approx(0.00099)
+
+
+def test_account_performance_neutralizes_external_cash_before_reinvestment_and_at_close(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000.0)
+    opened_at = "2026-07-22T13:00:00+00:00"
+    account.created_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    account.apply_fill(
+        ExecutionFill(
+            fill_id="fill-before-deposit",
+            order_id="order-before-deposit",
+            timestamp=pd.Timestamp("2026-07-22T14:00:00Z"),
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            quantity=10.0,
+            fill_price=100.0,
+            gross_value=1_000.0,
+            commission=0.0,
+        ),
+        source="manual",
+        price_kind="futu_snapshot",
+    )
+    account.ledger[-1] = account.ledger[-1].model_copy(
+        update={"timestamp": "2026-07-22T14:00:00+00:00"}
+    )
+    account.cash += 1_000.0
+    account.sleeve_cash["manual"] += 1_000.0
+    account.record_event(kind="deposit", note="external paper cash")
+    account.ledger[-1] = account.ledger[-1].model_copy(
+        update={"timestamp": "2026-07-23T13:00:00+00:00"}
+    )
+    account.apply_fill(
+        ExecutionFill(
+            fill_id="fill-after-deposit",
+            order_id="order-after-deposit",
+            timestamp=pd.Timestamp("2026-07-23T14:00:00Z"),
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            quantity=10.0,
+            fill_price=100.0,
+            gross_value=1_000.0,
+            commission=0.0,
+        ),
+        source="manual",
+        price_kind="futu_snapshot",
+    )
+    account.updated_at = "2026-07-23T14:00:00+00:00"
+    account.ledger[-1] = account.ledger[-1].model_copy(
+        update={"timestamp": account.updated_at}
+    )
+    account.cash += 1_000.0
+    account.sleeve_cash["manual"] += 1_000.0
+    account.record_event(kind="deposit", note="cash added at the completed close")
+    account.updated_at = "2026-07-24T20:00:00+00:00"
+    account.ledger[-1] = account.ledger[-1].model_copy(
+        update={"timestamp": account.updated_at}
+    )
+    PaperAccountStorage(tmp_path / "api_runs").save(account)
+
+    sessions = ["2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27"]
+    closes = {
+        "SPY": [100.0, 100.0, 100.0, 100.0],
+        "QQQ": [100.0, 100.0, 100.0, 100.0],
+        "AAPL": [100.0, 110.0, 121.0, 121.0],
+    }
+
+    hermetic_futu.history = {
+        symbol: list(zip(sessions, values, strict=True))
+        for symbol, values in closes.items()
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 28, 13, 0, tzinfo=UTC),
+    )
+
+    response = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    ).get("/api/paper/account/performance")
+
+    assert response.status_code == 200
+    paper = next(
+        item for item in response.json()["series"] if item["id"] == "paper"
+    )
+    assert paper["status"] == "available"
+    assert [point["equity"] for point in paper["points"]] == pytest.approx(
+        [1_000.0, 2_200.0, 3_420.0, 3_420.0]
+    )
+    assert [point["return_ratio"] for point in paper["points"]] == pytest.approx(
+        [0.0, 0.1, 0.21, 0.21]
+    )
+
+
+def test_account_performance_keeps_qqq_when_spy_is_unavailable(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    client = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    )
+    assert client.get("/api/paper/account").status_code == 200
+    storage = PaperAccountStorage(tmp_path / "api_runs")
+    account = storage.load()
+    assert account is not None
+    opened_at = "2026-07-20T20:00:00+00:00"
+    account.created_at = opened_at
+    account.updated_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    storage.save(account)
+
+    hermetic_futu.failed_symbols = {"SPY"}
+    hermetic_futu.history = {
+        "QQQ": [
+            ("2026-07-21", 548.0),
+            ("2026-07-22", 550.0),
+            ("2026-07-23", 555.5),
+            ("2026-07-24", 561.0),
+            ("2026-07-27", 566.5),
+        ]
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 28, 13, 0, tzinfo=UTC),
+    )
+
+    response = client.get("/api/paper/account/performance")
+
+    assert response.status_code == 200
+    payload = response.json()
+    series = {item["id"]: item for item in payload["series"]}
+    assert series["SPY"]["status"] == "unavailable"
+    assert series["SPY"]["error_code"] == "historical_prices_provider_error"
+    assert series["SPY"]["points"] == []
+    assert series["QQQ"]["status"] == "available"
+    assert series["QQQ"]["source"] == "futu"
+    assert series["paper"]["status"] == "available"
+    assert payload["coverage_complete"] is False
+    assert "SPY:historical_prices_provider_error" in payload["warnings"]
+
+
+def test_account_performance_fails_only_paper_when_position_history_is_missing(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000_000.0)
+    opened_at = "2026-07-20T20:00:00+00:00"
+    account.created_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    account.apply_fill(
+        ExecutionFill(
+            fill_id="fill-missing-history",
+            order_id="order-missing-history",
+            timestamp=pd.Timestamp("2026-07-23T15:00:00Z"),
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            quantity=10.0,
+            fill_price=100.0,
+            gross_value=1_000.0,
+            commission=0.0,
+        ),
+        source="manual",
+        price_kind="futu_snapshot",
+    )
+    fill_at = "2026-07-23T15:00:00+00:00"
+    account.updated_at = fill_at
+    account.ledger[-1] = account.ledger[-1].model_copy(update={"timestamp": fill_at})
+    PaperAccountStorage(tmp_path / "api_runs").save(account)
+
+    sessions = [
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23",
+        "2026-07-24",
+        "2026-07-27",
+    ]
+    benchmark_closes = [99.0, 100.0, 101.0, 102.0, 103.0]
+    hermetic_futu.failed_symbols = {"AAPL"}
+    hermetic_futu.history = {
+        symbol: list(zip(sessions, benchmark_closes, strict=True))
+        for symbol in ("SPY", "QQQ")
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 28, 13, 0, tzinfo=UTC),
+    )
+    client = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    )
+
+    response = client.get("/api/paper/account/performance")
+
+    assert response.status_code == 200
+    payload = response.json()
+    series = {item["id"]: item for item in payload["series"]}
+    assert series["paper"]["status"] == "unavailable"
+    assert series["paper"]["error_code"] == "paper_position_history_unavailable"
+    assert series["paper"]["points"] == []
+    assert series["SPY"]["status"] == "available"
+    assert series["QQQ"]["status"] == "available"
+    assert payload["actual_start"] == "2026-07-21"
+    assert payload["actual_end"] == "2026-07-27"
+    assert payload["coverage_complete"] is False
+    assert "paper:paper_position_history_unavailable" in payload["warnings"]
+
+
+def test_account_performance_does_not_forward_fill_a_missing_held_session(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000_000.0)
+    opened_at = "2026-07-20T20:00:00+00:00"
+    account.created_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    account.apply_fill(
+        ExecutionFill(
+            fill_id="fill-session-gap",
+            order_id="order-session-gap",
+            timestamp=pd.Timestamp("2026-07-23T15:00:00Z"),
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            quantity=10.0,
+            fill_price=100.0,
+            gross_value=1_000.0,
+            commission=0.0,
+        ),
+        source="manual",
+        price_kind="futu_snapshot",
+    )
+    fill_at = "2026-07-23T15:00:00+00:00"
+    account.updated_at = fill_at
+    account.ledger[-1] = account.ledger[-1].model_copy(update={"timestamp": fill_at})
+    PaperAccountStorage(tmp_path / "api_runs").save(account)
+
+    benchmark_rows = [
+        ("2026-07-21", 99.0),
+        ("2026-07-22", 100.0),
+        ("2026-07-23", 101.0),
+        ("2026-07-24", 102.0),
+        ("2026-07-27", 103.0),
+    ]
+    hermetic_futu.history = {
+        "SPY": benchmark_rows,
+        "QQQ": benchmark_rows,
+        "AAPL": [
+            ("2026-07-23", 100.0),
+            ("2026-07-27", 103.0),
+        ],
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 28, 13, 0, tzinfo=UTC),
+    )
+
+    response = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    ).get("/api/paper/account/performance")
+
+    assert response.status_code == 200
+    payload = response.json()
+    series = {item["id"]: item for item in payload["series"]}
+    assert series["paper"]["status"] == "unavailable"
+    assert series["paper"]["error_code"] == "paper_position_history_unavailable"
+    assert series["paper"]["points"] == []
+    assert series["SPY"]["status"] == "available"
+    assert series["QQQ"]["status"] == "available"
+    assert payload["coverage_complete"] is False
+
+
+def test_account_performance_marks_partial_when_account_starts_inside_window(
+    tmp_path,
+    monkeypatch,
+    hermetic_futu,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000_000.0)
+    opened_at = "2026-07-24T15:00:00+00:00"
+    account.created_at = opened_at
+    account.updated_at = opened_at
+    account.ledger[0] = account.ledger[0].model_copy(update={"timestamp": opened_at})
+    PaperAccountStorage(tmp_path / "api_runs").save(account)
+
+    closes = {
+        "SPY": [618.0, 620.0, 626.2, 623.1, 632.4],
+        "QQQ": [548.0, 550.0, 555.5, 561.0, 566.5],
+    }
+    sessions = [
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23",
+        "2026-07-24",
+        "2026-07-27",
+    ]
+
+    hermetic_futu.history = {
+        symbol: list(zip(sessions, values, strict=True))
+        for symbol, values in closes.items()
+    }
+    monkeypatch.setattr(
+        "quant_system.execution.account_performance._utc_now",
+        lambda: datetime(2026, 7, 28, 13, 0, tzinfo=UTC),
+    )
+    client = TestClient(
+        create_app(settings=_hermetic_futu_settings(), output_dir=tmp_path)
+    )
+
+    response = client.get("/api/paper/account/performance")
+
+    assert response.status_code == 200
+    payload = response.json()
+    series = {item["id"]: item for item in payload["series"]}
+    assert payload["actual_start"] == "2026-07-24"
+    assert payload["actual_end"] == "2026-07-27"
+    assert payload["coverage_complete"] is False
+    assert series["paper"]["status"] == "partial"
+    assert [point["date"] for point in series["paper"]["points"]] == [
+        "2026-07-24",
+        "2026-07-27",
+    ]
+    assert series["SPY"]["points"][0]["return_ratio"] == 0.0
+    assert series["QQQ"]["points"][0]["return_ratio"] == 0.0
+    assert "paper:partial_coverage" in payload["warnings"]

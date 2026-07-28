@@ -219,6 +219,50 @@ class BriefRepository:
             snapshot=_snapshot_from_row(row[5:]),
         )
 
+    def list_issues(
+        self,
+        *,
+        locale: str,
+        limit: int = 30,
+        offset: int = 0,
+    ) -> tuple[list[BriefIssue], int]:
+        database = self._require_database()
+        safe_limit = max(0, min(int(limit), 100))
+        safe_offset = max(0, int(offset))
+        try:
+            with database.connect() as conn, conn.transaction():
+                total_row = conn.execute(
+                    f"""
+                    SELECT count(*)
+                    FROM {SCHEMA}.brief_issues AS i
+                    WHERE i.owner_user_id = %s
+                      AND i.locale = %s
+                    """,
+                    (ROOT_USER_ID, locale),
+                ).fetchone()
+                if total_row is None:
+                    raise BriefDatabaseUnavailable("brief issue count failed")
+                rows = conn.execute(
+                    f"""
+                    SELECT i.issue_id::text,
+                           i.public_id,
+                           i.issue_date,
+                           i.locale,
+                           i.status
+                    FROM {SCHEMA}.brief_issues AS i
+                    WHERE i.owner_user_id = %s
+                      AND i.locale = %s
+                    ORDER BY i.issue_date DESC, i.updated_at DESC, i.issue_id DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    (ROOT_USER_ID, locale, safe_limit, safe_offset),
+                ).fetchall()
+        except DatabaseUnavailable as exc:
+            raise BriefDatabaseUnavailable(str(exc)) from exc
+        except psycopg.Error as exc:
+            raise BriefDatabaseUnavailable(str(exc)) from exc
+        return [_issue_from_row(row) for row in rows], int(total_row[0])
+
     def _require_database(self) -> Database:
         database = get_database(self._settings)
         if database is None:

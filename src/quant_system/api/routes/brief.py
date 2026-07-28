@@ -9,6 +9,7 @@ from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.brief import (
     BriefGenerateRequest,
     BriefIssueEnvelopeResponse,
+    BriefIssueListResponse,
     BriefIssueResponse,
     BriefSnapshotResponse,
 )
@@ -21,6 +22,42 @@ from quant_system.brief.repository import (
 from quant_system.brief.service import BriefService, BriefSnapshotMismatch
 
 router = APIRouter()
+
+
+@router.get(
+    "/brief/issues",
+    response_model=BriefIssueListResponse,
+)
+def list_brief_issues(
+    settings: SettingsDep,
+    locale: Annotated[str, Query()] = "zh",
+    limit: Annotated[int, Query(ge=0, le=100)] = 30,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> BriefIssueListResponse:
+    service = BriefService(BriefRepository(settings))
+    try:
+        items, total = service.list_issues(
+            locale=locale,
+            limit=limit,
+            offset=offset,
+        )
+    except BriefDatabaseUnavailable as exc:
+        raise _database_unavailable_503() from exc
+    return BriefIssueListResponse(
+        items=[
+            BriefIssueResponse(
+                issue_id=item.issue_id,
+                public_id=item.public_id,
+                issue_date=item.issue_date,
+                locale=item.locale,
+                status=item.status,
+            )
+            for item in items
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post(

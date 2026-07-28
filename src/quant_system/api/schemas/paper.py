@@ -311,6 +311,10 @@ class AccountPositionResponse(BaseModel):
     source_breakdown: dict[str, float] = Field(default_factory=dict)
     price_kind: str
     price_as_of: str | None = None
+    previous_close: float | None = None
+    day_change_ratio: float | None = None
+    day_change_source: str | None = None
+    day_change_as_of: str | None = None
 
 
 class PendingAccountOrderResponse(BaseModel):
@@ -401,6 +405,40 @@ class PaperAccountEquityCurveResponse(BaseModel):
     limit: int
     offset: int
     points: list[PaperAccountEquityCurvePointResponse]
+
+
+class PaperAccountPerformancePointResponse(BaseModel):
+    date: str
+    return_ratio: float
+    equity: float | None = None
+    close: float | None = None
+
+
+class PaperAccountPerformanceSeriesResponse(BaseModel):
+    id: str
+    kind: Literal["paper", "benchmark"]
+    label: str
+    symbol: str | None = None
+    status: Literal["available", "partial", "unavailable"]
+    source: str | None = None
+    as_of: str | None = None
+    error_code: str | None = None
+    points: list[PaperAccountPerformancePointResponse] = Field(default_factory=list)
+
+
+class PaperAccountPerformanceResponse(BaseModel):
+    account_id: str
+    account_exists: bool
+    range: Literal["7d", "1m", "3m"]
+    granularity: Literal["1d"]
+    benchmarks: list[Literal["SPY", "QQQ"]]
+    requested_start: str
+    requested_end: str
+    actual_start: str | None = None
+    actual_end: str | None = None
+    coverage_complete: bool
+    series: list[PaperAccountPerformanceSeriesResponse]
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PaperAccountSnapshotResponse(BaseModel):

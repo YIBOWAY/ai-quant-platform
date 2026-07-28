@@ -2,6 +2,9 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { BriefArchiveControl } from "@/components/brief/BriefArchiveControl";
+import { BriefDailyChange } from "@/components/brief/BriefDailyChange";
+import { BriefPerformanceChart } from "@/components/brief/BriefPerformanceChart";
+import { BriefPerformanceRangeSelector } from "@/components/brief/BriefPerformanceRangeSelector";
 import {
   PaperEquityFigureState,
   resolvePaperEquityAvailability,
@@ -12,19 +15,20 @@ import {
   getAgentCandidates,
   getBacktests,
   getFactors,
+  getBriefIssueList,
   getLatestBriefIssue,
   getMarketDataHistory,
   getNewsItems,
   getOptionsDailyScanStatus,
   getPaperAccount,
   getPaperAccountEquityCurve,
+  getPaperAccountPerformance,
   getPaperRuns,
   getRecentRuns,
   getSymbols,
   type AccountPositionResponse,
   type MarketDataHistoryResponse,
   type OptionsDailyScanStatusResponse,
-  type PaperAccountEquityCurveResponse,
   type RecentRun,
 } from "@/lib/api";
 import {
@@ -37,7 +41,13 @@ import { localizePath } from "@/lib/locale";
 import type { BriefArchivePayload, BriefSourceWatermark } from "@/lib/briefArchive";
 import { buildBriefAiNewsDigest } from "@/lib/briefAiNewsDigest";
 import { briefDateKey } from "@/lib/briefDate";
-import { getCachedHealth } from "@/lib/serverApi";
+import {
+  buildBriefPerformanceSnapshot,
+  parseBriefPerformanceRange,
+  resolveBriefArchiveBlockedReason,
+  type BriefPerformanceRange,
+} from "@/lib/briefPerformance";
+import { getCachedSettings } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -65,23 +75,23 @@ const copy = {
     avg: "Avg",
     last: "Last",
     marketValue: "Market value",
-    weight: "Weight",
+    dayChange: "Daily",
     emptyPositions: "No current positions",
     accountSource: "source: local paper account engine",
     accountUnavailable: "Paper account unavailable; factual archive is blocked.",
     equityCurveUnavailable:
-      "Paper account equity curve unavailable; factual archive is blocked.",
+      "Paper account performance data unavailable; factual archive is blocked.",
     backtest: "Paper Return",
-    backtestEn: "ONE-WEEK PAPER RETURN",
-    figureTitle: "Figure 1 · paper account one-week return from account ledger",
-    chartSource: "source: /api/paper/account/equity-curve account ledger + current quote",
+    backtestEn: "PAPER VS SPY · QQQ",
+    figureTitle: "Figure 1 · cumulative return rebased to 0%",
+    chartSource: "source: paper-account ledger + Futu QFQ daily closes",
     latestRun: "paper account",
-    cumulativeReturn: "one-week return",
-    sharpe: "points",
+    cumulativeReturn: "selected return",
+    sharpe: "sessions",
     maxDrawdown: "latest equity",
-    chartNote: "Historical points are replayed from the paper-account ledger; the final mark uses the latest paper quote.",
-    noChart: "No paper account equity curve has been written yet.",
-    chartUnavailable: "Paper account equity data unavailable.",
+    chartNote: "Paper is replayed from the account ledger; SPY and QQQ use the same completed Futu trading sessions. Every visible line starts at 0%.",
+    noChart: "No aligned paper / SPY / QQQ sessions are available.",
+    chartUnavailable: "Paper-account performance data unavailable.",
     market: "Market",
     marketEn: "THE MARKET",
     marketSummary: "Market summary",
@@ -99,6 +109,9 @@ const copy = {
     footer: "private quant research journal · paper trading · not investment advice · printed locally",
     liveTrading: "live trading",
     neverActive: "never implied active",
+    on: "on",
+    off: "off",
+    unavailable: "unavailable",
   },
   zh: {
     stripTitle: "每日晨报",
@@ -124,22 +137,22 @@ const copy = {
     avg: "均价",
     last: "现价",
     marketValue: "市值",
-    weight: "权重",
+    dayChange: "日涨跌",
     emptyPositions: "当前空仓",
     accountSource: "资料来源：本地模拟盘引擎",
     accountUnavailable: "模拟账户不可用，已禁止保存事实归档。",
-    equityCurveUnavailable: "模拟盘权益曲线不可用，已禁止保存事实归档。",
+    equityCurveUnavailable: "模拟盘收益数据不可用，已禁止保存事实归档。",
     backtest: "模拟盘收益",
-    backtestEn: "ONE-WEEK PAPER RETURN",
-    figureTitle: "图一 · 模拟盘近 7 日权益曲线",
-    chartSource: "来源：/api/paper/account/equity-curve 账户账本 + 当前报价",
+    backtestEn: "PAPER VS SPY · QQQ",
+    figureTitle: "图一 · 累计收益统一归零比较",
+    chartSource: "来源：模拟账户账本 + Futu 前复权日线收盘",
     latestRun: "模拟账户",
-    cumulativeReturn: "一周收益",
-    sharpe: "点数",
+    cumulativeReturn: "所选区间收益",
+    sharpe: "交易日",
     maxDrawdown: "最新权益",
-    chartNote: "历史点由模拟账户账本回放，最后一点使用最新纸面报价。",
-    noChart: "尚未写入模拟盘权益曲线。",
-    chartUnavailable: "模拟盘权益数据不可用。",
+    chartNote: "模拟盘由账户账本逐日回放；SPY 与 QQQ 使用相同的 Futu 已完成交易日，三条可用曲线首日统一为 0%。",
+    noChart: "暂无可对齐的模拟盘、SPY 与 QQQ 交易日。",
+    chartUnavailable: "模拟盘收益数据不可用。",
     market: "市场",
     marketEn: "THE MARKET",
     marketSummary: "市场概括",
@@ -157,11 +170,13 @@ const copy = {
     footer: "一人量化研究刊物 · 模拟盘 · 非投资建议 · 印刷于本地",
     liveTrading: "live trading",
     neverActive: "never implied active",
+    on: "开",
+    off: "关",
+    unavailable: "不可用",
   },
 } as const;
 
 type BriefCopy = (typeof copy)["en"] | (typeof copy)["zh"];
-type ChartPoint = { x: string; y: number };
 type MarketSnapshot = {
   symbol: "SPY" | "QQQ" | "SOXX" | "IGV";
   last?: number;
@@ -218,28 +233,6 @@ function formatLogTime(value: string | null | undefined, locale: "en" | "zh") {
   }).format(date);
 }
 
-function normalizePaperEquityCurve(curve: PaperAccountEquityCurveResponse): ChartPoint[] {
-  const points = curve.points
-    .map((row) => ({
-      x: row.timestamp,
-      y: row.equity,
-    }))
-    .filter((row) => {
-      const time = new Date(row.x).getTime();
-      return Boolean(row.x) && Number.isFinite(row.y) && !Number.isNaN(time);
-    })
-    .sort((a, b) => new Date(a.x).getTime() - new Date(b.x).getTime())
-    .slice(-24);
-  if (!points.length) {
-    return [];
-  }
-  const first = points[0]?.y;
-  if (!first) {
-    return [];
-  }
-  return points.map((row) => ({ x: row.x, y: (row.y / first - 1) * 100 }));
-}
-
 function formatSignedPointReturn(value: number | undefined) {
   if (value === undefined || Number.isNaN(value)) {
     return "--";
@@ -252,6 +245,17 @@ function formatPrice(value: number | undefined) {
     return "--";
   }
   return `$${value.toFixed(2)}`;
+}
+
+function performanceRangeLabel(
+  range: BriefPerformanceRange,
+  locale: "en" | "zh",
+) {
+  const labels =
+    locale === "zh"
+      ? { "7d": "近 7 日", "1m": "近一月", "3m": "近三月" }
+      : { "7d": "7-day", "1m": "1-month", "3m": "3-month" };
+  return labels[range];
 }
 
 function safeExternalUrl(value: string | null | undefined) {
@@ -314,21 +318,23 @@ function buildMarketNote(markets: MarketSnapshot[], text: BriefCopy) {
 function buildLede({
   text,
   equity,
-  paperWeekReturn,
+  paperReturn,
+  performanceLabel,
   marketNote,
   digestCount,
 }: {
   text: BriefCopy;
   equity: string;
-  paperWeekReturn: string;
+  paperReturn: string;
+  performanceLabel: string;
   marketNote: string;
   digestCount: number;
 }) {
   if (text === copy.zh) {
     return (
       <>
-        今晨，模拟盘权益报 <strong>{equity}</strong>，近 7 日权益收益{" "}
-        <strong>{paperWeekReturn}</strong>；平台市场手记：{marketNote} 另整理{" "}
+        今晨，模拟盘权益报 <strong>{equity}</strong>，{performanceLabel}收益{" "}
+        <strong>{paperReturn}</strong>；平台市场手记：{marketNote} 另整理{" "}
         <strong>{formatCount(digestCount)}</strong> 条 AI 业内情报。
       </>
     );
@@ -336,7 +342,7 @@ function buildLede({
   return (
     <>
       This morning, paper equity prints at <strong>{equity}</strong> with a{" "}
-      <strong>{paperWeekReturn}</strong> seven-day paper return; platform market note: {marketNote} It has set{" "}
+      <strong>{paperReturn}</strong> {performanceLabel} paper return; platform market note: {marketNote} It has set{" "}
       <strong>{formatCount(digestCount)}</strong> AI intelligence items in type.
     </>
   );
@@ -345,20 +351,22 @@ function buildLede({
 function buildArchivedLede({
   locale,
   equity,
-  paperWeekReturn,
+  paperReturn,
+  performanceLabel,
   marketNote,
   digestCount,
 }: {
   locale: "en" | "zh";
   equity: string;
-  paperWeekReturn: string;
+  paperReturn: string;
+  performanceLabel: string;
   marketNote: string;
   digestCount: number;
 }) {
   if (locale === "zh") {
-    return `今晨，模拟盘权益报 ${equity}，近 7 日权益收益 ${paperWeekReturn}；平台市场手记：${marketNote} 另整理 ${formatCount(digestCount)} 条 AI 业内情报。`;
+    return `今晨，模拟盘权益报 ${equity}，${performanceLabel}收益 ${paperReturn}；平台市场手记：${marketNote} 另整理 ${formatCount(digestCount)} 条 AI 业内情报。`;
   }
-  return `This morning, paper equity prints at ${equity} with a ${paperWeekReturn} seven-day paper return. Platform market note: ${marketNote} It has set ${formatCount(digestCount)} AI intelligence items in type.`;
+  return `This morning, paper equity prints at ${equity} with a ${paperReturn} ${performanceLabel} paper return. Platform market note: ${marketNote} It has set ${formatCount(digestCount)} AI intelligence items in type.`;
 }
 
 function finiteNumber(value: number, fallback = 0) {
@@ -393,10 +401,10 @@ function uniqueWarnings(values: Array<string | null | undefined>) {
 
 function SectionHeader({ title, en }: { title: string; en: string }) {
   return (
-    <div className="mb-4 flex items-baseline gap-3">
-      <h2 className="font-editorial-display text-2xl leading-8 text-ink">{title}</h2>
+    <div className="mb-4 flex flex-col items-start gap-1 sm:flex-row sm:items-baseline sm:gap-3">
+      <h2 className="shrink-0 font-editorial-display text-2xl leading-8 text-ink">{title}</h2>
       <span className="font-editorial-caps text-sm text-ink-secondary">{en}</span>
-      <span className="h-px flex-1 bg-editorial-rule" />
+      <span className="mt-2 h-px w-full flex-1 bg-editorial-rule sm:mt-0" />
     </div>
   );
 }
@@ -418,7 +426,7 @@ function AccountTable({
             <th className="px-3 py-2">{text.avg}</th>
             <th className="px-3 py-2">{text.last}</th>
             <th className="px-3 py-2">{text.marketValue}</th>
-            <th className="py-2 pl-3">{text.weight}</th>
+            <th className="py-2 pl-3">{text.dayChange}</th>
           </tr>
         </thead>
         <tbody>
@@ -432,7 +440,9 @@ function AccountTable({
                 <td className="px-3 py-2">{formatMoney(position.avg_cost)}</td>
                 <td className="px-3 py-2">{formatMoney(position.last_price)}</td>
                 <td className="px-3 py-2">{formatMoney(position.market_value)}</td>
-                <td className="py-2 pl-3 text-ink-secondary">{formatPercent(position.weight, 3)}</td>
+                <td className="py-2 pl-3">
+                  <BriefDailyChange value={position.day_change_ratio} />
+                </td>
               </tr>
             ))
           ) : (
@@ -447,88 +457,6 @@ function AccountTable({
       <div className="mt-2 text-right font-data-mono text-[11px] text-ink-secondary">
         {text.accountSource}
       </div>
-    </div>
-  );
-}
-
-function EditorialChart({
-  series,
-  benchmark,
-  text,
-}: {
-  series: ChartPoint[];
-  benchmark: ChartPoint[];
-  text: BriefCopy;
-}) {
-  const all = [...series, ...benchmark];
-  if (!all.length) {
-    return (
-      <div className="flex h-[280px] items-center justify-center border border-editorial-rule bg-paper-surface font-data-mono text-sm text-ink-secondary">
-        {text.noChart}
-      </div>
-    );
-  }
-
-  const width = 800;
-  const height = 240;
-  const padX = 38;
-  const padY = 24;
-  const yValues = all.map((point) => point.y);
-  const minY = Math.min(0, ...yValues);
-  const maxY = Math.max(1, ...yValues);
-  const spanY = maxY - minY || 1;
-  const maxLen = Math.max(series.length, benchmark.length, 2);
-  const xFor = (index: number) => padX + (index / (maxLen - 1)) * (width - padX * 2);
-  const yFor = (value: number) => height - padY - ((value - minY) / spanY) * (height - padY * 2);
-  const pointsFor = (points: ChartPoint[]) =>
-    points.map((point, index) => `${xFor(index).toFixed(1)},${yFor(point.y).toFixed(1)}`).join(" ");
-  const gridRows = [0, 0.25, 0.5, 0.75, 1].map((ratio) => minY + spanY * ratio);
-
-  return (
-    <div className="border border-editorial-rule bg-paper-surface p-3">
-      <svg aria-label={text.figureTitle} className="h-[280px] w-full" role="img" viewBox={`0 0 ${width} ${height}`}>
-        {gridRows.map((value) => (
-          <g key={value.toFixed(4)}>
-            <line
-              className="stroke-editorial-rule"
-              strokeOpacity="0.65"
-              x1={padX}
-              x2={width - padX}
-              y1={yFor(value)}
-              y2={yFor(value)}
-            />
-            <text className="fill-ink-secondary font-data-mono text-[10px]" x={padX - 8} y={yFor(value) + 3} textAnchor="end">
-              {value.toFixed(1)}%
-            </text>
-          </g>
-        ))}
-        {benchmark.length ? (
-          <polyline
-            className="fill-none stroke-editorial-down"
-            points={pointsFor(benchmark)}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-          />
-        ) : null}
-        {series.length ? (
-          <polyline
-            className="fill-none stroke-editorial-accent"
-            points={pointsFor(series)}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2.5"
-          />
-        ) : null}
-        <text className="fill-editorial-accent font-data-mono text-[11px] font-bold" x={width - 92} y={28}>
-          paper
-        </text>
-        {benchmark.length ? (
-          <text className="fill-editorial-down font-data-mono text-[11px] font-bold" x={width - 92} y={44}>
-            benchmark
-          </text>
-        ) : null}
-      </svg>
     </div>
   );
 }
@@ -724,18 +652,31 @@ function DigestArticle({
   );
 }
 
-export default async function BriefPage() {
+type BriefPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function BriefPage({ searchParams }: BriefPageProps) {
+  const query = await searchParams;
+  const selectedRange = parseBriefPerformanceRange(query?.range);
+  const selectedPerformanceRequest = getPaperAccountPerformance(selectedRange);
+  const masterPerformanceRequest =
+    selectedRange === "3m"
+      ? selectedPerformanceRequest
+      : getPaperAccountPerformance("3m");
   const today = new Date();
   const marketStart = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
   const locale = await getServerLocale();
   const [
-    health,
+    settings,
     symbols,
     factors,
     backtests,
     paperRuns,
     paperAccount,
     paperEquityCurve,
+    selectedPerformance,
+    masterPerformance,
     recentRuns,
     candidates,
     digest,
@@ -745,14 +686,17 @@ export default async function BriefPage() {
     soxxHistory,
     igvHistory,
     archivedEnvelope,
+    archiveList,
   ] = await Promise.all([
-    getCachedHealth(),
+    getCachedSettings(),
     getSymbols(),
     getFactors(),
     getBacktests(),
     getPaperRuns(),
     getPaperAccount(),
     getPaperAccountEquityCurve(7),
+    selectedPerformanceRequest,
+    masterPerformanceRequest,
     getRecentRuns(8),
     getAgentCandidates(),
     getNewsItems({ take: 6, preference: "auto" }),
@@ -762,8 +706,18 @@ export default async function BriefPage() {
     getMarketDataHistory("SOXX", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getMarketDataHistory("IGV", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getLatestBriefIssue({ locale }),
+    getBriefIssueList({ locale, limit: 12 }),
   ]);
   const text = copy[locale];
+  const settingsSafety =
+    settings.apiError || !settings.safety ? null : settings.safety;
+  const settingsStatus = settingsSafety ? "available" : "unavailable";
+  const liveTradingStatus =
+    settingsSafety === null
+      ? text.unavailable
+      : settingsSafety.live_trading_enabled
+        ? text.on
+        : text.off;
   const issueDate = briefDateKey(today);
   const capturedAt = new Date().toISOString();
   const paperEquityAvailability = resolvePaperEquityAvailability({
@@ -772,9 +726,9 @@ export default async function BriefPage() {
     accountBlockedLabel: text.accountUnavailable,
     curveBlockedLabel: text.equityCurveUnavailable,
   });
-  const paperCurve = paperEquityAvailability.unavailableReason
-    ? []
-    : normalizePaperEquityCurve(paperEquityCurve);
+  const selectedPaperSeries = selectedPerformance.series.find(
+    (series) => series.id === "paper",
+  );
   const marketSnapshots = [
     marketSnapshot("SPY", spyHistory),
     marketSnapshot("QQQ", qqqHistory),
@@ -788,7 +742,11 @@ export default async function BriefPage() {
     optionsStatus,
     locale,
   });
-  const paperWeekReturn = paperCurve.at(-1)?.y;
+  const paperPeriodReturn =
+    selectedPaperSeries?.points.at(-1)?.return_ratio !== undefined
+      ? selectedPaperSeries.points.at(-1)!.return_ratio * 100
+      : undefined;
+  const rangeLabel = performanceRangeLabel(selectedRange, locale);
   const { items: digestItems, source: aiNewsSource } = buildBriefAiNewsDigest(digest);
   const archivedIssuePublicId =
     archivedEnvelope.issue.status !== "unavailable" &&
@@ -798,13 +756,15 @@ export default async function BriefPage() {
       ? archivedEnvelope.issue.public_id
       : null;
   const archiveWarnings = uniqueWarnings([
-    health.apiError,
+    settings.apiError,
     symbols.apiError,
     factors.apiError,
     backtests.apiError,
     paperRuns.apiError,
     paperAccount.apiError,
     paperEquityCurve.apiError,
+    selectedPerformance.apiError,
+    masterPerformance.apiError,
     recentRuns.apiError,
     candidates.apiError,
     digest.apiError,
@@ -814,9 +774,14 @@ export default async function BriefPage() {
     soxxHistory.apiError,
     igvHistory.apiError,
     ...(paperAccount.warnings ?? []),
+    ...selectedPerformance.warnings,
+    ...masterPerformance.warnings,
     ...digest.warnings,
   ]);
-  const archiveBlockedReason = paperEquityAvailability.blockedReason;
+  const archiveBlockedReason = resolveBriefArchiveBlockedReason(
+    paperEquityAvailability.blockedReason,
+    masterPerformance.apiError,
+  );
   const archivePayload: BriefArchivePayload = {
     schema_version: "brief_snapshot_v1",
     title: text.title,
@@ -826,7 +791,8 @@ export default async function BriefPage() {
     lede: buildArchivedLede({
       locale,
       equity: paperAccount.apiError ? "--" : formatMoney(paperAccount.equity),
-      paperWeekReturn: formatSignedPointReturn(paperWeekReturn),
+      paperReturn: formatSignedPointReturn(paperPeriodReturn),
+      performanceLabel: rangeLabel,
       marketNote,
       digestCount: digestItems.length,
     }),
@@ -854,6 +820,20 @@ export default async function BriefPage() {
           unrealized_pnl: finiteNumber(position.unrealized_pnl),
           price_kind: position.price_kind || "unavailable",
           price_as_of: isoTimestamp(position.price_as_of),
+          previous_close:
+            position.previous_close !== null &&
+            position.previous_close !== undefined &&
+            Number.isFinite(position.previous_close)
+              ? position.previous_close
+              : null,
+          day_change_ratio:
+            position.day_change_ratio !== null &&
+            position.day_change_ratio !== undefined &&
+            Number.isFinite(position.day_change_ratio)
+              ? position.day_change_ratio
+              : null,
+          day_change_source: position.day_change_source ?? null,
+          day_change_as_of: isoTimestamp(position.day_change_as_of),
         })),
     },
     paper_equity: paperEquityCurve.points
@@ -889,6 +869,14 @@ export default async function BriefPage() {
       summary: entry.summary ?? null,
     })),
     warnings: archiveWarnings,
+    ...(masterPerformance.apiError
+      ? {}
+      : {
+          performance: buildBriefPerformanceSnapshot(
+            masterPerformance,
+            selectedRange,
+          ),
+        }),
   };
   const sourceWatermark: BriefSourceWatermark = {
     captured_at: capturedAt,
@@ -904,6 +892,24 @@ export default async function BriefPage() {
         status: sourceStatus(paperEquityCurve.apiError),
         as_of: isoTimestamp(paperEquityCurve.points.at(-1)?.timestamp),
         detail: paperEquityCurve.apiError ?? `${paperEquityCurve.points.length} points`,
+      },
+      {
+        name: "paper_performance",
+        status: masterPerformance.apiError
+          ? "unavailable"
+          : masterPerformance.coverage_complete
+            ? "available"
+            : "stale",
+        as_of: isoTimestamp(
+          masterPerformance.series
+            .map((series) => series.as_of)
+            .filter((value): value is string => Boolean(value))
+            .sort()
+            .at(-1),
+        ),
+        detail:
+          masterPerformance.apiError ??
+          `range=3m · ${masterPerformance.series.length} series`,
       },
       {
         name: "research_activity",
@@ -943,13 +949,15 @@ export default async function BriefPage() {
         <ErrorBanner
           locale={locale}
           messages={[
-            health.apiError,
+            settings.apiError,
             symbols.apiError,
             factors.apiError,
             backtests.apiError,
             paperRuns.apiError,
             paperAccount.apiError,
             paperEquityCurve.apiError,
+            selectedPerformance.apiError,
+            masterPerformance.apiError,
             recentRuns.apiError,
             candidates.apiError,
             digest.apiError,
@@ -977,6 +985,12 @@ export default async function BriefPage() {
           </div>
           <BriefArchiveControl
             disabledReason={archiveBlockedReason}
+            history={(archiveList.items ?? [])
+              .filter((item) => item.public_id && item.issue_date)
+              .map((item) => ({
+                publicId: item.public_id,
+                issueDate: item.issue_date,
+              }))}
             initialPublicId={archivedIssuePublicId}
             locale={locale}
             payload={archivePayload}
@@ -985,7 +999,7 @@ export default async function BriefPage() {
         </header>
 
         <div className="border-b border-editorial-rule py-2 text-center font-data-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary">
-          {text.safetyLine} · API {health.status}
+          {text.safetyLine} · API {settingsStatus}
         </div>
 
         <section className="border-b border-editorial-rule px-0 py-7 text-center md:px-14">
@@ -993,7 +1007,8 @@ export default async function BriefPage() {
             {buildLede({
               text,
               equity: paperAccount.apiError ? "--" : formatMoney(paperAccount.equity),
-              paperWeekReturn: formatSignedPointReturn(paperWeekReturn),
+              paperReturn: formatSignedPointReturn(paperPeriodReturn),
+              performanceLabel: rangeLabel,
               marketNote,
               digestCount: digestItems.length,
             })}
@@ -1040,23 +1055,36 @@ export default async function BriefPage() {
         <section className="border-b border-editorial-rule py-7">
           <SectionHeader title={text.backtest} en={text.backtestEn} />
           <figure>
-            <div className="mb-2 flex justify-between gap-3 font-data-mono text-[11px] text-ink-secondary">
-              <span>{text.figureTitle}</span>
+            <div className="mb-3 flex flex-col gap-3 font-data-mono text-[11px] text-ink-secondary sm:flex-row sm:items-center sm:justify-between">
               <span>
-                {paperEquityAvailability.unavailableReason
+                {text.figureTitle} · {rangeLabel}
+              </span>
+              <BriefPerformanceRangeSelector
+                locale={locale}
+                selectedRange={selectedRange}
+              />
+            </div>
+            <div className="mb-2 flex justify-end font-data-mono text-[11px] text-ink-secondary">
+              <span>
+                {selectedPerformance.apiError
                   ? text.chartUnavailable
                   : text.chartSource}
               </span>
             </div>
             <PaperEquityFigureState
               unavailableLabel={text.chartUnavailable}
-              unavailableReason={paperEquityAvailability.unavailableReason}
+              unavailableReason={selectedPerformance.apiError ?? null}
             >
-              <EditorialChart series={paperCurve} benchmark={[]} text={text} />
+              <BriefPerformanceChart
+                ariaLabel={`${text.figureTitle} · ${rangeLabel}`}
+                emptyLabel={text.noChart}
+                series={selectedPerformance.series}
+              />
               <figcaption className="mt-2 text-center font-editorial-caps text-sm text-ink-secondary">
                 {text.latestRun} <strong className="text-ink">{paperAccount.account_id}</strong> ·{" "}
-                {text.cumulativeReturn} <strong className="text-ink">{formatSignedPointReturn(paperWeekReturn)}</strong> ·{" "}
-                {text.sharpe} <strong className="text-ink">{formatCount(paperCurve.length)}</strong> · {text.maxDrawdown}{" "}
+                {text.cumulativeReturn} <strong className="text-ink">{formatSignedPointReturn(paperPeriodReturn)}</strong> ·{" "}
+                {text.sharpe} <strong className="text-ink">{formatCount(selectedPaperSeries?.points.length ?? 0)}</strong> ·{" "}
+                {selectedPerformance.actual_start ?? "--"} → {selectedPerformance.actual_end ?? "--"} · {text.maxDrawdown}{" "}
                 <strong className="text-ink">{formatMoney(paperAccount.equity)}</strong>
               </figcaption>
               <p className="mt-2 text-center font-data-mono text-[11px] text-ink-secondary">{text.chartNote}</p>
@@ -1107,7 +1135,7 @@ export default async function BriefPage() {
           <br />
           {text.footer}
           <br />
-          {text.liveTrading}: {health.safety?.live_trading_enabled ? "on" : "off"} · {text.neverActive}
+          {text.liveTrading}: {liveTradingStatus} · {text.neverActive}
         </footer>
       </div>
     </div>

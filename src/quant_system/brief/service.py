@@ -5,6 +5,7 @@ from datetime import date
 
 from quant_system.brief.models import (
     BriefArchivePayload,
+    BriefIssue,
     BriefIssueEnvelope,
     BriefSourceWatermark,
 )
@@ -59,6 +60,21 @@ class BriefService:
             locale=normalized_locale,
             issue_date=issue_date,
         )
+
+    def list_issues(
+        self,
+        *,
+        locale: str,
+        limit: int = 30,
+        offset: int = 0,
+    ) -> tuple[list[BriefIssue], int]:
+        normalized_locale = locale.strip() or "zh"
+        return self._repository.list_issues(
+            locale=normalized_locale,
+            limit=limit,
+            offset=offset,
+        )
+
 
 def _new_public_id(issue_date: date) -> str:
     token = "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(6))

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import duckdb
 import pandas as pd
 import pytest
 
+from quant_system.data.equity_bar_cache import EquityBarCache
 from quant_system.data.price_history import (
     HistoricalPriceReadError,
     read_historical_prices,
@@ -74,6 +76,29 @@ def _frame() -> pd.DataFrame:
     )
 
 
+def _weekend_frame() -> pd.DataFrame:
+    fetched_at = pd.Timestamp.now(tz="UTC")
+    return pd.DataFrame(
+        [
+            {
+                "symbol": symbol,
+                "timestamp": pd.Timestamp("2026-07-10T00:00:00Z"),
+                "open": close - 1.0,
+                "high": close + 1.0,
+                "low": close - 2.0,
+                "close": close,
+                "volume": 1_000.0,
+                "provider": "futu",
+                "interval": "1d",
+                "price_adjustment": "qfq",
+                "event_ts": pd.Timestamp("2026-07-10T00:00:00Z"),
+                "knowledge_ts": fetched_at,
+            }
+            for symbol, close in (("MSFT", 505.0), ("AAPL", 201.0))
+        ]
+    )
+
+
 def _read(frame: pd.DataFrame, **overrides):
     provider = _Provider(frame)
     builder_calls = []
@@ -93,6 +118,94 @@ def _read(frame: pd.DataFrame, **overrides):
     kwargs.update(overrides)
     snapshot = read_historical_prices(**kwargs)
     return snapshot.to_dict(), provider, builder_calls
+
+
+def test_futu_qfq_cache_persists_weekend_window_without_refetch(tmp_path) -> None:
+    cache_path = tmp_path / "quant_system.duckdb"
+    first_payload, first_provider, _ = _read(
+        _weekend_frame(),
+        start="2026-07-10",
+        end="2026-07-12",
+        cache=EquityBarCache(cache_path),
+    )
+    second_payload, second_provider, second_builder_calls = _read(
+        _weekend_frame(),
+        start="2026-07-10",
+        end="2026-07-12",
+        cache=EquityBarCache(cache_path),
+    )
+
+    assert first_payload["source"] == "futu"
+    assert first_provider.calls
+    assert second_payload["source"] == "futu_cache"
+    assert second_provider.calls == []
+    assert second_builder_calls == []
+    assert second_payload["series"] == first_payload["series"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("provider", "tiingo"),
+        ("interval", "1h"),
+        ("adjustment", "raw"),
+    ],
+)
+def test_equity_bar_cache_never_crosses_provenance_keys(
+    tmp_path,
+    field,
+    value,
+) -> None:
+    cache = EquityBarCache(tmp_path / "quant_system.duckdb")
+    cache.write(
+        _weekend_frame(),
+        provider="futu",
+        symbols=["MSFT", "AAPL"],
+        interval="1d",
+        adjustment="qfq",
+        start="2026-07-10",
+        end="2026-07-12",
+    )
+    request = {
+        "provider": "futu",
+        "symbols": ["MSFT", "AAPL"],
+        "interval": "1d",
+        "adjustment": "qfq",
+        "start": "2026-07-10",
+        "end": "2026-07-12",
+    }
+    request[field] = value
+
+    assert cache.read(**request) is None
+
+
+def test_equity_bar_cache_rejects_partial_symbol_rows(tmp_path) -> None:
+    cache_path = tmp_path / "quant_system.duckdb"
+    cache = EquityBarCache(cache_path)
+    cache.write(
+        _weekend_frame(),
+        provider="futu",
+        symbols=["MSFT", "AAPL"],
+        interval="1d",
+        adjustment="qfq",
+        start="2026-07-10",
+        end="2026-07-12",
+    )
+    with duckdb.connect(str(cache_path)) as connection:
+        connection.execute(
+            "DELETE FROM equity_bars WHERE provider = 'futu' AND symbol = 'MSFT'"
+        )
+
+    cached = cache.read(
+        provider="futu",
+        symbols=["MSFT", "AAPL"],
+        interval="1d",
+        adjustment="qfq",
+        start="2026-07-10",
+        end="2026-07-12",
+    )
+
+    assert cached is None
 
 
 def test_reads_all_symbols_once_and_emits_deterministic_qfq_contract() -> None:

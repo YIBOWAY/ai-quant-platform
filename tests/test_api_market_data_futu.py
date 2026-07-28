@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pandas as pd
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
 from quant_system.config.settings import ApiKeySettings, DataSettings, FutuSettings, Settings
-from quant_system.data.providers.futu import FutuProviderError
+from quant_system.data.providers.futu import FutuMarketDataProvider, FutuProviderError
 from quant_system.data.schema import normalize_ohlcv_dataframe
 
 
@@ -30,6 +32,35 @@ def _fake_futu_frame() -> pd.DataFrame:
         provider="futu",
         interval="1d",
     )
+
+
+def test_futu_snapshot_preserves_previous_regular_close() -> None:
+    class Context:
+        def get_market_snapshot(self, symbols):
+            assert symbols == ["US.AAPL"]
+            return 0, pd.DataFrame(
+                [
+                    {
+                        "code": "US.AAPL",
+                        "update_time": "2026-07-28 15:59:59",
+                        "last_price": 105.0,
+                        "prev_close_price": 100.0,
+                    }
+                ]
+            )
+
+        def close(self):
+            return None
+
+    provider = FutuMarketDataProvider(
+        context_factory=lambda _host, _port: Context(),
+        sdk_loader=lambda: SimpleNamespace(RET_OK=0),
+    )
+
+    snapshot = provider.fetch_market_snapshots(["US.AAPL"])
+
+    assert snapshot.loc[0, "last"] == 105.0
+    assert snapshot.loc[0, "prev_close"] == 100.0
 
 
 def test_market_data_history_uses_futu_provider(tmp_path, monkeypatch) -> None:

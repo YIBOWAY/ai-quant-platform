@@ -55,6 +55,22 @@ export function buildLatestBriefIssuePath(locale: string) {
   return `/api/brief/issues/latest?${params.toString()}`;
 }
 
+export function buildBriefIssueListPath(locale: string, limit = 30, offset = 0) {
+  const params = new URLSearchParams();
+  params.set("locale", locale || "zh");
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  return `/api/brief/issues?${params.toString()}`;
+}
+
+export type BriefIssueListResponse = {
+  items: BriefIssue[];
+  total: number;
+  limit: number;
+  offset: number;
+  apiError?: string;
+};
+
 export function normalizeBriefIssueEnvelope(envelope: BriefIssueEnvelope): BriefIssueArchiveView {
   const payloadTitle = envelope.snapshot.payload.title;
   const payloadResult = briefArchivePayloadSchema.safeParse(envelope.snapshot.payload);
@@ -144,6 +160,10 @@ const briefArchivePayloadSchema = z
               unrealized_pnl: z.number().finite(),
               price_kind: z.string().min(1),
               price_as_of: nullableTimestamp,
+              previous_close: z.number().finite().nullable().optional(),
+              day_change_ratio: z.number().finite().nullable().optional(),
+              day_change_source: z.string().min(1).nullable().optional(),
+              day_change_as_of: nullableTimestamp.optional(),
             })
             .strict(),
         ),
@@ -198,6 +218,46 @@ const briefArchivePayloadSchema = z
         .strict(),
     ),
     warnings: z.array(z.string()),
+    performance: z
+      .object({
+        selected_range: z.enum(["7d", "1m", "3m"]),
+        master_range: z.literal("3m"),
+        granularity: z.literal("1d"),
+        benchmarks: z.array(z.enum(["SPY", "QQQ"])),
+        requested_start: z.string().min(1),
+        requested_end: z.string().min(1),
+        actual_start: z.string().min(1).nullable(),
+        actual_end: z.string().min(1).nullable(),
+        coverage_complete: z.boolean(),
+        series: z.array(
+          z
+            .object({
+              id: z.string().min(1),
+              kind: z.enum(["paper", "benchmark"]),
+              label: z.string().min(1),
+              symbol: z.string().min(1).nullable(),
+              status: z.enum(["available", "partial", "unavailable"]),
+              source: z.string().min(1).nullable(),
+              as_of: nullableTimestamp,
+              error_code: z.string().min(1).nullable(),
+              points: z.array(
+                z
+                  .object({
+                    date: z.string().min(1),
+                    return_ratio: z.number().finite(),
+                    equity: z.number().finite().nullable(),
+                    close: z.number().finite().nullable(),
+                  })
+                  .strict(),
+              ),
+            })
+            .strict(),
+        ),
+        warnings: z.array(z.string()),
+      })
+      .strict()
+      .nullable()
+      .optional(),
   })
   .strict();
 
@@ -212,7 +272,7 @@ const briefSourceWatermarkSchema = z
           as_of: nullableTimestamp,
           detail: z.string().nullable(),
           /** News facade provider id (e.g. aihot / longbridge); optional for legacy rows. */
-          provider: z.string().min(1).optional(),
+          provider: z.string().min(1).nullable().optional(),
           /** Where the facade served from (primary / failover / cache). */
           served_from: z.string().min(1).nullable().optional(),
         })

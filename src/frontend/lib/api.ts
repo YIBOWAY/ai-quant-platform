@@ -562,6 +562,10 @@ export type AccountPositionResponse = {
   source_breakdown: Record<string, number>;
   price_kind: string;
   price_as_of: string | null;
+  previous_close?: number | null;
+  day_change_ratio?: number | null;
+  day_change_source?: string | null;
+  day_change_as_of?: string | null;
 };
 
 export type AccountPositionView = AccountPositionResponse;
@@ -970,6 +974,42 @@ export type PaperAccountEquityCurveResponse = ApiEnvelope & {
   limit: number;
   offset: number;
   points: PaperAccountEquityCurvePointResponse[];
+};
+
+export type PaperPerformanceRange = "7d" | "1m" | "3m";
+
+export type PaperAccountPerformancePointResponse = {
+  date: string;
+  return_ratio: number;
+  equity: number | null;
+  close: number | null;
+};
+
+export type PaperAccountPerformanceSeriesResponse = {
+  id: string;
+  kind: "paper" | "benchmark";
+  label: string;
+  symbol: string | null;
+  status: "available" | "partial" | "unavailable";
+  source: string | null;
+  as_of: string | null;
+  error_code: string | null;
+  points: PaperAccountPerformancePointResponse[];
+};
+
+export type PaperAccountPerformanceResponse = ApiEnvelope & {
+  account_id: string;
+  account_exists: boolean;
+  range: PaperPerformanceRange;
+  granularity: "1d";
+  benchmarks: Array<"SPY" | "QQQ">;
+  requested_start: string;
+  requested_end: string;
+  actual_start: string | null;
+  actual_end: string | null;
+  coverage_complete: boolean;
+  series: PaperAccountPerformanceSeriesResponse[];
+  warnings: string[];
 };
 
 export type ExperimentSummary = {
@@ -2607,6 +2647,32 @@ export function getPaperAccountEquityCurve(days = 7, limit = 200, offset = 0) {
       limit,
       offset,
       points: [],
+      safety: FALLBACK_SAFETY,
+    },
+  );
+}
+
+export function getPaperAccountPerformance(range: PaperPerformanceRange = "7d") {
+  const params = new URLSearchParams({
+    range,
+    granularity: "1d",
+    benchmarks: "SPY,QQQ",
+  });
+  return apiGet<PaperAccountPerformanceResponse>(
+    `/api/paper/account/performance?${params.toString()}`,
+    {
+      account_id: "default",
+      account_exists: false,
+      range,
+      granularity: "1d",
+      benchmarks: ["SPY", "QQQ"],
+      requested_start: "",
+      requested_end: "",
+      actual_start: null,
+      actual_end: null,
+      coverage_complete: false,
+      series: [],
+      warnings: [],
       safety: FALLBACK_SAFETY,
     },
   );

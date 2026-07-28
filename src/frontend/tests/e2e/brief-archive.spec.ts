@@ -9,9 +9,77 @@ test.beforeEach(() => {
 // this suite asserts the hermetic empty-DB path that playwright.config forces
 // (QS_DATABASE_ENABLED=false, no aihot seed). Positive seeded-archive coverage belongs
 // in API/unit tests or a future backend seed helper — not a browser route mock.
-test("brief empty archive DB offers save but fails closed and shows empty digest", async ({ page }) => {
-  await page.goto("/zh/brief");
+test("brief empty archive DB offers save but fails closed and shows empty digest", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/zh/brief?range=7d");
   await expect(page.getByRole("heading", { name: "每日晨报" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "日涨跌" })).toBeVisible();
+
+  await expect(page.getByRole("link", { name: "近 7 日" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.getByRole("link", { name: "近一月" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "近三月" })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+
+  const backendPort = process.env.PW_BACKEND_PORT ?? "8765";
+  const performanceResponse = await page.request.get(
+    `http://127.0.0.1:${backendPort}/api/paper/account/performance?range=7d&granularity=1d&benchmarks=SPY%2CQQQ`,
+  );
+  expect(performanceResponse.status()).toBe(200);
+  const performance = await performanceResponse.json();
+  expect(performance.series.map((series: { id: string }) => series.id)).toEqual([
+    "paper",
+    "SPY",
+    "QQQ",
+  ]);
+  await page.screenshot({
+    path: testInfo.outputPath("brief-desktop-1440.png"),
+    fullPage: true,
+  });
+  const desktopPerformanceSection = page
+    .getByRole("heading", { name: "模拟盘收益" })
+    .locator("xpath=ancestor::section[1]");
+  await desktopPerformanceSection.scrollIntoViewIfNeeded();
+  await desktopPerformanceSection.screenshot({
+    path: testInfo.outputPath("brief-performance-desktop-1440.png"),
+  });
+
+  await page.getByRole("link", { name: "近三月" }).click();
+  await expect(page).toHaveURL(/\/zh\/brief\?range=3m$/);
+  await expect(page.getByRole("link", { name: "近三月" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await page.getByRole("link", { name: "近一月" }).click();
+  await expect(page).toHaveURL(/\/zh\/brief\?range=1m$/);
+  await expect(page.getByRole("link", { name: "近一月" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "每日晨报" })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("brief-mobile-390.png"),
+    fullPage: true,
+  });
+  const mobilePerformanceSection = page
+    .getByRole("heading", { name: "模拟盘收益" })
+    .locator("xpath=ancestor::section[1]");
+  await mobilePerformanceSection.scrollIntoViewIfNeeded();
+  await mobilePerformanceSection.screenshot({
+    path: testInfo.outputPath("brief-performance-mobile-390.png"),
+  });
 
   await expect(page.getByRole("link", { name: "查看归档版" })).toHaveCount(0);
   const saveButton = page.getByRole("button", { name: "保存今日归档" });

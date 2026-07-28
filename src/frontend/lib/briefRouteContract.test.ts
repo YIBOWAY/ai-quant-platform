@@ -13,13 +13,14 @@ describe("/brief route contract", () => {
     const source = readBriefPage();
 
     for (const getter of [
-      "getCachedHealth",
+      "getCachedSettings",
       "getSymbols",
       "getFactors",
       "getBacktests",
       "getPaperRuns",
       "getPaperAccount",
       "getPaperAccountEquityCurve",
+      "getPaperAccountPerformance",
       "getRecentRuns",
       "getAgentCandidates",
       "getNewsItems",
@@ -28,6 +29,8 @@ describe("/brief route contract", () => {
       "getServerLocale",
       "getLatestBriefIssue",
       "BriefArchiveControl",
+      "BriefPerformanceChart",
+      "BriefPerformanceRangeSelector",
     ]) {
       expect(source).toContain(getter);
     }
@@ -41,6 +44,10 @@ describe("/brief route contract", () => {
     }
   });
 
+  it("does not call the provider-coupled health route during SSR", () => {
+    expect(readBriefPage()).not.toContain("/api/health");
+  });
+
   it("reuses dashboard formatting, run-link, and locale helpers", () => {
     const source = readBriefPage();
 
@@ -51,9 +58,11 @@ describe("/brief route contract", () => {
       "dashboardRunKindLabel",
       "dashboardRunSummary",
       "localizePath",
+      "resolveBriefArchiveBlockedReason",
     ]) {
       expect(source).toContain(helper);
     }
+    expect(source).toContain("masterPerformance.apiError");
   });
 
   it("stays isolated from navigation, backend mutation, and generated-copy APIs", () => {
@@ -64,9 +73,11 @@ describe("/brief route contract", () => {
     expect(source).toContain("font-editorial-display");
     expect(source).toContain("Daily Morning Brief");
     expect(source).toContain("每日晨报");
-    expect(source).toContain("ONE-WEEK PAPER RETURN");
-    expect(source).toContain("/api/paper/account/equity-curve");
+    expect(source).toContain("PAPER VS SPY · QQQ");
+    expect(source).toContain("Futu QFQ daily closes");
     expect(source).toContain("account ledger");
+    expect(source).toContain("buildBriefPerformanceSnapshot");
+    expect(source).toContain("selectedRange");
     expect(source).toContain("平台市场手记");
     expect(source).toContain("Platform recorded backtest");
     expect(source).toContain("Options daily scan");

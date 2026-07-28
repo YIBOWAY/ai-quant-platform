@@ -265,6 +265,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/brief/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Brief Issues */
+        get: operations["list_brief_issues_api_brief_issues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/brief/issues/generate": {
         parameters: {
             query?: never;
@@ -1476,6 +1493,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/paper/account/performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Account Performance */
+        get: operations["get_account_performance_api_paper_account_performance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/paper/account/rebalance": {
         parameters: {
             query?: never;
@@ -2150,10 +2184,18 @@ export interface components {
         AccountPositionResponse: {
             /** Avg Cost */
             avg_cost: number;
+            /** Day Change As Of */
+            day_change_as_of?: string | null;
+            /** Day Change Ratio */
+            day_change_ratio?: number | null;
+            /** Day Change Source */
+            day_change_source?: string | null;
             /** Last Price */
             last_price: number;
             /** Market Value */
             market_value: number;
+            /** Previous Close */
+            previous_close?: number | null;
             /** Price As Of */
             price_as_of?: string | null;
             /** Price Kind */
@@ -2848,10 +2890,18 @@ export interface components {
         BriefAccountPosition: {
             /** Avg Cost */
             avg_cost: number;
+            /** Day Change As Of */
+            day_change_as_of?: string | null;
+            /** Day Change Ratio */
+            day_change_ratio?: number | null;
+            /** Day Change Source */
+            day_change_source?: string | null;
             /** Last Price */
             last_price: number;
             /** Market Value */
             market_value: number;
+            /** Previous Close */
+            previous_close?: number | null;
             /** Price As Of */
             price_as_of: string | null;
             /** Price Kind */
@@ -2934,6 +2984,7 @@ export interface components {
             markets: components["schemas"]["BriefMarketSnapshot"][];
             /** Paper Equity */
             paper_equity: components["schemas"]["BriefEquityPoint"][];
+            performance?: components["schemas"]["BriefPerformanceSnapshot"] | null;
             /**
              * Schema Version
              * @constant
@@ -2995,6 +3046,26 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /** BriefIssueListResponse */
+        BriefIssueListResponse: {
+            /** Items */
+            items?: components["schemas"]["BriefIssueResponse"][];
+            /**
+             * Limit
+             * @default 30
+             */
+            limit: number;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
         /** BriefIssueResponse */
         BriefIssueResponse: {
             /**
@@ -3027,6 +3098,87 @@ export interface components {
             /** Symbol */
             symbol: string;
         };
+        /** BriefPerformancePoint */
+        BriefPerformancePoint: {
+            /** Close */
+            close?: number | null;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Equity */
+            equity?: number | null;
+            /** Return Ratio */
+            return_ratio: number;
+        };
+        /** BriefPerformanceSeries */
+        BriefPerformanceSeries: {
+            /** As Of */
+            as_of?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "paper" | "benchmark";
+            /** Label */
+            label: string;
+            /** Points */
+            points: components["schemas"]["BriefPerformancePoint"][];
+            /** Source */
+            source?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "partial" | "unavailable";
+            /** Symbol */
+            symbol?: string | null;
+        };
+        /** BriefPerformanceSnapshot */
+        BriefPerformanceSnapshot: {
+            /** Actual End */
+            actual_end?: string | null;
+            /** Actual Start */
+            actual_start?: string | null;
+            /** Benchmarks */
+            benchmarks: ("SPY" | "QQQ")[];
+            /** Coverage Complete */
+            coverage_complete: boolean;
+            /**
+             * Granularity
+             * @constant
+             */
+            granularity: "1d";
+            /**
+             * Master Range
+             * @constant
+             */
+            master_range: "3m";
+            /**
+             * Requested End
+             * Format: date
+             */
+            requested_end: string;
+            /**
+             * Requested Start
+             * Format: date
+             */
+            requested_start: string;
+            /**
+             * Selected Range
+             * @enum {string}
+             */
+            selected_range: "7d" | "1m" | "3m";
+            /** Series */
+            series: components["schemas"]["BriefPerformanceSeries"][];
+            /** Warnings */
+            warnings: string[];
+        };
         /** BriefPriceSource */
         BriefPriceSource: {
             /** As Of */
@@ -3057,6 +3209,10 @@ export interface components {
             detail: string | null;
             /** Name */
             name: string;
+            /** Provider */
+            provider?: string | null;
+            /** Served From */
+            served_from?: string | null;
             /**
              * Status
              * @enum {string}
@@ -6339,6 +6495,77 @@ export interface components {
             /** Orders */
             orders: components["schemas"]["PaperAccountOrderOutcomeResponse"][];
         };
+        /** PaperAccountPerformancePointResponse */
+        PaperAccountPerformancePointResponse: {
+            /** Close */
+            close?: number | null;
+            /** Date */
+            date: string;
+            /** Equity */
+            equity?: number | null;
+            /** Return Ratio */
+            return_ratio: number;
+        };
+        /** PaperAccountPerformanceResponse */
+        PaperAccountPerformanceResponse: {
+            /** Account Exists */
+            account_exists: boolean;
+            /** Account Id */
+            account_id: string;
+            /** Actual End */
+            actual_end?: string | null;
+            /** Actual Start */
+            actual_start?: string | null;
+            /** Benchmarks */
+            benchmarks: ("SPY" | "QQQ")[];
+            /** Coverage Complete */
+            coverage_complete: boolean;
+            /**
+             * Granularity
+             * @constant
+             */
+            granularity: "1d";
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "7d" | "1m" | "3m";
+            /** Requested End */
+            requested_end: string;
+            /** Requested Start */
+            requested_start: string;
+            /** Series */
+            series: components["schemas"]["PaperAccountPerformanceSeriesResponse"][];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** PaperAccountPerformanceSeriesResponse */
+        PaperAccountPerformanceSeriesResponse: {
+            /** As Of */
+            as_of?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "paper" | "benchmark";
+            /** Label */
+            label: string;
+            /** Points */
+            points?: components["schemas"]["PaperAccountPerformancePointResponse"][];
+            /** Source */
+            source?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "partial" | "unavailable";
+            /** Symbol */
+            symbol?: string | null;
+        };
         /** PaperAccountPriceSourceResponse */
         PaperAccountPriceSourceResponse: {
             /** As Of */
@@ -8576,6 +8803,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BenchmarkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_brief_issues_api_brief_issues_get: {
+        parameters: {
+            query?: {
+                locale?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefIssueListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10839,6 +11099,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaperAccountOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_account_performance_api_paper_account_performance_get: {
+        parameters: {
+            query?: {
+                range?: "7d" | "1m" | "3m";
+                granularity?: "1d";
+                benchmarks?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperAccountPerformanceResponse"];
                 };
             };
             /** @description Validation Error */

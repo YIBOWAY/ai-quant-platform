@@ -184,3 +184,102 @@ def test_generate_issue_rejects_request_and_payload_identity_mismatch(
         )
 
     assert repository.calls == []
+
+
+def test_generate_issue_accepts_additive_performance_and_daily_change_snapshot() -> None:
+    payload_data = _payload().model_dump(mode="json")
+    payload_data["account"]["positions"][0].update(
+        {
+            "previous_close": 208.0,
+            "day_change_ratio": 0.0096153846,
+            "day_change_source": "futu_snapshot",
+            "day_change_as_of": "2026-07-14T08:29:00+08:00",
+        }
+    )
+    payload_data["performance"] = {
+        "selected_range": "7d",
+        "master_range": "3m",
+        "granularity": "1d",
+        "benchmarks": ["SPY", "QQQ"],
+        "requested_start": "2026-04-14",
+        "requested_end": "2026-07-14",
+        "actual_start": "2026-04-14",
+        "actual_end": "2026-07-14",
+        "coverage_complete": True,
+        "series": [
+            {
+                "id": "paper",
+                "kind": "paper",
+                "label": "模拟盘",
+                "symbol": None,
+                "status": "available",
+                "source": "paper_account_ledger+futu_qfq_1d",
+                "as_of": "2026-07-14T08:29:00+08:00",
+                "error_code": None,
+                "points": [
+                    {
+                        "date": "2026-04-14",
+                        "return_ratio": 0.0,
+                        "equity": 100_000.0,
+                        "close": None,
+                    },
+                    {
+                        "date": "2026-07-14",
+                        "return_ratio": 0.012345,
+                        "equity": 101_234.5,
+                        "close": None,
+                    },
+                ],
+            },
+            {
+                "id": "SPY",
+                "kind": "benchmark",
+                "label": "SPY",
+                "symbol": "SPY",
+                "status": "available",
+                "source": "futu_cache",
+                "as_of": "2026-07-14T08:29:00+08:00",
+                "error_code": None,
+                "points": [
+                    {
+                        "date": "2026-04-14",
+                        "return_ratio": 0.0,
+                        "equity": None,
+                        "close": 580.0,
+                    },
+                    {
+                        "date": "2026-07-14",
+                        "return_ratio": 0.06931,
+                        "equity": None,
+                        "close": 620.2,
+                    },
+                ],
+            },
+        ],
+        "warnings": [],
+    }
+    watermark_data = _watermark().model_dump(mode="json")
+    watermark_data["sources"][1].update(
+        {
+            "provider": "aihot",
+            "served_from": "cache",
+        }
+    )
+    payload = BriefArchivePayload.model_validate(payload_data)
+    watermark = BriefSourceWatermark.model_validate(watermark_data)
+    repository = _RecordingRepository()
+
+    result = BriefService(repository).generate_issue(
+        issue_date=date(2026, 7, 14),
+        locale="zh",
+        payload=payload,
+        source_watermark=watermark,
+    )
+
+    assert result.snapshot.payload["performance"]["master_range"] == "3m"
+    assert result.snapshot.payload["performance"]["selected_range"] == "7d"
+    assert result.snapshot.payload["account"]["positions"][0]["day_change_ratio"] == (
+        pytest.approx(0.0096153846)
+    )
+    assert result.snapshot.source_watermark["sources"][1]["provider"] == "aihot"
+    assert result.snapshot.source_watermark["sources"][1]["served_from"] == "cache"

@@ -4,7 +4,9 @@ import json
 import logging
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
@@ -12,7 +14,13 @@ from typer.testing import CliRunner
 from quant_system.api.schemas.paper import PaperAccountSnapshotResponse
 from quant_system.api.server import create_app
 from quant_system.cli import app
-from quant_system.config.settings import PaperAccountSettings, Settings, reload_settings
+from quant_system.config.settings import (
+    FutuSettings,
+    PaperAccountSettings,
+    Settings,
+    reload_settings,
+)
+from quant_system.data.providers import futu as futu_provider_module
 from quant_system.execution.account import AccountPosition, PaperAccount
 from quant_system.execution.account_dual_write_repository import (
     DualWritePaperAccountRepository,
@@ -141,8 +149,12 @@ def test_account_show_json_matches_snapshot_api_business_view_without_writes(
     assert cli_account["positions"] == [
         {
             "avg_cost": 100.0,
+            "day_change_as_of": None,
+            "day_change_ratio": None,
+            "day_change_source": None,
             "last_price": 120.0,
             "market_value": 1_200.0,
+            "previous_close": None,
             "price_as_of": "2026-07-10T14:30:00+00:00",
             "price_kind": "futu_snapshot",
             "quantity": 10.0,
@@ -248,6 +260,160 @@ def test_snapshot_preserves_mixed_quote_provenance_and_naive_provider_timestamp(
     assert positions["MSFT"]["price_kind"] == "avg_cost_fallback"
     assert "paper_account_price_unavailable" in snapshot.account["warnings"]
     assert _file_tree_snapshot(storage.account_dir) == before
+
+
+def test_snapshot_surfaces_futu_previous_close_and_day_change_without_writes(
+    tmp_path,
+) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    account = PaperAccount.open_new()
+    account.cash = 999_000.0
+    account.positions["AAPL"] = AccountPosition(
+        symbol="AAPL",
+        quantity=10.0,
+        avg_cost=100.0,
+        source_quantity={"manual": 10.0},
+    )
+    storage.save(account, prices={"AAPL": 100.0})
+
+    class FutuSnapshotPriceSource:
+        def get_price(self, symbol):
+            return SimpleNamespace(
+                symbol=symbol,
+                price=105.0,
+                previous_close=100.0,
+                price_kind="futu_snapshot",
+                as_of="2026-07-28T15:59:59-04:00",
+                source="futu",
+            )
+
+    before = _file_tree_snapshot(storage.account_dir)
+
+    snapshot = PaperAccountSnapshotReader(
+        repository=storage,
+        settings=Settings(),
+        price_source=FutuSnapshotPriceSource(),
+    ).read()
+
+    assert snapshot.account is not None
+    position = snapshot.account["positions"][0]
+    assert position["previous_close"] == pytest.approx(100.0)
+    assert position["day_change_ratio"] == pytest.approx(0.05)
+    assert position["day_change_source"] == "futu_snapshot"
+    assert position["day_change_as_of"] == "2026-07-28T15:59:59-04:00"
+    assert _file_tree_snapshot(storage.account_dir) == before
+
+
+def test_snapshot_production_branch_enriches_from_hermetic_futu_without_writes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    account = PaperAccount.open_new()
+    account.cash = 999_000.0
+    account.positions["AAPL"] = AccountPosition(
+        symbol="AAPL",
+        quantity=10.0,
+        avg_cost=100.0,
+        source_quantity={"manual": 10.0},
+    )
+    storage.save(account, prices={"AAPL": 100.0})
+
+    provider_class = futu_provider_module.FutuMarketDataProvider
+    real_init = provider_class.__init__
+    provider_calls: list[tuple[str, ...]] = []
+    close_calls = 0
+
+    class HermeticOpenDContext:
+        def get_market_snapshot(self, symbols: list[str]):
+            provider_calls.append(tuple(symbols))
+            assert symbols == ["US.AAPL"]
+            return 0, pd.DataFrame(
+                [{
+                    "code": "US.AAPL",
+                    "update_time": "2026-07-28T15:59:59-04:00",
+                    "last_price": 105.0,
+                    "prev_close_price": 100.0,
+                }]
+            )
+
+        def set_sync_query_connect_timeout(self, _timeout) -> None:
+            return None
+
+        def close(self) -> None:
+            nonlocal close_calls
+            close_calls += 1
+
+    def hermetic_init(self, *args, **kwargs) -> None:
+        kwargs["context_factory"] = lambda _host, _port: HermeticOpenDContext()
+        kwargs["sdk_loader"] = lambda: SimpleNamespace(RET_OK=0)
+        kwargs["rate_limit_max_retries"] = 0
+        kwargs["sleep_func"] = lambda seconds: pytest.fail(
+            f"hermetic Futu snapshot unexpectedly slept {seconds}"
+        )
+        real_init(self, *args, **kwargs)
+
+    def forbidden_network(*_args, **_kwargs):
+        raise AssertionError("snapshot test must not open a network connection")
+
+    monkeypatch.setattr(provider_class, "__init__", hermetic_init)
+    monkeypatch.setattr(
+        futu_provider_module.socket,
+        "create_connection",
+        forbidden_network,
+    )
+    before = _file_tree_snapshot(storage.account_dir)
+
+    snapshot = PaperAccountSnapshotReader(
+        repository=storage,
+        settings=Settings(futu=FutuSettings(enabled=True, use_cache=False)),
+    ).read()
+
+    assert snapshot.account is not None
+    position = snapshot.account["positions"][0]
+    assert position["previous_close"] == pytest.approx(100.0)
+    assert position["day_change_ratio"] == pytest.approx(0.05)
+    assert position["day_change_source"] == "futu_snapshot"
+    assert position["day_change_as_of"] == "2026-07-28T15:59:59-04:00"
+    assert provider_calls == [("US.AAPL",), ("US.AAPL",)]
+    assert close_calls == 2
+    assert _file_tree_snapshot(storage.account_dir) == before
+
+
+def test_snapshot_does_not_invent_day_change_without_previous_close(tmp_path) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    account = PaperAccount.open_new()
+    account.cash = 999_000.0
+    account.positions["AAPL"] = AccountPosition(
+        symbol="AAPL",
+        quantity=10.0,
+        avg_cost=100.0,
+        source_quantity={"manual": 10.0},
+    )
+    storage.save(account, prices={"AAPL": 100.0})
+
+    class SnapshotWithoutPreviousClose:
+        def get_price(self, symbol):
+            return PricedQuote(
+                symbol=symbol,
+                price=105.0,
+                price_kind="futu_snapshot",
+                as_of="2026-07-28T15:59:59-04:00",
+                source="futu",
+            )
+
+    snapshot = PaperAccountSnapshotReader(
+        repository=storage,
+        settings=Settings(),
+        price_source=SnapshotWithoutPreviousClose(),
+    ).read()
+
+    assert snapshot.account is not None
+    position = snapshot.account["positions"][0]
+    assert position["previous_close"] is None
+    assert position["day_change_ratio"] is None
+    assert position["day_change_source"] is None
+    assert position["day_change_as_of"] is None
 
 
 def test_snapshot_uses_valid_backup_and_surfaces_warning_without_repair(

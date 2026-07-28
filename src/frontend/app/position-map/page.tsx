@@ -1,32 +1,20 @@
-import Link from "next/link";
-import type { ReactNode } from "react";
-import {
-  ArrowRight,
-  BriefcaseBusiness,
-  Layers,
-  ShieldCheck,
-} from "lucide-react";
+import { Layers } from "lucide-react";
 import { AccountRefreshControl } from "@/components/AccountRefreshControl";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
-import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
-import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
+import {
+  PositionMapWorkspace,
+  type BacktestExposureRow,
+} from "@/components/position-map/PositionMapWorkspace";
 import {
   formatMoney,
   getBacktestDetail,
   getBacktests,
   getPaperAccountActivity,
-  type AccountPositionView,
-  type LedgerEntryView,
-  type PaperAccountActivityResponse,
-  type PaperAccountBalanceHistoryRowResponse,
-  type PaperAccountOrderHistoryRowResponse,
-  type PendingAccountOrderView,
   type PreviewRecord,
 } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
 import { selectDisplayRun, shouldIncludeSampleRuns } from "@/lib/runSource";
-import { getCachedHealth } from "@/lib/serverApi";
+import { getCachedSettings } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -34,257 +22,50 @@ const copy = {
     eyebrow: "Paper account",
     title: "Position Map",
     subtitle:
-      "One persistent simulated account: equity vs the funded base, cash, per-symbol exposure with strategy/manual attribution, and the audit ledger.",
-    openPaperTrading: "Trade / Rebalance",
-    accountSelector: "default paper account",
-    positionsTab: "Positions",
-    ordersTab: "Orders",
-    orderHistoryTab: "Order History",
-    balanceHistoryTab: "Balance History",
-    tradeLogTab: "Trade Log",
-    accountBalance: "Account Balance",
+      "One persistent simulated account: net value, cash, per-symbol exposure with strategy/manual attribution, and the full audit ledger.",
     netValue: "Net Value",
-    realizedPnl: "Realized P&L",
+    availableCash: "Available Cash",
+    unrealized: "Unrealized P&L",
+    realized: "Realized P&L",
+    invested: "Invested",
+    cashLabel: "Cash",
+    detailsToggle: "Account details · margin & balance",
     accountMargin: "Account Margin",
-    availableFunds: "Available Funds",
     orderMargin: "Order Margin",
     marginBuffer: "Margin Buffer",
-    accountValue: "Account Value",
-    pnl: "Total P&L",
-    cash: "Available Cash",
-    invested: "Invested",
-    unrealized: "Unrealized P&L",
-    accountUnavailable: "Account unreachable — values hidden until the backend responds.",
-    exposureBySymbol: "Account Exposure by Symbol",
-    exposureBySymbolDesc: "Share of invested market value per holding; each bar splits strategy vs manual origin.",
-    long: "Long",
-    short: "Short",
-    manual: "Manual",
-    strategy: "Strategy",
-    noPositionsTitle: "No open positions",
-    noPositionsDesc: "Place a manual order or run a strategy rebalance to build the account.",
-    goTrade: "Open Paper Trading",
+    accountBalance: "Account Balance",
+    reservedCash: "Reserved",
+    initialBase: "initial base",
     priceSource: "Prices",
     priceKinds: {
       futu_snapshot: "Futu live snapshot",
       last_close: "last real close",
     } as Record<string, string>,
-    asOf: "as of",
-    safetyState: "Safety",
-    paperBadge: "Paper-only · no live trading",
-    accountFrozen: "frozen",
-    positionsTitle: "Account Positions",
-    positionsDesc: "Live holdings with average cost, current price, weight and unrealized P&L.",
-    ordersTitle: "Open Orders",
-    ordersDesc: "Pending paper limit orders with reserved cash or reserved quantity.",
-    orderHistoryTitle: "Order History",
-    orderHistoryDesc: "Completed and cancelled paper-account order events from the ledger.",
-    balanceHistoryTitle: "Balance History",
-    balanceHistoryDesc: "Cash movement reconstructed from the append-only account ledger.",
-    tradeLogTitle: "Trade Log",
-    tradeLogDesc: "Complete account ledger: deposits, fills, cancellations, freezes and sleeve events.",
-    noPositionRowsDesc: "No account positions yet.",
-    noOrdersTitle: "No open orders",
-    noOrdersDesc: "Pending limit orders will appear here until they fill or are cancelled.",
-    noOrderHistoryTitle: "No order history",
-    noOrderHistoryDesc: "Filled and cancelled paper orders will appear here.",
-    noBalanceHistoryTitle: "No balance history",
-    noBalanceHistoryDesc: "Cash movements will appear after the account opens or mutates.",
-    noTradeLogTitle: "No trade log",
-    noTradeLogDesc: "Ledger events will appear here once the paper account records activity.",
-    product: "Product",
-    buySell: "Buy/Sell",
-    quantity: "Qty",
-    avgFill: "Avg Fill",
-    latestPrice: "Last",
-    unrealizedPct: "Unrealized %",
-    tradeValue: "Trade Value",
-    sourceLabel: "Source",
-    time: "Time",
-    orderId: "Order ID",
-    status: "Status",
-    limitPrice: "Limit",
-    reserved: "Reserved",
-    lastCheck: "Last Check",
-    event: "Event",
-    cashDelta: "Cash Δ",
-    cashAfterShort: "Cash After",
-    note: "Note",
-    ledgerTitle: "Account Activity",
-    ledgerDesc: "Latest ledger entries — every order, rebalance and reset is recorded here.",
-    ledgerEmptyTitle: "No activity yet",
-    ledgerEmptyDesc: "Orders and rebalances will appear here as an audit trail.",
-    ledgerMore: "Showing latest",
-    kind: {
-      fill: "Fill",
-      rebalance_fill: "Rebalance fill",
-      deposit: "Deposit",
-      reset: "Reset",
-      fee: "Fee",
-      freeze: "Freeze",
-      unfreeze: "Unfreeze",
-      order_cancelled: "Cancelled",
-      sleeve_cash_allocated: "Sleeve cash",
-      sleeve_execution_fill: "Sleeve fill",
-    } as Record<string, string>,
-    statusLabels: {
-      pending: "Pending",
-      filled: "Filled",
-      cancelled: "Cancelled",
-      event: "Event",
-    } as Record<string, string>,
-    side: { BUY: "Buy", SELL: "Sell" } as Record<string, string>,
-    cashAfter: "cash after",
-    comparisonTitle: "Last Backtest Exposure (research comparison)",
-    comparisonDesc: "The newest backtest's final positions — a research artifact, not your account.",
-    noBacktestDesc: "No backtest positions were found.",
-    openBacktest: "Open run",
-    columns: {
-      symbol: "Symbol",
-      quantity: "Qty",
-      avg_cost: "Avg Cost",
-      last_price: "Last",
-      weight: "Weight",
-      market_value: "Mkt Value",
-      unrealized_pnl: "Unrealized P&L",
-      source: "Source",
-      price_kind: "Price Src",
-    },
-    tips: {
-      price_kind:
-        "futu_snapshot = live Futu quote at fill time; last_close = most recent real daily close (OpenD offline fallback).",
-      source: "Which path created this exposure: manual orders, strategy rebalances, or a mix.",
-      weight: "Position market value as a share of total invested value.",
-    },
-    mixed: "Mixed",
+    accountUnavailable: "Account unreachable — values hidden until the backend responds.",
   },
   zh: {
     eyebrow: "模拟账户",
     title: "持仓地图",
-    subtitle:
-      "单一持续模拟账户：净值对比初始本金、现金、按标的的暴露（策略/手动归因），以及完整账本流水。",
-    openPaperTrading: "去下单 / 再平衡",
-    accountSelector: "默认模拟账户",
-    positionsTab: "持仓",
-    ordersTab: "订单",
-    orderHistoryTab: "订单历史",
-    balanceHistoryTab: "余额历史",
-    tradeLogTab: "交易日志",
-    accountBalance: "账户余额",
+    subtitle: "单一持续模拟账户：净值、现金、按标的的暴露（策略/手动归因），以及完整账本流水。",
     netValue: "净值",
-    realizedPnl: "已实现损益",
+    availableCash: "可用现金",
+    unrealized: "未实现盈亏",
+    realized: "已实现损益",
+    invested: "已投资",
+    cashLabel: "现金",
+    detailsToggle: "账户详情 · 保证金与余额",
     accountMargin: "账户保证金",
-    availableFunds: "可用资金",
     orderMargin: "订单保证金",
     marginBuffer: "保证金缓冲",
-    accountValue: "账户净值",
-    pnl: "总盈亏",
-    cash: "可用现金",
-    invested: "已投资比例",
-    unrealized: "未实现盈亏",
-    accountUnavailable: "账户接口不可达——在后端恢复前隐藏数值，避免误读。",
-    exposureBySymbol: "按标的的暴露",
-    exposureBySymbolDesc: "各持仓占已投资市值的比例；每条按「策略 / 手动」来源分段着色。",
-    long: "多头",
-    short: "空头",
-    manual: "手动",
-    strategy: "策略",
-    noPositionsTitle: "暂无持仓",
-    noPositionsDesc: "手动下单或运行一次策略再平衡，即可建立账户持仓。",
-    goTrade: "打开模拟交易",
+    accountBalance: "账户余额",
+    reservedCash: "冻结",
+    initialBase: "初始本金",
     priceSource: "报价",
     priceKinds: {
       futu_snapshot: "Futu 实时快照",
       last_close: "最近真实收盘",
     } as Record<string, string>,
-    asOf: "截至",
-    safetyState: "安全状态",
-    paperBadge: "仅模拟 · 不接触实盘",
-    accountFrozen: "已冻结",
-    positionsTitle: "账户持仓",
-    positionsDesc: "实时持仓：均价、现价、权重与未实现盈亏。",
-    ordersTitle: "当前订单",
-    ordersDesc: "尚未成交的模拟限价单，以及冻结的现金或数量。",
-    orderHistoryTitle: "订单历史",
-    orderHistoryDesc: "来自账户账本的已成交、已取消订单事件。",
-    balanceHistoryTitle: "余额历史",
-    balanceHistoryDesc: "从追加式账户账本重建的现金变化。",
-    tradeLogTitle: "交易日志",
-    tradeLogDesc: "完整账户账本：入金、成交、取消、冻结与袖珍仓事件。",
-    noPositionRowsDesc: "账户暂无持仓。",
-    noOrdersTitle: "暂无当前订单",
-    noOrdersDesc: "等待成交的限价单会显示在这里，直到成交或取消。",
-    noOrderHistoryTitle: "暂无订单历史",
-    noOrderHistoryDesc: "模拟订单成交或取消后会显示在这里。",
-    noBalanceHistoryTitle: "暂无余额历史",
-    noBalanceHistoryDesc: "账户打开或发生变化后，现金流水会显示在这里。",
-    noTradeLogTitle: "暂无交易日志",
-    noTradeLogDesc: "模拟账户记录账本事件后会显示在这里。",
-    product: "商品",
-    buySell: "买/卖方",
-    quantity: "数量",
-    avgFill: "平均成交价",
-    latestPrice: "最新价",
-    unrealizedPct: "未实现损益%",
-    tradeValue: "交易值",
-    sourceLabel: "来源",
-    time: "时间",
-    orderId: "订单号",
-    status: "状态",
-    limitPrice: "限价",
-    reserved: "冻结",
-    lastCheck: "最近检查",
-    event: "事件",
-    cashDelta: "现金变化",
-    cashAfterShort: "余额",
-    note: "备注",
-    ledgerTitle: "账户流水",
-    ledgerDesc: "最近的账本记录——每一笔下单、再平衡与重置都在这里留痕。",
-    ledgerEmptyTitle: "暂无流水",
-    ledgerEmptyDesc: "下单与再平衡后，这里会出现完整的审计流水。",
-    ledgerMore: "显示最近",
-    kind: {
-      fill: "成交",
-      rebalance_fill: "再平衡成交",
-      deposit: "入金",
-      reset: "重置",
-      fee: "费用",
-      freeze: "冻结",
-      unfreeze: "解冻",
-      order_cancelled: "已取消",
-      sleeve_cash_allocated: "袖珍仓现金",
-      sleeve_execution_fill: "袖珍仓成交",
-    } as Record<string, string>,
-    statusLabels: {
-      pending: "等待",
-      filled: "已成交",
-      cancelled: "已取消",
-      event: "事件",
-    } as Record<string, string>,
-    side: { BUY: "买入", SELL: "卖出" } as Record<string, string>,
-    cashAfter: "余额",
-    comparisonTitle: "最近一次回测暴露（研究对比）",
-    comparisonDesc: "最新回测的期末持仓——研究产物，不是你的账户。",
-    noBacktestDesc: "未找到回测持仓数据行。",
-    openBacktest: "打开运行",
-    columns: {
-      symbol: "标的",
-      quantity: "数量",
-      avg_cost: "均价",
-      last_price: "现价",
-      weight: "权重",
-      market_value: "市值",
-      unrealized_pnl: "未实现盈亏",
-      source: "来源",
-      price_kind: "价格来源",
-    },
-    tips: {
-      price_kind:
-        "futu_snapshot = 成交时的 Futu 实时快照；last_close = 最近一根真实日收盘（OpenD 离线时回退）。",
-      source: "该持仓由哪条路径建立：手动下单、策略再平衡，或两者混合。",
-      weight: "持仓市值占全部已投资市值的比例。",
-    },
-    mixed: "混合",
+    accountUnavailable: "账户接口不可达——在后端恢复前隐藏数值，避免误读。",
   },
 } as const;
 
@@ -301,27 +82,19 @@ function resolveAccountTab(value: string | string[] | undefined): AccountTab {
   return accountTabs.includes(raw as AccountTab) ? (raw as AccountTab) : "positions";
 }
 
-function accountTabHref(tab: AccountTab, locale: "en" | "zh") {
-  const path = tab === "positions" ? "/position-map" : `/position-map?tab=${tab}`;
-  return localizePath(path, locale);
-}
-
 export default async function PositionMapPage({ searchParams }: PositionMapPageProps) {
   const params = (await searchParams) ?? {};
   const locale = await getServerLocale(params);
   const text = copy[locale];
-  const activeTab = resolveAccountTab(params.tab);
-  const [activity, backtests, health] = await Promise.all([
+  const initialTab = resolveAccountTab(params.tab);
+  const [activity, backtests, settings] = await Promise.all([
     getPaperAccountActivity(200),
     getBacktests(),
-    getCachedHealth(),
+    getCachedSettings(),
   ]);
+  const settingsSafety =
+    settings.apiError || !settings.safety ? null : settings.safety;
   const account = activity.account;
-  const ledger = {
-    apiError: activity.apiError,
-    entries: activity.trade_log.slice(0, 12),
-    total: activity.trade_log_total,
-  };
   const includeSample = shouldIncludeSampleRuns(params);
   const latestBacktest = selectDisplayRun(backtests.backtests, includeSample);
   const backtestDetail = latestBacktest ? await getBacktestDetail(latestBacktest.id) : null;
@@ -332,908 +105,182 @@ export default async function PositionMapPage({ searchParams }: PositionMapPageP
     (a, b) => Math.abs(b.market_value) - Math.abs(a.market_value),
   );
   const grossInvested = positions.reduce((sum, p) => sum + Math.abs(p.market_value), 0);
-  const priceSourceLabel = text.priceKinds[account.price_source.kind] ?? account.price_source.kind;
-  const marginBuffer = account.equity > 0 ? account.available_cash / account.equity : 0;
+  const priceSourceLabel = `${text.priceSource}: ${text.priceKinds[account.price_source.kind] ?? account.price_source.kind}`;
+  const totalPnl = account.realized_pnl + account.unrealized_pnl;
+  const investedPct = account.equity > 0 ? grossInvested / account.equity : 0;
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-y-auto bg-bg-base text-text-primary">
       <ErrorBanner
         locale={locale}
-        messages={[activity.apiError, account.apiError, backtests.apiError, health.apiError, backtestDetail?.apiError]}
+        messages={[activity.apiError, account.apiError, backtests.apiError, settings.apiError, backtestDetail?.apiError]}
       />
 
-      <header className="border-b border-border-subtle bg-bg-surface px-4 py-4 lg:px-6">
+      {/* ---------- Hero：净值主角 + 次级指标 + 资金构成 ---------- */}
+      <header className="border-b border-border-subtle px-4 pb-6 pt-5 lg:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-text-secondary">
-              <Layers size={18} className="text-text-primary" />
-              <span className="font-label-caps uppercase">{text.eyebrow}</span>
+              <Layers size={16} className="text-text-primary" />
+              <span className="font-label-caps uppercase">
+                {text.eyebrow} · {accountDown ? "default" : account.account_id} / {account.base_currency}
+              </span>
             </div>
             <h1 className="mt-1 font-headline-xl text-text-primary">{text.title}</h1>
-            <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">{text.subtitle}</p>
+            <p className="mt-2 max-w-2xl font-body-sm text-text-secondary">{text.subtitle}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <AccountRefreshControl locale={locale} />
-            <Link
-              className="flex items-center gap-1.5 rounded-full border border-border-subtle bg-bg-surface-muted px-3 py-1.5 font-body-sm text-text-primary transition-colors hover:border-text-secondary/50 hover:bg-bg-surface"
-              href={localizePath("/paper-trading", locale)}
-            >
-              <BriefcaseBusiness size={14} />
-              {text.openPaperTrading}
-            </Link>
-          </div>
+          <AccountRefreshControl locale={locale} />
         </div>
 
-        <div className="mt-6 flex flex-col gap-4 xl:flex-row xl:items-center">
-          <div className="inline-flex min-w-[220px] items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-base px-3 py-2 text-text-primary">
-            <span className="min-w-0 truncate font-body-md">{accountDown ? text.accountSelector : account.account_id}</span>
-            <span className="font-data-mono text-xs uppercase text-text-secondary">{account.base_currency}</span>
+        <div className="mt-7 flex flex-wrap items-end gap-x-14 gap-y-6">
+          <div>
+            <div className="font-label-caps text-text-secondary">{text.netValue}</div>
+            <div className="mt-1 font-data-mono text-[34px] font-semibold leading-none tabular-nums text-text-primary">
+              {accountDown ? "--" : formatMoney2(account.equity)}
+            </div>
+            {!accountDown ? (
+              <div
+                className={`mt-2 inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-data-mono text-xs font-semibold ${
+                  totalPnl >= 0 ? "bg-accent-success/10 text-accent-success" : "bg-danger/10 text-danger"
+                }`}
+              >
+                {totalPnl >= 0 ? "▲" : "▼"} {signedMoney(totalPnl)} · {signedPct(account.pnl_pct)}
+              </div>
+            ) : null}
           </div>
-          <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-8 gap-y-3 md:grid-cols-4 2xl:grid-cols-8">
-            <TerminalMetric
-              label={text.accountBalance}
-              value={accountDown ? "--" : formatMoney(account.cash)}
-            />
-            <TerminalMetric label={text.netValue} value={accountDown ? "--" : formatMoney(account.equity)} />
-            <TerminalMetric
-              label={text.realizedPnl}
-              value={accountDown ? "--" : signedMoney(account.realized_pnl)}
-              tone={accountDown ? "neutral" : pnlTone(account.realized_pnl)}
-            />
-            <TerminalMetric
-              label={text.unrealized}
-              value={accountDown ? "--" : signedMoney(account.unrealized_pnl)}
-              tone={accountDown ? "neutral" : pnlTone(account.unrealized_pnl)}
-            />
-            <TerminalMetric
-              label={text.accountMargin}
-              value={accountDown ? "--" : formatMoney(grossInvested)}
-            />
-            <TerminalMetric
-              label={text.availableFunds}
+          <div className="flex flex-wrap gap-x-10 gap-y-4 pb-1">
+            <HeroMetric
+              label={text.availableCash}
+              sub={`${text.reservedCash} ${accountDown ? "--" : formatMoney(account.reserved_cash)}`}
               value={accountDown ? "--" : formatMoney(account.available_cash)}
             />
-            <TerminalMetric
-              label={text.orderMargin}
-              value={accountDown ? "--" : formatMoney(account.reserved_cash)}
+            <HeroMetric
+              label={text.unrealized}
+              tone={accountDown ? "neutral" : totalTone(account.unrealized_pnl)}
+              value={accountDown ? "--" : signedMoney(account.unrealized_pnl)}
             />
-            <TerminalMetric
-              label={text.marginBuffer}
-              value={accountDown ? "--" : `${(marginBuffer * 100).toFixed(2)}%`}
+            <HeroMetric
+              label={text.realized}
+              tone={accountDown ? "neutral" : totalTone(account.realized_pnl)}
+              value={accountDown ? "--" : signedMoney(account.realized_pnl)}
             />
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <nav className="flex flex-wrap gap-2" aria-label={text.positionsTitle}>
-            <TradingTab
-              active={activeTab === "positions"}
-              href={accountTabHref("positions", locale)}
-              label={`${text.positionsTab} ${positions.length}`}
-            />
-            <TradingTab
-              active={activeTab === "orders"}
-              href={accountTabHref("orders", locale)}
-              label={`${text.ordersTab} ${activity.pending_order_total}`}
-            />
-            <TradingTab
-              active={activeTab === "order-history"}
-              href={accountTabHref("order-history", locale)}
-              label={text.orderHistoryTab}
-            />
-            <TradingTab
-              active={activeTab === "balance-history"}
-              href={accountTabHref("balance-history", locale)}
-              label={text.balanceHistoryTab}
-            />
-            <TradingTab
-              active={activeTab === "trade-log"}
-              href={accountTabHref("trade-log", locale)}
-              label={text.tradeLogTab}
-            />
-          </nav>
-          <div className="flex items-center gap-2 text-text-secondary">
-            <span className="hidden items-center gap-1.5 font-data-mono text-[10px] uppercase sm:flex">
-              {text.priceSource}: {priceSourceLabel}
-              {account.price_source.as_of ? ` · ${text.asOf} ${formatTimestamp(account.price_source.as_of)}` : ""}
-            </span>
+        {!accountDown ? (
+          <div className="mt-6 max-w-xl">
+            <div className="flex h-2 overflow-hidden rounded-full">
+              <div className="bg-info" style={{ width: `${Math.max(investedPct * 100, 1.5)}%` }} />
+              <div className="flex-1 bg-bg-surface-muted" />
+            </div>
+            <div className="mt-1.5 flex justify-between font-data-mono text-[11px] text-text-secondary">
+              <span>
+                <span className="mr-1.5 inline-block h-[7px] w-[7px] rounded-sm bg-info" />
+                {text.invested} <b className="font-medium text-text-primary">{formatMoney(grossInvested)} · {(investedPct * 100).toFixed(1)}%</b>
+              </span>
+              <span>
+                <span className="mr-1.5 inline-block h-[7px] w-[7px] rounded-sm bg-bg-surface-muted outline outline-1 outline-border-subtle" />
+                {text.cashLabel} <b className="font-medium text-text-primary">{formatMoney(account.available_cash)} · {((1 - investedPct) * 100).toFixed(1)}%</b>
+              </span>
+            </div>
           </div>
-        </div>
+        ) : null}
+
+        <details className="group mt-4">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 font-body-sm text-text-secondary transition-colors hover:text-text-primary [&::-webkit-details-marker]:hidden">
+            <span className="text-[9px] transition-transform group-open:rotate-90">▸</span>
+            {text.detailsToggle}
+          </summary>
+          <div className="mt-3 flex flex-wrap gap-x-10 gap-y-3">
+            <DetailMetric label={text.accountMargin} value={accountDown ? "--" : formatMoney(grossInvested)} />
+            <DetailMetric label={text.orderMargin} value={accountDown ? "--" : formatMoney(account.reserved_cash)} />
+            <DetailMetric
+              label={text.marginBuffer}
+              value={accountDown || account.equity <= 0 ? "--" : `${((account.available_cash / account.equity) * 100).toFixed(2)}%`}
+            />
+            <DetailMetric label={text.accountBalance} value={accountDown ? "--" : formatMoney(account.cash)} />
+            <DetailMetric
+              label={text.initialBase}
+              value={accountDown ? "--" : formatMoney(account.initial_cash)}
+            />
+          </div>
+        </details>
+
+        {accountDown ? (
+          <p className="mt-4 font-body-sm text-danger">{text.accountUnavailable}</p>
+        ) : null}
       </header>
 
-      {accountDown ? (
-        <Card tone="danger" padded className="m-4 lg:m-6">
-          <p className="font-body-sm text-danger">{text.accountUnavailable}</p>
-        </Card>
-      ) : null}
-
-      <main className="flex flex-col gap-4 p-4 lg:p-6">
-        <AccountActivityPanel
-          accountDown={accountDown}
-          activeTab={activeTab}
-          activity={activity}
-          positions={positions}
-          text={text}
-        />
-
-        <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
-        <div className="flex min-w-0 flex-col gap-4">
-          <Card padded>
-            <SectionTitle
-              title={text.exposureBySymbol}
-              hint={text.exposureBySymbolDesc}
-              right={
-                <span className="shrink-0 font-data-mono text-[10px] uppercase text-text-secondary">
-                  {text.priceSource}: {priceSourceLabel}
-                  {account.price_source.as_of ? ` · ${text.asOf} ${formatTimestamp(account.price_source.as_of)}` : ""}
-                </span>
-              }
-            />
-            {positions.length ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-4 font-label-caps text-[10px] text-text-secondary">
-                  <span className="flex items-center gap-1.5">
-                    <span className="inline-block h-2 w-2 rounded-sm bg-accent-success" /> {text.strategy}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="inline-block h-2 w-2 rounded-sm bg-info" /> {text.manual}
-                  </span>
-                </div>
-                {positions.map((row) => (
-                  <ExposureBar
-                    key={row.symbol}
-                    row={row}
-                    gross={grossInvested}
-                    longLabel={text.long}
-                    shortLabel={text.short}
-                    manualLabel={text.manual}
-                    strategyLabel={text.strategy}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                title={text.noPositionsTitle}
-                description={text.noPositionsDesc}
-                action={
-                  <Link
-                    className="flex items-center gap-1.5 rounded-lg border border-info/40 bg-info/10 px-3 py-1.5 font-body-sm text-info transition-colors hover:bg-info/20"
-                    href={localizePath("/paper-trading", locale)}
-                  >
-                    {text.goTrade}
-                    <ArrowRight size={14} />
-                  </Link>
-                }
-              />
-            )}
-          </Card>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-4">
-          <Card padded>
-            <SectionTitle
-              title={text.ledgerTitle}
-              hint={text.ledgerDesc}
-              right={
-                ledger.total > ledger.entries.length ? (
-                  <span className="font-data-mono text-[10px] uppercase text-text-secondary">
-                    {text.ledgerMore} {ledger.entries.length}/{ledger.total}
-                  </span>
-                ) : null
-              }
-            />
-            {ledger.entries.length ? (
-              <ol className="space-y-2">
-                {ledger.entries.map((entry) => (
-                  <LedgerRow key={entry.entry_id} entry={entry} text={text} />
-                ))}
-              </ol>
-            ) : (
-              <EmptyState title={text.ledgerEmptyTitle} description={text.ledgerEmptyDesc} />
-            )}
-          </Card>
-
-          <Card padded>
-            <div className="mb-3 flex items-center gap-2 text-text-secondary">
-              <ShieldCheck size={16} className="text-accent-success" />
-              <h2 className="font-label-caps text-text-primary">{text.safetyState}</h2>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <StatusPill
-                label="paper_trading"
-                value={String(health.safety?.paper_trading ?? true)}
-                tone="success"
-              />
-              <StatusPill
-                label="live_trading"
-                value={String(health.safety?.live_trading_enabled ?? false)}
-                tone={health.safety?.live_trading_enabled ? "danger" : "neutral"}
-              />
-              <StatusPill
-                label={text.accountFrozen}
-                value={String(account.kill_switch)}
-                tone={account.kill_switch ? "danger" : "neutral"}
-              />
-            </div>
-            <p className="mt-3 font-body-sm text-text-secondary">{text.paperBadge}</p>
-          </Card>
-        </div>
-        </section>
-
-        <section>
-        <Card padded>
-          <SectionTitle
-            title={text.comparisonTitle}
-            hint={text.comparisonDesc}
-            right={
-              <span className="flex items-center gap-2">
-                {latestBacktest?.source ? <DataSourceBadge source={latestBacktest.source} /> : null}
-                {latestBacktest ? (
-                  <Link
-                    className="rounded-lg border border-border-subtle px-2 py-1 font-body-sm text-info transition-colors hover:bg-bg-surface-muted"
-                    href={localizePath(`/backtest/${latestBacktest.id}`, locale)}
-                  >
-                    {text.openBacktest}
-                  </Link>
-                ) : null}
-              </span>
-            }
-          />
-          {backtestExposure.length ? (
-            <div className="grid gap-x-8 gap-y-2 md:grid-cols-2">
-              {backtestExposure.map((row) => (
-                <div className="grid grid-cols-[110px_1fr_70px] items-center gap-2" key={row.symbol}>
-                  <span className="font-data-mono text-text-primary">{row.symbol}</span>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-bg-surface-muted">
-                    <div
-                      className={row.side === "Long" ? "h-full bg-accent-success/70" : "h-full bg-danger/70"}
-                      style={{ width: `${Math.max(row.weight * 100, 2)}%` }}
-                    />
-                  </div>
-                  <span className="text-right font-data-mono text-text-secondary">
-                    {(row.weight * 100).toFixed(1)}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState title={text.comparisonTitle} description={text.noBacktestDesc} />
-          )}
-        </Card>
-        </section>
-      </main>
+      {/* ---------- 工作区：tabs + 面板 + 情境右栏（客户端） ---------- */}
+      <PositionMapWorkspace
+        account={account}
+        accountDown={accountDown}
+        backtestExposure={backtestExposure}
+        backtestHref={latestBacktest ? localizePath(`/backtest/${latestBacktest.id}`, locale) : null}
+        balanceHistory={activity.balance_history}
+        initialTab={initialTab}
+        locale={locale}
+        orderHistory={activity.order_history}
+        pendingOrders={activity.pending_orders}
+        positions={positions}
+        priceSourceLabel={priceSourceLabel}
+        safety={{
+          paperTrading: settingsSafety?.paper_trading ?? null,
+          liveTrading: settingsSafety?.live_trading_enabled ?? null,
+        }}
+        totals={{
+          orders: activity.pending_order_total,
+          orderHistory: activity.order_history_total,
+          balanceHistory: activity.balance_history_total,
+          tradeLog: activity.trade_log_total,
+        }}
+        tradeLog={activity.trade_log}
+      />
     </div>
   );
 }
 
-type PositionCopy = (typeof copy)["en"] | (typeof copy)["zh"];
-type Tone = "neutral" | "success" | "danger";
-
-function TerminalMetric({
+function HeroMetric({
   label,
-  value,
+  sub,
   tone = "neutral",
+  value,
 }: {
   label: string;
+  sub?: string;
+  tone?: "neutral" | "success" | "danger";
   value: string;
-  tone?: Tone;
 }) {
-  const toneStyle =
-    tone === "success"
-      ? { color: "var(--color-accent-success)" }
-      : tone === "danger"
-        ? { color: "var(--color-danger)" }
-        : undefined;
+  const toneClass =
+    tone === "success" ? "text-accent-success" : tone === "danger" ? "text-danger" : "text-text-primary";
   return (
-    <div className="min-w-0">
-      <div className="whitespace-nowrap font-label-caps text-text-secondary">{label}</div>
-      <div
-        className="mt-1 whitespace-nowrap font-data-mono text-base font-semibold tabular-nums text-text-primary"
-        style={toneStyle}
-      >
-        {value}
-      </div>
+    <div className="border-l border-border-subtle pl-4 first:border-l-0 first:pl-0">
+      <div className="font-label-caps text-text-secondary">{label}</div>
+      <div className={`mt-1 font-data-mono text-lg font-semibold tabular-nums ${toneClass}`}>{value}</div>
+      {sub ? <div className="mt-0.5 font-data-mono text-[10.5px] text-text-secondary">{sub}</div> : null}
     </div>
   );
 }
 
-function TradingTab({
-  label,
-  active = false,
-  href,
-}: {
-  label: string;
-  active?: boolean;
-  href: string;
-}) {
+function DetailMetric({ label, value }: { label: string; value: string }) {
   return (
-    <Link
-      aria-current={active ? "page" : undefined}
-      className={`inline-flex h-9 items-center rounded-full px-4 font-body-md transition-colors ${
-        active
-          ? "bg-text-primary text-bg-base"
-          : "bg-bg-surface-muted text-text-secondary hover:bg-border-subtle hover:text-text-primary"
-      }`}
-      href={href}
-    >
-      {label}
-    </Link>
-  );
-}
-
-function AccountActivityPanel({
-  accountDown,
-  activeTab,
-  activity,
-  positions,
-  text,
-}: {
-  accountDown: boolean;
-  activeTab: AccountTab;
-  activity: PaperAccountActivityResponse;
-  positions: AccountPositionView[];
-  text: PositionCopy;
-}) {
-  if (activeTab === "orders") {
-    return <OrdersPanel accountDown={accountDown} orders={activity.pending_orders} text={text} />;
-  }
-  if (activeTab === "order-history") {
-    return (
-      <OrderHistoryPanel
-        accountDown={accountDown}
-        rows={activity.order_history}
-        text={text}
-        total={activity.order_history_total}
-      />
-    );
-  }
-  if (activeTab === "balance-history") {
-    return (
-      <BalanceHistoryPanel
-        accountDown={accountDown}
-        rows={activity.balance_history}
-        text={text}
-        total={activity.balance_history_total}
-      />
-    );
-  }
-  if (activeTab === "trade-log") {
-    return (
-      <TradeLogPanel
-        accountDown={accountDown}
-        rows={activity.trade_log}
-        text={text}
-        total={activity.trade_log_total}
-      />
-    );
-  }
-  return <PositionsTradingPanel accountDown={accountDown} positions={positions} text={text} />;
-}
-
-function PositionsTradingPanel({
-  accountDown,
-  positions,
-  text,
-}: {
-  accountDown: boolean;
-  positions: AccountPositionView[];
-  text: PositionCopy;
-}) {
-  return (
-    <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-        <div>
-          <h2 className="font-label-caps text-text-primary">{text.positionsTitle}</h2>
-          <p className="mt-1 font-body-sm text-text-secondary">{text.positionsDesc}</p>
-        </div>
-        <span className="font-data-mono text-[10px] uppercase text-text-secondary">
-          {positions.length} {text.positionsTab}
-        </span>
-      </div>
-      {accountDown ? (
-        <p className="py-10 text-center font-body-sm text-text-secondary">{text.accountUnavailable}</p>
-      ) : positions.length === 0 ? (
-        <EmptyState title={text.noPositionsTitle} description={text.noPositionsDesc} />
-      ) : (
-        <div className="overflow-x-auto" data-position-table-scroll="true">
-          <table className="w-full min-w-[980px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
-                {[
-                  text.product,
-                  text.buySell,
-                  text.quantity,
-                  text.avgFill,
-                  text.latestPrice,
-                  text.unrealized,
-                  text.unrealizedPct,
-                  text.tradeValue,
-                  text.sourceLabel,
-                ].map((heading, index) => (
-                  <th
-                    className={`px-4 py-3 font-label-caps ${
-                      index >= 2 && index <= 7 ? "text-right" : ""
-                    }`}
-                    key={heading}
-                  >
-                    {heading}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="font-data-mono text-sm text-text-primary">
-              {positions.map((position) => (
-                <PositionTradingRow key={position.symbol} position={position} text={text} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function AccountPanelShell({
-  accountDown,
-  children,
-  countLabel,
-  description,
-  emptyDescription,
-  emptyTitle,
-  hasRows,
-  title,
-}: {
-  accountDown: boolean;
-  children: ReactNode;
-  countLabel: string;
-  description: string;
-  emptyDescription: string;
-  emptyTitle: string;
-  hasRows: boolean;
-  title: string;
-}) {
-  return (
-    <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-        <div>
-          <h2 className="font-label-caps text-text-primary">{title}</h2>
-          <p className="mt-1 font-body-sm text-text-secondary">{description}</p>
-        </div>
-        <span className="font-data-mono text-[10px] uppercase text-text-secondary">{countLabel}</span>
-      </div>
-      {accountDown ? (
-        <p className="py-10 text-center font-body-sm text-text-secondary">{emptyDescription}</p>
-      ) : hasRows ? (
-        children
-      ) : (
-        <EmptyState title={emptyTitle} description={emptyDescription} />
-      )}
-    </section>
-  );
-}
-
-function OrdersPanel({
-  accountDown,
-  orders,
-  text,
-}: {
-  accountDown: boolean;
-  orders: PendingAccountOrderView[];
-  text: PositionCopy;
-}) {
-  return (
-    <AccountPanelShell
-      accountDown={accountDown}
-      countLabel={`${orders.length} ${text.ordersTab}`}
-      description={text.ordersDesc}
-      emptyDescription={accountDown ? text.accountUnavailable : text.noOrdersDesc}
-      emptyTitle={text.noOrdersTitle}
-      hasRows={orders.length > 0}
-      title={text.ordersTitle}
-    >
-      <div className="overflow-x-auto" data-position-table-scroll="true">
-        <table className="w-full min-w-[980px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
-              {[text.time, text.orderId, text.product, text.buySell, text.quantity, text.limitPrice, text.reserved, text.lastCheck].map(
-                (heading, index) => (
-                  <th className={`px-4 py-3 font-label-caps ${index >= 4 && index <= 6 ? "text-right" : ""}`} key={heading}>
-                    {heading}
-                  </th>
-                ),
-              )}
-            </tr>
-          </thead>
-          <tbody className="font-data-mono text-sm text-text-primary">
-            {orders.map((order) => (
-              <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={order.order_id}>
-                <td className="px-4 py-3 text-text-secondary">{formatTimestamp(order.created_at)}</td>
-                <td className="px-4 py-3 text-text-secondary">{shortId(order.order_id)}</td>
-                <td className="px-4 py-3 font-semibold">{order.symbol}</td>
-                <td className={order.side.toLowerCase() === "buy" ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
-                  {formatSide(order.side, text)}
-                </td>
-                <NumericCell>{formatQuantity(order.quantity)}</NumericCell>
-                <NumericCell>{formatPrice(order.limit_price)}</NumericCell>
-                <NumericCell>{formatReserved(order)}</NumericCell>
-                <td className="px-4 py-3 text-text-secondary">
-                  {order.last_checked_at ? formatTimestamp(order.last_checked_at) : "--"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </AccountPanelShell>
-  );
-}
-
-function OrderHistoryPanel({
-  accountDown,
-  rows,
-  text,
-  total,
-}: {
-  accountDown: boolean;
-  rows: PaperAccountOrderHistoryRowResponse[];
-  text: PositionCopy;
-  total: number;
-}) {
-  return (
-    <AccountPanelShell
-      accountDown={accountDown}
-      countLabel={`${total} ${text.orderHistoryTab}`}
-      description={text.orderHistoryDesc}
-      emptyDescription={accountDown ? text.accountUnavailable : text.noOrderHistoryDesc}
-      emptyTitle={text.noOrderHistoryTitle}
-      hasRows={rows.length > 0}
-      title={text.orderHistoryTitle}
-    >
-      <div className="overflow-x-auto" data-position-table-scroll="true">
-        <table className="w-full min-w-[1120px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
-              {[text.time, text.status, text.orderId, text.product, text.buySell, text.quantity, text.avgFill, text.tradeValue, text.sourceLabel].map(
-                (heading, index) => (
-                  <th className={`px-4 py-3 font-label-caps ${index >= 5 && index <= 7 ? "text-right" : ""}`} key={heading}>
-                    {heading}
-                  </th>
-                ),
-              )}
-            </tr>
-          </thead>
-          <tbody className="font-data-mono text-sm text-text-primary">
-            {rows.map((row) => (
-              <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={row.event_id}>
-                <td className="px-4 py-3 text-text-secondary">{formatTimestamp(row.timestamp)}</td>
-                <td className="px-4 py-3">
-                  <StatusBadge label={statusLabel(row.status, text)} status={row.status} />
-                </td>
-                <td className="px-4 py-3 text-text-secondary">{row.order_id ? shortId(row.order_id) : "--"}</td>
-                <td className="px-4 py-3 font-semibold">{row.symbol ?? "--"}</td>
-                <td className={row.side?.toLowerCase() === "buy" ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
-                  {formatSide(row.side, text)}
-                </td>
-                <NumericCell>{formatMaybeQuantity(row.quantity)}</NumericCell>
-                <NumericCell>{formatMaybePrice(row.price)}</NumericCell>
-                <NumericCell>{formatMaybeMoney(row.gross_value)}</NumericCell>
-                <td className="px-4 py-3 text-text-secondary">{row.source}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </AccountPanelShell>
-  );
-}
-
-function BalanceHistoryPanel({
-  accountDown,
-  rows,
-  text,
-  total,
-}: {
-  accountDown: boolean;
-  rows: PaperAccountBalanceHistoryRowResponse[];
-  text: PositionCopy;
-  total: number;
-}) {
-  return (
-    <AccountPanelShell
-      accountDown={accountDown}
-      countLabel={`${total} ${text.balanceHistoryTab}`}
-      description={text.balanceHistoryDesc}
-      emptyDescription={accountDown ? text.accountUnavailable : text.noBalanceHistoryDesc}
-      emptyTitle={text.noBalanceHistoryTitle}
-      hasRows={rows.length > 0}
-      title={text.balanceHistoryTitle}
-    >
-      <div className="overflow-x-auto" data-position-table-scroll="true">
-        <table className="w-full min-w-[860px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
-              {[text.time, text.event, text.cashDelta, text.cashAfterShort, text.sourceLabel, text.note].map((heading, index) => (
-                <th className={`px-4 py-3 font-label-caps ${index === 2 || index === 3 ? "text-right" : ""}`} key={heading}>
-                  {heading}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="font-data-mono text-sm text-text-primary">
-            {rows.map((row) => {
-              const tone = pnlTone(row.cash_delta);
-              const toneClass =
-                tone === "success" ? "text-accent-success" : tone === "danger" ? "text-danger" : "text-text-primary";
-              return (
-                <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={row.event_id}>
-                  <td className="px-4 py-3 text-text-secondary">{formatTimestamp(row.timestamp)}</td>
-                  <td className="px-4 py-3">{eventLabel(row.kind, text)}</td>
-                  <NumericCell className={toneClass}>{signedMoney(row.cash_delta)}</NumericCell>
-                  <NumericCell>{formatMoney(row.cash_after)}</NumericCell>
-                  <td className="px-4 py-3 text-text-secondary">{row.source}</td>
-                  <td className="max-w-[360px] truncate px-4 py-3 text-text-secondary">{row.note || "--"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </AccountPanelShell>
-  );
-}
-
-function TradeLogPanel({
-  accountDown,
-  rows,
-  text,
-  total,
-}: {
-  accountDown: boolean;
-  rows: LedgerEntryView[];
-  text: PositionCopy;
-  total: number;
-}) {
-  return (
-    <AccountPanelShell
-      accountDown={accountDown}
-      countLabel={`${total} ${text.tradeLogTab}`}
-      description={text.tradeLogDesc}
-      emptyDescription={accountDown ? text.accountUnavailable : text.noTradeLogDesc}
-      emptyTitle={text.noTradeLogTitle}
-      hasRows={rows.length > 0}
-      title={text.tradeLogTitle}
-    >
-      <div className="overflow-x-auto" data-position-table-scroll="true">
-        <table className="w-full min-w-[1120px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-subtle bg-bg-surface text-text-secondary">
-              {[text.time, text.event, text.product, text.buySell, text.quantity, text.avgFill, text.cashAfterShort, text.note].map(
-                (heading, index) => (
-                  <th className={`px-4 py-3 font-label-caps ${index >= 4 && index <= 6 ? "text-right" : ""}`} key={heading}>
-                    {heading}
-                  </th>
-                ),
-              )}
-            </tr>
-          </thead>
-          <tbody className="font-data-mono text-sm text-text-primary">
-            {rows.map((row) => (
-              <tr className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45" key={row.entry_id}>
-                <td className="px-4 py-3 text-text-secondary">{formatTimestamp(row.timestamp)}</td>
-                <td className="px-4 py-3">{eventLabel(row.kind, text)}</td>
-                <td className="px-4 py-3 font-semibold">{row.symbol ?? "--"}</td>
-                <td className={row.side?.toLowerCase() === "buy" ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
-                  {formatSide(row.side, text)}
-                </td>
-                <NumericCell>{formatMaybeQuantity(row.quantity)}</NumericCell>
-                <NumericCell>{formatMaybePrice(row.price)}</NumericCell>
-                <NumericCell>{formatMaybeMoney(row.cash_after)}</NumericCell>
-                <td className="max-w-[360px] truncate px-4 py-3 text-text-secondary">{row.note || "--"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </AccountPanelShell>
-  );
-}
-
-function PositionTradingRow({ position, text }: { position: AccountPositionView; text: PositionCopy }) {
-  const isLong = position.quantity >= 0;
-  const pnl = pnlTone(position.unrealized_pnl);
-  const pnlClass =
-    pnl === "success" ? "text-accent-success" : pnl === "danger" ? "text-danger" : "text-text-primary";
-  const costBasis = Math.abs(position.quantity) * position.avg_cost;
-  const pnlPct = costBasis > 0 ? position.unrealized_pnl / costBasis : 0;
-  const source = positionSourceLabel(position, text);
-  const sourceTone =
-    source === text.strategy
-      ? "border-accent-success/30 bg-accent-success/10 text-accent-success"
-      : source === text.manual
-        ? "border-border-subtle bg-bg-surface-muted text-text-secondary"
-        : "border-warning/30 bg-warning/10 text-warning";
-
-  return (
-    <tr
-      className="border-b border-border-subtle/80 transition-colors hover:bg-bg-surface-muted/45"
-      data-position-row="true"
-    >
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-surface-muted font-data-mono text-[10px] uppercase text-text-secondary">
-            {position.symbol.slice(0, 2)}
-          </span>
-          <span className="rounded-md bg-bg-surface-muted px-2.5 py-1 font-data-mono font-semibold text-text-primary">
-            {position.symbol}
-          </span>
-        </div>
-      </td>
-      <td className={isLong ? "px-4 py-3 text-info" : "px-4 py-3 text-danger"}>
-        {isLong ? text.long : text.short}
-      </td>
-      <NumericCell>{formatQuantity(position.quantity)}</NumericCell>
-      <NumericCell>{formatPrice(position.avg_cost)}</NumericCell>
-      <NumericCell>{formatPrice(position.last_price)}</NumericCell>
-      <NumericCell className={pnlClass}>{signedMoney(position.unrealized_pnl)}</NumericCell>
-      <NumericCell className={pnlClass}>{signedPct(pnlPct)}</NumericCell>
-      <NumericCell>{formatMoney(Math.abs(position.market_value))}</NumericCell>
-      <td className="px-4 py-3">
-        <span className={`inline-flex rounded-full border px-2 py-0.5 font-data-mono text-[10px] uppercase ${sourceTone}`}>
-          {source}
-        </span>
-      </td>
-    </tr>
-  );
-}
-
-function NumericCell({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <td className={`px-4 py-3 text-right tabular-nums ${className}`}>{children}</td>;
-}
-
-function ExposureBar({
-  row,
-  gross,
-  longLabel,
-  shortLabel,
-  manualLabel,
-  strategyLabel,
-}: {
-  row: AccountPositionView;
-  gross: number;
-  longLabel: string;
-  shortLabel: string;
-  manualLabel: string;
-  strategyLabel: string;
-}) {
-  const absValue = Math.abs(row.market_value);
-  const weight = gross > 0 ? absValue / gross : 0;
-  const isLong = row.quantity >= 0;
-  let manualShare = 0;
-  for (const [source, share] of Object.entries(row.source_breakdown)) {
-    if (source === "manual") manualShare += share;
-  }
-  manualShare = Math.max(0, Math.min(1, manualShare));
-  const strategyShare = Math.max(0, 1 - manualShare);
-  const widthPct = Math.max(weight * 100, 2);
-
-  return (
-    <div className="grid gap-2 md:grid-cols-[130px_1fr_90px]">
-      <div>
-        <div className="font-data-mono text-text-primary">{row.symbol}</div>
-        <div className={`font-label-caps ${isLong ? "text-text-secondary" : "text-danger"}`}>
-          {isLong ? longLabel : shortLabel}
-        </div>
-      </div>
-      <div className="flex flex-col justify-center gap-1">
-        <div className="flex h-3 w-full overflow-hidden rounded-full bg-bg-surface-muted">
-          <div className="flex h-full" style={{ width: `${widthPct}%` }}>
-            {strategyShare > 0 ? (
-              <div
-                className={isLong ? "h-full bg-accent-success" : "h-full bg-danger"}
-                style={{ width: `${strategyShare * 100}%` }}
-              />
-            ) : null}
-            {manualShare > 0 ? (
-              <div
-                className={isLong ? "h-full bg-info" : "h-full bg-danger/60"}
-                style={{ width: `${manualShare * 100}%` }}
-              />
-            ) : null}
-          </div>
-        </div>
-        <div className="font-label-caps text-text-secondary">
-          {strategyLabel} {(strategyShare * 100).toFixed(0)}% · {manualLabel} {(manualShare * 100).toFixed(0)}%
-        </div>
-      </div>
-      <div className="text-right font-data-mono tabular-nums text-text-primary">
-        {(weight * 100).toFixed(1)}%
-      </div>
+    <div>
+      <div className="font-label-caps text-text-secondary">{label}</div>
+      <div className="mt-0.5 font-data-mono text-sm font-medium tabular-nums text-text-primary">{value}</div>
     </div>
   );
 }
 
-function LedgerRow({
-  entry,
-  text,
-}: {
-  entry: LedgerEntryView;
-  text: PositionCopy;
-}) {
-  const kindLabel = text.kind[entry.kind] ?? entry.kind;
-  const sideLabel = entry.side ? (text.side[entry.side.toUpperCase()] ?? entry.side) : null;
-  const isStrategy = entry.source.startsWith("strategy:");
-  const sourceLabel = isStrategy ? `${text.strategy} ${entry.source.slice("strategy:".length)}` : text.manual;
-  const isSell = entry.side?.toUpperCase() === "SELL";
-
-  return (
-    <li className="rounded-lg border border-border-subtle bg-bg-surface-muted/40 px-3 py-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="font-label-caps text-text-primary">{kindLabel}</span>
-          {entry.source !== "system" ? (
-            <span
-              className={`rounded-lg border px-1.5 py-0.5 font-data-mono text-[10px] uppercase ${
-                isStrategy
-                  ? "border-accent-success/40 bg-accent-success/10 text-accent-success"
-                  : "border-info/40 bg-info/10 text-info"
-              }`}
-            >
-              {sourceLabel}
-            </span>
-          ) : null}
-        </div>
-        <span className="font-data-mono text-[10px] text-text-secondary">
-          {formatTimestamp(entry.timestamp)}
-        </span>
-      </div>
-      {entry.symbol ? (
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 font-data-mono text-xs">
-          <span className={isSell ? "text-danger" : "text-accent-success"}>
-            {sideLabel ?? ""} {entry.symbol}{" "}
-            {entry.quantity != null ? Math.abs(entry.quantity).toLocaleString(undefined, { maximumFractionDigits: 2 }) : ""}
-            {entry.price != null ? ` @ ${entry.price.toFixed(2)}` : ""}
-          </span>
-          {entry.cash_after != null ? (
-            <span className="text-text-secondary">
-              {text.cashAfter} {formatMoney(entry.cash_after)}
-            </span>
-          ) : null}
-        </div>
-      ) : entry.note ? (
-        <div className="mt-1 font-body-sm text-text-secondary">{entry.note}</div>
-      ) : null}
-    </li>
-  );
-}
-
-function formatTimestamp(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.valueOf())) {
-    return value;
-  }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
-}
-
-function positionSourceLabel(row: AccountPositionView, text: PositionCopy) {
-  let manualShare = 0;
-  for (const [source, share] of Object.entries(row.source_breakdown)) {
-    if (source === "manual") manualShare += share;
-  }
-  if (manualShare >= 0.999) {
-    return text.manual;
-  }
-  if (manualShare <= 0.001) {
-    return text.strategy;
-  }
-  return text.mixed;
-}
-
-function pnlTone(value: number): Tone {
-  if (!Number.isFinite(value) || value === 0) {
-    return "neutral";
-  }
+function totalTone(value: number): "neutral" | "success" | "danger" {
+  if (!Number.isFinite(value) || value === 0) return "neutral";
   return value > 0 ? "success" : "danger";
+}
+
+function formatMoney2(value: number) {
+  return `${value < 0 ? "-" : ""}$${Math.abs(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function signedMoney(value: number) {
@@ -1241,77 +288,9 @@ function signedMoney(value: number) {
 }
 
 function signedPct(value: number) {
-  if (!Number.isFinite(value)) {
-    return "--";
-  }
+  if (!Number.isFinite(value)) return "--";
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
 }
-
-function formatPrice(value: number) {
-  return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : "--";
-}
-
-function formatQuantity(value: number) {
-  return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "--";
-}
-
-function formatMaybeQuantity(value: number | null | undefined) {
-  return typeof value === "number" ? formatQuantity(value) : "--";
-}
-
-function formatMaybePrice(value: number | null | undefined) {
-  return typeof value === "number" ? formatPrice(value) : "--";
-}
-
-function formatMaybeMoney(value: number | null | undefined) {
-  return typeof value === "number" ? formatMoney(value) : "--";
-}
-
-function formatReserved(order: PendingAccountOrderView) {
-  if (order.reserved_cash > 0) {
-    return formatMoney(order.reserved_cash);
-  }
-  if (order.reserved_quantity > 0) {
-    return formatQuantity(order.reserved_quantity);
-  }
-  return "--";
-}
-
-function formatSide(side: string | null | undefined, text: PositionCopy) {
-  if (!side) {
-    return "--";
-  }
-  const key = side.toUpperCase();
-  return text.side[key] ?? side;
-}
-
-function shortId(id: string) {
-  return id.length > 12 ? `${id.slice(0, 8)}...` : id;
-}
-
-function statusLabel(status: string, text: PositionCopy) {
-  return text.statusLabels[status] ?? status;
-}
-
-function eventLabel(kind: string, text: PositionCopy) {
-  return text.kind[kind] ?? kind;
-}
-
-function StatusBadge({ label, status }: { label: string; status: string }) {
-  const tone =
-    status === "filled"
-      ? "border-accent-success/30 bg-accent-success/10 text-accent-success"
-      : status === "cancelled"
-        ? "border-danger/30 bg-danger/10 text-danger"
-        : "border-border-subtle bg-bg-surface-muted text-text-secondary";
-  return <span className={`inline-flex rounded-full border px-2 py-0.5 font-data-mono text-[10px] uppercase ${tone}`}>{label}</span>;
-}
-
-type BacktestExposureRow = {
-  symbol: string;
-  weight: number;
-  side: "Long" | "Short";
-};
 
 function latestExposure(rows: PreviewRecord[]): BacktestExposureRow[] {
   const latestTimestamp = rows
