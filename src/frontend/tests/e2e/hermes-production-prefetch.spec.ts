@@ -54,7 +54,7 @@ function installDiagnostics(page: Page): Diagnostics & {
 
 test("production Hermes navigation has no background RSC prefetch or aborted request", async ({
   page,
-}) => {
+}, testInfo) => {
   const diagnostics = installDiagnostics(page);
 
   await page.goto("/zh/hermes", { waitUntil: "networkidle" });
@@ -73,6 +73,26 @@ test("production Hermes navigation has no background RSC prefetch or aborted req
     .click();
   await expect(page).toHaveURL(/\/zh\/hermes\/tasks$/);
   await page.waitForLoadState("networkidle");
+
+  await testInfo.attach("attempt5-browser-diagnostics.json", {
+    body: Buffer.from(
+      JSON.stringify(
+        {
+          automatic_rsc_request_count: diagnostics.automaticRscRequests.length,
+          console_error_count: diagnostics.consoleErrors.length,
+          failed_request_count: diagnostics.failedRequests.length,
+          http_error_count: diagnostics.httpErrors.length,
+          page_error_count: diagnostics.pageErrors.length,
+          rsc_err_aborted_count: diagnostics.failedRequests.filter(
+            (value) => value.includes("_rsc=") && value.includes("ERR_ABORTED"),
+          ).length,
+        },
+        null,
+        2,
+      ),
+    ),
+    contentType: "application/json",
+  });
 
   expect(diagnostics.consoleErrors).toEqual([]);
   expect(diagnostics.pageErrors).toEqual([]);
