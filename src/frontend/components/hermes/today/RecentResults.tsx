@@ -58,6 +58,7 @@ export function RecentResults({
         <Link
           className="app-touch-target inline-flex items-center font-body-sm text-info underline-offset-2 hover:underline"
           href={hermesRouteHref("results", locale)}
+          prefetch={false}
         >
           {workbench.labels.viewUnifiedResults}
         </Link>

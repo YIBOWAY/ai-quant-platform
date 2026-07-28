@@ -71,6 +71,7 @@ export function TodayResults({ preview, hqaConclusions, locale }: TodayResultsPr
         <Link
           className="app-touch-target -my-[13px] ml-auto inline-flex min-h-[44px] items-center font-body-sm text-text-secondary underline-offset-2 hover:text-info hover:underline"
           href={hermesRouteHref("results", locale)}
+          prefetch={false}
         >
           {copy.viewAll}
         </Link>
@@ -92,6 +93,7 @@ export function TodayResults({ preview, hqaConclusions, locale }: TodayResultsPr
               <Link
                 className="flex flex-wrap items-center gap-3 border-b border-border-subtle py-2.5 transition-colors hover:bg-bg-surface-muted/40"
                 href={resultDetailHref(item, locale)}
+                prefetch={false}
               >
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2">

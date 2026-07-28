@@ -579,6 +579,7 @@ export function WorkbenchGateSurfacesPanel({
                               row.candidate_id ||
                               row.candidate_ref?.replace(/^candidate:/, ""),
                           })}
+                          prefetch={false}
                           rel="noreferrer"
                           target="_blank"
                         >

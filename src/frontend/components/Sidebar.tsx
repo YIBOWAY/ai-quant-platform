@@ -107,6 +107,8 @@ export function Sidebar({
   const locale = useLocale();
   const text = copy[locale];
   const activePath = splitLocalePath(pathname).pathname;
+  const disableNavigationPrefetch =
+    activePath === "/hermes" || activePath.startsWith("/hermes/");
 
   const navSections = buildNavSections({ shellEnabled, agentStudioRedirect }).map((section) => ({
     name: text.groups[section.id],
@@ -137,6 +139,7 @@ export function Sidebar({
         <Link
           className="app-touch-target font-label-caps flex w-full items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/5 text-info transition-colors hover:bg-bg-sidebar-muted"
           href={localizePath("/backtest", locale)}
+          prefetch={disableNavigationPrefetch ? false : undefined}
         >
           <Plus size={16} />
           <span>{text.runBacktest}</span>
@@ -160,6 +163,7 @@ export function Sidebar({
                       <Link
                         aria-current={isActive ? "page" : undefined}
                         href={localizePath(item.href, locale)}
+                        prefetch={disableNavigationPrefetch ? false : undefined}
                         className={`app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight transition-colors ${
                           isActive
                             ? "border-l-2 border-text-primary bg-bg-sidebar-muted font-semibold text-text-primary"
@@ -183,6 +187,7 @@ export function Sidebar({
           <li>
             <Link
               href={localizePath("/docs/reversal-momentum", locale)}
+              prefetch={disableNavigationPrefetch ? false : undefined}
               className="app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
             >
               <FileText size={16} />
@@ -192,6 +197,7 @@ export function Sidebar({
           <li>
             <Link
               href={localizePath("/settings", locale)}
+              prefetch={disableNavigationPrefetch ? false : undefined}
               className="app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
             >
               <HelpCircle size={16} />

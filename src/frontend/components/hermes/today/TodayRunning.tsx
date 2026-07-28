@@ -53,6 +53,7 @@ export function TodayRunning({ locale }: TodayRunningProps) {
         <Link
           className="ml-auto font-body-sm text-text-secondary underline-offset-2 hover:text-info hover:underline"
           href={hermesRouteHref("tasks", locale)}
+          prefetch={false}
         >
           {copy.viewAll}
         </Link>

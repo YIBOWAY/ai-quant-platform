@@ -184,6 +184,7 @@ function ResultRow({
         <Link
           className={`flex min-h-11 items-start gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4 transition-colors hover:border-info/40 hover:bg-info/5 ${focusClass}`}
           href={href}
+          prefetch={false}
         >
           {content}
         </Link>
@@ -336,6 +337,7 @@ export function UnifiedResultsIndex({
               <Link
                 className={`inline-flex min-h-11 items-center gap-1 rounded-lg px-3 font-data-mono text-xs text-info hover:bg-info/10 ${focusClass}`}
                 href={filters.clearHref}
+                prefetch={false}
               >
                 <RotateCcw size={13} /> {text.clear}
               </Link>
@@ -355,6 +357,7 @@ export function UnifiedResultsIndex({
                           : "border-border-subtle text-text-secondary hover:border-info/30 hover:text-text-primary"
                       }`}
                       href={option.href}
+                      prefetch={false}
                     >
                       {option.label}
                       {option.count === undefined ? null : (
@@ -429,6 +432,7 @@ export function UnifiedResultsIndex({
               <Link
                 className={`inline-flex min-h-11 items-center rounded-lg px-3 font-data-mono text-xs text-info hover:bg-info/10 ${focusClass}`}
                 href={pagination.previousHref}
+                prefetch={false}
                 rel="prev"
               >
                 {text.previous}
@@ -445,6 +449,7 @@ export function UnifiedResultsIndex({
               <Link
                 className={`inline-flex min-h-11 items-center rounded-lg px-3 font-data-mono text-xs text-info hover:bg-info/10 ${focusClass}`}
                 href={pagination.nextHref}
+                prefetch={false}
                 rel="next"
               >
                 {text.next}

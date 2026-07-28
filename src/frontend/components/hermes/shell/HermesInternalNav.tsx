@@ -91,6 +91,7 @@ export function HermesInternalNav({ locale }: HermesInternalNavProps) {
                     : "border-border-subtle text-text-secondary hover:bg-bg-surface-muted hover:text-text-primary"
                 }`}
                 href={entry.href}
+                prefetch={false}
               >
                 {entry.label}
               </Link>

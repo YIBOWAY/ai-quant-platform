@@ -255,6 +255,13 @@ export function createFixtureServer(
 
   const routes = new Map([
     ["/api/health", validated.health],
+    [
+      "/api/settings",
+      {
+        safety: validated.health.safety,
+        settings: {},
+      },
+    ],
     ["/api/hermes/artifacts", validated.artifacts],
     ["/api/agent/candidates", validated.candidates],
   ]);

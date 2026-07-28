@@ -204,7 +204,11 @@ export function TodayAttention({ items, locale }: TodayAttentionProps) {
             title = workbench.labels.researchApproval;
             tag = <span className={TAG_INFO}>{copy.gate2Tag}</span>;
             action = (
-              <Link className={ACTION_GHOST} href={href ?? hermesRouteHref("approvals", locale)}>
+              <Link
+                className={ACTION_GHOST}
+                href={href ?? hermesRouteHref("approvals", locale)}
+                prefetch={false}
+              >
                 {copy.review}
               </Link>
             );
@@ -226,7 +230,7 @@ export function TodayAttention({ items, locale }: TodayAttentionProps) {
             title = item.id === "candidate-feed" ? copy.candidateFeedUnavailable : item.title;
             desc = <span className="font-data-mono text-xs">{item.summary}</span>;
             action = href ? (
-              <Link className={ACTION_GHOST} href={href}>
+              <Link className={ACTION_GHOST} href={href} prefetch={false}>
                 {copy.openTasks}
               </Link>
             ) : null;

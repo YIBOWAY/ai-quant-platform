@@ -121,6 +121,8 @@ export function TopBar({
       })),
   }));
   const activePath = splitLocalePath(pathname).pathname;
+  const disableNavigationPrefetch =
+    activePath === "/hermes" || activePath.startsWith("/hermes/");
 
   useEffect(() => {
     if (!menuOpen) {
@@ -182,6 +184,7 @@ export function TopBar({
             aria-label={text.openHermes}
             className="app-touch-target flex cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info"
             href={localizePath("/hermes", locale)}
+            prefetch={disableNavigationPrefetch ? false : undefined}
           >
             <Terminal size={18} />
           </Link>
@@ -189,6 +192,7 @@ export function TopBar({
             aria-label={text.openSettings}
             className="app-touch-target flex cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info"
             href={localizePath("/settings", locale)}
+            prefetch={disableNavigationPrefetch ? false : undefined}
           >
             <Settings size={18} />
           </Link>
@@ -218,6 +222,7 @@ export function TopBar({
                     }`}
                     href={localizePath(item.href, locale)}
                     key={`${section.name}-${item.href}-${item.name}`}
+                    prefetch={disableNavigationPrefetch ? false : undefined}
                     onClick={() => setMenuOpen(false)}
                   >
                     {item.name}

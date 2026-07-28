@@ -230,6 +230,7 @@ function CandidateLink({
         href={hermesRouteHref("approvals", locale, {
           candidate: candidate.candidate_id,
         })}
+        prefetch={false}
       >
         <span className="flex min-w-0 items-center gap-2">
           <Fingerprint className={selected ? "text-info" : "text-text-secondary"} size={14} />

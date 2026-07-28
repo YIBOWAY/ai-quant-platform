@@ -168,6 +168,7 @@ export function UnifiedResultDetail({
         <Link
           className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-body-sm text-info hover:bg-info/10 ${focusClass}`}
           href={backHref}
+          prefetch={false}
         >
           <ArrowLeft size={15} /> {text.back}
         </Link>
@@ -208,6 +209,7 @@ export function UnifiedResultDetail({
       <Link
         className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-body-sm text-info hover:bg-info/10 ${focusClass}`}
         href={backHref}
+        prefetch={false}
       >
         <ArrowLeft size={15} /> {text.back}
       </Link>
@@ -317,6 +319,7 @@ export function UnifiedResultDetail({
           <Link
             className={`mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg border border-info/40 bg-info/5 px-3 font-data-mono text-xs text-info hover:bg-info/10 ${focusClass}`}
             href={originalResourceHref}
+            prefetch={false}
           >
             <ExternalLink size={14} /> {text.openOriginal}
           </Link>

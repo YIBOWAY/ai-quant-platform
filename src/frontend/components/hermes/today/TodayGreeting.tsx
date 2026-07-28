@@ -78,6 +78,7 @@ export function TodayGreeting({ model, locale }: TodayGreetingProps) {
         className="app-touch-target inline-flex shrink-0 items-center gap-2 self-start rounded-lg border border-border-subtle px-3 font-body-sm text-text-secondary transition-colors hover:bg-bg-surface-muted hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info sm:self-auto"
         data-testid="hermes-today-brief-entry"
         href={localizePath("/brief", locale)}
+        prefetch={false}
       >
         <Sunrise aria-hidden size={16} />
         <span>{copy.labels.openMorningBrief}</span>
