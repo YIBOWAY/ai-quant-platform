@@ -28,6 +28,7 @@ describe("/brief route contract", () => {
       "getServerLocale",
       "getLatestBriefIssue",
       "BriefArchiveControl",
+      "buildBriefSummary",
     ]) {
       expect(source).toContain(getter);
     }
@@ -74,7 +75,7 @@ describe("/brief route contract", () => {
     expect(source).toContain("target=\"_blank\"");
     expect(source).toContain("rel=\"noreferrer noopener\"");
     expect(source).toContain("Compiled from platform facts");
-    expect(source).toContain("template");
+    expect(source).toContain("data-based summary");
     expect(source).toContain("live trading");
     expect(source).toContain("never implied active");
     expect(source).toContain("payload={archivePayload}");
@@ -92,6 +93,8 @@ describe("/brief route contract", () => {
     expect(source).not.toContain("generateCopy");
     expect(source).not.toContain("generateWithLlm");
     expect(source).not.toContain("llm");
+    expect(source).not.toContain("平台模板提示");
+    expect(source).not.toContain("deterministic template");
     expect(source).not.toContain("getBacktestDetail");
     expect(source).not.toContain("strategy={strategyCurve}");
     expect(source).not.toContain("text.symbols");

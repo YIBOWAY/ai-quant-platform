@@ -37,6 +37,7 @@ import { localizePath } from "@/lib/locale";
 import type { BriefArchivePayload, BriefSourceWatermark } from "@/lib/briefArchive";
 import { buildBriefAiNewsDigest } from "@/lib/briefAiNewsDigest";
 import { briefDateKey } from "@/lib/briefDate";
+import { buildBriefSummary } from "@/lib/briefSummary";
 import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
@@ -49,11 +50,11 @@ const copy = {
     edition: "U.S. research edition",
     title: "Daily Morning Brief",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
-    author: "Platform factual desk · deterministic template",
+    author: "Platform factual desk · data-based summary",
     subscriber: "subscriber one · private use",
     safetyLine: "paper-only journal · dry-run rehearsal · live trading never implied active",
     archiveCta: "Open archived issue",
-    ledeByline: "Compiled from platform facts · template lede",
+    ledeByline: "Compiled from platform facts · data-based summary",
     account: "Account",
     accountEn: "THE ACCOUNT",
     equity: "Equity",
@@ -86,9 +87,7 @@ const copy = {
     marketEn: "THE MARKET",
     marketSummary: "Market summary",
     marketUnavailable: "market move unavailable",
-    quote:
-      "Market data is incomplete; the platform template is holding the daily read until SPY, QQQ, SOXX, and IGV all publish fresh bars.",
-    quoteSig: "Platform market note · deterministic template",
+    quoteSig: "Platform market note · daily market data",
     digest: "AI Intelligence Digest",
     digestEn: "INTELLIGENCE DIGEST",
     noDigest: "No AI intelligence items are available from the local feed.",
@@ -108,11 +107,11 @@ const copy = {
     edition: "美股研究版",
     title: "每日晨报",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
-    author: "平台事实台 · 确定性模板排印",
+    author: "平台事实台 · 数据化摘要",
     subscriber: "订户一人 · 自用",
     safetyLine: "本刊为模拟盘刊物 · DRY-RUN 演练 · live trading never implied active",
     archiveCta: "查看归档版",
-    ledeByline: "导语由平台事实模板排印",
+    ledeByline: "导语由平台当日数据生成",
     account: "账户",
     accountEn: "THE ACCOUNT",
     equity: "权益",
@@ -144,9 +143,7 @@ const copy = {
     marketEn: "THE MARKET",
     marketSummary: "市场概括",
     marketUnavailable: "市场涨跌数据不足",
-    quoteSig: "平台市场手记 · 确定性模板",
-    quote:
-      "市场涨跌数据暂不完整；平台模板等待 SPY、QQQ、SOXX、IGV 四组日线全部刷新后再形成完整判断。",
+    quoteSig: "平台市场手记 · 当日市场数据",
     digest: "AI 情报摘要",
     digestEn: "INTELLIGENCE DIGEST",
     noDigest: "本地 AI 情报源暂无条目。",
@@ -295,70 +292,6 @@ function formatMarketChange(changePct: number | undefined) {
     return "--";
   }
   return `${changePct >= 0 ? "▲ " : "▼ "}${formatPercent(Math.abs(changePct))}`;
-}
-
-function buildMarketNote(markets: MarketSnapshot[], text: BriefCopy) {
-  const complete = markets.filter((item) => item.changePct !== undefined);
-  if (complete.length < 4) {
-    return text.quote;
-  }
-  const strongest = [...complete].sort((a, b) => (b.changePct ?? 0) - (a.changePct ?? 0))[0];
-  const weakest = [...complete].sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0))[0];
-  const positiveCount = complete.filter((item) => (item.changePct ?? 0) >= 0).length;
-  if (text === copy.zh) {
-    return `今日四个观察指数中 ${positiveCount}/4 收涨，${strongest.symbol} 最强（${formatMarketChange(strongest.changePct)}），${weakest.symbol} 最弱（${formatMarketChange(weakest.changePct)}）；平台模板提示先比较半导体与软件的相对强弱。`;
-  }
-  return `${positiveCount}/4 watched ETFs are up today; ${strongest.symbol} leads (${formatMarketChange(strongest.changePct)}) while ${weakest.symbol} lags (${formatMarketChange(weakest.changePct)}). The deterministic template flags semis versus software for review.`;
-}
-
-function buildLede({
-  text,
-  equity,
-  paperWeekReturn,
-  marketNote,
-  digestCount,
-}: {
-  text: BriefCopy;
-  equity: string;
-  paperWeekReturn: string;
-  marketNote: string;
-  digestCount: number;
-}) {
-  if (text === copy.zh) {
-    return (
-      <>
-        今晨，模拟盘权益报 <strong>{equity}</strong>，近 7 日权益收益{" "}
-        <strong>{paperWeekReturn}</strong>；平台市场手记：{marketNote} 另整理{" "}
-        <strong>{formatCount(digestCount)}</strong> 条 AI 业内情报。
-      </>
-    );
-  }
-  return (
-    <>
-      This morning, paper equity prints at <strong>{equity}</strong> with a{" "}
-      <strong>{paperWeekReturn}</strong> seven-day paper return; platform market note: {marketNote} It has set{" "}
-      <strong>{formatCount(digestCount)}</strong> AI intelligence items in type.
-    </>
-  );
-}
-
-function buildArchivedLede({
-  locale,
-  equity,
-  paperWeekReturn,
-  marketNote,
-  digestCount,
-}: {
-  locale: "en" | "zh";
-  equity: string;
-  paperWeekReturn: string;
-  marketNote: string;
-  digestCount: number;
-}) {
-  if (locale === "zh") {
-    return `今晨，模拟盘权益报 ${equity}，近 7 日权益收益 ${paperWeekReturn}；平台市场手记：${marketNote} 另整理 ${formatCount(digestCount)} 条 AI 业内情报。`;
-  }
-  return `This morning, paper equity prints at ${equity} with a ${paperWeekReturn} seven-day paper return. Platform market note: ${marketNote} It has set ${formatCount(digestCount)} AI intelligence items in type.`;
 }
 
 function finiteNumber(value: number, fallback = 0) {
@@ -781,7 +714,6 @@ export default async function BriefPage() {
     marketSnapshot("SOXX", soxxHistory),
     marketSnapshot("IGV", igvHistory),
   ];
-  const marketNote = buildMarketNote(marketSnapshots, text);
   const logEntries = buildBriefLogEntries({
     runs: recentRuns.runs,
     candidates: candidates.candidates,
@@ -790,6 +722,14 @@ export default async function BriefPage() {
   });
   const paperWeekReturn = paperCurve.at(-1)?.y;
   const { items: digestItems, source: aiNewsSource } = buildBriefAiNewsDigest(digest);
+  const briefSummary = buildBriefSummary({
+    locale,
+    equity: paperAccount.apiError ? "--" : formatMoney(paperAccount.equity),
+    paperWeekReturn: formatSignedPointReturn(paperWeekReturn),
+    markets: marketSnapshots,
+    digestTitles: digestItems.map((item) => item.title),
+  });
+  const marketNote = briefSummary.marketNote;
   const archivedIssuePublicId =
     archivedEnvelope.issue.status !== "unavailable" &&
     archivedEnvelope.issue.issue_date === issueDate &&
@@ -823,13 +763,7 @@ export default async function BriefPage() {
     issue_date: issueDate,
     locale,
     generated_at: capturedAt,
-    lede: buildArchivedLede({
-      locale,
-      equity: paperAccount.apiError ? "--" : formatMoney(paperAccount.equity),
-      paperWeekReturn: formatSignedPointReturn(paperWeekReturn),
-      marketNote,
-      digestCount: digestItems.length,
-    }),
+    lede: briefSummary.lede,
     account: {
       account_id: paperAccount.account_id || "unavailable",
       base_currency: paperAccount.base_currency || "USD",
@@ -990,13 +924,7 @@ export default async function BriefPage() {
 
         <section className="border-b border-editorial-rule px-0 py-7 text-center md:px-14">
           <p className="font-editorial-body text-xl leading-9 text-ink">
-            {buildLede({
-              text,
-              equity: paperAccount.apiError ? "--" : formatMoney(paperAccount.equity),
-              paperWeekReturn: formatSignedPointReturn(paperWeekReturn),
-              marketNote,
-              digestCount: digestItems.length,
-            })}
+            {briefSummary.lede}
           </p>
           <div className="mt-3 font-data-mono text-xs text-ink-secondary">
             {text.ledeByline} · {paperAccount.price_source?.as_of ?? formatDate(today, locale)}
