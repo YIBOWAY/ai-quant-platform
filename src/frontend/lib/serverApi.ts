@@ -1,4 +1,5 @@
 import { cache } from "react";
-import { getHealth } from "@/lib/api";
+import { getHealth, getSettings } from "@/lib/api";
 
 export const getCachedHealth = cache(getHealth);
+export const getCachedSettings = cache(getSettings);

@@ -1,5 +1,5 @@
 import { ShieldAlert } from "lucide-react";
-import { getCachedHealth } from "@/lib/serverApi";
+import { getCachedSettings } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -12,6 +12,7 @@ const copy = {
     on: "on",
     off: "off",
     api: "api",
+    unavailable: "unavailable",
   },
   zh: {
     paperOnly: "仅模拟",
@@ -22,21 +23,32 @@ const copy = {
     on: "开",
     off: "关",
     api: "接口",
+    unavailable: "不可用",
   },
 };
 
 export async function SafetyStrip() {
-  const [health, locale] = await Promise.all([getCachedHealth(), getServerLocale()]);
+  const [settings, locale] = await Promise.all([getCachedSettings(), getServerLocale()]);
   const text = copy[locale];
+  const health = {
+    safety: settings.apiError ? undefined : settings.safety,
+    status: settings.apiError || !settings.safety ? "unavailable" : "available",
+  };
   const safety = health.safety;
   const paperOnly = Boolean(safety?.dry_run && safety?.paper_trading);
   const liveDisabled = safety?.live_trading_enabled === false;
   const killSwitchOn = safety?.kill_switch === true;
+  const liveStatus = safety
+    ? liveDisabled
+      ? text.liveDisabled
+      : text.liveEnabled
+    : text.unavailable;
+  const killStatus = safety ? (killSwitchOn ? text.on : text.off) : text.unavailable;
   const desktopStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
-    liveDisabled ? text.liveDisabled : text.liveEnabled
-  } · ${text.kill} ${killSwitchOn ? text.on : text.off} · ${text.api} ${health.status}`;
+    liveStatus
+  } · ${text.kill} ${killStatus} · ${text.api} ${health.status}`;
   const mobileStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
-    liveDisabled ? text.liveDisabled : text.liveEnabled
+    liveStatus
   } · ${text.api} ${health.status}`;
 
   return (
