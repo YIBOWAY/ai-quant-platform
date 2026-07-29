@@ -55,13 +55,14 @@ from quant_system.ops.common import (
     write_immutable,
 )
 
-SCHEMA_VERSION = "agent-v0.2.2-repository-zero-effect-proof.v6"
+SCHEMA_VERSION = "agent-v0.2.2-repository-zero-effect-proof.v7"
 AUTHORITY_KIND = "immutable_same_identity_zero_effect_journal"
 CLAIM_SCHEMA_VERSION = "agent-v0.2.2-zero-effect-claim.v3"
 SEAL_SCHEMA_VERSION = "agent-v0.2.2-zero-effect-seal.v1"
 OPERATION_ID = "agent-v02-zero-effect-paper-replay-001"
 DISPOSABLE_ACCOUNT = "agent-v02-zero-effect-disposable-account"
-EXPECTED_BLOCK_CODE = "replay_kill_switch_enabled"
+REPLAY_SWITCH_BLOCK_CODE = "replay_kill_switch_enabled"
+GLOBAL_SWITCH_BLOCK_CODE = "global_kill_switch_enabled"
 EXPECTED_RELEASE_CONTRACT = "agent-v0.2-release-cli/v1"
 FIXED_TIME = "2026-01-01T00:00:00+00:00"
 GLOBAL_SWITCH_AUTHORITY = "Settings.safety.kill_switch"
@@ -115,13 +116,13 @@ ROUTE_SAFE_ENVIRONMENT = {
 }
 
 
-def _paper_run_request() -> PaperRunRequest:
+def _paper_run_request(*, enable_kill_switch: bool = True) -> PaperRunRequest:
     return PaperRunRequest(
         symbols=["SPY", "QQQ"],
         start="2026-01-02",
         end="2026-01-03",
         provider="sample",
-        enable_kill_switch=True,
+        enable_kill_switch=enable_kill_switch,
         initial_cash=100_000.0,
         lookback=20,
         top_n=2,
@@ -159,6 +160,14 @@ def _scoped_switch_observations(
             "value": replay_request_value,
         },
     ]
+
+
+def _expected_block_code(request: PaperRunRequest) -> str:
+    return (
+        REPLAY_SWITCH_BLOCK_CODE
+        if request.enable_kill_switch
+        else GLOBAL_SWITCH_BLOCK_CODE
+    )
 
 
 def state_namespace_identity(state_dir: Path) -> dict[str, str]:
@@ -214,7 +223,9 @@ def default_request_bytes(
             "idempotency_identity": idempotency,
             "operation_id": OPERATION_ID,
             "operation_kind": "paper.replay.blocked_zero_effect",
-            "paper_run_request": _paper_run_request().model_dump(mode="json"),
+            "paper_run_request": _paper_run_request(
+                enable_kill_switch=False
+            ).model_dump(mode="json"),
             "route_child_deadline": {
                 "clock": "time.monotonic",
                 "kill_reap_grace_seconds": ROUTE_CHILD_KILL_REAP_GRACE_SECONDS,
@@ -1133,7 +1144,7 @@ def _execute_repository_block(
             if (
                 exc.status_code != 409
                 or not isinstance(detail, dict)
-                or detail.get("code") != EXPECTED_BLOCK_CODE
+                or detail.get("code") != _expected_block_code(request)
             ):
                 raise ReleaseOperationError(
                     "run_paper returned the wrong repository-defined block"
@@ -1242,9 +1253,10 @@ def _authoritative_receipt(
     release_preflight: dict[str, object],
     release_postflight: dict[str, object],
     execution: dict[str, object],
+    replay_request: PaperRunRequest | None = None,
 ) -> dict[str, object]:
     route_module = Path(paper_routes.__file__).resolve()
-    replay_request = _paper_run_request()
+    replay_request = replay_request or _paper_run_request()
     preflight_switches = _scoped_switch_observations(
         global_process_value=settings_preflight["global_kill_switch"],
         paper_account_value=execution["account_before"]["paper_account_local_kill_switch"],
@@ -1254,6 +1266,14 @@ def _authoritative_receipt(
         global_process_value=settings_postflight["global_kill_switch"],
         paper_account_value=execution["account_after"]["paper_account_local_kill_switch"],
         replay_request_value=replay_request.enable_kill_switch,
+    )
+    expected_block_code = _expected_block_code(replay_request)
+    repository_block = execution.get("repository_blocked_result")
+    observed_block_code = (
+        repository_block.get("detail", {}).get("code")
+        if isinstance(repository_block, dict)
+        and isinstance(repository_block.get("detail"), dict)
+        else expected_block_code
     )
     body: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
@@ -1299,8 +1319,24 @@ def _authoritative_receipt(
         },
         "expected_outcome": {
             "status_code": 409,
-            "code": EXPECTED_BLOCK_CODE,
+            "code": expected_block_code,
             "stage": "before_run_id_provider_broker_pipeline_persist",
+        },
+        "switch_source_independence": {
+            "mixed_values_observed": len(
+                {
+                    settings_preflight["global_kill_switch"],
+                    execution["account_before"]["paper_account_local_kill_switch"],
+                    replay_request.enable_kill_switch,
+                }
+            )
+            > 1,
+            "operational_block_authority": (
+                REPLAY_REQUEST_SWITCH_AUTHORITY
+                if replay_request.enable_kill_switch
+                else GLOBAL_SWITCH_AUTHORITY
+            ),
+            "operational_block_code": observed_block_code,
         },
         "outcome": "blocked_before_effect",
         "repository_blocking_primitive": {
@@ -1441,6 +1477,21 @@ def _validate_existing_receipt(
         or safety_postflight.get("switch_observations") != expected_switches["postflight"]
     ):
         raise ReleaseOperationError("immutable receipt switch scope authority is invalid")
+    independence = receipt.get("switch_source_independence")
+    expected_outcome = receipt.get("expected_outcome")
+    if (
+        independence
+        != {
+            "mixed_values_observed": True,
+            "operational_block_authority": GLOBAL_SWITCH_AUTHORITY,
+            "operational_block_code": GLOBAL_SWITCH_BLOCK_CODE,
+        }
+        or not isinstance(expected_outcome, dict)
+        or expected_outcome.get("code") != GLOBAL_SWITCH_BLOCK_CODE
+    ):
+        raise ReleaseOperationError(
+            "immutable receipt lacks mixed-value global switch independence"
+        )
     for field, value in current_settings.items():
         if safety_preflight.get(field) != value or safety_postflight.get(field) != value:
             raise ReleaseOperationError("immutable receipt Settings safety facts drifted")
@@ -1453,6 +1504,16 @@ def _validate_existing_receipt(
     execution = receipt.get("execution_observation")
     if not isinstance(execution, dict):
         raise ReleaseOperationError("immutable receipt execution observation is invalid")
+    repository_block = execution.get("repository_blocked_result")
+    if (
+        not isinstance(repository_block, dict)
+        or repository_block.get("status_code") != 409
+        or not isinstance(repository_block.get("detail"), dict)
+        or repository_block["detail"].get("code") != GLOBAL_SWITCH_BLOCK_CODE
+    ):
+        raise ReleaseOperationError(
+            "immutable receipt did not operationally observe the global switch block"
+        )
     if execution.get("account_after") != account_observation:
         raise ReleaseOperationError("disposable PaperAccount changed after receipt")
     if execution.get("tree_after") != tree_observation:
@@ -1772,7 +1833,7 @@ def _run_zero_effect_proof_locked(
         route_request = PaperRunRequest.model_validate(decoded["paper_run_request"])
     except Exception as exc:
         raise ReleaseOperationError("paper replay request payload is invalid") from exc
-    if route_request != _paper_run_request():
+    if route_request != _paper_run_request(enable_kill_switch=False):
         raise ReleaseOperationError("paper replay request model is not exact")
 
     execution_authority = validate_platform_execution_authority(platform_root)
@@ -1892,6 +1953,7 @@ def _run_zero_effect_proof_locked(
             release_preflight=release_preflight,
             release_postflight=release_postflight,
             execution=execution,
+            replay_request=route_request,
         )
 
         def verify_runtime_identity() -> dict[str, object]:
@@ -1995,7 +2057,8 @@ def _run_zero_effect_proof_locked(
         "all_effect_counters_zero": all(value == 0 for value in effect_counters.values()),
         "repository_block_executed": (
             repository_block["status_code"] == 409
-            and repository_block["detail"]["code"] == EXPECTED_BLOCK_CODE
+            and repository_block["detail"]["code"]
+            == receipt["expected_outcome"]["code"]
         ),
         "safety_unchanged": (
             receipt["safety_preflight"] == receipt["safety_postflight"]
