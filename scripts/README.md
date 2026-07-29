@@ -22,6 +22,7 @@ or trading.
 | Script | Purpose |
 | --- | --- |
 | `verify_backend_non_postgres.sh` | Run mandatory Gate 2 in a fresh Python 3.11 environment from committed `uv.lock`: frozen, non-editable install followed by the complete non-PostgreSQL/non-provider backend suite with fail-closed JUnit and skip validation. |
+| `backend_non_postgres_gate.py` | Internal helper used only by `verify_backend_non_postgres.sh` to bind tool identities, construct the fresh allowlisted environment, partition the exact macOS sandbox-sensitive tests, and seal Gate 2 results; it is not an operator entrypoint. |
 | `verify_agent_v02_focused_safety.sh` | Run the fixed, repository-authoritative Agent v0.2 focused-safety selector with a release-local Python and an external one-shot basetemp. |
 | `verify_agent_v02_postgres_suite.sh` | Create an isolated loopback PostgreSQL cluster, run the authoritative PostgreSQL suite, prove suite-owned roles are removed, and destroy the cluster. |
 | `verify_agent_v02_backup_restore.sh` | Back up and restore the full authoritative PostgreSQL state into an independently created destination cluster, then compare schema, role, and data facts. |
