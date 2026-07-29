@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import asdict
 from pathlib import Path
 
@@ -39,6 +39,7 @@ DISPATCH_NODES = (
     "tests/test_hermes_connector_dispatch.py::test_pg_accept_drop_ack_then_recover_same_run_identity",
     "tests/test_hermes_connector_dispatch.py::test_pg_empty_queue_zero_provider_and_hermes",
 )
+MINIMUM_PG_MARKED_TESTS = 245
 COVERAGE = {
     "migration": (
         "tests/test_database.py",
@@ -125,9 +126,14 @@ def _run_pytest(
     env: dict[str, str],
     arguments: tuple[str, ...],
     log_path: Path,
+    minimum_tests: int,
 ) -> dict[str, object]:
     basetemp = Path(env["TMPDIR"]) / log_path.stem
     cache_dir = Path(env["XDG_CACHE_HOME"]) / "pytest" / log_path.stem
+    junit_path = log_path.with_suffix(".junit.xml")
+    node_manifest_path = log_path.with_suffix(".nodes.json")
+    if junit_path.exists() or node_manifest_path.exists():
+        raise ReleaseOperationError("PostgreSQL pytest population artifact already exists")
     argv = (
         str(python),
         "-m",
@@ -138,6 +144,10 @@ def _run_pytest(
         str(basetemp),
         "-o",
         f"cache_dir={cache_dir}",
+        "-o",
+        "junit_family=xunit2",
+        "--junitxml",
+        str(junit_path),
         *arguments,
     )
     completed = subprocess.run(
@@ -149,19 +159,107 @@ def _run_pytest(
     )
     payload = completed.stdout + completed.stderr
     write_immutable(log_path, payload)
-    text = payload.decode("utf-8", "replace")
-    skipped = sum(int(value) for value in re.findall(r"(\d+) skipped", text))
+    if not junit_path.is_file():
+        raise ReleaseOperationError(
+            f"disposable PostgreSQL pytest omitted JUnit: {log_path.name}"
+        )
+    junit_path.chmod(0o600)
+    population = parse_pytest_junit(junit_path)
+    write_immutable(node_manifest_path, canonical_json_bytes(population))
     if completed.returncode != 0:
         raise ReleaseOperationError(f"disposable PostgreSQL pytest failed: {log_path.name}")
-    if skipped:
-        raise ReleaseOperationError(f"disposable PostgreSQL pytest has unexpected skips: {skipped}")
+    if population["tests"] < minimum_tests:
+        raise ReleaseOperationError(
+            f"disposable PostgreSQL pytest population shrank: {population['tests']}"
+        )
+    unexpected = sum(
+        population[field]
+        for field in ("failed", "errors", "skipped", "xfailed")
+    )
+    if unexpected:
+        raise ReleaseOperationError(
+            f"disposable PostgreSQL pytest has unexpected outcomes: {unexpected}"
+        )
+    text = payload.decode("utf-8", "strict")
+    if "XPASS" in text:
+        raise ReleaseOperationError("disposable PostgreSQL pytest has unexpected xpass")
     return {
         "argv": list(argv),
         "exit_code": completed.returncode,
+        "junit_path": str(junit_path),
+        "junit_sha256": sha256_bytes(junit_path.read_bytes()),
+        "node_manifest_path": str(node_manifest_path),
+        "node_manifest_sha256": sha256_bytes(node_manifest_path.read_bytes()),
+        "population": population,
         "stdout_stderr_sha256": sha256_bytes(payload),
         "stdout_stderr_bytes": len(payload),
-        "unexpected_skips": skipped,
+        "unexpected_skips": population["skipped"] + population["xfailed"],
         "log_path": str(log_path),
+    }
+
+
+def parse_pytest_junit(path: Path) -> dict[str, object]:
+    """Return an exact, duplicate-free pytest population from JUnit XML."""
+
+    try:
+        root = ET.fromstring(path.read_bytes())
+    except (ET.ParseError, OSError) as exc:
+        raise ReleaseOperationError(f"PostgreSQL pytest JUnit is invalid: {exc}") from exc
+    cases = [
+        element
+        for element in root.iter()
+        if element.tag.rsplit("}", 1)[-1] == "testcase"
+    ]
+    if not cases:
+        raise ReleaseOperationError("PostgreSQL pytest JUnit has zero testcases")
+    nodes: list[dict[str, str]] = []
+    counts = {
+        "passed": 0,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xfailed": 0,
+    }
+    seen: set[str] = set()
+    for case in cases:
+        classname = case.attrib.get("classname")
+        name = case.attrib.get("name")
+        if not classname or not name:
+            raise ReleaseOperationError("PostgreSQL pytest JUnit testcase identity is absent")
+        node_id = f"{classname}::{name}"
+        if node_id in seen:
+            raise ReleaseOperationError(
+                f"PostgreSQL pytest JUnit testcase is duplicated: {node_id}"
+            )
+        seen.add(node_id)
+        terminal = [
+            child
+            for child in case
+            if child.tag.rsplit("}", 1)[-1] in {"failure", "error", "skipped"}
+        ]
+        if len(terminal) > 1:
+            raise ReleaseOperationError(
+                f"PostgreSQL pytest JUnit testcase has multiple outcomes: {node_id}"
+            )
+        if not terminal:
+            outcome = "passed"
+        else:
+            tag = terminal[0].tag.rsplit("}", 1)[-1]
+            if tag == "failure":
+                outcome = "failed"
+            elif tag == "error":
+                outcome = "errors"
+            elif terminal[0].attrib.get("type") == "pytest.xfail":
+                outcome = "xfailed"
+            else:
+                outcome = "skipped"
+        counts[outcome] += 1
+        nodes.append({"node_id": node_id, "outcome": outcome})
+    nodes.sort(key=lambda value: value["node_id"])
+    return {
+        **counts,
+        "tests": len(nodes),
+        "node_ids": nodes,
     }
 
 
@@ -207,6 +305,7 @@ def verify_postgres_suite(
                     env=env,
                     arguments=("-m", "pg", *marked_files),
                     log_path=output_dir / "pytest-pg-marked.log",
+                    minimum_tests=MINIMUM_PG_MARKED_TESTS,
                 )
                 dispatch = _run_pytest(
                     python=executable,
@@ -214,6 +313,7 @@ def verify_postgres_suite(
                     env=env,
                     arguments=DISPATCH_NODES,
                     log_path=output_dir / "pytest-pg-dispatch.log",
+                    minimum_tests=len(DISPATCH_NODES),
                 )
                 run_migrations(Database(source_url, connect_timeout=1))
             finally:
