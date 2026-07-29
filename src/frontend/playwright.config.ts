@@ -26,7 +26,19 @@ const reuseExistingServer = process.env.PW_REUSE_SERVER === "1";
 const hermesWorkbenchFixture = readHermesWorkbenchFixture(
   process.env.PW_HERMES_WORKBENCH_FIXTURE,
 );
-const fixtureMode = hermesWorkbenchFixture !== null;
+const lifecycleFixtureMode = readOptionalFlag(
+  "PW_HERMES_LIFECYCLE_FIXTURE",
+);
+if (lifecycleFixtureMode && hermesWorkbenchFixture !== null) {
+  throw new Error(
+    "PW_HERMES_LIFECYCLE_FIXTURE cannot be combined with PW_HERMES_WORKBENCH_FIXTURE",
+  );
+}
+const fixtureMode =
+  lifecycleFixtureMode || hermesWorkbenchFixture !== null;
+const fixtureIdentity = lifecycleFixtureMode
+  ? "lifecycle"
+  : hermesWorkbenchFixture;
 if (
   fixtureMode &&
   (process.env.QUANT_API_COMMAND || process.env.PW_REUSE_SERVER === "1")
@@ -65,8 +77,9 @@ const forbiddenProviderProbe = Object.freeze({
   allowedForReadiness: false,
 });
 const providerFreeBackendReadinessUrl = requireProviderFreeReadinessUrl(
-  hermesWorkbenchFixture !== null &&
-    hermesWorkbenchFixture !== "normal"
+  lifecycleFixtureMode ||
+    (hermesWorkbenchFixture !== null &&
+      hermesWorkbenchFixture !== "normal")
     ? `${backendUrl}/api/hermes/fixture-ready`
     : `${backendUrl}/api/hermes/gateway`,
 );
@@ -124,7 +137,8 @@ function buildBackendLaunch(): { command: string; args: string[] } {
           "hermes-fixture-api.mjs",
         ),
         String(backendPort),
-        hermesWorkbenchFixture!,
+        lifecycleFixtureMode ? "normal" : hermesWorkbenchFixture!,
+        ...(lifecycleFixtureMode ? ["lifecycle"] : []),
       ],
     };
   }
@@ -165,7 +179,7 @@ function buildSupervisedBackendCommand(): string {
       ...launch,
       backendPort,
       baseRoot: e2eRunIdentity.baseRoot,
-      fixture: hermesWorkbenchFixture,
+      fixture: fixtureIdentity,
       frontendPort,
       runId: e2eRunIdentity.runId,
     }),
@@ -206,6 +220,17 @@ function readHermesWorkbenchFixture(
     );
   }
   return raw;
+}
+
+function readOptionalFlag(name: string): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "" || raw === "0") {
+    return false;
+  }
+  if (raw === "1") {
+    return true;
+  }
+  throw new Error(`${name} must be 0 or 1`);
 }
 
 function readPort(name: string, fallback: number) {
@@ -328,9 +353,12 @@ function buildWebServers(): WebServerConfig[] | undefined {
       env: {
         // Pin the API base for hermetic E2E runs: shell env beats .env.local
         // in Next.js, so this overrides any local override (e.g. 8800/8700).
+        // Pin the same-origin /api rewrite to the same isolated backend port so
+        // owner-cookie + CSRF lifecycle requests never drift to :8765.
         // Never inject PW_HERMES_WORKBENCH_FIXTURE or fixture name here.
         // Never expose shell flag as NEXT_PUBLIC_*.
         NEXT_PUBLIC_QUANT_API_BASE_URL: backendUrl,
+        QUANT_API_REWRITE_ORIGIN: backendUrl,
         NEXT_FONT_GOOGLE_MOCKED_RESPONSES: path.join(
           frontendRoot,
           "tests",
@@ -338,6 +366,9 @@ function buildWebServers(): WebServerConfig[] | undefined {
           "next-font-mock.cjs",
         ),
         QS_HERMES_SHELL_ENABLED: "true",
+        ...(lifecycleFixtureMode
+          ? { QS_HERMES_CHAT_ENABLED: "true" }
+          : {}),
       },
     },
   ];
@@ -351,6 +382,7 @@ function buildWebServers(): WebServerConfig[] | undefined {
       timeout: 120_000,
       env: {
         NEXT_PUBLIC_QUANT_API_BASE_URL: backendUrl,
+        QUANT_API_REWRITE_ORIGIN: backendUrl,
         NEXT_FONT_GOOGLE_MOCKED_RESPONSES: path.join(
           frontendRoot,
           "tests",
@@ -385,12 +417,15 @@ export default defineConfig({
         e2eRun: {
           backendPort,
           dataRoot: e2eDataRoot,
-          fixture: hermesWorkbenchFixture,
+          fixture: fixtureIdentity,
           frontendPort,
           runId: e2eRunIdentity.runId,
         },
         ...(hermesWorkbenchFixture
           ? { hermesWorkbenchFixture }
+          : {}),
+        ...(lifecycleFixtureMode
+          ? { hermesLifecycleFixture: true }
           : {}),
       }
     : undefined,

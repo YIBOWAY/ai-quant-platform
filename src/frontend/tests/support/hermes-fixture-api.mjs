@@ -8,6 +8,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { createHermesLifecycleFixture } from "./hermes-lifecycle-fixture.mjs";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(
   __dirname,
@@ -248,6 +250,7 @@ export function createFixtureServer(
   {
     includePersistedSession = false,
     includeFixtureGateway = false,
+    includeLifecycle = false,
   } = {},
 ) {
   const validated = validateCombinedFixture(
@@ -255,6 +258,7 @@ export function createFixtureServer(
       ? structuredClone(fixture)
       : JSON.parse(JSON.stringify(fixture)),
   );
+  const lifecycle = includeLifecycle ? createHermesLifecycleFixture() : null;
 
   const routes = new Map([
     ["/api/health", validated.health],
@@ -364,12 +368,12 @@ export function createFixtureServer(
     };
   }
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const method = req.method ?? "GET";
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     const pathname = url.pathname;
 
-    const finish = (status, body) => {
+    const finish = (status, body, headers = {}) => {
       const payload =
         body === undefined || body === null
           ? ""
@@ -380,8 +384,19 @@ export function createFixtureServer(
       res.setHeader("Cache-Control", "no-store");
       // Browser client components (Gate 2 detail re-fetch) need CORS on loopback.
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "accept, content-type");
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        includeLifecycle ? "GET, POST, OPTIONS" : "GET, OPTIONS",
+      );
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        includeLifecycle
+          ? "accept, content-type, x-csrf-token, x-qs-aw-csrf"
+          : "accept, content-type",
+      );
+      for (const [name, value] of Object.entries(headers)) {
+        res.setHeader(name, value);
+      }
       if (payload) {
         res.setHeader("Content-Type", "application/json; charset=utf-8");
       }
@@ -395,6 +410,31 @@ export function createFixtureServer(
       return;
     }
 
+    if (lifecycle) {
+      try {
+        const handled = await lifecycle.handle({
+          req,
+          res,
+          method,
+          pathname,
+          url,
+          finish,
+        });
+        if (handled) {
+          return;
+        }
+      } catch (error) {
+        finish(400, {
+          detail: {
+            code: "invalid_fixture_request",
+            message:
+              error instanceof Error ? error.message : "invalid fixture request",
+          },
+        });
+        return;
+      }
+    }
+
     // GET-only fixture surface — review POST remains intentionally unavailable.
     if (method !== "GET") {
       finish(405, { detail: "method_not_allowed" });
@@ -404,10 +444,16 @@ export function createFixtureServer(
     // Playwright process readiness only. This says the isolated loopback fixture
     // is listening; it deliberately says nothing about Hermes connectivity.
     if (pathname === "/api/hermes/fixture-ready") {
-      finish(200, {
-        ready: true,
-        transport: "loopback_get_only_fixture",
-      });
+      const readiness = includeLifecycle
+        ? {
+            ready: true,
+            transport: "loopback_lifecycle_fixture",
+          }
+        : {
+            ready: true,
+            transport: "loopback_get_only_fixture",
+          };
+      finish(200, readiness);
       return;
     }
 
@@ -490,11 +536,16 @@ export function createFixtureServer(
   return server;
 }
 
-export function startFixtureServer(port, fixtureName) {
+export function startFixtureServer(
+  port,
+  fixtureName,
+  { includeLifecycle = false } = {},
+) {
   const fixture = loadFixture(fixtureName);
   const server = createFixtureServer(fixture, {
     includePersistedSession: fixtureName === "normal",
     includeFixtureGateway: true,
+    includeLifecycle,
   });
   return new Promise((resolve, reject) => {
     const onError = (error) => {
@@ -510,9 +561,19 @@ export function startFixtureServer(port, fixtureName) {
 }
 
 function main(argv) {
-  const [, , portRaw, fixtureName] = argv;
+  const [, , portRaw, fixtureName, mode] = argv;
   if (!portRaw || !fixtureName) {
-    console.error("usage: node hermes-fixture-api.mjs <port> <fixture>");
+    console.error(
+      "usage: node hermes-fixture-api.mjs <port> <fixture> [lifecycle]",
+    );
+    process.exit(2);
+  }
+  if (mode && mode !== "lifecycle") {
+    console.error("optional fixture mode must be lifecycle");
+    process.exit(2);
+  }
+  if (mode === "lifecycle" && fixtureName !== "normal") {
+    console.error("lifecycle mode requires the normal combined fixture");
     process.exit(2);
   }
   const port = Number(portRaw);
@@ -532,6 +593,7 @@ function main(argv) {
   const server = createFixtureServer(fixture, {
     includePersistedSession: fixtureName === "normal",
     includeFixtureGateway: true,
+    includeLifecycle: mode === "lifecycle",
   });
   server.on("error", (error) => {
     console.error(error instanceof Error ? error.message : String(error));
@@ -539,7 +601,7 @@ function main(argv) {
   });
   server.listen(port, "127.0.0.1", () => {
     console.log(
-      `hermes-fixture-api listening on 127.0.0.1:${port} fixture=${fixtureName}`,
+      `hermes-fixture-api listening on 127.0.0.1:${port} fixture=${fixtureName} mode=${mode ?? "get-only"}`,
     );
   });
 }

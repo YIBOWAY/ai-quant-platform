@@ -59,7 +59,7 @@ def test_playwright_supervises_per_run_data_root_and_binds_safe_provenance() -> 
     assert "frontendPort" in config
     assert "runId: e2eRunIdentity.runId" in config
     assert "dataRoot: e2eDataRoot" in config
-    assert "fixture: hermesWorkbenchFixture" in config
+    assert "fixture: fixtureIdentity" in config
     assert 'gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 }' in config
     assert "prepareE2ERunRoot(identity" in runner
     assert "cleanupE2ERunRoot(identity, {" in runner
@@ -82,6 +82,42 @@ def test_playwright_fixture_readiness_is_separate_from_gateway_truth() -> None:
     assert 'transport: "loopback_get_only_fixture"' in fixture_server
     assert 'pathname === "/api/hermes/gateway"' in fixture_server
     assert "includeFixtureGateway: true" in fixture_server
+    assert 'readOptionalFlag( "PW_HERMES_LIFECYCLE_FIXTURE", )' in " ".join(
+        config.split()
+    )
+    assert "lifecycleFixtureMode && hermesWorkbenchFixture !== null" in config
+    assert 'QS_HERMES_CHAT_ENABLED: "true"' in config
+    assert 'QUANT_API_REWRITE_ORIGIN: backendUrl' in config
+    assert 'includeLifecycle: mode === "lifecycle"' in fixture_server
+    assert 'transport: "loopback_lifecycle_fixture"' in fixture_server
+
+
+def test_hermes_closure_specs_declare_only_exact_mode_tests_without_skips() -> None:
+    specs = {
+        "matrix": Path(
+            "src/frontend/tests/e2e/hermes-closure-matrix.spec.ts"
+        ).read_text(encoding="utf-8"),
+        "quality": Path(
+            "src/frontend/tests/e2e/hermes-closure-quality.spec.ts"
+        ).read_text(encoding="utf-8"),
+        "lifecycle": Path(
+            "src/frontend/tests/e2e/hermes-lifecycle.spec.ts"
+        ).read_text(encoding="utf-8"),
+    }
+    forbidden = re.compile(r"test\.(?:skip|fixme)\b|\btodo\b", re.IGNORECASE)
+
+    for name, spec in specs.items():
+        assert "const modeMatches =" in spec, name
+        assert "if (modeMatches) {" in spec, name
+        first_test = re.search(r"\btest(?:\.describe)?\(", spec)
+        assert first_test is not None, name
+        assert spec.index("if (modeMatches) {") < first_test.start(), name
+        assert forbidden.search(spec) is None, name
+        assert "requires PW_E2E" not in spec, name
+
+    assert 'process.env.PW_HERMES_WORKBENCH_FIXTURE === "normal"' in specs["matrix"]
+    assert "closureFixtures.has(fixture)" in specs["quality"]
+    assert 'process.env.PW_HERMES_LIFECYCLE_FIXTURE === "1"' in specs["lifecycle"]
 
 
 def test_hermes_e2e_fixture_covers_all_read_only_artifact_kinds() -> None:

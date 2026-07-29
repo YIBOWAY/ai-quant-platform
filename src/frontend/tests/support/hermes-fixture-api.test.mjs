@@ -42,7 +42,12 @@ function closeServer(server) {
   });
 }
 
-function request(port, method, pathname) {
+function request(
+  port,
+  method,
+  pathname,
+  { headers = {}, body } = {},
+) {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -50,7 +55,7 @@ function request(port, method, pathname) {
         port,
         path: pathname,
         method,
-        headers: { accept: "application/json" },
+        headers: { accept: "application/json", ...headers },
       },
       (res) => {
         const chunks = [];
@@ -65,7 +70,7 @@ function request(port, method, pathname) {
       },
     );
     req.on("error", reject);
-    req.end();
+    req.end(body);
   });
 }
 
@@ -219,6 +224,125 @@ describe("hermes-fixture-api", () => {
       assert.equal(detailBody.session.id, "fixture-long-session");
       assert.ok(messagesBody.messages.length >= 40);
       assert.equal(messagesBody.messages.at(-1).content, "Latest fixture message");
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("keeps the lifecycle fixture explicit while exercising exact local mutation receipts", async () => {
+    const fixture = loadFixture("normal");
+    const server = createFixtureServer(fixture, {
+      includePersistedSession: true,
+      includeLifecycle: true,
+    });
+    const port = await listenEphemeral(server);
+    const csrfHeaders = {
+      "content-type": "application/json",
+      cookie: "qs_aw_csrf=fixture-csrf-token",
+      "x-csrf-token": "fixture-csrf-token",
+    };
+    try {
+      const readiness = await request(
+        port,
+        "GET",
+        "/api/hermes/fixture-ready",
+      );
+      const gateway = await request(port, "GET", "/api/hermes/gateway");
+      const owner = await request(port, "GET", "/api/auth/owner/session");
+      const snapshotBefore = await request(
+        port,
+        "GET",
+        "/api/workspace/ws-local-main/snapshot",
+      );
+
+      assert.deepEqual(
+        JSON.parse(readiness.body.toString("utf8")),
+        {
+          ready: true,
+          transport: "loopback_lifecycle_fixture",
+        },
+      );
+      assert.equal(gateway.status, 200);
+      assert.equal(
+        JSON.parse(gateway.body.toString("utf8")).chat_write_ready,
+        true,
+      );
+      assert.match(String(owner.headers["set-cookie"]), /qs_aw_csrf=/);
+      const before = JSON.parse(snapshotBefore.body.toString("utf8"));
+      assert.equal(before.mutation_enabled, true);
+      assert.equal(before.managed_sessions.length, 1);
+      assert.equal(before.commands[0].state, "delivered");
+      assert.equal(before.approvals[0].status, "pending");
+      assert.deepEqual(
+        before.gates.map((row) => [row.gate_kind, row.status]),
+        [
+          ["gate1", "confirmed"],
+          ["gate2", "pending"],
+          ["gate3", "prepared"],
+        ],
+      );
+      assert.equal(before.results[0].status, "completed");
+
+      const turn = await request(
+        port,
+        "POST",
+        "/api/agent/workspace/submit-turn",
+        {
+          headers: csrfHeaders,
+          body: JSON.stringify({
+            client_action_id: "fixture-turn-test",
+            managed_session_ref: "session:wm_11111111111111111111111111111111",
+            prompt: "Exact local fixture prompt",
+          }),
+        },
+      );
+      assert.equal(turn.status, 200);
+      const turnBody = JSON.parse(turn.body.toString("utf8"));
+      assert.equal(turnBody.status, "accepted");
+      assert.equal(
+        turnBody.hermes_session_id,
+        `web_${"1".repeat(40)}`,
+      );
+
+      const stop = await request(
+        port,
+        "POST",
+        "/api/workspace/ws-local-main/act",
+        {
+          headers: csrfHeaders,
+          body: JSON.stringify({
+            action: {
+              kind: "run.stop.request",
+              client_action_id: "fixture-stop-test",
+              run_ref: "run:fixture-run-active-001",
+            },
+          }),
+        },
+      );
+      assert.equal(stop.status, 200);
+      assert.equal(JSON.parse(stop.body.toString("utf8")).status, "accepted");
+
+      const snapshotAfter = await request(
+        port,
+        "GET",
+        "/api/workspace/ws-local-main/snapshot",
+      );
+      const after = JSON.parse(snapshotAfter.body.toString("utf8"));
+      assert.equal(
+        after.commands.find(
+          (row) => row.command_id === "fixture-command-active-001",
+        ).state,
+        "cancelled",
+      );
+      const audit = await request(
+        port,
+        "GET",
+        "/api/hermes/fixture-audit",
+      );
+      assert.deepEqual(
+        JSON.parse(audit.body.toString("utf8")).events.map((row) => row.kind),
+        ["conversation.turn", "run.stop.request"],
+      );
     } finally {
       await closeServer(server);
     }
