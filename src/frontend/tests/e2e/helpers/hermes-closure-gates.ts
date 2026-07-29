@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 const INTERACTIVE_SELECTOR = [
   "a[href]",
@@ -13,13 +13,57 @@ const INTERACTIVE_SELECTOR = [
 
 const SHELL_SELECTOR = "[data-hermes-workbench-a11y]";
 
+async function resolveWholeHermesShell(page: Page): Promise<Locator> {
+  const markers = page.locator(SHELL_SELECTOR);
+  const resolution = await markers.evaluateAll((nodes) => {
+    const outermostIndexes = nodes
+      .map((node, index) => ({ node, index }))
+      .filter(
+        ({ node }) =>
+          !nodes.some(
+            (candidate) => candidate !== node && candidate.contains(node),
+          ),
+      )
+      .map(({ index }) => index);
+    const outermost =
+      outermostIndexes.length === 1 ? nodes[outermostIndexes[0]] : null;
+    const allWithinOutermost =
+      outermost !== null &&
+      nodes.every(
+        (node) => node === outermost || outermost.contains(node),
+      );
+
+    return {
+      markerCount: nodes.length,
+      outermostIndexes,
+      allWithinOutermost,
+    };
+  });
+
+  expect(
+    resolution.markerCount,
+    "expected at least one Hermes shell marker",
+  ).toBeGreaterThan(0);
+  expect(
+    resolution.outermostIndexes,
+    "expected exactly one outermost Hermes shell",
+  ).toHaveLength(1);
+  expect(
+    resolution.allWithinOutermost,
+    "expected every Hermes shell marker to descend from one outermost shell",
+  ).toBe(true);
+
+  return markers.nth(resolution.outermostIndexes[0]);
+}
+
 /**
  * WCAG 2.1 AA text contrast for every visible text node in the Hermes shell.
  * Normal text requires 4.5:1; large text (24px, or 18.67px bold) requires 3:1.
  * The only contrast exemption is a semantically disabled control.
  */
 export async function assertWholeHermesShellWcagAaContrast(page: Page) {
-  const offenders = await page.locator(SHELL_SELECTOR).evaluate((root) => {
+  const shell = await resolveWholeHermesShell(page);
+  const offenders = await shell.evaluate((root) => {
     type Rgba = [number, number, number, number];
 
     const parseColor = (raw: string): Rgba | null => {
@@ -212,7 +256,8 @@ export async function assertWholeHermesShellWcagAaContrast(page: Page) {
  * grid so an edge/corner overlay cannot hide behind a center-only check.
  */
 export async function assertWholeHermesShellControlsUnclipped(page: Page) {
-  const offenders = await page.locator(SHELL_SELECTOR).evaluate(
+  const shell = await resolveWholeHermesShell(page);
+  const offenders = await shell.evaluate(
     async (root, selector) => {
       const failures: string[] = [];
       const controls = Array.from(root.querySelectorAll<HTMLElement>(selector));
@@ -381,7 +426,8 @@ export async function assertWholeHermesShellSemanticStatus(page: Page) {
     }),
   ).toBeVisible();
 
-  const textlessStatuses = await page.locator(SHELL_SELECTOR).evaluate((root) =>
+  const shell = await resolveWholeHermesShell(page);
+  const textlessStatuses = await shell.evaluate((root) =>
     Array.from(root.querySelectorAll<HTMLElement>('[role="status"]'))
       .filter((element) => {
         const style = window.getComputedStyle(element);

@@ -125,6 +125,31 @@ if (modeMatches) {
     ).rejects.toThrow(/covered/);
   });
 
+  test("@combined-fixture whole-shell root resolver accepts nested markers and rejects siblings", async ({
+    page,
+  }) => {
+    await page.setContent(`
+      <div data-hermes-workbench-a11y style="background: white">
+        <div data-hermes-workbench-a11y>
+          <p style="color: black">Nested active workspace</p>
+        </div>
+      </div>
+    `);
+    await assertWholeHermesShellWcagAaContrast(page);
+
+    await page.setContent(`
+      <div data-hermes-workbench-a11y style="background: white">
+        <p style="color: black">First shell</p>
+      </div>
+      <div data-hermes-workbench-a11y style="background: white">
+        <p style="color: black">Sibling shell</p>
+      </div>
+    `);
+    await expect(
+      assertWholeHermesShellWcagAaContrast(page),
+    ).rejects.toThrow(/exactly one outermost Hermes shell/);
+  });
+
   for (const viewport of viewports) {
     test(`@combined-fixture Hermes ${fixtureName} semantic status ${viewport.name}`, async ({
       page,
