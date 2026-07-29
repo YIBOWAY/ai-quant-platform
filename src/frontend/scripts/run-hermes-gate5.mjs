@@ -1127,7 +1127,7 @@ export function buildGate5Matrix({
 
   const definitions = [
     {
-      args: ["run", "test:support"],
+      args: ["run", "test:gate5-support"],
       command: process.platform === "win32" ? "npm.cmd" : "npm",
       contract: { expected: 37, skipped: 0 },
       id: "support",

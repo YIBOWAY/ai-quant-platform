@@ -14,7 +14,8 @@
     "clean": "next clean",
     "test:e2e": "playwright test",
     "test:e2e:gate5": "node scripts/run-hermes-gate5.mjs",
-    "test:support": "node --test tests/support/hermes-fixture-api.test.mjs tests/support/hermes-e2e-run-root.test.mjs scripts/run-hermes-gate5.test.mjs"
+    "test:support": "node --test tests/support/hermes-fixture-api.test.mjs tests/support/hermes-e2e-run-root.test.mjs",
+    "test:gate5-support": "node --test tests/support/hermes-fixture-api.test.mjs tests/support/hermes-e2e-run-root.test.mjs scripts/run-hermes-gate5.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",

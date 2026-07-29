@@ -135,7 +135,7 @@ describe("Hermes Gate 5 release authority", () => {
     ];
 
     assert.equal(byId.support.kind, "node-test");
-    assert.deepEqual(byId.support.args, ["run", "test:support"]);
+    assert.deepEqual(byId.support.args, ["run", "test:gate5-support"]);
     assert.deepEqual(byId.support.contract, {
       expected: 37,
       skipped: 0,
