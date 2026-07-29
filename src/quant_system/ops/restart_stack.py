@@ -1200,6 +1200,8 @@ def _process_facts(
         facts["next_build"] = frontend_build_tree_facts(
             repository_root / "src" / "frontend" / ".next"
         )
+    if label == CONNECTOR_LABEL:
+        _live_connector_generation_authority(facts)
     return facts
 
 
@@ -1314,11 +1316,16 @@ def _validate_connector_cycle(
     }
 
 
-def _connector_generation_authority(
+def _legacy_connector_generation_projection(
     process_facts: object,
 ) -> dict[str, object]:
+    """Project current or exact legacy connector facts without inventing facts."""
+
     if not isinstance(process_facts, dict):
         raise ReleaseOperationError("connector generation process facts are absent")
+    legacy_projection = (
+        "launchd_state" not in process_facts and "last_exit_status" not in process_facts
+    )
     required = {
         "label": str,
         "pid": int,
@@ -1328,10 +1335,15 @@ def _connector_generation_authority(
         "actual_executable_image_sha256": str,
         "launcher_sha256": str,
         "launchd_runs": int,
-        "launchd_state": str,
-        "last_exit_status": str,
         "connector_mode": str,
     }
+    if not legacy_projection:
+        required.update(
+            {
+                "launchd_state": str,
+                "last_exit_status": str,
+            }
+        )
     for field, expected_type in required.items():
         value = process_facts.get(field)
         if type(value) is not expected_type or (expected_type is str and not value):
@@ -1340,20 +1352,24 @@ def _connector_generation_authority(
         raise ReleaseOperationError("connector generation label is invalid")
     if process_facts["pid"] <= 0 or process_facts["launchd_runs"] <= 0:
         raise ReleaseOperationError("connector generation values are invalid")
-    if process_facts["launchd_state"] != "active":
-        raise ReleaseOperationError("connector generation is not active")
     if "last_exit_code" not in process_facts:
         raise ReleaseOperationError("connector generation exit code fact is absent")
-    last_exit_status = process_facts["last_exit_status"]
     last_exit_code = process_facts.get("last_exit_code")
-    if last_exit_status == "recorded":
+    if legacy_projection:
         if type(last_exit_code) is not int or last_exit_code != 0:
-            raise ReleaseOperationError("connector generation has a nonzero or missing exit")
-    elif last_exit_status == "never_exited":
-        if last_exit_code is not None:
-            raise ReleaseOperationError("connector never-exited generation has an exit code")
+            raise ReleaseOperationError("legacy connector generation has a nonzero exit")
     else:
-        raise ReleaseOperationError("connector generation exit status is invalid")
+        if process_facts["launchd_state"] != "active":
+            raise ReleaseOperationError("connector generation is not active")
+        last_exit_status = process_facts["last_exit_status"]
+        if last_exit_status == "recorded":
+            if type(last_exit_code) is not int or last_exit_code != 0:
+                raise ReleaseOperationError("connector generation has a nonzero or missing exit")
+        elif last_exit_status == "never_exited":
+            if last_exit_code is not None:
+                raise ReleaseOperationError("connector never-exited generation has an exit code")
+        else:
+            raise ReleaseOperationError("connector generation exit status is invalid")
     if process_facts["connector_mode"] != "reconcile_only":
         raise ReleaseOperationError("connector generation mode is not reconcile_only")
     body: dict[str, object] = {
@@ -1366,13 +1382,34 @@ def _connector_generation_authority(
         "actual_executable_image": process_facts["actual_executable_image"],
         "actual_executable_image_sha256": process_facts["actual_executable_image_sha256"],
         "launcher_sha256": process_facts["launcher_sha256"],
-        "launchd_state": "active",
         "mode": "reconcile_only",
         "last_exit_code": last_exit_code,
-        "last_exit_status": last_exit_status,
     }
+    if not legacy_projection:
+        body["launchd_state"] = process_facts["launchd_state"]
+        body["last_exit_status"] = process_facts["last_exit_status"]
     body["authority_sha256"] = sha256_bytes(canonical_json_bytes(body))
     return body
+
+
+def _connector_generation_authority(
+    process_facts: object,
+) -> dict[str, object]:
+    """Compatibility alias for sealed legacy projection consumers."""
+
+    return _legacy_connector_generation_projection(process_facts)
+
+
+def _live_connector_generation_authority(
+    process_facts: object,
+) -> dict[str, object]:
+    if not isinstance(process_facts, dict):
+        raise ReleaseOperationError("live connector generation process facts are absent")
+    for field in ("launchd_state", "last_exit_status"):
+        value = process_facts.get(field)
+        if type(value) is not str or not value:
+            raise ReleaseOperationError(f"live connector generation fact is absent: {field}")
+    return _legacy_connector_generation_projection(process_facts)
 
 
 def _validate_connector_heartbeat_observation(
@@ -1521,8 +1558,8 @@ def _capture_connector_follow_boundary(
     if boundary_offset < pre_offset:
         raise ReleaseOperationError("connector log truncated before follow boundary")
     if require_connector_authority:
-        pre_generation = _connector_generation_authority(pre["connector"])
-        post_generation = _connector_generation_authority(post["connector"])
+        pre_generation = _legacy_connector_generation_projection(pre["connector"])
+        post_generation = _legacy_connector_generation_projection(post["connector"])
         if post_generation != pre_generation:
             raise ReleaseOperationError("connector generation changed before follow boundary")
         boundary["connector_generation"] = post_generation
@@ -1913,7 +1950,7 @@ def _stable_process_authority(process_facts: object) -> dict[str, object]:
                 raise ReleaseOperationError(f"stable frontend process authority is absent: {field}")
             body[field] = process_facts[field]
     if label == CONNECTOR_LABEL:
-        body["connector_generation"] = _connector_generation_authority(process_facts)
+        body["connector_generation"] = _legacy_connector_generation_projection(process_facts)
     body["authority_sha256"] = sha256_bytes(canonical_json_bytes(body))
     return body
 
@@ -2012,7 +2049,7 @@ def _capture_pre_activation_restart_authority(
             preflight=checks["connector"],
         ),
     }
-    connector_generation = _connector_generation_authority(processes["connector"])
+    connector_generation = _legacy_connector_generation_projection(processes["connector"])
     schema = schema_fingerprint(get_database(settings))
     if schema in {"<db-disabled>", "<unavailable>"}:
         raise ReleaseOperationError("pre-activation schema fingerprint is unavailable")
@@ -2072,7 +2109,7 @@ def _capture_live_restart_publication_seal(
         repository_root=repository_root,
         preflight=checks["connector"],
     )
-    if _connector_generation_authority(connector_before_boundary) != expected_generation:
+    if _legacy_connector_generation_projection(connector_before_boundary) != expected_generation:
         raise ReleaseOperationError("connector generation changed before publication seal boundary")
     connector_boundary = _connector_log_snapshot(
         repository_root / CONNECTOR_LOG,
@@ -2135,7 +2172,7 @@ def _capture_live_restart_publication_seal(
             or _stable_process_authority(before) != _stable_process_authority(after)
         ):
             raise ReleaseOperationError(f"{service} live authority changed during publication seal")
-    if _connector_generation_authority(processes["connector"]) != expected_generation:
+    if _legacy_connector_generation_projection(processes["connector"]) != expected_generation:
         raise ReleaseOperationError("connector generation changed during publication seal")
 
     release_observation = _release_status(repository_root)
@@ -2360,7 +2397,7 @@ def _complete_activated_restart(
         repository_root=repository_root,
         preflight=checks["connector"],
     )
-    if _connector_generation_authority(connector_after_cycle) != connector_generation:
+    if _legacy_connector_generation_projection(connector_after_cycle) != connector_generation:
         raise ReleaseOperationError("connector generation changed after fresh cycle")
     post = {
         **post_processes,
@@ -2633,8 +2670,8 @@ def _reconcile_services_after_rollback(
     connector_before = pre_processes.get("connector")
     connector_after = recovered_processes.get("connector")
     try:
-        before_generation = _connector_generation_authority(connector_before)
-        after_generation = _connector_generation_authority(connector_after)
+        before_generation = _legacy_connector_generation_projection(connector_before)
+        after_generation = _legacy_connector_generation_projection(connector_after)
         if after_generation != before_generation:
             errors.append("connector_generation_changed")
     except ReleaseOperationError:
@@ -2718,7 +2755,7 @@ def _reconcile_services_after_rollback(
                 repository_root=repository_root,
                 preflight=checks["connector"],  # type: ignore[arg-type]
             )
-            if _connector_generation_authority(connector_final) != before_generation:
+            if _legacy_connector_generation_projection(connector_final) != before_generation:
                 raise ReleaseOperationError("connector generation changed after recovery cycle")
             document["connector_follow_boundary"] = boundary
             document["connector_heartbeat"] = heartbeat
@@ -2903,7 +2940,7 @@ def restart_stack(
                     connector_before = (
                         pre_processes.get("connector") if isinstance(pre_processes, dict) else None
                     )
-                    expected_generation = _connector_generation_authority(connector_before)
+                    expected_generation = _legacy_connector_generation_projection(connector_before)
                     live_expected: dict[str, object] = {
                         "processes": recovered_processes,
                         "settings": readiness.get("settings"),
