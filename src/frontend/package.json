@@ -12,7 +12,8 @@
     "lint": "eslint app components lib tests playwright.config.ts eslint.config.mjs next.config.ts",
     "type-check": "tsc --noEmit",
     "clean": "next clean",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:support": "node --test tests/support/hermes-fixture-api.test.mjs tests/support/hermes-e2e-run-root.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
