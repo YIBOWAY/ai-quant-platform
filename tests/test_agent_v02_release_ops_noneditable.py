@@ -541,6 +541,237 @@ def test_upgrade_process_environment_is_owner_local_and_offline(
     assert facts["network"] == "denied"
 
 
+def test_private_cache_prewarm_precedes_sandboxed_offline_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import inspect
+
+    from quant_system.ops import noneditable_upgrade as upgrade_ops
+
+    monkeypatch.setenv("UV_INDEX_URL", "https://operator:secret@example.invalid/simple")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "do-not-inherit")
+    monkeypatch.setenv("QS_FUTU_HOST", "provider.example.invalid")
+    output_dir = tmp_path / "evidence"
+    output_dir.mkdir(mode=0o700)
+    offline_environment, _facts = upgrade_ops._isolated_process_environment(output_dir)
+
+    prewarm_environment, prewarm_facts = upgrade_ops._private_cache_prewarm_environment(
+        offline_environment
+    )
+
+    assert prewarm_environment["UV_CACHE_DIR"] == offline_environment["UV_CACHE_DIR"]
+    assert "UV_OFFLINE" not in prewarm_environment
+    assert prewarm_environment["UV_DEFAULT_INDEX"] == "https://pypi.org/simple"
+    assert prewarm_environment["UV_KEYRING_PROVIDER"] == "disabled"
+    assert prewarm_environment["PIP_NO_INDEX"] == "1"
+    assert prewarm_environment["QS_KILL_SWITCH"] == "true"
+    assert prewarm_environment["QS_LIVE_TRADING_ENABLED"] == "false"
+    assert "UV_INDEX_URL" not in prewarm_environment
+    assert "AWS_SECRET_ACCESS_KEY" not in prewarm_environment
+    assert "QS_FUTU_HOST" not in prewarm_environment
+    assert prewarm_facts["network_scope"] == "pypi_lock_prewarm_only"
+    assert prewarm_facts["verification_offline_required"] is True
+
+    uv = Path("/opt/homebrew/bin/uv")
+    assert "--offline" not in upgrade_ops._uv_sync_argv(
+        uv,
+        inexact=False,
+        offline=False,
+    )
+    assert "--offline" in upgrade_ops._uv_sync_argv(uv, inexact=False)
+    assert "--offline" not in upgrade_ops._uv_build_argv(
+        uv,
+        output_dir=tmp_path / "prewarm-dist",
+        python=tmp_path / "python3.11",
+        offline=False,
+    )
+    assert "--offline" in upgrade_ops._uv_build_argv(
+        uv,
+        output_dir=tmp_path / "verification-dist",
+        python=tmp_path / "python3.11",
+    )
+
+    source = inspect.getsource(upgrade_ops.verify_noneditable_upgrade)
+    assert source.index("_prewarm_locked_projects(") < source.index(
+        'log_path=output_dir / "baseline-sync.log"'
+    )
+    assert '_guarded_argv(_uv_sync_argv(uv_path, inexact=False))' in source
+    verification_source = source[source.index("_activate_offline_verification(") :]
+    assert "offline=False" not in verification_source
+
+
+def test_offline_activation_binds_lock_metadata_tools_and_cache_inventory(
+    tmp_path: Path,
+) -> None:
+    from quant_system.ops import noneditable_upgrade as upgrade_ops
+
+    pyproject = (
+        "[build-system]\n"
+        'requires = ["setuptools>=68", "wheel"]\n'
+        'build-backend = "setuptools.build_meta"\n'
+        "\n"
+        "[project]\n"
+        'name = "quant-system"\n'
+        'version = "0.1.0"\n'
+    )
+    lock = (
+        "version = 1\n"
+        "\n"
+        "[[package]]\n"
+        'name = "quant-system"\n'
+        'version = "0.1.0"\n'
+        'source = { editable = "." }\n'
+        "\n"
+        "[[package]]\n"
+        'name = "example-dependency"\n'
+        'version = "1.2.3"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        "wheels = [\n"
+        "  { "
+        'url = "https://files.pythonhosted.org/packages/example.whl", '
+        f'hash = "sha256:{"a" * 64}", size = 17'
+        " },\n"
+        "]\n"
+    )
+    roots = [tmp_path / "baseline", tmp_path / "final"]
+    for root in roots:
+        root.mkdir()
+        (root / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+        (root / "uv.lock").write_text(lock, encoding="utf-8")
+    baseline_project = upgrade_ops._project_facts(roots[0])
+    final_project = upgrade_ops._project_facts(roots[1])
+    baseline_authority = upgrade_ops._locked_project_prewarm_authority(
+        roots[0],
+        baseline_project,
+    )
+    final_authority = upgrade_ops._locked_project_prewarm_authority(
+        roots[1],
+        final_project,
+    )
+
+    cache_root = tmp_path / "private-uv-cache"
+    cache_root.mkdir(mode=0o700)
+    cache_artifact = cache_root / "locked-artifact"
+    cache_artifact.write_bytes(b"cached wheel bytes")
+    cache_inventory = upgrade_ops._private_cache_inventory(cache_root)
+    uv = tmp_path / "uv"
+    uv.write_bytes(b"pinned uv fixture")
+    python = tmp_path / "python3.11"
+    python.write_bytes(b"pinned Python fixture")
+    prewarm_authority = {
+        "status": "complete",
+        "uv": {
+            "path": str(uv.resolve()),
+            "sha256": upgrade_ops.sha256_file(uv),
+        },
+        "base_python": {
+            "path": str(python.resolve()),
+            "sha256": upgrade_ops.sha256_file(python),
+        },
+        "baseline_authority": baseline_authority,
+        "final_authority": final_authority,
+        "cache_inventory": cache_inventory,
+    }
+    offline_environment = {
+        "PIP_NO_INDEX": "1",
+        "UV_CACHE_DIR": str(cache_root),
+        "UV_NO_CONFIG": "1",
+        "UV_OFFLINE": "1",
+    }
+
+    activated, facts = upgrade_ops._activate_offline_verification(
+        offline_environment=offline_environment,
+        prewarm_authority=prewarm_authority,
+        uv_path=uv,
+        base_python=python,
+        baseline_root=roots[0],
+        final_root=roots[1],
+        baseline_project=baseline_project,
+        final_project=final_project,
+    )
+
+    assert activated == offline_environment
+    assert facts["prewarm_completed_before_activation"] is True
+    assert facts["uv_offline"] is True
+    uv.write_bytes(b"mutated uv fixture")
+    with pytest.raises(ReleaseOperationError, match="tool identity"):
+        upgrade_ops._activate_offline_verification(
+            offline_environment=offline_environment,
+            prewarm_authority=prewarm_authority,
+            uv_path=uv,
+            base_python=python,
+            baseline_root=roots[0],
+            final_root=roots[1],
+            baseline_project=baseline_project,
+            final_project=final_project,
+        )
+    uv.write_bytes(b"pinned uv fixture")
+    cache_artifact.write_bytes(b"mutated after prewarm")
+    with pytest.raises(ReleaseOperationError, match="cache changed"):
+        upgrade_ops._activate_offline_verification(
+            offline_environment=offline_environment,
+            prewarm_authority=prewarm_authority,
+            uv_path=uv,
+            base_python=python,
+            baseline_root=roots[0],
+            final_root=roots[1],
+            baseline_project=baseline_project,
+            final_project=final_project,
+        )
+
+
+def test_private_cache_prewarm_rejects_non_pypi_lock_source(tmp_path: Path) -> None:
+    from quant_system.ops import noneditable_upgrade as upgrade_ops
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        "[build-system]\n"
+        'requires = ["setuptools>=68", "wheel"]\n'
+        'build-backend = "setuptools.build_meta"\n'
+        "\n"
+        "[project]\n"
+        'name = "quant-system"\n'
+        'version = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    (project / "uv.lock").write_text(
+        "version = 1\n"
+        "\n"
+        "[[package]]\n"
+        'name = "quant-system"\n'
+        'version = "0.1.0"\n'
+        'source = { editable = "." }\n'
+        "\n"
+        "[[package]]\n"
+        'name = "hostile-dependency"\n'
+        'version = "1.0.0"\n'
+        'source = { git = "https://example.invalid/repository.git" }\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ReleaseOperationError, match="non-PyPI"):
+        upgrade_ops._locked_project_prewarm_authority(
+            project,
+            upgrade_ops._project_facts(project),
+        )
+
+
+def test_private_cache_inventory_rejects_symlink_escape(tmp_path: Path) -> None:
+    from quant_system.ops import noneditable_upgrade as upgrade_ops
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "owned-artifact").write_bytes(b"owned")
+    outside = tmp_path / "outside-artifact"
+    outside.write_bytes(b"outside")
+    (cache / "escaping-link").symlink_to(outside)
+
+    with pytest.raises(ReleaseOperationError, match="escapes"):
+        upgrade_ops._private_cache_inventory(cache)
+
+
 def test_upgraded_and_fresh_final_environments_are_independent_and_equivalent() -> None:
     from quant_system.ops import noneditable_upgrade as upgrade_ops
 

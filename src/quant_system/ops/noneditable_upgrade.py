@@ -17,6 +17,7 @@ import zipfile
 from dataclasses import asdict
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 from quant_system.ops.common import (
     GitIdentity,
@@ -36,6 +37,8 @@ NETWORK_SANDBOX = Path("/usr/bin/sandbox-exec")
 NETWORK_SANDBOX_PROFILE = "(version 1) (allow default) (deny network*)"
 GIT_BINARY = Path("/usr/bin/git")
 CANONICAL_GITHUB_REMOTE = "https://github.com/YIBOWAY/ai-quant-platform.git"
+PYPI_INDEX = "https://pypi.org/simple"
+PYPI_ARTIFACT_HOST = "files.pythonhosted.org"
 EXPECTED_CONSOLE_ENTRY_POINT = "quant_system.cli:app"
 EXPECTED_CONSOLE_SCRIPT_BODY = """# -*- coding: utf-8 -*-
 import sys
@@ -83,7 +86,12 @@ def _guarded_argv(argv: list[str]) -> list[str]:
     ]
 
 
-def _uv_sync_argv(uv_path: Path, *, inexact: bool) -> list[str]:
+def _uv_sync_argv(
+    uv_path: Path,
+    *,
+    inexact: bool,
+    offline: bool = True,
+) -> list[str]:
     """Sync the explicitly active copy-based venv without asking uv to replace it.
 
     Supplying ``--python <venv>/bin/python`` to ``uv sync`` treats that
@@ -97,8 +105,18 @@ def _uv_sync_argv(uv_path: Path, *, inexact: bool) -> list[str]:
         str(uv_path),
         "sync",
         "--frozen",
-        "--offline",
     ]
+    if offline:
+        command.append("--offline")
+    else:
+        command.extend(
+            [
+                "--default-index",
+                PYPI_INDEX,
+                "--keyring-provider",
+                "disabled",
+            ]
+        )
     if inexact:
         command.append("--inexact")
     command.extend(
@@ -109,6 +127,41 @@ def _uv_sync_argv(uv_path: Path, *, inexact: bool) -> list[str]:
             "--no-editable",
             "--no-install-project",
             "--active",
+            "--no-python-downloads",
+        ]
+    )
+    return command
+
+
+def _uv_build_argv(
+    uv_path: Path,
+    *,
+    output_dir: Path,
+    python: Path,
+    offline: bool = True,
+) -> list[str]:
+    command = [
+        str(uv_path),
+        "build",
+        "--wheel",
+    ]
+    if offline:
+        command.append("--offline")
+    else:
+        command.extend(
+            [
+                "--default-index",
+                PYPI_INDEX,
+                "--keyring-provider",
+                "disabled",
+            ]
+        )
+    command.extend(
+        [
+            "--out-dir",
+            str(output_dir),
+            "--python",
+            str(python),
             "--no-python-downloads",
         ]
     )
@@ -360,6 +413,79 @@ def _isolated_process_environment(
         "sandbox_profile_sha256": sha256_bytes(NETWORK_SANDBOX_PROFILE.encode("utf-8")),
         "environment_variable_names": sorted(environment),
         "private_paths": {name: str(path) for name, path in paths.items()},
+    }
+
+
+def _private_cache_prewarm_environment(
+    offline_environment: dict[str, str],
+) -> tuple[dict[str, str], dict[str, object]]:
+    """Permit only a lock-bound uv prewarm against PyPI in the private cache.
+
+    The caller first obtains ``offline_environment`` from
+    :func:`_isolated_process_environment`, so no operator credentials, proxy
+    configuration, provider endpoints, or trading settings are inherited.  This
+    derivative deliberately removes uv's offline flag for the bounded prewarm
+    commands while keeping pip offline and every product safety switch closed.
+    """
+
+    allowed_names = {
+        "COLUMNS",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "NO_COLOR",
+        "PATH",
+        "PIP_DISABLE_PIP_VERSION_CHECK",
+        "PIP_NO_INDEX",
+        "PYTHONHASHSEED",
+        "PYTHONNOUSERSITE",
+        "PYTHONPYCACHEPREFIX",
+        "QS_DATABASE_AUTO_MIGRATE",
+        "QS_KILL_SWITCH",
+        "QS_LIVE_TRADING_ENABLED",
+        "TEMP",
+        "TERM",
+        "TMP",
+        "TMPDIR",
+        "UV_CACHE_DIR",
+        "UV_NO_CONFIG",
+        "UV_PYTHON_DOWNLOADS",
+        "XDG_CACHE_HOME",
+    }
+    missing = sorted(allowed_names.difference(offline_environment))
+    if missing:
+        raise ReleaseOperationError("offline environment is incomplete for private-cache prewarm")
+    if (
+        offline_environment.get("UV_OFFLINE") != "1"
+        or offline_environment.get("PIP_NO_INDEX") != "1"
+        or offline_environment.get("QS_KILL_SWITCH") != "true"
+        or offline_environment.get("QS_LIVE_TRADING_ENABLED") != "false"
+        or offline_environment.get("QS_DATABASE_AUTO_MIGRATE") != "false"
+    ):
+        raise ReleaseOperationError("offline environment safety controls are not closed")
+
+    cache_root = Path(offline_environment["UV_CACHE_DIR"])
+    if not cache_root.is_dir() or cache_root.is_symlink():
+        raise ReleaseOperationError("private uv cache is unavailable or unsafe")
+
+    environment = {
+        name: offline_environment[name]
+        for name in sorted(allowed_names)
+    }
+    environment.update(
+        {
+            "UV_DEFAULT_INDEX": PYPI_INDEX,
+            "UV_KEYRING_PROVIDER": "disabled",
+        }
+    )
+    return environment, {
+        "cache_root": str(cache_root.resolve()),
+        "credential_environment_inherited": False,
+        "environment_variable_names": sorted(environment),
+        "network_scope": "pypi_lock_prewarm_only",
+        "provider_environment_inherited": False,
+        "trading_enabled": False,
+        "verification_offline_required": True,
     }
 
 
@@ -1278,6 +1404,185 @@ def _project_facts(root: Path) -> dict[str, object]:
     }
 
 
+def _locked_project_prewarm_authority(
+    root: Path,
+    expected_project: dict[str, object],
+) -> dict[str, object]:
+    """Bind prewarm network use to exact metadata and registry-only lock artifacts."""
+
+    observed_project = _project_facts(root)
+    if observed_project != expected_project:
+        raise ReleaseOperationError("prewarm project metadata or lock changed")
+    try:
+        metadata = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        lock = tomllib.loads((root / "uv.lock").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ReleaseOperationError("prewarm project authority is unreadable") from exc
+    build_system = metadata.get("build-system")
+    if build_system != {
+        "requires": ["setuptools>=68", "wheel"],
+        "build-backend": "setuptools.build_meta",
+    }:
+        raise ReleaseOperationError("prewarm build-system metadata is not authorized")
+    packages = lock.get("package")
+    if not isinstance(packages, list) or not packages:
+        raise ReleaseOperationError("prewarm lock package inventory is malformed")
+
+    artifact_count = 0
+    registry_package_count = 0
+    root_package_count = 0
+    package_names: set[str] = set()
+    for package in packages:
+        if not isinstance(package, dict):
+            raise ReleaseOperationError("prewarm lock package row is malformed")
+        name = package.get("name")
+        version = package.get("version")
+        source = package.get("source")
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in package_names
+            or not isinstance(version, str)
+            or not version
+            or not isinstance(source, dict)
+        ):
+            raise ReleaseOperationError("prewarm lock package identity is malformed")
+        package_names.add(name)
+        if name == "quant-system":
+            root_package_count += 1
+            if source != {"editable": "."}:
+                raise ReleaseOperationError(
+                    "prewarm root package source is not the archived project"
+                )
+            continue
+        if source != {"registry": PYPI_INDEX}:
+            raise ReleaseOperationError("prewarm lock contains a non-PyPI package source")
+        registry_package_count += 1
+        artifacts: list[object] = []
+        if "sdist" in package:
+            artifacts.append(package["sdist"])
+        wheels = package.get("wheels", [])
+        if not isinstance(wheels, list):
+            raise ReleaseOperationError("prewarm lock wheel inventory is malformed")
+        artifacts.extend(wheels)
+        if not artifacts:
+            raise ReleaseOperationError("prewarm registry package lacks locked artifacts")
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                raise ReleaseOperationError("prewarm lock artifact row is malformed")
+            url = artifact.get("url")
+            digest = artifact.get("hash")
+            size = artifact.get("size")
+            if (
+                not isinstance(url, str)
+                or re.fullmatch(r"sha256:[0-9a-f]{64}", digest or "") is None
+                or not isinstance(size, int)
+                or isinstance(size, bool)
+                or size <= 0
+            ):
+                raise ReleaseOperationError("prewarm lock artifact identity is malformed")
+            parsed = urlsplit(url)
+            if (
+                parsed.scheme != "https"
+                or parsed.hostname != PYPI_ARTIFACT_HOST
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ReleaseOperationError("prewarm lock artifact URL is outside PyPI")
+            artifact_count += 1
+    if root_package_count != 1 or registry_package_count < 1 or artifact_count < 1:
+        raise ReleaseOperationError("prewarm lock authority is incomplete")
+    return {
+        "artifact_count": artifact_count,
+        "build_backend": "setuptools.build_meta",
+        "build_requirements": ["setuptools>=68", "wheel"],
+        "package_count": len(packages),
+        "project": observed_project,
+        "registry": PYPI_INDEX,
+        "registry_package_count": registry_package_count,
+        "root_source": {"editable": "."},
+    }
+
+
+def _private_cache_inventory(cache_root: Path) -> dict[str, object]:
+    """Content-address the private uv cache at the prewarm/offline boundary."""
+
+    root = cache_root.resolve(strict=True)
+    if not root.is_dir() or cache_root.is_symlink():
+        raise ReleaseOperationError("private uv cache root is unsafe")
+    entries: list[dict[str, object]] = []
+    file_count = 0
+    symlink_count = 0
+    total_bytes = 0
+    for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        info = path.lstat()
+        relative = path.relative_to(root).as_posix()
+        if stat.S_ISDIR(info.st_mode):
+            entries.append(
+                {
+                    "kind": "directory",
+                    "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+                    "path": relative,
+                }
+            )
+            continue
+        if stat.S_ISLNK(info.st_mode):
+            try:
+                target = path.resolve(strict=True)
+            except OSError as exc:
+                raise ReleaseOperationError("private uv cache contains a broken symlink") from exc
+            if not target.is_relative_to(root):
+                raise ReleaseOperationError(
+                    "private uv cache symlink target escapes the owned cache"
+                )
+            symlink_count += 1
+            entry: dict[str, object] = {
+                "kind": "symlink",
+                "path": relative,
+                "target": os.readlink(path),
+                "target_path": str(target),
+            }
+            if target.is_file():
+                entry.update(
+                    {
+                        "target_bytes": target.stat().st_size,
+                        "target_kind": "file",
+                        "target_sha256": sha256_file(target),
+                    }
+                )
+            elif target.is_dir():
+                entry["target_kind"] = "directory"
+            else:
+                raise ReleaseOperationError("private uv cache symlink target is unsafe")
+            entries.append(entry)
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            raise ReleaseOperationError("private uv cache contains a non-regular entry")
+        file_count += 1
+        total_bytes += info.st_size
+        entries.append(
+            {
+                "bytes": info.st_size,
+                "kind": "file",
+                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+                "path": relative,
+                "sha256": sha256_file(path),
+            }
+        )
+    if file_count < 1 or total_bytes < 1:
+        raise ReleaseOperationError("private uv cache prewarm produced no artifacts")
+    return {
+        "entry_count": len(entries),
+        "file_count": file_count,
+        "root": str(root),
+        "symlink_count": symlink_count,
+        "total_bytes": total_bytes,
+        "tree_sha256": sha256_bytes(canonical_json_bytes(entries)),
+    }
+
+
 def _tool_version_facts(
     *,
     binary: Path,
@@ -1376,6 +1681,168 @@ def _create_virtual_environment(
     command["python"] = str(python.resolve())
     command["python_sha256"] = sha256_file(python)
     return command
+
+
+def _prewarm_locked_projects(
+    *,
+    uv_path: Path,
+    base_python: Path,
+    work: Path,
+    output_dir: Path,
+    offline_environment: dict[str, str],
+    baseline_root: Path,
+    final_root: Path,
+    baseline_project: dict[str, object],
+    final_project: dict[str, object],
+) -> dict[str, object]:
+    """Populate the owned cache from exact archived locks before verification."""
+
+    baseline_authority = _locked_project_prewarm_authority(
+        baseline_root,
+        baseline_project,
+    )
+    final_authority = _locked_project_prewarm_authority(
+        final_root,
+        final_project,
+    )
+    prewarm_environment, environment_facts = _private_cache_prewarm_environment(
+        offline_environment
+    )
+    prewarm_environment_root = work / "prewarm-environment"
+    environment_create = _create_virtual_environment(
+        base_python=base_python,
+        root=prewarm_environment_root,
+        cwd=baseline_root,
+        env=offline_environment,
+        log_path=output_dir / "prewarm-environment-create.log",
+    )
+    prewarm_python = prewarm_environment_root / "bin" / "python"
+    prewarm_environment = _venv_environment(
+        prewarm_environment,
+        prewarm_environment_root,
+    )
+    baseline_sync = _run(
+        _uv_sync_argv(uv_path, inexact=False, offline=False),
+        cwd=baseline_root,
+        env=prewarm_environment,
+        log_path=output_dir / "prewarm-baseline-sync.log",
+    )
+    baseline_dist = ensure_private_directory(work / "prewarm-baseline-dist")
+    baseline_build = _run(
+        _uv_build_argv(
+            uv_path,
+            output_dir=baseline_dist,
+            python=prewarm_python,
+            offline=False,
+        ),
+        cwd=baseline_root,
+        env=prewarm_environment,
+        log_path=output_dir / "prewarm-baseline-wheel-build.log",
+    )
+    final_sync = _run(
+        _uv_sync_argv(uv_path, inexact=False, offline=False),
+        cwd=final_root,
+        env=prewarm_environment,
+        log_path=output_dir / "prewarm-final-sync.log",
+    )
+    final_dist = ensure_private_directory(work / "prewarm-final-dist")
+    final_build = _run(
+        _uv_build_argv(
+            uv_path,
+            output_dir=final_dist,
+            python=prewarm_python,
+            offline=False,
+        ),
+        cwd=final_root,
+        env=prewarm_environment,
+        log_path=output_dir / "prewarm-final-wheel-build.log",
+    )
+    if (
+        _locked_project_prewarm_authority(baseline_root, baseline_project)
+        != baseline_authority
+        or _locked_project_prewarm_authority(final_root, final_project)
+        != final_authority
+    ):
+        raise ReleaseOperationError("prewarm changed archived lock or metadata authority")
+    cache_inventory = _private_cache_inventory(
+        Path(prewarm_environment["UV_CACHE_DIR"])
+    )
+    return {
+        "base_python": {
+            "path": str(base_python.resolve()),
+            "sha256": sha256_file(base_python),
+        },
+        "baseline_authority": baseline_authority,
+        "baseline_build": baseline_build,
+        "baseline_sync": baseline_sync,
+        "cache_inventory": cache_inventory,
+        "environment": environment_facts,
+        "environment_create": environment_create,
+        "final_authority": final_authority,
+        "final_build": final_build,
+        "final_sync": final_sync,
+        "network_permitted": True,
+        "python": str(prewarm_python.resolve()),
+        "python_sha256": sha256_file(prewarm_python),
+        "status": "complete",
+        "uv": {
+            "path": str(uv_path.resolve()),
+            "sha256": sha256_file(uv_path),
+        },
+    }
+
+
+def _activate_offline_verification(
+    *,
+    offline_environment: dict[str, str],
+    prewarm_authority: dict[str, object],
+    uv_path: Path,
+    base_python: Path,
+    baseline_root: Path,
+    final_root: Path,
+    baseline_project: dict[str, object],
+    final_project: dict[str, object],
+) -> tuple[dict[str, str], dict[str, object]]:
+    """Require completed, unchanged private-cache prewarm before offline use."""
+
+    if prewarm_authority.get("status") != "complete":
+        raise ReleaseOperationError("offline verification lacks completed prewarm authority")
+    if prewarm_authority.get("uv") != {
+        "path": str(uv_path.resolve()),
+        "sha256": sha256_file(uv_path),
+    } or prewarm_authority.get("base_python") != {
+        "path": str(base_python.resolve()),
+        "sha256": sha256_file(base_python),
+    }:
+        raise ReleaseOperationError("offline verification tool identity changed after prewarm")
+    if (
+        offline_environment.get("UV_OFFLINE") != "1"
+        or offline_environment.get("PIP_NO_INDEX") != "1"
+        or offline_environment.get("UV_NO_CONFIG") != "1"
+    ):
+        raise ReleaseOperationError("offline verification environment is not closed")
+    cache_root = Path(offline_environment.get("UV_CACHE_DIR", ""))
+    expected_inventory = prewarm_authority.get("cache_inventory")
+    if (
+        not isinstance(expected_inventory, dict)
+        or expected_inventory.get("root") != str(cache_root.resolve())
+        or _private_cache_inventory(cache_root) != expected_inventory
+    ):
+        raise ReleaseOperationError("private uv cache changed before offline verification")
+    if (
+        _locked_project_prewarm_authority(baseline_root, baseline_project)
+        != prewarm_authority.get("baseline_authority")
+        or _locked_project_prewarm_authority(final_root, final_project)
+        != prewarm_authority.get("final_authority")
+    ):
+        raise ReleaseOperationError("archived lock or metadata changed before offline verification")
+    return dict(offline_environment), {
+        "cache_inventory_sha256": expected_inventory["tree_sha256"],
+        "network": "denied",
+        "prewarm_completed_before_activation": True,
+        "sandbox": str(NETWORK_SANDBOX),
+        "uv_offline": True,
+    }
 
 
 def verify_noneditable_upgrade(
@@ -1507,6 +1974,28 @@ def verify_noneditable_upgrade(
     baseline_project = _project_facts(baseline_root)
     final_project = _project_facts(final_root)
 
+    prewarm_authority = _prewarm_locked_projects(
+        uv_path=uv_path,
+        base_python=base_python,
+        work=work,
+        output_dir=output_dir,
+        offline_environment=environment,
+        baseline_root=baseline_root,
+        final_root=final_root,
+        baseline_project=baseline_project,
+        final_project=final_project,
+    )
+    environment, offline_verification = _activate_offline_verification(
+        offline_environment=environment,
+        prewarm_authority=prewarm_authority,
+        uv_path=uv_path,
+        base_python=base_python,
+        baseline_root=baseline_root,
+        final_root=final_root,
+        baseline_project=baseline_project,
+        final_project=final_project,
+    )
+
     upgrade_environment_root = baseline_root / ".venv"
     upgrade_environment_create = _create_virtual_environment(
         base_python=base_python,
@@ -1529,17 +2018,11 @@ def verify_noneditable_upgrade(
     baseline_dist = ensure_private_directory(work / "baseline-dist")
     baseline_build = _run(
         _guarded_argv(
-            [
-                str(uv_path),
-                "build",
-                "--wheel",
-                "--offline",
-                "--out-dir",
-                str(baseline_dist),
-                "--python",
-                str(upgrade_python),
-                "--no-python-downloads",
-            ]
+            _uv_build_argv(
+                uv_path,
+                output_dir=baseline_dist,
+                python=upgrade_python,
+            )
         ),
         cwd=baseline_root,
         env=upgrade_environment,
@@ -1622,17 +2105,11 @@ def verify_noneditable_upgrade(
     final_dist = ensure_private_directory(work / "final-dist")
     final_build = _run(
         _guarded_argv(
-            [
-                str(uv_path),
-                "build",
-                "--wheel",
-                "--offline",
-                "--out-dir",
-                str(final_dist),
-                "--python",
-                str(upgrade_python),
-                "--no-python-downloads",
-            ]
+            _uv_build_argv(
+                uv_path,
+                output_dir=final_dist,
+                python=upgrade_python,
+            )
         ),
         cwd=final_root,
         env=upgrade_environment,
@@ -1845,7 +2322,7 @@ def verify_noneditable_upgrade(
     )
 
     receipt: dict[str, object] = {
-        "schema_version": "agent-v0.2.2-noneditable-upgrade.v3",
+        "schema_version": "agent-v0.2.2-noneditable-upgrade.v4",
         "status": "passed",
         "completed_at": utc_now(),
         "repository_before": asdict(identity),
@@ -1867,6 +2344,8 @@ def verify_noneditable_upgrade(
         "final_archive": final_archive,
         "baseline_project": baseline_project,
         "final_project": final_project,
+        "private_cache_prewarm": prewarm_authority,
+        "offline_verification_activation": offline_verification,
         "forbidden_source_roots": [str(root) for root in forbidden],
         "upgrade_environment_create": upgrade_environment_create,
         "upgrade_environment_python": str(upgrade_python.resolve()),
@@ -1931,7 +2410,10 @@ def verify_noneditable_upgrade(
         "final_lock_consumed_in_same_environment": True,
         "fresh_final_control": True,
         "offline": True,
+        "offline_scope": "verification_after_private_cache_prewarm",
         "network_denied": True,
+        "network_denied_scope": "verification_after_private_cache_prewarm",
+        "prewarm_network_permitted": True,
         "normalized_wheel_payload_changed": True,
         "installed_tree_changed": True,
     }
