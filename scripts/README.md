@@ -21,6 +21,7 @@ or trading.
 
 | Script | Purpose |
 | --- | --- |
+| `verify_agent_v02_focused_safety.sh` | Run the fixed, repository-authoritative Agent v0.2 focused-safety selector with a release-local Python and an external one-shot basetemp. |
 | `verify_agent_v02_postgres_suite.sh` | Create an isolated loopback PostgreSQL cluster, run the authoritative PostgreSQL suite, prove suite-owned roles are removed, and destroy the cluster. |
 | `verify_agent_v02_backup_restore.sh` | Back up and restore the full authoritative PostgreSQL state into an independently created destination cluster, then compare schema, role, and data facts. |
 | `verify_agent_v02_noneditable_upgrade.sh` | Exercise baseline-to-current non-editable installation in isolated Python environments and reject source-tree import leakage. |
