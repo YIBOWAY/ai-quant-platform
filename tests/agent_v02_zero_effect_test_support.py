@@ -50,7 +50,7 @@ def install_fake_release_status_cli(
     bin_dir = repository / ".venv" / "bin"
     bin_dir.mkdir(parents=True)
     python = bin_dir / "python3"
-    python.symlink_to(sys.executable)
+    python.symlink_to(Path(sys._base_executable).resolve())
     cli = bin_dir / "quant-system"
     cli.write_text(
         f"#!{python}\n"
