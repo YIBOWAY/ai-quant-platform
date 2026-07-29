@@ -64,7 +64,20 @@ test("production Hermes navigation has no background RSC prefetch or aborted req
     "aria-label",
     /仅模拟.*实盘交易已禁用.*熔断开关 开.*接口 available/,
   );
-  await page.waitForTimeout(1_000);
+  const prefetchObservationStartedAt = Date.now();
+  await expect
+    .poll(
+      () =>
+        diagnostics.automaticRscRequests.length === 0 &&
+        Date.now() - prefetchObservationStartedAt >= 1_000,
+      {
+        message:
+          "Hermes must remain free of automatic RSC requests throughout the bounded observation window",
+        timeout: 10_000,
+        intervals: [100, 250, 500],
+      },
+    )
+    .toBe(true);
   expect(diagnostics.automaticRscRequests).toEqual([]);
 
   diagnostics.beginDeliberateNavigation();
