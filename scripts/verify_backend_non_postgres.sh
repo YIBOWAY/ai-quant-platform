@@ -12,7 +12,7 @@ seen_output_dir=0
 seen_expected_commit=0
 for argument in "$@"; do
   case "$argument" in
-    --repository-root | --repository-root=* | --uv | --uv=*)
+    --node | --node=* | --repository-root | --repository-root=* | --uv | --uv=*)
       fail "public_argument_forbidden"
       ;;
     --describe)
@@ -51,6 +51,12 @@ else
   fail "uv_not_found"
 fi
 [[ -n "$UV_BIN" && -x "$UV_BIN" ]] || fail "uv_not_found"
+if NODE_BIN="$(command -v node)"; then
+  :
+else
+  fail "node_not_found"
+fi
+[[ -n "$NODE_BIN" && -x "$NODE_BIN" ]] || fail "node_not_found"
 
 exec /usr/bin/env -i \
   HOME="/tmp" \
@@ -62,5 +68,6 @@ exec /usr/bin/env -i \
   "$PYTHON311" -I -B "$HELPER" \
   --repository-root "$ROOT" \
   --uv "$UV_BIN" \
+  --node "$NODE_BIN" \
   --public-entrypoint "$0" \
   --public-argv "$@"

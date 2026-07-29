@@ -883,13 +883,19 @@ def _uv_environment(
 def _test_environment(
     transient_paths: dict[str, Path],
     uv: Path,
+    node: Path | None = None,
 ) -> dict[str, str]:
     venv = transient_paths["venv"]
+    path_entries = (
+        ([node.parent] if node is not None else [])
+        + [venv / "bin", uv.parent, Path("/usr/bin"), Path("/bin")]
+    )
+    path_entries = list(dict.fromkeys(path_entries))
     return {
         "HOME": str(transient_paths["home"]),
         "LANG": "C",
         "LC_ALL": "C",
-        "PATH": f"{venv / 'bin'}:{uv.parent}:/usr/bin:/bin",
+        "PATH": ":".join(str(path) for path in path_entries),
         "PYTHONNOUSERSITE": "1",
         "PYTHONPYCACHEPREFIX": str(transient_paths["pycache"]),
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
@@ -1004,6 +1010,7 @@ def run_gate(
     expected_skip_node_ids: tuple[str, ...],
     public_entrypoint: str,
     public_argv: tuple[str, ...],
+    node_argument: Path | None = None,
 ) -> dict[str, object]:
     public_entrypoint_binding = _require_public_entrypoint(root, public_entrypoint)
     repository_before = _require_expected_commit(root, expected_commit)
@@ -1016,6 +1023,11 @@ def run_gate(
     uv = uv_argument.resolve()
     if not uv.is_file() or not os.access(uv, os.X_OK):
         raise GateError("uv_not_executable")
+    node: Path | None = None
+    if node_argument is not None:
+        node = node_argument.resolve()
+        if not node.is_file() or not os.access(node, os.X_OK):
+            raise GateError("node_not_executable")
     output = _prepare_output(output_argument, root=root)
     runtime_root, transient_paths = _fresh_checkout_runtime(
         root=root,
@@ -1025,7 +1037,7 @@ def run_gate(
     venv = transient_paths["venv"]
     sandbox_exec = _require_sandbox_exec()
     uv_env = _uv_environment(transient_paths, uv)
-    test_env = _test_environment(transient_paths, uv)
+    test_env = _test_environment(transient_paths, uv, node)
     inputs_before = _input_identity(root)
     output_info = output.lstat()
     output_parent_info = output.parent.lstat()
@@ -1092,6 +1104,23 @@ def run_gate(
         }
         if uv_version_completed.returncode != 0:
             raise GateError("uv_version_failed")
+
+        if node is not None:
+            node_version_completed, node_version = _run_logged(
+                argv=(str(node), "--version"),
+                cwd=root,
+                env=test_env,
+                output=output,
+                name="node-version",
+            )
+            receipt["node"] = {
+                "argument": str(node_argument),
+                "realpath": str(node),
+                "sha256": _sha256_file(node),
+                "version": node_version,
+            }
+            if node_version_completed.returncode != 0:
+                raise GateError("node_version_failed")
 
         install_completed, install = _run_logged(
             argv=(
@@ -1256,8 +1285,8 @@ def _parse_public_args(argv: tuple[str, ...]) -> argparse.Namespace:
     while index < len(argv):
         token = argv[index]
         value: str | None = None
-        if token in {"--repository-root", "--uv"} or token.startswith(
-            ("--repository-root=", "--uv=")
+        if token in {"--node", "--repository-root", "--uv"} or token.startswith(
+            ("--node=", "--repository-root=", "--uv=")
         ):
             raise GateError("public_argument_forbidden")
         if token in {"--describe", "--self-test"}:
@@ -1312,6 +1341,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--repository-root", type=Path, required=True)
     parser.add_argument("--uv", type=Path)
+    parser.add_argument("--node", type=Path)
     parser.add_argument("--public-entrypoint", required=True)
     parser.add_argument("--public-argv", nargs=argparse.REMAINDER, required=True)
     internal = parser.parse_args()
@@ -1338,6 +1368,8 @@ def main() -> int:
     elif args.self_test:
         result = run_self_test(root)
     else:
+        if args.node is None:
+            raise GateError("node_not_found")
         result = run_gate(
             root=root,
             output_argument=args.output_dir,
@@ -1347,6 +1379,7 @@ def main() -> int:
             expected_skip_node_ids=expected_skip_node_ids,
             public_entrypoint=args.public_entrypoint,
             public_argv=args.public_argv,
+            node_argument=args.node,
         )
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0
