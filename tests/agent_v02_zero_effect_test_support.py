@@ -141,6 +141,7 @@ def fixture_environment(platform: Path) -> dict[str, str]:
     }
     return {
         **keep,
+        "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPATH": str(platform / "src"),
         "PYTHONNOUSERSITE": "1",
         "QS_DATABASE_AUTO_MIGRATE": "false",

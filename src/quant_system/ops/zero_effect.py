@@ -421,6 +421,7 @@ def _fresh_release_status_observation(
     environment = dict(os.environ)
     environment.update(
         {
+            "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONNOUSERSITE": "1",
             "PYTHONPATH": str(platform_root.resolve() / "src"),
             "PYTHONSAFEPATH": "1",
@@ -471,6 +472,7 @@ def _fresh_release_status_observation(
             "provider_free_surface": "quant-system hermes release status",
             "module_binding": {
                 "pythonpath": environment["PYTHONPATH"],
+                "python_dont_write_bytecode": True,
                 "python_no_user_site": True,
                 "python_safe_path": True,
             },
