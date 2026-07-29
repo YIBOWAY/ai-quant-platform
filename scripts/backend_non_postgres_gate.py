@@ -31,6 +31,61 @@ _XML_ENCODING = re.compile(
     re.IGNORECASE,
 )
 _MAX_JUNIT_BYTES = 16 * 1024 * 1024
+COLLECTION_PREFIX = "GATE2_COLLECTION_NODE_IDS="
+COLLECTION_SOURCE = f"""
+import json
+import sys
+
+import pytest
+
+
+class ExactCollection:
+    def pytest_collection_finish(self, session):
+        node_ids = [item.nodeid for item in session.items]
+        sys.stdout.write(
+            {COLLECTION_PREFIX!r}
+            + json.dumps(
+                node_ids,
+                allow_nan=False,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            + "\\n"
+        )
+        sys.stdout.flush()
+
+
+raise SystemExit(pytest.main(["-s", *sys.argv[1:]], plugins=[ExactCollection()]))
+"""
+INNER_SANDBOX_NODE_IDS = (
+    "tests/test_agent_v02_release_ops_restart_zero.py::"
+    "test_zero_effect_crash_after_route_leaves_claim_and_retry_never_routes",
+    "tests/test_agent_v02_release_ops_restart_zero.py::"
+    "test_zero_effect_concurrent_same_id_routes_exactly_once",
+    "tests/test_agent_v02_release_ops_restart_zero.py::"
+    "test_zero_effect_postflight_rejects_repository_or_runtime_drift_without_receipt[platform]",
+    "tests/test_agent_v02_release_ops_restart_zero.py::"
+    "test_zero_effect_postflight_rejects_repository_or_runtime_drift_without_receipt[hqa]",
+    "tests/test_agent_v02_release_ops_restart_zero.py::"
+    "test_zero_effect_postflight_rejects_repository_or_runtime_drift_without_receipt"
+    "[platform_runtime]",
+    "tests/test_agent_v02_release_ops_restart_zero.py::"
+    "test_zero_effect_changed_same_id_request_fails_closed_without_route",
+    "tests/test_agent_v02_zero_effect_hardening.py::"
+    "test_zero_effect_real_route_runs_in_confined_child_and_replays",
+    "tests/test_agent_v02_zero_effect_hardening.py::"
+    "test_zero_effect_cross_state_directories_have_distinct_idempotency_identity",
+    "tests/test_agent_v02_zero_effect_hardening.py::"
+    "test_zero_effect_real_sigkill_after_route_never_retries",
+    "tests/test_agent_v02_zero_effect_hardening.py::"
+    "test_zero_effect_receipt_fsync_mutation_prevents_authoritative_seal",
+    "tests/test_agent_v02_zero_effect_hardening.py::"
+    "test_zero_effect_concurrent_processes_execute_real_route_exactly_once",
+    "tests/test_agent_v02_zero_effect_hardening.py::"
+    "test_zero_effect_postflight_drift_fails_before_receipt",
+    "tests/test_agent_v02_zero_effect_hardening.py::"
+    "test_zero_effect_changed_same_identity_request_fails_before_observation",
+)
 _NETWORK_DENIAL_SOURCE = r"""
 import errno
 import socket
@@ -43,6 +98,25 @@ try:
 except OSError as exc:
     raise SystemExit(0 if exc.errno in {errno.EACCES, errno.EPERM} else 2)
 raise SystemExit(3)
+"""
+INNER_SHARD_SOURCE = r"""
+import socket
+import sys
+
+
+def deny_inet_socket(event, arguments):
+    if event not in {"socket.bind", "socket.connect", "socket.sendto"}:
+        return
+    candidate = arguments[0] if arguments else None
+    if getattr(candidate, "family", None) in {socket.AF_INET, socket.AF_INET6}:
+        raise PermissionError("Gate 2 inner shard denies INET sockets")
+
+
+sys.addaudithook(deny_inet_socket)
+
+import pytest
+
+raise SystemExit(pytest.main(sys.argv[1:]))
 """
 _PROBE_SOURCE = r"""
 import hashlib
@@ -387,6 +461,183 @@ def validate_junit(
         "skip_node_ids": observed_skips,
         "total": len(testcases),
     }
+
+
+def partition_collected_node_ids(
+    collected_node_ids: tuple[str, ...],
+    inner_sandbox_node_ids: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if (
+        not collected_node_ids
+        or len(set(collected_node_ids)) != len(collected_node_ids)
+        or any(
+            not node_id.startswith("tests/") or "::" not in node_id
+            for node_id in collected_node_ids
+        )
+    ):
+        raise GateError("pytest_collection_invalid")
+    if (
+        not inner_sandbox_node_ids
+        or len(set(inner_sandbox_node_ids)) != len(inner_sandbox_node_ids)
+        or any(
+            not node_id.startswith("tests/") or "::" not in node_id
+            for node_id in inner_sandbox_node_ids
+        )
+    ):
+        raise GateError("pytest_inner_sandbox_partition_invalid")
+    collected_set = set(collected_node_ids)
+    inner_set = set(inner_sandbox_node_ids)
+    if not inner_set.issubset(collected_set):
+        raise GateError("pytest_inner_sandbox_node_missing")
+    general = tuple(
+        node_id for node_id in collected_node_ids if node_id not in inner_set
+    )
+    if (
+        not general
+        or set(general) & inner_set
+        or set(general) | inner_set != collected_set
+        or len(general) + len(inner_sandbox_node_ids) != len(collected_node_ids)
+    ):
+        raise GateError("pytest_partition_not_exact")
+    return general, inner_sandbox_node_ids
+
+
+def parse_collected_node_ids(content: bytes) -> tuple[str, ...]:
+    try:
+        lines = content.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise GateError("pytest_collection_invalid") from exc
+    documents = [
+        line.removeprefix(COLLECTION_PREFIX)
+        for line in lines
+        if line.startswith(COLLECTION_PREFIX)
+    ]
+    if len(documents) != 1:
+        raise GateError("pytest_collection_invalid")
+    try:
+        document = _strict_json(documents[0].encode("utf-8"))
+    except GateError as exc:
+        raise GateError("pytest_collection_invalid") from exc
+    if (
+        not isinstance(document, list)
+        or not document
+        or any(
+            not isinstance(node_id, str)
+            or not node_id.startswith("tests/")
+            or "::" not in node_id
+            for node_id in document
+        )
+        or len(set(document)) != len(document)
+    ):
+        raise GateError("pytest_collection_invalid")
+    return tuple(document)
+
+
+def build_pytest_shard_commands(
+    *,
+    sandbox_exec: Path,
+    python: Path,
+    transient_paths: dict[str, Path],
+    output: Path,
+    marker_expression: str,
+    inner_sandbox_node_ids: tuple[str, ...],
+) -> dict[str, tuple[str, ...]]:
+    outer_sandbox = (str(sandbox_exec), "-p", SANDBOX_PROFILE)
+    common_pytest = (
+        "-q",
+        "-rA",
+        "--strict-config",
+        "--strict-markers",
+        "-p",
+        "no:cacheprovider",
+        "-m",
+        marker_expression,
+    )
+    collection = (
+        *outer_sandbox,
+        str(python),
+        "-I",
+        "-B",
+        "-c",
+        COLLECTION_SOURCE,
+        "--collect-only",
+        "-q",
+        "--strict-config",
+        "--strict-markers",
+        "-p",
+        "no:cacheprovider",
+        "--basetemp",
+        str(transient_paths["basetemp"] / "collection"),
+        "-m",
+        marker_expression,
+        "tests",
+    )
+    general = (
+        *outer_sandbox,
+        str(python),
+        "-I",
+        "-B",
+        "-m",
+        "pytest",
+        *common_pytest,
+        "--basetemp",
+        str(transient_paths["basetemp"] / "general"),
+        *(f"--deselect={node_id}" for node_id in inner_sandbox_node_ids),
+        "tests",
+        f"--junitxml={output / 'pytest-backend-non-postgres.junit.xml'}",
+    )
+    inner_sandbox = (
+        str(python),
+        "-I",
+        "-B",
+        "-c",
+        INNER_SHARD_SOURCE,
+        *common_pytest,
+        "--basetemp",
+        str(transient_paths["basetemp"] / "inner-sandbox"),
+        *inner_sandbox_node_ids,
+        f"--junitxml={output / 'pytest-backend-non-postgres-inner-sandbox.junit.xml'}",
+    )
+    return {
+        "collection": collection,
+        "general": general,
+        "inner_sandbox": inner_sandbox,
+    }
+
+
+def combine_shard_results(
+    *,
+    collected_node_ids: tuple[str, ...],
+    general_node_ids: tuple[str, ...],
+    inner_sandbox_node_ids: tuple[str, ...],
+    general_result: dict[str, object],
+    inner_sandbox_result: dict[str, object],
+) -> dict[str, object]:
+    if (
+        set(general_node_ids) & set(inner_sandbox_node_ids)
+        or set(general_node_ids) | set(inner_sandbox_node_ids)
+        != set(collected_node_ids)
+        or general_result.get("total") != len(general_node_ids)
+        or inner_sandbox_result.get("total") != len(inner_sandbox_node_ids)
+    ):
+        raise GateError("pytest_shard_count_mismatch")
+    combined = {
+        field: int(general_result[field]) + int(inner_sandbox_result[field])
+        for field in ("failed", "passed", "skipped", "total")
+    }
+    combined["skip_node_ids"] = sorted(
+        [
+            *general_result["skip_node_ids"],
+            *inner_sandbox_result["skip_node_ids"],
+        ]
+    )
+    if (
+        combined["total"] != len(collected_node_ids)
+        or combined["failed"] + combined["passed"] + combined["skipped"]
+        != combined["total"]
+    ):
+        raise GateError("pytest_shard_count_mismatch")
+    return combined
 
 
 def _junit(*, outcome: str = "passed") -> bytes:
@@ -1003,6 +1254,7 @@ def run_gate(
     public_entrypoint: str,
     public_argv: tuple[str, ...],
     node_argument: Path | None = None,
+    inner_sandbox_node_ids: tuple[str, ...] = (),
 ) -> dict[str, object]:
     public_entrypoint_binding = _require_public_entrypoint(root, public_entrypoint)
     repository_before = _require_expected_commit(root, expected_commit)
@@ -1192,46 +1444,186 @@ def run_gate(
         if sandbox_completed.returncode != 0:
             raise GateError("network_sandbox_denial_not_proven")
 
-        junit_path = output / "pytest-backend-non-postgres.junit.xml"
-        pytest_completed, pytest_record = _run_logged(
-            argv=(
-                str(sandbox_exec),
-                "-p",
-                SANDBOX_PROFILE,
-                str(python),
-                "-I",
-                "-B",
-                "-m",
-                "pytest",
-                "-q",
-                "-rA",
-                "--strict-config",
-                "--strict-markers",
-                "-p",
-                "no:cacheprovider",
-                "--basetemp",
-                str(transient_paths["basetemp"]),
-                "-m",
-                marker_expression,
-                "tests",
-                f"--junitxml={junit_path}",
-            ),
-            cwd=root,
-            env=test_env,
-            output=output,
-            name="pytest-backend-non-postgres",
-        )
-        receipt["pytest"] = pytest_record
-        if not junit_path.is_file() or junit_path.is_symlink():
-            raise GateError("pytest_junit_missing")
-        junit_path.chmod(0o600)
-        junit_content = junit_path.read_bytes()
-        pytest_record["junit"] = _artifact(junit_path)
-        pytest_record["result"] = validate_junit(
-            junit_content,
-            pytest_exit=pytest_completed.returncode,
-            expected_skip_node_ids=expected_skip_node_ids,
-        )
+        if inner_sandbox_node_ids:
+            shard_commands = build_pytest_shard_commands(
+                sandbox_exec=sandbox_exec,
+                python=python,
+                transient_paths=transient_paths,
+                output=output,
+                marker_expression=marker_expression,
+                inner_sandbox_node_ids=inner_sandbox_node_ids,
+            )
+            collection_completed, collection_record = _run_logged(
+                argv=shard_commands["collection"],
+                cwd=root,
+                env=test_env,
+                output=output,
+                name="pytest-backend-non-postgres-collection",
+            )
+            pytest_record: dict[str, object] = {
+                "collection": collection_record,
+                "inner_sandbox_contract": {
+                    "macos_outer_sandbox": False,
+                    "parent_inet_audit_guard": True,
+                    "product_child_macos_sandbox_required": True,
+                },
+            }
+            receipt["pytest"] = pytest_record
+            if collection_completed.returncode != 0:
+                raise GateError(
+                    f"pytest_collection_exit_nonzero:{collection_completed.returncode}"
+                )
+            collected_node_ids = parse_collected_node_ids(collection_completed.stdout)
+            general_node_ids, exact_inner_node_ids = partition_collected_node_ids(
+                collected_node_ids,
+                inner_sandbox_node_ids,
+            )
+            expected_skip_set = set(expected_skip_node_ids)
+            if not expected_skip_set.issubset(collected_node_ids):
+                raise GateError("expected_skip_not_collected")
+            general_expected_skips = tuple(
+                node_id
+                for node_id in expected_skip_node_ids
+                if node_id in set(general_node_ids)
+            )
+            inner_expected_skips = tuple(
+                node_id
+                for node_id in expected_skip_node_ids
+                if node_id in set(exact_inner_node_ids)
+            )
+            pytest_record["partition"] = {
+                "collected": {
+                    "count": len(collected_node_ids),
+                    "node_ids_sha256": _sha256(
+                        _canonical_json(list(collected_node_ids))
+                    ),
+                },
+                "exact_union": True,
+                "general": {
+                    "count": len(general_node_ids),
+                    "node_ids_sha256": _sha256(
+                        _canonical_json(list(general_node_ids))
+                    ),
+                },
+                "inner_sandbox": {
+                    "count": len(exact_inner_node_ids),
+                    "node_ids": list(exact_inner_node_ids),
+                    "node_ids_sha256": _sha256(
+                        _canonical_json(list(exact_inner_node_ids))
+                    ),
+                },
+                "overlap_count": 0,
+            }
+
+            general_completed, general_record = _run_logged(
+                argv=shard_commands["general"],
+                cwd=root,
+                env=test_env,
+                output=output,
+                name="pytest-backend-non-postgres",
+            )
+            inner_completed, inner_record = _run_logged(
+                argv=shard_commands["inner_sandbox"],
+                cwd=root,
+                env=test_env,
+                output=output,
+                name="pytest-backend-non-postgres-inner-sandbox",
+            )
+            pytest_record["shards"] = {
+                "general": general_record,
+                "inner_sandbox": inner_record,
+            }
+            shard_results: dict[str, dict[str, object]] = {}
+            shard_errors: list[str] = []
+            for (
+                shard_name,
+                junit_path,
+                completed,
+                record,
+                declared_skips,
+            ) in (
+                (
+                    "general",
+                    output / "pytest-backend-non-postgres.junit.xml",
+                    general_completed,
+                    general_record,
+                    general_expected_skips,
+                ),
+                (
+                    "inner_sandbox",
+                    output
+                    / "pytest-backend-non-postgres-inner-sandbox.junit.xml",
+                    inner_completed,
+                    inner_record,
+                    inner_expected_skips,
+                ),
+            ):
+                if not junit_path.is_file() or junit_path.is_symlink():
+                    shard_errors.append(f"{shard_name}:pytest_junit_missing")
+                    continue
+                junit_path.chmod(0o600)
+                record["junit"] = _artifact(junit_path)
+                try:
+                    shard_result = validate_junit(
+                        junit_path.read_bytes(),
+                        pytest_exit=completed.returncode,
+                        expected_skip_node_ids=declared_skips,
+                    )
+                except GateError as exc:
+                    shard_errors.append(f"{shard_name}:{exc}")
+                else:
+                    record["result"] = shard_result
+                    shard_results[shard_name] = shard_result
+            if shard_errors:
+                raise GateError(f"pytest_shards_failed:{'|'.join(shard_errors)}")
+            pytest_record["result"] = combine_shard_results(
+                collected_node_ids=collected_node_ids,
+                general_node_ids=general_node_ids,
+                inner_sandbox_node_ids=exact_inner_node_ids,
+                general_result=shard_results["general"],
+                inner_sandbox_result=shard_results["inner_sandbox"],
+            )
+        else:
+            junit_path = output / "pytest-backend-non-postgres.junit.xml"
+            pytest_completed, pytest_record = _run_logged(
+                argv=(
+                    str(sandbox_exec),
+                    "-p",
+                    SANDBOX_PROFILE,
+                    str(python),
+                    "-I",
+                    "-B",
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "-rA",
+                    "--strict-config",
+                    "--strict-markers",
+                    "-p",
+                    "no:cacheprovider",
+                    "--basetemp",
+                    str(transient_paths["basetemp"]),
+                    "-m",
+                    marker_expression,
+                    "tests",
+                    f"--junitxml={junit_path}",
+                ),
+                cwd=root,
+                env=test_env,
+                output=output,
+                name="pytest-backend-non-postgres",
+            )
+            receipt["pytest"] = pytest_record
+            if not junit_path.is_file() or junit_path.is_symlink():
+                raise GateError("pytest_junit_missing")
+            junit_path.chmod(0o600)
+            junit_content = junit_path.read_bytes()
+            pytest_record["junit"] = _artifact(junit_path)
+            pytest_record["result"] = validate_junit(
+                junit_content,
+                pytest_exit=pytest_completed.returncode,
+                expected_skip_node_ids=expected_skip_node_ids,
+            )
 
         repository_after = _git_identity(root)
         receipt["repository_after"] = repository_after
@@ -1372,6 +1764,7 @@ def main() -> int:
             public_entrypoint=args.public_entrypoint,
             public_argv=args.public_argv,
             node_argument=args.node,
+            inner_sandbox_node_ids=INNER_SANDBOX_NODE_IDS,
         )
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0
