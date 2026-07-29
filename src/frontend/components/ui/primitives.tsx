@@ -187,7 +187,7 @@ export function StatusPill({
     <span
       className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-data-mono text-[10px] uppercase ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]}`}
     >
-      <span className="opacity-70">{label}</span>
+      <span>{label}</span>
       <span className="font-bold">{value}</span>
     </span>
   );
