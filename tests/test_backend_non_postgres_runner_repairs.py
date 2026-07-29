@@ -85,6 +85,48 @@ def test_gate_test_environment_exposes_only_the_bound_node_parent(
     ]
 
 
+def test_gate_rejects_root_and_frontend_ignored_environment_files(
+    tmp_path: Path,
+) -> None:
+    helper = _gate_helper()
+    root = tmp_path / "repository"
+    frontend = root / "src" / "frontend"
+    frontend.mkdir(parents=True)
+    (frontend / ".env.example").write_text(
+        "TRACKED_EXAMPLE=true\n",
+        encoding="utf-8",
+    )
+
+    helper._require_runtime_configuration_absent(root)
+
+    root_environment = root / ".env"
+    root_environment.symlink_to(root / "missing-root-environment")
+    try:
+        try:
+            helper._require_runtime_configuration_absent(root)
+        except helper.GateError as exc:
+            assert str(exc) == "checkout_env_file_present:.env"
+        else:
+            raise AssertionError("dangling root .env was accepted")
+    finally:
+        root_environment.unlink()
+
+    frontend_environment = frontend / ".env.local"
+    frontend_environment.symlink_to(frontend / "missing-frontend-environment")
+    try:
+        try:
+            helper._require_runtime_configuration_absent(root)
+        except helper.GateError as exc:
+            assert (
+                str(exc)
+                == "checkout_env_file_present:src/frontend/.env.local"
+            )
+        else:
+            raise AssertionError("dangling frontend .env.local was accepted")
+    finally:
+        frontend_environment.unlink()
+
+
 def test_gate_receipt_binds_the_node_runtime(
     tmp_path: Path,
     monkeypatch,
@@ -129,7 +171,37 @@ def test_gate_receipt_binds_the_node_runtime(
     monkeypatch.setattr(
         helper,
         "_validate_import_probe",
-        lambda document, **_kwargs: document,
+        lambda _document, **_kwargs: {
+            "quant_system_file": str(root / "installed" / "__init__.py")
+        },
+    )
+    monkeypatch.setattr(
+        helper,
+        "installed_quant_system_tree_identity",
+        lambda _module: {
+            "file_count": 1,
+            "root": str(root / "installed"),
+            "tree_sha256": "c" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        helper,
+        "installed_environment_tree_identity",
+        lambda _venv: {
+            "entry_count": 1,
+            "root": str(root / "venv"),
+            "tree_sha256": "d" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        helper,
+        "normalize_installed_environment_lock",
+        lambda _venv: {
+            "after_mode": "600",
+            "before_mode": "666",
+            "owner_uid": 501,
+            "path": ".lock",
+        },
     )
 
     def fake_run_logged(*, argv, env, name, output, **_kwargs):

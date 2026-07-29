@@ -237,6 +237,177 @@ def _canonical_json(document: object) -> bytes:
     ).encode("utf-8")
 
 
+def installed_quant_system_tree_identity(
+    quant_system_file: str | Path,
+) -> dict[str, object]:
+    module_path = Path(quant_system_file)
+    if not module_path.is_absolute():
+        raise GateError("installed_quant_system_tree_root_invalid")
+    root = module_path.parent
+    root_info = root.lstat()
+    if (
+        not stat.S_ISDIR(root_info.st_mode)
+        or stat.S_ISLNK(root_info.st_mode)
+        or root_info.st_uid != os.getuid()
+        or stat.S_IMODE(root_info.st_mode) & 0o022
+    ):
+        raise GateError("installed_quant_system_tree_root_unsafe")
+    records: list[dict[str, object]] = []
+    for candidate in sorted(
+        root.rglob("*"),
+        key=lambda item: item.relative_to(root).as_posix(),
+    ):
+        info = candidate.lstat()
+        relative = candidate.relative_to(root).as_posix()
+        if (
+            stat.S_ISLNK(info.st_mode)
+            or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) & 0o022
+        ):
+            raise GateError(f"installed_quant_system_tree_entry_unsafe:{relative}")
+        if stat.S_ISDIR(info.st_mode):
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            raise GateError(f"installed_quant_system_tree_entry_unsafe:{relative}")
+        records.append(
+            {
+                "mode": f"{stat.S_IMODE(info.st_mode):03o}",
+                "path": relative,
+                "sha256": _sha256_file(candidate),
+                "size_bytes": info.st_size,
+            }
+        )
+    if not records:
+        raise GateError("installed_quant_system_tree_empty")
+    return {
+        "file_count": len(records),
+        "root": str(root.resolve()),
+        "tree_sha256": _sha256(_canonical_json(records)),
+    }
+
+
+def installed_environment_tree_identity(
+    environment_root: str | Path,
+) -> dict[str, object]:
+    root = Path(environment_root)
+    if not root.is_absolute():
+        raise GateError("installed_environment_tree_root_invalid")
+    root_info = root.lstat()
+    if (
+        not stat.S_ISDIR(root_info.st_mode)
+        or stat.S_ISLNK(root_info.st_mode)
+        or root_info.st_uid != os.getuid()
+        or stat.S_IMODE(root_info.st_mode) & 0o022
+    ):
+        raise GateError("installed_environment_tree_root_unsafe")
+    records: list[dict[str, object]] = []
+    for candidate in sorted(
+        root.rglob("*"),
+        key=lambda item: item.relative_to(root).as_posix(),
+    ):
+        info = candidate.lstat()
+        relative = candidate.relative_to(root).as_posix()
+        if info.st_uid != os.getuid():
+            raise GateError(f"installed_environment_tree_entry_unsafe:{relative}")
+        if stat.S_ISLNK(info.st_mode):
+            try:
+                resolved = candidate.resolve(strict=True)
+                resolved_info = resolved.stat()
+            except (OSError, RuntimeError) as exc:
+                raise GateError(
+                    f"installed_environment_tree_entry_unsafe:{relative}"
+                ) from exc
+            if (
+                not stat.S_ISREG(resolved_info.st_mode)
+                or stat.S_IMODE(resolved_info.st_mode) & 0o022
+            ):
+                raise GateError(
+                    f"installed_environment_tree_entry_unsafe:{relative}"
+                )
+            records.append(
+                {
+                    "link_target": os.readlink(candidate),
+                    "mode": f"{stat.S_IMODE(info.st_mode):03o}",
+                    "path": relative,
+                    "resolved": {
+                        "mode": f"{stat.S_IMODE(resolved_info.st_mode):03o}",
+                        "owner_uid": resolved_info.st_uid,
+                        "path": str(resolved),
+                        "sha256": _sha256_file(resolved),
+                        "size_bytes": resolved_info.st_size,
+                        "type": "file",
+                    },
+                    "type": "symlink",
+                }
+            )
+            continue
+        if stat.S_IMODE(info.st_mode) & 0o022:
+            raise GateError(f"installed_environment_tree_entry_unsafe:{relative}")
+        if stat.S_ISDIR(info.st_mode):
+            records.append(
+                {
+                    "mode": f"{stat.S_IMODE(info.st_mode):03o}",
+                    "path": relative,
+                    "type": "directory",
+                }
+            )
+            continue
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise GateError(f"installed_environment_tree_entry_unsafe:{relative}")
+        records.append(
+            {
+                "mode": f"{stat.S_IMODE(info.st_mode):03o}",
+                "path": relative,
+                "sha256": _sha256_file(candidate),
+                "size_bytes": info.st_size,
+                "type": "file",
+            }
+        )
+    if not records:
+        raise GateError("installed_environment_tree_empty")
+    return {
+        "entry_count": len(records),
+        "root": str(root.resolve()),
+        "tree_sha256": _sha256(_canonical_json(records)),
+    }
+
+
+def normalize_installed_environment_lock(
+    environment_root: str | Path,
+) -> dict[str, object]:
+    root = Path(environment_root)
+    lock = root / ".lock"
+    if not root.is_absolute() or lock.parent != root:
+        raise GateError("installed_environment_lock_path_invalid")
+    try:
+        info = lock.lstat()
+    except OSError as exc:
+        raise GateError("installed_environment_lock_missing") from exc
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or stat.S_ISLNK(info.st_mode)
+        or info.st_uid != os.getuid()
+        or info.st_nlink != 1
+    ):
+        raise GateError("installed_environment_lock_unsafe")
+    before_mode = f"{stat.S_IMODE(info.st_mode):03o}"
+    lock.chmod(0o600)
+    after = lock.lstat()
+    if (
+        not stat.S_ISREG(after.st_mode)
+        or after.st_uid != os.getuid()
+        or after.st_nlink != 1
+        or stat.S_IMODE(after.st_mode) != 0o600
+    ):
+        raise GateError("installed_environment_lock_normalization_failed")
+    return {
+        "after_mode": "600",
+        "before_mode": before_mode,
+        "owner_uid": after.st_uid,
+        "path": ".lock",
+    }
+
+
 def _require_helper_path(root: Path) -> dict[str, str]:
     actual = Path(__file__).resolve()
     expected = root / "scripts" / "backend_non_postgres_gate.py"
@@ -1023,6 +1194,24 @@ def _fresh_checkout_runtime(
     return runtime_root, paths
 
 
+def _require_runtime_configuration_absent(root: Path) -> None:
+    root_environment = root / ".env"
+    if root_environment.exists() or root_environment.is_symlink():
+        raise GateError("checkout_env_file_present:.env")
+    frontend_root = root / "src" / "frontend"
+    if not frontend_root.exists():
+        return
+    try:
+        candidates = sorted(frontend_root.iterdir(), key=lambda item: item.name)
+    except OSError as exc:
+        raise GateError("checkout_frontend_environment_scan_failed") from exc
+    for candidate in candidates:
+        if candidate.name.startswith(".env") and candidate.name != ".env.example":
+            raise GateError(
+                f"checkout_env_file_present:src/frontend/{candidate.name}"
+            )
+
+
 def _run_logged(
     *,
     argv: tuple[str, ...],
@@ -1258,8 +1447,7 @@ def run_gate(
 ) -> dict[str, object]:
     public_entrypoint_binding = _require_public_entrypoint(root, public_entrypoint)
     repository_before = _require_expected_commit(root, expected_commit)
-    if (root / ".env").exists() or (root / ".env").is_symlink():
-        raise GateError("checkout_env_file_present")
+    _require_runtime_configuration_absent(root)
     if sys.version_info[:2] != (3, 11):
         raise GateError("bootstrap_python_not_3_11")
     if uv_argument is None:
@@ -1384,6 +1572,9 @@ def run_gate(
         receipt["install"] = install
         if install_completed.returncode != 0:
             raise GateError(f"uv_sync_failed:{install_completed.returncode}")
+        receipt["installed_environment_normalization"] = (
+            normalize_installed_environment_lock(venv)
+        )
 
         python = venv / "bin" / "python"
         if not python.is_file() or not os.access(python, os.X_OK):
@@ -1408,6 +1599,12 @@ def run_gate(
             root=root,
             venv=venv,
         )
+        installed_tree_before = installed_quant_system_tree_identity(
+            python_record["identity"]["quant_system_file"]
+        )
+        receipt["installed_quant_system_tree_before"] = installed_tree_before
+        installed_environment_before = installed_environment_tree_identity(venv)
+        receipt["installed_environment_tree_before"] = installed_environment_before
 
         inventory_completed, inventory = _run_logged(
             argv=(str(uv), "pip", "freeze", "--strict", "--python", str(python)),
@@ -1624,6 +1821,17 @@ def run_gate(
                 pytest_exit=pytest_completed.returncode,
                 expected_skip_node_ids=expected_skip_node_ids,
             )
+
+        installed_tree_after = installed_quant_system_tree_identity(
+            python_record["identity"]["quant_system_file"]
+        )
+        receipt["installed_quant_system_tree_after"] = installed_tree_after
+        if installed_tree_after != installed_tree_before:
+            raise GateError("installed_quant_system_tree_changed")
+        installed_environment_after = installed_environment_tree_identity(venv)
+        receipt["installed_environment_tree_after"] = installed_environment_after
+        if installed_environment_after != installed_environment_before:
+            raise GateError("installed_environment_tree_changed")
 
         repository_after = _git_identity(root)
         receipt["repository_after"] = repository_after

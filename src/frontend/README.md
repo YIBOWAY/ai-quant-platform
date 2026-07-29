@@ -51,17 +51,46 @@ through its single package entry:
 
 ```bash
 release_root="$(cd ../.. && pwd -P)"
+platform_commit="$(git -C "$release_root" rev-parse --verify HEAD)"
+gate2_receipt="/absolute/path/to/passing-gate2/backend-non-postgres-receipt.json"
+gate2_python="/absolute/path/recorded-as-fresh_environment.path-in-the-passing-Gate-2-receipt/bin/python"
+frontend_install_output="/absolute/path/to/a-new-empty-frontend-install-evidence-directory"
 gate5_output="/absolute/path/to/a-new-empty-gate5-evidence-directory"
-install -d -m 700 "$gate5_output"
+install -d -m 700 "$frontend_install_output" "$gate5_output"
+node scripts/prepare-hermes-gate5-install.mjs \
+  --expected-commit "$platform_commit" \
+  --npm-cli "$(command -v npm)" \
+  --output-dir "$frontend_install_output"
+frontend_install_receipt="$frontend_install_output/frontend-fresh-install-receipt.json"
 npm run test:e2e:gate5 -- \
   --output-dir "$gate5_output" \
-  --backend-python "$release_root/ai-quant/bin/python"
+  --backend-python "$gate2_python" \
+  --gate2-receipt "$gate2_receipt" \
+  --frontend-install-receipt "$frontend_install_receipt" \
+  --expected-commit "$platform_commit"
 ```
 
-`--output-dir` is mandatory. It must already exist, be empty, canonical,
+Both output directories are mandatory. They must already exist, be empty, canonical,
 non-symlinked, owned by the current user, and inaccessible to group/other
-users. `--backend-python` is also mandatory and must be the executable Python
-inside this release checkout.
+users. The frontend preparation command runs exact `npm ci` with an owner-only
+temporary HOME/cache, removes that temporary state, and binds the current
+commit, Node/npm/npx bytes, package inputs, and complete installed
+`node_modules` tree. `--backend-python`, `--gate2-receipt`,
+`--frontend-install-receipt`, and `--expected-commit` are also mandatory. The
+Python must be the retained fresh environment created by the canonical,
+passing Gate 2 receipt for that exact commit:
+`.tmp/backend-non-postgres-<commit-prefix>-<run-digest>/venv/bin/python`.
+Gate 5 rejects a different checkout or environment, a dirty/hidden index,
+wrong branch or publication remote, non-Python-3.11, editable/source imports,
+an unsuccessful/tampered Gate 2 or frontend install receipt, source/helper,
+test-shard, full backend/frontend environment, browser-cache, or
+lock/import/interpreter identity mismatch. Its canonical summary records the
+commit/tree, receipts and artifact digests, exact safe row environments,
+per-row start/end/command/exit/stdout/stderr identities, installer exits,
+runtime bytes, noneditable direct URL, module path, and dependency inventory
+before any browser row runs. The same sandboxed backend, frontend and
+repository authority is collected again after the matrix; any drift fails the
+gate.
 
 The command runs, in order, support tests, the provider-free real-backend
 smoke, all five combined fixtures, the lifecycle fixture, and rollback. Every

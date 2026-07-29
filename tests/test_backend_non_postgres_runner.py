@@ -272,7 +272,37 @@ def test_gate_receipt_records_exact_public_argv(
     monkeypatch.setattr(
         helper,
         "_validate_import_probe",
-        lambda document, **_kwargs: document,
+        lambda _document, **_kwargs: {
+            "quant_system_file": str(root / "installed" / "__init__.py")
+        },
+    )
+    monkeypatch.setattr(
+        helper,
+        "installed_quant_system_tree_identity",
+        lambda _module: {
+            "file_count": 1,
+            "root": str(root / "installed"),
+            "tree_sha256": "c" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        helper,
+        "installed_environment_tree_identity",
+        lambda _venv: {
+            "entry_count": 1,
+            "root": str(root / "venv"),
+            "tree_sha256": "d" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        helper,
+        "normalize_installed_environment_lock",
+        lambda _venv: {
+            "after_mode": "600",
+            "before_mode": "666",
+            "owner_uid": 501,
+            "path": ".lock",
+        },
     )
 
     def fake_run_logged(*, argv, env, name, output, **_kwargs):
