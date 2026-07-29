@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import shutil
 import stat
 import subprocess
+from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = (
@@ -82,8 +81,7 @@ def test_uninstallers_preserve_unexpected_bootout_failure(
             "QS_LAUNCHCTL_BIN": str(launchctl),
         },
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
 
@@ -128,8 +126,7 @@ def test_connector_uninstaller_accepts_only_exact_absent_service(
             "QS_LAUNCHCTL_BIN": str(launchctl),
         },
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
 
