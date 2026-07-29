@@ -167,8 +167,8 @@ export function WorkbenchTypedResultsPanel({
                       <p
                         className={
                           sample
-                            ? "rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-data-mono text-[11px] text-amber-700 dark:text-amber-300"
-                            : "rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-data-mono text-[11px] text-emerald-700 dark:text-emerald-300"
+                            ? "rounded border border-warning/40 bg-warning/10 px-2 py-0.5 font-data-mono text-[11px] text-warning"
+                            : "rounded border border-accent-success/40 bg-accent-success/10 px-2 py-0.5 font-data-mono text-[11px] text-accent-success"
                         }
                         data-hermes-result-mark
                       >
