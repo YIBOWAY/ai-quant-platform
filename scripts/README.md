@@ -23,6 +23,8 @@ or trading.
 | --- | --- |
 | `verify_backend_non_postgres.sh` | Run mandatory Gate 2 in a fresh Python 3.11 environment from committed `uv.lock`: frozen, non-editable install followed by the complete non-PostgreSQL/non-provider backend suite with fail-closed JUnit and skip validation. |
 | `backend_non_postgres_gate.py` | Internal helper used only by `verify_backend_non_postgres.sh` to bind tool identities, construct the fresh allowlisted environment, partition the exact macOS sandbox-sensitive tests, and seal Gate 2 results; it is not an operator entrypoint. |
+| `verify_python_static.sh` | Run Gate 4's exact repository-defined Ruff surface with the fresh, non-editable Python environment sealed by the successful Gate 2 receipt. |
+| `python_static_gate.py` | Internal helper used only by `verify_python_static.sh` to bind the Gate 2 environment, repository and tool identities, deny network access, run Ruff, and seal canonical evidence; it is not an operator entrypoint. |
 | `verify_agent_v02_focused_safety.sh` | Run the fixed, repository-authoritative Agent v0.2 focused-safety selector with a release-local Python and an external one-shot basetemp. |
 | `verify_agent_v02_postgres_suite.sh` | Create an isolated loopback PostgreSQL cluster, run the authoritative PostgreSQL suite, prove suite-owned roles are removed, and destroy the cluster. |
 | `verify_agent_v02_backup_restore.sh` | Back up and restore the full authoritative PostgreSQL state into an independently created destination cluster, then compare schema, role, and data facts. |
@@ -90,6 +92,27 @@ the test process.
 `--describe` prints the machine-readable repository contract and `--self-test`
 exercises the result validator's pass/fail cases. Both are diagnostics, not a
 Gate 2 pass.
+
+### Gate 4: repository-defined Python static checks
+
+Gate 4 consumes the successful canonical Gate 2 receipt and reuses that
+receipt's exact fresh, non-editable Python 3.11 environment under `.tmp/`.
+Run it only from the same clean final commit:
+
+```bash
+FINAL_COMMIT=<exact-final-commit>
+scripts/verify_python_static.sh \
+  --gate2-receipt /absolute/private/gate2/backend-non-postgres-receipt.json \
+  --output-dir /absolute/private/path/platform-python-static \
+  --expected-commit "$FINAL_COMMIT"
+```
+
+The runner binds the commit, tree, branch, hidden-index audit, publication
+remote, `pyproject.toml`, `uv.lock`, Python/import/direct-URL identity, and Ruff
+executable/version. It executes the exact Ruff surface declared by
+`scripts/verify.sh` under a deny-network sandbox and an allowlist without
+provider or database configuration. Stdout and stderr remain separate
+mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 
 ## macOS Local Services
 
