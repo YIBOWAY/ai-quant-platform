@@ -1215,6 +1215,7 @@ def _bound_command(
     return ledger.get_command(result.command_id)
 
 
+@pytest.mark.pg
 def test_pg_supervised_happy_path_delivers_and_links_run() -> None:
     settings = _pg_settings()
     db.reset_database_cache()
@@ -1286,6 +1287,7 @@ def test_pg_supervised_happy_path_delivers_and_links_run() -> None:
         db.reset_database_cache()
 
 
+@pytest.mark.pg
 def test_pg_timeout_is_outcome_unknown_and_not_reclaimed() -> None:
     settings = _pg_settings()
     db.reset_database_cache()
@@ -1332,6 +1334,7 @@ def test_pg_timeout_is_outcome_unknown_and_not_reclaimed() -> None:
         db.reset_database_cache()
 
 
+@pytest.mark.pg
 def test_pg_gate_reject_never_calls_hermes() -> None:
     settings = _pg_settings()
     db.reset_database_cache()
@@ -1373,6 +1376,7 @@ def test_pg_gate_reject_never_calls_hermes() -> None:
         db.reset_database_cache()
 
 
+@pytest.mark.pg
 def test_pg_accept_drop_ack_then_recover_same_run_identity() -> None:
     """Crash matrix: Hermes accepted / ack lost → timeout; recover by key."""
     settings = _pg_settings()
@@ -1432,6 +1436,7 @@ def test_pg_accept_drop_ack_then_recover_same_run_identity() -> None:
         db.reset_database_cache()
 
 
+@pytest.mark.pg
 def test_pg_empty_queue_zero_provider_and_hermes() -> None:
     settings = _pg_settings()
     db.reset_database_cache()

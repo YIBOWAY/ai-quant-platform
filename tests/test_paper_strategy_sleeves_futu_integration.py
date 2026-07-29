@@ -22,13 +22,18 @@ from quant_system.execution.paper_strategy_sleeves import (
 from quant_system.execution.price_source import PaperPriceSource
 from tests.test_paper_strategy_signals import make_config, make_sleeve
 
-pytestmark = pytest.mark.futu_opend
-
-if os.getenv("QS_TEST_FUTU_OPEND") != "1":
-    pytest.skip(
-        "set QS_TEST_FUTU_OPEND=1 to run read-only local Futu/OpenD integration tests",
-        allow_module_level=True,
-    )
+pytestmark = [
+    pytest.mark.futu_opend,
+    pytest.mark.provider,
+    pytest.mark.network,
+    pytest.mark.skipif(
+        os.getenv("QS_TEST_FUTU_OPEND") != "1",
+        reason=(
+            "set QS_TEST_FUTU_OPEND=1 to run read-only local Futu/OpenD "
+            "integration tests"
+        ),
+    ),
+]
 
 
 def test_real_futu_opend_generates_strategy_sleeve_signal(

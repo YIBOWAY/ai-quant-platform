@@ -191,6 +191,7 @@ def test_futu_skill_does_not_ship_mutating_trade_scripts() -> None:
     assert hits == []
 
 
+@pytest.mark.provider
 def test_futu_skill_mutating_trade_entrypoints_are_disabled() -> None:
     trade_root = Path(".agents/skills/futuapi/scripts/trade")
     if not trade_root.is_dir():

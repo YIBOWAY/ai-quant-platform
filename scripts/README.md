@@ -21,12 +21,74 @@ or trading.
 
 | Script | Purpose |
 | --- | --- |
+| `verify_backend_non_postgres.sh` | Run mandatory Gate 2 in a fresh Python 3.11 environment from committed `uv.lock`: frozen, non-editable install followed by the complete non-PostgreSQL/non-provider backend suite with fail-closed JUnit and skip validation. |
 | `verify_agent_v02_focused_safety.sh` | Run the fixed, repository-authoritative Agent v0.2 focused-safety selector with a release-local Python and an external one-shot basetemp. |
 | `verify_agent_v02_postgres_suite.sh` | Create an isolated loopback PostgreSQL cluster, run the authoritative PostgreSQL suite, prove suite-owned roles are removed, and destroy the cluster. |
 | `verify_agent_v02_backup_restore.sh` | Back up and restore the full authoritative PostgreSQL state into an independently created destination cluster, then compare schema, role, and data facts. |
 | `verify_agent_v02_noneditable_upgrade.sh` | Exercise baseline-to-current non-editable installation in isolated Python environments and reject source-tree import leakage. |
 | `verify_agent_v02_zero_effect.sh` | Run the fixed-identity §9.1 blocked paper-replay proof with a durable pre-route claim, exact-byte replay, provider tripwires, and zero effect counters. |
 | `restart_agent_v02_stack.sh` | Build the current clean frontend HEAD, bind the complete `.next` digest to its Git commit/tree, restart only backend/frontend, and verify provider-free `/api/settings` plus `/api/hermes/gateway` readiness while the connector remains `reconcile_only`. |
+
+### Gate 2: complete non-PostgreSQL backend suite
+
+Run Gate 2 only from the exact clean final Platform checkout. The evidence
+directory must be a canonical absolute path outside that checkout and must
+either not exist or be empty, owner-only mode `700`; its existing parent must
+be owned by the invoking user and not group/world writable. Bind the final
+commit explicitly. The runner also requires branch
+`codex/agent-v0-2-release` and
+publication remote
+`github=https://github.com/YIBOWAY/ai-quant-platform.git`; it rejects a
+different identity or dirty checkout before installing:
+
+```bash
+FINAL_COMMIT=<exact-final-commit>
+scripts/verify_backend_non_postgres.sh \
+  --output-dir /absolute/private/path/platform-backend-non-postgres \
+  --expected-commit "$FINAL_COMMIT"
+```
+
+The authoritative suite expression is
+`not pg and not futu_opend and not provider and not network`, over the complete
+`tests` selector with strict markers. Repository authority currently declares
+zero expected skips; zero collection, any undeclared skip, any failed/error
+testcase, a non-zero pytest exit, malformed/count-drifted JUnit, or repository
+identity drift fails the gate. The receipt records the commit/tree/branch/URL,
+exact argv and allowlisted safety environment, Python and `quant_system` import
+identity, `uv` and dependency inventory, `pyproject.toml`/`uv.lock` digests,
+installer exit/logs, pytest/JUnit counts, and clean identity before and after.
+It does not authorize public write or trading.
+
+Clean identity covers the entire tracked tree, not only the runner authority
+files. The runner rejects every `assume-unchanged` or `skip-worktree` index
+flag and every unmerged entry, then independently checks index versus `HEAD`
+and worktree versus index. The receipt records the tracked-path count, flag
+listing digest, zero hidden/conflict counts, and both diff verdicts.
+
+One unique runner-owned runtime root is created under the exact checkout's
+ignored `.tmp/` area. Its path is bound to the commit and evidence directory
+and must not pre-exist. The fresh non-editable environment, uv cache, HOME/TMP,
+pytest basetemp/pycache, and sandbox data all stay below that transient root.
+The runner never recursively removes it; the receipt records the exact root so
+the outer collector can clean only that root after sealing.
+
+The external owner-only evidence directory contains files only: mode-`600`
+plain logs, the mode-`600` JUnit document, and the canonical mode-`600`
+receipt. Transient lock files, symlinks, hardlinks, FIFOs, caches, and test data
+must never be placed there. The known JSON import probe is parsed strictly in
+memory and embedded canonically in the receipt; its newline-terminated raw
+stdout is not persisted as a JSON artifact.
+
+The test process runs under the macOS deny-network sandbox after a fail-closed
+network-denial probe. Dependency installation is the only phase allowed to
+contact the package index. The receipt records every allowlisted install/test
+environment name and value; no inherited database URL, Futu/OpenD endpoint,
+provider credential, live flag, or pytest/Python injection variable reaches
+the test process.
+
+`--describe` prints the machine-readable repository contract and `--self-test`
+exercises the result validator's pass/fail cases. Both are diagnostics, not a
+Gate 2 pass.
 
 ## macOS Local Services
 

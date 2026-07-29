@@ -53,7 +53,14 @@ addopts = "-q"
 markers = [
   "pg: PostgreSQL integration tests that require QS_TEST_DATABASE_URL",
   "futu_opend: read-only Futu/OpenD integration tests that require QS_TEST_FUTU_OPEND=1",
+  "provider: tests that require external provider services, credentials, or local provider assets",
+  "network: tests that require network access",
 ]
+
+[tool.quant_system.release.backend_non_postgres]
+python = "3.11"
+marker_expression = "not pg and not futu_opend and not provider and not network"
+expected_skip_node_ids = []
 
 [tool.ruff]
 line-length = 100
