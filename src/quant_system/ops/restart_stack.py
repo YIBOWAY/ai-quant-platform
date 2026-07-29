@@ -60,24 +60,44 @@ class _RejectRedirects(urllib.request.HTTPRedirectHandler):
 
 
 def parse_launchctl_pid(document: str) -> int:
-    match = re.search(r"(?m)^\s*pid = ([1-9][0-9]*)\s*$", document)
-    if match is None:
+    matches = re.findall(r"(?m)^[ \t]*pid = ([1-9][0-9]*)[ \t]*$", document)
+    if len(matches) != 1:
         raise ReleaseOperationError("launchd job has no running pid")
-    return int(match.group(1))
+    return int(matches[0])
 
 
 def parse_launchctl_last_exit_code(document: str) -> int:
-    match = re.search(r"(?m)^\s*last exit code = (-?[0-9]+)\s*$", document)
-    if match is None:
+    matches = re.findall(
+        r"(?m)^[ \t]*last exit code = (-?[0-9]+)[ \t]*$",
+        document,
+    )
+    if len(matches) != 1:
         raise ReleaseOperationError("launchd job has no last exit code")
-    return int(match.group(1))
+    return int(matches[0])
 
 
 def parse_launchctl_runs(document: str) -> int:
-    match = re.search(r"(?m)^\s*runs = ([1-9][0-9]*)\s*$", document)
-    if match is None:
+    matches = re.findall(r"(?m)^[ \t]*runs = ([1-9][0-9]*)[ \t]*$", document)
+    if len(matches) != 1:
         raise ReleaseOperationError("launchd job has no positive generation count")
-    return int(match.group(1))
+    return int(matches[0])
+
+
+def parse_launchctl_state(document: str) -> str:
+    matches = re.findall(r"(?m)^[ \t]*state = ([^ \t\r\n]+)[ \t]*$", document)
+    if len(matches) != 1:
+        raise ReleaseOperationError("launchd job has no unambiguous current state")
+    return matches[0]
+
+
+def _launchctl_last_exit_values(document: str) -> list[str]:
+    return [
+        value.strip()
+        for value in re.findall(
+            r"(?m)^[ \t]*last exit code = ([^\r\n]*)$",
+            document,
+        )
+    ]
 
 
 def observed_launchctl_last_exit_code(
@@ -87,6 +107,20 @@ def observed_launchctl_last_exit_code(
 ) -> int | None:
     """Require a zero historical exit only for the always-on connector."""
 
+    if label == CONNECTOR_LABEL:
+        exit_values = _launchctl_last_exit_values(document)
+        if exit_values == ["(never exited)"]:
+            if parse_launchctl_state(document) != "active":
+                raise ReleaseOperationError(
+                    "connector launchd never-exited state is not active"
+                )
+            parse_launchctl_pid(document)
+            parse_launchctl_runs(document)
+            return None
+        if len(exit_values) != 1:
+            raise ReleaseOperationError(
+                "connector launchd last exit code is absent or ambiguous"
+            )
     try:
         value = parse_launchctl_last_exit_code(document)
     except ReleaseOperationError:
@@ -1005,6 +1039,7 @@ def _process_facts(
 ) -> dict[str, object]:
     launchd = _launchctl_document(launchctl, domain, label)
     pid = parse_launchctl_pid(launchd)
+    launchd_state = parse_launchctl_state(launchd)
     scripts = {
         BACKEND_LABEL: "run_quant_backend.sh",
         FRONTEND_LABEL: "run_quant_frontend.sh",
@@ -1071,6 +1106,12 @@ def _process_facts(
     if not image_paths:
         raise ReleaseOperationError(f"process executable image is absent: {label}")
     last_exit_code = observed_launchctl_last_exit_code(launchd, label=label)
+    if last_exit_code is not None:
+        last_exit_status = "recorded"
+    elif label == CONNECTOR_LABEL:
+        last_exit_status = "never_exited"
+    else:
+        last_exit_status = "unavailable"
     runtime = preflight.get("runtime")
     if not isinstance(runtime, dict):
         raise ReleaseOperationError(f"preflight runtime identity is absent: {label}")
@@ -1103,9 +1144,11 @@ def _process_facts(
         "mapped_text_image_count": len(image_paths),
         "working_directory": cwd_paths[0],
         "launchd_document_sha256": sha256_bytes(launchd.encode("utf-8")),
+        "launchd_state": launchd_state,
         "launcher_path": str(expected_script),
         "launcher_sha256": launcher_sha256,
         "last_exit_code": last_exit_code,
+        "last_exit_status": last_exit_status,
         "preflight_source_sha256": preflight["source_sha256"],
         "runtime_matches_preflight": runtime_matches,
     }
@@ -1285,7 +1328,8 @@ def _connector_generation_authority(
         "actual_executable_image_sha256": str,
         "launcher_sha256": str,
         "launchd_runs": int,
-        "last_exit_code": int,
+        "launchd_state": str,
+        "last_exit_status": str,
         "connector_mode": str,
     }
     for field, expected_type in required.items():
@@ -1296,8 +1340,20 @@ def _connector_generation_authority(
         raise ReleaseOperationError("connector generation label is invalid")
     if process_facts["pid"] <= 0 or process_facts["launchd_runs"] <= 0:
         raise ReleaseOperationError("connector generation values are invalid")
-    if process_facts["last_exit_code"] != 0:
-        raise ReleaseOperationError("connector generation has a nonzero exit")
+    if process_facts["launchd_state"] != "active":
+        raise ReleaseOperationError("connector generation is not active")
+    if "last_exit_code" not in process_facts:
+        raise ReleaseOperationError("connector generation exit code fact is absent")
+    last_exit_status = process_facts["last_exit_status"]
+    last_exit_code = process_facts.get("last_exit_code")
+    if last_exit_status == "recorded":
+        if type(last_exit_code) is not int or last_exit_code != 0:
+            raise ReleaseOperationError("connector generation has a nonzero or missing exit")
+    elif last_exit_status == "never_exited":
+        if last_exit_code is not None:
+            raise ReleaseOperationError("connector never-exited generation has an exit code")
+    else:
+        raise ReleaseOperationError("connector generation exit status is invalid")
     if process_facts["connector_mode"] != "reconcile_only":
         raise ReleaseOperationError("connector generation mode is not reconcile_only")
     body: dict[str, object] = {
@@ -1310,8 +1366,10 @@ def _connector_generation_authority(
         "actual_executable_image": process_facts["actual_executable_image"],
         "actual_executable_image_sha256": process_facts["actual_executable_image_sha256"],
         "launcher_sha256": process_facts["launcher_sha256"],
+        "launchd_state": "active",
         "mode": "reconcile_only",
-        "last_exit_code": 0,
+        "last_exit_code": last_exit_code,
+        "last_exit_status": last_exit_status,
     }
     body["authority_sha256"] = sha256_bytes(canonical_json_bytes(body))
     return body

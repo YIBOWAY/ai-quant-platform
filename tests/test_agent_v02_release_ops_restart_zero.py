@@ -749,6 +749,74 @@ def test_release_restart_launchers_and_wrappers_have_no_mask_or_health_probe() -
     assert "sys.setprofile(profile)" in zero_source
 
 
+def test_connector_accepts_never_exited_only_for_proven_active_generation() -> None:
+    valid = (
+        "state = active\n"
+        "\tpid = 11367\n"
+        "\truns = 1\n"
+        "\tlast exit code = (never exited)\n"
+    )
+
+    assert (
+        restart_stack.observed_launchctl_last_exit_code(
+            valid,
+            label=restart_stack.CONNECTOR_LABEL,
+        )
+        is None
+    )
+
+    invalid_documents = (
+        valid.replace("state = active", "state = waiting"),
+        valid.replace("\tpid = 11367\n", ""),
+        valid.replace("\truns = 1\n", "\truns = 0\n"),
+        valid + "\tlast exit code = 0\n",
+    )
+    for document in invalid_documents:
+        with pytest.raises(ReleaseOperationError):
+            restart_stack.observed_launchctl_last_exit_code(
+                document,
+                label=restart_stack.CONNECTOR_LABEL,
+            )
+
+
+def test_connector_generation_preserves_never_exited_identity() -> None:
+    facts = {
+        "label": restart_stack.CONNECTOR_LABEL,
+        "pid": 11367,
+        "process_started_at": "Wed Jul 29 08:10:00 2026",
+        "process_command": "/release/run-agent connector-worker --mode reconcile_only",
+        "actual_executable_image": "/release/.venv/bin/python",
+        "actual_executable_image_sha256": "a" * 64,
+        "launcher_sha256": "b" * 64,
+        "launchd_runs": 1,
+        "launchd_state": "active",
+        "last_exit_code": None,
+        "last_exit_status": "never_exited",
+        "connector_mode": "reconcile_only",
+    }
+
+    authority = restart_stack._connector_generation_authority(facts)
+
+    assert authority["last_exit_code"] is None
+    assert authority["last_exit_status"] == "never_exited"
+    assert authority["launchd_state"] == "active"
+    recorded_without_code = dict(facts, last_exit_status="recorded")
+    with pytest.raises(ReleaseOperationError, match="exit"):
+        restart_stack._connector_generation_authority(recorded_without_code)
+    recorded_zero = dict(
+        facts,
+        last_exit_code=0,
+        last_exit_status="recorded",
+    )
+    assert (
+        restart_stack._connector_generation_authority(recorded_zero)["last_exit_code"]
+        == 0
+    )
+    recorded_nonzero = dict(recorded_zero, last_exit_code=70)
+    with pytest.raises(ReleaseOperationError, match="nonzero"):
+        restart_stack._connector_generation_authority(recorded_nonzero)
+
+
 def test_zero_effect_changed_same_id_request_fails_closed_without_route(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
