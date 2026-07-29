@@ -3,7 +3,13 @@ import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  assertWholeHermesShellControlsUnclipped,
+  assertWholeHermesShellWcagAaContrast,
+} from "./helpers/hermes-closure-gates";
+import {
+  assertFullPageTargetsAndFocus,
   assertNoHorizontalOverflow,
+  assertReducedMotion,
   installLoopbackOnlyGuard,
 } from "./helpers/hermes-page-gates";
 
@@ -12,6 +18,13 @@ const ACTIVE_PLATFORM_SESSION_ID = `wm_${"1".repeat(32)}`;
 const INITIAL_RUN_ID = "fixture-run-active-001";
 const APPROVAL_ID = "fixture-approval-active-001";
 const INITIAL_COMMAND_ID = "fixture-command-active-001";
+
+const activeQualityViewports = [
+  { name: "wide", width: 1440, height: 900 },
+  { name: "desktop", width: 1280, height: 800 },
+  { name: "tablet", width: 768, height: 1024 },
+  { name: "mobile", width: 390, height: 844 },
+] as const;
 
 const modeMatches =
   process.env.PW_E2E === "1" &&
@@ -375,6 +388,42 @@ if (modeMatches) {
     await expect(
       page.locator("[data-hermes-transcript-loading]"),
     ).toHaveCount(0);
+    expectCleanBrowser(externalRequests, problems);
+  });
+
+  test("active lifecycle whole-shell quality spans all four exact viewports", async ({
+    page,
+  }) => {
+    const externalRequests = await installLoopbackOnlyGuard(page);
+    const problems = collectBrowserProblems(page);
+    const baselineResponse = await page.request.get(
+      "/api/hermes/fixture-audit",
+    );
+    expect(baselineResponse.ok()).toBe(true);
+    const baseline = (await baselineResponse.json()) as {
+      events: Array<Record<string, unknown>>;
+    };
+
+    for (const viewport of activeQualityViewports) {
+      await page.setViewportSize(viewport);
+      await page.goto(
+        `/en/hermes?hermes_session_id=${encodeURIComponent(ACTIVE_SESSION_ID)}`,
+        { waitUntil: "domcontentloaded" },
+      );
+      await expect(page.locator("[data-hermes-active-grid]")).toBeVisible();
+      await expect(
+        page.locator("[data-hermes-transcript-scroll]"),
+      ).toBeVisible();
+
+      await assertWholeHermesShellWcagAaContrast(page);
+      await assertWholeHermesShellControlsUnclipped(page);
+      await assertFullPageTargetsAndFocus(page);
+      await assertReducedMotion(page);
+      await assertNoHorizontalOverflow(page, viewport.width);
+    }
+
+    const after = await fixtureAudit(page);
+    expect(after.events).toEqual(baseline.events);
     expectCleanBrowser(externalRequests, problems);
   });
 

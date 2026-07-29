@@ -143,6 +143,23 @@ def test_lifecycle_proves_exact_rendered_authority_rows() -> None:
         assert authority_id in spec
 
 
+def test_lifecycle_runs_the_active_state_quality_grid() -> None:
+    spec = Path("src/frontend/tests/e2e/hermes-lifecycle.spec.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert "activeQualityViewports" in spec
+    assert "active lifecycle whole-shell quality" in spec
+    for gate in (
+        "assertWholeHermesShellWcagAaContrast",
+        "assertWholeHermesShellControlsUnclipped",
+        "assertFullPageTargetsAndFocus",
+        "assertReducedMotion",
+        "assertNoHorizontalOverflow",
+    ):
+        assert gate in spec
+
+
 def test_hermes_e2e_fixture_covers_all_read_only_artifact_kinds() -> None:
     fixture = json.loads(
         Path("src/frontend/tests/fixtures/hermes-artifacts.v1.json").read_text(
