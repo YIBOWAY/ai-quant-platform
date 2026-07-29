@@ -5,8 +5,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE_DIR="$ROOT/scripts/launchd"
 LAUNCHD_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$ROOT/data/_runtime/logs"
-LAUNCHCTL="${QS_LAUNCHCTL_BIN:-$(command -v launchctl || true)}"
-PLUTIL="${QS_PLUTIL_BIN:-$(command -v plutil || true)}"
+if [[ -n "${QS_LAUNCHCTL_BIN:-}" ]]; then
+  LAUNCHCTL="$QS_LAUNCHCTL_BIN"
+elif command -v launchctl >/dev/null 2>&1; then
+  LAUNCHCTL="$(command -v launchctl)"
+else
+  LAUNCHCTL=""
+fi
+if [[ -n "${QS_PLUTIL_BIN:-}" ]]; then
+  PLUTIL="$QS_PLUTIL_BIN"
+elif command -v plutil >/dev/null 2>&1; then
+  PLUTIL="$(command -v plutil)"
+else
+  PLUTIL=""
+fi
 LAUNCHCTL_BOOTSTRAP_MAX_ATTEMPTS=5
 LAUNCHCTL_BOOTSTRAP_RETRY_DELAY_SECONDS=0.2
 
@@ -18,6 +30,35 @@ fail() {
 [[ -n "$LAUNCHCTL" && -x "$LAUNCHCTL" ]] || fail "launchctl_not_found"
 [[ -n "$PLUTIL" && -x "$PLUTIL" ]] || fail "plutil_not_found"
 [[ "$ROOT" != *"#"* ]] || fail "unsupported_root_character"
+
+bootout_if_loaded() {
+  local service="$1"
+  local output
+  local status
+
+  if output="$("$LAUNCHCTL" bootout "$service" 2>&1)"; then
+    if [[ -n "$output" ]]; then
+      printf '%s\n' "$output"
+    fi
+    return 0
+  else
+    status=$?
+  fi
+  if [[ "$status" -eq 3 \
+    && "$output" == "Boot-out failed: 3: No such process" ]]; then
+    echo "already_unloaded=$service"
+    return 0
+  fi
+  if [[ "$status" -eq 113 \
+    && "$output" == "Boot-out failed: 113: Could not find specified service" ]]; then
+    echo "already_unloaded=$service"
+    return 0
+  fi
+  if [[ -n "$output" ]]; then
+    printf '%s\n' "$output" >&2
+  fi
+  return "$status"
+}
 
 bootstrap_launchagent() {
   local label="$1"
@@ -104,7 +145,7 @@ for LABEL in "${LABELS[@]}"; do
   mv -f "$TEMP" "$TARGET"
   trap - EXIT
 
-  "$LAUNCHCTL" bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+  bootout_if_loaded "$DOMAIN/$LABEL"
   bootstrap_launchagent "$LABEL" "$TARGET"
   echo "installed=$TARGET"
 done
