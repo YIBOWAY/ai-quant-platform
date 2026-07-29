@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -133,6 +134,43 @@ def test_inet_socket_is_denied():
             str(socket_test),
         ],
         cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "1 passed" in completed.stdout
+
+
+def test_inner_shard_launcher_ignores_ambient_pytest_addopts(tmp_path: Path) -> None:
+    helper = _gate_helper()
+    selected_test = tmp_path / "test_selected.py"
+    selected_test.write_text(
+        """
+def test_selected():
+    assert True
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            "-c",
+            helper.INNER_SHARD_SOURCE,
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            str(selected_test),
+        ],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PYTEST_ADDOPTS": "-k ambient_selector_would_drop_test",
+        },
         check=False,
         capture_output=True,
         text=True,

@@ -100,8 +100,11 @@ except OSError as exc:
 raise SystemExit(3)
 """
 INNER_SHARD_SOURCE = r"""
+import os
 import socket
 import sys
+
+os.environ.pop("PYTEST_ADDOPTS", None)
 
 
 def deny_inet_socket(event, arguments):
@@ -116,7 +119,7 @@ sys.addaudithook(deny_inet_socket)
 
 import pytest
 
-raise SystemExit(pytest.main(sys.argv[1:]))
+raise SystemExit(pytest.main(["-o", "addopts=", *sys.argv[1:]]))
 """
 _PROBE_SOURCE = r"""
 import hashlib
