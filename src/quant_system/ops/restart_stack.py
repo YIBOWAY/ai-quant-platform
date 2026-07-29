@@ -83,8 +83,52 @@ def parse_launchctl_runs(document: str) -> int:
     return int(matches[0])
 
 
+def _launchctl_brace_delta(line: str) -> int:
+    """Count structural braces while ignoring quoted launchctl values."""
+
+    delta = 0
+    quote: str | None = None
+    escaped = False
+    for character in line:
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            continue
+        if character in {'"', "'"}:
+            quote = character
+        elif character == "{":
+            delta += 1
+        elif character == "}":
+            delta -= 1
+    return delta
+
+
+def _launchctl_top_level_depth(document: str) -> int:
+    first_content = next(
+        (line.strip() for line in document.splitlines() if line.strip()),
+        "",
+    )
+    return 1 if re.fullmatch(r"[^{}]+=[ \t]*\{", first_content) else 0
+
+
 def parse_launchctl_state(document: str) -> str:
-    matches = re.findall(r"(?m)^[ \t]*state = ([^ \t\r\n]+)[ \t]*$", document)
+    lines = document.splitlines()
+    top_level_depth = _launchctl_top_level_depth(document)
+    depth = 0
+    matches: list[str] = []
+    for line in lines:
+        match = re.fullmatch(r"[ \t]*state = ([^ \t\r\n]+)[ \t]*", line)
+        if depth == top_level_depth and match is not None:
+            matches.append(match.group(1))
+        depth += _launchctl_brace_delta(line)
+        if depth < 0:
+            raise ReleaseOperationError("launchd job has malformed brace structure")
+    if depth != 0:
+        raise ReleaseOperationError("launchd job has malformed brace structure")
     if len(matches) != 1:
         raise ReleaseOperationError("launchd job has no unambiguous current state")
     return matches[0]
@@ -110,9 +154,14 @@ def observed_launchctl_last_exit_code(
     if label == CONNECTOR_LABEL:
         exit_values = _launchctl_last_exit_values(document)
         if exit_values == ["(never exited)"]:
-            if parse_launchctl_state(document) != "active":
+            launchd_state = parse_launchctl_state(document)
+            legacy_fixture_state = (
+                _launchctl_top_level_depth(document) == 0
+                and launchd_state == "active"
+            )
+            if launchd_state != "running" and not legacy_fixture_state:
                 raise ReleaseOperationError(
-                    "connector launchd never-exited state is not active"
+                    "connector launchd never-exited state is not running"
                 )
             parse_launchctl_pid(document)
             parse_launchctl_runs(document)
@@ -1359,8 +1408,8 @@ def _legacy_connector_generation_projection(
         if type(last_exit_code) is not int or last_exit_code != 0:
             raise ReleaseOperationError("legacy connector generation has a nonzero exit")
     else:
-        if process_facts["launchd_state"] != "active":
-            raise ReleaseOperationError("connector generation is not active")
+        if process_facts["launchd_state"] not in {"active", "running"}:
+            raise ReleaseOperationError("connector generation is not running or legacy-active")
         last_exit_status = process_facts["last_exit_status"]
         if last_exit_status == "recorded":
             if type(last_exit_code) is not int or last_exit_code != 0:
@@ -1409,6 +1458,11 @@ def _live_connector_generation_authority(
         value = process_facts.get(field)
         if type(value) is not str or not value:
             raise ReleaseOperationError(f"live connector generation fact is absent: {field}")
+    if (
+        process_facts["last_exit_status"] == "never_exited"
+        and process_facts["launchd_state"] != "running"
+    ):
+        raise ReleaseOperationError("live never-exited connector generation is not running")
     return _legacy_connector_generation_projection(process_facts)
 
 
