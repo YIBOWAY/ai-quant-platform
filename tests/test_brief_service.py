@@ -141,6 +141,8 @@ def test_generate_issue_persists_the_exact_validated_snapshot() -> None:
     repository = _RecordingRepository()
     payload = _payload()
     watermark = _watermark()
+    expected_payload = payload.model_dump(mode="json", exclude_unset=True)
+    expected_watermark = watermark.model_dump(mode="json", exclude_unset=True)
 
     result = BriefService(repository).generate_issue(
         issue_date=date(2026, 7, 14),
@@ -149,17 +151,34 @@ def test_generate_issue_persists_the_exact_validated_snapshot() -> None:
         source_watermark=watermark,
     )
 
-    assert result.snapshot.payload == payload.model_dump(mode="json")
-    assert result.snapshot.source_watermark == watermark.model_dump(mode="json")
+    assert result.snapshot.payload == expected_payload
+    assert result.snapshot.source_watermark == expected_watermark
     assert repository.calls == [
         {
             "issue_date": date(2026, 7, 14),
             "locale": "zh",
             "public_id": result.issue.public_id,
-            "payload": payload.model_dump(mode="json"),
-            "source_watermark": watermark.model_dump(mode="json"),
+            "payload": expected_payload,
+            "source_watermark": expected_watermark,
         }
     ]
+
+
+def test_generate_issue_preserves_explicit_null_performance() -> None:
+    payload_data = _payload().model_dump(mode="json", exclude_unset=True)
+    payload_data["performance"] = None
+    payload = BriefArchivePayload.model_validate(payload_data)
+    repository = _RecordingRepository()
+
+    result = BriefService(repository).generate_issue(
+        issue_date=date(2026, 7, 14),
+        locale="zh",
+        payload=payload,
+        source_watermark=_watermark(),
+    )
+
+    assert "performance" in result.snapshot.payload
+    assert result.snapshot.payload["performance"] is None
 
 
 @pytest.mark.parametrize(

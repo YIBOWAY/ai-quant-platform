@@ -42,8 +42,11 @@ class BriefService:
             issue_date=active_date,
             locale=normalized_locale,
             public_id=_new_public_id(active_date),
-            payload=payload.model_dump(mode="json"),
-            source_watermark=source_watermark.model_dump(mode="json"),
+            payload=payload.model_dump(mode="json", exclude_unset=True),
+            source_watermark=source_watermark.model_dump(
+                mode="json",
+                exclude_unset=True,
+            ),
         )
 
     def get_issue(self, public_id: str) -> BriefIssueEnvelope:
