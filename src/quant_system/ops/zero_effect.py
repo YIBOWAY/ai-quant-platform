@@ -45,6 +45,7 @@ from quant_system.execution.paper_broker import PaperBroker
 from quant_system.ops.common import (
     ReleaseOperationError,
     canonical_json_bytes,
+    canonicalize_json_bytes,
     ensure_private_directory,
     git_identity,
     read_private_regular,
@@ -426,14 +427,15 @@ def _fresh_release_status_observation(
         raise ReleaseOperationError("provider-free release status command failed")
     if completed.stderr:
         raise ReleaseOperationError("provider-free release status wrote stderr")
-    try:
-        document = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise ReleaseOperationError("release status artifact is not valid JSON") from exc
+    canonical_response = canonicalize_json_bytes(
+        completed.stdout,
+        label="release status artifact",
+    )
+    document = json.loads(canonical_response)
     facts = _validate_release_status(document)
     artifact_dir = ensure_private_directory(state_dir / "release-status")
     artifact_path = artifact_dir / f"status-{uuid.uuid4().hex}.json"
-    write_immutable(artifact_path, completed.stdout)
+    write_immutable(artifact_path, canonical_response)
     mode = stat.S_IMODE(artifact_path.stat().st_mode)
     if mode != 0o600:
         raise ReleaseOperationError("release status artifact is not owner-only")
@@ -451,6 +453,8 @@ def _fresh_release_status_observation(
             "cli_sha256": sha256_file(cli),
             "stdout_sha256": sha256_bytes(completed.stdout),
             "stdout_bytes": len(completed.stdout),
+            "canonical_artifact_sha256": sha256_bytes(canonical_response),
+            "canonical_artifact_bytes": len(canonical_response),
             "stderr_sha256": sha256_bytes(completed.stderr),
             "stderr_bytes": len(completed.stderr),
             "provider_free_surface": "quant-system hermes release status",

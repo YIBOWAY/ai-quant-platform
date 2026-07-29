@@ -339,16 +339,21 @@ def prepare_commit_bound_source() -> tuple[Path, Path, list[str]]:
         "repository_root": str(root),
         "schema_version": "agent-v0.2.2-commit-bound-bootstrap.v2",
         "source_manifest_sha256": hashlib.sha256(
-            (
-                json.dumps(source_manifest, sort_keys=True, separators=(",", ":"))
-                + "\n"
+            json.dumps(
+                source_manifest,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest(),
         "source_root": str(source),
         "tree": tree,
     }
-    authority_payload = (
-        json.dumps(authority, sort_keys=True, separators=(",", ":")) + "\n"
+    authority_payload = json.dumps(
+        authority,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
     ).encode("utf-8")
     write_exclusive(
         authority_path,

@@ -19,9 +19,47 @@ class ReleaseOperationError(RuntimeError):
 
 
 def canonical_json_bytes(value: object) -> bytes:
-    return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-    ).encode("utf-8")
+    return json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8", errors="strict")
+
+
+def canonicalize_json_bytes(payload: bytes, *, label: str) -> bytes:
+    """Strictly decode and canonically re-encode a raw JSON response."""
+
+    try:
+        text = payload.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ReleaseOperationError(f"{label} is not valid UTF-8") from exc
+
+    def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        document: dict[str, object] = {}
+        for key, value in pairs:
+            if key in document:
+                raise ReleaseOperationError(f"{label} has duplicate JSON key: {key}")
+            document[key] = value
+        return document
+
+    def reject_non_finite(value: str) -> object:
+        raise ReleaseOperationError(
+            f"{label} has non-finite JSON constant: {value}"
+        )
+
+    try:
+        decoded = json.loads(
+            text,
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_non_finite,
+        )
+    except ReleaseOperationError:
+        raise
+    except json.JSONDecodeError as exc:
+        raise ReleaseOperationError(f"{label} is not valid JSON") from exc
+    return canonical_json_bytes(decoded)
 
 
 def sha256_bytes(value: bytes) -> str:
