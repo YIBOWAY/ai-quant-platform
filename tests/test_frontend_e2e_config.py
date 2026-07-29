@@ -120,6 +120,29 @@ def test_hermes_closure_specs_declare_only_exact_mode_tests_without_skips() -> N
     assert 'process.env.PW_HERMES_LIFECYCLE_FIXTURE === "1"' in specs["lifecycle"]
 
 
+def test_lifecycle_proves_exact_rendered_authority_rows() -> None:
+    spec = Path("src/frontend/tests/e2e/hermes-lifecycle.spec.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert "expectExactRenderedAuthorities" in spec
+    for marker in (
+        "data-hermes-activity-row",
+        "data-hermes-approval-row",
+        "data-hermes-gate-row",
+        "data-hermes-typed-result-row",
+        "data-hermes-authority-slot",
+    ):
+        assert marker in spec
+    for authority_id in (
+        "task:fixture-research",
+        "attempt:fixture-attempt-1",
+        "run:fixture-run-active-001",
+        "fixture-result-terminal-001",
+    ):
+        assert authority_id in spec
+
+
 def test_hermes_e2e_fixture_covers_all_read_only_artifact_kinds() -> None:
     fixture = json.loads(
         Path("src/frontend/tests/fixtures/hermes-artifacts.v1.json").read_text(

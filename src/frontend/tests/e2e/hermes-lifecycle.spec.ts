@@ -190,6 +190,156 @@ function expectExactAuthorities(
   ]);
 }
 
+async function expectExactRenderedAuthorities(
+  page: Page,
+  expected: {
+    approvalText: string;
+    initialCommandState: string;
+  },
+) {
+  const activityRows = page.locator("[data-hermes-activity-row]");
+  await expect(activityRows).toHaveCount(3);
+  await expect
+    .poll(() =>
+      activityRows.evaluateAll((rows) =>
+        rows
+          .map((row) => ({
+            commandId: row.getAttribute("data-hermes-command-id"),
+            state: row.getAttribute("data-hermes-command-state"),
+          }))
+          .sort((left, right) =>
+            String(left.commandId).localeCompare(String(right.commandId)),
+          ),
+      ),
+    )
+    .toEqual([
+      {
+        commandId: INITIAL_COMMAND_ID,
+        state: expected.initialCommandState,
+      },
+      {
+        commandId: "fixture-command-turn-001",
+        state: "succeeded",
+      },
+      {
+        commandId: "fixture-command-turn-002",
+        state: "succeeded",
+      },
+    ]);
+
+  const approvalRows = page.locator("[data-hermes-approval-row]");
+  await expect(approvalRows).toHaveCount(1);
+  await expect(approvalRows).toHaveAttribute(
+    "data-hermes-approval-id",
+    APPROVAL_ID,
+  );
+  await expect(
+    approvalRows.locator("[data-hermes-approval-status]"),
+  ).toHaveText(expected.approvalText);
+
+  const gateRows = page.locator("[data-hermes-gate-row]");
+  await expect(gateRows).toHaveCount(3);
+  await expect
+    .poll(() =>
+      gateRows.evaluateAll((rows) =>
+        rows
+          .map((row) => ({
+            gateId: row.getAttribute("data-hermes-gate-id"),
+            kind: row.getAttribute("data-hermes-gate-kind"),
+            status: row.getAttribute("data-hermes-gate-status"),
+          }))
+          .sort((left, right) =>
+            String(left.gateId).localeCompare(String(right.gateId)),
+          ),
+      ),
+    )
+    .toEqual([
+      {
+        gateId: "fixture-gate-1",
+        kind: "gate1",
+        status: "confirmed",
+      },
+      {
+        gateId: "fixture-gate-2",
+        kind: "gate2",
+        status: "pending",
+      },
+      {
+        gateId: "fixture-gate-3",
+        kind: "gate3",
+        status: "prepared",
+      },
+    ]);
+
+  const typedResultRows = page.locator("[data-hermes-typed-result-row]");
+  await expect(typedResultRows).toHaveCount(1);
+  await expect(typedResultRows).toHaveAttribute(
+    "data-hermes-result-id",
+    "fixture-result-terminal-001",
+  );
+  await expect(typedResultRows).toHaveAttribute(
+    "data-hermes-result-kind",
+    "backtest",
+  );
+  await expect(typedResultRows).toHaveAttribute(
+    "data-hermes-result-sample",
+    "sample",
+  );
+  await expect(
+    typedResultRows.getByText("Fixture terminal backtest", { exact: true }),
+  ).toHaveCount(1);
+
+  const authoritySlots = page.locator("[data-hermes-authority-slot]");
+  await expect(authoritySlots).toHaveCount(4);
+  await expect
+    .poll(() =>
+      authoritySlots.evaluateAll((rows) =>
+        rows
+          .map((row) => row.getAttribute("data-hermes-authority-slot"))
+          .sort(),
+      ),
+    )
+    .toEqual(["attempt", "result", "run", "task"]);
+  await expect(page.locator("[data-hermes-authority-count]")).toHaveText(
+    "4 refs · read-only",
+  );
+
+  for (const authority of [
+    {
+      display: "task:fixture-research",
+      id: "task:fixture-research",
+      slot: "task",
+    },
+    {
+      display: "attempt:fixture-…empt-1",
+      id: "attempt:fixture-attempt-1",
+      slot: "attempt",
+    },
+    {
+      display: "run:fixture-run-…ve-001",
+      id: `run:${INITIAL_RUN_ID}`,
+      slot: "run",
+    },
+    {
+      display: "fixture-result-t…al-001",
+      id: "fixture-result-terminal-001",
+      slot: "result",
+    },
+  ]) {
+    const slot = page.locator(
+      `[data-hermes-authority-slot="${authority.slot}"]`,
+    );
+    await expect(slot).toHaveCount(1);
+    const nestedIds = slot.locator(":scope > ul > li");
+    await expect(nestedIds).toHaveCount(1);
+    await expect(nestedIds).toHaveAttribute("title", authority.id);
+    await expect(nestedIds).toHaveText(authority.display);
+    await expect(
+      slot.locator("[data-hermes-authority-empty]"),
+    ).toHaveCount(0);
+  }
+}
+
 if (modeMatches) {
   test.describe("@lifecycle-fixture Hermes active lifecycle", () => {
   test.describe.configure({ mode: "serial" });
@@ -477,6 +627,10 @@ if (modeMatches) {
       approvalStatus: "pending",
       initialCommandState: "delivered",
     });
+    await expectExactRenderedAuthorities(page, {
+      approvalText: "pending",
+      initialCommandState: "delivered",
+    });
 
     const stopRow = page.locator(
       `[data-hermes-run-stop-row][data-hermes-run-id="${INITIAL_RUN_ID}"]`,
@@ -581,6 +735,10 @@ if (modeMatches) {
     const afterAuthorities = await fixtureSnapshot(page);
     expectExactAuthorities(afterAuthorities, {
       approvalStatus: "denied",
+      initialCommandState: "cancelled",
+    });
+    await expectExactRenderedAuthorities(page, {
+      approvalText: "denied · deny",
       initialCommandState: "cancelled",
     });
     expect(afterAuthorities.gates).toEqual(beforeAuthorities.gates);
