@@ -523,6 +523,47 @@ export function createHermesLifecycleFixture() {
         finish(200, { appended: true, revision: state.cursor });
         return true;
       }
+      if (
+        method === "POST" &&
+        pathname === "/api/hermes/fixture-project-real-result"
+      ) {
+        if (!hasFixtureCsrf(req)) {
+          finish(403, { detail: "fixture_csrf_required" });
+          return true;
+        }
+        const body = await readJsonBody(req);
+        if (body.scenario !== "typed-result-real") {
+          finish(409, {
+            detail: { code: "fixture_result_scenario_not_supported" },
+          });
+          return true;
+        }
+        const result = state.results.find(
+          (row) => row.result_id === "fixture-result-terminal-001",
+        );
+        if (!result || result.sample_or_real !== "sample") {
+          finish(409, {
+            detail: { code: "fixture_result_not_sample" },
+          });
+          return true;
+        }
+        result.sample_or_real = "real";
+        state.cursor += 1;
+        recordAudit(state, {
+          kind: "fixture.result.real_projected",
+          result_id: result.result_id,
+        });
+        broadcast(state, "results", {
+          results: state.results,
+          authority_health: authorityHealth(),
+        });
+        finish(200, {
+          projected: true,
+          result_id: result.result_id,
+          sample_or_real: result.sample_or_real,
+        });
+        return true;
+      }
 
       const forkMatch = pathname.match(
         /^\/api\/hermes\/sessions\/([^/]+)\/forks-to-managed$/,

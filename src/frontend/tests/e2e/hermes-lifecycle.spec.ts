@@ -878,5 +878,82 @@ if (modeMatches) {
     expect(audit.workspace_cursor).toBe(baseline.workspace_cursor + 1);
     expectCleanBrowser(externalRequests, problems);
   });
+
+  test("projects one isolated REAL typed result through the frozen AA checker", async ({
+    page,
+  }) => {
+    const externalRequests = await installLoopbackOnlyGuard(page);
+    const problems = collectBrowserProblems(page);
+    await page.goto(
+      `/en/hermes?hermes_session_id=${encodeURIComponent(ACTIVE_SESSION_ID)}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    const baseline = await fixtureAudit(page);
+    const baselineEventCount = baseline.events.length;
+
+    const row = page.locator(
+      '[data-hermes-typed-result-row][data-hermes-result-id="fixture-result-terminal-001"]',
+    );
+    const mark = row.locator("[data-hermes-result-mark]");
+    await expect(row).toHaveAttribute(
+      "data-hermes-result-sample",
+      "sample",
+    );
+    await expect(mark).toHaveText("SAMPLE");
+
+    const projection = await page.evaluate(async () => {
+      const token = document.cookie
+        .split(";")
+        .map((part) => part.trim())
+        .find((part) => part.startsWith("qs_aw_csrf="))
+        ?.slice("qs_aw_csrf=".length);
+      if (!token) throw new Error("fixture CSRF cookie missing");
+      const response = await fetch(
+        "/api/hermes/fixture-project-real-result",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+            "x-csrf-token": decodeURIComponent(token),
+          },
+          body: JSON.stringify({ scenario: "typed-result-real" }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(
+          `fixture REAL projection failed: ${response.status}`,
+        );
+      }
+      return (await response.json()) as Record<string, unknown>;
+    });
+    expect(projection).toEqual({
+      projected: true,
+      result_id: "fixture-result-terminal-001",
+      sample_or_real: "real",
+    });
+
+    await expect(row).toHaveAttribute("data-hermes-result-sample", "real");
+    await expect(mark).toHaveText("REAL");
+    await assertWholeHermesShellWcagAaContrast(page);
+
+    const snapshot = await fixtureSnapshot(page);
+    expect(snapshot.results).toHaveLength(1);
+    expect(snapshot.results[0]).toMatchObject({
+      result_id: "fixture-result-terminal-001",
+      sample_or_real: "real",
+    });
+    const audit = await fixtureAudit(page);
+    expect(audit.events.slice(baselineEventCount)).toEqual([
+      {
+        sequence: baselineEventCount + 1,
+        kind: "fixture.result.real_projected",
+        result_id: "fixture-result-terminal-001",
+      },
+    ]);
+    expect(audit.workspace_cursor).toBe(baseline.workspace_cursor + 1);
+    expectCleanBrowser(externalRequests, problems);
+  });
   });
 }
