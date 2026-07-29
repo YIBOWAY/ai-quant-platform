@@ -35,6 +35,90 @@ function assertBoundedChild(baseRoot, dataRoot) {
   }
 }
 
+function assertCanonicalDirectoryChain(
+  candidate,
+  { allowMissingTail, label },
+) {
+  const resolved = path.resolve(candidate);
+  const parsed = path.parse(resolved);
+  const segments = resolved
+    .slice(parsed.root.length)
+    .split(path.sep)
+    .filter(Boolean);
+  let current = parsed.root;
+  let missingTail = false;
+
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    if (missingTail) continue;
+
+    let stat;
+    try {
+      stat = fs.lstatSync(current);
+    } catch (error) {
+      if (
+        allowMissingTail &&
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        missingTail = true;
+        continue;
+      }
+      throw error;
+    }
+    if (stat.isSymbolicLink()) {
+      throw new Error(`${label} contains a symbolic link: ${current}`);
+    }
+    if (!stat.isDirectory()) {
+      throw new Error(`${label} contains a non-directory: ${current}`);
+    }
+    if (fs.realpathSync(current) !== current) {
+      throw new Error(`${label} is not canonical: ${current}`);
+    }
+  }
+
+  if (missingTail) return null;
+  if (fs.realpathSync(resolved) !== resolved) {
+    throw new Error(`${label} is not canonical: ${resolved}`);
+  }
+  return resolved;
+}
+
+function assertPathAbsent(candidate, label) {
+  try {
+    fs.lstatSync(candidate);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return;
+    }
+    throw error;
+  }
+  throw new Error(`${label} must not already exist`);
+}
+
+function assertCanonicalOwnedRunRoot(identity) {
+  const canonicalBaseRoot = assertCanonicalDirectoryChain(
+    identity.baseRoot,
+    {
+      allowMissingTail: false,
+      label: "Playwright data-root base",
+    },
+  );
+  const canonicalDataRoot = assertCanonicalDirectoryChain(
+    identity.dataRoot,
+    {
+      allowMissingTail: false,
+      label: "Playwright data root",
+    },
+  );
+  assertBoundedChild(canonicalBaseRoot, canonicalDataRoot);
+}
+
 export function buildE2ERunIdentity({
   baseRoot,
   rawRunId,
@@ -90,9 +174,19 @@ export function prepareE2ERunRoot(
     throw new Error("Playwright data-root owner token is required");
   }
   assertBoundedChild(identity.baseRoot, identity.dataRoot);
+  assertCanonicalDirectoryChain(identity.baseRoot, {
+    allowMissingTail: true,
+    label: "Playwright data-root base",
+  });
   fs.mkdirSync(identity.baseRoot, { recursive: true, mode: 0o700 });
+  assertCanonicalDirectoryChain(identity.baseRoot, {
+    allowMissingTail: false,
+    label: "Playwright data-root base",
+  });
+  assertPathAbsent(identity.dataRoot, "Playwright data root");
   fs.mkdirSync(identity.dataRoot, { mode: 0o700 });
   try {
+    assertCanonicalOwnedRunRoot(identity);
     const provenance = expectedProvenance(identity, fixture, ownerToken);
     fs.writeFileSync(
       path.join(identity.dataRoot, E2E_RUN_PROVENANCE_FILE),
@@ -105,6 +199,7 @@ export function prepareE2ERunRoot(
     );
     return provenance;
   } catch (error) {
+    assertCanonicalOwnedRunRoot(identity);
     fs.rmdirSync(identity.dataRoot);
     throw error;
   }
@@ -118,10 +213,7 @@ export function cleanupE2ERunRoot(
     throw new Error("Playwright data-root owner token is required");
   }
   assertBoundedChild(identity.baseRoot, identity.dataRoot);
-  const rootStat = fs.lstatSync(identity.dataRoot);
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
-    throw new Error("Playwright data root is not an owned directory");
-  }
+  assertCanonicalOwnedRunRoot(identity);
 
   const provenancePath = path.join(
     identity.dataRoot,
@@ -137,5 +229,6 @@ export function cleanupE2ERunRoot(
     throw new Error("Playwright data-root provenance mismatch; cleanup refused");
   }
 
+  assertCanonicalOwnedRunRoot(identity);
   fs.rmSync(identity.dataRoot, { recursive: true });
 }

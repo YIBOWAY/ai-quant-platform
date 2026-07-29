@@ -17,7 +17,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const runnerPath = path.join(__dirname, "hermes-e2e-backend-runner.mjs");
 
 function makeBaseRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "hermes-e2e-root-test-"));
+  return fs.mkdtempSync(
+    path.join(fs.realpathSync(os.tmpdir()), "hermes-e2e-root-test-"),
+  );
 }
 
 describe("Hermes Playwright run-root ownership", () => {
@@ -56,6 +58,81 @@ describe("Hermes Playwright run-root ownership", () => {
         /PW_E2E_RUN_ID/,
         rawRunId,
       );
+    }
+  });
+
+  it("rejects a symlinked base ancestor before creating any run-root bytes", () => {
+    const container = makeBaseRoot();
+    const outside = path.join(container, "outside");
+    const marker = path.join(outside, "must-survive.txt");
+    const symlinkedAncestor = path.join(container, "base-alias");
+    fs.mkdirSync(outside);
+    fs.writeFileSync(marker, "untouched\n", "utf8");
+    fs.symlinkSync(outside, symlinkedAncestor, "dir");
+    const identity = buildE2ERunIdentity({
+      baseRoot: path.join(symlinkedAncestor, "e2e-data"),
+      rawRunId: "symlink-rejected-run",
+      backendPort: 41_010,
+      frontendPort: 42_010,
+      processId: 1_010,
+    });
+
+    try {
+      assert.throws(
+        () =>
+          prepareE2ERunRoot(identity, {
+            fixture: "normal",
+            ownerToken: "owner-token-symlink",
+          }),
+        /symbolic link|canonical/,
+      );
+      assert.deepEqual(fs.readdirSync(outside), ["must-survive.txt"]);
+      assert.equal(fs.readFileSync(marker, "utf8"), "untouched\n");
+    } finally {
+      fs.rmSync(container, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses cleanup through a replaced symlink base chain", () => {
+    const container = makeBaseRoot();
+    const baseRoot = path.join(container, "base");
+    const parkedBase = path.join(container, "parked-owned-base");
+    const outside = path.join(container, "outside");
+    const marker = path.join(outside, "must-survive.txt");
+    const identity = buildE2ERunIdentity({
+      baseRoot,
+      rawRunId: "cleanup-symlink-rejected-run",
+      backendPort: 41_011,
+      frontendPort: 42_011,
+      processId: 1_011,
+    });
+
+    try {
+      prepareE2ERunRoot(identity, {
+        fixture: "normal",
+        ownerToken: "owner-token-cleanup-symlink",
+      });
+      fs.renameSync(baseRoot, parkedBase);
+      fs.mkdirSync(outside);
+      fs.writeFileSync(marker, "untouched\n", "utf8");
+      fs.symlinkSync(outside, baseRoot, "dir");
+
+      assert.throws(
+        () =>
+          cleanupE2ERunRoot(identity, {
+            fixture: "normal",
+            ownerToken: "owner-token-cleanup-symlink",
+          }),
+        /symbolic link|canonical/,
+      );
+      assert.deepEqual(fs.readdirSync(outside), ["must-survive.txt"]);
+      assert.equal(fs.readFileSync(marker, "utf8"), "untouched\n");
+      assert.equal(
+        fs.existsSync(path.join(parkedBase, identity.runId)),
+        true,
+      );
+    } finally {
+      fs.rmSync(container, { recursive: true, force: true });
     }
   });
 
