@@ -180,6 +180,8 @@ esac
 require_empty_output_path "$BASETEMP" "basetemp"
 PYCACHE_ROOT="${BASETEMP}.pycache"
 require_empty_output_path "$PYCACHE_ROOT" "pycache"
+EVIDENCE_ROOT="${BASETEMP}.focused-safety-evidence"
+require_empty_output_path "$EVIDENCE_ROOT" "focused_safety_evidence"
 
 for selector in "${SELECTORS[@]}"; do
   path_has_symlink_component "$ROOT/$selector" &&
@@ -196,14 +198,22 @@ unset \
   LLM_MODEL \
   OPENAI_API_KEY \
   PYTEST_ADDOPTS \
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD \
   PYTEST_PLUGINS \
   PYTHONHOME \
   PYTHONPATH \
   PYTHONSTARTUP \
   PYTHONWARNINGS \
-  QS_LLM_PROVIDER
+  QS_AGENT_V02_FOCUSED_SAFETY_EVIDENCE_DIR \
+  QS_LLM_PROVIDER \
+  QS_TEST_DATABASE_ADMIN_URL \
+  QS_TEST_DATABASE_URL
 export PYTHONNOUSERSITE=1
 export PYTHONPYCACHEPREFIX="$PYCACHE_ROOT"
+export PYTEST_ADDOPTS="-p no:cacheprovider"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+export PYTEST_PLUGINS=quant_system.ops.focused_safety_authority
+export QS_AGENT_V02_FOCUSED_SAFETY_EVIDENCE_DIR="$EVIDENCE_ROOT"
 export QS_DATABASE_AUTO_MIGRATE=false
 export QS_DATABASE_ENABLED=false
 export QS_DEFAULT_DATA_PROVIDER=sample
