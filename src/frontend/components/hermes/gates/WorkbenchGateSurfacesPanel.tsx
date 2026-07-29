@@ -573,7 +573,7 @@ export function WorkbenchGateSurfacesPanel({
                           ? "批准前请在只读证据页检查候选源码、审计记录和完整 digest；证据页不会自动提交 Gate 2。"
                           : "Before approving, inspect candidate source, audit records, and the full digest in the read-only evidence page; that page never submits Gate 2 automatically."}{" "}
                         <Link
-                          className="font-semibold text-info underline underline-offset-2"
+                          className="app-touch-target inline-flex items-center font-semibold text-info underline underline-offset-2"
                           href={hermesRouteHref("approvals", locale, {
                             candidate:
                               row.candidate_id ||
