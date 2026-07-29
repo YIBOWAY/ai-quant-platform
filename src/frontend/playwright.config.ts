@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
+import { buildE2ERunIdentity } from "./tests/support/hermes-e2e-run-root.mjs";
+
 const HERMES_WORKBENCH_FIXTURES = new Set([
   "normal",
   "degraded",
@@ -13,7 +15,7 @@ const HERMES_WORKBENCH_FIXTURES = new Set([
 const runE2E = process.env.PW_E2E === "1";
 const repoRoot = findRepoRoot(process.cwd());
 const frontendRoot = path.join(repoRoot, "src", "frontend");
-const e2eDataRoot = path.join(frontendRoot, ".tmp", "e2e-data");
+const e2eDataRootBase = path.join(frontendRoot, ".tmp", "e2e-data");
 const hermesArtifactFixture = path.join(
   frontendRoot,
   "tests",
@@ -34,6 +36,14 @@ if (
 }
 const backendPort = readPort("PW_BACKEND_PORT", 8765);
 const frontendPort = readPort("PW_FRONTEND_PORT", 3001);
+const e2eRunIdentity = buildE2ERunIdentity({
+  baseRoot: e2eDataRootBase,
+  rawRunId: process.env.PW_E2E_RUN_ID,
+  backendPort,
+  frontendPort,
+  processId: process.pid,
+});
+const e2eDataRoot = e2eRunIdentity.dataRoot;
 const rollbackE2E = process.env.PW_HERMES_ROLLBACK_E2E === "1";
 const rollbackPort = rollbackE2E
   ? readRequiredPort("PW_HERMES_ROLLBACK_PORT")
@@ -73,10 +83,7 @@ const frontendCommand = buildFrontendCommand(frontendPort);
 const rollbackFrontendCommand =
   rollbackPort !== null ? buildFrontendCommand(rollbackPort) : null;
 const backendPython = resolveBackendPython();
-const backendCommand = fixtureMode
-  ? `node src/frontend/tests/support/hermes-fixture-api.mjs ${backendPort} ${hermesWorkbenchFixture}`
-  : (process.env.QUANT_API_COMMAND ??
-    `${JSON.stringify(backendPython)} -m uvicorn quant_system.api.server:create_app --factory --host 127.0.0.1 --port ${backendPort}`);
+const backendCommand = buildSupervisedBackendCommand();
 const backendReuse = fixtureMode ? false : reuseExistingServer;
 const frontendReuse = fixtureMode || rollbackE2E ? false : reuseExistingServer;
 
@@ -100,6 +107,74 @@ function buildFrontendCommand(port: number): string {
     `cd ".tmp/e2e-frontend-${port}"`,
     frontendDevCommand,
   ].join(" && ");
+}
+
+function buildBackendLaunch(): { command: string; args: string[] } {
+  if (fixtureMode) {
+    return {
+      command: process.execPath,
+      args: [
+        path.join(
+          frontendRoot,
+          "tests",
+          "support",
+          "hermes-fixture-api.mjs",
+        ),
+        String(backendPort),
+        hermesWorkbenchFixture!,
+      ],
+    };
+  }
+
+  const customCommand = process.env.QUANT_API_COMMAND;
+  if (customCommand) {
+    if (process.platform === "win32") {
+      return {
+        command: process.env.ComSpec ?? "cmd.exe",
+        args: ["/d", "/s", "/c", customCommand],
+      };
+    }
+    return {
+      command: process.env.SHELL ?? "/bin/sh",
+      args: ["-lc", customCommand],
+    };
+  }
+
+  return {
+    command: backendPython,
+    args: [
+      "-m",
+      "uvicorn",
+      "quant_system.api.server:create_app",
+      "--factory",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(backendPort),
+    ],
+  };
+}
+
+function buildSupervisedBackendCommand(): string {
+  const launch = buildBackendLaunch();
+  const payload = Buffer.from(
+    JSON.stringify({
+      ...launch,
+      backendPort,
+      baseRoot: e2eRunIdentity.baseRoot,
+      fixture: hermesWorkbenchFixture,
+      frontendPort,
+      runId: e2eRunIdentity.runId,
+    }),
+    "utf8",
+  ).toString("base64url");
+  const runner = path.join(
+    frontendRoot,
+    "tests",
+    "support",
+    "hermes-e2e-backend-runner.mjs",
+  );
+  return `${JSON.stringify(process.execPath)} ${JSON.stringify(runner)} ${JSON.stringify(payload)}`;
 }
 
 function resolveBackendPython(): string {
@@ -177,6 +252,10 @@ type WebServerConfig = {
   url: string;
   reuseExistingServer: boolean;
   timeout: number;
+  gracefulShutdown?: {
+    signal: "SIGINT" | "SIGTERM";
+    timeout: number;
+  };
   env?: { [key: string]: string };
 };
 
@@ -192,6 +271,9 @@ function buildWebServers(): WebServerConfig[] | undefined {
       url: providerFreeBackendReadinessUrl,
       reuseExistingServer: backendReuse,
       timeout: 60_000,
+      // Playwright defaults to SIGKILL. A bounded TERM window is required so
+      // the backend supervisor can verify provenance and remove only its root.
+      gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
       // Fixture server is pure Node and ignores QS_* settings.
       // Only real-smoke mode injects hermetic platform env. Never forward
       // the fixture name into this process environment.
@@ -293,9 +375,21 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  // Fixture name stays in Playwright process/config metadata only.
-  metadata: fixtureMode
-    ? { hermesWorkbenchFixture }
+  // Safe per-run facts stay in Playwright process/config metadata so evidence
+  // collectors can bind the actual ports, fixture, and owned data root.
+  metadata: runE2E
+    ? {
+        e2eRun: {
+          backendPort,
+          dataRoot: e2eDataRoot,
+          fixture: hermesWorkbenchFixture,
+          frontendPort,
+          runId: e2eRunIdentity.runId,
+        },
+        ...(hermesWorkbenchFixture
+          ? { hermesWorkbenchFixture }
+          : {}),
+      }
     : undefined,
   webServer: buildWebServers(),
 });

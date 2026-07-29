@@ -23,7 +23,13 @@ def test_playwright_backend_uses_isolated_test_environment() -> None:
     assert "QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS" in backend_block
     assert "QS_API_CORS_ORIGINS: JSON.stringify(e2eCorsOrigins)" in backend_block
     assert "frontendUrl" in backend_block
-    assert 'const e2eDataRoot = path.join(frontendRoot, ".tmp", "e2e-data")' in config
+    assert (
+        'const e2eDataRootBase = path.join(frontendRoot, ".tmp", "e2e-data")'
+        in config
+    )
+    assert "const e2eRunIdentity = buildE2ERunIdentity({" in config
+    assert "rawRunId: process.env.PW_E2E_RUN_ID" in config
+    assert "const e2eDataRoot = e2eRunIdentity.dataRoot" in config
     assert "QS_DATA_DIR: e2eDataRoot" in backend_block
     assert 'QS_AGENT_OUTPUT_DIR: path.join(e2eDataRoot, "agent-output")' in backend_block
     assert 'QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet")' in backend_block
@@ -37,6 +43,31 @@ def test_playwright_backend_uses_isolated_test_environment() -> None:
     assert "QS_OPTIONS_RADAR_VIX_HISTORY_PATH" in compact_backend_block
     assert "QS_DATABASE_ENABLED" not in frontend_block
 
+
+def test_playwright_supervises_per_run_data_root_and_binds_safe_provenance() -> None:
+    config = Path("src/frontend/playwright.config.ts").read_text(encoding="utf-8")
+    runner = Path(
+        "src/frontend/tests/support/hermes-e2e-backend-runner.mjs"
+    ).read_text(encoding="utf-8")
+    ownership = Path(
+        "src/frontend/tests/support/hermes-e2e-run-root.mjs"
+    ).read_text(encoding="utf-8")
+
+    assert "const backendCommand = buildSupervisedBackendCommand()" in config
+    assert "hermes-e2e-backend-runner.mjs" in config
+    assert "backendPort" in config
+    assert "frontendPort" in config
+    assert "runId: e2eRunIdentity.runId" in config
+    assert "dataRoot: e2eDataRoot" in config
+    assert "fixture: hermesWorkbenchFixture" in config
+    assert 'gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 }' in config
+    assert "prepareE2ERunRoot(identity" in runner
+    assert "cleanupE2ERunRoot(identity, {" in runner
+    assert "fixture: payload.fixture ?? null" in runner
+    assert "crypto.randomBytes(32)" in runner
+    assert "result.signal === forwardedShutdownSignal" in runner
+    assert "assertBoundedChild(identity.baseRoot, identity.dataRoot)" in ownership
+    assert "provenance mismatch; cleanup refused" in ownership
 
 def test_hermes_e2e_fixture_covers_all_read_only_artifact_kinds() -> None:
     fixture = json.loads(
