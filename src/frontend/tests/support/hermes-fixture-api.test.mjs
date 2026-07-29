@@ -109,6 +109,47 @@ describe("hermes-fixture-api", () => {
     }
   });
 
+  it("exposes fixture-only readiness for every mode without claiming gateway connectivity", async () => {
+    for (const name of HERMES_WORKBENCH_FIXTURE_NAMES) {
+      const fixture = loadFixture(name);
+      const server = createFixtureServer(fixture, {
+        includePersistedSession: name === "normal",
+        includeFixtureGateway: true,
+      });
+      const port = await listenEphemeral(server);
+      try {
+        const readiness = await request(
+          port,
+          "GET",
+          "/api/hermes/fixture-ready",
+        );
+        const gateway = await request(port, "GET", "/api/hermes/gateway");
+
+        assert.equal(readiness.status, 200, name);
+        assert.equal(readiness.headers["cache-control"], "no-store", name);
+        assert.deepEqual(
+          JSON.parse(readiness.body.toString("utf8")),
+          {
+            ready: true,
+            transport: "loopback_get_only_fixture",
+          },
+          name,
+        );
+        assert.equal(gateway.status, 200, name);
+        assert.equal(
+          Object.hasOwn(
+            JSON.parse(readiness.body.toString("utf8")),
+            "connected",
+          ),
+          false,
+          name,
+        );
+      } finally {
+        await closeServer(server);
+      }
+    }
+  });
+
   it("serves the three exact GET routes with Cache-Control no-store", async () => {
     const fixture = loadFixture("normal");
     const server = createFixtureServer(fixture);
@@ -191,6 +232,40 @@ describe("hermes-fixture-api", () => {
       const gateway = await request(port, "GET", "/api/hermes/gateway");
       const sessions = await request(port, "GET", "/api/hermes/sessions");
       assert.equal(gateway.status, 404);
+      assert.equal(sessions.status, 404);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("exposes truthful gateway state only for the explicit Playwright projection", async () => {
+    const fixture = loadFixture("offline");
+    const server = createFixtureServer(fixture, {
+      includeFixtureGateway: true,
+    });
+    const port = await listenEphemeral(server);
+    try {
+      const gateway = await request(port, "GET", "/api/hermes/gateway");
+      const sessions = await request(port, "GET", "/api/hermes/sessions");
+      assert.equal(gateway.status, 200);
+      assert.deepEqual(
+        JSON.parse(gateway.body.toString("utf8")),
+        {
+          read_status: "unavailable",
+          connected: false,
+          model: "fixture-model",
+          session_api_available: false,
+          chat_write_ready: false,
+          features: { session_resources: false },
+          upstream_blockers: ["fixture_gateway_unavailable"],
+          platform_delivery_blockers: ["fixture_write_disabled"],
+          blockers: [
+            "fixture_gateway_unavailable",
+            "fixture_write_disabled",
+          ],
+          warnings: [],
+        },
+      );
       assert.equal(sessions.status, 404);
     } finally {
       await closeServer(server);

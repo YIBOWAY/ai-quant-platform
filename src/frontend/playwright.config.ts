@@ -65,7 +65,10 @@ const forbiddenProviderProbe = Object.freeze({
   allowedForReadiness: false,
 });
 const providerFreeBackendReadinessUrl = requireProviderFreeReadinessUrl(
-  `${backendUrl}/api/hermes/gateway`,
+  hermesWorkbenchFixture !== null &&
+    hermesWorkbenchFixture !== "normal"
+    ? `${backendUrl}/api/hermes/fixture-ready`
+    : `${backendUrl}/api/hermes/gateway`,
 );
 const rollbackFrontendUrl =
   rollbackPort !== null ? `http://127.0.0.1:${rollbackPort}` : null;

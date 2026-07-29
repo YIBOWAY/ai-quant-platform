@@ -245,7 +245,10 @@ export function loadFixture(name) {
  */
 export function createFixtureServer(
   fixture,
-  { includePersistedSession = false } = {},
+  {
+    includePersistedSession = false,
+    includeFixtureGateway = false,
+  } = {},
 ) {
   const validated = validateCombinedFixture(
     typeof structuredClone === "function"
@@ -293,16 +296,24 @@ export function createFixtureServer(
         : `Fixture transcript message ${index + 1}: ${"bounded research context ".repeat(4)}`,
     timestamp: `2026-07-16T00:${String(index).padStart(2, "0")}:00Z`,
   }));
+  const fixtureGatewayUnavailable =
+    validated.health.status === "offline" ||
+    validated.artifacts.read_status === "unavailable";
+  const fixtureGatewayBlocker = fixtureGatewayUnavailable
+    ? "fixture_gateway_unavailable"
+    : "fixture_write_disabled";
   const gatewayStatus = {
-    read_status: "available",
-    connected: true,
+    read_status: fixtureGatewayUnavailable ? "unavailable" : "available",
+    connected: !fixtureGatewayUnavailable,
     model: "fixture-model",
-    session_api_available: true,
+    session_api_available: includePersistedSession,
     chat_write_ready: false,
-    features: { session_resources: true },
-    upstream_blockers: ["fixture_write_disabled"],
+    features: { session_resources: includePersistedSession },
+    upstream_blockers: [fixtureGatewayBlocker],
     platform_delivery_blockers: ["fixture_write_disabled"],
-    blockers: ["fixture_write_disabled"],
+    blockers: fixtureGatewayUnavailable
+      ? [fixtureGatewayBlocker, "fixture_write_disabled"]
+      : ["fixture_write_disabled"],
     warnings: [],
   };
   const sessionsResponse = {
@@ -390,7 +401,20 @@ export function createFixtureServer(
       return;
     }
 
-    if (includePersistedSession && pathname === "/api/hermes/gateway") {
+    // Playwright process readiness only. This says the isolated loopback fixture
+    // is listening; it deliberately says nothing about Hermes connectivity.
+    if (pathname === "/api/hermes/fixture-ready") {
+      finish(200, {
+        ready: true,
+        transport: "loopback_get_only_fixture",
+      });
+      return;
+    }
+
+    if (
+      (includePersistedSession || includeFixtureGateway) &&
+      pathname === "/api/hermes/gateway"
+    ) {
       finish(200, gatewayStatus);
       return;
     }
@@ -470,6 +494,7 @@ export function startFixtureServer(port, fixtureName) {
   const fixture = loadFixture(fixtureName);
   const server = createFixtureServer(fixture, {
     includePersistedSession: fixtureName === "normal",
+    includeFixtureGateway: true,
   });
   return new Promise((resolve, reject) => {
     const onError = (error) => {
@@ -506,6 +531,7 @@ function main(argv) {
 
   const server = createFixtureServer(fixture, {
     includePersistedSession: fixtureName === "normal",
+    includeFixtureGateway: true,
   });
   server.on("error", (error) => {
     console.error(error instanceof Error ? error.message : String(error));

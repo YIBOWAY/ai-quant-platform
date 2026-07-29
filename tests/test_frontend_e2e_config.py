@@ -69,6 +69,21 @@ def test_playwright_supervises_per_run_data_root_and_binds_safe_provenance() -> 
     assert "assertBoundedChild(identity.baseRoot, identity.dataRoot)" in ownership
     assert "provenance mismatch; cleanup refused" in ownership
 
+
+def test_playwright_fixture_readiness_is_separate_from_gateway_truth() -> None:
+    config = Path("src/frontend/playwright.config.ts").read_text(encoding="utf-8")
+    fixture_server = Path(
+        "src/frontend/tests/support/hermes-fixture-api.mjs"
+    ).read_text(encoding="utf-8")
+
+    assert '`${backendUrl}/api/hermes/fixture-ready`' in config
+    assert '`${backendUrl}/api/hermes/gateway`' in config
+    assert 'pathname === "/api/hermes/fixture-ready"' in fixture_server
+    assert 'transport: "loopback_get_only_fixture"' in fixture_server
+    assert 'pathname === "/api/hermes/gateway"' in fixture_server
+    assert "includeFixtureGateway: true" in fixture_server
+
+
 def test_hermes_e2e_fixture_covers_all_read_only_artifact_kinds() -> None:
     fixture = json.loads(
         Path("src/frontend/tests/fixtures/hermes-artifacts.v1.json").read_text(
