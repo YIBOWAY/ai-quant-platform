@@ -39,6 +39,68 @@ function canonicalJson(value) {
   return JSON.stringify(normalize(value));
 }
 
+function playwrightReport({
+  expected = 2,
+  skipped = [],
+  stats = {},
+} = {}) {
+  const passedSpecs = Array.from({ length: expected }, (_, index) => ({
+    file: "hermes-workbench.spec.ts",
+    tests: [
+      {
+        annotations: [],
+        expectedStatus: "passed",
+        projectName: "chromium",
+        results: [{ status: "passed" }],
+        status: "expected",
+      },
+    ],
+    title: `expected test ${index + 1}`,
+  }));
+  const skippedSpecs = skipped.map((entry) => ({
+    file: entry.file,
+    tests: [
+      {
+        annotations: [{ description: entry.reason, type: "skip" }],
+        expectedStatus: "skipped",
+        projectName: "chromium",
+        results: [{ status: "skipped" }],
+        status: "skipped",
+      },
+    ],
+    title: entry.title,
+  }));
+  return {
+    errors: [],
+    stats: {
+      expected,
+      flaky: 0,
+      skipped: skipped.length,
+      unexpected: 0,
+      ...stats,
+    },
+    suites: [
+      {
+        specs: [...passedSpecs, ...skippedSpecs],
+        suites: [],
+        title: "root",
+      },
+    ],
+  };
+}
+
+function playwrightReportForRow(row) {
+  const skipped = row.contract.expectedSkips.map(({ id, reason }) => {
+    const [file, title, projectName] = id.split("::");
+    assert.equal(projectName, "chromium");
+    return { file, reason, title };
+  });
+  return playwrightReport({
+    expected: row.contract.expected,
+    skipped,
+  });
+}
+
 describe("Hermes Gate 5 release authority", () => {
   it("defines the complete ordered browser matrix", () => {
     const matrix = buildGate5Matrix({
@@ -137,7 +199,8 @@ describe("Hermes Gate 5 release authority", () => {
     assert.equal(byId.support.kind, "node-test");
     assert.deepEqual(byId.support.args, ["run", "test:gate5-support"]);
     assert.deepEqual(byId.support.contract, {
-      expected: 37,
+      expected: 38,
+      expectedSkips: [],
       skipped: 0,
     });
 
@@ -147,10 +210,11 @@ describe("Hermes Gate 5 release authority", () => {
     assert.equal(byId["real-smoke"].grep, "@real-backend-smoke");
     assert.deepEqual(byId["real-smoke"].contract, {
       expected: 2,
+      expectedSkips: [],
       skipped: 0,
     });
 
-    for (const [fixture, contract] of Object.entries({
+    for (const [fixture, counts] of Object.entries({
       normal: { expected: 30, skipped: 0 },
       degraded: { expected: 23, skipped: 2 },
       offline: { expected: 22, skipped: 3 },
@@ -160,20 +224,34 @@ describe("Hermes Gate 5 release authority", () => {
       const row = byId[`fixture-${fixture}`];
       assert.deepEqual(row.testFiles, fixtureFiles);
       assert.equal(row.grep, "@combined-fixture");
-      assert.deepEqual(row.contract, contract);
+      assert.equal(row.contract.expected, counts.expected);
+      assert.equal(row.contract.skipped, counts.skipped);
+      assert.equal(row.contract.expectedSkips.length, counts.skipped);
+      for (const skip of row.contract.expectedSkips) {
+        assert.match(skip.id, /^hermes-workbench\.spec\.ts::.+::chromium$/);
+        assert.equal(skip.reason.length > 0, true);
+      }
     }
 
     assert.deepEqual(byId.lifecycle.testFiles, [
       "tests/e2e/hermes-lifecycle.spec.ts",
     ]);
     assert.equal(byId.lifecycle.grep, "@lifecycle-fixture");
-    assert.deepEqual(byId.lifecycle.contract, { expected: 7, skipped: 0 });
+    assert.deepEqual(byId.lifecycle.contract, {
+      expected: 7,
+      expectedSkips: [],
+      skipped: 0,
+    });
 
     assert.deepEqual(byId.rollback.testFiles, [
       "tests/e2e/hermes-rollback.spec.ts",
     ]);
     assert.equal(byId.rollback.grep, "@rollback");
-    assert.deepEqual(byId.rollback.contract, { expected: 2, skipped: 0 });
+    assert.deepEqual(byId.rollback.contract, {
+      expected: 2,
+      expectedSkips: [],
+      skipped: 0,
+    });
 
     for (const row of matrix.filter(
       (candidate) => candidate.kind === "playwright",
@@ -347,7 +425,7 @@ describe("Hermes Gate 5 release authority", () => {
       () =>
         validatePlaywrightReport(
           {
-            contract: { expected: 2, skipped: 0 },
+            contract: { expected: 2, expectedSkips: [], skipped: 0 },
             id: "real-smoke",
           },
           {
@@ -369,7 +447,7 @@ describe("Hermes Gate 5 release authority", () => {
       () =>
         validatePlaywrightReport(
           {
-            contract: { expected: 23, skipped: 2 },
+            contract: { expected: 23, expectedSkips: [], skipped: 2 },
             id: "fixture-degraded",
           },
           {
@@ -422,19 +500,11 @@ describe("Hermes Gate 5 release authority", () => {
 
   it("accepts only the exact pass contract with zero unexpected and flaky outcomes", () => {
     const row = {
-      contract: { expected: 2, skipped: 0 },
+      contract: { expected: 2, expectedSkips: [], skipped: 0 },
       id: "real-smoke",
     };
-    const report = (overrides = {}) => ({
-      errors: [],
-      stats: {
-        expected: 2,
-        flaky: 0,
-        skipped: 0,
-        unexpected: 0,
-        ...overrides,
-      },
-    });
+    const report = (overrides = {}) =>
+      playwrightReport({ expected: 2, stats: overrides });
 
     assert.doesNotThrow(() => validatePlaywrightReport(row, report()));
     assert.throws(
@@ -448,6 +518,37 @@ describe("Hermes Gate 5 release authority", () => {
     assert.throws(
       () => validatePlaywrightReport(row, report({ flaky: 1 })),
       /real-smoke has 1 flaky test outcomes/,
+    );
+  });
+
+  it("rejects equal-count skip substitution by exact id and reason", () => {
+    const row = {
+      contract: {
+        expected: 1,
+        expectedSkips: [
+          {
+            id: "hermes-workbench.spec.ts::expected skipped test::chromium",
+            reason: "Repository-authorized reason.",
+          },
+        ],
+        skipped: 1,
+      },
+      id: "fixture-substitution",
+    };
+    const report = playwrightReport({
+      expected: 1,
+      skipped: [
+        {
+          file: "hermes-workbench.spec.ts",
+          reason: "Unrelated new reason.",
+          title: "unrelated newly skipped test",
+        },
+      ],
+    });
+
+    assert.throws(
+      () => validatePlaywrightReport(row, report),
+      /fixture-substitution exact skip identity\/reason mismatch/,
     );
   });
 
@@ -479,7 +580,7 @@ describe("Hermes Gate 5 release authority", () => {
 
   it("treats support TAP as an exact nonzero pass/skip contract", () => {
     const row = {
-      contract: { expected: 37, skipped: 0 },
+      contract: { expected: 38, skipped: 0 },
       id: "support",
     };
     const tap = (tests, passed, skipped) => `
@@ -493,17 +594,17 @@ TAP version 13
 # todo 0
 `;
 
-    assert.deepEqual(validateSupportTap(row, tap(37, 37, 0)), {
-      expected: 37,
+    assert.deepEqual(validateSupportTap(row, tap(38, 38, 0)), {
+      expected: 38,
       skipped: 0,
-      total: 37,
+      total: 38,
     });
     assert.throws(
       () => validateSupportTap(row, tap(0, 0, 0)),
       /support discovered zero tests/,
     );
     assert.throws(
-      () => validateSupportTap(row, tap(37, 36, 1)),
+      () => validateSupportTap(row, tap(38, 37, 1)),
       /support skip contract mismatch: expected 0, got 1/,
     );
   });
@@ -558,9 +659,9 @@ TAP version 13
     const seen = [];
     const supportTap = `
 TAP version 13
-1..37
-# tests 37
-# pass 37
+1..38
+# tests 38
+# pass 38
 # fail 0
 # cancelled 0
 # skipped 0
@@ -575,15 +676,7 @@ TAP version 13
             exitCode: 0,
             reportText:
               row.kind === "playwright"
-                ? JSON.stringify({
-                    errors: [],
-                    stats: {
-                      expected: row.contract.expected,
-                      flaky: 0,
-                      skipped: row.contract.skipped,
-                      unexpected: 0,
-                    },
-                  })
+                ? JSON.stringify(playwrightReportForRow(row))
                 : undefined,
             stderr: "",
             stdout: row.kind === "node-test" ? supportTap : `${row.id}\n`,
@@ -674,9 +767,9 @@ TAP version 13
       "{\"stats\":{},\"stats\":{\"provider_body\":\"credential-shaped invalid raw report\"}}";
     const supportTap = `
 TAP version 13
-1..37
-# tests 37
-# pass 37
+1..38
+# tests 38
+# pass 38
 # fail 0
 # cancelled 0
 # skipped 0
@@ -694,15 +787,7 @@ TAP version 13
                 row.kind === "playwright"
                   ? row.id === "real-smoke"
                     ? duplicateRawReport
-                    : JSON.stringify({
-                        errors: [],
-                        stats: {
-                          expected: row.contract.expected,
-                          flaky: 0,
-                          skipped: row.contract.skipped,
-                          unexpected: 0,
-                        },
-                      })
+                    : JSON.stringify(playwrightReportForRow(row))
                   : undefined,
               stderr: "",
               stdout: row.kind === "node-test" ? supportTap : `${row.id}\n`,

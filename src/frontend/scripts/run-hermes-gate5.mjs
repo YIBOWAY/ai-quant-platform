@@ -45,12 +45,57 @@ const FIXTURE_TEST_FILES = Object.freeze([
   "tests/e2e/hermes-closure-quality.spec.ts",
 ]);
 
+const PERSISTED_TRANSCRIPT_SKIP = Object.freeze({
+  id: "hermes-workbench.spec.ts::@combined-fixture opens a persisted transcript at its latest message with pinned context::chromium",
+  reason:
+    "The deterministic long session belongs to the normal combined fixture.",
+});
+const RETURN_TARGET_SKIP = Object.freeze({
+  id: "hermes-workbench.spec.ts::@combined-fixture exposes a 44px return target on persisted transcripts::chromium",
+  reason:
+    "The deterministic persisted session belongs to the normal combined fixture.",
+});
+const CANDIDATE_EVIDENCE_SKIP = Object.freeze({
+  id: "hermes-workbench.spec.ts::@combined-fixture Hermes Approvals navigates complete GET-only candidate evidence::chromium",
+  reason:
+    "Candidate detail evidence requires a fixture with one persisted candidate.",
+});
+const PERSISTED_SKIPS = Object.freeze([
+  PERSISTED_TRANSCRIPT_SKIP,
+  RETURN_TARGET_SKIP,
+]);
+const PERSISTED_AND_CANDIDATE_SKIPS = Object.freeze([
+  CANDIDATE_EVIDENCE_SKIP,
+  ...PERSISTED_SKIPS,
+].sort((left, right) => left.id.localeCompare(right.id)));
+const NO_SKIPS = Object.freeze([]);
+
 const FIXTURE_CONTRACTS = Object.freeze({
-  normal: Object.freeze({ expected: 30, skipped: 0 }),
-  degraded: Object.freeze({ expected: 23, skipped: 2 }),
-  offline: Object.freeze({ expected: 22, skipped: 3 }),
-  empty: Object.freeze({ expected: 22, skipped: 3 }),
-  "long-content": Object.freeze({ expected: 22, skipped: 3 }),
+  normal: Object.freeze({
+    expected: 30,
+    expectedSkips: NO_SKIPS,
+    skipped: 0,
+  }),
+  degraded: Object.freeze({
+    expected: 23,
+    expectedSkips: PERSISTED_SKIPS,
+    skipped: 2,
+  }),
+  offline: Object.freeze({
+    expected: 22,
+    expectedSkips: PERSISTED_AND_CANDIDATE_SKIPS,
+    skipped: 3,
+  }),
+  empty: Object.freeze({
+    expected: 22,
+    expectedSkips: PERSISTED_AND_CANDIDATE_SKIPS,
+    skipped: 3,
+  }),
+  "long-content": Object.freeze({
+    expected: 22,
+    expectedSkips: PERSISTED_AND_CANDIDATE_SKIPS,
+    skipped: 3,
+  }),
 });
 
 const SAFE_INHERITED_ENV = Object.freeze([
@@ -344,11 +389,142 @@ export function validatePlaywrightReport(row, report) {
   if (!Array.isArray(report.errors) || report.errors.length !== 0) {
     throw new Error(`${row.id} Playwright report contains top-level errors`);
   }
+  const expectedSkips = row.contract.expectedSkips;
+  if (
+    !Array.isArray(expectedSkips) ||
+    expectedSkips.length !== row.contract.skipped ||
+    expectedSkips.some(
+      (entry) =>
+        entry === null ||
+        typeof entry !== "object" ||
+        typeof entry.id !== "string" ||
+        entry.id.length === 0 ||
+        typeof entry.reason !== "string" ||
+        entry.reason.length === 0,
+    )
+  ) {
+    throw new Error(`${row.id} has an invalid repository skip contract`);
+  }
+  const outcomes = collectPlaywrightOutcomes(report, row.id);
+  if (outcomes.length !== total) {
+    throw new Error(
+      `${row.id} Playwright suite population mismatch: stats=${total}, tree=${outcomes.length}`,
+    );
+  }
+  const actualSkips = outcomes
+    .filter((outcome) => outcome.status === "skipped")
+    .map(({ id, reason }) => ({ id, reason }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const normalizedExpectedSkips = [...expectedSkips].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+  if (
+    canonicalJson(actualSkips) !== canonicalJson(normalizedExpectedSkips)
+  ) {
+    throw new Error(`${row.id} exact skip identity/reason mismatch`);
+  }
   return Object.freeze({
     expected: stats.expected,
+    exact_skips: actualSkips,
     skipped: stats.skipped,
     total,
   });
+}
+
+export function collectPlaywrightOutcomes(report, rowId) {
+  if (!Array.isArray(report?.suites)) {
+    throw new Error(`${rowId} Playwright report has no suite tree`);
+  }
+  const outcomes = [];
+  const seen = new Set();
+  const visit = (suite) => {
+    if (suite === null || typeof suite !== "object") {
+      throw new Error(`${rowId} Playwright suite entry is invalid`);
+    }
+    const specs = suite.specs ?? [];
+    const childSuites = suite.suites ?? [];
+    if (
+      !Array.isArray(specs) ||
+      !Array.isArray(childSuites) ||
+      (specs.length === 0 && childSuites.length === 0)
+    ) {
+      throw new Error(`${rowId} Playwright suite shape is invalid`);
+    }
+    for (const spec of specs) {
+      if (
+        spec === null ||
+        typeof spec !== "object" ||
+        typeof spec.file !== "string" ||
+        spec.file.length === 0 ||
+        typeof spec.title !== "string" ||
+        spec.title.length === 0 ||
+        !Array.isArray(spec.tests) ||
+        spec.tests.length === 0
+      ) {
+        throw new Error(`${rowId} Playwright spec identity is invalid`);
+      }
+      for (const test of spec.tests) {
+        if (
+          test === null ||
+          typeof test !== "object" ||
+          typeof test.projectName !== "string" ||
+          test.projectName.length === 0 ||
+          typeof test.status !== "string" ||
+          typeof test.expectedStatus !== "string" ||
+          !Array.isArray(test.annotations) ||
+          !Array.isArray(test.results)
+        ) {
+          throw new Error(`${rowId} Playwright test identity is invalid`);
+        }
+        const id = `${spec.file}::${spec.title}::${test.projectName}`;
+        if (seen.has(id)) {
+          throw new Error(`${rowId} Playwright test identity is duplicated`);
+        }
+        seen.add(id);
+        const skipAnnotations = test.annotations.filter(
+          (annotation) => annotation?.type === "skip",
+        );
+        const isSkipped =
+          test.status === "skipped" ||
+          test.expectedStatus === "skipped" ||
+          test.results.some((result) => result?.status === "skipped");
+        if (isSkipped) {
+          if (
+            test.status !== "skipped" ||
+            test.expectedStatus !== "skipped" ||
+            test.results.length === 0 ||
+            test.results.some((result) => result?.status !== "skipped") ||
+            skipAnnotations.length !== 1 ||
+            typeof skipAnnotations[0].description !== "string" ||
+            skipAnnotations[0].description.length === 0
+          ) {
+            throw new Error(
+              `${rowId} Playwright skip is not exact and justified`,
+            );
+          }
+          outcomes.push({
+            id,
+            reason: skipAnnotations[0].description,
+            status: "skipped",
+          });
+        } else {
+          if (skipAnnotations.length !== 0) {
+            throw new Error(
+              `${rowId} non-skipped Playwright test has a skip annotation`,
+            );
+          }
+          outcomes.push({ id, reason: null, status: test.status });
+        }
+      }
+    }
+    for (const child of childSuites) {
+      visit(child);
+    }
+  };
+  for (const suite of report.suites) {
+    visit(suite);
+  }
+  return outcomes;
 }
 
 function writeNewFile(filePath, contents) {
@@ -1129,13 +1305,13 @@ export function buildGate5Matrix({
     {
       args: ["run", "test:gate5-support"],
       command: process.platform === "win32" ? "npm.cmd" : "npm",
-      contract: { expected: 37, skipped: 0 },
+      contract: { expected: 38, expectedSkips: NO_SKIPS, skipped: 0 },
       id: "support",
       kind: "node-test",
       timeoutMs: 60_000,
     },
     {
-      contract: { expected: 2, skipped: 0 },
+      contract: { expected: 2, expectedSkips: NO_SKIPS, skipped: 0 },
       grep: "@real-backend-smoke",
       id: "real-smoke",
       kind: "playwright",
@@ -1152,7 +1328,7 @@ export function buildGate5Matrix({
       timeoutMs: 600_000,
     })),
     {
-      contract: { expected: 7, skipped: 0 },
+      contract: { expected: 7, expectedSkips: NO_SKIPS, skipped: 0 },
       grep: "@lifecycle-fixture",
       id: "lifecycle",
       kind: "playwright",
@@ -1160,7 +1336,7 @@ export function buildGate5Matrix({
       timeoutMs: 900_000,
     },
     {
-      contract: { expected: 2, skipped: 0 },
+      contract: { expected: 2, expectedSkips: NO_SKIPS, skipped: 0 },
       grep: "@rollback",
       id: "rollback",
       kind: "playwright",
