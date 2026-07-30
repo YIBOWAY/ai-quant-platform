@@ -45,6 +45,18 @@ def _accepted_receipt(request: CompositeTurnRequest) -> ActionReceipt:
     )
 
 
+def _managed_session() -> object:
+    """Minimal web-managed-session stub for patching require_web_writable_session."""
+    return SimpleNamespace(
+        kind="web_managed_session",
+        writer="web_control_plane",
+        workspace_id=PLATFORM_WORKSPACE_ID,
+        platform_session_id="managed-1",
+        hermes_session_id="hermes-s1",
+        web_writable=True,
+    )
+
+
 def test_parse_submit_turn_body_closed_schema() -> None:
     parsed = parse_submit_turn_body(
         {
@@ -176,14 +188,7 @@ def test_nonretryable_payload_port_failure_stays_nonretryable() -> None:
             retryable=False,
         )
 
-    session = _managed_session()
-    with (
-        patch(
-            "quant_system.hermes.composite_turn_submit.require_web_writable_session",
-            return_value=session,
-        ),
-        pytest.raises(CompositeTurnSubmitError) as exc,
-    ):
+    with pytest.raises(CompositeTurnSubmitError) as exc:
         submit_composite_turn(
             SimpleNamespace(),
             _request(),
