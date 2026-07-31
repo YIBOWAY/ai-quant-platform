@@ -44,6 +44,7 @@ _CAPABILITY_FEATURES = (
     "session_resources",
     "run_submission",
     "run_events_sse",
+    "run_events_snapshot",
     "run_status",
     "run_approval_response",
     "run_stop",
@@ -702,6 +703,12 @@ class _ApprovalObservation:
         }
 
 
+@dataclass(frozen=True)
+class _RunEventSnapshot:
+    events: tuple[dict[str, object], ...]
+    terminal: bool
+
+
 def _control_id(value: object, field: str) -> str:
     if not isinstance(value, str) or _CONTROL_ID_RE.fullmatch(value) is None:
         raise HermesRunControlError(
@@ -770,7 +777,7 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
     challenge/digest/expiry tuple before the upstream CAS is attempted.
     """
 
-    def _require_control_ready(self, *, feature: str) -> None:
+    def _require_control_ready(self, *, features: tuple[str, ...]) -> None:
         if self.settings.enabled is not True:
             raise HermesRunControlError(
                 "durable_run_control_unavailable",
@@ -783,7 +790,10 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
         if (
             capabilities.get("contract_version") is None
             or not isinstance(capabilities.get("features"), Mapping)
-            or capabilities["features"].get(feature) is not True  # type: ignore[index]
+            or any(
+                capabilities["features"].get(feature) is not True  # type: ignore[index]
+                for feature in features
+            )
         ):
             raise HermesRunControlError(
                 "durable_run_control_unavailable",
@@ -917,16 +927,24 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
         except HermesApiReadError as exc:
             raise HermesRunControlError(exc.code, exc.message) from exc
         status = raw.get("status")
+        substate = raw.get("substate")
         if (
             raw.get("object") != "hermes.run"
             or raw.get("run_id") != rid
             or status not in _RUN_STATES
+            or (
+                substate is not None
+                and (
+                    status != "running"
+                    or substate not in {"waiting_for_approval", "stopping"}
+                )
+            )
         ):
             raise HermesRunControlError(
                 "invalid_upstream_response",
                 "Hermes Run status response is invalid",
             )
-        return {
+        projected: dict[str, object] = {
             "object": "hermes.run",
             "run_id": rid,
             "status": str(status),
@@ -936,103 +954,38 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
                 else None
             ),
         }
+        if substate is not None:
+            projected["substate"] = str(substate)
+        return projected
 
     def run_events(self, run_id: str) -> tuple[dict[str, object], ...]:
-        """Read a bounded gap-free durable backlog.
-
-        Live SSE remains open. A short read timeout is an intentional snapshot
-        boundary after already-buffered complete frames; zero received bytes is
-        still an outage. Candidate/release callers normally use terminal Runs,
-        whose official stream closes immediately.
-        """
-
+        """Read the finite, bounded, gap-free durable event snapshot."""
         rid = _control_id(run_id, "run_id")
-        token = self._api_key()
-        timeout = httpx.Timeout(
-            connect=self.settings.timeout_seconds,
-            read=min(self.settings.timeout_seconds, 0.25),
-            write=self.settings.timeout_seconds,
-            pool=self.settings.timeout_seconds,
-        )
-        chunks: list[bytes] = []
-        total = 0
+        self._require_control_ready(features=("run_events_snapshot",))
+        return self._read_run_event_snapshot(rid).events
+
+    def _read_run_event_snapshot(
+        self,
+        run_id: str,
+    ) -> _RunEventSnapshot:
         try:
-            with (
-                httpx.Client(
-                    base_url=self.base_url,
-                    timeout=timeout,
-                    follow_redirects=False,
-                    trust_env=False,
-                    transport=self._transport,
-                    headers={
-                        "accept": "text/event-stream",
-                        "authorization": f"Bearer {token}",
-                    },
-                ) as client,
-                client.stream(
-                    "GET",
-                    f"/v1/runs/{quote(rid, safe='')}/events",
-                ) as response,
-            ):
-                if response.status_code != 200:
-                    raw_error = response.read()
-                    raise HermesRunControlError(
-                        _upstream_error_code(raw_error)
-                        or (
-                            "run_not_found"
-                            if response.status_code == 404
-                            else "upstream_unavailable"
-                        ),
-                        "Hermes Run event replay is unavailable",
-                    )
-                if not response.headers.get("content-type", "").startswith(
-                    "text/event-stream"
-                ):
-                    raise HermesRunControlError(
-                        "invalid_upstream_response",
-                        "Hermes Run event replay response is invalid",
-                    )
-                try:
-                    for chunk in response.iter_bytes():
-                        total += len(chunk)
-                        if total > self.settings.max_response_bytes:
-                            raise HermesRunControlError(
-                                "response_too_large",
-                                "Hermes Run event replay exceeded the configured bound",
-                            )
-                        chunks.append(chunk)
-                except httpx.TimeoutException:
-                    if not chunks:
-                        raise
-        except HermesRunControlError:
-            raise
-        except httpx.TimeoutException as exc:
-            raise HermesRunControlError(
-                "upstream_timeout",
-                "Hermes Run event replay timed out",
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise HermesRunControlError(
-                "upstream_unavailable",
-                "Hermes Run event replay is unavailable",
-            ) from exc
-        events = _parse_run_sse(b"".join(chunks), expected_run_id=rid)
-        expected_seq = 1
-        for event in events:
-            if event["seq"] != expected_seq:
-                raise HermesRunControlError(
-                    "run_event_replay_incomplete",
-                    "Hermes Run event replay is not gap-free",
-                )
-            expected_seq += 1
-        return events
+            snapshot = self._get_json(
+                f"/v1/runs/{quote(run_id, safe='')}/events/snapshot",
+                not_found_code="run_not_found",
+                not_found_message="Hermes Run was not found",
+            )
+        except HermesApiReadError as exc:
+            raise HermesRunControlError(exc.code, exc.message) from exc
+        return _parse_run_event_snapshot(snapshot, expected_run_id=run_id)
 
     def _approval_observations(
         self,
         run_id: str,
-    ) -> dict[str, _ApprovalObservation]:
+    ) -> tuple[dict[str, _ApprovalObservation], bool]:
         observations: dict[str, _ApprovalObservation] = {}
-        for event in self.run_events(run_id):
+        rid = _control_id(run_id, "run_id")
+        snapshot = self._read_run_event_snapshot(rid)
+        for event in snapshot.events:
             event_type = event["event"]
             challenge_value = event.get("challenge_id")
             if event_type == "approval.request":
@@ -1049,7 +1002,7 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
                 observations[challenge_id] = _ApprovalObservation(
                     challenge_id=challenge_id,
                     approval_id=approval_id,
-                    run_id=run_id,
+                    run_id=rid,
                     action_digest=action_digest,
                     expires_at=expires_at,
                     state="pending",
@@ -1084,7 +1037,7 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
                     state="decided",
                     choice=str(choice),
                 )
-        return observations
+        return observations, snapshot.terminal
 
     def pending_approvals(
         self,
@@ -1095,11 +1048,25 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
                 "run_control_validation",
                 "run_ids must be a bounded distinct set",
             )
-        self._require_control_ready(feature="run_approval_response")
+        self._require_control_ready(
+            features=(
+                "run_approval_response",
+                "run_events_snapshot",
+                "run_status",
+            )
+        )
         pending: list[dict[str, object]] = []
         now = datetime.now(UTC)
         for run_id in sorted(run_ids):
-            for observation in self._approval_observations(run_id).values():
+            observations, snapshot_terminal = self._approval_observations(run_id)
+            run_status = self.run_status(run_id)
+            if (
+                snapshot_terminal
+                or run_status["status"] != "running"
+                or run_status.get("substate") == "stopping"
+            ):
+                continue
+            for observation in observations.values():
                 expiry = datetime.fromisoformat(
                     observation.expires_at.replace("Z", "+00:00")
                 )
@@ -1137,10 +1104,14 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
             expected_expires_at,
             "expected_expires_at",
         )
-        self._require_control_ready(feature="run_approval_response")
-        observation = self._approval_observations(rid).get(challenge)
+        self._require_control_ready(
+            features=("run_approval_response", "run_events_snapshot")
+        )
+        observations, snapshot_terminal = self._approval_observations(rid)
+        observation = observations.get(challenge)
         if (
             observation is None
+            or (snapshot_terminal and observation.state != "decided")
             or observation.action_digest != digest
             or observation.expires_at != expiry
             or (
@@ -1196,7 +1167,7 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
 
     def stop(self, run_id: str) -> StopResult:
         rid = _control_id(run_id, "run_id")
-        self._require_control_ready(feature="run_stop")
+        self._require_control_ready(features=("run_stop",))
         raw = self._post_json(
             f"/v1/runs/{quote(rid, safe='')}/stop",
             {},
@@ -1251,56 +1222,60 @@ def _upstream_error_code(raw: bytes) -> str | None:
     )
 
 
-def _parse_run_sse(
-    raw: bytes,
+def _parse_run_event_snapshot(
+    snapshot: Mapping[str, object],
     *,
     expected_run_id: str,
-) -> tuple[dict[str, object], ...]:
-    try:
-        text = raw.decode("utf-8", errors="strict").replace("\r\n", "\n")
-    except UnicodeDecodeError as exc:
+) -> _RunEventSnapshot:
+    if set(snapshot) != {"object", "run_id", "events", "head_seq", "terminal"}:
         raise HermesRunControlError(
             "invalid_upstream_response",
-            "Hermes Run event replay is invalid",
-        ) from exc
-    events: list[dict[str, object]] = []
-    for block in text.split("\n\n"):
-        if not block or block.startswith(":"):
-            continue
-        seq: int | None = None
-        event_type: str | None = None
-        data_lines: list[str] = []
-        for line in block.splitlines():
-            if line.startswith("id:"):
-                try:
-                    seq = int(line[3:].strip())
-                except ValueError:
-                    seq = None
-            elif line.startswith("event:"):
-                event_type = line[6:].strip()
-            elif line.startswith("data:"):
-                data_lines.append(line[5:].lstrip())
-        if seq is None or seq < 1 or not event_type or not data_lines:
+            "Hermes Run event snapshot envelope is invalid",
+        )
+    events = snapshot.get("events")
+    head_seq = snapshot.get("head_seq")
+    if (
+        snapshot.get("object") != "hermes.run_event.snapshot"
+        or snapshot.get("run_id") != expected_run_id
+        or type(events) is not list
+        or type(head_seq) is not int
+        or head_seq < 0
+        or len(events) != head_seq
+        or type(snapshot.get("terminal")) is not bool
+    ):
+        raise HermesRunControlError(
+            "invalid_upstream_response",
+            "Hermes Run event snapshot is invalid",
+        )
+
+    parsed: list[dict[str, object]] = []
+    event_ids: set[str] = set()
+    for expected_seq, event in enumerate(events, start=1):
+        if type(event) is not dict:
             raise HermesRunControlError(
                 "invalid_upstream_response",
-                "Hermes Run event frame is invalid",
+                "Hermes Run event snapshot contains an invalid event",
             )
-        try:
-            document = json.loads("\n".join(data_lines))
-        except json.JSONDecodeError as exc:
-            raise HermesRunControlError(
-                "invalid_upstream_response",
-                "Hermes Run event payload is invalid",
-            ) from exc
+        seq = event.get("seq")
+        event_type = event.get("event")
+        event_id = event.get("event_id")
         if (
-            not isinstance(document, dict)
-            or document.get("run_id") != expected_run_id
-            or document.get("seq") != seq
-            or document.get("event") != event_type
+            type(seq) is not int
+            or seq != expected_seq
+            or not isinstance(event_type, str)
+            or _CONTROL_ID_RE.fullmatch(event_type) is None
+            or not isinstance(event_id, str)
+            or _CONTROL_ID_RE.fullmatch(event_id) is None
+            or event_id in event_ids
+            or event.get("run_id") != expected_run_id
         ):
             raise HermesRunControlError(
-                "invalid_upstream_response",
-                "Hermes Run event identity is invalid",
+                "run_event_replay_incomplete",
+                "Hermes Run event snapshot identities are not gap-free and unique",
             )
-        events.append(document)
-    return tuple(events)
+        event_ids.add(event_id)
+        parsed.append(dict(event))
+    return _RunEventSnapshot(
+        events=tuple(parsed),
+        terminal=bool(snapshot["terminal"]),
+    )

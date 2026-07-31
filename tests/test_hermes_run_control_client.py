@@ -64,6 +64,7 @@ def _capabilities() -> dict[str, object]:
             "session_resources": True,
             "run_submission": True,
             "run_events_sse": True,
+            "run_events_snapshot": True,
             "run_status": True,
             "run_approval_response": True,
             "run_stop": True,
@@ -87,17 +88,17 @@ def _capabilities() -> dict[str, object]:
     }
 
 
-def _sse(*events: dict[str, object]) -> bytes:
-    frames: list[str] = []
-    for event in events:
-        seq = event["seq"]
-        event_type = event["event"]
-        frames.append(
-            f"id: {seq}\nevent: {event_type}\n"
-            f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
-        )
-    frames.append(": stream closed\n\n")
-    return "".join(frames).encode()
+def _snapshot(
+    *events: dict[str, object],
+    terminal: bool = False,
+) -> dict[str, object]:
+    return {
+        "object": "hermes.run_event.snapshot",
+        "run_id": RUN_ID,
+        "events": list(events),
+        "head_seq": len(events),
+        "terminal": terminal,
+    }
 
 
 def _approval_request(*, seq: int = 1) -> dict[str, object]:
@@ -122,12 +123,10 @@ def test_exact_pending_approval_is_verified_before_once_post(tmp_path: Path) -> 
         seen.append((request.method, request.url.path, body))
         if request.url.path == "/v1/capabilities":
             return httpx.Response(200, json=_capabilities())
-        if request.url.path == f"/v1/runs/{RUN_ID}/events":
-            return httpx.Response(
-                200,
-                content=_sse(_approval_request()),
-                headers={"content-type": "text/event-stream"},
-            )
+        if request.url.path == f"/v1/runs/{RUN_ID}/events/snapshot":
+            assert request.headers["authorization"] == "Bearer test-only-token"
+            assert request.headers["accept"] == "application/json"
+            return httpx.Response(200, json=_snapshot(_approval_request()))
         if request.url.path == f"/v1/runs/{RUN_ID}/approval":
             return httpx.Response(
                 200,
@@ -161,7 +160,7 @@ def test_exact_pending_approval_is_verified_before_once_post(tmp_path: Path) -> 
     assert result.waiter_signal_status == "confirmed"
     assert seen == [
         ("GET", "/v1/capabilities", None),
-        ("GET", f"/v1/runs/{RUN_ID}/events", None),
+        ("GET", f"/v1/runs/{RUN_ID}/events/snapshot", None),
         (
             "POST",
             f"/v1/runs/{RUN_ID}/approval",
@@ -174,6 +173,151 @@ def test_exact_pending_approval_is_verified_before_once_post(tmp_path: Path) -> 
     ]
 
 
+def test_pending_approval_projects_from_finite_nonterminal_snapshot(
+    tmp_path: Path,
+) -> None:
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json=_capabilities())
+        if request.url.path == f"/v1/runs/{RUN_ID}":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "hermes.run",
+                    "run_id": RUN_ID,
+                    "status": "running",
+                    "session_id": "web-session",
+                },
+            )
+        if request.url.path == f"/v1/runs/{RUN_ID}/events/snapshot":
+            return httpx.Response(
+                200,
+                json=_snapshot(_approval_request(), terminal=False),
+            )
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    client = OfficialHermesRunControlClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+
+    approvals = client.pending_approvals((RUN_ID,))
+
+    assert len(approvals) == 1
+    assert approvals[0]["approval_id"] == CHALLENGE_ID
+    assert seen == [
+        ("GET", "/v1/capabilities"),
+        ("GET", f"/v1/runs/{RUN_ID}/events/snapshot"),
+        ("GET", f"/v1/runs/{RUN_ID}"),
+    ]
+
+
+def test_terminal_run_never_projects_ghost_pending_approval(tmp_path: Path) -> None:
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json=_capabilities())
+        if request.url.path == f"/v1/runs/{RUN_ID}/events/snapshot":
+            return httpx.Response(
+                200,
+                json=_snapshot(_approval_request(), terminal=False),
+            )
+        if request.url.path == f"/v1/runs/{RUN_ID}":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "hermes.run",
+                    "run_id": RUN_ID,
+                    "status": "succeeded",
+                    "session_id": "web-session",
+                },
+            )
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    client = OfficialHermesRunControlClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.pending_approvals((RUN_ID,)) == ()
+    assert seen == [
+        ("GET", "/v1/capabilities"),
+        ("GET", f"/v1/runs/{RUN_ID}/events/snapshot"),
+        ("GET", f"/v1/runs/{RUN_ID}"),
+    ]
+
+
+def test_terminal_snapshot_marker_blocks_pending_even_if_status_is_running(
+    tmp_path: Path,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json=_capabilities())
+        if request.url.path == f"/v1/runs/{RUN_ID}/events/snapshot":
+            return httpx.Response(
+                200,
+                json=_snapshot(_approval_request(), terminal=True),
+            )
+        if request.url.path == f"/v1/runs/{RUN_ID}":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "hermes.run",
+                    "run_id": RUN_ID,
+                    "status": "running",
+                    "session_id": "web-session",
+                },
+            )
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    client = OfficialHermesRunControlClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.pending_approvals((RUN_ID,)) == ()
+
+
+def test_stopping_run_never_projects_pending_approval(tmp_path: Path) -> None:
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json=_capabilities())
+        if request.url.path == f"/v1/runs/{RUN_ID}/events/snapshot":
+            return httpx.Response(200, json=_snapshot(_approval_request()))
+        if request.url.path == f"/v1/runs/{RUN_ID}":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "hermes.run",
+                    "run_id": RUN_ID,
+                    "status": "running",
+                    "substate": "stopping",
+                    "session_id": "web-session",
+                },
+            )
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    client = OfficialHermesRunControlClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.pending_approvals((RUN_ID,)) == ()
+    assert seen == [
+        ("GET", "/v1/capabilities"),
+        ("GET", f"/v1/runs/{RUN_ID}/events/snapshot"),
+        ("GET", f"/v1/runs/{RUN_ID}"),
+    ]
+
+
 def test_stale_expiry_fails_closed_before_approval_post(tmp_path: Path) -> None:
     posts = 0
 
@@ -183,11 +327,7 @@ def test_stale_expiry_fails_closed_before_approval_post(tmp_path: Path) -> None:
             posts += 1
         if request.url.path == "/v1/capabilities":
             return httpx.Response(200, json=_capabilities())
-        return httpx.Response(
-            200,
-            content=_sse(_approval_request()),
-            headers={"content-type": "text/event-stream"},
-        )
+        return httpx.Response(200, json=_snapshot(_approval_request()))
 
     client = OfficialHermesRunControlClient(
         _settings(tmp_path),
@@ -208,7 +348,7 @@ def test_stale_expiry_fails_closed_before_approval_post(tmp_path: Path) -> None:
     assert posts == 0
 
 
-def test_exact_decision_replay_can_recover_unknown_waiter_after_restart(
+def test_terminal_exact_decision_replay_recovers_unknown_waiter_after_restart(
     tmp_path: Path,
 ) -> None:
     decision = {
@@ -225,11 +365,10 @@ def test_exact_decision_replay_can_recover_unknown_waiter_after_restart(
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/capabilities":
             return httpx.Response(200, json=_capabilities())
-        if request.url.path.endswith("/events"):
+        if request.url.path.endswith("/events/snapshot"):
             return httpx.Response(
                 200,
-                content=_sse(_approval_request(), decision),
-                headers={"content-type": "text/event-stream"},
+                json=_snapshot(_approval_request(), decision, terminal=True),
             )
         return httpx.Response(
             200,
@@ -329,17 +468,114 @@ def test_capability_failure_prevents_stop_post(tmp_path: Path) -> None:
     assert posts == 0
 
 
+def test_missing_snapshot_feature_prevents_approval_projection(
+    tmp_path: Path,
+) -> None:
+    capabilities = _capabilities()
+    del capabilities["features"]["run_events_snapshot"]  # type: ignore[index]
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        return httpx.Response(200, json=capabilities)
+
+    client = OfficialHermesRunControlClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HermesRunControlError) as exc:
+        client.pending_approvals((RUN_ID,))
+
+    assert exc.value.code == "durable_run_control_unavailable"
+    assert seen == [("GET", "/v1/capabilities")]
+
+
+def test_missing_run_status_feature_prevents_approval_projection(
+    tmp_path: Path,
+) -> None:
+    capabilities = _capabilities()
+    capabilities["features"]["run_status"] = False  # type: ignore[index]
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        return httpx.Response(200, json=capabilities)
+
+    client = OfficialHermesRunControlClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HermesRunControlError) as exc:
+        client.pending_approvals((RUN_ID,))
+
+    assert exc.value.code == "durable_run_control_unavailable"
+    assert seen == [("GET", "/v1/capabilities")]
+
+
+def test_run_event_snapshot_read_requires_snapshot_feature(tmp_path: Path) -> None:
+    capabilities = _capabilities()
+    capabilities["features"]["run_events_snapshot"] = False  # type: ignore[index]
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        return httpx.Response(200, json=capabilities)
+
+    client = OfficialHermesRunControlClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HermesRunControlError) as exc:
+        client.run_events(RUN_ID)
+
+    assert exc.value.code == "durable_run_control_unavailable"
+    assert seen == [("GET", "/v1/capabilities")]
+
+
+def test_run_event_snapshot_uses_configured_response_byte_bound(
+    tmp_path: Path,
+) -> None:
+    settings = HermesGatewaySettings(
+        enabled=True,
+        base_url="http://127.0.0.1:8642",
+        api_key_file=_token_file(tmp_path),
+        timeout_seconds=0.2,
+        max_response_bytes=4096,
+    )
+    oversized_event = dict(_approval_request(), payload="x" * 8192)
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json=_capabilities())
+        return httpx.Response(200, json=_snapshot(oversized_event))
+
+    client = OfficialHermesRunControlClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HermesRunControlError) as exc:
+        client.run_events(RUN_ID)
+
+    assert exc.value.code == "response_too_large"
+    assert seen == [
+        ("GET", "/v1/capabilities"),
+        ("GET", f"/v1/runs/{RUN_ID}/events/snapshot"),
+    ]
+
+
 def test_event_gap_is_not_accepted_as_approval_authority(tmp_path: Path) -> None:
     request = _approval_request(seq=2)
 
     def handler(http_request: httpx.Request) -> httpx.Response:
         if http_request.url.path == "/v1/capabilities":
             return httpx.Response(200, json=_capabilities())
-        return httpx.Response(
-            200,
-            content=_sse(request),
-            headers={"content-type": "text/event-stream"},
-        )
+        return httpx.Response(200, json=_snapshot(request))
 
     client = OfficialHermesRunControlClient(
         _settings(tmp_path),
@@ -357,3 +593,52 @@ def test_event_gap_is_not_accepted_as_approval_authority(tmp_path: Path) -> None
         )
 
     assert exc.value.code == "run_event_replay_incomplete"
+
+
+@pytest.mark.parametrize(
+    ("malformation", "expected_code"),
+    [
+        ("extra_envelope_field", "invalid_upstream_response"),
+        ("head_mismatch", "invalid_upstream_response"),
+        ("terminal_not_boolean", "invalid_upstream_response"),
+        ("duplicate_event_id", "run_event_replay_incomplete"),
+    ],
+)
+def test_malformed_event_snapshot_fails_closed_before_status_projection(
+    tmp_path: Path,
+    malformation: str,
+    expected_code: str,
+) -> None:
+    snapshot = _snapshot(_approval_request())
+    if malformation == "extra_envelope_field":
+        snapshot["secret"] = "must-not-be-consumed"
+    elif malformation == "head_mismatch":
+        snapshot["head_seq"] = 2
+    elif malformation == "terminal_not_boolean":
+        snapshot["terminal"] = 0
+    else:
+        duplicate = dict(_approval_request(seq=2), event_id="event-1")
+        snapshot = _snapshot(_approval_request(), duplicate)
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json=_capabilities())
+        if request.url.path == f"/v1/runs/{RUN_ID}/events/snapshot":
+            return httpx.Response(200, json=snapshot)
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    client = OfficialHermesRunControlClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HermesRunControlError) as exc:
+        client.pending_approvals((RUN_ID,))
+
+    assert exc.value.code == expected_code
+    assert seen == [
+        ("GET", "/v1/capabilities"),
+        ("GET", f"/v1/runs/{RUN_ID}/events/snapshot"),
+    ]

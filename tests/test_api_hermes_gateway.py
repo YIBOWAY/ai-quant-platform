@@ -16,6 +16,7 @@ class _FakeHermesReadClient:
                 "session_resources": True,
                 "run_submission": True,
                 "run_events_sse": True,
+                "run_events_snapshot": True,
                 "run_status": True,
                 "run_approval_response": True,
                 "run_stop": True,

@@ -197,6 +197,7 @@ def test_client_calls_only_allowlisted_gets_and_keeps_bearer_server_side(
                         "session_resources": True,
                         "run_submission": True,
                         "run_events_sse": True,
+                        "run_events_snapshot": True,
                         "run_status": True,
                         "run_approval_response": True,
                         "run_stop": True,
@@ -257,6 +258,7 @@ def test_client_calls_only_allowlisted_gets_and_keeps_bearer_server_side(
 
     assert capabilities["model"] == "codex-local"
     assert capabilities["features"]["session_resources"] is True
+    assert capabilities["features"]["run_events_snapshot"] is True
     assert capabilities["features"]["managed_run_sessions"] is True
     assert capabilities["contract_version"] == 1
     assert capabilities["runtime"] == {

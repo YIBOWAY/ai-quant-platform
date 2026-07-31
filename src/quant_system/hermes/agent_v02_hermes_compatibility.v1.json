@@ -6,6 +6,7 @@
     "session_resources",
     "run_submission",
     "run_events_sse",
+    "run_events_snapshot",
     "run_status",
     "run_approval_response",
     "run_stop",
@@ -48,6 +49,10 @@
     {
       "method": "GET",
       "path": "/v1/runs/{run_id}/events"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runs/{run_id}/events/snapshot"
     },
     {
       "method": "POST",

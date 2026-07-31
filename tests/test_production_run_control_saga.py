@@ -525,3 +525,88 @@ def test_database_outage_does_not_project_ready_empty_approvals(
     assert projection["authority_health"]["command_approval"] == "unavailable"
     assert projection["authority_health"]["hermes_gateway"] == "unavailable"
     assert calls == 0
+
+
+def test_approval_projection_failure_logs_only_code_and_run_count(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from quant_system.hermes import agent_workspace
+    from quant_system.hermes.agent_workspace import PlatformAgentWorkspace
+
+    secret_message = f"Bearer must-not-log for {RUN_ID}"
+
+    class _ProjectionControl:
+        failing = True
+
+        def pending_approvals(
+            self,
+            _run_ids: tuple[str, ...],
+        ) -> tuple[dict[str, object], ...]:
+            if self.failing:
+                raise HermesRunControlError(
+                    "run_event_replay_incomplete",
+                    secret_message,
+                )
+            return ()
+
+    control = _ProjectionControl()
+
+    monkeypatch.setattr(
+        agent_workspace,
+        "OfficialHermesRunControlClient",
+        lambda _settings: control,
+    )
+    monkeypatch.setattr(
+        agent_workspace,
+        "_APPROVAL_PROJECTION_LAST_ERROR_CODE",
+        None,
+    )
+    workspace = PlatformAgentWorkspace(
+        Settings(
+            database=DatabaseSettings(enabled=False, auto_migrate=False),
+            hermes_gateway=HermesGatewaySettings(enabled=True),
+        )
+    )
+    caplog.set_level("WARNING", logger="quant_system.hermes.agent_workspace")
+
+    projection = workspace._authority_spine_projections(  # noqa: SLF001
+        WORKSPACE_ID,
+        hermes_run_ids=(RUN_ID,),
+    )
+    repeated = workspace._authority_spine_projections(  # noqa: SLF001
+        WORKSPACE_ID,
+        hermes_run_ids=(RUN_ID,),
+    )
+
+    control.failing = False
+    recovered = workspace._authority_spine_projections(  # noqa: SLF001
+        WORKSPACE_ID,
+        hermes_run_ids=(RUN_ID,),
+    )
+    control.failing = True
+    failed_after_recovery = workspace._authority_spine_projections(  # noqa: SLF001
+        WORKSPACE_ID,
+        hermes_run_ids=(RUN_ID,),
+    )
+
+    assert projection["approvals"] == ()
+    assert projection["authority_health"]["command_approval"] == "unavailable"
+    assert projection["authority_health"]["hermes_gateway"] == "unavailable"
+    assert repeated["authority_health"]["command_approval"] == "unavailable"
+    assert recovered["authority_health"]["command_approval"] == "ready"
+    assert failed_after_recovery["authority_health"]["command_approval"] == "unavailable"
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "quant_system.hermes.agent_workspace"
+    ]
+    assert len(records) == 2
+    assert all(
+        record.getMessage() == "Hermes approval projection unavailable"
+        for record in records
+    )
+    assert all(record.error_code == "run_event_replay_incomplete" for record in records)
+    assert all(record.run_count == 1 for record in records)
+    assert secret_message not in caplog.text
+    assert RUN_ID not in caplog.text

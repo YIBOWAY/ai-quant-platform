@@ -148,6 +148,7 @@ def _capabilities(*, observed_at: datetime = NOW) -> HermesDurableCapabilityObse
                 "session_resources": True,
                 "run_submission": True,
                 "run_events_sse": True,
+                "run_events_snapshot": True,
                 "run_status": True,
                 "run_approval_response": True,
                 "run_stop": True,

@@ -73,6 +73,7 @@ class _Reader:
         return {
             "features": {
                 "run_events_sse": True,
+                "run_events_snapshot": True,
                 "run_status": True,
             },
             "durable": {

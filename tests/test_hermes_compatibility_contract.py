@@ -11,6 +11,7 @@ def test_agent_v02_compatibility_manifest_is_closed_and_runtime_loadable() -> No
     assert contract.schema_version == 1
     assert contract.profile == "local_agent_v0_2"
     assert "managed_run_sessions" in contract.required_bool_features
+    assert "run_events_snapshot" in contract.required_bool_features
     assert contract.required_exact_features == {
         "managed_run_history_authority": "hermes_session_db",
         "managed_session_fork_mode": "preserve_source_exact_message_cursor",
@@ -28,4 +29,8 @@ def test_agent_v02_compatibility_manifest_is_closed_and_runtime_loadable() -> No
         "session-fork",
     )
     assert ("POST", "/v1/runs") in contract.http_endpoints
+    assert (
+        "GET",
+        "/v1/runs/{run_id}/events/snapshot",
+    ) in contract.http_endpoints
     assert ("POST", "/api/sessions/{session_id}/fork") in contract.http_endpoints

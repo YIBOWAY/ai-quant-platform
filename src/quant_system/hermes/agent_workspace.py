@@ -11,6 +11,8 @@ submission saga against the isolated database only.
 
 from __future__ import annotations
 
+import logging
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -51,6 +53,27 @@ from quant_system.hermes.submission_saga import (
     submit_action,
 )
 from quant_system.storage.database import get_database
+
+logger = logging.getLogger(__name__)
+
+_APPROVAL_PROJECTION_LOG_LOCK = threading.Lock()
+_APPROVAL_PROJECTION_LAST_ERROR_CODE: str | None = None
+
+
+def _approval_projection_error_transition(error_code: str) -> bool:
+    """Return true once per contiguous projection-error code."""
+    global _APPROVAL_PROJECTION_LAST_ERROR_CODE
+    with _APPROVAL_PROJECTION_LOG_LOCK:
+        if error_code == _APPROVAL_PROJECTION_LAST_ERROR_CODE:
+            return False
+        _APPROVAL_PROJECTION_LAST_ERROR_CODE = error_code
+        return True
+
+
+def _approval_projection_recovered() -> None:
+    global _APPROVAL_PROJECTION_LAST_ERROR_CODE
+    with _APPROVAL_PROJECTION_LOG_LOCK:
+        _APPROVAL_PROJECTION_LAST_ERROR_CODE = None
 
 # HQA-aligned public recovery codes (strings only; no HQA import).
 _RECOVERY_RESNAPSHOT = "resnapshot_workspace"
@@ -605,10 +628,20 @@ class PlatformAgentWorkspace:
                     approvals = self._run_control_adapter.pending_approvals(
                         hermes_run_ids
                     )
-                except HermesRunControlError:
+                except HermesRunControlError as exc:
+                    error_code = str(exc.code)[:128]
+                    if _approval_projection_error_transition(error_code):
+                        logger.warning(
+                            "Hermes approval projection unavailable",
+                            extra={
+                                "error_code": error_code,
+                                "run_count": len(hermes_run_ids),
+                            },
+                        )
                     durable_health["command_approval"] = "unavailable"
                     durable_health["hermes_gateway"] = "unavailable"
                 else:
+                    _approval_projection_recovered()
                     durable_health["command_approval"] = "ready"
                     durable_health["hermes_gateway"] = "ready"
             return {
