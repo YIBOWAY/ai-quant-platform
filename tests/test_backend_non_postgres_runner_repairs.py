@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +34,16 @@ def test_public_runner_binds_node_as_a_helper_only_runtime(tmp_path: Path) -> No
         "import json, sys\nprint(json.dumps(sys.argv[1:]))\n",
         encoding="utf-8",
     )
+    runtime_bin = tmp_path / "runtime-bin"
+    runtime_bin.mkdir()
+    python = runtime_bin / "python3.11"
+    python.symlink_to(Path(sys.executable).resolve())
+    uv = runtime_bin / "uv"
+    uv.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    uv.chmod(0o755)
+    node = runtime_bin / "node"
+    node.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    node.chmod(0o755)
 
     completed = subprocess.run(
         ["bash", str(wrapper), "--describe"],
@@ -39,15 +51,14 @@ def test_public_runner_binds_node_as_a_helper_only_runtime(tmp_path: Path) -> No
         check=False,
         capture_output=True,
         text=True,
+        env={**os.environ, "PATH": f"{runtime_bin}{os.pathsep}{os.defpath}"},
     )
 
     assert completed.returncode == 0, completed.stderr
     helper_argv = json.loads(completed.stdout)
     node_index = helper_argv.index("--node")
     public_boundary = helper_argv.index("--public-argv")
-    expected_node = shutil.which("node")
-    assert expected_node is not None
-    assert Path(helper_argv[node_index + 1]).resolve() == Path(expected_node).resolve()
+    assert Path(helper_argv[node_index + 1]).resolve() == node.resolve()
     assert node_index < helper_argv.index("--public-entrypoint") < public_boundary
 
 

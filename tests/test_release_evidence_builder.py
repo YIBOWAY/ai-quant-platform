@@ -147,13 +147,36 @@ def _runtime_roots(tmp_path: Path) -> tuple[dict[str, Path], dict[str, dict[str,
     return roots, runtime
 
 
-def _node_executable() -> Path:
-    configured = os.environ.get("QS_QUANT_FRONTEND_NODE_BIN")
-    observed = configured or shutil.which("node")
-    assert observed is not None
-    node = Path(observed).expanduser().resolve()
-    assert node.is_file()
-    return node
+def _fake_node_executable(tmp_path: Path) -> Path:
+    node = tmp_path / "fake-node-bin" / "node"
+    node.parent.mkdir(exist_ok=True)
+    node.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "[ \"${PYTHONPATH+x}\" != x ] || exit 41\n"
+        "[ \"${PYTEST_ADDOPTS+x}\" != x ] || exit 42\n"
+        "[ \"${PYTEST_PLUGINS+x}\" != x ] || exit 43\n"
+        "[ \"${PYTHONSTARTUP+x}\" != x ] || exit 44\n"
+        "[ \"${COVERAGE_PROCESS_START+x}\" != x ] || exit 45\n"
+        "[ \"${OPENAI_API_KEY+x}\" != x ] || exit 46\n"
+        "[ \"${QS_DATABASE_URL+x}\" != x ] || exit 47\n"
+        "[ \"${PYTEST_DISABLE_PLUGIN_AUTOLOAD:-}\" = 1 ] || exit 48\n"
+        "junit=''\n"
+        "for argument in \"$@\"; do\n"
+        "  case \"$argument\" in\n"
+        "    --outputFile=*) junit=${argument#--outputFile=} ;;\n"
+        "  esac\n"
+        "done\n"
+        "[ -n \"$junit\" ] || exit 49\n"
+        "printf '%s\\n' "
+        "'<testsuites tests=\"1\" failures=\"0\" errors=\"0\" skipped=\"0\">"
+        "<testsuite name=\"frontend\" tests=\"1\" failures=\"0\" errors=\"0\" "
+        "skipped=\"0\"><testcase classname=\"frontend\" name=\"sealed-env\"/>"
+        "</testsuite></testsuites>' > \"$junit\"\n",
+        encoding="utf-8",
+    )
+    node.chmod(0o755)
+    return node.resolve()
 
 
 def _test_receipts(
@@ -179,7 +202,7 @@ def _test_receipts(
         if name == "frontend":
             cwd = roots["platform"] / "src/frontend"
             argv = (
-                str(_node_executable()),
+                str(_fake_node_executable(tmp_path)),
                 str(cwd / "node_modules" / "vitest" / "vitest.mjs"),
                 "run",
                 "--reporter=junit",
@@ -895,7 +918,7 @@ def test_run_suite_rejects_partial_or_substituted_suite_selectors(
         run_test_suite(
             name="frontend",
             argv=(
-                str(_node_executable()),
+                str(_fake_node_executable(tmp_path)),
                 str(frontend / "node_modules" / "vitest" / "vitest.mjs"),
                 "run",
                 "release-receipt.test.js",

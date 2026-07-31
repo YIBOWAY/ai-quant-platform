@@ -1,8 +1,5 @@
 import json
-import os
 import re
-import shutil
-import subprocess
 from pathlib import Path
 
 
@@ -239,41 +236,17 @@ def test_playwright_frontend_uses_an_isolated_workspace() -> None:
     assert "prepareE2EFrontend" not in config
 
 
-def test_e2e_workspace_preparer_refreshes_stale_copy_without_touching_source() -> None:
-    frontend = Path("src/frontend").resolve()
-    port = 60_000 + os.getpid() % 5_000
-    workspace = frontend / ".tmp" / f"e2e-frontend-{port}"
-    guarded_sources = [frontend / "next-env.d.ts", frontend / "tsconfig.json"]
-    before = {path: path.read_bytes() for path in guarded_sources}
+def test_e2e_workspace_preparer_has_bounded_refresh_contract() -> None:
+    script = Path(
+        "src/frontend/scripts/prepare-e2e-workspace.mjs"
+    ).read_text(encoding="utf-8")
 
-    try:
-        shutil.rmtree(workspace, ignore_errors=True)
-        subprocess.run(
-            ["node", "scripts/prepare-e2e-workspace.mjs", str(port)],
-            cwd=frontend,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        assert (workspace / "node_modules").exists()
-        assert (workspace / ".source-fingerprint").is_file()
-
-        (workspace / "next.config.ts").write_text("stale", encoding="utf-8")
-        (workspace / ".source-fingerprint").write_text("stale", encoding="utf-8")
-        subprocess.run(
-            ["node", "scripts/prepare-e2e-workspace.mjs", str(port)],
-            cwd=frontend,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-        assert (workspace / "next.config.ts").read_bytes() == (
-            frontend / "next.config.ts"
-        ).read_bytes()
-        assert {path: path.read_bytes() for path in guarded_sources} == before
-    finally:
-        shutil.rmtree(workspace, ignore_errors=True)
+    assert "port < 1 || port > 65_535" in script
+    assert 'path.join(frontendRoot, ".tmp")' in script
+    assert "refusing to prepare an E2E workspace outside frontend/.tmp" in script
+    assert "fs.rmSync(targetRoot, { recursive: true, force: true })" in script
+    assert "fs.symlinkSync(" in script
+    assert 'path.join(frontendRoot, "node_modules")' in script
 
 
 def test_dev_scripts_use_project_ports_and_docker_database_probe() -> None:

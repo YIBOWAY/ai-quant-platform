@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -22,11 +21,32 @@ from quant_system.hermes.release_evidence_builder import (
 _TEST_NAMES = ("platform", "hqa", "hermes_focused", "frontend")
 
 
-def _node_executable() -> str:
-    configured = os.environ.get("QS_QUANT_FRONTEND_NODE_BIN")
-    discovered = configured or shutil.which("node")
-    assert discovered is not None
-    return str(Path(discovered).resolve())
+def _fake_node_executable(tmp_path: Path) -> str:
+    node = tmp_path / "fake-node-bin" / "node"
+    node.parent.mkdir(exist_ok=True)
+    node.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "[ \"${PYTHONPATH+x}\" != x ] || exit 41\n"
+        "[ \"${PYTEST_ADDOPTS+x}\" != x ] || exit 42\n"
+        "[ \"${PYTEST_PLUGINS+x}\" != x ] || exit 43\n"
+        "[ \"${PYTEST_DISABLE_PLUGIN_AUTOLOAD:-}\" = 1 ] || exit 44\n"
+        "junit=''\n"
+        "for argument in \"$@\"; do\n"
+        "  case \"$argument\" in\n"
+        "    --outputFile=*) junit=${argument#--outputFile=} ;;\n"
+        "  esac\n"
+        "done\n"
+        "[ -n \"$junit\" ] || exit 45\n"
+        "printf '%s\\n' "
+        "'<testsuites tests=\"1\" failures=\"0\" errors=\"0\" skipped=\"0\">"
+        "<testsuite name=\"frontend\" tests=\"1\" failures=\"0\" errors=\"0\" "
+        "skipped=\"0\"><testcase classname=\"frontend\" name=\"sealed-env\"/>"
+        "</testsuite></testsuites>' > \"$junit\"\n",
+        encoding="utf-8",
+    )
+    node.chmod(0o755)
+    return str(node.resolve())
 
 
 def _run(*argv: str, cwd: Path) -> str:
@@ -119,7 +139,7 @@ def _receipt_paths(tmp_path: Path, roots: dict[str, Path]) -> tuple[Path, ...]:
         if name == "frontend":
             cwd = roots["platform"] / "src/frontend"
             argv = (
-                _node_executable(),
+                _fake_node_executable(tmp_path),
                 str(cwd / "node_modules" / "vitest" / "vitest.mjs"),
                 "run",
                 "--reporter=junit",

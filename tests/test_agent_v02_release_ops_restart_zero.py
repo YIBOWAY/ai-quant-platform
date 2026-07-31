@@ -304,6 +304,14 @@ def test_frontend_build_environment_strips_backend_secrets_and_proxies(
     npm.parent.mkdir()
     npm.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     npm.chmod(0o755)
+    node = npm.parent / "node"
+    node.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    node.chmod(0o755)
+    monkeypatch.setattr(
+        restart_stack.shutil,
+        "which",
+        lambda name: str(node) if name == "node" else None,
+    )
 
     environment, authority = restart_stack._frontend_build_environment(
         npm=npm,

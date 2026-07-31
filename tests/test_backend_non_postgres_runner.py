@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -45,13 +46,29 @@ expected_skip_node_ids = []
     (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
 
 
-def test_runner_describes_commit_bound_gate2_contract() -> None:
+def _runner_environment(tmp_path: Path) -> dict[str, str]:
+    runtime_bin = tmp_path / "runner-runtime-bin"
+    runtime_bin.mkdir()
+    python = runtime_bin / "python3.11"
+    python.symlink_to(Path(sys.executable).resolve())
+    for name in ("uv", "node"):
+        executable = runtime_bin / name
+        executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        executable.chmod(0o755)
+    return {
+        **os.environ,
+        "PATH": f"{runtime_bin}{os.pathsep}{os.defpath}",
+    }
+
+
+def test_runner_describes_commit_bound_gate2_contract(tmp_path: Path) -> None:
     completed = subprocess.run(
         ["bash", str(RUNNER), "--describe"],
         cwd=ROOT,
         check=False,
         capture_output=True,
         text=True,
+        env=_runner_environment(tmp_path),
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -102,13 +119,16 @@ def test_runner_describes_commit_bound_gate2_contract() -> None:
     }
 
 
-def test_runner_self_test_exercises_fail_closed_result_validation() -> None:
+def test_runner_self_test_exercises_fail_closed_result_validation(
+    tmp_path: Path,
+) -> None:
     completed = subprocess.run(
         ["bash", str(RUNNER), "--self-test"],
         cwd=ROOT,
         check=False,
         capture_output=True,
         text=True,
+        env=_runner_environment(tmp_path),
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -218,6 +238,7 @@ def test_public_runner_forwards_exact_public_argv_to_helper(tmp_path: Path) -> N
         check=False,
         capture_output=True,
         text=True,
+        env=_runner_environment(tmp_path),
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -478,6 +499,7 @@ def test_runner_rejects_a_checkout_that_does_not_match_expected_commit(
         check=False,
         capture_output=True,
         text=True,
+        env=_runner_environment(tmp_path),
     )
 
     assert completed.returncode == 78
