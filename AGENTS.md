@@ -68,11 +68,15 @@ data/                     Local cache, fixtures, generated research outputs.
   operator window subsequently observed one 028 marker at version 1, exact two
   `ENABLE ALWAYS` binding triggers, schema fingerprint
   `e3f713ac05a1a990cfa9be45157e880e06709c425a4883736544d8f2b626f33a`,
-  live readiness plus `/api/safety/effective`, and a passing local-private E2E
-  with zero orders. The exact candidate was then revoked, the connector was
-  returned to `reconcile_only`, and public release remained OFF. This dated
-  observation does not authorize reapplying 028 or opening another window; use
-  the local-stack runbook and the cross-repo AlphaZeroBeta audit for evidence.
+  live readiness plus `/api/safety/effective`, and a zero-order AlphaZeroBeta
+  retest whose Web/session/dispatch/provider/approval/durable-Run/PDF/persistence
+  mechanics passed. Its research verdict is nevertheless unverified and not
+  accepted: no runtime-enforced, digest-bound `hqa.paper_intake/v1` receipt and
+  verifier existed, so factor/backtest/Gate/result work was not evaluated. The
+  candidate was then revoked, the connector returned to `reconcile_only`, and
+  public release remained OFF. This dated observation does not authorize
+  reapplying 028 or opening another window; use the local-stack runbook and the
+  cross-repo AlphaZeroBeta audit for evidence.
 - Backend startup never applies migrations. Keep
   `QS_DATABASE_AUTO_MIGRATE=false`; a future migration requires the explicit
   `quant-system migrate --apply --allow <exact-file>` operator path and fresh
@@ -206,6 +210,12 @@ data/                     Local cache, fixtures, generated research outputs.
   them deterministically, but must not revive a platform-side LLM runner.
   Candidate publication is immutable after atomic publish; same-ID retries are
   idempotent only for the same manifest digest.
+- Paper-intake acceptance is a runtime contract, not a skill/prompt convention.
+  A succeeded Command/Run, provider calls, direct PDF/full-text reads, or skill
+  instructions do not establish an accepted actionable/non-actionable verdict.
+  Until a digest-bound `hqa.paper_intake/v1` receipt is enforced and verified at
+  runtime, report the verdict as `unverified/not accepted` and downstream
+  factor/backtest/Gate/result work as `not evaluated`.
 
 ### Storage and PostgreSQL
 

@@ -31,11 +31,15 @@ process, or authorized. Recheck every fact in the actual operator window; do
 not copy this dated observation forward.
 Nothing in this runbook sets `release_authorized=true` or opens public write.
 
-### Completed operator-window observation (2026-08-01)
+### Completed operator-window and AlphaZeroBeta retest (2026-08-01)
 
 The retained 2026-07-31 text above is the pre-apply snapshot. In the exact
 authorized follow-up window, Platform commit `2eb714d1ef4ece96a664a816b1f3392d1640809e`
-was observed with:
+was installed for the one-time migration apply. The later formal AlphaZeroBeta
+retest bound Platform `53f7280dbd66ecb79add9fc377db2de8a3d22edd`, HQA
+`669c247f8b0d33c8a90e6381c3f0828519304816`, and Hermes
+`199a251d20ec62be3845681f40d220a40fabd7d8`; do not collapse those identities
+into the earlier apply snapshot. The live database was observed with:
 
 - one `agent_v02_candidate_paper_fence_meta` row at schema version 1, schema
   fingerprint
@@ -46,16 +50,53 @@ was observed with:
   provider-free `GET /api/safety/effective`;
 - `dry_run=true`, `paper_trading=true`, `live_trading_enabled=false`, and
   `kill_switch=true` throughout;
-- one successful bounded local-private candidate E2E with zero orders, followed
-  by exact candidate revocation and return of the connector to `reconcile_only`;
 - public release/write fields still OFF.
 
-The formal preflight manifest is
-`/Users/sunyibo/programs/Hermes-quant-agent/artifacts/alphazerobeta-compat-fix-e2e-20260731.luZH43/candidate-preflight-release-final/bundle/agent-v0.2-candidate-evidence.json`.
+The subsequent AlphaZeroBeta retest has two separate verdicts. Do not collapse
+them into one “E2E passed” claim:
+
+| Layer | Verdict | Observed evidence |
+|---|---|---|
+| Mechanical lifecycle | **PASS** | Web UI, managed Session, dispatch, real provider, command approval, durable Run, direct PDF/full-text reads, and database persistence completed. The actual 13 tool calls were `web_search=0`, `web_extract=1` (failed), `terminal=5`, `read_file=5`, and `skill_view=2`. |
+| Paper-intake research contract | **UNVERIFIED / NOT ACCEPTED** | The successful lifecycle did not produce or verify a runtime-enforced, digest-bound `hqa.paper_intake/v1` receipt. Skill-only hardening did not constrain the research verdict and is not an accepted mitigation. |
+| Factor/backtest/Gate/result continuation | **NOT EVALUATED** | Because the upstream paper-intake verdict was not accepted, zero downstream rows cannot be relabeled `EXPECTED_NOT_REACHED` or used as evidence of a correct non-actionable branch. |
+| Trading safety | **PASS** | The canonical order state did not change and the retest placed zero orders. |
+
+The exact lifecycle identity was:
+
+```text
+Platform Session: wm_39f4577b534c9a9bca8eb5c634339408
+Hermes Session:   web_39f4577b534c9a9bca8eb5c634339408cd82dd74
+Command:          850d34cd-6286-4fdb-9151-4c6b333ef895
+Hermes Run:       run_7cf82203191743ff85cb373285579ab6
+Candidate:        candidate_087abe73ffb54fb9914fac6817862c01 (revoked)
+```
+
+The PostgreSQL retest counts were `primary=1`, `approval_control=2`,
+`hermes_run=1`, `workflow_binding=0`, `gate_challenge=0`, `gate_action=0`,
+`gate_completion=0`, `run_link=0`, `typed_result=0`, `platform_run=0`, and
+`platform_backtest=0`. Those zeros describe **not evaluated** downstream work;
+they do not validate the research verdict.
+
+The canonical order snapshot SHA-256 was
+`c4d6979ffddeed35fad34ca6daef30907c7bc8036297ce0b6332b6bfa1ad295d`:
+one account, 12 ledger facts, zero pending orders, and three positions. All four
+order-table delta counts were zero and paper-authority epoch `197` was unchanged.
+Cleanup revoked the exact candidate, restored the connector to `reconcile_only`,
+and left `chat_write_ready=false` with blocker `candidate_admission_missing`,
+`public_chat_write_ready=false`, `public_write_authorized=false`,
+`release_authorized=false`, `kill_switch=true`, `paper_trading=true`, and
+`live_trading_enabled=false`.
+
+The formal retest preflight manifest is
+`/Users/sunyibo/programs/Hermes-quant-agent/artifacts/alphazerobeta-websearch-retest-20260801.pEDa3x/preflight/agent-v0.2-candidate-evidence.json`
+(SHA-256
+`eba8099bf3801927f3d93b40d1e133546d7cbcc4eece4c58b416bf52bd29a136`);
+its candidate suite recorded `5632 passed / 272 skipped / 0 failed`.
 The cross-repo trace and database/browser evidence are recorded in the exact
 HQA runtime repository as
-`docs/audits/2026-07-31-alphazerobeta-paper-research-web-e2e.md`; do not
-duplicate them here. This is a dated observation, not authority to
+`/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/Hermes-quant-agent/docs/audits/2026-07-31-alphazerobeta-paper-research-web-e2e.md`;
+do not duplicate them here. This is a dated observation, not authority to
 reapply 028, reuse the revoked candidate, or open public write. Re-run all
 status and readiness checks before any future candidate or release window.
 
@@ -408,6 +449,21 @@ historical/external session read-only behavior plus explicit exact fork,
 approval/stop/result evidence, both vertical flows, and zero orders. External
 or historical sessions never become writable in place. Any uncertainty closes
 the candidate and keeps public standing OFF.
+
+### Paper-intake acceptance gate (P1 open)
+
+For a paper-research task, lifecycle success is necessary but not sufficient.
+Do not accept a research verdict from a succeeded Command/Run, provider usage,
+tool counts, direct PDF/full-text reads, or skill instructions alone. A future
+candidate must provide a runtime-enforced, digest-bound `hqa.paper_intake/v1`
+receipt and pass its verifier before the verdict can authorize a downstream
+classification or a deliberate no-op branch.
+
+Until that receipt/verifier exists and passes, record the paper-intake verdict
+as `unverified/not accepted` and factor, backtest, Gate, Run-link, and typed-
+result work as `not evaluated`. Keep candidate acceptance, release, and public
+write closed. This P1 is an application/runtime contract gap; changing a skill
+prompt alone does not close it.
 
 ## Pre-028 restore
 

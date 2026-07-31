@@ -14,7 +14,8 @@
 | 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 Hermes 壳与可回滚默认首页已交付。Approvals 保持证据只读（`approvalMutations=false`）；official Hermes API 会话读取已接入（`sessionRead=true`）。3E-A 又交付只读 Unified Results 目录/详情，但完整切流仍关闭。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
 | 唯一运维权威 | [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 唯一维护 migration、backup、isolated replay、readiness、restart、candidate E2E 与 pre-028 restore 的文档；其他 runbook 只解释组件。 |
 | 应用前历史快照 | source/change set 016–028；live 现场只读核对 2026-07-31 | inspected 016–027 markers 存在；当时 028 marker 不存在，运行后端尚无 `/api/safety/effective`。这是保留的 pre-apply 快照，不描述当前 live 状态。 |
-| 028 operator window | 2026-08-01 现场观察；详见 [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 028 marker=1/version=1，exact two binding triggers 均为 `ENABLE ALWAYS`，schema fingerprint `e3f713ac05a1a990cfa9be45157e880e06709c425a4883736544d8f2b626f33a`；正常重启、readiness、`/api/safety/effective` 与 local-private candidate E2E 通过，零订单。candidate 随后 revoked，connector 已回 `reconcile_only`，public release 仍 OFF；该快照不授权重放 028。 |
+| 028 operator window | 2026-08-01 现场观察；详见 [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 028 marker=1/version=1，exact two binding triggers 均为 `ENABLE ALWAYS`，schema fingerprint `e3f713ac05a1a990cfa9be45157e880e06709c425a4883736544d8f2b626f33a`；一次性 apply 后的正常重启、readiness 与 `/api/safety/effective` 通过。该快照不证明论文研究语义，也不授权重放 028。 |
+| AlphaZeroBeta 重测 | `/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/Hermes-quant-agent/docs/audits/2026-07-31-alphazerobeta-paper-research-web-e2e.md` | Web/UI、Session、dispatch、provider、approval、durable Run、直接 PDF/全文读取与数据库持久化等机械生命周期通过，zero orders；但论文研究 verdict 为 **UNVERIFIED / NOT ACCEPTED**。Skill-only 约束没有形成 runtime-enforced、digest-bound `hqa.paper_intake/v1` receipt/verifier，因此 factor/backtest/Gate/result 为 **NOT EVALUATED**，不能写成正确跳过。正式候选套件 `5632 passed / 272 skipped / 0 failed`，manifest SHA-256=`eba8099bf3801927f3d93b40d1e133546d7cbcc4eece4c58b416bf52bd29a136`；candidate 已 revoke，connector=`reconcile_only`，local/public write 均关闭。 |
 | 当前实现选择 | Agent v0.2 local-private managed-session write | owner session/CSRF + encrypted payload + durable connector + transcript/follow/approval/stop/result。CLI 默认 `reconcile_only`；`supervised_dispatch` 只在 exact candidate/release window。历史/外部 session 只读，继续上下文需显式 fork。local `chat_write_ready` ≠ public；public standing OFF，交易 kill switch true。 |
 | 本机 Hermes 连接决策 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-15-local-hermes-integration-decision.md` | 采用 PostgreSQL durable command/event/outbox + deterministic worker；`LISTEN/NOTIFY` 唤醒、periodic scan 兜底，不让 Hermes/LLM cron 空轮询。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
@@ -457,9 +458,11 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
   回退到 sample、Tiingo 或 Longbridge。
 - HQA 9A-9G、mini/full 9H 与 D-31 第一批三份计划（Wave 1）均已交付到各自明确边界。
 - Agent v0.2 source 当前含 016–028。2026-07-31 “live 有 016–027、没有 028”只是
-  pre-apply 历史快照；2026-08-01 窗口已完成一次 028 apply、private candidate 与真实
-  E2E。当前保持 candidate revoked、connector `reconcile_only`、public OFF，禁止重放
-  028；未来只能用全新 candidate 补齐剩余 DoD，不能从历史 D-31 状态推导执行顺序。
+  pre-apply 历史快照；2026-08-01 窗口已完成一次 028 apply，随后 AlphaZeroBeta 重测仅
+  证明 private candidate 的机械生命周期。论文 intake verdict 未被运行时合同验证或接受，
+  factor/backtest/Gate/result 均未评价；P1 仍需 digest-bound `hqa.paper_intake/v1`
+  receipt/verifier。当前保持 candidate revoked、connector `reconcile_only`、public OFF，
+  禁止重放 028；未来只能用全新 candidate 补齐剩余 DoD，不能从历史 D-31 状态推导执行顺序。
 - 写端使用 PostgreSQL durable command/outbox/event ledger + deterministic connector；
   `LISTEN/NOTIFY` 只作唤醒、periodic scan 补偿。`reconcile_only` 是默认安装姿态；
   `supervised_dispatch` 只在 exact local candidate/release window 内运行。空队列零
