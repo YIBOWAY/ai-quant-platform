@@ -10,6 +10,7 @@ describe("SafetyStrip provider-free SSR authority", () => {
     const source = readFileSync(safetyStripPath, "utf8");
 
     expect(source).toContain("getCachedSettings()");
+    expect(source).toContain("getCachedEffectivePaperSafety()");
     expect(source).not.toContain("getCachedHealth");
     expect(source).not.toContain("/api/health");
     expect(source).toContain(
@@ -17,12 +18,18 @@ describe("SafetyStrip provider-free SSR authority", () => {
     );
     expect(source).toContain("settings.apiError ? undefined : settings.safety");
     expect(source).toContain("health.status");
+    expect(source).toContain("paperSafety.effective");
+    expect(source).toContain("paperSafety.canonical_account_frozen");
+    expect(source).toContain("paperSafety.current_paper_authority_epoch");
   });
 
-  it("caches the provider-free settings getter on the server", () => {
+  it("caches both provider-free safety getters on the server", () => {
     const source = readFileSync(serverApiPath, "utf8");
 
-    expect(source).toContain('import { getHealth, getSettings } from "@/lib/api"');
+    expect(source).toContain("getEffectivePaperSafety");
     expect(source).toContain("getCachedSettings = cache(getSettings)");
+    expect(source).toContain(
+      "getCachedEffectivePaperSafety = cache(getEffectivePaperSafety)",
+    );
   });
 });

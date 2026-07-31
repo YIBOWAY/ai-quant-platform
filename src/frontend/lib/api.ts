@@ -1982,6 +1982,17 @@ export type SettingsResponse = ApiEnvelope & {
   settings?: Record<string, unknown>;
 };
 
+export type EffectivePaperSafetyResponse = ApiEnvelope & {
+  owner_user_id: string;
+  workspace_id: string;
+  global_kill_switch: boolean;
+  canonical_account_count: number | null;
+  canonical_account_frozen: boolean | null;
+  current_paper_authority_epoch: number | null;
+  effective: boolean;
+  blockers: string[];
+};
+
 export type HermesGatewayWarningResponse =
   HermesSchemas["HermesGatewayWarningResponse"];
 export type HermesGatewayWarning = HermesGatewayWarningResponse;
@@ -2135,6 +2146,20 @@ export function getHealth() {
 
 export function getSettings() {
   return apiGet<SettingsResponse>("/api/settings", {
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export function getEffectivePaperSafety() {
+  return apiGet<EffectivePaperSafetyResponse>("/api/safety/effective", {
+    owner_user_id: "",
+    workspace_id: "",
+    global_kill_switch: true,
+    canonical_account_count: null,
+    canonical_account_frozen: null,
+    current_paper_authority_epoch: null,
+    effective: false,
+    blockers: ["canonical_paper_authority_unavailable"],
     safety: FALLBACK_SAFETY,
   });
 }

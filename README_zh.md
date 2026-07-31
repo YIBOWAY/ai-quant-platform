@@ -2,24 +2,25 @@
 
 本地优先的量化研究、回测、模拟交易、只读行情与期权研究平台。
 
-Phase 0-14 文档描述已经交付的历史能力层，不是当前实现队列。先读
-[docs/INDEX.md](docs/INDEX.md)。HQA Slice 9A-9G、只读 mini 9H Hermes 产物架与
-完整 9H 自动化/通知均已完成。D-31 Wave 3 也已交付 official API 会话读取、
-PostgreSQL transport ledger、仅对账的 connector-worker 框架，以及只读 Unified
-Results 目录/详情。这里没有真实 chat 写桥：prompt/provider、审批 mutation、精确
-Hermes Run 关联、完整结果切流和旧页退休仍受独立证据门阻断。9E 是 HQA 本地带锁的
-prediction event ledger，复用但
-不修改平台代码或 schema。9D 新增严格只读的 `data prices` JSON seam：只接受
-显式 Futu、QFQ、1d，最多 25 个标的和 500 个含首尾日历日期，不回退到
-sample/local/Tiingo/Longbridge。HQA 组合风险 v2 以 previous UTC date 为 `end`、
-`end-400 days` 为 `start`，先做全局日期 inner join 再计算收益，至少需要 60 个对齐收益；只报告
-逐仓相对 SPY 的 beta 与持仓两两 correlation，不计算 aggregate beta、VaR 或阈值
-verdict。2026-07-11 真实验收得到 274 个对齐收益，AAPL beta 为
-`0.8576599678`；平台全量为 1027 passed、15 skipped，20 个受观察状态/缓存文件的
-bytes、mtime、hash 均未变化。[前端渐进改造与 Hermes 集成计划](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
-保留为 Slice 0-8 交付记录与 UI backlog；跨仓产品路线仍由
-`/Users/sunyibo/programs/Hermes-quant-agent` 管理。
-本仓库是该 Hermes 工作流的量化领域后端，不再独立扩张 Phase 15 产品路线。
+历史 Phase、Wave 和 Workbench 文档是交付证据，不是当前实现或运维队列。先读
+[docs/INDEX.md](docs/INDEX.md)。跨仓产品路线仍由
+`/Users/sunyibo/programs/Hermes-quant-agent` 管理；本仓库是量化领域后端，不再
+独立扩张 Phase 15。
+
+Agent v0.2 已有受门禁控制的本地单用户 managed-session 写入、durable connector、
+transcript/follow、approval/stop/result 与 candidate/release authority。历史和外部
+会话在 Web 中保持只读；继续上下文必须显式 fork 到新的 managed Session。本地
+`chat_write_ready` 不等于 public 授权；standing
+`public_chat_write_ready`、`public_write_authorized` 与
+`release_authorized` 继续 OFF。
+
+仓库 change set 包含有序 migration source 016–028。2026-07-31 对 live
+`quantplatform` 的只读核对发现 016–027 标记存在、028 标记不存在，运行中的后端也
+尚未提供新的 `GET /api/safety/effective`。这是有日期的 source/live 边界，不是
+apply 或 release 授权；本 README 也不证明 028 是否 committed、installed、
+isolated-replayed、live-applied 或 authorized。migration、readiness、restart、E2E
+与 restore 的唯一权威是
+[Agent v0.2 local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md)。
 
 - 美股及 ETF 历史数据流水线。
 - 因子研究、因子实验室诊断（2026-06-11 起真实数据优先：默认 `futu`，数据源/股票池/择时标的/基准可在界面调整，可保存因子研究运行，并可预填发送至回测器）、策略/股票池注册、回测、实验和模拟交易。
@@ -102,12 +103,28 @@ quant-system doctor
 `doctor` 不会连接行情源或 PostgreSQL；它只打印当前环境、安全开关、默认数据源、
 Futu/OpenD 端点、可选数据库索引设置和运行日志路径。
 
+### Agent v0.2 本地运维边界
+
+不要从本 README 执行 Agent v0.2 migration 或 release。唯一完整流程在
+[local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md)，由它单独定义
+精确顺序、验收证据和 restore 边界。
+
+Migration 028 增加 current-paper-epoch fence，并要求 root owner 恰好一个 canonical
+paper account：ID 为 `default`，materialized `kill_switch=true`，raw JSON 的
+`account_id` 与 JSON boolean `kill_switch` 和物化列完全一致。新 runtime 安装后，
+`GET /api/safety/effective` 只做 provider-free 观察，不授权 chat 或 release。
+
+私有准入由操作者通过 `quant-system hermes candidate status|open|revoke` 控制。
+HQA Keychain `probe` 不创建 key；普通 encrypt/put/bind 与 connector check 也不得
+创建。只有人在核对 exact committed/installed runtime 后，才能单独执行
+`initialize-key`，随后再次 `probe`。
+
 ## 主要页面
 
 | 页面 | 用途 |
 |---|---|
-| `/hermes` | 可回滚默认首页；展示 Today、任务、只读审批与 Unified Results 预览，只有一个安全条，composer 始终禁用。 |
-| `/hermes/sessions` | 通过服务端 official API adapter GET-only 读取本机 Hermes 已保存会话；key 不下发浏览器，也不消耗 provider 额度。 |
+| `/hermes` | 可回滚 COO 工作台，展示 Today、managed-session 对话、任务、审批与 Unified Results 预览。Composer 只在 exact local candidate/release window 且全部本地门禁通过时打开；public standing 继续 OFF。 |
+| `/hermes/sessions` | 服务端 official API adapter GET-only 读取本机 Hermes 已保存会话；key 不下发浏览器，也不消耗 provider 额度。历史/外部 transcript 保持只读，继续上下文需显式 fork 到新 managed Session。 |
 | `/hermes/results` | 汇总平台运行、实验、候选、HQA 产物及 exact run-link 的只读目录/详情；预览可见但 `unifiedResultsCutoverAccepted=false`。 |
 | `/data-explorer` | 美股历史数据查看器。 |
 | `/factor-lab` | 当前因子诊断面；HQA 工作台落地后应降级为 run/detail 分析面。 |
@@ -255,17 +272,30 @@ docker start quantplatform-db
 QS_DATABASE_ENABLED=true
 QS_DATABASE_URL="postgresql://quant:quantpass@127.0.0.1:5432/quantplatform"
 QS_DATABASE_CONNECT_TIMEOUT_SECONDS=1
-QS_DATABASE_AUTO_MIGRATE=true
+QS_DATABASE_AUTO_MIGRATE=false
 QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 ```
 
-后端启动时按文件名字典序应用 `scripts/sql/*.sql`。003/004 migration 会创建 11 张
-业务表：root 用户、brief issue/snapshot/source、AI 日报，以及 paper account 的账户、
-账本、挂单、当前持仓和持仓快照六张表。005 新增 Hermes transport ledger 的 schema
-元数据、command、event、outbox 与 exact run link 五张表。加上 001 的 run index 与 002
-的两张 AI 新闻缓存表，五份 migration 共定义 19 张 `quant_system` 表。系统不维护通用
-`schema_migrations` 台账，而是按文件名幂等重放 SQL。启动流程还会回填运行索引，并清理对应文件
-已删除的索引行。如果 PostgreSQL 不可用，
+这是通用 file-mode 开发示例。Agent v0.2 private candidate stack 必须使用
+`canonical`；只按 local-stack runbook 判定，不从这个示例推断 live mode。
+
+后端启动从不应用 migration；`QS_DATABASE_AUTO_MIGRATE` 必须为 false。默认
+`quant-system migrate` 只做 dry-run，真正 apply 必须使用
+`--apply --allow <exact-file>`，非交互场景还要 `--yes`，并取得本次明确授权。
+
+Migration 是有序、幂等 SQL，不使用通用 `schema_migrations` 台账。001–015 建立
+run/news/business facts、Hermes ledger/workflow/session、安全与 provisioning 基线；
+Agent v0.2 的 016–028 是一个 additive ladder，覆盖 private candidate、vertical/paper
+authority、sealed evidence/release hardening、run/fork/control lineage、
+release/session binding、research claim lineage、candidate TTL 与 current paper-epoch
+fence。source 文件、isolated replay 或 backup 都不证明 live apply；只按 local-stack
+runbook 执行和判定。
+
+Migration apply 会在整个文件批次持有独占 schema-runtime gate；candidate open
+则在同一事务中先拿匹配的共享 gate，再用同一连接读取 schema 指纹，之后才允许写入
+authority，从而避免 migration 与 candidate 的检查后写入竞态。
+
+启动流程仍会回填运行索引，并清理对应文件已删除的索引行。如果 PostgreSQL 不可用，
 首次探测很短，后续失败请求在短暂的冷却窗口内继续从本地文件或实时上游读取；健康的 PostgreSQL
 短连接可以并发执行。可通过以下命令检查：
 
@@ -509,16 +539,18 @@ npx playwright test --config playwright.config.ts --workers=1
 
 - [docs/INDEX.md](docs/INDEX.md)
 - [docs/OVERVIEW.md](docs/OVERVIEW.md)
+- [Agent v0.2 local-stack 运维权威](docs/runbooks/agent-v0-2-local-stack.md)
 - [前序前端/Hermes Slice 0-8 记录](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
 - [本地存储与 PostgreSQL 状态](docs/architecture/database_cache_plan.md)
 
 `docs/SYSTEM_DESIGN_RESEARCH.md`、phase 交付记录和 audits 是历史设计/证据，不是
 当前待办队列。
 
-当前交接：D-31 3A/3B 与只读 3E-A 已交付并通过本机验收；3C 只是
-reconcile-only 框架，不是 command dispatch。3D chat 正确 fail closed；3F 只有默认关闭的
-Agent Studio redirect 机制。后续必须逐项关闭显式写端 blocker，或在旧页切流前证明
-完整 parity，不能从历史 backlog 自动续做。
+当前交接：local managed-session write 只存在于 exact local-private gate 之内；
+external/history session 继续只读，public standing 为 OFF。source 包含
+016–028；2026-07-31 的 live 核对只有 016–027、没有 028。任何 candidate E2E
+之前，先闭合 local-stack 的完整 operator window，再做非创建式 Keychain probe
+并打开一个短时 candidate。旧页 cutover 仍是独立决策。
 
 当前期权相关文档：
 

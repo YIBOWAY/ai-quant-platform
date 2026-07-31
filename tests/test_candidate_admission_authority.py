@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -18,6 +21,7 @@ from quant_system.hermes.candidate_admission_authority import (
     AcceptCandidateAdmissionRequest,
     CandidateAdmissionAuthority,
     CandidateAdmissionConflict,
+    CandidateAdmissionReceipt,
     OpenCandidateAdmissionRequest,
     candidate_admission_runtime_security_is_ready,
     candidate_admission_schema_is_ready_on_connection,
@@ -27,7 +31,7 @@ from quant_system.hermes.candidate_evidence_v3 import (
     candidate_evidence_runtime_security_is_ready,
     candidate_evidence_schema_is_ready_on_connection,
 )
-from quant_system.hermes.command_ledger import HermesCommandLedger
+from quant_system.hermes.command_ledger import ROOT_USER_ID, HermesCommandLedger
 from quant_system.hermes.dark_identity_profile import (
     PROVIDER_POLICY_DIGEST,
     STORE_TTL_DAYS,
@@ -69,6 +73,7 @@ MIGRATIONS = (
     "025_agent_v02_release_session_binding.sql",
     "026_agent_v02_paper_research_claim_lineage.sql",
     "027_agent_v02_candidate_ttl_window.sql",
+    "028_agent_v02_candidate_paper_epoch_fence.sql",
 )
 WORKSPACE = "workspace-root"
 PLATFORM = "1" * 64
@@ -151,6 +156,24 @@ def _prepare(*, ttl_seconds: int = 120) -> tuple[Settings, db.Database]:
     database = db.get_database(settings)
     assert database is not None
     db.run_migrations(database, only=MIGRATIONS)
+    observed_at = datetime.now(UTC)
+    with database.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO quant_system.paper_accounts (
+                account_id, owner_user_id, base_currency, initial_cash,
+                cash, realized_pnl, kill_switch, version, raw,
+                created_at, updated_at
+            )
+            VALUES (
+                'default', %s, 'USD', 1000, 1000,
+                0, TRUE, 1,
+                '{"account_id":"default","kill_switch":true}'::jsonb,
+                %s, %s
+            )
+            """,
+            (ROOT_USER_ID, observed_at, observed_at),
+        )
     return settings, database
 
 
@@ -293,6 +316,94 @@ def test_candidate_supports_two_hour_operator_evidence_window() -> None:
     active = authority.active(WORKSPACE)
     assert active is not None
     assert (active.expires_at - active.opened_at).total_seconds() == 7200
+
+
+def test_candidate_open_waits_for_schema_runtime_gate_before_fingerprint() -> None:
+    settings, database = _prepare()
+    url = os.environ.get("QS_TEST_DATABASE_URL")
+    assert url is not None
+    connected = threading.Event()
+    fingerprint_called = threading.Event()
+    backend_pid: list[int] = []
+    results: list[CandidateAdmissionReceipt] = []
+    errors: list[BaseException] = []
+
+    class ObservedDatabase:
+        @contextmanager
+        def connect(self):
+            with database.connect() as conn:
+                backend_pid.append(conn.info.backend_pid)
+                connected.set()
+                yield conn
+
+    authority = CandidateAdmissionAuthority(
+        settings,
+        database=ObservedDatabase(),  # type: ignore[arg-type]
+        schema_fingerprint_reader=lambda _database: (
+            fingerprint_called.set() or SCHEMA_DIGEST
+        ),
+    )
+
+    def open_candidate() -> None:
+        try:
+            results.append(
+                authority.open(
+                    _open_request(action_id="candidate-open-schema-gated"),
+                    admission_id="candidate_schema_gated",
+                )
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    with (
+        psycopg.connect(url, connect_timeout=1, autocommit=True) as blocker,
+        psycopg.connect(url, connect_timeout=1, autocommit=True) as monitor,
+    ):
+        blocker.execute(
+            "SELECT pg_advisory_lock(hashtextextended(%s, 0))",
+            (db.HERMES_SCHEMA_RUNTIME_GATE,),
+        )
+        thread = threading.Thread(target=open_candidate)
+        thread.start()
+        try:
+            assert connected.wait(timeout=2)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                waiting = monitor.execute(
+                    """
+                    SELECT wait_event_type, wait_event
+                    FROM pg_stat_activity
+                    WHERE pid = %s
+                    """,
+                    (backend_pid[0],),
+                ).fetchone()
+                if waiting == ("Lock", "advisory"):
+                    break
+                time.sleep(0.01)
+            else:
+                pytest.fail("candidate open did not wait on the schema runtime gate")
+
+            assert fingerprint_called.is_set() is False
+            candidate_count = monitor.execute(
+                """
+                SELECT count(*)
+                FROM quant_system.agent_v02_candidate_admissions
+                WHERE admission_id = 'candidate_schema_gated'
+                """
+            ).fetchone()
+            assert candidate_count == (0,)
+        finally:
+            blocker.execute(
+                "SELECT pg_advisory_unlock(hashtextextended(%s, 0))",
+                (db.HERMES_SCHEMA_RUNTIME_GATE,),
+            )
+            thread.join(timeout=3)
+
+    assert not thread.is_alive()
+    assert errors == []
+    assert fingerprint_called.is_set() is True
+    assert len(results) == 1
+    assert results[0].status == "open"
 
 
 def test_candidate_never_claims_a_web_command_from_another_workspace() -> None:
@@ -476,6 +587,7 @@ def test_candidate_authority_requires_constrained_runtime_role() -> None:
             "016_agent_v02_candidate_admission.sql",
             "019_agent_v02_candidate_evidence_v3.sql",
             "025_agent_v02_release_session_binding.sql",
+            "028_agent_v02_candidate_paper_epoch_fence.sql",
         ),
     )
     runtime_parameters = conninfo_to_dict(admin_url)
@@ -528,6 +640,7 @@ def test_candidate_readiness_rejects_pre_025_trigger_body() -> None:
             "019_agent_v02_candidate_evidence_v3.sql",
             "020_agent_v02_release_authority_hardening.sql",
             "025_agent_v02_release_session_binding.sql",
+            "028_agent_v02_candidate_paper_epoch_fence.sql",
         ),
     )
     with database.connect() as conn:

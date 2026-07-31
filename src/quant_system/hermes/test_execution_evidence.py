@@ -12,7 +12,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import stat
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
@@ -20,7 +19,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-TEST_EXECUTION_RECEIPT_CONTRACT = "agent-v0.2-test-execution-receipt/v1"
+TEST_EXECUTION_RECEIPT_CONTRACT = "agent-v0.2-test-execution-receipt/v2"
 RUNTIME_NAMES = ("platform", "hqa", "hermes")
 REQUIRED_TEST_SUITES = frozenset({"platform", "hqa", "hermes_focused", "frontend"})
 
@@ -132,8 +131,11 @@ class ValidatedTestExecution:
     runtime: Mapping[str, Mapping[str, str]]
     cwd_runtime: str
     cwd_relative: str
+    runner_kind: str
     executable_path: Path
     executable_sha256: str
+    suite_entry_path: Path | None
+    suite_entry_sha256: str | None
     receipt_path: Path
     receipt_content: bytes
     output_path: Path
@@ -255,12 +257,150 @@ def _hash_regular_file(path: Path, *, field: str) -> str:
             os.close(directory_fd)
 
 
-def executable_evidence(path: Path) -> dict[str, str]:
-    realpath = Path(path).expanduser().resolve()
+def _mode_text(mode: int) -> str:
+    return f"{stat.S_IMODE(mode):04o}"
+
+
+def _trusted_owner(uid: int) -> bool:
+    return uid == 0 or not hasattr(os, "geteuid") or uid == os.geteuid()
+
+
+def _file_identity(
+    path: Path,
+    *,
+    root: Path,
+    field: str,
+    require_executable: bool,
+) -> dict[str, object]:
+    try:
+        realpath = Path(path).expanduser().resolve(strict=True)
+        root_realpath = Path(root).expanduser().resolve(strict=True)
+        relative = realpath.relative_to(root_realpath)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise TestExecutionEvidenceError(
+            f"test receipt {field} is outside its trusted root"
+        ) from exc
+    if not relative.parts:
+        raise TestExecutionEvidenceError(
+            f"test receipt {field} must be below its trusted root"
+        )
+    root_info = root_realpath.stat()
+    if (
+        not stat.S_ISDIR(root_info.st_mode)
+        or not _trusted_owner(root_info.st_uid)
+        or stat.S_IMODE(root_info.st_mode) & 0o022
+    ):
+        raise TestExecutionEvidenceError(
+            f"test receipt {field} trusted root is not owner-controlled"
+        )
+    current = root_realpath
+    for component in relative.parts[:-1]:
+        current = current / component
+        info = current.stat()
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or not _trusted_owner(info.st_uid)
+            or stat.S_IMODE(info.st_mode) & 0o022
+        ):
+            raise TestExecutionEvidenceError(
+                f"test receipt {field} path is not owner-controlled"
+            )
+    info = realpath.stat()
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_nlink != 1
+        or not _trusted_owner(info.st_uid)
+        or stat.S_IMODE(info.st_mode) & 0o022
+        or (require_executable and not stat.S_IMODE(info.st_mode) & 0o111)
+    ):
+        raise TestExecutionEvidenceError(
+            f"test receipt {field} is not an approved owner-controlled file"
+        )
     return {
+        "mode": _mode_text(info.st_mode),
+        "nlink": info.st_nlink,
         "realpath": str(realpath),
-        "sha256": _hash_regular_file(realpath, field="executable"),
+        "relative": relative.as_posix(),
+        "root": {
+            "mode": _mode_text(root_info.st_mode),
+            "realpath": str(root_realpath),
+            "uid": root_info.st_uid,
+        },
+        "sha256": _hash_regular_file(realpath, field=field),
+        "uid": info.st_uid,
     }
+
+
+def _executable_root(path: Path) -> Path:
+    realpath = Path(path).expanduser().resolve(strict=True)
+    if realpath.parent.name in {"bin", "Scripts"}:
+        return realpath.parent.parent
+    return realpath.parent
+
+
+def executable_evidence(path: Path) -> dict[str, object]:
+    realpath = Path(path).expanduser().resolve(strict=True)
+    return _file_identity(
+        realpath,
+        root=_executable_root(realpath),
+        field="executable",
+        require_executable=True,
+    )
+
+
+def _suite_entry_evidence(path: Path) -> dict[str, object]:
+    realpath = Path(path).expanduser().resolve(strict=True)
+    return _file_identity(
+        realpath,
+        root=realpath.parent,
+        field="suite_entry",
+        require_executable=False,
+    )
+
+
+def _validated_file_identity(
+    value: object,
+    *,
+    field: str,
+    require_executable: bool,
+) -> tuple[Path, str]:
+    document = _exact_mapping(
+        value,
+        keys=frozenset(
+            {"mode", "nlink", "realpath", "relative", "root", "sha256", "uid"}
+        ),
+        field=field,
+    )
+    root = _exact_mapping(
+        document["root"],
+        keys=frozenset({"mode", "realpath", "uid"}),
+        field=f"{field}.root",
+    )
+    realpath = document["realpath"]
+    root_realpath = root["realpath"]
+    digest = document["sha256"]
+    if (
+        not isinstance(realpath, str)
+        or not Path(realpath).is_absolute()
+        or not isinstance(root_realpath, str)
+        or not Path(root_realpath).is_absolute()
+        or not isinstance(digest, str)
+        or _HEX_DIGEST_RE.fullmatch(digest) is None
+    ):
+        raise TestExecutionEvidenceError(
+            f"test receipt {field} identity is invalid"
+        )
+    observed = _file_identity(
+        Path(realpath),
+        root=Path(root_realpath),
+        field=field,
+        require_executable=require_executable,
+    )
+    if dict(document) != observed:
+        raise TestExecutionEvidenceError(
+            f"test receipt {field} identity is invalid"
+        )
+    return Path(realpath), digest
 
 
 def _approved_pytest_selectors(
@@ -365,9 +505,10 @@ def _validate_execution_policy(
     argv: tuple[str, ...],
     cwd: object,
     executable: object,
+    runner_kind: object,
+    suite_entry: object,
     require_junit_placeholder: bool,
-    require_environment_runner_resolution: bool,
-) -> tuple[str, str, Path, str]:
+) -> tuple[str, str, str, Path, str, Path | None, str | None]:
     cwd_document = _exact_mapping(
         cwd,
         keys=frozenset({"realpath", "relative", "runtime"}),
@@ -388,50 +529,24 @@ def _validate_execution_policy(
     ):
         raise TestExecutionEvidenceError("test receipt cwd is not approved for its suite")
 
-    executable_document = _exact_mapping(
+    executable_path, executable_digest = _validated_file_identity(
         executable,
-        keys=frozenset({"realpath", "sha256"}),
         field="executable",
+        require_executable=True,
     )
-    executable_realpath = executable_document["realpath"]
-    executable_digest = executable_document["sha256"]
     argv_executable = Path(argv[0]).expanduser()
     if (
-        not isinstance(executable_realpath, str)
-        or not Path(executable_realpath).is_absolute()
-        or str(Path(executable_realpath).resolve()) != executable_realpath
-        or not argv_executable.is_absolute()
-        or not isinstance(executable_digest, str)
-        or _HEX_DIGEST_RE.fullmatch(executable_digest) is None
-        or _hash_regular_file(
-            Path(executable_realpath),
-            field="executable",
-        )
-        != executable_digest
-        or argv_executable.resolve() != Path(executable_realpath)
+        not argv_executable.is_absolute()
+        or argv_executable.resolve() != executable_path
     ):
         raise TestExecutionEvidenceError("test receipt executable identity is invalid")
 
-    executable_name = Path(executable_realpath).name
+    executable_name = executable_path.name
     is_python_executable = (
         _PYTHON_EXECUTABLE_RE.fullmatch(executable_name) is not None
     )
-    executable_path = Path(executable_realpath)
-    approved_uv = (
-        shutil.which("uv") if require_environment_runner_resolution else None
-    )
-    approved_pnpm = (
-        shutil.which("pnpm") if require_environment_runner_resolution else None
-    )
     uv_identity_is_approved = (
-        approved_uv is not None and executable_path == Path(approved_uv).resolve()
-        if require_environment_runner_resolution
-        else argv_executable.name == "uv"
-    )
-    pnpm_identity_is_approved = (
-        approved_pnpm is not None and executable_path == Path(approved_pnpm).resolve()
-        if require_environment_runner_resolution
-        else argv_executable.name == "pnpm"
+        argv_executable.name == "uv" and executable_name == "uv"
     )
     is_pytest_script = (
         executable_name == "pytest"
@@ -444,31 +559,44 @@ def _validate_execution_policy(
         and argv[1:5] == ("run", "--frozen", "--extra", "dev")
         and argv[5] == "pytest"
     )
-    is_pnpm_vitest = (
+    is_node_vitest = (
         name == "frontend"
-        and pnpm_identity_is_approved
-        and len(argv) >= 2
-        and argv[1] in {"test", "vitest"}
-        and (argv[1] != "vitest" or (len(argv) >= 3 and argv[2] == "run"))
-    )
-    is_repo_vitest = (
-        name == "frontend"
-        and len(argv) >= 2
-        and Path(argv[0]) == Path(str(cwd_realpath)) / "node_modules" / ".bin" / "vitest"
-        and argv[1] == "run"
+        and runner_kind == "node_vitest"
+        and argv_executable.name == "node"
+        and executable_name == "node"
+        and len(argv) >= 3
+        and Path(argv[1]).is_absolute()
+        and Path(argv[1])
+        == Path(str(cwd_realpath)) / "node_modules" / "vitest" / "vitest.mjs"
+        and argv[2] == "run"
     )
     is_python_pytest = (
         is_python_executable
         and len(argv) >= 3
         and argv[1:3] == ("-m", "pytest")
     )
-    approved_runner = (
-        is_pnpm_vitest or is_repo_vitest
-        if name == "frontend"
-        else is_python_pytest or is_pytest_script or is_uv_pytest
+    approved_runner = is_node_vitest if name == "frontend" else (
+        runner_kind == "python"
+        and (is_python_pytest or is_pytest_script or is_uv_pytest)
     )
     if not approved_runner:
         raise TestExecutionEvidenceError("test receipt argv does not use an approved suite runner")
+    entry_path: Path | None = None
+    entry_digest: str | None = None
+    if is_node_vitest:
+        entry_path, entry_digest = _validated_file_identity(
+            suite_entry,
+            field="suite_entry",
+            require_executable=False,
+        )
+        if Path(argv[1]).resolve() != entry_path:
+            raise TestExecutionEvidenceError(
+                "test receipt Vitest entry identity is invalid"
+            )
+    elif suite_entry is not None:
+        raise TestExecutionEvidenceError(
+            "Python test receipt must not contain a suite entry"
+        )
     test_args_start = (
         3
         if is_python_pytest
@@ -477,8 +605,6 @@ def _validate_execution_policy(
         else 6
         if is_uv_pytest
         else 3
-        if is_pnpm_vitest and argv[1] == "vitest"
-        else 2
     )
     if any(
         argument == forbidden or argument.startswith(f"{forbidden}=")
@@ -489,14 +615,11 @@ def _validate_execution_policy(
             "test receipt argv contains an unapproved test-selection override"
         )
     placeholder = "{junit}" if require_junit_placeholder else ""
-    if is_pnpm_vitest or is_repo_vitest:
+    if is_node_vitest:
         junit_args = [argument for argument in argv if argument.startswith("--outputFile=")]
         if "--reporter=junit" not in argv:
             raise TestExecutionEvidenceError("frontend suite argv must select the JUnit reporter")
-        frontend_args_start = (
-            3 if is_pnpm_vitest and argv[1] == "vitest" else 2
-        )
-        _approved_frontend_arguments(argv[frontend_args_start:])
+        _approved_frontend_arguments(argv[3:])
     else:
         junit_args = [argument for argument in argv if argument.startswith("--junitxml=")]
         _approved_pytest_selectors(
@@ -518,8 +641,11 @@ def _validate_execution_policy(
     return (
         str(cwd_runtime),
         cwd_relative,
-        Path(executable_realpath),
+        str(runner_kind),
+        executable_path,
         executable_digest,
+        entry_path,
+        entry_digest,
     )
 
 
@@ -529,10 +655,16 @@ def validate_execution_plan(
     argv: tuple[str, ...],
     cwd: Path,
     runtime_roots: Mapping[str, Path],
-) -> tuple[dict[str, str], dict[str, str]]:
+) -> tuple[
+    dict[str, str],
+    dict[str, object],
+    str,
+    dict[str, object] | None,
+]:
     """Bind an operator command to its suite's approved runner and repository."""
 
     suite_name = validate_suite_name(name)
+    planned_argv = validate_argv(argv, require_junit_placeholder=True)
     if set(runtime_roots) != set(RUNTIME_NAMES):
         raise TestExecutionEvidenceError("test runtime roots are invalid")
     cwd_realpath = Path(cwd).expanduser().resolve()
@@ -548,19 +680,33 @@ def validate_execution_plan(
         "relative": relative_text,
         "runtime": runtime_name,
     }
-    executable_path = Path(argv[0]).expanduser()
+    executable_path = Path(planned_argv[0]).expanduser()
     if not executable_path.is_absolute():
         raise TestExecutionEvidenceError("test suite executable must be an explicit absolute path")
     executable_document = executable_evidence(executable_path)
+    runner_kind = "node_vitest" if suite_name == "frontend" else "python"
+    suite_entry_document: dict[str, object] | None = None
+    if suite_name == "frontend":
+        if len(planned_argv) < 2 or not Path(planned_argv[1]).is_absolute():
+            raise TestExecutionEvidenceError(
+                "frontend suite requires an explicit absolute Vitest entry"
+            )
+        suite_entry_document = _suite_entry_evidence(Path(planned_argv[1]))
     _validate_execution_policy(
         name=suite_name,
-        argv=argv,
+        argv=planned_argv,
         cwd=cwd_document,
         executable=executable_document,
+        runner_kind=runner_kind,
+        suite_entry=suite_entry_document,
         require_junit_placeholder=True,
-        require_environment_runner_resolution=True,
     )
-    return cwd_document, executable_document
+    return (
+        cwd_document,
+        executable_document,
+        runner_kind,
+        suite_entry_document,
+    )
 
 
 def _strict_json(content: bytes) -> object:
@@ -910,8 +1056,16 @@ def validate_test_execution_receipt(
         allow_empty=False,
         field="execution receipt",
     )
+    raw_receipt = _strict_json(content)
+    if (
+        not isinstance(raw_receipt, Mapping)
+        or raw_receipt.get("contract") != TEST_EXECUTION_RECEIPT_CONTRACT
+    ):
+        raise TestExecutionEvidenceError(
+            "test receipt contract version is invalid; v1 lacks required runner identity"
+        )
     receipt = _exact_mapping(
-        _strict_json(content),
+        raw_receipt,
         keys=frozenset(
             {
                 "argv",
@@ -924,7 +1078,9 @@ def validate_test_execution_receipt(
                 "name",
                 "output",
                 "runtime",
+                "runner_kind",
                 "started_at",
+                "suite_entry",
                 "summary",
             }
         ),
@@ -933,8 +1089,6 @@ def validate_test_execution_receipt(
     name = validate_suite_name(receipt["name"])
     if expected_name is not None and name != expected_name:
         raise TestExecutionEvidenceError("test receipt suite identity mismatches")
-    if receipt["contract"] != TEST_EXECUTION_RECEIPT_CONTRACT:
-        raise TestExecutionEvidenceError("test receipt contract version is invalid")
     expected_receipt_name = (
         f"test-{name.replace('_', '-')}-receipt-{hashlib.sha256(content).hexdigest()}.json"
     )
@@ -962,15 +1116,19 @@ def validate_test_execution_receipt(
     (
         cwd_runtime,
         cwd_relative,
+        runner_kind,
         executable_path,
         executable_sha256,
+        suite_entry_path,
+        suite_entry_sha256,
     ) = _validate_execution_policy(
         name=name,
         argv=argv,
         cwd=receipt["cwd"],
         executable=receipt["executable"],
+        runner_kind=receipt["runner_kind"],
+        suite_entry=receipt["suite_entry"],
         require_junit_placeholder=False,
-        require_environment_runner_resolution=False,
     )
 
     runtime = _runtime_document(receipt["runtime"])
@@ -1035,8 +1193,11 @@ def validate_test_execution_receipt(
         runtime=runtime,
         cwd_runtime=cwd_runtime,
         cwd_relative=cwd_relative,
+        runner_kind=runner_kind,
         executable_path=executable_path,
         executable_sha256=executable_sha256,
+        suite_entry_path=suite_entry_path,
+        suite_entry_sha256=suite_entry_sha256,
         receipt_path=receipt_path,
         receipt_content=content,
         output_path=output_path,

@@ -2,19 +2,18 @@
 
 本仓库是一个**本地优先**的 AI 量化研究与模拟交易平台。它面向研究、测试、报告与只读行情分析而构建，**不是实盘交易平台**。
 
-Phase 0-14 是已交付的历史能力层，不是当前开发路线。HQA Slice 9A-9G、只读
-mini 9H、完整 9H 自动化/通知与 D-31 Wave 2 的 Scene-B 三道 Gate 均已完成；
-promotion commit `524e791` 已合入。平台随后交付了 official Hermes API 的只读
-session list/detail/messages BFF 与 `/hermes/sessions` 观察面，但没有开放 chat write。
-[前端渐进改造与 Hermes 集成计划](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
-保留 Slice 0-8 记录与未来 UI backlog；恢复该 backlog 前必须先做新的产品决定并另立
-独立 bite-sized plan。9E 位于 HQA；它复用 9D 的 `data prices`
-严格只读 Futu/QFQ/1d JSON seam（25 个标的、500 个
-含首尾日历日期上限，无其他 provider 或 local fallback）；HQA v2 以 previous UTC date
-为 `end`、`end-400 days` 为 `start`，经全局日期 inner join 和至少 60 个对齐收益，输出逐仓 beta 与持仓两两
-correlation，不输出 aggregate beta、VaR 或阈值 verdict。当前进度先看
-[INDEX.md](INDEX.md)，
-不要从旧 phase 文档的标题或 checkbox 推断。
+Phase、Wave 与 Workbench 文档是历史交付证据，不是当前开发或运维路线。Agent v0.2
+已有 gated local managed-session write、durable connector 与完整观察面；历史/外部
+会话仍只读，继续上下文必须显式 fork。`chat_write_ready` 是本地状态，public standing
+继续 OFF。
+
+仓库 change set 含 migration source 016–028。2026-07-31 的只读现场核对显示 live
+`quantplatform` 有 016–027 标记、没有 028 标记，运行进程也尚未提供
+`GET /api/safety/effective`。这不是 028 live 或 release 授权，本页也不证明 028
+是否 committed/installed/isolated-replayed/live-applied/authorized。当前进度先看
+[INDEX.md](INDEX.md)，运维只看
+[Agent v0.2 local-stack runbook](runbooks/agent-v0-2-local-stack.md)，不要从旧
+phase 标题或 checkbox 推断。
 
 ## 它能做什么
 
@@ -56,6 +55,13 @@ Hermes 与 AI 研究工作流：
   本机会话；session list/detail/messages 均为 server-side GET-only。Hermes Bearer key
   留在 owner-only 文件中，不进入浏览器。health、capabilities 和 session reads 不执行
   prompt、不调用 provider，也不消耗 Hermes 配置的 provider 额度。
+- `GET /api/safety/effective` 是 provider-free safety observation：canonical
+  PostgreSQL 必须恰好一个 root-owner `default` 账户，materialized/raw
+  `account_id` 与 JSON boolean `kill_switch=true` 一致，并绑定 current paper epoch。
+  `effective=true` 也不等于 release。
+- 私有 candidate 由操作者用 `quant-system hermes candidate status|open|revoke`
+  管理。HQA Keychain 先做非创建式 `probe`；只有操作者可对 exact runtime 单独执行
+  `initialize-key`，普通 encrypt/put/bind 与 worker 不得创建 key。
 - 平台兼容 schema 1.0 的精确三来源合同与 schema 1.1 的精确六来源合同；whole-feed
   freshness budget 是 10800 秒。
 - 9G 由 HQA 本地 JSONL opportunity ledger 负责；平台只提供 CLI-only、file-backed 的
@@ -66,9 +72,13 @@ Hermes 与 AI 研究工作流：
 - Hermes session-read 增量同样没有新增数据库 migration，也没有把上游会话复制到
   PostgreSQL。旧 TUI gateway contract 已漂移并 fail closed；official API Server 是当前
   主读取链路。
-- 平台不复活 LLM runner，不把 disabled composer 伪装成可执行任务面。
-- `chat_write`、Hermes approval mutation、统一动态 Results 和旧研究页 redirects 仍为
-  hard-off。Approvals 页面只展示证据，`approvalMutations=false`。
+- 平台不复活 LLM runner；普通 chat prompt 只经 HQA encrypted Intent Payload
+  authority，不进入 PostgreSQL 或 `/act`。
+- 新 managed Session 的 composer 只有在 local flags、owner/CSRF、migration 028
+  readiness、effective paper safety、Keychain、candidate/release 与 connector
+  liveness 全通过时打开。External/history session 不原地写入。
+- `public_chat_write_ready`、`public_write_authorized`、
+  `release_authorized` 继续 OFF；旧研究页 redirect/retirement 仍需独立批准。
 - 任何候选晋级前都必须经过人工评审；常驻 paper/live 路径不加载 candidate 文件。
 
 AI 行业资讯：
@@ -147,11 +157,12 @@ http://127.0.0.1:3001
 
 1. [INDEX.md](INDEX.md) — 当前主线和文档分类。
 2. [README.md](../README.md) — 启动、稳定能力和安全边界。
-3. HQA `docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` 与
+3. [Agent v0.2 local-stack 运维权威](runbooks/agent-v0-2-local-stack.md)。
+4. HQA `docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` 与
    `docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md`（已交付记录）。
-4. [前序 Slice 0-8 记录](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)。
-5. [数据库/存储架构](architecture/database_cache_plan.md)。
-6. 改到具体功能时再读对应 `guides/`、`execution/` 和测试。
+5. [前序 Slice 0-8 记录](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)。
+6. [数据库/存储架构](architecture/database_cache_plan.md)。
+7. 改到具体功能时再读对应 `guides/`、`execution/` 和测试。
 
 `SYSTEM_DESIGN_RESEARCH.md`、Phase 0-15、delivery 和 audit 文档是设计/交付历史，
 需要追溯决策时再读，不作为“下一步”入口。
@@ -168,18 +179,8 @@ http://127.0.0.1:3001
 
 ## 当前交接
 
-HQA 9A-9G、mini/full 9H、Scene-B final→Gate 3、official Hermes session-read、
-PostgreSQL transport ledger 与只读 Unified Results 已完成。V5 dark supervised dispatch
-与 V6 本地 dark enablement（2026-07-21）已把真实 loopback `/v1/runs` adapter、CLI
-supervised mode、provider smoke 与 settings-gated local mutation/composer 打开。
-**L2a-Send（2026-07-22）** 接上 composite `submit-turn` → Intent Payload Store →
-ledger → worker bind/resolve → Hermes（live `L2a-pong`）。**L2b-Observe（2026-07-22）**
-接上 command-aware snapshot/follow 与 delivered 后 messages 预览。交易 kill_switch 与
-approval mutation / Results cutover / 旧页 retirement / **public** composer 仍关闭。
-Plan-V6 完整 transcript UI / SSE 仍未完成。
-
-Migration 005–007 已 live；L2a claim 扩展见 `008_l2a_conversation_turn_claim.sql`。
-connector worker 默认 `reconcile_only`。`--mode supervised_dispatch` 自动构建
-`HttpHermesDispatchAdapter`（ephemeral runs 可开）。空队列检查不调用 LLM；不要用
-Hermes cron 反复询问“有没有新任务”。完整 public composer 仍需 V8 与剩余 Plan-V6 UI
-（Attempt observe 全链、approval exact binding、stop reconciliation、SSE）。
+当前阻断点不是补旧 UI 清单，而是把 source/live/runtime 事实闭合：source 有
+016–028；2026-07-31 的 live 核对有 016–027、没有 028。只按 local-stack 闭合
+完整 operator window，再做非创建式 Keychain probe、短时 private candidate、fresh
+connector 与真实 E2E。失败或漂移就 CAS revoke candidate，并按该 runbook 恢复。
+整个过程中 trading kill switch 为 true，public standing 为 OFF。

@@ -20,6 +20,7 @@ from quant_system.hermes.connector_liveness import (
     ConnectorLivenessAuthority,
 )
 from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
+from quant_system.hermes.paper_safety_authority import PaperSafetyAuthority
 from quant_system.hermes.release_runtime import (
     current_release_decision,
     runtime_identity_observation,
@@ -68,6 +69,16 @@ def current_candidate_decision(
             blockers=("release_workspace_profile_mismatch",),
             record=None,
         )
+    if settings.paper_account.db_mode != "canonical":
+        return CandidateAdmissionDecision(
+            ready=False,
+            dispatch_ready=False,
+            connector_ready=False,
+            admission_id=None,
+            admission_digest=None,
+            blockers=("canonical_paper_authority_required",),
+            record=None,
+        )
 
     blockers: list[str] = []
     if settings.candidate_admission.enabled is not True:
@@ -95,13 +106,29 @@ def current_candidate_decision(
 
     record = None
     try:
-        record = CandidateAdmissionAuthority(settings).active(
+        authority = CandidateAdmissionAuthority(settings)
+        record = authority.active(
             settings.agent_v02_release.workspace_id
         )
+        if record is None:
+            observed = authority.current(
+                settings.agent_v02_release.workspace_id
+            )
+            if observed is not None and observed.status == "open":
+                record = observed
     except Exception:  # noqa: BLE001 - every uncertain fact closes admission
         blockers.append("candidate_authority_unavailable")
     if record is None:
         blockers.append("candidate_admission_missing")
+    else:
+        try:
+            paper_safety = PaperSafetyAuthority(settings).observe(
+                settings.agent_v02_release.workspace_id,
+                candidate_paper_authority_epoch=record.paper_authority_epoch,
+            )
+            blockers.extend(str(blocker) for blocker in paper_safety.blockers)
+        except Exception:  # noqa: BLE001 - uncertain paper facts close admission
+            blockers.append("canonical_paper_authority_unavailable")
 
     identities = None
     try:
@@ -199,8 +226,6 @@ def current_candidate_decision(
                 blockers.append("candidate_connector_predates_admission")
         except Exception:  # noqa: BLE001
             blockers.append("connector_liveness_unavailable")
-    elif require_connector:
-        blockers.append("connector_liveness_unavailable")
 
     ordered = _dedupe(blockers)
     return CandidateAdmissionDecision(

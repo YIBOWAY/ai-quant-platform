@@ -115,7 +115,7 @@ def _validate_request(request: CompositeTurnRequest) -> None:
         )
     if len(request.prompt.encode("utf-8")) > CHAT_PROMPT_MAX_BYTES:
         raise CompositeTurnSubmitError(
-            "validation",
+            "prompt_too_large",
             "prompt exceeds 16 KiB UTF-8 chat ceiling",
             http_status=400,
         )
@@ -164,6 +164,17 @@ def _require_exact_session_admission(
 
 def _map_port_error(exc: IntentPayloadPortError) -> CompositeTurnSubmitError:
     code = exc.code
+    if (
+        code.startswith("crypto_")
+        or code.startswith("intent_crypto_")
+        or code in {"key_not_found", "key_corrupt", "keychain_unavailable"}
+    ):
+        return CompositeTurnSubmitError(
+            "intent_crypto_unavailable",
+            "intent crypto is unavailable",
+            http_status=503,
+            retryable=True,
+        )
     if code in {"intent_idempotency_conflict"}:
         return CompositeTurnSubmitError(
             "conflict",
@@ -171,11 +182,17 @@ def _map_port_error(exc: IntentPayloadPortError) -> CompositeTurnSubmitError:
             http_status=409,
             retryable=False,
         )
+    if code == "prompt_too_large":
+        return CompositeTurnSubmitError(
+            code,
+            exc.message,
+            http_status=400,
+            retryable=False,
+        )
     if code in {
         "intent_invalid_request",
         "intent_invalid_arguments",
         "intent_invalid_json",
-        "prompt_too_large",
         "invalid_prompt",
         "invalid_session_ref",
         "workspace_not_admitted",

@@ -1,65 +1,87 @@
-# Agent v0.2 Local Stack LaunchAgents
+# Agent v0.2 Local Stack Operations
 
-This runbook installs only the long-running Platform backend and built Web
-frontend for the local Agent v0.2 stack:
+This is the sole Platform operations authority for Agent v0.2 database
+migration, readiness, service restart, candidate E2E, and database restore.
+The connector runbook covers connector mechanics only and must not duplicate
+this sequence.
 
-- `com.aiquant.backend` — release checkout source on `127.0.0.1:8765`;
-- `com.aiquant.frontend` — release checkout `.next` build on
-  `127.0.0.1:3001`.
+The long-running local stack has three independently managed LaunchAgents:
 
-It never installs or starts Paper Strategy Sleeves schedulers. The supervised
-Hermes connector has its own installer and runbook.
+- `com.aiquant.backend` — Platform API on `127.0.0.1:8765`;
+- `com.aiquant.frontend` — built Web frontend on `127.0.0.1:3001`;
+- `com.aiquant.agent-v02-connector` — installed separately and kept in
+  explicit `reconcile_only` unless a bounded candidate/release window is ready.
 
-## Prepare the exact release
+These jobs never install or start Paper Strategy Sleeves schedulers.
 
-Apply database migrations only through the explicit operator migration
-command. Backend startup rejects `QS_DATABASE_AUTO_MIGRATE=true`; startup is
-never a migration authority.
+## Current source and live boundary
 
-For the final hardening window, first inspect the live migration metadata and
-prepare a restore-tested backup. Apply any missing 016–024 prerequisites in
-order, then preserve this operator sequence:
+Read-only inspection on 2026-07-31 established this narrow snapshot:
+
+- the repository change set contains ordered migration source 016–028;
+- live `quantplatform` has the inspected 016–027 markers;
+- live `quantplatform` does not have
+  `agent_v02_candidate_paper_fence_meta`, the migration 028 marker;
+- the running backend predates this source and returns `404` for the new
+  provider-free `GET /api/safety/effective` route.
+
+Migration 028 is a source/change set. This runbook does not prove whether it is
+committed, installed, isolated-replayed, live-applied, loaded by the running
+process, or authorized. Recheck every fact in the actual operator window; do
+not copy this dated observation forward.
+Nothing in this runbook sets `release_authorized=true` or opens public write.
+
+## Non-negotiable safety state
+
+Keep all of the following true throughout preparation, migration, candidate
+E2E, and rollback:
 
 ```text
-backup -> migration 025 -> migration 026 -> service restart -> live E2E
+paper_trading=true
+live_trading_enabled=false
+kill_switch=true
+public_chat_write_ready=false
+public_write_authorized=false
+release_authorized=false
 ```
 
-Migration 025 fences managed Session/Command writes to the current
-paper-authority epoch and exact candidate/release generation. Migration 026
-seals the HQA research claim/start/continue digests and enforces claim-less v1
-versus exact-lineage v2 completion. Do not infer either migration's live state
-from this runbook, and do not start the backend, frontend or connector between
-025 and 026. After 026, restart the Platform stack and connector before any
-candidate-bound live browser flow so no old process reports a stale schema or
-release decision.
+`chat_write_ready` is local readiness and may open only inside an exact private
+candidate or accepted-release window. It is not a synonym for any public field.
 
-Build the frontend in the release checkout:
+Backend startup is never migration authority. The runtime env must contain
+`QS_DATABASE_AUTO_MIGRATE=false`; the launch scripts reject a truthy value.
+Only `quant-system migrate --apply --allow <exact-file>` may apply a migration,
+after fresh human authorization for that exact database and source identity.
 
-```bash
-npm --prefix src/frontend run build
-```
+## Release identity and runtime files
 
-The runners discover the main repository through Git's common directory. This
-lets a clean worktree reuse the main checkout's Python environment and frontend
-`node_modules`, while `PYTHONPATH` and `.next` remain bound to the release
-worktree. Operators may override discovery with `QS_MAIN_REPO_ROOT`.
+Use a clean, reviewed, committed release checkout. Source, HQA, and Hermes
+runtime digests must match the preflight/evidence that the candidate will bind.
+A dirty worktree, a green isolated suite, or a backup receipt is not a release
+identity.
 
-Create the ignored runtime file at:
+Create these ignored owner-only files in the release checkout:
 
 ```text
 data/_runtime/agent-v0.2-backend.env
+data/_runtime/agent-v0.2-frontend.env
+data/_runtime/agent-v0.2-connector.env
 ```
 
-It is a trusted shell dotenv and must be a regular file owned by the current
-user with exact mode `600`. Do not commit it. A local example is:
+Every file must be a regular non-symlink owned by the current user with exact
+mode `600`. Keep credentials in an owner-only key file or Keychain; never put
+them in this runbook, Git, argv, browser storage, or evidence logs.
+
+The backend env may contain the following non-secret shape:
 
 ```dotenv
 QS_DATABASE_ENABLED=true
-QS_DATABASE_URL=postgresql://quant_app_runtime:REDACTED@127.0.0.1:5432/quantplatform
+QS_DATABASE_URL=REDACTED
 QS_DATABASE_AUTO_MIGRATE=false
+QS_PAPER_ACCOUNT_DB_MODE=canonical
 QS_HERMES_GATEWAY_ENABLED=true
 QS_HERMES_GATEWAY_BASE_URL=http://127.0.0.1:8642
-QS_HERMES_GATEWAY_API_KEY_FILE=/absolute/path/to/hermes-api.key
+QS_HERMES_GATEWAY_API_KEY_FILE=/absolute/owner-only/hermes-api.key
 QS_HERMES_GATEWAY_RUNTIME_ROOT=/absolute/path/to/hermes-runtime
 QS_INTENT_PAYLOAD_HQA_ROOT=/absolute/path/to/Hermes-quant-agent-release
 QS_INTENT_PAYLOAD_PYTHON_EXECUTABLE=/absolute/path/to/hqa-python
@@ -67,65 +89,331 @@ QS_LOCAL_MUTATION_ENABLED=true
 QS_LOCAL_MUTATION_COMPOSER_OPEN=true
 ```
 
-Create a second ignored, owner-only frontend runtime file:
-
-```text
-data/_runtime/agent-v0.2-frontend.env
-```
-
-The frontend runner requires an explicit local chat enablement instead of
-silently serving a disabled build:
+The frontend env requires an explicit local-only chat build:
 
 ```dotenv
 QS_HERMES_CHAT_ENABLED=true
 NEXT_PUBLIC_QUANT_API_BASE_URL=http://127.0.0.1:8765
 ```
 
-Keep the Hermes API key in its separate owner-only file. Then validate both
-runners without starting them:
+These flags are necessary but never sufficient: database readiness, effective
+paper safety, Keychain readiness, candidate/release authority, owner/CSRF
+checks, and connector liveness still gate every write.
+
+## Migration 016–028 operator window
+
+The ordered additive ladder is:
+
+```text
+016 -> 017 -> 018 -> 019 -> 020 -> 021 -> 022
+    -> 023 -> 024 -> 025 -> 026 -> 027 -> 028
+```
+
+Never skip an absent prerequisite or use a later migration as a patch. If
+inspection finds any missing 016–024 entry, apply the missing entries in order
+before 025. Do not start backend, frontend, or connector between partially
+applied ladder entries.
+
+The complete operator sequence is:
+
+```text
+freeze writers
+  -> capture live pre-028 backup
+  -> restore that backup into an isolated destination
+  -> replay the exact missing migrations there
+  -> pass exact readiness
+  -> obtain live-apply authorization
+  -> apply the exact allowlist to live
+  -> pass live readiness
+  -> seal absolute-runner release preflight
+  -> restart backend/frontend
+  -> non-creating Keychain probe
+  -> open private candidate
+  -> start supervised connector
+  -> real E2E
+  -> revoke/accept candidate
+  -> retain and re-verify the isolated pre-028 restore rehearsal
+```
+
+The final rehearsal check never overwrites, replaces, or switches the live
+database.
+
+### 1. Freeze and capture pre-028 authority
+
+Keep the connector in `reconcile_only`, close any candidate, stamp, or cutover,
+and stop mutation traffic before the backup. Record clean three-repository
+identity, live schema fingerprint, current service identity, and provider-free
+paper safety facts without printing connection strings or credentials.
+
+Create a new owner-only backup directory and capture the live database with
+operator-vetted PostgreSQL tools. The live dump and its digest are the rollback
+authority; the repository helper below is additional disposable-cluster proof,
+not a backup of live `quantplatform`:
 
 ```bash
+umask 077
+set -a
+source data/_runtime/agent-v0.2-backend.env >/dev/null 2>&1
+set +a
+mkdir -m 700 /absolute/owner-only/pre-028-backup
+pg_dump --dbname="$QS_DATABASE_URL" --format=custom \
+  --file=/absolute/owner-only/pre-028-backup/quantplatform.dump
+pg_restore --list \
+  /absolute/owner-only/pre-028-backup/quantplatform.dump >/dev/null
+shasum -a 256 \
+  /absolute/owner-only/pre-028-backup/quantplatform.dump
+
+bash scripts/verify_agent_v02_backup_restore.sh \
+  --output-dir /absolute/new/owner-only/disposable-backup-proof
+```
+
+Do not continue until the live dump has been restored into a new isolated
+database and its pre-028 schema/data/ownership facts match the source. Preserve
+that untouched restore as the rollback rehearsal. Never test restore by
+overwriting the live database.
+
+### 2. Replay the exact source in isolation
+
+Point a temporary owner-only env at the isolated restored database. First run a
+dry plan, then apply only the exact missing files. For the dated observed
+016–027 marker baseline, the final command would be:
+
+```bash
+quant-system migrate --allow 028_agent_v02_candidate_paper_epoch_fence.sql
+
+quant-system migrate --apply \
+  --allow 028_agent_v02_candidate_paper_epoch_fence.sql \
+  --yes
+```
+
+This example is not live authorization. On an older database, repeat
+`--allow` in lexical order for every genuinely missing prerequisite. Run the
+PostgreSQL and focused safety suites against isolated infrastructure and retain
+their receipts:
+
+```bash
+bash scripts/verify_agent_v02_postgres_suite.sh \
+  --output-dir /absolute/new/owner-only/postgres-suite
+bash scripts/verify_agent_v02_focused_safety.sh \
+  --python /absolute/path/to/release/.venv/bin/python \
+  --basetemp /absolute/new/owner-only/focused-safety
+```
+
+The migration runner holds the exclusive
+`quant_system:hermes_schema_runtime_gate` for the complete allowlisted file
+batch. Candidate open takes the matching transaction-scoped shared gate before
+reading the schema fingerprint, checking readiness, or writing authority rows;
+the production fingerprint is read on that same guarded connection. Thus
+migration and candidate admission serialize instead of admitting a
+check-then-write schema race. A gate wait timeout is not candidate success and
+must not be retried by bypassing the gate.
+
+### 3. Verify the 028 contract
+
+Migration 028 readiness is exact, not “table exists.” It must verify:
+
+- the fence marker's version, owner, and ACL;
+- the canonical `default` paper-account raw-consistency constraint;
+- exact helper function identity/source/ACL;
+- exact candidate and paper-epoch trigger signatures, including the required
+  `ENABLE ALWAYS` state;
+- restricted runtime-role access;
+- candidate TTL and all 016–027 prerequisites.
+
+The effective paper authority must also be true:
+
+- `QS_PAPER_ACCOUNT_DB_MODE=canonical`;
+- exactly one root-owner paper account exists;
+- its materialized `account_id` is `default`;
+- its materialized `kill_switch` is true;
+- raw JSON contains the same `account_id` and a JSON boolean `kill_switch=true`;
+- the global kill switch is true and the current paper-authority epoch is
+  available.
+
+Use the source readiness functions before restart. The script emits booleans
+only and exits closed:
+
+```bash
+set -a
+source data/_runtime/agent-v0.2-backend.env >/dev/null 2>&1
+set +a
+
+PYTHONPATH=src .venv/bin/python - <<'PY'
+from quant_system.config.settings import load_settings
+from quant_system.hermes.candidate_admission_authority import (
+    candidate_admission_runtime_security_is_ready,
+    candidate_admission_schema_ready,
+)
+
+settings = load_settings()
+schema = candidate_admission_schema_ready(settings)
+runtime = candidate_admission_runtime_security_is_ready(settings)
+print({"candidate_schema_ready": schema, "runtime_security_ready": runtime})
+raise SystemExit(0 if schema and runtime else 78)
+PY
+```
+
+Only after isolated replay/review passes and a human authorizes this exact live
+apply may the operator run the same dry plan and exact allowlisted apply against
+live. A timeout or unavailable post-apply fingerprint is an unknown outcome:
+stop, inspect, and recover; never rerun blindly.
+
+### 4. Seal frontend runner identity in release evidence
+
+Before building candidate or release preflight evidence, run the frontend suite
+only with an argv whose first two entries are:
+
+```text
+/absolute/trusted/node
+/absolute/platform/src/frontend/node_modules/vitest/vitest.mjs
+```
+
+The first entry is the reviewed Node executable; the second is the Vitest
+JavaScript entry. Both arguments must be absolute and resolve to trusted,
+owner-controlled regular files. In test-execution receipt contract v2,
+`runner_kind` must be `node_vitest`; the required `executable` and
+`suite_entry` identity documents seal canonical realpath, trusted root plus
+relative path, uid/mode/link facts, and SHA-256. Receipt validation must recheck
+the same paths and bytes before the evidence can open a candidate or release
+gate.
+
+Never resolve Node from ambient `PATH`, invoke bare `node`, use
+`/usr/bin/env node`, or substitute `npm`, `pnpm`, a shell wrapper, or
+`node_modules/.bin/vitest`. A clean repository digest does not substitute for
+these two runner identities. If either file, path, owner/mode/link identity, or
+digest changes, discard the receipt and rerun the suite from the reviewed
+release identity.
+
+### 5. Restart and observe
+
+Build and validate the release-bound frontend/backend:
+
+```bash
+npm --prefix src/frontend run build
 chmod 600 data/_runtime/agent-v0.2-backend.env
 chmod 600 data/_runtime/agent-v0.2-frontend.env
 bash scripts/run_quant_backend.sh --check
 bash scripts/run_quant_frontend.sh --check
+
+bash scripts/restart_agent_v02_stack.sh \
+  --output-dir /absolute/new/owner-only/restart-evidence
 ```
 
-## Install or replace
+Then verify provider-free runtime state:
 
-The dedicated installer repeats both checks before changing launchd state,
-renders valid plists for this exact checkout, boots out an older generation,
-and bootstraps the replacement:
+```bash
+curl --fail http://127.0.0.1:8765/api/health
+curl --fail http://127.0.0.1:8765/api/settings
+curl --fail http://127.0.0.1:8765/api/hermes/gateway
+curl --fail http://127.0.0.1:8765/api/safety/effective
+curl --fail http://127.0.0.1:3001/zh/hermes
+quant-system hermes release status
+quant-system hermes candidate status
+```
+
+`GET /api/safety/effective` is provider-free observation. Its `effective=true`
+does not open local chat or public release.
+
+## Keychain preflight and private candidate
+
+After restart, use the exact configured HQA release and interpreter. The first
+probe must not create a key:
+
+```bash
+(
+  cd "$QS_INTENT_PAYLOAD_HQA_ROOT"
+  printf '{}\n' |
+    "$QS_INTENT_PAYLOAD_PYTHON_EXECUTABLE" -m hqa.intent_payload_cli probe
+)
+```
+
+If the result is key missing, stop. Only a human operator may separately decide
+to initialize this exact committed/installed runtime:
+
+```bash
+(
+  cd "$QS_INTENT_PAYLOAD_HQA_ROOT"
+  printf '{}\n' |
+    "$QS_INTENT_PAYLOAD_PYTHON_EXECUTABLE" \
+    -m hqa.intent_payload_cli initialize-key
+  printf '{}\n' |
+    "$QS_INTENT_PAYLOAD_PYTHON_EXECUTABLE" -m hqa.intent_payload_cli probe
+)
+```
+
+`initialize-key` is the only key-creating operation. Do not substitute a normal
+encrypt/put, expose it to the BFF/worker/skill, or automate it.
+
+Inspect, open, and if necessary revoke the bounded candidate:
+
+```bash
+quant-system hermes candidate status
+quant-system hermes candidate open \
+  --note "<operator reason>" \
+  --client-action-id "<stable exact action id>"
+
+quant-system hermes candidate revoke \
+  --admission-id "<exact id>" \
+  --expected-admission-digest "<exact digest>" \
+  --reason "<failure, drift, or abandonment reason>" \
+  --client-action-id "<stable exact revoke id>"
+```
+
+Open only after all preflight facts match. It remains local-private and
+short-lived. Start `supervised_dispatch` only after the candidate status and
+connector liveness bind the same runtime/schema; see
+[the connector runbook](agent-v0-2-connector-daemon.md).
+
+Real E2E must cover managed multi-turn chat, refresh/restart recovery,
+historical/external session read-only behavior plus explicit exact fork,
+approval/stop/result evidence, both vertical flows, and zero orders. External
+or historical sessions never become writable in place. Any uncertainty closes
+the candidate and keeps public standing OFF.
+
+## Pre-028 restore
+
+After a successful E2E, retain and re-verify the already isolated rehearsal by
+its dump digest and pre-028 schema/data/owner facts only. Do not run an
+environment switch as a normal completion step.
+
+Migration 028 has no supported down-migration. Only if an explicitly authorized
+emergency rollback is required, use the untouched pre-028 backup:
+
+1. revoke the candidate and keep public/local mutation closed;
+2. return the connector to `reconcile_only`, then stop connector and Web stack;
+3. restore the pre-028 dump into a new database, never over the failed live
+   database;
+4. verify the dump digest and the rehearsed pre-028 schema/data/owner facts;
+5. change the owner-only runtime env to the restored database;
+6. restart backend/frontend and verify provider-free health/readiness;
+7. keep 028-dependent candidate/release paths closed.
+
+Do not delete the failed database or the backup while the outcome is uncertain.
+Do not merge post-028 candidate/E2E rows back into the restored authority.
+Database replacement and env switching require explicit operator approval.
+
+## Install or remove LaunchAgents
+
+For a prepared release:
 
 ```bash
 bash scripts/install_agent_v02_stack_launchagents.sh
-```
-
-It is replay-safe and preserves existing logs. The log directory is mode `700`
-and all six backend/frontend combined, stdout, and stderr logs are mode `600`.
-
-Inspect the two services:
-
-```bash
 launchctl print gui/$(id -u)/com.aiquant.backend
 launchctl print gui/$(id -u)/com.aiquant.frontend
-curl --fail http://127.0.0.1:8765/api/health
-curl --fail http://127.0.0.1:3001/zh/hermes
 ```
 
-Install the supervised connector separately only after the durable release
-prerequisites are honest:
+Install the connector separately only after the private candidate prerequisites
+above are honest:
 
 ```bash
 bash scripts/install_agent_v02_connector_launchagent.sh
 ```
 
-## Remove only the Web stack
+Remove only the Web stack:
 
 ```bash
 bash scripts/uninstall_agent_v02_stack_launchagents.sh
 ```
 
-The uninstaller boots out and removes only `com.aiquant.backend` and
-`com.aiquant.frontend`. It does not alter connector or Paper Strategy Sleeves
-jobs and does not delete runtime evidence or logs.
+The uninstaller removes only backend/frontend LaunchAgents. It does not alter
+the connector, Paper Strategy Sleeves jobs, runtime evidence, backups, or logs.

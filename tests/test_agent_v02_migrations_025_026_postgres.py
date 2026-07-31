@@ -42,6 +42,8 @@ pytestmark = pytest.mark.pg
 
 MIGRATION_025 = "025_agent_v02_release_session_binding.sql"
 MIGRATION_026 = "026_agent_v02_paper_research_claim_lineage.sql"
+MIGRATION_027 = "027_agent_v02_candidate_ttl_window.sql"
+MIGRATION_028 = "028_agent_v02_candidate_paper_epoch_fence.sql"
 THROUGH_018 = (
     "001_runs_index.sql",
     "002_ai_news_cache.sql",
@@ -74,6 +76,7 @@ THROUGH_026 = THROUGH_021 + (
     MIGRATION_025,
     MIGRATION_026,
 )
+THROUGH_028 = THROUGH_026 + (MIGRATION_027, MIGRATION_028)
 ROOT_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 CLAIM_DIGEST = "c" * 64
 START_DIGEST = "d" * 64
@@ -900,7 +903,9 @@ def _released_database(
 ) -> Iterator[tuple[Settings, db.Database]]:
     with isolated_test_database_url(_base_url(), purpose=purpose) as isolated_url:
         database = db.Database(isolated_url, connect_timeout=2)
-        db.run_migrations(database, only=THROUGH_026)
+        db.run_migrations(database, only=THROUGH_028)
+        with database.connect() as conn:
+            _insert_paper_epoch_mutation(conn, label="baseline-frozen")
         settings = Settings(
             database=DatabaseSettings(
                 enabled=True,
@@ -987,6 +992,11 @@ def _insert_paper_epoch_mutation(
     label: str,
 ) -> None:
     observed_at = datetime.now(UTC)
+    account_id = (
+        "default"
+        if label == "baseline-frozen"
+        else f"paper-{label}-{uuid4().hex}"
+    )
     conn.execute(
         """
         INSERT INTO quant_system.paper_accounts (
@@ -996,12 +1006,17 @@ def _insert_paper_epoch_mutation(
         )
         VALUES (
             %s, %s, 'USD', 1000, 1000, 0, TRUE, 1,
-            '{}'::jsonb, %s, %s
+            jsonb_build_object(
+                'account_id', %s::TEXT,
+                'kill_switch', TRUE
+            ),
+            %s, %s
         )
         """,
         (
-            f"paper-{label}-{uuid4().hex}",
+            account_id,
             ROOT_USER_ID,
+            account_id,
             observed_at,
             observed_at,
         ),

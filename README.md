@@ -5,37 +5,28 @@
 Local-first quant research, backtesting, paper-trading, read-only market-data,
 and options research platform.
 
-The Phase 0-14 documents describe delivered historical capability layers, not
-the current implementation queue. Start with [docs/INDEX.md](docs/INDEX.md).
-HQA Slices 9A-9G, the read-only mini 9H Hermes artifact shelf, and full 9H
-automation/notifications are delivered. D-31 Waves 1-3 have delivered the
-fail-closed gateway contract, candidate integrity/scoped Gate 3, the
-professional read-only Hermes shell, official-API persisted-session reads,
-migration 005's durable transport ledger, a reconcile-only connector-worker
-framework, and a read-only Unified Results catalog/detail UI. Slice 3C.1 now has
-code-accepted exact workflow-binding/inventory primitives for HQA Task/Attempt and
-immutable payload metadata, but migration 006 is not applied to the live database
-and no browser or worker path consumes it. This is not a
-write bridge: real local-Hermes chat/provider use, approval mutations, exact
-Hermes-run links, full results cutover, and legacy-page retirement remain
-unfinished and require later independent evidence gates. Slice 9E is an HQA-local locked
-prediction event ledger that reuses, but does not modify, the platform. Slice 9D adds a strict read-only
-`data prices` JSON seam: explicit Futu, QFQ, and 1d only; at most 25 symbols
-and 500 inclusive calendar dates; no sample/local/Tiingo/Longbridge fallback.
-HQA portfolio-risk v2 uses the previous UTC date as `end` and `end-400 days`
-as `start`,
-globally inner-joins dates before computing returns, requires at least 60
-aligned returns, and reports per-position beta versus SPY plus position-pair
-correlations. It does not calculate aggregate beta, VaR, or a threshold
-verdict. The 2026-07-11 live acceptance used 274 aligned returns and measured
-AAPL beta at `0.8576599678`; the platform suite reported
-`1027 passed, 15 skipped`, while 20 observed state/cache files retained
-identical bytes, mtimes,
-and hashes. This repository's
-[frontend redesign and Hermes integration plan](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
-is the Slice 0-8 delivery record and UI backlog. The cross-repo product roadmap
-remains in `/Users/sunyibo/programs/Hermes-quant-agent`; this repository is its
-domain backend, not an independent Phase 15 product track.
+Historical Phase, Wave, and Workbench documents are delivery evidence, not the
+current implementation or operations queue. Start with
+[docs/INDEX.md](docs/INDEX.md). The cross-repo roadmap remains in
+`/Users/sunyibo/programs/Hermes-quant-agent`; this repository is its domain
+backend, not an independent Phase 15 track.
+
+Agent v0.2 now has a gated local single-user managed-session write path,
+durable connector, transcript/follow surfaces, approvals/stops/results, and
+candidate/release authorities. Historical and external sessions stay Web
+read-only; continuing one requires an explicit fork into a new managed Session.
+Local `chat_write_ready` is not public authorization. Standing
+`public_chat_write_ready`, `public_write_authorized`, and
+`release_authorized` remain OFF.
+
+The repository change set contains ordered migration source 016–028. A read-only
+2026-07-31 check of live `quantplatform` found the inspected 016–027 markers
+and no 028 marker; the running backend also did not expose the new
+`GET /api/safety/effective` route. That is a dated source/live boundary, not an
+authorization or a claim about a future operator window. This README does not
+prove whether 028 is committed, installed, isolated-replayed, live-applied, or
+authorized. The sole migration, readiness, restart, E2E, and restore authority is the
+[Agent v0.2 local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md).
 
 - US equity and ETF historical data workflows.
 - Factor research, Factor Lab diagnostics (real-data-first since 2026-06-11,
@@ -149,12 +140,30 @@ quant-system doctor
 environment, safety flags, default data provider, Futu/OpenD endpoint, optional
 database-index settings, and the runtime log path.
 
+### Agent v0.2 local operator boundary
+
+Do not run Agent v0.2 migration or release steps from this README. Use the
+[local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md), which owns the
+exact ordered operator sequence, acceptance evidence, and restore boundary.
+
+Migration 028 adds the current-paper-epoch fence and requires one canonical
+root-owner paper account with ID `default`, materialized `kill_switch=true`,
+and raw JSON `account_id`/boolean `kill_switch` equal to those columns.
+`GET /api/safety/effective` is the provider-free observation surface after the
+new runtime is installed; it does not authorize chat or release.
+
+Private admission is operator-controlled with
+`quant-system hermes candidate status|open|revoke`. HQA Keychain `probe` is
+non-creating; normal encrypt/put/bind and connector checks must not create a
+key. Only a human operator may separately run `initialize-key` for an exact
+committed/installed runtime and then repeat `probe`.
+
 ## Main Pages
 
 | Page | Purpose |
 |---|---|
-| `/hermes` | Reversible default, read-only COO workbench with Today, Tasks, Approvals, Unified Results preview, one safety strip, and a disabled composer. It reads local Hermes health/capabilities and saved sessions through a server-side official-API adapter, but submits no prompt and consumes no Hermes provider quota. |
-| `/hermes/sessions` | GET-only list/detail view over real saved local-Hermes sessions; the bearer key remains server-side and the transcript composer stays disabled. |
+| `/hermes` | Reversible COO workbench with Today, managed-session conversation, Tasks, Approvals, and Unified Results preview. Its composer opens only inside an exact local candidate/release window after every local gate passes; public standing remains OFF. Provider-free health/capability/session reads submit no prompt. |
+| `/hermes/sessions` | GET-only list/detail view over real saved local-Hermes sessions. The bearer key remains server-side; historical/external transcripts stay read-only and continuing context requires an explicit fork into a new managed Session. |
 | `/hermes/results` | Read-only unified catalog/detail projection over authoritative platform runs, experiments, candidate records, HQA artifacts, and exact run links. Preview is visible while `unifiedResultsCutoverAccepted=false`; no Hermes run is inferred from symbol/name similarity. |
 | `/brief` | Live UI-assembled factual daily-brief preview and PostgreSQL archive control; saving is disabled if the authoritative paper-account source is unavailable. Its AI HOT GET may contact that upstream and best-effort mirror news/cache-audit rows to PostgreSQL; merely viewing the live preview does not create a brief snapshot. The server validates the complete factual-v1 schema and watermarks, but does not independently refetch every upstream source. |
 | `/brief/[publicId]` | Immutable historical brief snapshot rendered from its stored payload and source watermarks. |
@@ -333,6 +342,10 @@ QS_DATABASE_AUTO_MIGRATE=false  # fail-closed: startup never auto-applies
 QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 ```
 
+This is the general file-mode development example. The Agent v0.2 private
+candidate stack instead requires `canonical`; follow the local-stack runbook
+and do not infer a live mode from this example.
+
 Startup does **not** auto-apply migrations. `QS_DATABASE_AUTO_MIGRATE` defaults
 to `false`, and startup ignores the legacy setting even if it is explicitly set
 to `true`; the schema is applied explicitly via
@@ -343,20 +356,20 @@ columns/defaults, constraints, indexes, views, sequences, triggers/rules,
 functions, types/enums, RLS policy and row-security flags—not only object names.
 An apply refuses to start when the pre-fingerprint is unavailable, and treats an
 unavailable post-fingerprint as an operator-review outcome rather than success.
-The migrations themselves:
+Migrations are ordered, idempotent SQL rather than a general
+`schema_migrations` ledger. Migrations 001–015 establish the run/news/business
+facts, Hermes ledger/workflow/session, security, and provisioning baseline.
+Agent v0.2 migrations 016–028 are one additive ladder for private candidate
+admission, vertical/paper authorities, sealed evidence and release hardening,
+run/fork/control lineage, release/session binding, research claim lineage,
+candidate TTL, and the current paper-epoch fence. A source file, green isolated
+replay, or backup does not prove live application. Use the local-stack runbook
+for current markers and the only supported apply/restore sequence.
+Migration apply holds an exclusive schema-runtime gate for its full file batch;
+candidate open takes the matching transaction-scoped shared gate and reads its
+schema fingerprint on the same connection before any authority write.
 
-- Migrations 003/004 create 11 business tables: root user, brief issue/snapshot/source,
-AI daily reports, and six paper-account tables for account, ledger, pending
-orders, current positions, and position snapshots. Migration 005 adds five
-Hermes transport-ledger tables for schema metadata, commands, events, outbox,
-and exact run links. Together with migration 001's run index and migration
-002's two AI-news cache tables, migrations 001–005 define 19 `quant_system` tables.
-Migration 006 source adds an independent workflow-binding schema-meta table and an
-append-only exact command-to-HQA binding table, making the source target 21 tables;
-it is **code accepted but not live applied**, so the current live database remains at
-migration 005 / 19 tables until separately authorized.
-There is no general `schema_migrations` ledger; the SQL
-files are idempotently replayed in lexical order. Startup also backfills the
+Startup also backfills the
 file-based run index and prunes index rows whose files were removed. If
 PostgreSQL is down, the first probe is short and later failed requests use a
 brief cooldown window while continuing to read local files or live upstreams.
@@ -710,20 +723,19 @@ Start here:
 
 - [docs/INDEX.md](docs/INDEX.md)
 - [docs/OVERVIEW.md](docs/OVERVIEW.md)
+- [Agent v0.2 local-stack operations authority](docs/runbooks/agent-v0-2-local-stack.md)
 - [Previous frontend/Hermes Slice 0-8 record](docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md)
 - [Local storage and PostgreSQL status](docs/architecture/database_cache_plan.md)
 
 `docs/SYSTEM_DESIGN_RESEARCH.md`, phase delivery records, and audits are
 historical design/evidence sources, not the current work queue.
 
-Current handoff: D-31 Wave 3A/3B and read-only 3E-A are delivered and locally
-accepted; 3C is a reconcile-only framework, not command dispatch. 3C.1's
-Task/Attempt/payload exact-binding foundation is code accepted, while migration 006
-is still pending live authorization/application. Wave 3D chat
-remains fail-closed, and 3F provides only a default-off Agent Studio redirect
-mechanism. The next implementation must close the explicit upstream/platform
-write gates or prove parity before any legacy-page cutover; neither is silently
-implied by an older backlog.
+Current handoff: local managed-session write exists only behind the exact
+local-private gate set; external/history sessions remain read-only and public
+standing is OFF. Source includes 016–028, while the dated 2026-07-31 live check
+found 016–027 and not 028. Before any candidate E2E, finish the local-stack
+operator window, run the non-creating Keychain probe, and open one bounded
+candidate. Legacy-page cutover remains a separate decision.
 
 Current options docs:
 

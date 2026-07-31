@@ -21,7 +21,10 @@ from quant_system.hermes.release_runtime import (
     hermes_process_runtime_digest,
     restricted_runtime_security_ready,
 )
-from quant_system.hermes.test_execution_evidence import executable_evidence
+from quant_system.hermes.test_execution_evidence import (
+    TEST_EXECUTION_RECEIPT_CONTRACT,
+    validate_execution_plan,
+)
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -48,10 +51,9 @@ def _clean_repo(tmp_path: Path) -> Path:
             '{"scripts":{"test":"vitest run"},"type":"module"}\n',
             encoding="utf-8",
         )
-        vitest = frontend / "node_modules" / ".bin" / "vitest"
+        vitest = frontend / "node_modules" / "vitest" / "vitest.mjs"
         vitest.parent.mkdir(parents=True)
-        vitest.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-        vitest.chmod(0o755)
+        vitest.write_text("process.exit(0);\n", encoding="utf-8")
     _git(repo, "add", "runtime.py")
     if tmp_path.name == "platform":
         _git(
@@ -59,7 +61,7 @@ def _clean_repo(tmp_path: Path) -> Path:
             "add",
             "-f",
             "src/frontend/package.json",
-            "src/frontend/node_modules/.bin/vitest",
+            "src/frontend/node_modules/vitest/vitest.mjs",
         )
     _git(repo, "commit", "-qm", "runtime")
     return repo
@@ -253,6 +255,10 @@ def _release_evidence_payload(
 
     artifacts: dict[str, dict[str, object]] = {}
     suites: list[dict[str, object]] = []
+    node = tmp_path / "trusted-node" / "bin" / "node"
+    node.parent.mkdir(parents=True)
+    node.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    node.chmod(0o755)
     for name in _TEST_SUITES:
         artifact_path = f"artifacts/test-{name}.json"
         output = f"{name} output\n".encode()
@@ -271,24 +277,16 @@ def _release_evidence_payload(
         }[name]
         now = datetime.now(UTC)
         if name == "frontend":
-            executable = (
-                runtime_roots[runtime_name]
-                / "src"
-                / "frontend"
-                / "node_modules"
-                / ".bin"
-                / "vitest"
-            ).resolve()
-            argv = [
-                str(executable),
+            cwd = runtime_roots[runtime_name] / "src/frontend"
+            suite_entry = cwd / "node_modules" / "vitest" / "vitest.mjs"
+            planned_argv = [
+                str(node),
+                str(suite_entry),
                 "run",
                 "--reporter=junit",
-                f"--outputFile=/tmp/{name}.junit.xml.tmp",
+                "--outputFile={junit}",
             ]
-            cwd = runtime_roots[runtime_name] / "src/frontend"
-            cwd_relative = "src/frontend"
         else:
-            executable = Path(sys.executable)
             selectors = (
                 [
                     "tests/gateway/test_api_server.py",
@@ -298,7 +296,7 @@ def _release_evidence_payload(
                 if name == "hermes_focused"
                 else ["tests"]
             )
-            argv = [
+            planned_argv = [
                 sys.executable,
                 "-m",
                 "pytest",
@@ -308,20 +306,25 @@ def _release_evidence_payload(
                     else []
                 ),
                 *selectors,
-                f"--junitxml=/tmp/{name}.junit.xml.tmp",
+                "--junitxml={junit}",
             ]
             cwd = runtime_roots[runtime_name]
-            cwd_relative = "."
+        cwd_evidence, executable, runner_kind, suite_entry = validate_execution_plan(
+            name=name,
+            argv=planned_argv,
+            cwd=cwd,
+            runtime_roots=runtime_roots,
+        )
+        argv = [
+            argument.replace("{junit}", f"/tmp/{name}.junit.xml.tmp")
+            for argument in planned_argv
+        ]
         artifacts[artifact_path] = {
             "argv": argv,
             "completed_at": now.isoformat().replace("+00:00", "Z"),
-            "contract": "agent-v0.2-test-execution-receipt/v1",
-            "cwd": {
-                "realpath": str(cwd.resolve()),
-                "relative": cwd_relative,
-                "runtime": runtime_name,
-            },
-            "executable": executable_evidence(executable),
+            "contract": TEST_EXECUTION_RECEIPT_CONTRACT,
+            "cwd": cwd_evidence,
+            "executable": executable,
             "exit_code": 0,
             "junit": {
                 "path": f"{stem}-junit-{junit_digest}.xml",
@@ -330,6 +333,8 @@ def _release_evidence_payload(
                 "_content": junit.decode(),
             },
             "name": name,
+            "runner_kind": runner_kind,
+            "suite_entry": suite_entry,
             "output": {
                 "path": f"{stem}-output-{output_digest}.log",
                 "sha256": output_digest,

@@ -58,6 +58,22 @@ _Avoid_: V6 done, local mutation ON as V6 complete
 Single-user opening of real Hermes dispatch, supervised worker path, and local mutation/composer flags under the trading kill switch; it is not Plan-V6 acceptance and not public cutover.
 _Avoid_: memory-V6 as plan exit, public composer open
 
+**Source / Live Migration Boundary**:
+Migration source, isolated replay, and backup evidence are separate from a marker and exact readiness in the current live database. The Platform operational sequence is owned only by `docs/runbooks/agent-v0-2-local-stack.md`; source 028 does not mean live 028.
+_Avoid_: file exists therefore applied, tests passed therefore released, copied migration ladders
+
+**Effective Paper Safety**:
+Provider-free observation that the global kill switch is on and canonical PostgreSQL contains exactly one root-owner `default` paper account whose materialized and raw `account_id`/JSON-boolean `kill_switch` facts match the current paper-authority epoch. `GET /api/safety/effective` observes this authority; it does not authorize chat or release.
+_Avoid_: file/mirror account, display snapshot, truthy string `"true"`, release gate
+
+**Private Candidate Admission**:
+Short-lived local-only authority opened and revoked by an operator for one exact runtime, schema, preflight, paper epoch, and evidence window. It may enable local `chat_write_ready` with a fresh connector but never public write.
+_Avoid_: public release, permanent enablement, refreshing a stale epoch, doc-only approval
+
+**Non-Creating Keychain Probe**:
+HQA `probe` verifies the existing device key without creating it. Ordinary encrypt, `put`, `bind_resolve`, BFF preflight, and connector checks also do not create a key; only the separately authorized operator `initialize-key` command may create one, followed by another `probe`.
+_Avoid_: first encrypt bootstraps key, worker initialization, automatic retry initialization
+
 **Thin Browser Write Rail**:
 The minimum browser path that obtains an owner gate, ensures a managed session, and submits a turn through the composite turn submit entry, then reconciles via action receipt and snapshot.
 _Avoid_: Composer draft unlock, gateway status poll, preventDefault-only submit, full Plan-V6 UI, public put-then-act

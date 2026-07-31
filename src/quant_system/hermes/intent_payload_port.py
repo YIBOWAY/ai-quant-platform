@@ -38,6 +38,8 @@ class IntentPayloadPortError(RuntimeError):
 
 
 class IntentPayloadPort(Protocol):
+    def probe(self) -> None: ...
+
     def put_intent(self, request: Mapping[str, Any]) -> dict[str, Any]: ...
 
     def bind_and_resolve_prompt(
@@ -231,6 +233,17 @@ class SubprocessIntentPayloadPort:
     cli_settings: IntentPayloadCliSettings
     runner: Callable[..., subprocess.CompletedProcess[bytes]] | None = None
 
+    def probe(self) -> None:
+        document = self._invoke("probe", {})
+        if document != {"ok": True, "status": "ready"}:
+            if document.get("ok") is not True:
+                raise _map_error_document(document)
+            raise IntentPayloadPortError(
+                "intent_cli_invalid_receipt",
+                "probe receipt is invalid",
+                retryable=True,
+            )
+
     def put_intent(self, request: Mapping[str, Any]) -> dict[str, Any]:
         document = self._invoke("put", request)
         if document.get("ok") is not True:
@@ -358,6 +371,8 @@ class FakeIntentPayloadPort:
     resolves: list[dict[str, Any]] | None = None
     put_handler: Callable[[Mapping[str, Any]], dict[str, Any]] | None = None
     resolve_handler: Callable[[Mapping[str, Any]], dict[str, Any]] | None = None
+    probe_handler: Callable[[], None] | None = None
+    probes: int = 0
     # Simple content-addressed memory when handlers are absent.
     _store: dict[str, dict[str, Any]] | None = None
 
@@ -368,6 +383,11 @@ class FakeIntentPayloadPort:
             self.resolves = []
         if self._store is None:
             self._store = {}
+
+    def probe(self) -> None:
+        self.probes += 1
+        if self.probe_handler is not None:
+            self.probe_handler()
 
     def put_intent(self, request: Mapping[str, Any]) -> dict[str, Any]:
         body = dict(request)

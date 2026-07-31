@@ -1,6 +1,6 @@
-# Hermes 会话读取：运行手册与威胁模型
+# Hermes 会话、读取边界与本地写入门禁
 
-## 当前结论（2026-07-16）
+## 当前结论（2026-07-31）
 
 平台已经能通过 **official Hermes API Server** 读取本机已保存的 Hermes 会话：
 
@@ -13,21 +13,32 @@
         -> Hermes 已保存会话
 ```
 
-这是会话观察面，不是完整 chat bridge：
+读取面与写入面必须分开理解：
 
-- 已开放：gateway/capability 状态、session list、session detail、经过过滤的 messages。
-- 未开放：run/chat submission、SSE 执行流、approval mutation、stop、完整 Unified
-  Results cutover、旧研究页 redirect/删除。
-- 前端能力位：`sessionRead=true`；`chat=false`、`execution=false`、
-  `approvalMutations=false`、`legacyRedirects=false`。Unified Results 只读
-  preview/catalog 已可见，但 `unifiedResultsCutoverAccepted=false`。
+- gateway/capability、session list/detail/messages 是 server-side GET-only；
+- Discord、外部导入和历史会话在 Web 中始终只读，继续上下文必须显式 fork
+  到新的 managed Hermes Session，并保留不可变 lineage；
+- 新 managed Session 的 composer/submit-turn 已有本地单用户路径，但只有
+  local mutation/composer、owner cookie/CSRF、完整 schema/runtime、有效
+  candidate 或 accepted release、Keychain、paper safety 与 connector liveness
+  同时通过时才可打开；
+- `chat_write_ready` 表示本地 readiness，不表示
+  `public_chat_write_ready`、`public_write_authorized` 或
+  `release_authorized`；public standing 继续 OFF；
+- Unified Results preview/catalog 可见，但 legacy redirect/retirement 仍需独立授权。
 - health、capabilities 与 session GET 不提交 prompt、不调用 Hermes provider，因而不消耗
   Hermes 当前配置的 Codex、Grok 或其他 provider 额度。
-- 本切片没有新增 PostgreSQL migration，也没有把 Hermes 会话复制进平台数据库；
-  页面读取的是 Hermes 自己的已保存会话。
+- 会话 GET 不把 Hermes 会话复制进平台数据库；写端只持久化 Platform 的
+  managed-session/command/evidence 权威。
 
 旧的 TUI gateway capability contract 已随上游实现漂移并 fail closed。它只保留历史/
 诊断价值，平台的现行主读取链路是 official API Server。
+
+数据库迁移、readiness、服务重启、candidate E2E 与 restore 只以
+[Agent v0.2 local-stack runbook](../runbooks/agent-v0-2-local-stack.md) 为准。
+仓库 change set 包含 source 016–028；2026-07-31 的只读现场核对显示 016–027
+标记存在、028 标记不存在。这个快照不是 028 live 或 release 授权，本指南也不证明
+028 是否 committed/installed/isolated-replayed/live-applied/authorized。
 
 ## 启用条件
 
@@ -98,6 +109,7 @@ TUI bridge。
 ```bash
 curl -fsS http://127.0.0.1:8765/api/hermes/gateway
 curl -fsS 'http://127.0.0.1:8765/api/hermes/sessions?limit=5&offset=0'
+curl -fsS http://127.0.0.1:8765/api/safety/effective
 ```
 
 gateway 正常时应看到：
@@ -105,13 +117,15 @@ gateway 正常时应看到：
 - `connected=true`
 - `session_api_available=true`
 - `read_status=available`
-- `chat_write_ready=false`
-- `platform_delivery_blockers` 含 permanent cutover/security 码（如
-  `authenticated_mutation_bff_unavailable`、`research_workflow_submission_unavailable`、
-  `independent_security_review_unavailable`、`user_chat_cutover_approval_required`）以及
-  schema 未就绪时的动态码（binding 未就绪时含 `command_dispatch_adapter_unavailable`）；
-  **不含**已实现的 `csrf_protection_unavailable`；`dark_dispatch_ready` 不打开 public write
-- `blockers` 仍合并 upstream 写端可靠性缺口与 platform blockers
+- `chat_write_ready` 只按当前 local candidate/release readiness 计算，可能为 false
+  或在受控窗口内为 true，不能据此推断 public write；
+- `platform_delivery_blockers` 与 `blockers` 必须如实保留 schema、runtime、
+  candidate/release、connector、Keychain 或上游缺口，不能把 unavailable 改写成空状态。
+
+`GET /api/safety/effective` 不调用 provider。只有 canonical 模式、root owner 恰好一个
+`default` 账户、materialized/raw `account_id` 与 JSON boolean `kill_switch=true`
+一致、global kill switch 为 true 且 current paper-authority epoch 可读时，
+`effective` 才能为 true。它仍不授权本地 chat 或 public release。
 
 从 sessions 响应选择一个真实 `id` 后，可以验证：
 
@@ -125,9 +139,10 @@ curl -fsS 'http://127.0.0.1:8765/api/hermes/sessions/<URL_ENCODED_ID>/messages'
 - `http://127.0.0.1:3001/zh/hermes/sessions`
 - `http://127.0.0.1:3001/zh/hermes/sessions/<URL_ENCODED_ID>`
 
-详情页只显示 `user` / `assistant` 文本消息，composer 必须保持 disabled。system/tool/
-reasoning 等上游消息不会透传；消息数受 `QS_HERMES_GATEWAY_MAX_MESSAGES` 限制，响应以
-`omitted_message_count` 说明被省略数量。
+persisted-session 详情页只显示 `user` / `assistant` 文本消息，并保持只读；它不是
+managed workspace composer。system/tool/reasoning 等上游消息不会透传；消息数受
+`QS_HERMES_GATEWAY_MAX_MESSAGES` 限制，响应以 `omitted_message_count`
+说明被省略数量。
 
 这里没有 DLP/秘密扫描：user/assistant 文本会按原内容限长展示。若用户曾把 key、token 或
 其他敏感文本粘贴进对话，它仍可能出现在详情页；不要把会话观察面当作脱敏归档。
@@ -161,8 +176,8 @@ ID。当前会话页只经平台 API/BFF 读取，从不接触上游 URL 或 Bea
   文件；不得出现在 JavaScript bundle、HTML、API response、日志或截图中。
 - **loopback 是网络边界，不是 OS 用户认证。** 同一台机器上其他用户/进程是否可访问，
   取决于 OS 权限与进程隔离；不能把 `127.0.0.1` 当成应用身份认证。
-- **平台 BFF 当前面向单用户本地部署。** 在没有用户认证、会话授权和 CSRF 保护前，
-  不得公开绑定或反向代理到 LAN/公网。
+- **平台 BFF 当前面向单用户本地部署。** 写路由使用本地 owner cookie 与 CSRF，
+  但这不是多用户身份系统；读取面也不能公开绑定或反向代理到 LAN/公网。
 - **Hermes 响应是不可信输入。** BFF 只投影 allowlisted 字段，过滤角色、校验 ID/类型、
   标准化 timestamp 并施加长度上限。
 
@@ -184,17 +199,13 @@ ID。当前会话页只经平台 API/BFF 读取，从不接触上游 URL 或 Bea
 | `upstream_auth_failed` | Hermes server 与 key file 不一致；安全轮换后重启 Hermes，再重试 BFF。 |
 | `upstream_unavailable` / `upstream_timeout` | 确认 official API Server 正在 loopback:8642 监听；不要改接旧 TUI port。 |
 | `session_resources_unavailable` | 当前 Hermes capability 没有明确声明 persisted session resources；保持 fail closed。 |
-| 页面“读取不可用” | 先看 `/api/hermes/gateway` warning，再看后端日志；不要通过启用 composer 绕过。 |
+| 页面“读取不可用” | 先看 `/api/hermes/gateway` warning，再看后端日志；不要通过打开 local composer 绕过。 |
+| `/api/safety/effective` 为 404 | 运行进程尚未加载当前 source；按 local-stack runbook 完成被授权的迁移/readiness/restart，不能把 source 当 live。 |
+| `candidate_paper_authority_epoch_stale` | paper authority 已变化；关闭写端并 CAS revoke exact candidate，不能刷新或代换 epoch。 |
 
-## Wave 3 / V5–V6 底座：成熟写端连接，而不是空轮询
+## 本地私有写入链路
 
-下图是目标链路。当前 live 已启用 PostgreSQL migration 005 transport ledger + 006/007
-workflow-binding/session-registry、session BFF，以及 deterministic connector worker。
-**V5（2026-07-21）** 交付 dark `supervised_dispatch` + crash matrix。
-**V6 本地授权（2026-07-21）** 在纯本地单用户前提下打开了此前 OFF 的四项：真实
-`HttpHermesDispatchAdapter`、CLI `--mode supervised_dispatch`、provider smoke、
-settings-gated local mutation / composer 就绪位。**交易**仍 fail-closed
-（`kill_switch=true` / `dry_run` / `paper` / `live_trading_enabled=false`）。
+本地写入使用 durable ledger 与 deterministic connector，不让 LLM cron 空轮询：
 
 ```text
 Browser (QS_HERMES_CHAT_ENABLED + owner cookie/CSRF)
@@ -216,27 +227,38 @@ Worker 模式：
 | `reconcile_only` | LISTEN/NOTIFY + periodic scan + expired-lease reconcile；**不 claim** | CLI 默认 |
 | `supervised_dispatch` | reconcile → claim → gate → `mark_dispatch_started` → adapter **事务外** → delivered / rejected / `outcome_unknown` | 需 `--mode supervised_dispatch`；自动构建 HTTP adapter |
 
-本地开关（默认 OFF；live `.env` 可按授权打开）：
+本地开关默认 OFF，只是必要条件：
 
 | 变量 | 作用 |
 |---|---|
-| `QS_HERMES_GATEWAY_ALLOW_EPHEMERAL_RUNS` | 上游无 durable 时仍允许 POST `/v1/runs` |
+| `QS_HERMES_GATEWAY_ALLOW_EPHEMERAL_RUNS` | 仅显式测试兼容窗口；不得替代 durable release contract |
 | `QS_HERMES_GATEWAY_DISPATCH_TIMEOUT_SECONDS` | 写端超时（默认 120s；读端仍 2s） |
 | `QS_LOCAL_MUTATION_ENABLED` | 打开 authenticated local BFF mutation 门 |
 | `QS_LOCAL_MUTATION_COMPOSER_OPEN` | 在 schema 就绪时表面 `chat_write_ready` / composer |
 | `QS_HERMES_CHAT_ENABLED`（FE） | 解锁 composer 草稿 UI；与 API local mutation 联用后可走 L2a composite submit（仍非 public V8） |
 | `QS_INTENT_PAYLOAD_*` | BFF/worker 子进程调用 HQA Intent Payload CLI（put / bind_resolve）；平台不 `import hqa` |
 
-V5/V6 验收要点：
+这些开关之外还必须满足 migration 028 exact readiness、effective paper safety、
+非创建式 HQA Keychain `probe`、短时 private candidate 或 exact accepted release、
+fresh supervised connector 与 owner/CSRF。Key missing 时必须暂停；只有操作者可按
+local-stack runbook 单独执行 `initialize-key`，普通 put/encrypt 不得创建 key。
 
-- `FakeHermesDispatchAdapter`：accept / recover / timeout / reject / accept_drop_ack。
-- `HttpHermesDispatchAdapter`：mock transport unit + live smoke
-  `ensure_bound_command` → `connector-worker --once --mode supervised_dispatch --fixed-input "Reply with exactly: pong"` → `delivered` / `provider_call_count=1`。
-- 空队列：零 Hermes mutation、零 provider call。
-- timeout / transport → durable `outcome_unknown`；**禁止盲重试**。
-- gate deny 在 claim 后、网络前 reject。
-- `composer_readiness` 现为 settings-gated：local mutation ON + research schema ready
-  ⇒ `mutation_enabled` / `composer_write_ready` / `chat_write_ready` 可为 true。
+Private candidate 的状态与关闭入口是：
+
+```bash
+quant-system hermes candidate status
+quant-system hermes candidate open \
+  --note "<operator reason>" \
+  --client-action-id "<stable exact action id>"
+quant-system hermes candidate revoke \
+  --admission-id "<exact id>" \
+  --expected-admission-digest "<exact digest>" \
+  --reason "<reason>" \
+  --client-action-id "<stable exact revoke id>"
+```
+
+`open` 不授权 public write。任何 runtime/schema/paper epoch/connector drift、证据失败
+或放弃都应 revoke exact candidate。
 
 最终 worker 的职责仍是确定性的队列与恢复，不是让模型担任消息队列：
 
@@ -254,16 +276,3 @@ V5/V6 验收要点：
    第二个 run。
 
 不推荐“让 Hermes cron 每隔 N 秒请求平台并问有没有任务”。
-
-**L2a/L2b（2026-07-22，本地 dark）：**
-
-- `POST /api/agent/workspace/submit-turn`：owner CSRF + composite put + ledger turn。
-- FE `workspaceClient` / `ComposerSubmitController`：same-origin cookies；poll follow
-  lifecycle；delivered 后 `GET /api/hermes/sessions/{hermes_session_id}/messages` 预览
-  最新 assistant（用 command/event 的 `hermes_session_id`，不要用 registry `web_`/`wm_`）。
-- snapshot `commands[]` 为 public objects；follow cursor = workspace-scoped max event_id。
-- ADR（HQA）：`docs/design/2026-07-22-l2a-send-thin-write-rail-adr.md`。
-
-仍待后续：Plan-V6 完整 transcript/SSE/Task drawer、HQA Attempt observe 全链路、
-approval exact binding、stop reconciliation、常驻 launchd supervised daemon 默认开启、
-**public** V8 cutover。

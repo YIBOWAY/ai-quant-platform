@@ -47,6 +47,8 @@ describe("commandActivity (L4a)", () => {
   it("labels states and active set", () => {
     expect(commandStateLabel("delivered")).toBe("Delivered");
     expect(commandStateLabel("delivered", true)).toBe("已送达");
+    expect(commandStateLabel("succeeded")).toBe("Succeeded");
+    expect(commandStateLabel("succeeded", true)).toBe("已成功");
     expect(isActiveCommandState("queued")).toBe(true);
     expect(isActiveCommandState("leased")).toBe(true);
     expect(isActiveCommandState("delivered")).toBe(false);

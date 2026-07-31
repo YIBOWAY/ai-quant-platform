@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -146,6 +147,15 @@ def _runtime_roots(tmp_path: Path) -> tuple[dict[str, Path], dict[str, dict[str,
     return roots, runtime
 
 
+def _node_executable() -> Path:
+    configured = os.environ.get("QS_QUANT_FRONTEND_NODE_BIN")
+    observed = configured or shutil.which("node")
+    assert observed is not None
+    node = Path(observed).expanduser().resolve()
+    assert node.is_file()
+    return node
+
+
 def _test_receipts(
     tmp_path: Path,
     roots: dict[str, Path],
@@ -169,7 +179,8 @@ def _test_receipts(
         if name == "frontend":
             cwd = roots["platform"] / "src/frontend"
             argv = (
-                str(cwd / "node_modules" / ".bin" / "vitest"),
+                str(_node_executable()),
+                str(cwd / "node_modules" / "vitest" / "vitest.mjs"),
                 "run",
                 "--reporter=junit",
                 "--outputFile={junit}",
@@ -254,7 +265,7 @@ def test_run_suite_executes_without_shell_and_seals_recomputable_receipt(
     assert {stat.S_IMODE(path.stat().st_mode) for path in output_dir.iterdir()} == {0o600}
 
 
-@pytest.mark.parametrize("runner_name", ["uv", "pnpm"])
+@pytest.mark.parametrize("runner_name", ["uv", "node"])
 def test_sealed_absolute_runner_receipt_validates_without_runner_on_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -265,10 +276,8 @@ def test_sealed_absolute_runner_receipt_validates_without_runner_on_path(
     output_dir.mkdir(mode=0o700)
     runner_path = tmp_path / "approved-bin" / runner_name
     runner_path.parent.mkdir()
-    runner_target = runner_path.with_name(f"{runner_name}.real")
-    runner_target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    runner_target.chmod(0o700)
-    runner_path.symlink_to(runner_target.name)
+    runner_path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    runner_path.chmod(0o700)
     runner = str(runner_path)
     monkeypatch.setenv(
         "PATH",
@@ -293,7 +302,7 @@ def test_sealed_absolute_runner_receipt_validates_without_runner_on_path(
         cwd = roots["platform"] / "src/frontend"
         argv = (
             runner,
-            "vitest",
+            str(cwd / "node_modules" / "vitest" / "vitest.mjs"),
             "run",
             "--reporter=junit",
             "--outputFile={junit}",
@@ -345,6 +354,212 @@ def test_sealed_absolute_runner_receipt_validates_without_runner_on_path(
 
     assert validated.executable_path == Path(runner).resolve()
     assert validated.argv[0] == runner
+
+
+def test_sanitized_environment_binds_managed_python_outside_private_home(
+    tmp_path: Path,
+) -> None:
+    scratch = tmp_path / "evidence"
+    scratch.mkdir()
+    managed_root = tmp_path / "operator" / ".local" / "share" / "uv" / "python"
+    interpreter = managed_root / "cpython-3.11-test" / "bin" / "python3.11"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_text("#!/bin/sh\nprintf managed-python-ok\n", encoding="utf-8")
+    interpreter.chmod(0o700)
+    runtime = tmp_path / "runtime"
+    venv_python = runtime / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(interpreter)
+    poisoned_git = venv_python.parent / "git"
+    poisoned_git.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+    poisoned_git.chmod(0o700)
+
+    env = release_evidence_builder._sanitized_test_environment(
+        scratch,
+        executable=venv_python,
+        working_directory=runtime,
+    )
+
+    assert env["HOME"] == str(scratch)
+    assert env["HQA_UV_MANAGED_PYTHON_ROOT"] == str(managed_root)
+    assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert env["PYTHONINTMAXSTRDIGITS"] == "0"
+    assert env["UV_PYTHON_DOWNLOADS"] == "never"
+    assert str(venv_python.parent) not in env["PATH"].split(os.pathsep)
+    assert str(interpreter.parent) in env["PATH"].split(os.pathsep)
+    completed = subprocess.run(
+        ("/usr/bin/env", "python3.11"),
+        check=True,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+    assert completed.stdout == "managed-python-ok"
+
+
+def test_frontend_release_suite_never_executes_node_from_ambient_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+    attacker_bin = tmp_path / "attacker-bin"
+    attacker_bin.mkdir()
+    attacker_marker = tmp_path / "attacker-node-executed"
+    attacker_node = attacker_bin / "node"
+    attacker_node.write_text(
+        "#!/bin/sh\n"
+        f"printf attacked > {str(attacker_marker)!r}\n"
+        'for argument in "$@"; do\n'
+        '  case "$argument" in\n'
+        "    --outputFile=*)\n"
+        '      target=${argument#--outputFile=}\n'
+        "      printf '%s' '<testsuite tests=\"1\" failures=\"0\" "
+        "errors=\"0\" skipped=\"0\"><testcase name=\"attacker\"/></testsuite>' "
+        '> "$target"\n'
+        "      chmod 600 \"$target\"\n"
+        "      ;;\n"
+        "  esac\n"
+        "done\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    attacker_node.chmod(0o700)
+    monkeypatch.setenv(
+        "PATH",
+        f"{attacker_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+    )
+    frontend = roots["platform"] / "src/frontend"
+
+    with pytest.raises(
+        EvidenceBuildError,
+        match="Node|node|Vitest|approved suite runner|exit code",
+    ):
+        run_test_suite(
+            name="frontend",
+            argv=(
+                str(frontend / "node_modules" / ".bin" / "vitest"),
+                "run",
+                "--reporter=junit",
+                "--outputFile={junit}",
+            ),
+            output_dir=output_dir,
+            runtime_roots=roots,
+            cwd=frontend,
+        )
+
+    assert not attacker_marker.exists()
+    assert not list(output_dir.iterdir())
+
+
+def test_frontend_release_suite_seals_absolute_node_and_vitest_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+    node_root = tmp_path / "trusted-node"
+    node_root.mkdir(mode=0o700)
+    node_bin = node_root / "bin"
+    node_bin.mkdir(mode=0o700)
+    node = node_bin / "node"
+    node.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    node.chmod(0o700)
+    frontend = roots["platform"] / "src/frontend"
+    vitest_entry = frontend / "node_modules" / "vitest" / "vitest.mjs"
+    captured_argv: tuple[str, ...] | None = None
+
+    def execute_with_passing_junit(
+        executed_argv: tuple[str, ...],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        timeout_seconds: int,
+    ) -> tuple[int, bytes]:
+        nonlocal captured_argv
+        del cwd, env, timeout_seconds
+        captured_argv = executed_argv
+        target = Path(
+            next(
+                argument.split("=", 1)[1]
+                for argument in executed_argv
+                if argument.startswith("--outputFile=")
+            )
+        )
+        target.write_bytes(
+            b'<testsuite tests="1" failures="0" errors="0" skipped="0">'
+            b'<testcase name="release"/></testsuite>'
+        )
+        target.chmod(0o600)
+        return 0, b"passed\n"
+
+    monkeypatch.setattr(
+        release_evidence_builder,
+        "_execute_bounded",
+        execute_with_passing_junit,
+    )
+    result = run_test_suite(
+        name="frontend",
+        argv=(
+            str(node),
+            str(vitest_entry),
+            "run",
+            "--reporter=junit",
+            "--outputFile={junit}",
+        ),
+        output_dir=output_dir,
+        runtime_roots=roots,
+        cwd=frontend,
+    )
+
+    receipt = json.loads(result.receipt_path.read_text(encoding="utf-8"))
+    node_realpath = node.resolve()
+    entry_realpath = vitest_entry.resolve()
+    assert captured_argv is not None
+    assert captured_argv[:3] == (str(node), str(vitest_entry), "run")
+    assert receipt["contract"] == "agent-v0.2-test-execution-receipt/v2"
+    assert receipt["runner_kind"] == "node_vitest"
+    assert receipt["argv"][:3] == [str(node), str(vitest_entry), "run"]
+    assert receipt["executable"] == {
+        "mode": "0700",
+        "nlink": 1,
+        "realpath": str(node_realpath),
+        "relative": "bin/node",
+        "root": {
+            "mode": "0700",
+            "realpath": str(node_root.resolve()),
+            "uid": os.geteuid(),
+        },
+        "sha256": hashlib.sha256(node.read_bytes()).hexdigest(),
+        "uid": os.geteuid(),
+    }
+    assert receipt["suite_entry"] == {
+        "mode": f"{stat.S_IMODE(entry_realpath.stat().st_mode):04o}",
+        "nlink": 1,
+        "realpath": str(entry_realpath),
+        "relative": "vitest.mjs",
+        "root": {
+            "mode": (
+                f"{stat.S_IMODE(entry_realpath.parent.stat().st_mode):04o}"
+            ),
+            "realpath": str(entry_realpath.parent),
+            "uid": entry_realpath.parent.stat().st_uid,
+        },
+        "sha256": hashlib.sha256(entry_realpath.read_bytes()).hexdigest(),
+        "uid": entry_realpath.stat().st_uid,
+    }
+    validated = validate_test_execution_receipt(
+        result.receipt_path,
+        expected_name="frontend",
+        expected_runtime=runtime,
+        expected_runtime_roots=roots,
+    )
+    assert validated.runner_kind == "node_vitest"
+    assert validated.executable_path == node_realpath
+    assert validated.suite_entry_path == entry_realpath
+    assert validated.suite_entry_sha256 == receipt["suite_entry"]["sha256"]
 
 
 def test_run_suite_seals_large_but_bounded_full_suite_junit(
@@ -449,7 +664,10 @@ def test_run_suite_rejects_unapproved_executable_or_suite_cwd(
             runtime_roots=roots,
             cwd=roots["hqa"],
         )
-    with pytest.raises(EvidenceBuildError, match="approved suite runner"):
+    with pytest.raises(
+        EvidenceBuildError,
+        match="approved suite runner|absolute Vitest entry",
+    ):
         run_test_suite(
             name="frontend",
             argv=(
@@ -478,8 +696,10 @@ def test_execution_plan_rejects_absolute_runner_name_spoof(
     output_dir.mkdir(mode=0o700)
     spoofed_runner = tmp_path / "untrusted" / runner_name
     spoofed_runner.parent.mkdir()
-    spoofed_runner.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    spoofed_runner.chmod(0o700)
+    spoofed_target = spoofed_runner.with_name(f"{runner_name}.real")
+    spoofed_target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    spoofed_target.chmod(0o700)
+    spoofed_runner.symlink_to(spoofed_target.name)
     monkeypatch.setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
     if runner_name == "uv":
         name = "platform"
@@ -505,7 +725,10 @@ def test_execution_plan_rejects_absolute_runner_name_spoof(
             "--outputFile={junit}",
         )
 
-    with pytest.raises(EvidenceBuildError, match="approved suite runner"):
+    with pytest.raises(
+        EvidenceBuildError,
+        match="approved suite runner|absolute Vitest entry",
+    ):
         run_test_suite(
             name=name,
             argv=argv,
@@ -569,7 +792,8 @@ def test_run_suite_rejects_partial_or_substituted_suite_selectors(
         run_test_suite(
             name="frontend",
             argv=(
-                str(frontend / "node_modules" / ".bin" / "vitest"),
+                str(_node_executable()),
+                str(frontend / "node_modules" / "vitest" / "vitest.mjs"),
                 "run",
                 "release-receipt.test.js",
                 "--reporter=junit",
@@ -849,7 +1073,10 @@ def test_preflight_rejects_invented_receipt_and_stale_commit_rebinding(
     output_dir = tmp_path / "preflight"
     output_dir.mkdir(mode=0o700)
 
-    with pytest.raises(EvidenceBuildError, match="field root"):
+    with pytest.raises(
+        EvidenceBuildError,
+        match="v1 lacks required runner identity",
+    ):
         build_candidate_preflight(
             output_dir=output_dir,
             runtime_roots=roots,
@@ -864,6 +1091,38 @@ def test_preflight_rejects_invented_receipt_and_stale_commit_rebinding(
             output_dir=output_dir,
             runtime_roots=roots,
             test_receipts=valid_receipts,
+        )
+
+
+@pytest.mark.parametrize("missing_field", ["runner_kind", "suite_entry"])
+def test_preflight_rejects_frontend_receipt_missing_node_identity(
+    tmp_path: Path,
+    missing_field: str,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    receipts = list(_test_receipts(tmp_path, roots))
+    receipt = json.loads(receipts[3].read_text(encoding="utf-8"))
+    receipt.pop(missing_field)
+    content = json.dumps(
+        receipt,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    missing_identity = receipts[3].parent / (
+        f"test-frontend-receipt-{hashlib.sha256(content).hexdigest()}.json"
+    )
+    missing_identity.write_bytes(content)
+    missing_identity.chmod(0o600)
+    receipts[3] = missing_identity
+    output_dir = tmp_path / "preflight"
+    output_dir.mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="field root"):
+        build_candidate_preflight(
+            output_dir=output_dir,
+            runtime_roots=roots,
+            test_receipts=tuple(receipts),
         )
 
 
@@ -900,14 +1159,18 @@ def test_preflight_rejects_stale_but_content_addressed_execution_receipt(
         )
 
 
-@pytest.mark.parametrize("attack", ["future", "excessive_duration", "executable_digest"])
+@pytest.mark.parametrize(
+    "attack",
+    ["future", "excessive_duration", "executable_digest", "suite_entry_digest"],
+)
 def test_preflight_rejects_time_or_executable_rebinding(
     tmp_path: Path,
     attack: str,
 ) -> None:
     roots, _runtime = _runtime_roots(tmp_path)
     receipts = list(_test_receipts(tmp_path, roots))
-    receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
+    receipt_index = 3 if attack == "suite_entry_digest" else 0
+    receipt = json.loads(receipts[receipt_index].read_text(encoding="utf-8"))
     now = datetime.now(UTC)
     if attack == "future":
         future = (now + timedelta(minutes=10)).isoformat(
@@ -922,24 +1185,26 @@ def test_preflight_rejects_time_or_executable_rebinding(
         receipt["completed_at"] = (now + timedelta(minutes=5)).isoformat(
             timespec="microseconds"
         ).replace("+00:00", "Z")
-    else:
+    elif attack == "executable_digest":
         receipt["executable"]["sha256"] = _digest("substituted executable")
+    else:
+        receipt["suite_entry"]["sha256"] = _digest("substituted suite entry")
     content = json.dumps(
         receipt,
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
-    rebound = receipts[0].parent / (
-        f"test-platform-receipt-{hashlib.sha256(content).hexdigest()}.json"
+    rebound = receipts[receipt_index].parent / (
+        f"test-{receipt['name']}-receipt-{hashlib.sha256(content).hexdigest()}.json"
     )
     rebound.write_bytes(content)
     rebound.chmod(0o600)
-    receipts[0] = rebound
+    receipts[receipt_index] = rebound
     output_dir = tmp_path / "preflight"
     output_dir.mkdir(mode=0o700)
 
-    with pytest.raises(EvidenceBuildError, match="freshness|executable"):
+    with pytest.raises(EvidenceBuildError, match="freshness|executable|suite_entry"):
         build_candidate_preflight(
             output_dir=output_dir,
             runtime_roots=roots,

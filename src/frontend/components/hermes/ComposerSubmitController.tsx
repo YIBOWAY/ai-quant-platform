@@ -14,6 +14,14 @@ import {
   type ComposerAttempt,
   type SessionBoundComposerAttempt,
 } from "@/lib/hermes/composerAttempt";
+import {
+  composerErrorMessage,
+  composerLoadingReplyText,
+  composerStillTrackingText,
+  composerSubmittingText,
+  formatComposerLifecycleStatus,
+  formatComposerReceiptStatus,
+} from "@/lib/hermes/composerPresentation";
 import { freshManagedSessionErrorCopy } from "@/lib/hermes/managedSessionPresentation";
 import { activateReadyManagedHermesSession } from "@/lib/hermes/sessionForkNavigation";
 import {
@@ -39,6 +47,8 @@ export type ComposerSubmitControllerProps = Omit<
   | "onStartNewSession"
   | "statusText"
   | "busy"
+  | "locale"
+  | "draftResetToken"
 > & {
   /** When false, dock stays visual-only even if allowSubmit is true. */
   networkSubmit?: boolean;
@@ -56,66 +66,6 @@ type SessionWriteAssessment = {
   state: "checking" | "empty" | "writable" | "read_only" | "unavailable";
 };
 
-function shortCommandId(commandId?: string | null): string {
-  if (!commandId) return "";
-  return commandId.length > 8 ? `${commandId.slice(0, 8)}…` : commandId;
-}
-
-function formatReceiptStatus(status: string, commandId?: string, reason?: string): string {
-  const cmd = commandId ? ` · command ${shortCommandId(commandId)}` : "";
-  const why = reason ? ` (${reason})` : "";
-  switch (status) {
-    case "accepted":
-      return `Accepted${cmd}`;
-    case "outcome_unknown":
-      return `Outcome unknown — retry same send or follow workspace${why}`;
-    case "conflict":
-      return `Conflict${why}`;
-    case "unavailable":
-      return `Unavailable${why}`;
-    case "reconciling":
-      return `Reconciling${cmd}`;
-    default:
-      return `${status}${why}`;
-  }
-}
-
-function formatLifecycleStatus(
-  state: string | null,
-  commandId?: string | null,
-  hermesRunId?: string | null,
-): string {
-  const cmd = commandId ? ` · ${shortCommandId(commandId)}` : "";
-  const run =
-    hermesRunId && hermesRunId.length > 12
-      ? ` · run ${hermesRunId.slice(0, 12)}…`
-      : hermesRunId
-        ? ` · run ${hermesRunId}`
-        : "";
-  switch (state) {
-    case "queued":
-      return `Queued${cmd}`;
-    case "leased":
-      return `Leased${cmd}`;
-    case "delivered":
-      return `Delivered${cmd}${run}`;
-    case "succeeded":
-      return `Succeeded${cmd}${run}`;
-    case "failed":
-      return `Failed${cmd}`;
-    case "rejected":
-      return `Rejected${cmd}`;
-    case "cancelled":
-      return `Cancelled${cmd}`;
-    case "timed_out":
-      return `Timed out${cmd}`;
-    case "outcome_unknown":
-      return `Outcome unknown${cmd}`;
-    default:
-      return state ? `${state}${cmd}` : `Tracking${cmd}`;
-  }
-}
-
 /**
  * Best-effort assistant preview only after replay-backed terminal success.
  * Failures leave lifecycle status intact (messages path is interim, not ledger).
@@ -127,6 +77,7 @@ async function surfaceAssistantPreview(options: {
   signal: AbortSignal;
   setStatusText: (text: string | null) => void;
   lifecyclePrefix?: string;
+  locale: Locale;
   /** L3a: publish session id so workbench transcript can load full messages. */
   onBindSession?: (next: {
     hermesSessionId: string;
@@ -143,8 +94,15 @@ async function surfaceAssistantPreview(options: {
   });
   const lifecycle =
     options.lifecyclePrefix ??
-    formatLifecycleStatus("succeeded", options.commandId, options.hermesRunId);
-  options.setStatusText(`${lifecycle} · loading reply…`);
+    formatComposerLifecycleStatus(
+      "succeeded",
+      options.commandId,
+      options.hermesRunId,
+      options.locale,
+    );
+  options.setStatusText(
+    `${lifecycle} · ${composerLoadingReplyText(options.locale)}`,
+  );
   const text = await fetchLatestAssistantText({
     hermesSessionId: sessionId,
     signal: options.signal,
@@ -183,6 +141,7 @@ export function ComposerSubmitController({
   const [retryAttempt, setRetryAttempt] =
     useState<SessionBoundComposerAttempt | null>(null);
   const [newSessionAttemptActive, setNewSessionAttemptActive] = useState(false);
+  const [acceptedDraftToken, setAcceptedDraftToken] = useState(0);
   const [sessionAssessment, setSessionAssessment] =
     useState<SessionWriteAssessment>({
       sessionId: null,
@@ -260,7 +219,7 @@ export function ComposerSubmitController({
       pollAbortRef.current = pollAbort;
 
       setBusy(true);
-      setStatusText("Submitting…");
+      setStatusText(composerSubmittingText(locale));
       let selectedHermesSessionId: string | null = null;
       try {
         selectedHermesSessionId = resolveComposerHermesSessionId(
@@ -273,10 +232,11 @@ export function ComposerSubmitController({
           signal: pollAbort.signal,
         });
         setStatusText(
-          formatReceiptStatus(
+          formatComposerReceiptStatus(
             receipt.status,
             receipt.command_id,
             receipt.reason_code,
+            locale,
           ),
         );
         const submittedHermesSessionId = requireSameComposerHermesSession(
@@ -304,6 +264,7 @@ export function ComposerSubmitController({
           (receipt.status === "outcome_unknown" && receipt.command_id)
         ) {
           setPendingUserText?.(prompt);
+          setAcceptedDraftToken((value) => value + 1);
         }
 
         if (
@@ -311,10 +272,11 @@ export function ComposerSubmitController({
           receipt.status === "unavailable"
         ) {
           throw new WorkspaceClientError(
-            formatReceiptStatus(
+            formatComposerReceiptStatus(
               receipt.status,
               receipt.command_id,
               receipt.reason_code,
+              locale,
             ),
             receipt.status === "conflict" ? 409 : 503,
             receipt.status,
@@ -329,10 +291,11 @@ export function ComposerSubmitController({
           );
           if (existing?.state) {
             setStatusText(
-              formatLifecycleStatus(
+              formatComposerLifecycleStatus(
                 existing.state,
                 receipt.command_id,
                 existing.hermes_run_id,
+                locale,
               ),
             );
             const observedHermesSessionId = requireSameComposerHermesSession(
@@ -348,6 +311,7 @@ export function ComposerSubmitController({
                   hermesRunId: existing.hermes_run_id ?? null,
                   signal: pollAbort.signal,
                   setStatusText,
+                  locale,
                   onBindSession: bindSession,
                 });
               } else {
@@ -362,7 +326,12 @@ export function ComposerSubmitController({
           }
 
           setStatusText(
-            formatLifecycleStatus("queued", receipt.command_id, null),
+            formatComposerLifecycleStatus(
+              "queued",
+              receipt.command_id,
+              null,
+              locale,
+            ),
           );
 
           // Nudge spine after submit so we do not wait solely on the next tick.
@@ -395,15 +364,16 @@ export function ComposerSubmitController({
             observed?.hermes_session_id,
           );
           const terminalState = observed?.state ?? null;
-          const lifecycle = formatLifecycleStatus(
+          const lifecycle = formatComposerLifecycleStatus(
             terminalState ?? "queued",
             receipt.command_id,
             observed?.hermes_run_id ?? null,
+            locale,
           );
           setStatusText(
             terminalState
               ? lifecycle
-              : `${lifecycle} · still tracking via follow spine`,
+              : `${lifecycle} · ${composerStillTrackingText(locale)}`,
           );
 
           if (terminalState === "outcome_unknown") {
@@ -422,6 +392,7 @@ export function ComposerSubmitController({
               signal: pollAbort.signal,
               setStatusText,
               lifecyclePrefix: lifecycle,
+              locale,
               onBindSession: bindSession,
             });
           } else if (terminalState && isTerminalCommandState(terminalState)) {
@@ -444,13 +415,7 @@ export function ComposerSubmitController({
         } else {
           setRetryAttempt(null);
         }
-        if (error instanceof WorkspaceClientError) {
-          setStatusText(error.message);
-        } else if (error instanceof Error) {
-          setStatusText(error.message);
-        } else {
-          setStatusText("Submit failed");
-        }
+        setStatusText(composerErrorMessage(error, locale));
         throw error;
       } finally {
         if (pollAbortRef.current === pollAbort) {
@@ -468,6 +433,7 @@ export function ComposerSubmitController({
       setPendingUserText,
       spine,
       followState.commands,
+      locale,
     ],
   );
 
@@ -588,6 +554,8 @@ export function ComposerSubmitController({
       allowSubmit={allowSubmit}
       busy={busy}
       disabled={disabled || !sessionCanSubmit}
+      draftResetToken={acceptedDraftToken}
+      locale={locale}
       onStartNewSession={
         baseControlsEnabled ? onStartNewSession : undefined
       }

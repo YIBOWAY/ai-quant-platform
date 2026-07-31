@@ -590,6 +590,26 @@ ORDER BY kind, identity, definition
 """
 
 
+def schema_fingerprint_on_connection(conn: psycopg.Connection) -> str:
+    """Fingerprint the schema on the caller's already-guarded connection.
+
+    Runtime authorities use this form after acquiring the shared schema gate in
+    their transaction, so a migration cannot change catalog bytes between the
+    fingerprint observation and the authority write.
+    """
+    rows = conn.execute(_SCHEMA_FINGERPRINT_SQL, (SCHEMA,)).fetchall()
+    digest = hashlib.sha256()
+    canonical_rows = sorted(
+        tuple("" if value is None else str(value) for value in row) for row in rows
+    )
+    for row in canonical_rows:
+        digest.update(
+            json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        )
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def schema_fingerprint(database: Database | None) -> str:
     """Read-only SHA-256 fingerprint of the ``quant_system`` schema contents.
 
@@ -601,17 +621,7 @@ def schema_fingerprint(database: Database | None) -> str:
         return "<db-disabled>"
     try:
         with database.connect() as conn:
-            rows = conn.execute(_SCHEMA_FINGERPRINT_SQL, (SCHEMA,)).fetchall()
+            return schema_fingerprint_on_connection(conn)
     except Exception as exc:  # noqa: BLE001 - fingerprint is best-effort/observational
         log.warning("schema fingerprint unavailable: %s", exc)
         return "<unavailable>"
-    digest = hashlib.sha256()
-    canonical_rows = sorted(
-        tuple("" if value is None else str(value) for value in row) for row in rows
-    )
-    for row in canonical_rows:
-        digest.update(
-            json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        )
-        digest.update(b"\n")
-    return digest.hexdigest()

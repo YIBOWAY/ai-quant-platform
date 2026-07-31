@@ -52,62 +52,53 @@ data/                     Local cache, fixtures, generated research outputs.
 
 - This repository is the domain backend for
   `/Users/sunyibo/programs/Hermes-quant-agent`.
-- **Agent v0.2 final-source addendum (2026-07-26):** the current release
-  branch contains migrations 016–027, private candidate admission and sealed
-  real-flow evidence, PostgreSQL-only release/cutover authority, managed
-  external-session exact-message fork with selected plus Hermes-resolved
-  lineage, durable conversation-root/resolved-run-tip identity, crash-safe
-  approval/stop outcomes, a browser Run-stop control with same-action replay,
-  natural-language paper research entry, and browser Gate 1 exact-source
-  review. Full-suite JUnit evidence has a separate bounded 8 MiB allowance;
-  logs, receipts and manifests remain capped at 4 MiB. The dated V4–V8 notes below are historical
-  provenance, not the current queue. Migration 025 fences new managed
-  Session/Command writes to the current paper-authority epoch plus the active
-  candidate or exact accepted release; migration 026 seals the HQA research
-  claim/start/continue digests through Gate 1/2/3 and separates historical
-  claim-less v1 completion from exact-lineage v2 completion. Migration 027
-  expands the already-bounded candidate admission window from 30 minutes to a
-  hard maximum of two hours so a supervised browser/paper/restart flow does
-  not expire mid-review; it changes no release, trading or public-write
-  authority. HQA keeps the
-  title and ordered universe only in its encrypted payload authority, limits
-  claim binding to Attempt 1, re-verifies exact pre-terminal lineage before
-  completion, and accepts only the closed 42-key Platform completion response.
-  This hardening is source + isolated-review APPROVE, not live-apply evidence.
-  Apply 016–027 only in order after backup and isolated replay. Never infer
-  live migration, connector, candidate, stamp, cutover or
-  `chat_write_ready` state from this file: query PostgreSQL metadata, runtime
-  identities, the effective release gate and health in the current operator
-  window. Public cutover is never a prerequisite for private candidate E2E.
-  The final operator window is **backup -> migration 025 -> migration 026 ->
-  migration 027 -> service restart -> live E2E**; first apply any missing
-  earlier ladder entries in order. The wider release order is full/focused
-  tests -> live migration ->
-  sealed test
-  preflight -> private candidate -> connector -> real browser flows -> verified
-  evidence -> candidate accept -> release stamp/cutover -> smoke/rollback.
-  Throughout this product slice, `paper_trading=true`,
-  `live_trading_enabled=false`, `kill_switch=true`, and zero orders are
-  invariant.
+- The only Platform operations authority for the Agent v0.2 local stack is
+  [`docs/runbooks/agent-v0-2-local-stack.md`](docs/runbooks/agent-v0-2-local-stack.md).
+  Other docs may explain a component, but must link there instead of copying a
+  migration, restart, readiness, or restore ladder.
+- **Source/live boundary (read-only check, 2026-07-31):** the repository change
+  set contains ordered migration source 016–028. Live `quantplatform` exposes
+  the inspected 016–027 markers and does not expose the 028 marker. Migration
+  028 is a source/change set; this file does not prove whether it is committed,
+  installed, isolated-replayed, live-applied, or authorized. The running
+  backend at that dated check also predates the new
+  provider-free `/api/safety/effective` route. Never promote source, tests,
+  backup, replay, or a migration file's presence into a live/runtime claim.
+- Backend startup never applies migrations. Keep
+  `QS_DATABASE_AUTO_MIGRATE=false`; an apply requires the explicit
+  `quant-system migrate --apply --allow <exact-file>` operator path. Migrations
+  016–028 are one ordered additive ladder. Any authorized 028 window must
+  preserve: live pre-028 backup, isolated restore/replay, exact allowlisted
+  apply, schema/runtime readiness, service restart, real candidate E2E, and an
+  exercised pre-028 restore path.
+- Migration 028 freezes the candidate write rail to the effective paper
+  authority. For the root owner there must be exactly one canonical paper
+  account, its ID must be `default`, materialized `kill_switch` must be true,
+  and raw JSON `account_id`/`kill_switch` must exactly match those columns.
+  Candidate Session/Command writes must bind the current paper-authority epoch;
+  stale or ambiguous authority fails closed. Read this provider-free state via
+  `GET /api/safety/effective`; it is observation, not release authorization.
+- Keychain readiness is also fail-closed. HQA `probe` is non-creating, and
+  ordinary `put`, `bind_resolve`, encrypt, Platform preflight, and connector
+  checks must not create a key. Only a human operator, after checking the exact
+  committed/installed runtime and preflight, may run HQA `initialize-key`, then
+  rerun `probe`. Never expose initialization through the BFF, worker, skill, or
+  an automatic retry.
+- Private candidate admission is operator-controlled through
+  `quant-system hermes candidate status|open|revoke`. `open` is short-lived,
+  exact-runtime/schema/evidence bound, local-only, and does not open public
+  write. On drift, failure, or abandonment, revoke the exact admission by CAS.
+- Local single-user write requires all local mutation/composer settings, exact
+  owner/CSRF gates, 028 readiness, effective paper safety, non-creating
+  Keychain preflight, an active candidate or accepted release, and a fresh
+  supervised connector. `chat_write_ready` is a local readiness field.
+  `public_chat_write_ready`, `public_write_authorized`, and
+  `release_authorized` remain separate; standing public posture is OFF.
 - The active cross-repo roadmap lives in
   `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`.
-- HQA Slices 9A-9G, the read-only mini 9H artifact shelf, full 9H
-  automation/notifications, and D-31 Wave 2 Scene-B are delivered. The real
-  Scene-B flow completed final receipt -> Gate 3 prepare -> human diff/commit ->
-  reviewed/cleanup, and promoted commit `524e791` is merged. The professional
-  Hermes default shell now includes an official-API persisted-session read
-  surface (`sessionRead=true`) through a server-side GET-only BFF. D-31 Wave 3
-  has also delivered migration 005's durable command/event/outbox/run-link
-  ledger, a deterministic **reconcile-only** connector-worker framework, and
-  the read-only Unified Results catalog/detail UI. This does not prove command
-  dispatch: real Hermes chat/provider evidence, Hermes approval mutations,
-  exact Hermes-run links, full results cutover, and legacy-page retirement
-  remain blocked behind independent evidence gates.
-  Slice 9E lives in HQA and reuses Slice 9D's price seam. Slice 9D's
-  `data prices` seam is strictly read-only Futu/QFQ/1d JSON, capped at 25
-  symbols and 500 calendar days, with no sample/local/Tiingo/Longbridge
-  fallback. The platform 2026-07-08 frontend plan is the Slice 0-8 record and
-  future UI backlog.
+- HQA plans and Platform audits are delivery/history records, not live
+  operations authority. Do not infer the next slice from old checkboxes or
+  append new status ladders to historical Workbench design records.
 - The platform consumes Hermes feed schema 1.0 with exactly three sources and
   schema 1.1 with exactly six: risk, prediction, foresight, weekly review,
   opportunity summary, and automation status. Whole-feed freshness is 10,800
@@ -160,13 +151,10 @@ data/                     Local cache, fixtures, generated research outputs.
   atomically reserve both experiment and report directories. Collision means
   retry, never reuse or overwrite. Scene-B receipts must bind persisted config,
   summary and report to that unique namespace and reject synthetic providers.
-- Later frontend convergence should fold `/factor-lab`, `/backtest`,
-  `/experiments`, and `/agent-studio` into the Hermes workbench only after
-  approval and result-evidence parity. The delivered Hermes Approvals surface
-  is read-only (`approvalMutations=false`); mutations stay disabled until a
-  bridge/approval plan lands.
-  The retained `/agent-studio` route is also read-only candidate inspection:
-  it must not mount `AgentTaskForm` or expose task/review controls.
+- Legacy `/factor-lab`, `/backtest`, `/experiments`, and `/agent-studio`
+  routes remain until separately approved parity/cutover. The retained
+  `/agent-studio` route is read-only candidate inspection and must not mount
+  task/review controls.
 - The current Hermes transport is the official API Server on explicit HTTP
   loopback (default `127.0.0.1:8642`), not the drifted old TUI contract. The
   session pages read through the platform API/BFF and must never receive the
@@ -174,57 +162,21 @@ data/                     Local cache, fixtures, generated research outputs.
   owner-only regular file. Loopback is a network boundary, not OS-user auth;
   while this local platform has no user authentication, bind it only to
   `127.0.0.1`/`::1`. Health/capability/session reads do not call a provider.
-- Migration 005 now provides the PostgreSQL command/event/outbox/run-link
-  ledger and schema metadata, including tested claim/lease/heartbeat primitives.
-  Migration 006 is a separate exact workflow-binding schema; until its live
-  readiness and the HQA authority binding are verified, every claim path must
-  fail closed. Its presence in source never authorizes the runnable worker to
-  claim or dispatch.
-  **Live 006/007 applied 2026-07-21** on `quantplatform` after explicit authorization
-  (backup + idempotent replay + readiness evidence in
-  `docs/audits/2026-07-21-v4-live-migrate-006-007.md`). Do **not** treat schema
-  readiness as write authorization. V4 006 is Scheme A:
-  `UNIQUE(attempt_id)` + `UNIQUE(task_id, attempt_number)`; readiness refuses the
-  obsolete `UNIQUE(task_id)`-only shape. Additive 007 is the session registry.
-  `hermes/composer_readiness.py` is the single blocker/readiness surface.
-  **Public** write standing default OFF (V8-M6 hermetic G7/G8 surface ACCEPT@a2953cb; operator open is explicit; full V8 release stamp still requires fresh auth; `release_authorized=false`). Local single-user may open
-  `QS_LOCAL_MUTATION_ENABLED` / `QS_LOCAL_MUTATION_COMPOSER_OPEN` (and FE
-  `QS_HERMES_CHAT_ENABLED` draft) under the trading kill switch — that is local
-  dark enablement, not public cutover and not Plan-V6 full-UI acceptance.
-  Typed `research.*` actions remain fail-closed for browser research submit until
-  their Gate; L2a uses `conversation_turn` + payload ref claim path (migration
-  `008_l2a_conversation_turn_claim.sql`) instead of putting prompts on `/act`.
-  Cross-repo status (2026-07-23): V0 formal DONE (`release_authorized=false`),
-  V1 code DONE / V1.2A live role+RLS PARTIAL, V2 source accepted / live durable
-  OFF, V3 HQA dark install DONE, **V4 live schema ACCEPT**, **V5 dark
-  claim/dispatch ACCEPT**, **V6 local dark enablement ACCEPT**, **L2a-Send
-  M1+M2 ACCEPT**, **L2b-Observe M1+M2 ACCEPT**, **L3a-Transcript M1 ACCEPT**,
-  **L3b-Transcript-Polish M1 ACCEPT**, **L4a-Task-Drawer M1 ACCEPT** (command
-  Activity from workspace `commands[]`; Task/Attempt authority still empty),
-  **L4b-SSE-Follow M1 ACCEPT** (BFF `GET …/follow/stream` + shared FE follow
-  spine; SSE preferred / poll fallback; Activity consumes spine; no assistant
-  bodies on follow), **L5a-Hermes-Approval-Observe M1 ACCEPT** (snapshot
-  `approvals=[]` + `command_approval=unavailable`; Composer waits on shared
-  spine; read-only Approvals panel; no allow/deny write; ≠ Gate 1/2/3),
-  **L5b-Authority-Projection M1 ACCEPT** (honest empty Task/Attempt/Run/result
-  slots + health on spine; read-only Authority panel; no invented HQA rows),
-  **L5c-Workbench-A11y M1 ACCEPT** (FE-only shell a11y: workbench region landmark,
-  responsive pad, collapse/long-id contracts, composer focus-visible;
-  marker `data-hermes-workbench-a11y=l5c-m1`; no mutation routes).
-  **V7a–V7g-A-M1 ACCEPT** (exact allow_once|deny CAS + hermetic respond_approval release/signal + hermetic Run-scoped stop with §5.5 layered receipt + durable approval projector + Domain Gate 1/2/3 surfaces + typed results on spine + hermetic Vertical A options bind → Task/Attempt/Run + typed result → completed|completed_degraded; sample/real fail-closed; no always-allow; Gates ≠ command-approval ≠ results; no Task invention from conversation.turn; no catalog-on-spine; zero live Futu/orders). Next: V7g-A-M2 live Futu RO → V7g-B;
-  full operator V8 release stamp still closed (`release_authorized=false`; standing public default OFF). See HQA `docs/README.md`, L2a ADR, and platform audits
-  `docs/audits/2026-07-21-v5-dark-supervised-dispatch.md` /
-  `docs/audits/2026-07-21-v6-local-off-to-on.md`.
-  Connector worker CLI **defaults to `reconcile_only`** (LISTEN/NOTIFY + scan +
-  expired-lease). `--mode supervised_dispatch` claims with a real
-  `HttpHermesDispatchAdapter` (or injected port in tests). Empty queue must
-  never call an LLM. Do not implement Hermes cron prompt polling as a queue.
-  Platform must never `import hqa`; Intent Payload Store I/O goes through the
-  subprocess CLI port (`QS_INTENT_PAYLOAD_*`). Owner gate is loopback cookie +
-  CSRF only; default `accepted_origin` is first CORS entry
-  (`http://127.0.0.1:3001` — FE port). FE workspace client uses same-origin
-  `/api/*` rewrites, not absolute `:8765` with credentials omit. Messages ids
-  must be Hermes API sessions (`run_…`); never registry `web_` / workspace `wm_`.
+- `hermes/composer_readiness.py` is the single local/public blocker surface.
+  Typed research actions remain fail-closed until their exact domain gates;
+  ordinary chat uses `conversation_turn` plus the HQA payload reference and
+  never places prompt text on `/act` or in PostgreSQL.
+- Connector worker CLI defaults to `reconcile_only` (LISTEN/NOTIFY, scan, and
+  expired-lease reconciliation). `supervised_dispatch` is allowed only inside
+  the bounded local candidate/release window described by the local-stack
+  runbook. Network I/O stays outside DB transactions; timeout is
+  `outcome_unknown`, never blind retry. An empty queue makes zero provider and
+  Hermes mutation calls. Do not use an LLM cron as a queue.
+- Platform must never `import hqa`; Intent Payload Store operations use the
+  closed subprocess port (`QS_INTENT_PAYLOAD_*`). Owner mutation is loopback
+  signed cookie plus CSRF, not multi-user authentication. Frontend calls use
+  same-origin `/api/*` rewrites. Message IDs must be Hermes API session IDs,
+  never registry/workspace IDs.
 
 
 ## Core Engineering Rules

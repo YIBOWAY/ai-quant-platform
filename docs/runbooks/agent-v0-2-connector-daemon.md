@@ -24,48 +24,37 @@ of exactly two modes:
 - there is no default or configured fixed prompt;
 - it has no trading/order path and does not change the trading kill switch.
 
-The installed v0.2.2 hardening posture must set
-`QS_AGENT_V02_CONNECTOR_MODE=reconcile_only` explicitly. The legacy absent-env fallback remains `supervised_dispatch`
-solely for the frozen compatibility contract; it is a residual default, not the
-installed safety posture. Never remove the explicit mode from the live
-owner-only environment. Reconcile-only intentionally does not acquire the
-supervised liveness generation, so it can never make Web chat ready.
+The installed posture must set
+`QS_AGENT_V02_CONNECTOR_MODE=reconcile_only` explicitly. Never rely on a code
+default or remove the explicit mode from the live owner-only environment.
+For frozen compatibility, the wrapper's absent-env fallback remains `supervised_dispatch`;
+that legacy behavior is not the installed safety posture and must never be
+treated as a safe default.
+Reconcile-only intentionally does not acquire the supervised liveness
+generation, so it can never make local Web chat ready.
 
 ## Prerequisites
 
-The following additional prerequisites apply before selecting
-`supervised_dispatch`. Do not run that mode until migrations through
-`026_agent_v02_paper_research_claim_lineage.sql` are live and the restricted runtime
-database login is configured. The Platform, HQA and Hermes runtime checkouts
-must be clean commits because the daemon binds its generation to the exact
-Platform Git runtime digest. Hermes must expose the managed Session and durable
-Run capability contract on loopback. Migration 023 binds each Run to the stable
-conversation root and its immutable resolved compression tip; migration 024
-persists approval/stop external outcomes before an exact replay may be treated
-as terminal. Migration 025 binds every new managed Session/Command to the
-current paper-authority epoch plus the active candidate or exact accepted
-release, so a paper-authority mutation cannot leave a stale release writable.
-Migration 026 persists only the sealed research claim/start/continue digests:
-Gate 1/2 carry claim+start, Gate 3 adds continue, historical claim-less
-completions remain v1, and claimed completions must use exact-lineage v2.
+[`agent-v0-2-local-stack.md`](agent-v0-2-local-stack.md) is the sole authority
+for migration 016–028 ordering, live/source distinction, backup, isolated
+replay, readiness, restart, candidate E2E, and pre-028 restore. This connector
+runbook does not declare any migration live.
 
-The corresponding HQA source keeps the paper title and ordered universe only
-inside its encrypted Intent Payload Store. It may bind the sealed claim only to
-Attempt 1, must verify the exact pre-terminal Attempt lineage before terminal
-completion, and must accept only the closed 42-key Platform completion
-response. Source and isolated review are APPROVE; this statement does not prove
-that 025/026 are live or that any candidate, stamp, cutover or connector
-generation is active. Inspect those facts in the current operator window.
+Do not select `supervised_dispatch` until that runbook has established all of
+the following for one exact operator window:
 
-The final live upgrade sequence is:
+- clean committed Platform, HQA, and Hermes runtime identities;
+- migration 028 exact schema/runtime readiness, including canonical
+  `default` paper-account raw consistency and current paper-authority epoch;
+- provider-free `GET /api/safety/effective` reports effective paper safety;
+- HQA Keychain `probe` succeeds without creating a key;
+- one short-lived private candidate, or an exact accepted release, is active;
+- Hermes exposes the managed Session and durable Run contract on loopback;
+- the restricted runtime login and all local mutation/owner/CSRF gates pass.
 
-```text
-backup -> migration 025 -> migration 026 -> service restart -> live E2E
-```
-
-If inspection finds an earlier 016–024 migration missing, apply the missing
-ordered prerequisites before 025. Never install or restart the connector
-between 025 and 026.
+An active local candidate may make local `chat_write_ready` true. It never makes
+`public_chat_write_ready`, `public_write_authorized`, or
+`release_authorized` true. Standing public posture remains OFF.
 
 The release gate distinguishes durable operator/drift facts from uncertainty.
 An operator-closed stamp/cutover, runtime identity mismatch, schema fingerprint
@@ -117,6 +106,10 @@ starts.
 The Hermes API key stays in its separate mode-`600` file. Never put prompt
 content in the daemon configuration. The production connector has no
 `--fixed-input` option; it resolves only the exact encrypted intent payload.
+Any Keychain check performed by connector `--check` or normal startup must use
+the non-creating HQA `probe`. `initialize-key` is an operator-only HQA command
+documented in the local-stack runbook; the daemon, BFF, and automatic retry
+paths must never call it.
 
 Validate the exact checkout before installing:
 
@@ -130,7 +123,7 @@ This check sources the protected dotenv, accepts only exact
 configured Python can import `quant_system` and connector configuration from
 this release checkout, and validates the poll/worker settings. It does not open
 PostgreSQL, contact Hermes or a provider, acquire connector liveness, or claim
-work.
+work, and it must not initialize the HQA Keychain.
 
 ## Install or replace
 

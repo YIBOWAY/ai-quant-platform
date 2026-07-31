@@ -34,6 +34,10 @@ from quant_system.hermes.effective_release_gate import (
     ReleaseEvidenceObservation,
     RuntimeIdentityObservation,
 )
+from quant_system.hermes.intent_payload_port import (
+    IntentPayloadPortError,
+    build_intent_payload_port,
+)
 from quant_system.hermes.release_runtime import (
     file_sha256,
     release_evidence_observation,
@@ -58,6 +62,7 @@ class CandidateCliRuntime:
     database: Database
     authority: CandidateAdmissionAuthority
     evidence_authority: CandidateEvidenceV3Authority
+    intent_crypto_probe: Callable[[], None]
     runtime_identity_probe: Callable[[], RuntimeIdentityObservation]
     preflight_probe: Callable[[], CandidatePreflightEvidenceObservation]
     final_evidence_probe: Callable[[], ReleaseEvidenceObservation]
@@ -89,6 +94,7 @@ def build_candidate_cli_runtime() -> CandidateCliRuntime:
             settings,
             database=database,
         ),
+        intent_crypto_probe=lambda: build_intent_payload_port(settings).probe(),
         runtime_identity_probe=lambda: runtime_identity_observation(settings),
         preflight_probe=lambda: candidate_preflight_evidence_observation(
             settings.candidate_admission.preflight_evidence_file
@@ -154,6 +160,12 @@ def _record(record: CandidateAdmissionRecord | None) -> object:
 
 
 def _require_safety(settings: Settings) -> None:
+    if settings.paper_account.db_mode != "canonical":
+        raise CandidateAdmissionError(
+            "canonical_paper_authority_required",
+            "candidate operations require canonical paper authority",
+        )
+
     blockers: list[str] = []
     if settings.safety.kill_switch is not True:
         blockers.append("kill_switch_off")
@@ -190,6 +202,16 @@ def _runtime_matches_preflight(
         and runtime.hermes_runtime_digest
         == preflight.hermes_runtime_digest
     )
+
+
+def _require_intent_crypto_preflight(runtime: CandidateCliRuntime) -> None:
+    try:
+        runtime.intent_crypto_probe()
+    except IntentPayloadPortError as exc:
+        raise CandidateAdmissionError(
+            "candidate_intent_crypto_preflight_failed",
+            "intent crypto preflight failed closed",
+        ) from exc
 
 
 candidate_app = typer.Typer(
@@ -260,6 +282,7 @@ def open_command(
                 "candidate preflight runtime binding does not match "
                 "the clean current runtimes"
             )
+        _require_intent_crypto_preflight(runtime)
         fingerprint = runtime.schema_fingerprint_probe()
         if len(fingerprint) != 64:
             raise RuntimeError("database schema fingerprint is unavailable")

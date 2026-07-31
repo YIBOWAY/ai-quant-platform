@@ -28,7 +28,10 @@ from quant_system.hermes.dark_identity_profile import (
     PROVIDER_POLICY_DIGEST,
     STORE_TTL_DAYS,
 )
-from quant_system.hermes.intent_payload_port import FakeIntentPayloadPort
+from quant_system.hermes.intent_payload_port import (
+    FakeIntentPayloadPort,
+    IntentPayloadPortError,
+)
 from quant_system.hermes.submission_saga import ActionReceipt
 
 ORIGIN = "http://127.0.0.1:3001"
@@ -153,6 +156,57 @@ def test_submit_turn_empty_prompt_400(tmp_path: Path) -> None:
     )
     assert response.status_code == 400, response.text
     assert response.json()["detail"]["code"] == "validation"
+
+
+def test_submit_turn_oversized_prompt_is_rejected_before_payload_io(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path, mutation=True)
+    port = client.app.state.services["intent_payload_port"]
+    boot = _bootstrap(client, tmp_path)
+    headers = {**_browser_headers(), CSRF_HEADER_NAME: boot["csrf"]}
+
+    response = client.post(
+        "/api/agent/workspace/submit-turn",
+        json=_body(prompt="量" * 5_462),
+        headers=headers,
+    )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]["code"] == "prompt_too_large"
+    assert port.puts == []
+
+
+def test_submit_turn_crypto_failure_is_safe_retryable_503(tmp_path: Path) -> None:
+    private_detail = "helper OSStatus -25300 private path"
+
+    def fail_put(_request):  # type: ignore[no-untyped-def]
+        raise IntentPayloadPortError(
+            "key_not_found",
+            private_detail,
+            retryable=False,
+        )
+
+    client = _client(tmp_path, mutation=True)
+    client.app.state.services["intent_payload_port"] = FakeIntentPayloadPort(
+        put_handler=fail_put
+    )
+    boot = _bootstrap(client, tmp_path)
+    headers = {**_browser_headers(), CSRF_HEADER_NAME: boot["csrf"]}
+
+    response = client.post(
+        "/api/agent/workspace/submit-turn",
+        json=_body(),
+        headers=headers,
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "intent_crypto_unavailable"
+    assert detail["message"] == "intent crypto is unavailable"
+    assert detail["retryable"] is True
+    assert "OSStatus" not in response.text
+    assert "helper" not in response.text
 
 
 def test_submit_turn_rejects_unknown_workspace(tmp_path: Path) -> None:

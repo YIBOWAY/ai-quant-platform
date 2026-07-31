@@ -108,6 +108,24 @@ def hardening_database() -> Iterator[tuple[Settings, db.Database, str]]:
         )
         database = db.Database(isolated_url, connect_timeout=2)
         db.run_migrations(database)
+        observed_at = datetime.now(UTC)
+        with database.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO quant_system.paper_accounts (
+                    account_id, owner_user_id, base_currency, initial_cash,
+                    cash, realized_pnl, kill_switch, version, raw,
+                    created_at, updated_at
+                )
+                VALUES (
+                    'default', %s, 'USD', 1000, 1000,
+                    0, TRUE, 1,
+                    '{"account_id":"default","kill_switch":true}'::jsonb,
+                    %s, %s
+                )
+                """,
+                (ROOT_USER_ID, observed_at, observed_at),
+            )
         yield settings, database, isolated_url
 
 

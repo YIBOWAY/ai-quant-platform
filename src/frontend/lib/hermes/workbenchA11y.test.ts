@@ -157,6 +157,12 @@ describe("workbenchA11y (L5c)", () => {
     expect(composer).toContain("rounded-md bg-bg-base");
     expect(composer).toContain('aria-atomic="true"');
     expect(composer).toContain('role="status"');
+    expect(composer).toContain('data-testid="hermes-composer-byte-count"');
+    expect(composer).toContain(
+      'aria-describedby="hermes-composer-byte-count hermes-composer-status"',
+    );
+    expect(composer).toContain("draftState.valid");
+    expect(composer).toContain("draftResetToken");
 
     const controller = readFileSync(
       path.join(
@@ -174,6 +180,7 @@ describe("workbenchA11y (L5c)", () => {
     expect(controller).toContain("focusComposerWhenWritableRef");
     expect(controller).toContain('assessedState === "empty"');
     expect(controller).toContain("freshManagedSessionErrorCopy");
+    expect(controller).toContain("setAcceptedDraftToken");
 
     const canvas = readFileSync(
       path.join(

@@ -1988,6 +1988,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/safety/effective": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Effective Paper Safety */
+        get: operations["effective_paper_safety_api_safety_effective_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -3861,6 +3878,25 @@ export interface components {
              * @enum {string}
              */
             status: "open" | "closed";
+        };
+        /** EffectivePaperSafetyResponse */
+        EffectivePaperSafetyResponse: {
+            /** Blockers */
+            blockers: string[];
+            /** Canonical Account Count */
+            canonical_account_count?: number | null;
+            /** Canonical Account Frozen */
+            canonical_account_frozen?: boolean | null;
+            /** Current Paper Authority Epoch */
+            current_paper_authority_epoch?: number | null;
+            /** Effective */
+            effective: boolean;
+            /** Global Kill Switch */
+            global_kill_switch: boolean;
+            /** Owner User Id */
+            owner_user_id: string;
+            /** Workspace Id */
+            workspace_id: string;
         };
         /** ExperimentDetailResponse */
         ExperimentDetailResponse: {
@@ -12094,6 +12130,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    effective_paper_safety_api_safety_effective_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectivePaperSafetyResponse"];
                 };
             };
         };

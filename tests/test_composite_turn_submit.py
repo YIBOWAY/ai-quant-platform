@@ -135,6 +135,7 @@ def test_submit_rejects_empty_and_oversized_prompt() -> None:
             port=port,
         )
     assert big.value.http_status == 400
+    assert big.value.code == "prompt_too_large"
     assert port.puts == []
 
 
@@ -379,6 +380,31 @@ def test_nonretryable_payload_port_failure_stays_nonretryable() -> None:
 
     assert exc.value.http_status == 503
     assert exc.value.retryable is False
+
+
+def test_crypto_port_failure_maps_to_safe_retryable_public_code() -> None:
+    private_detail = "helper OSStatus -25300 private path"
+
+    def boom(_req):  # type: ignore[no-untyped-def]
+        raise IntentPayloadPortError(
+            "intent_crypto_error",
+            private_detail,
+            retryable=False,
+        )
+
+    with pytest.raises(CompositeTurnSubmitError) as exc:
+        submit_composite_turn(
+            SimpleNamespace(),
+            _request(),
+            mutation_enabled=True,
+            port=FakeIntentPayloadPort(put_handler=boom),
+        )
+
+    assert exc.value.code == "intent_crypto_unavailable"
+    assert exc.value.http_status == 503
+    assert exc.value.retryable is True
+    assert exc.value.message == "intent crypto is unavailable"
+    assert private_detail not in str(exc.value)
 
 
 def test_put_ok_turn_raise_yields_outcome_unknown() -> None:

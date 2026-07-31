@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,13 @@ from quant_system.hermes.release_evidence_builder import (
 )
 
 _TEST_NAMES = ("platform", "hqa", "hermes_focused", "frontend")
+
+
+def _node_executable() -> str:
+    configured = os.environ.get("QS_QUANT_FRONTEND_NODE_BIN")
+    discovered = configured or shutil.which("node")
+    assert discovered is not None
+    return str(Path(discovered).resolve())
 
 
 def _run(*argv: str, cwd: Path) -> str:
@@ -111,7 +119,8 @@ def _receipt_paths(tmp_path: Path, roots: dict[str, Path]) -> tuple[Path, ...]:
         if name == "frontend":
             cwd = roots["platform"] / "src/frontend"
             argv = (
-                str(cwd / "node_modules" / ".bin" / "vitest"),
+                _node_executable(),
+                str(cwd / "node_modules" / "vitest" / "vitest.mjs"),
                 "run",
                 "--reporter=junit",
                 "--outputFile={junit}",

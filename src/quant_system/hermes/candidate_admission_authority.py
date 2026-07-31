@@ -19,13 +19,15 @@ from uuid import uuid4
 import psycopg
 
 from quant_system.config.settings import Settings
+from quant_system.execution.account import DEFAULT_ACCOUNT_ID
 from quant_system.hermes.command_ledger import ROOT_USER_ID
 from quant_system.storage.database import (
+    HERMES_SCHEMA_RUNTIME_GATE,
     SCHEMA,
     Database,
     DatabaseUnavailable,
     get_database,
-    schema_fingerprint,
+    schema_fingerprint_on_connection,
 )
 
 CANDIDATE_ADMISSION_SCHEMA_VERSION = 1
@@ -34,6 +36,11 @@ CandidateStatus = Literal["open", "accepted", "revoked", "expired"]
 
 _LEGACY_TTL_CEILING_SECONDS = 1800
 _CURRENT_TTL_CEILING_SECONDS = 7200
+_DEFAULT_PAPER_ACCOUNT_CONSTRAINT = (
+    "CHECK (account_id <> 'default'::text OR "
+    "COALESCE((raw -> 'account_id'::text) = to_jsonb(account_id) "
+    "AND (raw -> 'kill_switch'::text) = to_jsonb(kill_switch), false))"
+)
 _TTL_CONSTRAINT_CEILINGS = {
     (
         "CHECK (expires_at > opened_at AND expires_at <= (opened_at + '00:30:00'::interval))"
@@ -51,6 +58,46 @@ _NONTERMINAL_COMMAND_STATES = (
     "outcome_unknown",
 )
 _CANDIDATE_TRIGGER_SIGNATURES = {
+    (
+        "trg_agent_v02_paper_epoch_paper_accounts",
+        "paper_accounts",
+        31,
+        "A",
+        "quant_system",
+        "bump_agent_v02_paper_authority_epoch",
+        True,
+        "",
+    ),
+    (
+        "trg_agent_v02_paper_epoch_paper_account_ledger",
+        "paper_account_ledger",
+        31,
+        "A",
+        "quant_system",
+        "bump_agent_v02_paper_authority_epoch",
+        True,
+        "",
+    ),
+    (
+        "trg_agent_v02_paper_epoch_paper_pending_orders",
+        "paper_pending_orders",
+        31,
+        "A",
+        "quant_system",
+        "bump_agent_v02_paper_authority_epoch",
+        True,
+        "",
+    ),
+    (
+        "trg_agent_v02_paper_epoch_paper_positions_current",
+        "paper_positions_current",
+        31,
+        "A",
+        "quant_system",
+        "bump_agent_v02_paper_authority_epoch",
+        True,
+        "",
+    ),
     (
         "trg_agent_v02_candidate_admission_guard",
         "agent_v02_candidate_admissions",
@@ -134,16 +181,46 @@ _CANDIDATE_FUNCTION_SIGNATURES = {
 }
 _CANDIDATE_FUNCTION_SOURCE_SHA256 = {
     "bind_agent_v02_candidate_command": (
-        "ac05c8d18b74f389ce35f0dfd0dc157e8fe40cd5db4bc065ac03e1823962fbfd"
+        "464348acb8c135550671e5e6c3e42f838edd2d7dda39c33fef907d7d199779f7"
     ),
     "bind_agent_v02_candidate_session": (
-        "fb0cc0d59493faa7bbf0153a07aa5e4fc30b7eb30de61f999db7912d2ad2fc85"
+        "4f54d4b2cd64b6e27ea515e13db5fc98a2e5cbb89397a5c08824b9c6614fad3a"
     ),
     "guard_agent_v02_candidate_transition": (
         "71bf68ecebc77e6adb74db5105d80b67133f28060f06f9cafb2ba1e5a3033972"
     ),
     "reject_agent_v02_candidate_append_only": (
         "9e6e78dc09a82f7826e1ed159f1932881d869a7da81c5bf86f31e1174aa7e995"
+    ),
+}
+_PAPER_EPOCH_HELPER_SIGNATURES = {
+    (
+        "bump_agent_v02_paper_authority_epoch",
+        "quant_migrator",
+        "plpgsql",
+        True,
+        "v",
+        "trigger",
+        "",
+        "search_path=pg_catalog",
+    ),
+    (
+        "current_agent_v02_paper_authority_epoch",
+        "quant_migrator",
+        "plpgsql",
+        True,
+        "v",
+        "bigint",
+        "uuid, text",
+        "search_path=pg_catalog",
+    ),
+}
+_PAPER_EPOCH_HELPER_SOURCE_SHA256 = {
+    "bump_agent_v02_paper_authority_epoch": (
+        "dff12a6e23eb410389d30caa0c2a1b41b880e0b5f8a5a8939ad0c787acfd6e45"
+    ),
+    "current_agent_v02_paper_authority_epoch": (
+        "b549c6093f1c81a952b62f8f9940cafcfed5bde8e7243d22ab9a87cb20a7cce7"
     ),
 }
 
@@ -167,7 +244,8 @@ _ADMISSION_COLUMNS = """
     acceptance_digest,
     evidence_set_id,
     evidence_set_digest,
-    final_order_snapshot_digest
+    final_order_snapshot_digest,
+    paper_authority_epoch
 """
 
 
@@ -374,6 +452,7 @@ class CandidateAdmissionRecord:
     evidence_set_id: str | None
     evidence_set_digest: str | None
     final_order_snapshot_digest: str | None
+    paper_authority_epoch: int | None
 
     def to_public_dict(self) -> dict[str, object]:
         return {
@@ -394,6 +473,7 @@ class CandidateAdmissionRecord:
             "hermes_runtime_digest": self.hermes_runtime_digest,
             "hqa_runtime_digest": self.hqa_runtime_digest,
             "opened_at": _canonical_timestamp(self.opened_at),
+            "paper_authority_epoch": self.paper_authority_epoch,
             "platform_runtime_digest": self.platform_runtime_digest,
             "preflight_evidence_digest": self.preflight_evidence_digest,
             "route": self.route,
@@ -478,6 +558,7 @@ def _record_from_row(row: tuple[object, ...]) -> CandidateAdmissionRecord:
         evidence_set_id=(None if row[17] is None else str(row[17])),
         evidence_set_digest=(None if row[18] is None else str(row[18]).strip()),
         final_order_snapshot_digest=(None if row[19] is None else str(row[19]).strip()),
+        paper_authority_epoch=(None if row[20] is None else int(row[20])),
     )
 
 
@@ -532,6 +613,7 @@ def candidate_admission_schema_is_ready_on_connection(
         "agent_v02_candidate_admissions",
         "agent_v02_candidate_events",
         "agent_v02_candidate_actions",
+        "agent_v02_candidate_paper_fence_meta",
     )
     relation = conn.execute(
         """
@@ -557,6 +639,86 @@ def candidate_admission_schema_is_ready_on_connection(
         """
     ).fetchone()
     if version is None or version[0] != CANDIDATE_ADMISSION_SCHEMA_VERSION:
+        return False
+    paper_fence_version = conn.execute(
+        f"""
+        SELECT schema_version
+        FROM {SCHEMA}.agent_v02_candidate_paper_fence_meta
+        WHERE singleton IS TRUE
+        """
+    ).fetchone()
+    if paper_fence_version != (1,):
+        return False
+    paper_fence_relation = conn.execute(
+        """
+        SELECT
+            pg_get_userbyid(relation.relowner),
+            relation.relrowsecurity,
+            relation.relforcerowsecurity
+        FROM pg_class AS relation
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = %s
+          AND relation.relname = 'agent_v02_candidate_paper_fence_meta'
+          AND relation.relkind = 'r'
+        """,
+        (SCHEMA,),
+    ).fetchone()
+    if paper_fence_relation != ("quant_migrator", False, False):
+        return False
+    paper_fence_acl = conn.execute(
+        """
+        SELECT
+            COALESCE(role.rolname, 'PUBLIC'),
+            acl.privilege_type,
+            acl.is_grantable
+        FROM pg_class AS relation
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = relation.relnamespace
+        CROSS JOIN LATERAL aclexplode(
+            COALESCE(
+                relation.relacl,
+                acldefault('r', relation.relowner)
+            )
+        ) AS acl
+        LEFT JOIN pg_roles AS role ON role.oid = acl.grantee
+        WHERE namespace.nspname = %s
+          AND relation.relname = 'agent_v02_candidate_paper_fence_meta'
+        """,
+        (SCHEMA,),
+    ).fetchall()
+    if {
+        (str(role), str(privilege), bool(grantable))
+        for role, privilege, grantable in paper_fence_acl
+    } != {
+        ("quant_migrator", "DELETE", False),
+        ("quant_migrator", "INSERT", False),
+        ("quant_migrator", "REFERENCES", False),
+        ("quant_migrator", "SELECT", False),
+        ("quant_migrator", "TRIGGER", False),
+        ("quant_migrator", "TRUNCATE", False),
+        ("quant_migrator", "UPDATE", False),
+        ("quant_runtime", "SELECT", False),
+        ("quant_readonly", "SELECT", False),
+    }:
+        return False
+    canonical_account_constraint = conn.execute(
+        """
+        SELECT
+            constraint_record.convalidated,
+            pg_get_constraintdef(constraint_record.oid, true)
+        FROM pg_constraint AS constraint_record
+        WHERE constraint_record.conrelid =
+                'quant_system.paper_accounts'::regclass
+          AND constraint_record.conname =
+                'ck_agent_v02_default_paper_account_raw_consistency'
+          AND constraint_record.contype = 'c'
+        """
+    ).fetchone()
+    if canonical_account_constraint != (
+        True,
+        _DEFAULT_PAPER_ACCOUNT_CONSTRAINT,
+    ):
         return False
     marker_column = conn.execute(
         """
@@ -671,6 +833,10 @@ def candidate_admission_schema_is_ready_on_connection(
                 "trg_agent_v02_candidate_admission_guard",
                 "trg_agent_v02_candidate_events_append_only",
                 "trg_agent_v02_candidate_actions_append_only",
+                "trg_agent_v02_paper_epoch_paper_accounts",
+                "trg_agent_v02_paper_epoch_paper_account_ledger",
+                "trg_agent_v02_paper_epoch_paper_pending_orders",
+                "trg_agent_v02_paper_epoch_paper_positions_current",
                 "trg_hermes_session_candidate_binding",
                 "trg_hermes_command_candidate_binding",
             ],
@@ -736,7 +902,111 @@ def candidate_admission_schema_is_ready_on_connection(
         str(row[0]): hashlib.sha256(str(row[5]).encode("utf-8")).hexdigest()
         for row in function_rows
     }
-    return source_digests == _CANDIDATE_FUNCTION_SOURCE_SHA256
+    if source_digests != _CANDIDATE_FUNCTION_SOURCE_SHA256:
+        return False
+    helper_rows = conn.execute(
+        """
+        SELECT
+            procedure.proname,
+            pg_get_userbyid(procedure.proowner),
+            language.lanname,
+            procedure.prosecdef,
+            procedure.provolatile,
+            procedure.prorettype::regtype::text,
+            oidvectortypes(procedure.proargtypes),
+            COALESCE(array_to_string(procedure.proconfig, ','), ''),
+            procedure.prosrc
+        FROM pg_proc AS procedure
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = procedure.pronamespace
+        JOIN pg_language AS language
+          ON language.oid = procedure.prolang
+        WHERE procedure.oid IN (
+            to_regprocedure(
+                'quant_system.bump_agent_v02_paper_authority_epoch()'
+            ),
+            to_regprocedure(
+                'quant_system.current_agent_v02_paper_authority_epoch(uuid,text)'
+            )
+        )
+        """
+    ).fetchall()
+    helper_signatures = {
+        (
+            str(row[0]),
+            str(row[1]),
+            str(row[2]),
+            bool(row[3]),
+            str(row[4]),
+            str(row[5]),
+            str(row[6]),
+            str(row[7]),
+        )
+        for row in helper_rows
+    }
+    if helper_signatures != _PAPER_EPOCH_HELPER_SIGNATURES:
+        return False
+    helper_source_digests = {
+        str(row[0]): hashlib.sha256(str(row[8]).encode("utf-8")).hexdigest()
+        for row in helper_rows
+    }
+    if helper_source_digests != _PAPER_EPOCH_HELPER_SOURCE_SHA256:
+        return False
+    helper_acl = conn.execute(
+        """
+        SELECT
+            procedure.proname,
+            COALESCE(role.rolname, 'PUBLIC'),
+            acl.privilege_type,
+            acl.is_grantable
+        FROM pg_proc AS procedure
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = procedure.pronamespace
+        CROSS JOIN LATERAL aclexplode(
+            COALESCE(
+                procedure.proacl,
+                acldefault('f', procedure.proowner)
+            )
+        ) AS acl
+        LEFT JOIN pg_roles AS role ON role.oid = acl.grantee
+        WHERE procedure.oid IN (
+            to_regprocedure(
+                'quant_system.bump_agent_v02_paper_authority_epoch()'
+            ),
+            to_regprocedure(
+                'quant_system.current_agent_v02_paper_authority_epoch(uuid,text)'
+            )
+        )
+        """
+    ).fetchall()
+    return {
+        (
+            str(function_name),
+            str(role),
+            str(privilege),
+            bool(grantable),
+        )
+        for function_name, role, privilege, grantable in helper_acl
+    } == {
+        (
+            "bump_agent_v02_paper_authority_epoch",
+            "quant_migrator",
+            "EXECUTE",
+            False,
+        ),
+        (
+            "current_agent_v02_paper_authority_epoch",
+            "quant_migrator",
+            "EXECUTE",
+            False,
+        ),
+        (
+            "current_agent_v02_paper_authority_epoch",
+            "quant_runtime",
+            "EXECUTE",
+            False,
+        ),
+    }
 
 
 def candidate_admission_schema_ready(settings: Settings) -> bool:
@@ -878,7 +1148,7 @@ class CandidateAdmissionAuthority:
         settings: Settings,
         *,
         database: Database | None = None,
-        schema_fingerprint_reader=schema_fingerprint,
+        schema_fingerprint_reader=None,
     ) -> None:
         self._settings = settings
         self._database_override = database
@@ -1081,13 +1351,36 @@ class CandidateAdmissionAuthority:
                 row = conn.execute(
                     f"""
                     SELECT {_ADMISSION_COLUMNS}
-                    FROM {SCHEMA}.agent_v02_candidate_admissions
-                    WHERE workspace_id = %s
-                      AND status = 'open'
-                      AND expires_at > clock_timestamp()
+                    FROM {SCHEMA}.agent_v02_candidate_admissions AS candidate
+                    WHERE candidate.workspace_id = %s
+                      AND candidate.owner_user_id = %s
+                      AND candidate.status = 'open'
+                      AND candidate.expires_at > clock_timestamp()
+                      AND candidate.paper_authority_epoch =
+                            {SCHEMA}.current_agent_v02_paper_authority_epoch(
+                                candidate.owner_user_id,
+                                candidate.workspace_id
+                            )
+                      AND (
+                            SELECT CASE
+                                WHEN count(*) = 1
+                                THEN bool_and(
+                                    account.account_id = %s
+                                    AND account.kill_switch
+                                    AND account.raw -> 'account_id' =
+                                        to_jsonb(account.account_id)
+                                    AND account.raw -> 'kill_switch' =
+                                        to_jsonb(account.kill_switch)
+                                )
+                                ELSE FALSE
+                            END
+                            FROM {SCHEMA}.paper_accounts AS account
+                            WHERE account.owner_user_id =
+                                    candidate.owner_user_id
+                      ) IS TRUE
                     LIMIT 1
                     """,
-                    (workspace,),
+                    (workspace, ROOT_USER_ID, DEFAULT_ACCOUNT_ID),
                 ).fetchone()
                 return None if row is None else _record_from_row(row)
         except CandidateAdmissionError:
@@ -1288,13 +1581,22 @@ class CandidateAdmissionAuthority:
             "admission_id",
         )
         database = self._database()
-        observed_schema = self._schema_fingerprint_reader(database)
-        if observed_schema != schema:
-            raise CandidateAdmissionConflict(
-                "candidate database schema fingerprint does not match the live authority"
-            )
         try:
             with database.connect() as conn, conn.transaction():
+                conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(hashtextextended(%s, 0))",
+                    (HERMES_SCHEMA_RUNTIME_GATE,),
+                )
+                observed_schema = (
+                    schema_fingerprint_on_connection(conn)
+                    if self._schema_fingerprint_reader is None
+                    else self._schema_fingerprint_reader(database)
+                )
+                if observed_schema != schema:
+                    raise CandidateAdmissionConflict(
+                        "candidate database schema fingerprint does not match "
+                        "the live authority"
+                    )
                 if not candidate_admission_schema_is_ready_on_connection(
                     conn,
                     required_ttl_seconds=request.ttl_seconds,

@@ -32,6 +32,7 @@ from quant_system.api.routes import (
     prediction_market,
     replications,
     runs,
+    safety,
     strategies,
     universes,
     workspace,
@@ -452,6 +453,7 @@ def create_app(
     )
     app.middleware("http")(attach_safety_footer)
     app.include_router(health.router, prefix="/api", tags=["health"])
+    app.include_router(safety.router, prefix="/api", tags=["safety"])
     app.include_router(local_session.router, prefix="/api", tags=["auth"])
     app.include_router(workspace.router, prefix="/api", tags=["workspace"])
     app.include_router(hermes.router, prefix="/api", tags=["hermes"])

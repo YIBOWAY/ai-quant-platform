@@ -13,7 +13,6 @@ import json
 import os
 import re
 import selectors
-import shutil
 import signal
 import stat
 import subprocess
@@ -555,23 +554,59 @@ def _execute_bounded(
     return exit_code, b"".join(chunks)
 
 
-def _sanitized_test_environment(directory: Path) -> dict[str, str]:
-    path_parts = [os.defpath]
-    for executable in ("node",):
-        observed = shutil.which(executable)
-        if observed is not None:
-            path_parts.insert(0, str(Path(observed).resolve().parent))
-    return {
+def _uv_managed_python_root(interpreter: Path) -> Path | None:
+    try:
+        resolved = interpreter.resolve(strict=True)
+    except OSError:
+        return None
+    for parent in resolved.parents:
+        if parent.name == "python" and parent.parent.name == "uv":
+            return parent
+    return None
+
+
+def _sanitized_test_environment(
+    directory: Path,
+    *,
+    executable: Path,
+    working_directory: Path,
+) -> dict[str, str]:
+    path_parts: list[str] = []
+
+    venv_python = working_directory / ".venv" / "bin" / "python"
+    interpreter_candidates = (venv_python, executable)
+    managed_root: Path | None = None
+    for candidate in interpreter_candidates:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError:
+            continue
+        candidate_managed_root = _uv_managed_python_root(candidate)
+        if candidate_managed_root is not None:
+            path_parts.append(str(resolved.parent))
+            managed_root = managed_root or candidate_managed_root
+
+    path_parts.extend(os.defpath.split(os.pathsep))
+    sanitized_path = os.pathsep.join(dict.fromkeys(path_parts))
+    environment = {
         "CI": "1",
         "HOME": str(directory),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
-        "PATH": os.pathsep.join(path_parts),
+        "PATH": sanitized_path,
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONINTMAXSTRDIGITS": "0",
         "PYTHONNOUSERSITE": "1",
         "TMPDIR": str(directory),
         "TZ": "UTC",
+        "UV_NO_CONFIG": "1",
+        "UV_PYTHON_DOWNLOADS": "never",
     }
+    if managed_root is not None:
+        environment["HQA_UV_MANAGED_PYTHON_ROOT"] = str(managed_root)
+        environment["UV_PYTHON_INSTALL_DIR"] = str(managed_root)
+    return environment
 
 
 def _read_temporary_junit(directory_fd: int, name: str) -> bytes:
@@ -641,7 +676,12 @@ def run_test_suite(
     if not working_directory.is_dir():
         raise EvidenceBuildError("test suite working directory is unavailable")
     try:
-        cwd_document, executable_document = validate_execution_plan(
+        (
+            cwd_document,
+            executable_document,
+            runner_kind,
+            suite_entry_document,
+        ) = validate_execution_plan(
             name=suite_name,
             argv=argv_template,
             cwd=working_directory,
@@ -690,7 +730,11 @@ def run_test_suite(
             exit_code, output = _execute_bounded(
                 executed_argv,
                 cwd=working_directory,
-                env=_sanitized_test_environment(directory),
+                env=_sanitized_test_environment(
+                    directory,
+                    executable=Path(executed_argv[0]),
+                    working_directory=working_directory,
+                ),
                 timeout_seconds=timeout_seconds,
             )
             completed_at = datetime.now(UTC)
@@ -735,7 +779,9 @@ def run_test_suite(
             "size_bytes": len(output),
         },
         "runtime": runtime_document,
+        "runner_kind": runner_kind,
         "started_at": _timestamp(started_at, "started_at"),
+        "suite_entry": suite_entry_document,
         "summary": {
             "failed": counts.failed,
             "passed": counts.passed,

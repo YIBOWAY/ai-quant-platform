@@ -115,6 +115,7 @@ MIGRATIONS = (
     "025_agent_v02_release_session_binding.sql",
     "026_agent_v02_paper_research_claim_lineage.sql",
     "027_agent_v02_candidate_ttl_window.sql",
+    "028_agent_v02_candidate_paper_epoch_fence.sql",
 )
 REQUIRED_FLOW_NAMES = (
     "web_chat_multi_turn",
@@ -396,7 +397,7 @@ def database_environment() -> _DatabaseEnvironment:
                 updated_at
             )
             VALUES (
-                'candidate-evidence-paper',
+                'default',
                 %s,
                 'USD',
                 100000,
@@ -404,7 +405,7 @@ def database_environment() -> _DatabaseEnvironment:
                 0,
                 TRUE,
                 1,
-                '{"kill_switch":true,"version":1}'::jsonb,
+                '{"account_id":"default","kill_switch":true,"version":1}'::jsonb,
                 %s,
                 %s
             )
@@ -2349,7 +2350,7 @@ def test_zero_order_baseline_and_final_drift_is_rejected(
                     to_jsonb(version + 1)
                 ),
                 updated_at = clock_timestamp()
-            WHERE account_id = 'candidate-evidence-paper'
+            WHERE account_id = 'default'
             """
         )
 

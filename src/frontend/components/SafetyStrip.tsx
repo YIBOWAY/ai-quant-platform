@@ -1,5 +1,8 @@
 import { ShieldAlert } from "lucide-react";
-import { getCachedSettings } from "@/lib/serverApi";
+import {
+  getCachedEffectivePaperSafety,
+  getCachedSettings,
+} from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -8,7 +11,12 @@ const copy = {
     paperUnavailable: "paper mode unavailable",
     liveDisabled: "live trading disabled",
     liveEnabled: "live trading enabled",
-    kill: "kill_switch",
+    kill: "global kill_switch",
+    accountFrozen: "paper account frozen",
+    paperAuthority: "paper authority",
+    epoch: "epoch",
+    ready: "ready",
+    blocked: "blocked",
     on: "on",
     off: "off",
     api: "api",
@@ -19,7 +27,12 @@ const copy = {
     paperUnavailable: "模拟模式不可用",
     liveDisabled: "实盘交易已禁用",
     liveEnabled: "实盘交易已启用",
-    kill: "熔断开关",
+    kill: "全局熔断开关",
+    accountFrozen: "模拟账户冻结",
+    paperAuthority: "论文安全权威",
+    epoch: "纪元",
+    ready: "就绪",
+    blocked: "受阻",
     on: "开",
     off: "关",
     api: "接口",
@@ -28,7 +41,11 @@ const copy = {
 };
 
 export async function SafetyStrip() {
-  const [settings, locale] = await Promise.all([getCachedSettings(), getServerLocale()]);
+  const [settings, paperSafety, locale] = await Promise.all([
+    getCachedSettings(),
+    getCachedEffectivePaperSafety(),
+    getServerLocale(),
+  ]);
   const text = copy[locale];
   const health = {
     safety: settings.apiError ? undefined : settings.safety,
@@ -44,12 +61,30 @@ export async function SafetyStrip() {
       : text.liveEnabled
     : text.unavailable;
   const killStatus = safety ? (killSwitchOn ? text.on : text.off) : text.unavailable;
+  const accountFrozenStatus = paperSafety.apiError
+    ? text.unavailable
+    : paperSafety.canonical_account_frozen === true
+      ? text.on
+      : paperSafety.canonical_account_frozen === false
+        ? text.off
+        : text.unavailable;
+  const paperAuthorityStatus = paperSafety.apiError
+    ? text.unavailable
+    : paperSafety.effective
+      ? text.ready
+      : text.blocked;
+  const epochStatus =
+    paperSafety.current_paper_authority_epoch === null
+      ? text.unavailable
+      : String(paperSafety.current_paper_authority_epoch);
   const desktopStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
     liveStatus
-  } · ${text.kill} ${killStatus} · ${text.api} ${health.status}`;
+  } · ${text.kill} ${killStatus} · ${text.accountFrozen} ${accountFrozenStatus} · ${
+    text.paperAuthority
+  } ${paperAuthorityStatus} (${text.epoch} ${epochStatus}) · ${text.api} ${health.status}`;
   const mobileStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
     liveStatus
-  } · ${text.api} ${health.status}`;
+  } · ${text.paperAuthority} ${paperAuthorityStatus} · ${text.api} ${health.status}`;
 
   return (
     <div

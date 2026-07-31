@@ -3,6 +3,12 @@
 import { useRef, useState, type FormEvent } from "react";
 import { MessageSquarePlus, RotateCcw, Send } from "lucide-react";
 
+import {
+  composerDraftState,
+  composerErrorMessage,
+} from "@/lib/hermes/composerPresentation";
+import type { Locale } from "@/lib/locale";
+
 export type ComposerDockProps = {
   /**
    * Gates the textarea. Defaults non-interactive until local chat unlock.
@@ -35,6 +41,10 @@ export type ComposerDockProps = {
   /** Explicitly create a new root Web-managed conversation. */
   onStartNewSession?: () => void | Promise<void>;
   newSessionLabel?: string;
+  /** Locale for byte-count and local error presentation. */
+  locale?: Locale;
+  /** Incremented by the controller once the durable submit is accepted. */
+  draftResetToken?: number;
 };
 
 /**
@@ -42,6 +52,18 @@ export type ComposerDockProps = {
  * disabled is off, onSubmitPrompt is provided, and the draft passes local checks.
  */
 export function ComposerDock({
+  draftResetToken,
+  ...props
+}: ComposerDockProps) {
+  return (
+    <ComposerDockStateful
+      key={draftResetToken ?? "persistent-draft"}
+      {...props}
+    />
+  );
+}
+
+function ComposerDockStateful({
   disabled = true,
   allowSubmit = false,
   placeholder = "Describe a research task… (submit disabled)",
@@ -55,6 +77,7 @@ export function ComposerDock({
   retryLabel = "Retry same send",
   onStartNewSession,
   newSessionLabel = "New conversation",
+  locale = "en",
 }: ComposerDockProps) {
   const [draft, setDraft] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -62,12 +85,18 @@ export function ComposerDock({
   const newSessionButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const networkWired = typeof onSubmitPrompt === "function";
+  const draftState = composerDraftState(draft, locale);
   const submitEnabled =
-    !disabled && allowSubmit && networkWired && !busy && !submitting;
+    !disabled &&
+    allowSubmit &&
+    networkWired &&
+    draftState.valid &&
+    !busy &&
+    !submitting;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!submitEnabled || !onSubmitPrompt) {
+    if (!submitEnabled || !onSubmitPrompt || !draftState.valid) {
       return;
     }
     const prompt = draft;
@@ -77,9 +106,7 @@ export function ComposerDock({
       await onSubmitPrompt(prompt);
       setDraft("");
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Submit failed";
-      setLocalError(message);
+      setLocalError(composerErrorMessage(error, locale));
     } finally {
       setSubmitting(false);
     }
@@ -92,7 +119,7 @@ export function ComposerDock({
     try {
       await onRetry();
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "Retry failed");
+      setLocalError(composerErrorMessage(error, locale));
     } finally {
       setSubmitting(false);
     }
@@ -105,9 +132,7 @@ export function ComposerDock({
     try {
       await onStartNewSession();
     } catch (error) {
-      setLocalError(
-        error instanceof Error ? error.message : "New conversation failed",
-      );
+      setLocalError(composerErrorMessage(error, locale));
       window.requestAnimationFrame(() => {
         newSessionButtonRef.current?.focus();
       });
@@ -153,9 +178,12 @@ export function ComposerDock({
           </label>
           <textarea
             id="hermes-composer-draft"
+            aria-describedby="hermes-composer-byte-count hermes-composer-status"
             aria-busy={busy || submitting || undefined}
             aria-disabled={disabled || undefined}
-            aria-invalid={localError ? true : undefined}
+            aria-invalid={
+              localError || draftState.overLimitBytes > 0 ? true : undefined
+            }
             aria-label={label}
             className="app-touch-target min-h-[44px] max-h-32 min-w-0 flex-1 resize-y rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-primary placeholder:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
             disabled={disabled || busy || submitting}
@@ -178,6 +206,17 @@ export function ComposerDock({
             <Send size={16} className={submitEnabled ? "opacity-100" : "opacity-60"} />
           </button>
         </div>
+        <p
+          className={`font-body-sm ${
+            draftState.overLimitBytes > 0
+              ? "text-danger"
+              : "text-text-secondary"
+          }`}
+          data-testid="hermes-composer-byte-count"
+          id="hermes-composer-byte-count"
+        >
+          {draftState.counterText}
+        </p>
         {hint ? (
           <p className="font-body-sm text-text-secondary">{hint}</p>
         ) : null}
@@ -186,6 +225,7 @@ export function ComposerDock({
             aria-atomic="true"
             className={`font-body-sm ${localError ? "rounded-md bg-bg-base px-2 py-1 text-danger" : "text-text-secondary"}`}
             data-testid="hermes-composer-status"
+            id="hermes-composer-status"
             role="status"
           >
             {displayStatus ?? ""}

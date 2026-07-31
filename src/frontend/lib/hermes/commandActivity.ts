@@ -34,6 +34,8 @@ export function commandStateLabel(
         return "Leased";
       case "delivered":
         return "Delivered";
+      case "succeeded":
+        return "Succeeded";
       case "failed":
         return "Failed";
       case "rejected":
@@ -55,6 +57,8 @@ export function commandStateLabel(
       return "已租约";
     case "delivered":
       return "已送达";
+    case "succeeded":
+      return "已成功";
     case "failed":
       return "失败";
     case "rejected":

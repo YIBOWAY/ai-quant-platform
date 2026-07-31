@@ -170,6 +170,41 @@ def test_subprocess_port_put_rejects_prompt_echo(tmp_path: Path) -> None:
     assert exc.value.code == "intent_cli_leaked_prompt"
 
 
+def test_subprocess_port_probe_uses_empty_closed_request(tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def runner(argv, **kwargs):  # type: ignore[no-untyped-def]
+        captured["argv"] = argv
+        captured["input"] = kwargs["input"]
+        return subprocess.CompletedProcess(
+            args=argv,
+            returncode=0,
+            stdout=b'{"ok":true,"status":"ready"}\n',
+            stderr=b"",
+        )
+
+    py = tmp_path / "python"
+    py.write_text("#!/bin/sh\n", encoding="utf-8")
+    py.chmod(0o755)
+    port = SubprocessIntentPayloadPort(
+        cli_settings=IntentPayloadCliSettings(
+            python_executable=py,
+            hqa_root=tmp_path,
+            timeout_seconds=5.0,
+        ),
+        runner=runner,
+    )
+
+    assert port.probe() is None
+    assert captured["argv"] == [
+        str(py),
+        "-m",
+        "hqa.intent_payload_cli",
+        "probe",
+    ]
+    assert captured["input"] == b"{}"
+
+
 def test_build_intent_payload_port_injectable() -> None:
     fake = FakeIntentPayloadPort()
     port = build_intent_payload_port(port=fake)

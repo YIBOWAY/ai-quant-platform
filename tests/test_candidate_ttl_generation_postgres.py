@@ -23,6 +23,7 @@ from tests.test_agent_v02_migrations_025_026_postgres import THROUGH_026
 pytestmark = pytest.mark.pg
 
 MIGRATION_027 = "027_agent_v02_candidate_ttl_window.sql"
+MIGRATION_028 = "028_agent_v02_candidate_paper_epoch_fence.sql"
 
 
 def _base_url() -> str:
@@ -92,14 +93,14 @@ def test_readiness_recognizes_exact_legacy_and_current_ttl_generations() -> None
                     conn,
                     required_ttl_seconds=120,
                 )
-                is True
+                is False
             )
             assert (
                 candidate_admission_schema_is_ready_on_connection(
                     conn,
                     required_ttl_seconds=1800,
                 )
-                is True
+                is False
             )
             assert (
                 candidate_admission_schema_is_ready_on_connection(
@@ -120,12 +121,13 @@ def test_readiness_recognizes_exact_legacy_and_current_ttl_generations() -> None
             assert marker is None
 
         db.reset_database_cache()
-        assert candidate_admission_schema_ready(_settings(database, ttl_seconds=1800)) is True
+        assert candidate_admission_schema_ready(_settings(database, ttl_seconds=1800)) is False
         db.reset_database_cache()
         assert candidate_admission_schema_ready(_settings(database, ttl_seconds=1801)) is False
 
         db.run_migrations(database, only=(MIGRATION_027,))
         db.run_migrations(database, only=(MIGRATION_027,))
+        db.run_migrations(database, only=(MIGRATION_028,))
 
         with database.connect() as conn:
             assert conn.execute(
@@ -156,6 +158,8 @@ def test_readiness_recognizes_exact_legacy_and_current_ttl_generations() -> None
 
 def test_readiness_recognizes_original_027_and_rejects_mixed_generations() -> None:
     with _database(purpose="ttl-mixed") as database:
+        db.run_migrations(database, only=(MIGRATION_027,))
+        db.run_migrations(database, only=(MIGRATION_028,))
         _replace_ttl_constraint(database, interval="2 hours")
         with database.connect() as conn:
             assert (
@@ -216,6 +220,7 @@ def test_readiness_recognizes_original_027_and_rejects_mixed_generations() -> No
 def test_027_replay_repairs_marker_and_constraint_together() -> None:
     with _database(purpose="ttl-repair") as database:
         db.run_migrations(database, only=(MIGRATION_027,))
+        db.run_migrations(database, only=(MIGRATION_028,))
         with database.connect() as conn:
             conn.execute(
                 """
