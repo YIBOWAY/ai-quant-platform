@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
 from quant_system.config.settings import (
@@ -71,6 +72,18 @@ def _base_url() -> str:
     if not (database_name.endswith("_tmp") or "test" in database_name):
         pytest.fail("PostgreSQL migration tests require a throwaway base database")
     return value
+
+
+def _deployment_independent_tamper_role(
+    conn: psycopg.Connection,
+) -> str:
+    """Use the disposable-cluster admin, never a workstation-specific role."""
+
+    row = conn.execute("SELECT current_user").fetchone()
+    assert row is not None
+    role = str(row[0])
+    assert role not in {"quant_migrator", "quant_readonly", "quant_runtime"}
+    return role
 
 
 @contextmanager
@@ -241,12 +254,15 @@ def test_readiness_rejects_and_replay_repairs_marker_acl_drift() -> None:
         db.run_migrations(database, only=(MIGRATION_028,))
         with database.connect() as conn:
             assert candidate_admission_schema_is_ready_on_connection(conn) is True
+            tamper_role = _deployment_independent_tamper_role(conn)
             conn.execute(
+                sql.SQL(
+                    """
+                    GRANT SELECT ON TABLE
+                        quant_system.agent_v02_candidate_paper_fence_meta
+                    TO {}
                 """
-                GRANT SELECT ON TABLE
-                    quant_system.agent_v02_candidate_paper_fence_meta
-                TO quant
-                """
+                ).format(sql.Identifier(tamper_role))
             )
             assert candidate_admission_schema_is_ready_on_connection(conn) is False
 
@@ -269,12 +285,15 @@ def test_readiness_rejects_constraint_owner_and_future_version_drift() -> None:
         db.run_migrations(database, only=(MIGRATION_028,))
         with database.connect() as conn:
             assert candidate_admission_schema_is_ready_on_connection(conn) is True
+            tamper_role = _deployment_independent_tamper_role(conn)
             conn.execute(
+                sql.SQL(
+                    """
+                    ALTER TABLE
+                        quant_system.agent_v02_candidate_paper_fence_meta
+                    OWNER TO {}
                 """
-                ALTER TABLE
-                    quant_system.agent_v02_candidate_paper_fence_meta
-                OWNER TO quant
-                """
+                ).format(sql.Identifier(tamper_role))
             )
             assert candidate_admission_schema_is_ready_on_connection(conn) is False
 
