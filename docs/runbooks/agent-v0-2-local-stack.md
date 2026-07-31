@@ -31,6 +31,34 @@ process, or authorized. Recheck every fact in the actual operator window; do
 not copy this dated observation forward.
 Nothing in this runbook sets `release_authorized=true` or opens public write.
 
+### Completed operator-window observation (2026-08-01)
+
+The retained 2026-07-31 text above is the pre-apply snapshot. In the exact
+authorized follow-up window, Platform commit `2eb714d1ef4ece96a664a816b1f3392d1640809e`
+was observed with:
+
+- one `agent_v02_candidate_paper_fence_meta` row at schema version 1, schema
+  fingerprint
+  `e3f713ac05a1a990cfa9be45157e880e06709c425a4883736544d8f2b626f33a`,
+  and exactly `trg_hermes_session_candidate_binding` and
+  `trg_hermes_command_candidate_binding` in `ENABLE ALWAYS` state;
+- a passing normal backend/frontend restart, live readiness, and live
+  provider-free `GET /api/safety/effective`;
+- `dry_run=true`, `paper_trading=true`, `live_trading_enabled=false`, and
+  `kill_switch=true` throughout;
+- one successful bounded local-private candidate E2E with zero orders, followed
+  by exact candidate revocation and return of the connector to `reconcile_only`;
+- public release/write fields still OFF.
+
+The formal preflight manifest is
+`/Users/sunyibo/programs/Hermes-quant-agent/artifacts/alphazerobeta-compat-fix-e2e-20260731.luZH43/candidate-preflight-release-final/bundle/agent-v0.2-candidate-evidence.json`.
+The cross-repo trace and database/browser evidence are recorded in the exact
+HQA runtime repository as
+`docs/audits/2026-07-31-alphazerobeta-paper-research-web-e2e.md`; do not
+duplicate them here. This is a dated observation, not authority to
+reapply 028, reuse the revoked candidate, or open public write. Re-run all
+status and readiness checks before any future candidate or release window.
+
 ## Non-negotiable safety state
 
 Keep all of the following true throughout preparation, migration, candidate
@@ -50,8 +78,12 @@ candidate or accepted-release window. It is not a synonym for any public field.
 
 Backend startup is never migration authority. The runtime env must contain
 `QS_DATABASE_AUTO_MIGRATE=false`; the launch scripts reject a truthy value.
-Only `quant-system migrate --apply --allow <exact-file>` may apply a migration,
-after fresh human authorization for that exact database and source identity.
+Only `quant-system migrate --apply --allow <exact-file>` may apply a future
+migration, after fresh human authorization for that exact database and source
+identity. For current live `quantplatform`, first observe the 028 marker: because
+it exists, every 028 plan/apply must stop even if a generic migration approval is
+later granted. The retained 028 command below is permitted only against a newly
+created isolated pre-028 restore for rehearsal, never current live.
 
 ## Release identity and runtime files
 
@@ -100,7 +132,13 @@ These flags are necessary but never sufficient: database readiness, effective
 paper safety, Keychain readiness, candidate/release authority, owner/CSRF
 checks, and connector liveness still gate every write.
 
-## Migration 016–028 operator window
+## Historical migration 016–028 operator window — do not replay live
+
+This section preserves the exact pre-apply sequence used by the completed
+2026-08-01 window. It is not a current live execution queue. If
+`quant_system.agent_v02_candidate_paper_fence_meta` exists in the target, stop:
+do not plan or apply 028 there. The example apply command in this section may be
+used only on a new isolated database restored from the retained pre-028 dump.
 
 The ordered additive ladder is:
 
@@ -109,12 +147,12 @@ The ordered additive ladder is:
     -> 023 -> 024 -> 025 -> 026 -> 027 -> 028
 ```
 
-Never skip an absent prerequisite or use a later migration as a patch. If
-inspection finds any missing 016–024 entry, apply the missing entries in order
-before 025. Do not start backend, frontend, or connector between partially
-applied ladder entries.
+Never skip an absent prerequisite or use a later migration as a patch. In a new
+isolated pre-028 restore only, if inspection finds any missing 016–024 entry,
+apply the missing entries in order before 025. Do not start backend, frontend,
+or connector between partially applied ladder entries.
 
-The complete operator sequence is:
+The completed window used this sequence:
 
 ```text
 freeze writers
@@ -122,8 +160,8 @@ freeze writers
   -> restore that backup into an isolated destination
   -> replay the exact missing migrations there
   -> pass exact readiness
-  -> obtain live-apply authorization
-  -> apply the exact allowlist to live
+  -> obtain one-time live-apply authorization
+  -> apply the exact allowlist to live once
   -> pass live readiness
   -> seal absolute-runner release preflight
   -> restart backend/frontend
@@ -174,9 +212,9 @@ overwriting the live database.
 
 ### 2. Replay the exact source in isolation
 
-Point a temporary owner-only env at the isolated restored database. First run a
-dry plan, then apply only the exact missing files. For the dated observed
-016–027 marker baseline, the final command would be:
+Point a temporary owner-only env at a newly created isolated restored database.
+First run a dry plan, then apply only the exact missing files. For the dated
+016–027 pre-apply baseline, the isolated-only final command was:
 
 ```bash
 quant-system migrate --allow 028_agent_v02_candidate_paper_epoch_fence.sql
@@ -186,10 +224,10 @@ quant-system migrate --apply \
   --yes
 ```
 
-This example is not live authorization. On an older database, repeat
-`--allow` in lexical order for every genuinely missing prerequisite. Run the
-PostgreSQL and focused safety suites against isolated infrastructure and retain
-their receipts:
+This example is prohibited against current live. On an older isolated restore,
+repeat `--allow` in lexical order for every genuinely missing prerequisite. Run
+the PostgreSQL and focused safety suites against isolated infrastructure and
+retain their receipts:
 
 ```bash
 bash scripts/verify_agent_v02_postgres_suite.sh \
@@ -253,10 +291,11 @@ raise SystemExit(0 if schema and runtime else 78)
 PY
 ```
 
-Only after isolated replay/review passes and a human authorizes this exact live
-apply may the operator run the same dry plan and exact allowlisted apply against
-live. A timeout or unavailable post-apply fingerprint is an unknown outcome:
-stop, inspect, and recover; never rerun blindly.
+The completed 2026-08-01 window performed the live apply once after isolated
+review and exact human authorization. That authorization is spent. Current live
+already has the 028 marker, so do not run the dry plan or apply there again. A
+timeout or unavailable fingerprint in any future migration is an unknown
+outcome: stop, inspect, and recover; never rerun blindly.
 
 ### 4. Seal frontend runner identity in release evidence
 

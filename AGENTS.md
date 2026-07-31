@@ -64,13 +64,23 @@ data/                     Local cache, fixtures, generated research outputs.
   backend at that dated check also predates the new
   provider-free `/api/safety/effective` route. Never promote source, tests,
   backup, replay, or a migration file's presence into a live/runtime claim.
+- **Completed-window boundary (read-only check, 2026-08-01):** the authorized
+  operator window subsequently observed one 028 marker at version 1, exact two
+  `ENABLE ALWAYS` binding triggers, schema fingerprint
+  `e3f713ac05a1a990cfa9be45157e880e06709c425a4883736544d8f2b626f33a`,
+  live readiness plus `/api/safety/effective`, and a passing local-private E2E
+  with zero orders. The exact candidate was then revoked, the connector was
+  returned to `reconcile_only`, and public release remained OFF. This dated
+  observation does not authorize reapplying 028 or opening another window; use
+  the local-stack runbook and the cross-repo AlphaZeroBeta audit for evidence.
 - Backend startup never applies migrations. Keep
-  `QS_DATABASE_AUTO_MIGRATE=false`; an apply requires the explicit
-  `quant-system migrate --apply --allow <exact-file>` operator path. Migrations
-  016–028 are one ordered additive ladder. Any authorized 028 window must
-  preserve: live pre-028 backup, isolated restore/replay, exact allowlisted
-  apply, schema/runtime readiness, service restart, real candidate E2E, and an
-  exercised pre-028 restore path.
+  `QS_DATABASE_AUTO_MIGRATE=false`; a future migration requires the explicit
+  `quant-system migrate --apply --allow <exact-file>` operator path and fresh
+  authorization. The 016–028 ladder is now historical for the current live
+  database: because its 028 marker exists, every 028 plan/apply against that
+  database must stop. The retained 028 commands may target only a newly created
+  isolated pre-028 restore for rehearsal, never current live; any later
+  migration needs its own review and authorization.
 - Migration 028 freezes the candidate write rail to the effective paper
   authority. For the root owner there must be exactly one canonical paper
   account, its ID must be `default`, materialized `kill_switch` must be true,
