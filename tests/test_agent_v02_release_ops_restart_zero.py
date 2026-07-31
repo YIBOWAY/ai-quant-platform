@@ -456,7 +456,7 @@ def test_frontend_success_build_rebinds_and_atomically_activates(
     assert (active_next / "server" / "page.js").read_text() == "new bytes\n"
     required = (active_next / "required-server-files.json").read_text()
     assert str(frontend) in required
-    assert "candidate-" not in required
+    assert json.loads(required)["appDir"] == str(frontend)
     assert authority["atomic_activation"]["primitive"] in {
         "renamex_np(RENAME_SWAP)",
         "renameat2(RENAME_EXCHANGE)",
