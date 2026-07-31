@@ -581,6 +581,11 @@ def _sanitized_test_environment(
             resolved = candidate.resolve(strict=True)
         except OSError:
             continue
+        if candidate == executable and resolved.name == "uv":
+            # An approved ``uv run`` receipt seals this exact executable.
+            # Keep that same binary discoverable to release-regression tests
+            # without restoring the operator's ambient PATH.
+            path_parts.append(str(resolved.parent))
         candidate_managed_root = _uv_managed_python_root(candidate)
         if candidate_managed_root is not None:
             path_parts.append(str(resolved.parent))
@@ -689,6 +694,11 @@ def run_test_suite(
         )
     except TestExecutionEvidenceError as exc:
         raise EvidenceBuildError(str(exc)) from exc
+    sealed_executable = executable_document.get("realpath")
+    if not isinstance(sealed_executable, str):
+        raise EvidenceBuildError("test suite executable identity is invalid")
+    if Path(argv_template[0]).name == "uv":
+        argv_template = (sealed_executable, *argv_template[1:])
 
     temporary_name = f".test-{suite_name}-{uuid4().hex}.junit.xml.tmp"
     temporary_path = directory / temporary_name

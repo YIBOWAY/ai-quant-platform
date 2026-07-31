@@ -356,6 +356,80 @@ def test_sealed_absolute_runner_receipt_validates_without_runner_on_path(
     assert validated.argv[0] == runner
 
 
+def test_run_suite_executes_the_sealed_runner_not_a_retargetable_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+    trusted_bin = tmp_path / "trusted" / "bin"
+    trusted_bin.mkdir(parents=True)
+    trusted_uv = trusted_bin / "uv"
+    trusted_uv.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    trusted_uv.chmod(0o700)
+    attacker_uv = tmp_path / "attacker" / "uv"
+    attacker_uv.parent.mkdir()
+    attacker_uv.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+    attacker_uv.chmod(0o700)
+    alias_uv = tmp_path / "alias" / "uv"
+    alias_uv.parent.mkdir()
+    alias_uv.symlink_to(trusted_uv)
+    executed: list[tuple[str, ...]] = []
+
+    def execute_with_passing_junit(
+        executed_argv: tuple[str, ...],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        timeout_seconds: int,
+    ) -> tuple[int, bytes]:
+        del cwd, env, timeout_seconds
+        alias_uv.unlink()
+        alias_uv.symlink_to(attacker_uv)
+        executed.append(executed_argv)
+        target = Path(
+            next(
+                argument.split("=", 1)[1]
+                for argument in executed_argv
+                if argument.startswith("--junitxml=")
+            )
+        )
+        target.write_bytes(
+            b'<testsuite tests="1" failures="0" errors="0" skipped="0">'
+            b'<testcase name="release"/></testsuite>'
+        )
+        target.chmod(0o600)
+        return 0, b"passed\n"
+
+    monkeypatch.setattr(
+        release_evidence_builder,
+        "_execute_bounded",
+        execute_with_passing_junit,
+    )
+    result = run_test_suite(
+        name="platform",
+        argv=(
+            str(alias_uv),
+            "run",
+            "--frozen",
+            "--extra",
+            "dev",
+            "pytest",
+            "tests",
+            "--junitxml={junit}",
+        ),
+        output_dir=output_dir,
+        runtime_roots=roots,
+        cwd=roots["platform"],
+    )
+
+    receipt = json.loads(result.receipt_path.read_text(encoding="utf-8"))
+    assert executed[0][0] == str(trusted_uv.resolve())
+    assert receipt["argv"][0] == str(trusted_uv.resolve())
+    assert result.runtime == runtime
+
+
 def test_sanitized_environment_binds_managed_python_outside_private_home(
     tmp_path: Path,
 ) -> None:
@@ -395,6 +469,35 @@ def test_sanitized_environment_binds_managed_python_outside_private_home(
         text=True,
     )
     assert completed.stdout == "managed-python-ok"
+
+
+def test_sanitized_environment_exposes_only_the_explicit_uv_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scratch = tmp_path / "evidence"
+    scratch.mkdir()
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    trusted_bin = tmp_path / "trusted" / "bin"
+    trusted_bin.mkdir(parents=True)
+    uv = trusted_bin / "uv"
+    uv.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    uv.chmod(0o700)
+    attacker_bin = tmp_path / "attacker"
+    attacker_bin.mkdir()
+    monkeypatch.setenv("PATH", str(attacker_bin))
+
+    env = release_evidence_builder._sanitized_test_environment(
+        scratch,
+        executable=uv,
+        working_directory=runtime,
+    )
+
+    path_parts = env["PATH"].split(os.pathsep)
+    assert str(trusted_bin) in path_parts
+    assert str(attacker_bin) not in path_parts
+    assert shutil.which("uv", path=env["PATH"]) == str(uv)
 
 
 def test_frontend_release_suite_never_executes_node_from_ambient_path(
