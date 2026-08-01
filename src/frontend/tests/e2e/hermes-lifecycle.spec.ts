@@ -6,7 +6,7 @@ import {
   assertWholeHermesShellControlsUnclipped,
   assertWholeHermesShellWcagAaContrast,
 } from "./helpers/hermes-closure-gates";
-import { openDock } from "./helpers/hermes-dock";
+import { closeDock, openDock } from "./helpers/hermes-dock";
 import {
   assertFullPageTargetsAndFocus,
   assertNoHorizontalOverflow,
@@ -357,6 +357,8 @@ async function expectExactRenderedAuthorities(
       slot.locator("[data-hermes-authority-empty]"),
     ).toHaveCount(0);
   }
+
+  await closeDock(page);
 }
 
 if (modeMatches) {
@@ -901,6 +903,7 @@ if (modeMatches) {
     const baseline = await fixtureAudit(page);
     const baselineEventCount = baseline.events.length;
 
+    await openDock(page, "results");
     const row = page.locator(
       '[data-hermes-typed-result-row][data-hermes-result-id="fixture-result-terminal-001"]',
     );
@@ -946,6 +949,7 @@ if (modeMatches) {
 
     await expect(row).toHaveAttribute("data-hermes-result-sample", "real");
     await expect(mark).toHaveText("REAL");
+    await closeDock(page);
     await assertWholeHermesShellWcagAaContrast(page);
 
     const snapshot = await fixtureSnapshot(page);

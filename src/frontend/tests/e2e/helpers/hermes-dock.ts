@@ -10,13 +10,15 @@ export type DockPanelId =
 
 /**
  * Workbench panels live in on-demand dock drawers, so any assertion about their
- * rows must open the owning drawer first. Idempotent: clicking an already-open
- * panel would close it, so this only clicks when the drawer is not showing.
+ * rows must open the owning drawer first. Idempotent: no-op when the target
+ * panel is already open. The rail sits below the modal drawer's scrim, so a
+ * different open panel is closed first rather than clicked through.
  */
 export async function openDock(page: Page, panel: DockPanelId): Promise<void> {
   const button = page.locator(`[data-hermes-dock-rail-button="${panel}"]`);
   await expect(button).toBeVisible();
   if ((await button.getAttribute("aria-pressed")) !== "true") {
+    await closeDock(page);
     await button.click();
   }
   await expect(page.locator("[data-hermes-dock-drawer]")).toBeVisible();
