@@ -187,7 +187,7 @@ export function OwnerSessionBootstrapPanel({
           </button>
         </div>
         <button
-          className="app-touch-target w-full rounded-[var(--radius-card)] bg-[var(--color-hermes)] px-4 py-2 font-body-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
+          className="app-touch-target w-full rounded-[var(--radius-card)] bg-[var(--color-hermes-strong)] px-4 py-2 font-body-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
           disabled={state === "submitting"}
           type="submit"
         >
