@@ -26,6 +26,7 @@ from quant_system.api.safety.local_session import (
     enforce_browser_request_gates,
     exchange_bootstrap_token,
     local_session_security_ready,
+    mint_owner_session,
     policy_from_settings,
     require_loopback_peer,
     session_public_view,
@@ -152,6 +153,7 @@ def owner_bootstrap(
 @router.get("/auth/owner/session", response_model=OwnerSessionStatusResponse)
 def owner_session_status(
     request: Request,
+    response: Response,
     settings: SettingsDep,
     output_dir: OutputDirDep,
 ) -> dict:
@@ -165,9 +167,28 @@ def owner_session_status(
             origin_header=request.headers.get("origin"),
             sec_fetch_site=request.headers.get("sec-fetch-site"),
         )
-        session = verify_session_cookie(
-            output_dir, request.cookies.get(SESSION_COOKIE_NAME)
-        )
+        try:
+            session = verify_session_cookie(
+                output_dir, request.cookies.get(SESSION_COOKIE_NAME)
+            )
+        except LocalSessionAuthError:
+            # Solo-owner local trust mode: skip the bootstrap-token ritual and
+            # auto-issue the owner session on first contact. Loopback peer,
+            # Host/Origin gates, HMAC-signed cookie and CSRF double-submit are
+            # all unchanged — only the manual token paste is removed. Outside
+            # trust mode the 401 propagates and the ceremony stays required.
+            if not trust_mode_active(settings):
+                raise
+            issued = mint_owner_session(output_dir, ttl=TRUST_SESSION_TTL)
+            _set_session_cookies(
+                response,
+                session_cookie_value=issued.session_cookie_value,
+                csrf_token=issued.session.csrf_token,
+                secure=request.url.scheme == "https",
+                ttl_seconds=TRUST_SESSION_TTL_SECONDS,
+            )
+            response.headers["Cache-Control"] = "no-store"
+            session = issued.session
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _http_error(exc) from exc
     mutation_on = bool(getattr(settings.local_mutation, "enabled", False))

@@ -489,3 +489,56 @@ def test_minted_session_only_root_owner(tmp_path: Path) -> None:
     session = verify_session_cookie(tmp_path, issued.session_cookie_value)
     assert session.owner_user_id == ROOT_USER_ID
     assert re.fullmatch(r"[A-Za-z0-9_-]+", session.session_id)
+
+
+def _trust_client(tmp_path: Path) -> TestClient:
+    from quant_system.config.settings import LocalMutationSettings, LocalTrustSettings
+
+    settings = Settings(
+        hermes_gateway=HermesGatewaySettings(enabled=False),
+        local_mutation=LocalMutationSettings(enabled=True, composer_open=True),
+        local_trust=LocalTrustSettings(mode=True),
+        api_cors_origins=[
+            ORIGIN,
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+        ],
+    )
+    app = create_app(settings=settings, output_dir=tmp_path, bind_address="127.0.0.1")
+    return TestClient(app)
+
+
+def test_trust_mode_auto_issues_owner_session_on_status_get(tmp_path: Path) -> None:
+    """Trust mode skips the bootstrap ritual: first GET mints the session."""
+    client = _trust_client(tmp_path)
+    status = client.get("/api/auth/owner/session", headers=_browser_headers())
+    assert status.status_code == 200, status.text
+    payload = status.json()
+    assert payload["owner_user_id"] == str(ROOT_USER_ID)
+    assert SESSION_COOKIE_NAME in status.cookies
+    assert CSRF_COOKIE_NAME in status.cookies
+    assert status.headers.get("cache-control") == "no-store"
+
+    # Second GET reuses the minted cookie instead of minting a new session.
+    again = client.get("/api/auth/owner/session", headers=_browser_headers())
+    assert again.status_code == 200
+    assert again.json()["session_id"] == payload["session_id"]
+    assert "set-cookie" not in again.headers
+
+
+def test_trust_mode_auto_issue_still_enforces_browser_gates(tmp_path: Path) -> None:
+    """Cross-site Sec-Fetch-Site is still rejected before any minting."""
+    client = _trust_client(tmp_path)
+    status = client.get(
+        "/api/auth/owner/session",
+        headers=_browser_headers(site="cross-site"),
+    )
+    assert status.status_code == 403
+    assert SESSION_COOKIE_NAME not in status.cookies
+
+
+def test_no_trust_mode_status_get_stays_401(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    status = client.get("/api/auth/owner/session", headers=_browser_headers())
+    assert status.status_code == 401
+    assert SESSION_COOKIE_NAME not in status.cookies
