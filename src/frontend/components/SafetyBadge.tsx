@@ -11,6 +11,7 @@ const copy = {
     paperUnavailable: "paper mode unavailable",
     liveDisabled: "live trading disabled",
     liveEnabled: "live trading enabled",
+    live: "live trading",
     kill: "global kill_switch",
     accountFrozen: "paper account frozen",
     paperAuthority: "paper authority",
@@ -30,6 +31,7 @@ const copy = {
     paperUnavailable: "模拟模式不可用",
     liveDisabled: "实盘交易已禁用",
     liveEnabled: "实盘交易已启用",
+    live: "实盘交易",
     kill: "全局熔断开关",
     accountFrozen: "模拟账户冻结",
     paperAuthority: "论文安全权威",
@@ -92,12 +94,14 @@ export async function SafetyBadge() {
     liveStatus
   } · ${text.paperAuthority} ${paperAuthorityStatus} · ${text.api} ${health.status}`;
 
-  // Fail closed: anything short of "paper-only, live disabled, authority ready,
-  // API reachable" reads as an attention state, never as all-clear.
+  // Fail closed: anything short of "paper-only, live disabled, kill switch
+  // engaged, authority ready, API reachable" reads as an attention state, never
+  // as all-clear. Per AGENTS.md the safe posture is kill_switch = TRUE, so an
+  // absent or false kill switch is what warrants attention.
   const allSafe =
     paperOnly &&
     liveDisabled &&
-    !killSwitchOn &&
+    killSwitchOn &&
     paperSafety.effective === true &&
     !paperSafety.apiError &&
     health.status === "available";
@@ -106,7 +110,7 @@ export async function SafetyBadge() {
 
   const rows: Array<{ label: string; value: string }> = [
     { label: text.paperOnly, value: paperOnly ? text.on : text.off },
-    { label: liveStatus, value: liveDisabled ? text.on : text.off },
+    { label: text.live, value: liveStatus },
     { label: text.kill, value: killStatus },
     { label: text.accountFrozen, value: accountFrozenStatus },
     {
@@ -126,7 +130,7 @@ export async function SafetyBadge() {
     >
       <details className="group">
         <summary
-          aria-label={text.details}
+          aria-label={`${badgeLabel} — ${text.details}`}
           className="app-touch-target flex cursor-pointer list-none items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-2.5 font-mono text-[10px] font-bold uppercase tracking-widest text-warning marker:hidden"
         >
           <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
