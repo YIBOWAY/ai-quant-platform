@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 class StrategyMetadata(BaseModel):
     id: str
     name: str
+    # Optional zh display layer; ids and name stay canonical English.
+    display_name_zh: str | None = None
     description: str
     paper_source: str | None = None
     run_endpoint: str
@@ -43,6 +45,7 @@ def build_default_strategy_registry() -> StrategyRegistry:
         StrategyMetadata(
             id="cross_sectional_top_n",
             name="Cross-Sectional Top-N",
+            display_name_zh="横截面 Top-N",
             description=(
                 "Ranks a selected universe by blended factor score and holds the "
                 "top positive-scoring names."
@@ -78,6 +81,7 @@ def build_default_strategy_registry() -> StrategyRegistry:
         StrategyMetadata(
             id="reversal_momentum",
             name="Short-Term Reversal / Longer-Term Momentum",
+            display_name_zh="短期反转 / 长期动量",
             description=(
                 "Local research-only replication of monthly short-term reversal "
                 "and longer-term momentum portfolios."
@@ -112,6 +116,7 @@ def build_default_strategy_registry() -> StrategyRegistry:
         StrategyMetadata(
             id="mean_reversion_top_n",
             name="Mean-Reversion Top-N",
+            display_name_zh="均值回归 Top-N",
             description=(
                 "Contrarian counterpart to Cross-Sectional Top-N. Buys the "
                 "lowest blended-score names (recent underperformers) each "
@@ -142,6 +147,58 @@ def build_default_strategy_registry() -> StrategyRegistry:
                 "benchmark_symbol": "SPY",
                 "top_n": 3,
                 "provider": "sample",
+            },
+        )
+    )
+    # Research draft only. Factor is Gate-2 approved candidate, not Gate-3
+    # promoted; default payload keeps a runnable resident blend so catalog
+    # listing does not break /api/backtests/run. Full candidate binding and
+    # sample evidence live under strategies/drafts/.
+    registry.register(
+        StrategyMetadata(
+            id="drift_regime_reversal_top_n_v1",
+            name="Drift Regime Reversal Top-N (Research Draft)",
+            display_name_zh="漂移状态反转 Top-N（研究草稿）",
+            description=(
+                "RESEARCH DRAFT — long-only Top-N inspired by arXiv:2511.12490 "
+                "(drift-regime gated value + short-term reversal). Candidate "
+                "factor_id=drift_regime_reversal_edge_v1 is approved but not "
+                "resident-promoted. Catalog default_payload uses resident "
+                "momentum as a placeholder so the UI remains runnable; see "
+                "strategies/drafts/drift_regime_reversal_top_n_v1.json for the "
+                "true candidate binding and sample-lab evidence. Not paper/live."
+            ),
+            paper_source=(
+                "Discovery of a 13-Sharpe OOS Factor: Drift Regimes Unlock "
+                "Hidden Cross-Sectional Predictability, arXiv:2511.12490"
+            ),
+            run_endpoint="/api/backtests/run",
+            result_type="backtest",
+            supports_account_rebalance=False,
+            parameter_schema={
+                "fields": {
+                    "universe_id": {"type": "universe", "required": True},
+                    "factor_ids": {"type": "factor_multi_select", "required": True},
+                    "weights": {"type": "factor_weight_map", "required": False},
+                    "top_n": {"type": "integer", "default": 3, "min": 1},
+                    "benchmark_symbol": {"type": "symbol", "default": "SPY"},
+                    "start": {"type": "date", "default": "2024-01-02"},
+                    "end": {"type": "date", "default": "2024-12-31"},
+                    "provider": {"type": "provider", "default": "sample"},
+                }
+            },
+            default_payload={
+                "strategy_id": "cross_sectional_top_n",
+                "universe_id": "etf",
+                # Placeholder resident factor — true research factor is still
+                # candidate-only (drift_regime_reversal_edge_v1).
+                "factor_ids": ["momentum"],
+                "weights": {"momentum": 1.0},
+                "benchmark_symbol": "SPY",
+                "top_n": 3,
+                "provider": "sample",
+                "start": "2024-01-02",
+                "end": "2024-12-31",
             },
         )
     )

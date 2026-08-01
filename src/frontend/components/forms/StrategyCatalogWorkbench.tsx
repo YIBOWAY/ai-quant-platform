@@ -184,6 +184,15 @@ const fieldLabels = {
 const inputClass =
   "rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-data-mono text-text-primary disabled:opacity-50";
 
+// zh display layer: ids and canonical English names stay authoritative.
+function localizedName(
+  item: { display_name_zh?: string | null },
+  canonical: string,
+  locale: Locale,
+): string {
+  return locale === "zh" && item.display_name_zh ? item.display_name_zh : canonical;
+}
+
 export function StrategyCatalogWorkbench({
   strategies,
   universes,
@@ -297,7 +306,7 @@ export function StrategyCatalogWorkbench({
           >
             {activeStrategies.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name}
+                {localizedName(item, item.name, locale)}
               </option>
             ))}
           </select>
@@ -380,7 +389,7 @@ export function StrategyCatalogWorkbench({
 
         <PageHeader
           eyebrow={text.eyebrow}
-          title={strategy?.name ?? text.title}
+          title={strategy ? localizedName(strategy, strategy.name, locale) : text.title}
           subtitle={strategy?.description}
           actions={
             <>
@@ -717,7 +726,7 @@ function FieldRenderer({
               }}
               type="checkbox"
             />
-            {factor.factor_name}
+            {localizedName(factor, factor.factor_name, locale)}
           </label>
         ))}
       </div>

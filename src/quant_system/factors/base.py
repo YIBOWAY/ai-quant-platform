@@ -28,6 +28,8 @@ FACTOR_RESULT_COLUMNS: tuple[str, ...] = (
 class FactorMetadata(BaseModel):
     factor_id: str
     factor_name: str
+    # Optional zh display layer; factor_id/factor_name stay canonical English.
+    display_name_zh: str | None = None
     factor_version: str
     lookback: int = Field(gt=0)
     direction: Literal["higher_is_better", "lower_is_better", "neutral"]
@@ -45,6 +47,7 @@ class BaseFactor(ABC):
 
     factor_id: ClassVar[str]
     factor_name: ClassVar[str]
+    display_name_zh: ClassVar[str | None] = None
     factor_version: ClassVar[str] = "0.1.0"
     default_lookback: ClassVar[int]
     direction: ClassVar[Literal["higher_is_better", "lower_is_better", "neutral"]]
@@ -61,6 +64,7 @@ class BaseFactor(ABC):
         return FactorMetadata(
             factor_id=self.factor_id,
             factor_name=self.factor_name,
+            display_name_zh=self.display_name_zh,
             factor_version=self.factor_version,
             lookback=self.lookback,
             direction=self.direction,

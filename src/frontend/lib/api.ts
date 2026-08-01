@@ -139,6 +139,7 @@ export type MarketDataHistoryResponse = ApiEnvelope & {
 export type FactorMetadata = {
   factor_id: string;
   factor_name: string;
+  display_name_zh?: string | null;
   factor_version: string;
   lookback: number;
   direction: string;
@@ -373,6 +374,7 @@ export type ReversalMomentumReplicationRunResponse = ApiEnvelope & {
 export type StrategyMetadata = {
   id: string;
   name: string;
+  display_name_zh?: string | null;
   description: string;
   paper_source: string | null;
   run_endpoint: string;

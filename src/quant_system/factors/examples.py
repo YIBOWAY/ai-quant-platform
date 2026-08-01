@@ -9,6 +9,7 @@ from quant_system.factors.base import BaseFactor
 class MomentumFactor(BaseFactor):
     factor_id = "momentum"
     factor_name = "Momentum"
+    display_name_zh = "动量"
     default_lookback = 20
     direction = "higher_is_better"
     description = "Close-to-close momentum over a trailing window."
@@ -23,6 +24,7 @@ class MomentumFactor(BaseFactor):
 class VolatilityFactor(BaseFactor):
     factor_id = "volatility"
     factor_name = "Volatility"
+    display_name_zh = "波动率"
     default_lookback = 20
     direction = "lower_is_better"
     description = "Trailing realized volatility from close-to-close returns."
@@ -39,6 +41,7 @@ class VolatilityFactor(BaseFactor):
 class LiquidityFactor(BaseFactor):
     factor_id = "liquidity"
     factor_name = "Liquidity"
+    display_name_zh = "流动性"
     default_lookback = 20
     direction = "higher_is_better"
     description = "Log trailing average dollar volume."
@@ -54,6 +57,7 @@ class LiquidityFactor(BaseFactor):
 class RSIFactor(BaseFactor):
     factor_id = "rsi"
     factor_name = "Relative Strength Index"
+    display_name_zh = "相对强弱指标 RSI"
     default_lookback = 14
     direction = "lower_is_better"
     description = "Trailing RSI oscillator; lower values represent stronger oversold pressure."
@@ -80,6 +84,7 @@ class RSIFactor(BaseFactor):
 class MACDFactor(BaseFactor):
     factor_id = "macd"
     factor_name = "MACD Histogram"
+    display_name_zh = "MACD 柱状图"
     default_lookback = 12
     direction = "higher_is_better"
     description = (

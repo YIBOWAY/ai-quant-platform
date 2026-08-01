@@ -10,6 +10,7 @@ from quant_system.factors.base import BaseFactor
 class PaperReversalMomentumProxyV2(BaseFactor):
     factor_id = "paper_reversal_momentum_proxy_v2"
     factor_name = "Paper Reversal Momentum Proxy V2"
+    display_name_zh = "论文反转动量代理 V2"
     factor_version = "0.2.0"
     default_lookback = 252
     direction = "higher_is_better"

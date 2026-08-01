@@ -10,6 +10,7 @@ from quant_system.factors.base import BaseFactor
 class AgentCandidateFactor(BaseFactor):
     factor_id = "agent_candidate_wave2_sceneb_mom20_v3"
     factor_name = "Wave2 SceneB Momentum 20d v3"
+    display_name_zh = "Wave2 场景B 20日动量 v3"
     factor_version = "0.1.0-wave2-smoke"
     default_lookback = 20
     direction = "higher_is_better"
