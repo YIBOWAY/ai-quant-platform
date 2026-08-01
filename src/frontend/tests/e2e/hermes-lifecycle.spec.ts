@@ -435,6 +435,37 @@ if (modeMatches) {
     expectCleanBrowser(externalRequests, problems);
   });
 
+  // The viewport sweep above only ever paints the closed shell, so drawer
+  // content had no contrast coverage. Open each dock panel once. The clipping
+  // gate is deliberately not run here: the drawer is modal, so its scrim covers
+  // every shell control behind it by design, which that gate reads as an
+  // offender. Closed-shell clipping is already covered by the sweep above.
+  test("active lifecycle dock drawers pass contrast", async ({ page }) => {
+    const externalRequests = await installLoopbackOnlyGuard(page);
+    const problems = collectBrowserProblems(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(
+      `/en/hermes?hermes_session_id=${encodeURIComponent(ACTIVE_SESSION_ID)}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    await expect(page.locator("[data-hermes-active-grid]")).toBeVisible();
+
+    for (const panel of [
+      "approvals",
+      "activity",
+      "runs",
+      "results",
+      "gates",
+      "authority",
+    ] as const) {
+      await openDock(page, panel);
+      await expect(page.locator("[data-hermes-dock-drawer]")).toBeVisible();
+      await assertWholeHermesShellWcagAaContrast(page);
+    }
+    await closeDock(page);
+    expectCleanBrowser(externalRequests, problems);
+  });
+
   test("submits multiple turns and reconnects to the exact managed session", async ({
     page,
   }) => {
@@ -452,12 +483,15 @@ if (modeMatches) {
     const composer = page.getByRole("textbox", { name: "Talk with Hermes" });
     const send = page.getByRole("button", { name: "Send", exact: true });
     await expect(composer).toBeEnabled();
-    await expect(send).toBeEnabled();
+    // Send unlocks on a valid draft, not on mount: composerDraftState treats an
+    // empty draft as invalid. Assert both halves of that rule.
+    await expect(send).toBeDisabled();
     const baselineAudit = await fixtureAudit(page);
     const baselineEventCount = baselineAudit.events.length;
 
     const firstPrompt = "First deterministic lifecycle turn";
     await composer.fill(firstPrompt);
+    await expect(send).toBeEnabled();
     const firstRequestPromise = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
