@@ -22,6 +22,7 @@ import { OwnerSessionBootstrapPanel } from "@/components/hermes/OwnerSessionBoot
 import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { WorkbenchTranscriptPanel } from "@/components/hermes/transcript/WorkbenchTranscriptPanel";
 import { ActiveHermesSessionProvider } from "@/lib/hermes/activeSession";
+import { HermesChatActiveProvider } from "@/lib/hermes/chatActiveContext";
 import {
   WORKBENCH_A11Y_MARKER,
   workbenchContentPadClass,
@@ -202,7 +203,11 @@ export function HermesLocalChatBoundary({
                   // Fullscreen chat hides Today's landing content but must keep
                   // it mounted: the page also renders the deep-link binder that
                   // rebinds ?hermes_session_id into the active-session context.
-                  <div hidden>{children}</div>
+                  // The provider tells the hidden Today tree to release the
+                  // hermes-today-state test id to the "active" node above.
+                  <div hidden>
+                    <HermesChatActiveProvider active>{children}</HermesChatActiveProvider>
+                  </div>
                 ) : (
                   children
                 )}

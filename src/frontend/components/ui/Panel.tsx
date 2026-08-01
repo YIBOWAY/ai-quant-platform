@@ -1,6 +1,6 @@
 'use client';
 
-import type { JSX, ReactNode } from "react";
+import { useId, type JSX, type ReactNode } from "react";
 
 /**
  * Shared panel chrome for the Hermes workbench.
@@ -40,14 +40,20 @@ export function Panel({
   ...dataProps
 }: PanelProps): JSX.Element {
   const showEmpty = Boolean(isEmpty) && Boolean(empty);
+  // The section is a landmark, so it needs an accessible name; the panel title
+  // is that name and never has to be repeated as a hand-written aria-label.
+  const titleId = useId();
 
   return (
     <section
       {...(dataProps as Record<string, string>)}
+      aria-labelledby={titleId}
       className="rounded-[var(--radius-card)] border border-border-subtle bg-bg-surface"
     >
       <header className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
-        <h3 className="min-w-0 flex-1 truncate font-label-caps text-text-secondary">{title}</h3>
+        <h3 className="min-w-0 flex-1 truncate font-label-caps text-text-secondary" id={titleId}>
+          {title}
+        </h3>
         {typeof count === "number" ? (
           <span className="shrink-0 rounded-full bg-bg-surface-muted px-2 text-[11px] text-text-secondary">
             {count}

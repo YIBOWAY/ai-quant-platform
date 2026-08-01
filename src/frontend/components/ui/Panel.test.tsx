@@ -52,6 +52,37 @@ describe("Panel", () => {
     expect(html).not.toContain("CHILD_MARKER");
   });
 
+  it("names the section landmark via its own heading", () => {
+    const html = renderToStaticMarkup(
+      <Panel title="Approvals">
+        <p>body</p>
+      </Panel>,
+    );
+    const labelledBy = /aria-labelledby="([^"]+)"/.exec(html)?.[1];
+    expect(labelledBy).toBeTruthy();
+    expect(html).toContain(`id="${labelledBy}"`);
+    // The referenced element is the heading that carries the title text.
+    expect(html).toMatch(
+      new RegExp(`<h3[^>]*id="${labelledBy}"[^>]*>Approvals</h3>`),
+    );
+  });
+
+  it("gives each panel instance a distinct heading id", () => {
+    const html = renderToStaticMarkup(
+      <>
+        <Panel title="Approvals">
+          <p>a</p>
+        </Panel>
+        <Panel title="Activity">
+          <p>b</p>
+        </Panel>
+      </>,
+    );
+    const ids = [...html.matchAll(/aria-labelledby="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+  });
+
   it("renders children, headerExtra, and forwards data-* attributes", () => {
     const html = renderToStaticMarkup(
       <Panel

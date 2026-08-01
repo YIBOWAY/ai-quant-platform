@@ -7,6 +7,7 @@ import { TechnicalDetails } from "@/components/hermes/artifacts/TechnicalDetails
 import { TodayAttention } from "./TodayAttention";
 import { TodayGreeting } from "./TodayGreeting";
 import { TodayRunning } from "./TodayRunning";
+import { TodayStateNode } from "./TodayStateNode";
 import { TodayStatusLine } from "./TodayStatusLine";
 
 const READ_ONLY_DESK_STATUS =
@@ -35,8 +36,11 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
       data-hermes-today
       data-hermes-today-state={model.state}
       data-state={model.state}
-      data-testid="hermes-today-state"
     >
+      <TodayStateNode
+        label={locale === "zh" ? READ_ONLY_DESK_STATUS_ZH : READ_ONLY_DESK_STATUS}
+        state={model.state}
+      />
       <TodayGreeting locale={locale} model={model} />
 
       <p className="text-xs text-text-secondary">

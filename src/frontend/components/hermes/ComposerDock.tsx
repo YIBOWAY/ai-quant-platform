@@ -219,7 +219,7 @@ function ComposerDockStateful({
               <span
                 className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors motion-reduce:transition-none ${
                   submitEnabled
-                    ? "bg-[var(--color-hermes)] text-white"
+                    ? "bg-[var(--color-hermes-strong)] text-white"
                     : "bg-bg-surface-muted text-text-secondary opacity-50"
                 }`}
               >

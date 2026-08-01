@@ -484,7 +484,10 @@ if (modeMatches) {
     const send = page.getByRole("button", { name: "Send", exact: true });
     await expect(composer).toBeEnabled();
     // Send unlocks on a valid draft, not on mount: composerDraftState treats an
-    // empty draft as invalid. Assert both halves of that rule.
+    // empty draft as invalid. Assert both halves of that rule. This
+    // disabled-on-mount → enabled-after-fill pair is deliberately stricter than
+    // the older single enabled-state assertion; the send behaviour itself did
+    // not change.
     await expect(send).toBeDisabled();
     const baselineAudit = await fixtureAudit(page);
     const baselineEventCount = baselineAudit.events.length;
