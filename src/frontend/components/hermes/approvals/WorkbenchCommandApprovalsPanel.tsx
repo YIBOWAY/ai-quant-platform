@@ -13,6 +13,10 @@ import {
   type WorkspaceApprovalProjection,
   WorkspaceClientError,
 } from "@/lib/hermes/workspaceClient";
+import {
+  canDecideCommandApproval as canDecideCommandApprovalImpl,
+  filterApprovalsForPanel as filterApprovalsForPanelImpl,
+} from "@/lib/hermes/commandApprovalPredicates";
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
 import type { Locale } from "@/lib/locale";
 
@@ -23,34 +27,17 @@ export type WorkbenchCommandApprovalsPanelProps = {
 const DECIDE_BTN_CLASS =
   "app-touch-target inline-flex items-center justify-center rounded border border-border-subtle bg-bg-elevated px-3 font-body-sm text-text-primary transition-colors hover:bg-bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none";
 
-/** V7a decide gate: full CAS binding required before any control renders. */
-export function canDecideCommandApproval(row: WorkspaceApprovalProjection): boolean {
-  const status = (row.status || row.expected_status || "pending").toLowerCase();
-  if (status !== "pending") return false;
-  if (!row.approval_id) return false;
-  if (!row.run_id) return false;
-  if (!row.digest || !/^[0-9a-f]{64}$/.test(row.digest)) return false;
-  if (!row.expires_at) return false;
-  return true;
-}
-
-const canDecide = canDecideCommandApproval;
-
 /**
- * V7d: optimistic hide only while the spine still shows the row as pending.
- * Once the projector surfaces a terminal decided/expired fact, keep the row
- * so decision is visible and canDecide stays false.
+ * V7a decide gate + V7d projection filter now live in
+ * lib/hermes/commandApprovalPredicates so the dock badge can share them.
+ * Re-exported here: this module stays their public import path.
  */
-export function filterApprovalsForPanel(
-  rows: WorkspaceApprovalProjection[],
-  consumedIds: Record<string, true>,
-): WorkspaceApprovalProjection[] {
-  return rows.filter((row) => {
-    if (!consumedIds[row.approval_id]) return true;
-    // Hide only while still pending; surface terminal decided facts (V7d).
-    return !canDecide(row);
-  });
-}
+export {
+  canDecideCommandApproval,
+  filterApprovalsForPanel,
+} from "@/lib/hermes/commandApprovalPredicates";
+
+const canDecide = canDecideCommandApprovalImpl;
 
 /**
  * L5a observe + V7a decide: Hermes command-approval challenges from the shared
@@ -72,7 +59,7 @@ export function WorkbenchCommandApprovalsPanel({
 
   const approvals = useMemo(() => {
     const raw = Array.isArray(follow.approvals) ? follow.approvals : [];
-    return filterApprovalsForPanel(raw, consumedIds);
+    return filterApprovalsForPanelImpl(raw, consumedIds);
   }, [follow.approvals, consumedIds]);
   const health = follow.snapshotCursor != null || follow.transport !== "idle";
   const commandApprovalHealth =

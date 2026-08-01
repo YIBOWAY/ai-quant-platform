@@ -13,6 +13,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import {
+  canDecideCommandApproval,
+  filterApprovalsForPanel,
+} from "@/lib/hermes/commandApprovalPredicates";
+import type { WorkspaceApprovalProjection } from "@/lib/hermes/workspaceClient";
+
 export type DockPanelId =
   | "approvals"
   | "activity"
@@ -101,29 +107,25 @@ export function subscribeStoredDockPanel(onChange: () => void): () => void {
 }
 
 /**
- * Badge count for the approvals rail icon.
+ * Badge count for the approvals rail icon: rows the approvals panel would
+ * render as decidable. Uses the same two predicates the panel uses, so the
+ * badge can never disagree with what the panel shows.
  *
- * Mirrors the pending predicate of canDecideCommandApproval in
- * WorkbenchCommandApprovalsPanel: effective status is `status`, falling back to
- * `expected_status`, falling back to "pending". Rows without an approval_id are
- * not real projection rows and never counted. Input is `unknown[]` because the
- * spine state is only structurally trusted at the panel boundary.
+ * `consumedIds` is the panel's optimistic-hide set; the dock has no decide
+ * controls of its own, so callers normally omit it.
  */
-export function pendingApprovalCount(approvals: unknown[]): number {
+export function pendingApprovalCount(
+  approvals: unknown[],
+  consumedIds: Record<string, true> = {},
+): number {
   if (!Array.isArray(approvals)) return 0;
-  let count = 0;
-  for (const row of approvals) {
-    if (!row || typeof row !== "object") continue;
-    const record = row as Record<string, unknown>;
-    const approvalId = record.approval_id;
-    if (typeof approvalId !== "string" || approvalId.length === 0) continue;
-    const status =
-      typeof record.status === "string" && record.status
-        ? record.status
-        : typeof record.expected_status === "string" && record.expected_status
-          ? record.expected_status
-          : "pending";
-    if (status.toLowerCase() === "pending") count += 1;
-  }
-  return count;
+  const rows = approvals.filter(
+    (row): row is WorkspaceApprovalProjection =>
+      !!row &&
+      typeof row === "object" &&
+      typeof (row as { approval_id?: unknown }).approval_id === "string",
+  );
+  return filterApprovalsForPanel(rows, consumedIds).filter(
+    canDecideCommandApproval,
+  ).length;
 }

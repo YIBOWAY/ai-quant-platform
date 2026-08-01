@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canDecideCommandApproval,
+  filterApprovalsForPanel,
+} from "@/lib/hermes/commandApprovalPredicates";
+import type { WorkspaceApprovalProjection } from "@/lib/hermes/workspaceClient";
+
+import {
   DOCK_OPEN_STORAGE_KEY,
   DOCK_PANELS,
   dockPanelLabel,
@@ -72,19 +78,54 @@ describe("isDockPanelId", () => {
 });
 
 describe("pendingApprovalCount", () => {
+  const decidable = (id: string) => ({
+    approval_id: id,
+    run_id: "run.1",
+    digest: "a".repeat(64),
+    expires_at: "2099-01-01T00:00:00.000000Z",
+    status: "pending",
+    kind: "hermes.command_approval",
+  });
+
   it("returns 0 for empty or non-array input", () => {
     expect(pendingApprovalCount([])).toBe(0);
     expect(pendingApprovalCount(undefined as unknown as unknown[])).toBe(0);
     expect(pendingApprovalCount(null as unknown as unknown[])).toBe(0);
   });
 
-  it("counts only pending rows", () => {
+  it("counts fully CAS-bound pending rows", () => {
+    expect(pendingApprovalCount([decidable("a1"), decidable("a2")])).toBe(2);
+  });
+
+  it("excludes non-pending rows", () => {
     expect(
       pendingApprovalCount([
-        { approval_id: "a1", status: "pending" },
-        { approval_id: "a2", status: "decided" },
-        { approval_id: "a3", status: "expired" },
-        { approval_id: "a4", status: "pending" },
+        { ...decidable("a1"), status: "denied", decision: "deny" },
+        { ...decidable("a2"), status: "expired" },
+        decidable("a3"),
+      ]),
+    ).toBe(1);
+  });
+
+  it("excludes rows missing any CAS field the panel requires", () => {
+    expect(
+      pendingApprovalCount([
+        { ...decidable("a1"), run_id: "" },
+        { ...decidable("a2"), digest: "" },
+        { ...decidable("a3"), digest: "not-a-sha256" },
+        { ...decidable("a4"), digest: "A".repeat(64) },
+        { ...decidable("a5"), expires_at: "" },
+      ]),
+    ).toBe(0);
+  });
+
+  it("falls back to expected_status then to pending", () => {
+    const { status: _status, ...noStatus } = decidable("a1");
+    expect(
+      pendingApprovalCount([
+        { ...noStatus, expected_status: "pending" },
+        { ...decidable("a2"), status: "", expected_status: "decided" },
+        noStatus,
       ]),
     ).toBe(2);
   });
@@ -92,41 +133,39 @@ describe("pendingApprovalCount", () => {
   it("is case-insensitive on status", () => {
     expect(
       pendingApprovalCount([
-        { approval_id: "a1", status: "PENDING" },
-        { approval_id: "a2", status: "Pending" },
+        { ...decidable("a1"), status: "PENDING" },
+        { ...decidable("a2"), status: "Pending" },
       ]),
     ).toBe(2);
-  });
-
-  it("falls back to expected_status then to pending", () => {
-    expect(
-      pendingApprovalCount([
-        { approval_id: "a1", expected_status: "pending" },
-        { approval_id: "a2", expected_status: "decided" },
-        { approval_id: "a3" },
-      ]),
-    ).toBe(2);
-  });
-
-  it("prefers status over expected_status", () => {
-    expect(
-      pendingApprovalCount([
-        { approval_id: "a1", status: "decided", expected_status: "pending" },
-      ]),
-    ).toBe(0);
   });
 
   it("ignores rows without a usable approval_id", () => {
     expect(
       pendingApprovalCount([
-        { status: "pending" },
-        { approval_id: "", status: "pending" },
-        { approval_id: 7, status: "pending" },
+        { ...decidable("a1"), approval_id: "" },
+        { ...decidable("a2"), approval_id: 7 },
         null,
         "pending",
-        { approval_id: "a1", status: "pending" },
+        decidable("a3"),
       ]),
     ).toBe(1);
+  });
+
+  it("honors the panel's optimistic-hide set", () => {
+    const rows = [decidable("a1"), decidable("a2")];
+    expect(pendingApprovalCount(rows, { a1: true })).toBe(1);
+  });
+
+  it("agrees with the panel predicates it delegates to", () => {
+    const rows = [
+      decidable("a1"),
+      { ...decidable("a2"), status: "denied" },
+      { ...decidable("a3"), run_id: "" },
+    ] as unknown as WorkspaceApprovalProjection[];
+    const viaPanel = filterApprovalsForPanel(rows, {}).filter(
+      canDecideCommandApproval,
+    ).length;
+    expect(pendingApprovalCount(rows)).toBe(viaPanel);
   });
 });
 
