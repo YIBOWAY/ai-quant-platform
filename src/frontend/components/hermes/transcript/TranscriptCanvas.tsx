@@ -16,6 +16,20 @@ import type { AssistantPhase } from "@/lib/hermes/transcriptHelpers";
  * or anything inside it takes keyboard focus. Always shown on touch devices
  * and under reduced-motion, where hover reveal is not a usable affordance.
  */
+/** Human timestamp for message meta rows (falls back to the raw value). */
+function formatMessageTime(value: string, isZh: boolean): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(isZh ? "zh-CN" : "en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Shanghai",
+  });
+}
+
 const META_REVEAL_CLASS =
   "opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 motion-reduce:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100";
 
@@ -180,8 +194,11 @@ export function TranscriptCanvas({
                 ) : null}
                 <div className={`flex items-center gap-2 ${META_REVEAL_CLASS}`}>
                   {message.timestamp ? (
-                    <p className="mt-1 font-data-mono text-[11px] text-text-secondary">
-                      {message.timestamp}
+                    <p
+                      className="mt-1 font-data-mono text-[11px] text-text-secondary"
+                      title={message.timestamp}
+                    >
+                      {formatMessageTime(message.timestamp, isZh)}
                     </p>
                   ) : null}
                   {forkPoint && onSelectForkPoint ? (
