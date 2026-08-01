@@ -99,7 +99,7 @@
 
   /* ---- Layout spacings ---- */
   --spacing-stack-gap: 0.5rem;
-  --spacing-topbar-height: 56px;
+  --spacing-topbar-height: 48px;
   --spacing-sidebar-width: 220px;
   --spacing-gutter: 1rem;
   --spacing-container-padding: 1.5rem;
@@ -205,10 +205,17 @@ select option {
   }
 }
 
-/* Global shell / Hermes a11y contracts: 44px targets, focus ring, reduced motion */
+/* Global shell / Hermes a11y contracts: 44px targets on touch devices,
+   compact 32px on fine pointers (mouse); focus ring, reduced motion */
 .app-touch-target {
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 32px;
+  min-height: 32px;
+}
+@media (pointer: coarse) {
+  .app-touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 :where(a[href], button, input, select, textarea, summary, [role="button"]):focus-visible {

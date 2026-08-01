@@ -166,11 +166,11 @@ export function TopBar({
         >
           {menuOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
-        <form className="relative hidden md:flex w-full max-w-[320px] items-center" onSubmit={submitSearch}>
-          <Search className="absolute left-3 text-text-secondary" size={16} />
+        <form className="relative hidden md:flex w-full max-w-[260px] items-center" onSubmit={submitSearch}>
+          <Search className="absolute left-2.5 text-text-secondary" size={14} />
           <input
             aria-label={text.search}
-            className="app-touch-target w-full max-w-[320px] rounded-lg border border-border-subtle bg-bg-surface py-2 pl-9 pr-4 font-sans text-sm text-text-primary placeholder-text-secondary focus:border-info focus:outline-none focus:ring-1 focus:ring-info"
+            className="app-touch-target w-full max-w-[260px] rounded-lg border border-border-subtle bg-bg-surface py-1.5 pl-8 pr-3 font-sans text-[13px] text-text-primary placeholder-text-secondary focus:border-info focus:outline-none focus:ring-1 focus:ring-info"
             onChange={(event) => setQuery(event.target.value)}
             placeholder={text.search}
             type="text"
@@ -179,12 +179,12 @@ export function TopBar({
         </form>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 lg:gap-4">
+      <div className="flex shrink-0 items-center gap-2">
         {safetySlot}
         <Suspense fallback={<LocaleToggleFallback />}>
           <LocaleToggle />
         </Suspense>
-        <div className="hidden items-center gap-2 border-l border-border-subtle pl-4 text-text-secondary lg:flex">
+        <div className="hidden items-center gap-1 border-l border-border-subtle pl-3 text-text-secondary lg:flex">
           <Link
             aria-label={text.openHermes}
             className="app-touch-target flex cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-surface hover:text-info"
