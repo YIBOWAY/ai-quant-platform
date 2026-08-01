@@ -162,6 +162,9 @@ export function TranscriptCanvas({
                       }`
                 }
               >
+                <span className="sr-only">
+                  {isUser ? (isZh ? "你" : "You") : "Hermes"}
+                </span>
                 <p className="whitespace-pre-wrap break-words font-body-md text-text-primary">
                   {message.content}
                 </p>
