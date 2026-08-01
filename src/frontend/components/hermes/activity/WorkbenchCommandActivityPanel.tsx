@@ -119,13 +119,13 @@ export function WorkbenchCommandActivityPanel({
                 data-hermes-command-state={row.state}
                 key={row.command_id}
               >
-                <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
                   <p className="min-w-0 font-body-sm font-semibold text-text-primary">
                     <span data-hermes-activity-state>
                       {commandStateLabel(row.state, isZh)}
                     </span>
                     <span className="mx-1 text-text-secondary">·</span>
-                    <span className="break-all font-data-mono text-xs text-text-secondary">
+                    <span className="break-all font-data-mono text-xs font-normal text-text-secondary">
                       {row.kind}
                     </span>
                   </p>
@@ -134,7 +134,7 @@ export function WorkbenchCommandActivityPanel({
                   </p>
                 </div>
                 <dl className="mt-1 grid min-w-0 gap-0.5 sm:grid-cols-2">
-                  <div className="min-w-0">
+                  <div className="min-w-0 sm:col-span-2">
                     <dt className="inline text-text-secondary font-data-mono text-[11px]">
                       cmd{" "}
                     </dt>
@@ -142,11 +142,11 @@ export function WorkbenchCommandActivityPanel({
                       className={`inline ${LONG_ID_CLASS}`}
                       title={row.command_id}
                     >
-                      {displayId(row.command_id, { head: 10, tail: 6 })}
+                      {displayId(row.command_id, { head: 14, tail: 10 })}
                     </dd>
                   </div>
                   {row.hermes_session_id ? (
-                    <div className="min-w-0">
+                    <div className="min-w-0 sm:col-span-2">
                       <dt className="inline font-data-mono text-[11px] text-text-secondary">
                         session{" "}
                       </dt>
@@ -155,14 +155,14 @@ export function WorkbenchCommandActivityPanel({
                         title={row.hermes_session_id}
                       >
                         {displayId(row.hermes_session_id, {
-                          head: 12,
-                          tail: 6,
+                          head: 14,
+                          tail: 10,
                         })}
                       </dd>
                     </div>
                   ) : null}
                   {row.hermes_run_id ? (
-                    <div className="min-w-0">
+                    <div className="min-w-0 sm:col-span-2">
                       <dt className="inline font-data-mono text-[11px] text-text-secondary">
                         run{" "}
                       </dt>
@@ -170,7 +170,7 @@ export function WorkbenchCommandActivityPanel({
                         className={`inline ${LONG_ID_CLASS}`}
                         title={row.hermes_run_id}
                       >
-                        {displayId(row.hermes_run_id, { head: 12, tail: 6 })}
+                        {displayId(row.hermes_run_id, { head: 14, tail: 10 })}
                       </dd>
                     </div>
                   ) : null}
