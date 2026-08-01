@@ -199,7 +199,7 @@ function ComposerDockStateful({
           />
           <div className="flex items-center justify-end gap-2 px-1">
             <p
-              className={`font-body-sm text-[11px] opacity-60 ${
+              className={`font-body-sm ${
                 draftState.overLimitBytes > 0
                   ? "text-danger"
                   : "text-text-secondary"

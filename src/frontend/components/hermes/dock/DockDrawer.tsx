@@ -1,8 +1,15 @@
 'use client';
 
 import { X } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
 import type { Locale } from "@/lib/locale";
@@ -24,6 +31,26 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(", ");
 
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+/**
+ * Local reduced-motion probe. `useReducedMotion` from motion/react logs a dev
+ * warning whenever the preference is on, which pollutes the E2E console gate
+ * (Playwright forces reduced motion), so subscribe to the media query directly.
+ */
+function usePrefersReducedMotion(): boolean {
+  const subscribe = useCallback((onChange: () => void) => {
+    const query = window.matchMedia(REDUCED_MOTION_QUERY);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
+    () => false,
+  );
+}
+
 /**
  * Slide-over panel anchored to the left of the dock rail.
  *
@@ -41,7 +68,7 @@ export function DockDrawer({
 }: DockDrawerProps) {
   const isZh = locale === "zh";
   const titleId = useId();
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = usePrefersReducedMotion();
   const { state: follow } = useWorkspaceFollow();
   const cursor = follow.snapshotCursor ?? follow.cursor ?? 0;
   const drawerRef = useRef<HTMLElement | null>(null);
@@ -97,33 +124,48 @@ export function DockDrawer({
     };
   }, [open, onClose]);
 
-  const duration = reduceMotion ? 0 : 0.18;
+  // Under reduced motion the animated variants are all no-ops, and mounting
+  // them makes the motion runtime log a reduced-motion warning on every open.
+  // Render the plain elements instead so the console stays clean.
+  const duration = 0.18;
+  const Scrim = reduceMotion ? "div" : motion.div;
+  const Panel = reduceMotion ? "aside" : motion.aside;
+  const scrimMotion = reduceMotion
+    ? {}
+    : {
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        initial: { opacity: 0 },
+        transition: { duration },
+      };
+  const panelMotion = reduceMotion
+    ? {}
+    : {
+        animate: { x: 0 },
+        exit: { x: "100%" },
+        initial: { x: "100%" },
+        transition: { duration, ease: "easeOut" as const },
+      };
 
   return (
     <AnimatePresence>
       {open ? (
         <>
-          <motion.div
-            animate={{ opacity: 1 }}
+          <Scrim
             aria-hidden="true"
             className="fixed inset-0 z-30 bg-black/40"
             data-hermes-dock-scrim
-            exit={{ opacity: 0 }}
-            initial={{ opacity: 0 }}
             onClick={onClose}
-            transition={{ duration }}
+            {...scrimMotion}
           />
-          <motion.aside
-            animate={{ x: 0 }}
+          <Panel
             aria-labelledby={titleId}
             aria-modal="true"
             className="fixed bottom-0 right-[var(--spacing-dock-rail)] top-0 z-40 flex w-[var(--spacing-drawer)] max-w-[calc(100vw-var(--spacing-dock-rail))] flex-col rounded-l-[var(--radius-card)] bg-[var(--color-bg-overlay)] shadow-[var(--shadow-overlay)]"
             data-hermes-dock-drawer
-            exit={{ x: "100%" }}
-            initial={{ x: "100%" }}
             ref={drawerRef}
             role="dialog"
-            transition={{ duration, ease: "easeOut" }}
+            {...panelMotion}
           >
             <header className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
               <h2
@@ -153,7 +195,7 @@ export function DockDrawer({
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
               {children}
             </div>
-          </motion.aside>
+          </Panel>
         </>
       ) : null}
     </AnimatePresence>

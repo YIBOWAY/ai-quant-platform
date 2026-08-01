@@ -155,10 +155,8 @@ export function TranscriptCanvas({
                     ? `relative max-w-[72%] rounded-[var(--radius-bubble)] rounded-br-md border-none bg-info/12 px-4 py-3 ${
                         isForkSelected ? "ring-2 ring-info/40" : ""
                       } ${isPending ? "opacity-70" : ""}`
-                    : `min-w-0 flex-1 ${
-                        isForkSelected
-                          ? "rounded-[var(--radius-bubble)] px-3 py-2 ring-2 ring-info/40"
-                          : ""
+                    : `min-w-0 flex-1 rounded-[var(--radius-bubble)] px-3 py-2 ${
+                        isForkSelected ? "ring-2 ring-info/40" : ""
                       }`
                 }
               >
@@ -263,7 +261,7 @@ function SessionChip({
           : "Copy";
   return (
     <div
-      className="flex min-w-0 flex-wrap items-center justify-center gap-2 font-data-mono text-[11px] text-text-secondary opacity-70"
+      className="flex min-w-0 flex-wrap items-center justify-center gap-2 font-data-mono text-[11px] text-text-secondary"
       data-hermes-transcript-session-chip
     >
       <span

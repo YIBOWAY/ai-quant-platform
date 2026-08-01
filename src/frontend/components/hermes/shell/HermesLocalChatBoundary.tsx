@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { WorkbenchCommandActivityPanel } from "@/components/hermes/activity/WorkbenchCommandActivityPanel";
@@ -28,6 +29,7 @@ import {
 import { WorkspaceFollowProvider, useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
 import type { HermesDeliveryState } from "@/lib/hermes/types";
 import type { Locale } from "@/lib/locale";
+import { splitLocalePath } from "@/lib/locale";
 
 export type HermesLocalChatBoundaryProps = {
   locale: Locale;
@@ -108,6 +110,11 @@ export function HermesLocalChatBoundary({
   const [ownerReady, setOwnerReady] = useState(false);
   const [bootstrapCompleted, setBootstrapCompleted] = useState(false);
   const authorizedChatOpen = chatOpen && ownerReady;
+  // Fullscreen chat replaces the Today landing content only. Every other Hermes
+  // route (sessions, tasks, approvals, results) renders its own page below the
+  // transcript; blanking those children would make the routes render empty.
+  const isTodayRoute = splitLocalePath(usePathname()).pathname === "/hermes";
+  const chatReplacesChildren = authorizedChatOpen && isTodayRoute;
 
   useEffect(() => {
     if (!authorizedChatOpen || !bootstrapCompleted) return;
@@ -191,7 +198,14 @@ export function HermesLocalChatBoundary({
                     </div>
                   </div>
                 ) : null}
-                {authorizedChatOpen ? null : children}
+                {chatReplacesChildren ? (
+                  // Fullscreen chat hides Today's landing content but must keep
+                  // it mounted: the page also renders the deep-link binder that
+                  // rebinds ?hermes_session_id into the active-session context.
+                  <div hidden>{children}</div>
+                ) : (
+                  children
+                )}
               </div>
             </div>
             {authorizedChatOpen ? (

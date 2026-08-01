@@ -71,7 +71,10 @@ export function HermesInternalNav({ locale }: HermesInternalNavProps) {
   return (
     <nav
       aria-label={text.nav.landmark}
-      className="shrink-0 border-b border-border-subtle bg-bg-surface px-3"
+      // The dock rail is fixed to the right edge and overlays this row while
+      // chat is active, so the last tab needs a rail-width gutter to stay
+      // clickable.
+      className="shrink-0 border-b border-border-subtle bg-bg-surface pl-3 pr-[var(--spacing-dock-rail)]"
     >
       <ul className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-wrap gap-6">
         {entries.map((entry) => {
