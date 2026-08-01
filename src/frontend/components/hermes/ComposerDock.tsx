@@ -152,27 +152,27 @@ function ComposerDockStateful({
   const displayStatus = localError ?? statusText;
 
   return (
-    <div className="border-t border-border-subtle bg-[var(--color-stream-surface)] p-3">
+    <div className="bg-transparent px-4 pb-4 pt-2">
       <form
-        className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-2"
+        className="mx-auto flex w-full max-w-[var(--spacing-chat-max)] flex-col gap-2"
         onSubmit={handleSubmit}
       >
         {onStartNewSession ? (
           <div className="flex justify-end">
             <button
               aria-label={newSessionLabel}
-              className="app-touch-target inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-bg-base px-2.5 py-1.5 font-body-sm text-text-primary transition-colors hover:bg-bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+              className="app-touch-target inline-flex items-center gap-1.5 rounded-md px-2 font-body-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
               disabled={busy || submitting}
               onClick={() => void handleStartNewSession()}
               ref={newSessionButtonRef}
               type="button"
             >
-              <MessageSquarePlus aria-hidden="true" size={15} />
+              <MessageSquarePlus aria-hidden="true" size={14} />
               {newSessionLabel}
             </button>
           </div>
         ) : null}
-        <div className="flex items-end gap-2">
+        <div className="rounded-[var(--radius-input)] border border-border-subtle bg-bg-surface p-2 shadow-[var(--shadow-composer)] transition-colors focus-within:border-[var(--color-hermes)]/50 motion-reduce:transition-none">
           <label className="sr-only" htmlFor="hermes-composer-draft">
             {label}
           </label>
@@ -185,7 +185,7 @@ function ComposerDockStateful({
               localError || draftState.overLimitBytes > 0 ? true : undefined
             }
             aria-label={label}
-            className="app-touch-target min-h-[44px] max-h-32 min-w-0 flex-1 resize-y rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-body-sm text-text-primary placeholder:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
+            className="app-touch-target block max-h-32 min-h-[44px] w-full resize-y border-none bg-transparent px-2 py-2 font-body-md text-text-primary placeholder:text-text-secondary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
             disabled={disabled || busy || submitting}
             placeholder={placeholder}
             readOnly={disabled}
@@ -197,26 +197,37 @@ function ComposerDockStateful({
               if (localError) setLocalError(null);
             }}
           />
-          <button
-            aria-label={sendLabel}
-            className="app-touch-target inline-flex shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-info/10 text-info transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-bg-surface-muted disabled:text-text-secondary disabled:opacity-50 motion-reduce:transition-none"
-            disabled={!submitEnabled}
-            type="submit"
-          >
-            <Send size={16} className={submitEnabled ? "opacity-100" : "opacity-60"} />
-          </button>
+          <div className="flex items-center justify-end gap-2 px-1">
+            <p
+              className={`font-body-sm text-[11px] opacity-60 ${
+                draftState.overLimitBytes > 0
+                  ? "text-danger"
+                  : "text-text-secondary"
+              }`}
+              data-testid="hermes-composer-byte-count"
+              id="hermes-composer-byte-count"
+            >
+              {draftState.counterText}
+            </p>
+            <button
+              aria-label={sendLabel}
+              className="app-touch-target inline-flex shrink-0 items-center justify-center rounded-full bg-transparent text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed"
+              disabled={!submitEnabled}
+              type="submit"
+            >
+              {/* 44px hit area (app-touch-target contract) around a 36px visual circle. */}
+              <span
+                className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors motion-reduce:transition-none ${
+                  submitEnabled
+                    ? "bg-[var(--color-hermes)] text-white"
+                    : "bg-bg-surface-muted text-text-secondary opacity-50"
+                }`}
+              >
+                <Send size={16} />
+              </span>
+            </button>
+          </div>
         </div>
-        <p
-          className={`font-body-sm ${
-            draftState.overLimitBytes > 0
-              ? "text-danger"
-              : "text-text-secondary"
-          }`}
-          data-testid="hermes-composer-byte-count"
-          id="hermes-composer-byte-count"
-        >
-          {draftState.counterText}
-        </p>
         {hint ? (
           <p className="font-body-sm text-text-secondary">{hint}</p>
         ) : null}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState } from "react";
+import { Loader2, Sparkles } from "lucide-react";
 
 import { copyTextToClipboard } from "@/lib/hermes/transcriptHelpers";
 import {
@@ -9,6 +10,14 @@ import {
 } from "@/lib/hermes/workbenchA11y";
 import type { HermesSessionMessage } from "@/lib/hermes/workspaceClient";
 import type { AssistantPhase } from "@/lib/hermes/transcriptHelpers";
+
+/**
+ * Message meta row (timestamp / fork action): hidden until the row is hovered
+ * or anything inside it takes keyboard focus. Always shown on touch devices
+ * and under reduced-motion, where hover reveal is not a usable affordance.
+ */
+const META_REVEAL_CLASS =
+  "opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 motion-reduce:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100";
 
 export type TranscriptCanvasProps = {
   messages: HermesSessionMessage[];
@@ -107,7 +116,10 @@ export function TranscriptCanvas({
           onCopy={onCopySession}
         />
       ) : null}
-      <ol className="space-y-3" data-hermes-session-messages>
+      <ol
+        className="mx-auto w-full max-w-[var(--spacing-chat-max)] space-y-5"
+        data-hermes-session-messages
+      >
         {messages.map((message, index) => {
           const isUser = message.role === "user";
           const isPending = message.id === pendingMessageId;
@@ -120,59 +132,74 @@ export function TranscriptCanvas({
             forkPoint !== null && forkPoint === selectedForkPoint;
           return (
             <li
-              className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+              className={`group flex gap-2 ${
+                isUser ? "justify-end" : "justify-start"
+              }`}
               data-hermes-message-fork-selected={
                 isForkSelected ? "true" : undefined
               }
               data-hermes-message-pending={isPending ? "true" : undefined}
               key={`${message.id || "msg"}:${index}`}
             >
+              {isUser ? null : (
+                <span
+                  aria-hidden="true"
+                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-hermes)]/15 text-[var(--color-hermes)]"
+                >
+                  <Sparkles size={14} />
+                </span>
+              )}
               <div
-                className={`max-w-[88%] rounded-lg border px-3 py-2 shadow-sm ${
-                  isForkSelected
-                    ? "border-info bg-info/10 ring-2 ring-info/30"
-                    : isUser
-                    ? isPending
-                      ? "border-info/20 bg-info/5 opacity-90"
-                      : "border-info/30 bg-info/10"
-                    : "border-border-subtle bg-bg-surface"
-                }`}
+                className={
+                  isUser
+                    ? `relative max-w-[72%] rounded-[var(--radius-bubble)] rounded-br-md border-none bg-info/12 px-4 py-3 ${
+                        isForkSelected ? "ring-2 ring-info/40" : ""
+                      } ${isPending ? "opacity-70" : ""}`
+                    : `min-w-0 flex-1 ${
+                        isForkSelected
+                          ? "rounded-[var(--radius-bubble)] px-3 py-2 ring-2 ring-info/40"
+                          : ""
+                      }`
+                }
               >
-                <p className="font-label-caps text-text-secondary">
-                  {isUser
-                    ? isPending
-                      ? isZh
-                        ? "你 · 发送中"
-                        : "You · sending"
-                      : isZh
-                        ? "你"
-                        : "You"
-                    : "Hermes"}
-                </p>
-                <p className="mt-2 whitespace-pre-wrap break-words font-body-sm text-text-primary">
+                <p className="whitespace-pre-wrap break-words font-body-md text-text-primary">
                   {message.content}
                 </p>
-                {message.timestamp ? (
-                  <p className="mt-2 font-data-mono text-[11px] text-text-secondary">
-                    {message.timestamp}
-                  </p>
+                {isUser && isPending ? (
+                  <span className="absolute bottom-1 right-2 text-text-secondary">
+                    <Loader2
+                      aria-hidden="true"
+                      className="animate-spin motion-reduce:animate-none"
+                      size={11}
+                    />
+                    <span className="sr-only">
+                      {isZh ? "发送中" : "Sending"}
+                    </span>
+                  </span>
                 ) : null}
-                {forkPoint && onSelectForkPoint ? (
-                  <button
-                    aria-label={`${forkActionLabel}: ${message.role}${
-                      message.timestamp ? ` · ${message.timestamp}` : ""
-                    }`}
-                    aria-pressed={isForkSelected}
-                    className="app-touch-target mt-3 inline-flex min-h-11 items-center justify-center rounded-lg border border-info/40 bg-info/5 px-3 font-body-sm text-info transition-colors hover:bg-info/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-                    data-hermes-fork-point={forkPoint}
-                    data-hermes-message-fork-select
-                    disabled={forkSelectionDisabled}
-                    onClick={() => onSelectForkPoint(forkPoint)}
-                    type="button"
-                  >
-                    {forkActionLabel}
-                  </button>
-                ) : null}
+                <div className={`flex items-center gap-2 ${META_REVEAL_CLASS}`}>
+                  {message.timestamp ? (
+                    <p className="mt-1 font-data-mono text-[11px] text-text-secondary">
+                      {message.timestamp}
+                    </p>
+                  ) : null}
+                  {forkPoint && onSelectForkPoint ? (
+                    <button
+                      aria-label={`${forkActionLabel}: ${message.role}${
+                        message.timestamp ? ` · ${message.timestamp}` : ""
+                      }`}
+                      aria-pressed={isForkSelected}
+                      className="app-touch-target mt-1 inline-flex min-h-11 items-center justify-center rounded-lg border border-info/40 bg-info/5 px-3 font-body-sm text-info transition-colors hover:bg-info/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+                      data-hermes-fork-point={forkPoint}
+                      data-hermes-message-fork-select
+                      disabled={forkSelectionDisabled}
+                      onClick={() => onSelectForkPoint(forkPoint)}
+                      type="button"
+                    >
+                      {forkActionLabel}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </li>
           );
@@ -233,7 +260,7 @@ function SessionChip({
           : "Copy";
   return (
     <div
-      className="flex min-w-0 flex-wrap items-center gap-2 font-data-mono text-[11px] text-text-secondary"
+      className="flex min-w-0 flex-wrap items-center justify-center gap-2 font-data-mono text-[11px] text-text-secondary opacity-70"
       data-hermes-transcript-session-chip
     >
       <span
