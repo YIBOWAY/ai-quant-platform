@@ -119,6 +119,11 @@ def project_managed_session_public(
         isinstance(admitted_candidate_admission_id, str)
         and bool(admitted_candidate_admission_id)
         and candidate_admission_id == admitted_candidate_admission_id
+    ) or (
+        # Release-scoped and local-trust admissions project no candidate id;
+        # a session row minted under the same NULL-admission scope matches.
+        admitted_candidate_admission_id is None
+        and candidate_admission_id is None
     )
     return {
         "platform_session_id": platform_session_id,

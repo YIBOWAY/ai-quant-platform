@@ -1248,6 +1248,10 @@ def require_current_session_admission(
         )
     expected = readiness.get("candidate_admission_id")
     observed = getattr(session, "candidate_admission_id", None)
+    if expected is None and observed is None:
+        # Release-scoped or local-trust admission: both the gate and the
+        # session row carry no candidate id; the NULL scope matches itself.
+        return
     if (
         not isinstance(expected, str)
         or not expected

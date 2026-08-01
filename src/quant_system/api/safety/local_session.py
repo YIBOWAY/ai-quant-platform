@@ -30,6 +30,10 @@ CSRF_COOKIE_NAME = "qs_aw_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 SESSION_TTL = timedelta(hours=12)
 SESSION_TTL_SECONDS = int(SESSION_TTL.total_seconds())
+# Extended cookie lifetime for solo-owner local trust mode. Cookie/CSRF and
+# loopback checks are unchanged; only the expiry lengthens.
+TRUST_SESSION_TTL = timedelta(days=30)
+TRUST_SESSION_TTL_SECONDS = int(TRUST_SESSION_TTL.total_seconds())
 
 RequestKind = Literal["top_level_document", "api_read", "sse_follow", "mutation"]
 
@@ -424,10 +428,15 @@ def _sign(key: bytes, message: str) -> str:
     return _b64url(digest)
 
 
-def mint_owner_session(output_dir: Path, *, now: datetime | None = None) -> IssuedOwnerSession:
+def mint_owner_session(
+    output_dir: Path,
+    *,
+    now: datetime | None = None,
+    ttl: timedelta | None = None,
+) -> IssuedOwnerSession:
     key = load_signing_key(output_dir)
     current = now.astimezone(UTC) if now is not None else datetime.now(UTC)
-    expires_at = current + SESSION_TTL
+    expires_at = current + (ttl if ttl is not None else SESSION_TTL)
     session_id = secrets.token_urlsafe(24)
     csrf_token = secrets.token_urlsafe(32)
     exp_unix = int(expires_at.timestamp())
@@ -449,10 +458,11 @@ def exchange_bootstrap_token(
     bootstrap_token: str,
     *,
     now: datetime | None = None,
+    ttl: timedelta | None = None,
 ) -> IssuedOwnerSession:
     """Consume one-time bootstrap token and mint a signed owner session."""
     _consume_bootstrap_token(output_dir, bootstrap_token)
-    return mint_owner_session(output_dir, now=now)
+    return mint_owner_session(output_dir, now=now, ttl=ttl)
 
 
 def verify_session_cookie(
@@ -496,7 +506,7 @@ def verify_session_cookie(
     if current >= expires_at:
         raise LocalSessionAuthError()
     # Reject cookies minted too far in the future (clock skew / forged exp).
-    if expires_at > current + SESSION_TTL + timedelta(minutes=5):
+    if expires_at > current + TRUST_SESSION_TTL + timedelta(minutes=5):
         raise LocalSessionAuthError()
     return OwnerSession(
         owner_user_id=owner,

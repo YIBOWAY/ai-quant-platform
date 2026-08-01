@@ -610,6 +610,26 @@ class LocalMutationSettings(BaseSettings):
     composer_open: bool = False
 
 
+class LocalTrustSettings(BaseSettings):
+    """Solo-owner localhost identity-ritual bypass (default OFF).
+
+    Bypasses ONLY identity binding: candidate admission records, preflight
+    test evidence, three-repo runtime digests, clean-checkout requirement,
+    and connector admission ceremony.  Never bypasses trading safety —
+    kill_switch / paper / dry_run / live flags are re-asserted by
+    ``quant_system.hermes.local_trust.trust_mode_active`` before the bypass
+    may apply, and public write/release fields are never touched.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_LOCAL_TRUST_",
+        extra="ignore",
+    )
+
+    mode: bool = False
+
+
 class AgentV02ReleaseSettings(BaseSettings):
     """Local operator inputs for the durable Agent v0.2 release gate."""
 
@@ -734,6 +754,7 @@ class Settings(BaseSettings):
     hermes_artifacts: HermesArtifactSettings = Field(default_factory=HermesArtifactSettings)
     hermes_gateway: HermesGatewaySettings = Field(default_factory=HermesGatewaySettings)
     local_mutation: LocalMutationSettings = Field(default_factory=LocalMutationSettings)
+    local_trust: LocalTrustSettings = Field(default_factory=LocalTrustSettings)
     agent_v02_release: AgentV02ReleaseSettings = Field(
         default_factory=AgentV02ReleaseSettings
     )

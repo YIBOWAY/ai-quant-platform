@@ -370,6 +370,8 @@ class WorkspaceAuthoritiesResponse(_WorkspaceSchema):
     candidate_chat_write_ready: bool
     release_event_cursor: int = Field(ge=0, le=2**63 - 1)
     mutation_enabled: bool
+    local_trust_mode: bool = False
+    local_trust_refused_blockers: list[str] = Field(default_factory=list)
     local_chat_write_ready: bool
     composer_write_ready: bool
     public_write_authorized: bool

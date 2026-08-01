@@ -27,6 +27,10 @@ from quant_system.hermes.candidate_admission_gate import (
 from quant_system.hermes.command_ledger import command_ledger_schema_version
 from quant_system.hermes.connector_liveness import ConnectorLivenessAuthority
 from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
+from quant_system.hermes.local_trust import (
+    trust_mode_active,
+    trust_mode_requested_but_refused,
+)
 from quant_system.hermes.release_runtime import (
     current_release_decision,
     runtime_identity_observation,
@@ -106,7 +110,10 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
     release_ready = bool(release is not None and release.ready)
     candidate = None
     candidate_probe_failed = False
-    if workspace_profile_ready and settings.candidate_admission.enabled is True:
+    if workspace_profile_ready and (
+        settings.candidate_admission.enabled is True
+        or trust_mode_active(settings)
+    ):
         try:
             candidate = current_candidate_decision(
                 settings,
@@ -354,6 +361,10 @@ def _authority_readiness_projection(
         "candidate_chat_write_ready": admission.candidate_ready,
         "release_event_cursor": admission.release_event_cursor,
         "mutation_enabled": mutation_on,
+        "local_trust_mode": trust_mode_active(settings),
+        "local_trust_refused_blockers": list(
+            trust_mode_requested_but_refused(settings)
+        ),
         "local_chat_write_ready": admission.ready,
         "composer_write_ready": admission.ready,
         "public_write_authorized": admission.release_ready,
@@ -426,6 +437,12 @@ def composer_readiness_snapshot(
         admission=admission,
     )
     platform = _platform_blockers(admission)
+    refused = [
+        f"local_trust_refused_{blocker}"
+        for blocker in trust_mode_requested_but_refused(settings)
+    ]
+    if refused:
+        platform = _dedupe([*platform, *refused])
     return {
         **authorities,
         "platform_delivery_blockers": platform,

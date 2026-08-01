@@ -18,6 +18,8 @@ from quant_system.api.safety.local_session import (
     CSRF_HEADER_NAME,
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
+    TRUST_SESSION_TTL,
+    TRUST_SESSION_TTL_SECONDS,
     LocalSessionAuthError,
     LocalSessionForbidden,
     LocalSessionValidationError,
@@ -29,6 +31,7 @@ from quant_system.api.safety.local_session import (
     session_public_view,
     verify_session_cookie,
 )
+from quant_system.hermes.local_trust import trust_mode_active
 from quant_system.api.safety.mutation_rate_limit import OWNER_BOOTSTRAP_ROUTE
 from quant_system.api.schemas.local_session import (
     OwnerBootstrapResponse,
@@ -65,11 +68,12 @@ def _set_session_cookies(
     session_cookie_value: str,
     csrf_token: str,
     secure: bool,
+    ttl_seconds: int = SESSION_TTL_SECONDS,
 ) -> None:
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_cookie_value,
-        max_age=SESSION_TTL_SECONDS,
+        max_age=ttl_seconds,
         httponly=True,
         samesite="strict",
         secure=secure,
@@ -80,7 +84,7 @@ def _set_session_cookies(
     response.set_cookie(
         key=CSRF_COOKIE_NAME,
         value=csrf_token,
-        max_age=SESSION_TTL_SECONDS,
+        max_age=ttl_seconds,
         httponly=False,
         samesite="strict",
         secure=secure,
@@ -116,7 +120,11 @@ def owner_bootstrap(
             owner_user_id=ROOT_USER_ID,
             route=OWNER_BOOTSTRAP_ROUTE,
         )
-        issued = exchange_bootstrap_token(output_dir, body.bootstrap_token)
+        issued = exchange_bootstrap_token(
+            output_dir,
+            body.bootstrap_token,
+            ttl=TRUST_SESSION_TTL if trust_mode_active(settings) else None,
+        )
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _http_error(exc) from exc
 
@@ -126,6 +134,11 @@ def owner_bootstrap(
         session_cookie_value=issued.session_cookie_value,
         csrf_token=issued.session.csrf_token,
         secure=secure,
+        ttl_seconds=(
+            TRUST_SESSION_TTL_SECONDS
+            if trust_mode_active(settings)
+            else SESSION_TTL_SECONDS
+        ),
     )
     mutation_on = bool(getattr(settings.local_mutation, "enabled", False))
     view = session_public_view(issued.session, mutation_enabled=mutation_on)

@@ -40,6 +40,10 @@ from quant_system.hermes.connector_worker import (
     PostgresCommandWakeupWaiter,
 )
 from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
+from quant_system.hermes.local_trust import (
+    trust_mode_active,
+    trust_runtime_digest,
+)
 from quant_system.hermes.intent_payload_port import (
     IntentPayloadPortError,
     intent_payload_input_resolver,
@@ -332,14 +336,25 @@ def build_connector_runtime(
             if (
                 initial_candidate is None
                 or initial_candidate.dispatch_ready is not True
-                or initial_candidate.admission_id is None
-                or initial_candidate.admission_digest is None
+                or (
+                    (
+                        initial_candidate.admission_id is None
+                        or initial_candidate.admission_digest is None
+                    )
+                    and not trust_mode_active(settings)
+                )
             ):
                 raise ConnectorRuntimeUnavailable(
                     "supervised connector has no exact release or candidate admission"
                 )
-            claim_candidate_admission_id = initial_candidate.admission_id
-            claim_candidate_admission_digest = initial_candidate.admission_digest
+            if initial_candidate.admission_id is None:
+                # Local trust mode: claim release-scoped (NULL-admission) rows.
+                claim_release_only = True
+            else:
+                claim_candidate_admission_id = initial_candidate.admission_id
+                claim_candidate_admission_digest = (
+                    initial_candidate.admission_digest
+                )
 
     worker_kwargs["ledger"] = HermesCommandLedger(
         settings,
@@ -354,6 +369,25 @@ def build_connector_runtime(
                 reason="connector_liveness_lost",
                 retryable=True,
             )
+        if claim_release_only and (
+            getattr(getattr(settings, "local_trust", None), "mode", False)
+            is True
+        ):
+            # Local trust mode: the gate is still consulted every cycle so a
+            # red-line flip (e.g. kill_switch off) closes dispatch immediately.
+            if not trust_mode_active(settings):
+                return DispatchGateDecision(
+                    allow=False,
+                    reason="trust_mode_red_line",
+                    retryable=False,
+                )
+            if settings.local_mutation.composer_open is not True:
+                return DispatchGateDecision(
+                    allow=False,
+                    reason="local_composer_closed",
+                    retryable=False,
+                )
+            return DispatchGateDecision(allow=True, reason="trust_ready")
         if claim_candidate_admission_id is not None:
             try:
                 candidate = current_candidate_decision(
@@ -421,10 +455,15 @@ def build_connector_runtime(
                     settings,
                     port=session_port,
                 )
-            runtime_digest = git_runtime_digest(
-                platform_runtime_root(),
-                logical_name="platform",
-            )
+            if trust_mode_active(settings):
+                # Trust mode: no clean-checkout requirement; advertise the
+                # synthetic trust identity that composer readiness expects.
+                runtime_digest = trust_runtime_digest(settings)
+            else:
+                runtime_digest = git_runtime_digest(
+                    platform_runtime_root(),
+                    logical_name="platform",
+                )
             liveness_lease = ConnectorLivenessAuthority(settings).acquire(
                 workspace_id=settings.agent_v02_release.workspace_id,
                 worker_id=worker_id,

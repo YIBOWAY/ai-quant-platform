@@ -20,6 +20,7 @@ from quant_system.hermes.connector_liveness import (
     ConnectorLivenessAuthority,
 )
 from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
+from quant_system.hermes.local_trust import trust_mode_active
 from quant_system.hermes.paper_safety_authority import PaperSafetyAuthority
 from quant_system.hermes.release_runtime import (
     current_release_decision,
@@ -80,8 +81,9 @@ def current_candidate_decision(
             record=None,
         )
 
+    trust_active = trust_mode_active(settings)
     blockers: list[str] = []
-    if settings.candidate_admission.enabled is not True:
+    if settings.candidate_admission.enabled is not True and not trust_active:
         blockers.append("candidate_setting_disabled")
     if settings.local_mutation.enabled is not True:
         blockers.append("local_mutation_disabled")
@@ -103,6 +105,12 @@ def current_candidate_decision(
         blockers.append("database_auto_migrate_enabled")
     if settings.hermes_gateway.enabled is not True:
         blockers.append("hermes_gateway_disabled")
+
+    if trust_active and not blockers:
+        return _trust_candidate_decision(
+            settings,
+            require_connector=require_connector,
+        )
 
     record = None
     try:
@@ -242,6 +250,63 @@ def current_candidate_decision(
         ),
         blockers=ordered,
         record=record,
+        connector_worker_id=connector_worker_id,
+        connector_generation_token=connector_generation,
+        connector_heartbeat_age_seconds=connector_age,
+    )
+
+
+def _trust_candidate_decision(
+    settings: Settings,
+    *,
+    require_connector: bool,
+) -> CandidateAdmissionDecision:
+    """Synthetic admission under local trust mode.
+
+    ``admission_id=None`` deliberately mirrors release-scoped dispatch so the
+    command ledger claim scope (``candidate_admission_id IS NULL``), session
+    admission equality, and the split-brain probe all work unchanged.  The
+    live connector heartbeat is still required for ``ready``; only the
+    identity ritual (records, digests, evidence, schema binding) is skipped.
+    """
+
+    from quant_system.hermes.local_trust import trust_runtime_digest
+
+    blockers: list[str] = []
+    connector_ready = False
+    connector_worker_id = None
+    connector_generation = None
+    connector_age = None
+    if require_connector:
+        try:
+            connector = ConnectorLivenessAuthority(settings).probe(
+                workspace_id=settings.agent_v02_release.workspace_id,
+                expected_runtime_digest=trust_runtime_digest(settings),
+                max_heartbeat_age_seconds=float(
+                    settings.agent_v02_release
+                    .connector_heartbeat_max_age_seconds
+                ),
+            )
+            connector_ready = bool(connector.ready)
+            connector_worker_id = connector.worker_id
+            connector_generation = connector.generation_token
+            connector_age = connector.heartbeat_age_seconds
+            if connector.ready is not True:
+                blockers.append(str(connector.reason))
+        except Exception:  # noqa: BLE001 - liveness uncertainty closes writes
+            blockers.append("connector_liveness_unavailable")
+
+    ordered = _dedupe(blockers)
+    return CandidateAdmissionDecision(
+        ready=bool(
+            (connector_ready if require_connector else True) and not ordered
+        ),
+        dispatch_ready=True,
+        connector_ready=connector_ready,
+        admission_id=None,
+        admission_digest=None,
+        blockers=ordered,
+        record=None,
         connector_worker_id=connector_worker_id,
         connector_generation_token=connector_generation,
         connector_heartbeat_age_seconds=connector_age,
