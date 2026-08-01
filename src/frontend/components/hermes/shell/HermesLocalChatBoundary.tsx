@@ -24,7 +24,7 @@ import { WorkbenchTranscriptPanel } from "@/components/hermes/transcript/Workben
 import { ActiveHermesSessionProvider } from "@/lib/hermes/activeSession";
 import {
   WORKBENCH_A11Y_MARKER,
-  WORKBENCH_CONTENT_PAD_CLASS,
+  workbenchContentPadClass,
 } from "@/lib/hermes/workbenchA11y";
 import { WorkspaceFollowProvider, useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
 import type { HermesDeliveryState } from "@/lib/hermes/types";
@@ -153,7 +153,7 @@ export function HermesLocalChatBoundary({
               }
               data-page-scroll-region
             >
-              <div className={WORKBENCH_CONTENT_PAD_CLASS}>
+              <div className={workbenchContentPadClass(authorizedChatOpen)}>
                 <HermesCapabilityNotice
                   deliveryState={deliveryState}
                   locale={locale}

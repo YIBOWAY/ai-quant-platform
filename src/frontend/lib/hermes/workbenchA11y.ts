@@ -43,4 +43,21 @@ export const COLLAPSE_TOGGLE_CLASS =
 
 /** Content column padding that stays usable at 390px and roomy at 1440. */
 export const WORKBENCH_CONTENT_PAD_CLASS =
-  "mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-3 p-3 pb-[calc(var(--spacing-hermes-composer-min)+2rem)] sm:gap-4 sm:p-4 sm:pb-[calc(var(--spacing-hermes-composer-min)+2.5rem)] lg:gap-4 lg:p-6 lg:pb-[calc(var(--spacing-hermes-composer-min)+3rem)]";
+  "mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:gap-4 lg:p-6";
+
+/**
+ * Extra bottom clearance so the last row of content can scroll clear of the
+ * composer card, which is fixed-height and overlays the scroll region's end.
+ * Only meaningful where a composer actually renders — the pad tracks
+ * `--spacing-hermes-composer-min`, so applying it without a composer leaves
+ * that much dead space at the bottom of the route.
+ */
+export const COMPOSER_CLEARANCE_PAD_CLASS =
+  "pb-[calc(var(--spacing-hermes-composer-min)+2rem)] sm:pb-[calc(var(--spacing-hermes-composer-min)+2.5rem)] lg:pb-[calc(var(--spacing-hermes-composer-min)+3rem)]";
+
+/** Content column padding, with composer clearance only when one is present. */
+export function workbenchContentPadClass(hasComposer: boolean): string {
+  return hasComposer
+    ? `${WORKBENCH_CONTENT_PAD_CLASS} ${COMPOSER_CLEARANCE_PAD_CLASS}`
+    : WORKBENCH_CONTENT_PAD_CLASS;
+}

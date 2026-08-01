@@ -9,7 +9,7 @@ import {
 } from "@/lib/hermes/featureFlags";
 import {
   WORKBENCH_A11Y_MARKER,
-  WORKBENCH_CONTENT_PAD_CLASS,
+  workbenchContentPadClass,
 } from "@/lib/hermes/workbenchA11y";
 import type { HermesDeliveryState } from "@/lib/hermes/types";
 import type { Locale } from "@/lib/locale";
@@ -80,7 +80,7 @@ export function HermesWorkbenchShell({
               className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
               data-page-scroll-region
             >
-              <div className={WORKBENCH_CONTENT_PAD_CLASS}>
+              <div className={workbenchContentPadClass(false)}>
                 <HermesCapabilityNotice
                   deliveryState={resolvedDelivery}
                   locale={locale}

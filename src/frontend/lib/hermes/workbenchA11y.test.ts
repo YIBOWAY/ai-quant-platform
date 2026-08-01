@@ -9,6 +9,7 @@ import {
   WORKBENCH_A11Y_BREAKPOINTS,
   WORKBENCH_A11Y_MARKER,
   WORKBENCH_CONTENT_PAD_CLASS,
+  workbenchContentPadClass,
 } from "./workbenchA11y";
 
 describe("workbenchA11y (L5c)", () => {
@@ -48,6 +49,19 @@ describe("workbenchA11y (L5c)", () => {
     expect(WORKBENCH_CONTENT_PAD_CLASS).toContain("lg:p-6");
   });
 
+  it("adds composer clearance only where a composer renders", () => {
+    // The clearance tracks --spacing-hermes-composer-min, so applying it on a
+    // route with no composer leaves that much dead space at the bottom.
+    expect(WORKBENCH_CONTENT_PAD_CLASS).not.toContain("pb-[calc(");
+    expect(workbenchContentPadClass(false)).toBe(WORKBENCH_CONTENT_PAD_CLASS);
+    expect(workbenchContentPadClass(true)).toContain(
+      "pb-[calc(var(--spacing-hermes-composer-min)+2rem)]",
+    );
+    expect(workbenchContentPadClass(true)).toContain(
+      "lg:pb-[calc(var(--spacing-hermes-composer-min)+3rem)]",
+    );
+  });
+
   it("globals keep focus-visible ring + reduced-motion + 44px targets", () => {
     const cssPath = path.join(process.cwd(), "app/globals.css");
     const css = readFileSync(cssPath, "utf8");
@@ -69,7 +83,7 @@ describe("workbenchA11y (L5c)", () => {
       "utf8",
     );
     expect(src).toContain("data-hermes-workbench-a11y={WORKBENCH_A11Y_MARKER}");
-    expect(src).toContain("WORKBENCH_CONTENT_PAD_CLASS");
+    expect(src).toContain("workbenchContentPadClass");
     expect(src).toContain("data-hermes-workbench-main");
     expect(src).toContain('role="region"');
     expect(src).toContain('aria-label={isZh ? "Hermes 工作台主区"');
@@ -89,7 +103,7 @@ describe("workbenchA11y (L5c)", () => {
     );
     expect(src).toContain("data-hermes-workbench-a11y={WORKBENCH_A11Y_MARKER}");
     expect(src).toContain("data-hermes-workbench-main");
-    expect(src).toContain("WORKBENCH_CONTENT_PAD_CLASS");
+    expect(src).toContain("workbenchContentPadClass");
     expect(src).toContain('role="region"');
     expect(src).not.toMatch(/<main[\s>]/);
   });
