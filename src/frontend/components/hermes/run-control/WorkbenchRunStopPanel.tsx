@@ -14,8 +14,8 @@ import {
   requestHermesRunStop,
   WorkspaceClientError,
 } from "@/lib/hermes/workspaceClient";
+import { Panel } from "@/components/ui/Panel";
 import {
-  COLLAPSE_TOGGLE_CLASS,
   displayId,
   LONG_ID_CLASS,
 } from "@/lib/hermes/workbenchA11y";
@@ -53,7 +53,6 @@ export function WorkbenchRunStopPanel({
   locale,
 }: WorkbenchRunStopPanelProps) {
   const isZh = locale === "zh";
-  const [open, setOpen] = useState(true);
   const { state: follow, spine } = useWorkspaceFollow();
   const [attempt, setAttempt] = useState<RunStopAttempt | null>(null);
   const [notice, setNotice] = useState<StopNotice | null>(null);
@@ -219,163 +218,134 @@ export function WorkbenchRunStopPanel({
   const busy = visibleNotice?.phase === "pending";
 
   return (
-    <section
-      aria-label={isZh ? "Hermes 运行停止控制" : "Hermes Run stop control"}
-      className="space-y-2"
-      data-hermes-run-stop-control
+    <Panel
+      count={stoppableRuns.length}
+      data-hermes-run-stop-control=""
       data-hermes-run-stop-mutation={
         follow.mutationEnabled === true ? "enabled" : "disabled"
       }
+      title={isZh ? "运行控制" : "Run control"}
     >
-      <header className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h2 className="font-headline-sm text-text-primary">
-            {isZh ? "运行控制" : "Run control"}
-          </h2>
+      <div className="min-w-0 space-y-2" id="hermes-run-stop-body">
+        <p className="font-body-sm text-text-secondary break-words">
+          {isZh
+            ? "仅对共享 follow spine 中 exact hermes_run_id 且状态为 delivered / outcome_unknown 的非终态运行显示停止按钮。只提交 run_ref；不会伪造 Task / Attempt / job 引用。"
+            : "Stop appears only for a nonterminal delivered / outcome_unknown command with an exact hermes_run_id on the shared follow spine. Only run_ref is authoritative; Task, Attempt, and job refs are never invented."}
+        </p>
+
+        {visibleNotice ? (
+          <div
+            aria-live="polite"
+            className={`font-body-sm break-words ${
+              visibleNotice.phase === "error" ||
+              visibleNotice.phase === "unknown"
+                ? "text-warning"
+                : visibleNotice.phase === "success"
+                  ? "text-accent-success"
+                  : "text-text-secondary"
+            }`}
+            data-hermes-run-stop-status={visibleNotice.phase}
+            role={visibleNotice.phase === "error" ? "alert" : "status"}
+          >
+            <p>{visibleNotice.message}</p>
+            <p className="mt-1 font-data-mono text-[11px]">
+              run {displayId(visibleNotice.runId, { head: 16, tail: 6 })} ·
+              action{" "}
+              {displayId(visibleNotice.clientActionId, {
+                head: 12,
+                tail: 6,
+              })}
+            </p>
+            {retryEligible ? (
+              <button
+                className={`${STOP_BTN_CLASS} mt-2`}
+                data-hermes-run-stop-retry
+                disabled={busy}
+                onClick={retryStop}
+                type="button"
+              >
+                {isZh ? "使用同一操作 ID 重试" : "Retry same stop request"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {!spineReady ? (
           <p className="font-body-sm text-text-secondary">
-            {isZh
-              ? `${stoppableRuns.length} 个可停止运行`
-              : `${stoppableRuns.length} stoppable Run${
-                  stoppableRuns.length === 1 ? "" : "s"
-                }`}
+            {isZh ? "follow spine 尚未就绪…" : "Follow spine not ready yet…"}
           </p>
-        </div>
-        <button
-          aria-controls="hermes-run-stop-body"
-          aria-expanded={open}
-          className={COLLAPSE_TOGGLE_CLASS}
-          onClick={() => setOpen((value) => !value)}
-          type="button"
-        >
-          {open ? (isZh ? "收起" : "Hide") : isZh ? "展开" : "Show"}
-        </button>
-      </header>
+        ) : null}
 
-      {open ? (
-        <div
-          className="min-w-0 rounded-lg border border-border-subtle bg-bg-surface"
-          id="hermes-run-stop-body"
-        >
-          <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
+        {spineReady && follow.mutationEnabled !== true ? (
+          <p
+            className="font-body-sm text-text-secondary"
+            data-hermes-run-stop-disabled
+          >
             {isZh
-              ? "仅对共享 follow spine 中 exact hermes_run_id 且状态为 delivered / outcome_unknown 的非终态运行显示停止按钮。只提交 run_ref；不会伪造 Task / Attempt / job 引用。"
-              : "Stop appears only for a nonterminal delivered / outcome_unknown command with an exact hermes_run_id on the shared follow spine. Only run_ref is authoritative; Task, Attempt, and job refs are never invented."}
+              ? "运行停止写权限当前关闭。"
+              : "Run stop mutation is currently disabled."}
           </p>
+        ) : null}
 
-          {visibleNotice ? (
-            <div
-              aria-live="polite"
-              className={`border-b border-border-subtle px-3 py-2 font-body-sm break-words ${
-                visibleNotice.phase === "error" ||
-                visibleNotice.phase === "unknown"
-                  ? "text-warning"
-                  : visibleNotice.phase === "success"
-                    ? "text-accent-success"
-                    : "text-text-secondary"
-              }`}
-              data-hermes-run-stop-status={visibleNotice.phase}
-              role={visibleNotice.phase === "error" ? "alert" : "status"}
-            >
-              <p>{visibleNotice.message}</p>
-              <p className="mt-1 font-data-mono text-[11px]">
-                run {displayId(visibleNotice.runId, { head: 16, tail: 6 })} ·
-                action{" "}
-                {displayId(visibleNotice.clientActionId, {
-                  head: 12,
-                  tail: 6,
-                })}
-              </p>
-              {retryEligible ? (
+        {spineReady &&
+        follow.mutationEnabled === true &&
+        stoppableRuns.length === 0 ? (
+          <p
+            className="font-body-sm text-text-secondary"
+            data-hermes-run-stop-empty
+          >
+            {isZh
+              ? "当前没有可停止的非终态 Hermes 运行。"
+              : "No eligible nonterminal Hermes Run is currently stoppable."}
+          </p>
+        ) : null}
+
+        {stoppableRuns.length ? (
+          <ul className="divide-y divide-border-subtle border-t border-border-subtle">
+            {stoppableRuns.map((run) => (
+              <li
+                className="flex min-w-0 flex-wrap items-center justify-between gap-3 py-2"
+                data-hermes-run-stop-row
+                data-hermes-run-id={run.runId}
+                key={run.runId}
+              >
+                <div className="min-w-0">
+                  <p className="font-body-sm font-semibold text-text-primary">
+                    {run.state}
+                  </p>
+                  <p className={LONG_ID_CLASS} title={run.runId}>
+                    {displayId(run.runId, { head: 18, tail: 8 })}
+                  </p>
+                </div>
                 <button
-                  className={`${STOP_BTN_CLASS} mt-2`}
-                  data-hermes-run-stop-retry
-                  disabled={busy}
-                  onClick={retryStop}
+                  aria-label={
+                    isZh
+                      ? `停止 Hermes 运行 ${run.runId}`
+                      : `Stop Hermes Run ${run.runId}`
+                  }
+                  className={STOP_BTN_CLASS}
+                  data-hermes-run-stop-button
+                  disabled={
+                    busy ||
+                    (visibleNotice?.phase === "success" &&
+                      visibleNotice.runId === run.runId)
+                  }
+                  onClick={() => requestStop(run)}
                   type="button"
                 >
-                  {isZh ? "使用同一操作 ID 重试" : "Retry same stop request"}
+                  {busy && visibleNotice?.runId === run.runId
+                    ? isZh
+                      ? "停止中…"
+                      : "Stopping…"
+                    : isZh
+                      ? "停止"
+                      : "Stop"}
                 </button>
-              ) : null}
-            </div>
-          ) : null}
-
-          {!spineReady ? (
-            <p className="px-3 py-4 font-body-sm text-text-secondary">
-              {isZh ? "follow spine 尚未就绪…" : "Follow spine not ready yet…"}
-            </p>
-          ) : null}
-
-          {spineReady && follow.mutationEnabled !== true ? (
-            <p
-              className="px-3 py-4 font-body-sm text-text-secondary"
-              data-hermes-run-stop-disabled
-            >
-              {isZh
-                ? "运行停止写权限当前关闭。"
-                : "Run stop mutation is currently disabled."}
-            </p>
-          ) : null}
-
-          {spineReady &&
-          follow.mutationEnabled === true &&
-          stoppableRuns.length === 0 ? (
-            <p
-              className="px-3 py-4 font-body-sm text-text-secondary"
-              data-hermes-run-stop-empty
-            >
-              {isZh
-                ? "当前没有可停止的非终态 Hermes 运行。"
-                : "No eligible nonterminal Hermes Run is currently stoppable."}
-            </p>
-          ) : null}
-
-          {stoppableRuns.length ? (
-            <ul className="divide-y divide-border-subtle">
-              {stoppableRuns.map((run) => (
-                <li
-                  className="flex min-w-0 flex-wrap items-center justify-between gap-3 px-3 py-2"
-                  data-hermes-run-stop-row
-                  data-hermes-run-id={run.runId}
-                  key={run.runId}
-                >
-                  <div className="min-w-0">
-                    <p className="font-body-sm font-semibold text-text-primary">
-                      {run.state}
-                    </p>
-                    <p className={LONG_ID_CLASS} title={run.runId}>
-                      {displayId(run.runId, { head: 18, tail: 8 })}
-                    </p>
-                  </div>
-                  <button
-                    aria-label={
-                      isZh
-                        ? `停止 Hermes 运行 ${run.runId}`
-                        : `Stop Hermes Run ${run.runId}`
-                    }
-                    className={STOP_BTN_CLASS}
-                    data-hermes-run-stop-button
-                    disabled={
-                      busy ||
-                      (visibleNotice?.phase === "success" &&
-                        visibleNotice.runId === run.runId)
-                    }
-                    onClick={() => requestStop(run)}
-                    type="button"
-                  >
-                    {busy && visibleNotice?.runId === run.runId
-                      ? isZh
-                        ? "停止中…"
-                        : "Stopping…"
-                      : isZh
-                        ? "停止"
-                        : "Stop"}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </Panel>
   );
 }

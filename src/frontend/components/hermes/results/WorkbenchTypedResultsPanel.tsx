@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
+import { Panel } from "@/components/ui/Panel";
 import {
-  COLLAPSE_TOGGLE_CLASS,
   displayId,
   LONG_ID_CLASS,
 } from "@/lib/hermes/workbenchA11y";
@@ -51,7 +51,6 @@ export function WorkbenchTypedResultsPanel({
   locale,
 }: WorkbenchTypedResultsPanelProps) {
   const isZh = locale === "zh";
-  const [open, setOpen] = useState(true);
   const { state: follow } = useWorkspaceFollow();
 
   const results = useMemo(() => {
@@ -79,237 +78,203 @@ export function WorkbenchTypedResultsPanel({
   const showEmpty = health && results.length === 0;
 
   return (
-    <section
-      aria-label={isZh ? "类型化结果" : "Typed results"}
-      className="space-y-2"
-      data-hermes-typed-results
+    <Panel
+      count={results.length}
+      data-hermes-typed-results=""
       data-hermes-typed-results-observe="v7f-m1"
       data-hermes-typed-results-projector="v7f-m1"
       data-hermes-typed-results-presenter="v7f-m1"
       data-hermes-result-health={resultHealth}
+      empty={
+        isZh
+          ? "当前无类型化结果。空列表诚实——不会把 command / Gate / 审批伪装成结果。"
+          : "No typed results. Empty is honest — commands, Gates, and approvals are never dressed as results."
+      }
+      headerExtra={
+        <span
+          className="font-body-sm text-text-secondary"
+          data-hermes-typed-results-count
+        >
+          {resultHealth === "ready"
+            ? isZh
+              ? "投影就绪"
+              : "projector ready"
+            : isZh
+              ? "未就绪"
+              : "unavailable"}
+        </span>
+      }
+      isEmpty={showEmpty}
+      title={isZh ? "类型化结果" : "Typed results"}
     >
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2">
-          <h2 className="font-headline-sm text-text-primary">
-            {isZh ? "类型化结果" : "Typed results"}
-          </h2>
-          <p
-            className="font-body-sm text-text-secondary"
-            data-hermes-typed-results-count
-          >
-            {isZh
-              ? `${results.length} 条`
-              : `${results.length} item${results.length === 1 ? "" : "s"}`}
-            {resultHealth === "ready"
-              ? isZh
-                ? " · 投影就绪"
-                : " · projector ready"
-              : isZh
-                ? " · 未就绪"
-                : " · unavailable"}
-          </p>
-        </div>
-        <button
-          aria-controls="hermes-typed-results-body"
-          aria-expanded={open}
-          className={COLLAPSE_TOGGLE_CLASS}
-          data-hermes-typed-results-toggle
-          onClick={() => setOpen((v) => !v)}
-          type="button"
-        >
-          {open ? (isZh ? "收起" : "Hide") : isZh ? "展开" : "Show"}
-        </button>
-      </header>
+      <div data-hermes-typed-results-body id="hermes-typed-results-body">
+        <p className="font-body-sm text-text-secondary break-words">
+          {isZh
+            ? "V7f 类型化结果：与 Gate / command-approval 分离。sample/real 醒目标记；仅展示已知 exact Task/Attempt/Run/artifact 链接；空列表诚实。hermetic ≠ 实盘行情。"
+            : "V7f typed results: separate from Gate / command-approval. sample/real is always marked; exact Task/Attempt/Run/artifact links only when known; empty is honest. Hermetic ≠ live quotes."}
+        </p>
 
-      {open ? (
-        <div
-          className="min-w-0 rounded-lg border border-border-subtle bg-bg-surface"
-          data-hermes-typed-results-body
-          id="hermes-typed-results-body"
+        <ul
+          className="mt-2 divide-y divide-border-subtle border-t border-border-subtle"
+          data-hermes-typed-results-list
         >
-          <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
-            {isZh
-              ? "V7f 类型化结果：与 Gate / command-approval 分离。sample/real 醒目标记；仅展示已知 exact Task/Attempt/Run/artifact 链接；空列表诚实。hermetic ≠ 实盘行情。"
-              : "V7f typed results: separate from Gate / command-approval. sample/real is always marked; exact Task/Attempt/Run/artifact links only when known; empty is honest. Hermetic ≠ live quotes."}
-          </p>
-
-          {showEmpty ? (
-            <p
-              className="px-3 py-4 font-body-sm text-text-secondary break-words"
-              data-hermes-typed-results-empty
-            >
-              {isZh
-                ? "当前无类型化结果。空列表诚实——不会把 command / Gate / 审批伪装成结果。"
-                : "No typed results. Empty is honest — commands, Gates, and approvals are never dressed as results."}
-            </p>
-          ) : (
-            <ul
-              className="divide-y divide-border-subtle"
-              data-hermes-typed-results-list
-            >
-              {results.map((row) => {
-                const key = resultRowKey(row);
-                const sample = isSample(row);
-                const links = row.exact_links || {};
-                return (
-                  <li
-                    className="space-y-2 px-3 py-3"
-                    data-hermes-typed-result-row
-                    data-hermes-result-id={key}
-                    data-hermes-result-kind={row.kind}
-                    data-hermes-result-sample={sample ? "sample" : "real"}
-                    key={key}
+          {results.map((row) => {
+            const key = resultRowKey(row);
+            const sample = isSample(row);
+            const links = row.exact_links || {};
+            return (
+              <li
+                className="space-y-2 py-3"
+                data-hermes-typed-result-row
+                data-hermes-result-id={key}
+                data-hermes-result-kind={row.kind}
+                data-hermes-result-sample={sample ? "sample" : "real"}
+                key={key}
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="font-body-sm text-text-primary break-words">
+                    {row.display_title || key}
+                  </p>
+                  <p
+                    className={
+                      sample
+                        ? "rounded border border-warning/40 bg-warning/10 px-2 py-0.5 font-data-mono text-[11px] text-warning"
+                        : "rounded border border-accent-success/40 bg-accent-success/10 px-2 py-0.5 font-data-mono text-[11px] text-accent-success"
+                    }
+                    data-hermes-result-mark
                   >
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <p className="font-body-sm text-text-primary break-words">
-                        {row.display_title || key}
-                      </p>
-                      <p
-                        className={
-                          sample
-                            ? "rounded border border-warning/40 bg-warning/10 px-2 py-0.5 font-data-mono text-[11px] text-warning"
-                            : "rounded border border-accent-success/40 bg-accent-success/10 px-2 py-0.5 font-data-mono text-[11px] text-accent-success"
-                        }
-                        data-hermes-result-mark
-                      >
-                        {sample
-                          ? isZh
-                            ? "SAMPLE · 样例"
-                            : "SAMPLE"
-                          : isZh
-                            ? "REAL · 真实"
-                            : "REAL"}
-                      </p>
-                    </div>
-                    <p className={`${LONG_ID_CLASS} break-all`} title={key}>
-                      {displayId(key)}
-                    </p>
-                    <p className="font-data-mono text-[11px] text-text-secondary">
-                      {row.kind}
-                      {row.status ? ` · ${row.status}` : ""}
-                      {row.freshness ? ` · freshness=${row.freshness}` : ""}
-                      {row.read_status ? ` · read=${row.read_status}` : ""}
-                    </p>
-                    {row.summary ? (
-                      <p className="font-body-sm text-text-secondary break-words">
-                        {row.summary}
-                      </p>
-                    ) : null}
+                    {sample
+                      ? isZh
+                        ? "SAMPLE · 样例"
+                        : "SAMPLE"
+                      : isZh
+                        ? "REAL · 真实"
+                        : "REAL"}
+                  </p>
+                </div>
+                <p className={`${LONG_ID_CLASS} break-all`} title={key}>
+                  {displayId(key)}
+                </p>
+                <p className="font-data-mono text-[11px] text-text-secondary">
+                  {row.kind}
+                  {row.status ? ` · ${row.status}` : ""}
+                  {row.freshness ? ` · freshness=${row.freshness}` : ""}
+                  {row.read_status ? ` · read=${row.read_status}` : ""}
+                </p>
+                {row.summary ? (
+                  <p className="font-body-sm text-text-secondary break-words">
+                    {row.summary}
+                  </p>
+                ) : null}
 
-                    {/* Vertical A options fields */}
-                    {row.kind === "options_vertical_a" ||
-                    row.ticker ||
-                    row.expiry ||
-                    row.strike != null ? (
-                      <dl
-                        className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4"
-                        data-hermes-result-options-fields
-                      >
-                        {[
-                          ["ticker", row.ticker],
-                          ["expiry", row.expiry],
-                          ["strike", num(row.strike)],
-                          ["bid", num(row.bid)],
-                          ["ask", num(row.ask)],
-                          ["delta", num(row.delta)],
-                          ["iv", num(row.iv)],
-                          ["apr", num(row.apr)],
-                        ].map(([label, value]) =>
-                          value ? (
-                            <div key={String(label)}>
-                              <dt className="font-data-mono text-[10px] uppercase tracking-wide text-text-secondary">
-                                {label}
-                              </dt>
-                              <dd className="font-data-mono text-[12px] text-text-primary">
-                                {value}
-                              </dd>
-                            </div>
-                          ) : null,
-                        )}
-                      </dl>
-                    ) : null}
+                {/* Vertical A options fields */}
+                {row.kind === "options_vertical_a" ||
+                row.ticker ||
+                row.expiry ||
+                row.strike != null ? (
+                  <dl
+                    className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4"
+                    data-hermes-result-options-fields
+                  >
+                    {[
+                      ["ticker", row.ticker],
+                      ["expiry", row.expiry],
+                      ["strike", num(row.strike)],
+                      ["bid", num(row.bid)],
+                      ["ask", num(row.ask)],
+                      ["delta", num(row.delta)],
+                      ["iv", num(row.iv)],
+                      ["apr", num(row.apr)],
+                    ].map(([label, value]) =>
+                      value ? (
+                        <div key={String(label)}>
+                          <dt className="font-data-mono text-[10px] uppercase tracking-wide text-text-secondary">
+                            {label}
+                          </dt>
+                          <dd className="font-data-mono text-[12px] text-text-primary">
+                            {value}
+                          </dd>
+                        </div>
+                      ) : null,
+                    )}
+                  </dl>
+                ) : null}
 
-                    {row.filters && row.filters.length ? (
-                      <p
-                        className="font-body-sm text-text-secondary break-words"
-                        data-hermes-result-filters
-                      >
-                        filters: {row.filters.join(", ")}
-                      </p>
-                    ) : null}
-                    {row.exclusions && row.exclusions.length ? (
-                      <p
-                        className="font-body-sm text-text-secondary break-words"
-                        data-hermes-result-exclusions
-                      >
-                        exclusions: {row.exclusions.join(", ")}
-                      </p>
-                    ) : null}
-                    {row.limitations && row.limitations.length ? (
-                      <p
-                        className="font-body-sm text-text-secondary break-words"
-                        data-hermes-result-limitations
-                      >
-                        limitations: {row.limitations.join(", ")}
-                      </p>
-                    ) : null}
-                    {row.provider_evidence && row.provider_evidence.length ? (
-                      <p
-                        className="font-data-mono text-[11px] text-text-secondary break-all"
-                        data-hermes-result-evidence
-                      >
-                        evidence: {row.provider_evidence.join(" · ")}
-                      </p>
-                    ) : null}
+                {row.filters && row.filters.length ? (
+                  <p
+                    className="font-body-sm text-text-secondary break-words"
+                    data-hermes-result-filters
+                  >
+                    filters: {row.filters.join(", ")}
+                  </p>
+                ) : null}
+                {row.exclusions && row.exclusions.length ? (
+                  <p
+                    className="font-body-sm text-text-secondary break-words"
+                    data-hermes-result-exclusions
+                  >
+                    exclusions: {row.exclusions.join(", ")}
+                  </p>
+                ) : null}
+                {row.limitations && row.limitations.length ? (
+                  <p
+                    className="font-body-sm text-text-secondary break-words"
+                    data-hermes-result-limitations
+                  >
+                    limitations: {row.limitations.join(", ")}
+                  </p>
+                ) : null}
+                {row.provider_evidence && row.provider_evidence.length ? (
+                  <p
+                    className="font-data-mono text-[11px] text-text-secondary break-all"
+                    data-hermes-result-evidence
+                  >
+                    evidence: {row.provider_evidence.join(" · ")}
+                  </p>
+                ) : null}
 
-                    {/* Exact links — only known ids */}
-                    {links.task_ref ||
-                    links.attempt_ref ||
-                    links.run_ref ||
-                    links.artifact_ref ||
-                    links.command_id ||
-                    row.task_id ||
-                    row.run_id ? (
-                      <ul
-                        className="space-y-0.5 font-data-mono text-[11px] text-text-secondary"
-                        data-hermes-result-exact-links
-                      >
-                        {(links.task_ref || row.task_id) && (
-                          <li>task: {links.task_ref || row.task_id}</li>
-                        )}
-                        {(links.attempt_ref || row.attempt_id) && (
-                          <li>
-                            attempt: {links.attempt_ref || row.attempt_id}
-                          </li>
-                        )}
-                        {(links.run_ref || row.run_id) && (
-                          <li>run: {links.run_ref || row.run_id}</li>
-                        )}
-                        {(links.artifact_ref || row.artifact_id) && (
-                          <li>
-                            artifact: {links.artifact_ref || row.artifact_id}
-                          </li>
-                        )}
-                        {(links.command_id || row.command_id) && (
-                          <li>
-                            command: {links.command_id || row.command_id}
-                          </li>
-                        )}
-                      </ul>
-                    ) : null}
+                {/* Exact links — only known ids */}
+                {links.task_ref ||
+                links.attempt_ref ||
+                links.run_ref ||
+                links.artifact_ref ||
+                links.command_id ||
+                row.task_id ||
+                row.run_id ? (
+                  <ul
+                    className="space-y-0.5 font-data-mono text-[11px] text-text-secondary"
+                    data-hermes-result-exact-links
+                  >
+                    {(links.task_ref || row.task_id) && (
+                      <li>task: {links.task_ref || row.task_id}</li>
+                    )}
+                    {(links.attempt_ref || row.attempt_id) && (
+                      <li>attempt: {links.attempt_ref || row.attempt_id}</li>
+                    )}
+                    {(links.run_ref || row.run_id) && (
+                      <li>run: {links.run_ref || row.run_id}</li>
+                    )}
+                    {(links.artifact_ref || row.artifact_id) && (
+                      <li>
+                        artifact: {links.artifact_ref || row.artifact_id}
+                      </li>
+                    )}
+                    {(links.command_id || row.command_id) && (
+                      <li>command: {links.command_id || row.command_id}</li>
+                    )}
+                  </ul>
+                ) : null}
 
-                    {row.occurred_at ? (
-                      <p className="font-data-mono text-[11px] text-text-secondary">
-                        occurred: {row.occurred_at}
-                      </p>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      ) : null}
-    </section>
+                {row.occurred_at ? (
+                  <p className="font-data-mono text-[11px] text-text-secondary">
+                    occurred: {row.occurred_at}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </Panel>
   );
 }

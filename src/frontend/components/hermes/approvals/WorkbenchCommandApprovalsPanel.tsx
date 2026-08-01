@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 
+import { Panel } from "@/components/ui/Panel";
 import {
   COLLAPSE_TOGGLE_CLASS,
   displayId,
@@ -109,235 +110,205 @@ export function WorkbenchCommandApprovalsPanel({
   );
 
   return (
-    <section
-      aria-label={isZh ? "命令审批" : "Command approval"}
-      className="space-y-2"
-      data-hermes-command-approvals
+    <Panel
+      count={approvals.length}
+      data-hermes-command-approvals=""
       data-hermes-approval-observe="l5a-m1"
       data-hermes-approval-projector="v7d-m1"
       data-hermes-approval-decide="v7a-m1"
       data-hermes-command-approval-health={commandApprovalHealth}
       data-hermes-approval-mutation={mutationOn ? "enabled" : "disabled"}
-    >
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2">
-          <h2 className="font-headline-sm text-text-primary">
-            {isZh ? "审批" : "Approvals"}
-          </h2>
-          <p
+      empty={
+        isZh
+          ? "当前无 command-approval 投影行（pending/decided）。不会伪造行。"
+          : "No command-approval projection rows (pending/decided). None are invented."
+      }
+      error={lastError}
+      headerExtra={
+        <div className="flex items-center gap-2">
+          <span
             className="font-body-sm text-text-secondary"
             data-hermes-approvals-count
           >
-            {isZh
-              ? `${approvals.length} 条挑战`
-              : `${approvals.length} challenge${
-                  approvals.length === 1 ? "" : "s"
-                }`}
-            {mutationOn
-              ? isZh
-                ? " · allow_once/deny"
-                : " · allow_once/deny"
-              : isZh
-                ? " · 只读"
-                : " · read-only"}
-          </p>
+            {mutationOn ? "allow_once/deny" : isZh ? "只读" : "read-only"}
+          </span>
+          <button
+            aria-controls="hermes-command-approvals-body"
+            aria-expanded={open}
+            className={COLLAPSE_TOGGLE_CLASS}
+            data-hermes-approvals-toggle
+            onClick={() => setOpen((v) => !v)}
+            type="button"
+          >
+            {open ? (isZh ? "收起" : "Hide") : isZh ? "展开" : "Show"}
+          </button>
         </div>
-        <button
-          aria-controls="hermes-command-approvals-body"
-          aria-expanded={open}
-          className={COLLAPSE_TOGGLE_CLASS}
-          data-hermes-approvals-toggle
-          onClick={() => setOpen((v) => !v)}
-          type="button"
-        >
-          {open ? (isZh ? "收起" : "Hide") : isZh ? "展开" : "Show"}
-        </button>
-      </header>
+      }
+      isEmpty={showEmptyApprovals}
+      title={isZh ? "审批" : "Approvals"}
+    >
+      <div
+        className="min-w-0"
+        data-hermes-command-approvals-body
+        id="hermes-command-approvals-body"
+      >
+        <p className="font-body-sm text-text-secondary break-words">
+          {isZh
+            ? "Hermes command-approval：exact CAS（approval_id + run_id + digest + expires_at）。仅 allow_once / deny；无 always-allow。≠ Gate 1/2/3、≠ 候选审批页。空列表诚实。"
+            : "Hermes command-approval: exact CAS (approval_id + run_id + digest + expires_at). allow_once / deny only; no always-allow. Not Gate 1/2/3, not candidate approvals. Empty is honest."}
+        </p>
 
-      {open ? (
-        <div
-          className="min-w-0 rounded-lg border border-border-subtle bg-bg-surface"
-          data-hermes-command-approvals-body
-          id="hermes-command-approvals-body"
-        >
-          <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
-            {isZh
-              ? "Hermes command-approval：exact CAS（approval_id + run_id + digest + expires_at）。仅 allow_once / deny；无 always-allow。≠ Gate 1/2/3、≠ 候选审批页。空列表诚实。"
-              : "Hermes command-approval: exact CAS (approval_id + run_id + digest + expires_at). allow_once / deny only; no always-allow. Not Gate 1/2/3, not candidate approvals. Empty is honest."}
+        {lastReceipt ? (
+          <p
+            className="mt-2 font-data-mono text-[11px] text-text-secondary break-all"
+            data-hermes-approvals-receipt
+          >
+            {lastReceipt}
           </p>
+        ) : null}
 
-          {lastError ? (
-            <p
-              className="border-b border-border-subtle px-3 py-2 font-body-sm text-danger"
-              data-hermes-approvals-error
-              role="alert"
-            >
-              {lastError}
-            </p>
-          ) : null}
-          {lastReceipt ? (
-            <p
-              className="border-b border-border-subtle px-3 py-2 font-data-mono text-[11px] text-text-secondary break-all"
-              data-hermes-approvals-receipt
-            >
-              {lastReceipt}
-            </p>
-          ) : null}
+        {!health ? (
+          <p className="mt-2 font-body-sm text-text-secondary">
+            {isZh ? "follow spine 尚未就绪…" : "Follow spine not ready yet…"}
+          </p>
+        ) : null}
 
-          {showEmptyApprovals ? (
-            <p
-              className="px-3 py-4 font-body-sm text-text-secondary break-words"
-              data-hermes-approvals-empty
-            >
-              {isZh
-                ? "当前无 command-approval 投影行（pending/decided）。不会伪造行。"
-                : "No command-approval projection rows (pending/decided). None are invented."}
-            </p>
-          ) : null}
-
-          {!health ? (
-            <p className="px-3 py-4 font-body-sm text-text-secondary">
-              {isZh ? "follow spine 尚未就绪…" : "Follow spine not ready yet…"}
-            </p>
-          ) : null}
-
-          {approvals.length ? (
-            <ol
-              aria-live="polite"
-              aria-relevant="additions text"
-              className="divide-y divide-border-subtle"
-              data-hermes-approvals-list
-            >
-              {approvals.map((row) => {
-                const decidable = mutationOn && canDecide(row);
-                const busy = busyId === row.approval_id;
-                return (
-                  <li
-                    className="min-w-0 px-3 py-2"
-                    data-hermes-approval-row
-                    data-hermes-approval-id={row.approval_id}
-                    data-hermes-approval-decidable={decidable ? "true" : "false"}
-                    key={row.approval_id}
-                  >
-                    <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-                      <p className="min-w-0 font-body-sm font-semibold text-text-primary">
-                        <span data-hermes-approval-status>
-                          {row.status || row.expected_status || "pending"}
-                          {row.decision ? ` · ${row.decision}` : ""}
-                        </span>
-                        {row.kind ? (
-                          <>
-                            <span className="mx-1 text-text-secondary">·</span>
-                            <span className="break-all font-data-mono text-xs text-text-secondary">
-                              {row.kind}
-                            </span>
-                          </>
-                        ) : null}
-                      </p>
-                      <p className="shrink-0 font-data-mono text-[11px] text-text-secondary">
-                        {row.expires_at || ""}
-                      </p>
+        {open && approvals.length ? (
+          <ol
+            aria-live="polite"
+            aria-relevant="additions text"
+            className="mt-2 divide-y divide-border-subtle border-t border-border-subtle"
+            data-hermes-approvals-list
+          >
+            {approvals.map((row) => {
+              const decidable = mutationOn && canDecide(row);
+              const busy = busyId === row.approval_id;
+              return (
+                <li
+                  className="min-w-0 py-2"
+                  data-hermes-approval-row
+                  data-hermes-approval-id={row.approval_id}
+                  data-hermes-approval-decidable={decidable ? "true" : "false"}
+                  key={row.approval_id}
+                >
+                  <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+                    <p className="min-w-0 font-body-sm font-semibold text-text-primary">
+                      <span data-hermes-approval-status>
+                        {row.status || row.expected_status || "pending"}
+                        {row.decision ? ` · ${row.decision}` : ""}
+                      </span>
+                      {row.kind ? (
+                        <>
+                          <span className="mx-1 text-text-secondary">·</span>
+                          <span className="break-all font-data-mono text-xs text-text-secondary">
+                            {row.kind}
+                          </span>
+                        </>
+                      ) : null}
+                    </p>
+                    <p className="shrink-0 font-data-mono text-[11px] text-text-secondary">
+                      {row.expires_at || ""}
+                    </p>
+                  </div>
+                  <dl className="mt-1 grid min-w-0 gap-0.5 sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <dt className="inline font-data-mono text-[11px] text-text-secondary">
+                        approval{" "}
+                      </dt>
+                      <dd
+                        className={`inline ${LONG_ID_CLASS}`}
+                        title={row.approval_id}
+                      >
+                        {displayId(row.approval_id, { head: 12, tail: 6 })}
+                      </dd>
                     </div>
-                    <dl className="mt-1 grid min-w-0 gap-0.5 sm:grid-cols-2">
+                    {row.run_id ? (
                       <div className="min-w-0">
                         <dt className="inline font-data-mono text-[11px] text-text-secondary">
-                          approval{" "}
+                          run{" "}
                         </dt>
                         <dd
                           className={`inline ${LONG_ID_CLASS}`}
-                          title={row.approval_id}
+                          title={row.run_id}
                         >
-                          {displayId(row.approval_id, { head: 12, tail: 6 })}
+                          {displayId(row.run_id, { head: 12, tail: 6 })}
                         </dd>
                       </div>
-                      {row.run_id ? (
-                        <div className="min-w-0">
-                          <dt className="inline font-data-mono text-[11px] text-text-secondary">
-                            run{" "}
-                          </dt>
-                          <dd
-                            className={`inline ${LONG_ID_CLASS}`}
-                            title={row.run_id}
-                          >
-                            {displayId(row.run_id, { head: 12, tail: 6 })}
-                          </dd>
-                        </div>
-                      ) : null}
-                      {row.command_id ? (
-                        <div className="min-w-0">
-                          <dt className="inline font-data-mono text-[11px] text-text-secondary">
-                            cmd{" "}
-                          </dt>
-                          <dd
-                            className={`inline ${LONG_ID_CLASS}`}
-                            title={row.command_id}
-                          >
-                            {displayId(row.command_id, { head: 10, tail: 6 })}
-                          </dd>
-                        </div>
-                      ) : null}
-                      {row.digest ? (
-                        <div className="min-w-0 sm:col-span-2">
-                          <dt className="inline font-data-mono text-[11px] text-text-secondary">
-                            digest{" "}
-                          </dt>
-                          <dd
-                            className={`inline ${LONG_ID_CLASS}`}
-                            title={row.digest}
-                          >
-                            {displayId(row.digest, { head: 16, tail: 6 })}
-                          </dd>
-                        </div>
-                      ) : null}
-                    </dl>
-                    {decidable ? (
-                      <div
-                        className="mt-2 flex flex-wrap gap-2"
-                        data-hermes-approval-actions
-                      >
-                        <button
-                          aria-label={
-                            isZh
-                              ? `允许一次 ${row.approval_id}`
-                              : `Allow once ${row.approval_id}`
-                          }
-                          className={DECIDE_BTN_CLASS}
-                          data-hermes-approval-allow-once
-                          disabled={busy || busyId != null}
-                          onClick={() => void onDecide(row, "allow_once")}
-                          type="button"
+                    ) : null}
+                    {row.command_id ? (
+                      <div className="min-w-0">
+                        <dt className="inline font-data-mono text-[11px] text-text-secondary">
+                          cmd{" "}
+                        </dt>
+                        <dd
+                          className={`inline ${LONG_ID_CLASS}`}
+                          title={row.command_id}
                         >
-                          {busy
-                            ? isZh
-                              ? "提交中…"
-                              : "Submitting…"
-                            : isZh
-                              ? "允许一次"
-                              : "Allow once"}
-                        </button>
-                        <button
-                          aria-label={
-                            isZh
-                              ? `拒绝 ${row.approval_id}`
-                              : `Deny ${row.approval_id}`
-                          }
-                          className={DECIDE_BTN_CLASS}
-                          data-hermes-approval-deny
-                          disabled={busy || busyId != null}
-                          onClick={() => void onDecide(row, "deny")}
-                          type="button"
-                        >
-                          {isZh ? "拒绝" : "Deny"}
-                        </button>
+                          {displayId(row.command_id, { head: 10, tail: 6 })}
+                        </dd>
                       </div>
                     ) : null}
-                  </li>
-                );
-              })}
-            </ol>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
+                    {row.digest ? (
+                      <div className="min-w-0 sm:col-span-2">
+                        <dt className="inline font-data-mono text-[11px] text-text-secondary">
+                          digest{" "}
+                        </dt>
+                        <dd
+                          className={`inline ${LONG_ID_CLASS}`}
+                          title={row.digest}
+                        >
+                          {displayId(row.digest, { head: 16, tail: 6 })}
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                  {decidable ? (
+                    <div
+                      className="mt-2 flex flex-wrap gap-2"
+                      data-hermes-approval-actions
+                    >
+                      <button
+                        aria-label={
+                          isZh
+                            ? `允许一次 ${row.approval_id}`
+                            : `Allow once ${row.approval_id}`
+                        }
+                        className={DECIDE_BTN_CLASS}
+                        data-hermes-approval-allow-once
+                        disabled={busy || busyId != null}
+                        onClick={() => void onDecide(row, "allow_once")}
+                        type="button"
+                      >
+                        {busy
+                          ? isZh
+                            ? "提交中…"
+                            : "Submitting…"
+                          : isZh
+                            ? "允许一次"
+                            : "Allow once"}
+                      </button>
+                      <button
+                        aria-label={
+                          isZh
+                            ? `拒绝 ${row.approval_id}`
+                            : `Deny ${row.approval_id}`
+                        }
+                        className={DECIDE_BTN_CLASS}
+                        data-hermes-approval-deny
+                        disabled={busy || busyId != null}
+                        onClick={() => void onDecide(row, "deny")}
+                        type="button"
+                      >
+                        {isZh ? "拒绝" : "Deny"}
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        ) : null}
+      </div>
+    </Panel>
   );
 }

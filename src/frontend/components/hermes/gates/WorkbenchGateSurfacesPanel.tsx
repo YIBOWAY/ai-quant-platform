@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { Panel } from "@/components/ui/Panel";
 import {
   COLLAPSE_TOGGLE_CLASS,
   displayId,
@@ -274,10 +275,9 @@ export function WorkbenchGateSurfacesPanel({
   );
 
   return (
-    <section
-      aria-label={isZh ? "领域门控" : "Domain gates"}
-      className="space-y-2"
-      data-hermes-gate-surfaces
+    <Panel
+      count={gates.length}
+      data-hermes-gate-surfaces=""
       data-hermes-gate-observe="v7e-m1"
       data-hermes-gate-projector="v7e-m1"
       data-hermes-gate-act="v7e-m1"
@@ -285,79 +285,78 @@ export function WorkbenchGateSurfacesPanel({
       data-hermes-gate-2-health={gate2Health}
       data-hermes-gate-3-health={gate3Health}
       data-hermes-gate-mutation={mutationOn ? "enabled" : "disabled"}
-    >
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2">
-          <h2 className="font-headline-sm text-text-primary">
-            {isZh ? "领域门控" : "Domain gates"}
-          </h2>
-          <p className="font-body-sm text-text-secondary" data-hermes-gates-count>
-            {isZh
-              ? `${gates.length} 条`
-              : `${gates.length} item${gates.length === 1 ? "" : "s"}`}
+      headerExtra={
+        <div className="flex items-center gap-2">
+          <span
+            className="font-body-sm text-text-secondary"
+            data-hermes-gates-count
+          >
             {mutationOn
               ? isZh
-                ? " · 可提交"
-                : " · actionable"
+                ? "可提交"
+                : "actionable"
               : isZh
-                ? " · 只读"
-                : " · read-only"}
-          </p>
+                ? "只读"
+                : "read-only"}
+          </span>
+          <button
+            aria-controls="hermes-gate-surfaces-body"
+            aria-expanded={open}
+            className={COLLAPSE_TOGGLE_CLASS}
+            data-hermes-gates-toggle
+            onClick={() => setOpen((v) => !v)}
+            type="button"
+          >
+            {open ? (isZh ? "收起" : "Hide") : isZh ? "展开" : "Show"}
+          </button>
         </div>
-        <button
-          aria-controls="hermes-gate-surfaces-body"
-          aria-expanded={open}
-          className={COLLAPSE_TOGGLE_CLASS}
-          data-hermes-gates-toggle
-          onClick={() => setOpen((v) => !v)}
-          type="button"
-        >
-          {open ? (isZh ? "收起" : "Hide") : isZh ? "展开" : "Show"}
-        </button>
-      </header>
+      }
+      title={isZh ? "领域门控" : "Domain gates"}
+    >
+      <div
+        className="min-w-0"
+        data-hermes-gate-surfaces-body
+        id="hermes-gate-surfaces-body"
+      >
+        <p className="font-body-sm text-text-secondary break-words">
+          {isZh
+            ? "Domain Gate 1/2/3：与 command-approval 分离。Gate 1/2 保持同一计划 Attempt；Gate 3 必须进入 ContinueResearch 的新 Attempt/Run，且仅 prepare（不 Git commit）。无 always-allow。"
+            : "Domain Gate 1/2/3: separate from command-approval. Gates 1/2 stay on the plan Attempt; Gate 3 must use a new ContinueResearch Attempt/Run and is prepare-only (no Git commit). No always-allow."}
+        </p>
 
-      {open ? (
-        <div
-          className="min-w-0 rounded-lg border border-border-subtle bg-bg-surface"
-          data-hermes-gate-surfaces-body
-          id="hermes-gate-surfaces-body"
-        >
-          <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
-            {isZh
-              ? "Domain Gate 1/2/3：与 command-approval 分离。Gate 1/2 保持同一计划 Attempt；Gate 3 必须进入 ContinueResearch 的新 Attempt/Run，且仅 prepare（不 Git commit）。无 always-allow。"
-              : "Domain Gate 1/2/3: separate from command-approval. Gates 1/2 stay on the plan Attempt; Gate 3 must use a new ContinueResearch Attempt/Run and is prepare-only (no Git commit). No always-allow."}
+        {lastError ? (
+          <p
+            className="mt-2 font-body-sm text-danger"
+            data-hermes-gates-error
+            role="alert"
+          >
+            {lastError}
           </p>
+        ) : null}
+        {lastReceipt ? (
+          <p
+            className="mt-2 font-data-mono text-[11px] text-text-secondary break-all"
+            data-hermes-gates-receipt
+          >
+            {lastReceipt}
+          </p>
+        ) : null}
 
-          {lastError ? (
-            <p
-              className="border-b border-border-subtle px-3 py-2 font-body-sm text-danger"
-              data-hermes-gates-error
-              role="alert"
-            >
-              {lastError}
-            </p>
-          ) : null}
-          {lastReceipt ? (
-            <p
-              className="border-b border-border-subtle px-3 py-2 font-data-mono text-[11px] text-text-secondary break-all"
-              data-hermes-gates-receipt
-            >
-              {lastReceipt}
-            </p>
-          ) : null}
-
-          {showEmpty ? (
-            <p
-              className="px-3 py-4 font-body-sm text-text-secondary break-words"
-              data-hermes-gates-empty
-            >
-              {isZh
-                ? "当前无待处理领域门控。空列表诚实——不会把 command-approval 或 Task 伪装成 Gate。"
-                : "No pending domain gates. Empty is honest — command-approval and Tasks are never dressed as Gates."}
-            </p>
-          ) : (
-            <ul className="divide-y divide-border-subtle" data-hermes-gates-list>
-              {gates.map((row) => {
+        {showEmpty ? (
+          <p
+            className="mt-2 font-body-sm text-text-secondary break-words"
+            data-hermes-gates-empty
+          >
+            {isZh
+              ? "当前无待处理领域门控。空列表诚实——不会把 command-approval 或 Task 伪装成 Gate。"
+              : "No pending domain gates. Empty is honest — command-approval and Tasks are never dressed as Gates."}
+          </p>
+        ) : open ? (
+          <ul
+            className="mt-2 divide-y divide-border-subtle border-t border-border-subtle"
+            data-hermes-gates-list
+          >
+            {gates.map((row) => {
                 const kind = (row.gate_kind || "").toLowerCase();
                 const actionable = canActGate(row) && mutationOn;
                 const needsNote = gateRequiresHumanNote(row);
@@ -720,10 +719,9 @@ export function WorkbenchGateSurfacesPanel({
                   </li>
                 );
               })}
-            </ul>
-          )}
-        </div>
-      ) : null}
-    </section>
+          </ul>
+        ) : null}
+      </div>
+    </Panel>
   );
 }
