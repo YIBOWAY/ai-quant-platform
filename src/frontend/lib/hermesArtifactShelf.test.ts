@@ -239,7 +239,7 @@ describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
     expect(html).toContain("早上好");
     expect(html).toContain("系统正常，");
     expect(html).toContain("有 1 件事需要你处理");
-    expect(html).toContain("Hermes 在线");
+    expect(html).toContain("Hermes 正在值班");
     expect(html).toContain('data-hermes-status-item="sources"');
     expect(html).toContain('data-hermes-status-item="automation"');
     expect(html).toContain('href="#hermes-technical-details"');
