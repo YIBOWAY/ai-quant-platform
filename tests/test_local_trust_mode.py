@@ -48,7 +48,6 @@ def test_trust_mode_active_when_flag_set_and_red_lines_hold() -> None:
 @pytest.mark.parametrize(
     ("overrides", "expected_blocker"),
     [
-        ({"safety": {"kill_switch": False}}, "kill_switch_off"),
         (
             {
                 "safety": {
@@ -59,21 +58,6 @@ def test_trust_mode_active_when_flag_set_and_red_lines_hold() -> None:
                 }
             },
             "live_trading_enabled",
-        ),
-        ({"safety": {"paper_trading": False}}, "paper_trading_off"),
-        ({"safety": {"dry_run": False}}, "dry_run_off"),
-        (
-            {"safety": {"no_live_trade_without_manual_approval": False}},
-            "manual_live_approval_guard_off",
-        ),
-        (
-            {
-                "paper_account": {
-                    "db_mode": "canonical",
-                    "auto_process_pending_orders_enabled": True,
-                }
-            },
-            "paper_pending_order_processor_enabled",
         ),
     ],
 )
@@ -87,17 +71,30 @@ def test_trust_mode_refuses_activation_on_each_red_line(
     assert expected_blocker in trust_mode_requested_but_refused(settings)
 
 
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"safety": {"kill_switch": False}},
+        {"safety": {"paper_trading": False}},
+        {"safety": {"dry_run": False}},
+        {"safety": {"no_live_trade_without_manual_approval": False}},
+        {
+            "paper_account": {
+                "db_mode": "canonical",
+                "auto_process_pending_orders_enabled": True,
+            }
+        },
+    ],
+)
+def test_research_mode_toggles_do_not_refuse_trust(overrides: dict) -> None:
+    settings = _trust_settings(**overrides)
+    assert trust_red_line_blockers(settings) == ()
+    assert trust_mode_active(settings) is True
+
+
 def test_red_line_catalog_matches_checks() -> None:
     names = {name for name, _ in TRUST_RED_LINES}
-    assert names == {
-        "kill_switch_off",
-        "live_trading_enabled",
-        "paper_trading_off",
-        "dry_run_off",
-        "manual_live_approval_guard_off",
-        "paper_pending_order_processor_enabled",
-        "live_trading_confirmation_present",
-    }
+    assert names == {"live_trading_enabled"}
 
 
 def test_trust_mode_candidate_decision_skips_all_identity_io(
@@ -141,7 +138,14 @@ def test_trust_mode_candidate_decision_skips_all_identity_io(
 def test_trust_mode_still_closes_on_safety_flags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = _trust_settings(safety={"kill_switch": False})
+    settings = _trust_settings(
+        safety={
+            "live_trading_enabled": True,
+            "manual_live_trading_confirmation": (
+                "I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"
+            ),
+        }
+    )
 
     # With a red line violated, trust mode must NOT apply: the gate falls
     # back to the full ritual (which needs a DB) and reports the safety
@@ -189,7 +193,7 @@ def test_trust_mode_still_closes_on_safety_flags(
     decision = current_candidate_decision(settings, require_connector=False)
     assert decision.ready is False
     assert decision.dispatch_ready is False
-    assert "kill_switch_off" in decision.blockers
+    assert "live_trading_enabled" in decision.blockers
 
 
 def test_trust_mode_never_promotes_public_chat_write_ready(
@@ -308,7 +312,14 @@ def test_trust_mode_refusal_is_surfaced_in_platform_delivery_blockers(
 ) -> None:
     from quant_system.hermes import composer_readiness
 
-    settings = _trust_settings(safety={"kill_switch": False})
+    settings = _trust_settings(
+        safety={
+            "live_trading_enabled": True,
+            "manual_live_trading_confirmation": (
+                "I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"
+            ),
+        }
+    )
     monkeypatch.setattr(
         composer_readiness,
         "_observe_effective_admission",
@@ -370,6 +381,6 @@ def test_trust_mode_refusal_is_surfaced_in_platform_delivery_blockers(
     snapshot = composer_readiness.composer_readiness_snapshot(settings)
     assert snapshot["composer_open"] is False
     assert (
-        "local_trust_refused_kill_switch_off"
+        "local_trust_refused_live_trading_enabled"
         in snapshot["platform_delivery_blockers"]
     )

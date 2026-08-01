@@ -89,20 +89,26 @@ def current_candidate_decision(
         blockers.append("local_mutation_disabled")
     if settings.local_mutation.composer_open is not True:
         blockers.append("local_composer_closed")
-    if settings.safety.kill_switch is not True:
-        blockers.append("kill_switch_off")
     if settings.safety.live_trading_enabled is not False:
         blockers.append("live_trading_enabled")
-    if settings.safety.paper_trading is not True:
-        blockers.append("paper_trading_off")
-    if settings.safety.dry_run is not True:
-        blockers.append("dry_run_off")
-    if settings.safety.no_live_trade_without_manual_approval is not True:
-        blockers.append("manual_live_approval_guard_off")
-    if settings.paper_account.auto_process_pending_orders_enabled is not False:
-        blockers.append("paper_pending_order_processor_enabled")
-    if settings.database.auto_migrate is not False:
-        blockers.append("database_auto_migrate_enabled")
+    if not trust_active:
+        # Research-mode toggles: under local trust the solo owner may flip
+        # these freely; only the live-trading line above stays mandatory.
+        if settings.safety.kill_switch is not True:
+            blockers.append("kill_switch_off")
+        if settings.safety.paper_trading is not True:
+            blockers.append("paper_trading_off")
+        if settings.safety.dry_run is not True:
+            blockers.append("dry_run_off")
+        if settings.safety.no_live_trade_without_manual_approval is not True:
+            blockers.append("manual_live_approval_guard_off")
+        if (
+            settings.paper_account.auto_process_pending_orders_enabled
+            is not False
+        ):
+            blockers.append("paper_pending_order_processor_enabled")
+        if settings.database.auto_migrate is not False:
+            blockers.append("database_auto_migrate_enabled")
     if settings.hermes_gateway.enabled is not True:
         blockers.append("hermes_gateway_disabled")
 

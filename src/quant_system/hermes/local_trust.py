@@ -19,45 +19,21 @@ import hashlib
 from quant_system.config.settings import Settings
 
 #: Documented, ordered red lines. Each entry: (blocker string, description).
+#: Deliberately minimal: live trading OFF is the only real-money boundary.
+#: kill_switch / paper / dry_run are research-mode toggles the solo owner may
+#: flip freely; the settings validator independently requires an explicit
+#: confirmation phrase before live trading can ever be enabled.
 TRUST_RED_LINES: tuple[tuple[str, str], ...] = (
-    ("kill_switch_off", "safety.kill_switch must be True"),
     ("live_trading_enabled", "safety.live_trading_enabled must be False"),
-    ("paper_trading_off", "safety.paper_trading must be True"),
-    ("dry_run_off", "safety.dry_run must be True"),
-    (
-        "manual_live_approval_guard_off",
-        "safety.no_live_trade_without_manual_approval must be True",
-    ),
-    (
-        "paper_pending_order_processor_enabled",
-        "paper_account.auto_process_pending_orders_enabled must be False",
-    ),
-    (
-        "live_trading_confirmation_present",
-        "safety.manual_live_trading_confirmation must be empty",
-    ),
 )
 
 
 def trust_red_line_blockers(settings: Settings) -> tuple[str, ...]:
     """Return the safety blockers that forbid trust mode. Empty == clean."""
 
-    blockers: list[str] = []
-    if settings.safety.kill_switch is not True:
-        blockers.append("kill_switch_off")
     if settings.safety.live_trading_enabled is not False:
-        blockers.append("live_trading_enabled")
-    if settings.safety.paper_trading is not True:
-        blockers.append("paper_trading_off")
-    if settings.safety.dry_run is not True:
-        blockers.append("dry_run_off")
-    if settings.safety.no_live_trade_without_manual_approval is not True:
-        blockers.append("manual_live_approval_guard_off")
-    if settings.paper_account.auto_process_pending_orders_enabled is not False:
-        blockers.append("paper_pending_order_processor_enabled")
-    if settings.safety.manual_live_trading_confirmation != "":
-        blockers.append("live_trading_confirmation_present")
-    return tuple(blockers)
+        return ("live_trading_enabled",)
+    return ()
 
 
 def trust_mode_active(settings: Settings) -> bool:
