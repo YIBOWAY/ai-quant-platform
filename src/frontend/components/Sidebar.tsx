@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   FileText,
   HelpCircle,
-  Plus,
 } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { localizePath, splitLocalePath } from "@/lib/locale";
@@ -18,7 +17,6 @@ import {
 const copy = {
   en: {
     tagline: "Local research workspace",
-    runBacktest: "Run Backtest",
     docs: "Docs",
     support: "Help",
     groups: {
@@ -53,7 +51,6 @@ const copy = {
   },
   zh: {
     tagline: "本地研究环境",
-    runBacktest: "运行回测",
     docs: "文档",
     support: "帮助",
     groups: {
@@ -133,17 +130,6 @@ export function Sidebar({
         <div className="font-sans text-xs tracking-tight text-text-secondary">
           {text.tagline}
         </div>
-      </div>
-
-      <div className="border-b border-border-subtle p-4">
-        <Link
-          className="app-touch-target font-label-caps flex w-full items-center justify-center gap-2 rounded-lg border border-info/40 bg-info/5 text-info transition-colors hover:bg-bg-sidebar-muted"
-          href={localizePath("/backtest", locale)}
-          prefetch={disableNavigationPrefetch ? false : undefined}
-        >
-          <Plus size={16} />
-          <span>{text.runBacktest}</span>
-        </Link>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4">

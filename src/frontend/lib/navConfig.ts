@@ -78,10 +78,13 @@ const briefItem: NavItem = {
 
 const researchTail: NavItem[] = [
   { id: "dataExplorer", href: "/data-explorer", icon: Database },
-  { id: "factorLab", href: "/factor-lab", icon: FlaskConical },
-  { id: "backtester", href: "/backtest", icon: LineChart },
+  // Factor Lab / Backtester / Experiments: routes stay reachable for audit,
+  // but the entries are hidden from every nav surface — Hermes drives the
+  // research pipeline, so these expert pages no longer earn sidebar slots.
+  { id: "factorLab", href: "/factor-lab", icon: FlaskConical, surfaces: [] },
+  { id: "backtester", href: "/backtest", icon: LineChart, surfaces: [] },
   { id: "replications", href: "/strategies", icon: ScrollText },
-  { id: "experiments", href: "/experiments", icon: Beaker },
+  { id: "experiments", href: "/experiments", icon: Beaker, surfaces: [] },
 ];
 
 const paperSection: NavSection = {
@@ -124,7 +127,7 @@ const systemSection: NavSection = {
  * Build mode-specific navigation.
  * shellEnabled: Hermes is the sole research home (Dashboard omitted).
  * shellEnabled false: Dashboard is home; Hermes remains a separate read-only entry.
- * Factor Lab / Backtester / Experiments / Agent Studio stay in both modes.
+ * Factor Lab / Backtester / Experiments are surface-hidden (routes kept for audit).
  */
 export function buildNavSections({
   shellEnabled,

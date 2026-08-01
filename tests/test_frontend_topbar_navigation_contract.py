@@ -77,3 +77,19 @@ def test_topbar_mobile_menu_exposes_accessible_state() -> None:
     assert 'window.addEventListener("keydown", onKeyDown)' in topbar
     assert 'event.key === "Escape"' in topbar
     assert "menuButtonRef.current?.focus()" in topbar
+
+
+def test_expert_research_pages_hidden_from_nav_surfaces() -> None:
+    """Factor Lab / Backtester / Experiments: routes kept for audit, nav hidden."""
+    nav_config = Path("src/frontend/lib/navConfig.ts").read_text(encoding="utf-8")
+
+    for entry in (
+        '{ id: "factorLab", href: "/factor-lab", icon: FlaskConical, surfaces: [] }',
+        '{ id: "backtester", href: "/backtest", icon: LineChart, surfaces: [] }',
+        '{ id: "experiments", href: "/experiments", icon: Beaker, surfaces: [] }',
+    ):
+        assert entry in nav_config
+
+    # Data Explorer and Strategy Catalog stay visible (no surfaces override).
+    assert '{ id: "dataExplorer", href: "/data-explorer", icon: Database }' in nav_config
+    assert '{ id: "replications", href: "/strategies", icon: ScrollText }' in nav_config

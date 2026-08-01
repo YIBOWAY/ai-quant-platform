@@ -17,7 +17,6 @@ import {
 const copy = {
   en: {
     search: "Search symbol...",
-    runBacktest: "Run Backtest",
     marketData: "Market Data",
     options: "Options",
     replications: "Strategy Catalog",
@@ -53,7 +52,6 @@ const copy = {
   },
   zh: {
     search: "搜索标的...",
-    runBacktest: "运行回测",
     marketData: "行情数据",
     options: "期权",
     replications: "策略目录",
