@@ -60,7 +60,9 @@ def test_topbar_mobile_menu_exposes_sidebar_primary_routes() -> None:
     assert "buildNavSections" in topbar
     assert "isVisibleOnSurface" in topbar
     assert "mobileNavSections" in topbar
-    assert "max-h-[calc(100dvh-4rem)] overflow-y-auto" in topbar
+    assert (
+        "max-h-[calc(100dvh-var(--spacing-topbar-height))] overflow-y-auto" in topbar
+    )
     assert "key={`${section.name}-${item.href}-${item.name}`}" in topbar
     assert "key={`${section.name}-${item.href}`}" not in topbar
     assert 'href={localizePath("/hermes", locale)}' in topbar
