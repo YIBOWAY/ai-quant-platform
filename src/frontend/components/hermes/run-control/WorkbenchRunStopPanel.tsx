@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { Panel } from "@/components/ui/Panel";
 import {
   ensureRunStopAttempt,
   selectStoppableHermesRuns,
@@ -14,7 +15,6 @@ import {
   requestHermesRunStop,
   WorkspaceClientError,
 } from "@/lib/hermes/workspaceClient";
-import { Panel } from "@/components/ui/Panel";
 import {
   displayId,
   LONG_ID_CLASS,

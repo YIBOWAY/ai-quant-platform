@@ -720,6 +720,10 @@ export function WorkbenchGateSurfacesPanel({
                 );
               })}
           </ul>
+        ) : gates.length ? (
+          <p className="mt-2 font-body-sm text-text-secondary">
+            {isZh ? `${gates.length} 项已折叠` : `${gates.length} hidden`}
+          </p>
         ) : null}
       </div>
     </Panel>

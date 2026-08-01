@@ -98,6 +98,12 @@ export function WorkbenchCommandActivityPanel({
             : "Read-only: ledger commands via shared follow spine (SSE preferred, poll fallback). Task/Attempt authority still empty; not research-task write; no assistant bodies."}
         </p>
 
+        {!open && commands.length ? (
+          <p className="mt-2 font-body-sm text-text-secondary">
+            {isZh ? `${commands.length} 项已折叠` : `${commands.length} hidden`}
+          </p>
+        ) : null}
+
         {open && commands.length ? (
           <ol
             aria-live="polite"

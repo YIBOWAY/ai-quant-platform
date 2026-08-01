@@ -144,7 +144,7 @@ export function WorkbenchCommandApprovalsPanel({
           </button>
         </div>
       }
-      isEmpty={showEmptyApprovals}
+      isEmpty={showEmptyApprovals && !lastReceipt}
       title={isZh ? "审批" : "Approvals"}
     >
       <div
@@ -170,6 +170,14 @@ export function WorkbenchCommandApprovalsPanel({
         {!health ? (
           <p className="mt-2 font-body-sm text-text-secondary">
             {isZh ? "follow spine 尚未就绪…" : "Follow spine not ready yet…"}
+          </p>
+        ) : null}
+
+        {!open && approvals.length ? (
+          <p className="mt-2 font-body-sm text-text-secondary">
+            {isZh
+              ? `${approvals.length} 项已折叠`
+              : `${approvals.length} hidden`}
           </p>
         ) : null}
 

@@ -126,6 +126,12 @@ export function WorkbenchAuthorityProjectionPanel({
           </p>
         ) : null}
 
+        {spineReady && !open && totalIds ? (
+          <p className="mt-2 font-body-sm text-text-secondary">
+            {isZh ? `${totalIds} 项已折叠` : `${totalIds} hidden`}
+          </p>
+        ) : null}
+
         {spineReady && open ? (
           <ul
             aria-live="polite"
