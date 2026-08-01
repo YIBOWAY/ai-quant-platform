@@ -12,7 +12,11 @@ import {
   type HermesResultsPaginationModel,
   type HermesResultsQuery,
 } from "./resultsTypes";
-import { resultKindLabel, resultSourceLabel } from "./resultsPresentation";
+import {
+  resultKindLabel,
+  resultSourceLabel,
+  resultStatusLabel,
+} from "./resultsPresentation";
 import { localizePath, type Locale } from "@/lib/locale";
 
 export type HermesResultsSearchParams = Record<
@@ -202,7 +206,7 @@ export function buildHermesResultsPageModel({
         },
         ...statusValues.map((status) => ({
           key: status,
-          label: status,
+          label: resultStatusLabel(status, locale),
           href: buildResultsHref(locale, withFilter(query, "status", status)),
           active: query.status === status,
         })),
@@ -213,7 +217,7 @@ export function buildHermesResultsPageModel({
   const activeParts = [
     query.kind ? `${text.kind}: ${resultKindLabel(query.kind, locale)}` : null,
     query.source ? `${text.source}: ${resultSourceLabel(query.source, locale)}` : null,
-    query.status ? `${text.status}: ${query.status}` : null,
+    query.status ? `${text.status}: ${resultStatusLabel(query.status, locale)}` : null,
     query.search ? `${text.search}: ${query.search}` : null,
   ].filter((value): value is string => value !== null);
   const hasFilters = activeParts.length > 0;

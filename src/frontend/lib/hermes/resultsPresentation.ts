@@ -80,6 +80,32 @@ export function resultSourceLabel(source: string, locale: Locale): string {
   return known[source] ?? source;
 }
 
+const statusLabels: Record<Locale, Record<string, string>> = {
+  en: {
+    available: "Available",
+    degraded: "Degraded",
+    empty: "Empty",
+    unavailable: "Unavailable",
+    pending: "Pending",
+    approved: "Approved",
+    rejected: "Rejected",
+  },
+  zh: {
+    available: "可用",
+    degraded: "已降级",
+    empty: "空",
+    unavailable: "不可用",
+    pending: "待定",
+    approved: "已批准",
+    rejected: "已拒绝",
+  },
+};
+
+/** Localized label for an item status value; unknown values pass through. */
+export function resultStatusLabel(status: string, locale: Locale): string {
+  return statusLabels[locale][status] ?? status;
+}
+
 export function resultAuthorityLabel(
   authority: HermesResultAuthority,
   locale: Locale,
