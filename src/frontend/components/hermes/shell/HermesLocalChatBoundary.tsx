@@ -173,12 +173,13 @@ export function HermesLocalChatBoundary({
                       : "Authorization complete. You can now chat with Hermes."
                     : ""}
                 </p>
-                {authorizedChatOpen ? (
+                {chatReplacesChildren ? (
                   /*
-                   * Fullscreen chat: the transcript owns the whole column and
-                   * the six workbench panels move into on-demand dock drawers.
-                   * Today's landing content is replaced, but its state node
-                   * stays for assistive tech and the closure gates.
+                   * Fullscreen chat on the Today route only: the transcript
+                   * owns the whole column and the six workbench panels move
+                   * into on-demand dock drawers. Other Hermes routes (tasks,
+                   * sessions, approvals, results) render their own content
+                   * without the active transcript stacked above it.
                    */
                   <div className="min-w-0" data-hermes-active-grid>
                     <p

@@ -635,7 +635,9 @@ if (modeMatches) {
 
     // Wait for the owner-ready client boundary before selecting; otherwise
     // its one-time shell transition can remount the server-rendered controller.
-    await expect(page.locator("[data-hermes-active-grid]")).toBeVisible();
+    // The dock rail is the owner-ready marker here: the fullscreen transcript
+    // grid only renders on the Today route.
+    await expect(page.locator("[data-hermes-dock-rail]")).toBeVisible();
     await expect(
       page.getByRole("textbox", { name: "Talk with Hermes" }),
     ).toBeDisabled();
