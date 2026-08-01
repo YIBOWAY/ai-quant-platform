@@ -72,7 +72,8 @@ export function DockRail({
   return (
     <nav
       aria-label={isZh ? "工作台面板" : "Workbench panels"}
-      className="fixed inset-y-0 right-0 z-30 flex w-[var(--spacing-dock-rail)] flex-col items-center gap-1 border-l border-border-subtle bg-bg-surface py-2"
+      className="fixed inset-y-0 right-0 z-50 flex w-[var(--spacing-dock-rail)] flex-col items-center gap-1 border-l border-border-subtle bg-bg-surface py-2"
+      data-hermes-active-rail
       data-hermes-dock-rail
     >
       {DOCK_PANELS.map((panel) => {

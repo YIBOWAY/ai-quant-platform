@@ -6,6 +6,7 @@ import {
   assertWholeHermesShellControlsUnclipped,
   assertWholeHermesShellWcagAaContrast,
 } from "./helpers/hermes-closure-gates";
+import { openDock } from "./helpers/hermes-dock";
 import {
   assertFullPageTargetsAndFocus,
   assertNoHorizontalOverflow,
@@ -210,6 +211,7 @@ async function expectExactRenderedAuthorities(
     initialCommandState: string;
   },
 ) {
+  await openDock(page, "activity");
   const activityRows = page.locator("[data-hermes-activity-row]");
   await expect(activityRows).toHaveCount(3);
   await expect
@@ -240,6 +242,7 @@ async function expectExactRenderedAuthorities(
       },
     ]);
 
+  await openDock(page, "approvals");
   const approvalRows = page.locator("[data-hermes-approval-row]");
   await expect(approvalRows).toHaveCount(1);
   await expect(approvalRows).toHaveAttribute(
@@ -250,6 +253,7 @@ async function expectExactRenderedAuthorities(
     approvalRows.locator("[data-hermes-approval-status]"),
   ).toHaveText(expected.approvalText);
 
+  await openDock(page, "gates");
   const gateRows = page.locator("[data-hermes-gate-row]");
   await expect(gateRows).toHaveCount(3);
   await expect
@@ -284,6 +288,7 @@ async function expectExactRenderedAuthorities(
       },
     ]);
 
+  await openDock(page, "results");
   const typedResultRows = page.locator("[data-hermes-typed-result-row]");
   await expect(typedResultRows).toHaveCount(1);
   await expect(typedResultRows).toHaveAttribute(
@@ -302,6 +307,7 @@ async function expectExactRenderedAuthorities(
     typedResultRows.getByText("Fixture terminal backtest", { exact: true }),
   ).toHaveCount(1);
 
+  await openDock(page, "authority");
   const authoritySlots = page.locator("[data-hermes-authority-slot]");
   await expect(authoritySlots).toHaveCount(4);
   await expect
@@ -681,6 +687,7 @@ if (modeMatches) {
       initialCommandState: "delivered",
     });
 
+    await openDock(page, "runs");
     const stopRow = page.locator(
       `[data-hermes-run-stop-row][data-hermes-run-id="${INITIAL_RUN_ID}"]`,
     );
@@ -702,6 +709,7 @@ if (modeMatches) {
     ).toBeVisible();
     await expect(stopRow).toHaveCount(0);
 
+    await openDock(page, "approvals");
     const approval = page.locator(
       `[data-hermes-approval-row][data-hermes-approval-id="${APPROVAL_ID}"]`,
     );
@@ -738,6 +746,7 @@ if (modeMatches) {
       ),
     ).toHaveCount(0);
 
+    await openDock(page, "gates");
     await expect(
       page.locator(
         '[data-hermes-gate-row][data-hermes-gate-kind="gate1"][data-hermes-gate-status="confirmed"]',
@@ -753,6 +762,7 @@ if (modeMatches) {
         '[data-hermes-gate-row][data-hermes-gate-kind="gate3"][data-hermes-gate-status="prepared"]',
       ),
     ).toHaveCount(1);
+    await openDock(page, "results");
     await expect(
       page.locator(
         '[data-hermes-typed-result-row][data-hermes-result-kind="backtest"][data-hermes-result-sample="sample"]',

@@ -74,6 +74,11 @@ function priorFromState(state: LoadState): PriorBundle | undefined {
   return undefined;
 }
 
+function pageScrollRegion(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  return document.querySelector<HTMLElement>("[data-page-scroll-region]");
+}
+
 /**
  * L3a + L3b: workbench-local transcript bound by active hermes_session_id.
  * Loads via same-origin messages BFF; soft-fails without breaking composer.
@@ -93,7 +98,7 @@ export function WorkbenchTranscriptPanel({
   const { state: followState } = useWorkspaceFollow();
   const [state, setState] = useState<LoadState>({ kind: "idle" });
   const [phase, setPhase] = useState<AssistantPhase>("idle");
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLElement | null>(null);
   const stickToBottomRef = useRef(true);
   const lastMessageKeyRef = useRef<string>("");
   const lastDirtySeqRef = useRef<number>(-1);
@@ -378,9 +383,21 @@ export function WorkbenchTranscriptPanel({
     el.scrollTop = el.scrollHeight;
   }, [canvasMessages]);
 
-  const onScroll = () => {
-    stickToBottomRef.current = isNearBottom(scrollRef.current);
-  };
+  // Scrolling belongs to the page-level region now, so stick-to-bottom binds to
+  // the nearest [data-page-scroll-region] ancestor instead of an inner box.
+  useEffect(() => {
+    const el = pageScrollRegion();
+    scrollRef.current = el;
+    if (!el) return;
+    const onScroll = () => {
+      stickToBottomRef.current = isNearBottom(el);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (scrollRef.current === el) scrollRef.current = null;
+    };
+  }, []);
 
   const phaseLabel =
     phase === "waiting"
@@ -506,12 +523,7 @@ export function WorkbenchTranscriptPanel({
       ) : null}
 
       {!showEmptyIdle && !showFirstLoad && !showHardUnavailable ? (
-        <div
-          className="max-h-[min(48vh,28rem)] overflow-y-auto rounded-lg"
-          data-hermes-transcript-scroll
-          onScroll={onScroll}
-          ref={scrollRef}
-        >
+        <div className="rounded-lg">
           <TranscriptCanvas
             assistantPhase={phase}
             hermesSessionId={

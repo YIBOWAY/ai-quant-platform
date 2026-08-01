@@ -5,6 +5,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import { WorkbenchCommandActivityPanel } from "@/components/hermes/activity/WorkbenchCommandActivityPanel";
 import { WorkbenchCommandApprovalsPanel } from "@/components/hermes/approvals/WorkbenchCommandApprovalsPanel";
 import { WorkbenchAuthorityProjectionPanel } from "@/components/hermes/authority/WorkbenchAuthorityProjectionPanel";
+import { DockDrawer } from "@/components/hermes/dock/DockDrawer";
+import { DockRail, useDockPanelState } from "@/components/hermes/dock/DockRail";
+import {
+  DOCK_PANELS,
+  dockPanelLabel,
+  pendingApprovalCount,
+  type DockPanelId,
+} from "@/components/hermes/dock/dockPanels";
 import { WorkbenchGateSurfacesPanel } from "@/components/hermes/gates/WorkbenchGateSurfacesPanel";
 import { WorkbenchTypedResultsPanel } from "@/components/hermes/results/WorkbenchTypedResultsPanel";
 import { WorkbenchRunStopPanel } from "@/components/hermes/run-control/WorkbenchRunStopPanel";
@@ -17,7 +25,7 @@ import {
   WORKBENCH_A11Y_MARKER,
   WORKBENCH_CONTENT_PAD_CLASS,
 } from "@/lib/hermes/workbenchA11y";
-import { WorkspaceFollowProvider } from "@/lib/hermes/workspaceFollowContext";
+import { WorkspaceFollowProvider, useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
 import type { HermesDeliveryState } from "@/lib/hermes/types";
 import type { Locale } from "@/lib/locale";
 
@@ -37,6 +45,52 @@ export type HermesLocalChatBoundaryProps = {
   /** When false, composer stays locked (should not use this boundary). */
   chatOpen: boolean;
 };
+
+/**
+ * Rail + drawer for the six workbench panels. Lives under the follow provider
+ * so the approvals badge reads the same projection the approvals panel does.
+ */
+function WorkbenchDock({ locale }: { locale: Locale }) {
+  const { open, toggle, close } = useDockPanelState();
+  const { state: follow } = useWorkspaceFollow();
+  const panel = DOCK_PANELS.find((entry) => entry.id === open) ?? null;
+
+  return (
+    <>
+      <DockRail
+        locale={locale}
+        onToggle={toggle}
+        open={open}
+        pendingApprovals={pendingApprovalCount(follow.approvals)}
+      />
+      <DockDrawer
+        locale={locale}
+        onClose={close}
+        open={panel !== null}
+        title={panel ? dockPanelLabel(panel, locale) : ""}
+      >
+        {open ? renderDockPanel(open, locale) : null}
+      </DockDrawer>
+    </>
+  );
+}
+
+function renderDockPanel(id: DockPanelId, locale: Locale) {
+  switch (id) {
+    case "approvals":
+      return <WorkbenchCommandApprovalsPanel locale={locale} />;
+    case "activity":
+      return <WorkbenchCommandActivityPanel locale={locale} />;
+    case "runs":
+      return <WorkbenchRunStopPanel locale={locale} />;
+    case "results":
+      return <WorkbenchTypedResultsPanel locale={locale} />;
+    case "gates":
+      return <WorkbenchGateSurfacesPanel locale={locale} />;
+    case "authority":
+      return <WorkbenchAuthorityProjectionPanel locale={locale} />;
+  }
+}
 
 /**
  * Client island: active Hermes session + shared L4b follow spine + transcript
@@ -74,12 +128,22 @@ export function HermesLocalChatBoundary({
           {/* role=region (not nested main element): root layout already owns document main. */}
           <div
             aria-label={isZh ? "Hermes 工作台主区" : "Hermes workbench main"}
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            className={`flex min-h-0 flex-1 flex-col overflow-hidden${
+              authorizedChatOpen ? " pr-[var(--spacing-dock-rail)]" : ""
+            }`}
             data-hermes-workbench-main
             role="region"
           >
+            {/*
+             * Single page-level scroll container. While chat is active it is
+             * also the transcript scroller (the transcript no longer owns an
+             * inner scrollbar), so both anchors sit on this one node.
+             */}
             <div
               className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
+              data-hermes-transcript-scroll={
+                authorizedChatOpen ? "" : undefined
+              }
               data-page-scroll-region
             >
               <div className={WORKBENCH_CONTENT_PAD_CLASS}>
@@ -103,32 +167,31 @@ export function HermesLocalChatBoundary({
                 </p>
                 {authorizedChatOpen ? (
                   /*
-                   * UI-2 Direction A active state: transcript main column +
-                   * 320px context rail at ≥1100px; single column below.
-                   * Owner/bootstrap admission and every panel's internal
-                   * contract remain unchanged.
+                   * Fullscreen chat: the transcript owns the whole column and
+                   * the six workbench panels move into on-demand dock drawers.
+                   * Today's landing content is replaced, but its state node
+                   * stays for assistive tech and the closure gates.
                    */
-                  <div
-                    className="grid min-w-0 grid-cols-1 gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_320px] min-[1100px]:items-start"
-                    data-hermes-active-grid
-                  >
-                    <div className="min-w-0" data-hermes-active-main>
+                  <div className="min-w-0" data-hermes-active-grid>
+                    <p
+                      className="sr-only"
+                      data-hermes-today-state="active"
+                      data-state="active"
+                      data-testid="hermes-today-state"
+                    >
+                      {isZh
+                        ? "今日概览已让位给对话；面板在右侧工作台面板栏。"
+                        : "Today's overview is replaced by the conversation; panels live in the workbench rail."}
+                    </p>
+                    <div
+                      className="mx-auto w-full max-w-[var(--spacing-chat-max)] min-w-0"
+                      data-hermes-active-main
+                    >
                       <WorkbenchTranscriptPanel locale={locale} />
                     </div>
-                    <aside
-                      className="flex min-w-0 flex-col gap-4 min-[1100px]:sticky min-[1100px]:top-4"
-                      data-hermes-active-rail
-                    >
-                      <WorkbenchCommandApprovalsPanel locale={locale} />
-                      <WorkbenchCommandActivityPanel locale={locale} />
-                      <WorkbenchRunStopPanel locale={locale} />
-                      <WorkbenchTypedResultsPanel locale={locale} />
-                      <WorkbenchGateSurfacesPanel locale={locale} />
-                      <WorkbenchAuthorityProjectionPanel locale={locale} />
-                    </aside>
                   </div>
                 ) : null}
-                {children}
+                {authorizedChatOpen ? null : children}
               </div>
             </div>
             {authorizedChatOpen ? (
@@ -180,6 +243,7 @@ export function HermesLocalChatBoundary({
               </div>
             ) : null}
           </div>
+          {authorizedChatOpen ? <WorkbenchDock locale={locale} /> : null}
         </div>
       </WorkspaceFollowProvider>
     </ActiveHermesSessionProvider>
