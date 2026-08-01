@@ -4,6 +4,20 @@ import { getHermesGatewayStatus, getHermesSessions } from "@/lib/api";
 import { localizePath } from "@/lib/locale";
 import { getServerLocale } from "@/lib/serverLocale";
 
+function formatSessionTime(value: string | null | undefined, locale: string): string {
+  if (!value) return "--";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Shanghai",
+  });
+}
+
 export default async function HermesSessionsPage() {
   const locale = await getServerLocale();
   const isZh = locale === "zh";
@@ -71,7 +85,13 @@ export default async function HermesSessionsPage() {
       ) : (
         <div className="space-y-3">
           <ul className="grid gap-3" data-hermes-session-list>
-            {sessions.sessions.map((session) => (
+            {sessions.sessions.map((session) => {
+              const cardTitle = session.title || session.preview || session.id;
+              // Only render the preview line when it adds information beyond
+              // the title (empty titles fall back to the preview above).
+              const previewLine =
+                session.preview && session.preview !== cardTitle ? session.preview : null;
+              return (
               <li key={session.id}>
                 <Card className="transition-colors hover:border-info/40">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -80,20 +100,23 @@ export default async function HermesSessionsPage() {
                         className="font-body-sm font-semibold text-text-primary underline-offset-2 hover:text-info hover:underline"
                         href={localizePath(`/hermes/sessions/${encodeURIComponent(session.id)}`, locale)}
                       >
-                        {session.title || session.preview || session.id}
+                        {cardTitle}
                       </Link>
-                      <p className="mt-1 line-clamp-2 font-body-sm text-text-secondary">
-                        {session.preview || (isZh ? "无会话摘要" : "No session preview")}
-                      </p>
+                      {previewLine ? (
+                        <p className="mt-1 line-clamp-2 font-body-sm text-text-secondary">
+                          {previewLine}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="shrink-0 text-right font-data-mono text-xs text-text-secondary">
                       <p>{session.message_count ?? 0} {isZh ? "条消息" : "messages"}</p>
-                      <p className="mt-1">{session.last_active || "--"}</p>
+                      <p className="mt-1">{formatSessionTime(session.last_active, locale)}</p>
                     </div>
                   </div>
                 </Card>
               </li>
-            ))}
+              );
+            })}
           </ul>
           {sessions.has_more ? (
             <p className="font-body-sm text-text-secondary" data-hermes-sessions-has-more>
