@@ -17,6 +17,21 @@
   --color-bg-surface: #181714;       /* cards, tables, panels */
   --color-bg-surface-muted: #23211C; /* inputs, nested panels, hover */
   --color-border-subtle: #302C25;    /* hairline borders */
+  --color-bg-overlay: #26242B;       /* drawers, popovers: one step above surface */
+
+  /* ---- Radii ---- */
+  --radius-card: 12px;
+  --radius-bubble: 16px;
+  --radius-input: 14px;
+
+  /* ---- Elevation ---- */
+  --shadow-overlay: 0 12px 40px rgba(0, 0, 0, 0.55);
+  --shadow-composer: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+  /* ---- Chat layout ---- */
+  --spacing-chat-max: 800px;
+  --spacing-dock-rail: 48px;
+  --spacing-drawer: 380px;
 
   --color-text-primary: #E7E0D3;
   --color-text-secondary: #9B9488;
@@ -82,9 +97,10 @@
   --radius-editorial: 2px;
 
   /* ---- Layout spacings ---- */
+  /* Deferred to Task 3: banner removal drops this token with its consumers. */
   --spacing-safety-strip-height: 36px;
   --spacing-stack-gap: 0.5rem;
-  --spacing-topbar-height: 64px;
+  --spacing-topbar-height: 56px;
   --spacing-sidebar-width: 240px;
   --spacing-gutter: 1rem;
   --spacing-container-padding: 1.5rem;
