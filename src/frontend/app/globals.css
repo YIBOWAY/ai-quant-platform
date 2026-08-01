@@ -97,11 +97,9 @@
   --radius-editorial: 2px;
 
   /* ---- Layout spacings ---- */
-  /* Deferred to Task 3: banner removal drops this token with its consumers. */
-  --spacing-safety-strip-height: 36px;
   --spacing-stack-gap: 0.5rem;
   --spacing-topbar-height: 56px;
-  --spacing-sidebar-width: 240px;
+  --spacing-sidebar-width: 220px;
   --spacing-gutter: 1rem;
   --spacing-container-padding: 1.5rem;
 

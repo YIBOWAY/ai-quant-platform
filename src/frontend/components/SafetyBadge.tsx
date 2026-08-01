@@ -21,6 +21,9 @@ const copy = {
     off: "off",
     api: "api",
     unavailable: "unavailable",
+    badge: "PAPER-ONLY",
+    badgeUnsafe: "CHECK SAFETY",
+    details: "Safety details",
   },
   zh: {
     paperOnly: "仅模拟",
@@ -37,10 +40,13 @@ const copy = {
     off: "关",
     api: "接口",
     unavailable: "不可用",
+    badge: "仅模拟",
+    badgeUnsafe: "安全待查",
+    details: "安全详情",
   },
 };
 
-export async function SafetyStrip() {
+export async function SafetyBadge() {
   const [settings, paperSafety, locale] = await Promise.all([
     getCachedSettings(),
     getCachedEffectivePaperSafety(),
@@ -86,19 +92,63 @@ export async function SafetyStrip() {
     liveStatus
   } · ${text.paperAuthority} ${paperAuthorityStatus} · ${text.api} ${health.status}`;
 
+  // Fail closed: anything short of "paper-only, live disabled, authority ready,
+  // API reachable" reads as an attention state, never as all-clear.
+  const allSafe =
+    paperOnly &&
+    liveDisabled &&
+    !killSwitchOn &&
+    paperSafety.effective === true &&
+    !paperSafety.apiError &&
+    health.status === "available";
+  const badgeLabel = allSafe ? text.badge : text.badgeUnsafe;
+  const dotClass = allSafe ? "bg-accent-success" : "bg-warning";
+
+  const rows: Array<{ label: string; value: string }> = [
+    { label: text.paperOnly, value: paperOnly ? text.on : text.off },
+    { label: liveStatus, value: liveDisabled ? text.on : text.off },
+    { label: text.kill, value: killStatus },
+    { label: text.accountFrozen, value: accountFrozenStatus },
+    {
+      label: text.paperAuthority,
+      value: `${paperAuthorityStatus} (${text.epoch} ${epochStatus})`,
+    },
+    { label: text.api, value: health.status },
+  ];
+
   return (
     <div
       aria-label={desktopStatus}
-      className="fixed top-16 left-0 right-0 z-30 flex h-[36px] items-center justify-start overflow-hidden border-b border-amber-900/50 bg-amber-950/20 px-3 sm:justify-center lg:left-[240px]"
+      className="relative shrink-0"
       data-global-safety-strip
       data-testid="global-safety-strip"
       role="status"
     >
-      <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-widest text-amber-500">
-        <ShieldAlert size={14} className="text-amber-500" />
-        <span className="min-w-0 truncate sm:hidden">{mobileStatus}</span>
-        <span className="hidden sm:inline">{desktopStatus}</span>
-      </div>
+      <details className="group">
+        <summary
+          aria-label={text.details}
+          className="app-touch-target flex cursor-pointer list-none items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-2.5 font-mono text-[10px] font-bold uppercase tracking-widest text-warning marker:hidden"
+        >
+          <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+          <ShieldAlert size={13} className="shrink-0" />
+          <span>{badgeLabel}</span>
+        </summary>
+        <div
+          className="absolute right-0 top-[calc(100%+6px)] z-50 w-[min(320px,80vw)] rounded-[var(--radius-card)] bg-[var(--color-bg-overlay)] p-3 shadow-[var(--shadow-overlay)]"
+        >
+          <ul className="space-y-1.5 font-mono text-[11px] leading-relaxed text-text-primary">
+            {rows.map((row) => (
+              <li className="flex items-baseline justify-between gap-3" key={row.label}>
+                <span className="min-w-0 truncate text-text-secondary">{row.label}</span>
+                <span className="shrink-0 uppercase tracking-wide">{row.value}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 border-t border-border-subtle pt-2 font-mono text-[10px] leading-relaxed text-text-secondary">
+            {mobileStatus}
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

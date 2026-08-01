@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { Menu, Search, Settings, Terminal, X } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
@@ -99,9 +99,13 @@ function labelFor(text: FlatCopy, id: NavItemId): string {
 export function TopBar({
   shellEnabled,
   agentStudioRedirect = false,
+  safetySlot,
 }: {
   shellEnabled: boolean;
   agentStudioRedirect?: boolean;
+  /** Server-rendered <SafetyBadge />: this component is a client boundary, so
+      the async badge is passed in as a child instead of imported here. */
+  safetySlot?: ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -149,7 +153,7 @@ export function TopBar({
 
   return (
     <>
-    <header className="fixed top-0 left-0 right-0 z-40 flex h-16 items-center justify-between border-b border-border-subtle bg-bg-base/80 px-3 backdrop-blur-md lg:left-[240px] lg:px-6">
+    <header className="fixed top-0 left-0 right-0 z-40 flex h-[var(--spacing-topbar-height)] items-center justify-between border-b border-border-subtle bg-bg-base/80 px-3 backdrop-blur-md lg:left-[220px] lg:px-6">
       <div className="flex h-full min-w-0 w-full items-center gap-3 lg:gap-8">
         <button
           aria-controls="mobile-navigation"
@@ -162,11 +166,11 @@ export function TopBar({
         >
           {menuOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
-        <form className="relative hidden md:flex items-center" onSubmit={submitSearch}>
+        <form className="relative hidden md:flex w-full max-w-[320px] items-center" onSubmit={submitSearch}>
           <Search className="absolute left-3 text-text-secondary" size={16} />
           <input
             aria-label={text.search}
-            className="app-touch-target w-64 rounded-lg border border-border-subtle bg-bg-surface py-2 pl-9 pr-4 font-sans text-sm text-text-primary placeholder-text-secondary focus:border-info focus:outline-none focus:ring-1 focus:ring-info"
+            className="app-touch-target w-full max-w-[320px] rounded-lg border border-border-subtle bg-bg-surface py-2 pl-9 pr-4 font-sans text-sm text-text-primary placeholder-text-secondary focus:border-info focus:outline-none focus:ring-1 focus:ring-info"
             onChange={(event) => setQuery(event.target.value)}
             placeholder={text.search}
             type="text"
@@ -176,6 +180,7 @@ export function TopBar({
       </div>
 
       <div className="flex shrink-0 items-center gap-2 lg:gap-4">
+        {safetySlot}
         <Suspense fallback={<LocaleToggleFallback />}>
           <LocaleToggle />
         </Suspense>
@@ -200,7 +205,7 @@ export function TopBar({
       </div>
     </header>
     {menuOpen ? (
-      <div className="fixed left-0 right-0 top-16 z-50 max-h-[calc(100dvh-4rem)] overflow-y-auto border-b border-border-subtle bg-bg-sidebar p-3 shadow-xl lg:hidden">
+      <div className="fixed left-0 right-0 top-[var(--spacing-topbar-height)] z-50 max-h-[calc(100dvh-var(--spacing-topbar-height))] overflow-y-auto border-b border-border-subtle bg-bg-sidebar p-3 shadow-xl lg:hidden">
         <nav aria-label={text.mobileMenu} className="space-y-4" id="mobile-navigation">
           {mobileNavSections.map((section) => (
             <section key={section.name}>

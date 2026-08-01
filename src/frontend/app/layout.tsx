@@ -3,7 +3,7 @@ import localFont from 'next/font/local';
 import './globals.css';
 import { Sidebar } from '@/components/Sidebar';
 import { TopBar } from '@/components/TopBar';
-import { SafetyStrip } from '@/components/SafetyStrip';
+import { SafetyBadge } from '@/components/SafetyBadge';
 import { Providers } from '@/components/Providers';
 import { LocaleProvider } from '@/components/LocaleProvider';
 import { hermesFeatureFlags } from '@/lib/hermes/featureFlags';
@@ -74,13 +74,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             />
             <TopBar
               agentStudioRedirect={flags.agentStudioRedirect}
+              safetySlot={<SafetyBadge />}
               shellEnabled={shellEnabled}
             />
-            <SafetyStrip />
             {/* h-screen + pt makes the content area a *fixed* height box (viewport
-                minus the 100px topbar+safety strip), so child pages using h-full /
-                flex-1 can size correctly instead of collapsing to content height. */}
-            <main className="ml-0 h-screen overflow-hidden bg-bg-base pt-[100px] lg:ml-[240px]">
+                minus the topbar), so child pages using h-full / flex-1 can size
+                correctly instead of collapsing to content height. */}
+            <main className="ml-0 h-screen overflow-hidden bg-bg-base pt-[var(--spacing-topbar-height)] lg:ml-[220px]">
               {children}
             </main>
           </Providers>

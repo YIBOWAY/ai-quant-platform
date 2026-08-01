@@ -123,7 +123,7 @@ export function Sidebar({
 
   return (
     <nav
-      className="fixed left-0 top-0 z-50 hidden h-full w-[240px] flex-col border-r border-border-subtle bg-bg-sidebar lg:flex"
+      className="fixed left-0 top-0 z-50 hidden h-full w-[220px] flex-col border-r border-border-subtle bg-bg-sidebar lg:flex"
       data-testid="desktop-sidebar"
     >
       <div className="border-b border-border-subtle p-6">
@@ -150,7 +150,7 @@ export function Sidebar({
         <div className="space-y-5">
           {navSections.map((section) => (
             <section key={section.name}>
-              <h2 className="px-3 pb-2 font-label-caps text-[10px] text-text-secondary/70">
+              <h2 className="px-3 pb-2 font-label-caps text-[10px] text-text-secondary opacity-60">
                 {section.name}
               </h2>
               <ul className="space-y-1">
@@ -166,7 +166,7 @@ export function Sidebar({
                         prefetch={disableNavigationPrefetch ? false : undefined}
                         className={`app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight transition-colors ${
                           isActive
-                            ? "border-l-2 border-text-primary bg-bg-sidebar-muted font-semibold text-text-primary"
+                            ? "border-l-2 border-[var(--color-hermes)] bg-transparent font-semibold text-text-primary"
                             : "border-l-2 border-transparent text-text-secondary hover:bg-bg-sidebar-muted hover:text-text-primary"
                         }`}
                       >

@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const safetyStripPath = path.join(process.cwd(), "components/SafetyStrip.tsx");
+const safetyBadgePath = path.join(process.cwd(), "components/SafetyBadge.tsx");
 const serverApiPath = path.join(process.cwd(), "lib/serverApi.ts");
 
-describe("SafetyStrip provider-free SSR authority", () => {
+describe("SafetyBadge provider-free SSR authority", () => {
   it("uses settings safety and fails closed when that projection is unavailable", () => {
-    const source = readFileSync(safetyStripPath, "utf8");
+    const source = readFileSync(safetyBadgePath, "utf8");
 
     expect(source).toContain("getCachedSettings()");
     expect(source).toContain("getCachedEffectivePaperSafety()");
