@@ -374,7 +374,7 @@ test("@combined-fixture Hermes Approvals navigates complete GET-only candidate e
     await expect(
       page.locator(`[data-hermes-selected-candidate="${approvedId}"]`),
     ).toBeVisible();
-    await expect(page.getByText("平台不可 review")).toBeVisible();
+    await expect(page.getByText("平台评审接口")).toBeVisible();
     await expect(page.locator('[data-hermes-candidate-events="review"]')).toContainText(
       "fixture review",
     );
@@ -392,7 +392,7 @@ test("@combined-fixture Hermes Approvals navigates complete GET-only candidate e
     await expect(page.locator("[data-hermes-promoted-registry]")).toHaveCount(0);
     await expect(page.locator("[data-hermes-promoted-factor-list]")).toHaveCount(0);
     await expect(page.getByText("仅为迁移证据，不能审批")).toBeVisible();
-    await expect(page.getByText("平台不可 review")).toBeVisible();
+    await expect(page.getByText("平台评审接口")).toBeVisible();
   }
 
   await expect(page.locator("[data-hermes-gate2-controls]")).toHaveCount(0);
