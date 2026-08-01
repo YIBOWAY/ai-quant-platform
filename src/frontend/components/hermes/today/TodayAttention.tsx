@@ -141,7 +141,7 @@ export function TodayAttention({ items, locale }: TodayAttentionProps) {
           return (
             <li key={`approval:${row.approval_id}`}>
               <div
-                className="flex flex-wrap items-center gap-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3"
+                className="flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-warning/30 bg-warning/5 px-4 py-3"
                 data-hermes-approval-decidable={decidable ? "true" : "false"}
                 data-hermes-approval-id={row.approval_id}
                 data-hermes-attention-kind="command_approval"
@@ -239,7 +239,7 @@ export function TodayAttention({ items, locale }: TodayAttentionProps) {
           return (
             <li key={item.id}>
               <div
-                className="flex flex-wrap items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface px-4 py-3"
+                className="flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-border-subtle bg-bg-surface px-4 py-3"
                 data-hermes-attention-id={item.id}
                 data-hermes-attention-kind={item.kind}
               >

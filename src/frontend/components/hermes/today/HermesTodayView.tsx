@@ -31,7 +31,7 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
   return (
     <section
       aria-labelledby="hermes-today-title"
-      className="flex flex-col gap-4 sm:gap-5"
+      className="flex flex-col gap-6"
       data-hermes-today
       data-hermes-today-state={model.state}
       data-state={model.state}
@@ -55,7 +55,7 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
         summary={copy.labels.technicalDetails}
       >
         <ArtifactFeed envelope={artifacts} locale={locale} sourcesOnly />
-        <div className="rounded-lg border border-border-subtle bg-bg-base p-3">
+        <div className="rounded-[var(--radius-card)] border border-border-subtle bg-bg-base p-3">
           <p className="font-label-caps text-text-secondary">hermes_gateway</p>
           <p className="mt-1 font-data-mono text-xs text-text-primary">
             {model.gateway.readStatus}
@@ -76,7 +76,7 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
           <dl className="grid gap-2 sm:grid-cols-2">
             {model.technical.map((source) => (
               <div
-                className="rounded-lg border border-border-subtle bg-bg-base p-3"
+                className="rounded-[var(--radius-card)] border border-border-subtle bg-bg-base p-3"
                 key={source.id}
               >
                 <dt className="font-label-caps text-text-secondary">{source.label}</dt>

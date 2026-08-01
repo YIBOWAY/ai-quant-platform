@@ -71,9 +71,9 @@ export function HermesInternalNav({ locale }: HermesInternalNavProps) {
   return (
     <nav
       aria-label={text.nav.landmark}
-      className="shrink-0 border-b border-border-subtle bg-bg-surface px-3 py-2"
+      className="shrink-0 border-b border-border-subtle bg-bg-surface px-3"
     >
-      <ul className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-wrap gap-2">
+      <ul className="mx-auto flex w-full max-w-[var(--spacing-hermes-content-max)] flex-wrap gap-6">
         {entries.map((entry) => {
           const barePath = splitLocalePath(entry.href).pathname;
           const isActive =
@@ -85,10 +85,10 @@ export function HermesInternalNav({ locale }: HermesInternalNavProps) {
             <li key={entry.id}>
               <Link
                 aria-current={isActive ? "page" : undefined}
-                className={`app-touch-target inline-flex items-center justify-center rounded-lg border px-3 font-body-sm transition-colors ${
+                className={`app-touch-target -mb-px inline-flex items-center justify-center border-b-2 font-body-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info ${
                   isActive
-                    ? "border-info/40 bg-info/10 text-text-primary"
-                    : "border-border-subtle text-text-secondary hover:bg-bg-surface-muted hover:text-text-primary"
+                    ? "border-[var(--color-hermes)] text-text-primary"
+                    : "border-transparent text-text-secondary hover:text-text-primary"
                 }`}
                 href={entry.href}
                 prefetch={false}

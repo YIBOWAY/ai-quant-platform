@@ -108,7 +108,7 @@ export function OwnerSessionBootstrapPanel({
   return (
     <section
       aria-labelledby="hermes-owner-bootstrap-title"
-      className="mb-4 rounded-lg border border-info/40 bg-info/5 p-4"
+      className="mx-auto mb-4 mt-16 max-w-[480px] rounded-[var(--radius-card)] border border-border-subtle bg-bg-surface p-8 text-center"
     >
       <p aria-live="polite" className="sr-only" role="status">
         {isZh
@@ -116,7 +116,7 @@ export function OwnerSessionBootstrapPanel({
           : "First-use authorization is required. Write controls are temporarily locked."}
       </p>
       <h2
-        className="font-headline-sm text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+        className="font-headline-lg text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
         id="hermes-owner-bootstrap-title"
         ref={headingRef}
         tabIndex={-1}
@@ -124,68 +124,70 @@ export function OwnerSessionBootstrapPanel({
         {isZh ? "首次使用授权" : "First-use authorization"}
       </h2>
       <p
-        className="mt-1 font-body-sm text-text-secondary"
+        className="mt-3 font-body-sm text-text-secondary"
         id="hermes-owner-bootstrap-hint"
       >
         {isZh
           ? "在 Platform release checkout 根目录的后端终端运行以下命令，然后把一次性 token 粘贴到这里。token 只用于建立本机 owner 会话，不会保存到浏览器存储。"
           : "From the Platform release checkout root, run the command below in the backend terminal, then paste the one-time token here. It only establishes the local owner session and is not saved in browser storage."}
       </p>
-      <code className="mt-2 block overflow-x-auto rounded bg-bg-surface-muted px-3 py-2 font-mono text-xs text-text-primary">
+      <code className="mt-4 block overflow-x-auto rounded-[var(--radius-card)] bg-bg-surface-muted px-3 py-2 text-left font-mono text-xs text-text-primary">
         {OWNER_BOOTSTRAP_COMMAND}
       </code>
-      <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={submit}>
+      <form className="mt-4 flex flex-col gap-2" onSubmit={submit}>
         <label className="sr-only" htmlFor="hermes-owner-bootstrap-token">
           {isZh ? "一次性 bootstrap token" : "One-time bootstrap token"}
         </label>
-        <input
-          aria-describedby={
-            error
-              ? "hermes-owner-bootstrap-hint hermes-owner-bootstrap-error"
-              : "hermes-owner-bootstrap-hint"
-          }
-          autoComplete="one-time-code"
-          className="app-touch-target min-w-0 flex-1 rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-mono text-sm text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
-          disabled={state === "submitting"}
-          id="hermes-owner-bootstrap-token"
-          maxLength={256}
-          minLength={32}
-          name="owner_bootstrap_token"
-          onChange={(event) => {
-            setToken(event.target.value);
-            if (error) setError(null);
-          }}
-          placeholder={isZh ? "粘贴一次性 token" : "Paste one-time token"}
-          required
-          spellCheck={false}
-          type={revealToken ? "text" : "password"}
-          value={token}
-        />
-        <button
-          aria-label={
-            revealToken
+        <div className="flex gap-2">
+          <input
+            aria-describedby={
+              error
+                ? "hermes-owner-bootstrap-hint hermes-owner-bootstrap-error"
+                : "hermes-owner-bootstrap-hint"
+            }
+            autoComplete="one-time-code"
+            className="app-touch-target min-w-0 flex-1 rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 font-mono text-sm text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+            disabled={state === "submitting"}
+            id="hermes-owner-bootstrap-token"
+            maxLength={256}
+            minLength={32}
+            name="owner_bootstrap_token"
+            onChange={(event) => {
+              setToken(event.target.value);
+              if (error) setError(null);
+            }}
+            placeholder={isZh ? "粘贴一次性 token" : "Paste one-time token"}
+            required
+            spellCheck={false}
+            type={revealToken ? "text" : "password"}
+            value={token}
+          />
+          <button
+            aria-label={
+              revealToken
+                ? isZh
+                  ? "隐藏一次性 token"
+                  : "Hide one-time token"
+                : isZh
+                  ? "显示一次性 token"
+                  : "Show one-time token"
+            }
+            className="app-touch-target shrink-0 rounded-[var(--radius-card)] border border-border-subtle bg-bg-surface-muted px-3 py-2 font-body-sm text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
+            disabled={state === "submitting"}
+            onClick={() => setRevealToken((visible) => !visible)}
+            type="button"
+          >
+            {revealToken
               ? isZh
-                ? "隐藏一次性 token"
-                : "Hide one-time token"
+                ? "隐藏"
+                : "Hide"
               : isZh
-                ? "显示一次性 token"
-                : "Show one-time token"
-          }
-          className="app-touch-target rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 font-body-sm text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
-          disabled={state === "submitting"}
-          onClick={() => setRevealToken((visible) => !visible)}
-          type="button"
-        >
-          {revealToken
-            ? isZh
-              ? "隐藏"
-              : "Hide"
-            : isZh
-              ? "显示"
-              : "Show"}
-        </button>
+                ? "显示"
+                : "Show"}
+          </button>
+        </div>
         <button
-          className="app-touch-target rounded-lg border border-info/50 bg-info/10 px-4 py-2 font-body-sm text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
+          className="app-touch-target w-full rounded-[var(--radius-card)] bg-[var(--color-hermes)] px-4 py-2 font-body-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
           disabled={state === "submitting"}
           type="submit"
         >
@@ -200,7 +202,7 @@ export function OwnerSessionBootstrapPanel({
       </form>
       {error ? (
         <p
-          className="mt-2 rounded bg-bg-base px-2 py-1 font-body-sm text-danger"
+          className="mt-3 rounded-[var(--radius-card)] bg-bg-base px-2 py-1 font-body-sm text-danger"
           id="hermes-owner-bootstrap-error"
           role="alert"
         >

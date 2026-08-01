@@ -56,7 +56,7 @@ export default async function HermesWorkbenchPage({
       {deepLinkedSessionId ? (
         <HermesSessionDeepLinkBinder hermesSessionId={deepLinkedSessionId} />
       ) : null}
-      <div className="flex flex-col gap-5 sm:gap-6">
+      <div className="flex flex-col gap-6">
         <HermesTodayView artifacts={artifacts} locale={locale} model={overview} />
         <TodayResults
           hqaConclusions={[]}
