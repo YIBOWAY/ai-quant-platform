@@ -108,9 +108,15 @@ export function WorkspaceFollowProvider({
         event.state === "succeeded" &&
         isUsableHermesApiSessionId(event.hermes_session_id)
       ) {
+        // onlyIfEmpty: replayed ledger history must not auto-resume an old
+        // conversation over the Today landing dashboard. Deliver-time binds
+        // (send, fork, deep link, New blank conversation) set the session
+        // before this event arrives, so they always win; a replay with no
+        // explicit selection stays on the dashboard.
         setActiveHermesSession({
           hermesSessionId: event.hermes_session_id,
           commandId: event.command_id,
+          onlyIfEmpty: true,
         });
       } else if (event.state === "succeeded") {
         bumpTranscript();

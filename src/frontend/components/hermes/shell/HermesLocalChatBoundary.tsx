@@ -21,7 +21,7 @@ import { ComposerSubmitController } from "@/components/hermes/ComposerSubmitCont
 import { OwnerSessionBootstrapPanel } from "@/components/hermes/OwnerSessionBootstrapPanel";
 import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { WorkbenchTranscriptPanel } from "@/components/hermes/transcript/WorkbenchTranscriptPanel";
-import { ActiveHermesSessionProvider } from "@/lib/hermes/activeSession";
+import { ActiveHermesSessionProvider, useOptionalActiveHermesSession } from "@/lib/hermes/activeSession";
 import { HermesChatActiveProvider } from "@/lib/hermes/chatActiveContext";
 import {
   WORKBENCH_A11Y_MARKER,
@@ -100,7 +100,11 @@ function renderDockPanel(id: DockPanelId, locale: Locale) {
  * + command activity + composer. Keeps server shell free of cookie/fetch.
  * L5c: main landmark + responsive content pad + workbench a11y marker.
  */
-export function HermesLocalChatBoundary({
+/**
+ * Shell body, rendered inside ActiveHermesSessionProvider so the fullscreen
+ * gate can read whether a conversation is actually active.
+ */
+function HermesLocalChatShell({
   locale,
   deliveryState,
   children,
@@ -111,11 +115,18 @@ export function HermesLocalChatBoundary({
   const [ownerReady, setOwnerReady] = useState(false);
   const [bootstrapCompleted, setBootstrapCompleted] = useState(false);
   const authorizedChatOpen = chatOpen && ownerReady;
-  // Fullscreen chat replaces the Today landing content only. Every other Hermes
-  // route (sessions, tasks, approvals, results) renders its own page below the
-  // transcript; blanking those children would make the routes render empty.
+  const activeSession = useOptionalActiveHermesSession();
+  const hasActiveSession = Boolean(activeSession?.hermesSessionId);
+  // Fullscreen chat replaces the Today landing content only when a
+  // conversation is actually active on the Today route. With no active
+  // session the dashboard lanes (greeting / status / attention / running /
+  // results / automation) stay visible as the landing surface. Every other
+  // Hermes route (sessions, tasks, approvals, results) renders its own page
+  // below the transcript; blanking those children would make the routes
+  // render empty.
   const isTodayRoute = splitLocalePath(usePathname()).pathname === "/hermes";
-  const chatReplacesChildren = authorizedChatOpen && isTodayRoute;
+  const chatReplacesChildren =
+    authorizedChatOpen && isTodayRoute && hasActiveSession;
 
   useEffect(() => {
     if (!authorizedChatOpen || !bootstrapCompleted) return;
@@ -126,8 +137,7 @@ export function HermesLocalChatBoundary({
   }, [authorizedChatOpen, bootstrapCompleted]);
 
   return (
-    <ActiveHermesSessionProvider>
-      <WorkspaceFollowProvider enabled={authorizedChatOpen}>
+    <WorkspaceFollowProvider enabled={authorizedChatOpen}>
         <div
           className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
           data-hermes-workspace-follow="l4b-m1"
@@ -266,6 +276,18 @@ export function HermesLocalChatBoundary({
           {authorizedChatOpen ? <WorkbenchDock locale={locale} /> : null}
         </div>
       </WorkspaceFollowProvider>
+  );
+}
+
+/**
+ * Client island: active Hermes session + shared L4b follow spine + transcript
+ * + command activity + composer. Keeps server shell free of cookie/fetch.
+ * L5c: main landmark + responsive content pad + workbench a11y marker.
+ */
+export function HermesLocalChatBoundary(props: HermesLocalChatBoundaryProps) {
+  return (
+    <ActiveHermesSessionProvider>
+      <HermesLocalChatShell {...props} />
     </ActiveHermesSessionProvider>
   );
 }

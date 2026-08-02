@@ -18,9 +18,7 @@ import {
 import { LONG_ID_CLASS, displayId } from "@/lib/hermes/workbenchA11y";
 import {
   fetchHermesSessionMessages,
-  fetchWorkspaceSnapshot,
   isTerminalCommandState,
-  latestReadyManagedSessionProjection,
   type HermesSessionMessage,
 } from "@/lib/hermes/workspaceClient";
 import { useWorkspaceFollow } from "@/lib/hermes/workspaceFollowContext";
@@ -90,7 +88,6 @@ export function WorkbenchTranscriptPanel({
   const isZh = locale === "zh";
   const {
     hermesSessionId,
-    setActiveHermesSession,
     transcriptEpoch,
     pendingUserText,
     setPendingUserText,
@@ -107,33 +104,11 @@ export function WorkbenchTranscriptPanel({
   const hermesSessionIdRef = useRef<string | null>(hermesSessionId);
   hermesSessionIdRef.current = hermesSessionId;
 
-  // Bootstrap only from the newest exact ready Web-managed registry row.
-  // Commands may carry historical run_* identities that are readable but are
-  // not writable managed-session authority.
-  useEffect(() => {
-    if (hermesSessionId) return;
-    let cancelled = false;
-    const ac = new AbortController();
-    (async () => {
-      try {
-        const snap = await fetchWorkspaceSnapshot(undefined, ac.signal);
-        if (cancelled) return;
-        const managed = latestReadyManagedSessionProjection(snap);
-        if (!managed) return;
-        // onlyIfEmpty: late snapshot must not clobber a deliver-time bind.
-        setActiveHermesSession({
-          hermesSessionId: managed.hermes_session_id,
-          onlyIfEmpty: true,
-        });
-      } catch {
-        // Snapshot optional for empty workbench.
-      }
-    })();
-    return () => {
-      cancelled = true;
-      ac.abort();
-    };
-  }, [hermesSessionId, setActiveHermesSession]);
+  // No snapshot bootstrap: a managed row from an earlier browser visit is
+  // stale history, and auto-resuming it would replace the Today landing
+  // dashboard with a fullscreen transcript on every reload. Sessions are
+  // entered explicitly — deep link, sessions-page fork, or "New blank
+  // conversation" — all of which bind the active session directly.
 
   // Plan-V6-Token-Stream-M1: load/refetch messages BFF (text authority).
   // Triggered by session bind, transcriptEpoch, and spine transcriptDirtySeq.
