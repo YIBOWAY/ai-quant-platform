@@ -241,8 +241,8 @@ export function WorkbenchGateSurfacesPanel({
         >
           <p className="border-b border-border-subtle px-3 py-2 font-body-sm text-text-secondary break-words">
             {isZh
-              ? "Domain Gate 1/2/3：与 command-approval 分离。Gate 1 绑定 task+source SHA-256+note；Gate 2 绑定 candidate+digest+pending；Gate 3 仅 prepare（不 Git commit）。无 always-allow。空列表诚实。"
-              : "Domain Gate 1/2/3: separate from command-approval. Gate 1 binds task+source SHA-256+note; Gate 2 binds candidate+digest+pending; Gate 3 prepare-only (no Git commit). No always-allow. Empty is honest."}
+              ? "Domain Gate 1/2/3：与 command-approval 分离。Gate 1/2 保持同一计划 Attempt；Gate 3 必须进入 ContinueResearch 的新 Attempt/Run，且仅 prepare（不 Git commit）。无 always-allow。"
+              : "Domain Gate 1/2/3: separate from command-approval. Gates 1/2 stay on the plan Attempt; Gate 3 must use a new ContinueResearch Attempt/Run and is prepare-only (no Git commit). No always-allow."}
           </p>
 
           {lastError ? (
@@ -307,6 +307,31 @@ export function WorkbenchGateSurfacesPanel({
                         task: {row.task_ref || row.task_id}
                       </p>
                     ) : null}
+                    {row.attempt_ref ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        attempt: {row.attempt_ref}
+                      </p>
+                    ) : null}
+                    {row.hqa_run_ref ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        HQA run: {row.hqa_run_ref}
+                      </p>
+                    ) : null}
+                    {row.hermes_session_id ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        Hermes session: {row.hermes_session_id}
+                      </p>
+                    ) : null}
+                    {row.hermes_run_id ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        Hermes run: {row.hermes_run_id}
+                      </p>
+                    ) : null}
+                    {row.command_ref || row.command_id ? (
+                      <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                        command: {row.command_ref || row.command_id}
+                      </p>
+                    ) : null}
                     {row.candidate_ref || row.candidate_id ? (
                       <p className="font-data-mono text-[11px] text-text-secondary break-all">
                         candidate: {row.candidate_ref || row.candidate_id}
@@ -336,6 +361,74 @@ export function WorkbenchGateSurfacesPanel({
                       <p className="font-data-mono text-[11px] text-text-secondary">
                         decided: {row.decided_at}
                       </p>
+                    ) : null}
+                    {kind === "gate3" &&
+                    (row.promotion_id ||
+                      row.worktree ||
+                      row.patch ||
+                      row.manifest) ? (
+                      <div
+                        className="space-y-1 rounded border border-warning/40 bg-warning/5 p-2"
+                        data-hermes-gate-review-materials
+                      >
+                        <p className="font-body-sm text-text-primary">
+                          {row.status === "completed"
+                            ? isZh
+                              ? "论文流程已完成：人工 commit、Task/Attempt terminal 与 Gate 3 passed 均已绑定"
+                              : "Paper flow completed: human commit, terminal Task/Attempt, and passed Gate 3 are bound"
+                            : row.human_git_commit_required
+                            ? isZh
+                              ? "晋升材料已准备；仍需人工审阅 diff 并 Git commit"
+                              : "Promotion materials are ready; human diff review and Git commit are still required"
+                            : isZh
+                              ? "晋升审阅材料"
+                              : "Promotion review materials"}
+                        </p>
+                        {row.promotion_id ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            promotion: {row.promotion_id}
+                          </p>
+                        ) : null}
+                        {row.worktree ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            worktree: {row.worktree}
+                          </p>
+                        ) : null}
+                        {row.patch ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            patch: {row.patch}
+                          </p>
+                        ) : null}
+                        {row.manifest ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            manifest: {row.manifest}
+                          </p>
+                        ) : null}
+                        <p className="font-body-sm text-text-secondary">
+                          {row.reviewed_commit
+                            ? isZh
+                              ? `已审阅 commit：${row.reviewed_commit}`
+                              : `Reviewed commit: ${row.reviewed_commit}`
+                            : isZh
+                              ? "尚无 reviewed_commit；prepared 不等于 Gate 3 完成。"
+                              : "No reviewed_commit yet; prepared is not Gate 3 completion."}
+                        </p>
+                        {row.provider_evidence_ref ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            provider evidence: {row.provider_evidence_ref}
+                          </p>
+                        ) : null}
+                        {row.workflow_audit_ref ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            workflow audit: {row.workflow_audit_ref}
+                          </p>
+                        ) : null}
+                        {row.hqa_completion_receipt_ref ? (
+                          <p className="font-data-mono text-[11px] text-text-secondary break-all">
+                            completion receipt: {row.hqa_completion_receipt_ref}
+                          </p>
+                        ) : null}
+                      </div>
                     ) : null}
 
                     {actionable ? (

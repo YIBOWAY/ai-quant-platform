@@ -100,6 +100,15 @@ from quant_system.hermes.gate_surface_authority import (
     GateSurfaceAuthorityError,
     default_gate_surface_authority,
 )
+from quant_system.hermes.paper_gate_authority import (
+    PaperGateAuthority,
+    PaperGateAuthorityConflict,
+    PaperGateAuthorityError,
+    PaperGateAuthorityUnavailable,
+    PaperGateAuthorityValidationError,
+    PaperGateExecutionPort,
+    PaperGateReceipt,
+)
 from quant_system.hermes.public_cutover_authority import (
     PublicCutoverAuthorityError,
     default_public_cutover_authority,
@@ -126,6 +135,9 @@ from quant_system.hermes.session_registry import (
     get_workspace_session,
     register_workspace_session,
     require_web_writable_session,
+)
+from quant_system.hermes.vertical_a_durable_authority import (
+    PostgresVerticalAAuthority,
 )
 from quant_system.hermes.vertical_binding_authority import (
     VerticalBindingAuthorityError,
@@ -197,6 +209,10 @@ class ActionReceipt:
     attempt_id: str | None = None
     result_id: str | None = None
     terminal_status: str | None = None
+    # Production Vertical-A domain request. This is not a transport Command,
+    # HQA Task/Attempt, Hermes Run, or completed result.
+    domain_request_id: str | None = None
+    domain_request_status: str | None = None
     # V7g-B-M3: optional Gate1 id after vertical.factor_b.gate1_seed.
     gate_id: str | None = None
     # V8-M5: optional canary grant identity (issue/revoke/accept).
@@ -248,6 +264,11 @@ class ActionReceipt:
             payload["result_id"] = self.result_id
         if self.terminal_status is not None:
             payload["terminal_status"] = self.terminal_status
+        if self.domain_request_id is not None:
+            payload["domain_request_id"] = self.domain_request_id
+            payload["domain_request_ref"] = f"options-request:{self.domain_request_id}"
+        if self.domain_request_status is not None:
+            payload["domain_request_status"] = self.domain_request_status
         if self.gate_id is not None:
             payload["gate_id"] = self.gate_id
         if self.grant_id is not None:
@@ -355,6 +376,8 @@ def _receipt(
     attempt_id: str | None = None,
     result_id: str | None = None,
     terminal_status: str | None = None,
+    domain_request_id: str | None = None,
+    domain_request_status: str | None = None,
     gate_id: str | None = None,
     grant_id: str | None = None,
     grant_digest: str | None = None,
@@ -383,6 +406,8 @@ def _receipt(
         attempt_id=attempt_id,
         result_id=result_id,
         terminal_status=terminal_status,
+        domain_request_id=domain_request_id,
+        domain_request_status=domain_request_status,
         gate_id=gate_id,
         grant_id=grant_id,
         grant_digest=grant_digest,
@@ -1075,14 +1100,92 @@ def submit_stop_run_request(
     )
 
 
+def _submit_durable_paper_gate_action(
+    action: ConfirmFormulaSource | ReviewCandidateCAS | PreparePromotionReview,
+    *,
+    digest: str,
+    mutation_enabled: bool,
+    authority: PaperGateAuthority,
+    port: PaperGateExecutionPort,
+) -> ActionReceipt:
+    """Execute one pre-registered Gate without manufacturing workflow facts.
+
+    The durable authority owns claim/replay/finalization.  In particular, an
+    ``outcome_unknown`` receipt is terminal for this action identity: the BFF
+    exposes reconciliation rather than blindly invoking HQA again.
+    """
+
+    try:
+        receipt: PaperGateReceipt = authority.execute_action(
+            action,
+            action_digest=digest,
+            port=port,
+        )
+    except PaperGateAuthorityValidationError as exc:
+        raise SubmissionSagaError("validation", exc.message) from exc
+    except PaperGateAuthorityConflict as exc:
+        return _receipt(
+            status="conflict",
+            action=action,
+            digest=digest,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+        )
+    except PaperGateAuthorityUnavailable as exc:
+        if exc.code in {
+            "paper_gate_finalization_outcome_unknown",
+            "paper_gate_invalid_hqa_receipt",
+        }:
+            status: ReceiptStatus = "outcome_unknown"
+        elif exc.code == "paper_gate_action_in_progress":
+            status = "reconciling"
+        else:
+            status = "unavailable"
+        return _receipt(
+            status=status,
+            action=action,
+            digest=digest,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+        )
+    except PaperGateAuthorityError as exc:
+        return _receipt(
+            status="unavailable",
+            action=action,
+            digest=digest,
+            reason_code=exc.code,
+            mutation_enabled=mutation_enabled,
+        )
+
+    if receipt.status in {"confirmed", "reviewed", "prepared"}:
+        status = "accepted"
+    elif receipt.status == "outcome_unknown":
+        status = "outcome_unknown"
+    elif receipt.status == "rejected":
+        status = "conflict"
+    else:
+        status = "unavailable"
+    return _receipt(
+        status=status,
+        action=action,
+        digest=digest,
+        gate_id=receipt.gate_id,
+        platform_session_id=strip_session_ref(receipt.managed_session_ref),
+        reason_code=receipt.reason_code,
+        mutation_enabled=mutation_enabled,
+    )
+
+
 def submit_confirm_formula_source(
     settings: Settings,
     action: ConfirmFormulaSource,
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    paper_gate_authority: PaperGateAuthority | None = None,
+    paper_gate_port: PaperGateExecutionPort | None = None,
 ) -> ActionReceipt:
-    """V7e Gate 1: hermetic formula-source confirm CAS (not command-approval)."""
+    """Gate 1 formula-source confirm (durable production or explicit hermetic)."""
     digest = canonical_action_digest(action)
     if not mutation_enabled:
         return _receipt(
@@ -1093,6 +1196,14 @@ def submit_confirm_formula_source(
             mutation_enabled=mutation_enabled,
         )
     _require_root_actor(actor_owner_user_id)
+    if paper_gate_authority is not None and paper_gate_port is not None:
+        return _submit_durable_paper_gate_action(
+            action,
+            digest=digest,
+            mutation_enabled=mutation_enabled,
+            authority=paper_gate_authority,
+            port=paper_gate_port,
+        )
     authority = default_gate_surface_authority()
     try:
         decided = authority.confirm_formula_source(
@@ -1160,8 +1271,10 @@ def submit_review_candidate_cas(
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    paper_gate_authority: PaperGateAuthority | None = None,
+    paper_gate_port: PaperGateExecutionPort | None = None,
 ) -> ActionReceipt:
-    """V7e Gate 2: hermetic candidate review CAS (no-refetch)."""
+    """Gate 2 exact candidate review CAS (no-refetch/no-substitution)."""
     digest = canonical_action_digest(action)
     if not mutation_enabled:
         return _receipt(
@@ -1172,6 +1285,14 @@ def submit_review_candidate_cas(
             mutation_enabled=mutation_enabled,
         )
     _require_root_actor(actor_owner_user_id)
+    if paper_gate_authority is not None and paper_gate_port is not None:
+        return _submit_durable_paper_gate_action(
+            action,
+            digest=digest,
+            mutation_enabled=mutation_enabled,
+            authority=paper_gate_authority,
+            port=paper_gate_port,
+        )
     authority = default_gate_surface_authority()
     try:
         decided = authority.review_candidate(
@@ -1240,8 +1361,10 @@ def submit_prepare_promotion_review(
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    paper_gate_authority: PaperGateAuthority | None = None,
+    paper_gate_port: PaperGateExecutionPort | None = None,
 ) -> ActionReceipt:
-    """V7e Gate 3: hermetic prepare only — never performs a Git commit."""
+    """Gate 3 promotion-review prepare only — never performs a Git commit."""
     digest = canonical_action_digest(action)
     if not mutation_enabled:
         return _receipt(
@@ -1252,6 +1375,14 @@ def submit_prepare_promotion_review(
             mutation_enabled=mutation_enabled,
         )
     _require_root_actor(actor_owner_user_id)
+    if paper_gate_authority is not None and paper_gate_port is not None:
+        return _submit_durable_paper_gate_action(
+            action,
+            digest=digest,
+            mutation_enabled=mutation_enabled,
+            authority=paper_gate_authority,
+            port=paper_gate_port,
+        )
     authority = default_gate_surface_authority()
     try:
         decided = authority.prepare_promotion_review(
@@ -1320,6 +1451,7 @@ def submit_bind_options_vertical_a(
     *,
     mutation_enabled: bool,
     actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    vertical_a_authority: object | None = None,
 ) -> ActionReceipt:
     """V7g-A: Vertical A options research bind (hermetic + live Futu RO).
 
@@ -1336,7 +1468,54 @@ def submit_bind_options_vertical_a(
             mutation_enabled=mutation_enabled,
         )
     _require_root_actor(actor_owner_user_id)
-    authority = default_vertical_binding_authority()
+    authority = vertical_a_authority or default_vertical_binding_authority()
+    if isinstance(authority, PostgresVerticalAAuthority):
+        try:
+            seeded = authority.seed_options_vertical_a(
+                workspace_id=action.workspace.workspace_id,
+                client_action_id=action.client_action_id,
+                action_digest=digest,
+                ticker=action.ticker,
+                goal_note=action.goal_note,
+                expiry=action.expiry,
+                strike=action.strike,
+                include_provider_evidence=action.include_provider_evidence,
+                provider_mode=action.provider_mode,
+                auth_envelope=action.auth_envelope,
+            )
+        except VerticalBindingAuthorityError as exc:
+            if exc.code == "validation":
+                raise SubmissionSagaError("validation", exc.message) from exc
+            if exc.code == "conflict":
+                return _receipt(
+                    status="conflict",
+                    action=action,
+                    digest=digest,
+                    reason_code=exc.message,
+                    mutation_enabled=mutation_enabled,
+                )
+            return _receipt(
+                status="unavailable",
+                action=action,
+                digest=digest,
+                reason_code=exc.code,
+                mutation_enabled=mutation_enabled,
+            )
+        state_status: ReceiptStatus
+        if seeded.state == "completed":
+            state_status = "accepted"
+        elif seeded.state == "outcome_unknown":
+            state_status = "outcome_unknown"
+        else:
+            state_status = "reconciling"
+        return _receipt(
+            status=state_status,
+            action=action,
+            digest=digest,
+            domain_request_id=seeded.domain_request_id,
+            domain_request_status=seeded.state,
+            mutation_enabled=mutation_enabled,
+        )
     try:
         outcome = authority.bind_options_vertical_a(
             workspace_id=action.workspace.workspace_id,
@@ -2370,6 +2549,9 @@ def submit_action(
     approval_authority: CommandApprovalAuthority | None = None,
     approval_release_adapter: ApprovalReleasePort | None = None,
     stop_adapter: RunStopPort | None = None,
+    vertical_a_authority: object | None = None,
+    paper_gate_authority: PaperGateAuthority | None = None,
+    paper_gate_port: PaperGateExecutionPort | None = None,
 ) -> ActionReceipt:
     """Dispatch one closed action through the crash-safe submission path."""
     if isinstance(action, dict):
@@ -2391,11 +2573,36 @@ def submit_action(
         and approval_release_adapter is not None
     )
     explicitly_injected_stop_port = type(parsed) is RequestStop and stop_adapter is not None
+    explicitly_injected_vertical_a = (
+        type(parsed) is BindOptionsVerticalA
+        and vertical_a_authority is not None
+        and isinstance(vertical_a_authority, PostgresVerticalAAuthority)
+    )
+    durable_paper_gate_action = type(parsed) in {
+        ConfirmFormulaSource,
+        ReviewCandidateCAS,
+        PreparePromotionReview,
+    }
+    explicitly_injected_paper_gate = (
+        durable_paper_gate_action
+        and paper_gate_authority is not None
+        and paper_gate_port is not None
+    )
+    if durable_paper_gate_action and ((paper_gate_authority is None) != (paper_gate_port is None)):
+        return _receipt(
+            status="unavailable",
+            action=parsed,
+            digest=canonical_action_digest(parsed),
+            reason_code="paper_gate_adapter_misconfigured",
+            mutation_enabled=mutation_enabled,
+        )
     if (
         mutation_enabled
         and not allow_hermetic_authorities
         and not explicitly_injected_approval_ports
         and not explicitly_injected_stop_port
+        and not explicitly_injected_vertical_a
+        and not explicitly_injected_paper_gate
         and type(parsed) in _PROCESS_LOCAL_AUTHORITY_ACTIONS
     ):
         public_cutover_action = type(parsed) in _PUBLIC_CUTOVER_ACTIONS
@@ -2454,6 +2661,8 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            paper_gate_authority=paper_gate_authority,
+            paper_gate_port=paper_gate_port,
         )
     if type(parsed) is ReviewCandidateCAS:
         return submit_review_candidate_cas(
@@ -2461,6 +2670,8 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            paper_gate_authority=paper_gate_authority,
+            paper_gate_port=paper_gate_port,
         )
     if type(parsed) is PreparePromotionReview:
         return submit_prepare_promotion_review(
@@ -2468,6 +2679,8 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            paper_gate_authority=paper_gate_authority,
+            paper_gate_port=paper_gate_port,
         )
     if type(parsed) is BindOptionsVerticalA:
         return submit_bind_options_vertical_a(
@@ -2475,6 +2688,7 @@ def submit_action(
             parsed,
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
+            vertical_a_authority=vertical_a_authority,
         )
     if type(parsed) is BindFactorVerticalB:
         return submit_bind_factor_vertical_b(

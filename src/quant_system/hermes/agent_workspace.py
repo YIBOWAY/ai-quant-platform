@@ -26,6 +26,11 @@ from quant_system.hermes.agent_workspace_actions import (
     parse_user_action_v1,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID
+from quant_system.hermes.paper_gate_authority import PaperGateAuthority
+from quant_system.hermes.paper_gate_port import (
+    SubprocessPaperGatePort,
+    build_subprocess_paper_gate_port,
+)
 from quant_system.hermes.submission_saga import (
     ActionReceipt,
     SubmissionSagaError,
@@ -125,6 +130,9 @@ class WorkspaceSnapshot:
     runs: tuple[str, ...]
     # V7f: typed result projections (objects). Empty honest; never bare invented Task rows.
     results: tuple[dict[str, object], ...]
+    # Production Vertical-A domain requests. These are provider-free seed facts,
+    # not transport Commands, HQA Tasks/Attempts, Hermes Runs, or Results.
+    options_requests: tuple[dict[str, object], ...]
     # L5a/V7a/V7d: Hermes command-approval challenges from hermetic authority
     # (pending + recent decided). Empty is honest; never invent Gate 1/2/3 rows.
     approvals: tuple[dict[str, object], ...]
@@ -149,6 +157,7 @@ class WorkspaceSnapshot:
             "commands": [dict(item) for item in self.commands],
             "runs": list(self.runs),
             "results": [dict(item) if isinstance(item, dict) else item for item in self.results],
+            "options_requests": [dict(item) for item in self.options_requests],
             "approvals": [dict(item) for item in self.approvals],
             "gates": [dict(item) for item in self.gates],
             "canary_grants": [dict(item) for item in self.canary_grants],
@@ -179,6 +188,8 @@ class EventPage:
     public_cutovers: tuple[dict[str, object], ...] | None = None
     # V7f: optional typed results projection (separate from gates/approvals).
     results: tuple[dict[str, object], ...] | None = None
+    # Production Vertical-A domain request projection.
+    options_requests: tuple[dict[str, object], ...] | None = None
     # V7g-A-M1: optional Task/Attempt/Run id lists on follow (same as snapshot).
     tasks: tuple[str, ...] | None = None
     attempts: tuple[str, ...] | None = None
@@ -204,6 +215,8 @@ class EventPage:
             payload["public_cutovers"] = [dict(item) for item in self.public_cutovers]
         if self.results is not None:
             payload["results"] = [dict(item) for item in self.results]
+        if self.options_requests is not None:
+            payload["options_requests"] = [dict(item) for item in self.options_requests]
         if self.tasks is not None:
             payload["tasks"] = list(self.tasks)
         if self.attempts is not None:
@@ -229,11 +242,31 @@ class PlatformAgentWorkspace:
         *,
         mutation_enabled: bool = False,
         hermetic_authorities: bool = False,
+        vertical_a_authority: object | None = None,
     ) -> None:
         self._settings = settings
         # Public path hard-defaults False. Tests may flip these independently.
         self._mutation_enabled = bool(mutation_enabled)
         self._hermetic_authorities = bool(hermetic_authorities)
+        if self._hermetic_authorities:
+            self._vertical_a_authority = vertical_a_authority
+            self._paper_gate_authority: PaperGateAuthority | None = None
+            self._paper_gate_port: SubprocessPaperGatePort | None = None
+        else:
+            if vertical_a_authority is not None:
+                raise ValueError(
+                    "production Vertical-A authority is settings-built and cannot be injected"
+                )
+            from quant_system.hermes.vertical_a_durable_authority import (
+                build_postgres_vertical_a_authority,
+            )
+
+            self._vertical_a_authority = build_postgres_vertical_a_authority(settings)
+            # Production `/act` uses only the settings-built durable PostgreSQL
+            # authority and fixed HQA subprocess port. Neither dependency is
+            # injectable through the HTTP/BFF factory.
+            self._paper_gate_authority = PaperGateAuthority(settings)
+            self._paper_gate_port = build_subprocess_paper_gate_port(settings)
 
     @property
     def mutation_enabled(self) -> bool:
@@ -286,6 +319,9 @@ class PlatformAgentWorkspace:
                 mutation_enabled=self._mutation_enabled,
                 actor_owner_user_id=owner,
                 allow_hermetic_authorities=self._hermetic_authorities,
+                vertical_a_authority=self._vertical_a_authority,
+                paper_gate_authority=self._paper_gate_authority,
+                paper_gate_port=self._paper_gate_port,
             )
         except SubmissionSagaError:
             raise
@@ -357,6 +393,7 @@ class PlatformAgentWorkspace:
                     health[authority_name] = "unavailable"
 
         process_projection = self._authority_spine_projections(workspace_id)
+        health.update(process_projection["authority_health"])  # type: ignore[arg-type]
 
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
@@ -369,6 +406,7 @@ class PlatformAgentWorkspace:
             commands=tuple(commands),
             runs=process_projection["runs"],  # type: ignore[arg-type]
             results=process_projection["results"],  # type: ignore[arg-type]
+            options_requests=process_projection["options_requests"],  # type: ignore[arg-type]
             approvals=process_projection["approvals"],  # type: ignore[arg-type]
             gates=process_projection["gates"],  # type: ignore[arg-type]
             canary_grants=process_projection["canary_grants"],  # type: ignore[arg-type]
@@ -391,6 +429,7 @@ class PlatformAgentWorkspace:
             "gate_2",
             "gate_3",
             "result",
+            "options_request",
             "task",
             "attempt",
             "run",
@@ -398,16 +437,88 @@ class PlatformAgentWorkspace:
             "public_cutover",
         )
         if not self._hermetic_authorities:
+            durable_health = {name: "unavailable" for name in authority_names}
+            durable_health["provider"] = "dark"
+            gates: tuple[dict[str, object], ...] = ()
+            results: tuple[dict[str, object], ...] = ()
+            options_requests: tuple[dict[str, object], ...] = ()
+            tasks: tuple[str, ...] = ()
+            attempts: tuple[str, ...] = ()
+            runs: tuple[str, ...] = ()
+            try:
+                gates = tuple(
+                    self._paper_gate_authority.list_observed(workspace_id)
+                    if self._paper_gate_authority is not None
+                    else ()
+                )
+            except Exception:
+                pass
+            else:
+                tasks = tuple(
+                    sorted(
+                        {
+                            str(row["task_ref"])
+                            for row in gates
+                            if isinstance(row.get("task_ref"), str)
+                        }
+                    )
+                )
+                attempts = tuple(
+                    sorted(
+                        {
+                            str(row["attempt_ref"])
+                            for row in gates
+                            if isinstance(row.get("attempt_ref"), str)
+                        }
+                    )
+                )
+                runs = tuple(
+                    sorted(
+                        {
+                            str(row["hqa_run_ref"])
+                            for row in gates
+                            if isinstance(row.get("hqa_run_ref"), str)
+                        }
+                    )
+                )
+                durable_health.update(
+                    {
+                        "gate_1": "ready",
+                        "gate_2": "ready",
+                        "gate_3": "ready",
+                        "task": "ready",
+                        "attempt": "ready",
+                        "run": "ready",
+                    }
+                )
+            if self._vertical_a_authority is not None:
+                try:
+                    projection = self._vertical_a_authority.project_workspace(  # type: ignore[attr-defined]
+                        workspace_id
+                    )
+                except Exception:
+                    pass
+                else:
+                    durable_health.update(
+                        {
+                            "options_request": "ready",
+                            "result": "ready",
+                            "provider": projection.provider_health,
+                        }
+                    )
+                    results = projection.results
+                    options_requests = projection.options_requests
             return {
                 "approvals": (),
-                "gates": (),
+                "gates": gates,
                 "canary_grants": (),
                 "public_cutovers": (),
-                "results": (),
-                "tasks": (),
-                "attempts": (),
-                "runs": (),
-                "authority_health": {name: "unavailable" for name in authority_names},
+                "results": results,
+                "options_requests": options_requests,
+                "tasks": tasks,
+                "attempts": attempts,
+                "runs": runs,
+                "authority_health": durable_health,
             }
 
         from quant_system.hermes.approval_observe import project_workspace_approvals
@@ -429,6 +540,7 @@ class PlatformAgentWorkspace:
             "canary_grants": tuple(project_workspace_canary_grants(workspace_id)),
             "public_cutovers": tuple(project_workspace_public_cutovers(workspace_id)),
             "results": tuple(project_workspace_results(workspace_id)),
+            "options_requests": (),
             "tasks": tuple(task_ids_for_spine(workspace_id)),
             "attempts": tuple(attempt_ids_for_spine(workspace_id)),
             "runs": tuple(run_ids_for_spine(workspace_id)),
@@ -503,6 +615,7 @@ class PlatformAgentWorkspace:
                 canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
                 public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
+                options_requests=proj["options_requests"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
                 runs=proj["runs"],  # type: ignore[arg-type]
@@ -534,6 +647,7 @@ class PlatformAgentWorkspace:
                 canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
                 public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
+                options_requests=proj["options_requests"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
                 runs=proj["runs"],  # type: ignore[arg-type]
@@ -552,6 +666,7 @@ class PlatformAgentWorkspace:
                 canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
                 public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
                 results=proj["results"],  # type: ignore[arg-type]
+                options_requests=proj["options_requests"],  # type: ignore[arg-type]
                 tasks=proj["tasks"],  # type: ignore[arg-type]
                 attempts=proj["attempts"],  # type: ignore[arg-type]
                 runs=proj["runs"],  # type: ignore[arg-type]
@@ -569,6 +684,7 @@ class PlatformAgentWorkspace:
             canary_grants=proj["canary_grants"],  # type: ignore[arg-type]
             public_cutovers=proj["public_cutovers"],  # type: ignore[arg-type]
             results=proj["results"],  # type: ignore[arg-type]
+            options_requests=proj["options_requests"],  # type: ignore[arg-type]
             tasks=proj["tasks"],  # type: ignore[arg-type]
             attempts=proj["attempts"],  # type: ignore[arg-type]
             runs=proj["runs"],  # type: ignore[arg-type]
@@ -875,12 +991,14 @@ def build_platform_agent_workspace(
     *,
     mutation_enabled: bool = False,
     hermetic_authorities: bool = False,
+    vertical_a_authority: object | None = None,
 ) -> PlatformAgentWorkspace:
     """Build a workspace; the production BFF leaves hermetic authorities off."""
     return PlatformAgentWorkspace(
         settings,
         mutation_enabled=mutation_enabled,
         hermetic_authorities=hermetic_authorities,
+        vertical_a_authority=vertical_a_authority,
     )
 
 

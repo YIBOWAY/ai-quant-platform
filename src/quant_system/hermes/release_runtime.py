@@ -12,7 +12,6 @@ import hashlib
 import json
 import os
 import re
-import stat
 import subprocess
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
@@ -37,11 +36,16 @@ from quant_system.hermes.release_authority import (
     release_authority_schema_ready,
 )
 from quant_system.hermes.session_registry import hermes_runtime_security_ready
+from quant_system.hermes.test_execution_evidence import (
+    TestExecutionEvidenceError,
+    read_owner_only_file,
+    validate_test_execution_receipt,
+)
 from quant_system.storage.database import get_database, schema_fingerprint
 
 _LOGICAL_NAME_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 _MAX_EVIDENCE_BYTES = 4 * 1024 * 1024
-_EVIDENCE_CONTRACT = "agent-v0.2-release-evidence/v2"
+_EVIDENCE_CONTRACT_V4 = "agent-v0.2-release-evidence/v4"
 _ARTIFACT_CONTRACT = "agent-v0.2-release-artifact/v2"
 _RUNTIME_NAMES = ("platform", "hqa", "hermes")
 _REQUIRED_TEST_SUITES = frozenset({"platform", "hqa", "hermes_focused", "frontend"})
@@ -62,9 +66,6 @@ _UTC_TIMESTAMP_RE = re.compile(
     r"[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z$"
 )
 _MAX_ARTIFACT_PATH_BYTES = 512
-_MAX_ARGV_ITEMS = 64
-_MAX_ARG_BYTES = 4096
-_MAX_ARGV_BYTES = 32 * 1024
 
 
 class ReleaseRuntimeProbeError(RuntimeError):
@@ -119,37 +120,139 @@ def git_runtime_digest(root: Path, *, logical_name: str) -> str:
     return _runtime_digest_from_commit(logical_name, commit.decode("ascii"))
 
 
-def _read_bounded_owned_file(path: Path) -> bytes:
-    target = Path(path).expanduser()
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+def hermes_process_runtime_digest(
+    payload: Mapping[str, object],
+    *,
+    runtime_root: Path,
+) -> str:
+    """Validate the boot-frozen identity reported by the live Hermes process."""
+
+    runtime = payload.get("runtime")
+    if not isinstance(runtime, Mapping):
+        raise ReleaseRuntimeProbeError("Hermes process identity is unavailable")
+    instance_id = runtime.get("instance_id")
+    started_at = runtime.get("started_at")
+    pid = runtime.get("pid")
+    if (
+        not isinstance(instance_id, str)
+        or re.fullmatch(r"[0-9a-f]{32}", instance_id) is None
+        or not isinstance(started_at, str)
+        or _UTC_TIMESTAMP_RE.fullmatch(started_at) is None
+        or isinstance(pid, bool)
+        or not isinstance(pid, int)
+        or pid <= 0
+    ):
+        raise ReleaseRuntimeProbeError("Hermes process identity is invalid")
+
+    build = runtime.get("build")
+    required_build_keys = frozenset(
+        {
+            "schema_version",
+            "source",
+            "ready",
+            "root_realpath",
+            "module_realpath",
+            "entrypoint_sha256",
+            "commit",
+            "tree",
+            "clean",
+            "digest",
+        }
+    )
+    if not isinstance(build, Mapping) or frozenset(build) != required_build_keys:
+        raise ReleaseRuntimeProbeError("Hermes process build identity is unavailable")
+    if (
+        build.get("schema_version") != 1
+        or build.get("source") != "git_worktree"
+        or build.get("ready") is not True
+        or build.get("clean") is not True
+    ):
+        raise ReleaseRuntimeProbeError("Hermes process build is not release-ready")
+
+    expected_root = Path(runtime_root).expanduser().resolve()
+    expected_module = (expected_root / "gateway/platforms/api_server.py").resolve()
+    if build.get("root_realpath") != str(expected_root) or build.get("module_realpath") != str(
+        expected_module
+    ):
+        raise ReleaseRuntimeProbeError("Hermes process root identity mismatches")
+    commit = build.get("commit")
+    tree = build.get("tree")
+    entrypoint_sha256 = build.get("entrypoint_sha256")
+    claimed_digest = build.get("digest")
+    if (
+        not isinstance(commit, str)
+        or _HEX_COMMIT_RE.fullmatch(commit) is None
+        or not isinstance(tree, str)
+        or _HEX_COMMIT_RE.fullmatch(tree) is None
+        or not isinstance(entrypoint_sha256, str)
+        or _HEX_DIGEST_RE.fullmatch(entrypoint_sha256) is None
+        or not isinstance(claimed_digest, str)
+        or _HEX_DIGEST_RE.fullmatch(claimed_digest) is None
+    ):
+        raise ReleaseRuntimeProbeError("Hermes process build identity is invalid")
+
+    digest_document = dict(build)
+    digest_document.pop("digest")
+    recomputed_digest = hashlib.sha256(
+        json.dumps(
+            digest_document,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    if recomputed_digest != claimed_digest:
+        raise ReleaseRuntimeProbeError("Hermes process build digest mismatches")
+
+    expected_commit = (
+        _run_git(
+            expected_root,
+            "rev-parse",
+            "--verify",
+            "HEAD^{commit}",
+        )
+        .strip()
+        .decode("ascii")
+    )
+    expected_tree = (
+        _run_git(
+            expected_root,
+            "rev-parse",
+            "--verify",
+            "HEAD^{tree}",
+        )
+        .strip()
+        .decode("ascii")
+    )
+    if commit != expected_commit or tree != expected_tree:
+        raise ReleaseRuntimeProbeError("Hermes running build mismatches reviewed checkout")
+    if _run_git(
+        expected_root,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+    ):
+        raise ReleaseRuntimeProbeError("Hermes reviewed checkout is no longer clean")
     try:
-        fd = os.open(target, flags)
+        current_entrypoint_sha256 = hashlib.sha256(expected_module.read_bytes()).hexdigest()
     except OSError as exc:
-        raise ReleaseRuntimeProbeError("release evidence must be a readable regular file") from exc
+        raise ReleaseRuntimeProbeError("Hermes process entrypoint is unavailable") from exc
+    if current_entrypoint_sha256 != entrypoint_sha256:
+        raise ReleaseRuntimeProbeError("Hermes process entrypoint identity mismatches")
+    return _runtime_digest_from_commit("hermes", commit)
+
+
+def _read_bounded_owned_file(path: Path) -> bytes:
     try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode):
-            raise ReleaseRuntimeProbeError("release evidence must be a readable regular file")
-        if info.st_size < 1 or info.st_size > _MAX_EVIDENCE_BYTES:
-            raise ReleaseRuntimeProbeError("release evidence must be nonempty and bounded")
-        if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
-            raise ReleaseRuntimeProbeError("release evidence must be owned by the current user")
-        if stat.S_IMODE(info.st_mode) & 0o022:
-            raise ReleaseRuntimeProbeError("release evidence must not be group/world writable")
-        chunks: list[bytes] = []
-        remaining = _MAX_EVIDENCE_BYTES + 1
-        while remaining:
-            chunk = os.read(fd, min(64 * 1024, remaining))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        content = b"".join(chunks)
-        if len(content) > _MAX_EVIDENCE_BYTES:
-            raise ReleaseRuntimeProbeError("release evidence must be nonempty and bounded")
-        return content
-    finally:
-        os.close(fd)
+        return read_owner_only_file(
+            path,
+            maximum_bytes=_MAX_EVIDENCE_BYTES,
+        )
+    except TestExecutionEvidenceError as exc:
+        raise ReleaseRuntimeProbeError(
+            f"release evidence must be a safe mode 0600 file: {exc}"
+        ) from exc
 
 
 def _json_object_without_duplicates(
@@ -251,33 +354,14 @@ def _artifact_file(
             "release evidence artifact path must be a bounded relative path"
         )
 
-    manifest_directory = manifest_path.expanduser().parent.resolve(strict=True)
+    manifest_directory = Path(os.path.abspath(os.fspath(manifest_path.expanduser().parent)))
     candidate = manifest_directory.joinpath(*logical_path.parts)
-    try:
-        resolved = candidate.resolve(strict=True)
-        resolved.relative_to(manifest_directory)
-    except (OSError, RuntimeError, ValueError) as exc:
-        raise ReleaseRuntimeProbeError(
-            "release evidence artifact path must remain within the manifest directory"
-        ) from exc
-
-    current = manifest_directory
-    for part in logical_path.parts:
-        current = current / part
-        try:
-            if stat.S_ISLNK(os.lstat(current).st_mode):
-                raise ReleaseRuntimeProbeError("release evidence artifact must not use a symlink")
-        except OSError as exc:
-            raise ReleaseRuntimeProbeError(
-                "release evidence artifact must be a readable regular file"
-            ) from exc
-
-    if resolved in used_paths:
+    if candidate in used_paths:
         raise ReleaseRuntimeProbeError(
             "release evidence contract contains a duplicate artifact path"
         )
-    used_paths.add(resolved)
-    return resolved
+    used_paths.add(candidate)
+    return candidate
 
 
 def _artifact_payload(
@@ -354,71 +438,61 @@ def _artifact_payload(
     return artifact
 
 
-def _bounded_argv(value: object) -> list[str]:
-    if not isinstance(value, list) or not value or len(value) > _MAX_ARGV_ITEMS:
-        raise ReleaseRuntimeProbeError("release evidence test artifact argv is invalid")
-    total_bytes = 0
-    result: list[str] = []
-    for argument in value:
-        if (
-            not isinstance(argument, str)
-            or not argument
-            or "\x00" in argument
-            or len(argument.encode("utf-8")) > _MAX_ARG_BYTES
-        ):
-            raise ReleaseRuntimeProbeError("release evidence test artifact argv is invalid")
-        total_bytes += len(argument.encode("utf-8"))
-        result.append(argument)
-    if total_bytes > _MAX_ARGV_BYTES:
-        raise ReleaseRuntimeProbeError("release evidence test artifact argv is invalid")
-    return result
-
-
-def _validate_test_artifact(
-    artifact: Mapping[str, object],
+def _validate_test_receipt(
     *,
+    manifest_path: Path,
+    receipt_ref: object,
+    expected_name: str,
+    expected_runtime: Mapping[str, Mapping[str, str]],
     expected_passed: int,
     expected_failed: int,
     expected_skipped: int,
+    used_paths: set[Path],
 ) -> None:
-    evidence = _exact_mapping(
-        artifact["evidence"],
-        keys=frozenset(
-            {
-                "argv",
-                "exit_code",
-                "passed",
-                "failed",
-                "skipped",
-                "output_sha256",
-            }
-        ),
-        field="test.artifact.evidence",
+    reference = _exact_mapping(
+        receipt_ref,
+        keys=frozenset({"path", "sha256"}),
+        field=f"test.{expected_name}.receipt",
     )
-    _bounded_argv(evidence["argv"])
-    exit_code = _nonnegative_int(
-        evidence["exit_code"],
-        field="test.artifact.exit_code",
+    expected_digest = _hex_digest(
+        reference["sha256"],
+        field=f"test.{expected_name}.receipt.sha256",
     )
-    if exit_code != 0:
-        raise ReleaseRuntimeProbeError("release evidence test artifact exit code is nonzero")
-    artifact_counts = (
-        _nonnegative_int(evidence["passed"], field="test.artifact.passed"),
-        _nonnegative_int(evidence["failed"], field="test.artifact.failed"),
-        _nonnegative_int(evidence["skipped"], field="test.artifact.skipped"),
+    receipt_path = _artifact_file(
+        manifest_path=manifest_path,
+        relative_path=reference["path"],
+        used_paths=used_paths,
     )
-    if artifact_counts != (
+    receipt_content = _read_bounded_owned_file(receipt_path)
+    if hashlib.sha256(receipt_content).hexdigest() != expected_digest:
+        raise ReleaseRuntimeProbeError("release evidence test receipt digest mismatches")
+    try:
+        execution = validate_test_execution_receipt(
+            receipt_path,
+            expected_name=expected_name,
+            expected_runtime=expected_runtime,
+        )
+    except TestExecutionEvidenceError as exc:
+        raise ReleaseRuntimeProbeError(str(exc)) from exc
+    if (
+        execution.counts.passed,
+        execution.counts.failed,
+        execution.counts.skipped,
+    ) != (
         expected_passed,
         expected_failed,
         expected_skipped,
     ):
         raise ReleaseRuntimeProbeError(
-            "release evidence test artifact counts do not match the manifest"
+            "release evidence test receipt counts do not match the manifest"
         )
-    _hex_digest(
-        evidence["output_sha256"],
-        field="test.artifact.output_sha256",
-    )
+    for evidence_path in (execution.output_path, execution.junit_path):
+        absolute = Path(os.path.abspath(os.fspath(evidence_path)))
+        if absolute in used_paths:
+            raise ReleaseRuntimeProbeError(
+                "release evidence contract contains a duplicate artifact path"
+            )
+        used_paths.add(absolute)
 
 
 def _identity_list(
@@ -633,13 +707,26 @@ def release_evidence_observation(path: Path) -> ReleaseEvidenceObservation:
     """Validate and bind the complete Agent v0.2 release evidence manifest."""
 
     content = _read_bounded_owned_file(path)
+    raw_root = _strict_json(content, field="contract")
+    if not isinstance(raw_root, Mapping):
+        raise ReleaseRuntimeProbeError("release evidence contract field root is invalid")
+    contract = raw_root.get("contract")
+    if contract != _EVIDENCE_CONTRACT_V4:
+        raise ReleaseRuntimeProbeError("release evidence contract version is invalid")
     root = _exact_mapping(
-        _strict_json(content, field="contract"),
-        keys=frozenset({"contract", "runtime", "tests", "real_flows", "safety"}),
+        raw_root,
+        keys=frozenset(
+            {
+                "candidate",
+                "contract",
+                "real_flows",
+                "runtime",
+                "safety",
+                "tests",
+            }
+        ),
         field="root",
     )
-    if root["contract"] != _EVIDENCE_CONTRACT:
-        raise ReleaseRuntimeProbeError("release evidence contract version is invalid")
 
     runtime = _exact_mapping(
         root["runtime"],
@@ -647,6 +734,7 @@ def release_evidence_observation(path: Path) -> ReleaseEvidenceObservation:
         field="runtime",
     )
     runtime_digests: dict[str, str] = {}
+    runtime_document: dict[str, dict[str, str]] = {}
     for logical_name in _RUNTIME_NAMES:
         item = _exact_mapping(
             runtime[logical_name],
@@ -668,6 +756,10 @@ def release_evidence_observation(path: Path) -> ReleaseEvidenceObservation:
                 f"release evidence contract runtime.{logical_name} is inconsistent"
             )
         runtime_digests[logical_name] = digest
+        runtime_document[logical_name] = {
+            "commit": commit,
+            "digest": digest,
+        }
 
     used_artifact_paths: set[Path] = set()
     tests = _exact_mapping(
@@ -681,7 +773,7 @@ def release_evidence_observation(path: Path) -> ReleaseEvidenceObservation:
     for index, raw_suite in enumerate(tests["suites"]):
         suite = _exact_mapping(
             raw_suite,
-            keys=frozenset({"name", "passed", "failed", "skipped", "artifact"}),
+            keys=frozenset({"name", "passed", "failed", "skipped", "receipt"}),
             field=f"tests.suites[{index}]",
         )
         name = suite["name"]
@@ -704,21 +796,17 @@ def release_evidence_observation(path: Path) -> ReleaseEvidenceObservation:
         )
         if passed < 1 or failed != 0:
             raise ReleaseRuntimeProbeError("release evidence contract tests did not pass")
-        artifact = _artifact_payload(
+        _validate_test_receipt(
             manifest_path=path,
-            artifact_ref=suite["artifact"],
-            runtime_digests=runtime_digests,
-            expected_kind="test",
+            receipt_ref=suite["receipt"],
             expected_name=name,
-            used_paths=used_artifact_paths,
-        )
-        _validate_test_artifact(
-            artifact,
+            expected_runtime=runtime_document,
             expected_passed=passed,
             expected_failed=failed,
             expected_skipped=skipped,
+            used_paths=used_artifact_paths,
         )
-    if not _REQUIRED_TEST_SUITES.issubset(suite_names):
+    if suite_names != _REQUIRED_TEST_SUITES:
         raise ReleaseRuntimeProbeError("release evidence contract required test suites are missing")
 
     real_flows = _exact_mapping(
@@ -772,11 +860,49 @@ def release_evidence_observation(path: Path) -> ReleaseEvidenceObservation:
     ):
         raise ReleaseRuntimeProbeError("release evidence contract safety facts are unsafe")
 
+    candidate = _exact_mapping(
+        root["candidate"],
+        keys=frozenset(
+            {
+                "admission_digest",
+                "admission_id",
+                "evidence_set_digest",
+                "evidence_set_id",
+                "final_order_snapshot_digest",
+            }
+        ),
+        field="candidate",
+    )
+    candidate_fields = {
+        "candidate_admission_id": _bounded_identity(
+            candidate["admission_id"],
+            field="candidate.admission_id",
+        ),
+        "candidate_admission_digest": _hex_digest(
+            candidate["admission_digest"],
+            field="candidate.admission_digest",
+        ),
+        "evidence_set_id": _bounded_identity(
+            candidate["evidence_set_id"],
+            field="candidate.evidence_set_id",
+        ),
+        "evidence_set_digest": _hex_digest(
+            candidate["evidence_set_digest"],
+            field="candidate.evidence_set_digest",
+        ),
+        "final_order_snapshot_digest": _hex_digest(
+            candidate["final_order_snapshot_digest"],
+            field="candidate.final_order_snapshot_digest",
+        ),
+    }
+
     return ReleaseEvidenceObservation(
         digest=hashlib.sha256(content).hexdigest(),
         platform_runtime_digest=runtime_digests["platform"],
         hqa_runtime_digest=runtime_digests["hqa"],
         hermes_runtime_digest=runtime_digests["hermes"],
+        contract=str(contract),
+        **candidate_fields,
     )
 
 
@@ -790,12 +916,29 @@ def platform_runtime_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def runtime_identity_observation(settings: Settings) -> RuntimeIdentityObservation:
-    return RuntimeIdentityObservation(
-        platform_runtime_digest=git_runtime_digest(
+def _capture_platform_boot_runtime_digest() -> str | None:
+    try:
+        return git_runtime_digest(
             platform_runtime_root(),
             logical_name="platform",
-        ),
+        )
+    except ReleaseRuntimeProbeError:
+        return None
+
+
+# Capture once for the lifetime of this Python process.  A checkout moving
+# underneath an old backend must close release admission, not relabel that
+# already-imported process as the new build.
+_PLATFORM_BOOT_RUNTIME_DIGEST = _capture_platform_boot_runtime_digest()
+
+
+def runtime_identity_observation(settings: Settings) -> RuntimeIdentityObservation:
+    if _PLATFORM_BOOT_RUNTIME_DIGEST is None:
+        raise ReleaseRuntimeProbeError(
+            "platform process did not boot from a clean reviewed runtime"
+        )
+    return RuntimeIdentityObservation(
+        platform_runtime_digest=_PLATFORM_BOOT_RUNTIME_DIGEST,
         hqa_runtime_digest=git_runtime_digest(
             settings.intent_payload.hqa_root,
             logical_name="hqa",
@@ -835,9 +978,9 @@ def build_effective_release_gate(
 
     def _capability() -> HermesDurableCapabilityObservation:
         payload = client.capabilities()
-        hermes_digest = git_runtime_digest(
-            settings.hermes_gateway.runtime_root,
-            logical_name="hermes",
+        hermes_digest = hermes_process_runtime_digest(
+            payload,
+            runtime_root=settings.hermes_gateway.runtime_root,
         )
         return HermesDurableCapabilityObservation(
             runtime_digest=hermes_digest,
@@ -853,6 +996,7 @@ def build_effective_release_gate(
             hermes_gateway_enabled=settings.hermes_gateway.enabled,
             kill_switch_enabled=settings.safety.kill_switch,
             live_trading_enabled=settings.safety.live_trading_enabled,
+            candidate_admission_enabled=(settings.candidate_admission.enabled),
         ),
         runtime_identity_probe=lambda: runtime_identity_observation(settings),
         database_schema_fingerprint_probe=lambda: schema_fingerprint(get_database(settings)),
@@ -887,6 +1031,7 @@ __all__ = [
     "current_release_decision",
     "file_sha256",
     "git_runtime_digest",
+    "hermes_process_runtime_digest",
     "platform_runtime_root",
     "release_evidence_observation",
     "restricted_runtime_security_ready",

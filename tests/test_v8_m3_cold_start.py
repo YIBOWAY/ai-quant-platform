@@ -341,7 +341,7 @@ def test_v8_m3_durable_absent_still_requires_explicit_ephemeral_allow(
     """GAP-12 adjacent: durable absent fails closed unless ephemeral allow."""
     import importlib
 
-    mod = importlib.import_module("test_hermes_http_dispatch_adapter")
+    mod = importlib.import_module("tests.test_hermes_http_dispatch_adapter")
     # Binder re-executes the existing hermetic proofs under the V8-M3 campaign.
     mod.test_durable_absent_fails_closed_without_ephemeral_allow(tmp_path)
     mod.test_accepts_ephemeral_run_when_durable_absent(tmp_path)

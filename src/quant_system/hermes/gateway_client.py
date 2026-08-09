@@ -153,6 +153,36 @@ def _normalized_timestamp(value: object) -> str | None:
     return rendered.replace("+00:00", "Z")
 
 
+def _runtime_build_projection(value: object) -> dict[str, object] | None:
+    """Copy only the bounded, non-secret Hermes build identity fields."""
+
+    if not isinstance(value, Mapping):
+        return None
+    schema_version = value.get("schema_version")
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
+        schema_version = None
+    ready = value.get("ready")
+    clean = value.get("clean")
+    return {
+        "schema_version": schema_version,
+        "source": _bounded_text(value.get("source"), maximum=64),
+        "ready": ready if type(ready) is bool else None,
+        "root_realpath": _bounded_text(value.get("root_realpath"), maximum=4096),
+        "module_realpath": _bounded_text(
+            value.get("module_realpath"),
+            maximum=4096,
+        ),
+        "entrypoint_sha256": _bounded_text(
+            value.get("entrypoint_sha256"),
+            maximum=64,
+        ),
+        "commit": _bounded_text(value.get("commit"), maximum=64),
+        "tree": _bounded_text(value.get("tree"), maximum=64),
+        "clean": clean if type(clean) is bool else None,
+        "digest": _bounded_text(value.get("digest"), maximum=64),
+    }
+
+
 def validate_hermes_session_id(value: object) -> str:
     sid = str(value or "").strip()
     drive_prefixed = len(sid) >= 2 and sid[0].isalpha() and sid[1] == ":"
@@ -436,12 +466,56 @@ class HermesApiReadClient:
                 else None
             ),
         }
+        raw_runtime = raw.get("runtime")
+        runtime_instance_id: str | None = None
+        runtime_started_at: str | None = None
+        runtime_pid: int | None = None
+        runtime_build: dict[str, object] | None = None
+        if isinstance(raw_runtime, Mapping):
+            candidate_instance = raw_runtime.get("instance_id")
+            candidate_started_at = raw_runtime.get("started_at")
+            candidate_pid = raw_runtime.get("pid")
+            if (
+                isinstance(candidate_pid, int)
+                and not isinstance(candidate_pid, bool)
+                and candidate_pid > 0
+            ):
+                runtime_pid = candidate_pid
+            runtime_build = _runtime_build_projection(raw_runtime.get("build"))
+            if (
+                isinstance(candidate_instance, str)
+                and re.fullmatch(r"[0-9a-f]{32}", candidate_instance)
+                and isinstance(candidate_started_at, str)
+            ):
+                try:
+                    parsed_started_at = datetime.fromisoformat(
+                        candidate_started_at.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    parsed_started_at = None
+                if (
+                    parsed_started_at is not None
+                    and parsed_started_at.tzinfo is not None
+                    and parsed_started_at.utcoffset() is not None
+                ):
+                    runtime_instance_id = candidate_instance
+                    runtime_started_at = (
+                        parsed_started_at.astimezone(UTC)
+                        .isoformat(timespec="microseconds")
+                        .replace("+00:00", "Z")
+                    )
         return {
             "model": _bounded_text(raw.get("model"), maximum=256),
             "features": features,
             "contract_version": contract_version,
             "durable": durable,
             "managed_session_contract": managed_session_contract,
+            "runtime": {
+                "instance_id": runtime_instance_id,
+                "started_at": runtime_started_at,
+                "pid": runtime_pid,
+                "build": runtime_build,
+            },
         }
 
     def list_sessions(self, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:

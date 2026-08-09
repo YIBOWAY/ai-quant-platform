@@ -16,6 +16,10 @@ from uuid import UUID
 import typer
 
 from quant_system.config.settings import load_settings
+from quant_system.hermes.candidate_admission_cli import candidate_app
+from quant_system.hermes.candidate_admission_gate import (
+    current_candidate_decision,
+)
 from quant_system.hermes.command_ledger import (
     HermesCommandConflict,
     HermesCommandLedger,
@@ -42,6 +46,7 @@ from quant_system.hermes.managed_session_provisioner import (
     ManagedSessionProvisionResult,
     SubprocessManagedSessionProvisionPort,
 )
+from quant_system.hermes.paper_gate_cli import paper_gate_app
 from quant_system.hermes.release_cli import release_app
 from quant_system.hermes.release_runtime import (
     ReleaseRuntimeProbeError,
@@ -296,7 +301,6 @@ def build_connector_runtime(
         stop_requested=stop_event.is_set,
     )
     worker_kwargs: dict = {
-        "ledger": HermesCommandLedger(settings),
         "capability_probe": None,
         "reconcile_limit": reconcile_limit,
         "mode": mode,
@@ -306,6 +310,44 @@ def build_connector_runtime(
     liveness_lease: ConnectorLivenessLease | None = None
     compatibility_probe: Callable[[], object] | None = None
     heartbeat_interval = 5.0
+    claim_candidate_admission_id: str | None = None
+    claim_candidate_admission_digest: str | None = None
+    claim_release_only = False
+
+    if mode == "supervised_dispatch":
+        try:
+            initial_release = current_release_decision(settings)
+        except Exception:  # noqa: BLE001 - exact admission is required below
+            initial_release = None
+        if initial_release is not None and initial_release.chat_write_ready is True:
+            claim_release_only = True
+        else:
+            try:
+                initial_candidate = current_candidate_decision(
+                    settings,
+                    require_connector=False,
+                )
+            except Exception:  # noqa: BLE001
+                initial_candidate = None
+            if (
+                initial_candidate is None
+                or initial_candidate.dispatch_ready is not True
+                or initial_candidate.admission_id is None
+                or initial_candidate.admission_digest is None
+            ):
+                raise ConnectorRuntimeUnavailable(
+                    "supervised connector has no exact release or candidate admission"
+                )
+            claim_candidate_admission_id = initial_candidate.admission_id
+            claim_candidate_admission_digest = (
+                initial_candidate.admission_digest
+            )
+
+    worker_kwargs["ledger"] = HermesCommandLedger(
+        settings,
+        claim_candidate_admission_id=claim_candidate_admission_id,
+        claim_release_only=claim_release_only,
+    )
 
     def _network_gate() -> DispatchGateDecision:
         if stop_event.is_set():
@@ -313,6 +355,36 @@ def build_connector_runtime(
                 allow=False,
                 reason="connector_liveness_lost",
                 retryable=True,
+            )
+        if claim_candidate_admission_id is not None:
+            try:
+                candidate = current_candidate_decision(
+                    settings,
+                    require_connector=False,
+                )
+            except Exception:  # noqa: BLE001
+                candidate = None
+            if (
+                candidate is None
+                or candidate.dispatch_ready is not True
+                or candidate.admission_id
+                != claim_candidate_admission_id
+                or candidate.admission_digest
+                != claim_candidate_admission_digest
+            ):
+                blocker = (
+                    candidate.blockers[0]
+                    if candidate is not None and candidate.blockers
+                    else "candidate_gate_closed"
+                )
+                return DispatchGateDecision(
+                    allow=False,
+                    reason=_safe_runtime_code(blocker),
+                    retryable=False,
+                )
+            return DispatchGateDecision(
+                allow=True,
+                reason="candidate_ready",
             )
         try:
             decision = current_release_decision(settings)
@@ -529,6 +601,8 @@ workflow_binding_app = typer.Typer(
 )
 hermes_app.add_typer(workflow_binding_app, name="workflow-binding")
 hermes_app.add_typer(release_app, name="release")
+hermes_app.add_typer(candidate_app, name="candidate")
+hermes_app.add_typer(paper_gate_app, name="paper-gate")
 
 _WORKFLOW_BINDING_STDIN_LIMIT = 16 * 1024
 _PG_BIGINT_MAX = 9_223_372_036_854_775_807

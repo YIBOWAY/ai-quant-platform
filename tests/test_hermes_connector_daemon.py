@@ -244,7 +244,11 @@ def test_supervised_builder_wires_one_durable_port_and_fresh_gate(
         "PostgresCommandWakeupWaiter",
         lambda **_kwargs: waiter,
     )
-    monkeypatch.setattr(connector_cli, "HermesCommandLedger", lambda _settings: ledger)
+    monkeypatch.setattr(
+        connector_cli,
+        "HermesCommandLedger",
+        lambda _settings, **_kwargs: ledger,
+    )
     monkeypatch.setattr(
         connector_cli,
         "intent_payload_input_resolver",
@@ -312,7 +316,7 @@ def test_supervised_builder_wires_one_durable_port_and_fresh_gate(
     second = runtime.network_gate()
     assert first.allow is True
     assert second.allow is True
-    assert release_calls == ["decision", "decision"]
+    assert release_calls == ["decision", "decision", "decision"]
     monkeypatch.setattr(
         connector_cli,
         "current_release_decision",
@@ -380,7 +384,15 @@ def test_supervised_builder_never_acquires_liveness_for_broken_hqa(
     monkeypatch.setattr(
         connector_cli,
         "HermesCommandLedger",
-        lambda _settings: SimpleNamespace(),
+        lambda _settings, **_kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        connector_cli,
+        "current_release_decision",
+        lambda _settings: SimpleNamespace(
+            chat_write_ready=True,
+            blockers=(),
+        ),
     )
     monkeypatch.setattr(
         connector_cli,

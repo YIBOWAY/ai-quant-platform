@@ -38,6 +38,7 @@ from quant_system.hermes.workflow_binding import (
     workflow_preparation_digest,
 )
 from quant_system.storage import database as db
+from tests.postgres_reset import truncate_with_fk_dependents
 
 pytestmark = pytest.mark.pg
 
@@ -112,51 +113,16 @@ def _prepared(**overrides: object) -> PreparedWorkflowCommand:
 
 
 def _reset_workflow_ledger(database: db.Database) -> None:
-    with database.connect() as conn, conn.transaction():
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_workflow_bindings DISABLE TRIGGER USER"
-        )
-        conn.execute("ALTER TABLE quant_system.hermes_command_events DISABLE TRIGGER USER")
-        conn.execute("ALTER TABLE quant_system.hermes_run_links DISABLE TRIGGER USER")
-        conn.execute(
-            """
-            TRUNCATE TABLE
-                quant_system.hermes_command_workflow_bindings,
-                quant_system.hermes_run_links,
-                quant_system.hermes_outbox,
-                quant_system.hermes_command_events,
-                quant_system.hermes_commands
-            RESTART IDENTITY
-            """
-        )
-        for trigger_name in (
-            "trg_hermes_workflow_binding_validate",
-            "trg_hermes_workflow_binding_append_only",
-            "trg_hermes_workflow_binding_append_only_truncate",
-        ):
-            conn.execute(
-                "ALTER TABLE quant_system.hermes_command_workflow_bindings "
-                f"ENABLE ALWAYS TRIGGER {trigger_name}"
-            )
-        # V1.2A: writer readiness now requires ENABLE ALWAYS ('A') on the
-        # migration-005 append-only triggers, so re-enable them in ALWAYS mode
-        # (not ENABLE TRIGGER USER, which would leave them origin-only/'O').
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only_truncate"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only_truncate"
-        )
+    truncate_with_fk_dependents(
+        database,
+        (
+            "quant_system.hermes_command_workflow_bindings",
+            "quant_system.hermes_run_links",
+            "quant_system.hermes_outbox",
+            "quant_system.hermes_command_events",
+            "quant_system.hermes_commands",
+        ),
+    )
 
 
 def _workflow_business_counts(database: db.Database) -> tuple[int, int, int, int]:

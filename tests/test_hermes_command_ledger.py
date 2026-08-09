@@ -32,6 +32,7 @@ from quant_system.hermes.workflow_binding import (
     workflow_preparation_digest,
 )
 from quant_system.storage import database as db
+from tests.postgres_reset import isolated_test_database_url, truncate_with_fk_dependents
 
 pytestmark = pytest.mark.pg
 
@@ -151,54 +152,16 @@ def _deliver_bound_test_command(
 
 
 def _reset_hermes_ledger(database: db.Database) -> None:
-    with database.connect() as conn, conn.transaction():
-        # Production roles must never truncate append-only evidence. Tests use
-        # the table owner and disable only user triggers inside one rollback-safe
-        # transaction to isolate cases.
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_workflow_bindings DISABLE TRIGGER USER"
-        )
-        conn.execute("ALTER TABLE quant_system.hermes_command_events DISABLE TRIGGER USER")
-        conn.execute("ALTER TABLE quant_system.hermes_run_links DISABLE TRIGGER USER")
-        conn.execute(
-            """
-            TRUNCATE TABLE
-                quant_system.hermes_command_workflow_bindings,
-                quant_system.hermes_run_links,
-                quant_system.hermes_outbox,
-                quant_system.hermes_command_events,
-                quant_system.hermes_commands
-            RESTART IDENTITY
-            """
-        )
-        for trigger_name in (
-            "trg_hermes_workflow_binding_validate",
-            "trg_hermes_workflow_binding_append_only",
-            "trg_hermes_workflow_binding_append_only_truncate",
-        ):
-            conn.execute(
-                "ALTER TABLE quant_system.hermes_command_workflow_bindings "
-                f"ENABLE ALWAYS TRIGGER {trigger_name}"
-            )
-        # V1.2A: writer readiness now requires ENABLE ALWAYS ('A') on the
-        # migration-005 append-only triggers, so re-enable them in ALWAYS mode
-        # (not ENABLE TRIGGER USER, which would leave them origin-only/'O').
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only_truncate"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only_truncate"
-        )
+    truncate_with_fk_dependents(
+        database,
+        (
+            "quant_system.hermes_command_workflow_bindings",
+            "quant_system.hermes_run_links",
+            "quant_system.hermes_outbox",
+            "quant_system.hermes_command_events",
+            "quant_system.hermes_commands",
+        ),
+    )
 
 
 def test_hermes_command_ledger_migration_is_repeatable() -> None:
@@ -958,47 +921,70 @@ def test_command_events_reject_update_and_delete() -> None:
 
 
 def test_manual_rollback_and_reapply_preserve_preexisting_platform_schema() -> None:
-    settings = _postgres_settings()
-    db.reset_database_cache()
-    database = db.get_database(settings)
-    assert database is not None
-    db.run_migrations(database)
+    base_url = os.environ.get("QS_TEST_DATABASE_URL")
+    if not base_url:
+        pytest.skip("set QS_TEST_DATABASE_URL to run PostgreSQL integration tests")
     rollback_sql = Path("scripts/sql/rollback/005_hermes_command_ledger.down.sql").read_text(
         encoding="utf-8"
     )
     binding_rollback_sql = Path(
         "scripts/sql/rollback/006_hermes_workflow_binding.down.sql"
     ).read_text(encoding="utf-8")
+    base_migrations = tuple(f"{ordinal:03d}_{name}.sql" for ordinal, name in (
+        (1, "runs_index"),
+        (2, "ai_news_cache"),
+        (3, "app_users_brief_ai_reports"),
+        (4, "paper_account_tables"),
+        (5, "hermes_command_ledger"),
+        (6, "hermes_workflow_binding"),
+    ))
 
-    try:
-        with database.connect() as conn:
-            root_before = conn.execute(
-                "SELECT username FROM quant_system.app_users WHERE username = 'root'"
-            ).fetchone()
-            conn.execute(binding_rollback_sql)
-            conn.execute(rollback_sql)
-            ledger_table_after_rollback = conn.execute(
-                "SELECT to_regclass('quant_system.hermes_commands')"
-            ).fetchone()[0]
-
-        assert root_before == ("root",)
-        assert ledger_table_after_rollback is None
-
-        db.run_migrations(database)
-        with database.connect() as conn:
-            root_after = conn.execute(
-                "SELECT username FROM quant_system.app_users WHERE username = 'root'"
-            ).fetchone()
-            schema_version = conn.execute(
-                "SELECT schema_version FROM quant_system.hermes_ledger_meta"
-            ).fetchone()
-
-        assert root_after == ("root",)
-        assert schema_version == (1,)
-    finally:
-        db.run_migrations(database)
-        _reset_hermes_ledger(database)
+    with isolated_test_database_url(base_url, purpose="ledger_rb") as isolated_url:
+        settings = Settings(
+            database=DatabaseSettings(
+                enabled=True,
+                url=isolated_url,
+                auto_migrate=False,
+                connect_timeout_seconds=1,
+            )
+        )
         db.reset_database_cache()
+        database = db.get_database(settings)
+        assert database is not None
+        try:
+            db.run_migrations(database, only=base_migrations)
+            with database.connect() as conn:
+                root_before = conn.execute(
+                    "SELECT username FROM quant_system.app_users WHERE username = 'root'"
+                ).fetchone()
+                conn.execute(binding_rollback_sql)
+                conn.execute(rollback_sql)
+                ledger_table_after_rollback = conn.execute(
+                    "SELECT to_regclass('quant_system.hermes_commands')"
+                ).fetchone()[0]
+
+            assert root_before == ("root",)
+            assert ledger_table_after_rollback is None
+
+            db.run_migrations(
+                database,
+                only=(
+                    "005_hermes_command_ledger.sql",
+                    "006_hermes_workflow_binding.sql",
+                ),
+            )
+            with database.connect() as conn:
+                root_after = conn.execute(
+                    "SELECT username FROM quant_system.app_users WHERE username = 'root'"
+                ).fetchone()
+                schema_version = conn.execute(
+                    "SELECT schema_version FROM quant_system.hermes_ledger_meta"
+                ).fetchone()
+
+            assert root_after == ("root",)
+            assert schema_version == (1,)
+        finally:
+            db.reset_database_cache()
 
 
 def test_claim_next_uses_lease_token_and_consumes_matching_outbox_wakeup() -> None:

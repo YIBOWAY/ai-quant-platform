@@ -21,6 +21,9 @@ from dataclasses import dataclass
 from typing import Final
 
 from quant_system.config.settings import Settings
+from quant_system.hermes.candidate_admission_gate import (
+    current_candidate_decision,
+)
 from quant_system.hermes.command_ledger import command_ledger_schema_version
 from quant_system.hermes.connector_liveness import ConnectorLivenessAuthority
 from quant_system.hermes.release_runtime import (
@@ -45,11 +48,16 @@ _CACHE_LOCK = threading.Lock()
 @dataclass(frozen=True)
 class _EffectiveAdmission:
     release_ready: bool
+    candidate_ready: bool
     connector_ready: bool
     ready: bool
+    admission_mode: str
     blockers: tuple[str, ...]
+    final_release_blockers: tuple[str, ...]
     release_stamp_id: str | None
     public_cutover_id: str | None
+    candidate_admission_id: str | None
+    candidate_admission_digest: str | None
     release_event_cursor: int
     connector_reason: str
     connector_worker_id: str | None
@@ -77,16 +85,39 @@ def _dedupe(items: list[str]) -> list[str]:
 
 
 def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
-    blockers: list[str] = []
+    final_blockers: list[str] = []
     release = None
     try:
         release = current_release_decision(settings)
-        blockers.extend(str(item) for item in release.blockers)
+        final_blockers.extend(str(item) for item in release.blockers)
     except Exception:  # noqa: BLE001 - admission probes always fail closed
-        blockers.append("effective_release_gate_unavailable")
+        final_blockers.append("effective_release_gate_unavailable")
 
     connector = None
-    if release is not None:
+    release_ready = bool(release is not None and release.ready)
+    candidate = None
+    if (
+        not release_ready
+        and settings.candidate_admission.enabled is True
+    ):
+        try:
+            candidate = current_candidate_decision(
+                settings,
+                require_connector=True,
+            )
+        except Exception:  # noqa: BLE001 - candidate uncertainty closes writes
+            candidate = None
+
+    candidate_ready = bool(candidate is not None and candidate.ready)
+    admission_mode = (
+        "release"
+        if release_ready
+        else ("candidate" if candidate_ready else "closed")
+    )
+    blockers: list[str] = []
+    if release_ready or candidate is None:
+        if not release_ready:
+            blockers.extend(final_blockers)
         try:
             platform_digest = runtime_identity_observation(
                 settings
@@ -107,18 +138,29 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
                 blockers.append(str(connector.reason))
         except Exception:  # noqa: BLE001 - liveness uncertainty closes writes
             blockers.append("connector_liveness_unavailable")
+    elif candidate is not None:
+        blockers.extend(str(item) for item in candidate.blockers)
     else:
-        blockers.append("connector_liveness_unavailable")
+        blockers.extend(final_blockers)
 
-    release_ready = bool(release is not None and release.ready)
-    connector_ready = bool(connector is not None and connector.ready)
+    connector_ready = bool(
+        (connector is not None and connector.ready)
+        or (candidate is not None and candidate.connector_ready)
+    )
     ordered = tuple(_dedupe(blockers))
-    ready = release_ready and connector_ready and not ordered
+    ready = (
+        (release_ready or candidate_ready)
+        and connector_ready
+        and not ordered
+    )
     return _EffectiveAdmission(
         release_ready=release_ready,
+        candidate_ready=candidate_ready,
         connector_ready=connector_ready,
         ready=ready,
+        admission_mode=admission_mode,
         blockers=ordered,
+        final_release_blockers=tuple(_dedupe(final_blockers)),
         release_stamp_id=(
             str(release.release_stamp_id)
             if release is not None and release.release_stamp_id is not None
@@ -128,6 +170,16 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
             str(release.public_cutover_id)
             if release is not None and release.public_cutover_id is not None
             else None
+        ),
+        candidate_admission_id=(
+            None
+            if candidate is None
+            else candidate.admission_id
+        ),
+        candidate_admission_digest=(
+            None
+            if candidate is None
+            else candidate.admission_digest
         ),
         release_event_cursor=(
             int(release.event_cursor)
@@ -140,23 +192,39 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
         connector_reason=(
             str(connector.reason)
             if connector is not None
-            else "connector_liveness_unavailable"
+            else (
+                "ready"
+                if candidate is not None and candidate.connector_ready
+                else "connector_liveness_unavailable"
+            )
         ),
         connector_worker_id=(
             str(connector.worker_id)
             if connector is not None and connector.worker_id is not None
-            else None
+            else (
+                None
+                if candidate is None
+                else candidate.connector_worker_id
+            )
         ),
         connector_mode=(
             str(connector.mode)
             if connector is not None and connector.mode is not None
-            else None
+            else (
+                "supervised_dispatch"
+                if candidate is not None and candidate.connector_ready
+                else None
+            )
         ),
         connector_heartbeat_age_seconds=(
             float(connector.heartbeat_age_seconds)
             if connector is not None
             and connector.heartbeat_age_seconds is not None
-            else None
+            else (
+                None
+                if candidate is None
+                else candidate.connector_heartbeat_age_seconds
+            )
         ),
     )
 
@@ -234,13 +302,23 @@ def _authority_readiness_projection(
         ),
         "release_authorized": admission.release_ready,
         "release_blockers": list(admission.blockers),
+        "final_release_blockers": list(
+            admission.final_release_blockers
+        ),
         "release_stamp_id": admission.release_stamp_id,
         "public_cutover_id": admission.public_cutover_id,
+        "admission_mode": admission.admission_mode,
+        "candidate_admission_id": admission.candidate_admission_id,
+        "candidate_admission_digest": (
+            admission.candidate_admission_digest
+        ),
+        "candidate_chat_write_ready": admission.candidate_ready,
         "release_event_cursor": admission.release_event_cursor,
         "mutation_enabled": mutation_on,
         "local_chat_write_ready": admission.ready,
         "composer_write_ready": admission.ready,
-        "public_chat_write_ready": admission.ready,
+        "public_write_authorized": admission.release_ready,
+        "public_chat_write_ready": admission.release_ready,
         "chat_write_ready": admission.ready,
     }
 

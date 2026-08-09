@@ -34,6 +34,7 @@ from quant_system.hermes.workflow_binding import (
     workflow_preparation_digest,
 )
 from quant_system.storage import database as db
+from tests.postgres_reset import truncate_with_fk_dependents
 
 
 def _cmd(
@@ -1043,48 +1044,16 @@ def _pg_settings() -> Settings:
 
 
 def _reset_ledger(database: db.Database) -> None:
-    with database.connect() as conn, conn.transaction():
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_workflow_bindings DISABLE TRIGGER USER"
-        )
-        conn.execute("ALTER TABLE quant_system.hermes_command_events DISABLE TRIGGER USER")
-        conn.execute("ALTER TABLE quant_system.hermes_run_links DISABLE TRIGGER USER")
-        conn.execute(
-            """
-            TRUNCATE TABLE
-                quant_system.hermes_command_workflow_bindings,
-                quant_system.hermes_run_links,
-                quant_system.hermes_outbox,
-                quant_system.hermes_command_events,
-                quant_system.hermes_commands
-            RESTART IDENTITY
-            """
-        )
-        for trigger_name in (
-            "trg_hermes_workflow_binding_validate",
-            "trg_hermes_workflow_binding_append_only",
-            "trg_hermes_workflow_binding_append_only_truncate",
-        ):
-            conn.execute(
-                "ALTER TABLE quant_system.hermes_command_workflow_bindings "
-                f"ENABLE ALWAYS TRIGGER {trigger_name}"
-            )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_command_events "
-            "ENABLE ALWAYS TRIGGER trg_hermes_command_events_append_only_truncate"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only"
-        )
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_run_links "
-            "ENABLE ALWAYS TRIGGER trg_hermes_run_links_append_only_truncate"
-        )
+    truncate_with_fk_dependents(
+        database,
+        (
+            "quant_system.hermes_command_workflow_bindings",
+            "quant_system.hermes_run_links",
+            "quant_system.hermes_outbox",
+            "quant_system.hermes_command_events",
+            "quant_system.hermes_commands",
+        ),
+    )
 
 
 def _bound_command(

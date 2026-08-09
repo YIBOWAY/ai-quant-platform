@@ -27,6 +27,7 @@ from quant_system.hermes.session_registry import (
 )
 from quant_system.hermes.submission_saga import submit_create_managed_session
 from quant_system.storage import database as db
+from tests.postgres_reset import truncate_with_fk_dependents
 
 pytestmark = pytest.mark.pg
 
@@ -141,13 +142,11 @@ def _postgres_settings() -> Settings:
 
 
 def _reset_sessions(database: db.Database) -> None:
-    with database.connect() as conn, conn.transaction():
-        conn.execute("ALTER TABLE quant_system.hermes_workspace_sessions DISABLE TRIGGER USER")
-        conn.execute("TRUNCATE TABLE quant_system.hermes_workspace_sessions")
-        conn.execute(
-            "ALTER TABLE quant_system.hermes_workspace_sessions "
-            "ENABLE ALWAYS TRIGGER trg_hermes_workspace_session_immutability"
-        )
+    truncate_with_fk_dependents(
+        database,
+        ("quant_system.hermes_workspace_sessions",),
+        restart_identity=False,
+    )
 
 
 def test_session_registry_migration_is_ready_and_repeatable() -> None:

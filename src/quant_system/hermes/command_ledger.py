@@ -185,8 +185,27 @@ class HermesOutboxEntry:
 class HermesCommandLedger:
     """Transactional repository for command, event, outbox, and run-link facts."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        claim_candidate_admission_id: str | None = None,
+        claim_release_only: bool = False,
+    ) -> None:
+        if (
+            claim_candidate_admission_id is not None
+            and _SESSION_ID_RE.fullmatch(claim_candidate_admission_id) is None
+        ):
+            raise HermesCommandValidationError(
+                "invalid claim_candidate_admission_id"
+            )
+        if claim_candidate_admission_id is not None and claim_release_only:
+            raise HermesCommandValidationError(
+                "candidate and final-release claim scopes are exclusive"
+            )
         self._settings = settings
+        self._claim_candidate_admission_id = claim_candidate_admission_id
+        self._claim_release_only = bool(claim_release_only)
 
     def create_command(
         self,
@@ -580,12 +599,38 @@ class HermesCommandLedger:
                 #   2) L2a chat path — conversation_turn with store-mapped
                 #      platform-payload://sha256/<digest> and a policy digest
                 #      (Intent Payload Store is body authority; no binding row)
+                claim_scope_sql = ""
+                claim_scope_params: tuple[object, ...] = ()
+                if self._claim_candidate_admission_id is not None:
+                    claim_scope_sql = f"""
+                      AND hermes_commands.candidate_admission_id = %s
+                      AND EXISTS (
+                          SELECT 1
+                          FROM {SCHEMA}.agent_v02_candidate_admissions
+                              AS candidate_admission
+                          WHERE candidate_admission.admission_id =
+                                hermes_commands.candidate_admission_id
+                            AND candidate_admission.owner_user_id =
+                                hermes_commands.owner_user_id
+                            AND candidate_admission.status = 'open'
+                            AND candidate_admission.expires_at >
+                                clock_timestamp()
+                      )
+                    """
+                    claim_scope_params = (
+                        self._claim_candidate_admission_id,
+                    )
+                elif self._claim_release_only:
+                    claim_scope_sql = (
+                        "\n AND hermes_commands.candidate_admission_id IS NULL"
+                    )
                 candidate = conn.execute(
                     f"""
                     SELECT command_id, version
                     FROM {SCHEMA}.hermes_commands
                     WHERE owner_user_id = %s
                       AND state = 'queued'
+                      {claim_scope_sql}
                       AND EXISTS (
                           SELECT 1
                           FROM {SCHEMA}.hermes_workflow_binding_meta AS binding_meta
@@ -630,7 +675,7 @@ class HermesCommandLedger:
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
                     """,
-                    (ROOT_USER_ID,),
+                    (ROOT_USER_ID, *claim_scope_params),
                 ).fetchone()
                 if candidate is None:
                     return None
@@ -651,6 +696,7 @@ class HermesCommandLedger:
                       AND owner_user_id = %s
                       AND version = %s
                       AND state = 'queued'
+                      {claim_scope_sql}
                       AND (
                           EXISTS (
                               SELECT 1
@@ -690,6 +736,7 @@ class HermesCommandLedger:
                         command_id,
                         ROOT_USER_ID,
                         previous_version,
+                        *claim_scope_params,
                     ),
                 ).fetchone()
                 if row is None:

@@ -1,0 +1,1082 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import stat
+import subprocess
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, cast
+
+import pytest
+
+from quant_system.config.settings import Settings
+from quant_system.hermes import release_evidence_builder
+from quant_system.hermes.candidate_evidence import (
+    candidate_preflight_evidence_observation,
+)
+from quant_system.hermes.release_evidence_builder import (
+    EvidenceBuildConflict,
+    EvidenceBuildError,
+    build_candidate_preflight,
+    build_release_evidence,
+    run_test_suite,
+)
+from quant_system.hermes.release_runtime import (
+    ReleaseRuntimeProbeError,
+    release_evidence_observation,
+)
+from quant_system.hermes.test_execution_evidence import (
+    TestExecutionEvidenceError as ExecutionEvidenceError,
+)
+from quant_system.hermes.test_execution_evidence import (
+    parse_junit_counts,
+    validate_argv,
+)
+
+
+def _digest(seed: str) -> str:
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()
+
+
+def _runtime_digest(name: str, commit: str) -> str:
+    payload = b"agent-v0.2-runtime\x00" + name.encode("ascii")
+    payload += b"\x00commit\x00" + commit.encode("ascii") + b"\x00"
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _run(*argv: str, cwd: Path) -> str:
+    return subprocess.run(
+        argv,
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _git_repo(path: Path, *, seed: str) -> tuple[Path, str]:
+    path.mkdir()
+    _run("git", "init", "-q", cwd=path)
+    _run("git", "config", "user.name", "Evidence Test", cwd=path)
+    _run("git", "config", "user.email", "evidence@example.invalid", cwd=path)
+    (path / "tracked.txt").write_text(seed, encoding="utf-8")
+    (path / ".gitignore").write_text(
+        ".pytest_cache/\n__pycache__/\nsrc/frontend/node_modules/\n",
+        encoding="utf-8",
+    )
+    tests_dir = path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_release_receipt.py").write_text(
+        "import os\n\n"
+        "def test_release_receipt():\n"
+        "    assert 'PYTHONPATH' not in os.environ\n"
+        "    assert 'PYTEST_ADDOPTS' not in os.environ\n"
+        "    assert 'PYTEST_PLUGINS' not in os.environ\n"
+        "    assert os.environ['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] == '1'\n",
+        encoding="utf-8",
+    )
+    if seed == "platform":
+        frontend = path / "src" / "frontend"
+        frontend.mkdir(parents=True)
+        (frontend / "package.json").write_text(
+            '{"scripts":{"test":"vitest run"},"type":"module"}\n',
+            encoding="utf-8",
+        )
+        (frontend / "release-receipt.test.js").write_text(
+            "import { expect, test } from 'vitest';\n"
+            "test('release receipt', () => {\n"
+            "  expect(process.env.PYTHONPATH).toBeUndefined();\n"
+            "  expect(process.env.PYTEST_ADDOPTS).toBeUndefined();\n"
+            "  expect(process.env.PYTEST_PLUGINS).toBeUndefined();\n"
+            "  expect(process.env.PYTEST_DISABLE_PLUGIN_AUTOLOAD).toBe('1');\n"
+            "});\n",
+            encoding="utf-8",
+        )
+        frontend_modules = Path(__file__).resolve().parents[1] / "src/frontend/node_modules"
+        assert frontend_modules.is_dir()
+        (frontend / "node_modules").symlink_to(
+            frontend_modules,
+            target_is_directory=True,
+        )
+    _run("git", "add", ".", cwd=path)
+    _run("git", "commit", "-q", "-m", "fixture", cwd=path)
+    return path, _run("git", "rev-parse", "HEAD", cwd=path)
+
+
+def _runtime_roots(tmp_path: Path) -> tuple[dict[str, Path], dict[str, dict[str, str]]]:
+    roots: dict[str, Path] = {}
+    runtime: dict[str, dict[str, str]] = {}
+    for name in ("platform", "hqa", "hermes"):
+        root, commit = _git_repo(tmp_path / f"{name}-repo", seed=name)
+        roots[name] = root
+        runtime[name] = {
+            "commit": commit,
+            "digest": _runtime_digest(name, commit),
+        }
+    return roots, runtime
+
+
+def _test_receipts(
+    tmp_path: Path,
+    roots: dict[str, Path],
+    *,
+    reuse: bool = True,
+) -> tuple[Path, ...]:
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    names = ("platform", "hqa", "hermes_focused", "frontend")
+    if reuse:
+        existing: list[Path] = []
+        for name in names:
+            matches = list(output_dir.glob(f"test-{name.replace('_', '-')}-receipt-*.json"))
+            if len(matches) != 1:
+                break
+            existing.append(matches[0])
+        if len(existing) == len(names):
+            return tuple(existing)
+    paths: list[Path] = []
+    for name in names:
+        if name == "frontend":
+            cwd = roots["platform"] / "src/frontend"
+            argv = (
+                str(cwd / "node_modules" / ".bin" / "vitest"),
+                "run",
+                "--reporter=junit",
+                "--outputFile={junit}",
+            )
+        else:
+            argv = (
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests",
+                "--junitxml={junit}",
+            )
+            cwd = roots[
+                {
+                    "platform": "platform",
+                    "hqa": "hqa",
+                    "hermes_focused": "hermes",
+                }[name]
+            ]
+        result = run_test_suite(
+            name=name,
+            argv=argv,
+            output_dir=output_dir,
+            runtime_roots=roots,
+            cwd=cwd,
+        )
+        paths.append(result.receipt_path)
+    return tuple(paths)
+
+
+def test_run_suite_executes_without_shell_and_seals_recomputable_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+    monkeypatch.setenv("PYTHONPATH", "/tmp/untrusted-shadow")
+    monkeypatch.setenv("PYTEST_ADDOPTS", "-k no_tests")
+    monkeypatch.setenv("PYTEST_PLUGINS", "untrusted_plugin")
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "0")
+    result = run_test_suite(
+        name="platform",
+        argv=(
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests",
+            "--junitxml={junit}",
+        ),
+        output_dir=output_dir,
+        runtime_roots=roots,
+        cwd=roots["platform"],
+    )
+
+    assert result.name == "platform"
+    assert result.passed == 1
+    assert result.failed == 0
+    assert result.skipped == 0
+    assert result.runtime == runtime
+    assert result.receipt_path.name.startswith("test-platform-receipt-")
+    receipt = json.loads(result.receipt_path.read_text(encoding="utf-8"))
+    assert receipt["argv"][0] == sys.executable
+    assert all("{junit}" not in argument for argument in receipt["argv"])
+    assert result.output_sha256 in result.output_path.name
+    assert result.junit_sha256 in result.junit_path.name
+    assert result.receipt_sha256 in result.receipt_path.name
+    assert {stat.S_IMODE(path.stat().st_mode) for path in output_dir.iterdir()} == {0o600}
+
+
+def test_run_suite_rejects_unapproved_executable_or_suite_cwd(
+    tmp_path: Path,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+    fake_runner = tmp_path / "fake-runner"
+    fake_runner.write_text(
+        "#!/bin/sh\nexit 0\n",
+        encoding="utf-8",
+    )
+    fake_runner.chmod(0o700)
+    spoofed_pytest = tmp_path / "untrusted" / ".venv" / "bin" / "pytest"
+    spoofed_pytest.parent.mkdir(parents=True)
+    spoofed_pytest.write_text(
+        "#!/bin/sh\nexit 0\n",
+        encoding="utf-8",
+    )
+    spoofed_pytest.chmod(0o700)
+
+    for executable in (fake_runner, spoofed_pytest):
+        with pytest.raises(EvidenceBuildError, match="approved suite runner"):
+            run_test_suite(
+                name="platform",
+                argv=(str(executable), "--junitxml={junit}"),
+                output_dir=output_dir,
+                runtime_roots=roots,
+                cwd=roots["platform"],
+            )
+    with pytest.raises(EvidenceBuildError, match="cwd"):
+        run_test_suite(
+            name="platform",
+            argv=(
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests",
+                "--junitxml={junit}",
+            ),
+            output_dir=output_dir,
+            runtime_roots=roots,
+            cwd=roots["hqa"],
+        )
+    with pytest.raises(EvidenceBuildError, match="approved suite runner"):
+        run_test_suite(
+            name="frontend",
+            argv=(
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests",
+                "--junitxml={junit}",
+            ),
+            output_dir=output_dir,
+            runtime_roots=roots,
+            cwd=roots["platform"] / "src/frontend",
+        )
+
+    assert not list(output_dir.iterdir())
+
+
+def test_argv_secret_screen_allows_benign_test_names_but_rejects_secret_options() -> None:
+    argv = validate_argv(
+        (
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/test_token_stream.py",
+            "--junitxml={junit}",
+        ),
+        require_junit_placeholder=True,
+    )
+
+    assert "tests/test_token_stream.py" in argv
+    with pytest.raises(ExecutionEvidenceError, match="sensitive"):
+        validate_argv(
+            (
+                sys.executable,
+                "-m",
+                "pytest",
+                "--auth-token=must-not-persist",
+                "--junitxml={junit}",
+            ),
+            require_junit_placeholder=True,
+        )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group contract")
+def test_process_cleanup_kills_descendants_after_group_leader_exits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    killed_groups: list[int] = []
+
+    class _ExitedLeader:
+        pid = 4242
+
+        @staticmethod
+        def poll() -> int:
+            return 0
+
+    monkeypatch.setattr(
+        os,
+        "killpg",
+        lambda process_group, _signal: killed_groups.append(process_group),
+    )
+
+    release_evidence_builder._terminate_process(  # noqa: SLF001
+        cast(Any, _ExitedLeader())
+    )
+
+    assert killed_groups == [4242]
+
+
+def test_run_suite_rejects_nonzero_exit_without_sealing_artifacts(
+    tmp_path: Path,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    failing_test = roots["platform"] / "tests" / "test_release_receipt.py"
+    failing_test.write_text(
+        "def test_release_receipt():\n    assert False\n",
+        encoding="utf-8",
+    )
+    _run("git", "add", ".", cwd=roots["platform"])
+    _run("git", "commit", "-q", "-m", "failing fixture", cwd=roots["platform"])
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="exit code"):
+        run_test_suite(
+            name="platform",
+            argv=(
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests",
+                "--junitxml={junit}",
+            ),
+            output_dir=output_dir,
+            runtime_roots=roots,
+            cwd=roots["platform"],
+        )
+
+    assert not list(output_dir.iterdir())
+
+
+def test_run_suite_rejects_oversized_output_without_sealing_artifacts(
+    tmp_path: Path,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    noisy_test = roots["platform"] / "tests" / "test_release_receipt.py"
+    noisy_test.write_text(
+        "def test_release_receipt():\n    print('x' * (4 * 1024 * 1024 + 1), flush=True)\n",
+        encoding="utf-8",
+    )
+    _run("git", "add", ".", cwd=roots["platform"])
+    _run("git", "commit", "-q", "-m", "noisy fixture", cwd=roots["platform"])
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="output is oversized"):
+        run_test_suite(
+            name="platform",
+            argv=(
+                sys.executable,
+                "-m",
+                "pytest",
+                "-s",
+                "tests",
+                "--junitxml={junit}",
+            ),
+            output_dir=output_dir,
+            runtime_roots=roots,
+            cwd=roots["platform"],
+        )
+
+    assert not list(output_dir.iterdir())
+
+
+def test_run_suite_fails_closed_if_runtime_changes_during_execution(
+    tmp_path: Path,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    mutating_test = roots["platform"] / "tests" / "test_release_receipt.py"
+    mutating_test.write_text(
+        "from pathlib import Path\n\n"
+        "def test_release_receipt():\n"
+        "    Path('tracked.txt').write_text('mutated during suite')\n",
+        encoding="utf-8",
+    )
+    _run("git", "add", ".", cwd=roots["platform"])
+    _run("git", "commit", "-q", "-m", "mutating fixture", cwd=roots["platform"])
+    output_dir = tmp_path / "receipts"
+    output_dir.mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="clean"):
+        run_test_suite(
+            name="platform",
+            argv=(
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests",
+                "--junitxml={junit}",
+            ),
+            output_dir=output_dir,
+            runtime_roots=roots,
+            cwd=roots["platform"],
+        )
+
+    assert not list(output_dir.iterdir())
+
+
+@pytest.mark.parametrize(
+    "xml",
+    [
+        "<testsuite><testcase></testsuite>",
+        (
+            '<testsuite tests="999" failures="0" errors="0" skipped="0">'
+            '<testcase name="only-one"/></testsuite>'
+        ),
+        (
+            '<!DOCTYPE testsuite [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'
+            '<testsuite><testcase name="bad">&xxe;</testcase></testsuite>'
+        ),
+    ],
+)
+def test_junit_parser_rejects_malformed_or_entity_bearing_xml(xml: str) -> None:
+    with pytest.raises(ExecutionEvidenceError, match="JUnit"):
+        parse_junit_counts(xml.encode("utf-8"))
+
+
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-32"])
+def test_junit_parser_rejects_non_utf8_dtd_before_xml_parsing(
+    encoding: str,
+) -> None:
+    xml = (
+        '<!DOCTYPE testsuite [<!ENTITY x "forbidden">]>'
+        '<testsuite tests="1"><testcase name="bad">&x;</testcase></testsuite>'
+    )
+
+    with pytest.raises(ExecutionEvidenceError, match="UTF-8"):
+        parse_junit_counts(xml.encode(encoding))
+
+
+def test_preflight_rejects_invented_receipt_and_stale_commit_rebinding(
+    tmp_path: Path,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    valid_receipts = _test_receipts(tmp_path, roots)
+    receipts = list(valid_receipts)
+    invented = b'{"contract":"agent-v0.2-test-execution-receipt/v1"}'
+    invented_path = (
+        tmp_path / "receipts" / f"test-platform-receipt-{hashlib.sha256(invented).hexdigest()}.json"
+    )
+    invented_path.write_bytes(invented)
+    invented_path.chmod(0o600)
+    receipts[0] = invented_path
+    output_dir = tmp_path / "preflight"
+    output_dir.mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="field root"):
+        build_candidate_preflight(
+            output_dir=output_dir,
+            runtime_roots=roots,
+            test_receipts=tuple(receipts),
+        )
+
+    (roots["hqa"] / "tracked.txt").write_text("new commit", encoding="utf-8")
+    _run("git", "add", "tracked.txt", cwd=roots["hqa"])
+    _run("git", "commit", "-q", "-m", "new runtime", cwd=roots["hqa"])
+    with pytest.raises(EvidenceBuildError, match="current clean runtimes"):
+        build_candidate_preflight(
+            output_dir=output_dir,
+            runtime_roots=roots,
+            test_receipts=valid_receipts,
+        )
+
+
+def test_preflight_rejects_stale_but_content_addressed_execution_receipt(
+    tmp_path: Path,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    receipts = list(_test_receipts(tmp_path, roots))
+    receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
+    stale = datetime.now(UTC) - timedelta(days=2)
+    timestamp = stale.isoformat(timespec="microseconds").replace("+00:00", "Z")
+    receipt["started_at"] = timestamp
+    receipt["completed_at"] = timestamp
+    content = json.dumps(
+        receipt,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    stale_path = receipts[0].parent / (
+        f"test-platform-receipt-{hashlib.sha256(content).hexdigest()}.json"
+    )
+    stale_path.write_bytes(content)
+    stale_path.chmod(0o600)
+    receipts[0] = stale_path
+    output_dir = tmp_path / "preflight"
+    output_dir.mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="freshness"):
+        build_candidate_preflight(
+            output_dir=output_dir,
+            runtime_roots=roots,
+            test_receipts=tuple(receipts),
+        )
+
+
+@pytest.mark.parametrize("kind", ["output", "junit"])
+def test_preflight_recomputes_and_rejects_tampered_test_files(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    receipts = _test_receipts(tmp_path, roots)
+    receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
+    target = receipts[0].parent / receipt[kind]["path"]
+    target.write_bytes(target.read_bytes() + b"tamper")
+    target.chmod(0o600)
+    output_dir = tmp_path / "preflight"
+    output_dir.mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="digest or size"):
+        build_candidate_preflight(
+            output_dir=output_dir,
+            runtime_roots=roots,
+            test_receipts=receipts,
+        )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX link/mode contract")
+@pytest.mark.parametrize(
+    "attack",
+    [
+        "receipt_symlink",
+        "receipt_parent_symlink",
+        "output_hardlink",
+        "junit_mode",
+    ],
+)
+def test_preflight_rejects_link_or_mode_weakened_execution_evidence(
+    tmp_path: Path,
+    attack: str,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    receipts = _test_receipts(tmp_path, roots)
+    receipt = receipts[0]
+    document = json.loads(receipt.read_text(encoding="utf-8"))
+    if attack == "receipt_symlink":
+        original = receipt.with_suffix(".original")
+        receipt.rename(original)
+        receipt.symlink_to(original)
+    elif attack == "receipt_parent_symlink":
+        original_parent = receipt.parent.with_name("receipts-original")
+        receipt.parent.rename(original_parent)
+        receipt.parent.symlink_to(original_parent, target_is_directory=True)
+    elif attack == "output_hardlink":
+        target = receipt.parent / document["output"]["path"]
+        os.link(target, target.with_suffix(".alias"))
+    else:
+        target = receipt.parent / document["junit"]["path"]
+        target.chmod(0o640)
+    output_dir = tmp_path / "preflight"
+    output_dir.mkdir(mode=0o700)
+
+    with pytest.raises(
+        EvidenceBuildError,
+        match="regular file|single-link|symlink",
+    ):
+        build_candidate_preflight(
+            output_dir=output_dir,
+            runtime_roots=roots,
+            test_receipts=receipts,
+        )
+
+
+def test_preflight_rejects_duplicate_keys_in_execution_receipt(
+    tmp_path: Path,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    receipts = list(_test_receipts(tmp_path, roots))
+    original = receipts[0].read_text(encoding="utf-8")
+    duplicate = (original[:-1] + ',"contract":"agent-v0.2-test-execution-receipt/v1"}').encode(
+        "utf-8"
+    )
+    duplicate_path = (
+        receipts[0].parent / f"test-platform-receipt-{hashlib.sha256(duplicate).hexdigest()}.json"
+    )
+    duplicate_path.write_bytes(duplicate)
+    duplicate_path.chmod(0o600)
+    receipts[0] = duplicate_path
+    output_dir = tmp_path / "preflight"
+    output_dir.mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="duplicate JSON"):
+        build_candidate_preflight(
+            output_dir=output_dir,
+            runtime_roots=roots,
+            test_receipts=tuple(receipts),
+        )
+
+
+def _facts(runtime: dict[str, dict[str, str]]) -> dict[str, object]:
+    return {
+        "admission_digest": _digest("admission"),
+        "admission_id": "admission-test",
+        "contract": "agent-v0.2-candidate-evidence-facts/v1",
+        "database_schema_fingerprint": _digest("schema"),
+        "final_order_snapshot_digest": _digest("zero-orders"),
+        "flows": {
+            "web_chat_multi_turn": {
+                "assistant_message_count": 2,
+                "command_ids": ["command-1", "command-2"],
+                "hermes_session_id": "hermes-web",
+                "message_count": 4,
+                "platform_session_id": "platform-web",
+                "route": "/hermes",
+                "run_ids": ["run-1", "run-2"],
+                "terminal_event_ids": [11, 12],
+                "transcript_digest": _digest("private-transcript"),
+                "user_message_count": 2,
+            },
+            "hermes_restart_recovery": {
+                "after_observation_id": "restart-after",
+                "before_observation_id": "restart-before",
+                "hermes_session_id": "hermes-web",
+                "message_count": 4,
+                "platform_session_id": "platform-web",
+                "post_restart_instance_id": "2" * 32,
+                "pre_restart_instance_id": "1" * 32,
+                "route": "/hermes",
+                "transcript_digest": _digest("private-transcript"),
+            },
+            "exact_message_fork": {
+                "child_hermes_session_id": "hermes-child",
+                "child_platform_session_id": "platform-child",
+                "fork_point": "message:2",
+                "provisioning_receipt_digest": _digest("fork-receipt"),
+                "route": "/hermes",
+                "source_channel": "discord",
+                "source_hermes_session_id": "hermes-source",
+                "source_message_count": 3,
+                "source_platform_session_id": "platform-source",
+                "source_transcript_digest": _digest("source-transcript"),
+            },
+            "options_vertical_live_futu_ro": {
+                "admission_digest": _digest("admission"),
+                "capture_digest": _digest("capture"),
+                "claim_id": "claim-options",
+                "command_id": "command-options",
+                "hermes_run_id": "run-options",
+                "hermes_session_id": "hermes-web",
+                "orders_created": 0,
+                "platform_session_id": "platform-web",
+                "provider": "futu",
+                "provider_receipt_digest": _digest("provider-receipt"),
+                "provider_receipt_id": "provider-receipt-1",
+                "provider_request_id": "provider-request-1",
+                "request_id": "options-request-1",
+                "result_id": "options-result-1",
+                "result_payload_digest": _digest("options-result"),
+                "route": "/hermes",
+                "sample_or_real": "real",
+            },
+            "paper_factor_gate_1_2_3_via_hermes": {
+                "attempt_ref": "attempt:paper",
+                "candidate_digest": _digest("paper-candidate"),
+                "candidate_id": "paper-candidate",
+                "command_id": "command-paper",
+                "final_backtest_receipt_id": "backtest-receipt-1",
+                "gate1_confirmation_id": "gate1-confirmation",
+                "gate1_hqa_ref": "gate:hqa-1",
+                "gate1_id": "gate-platform-1",
+                "gate1_receipt_digest": _digest("gate1-receipt"),
+                "gate1_receipt_ref": "receipt:gate1",
+                "gate1_source_digest": _digest("paper-source"),
+                "gate2_hqa_ref": "gate:hqa-2",
+                "gate2_id": "gate-platform-2",
+                "gate2_receipt_digest": _digest("gate2-receipt"),
+                "gate2_receipt_ref": "receipt:gate2",
+                "gate3_hqa_ref": "gate:hqa-3",
+                "gate3_id": "gate-platform-3",
+                "gate3_receipt_digest": _digest("gate3-receipt"),
+                "gate3_receipt_ref": "receipt:gate3",
+                "hermes_run_id": "run-paper",
+                "hermes_session_id": "hermes-web",
+                "orders_created": 0,
+                "platform_session_id": "platform-web",
+                "promotion_id": "promotion-paper",
+                "provider": "futu",
+                "reviewed_commit": "e" * 40,
+                "route": "/hermes",
+                "task_ref": "task:paper",
+                "workflow_audit_status": "consistent",
+            },
+        },
+        "runtime": {name: item["digest"] for name, item in runtime.items()},
+        "workspace_id": "workspace-root",
+    }
+
+
+class _Cursor:
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self._row = row
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self._row
+
+
+class _Connection:
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self.row = row
+        self.queries: list[tuple[str, tuple[object, ...]]] = []
+
+    def execute(
+        self,
+        statement: str,
+        parameters: tuple[object, ...],
+    ) -> _Cursor:
+        self.queries.append((statement, parameters))
+        return _Cursor(self.row)
+
+
+class _Database:
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self.connection = _Connection(row)
+
+    @contextmanager
+    def connect(self) -> Iterator[_Connection]:
+        yield self.connection
+
+
+def _database(
+    *,
+    facts: dict[str, object],
+    facts_digest: str | None = None,
+) -> _Database:
+    evidence_digest = facts_digest or _digest("evidence-set")
+    runtime = cast(dict[str, str], facts["runtime"])
+    row: tuple[object, ...] = (
+        "evidence-test",
+        "admission-test",
+        _digest("admission"),
+        None,
+        "workspace-root",
+        runtime["platform"],
+        runtime["hqa"],
+        runtime["hermes"],
+        _digest("zero-orders"),
+        _digest("zero-orders"),
+        facts,
+        evidence_digest,
+        evidence_digest,
+        datetime(2026, 7, 24, 2, 0, tzinfo=UTC),
+        "open",
+        None,
+        None,
+        None,
+    )
+    return _Database(row)
+
+
+def _build_final(
+    *,
+    tmp_path: Path,
+    roots: dict[str, Path],
+    database: _Database,
+    test_receipts: tuple[Path, ...] | None = None,
+):
+    receipts = test_receipts or _test_receipts(tmp_path, roots)
+    row = database.connection.row
+    if row is not None and row[3] is None:
+        preflight_dir = tmp_path / "admitted-preflight"
+        preflight_dir.mkdir(mode=0o700, exist_ok=True)
+        preflight = build_candidate_preflight(
+            output_dir=preflight_dir,
+            runtime_roots=roots,
+            test_receipts=receipts,
+        )
+        mutable_row = list(row)
+        mutable_row[3] = preflight.digest
+        database.connection.row = tuple(mutable_row)
+    return build_release_evidence(
+        cast(Settings, object()),
+        output_dir=tmp_path / "evidence",
+        runtime_roots=roots,
+        test_receipts=receipts,
+        admission_id="admission-test",
+        admission_digest=_digest("admission"),
+        evidence_set_id="evidence-test",
+        evidence_set_digest=_digest("evidence-set"),
+        database=cast(Any, database),
+        runtime_security_probe=lambda _settings: True,
+    )
+
+
+def test_build_release_evidence_maps_exact_verified_facts_and_self_validates(
+    tmp_path: Path,
+) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    database = _database(facts=_facts(runtime))
+    (tmp_path / "evidence").mkdir(mode=0o700)
+
+    result = _build_final(tmp_path=tmp_path, roots=roots, database=database)
+
+    assert result.idempotent_replay is False
+    observation = release_evidence_observation(result.manifest_path)
+    assert observation.digest == result.digest
+    assert observation.candidate_admission_id == "admission-test"
+    assert observation.evidence_set_id == "evidence-test"
+    assert observation.evidence_set_digest == _digest("evidence-set")
+    assert observation.final_order_snapshot_digest == _digest("zero-orders")
+    assert len(list((tmp_path / "evidence").glob("*.json"))) == 10
+    assert {
+        oct(path.stat().st_mode & 0o777) for path in (tmp_path / "evidence").glob("*.json")
+    } == {"0o600"}
+    manifest_text = result.manifest_path.read_text(encoding="utf-8")
+    assert "private-transcript" not in manifest_text
+    flow = json.loads(
+        (tmp_path / "evidence" / "real-flow-hermes-restart-recovery.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert flow["evidence"]["before_transcript_digest"] == _digest("private-transcript")
+    assert flow["evidence"]["after_transcript_digest"] == _digest("private-transcript")
+    assert len(database.connection.queries) == 1
+    query, parameters = database.connection.queries[0]
+    assert "agent_v02_candidate_evidence_sets" in query
+    assert parameters[-4:] == (
+        "admission-test",
+        _digest("admission"),
+        "evidence-test",
+        _digest("evidence-set"),
+    )
+
+
+def test_build_release_evidence_rejects_missing_flow(tmp_path: Path) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    facts = _facts(runtime)
+    cast(dict[str, object], facts["flows"]).pop("exact_message_fork")
+    database = _database(facts=facts)
+    (tmp_path / "evidence").mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="required flow"):
+        _build_final(tmp_path=tmp_path, roots=roots, database=database)
+
+    assert not list((tmp_path / "evidence").iterdir())
+
+
+def test_build_release_evidence_requires_exact_database_row(tmp_path: Path) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    database = _Database(None)
+    (tmp_path / "evidence").mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="exact verified"):
+        _build_final(tmp_path=tmp_path, roots=roots, database=database)
+
+
+def test_build_release_evidence_rejects_dirty_runtime(tmp_path: Path) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    (roots["hqa"] / "untracked.txt").write_text("dirty", encoding="utf-8")
+    database = _database(facts=_facts(runtime))
+    (tmp_path / "evidence").mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="clean"):
+        _build_final(tmp_path=tmp_path, roots=roots, database=database)
+
+    assert not list((tmp_path / "evidence").iterdir())
+
+
+def test_build_release_evidence_rejects_runtime_digest_mismatch(
+    tmp_path: Path,
+) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    facts = _facts(runtime)
+    cast(dict[str, str], facts["runtime"])["hermes"] = _digest("other-hermes")
+    database = _database(facts=facts)
+    (tmp_path / "evidence").mkdir(mode=0o700)
+
+    with pytest.raises(EvidenceBuildError, match="runtime"):
+        _build_final(tmp_path=tmp_path, roots=roots, database=database)
+
+
+def test_build_release_evidence_detects_tamper_and_conflicting_replay(
+    tmp_path: Path,
+) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    database = _database(facts=_facts(runtime))
+    (tmp_path / "evidence").mkdir(mode=0o700)
+    result = _build_final(tmp_path=tmp_path, roots=roots, database=database)
+    artifact = tmp_path / "evidence" / "real-flow-web-chat-multi-turn.json"
+    artifact.write_bytes(b"{}")
+    artifact.chmod(0o600)
+
+    with pytest.raises(ReleaseRuntimeProbeError):
+        release_evidence_observation(result.manifest_path)
+    with pytest.raises(EvidenceBuildConflict, match="different"):
+        _build_final(tmp_path=tmp_path, roots=roots, database=database)
+
+
+@pytest.mark.parametrize("kind", ["output", "junit"])
+def test_final_release_validator_reopens_copied_test_evidence(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    database = _database(facts=_facts(runtime))
+    (tmp_path / "evidence").mkdir(mode=0o700)
+    result = _build_final(tmp_path=tmp_path, roots=roots, database=database)
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    receipt_ref = manifest["tests"]["suites"][0]["receipt"]
+    receipt_path = result.manifest_path.parent / receipt_ref["path"]
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    target = result.manifest_path.parent / receipt[kind]["path"]
+    target.write_bytes(target.read_bytes() + b"tamper")
+    target.chmod(0o600)
+
+    with pytest.raises(ReleaseRuntimeProbeError, match="digest or size"):
+        release_evidence_observation(result.manifest_path)
+
+
+def test_build_release_evidence_replay_is_idempotent_and_drift_conflicts(
+    tmp_path: Path,
+) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    database = _database(facts=_facts(runtime))
+    (tmp_path / "evidence").mkdir(mode=0o700)
+    first = _build_final(tmp_path=tmp_path, roots=roots, database=database)
+    replay = _build_final(tmp_path=tmp_path, roots=roots, database=database)
+
+    assert replay.manifest_path == first.manifest_path
+    assert replay.digest == first.digest
+    assert replay.idempotent_replay is True
+
+    changed = _test_receipts(
+        tmp_path / "changed",
+        roots,
+        reuse=False,
+    )
+    with pytest.raises(EvidenceBuildError, match="admitted candidate preflight"):
+        _build_final(
+            tmp_path=tmp_path,
+            roots=roots,
+            database=database,
+            test_receipts=changed,
+        )
+
+
+def test_build_candidate_preflight_is_valid_and_idempotent(tmp_path: Path) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "preflight"
+    output_dir.mkdir(mode=0o700)
+    receipts = _test_receipts(tmp_path, roots)
+
+    first = build_candidate_preflight(
+        output_dir=output_dir,
+        runtime_roots=roots,
+        test_receipts=receipts,
+    )
+    replay = build_candidate_preflight(
+        output_dir=output_dir,
+        runtime_roots=roots,
+        test_receipts=receipts,
+    )
+
+    observation = candidate_preflight_evidence_observation(first.manifest_path)
+    assert observation.digest == first.digest
+    assert observation.test_passed_count == 4
+    assert first.idempotent_replay is False
+    assert replay.idempotent_replay is True
+    assert replay.digest == first.digest
+
+
+def test_final_build_reuses_exact_preflight_test_artifacts(tmp_path: Path) -> None:
+    roots, runtime = _runtime_roots(tmp_path)
+    output_dir = tmp_path / "evidence"
+    output_dir.mkdir(mode=0o700)
+    receipts = _test_receipts(tmp_path, roots)
+    preflight = build_candidate_preflight(
+        output_dir=output_dir,
+        runtime_roots=roots,
+        test_receipts=receipts,
+    )
+    database = _database(facts=_facts(runtime))
+
+    final = _build_final(
+        tmp_path=tmp_path,
+        roots=roots,
+        database=database,
+        test_receipts=receipts,
+    )
+
+    assert preflight.manifest_path.is_file()
+    assert final.manifest_path.is_file()
+    assert final.idempotent_replay is False
+    assert len(list(output_dir.glob("*.json"))) == 11
+
+
+def test_build_candidate_preflight_rejects_symlink_and_sensitive_argv(
+    tmp_path: Path,
+) -> None:
+    roots, _runtime = _runtime_roots(tmp_path)
+    real_output = tmp_path / "real-output"
+    real_output.mkdir(mode=0o700)
+    linked_output = tmp_path / "linked-output"
+    linked_output.symlink_to(real_output, target_is_directory=True)
+    receipts = _test_receipts(tmp_path, roots)
+
+    with pytest.raises(EvidenceBuildError, match="symlink"):
+        build_candidate_preflight(
+            output_dir=linked_output,
+            runtime_roots=roots,
+            test_receipts=receipts,
+        )
+
+    with pytest.raises(EvidenceBuildError, match="sensitive"):
+        run_test_suite(
+            name="platform",
+            argv=("pytest", "--api-key=must-not-be-persisted", "{junit}"),
+            output_dir=tmp_path / "receipts",
+            runtime_roots=roots,
+            cwd=roots["platform"],
+        )
+    assert not list(real_output.iterdir())
+
+
+def test_release_evidence_builder_module_help() -> None:
+    environment = {**os.environ, "PYTHONPATH": "src"}
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "quant_system.hermes.release_evidence_builder",
+            "--help",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "run-suite" in result.stdout
+    assert "build-preflight" in result.stdout
+    assert "build-final" in result.stdout
+    for command in ("build-preflight", "build-final"):
+        command_help = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "quant_system.hermes.release_evidence_builder",
+                command,
+                "--help",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        assert command_help.returncode == 0, command_help.stderr
+        assert "--test-receipt" in command_help.stdout
+        assert "--tests-json" not in command_help.stdout
