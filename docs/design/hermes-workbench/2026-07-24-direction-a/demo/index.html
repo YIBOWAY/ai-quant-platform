@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hermes 工作台 · 重设计 Demo</title>
+<style>
+  :root {
+    --bg: #12110E;
+    --surface: #181714;
+    --surface-2: #1E1C17;
+    --surface-3: #26231C;
+    --sidebar: #15140F;
+    --border: #2B2820;
+    --border-strong: #3A362B;
+    --text: #EDE7DA;
+    --text-2: #A79E8D;
+    --text-3: #6E6759;
+    --blue: #5EA2FF;
+    --blue-dim: rgba(94, 162, 255, 0.14);
+    --yellow: #F0B90B;
+    --yellow-dim: rgba(240, 185, 11, 0.10);
+    --green: #45B787;
+    --red: #E5484D;
+    --purple: #9085E9;
+    --font-ui: "Inter", -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    --sidebar-w: 232px;
+    --topbar-h: 52px;
+    --strip-h: 30px;
+    --composer-h: 76px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13.5px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  a { color: inherit; text-decoration: none; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  /* ---------- Shell ---------- */
+  .shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    padding: 14px 10px;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  .brand { display: flex; align-items: baseline; gap: 7px; padding: 2px 8px 14px; }
+  .brand-mark { color: var(--purple); font-weight: 700; font-size: 15px; letter-spacing: 0.02em; }
+  .brand-sub { color: var(--text-3); font-size: 11px; }
+  .nav-group { margin-top: 14px; }
+  .nav-group-label {
+    font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-3); padding: 0 8px 5px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px;
+    color: var(--text-2); font-size: 13px;
+  }
+  .nav-item:hover { background: var(--surface-2); color: var(--text); }
+  .nav-item.active { background: var(--surface-3); color: var(--text); font-weight: 500; }
+  .nav-item .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); flex: none; }
+  .nav-item.active .dot { background: var(--purple); }
+  .nav-badge {
+    margin-left: auto; font-family: var(--font-mono); font-size: 10.5px;
+    background: var(--yellow-dim); color: var(--yellow);
+    border-radius: 999px; padding: 1px 7px;
+  }
+
+  /* ---------- Main column ---------- */
+  .main-col { display: flex; flex-direction: column; min-width: 0; }
+
+  .topbar {
+    height: var(--topbar-h); display: flex; align-items: center; gap: 12px;
+    padding: 0 20px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg); z-index: 20;
+  }
+  .search {
+    flex: 0 1 320px; display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 7px; padding: 6px 10px; color: var(--text-3); font-size: 12.5px;
+  }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .demo-badge {
+    font-size: 11px; color: var(--blue); background: var(--blue-dim);
+    border: 1px solid rgba(94,162,255,0.25); border-radius: 999px; padding: 2px 10px;
+  }
+  .lang { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .lang span { padding: 3px 9px; font-size: 11.5px; color: var(--text-3); }
+  .lang span.on { background: var(--surface-3); color: var(--text); }
+
+  .safety-strip {
+    height: var(--strip-h); display: flex; align-items: center; justify-content: center; gap: 6px;
+    background: rgba(240,185,11,0.07); border-bottom: 1px solid rgba(240,185,11,0.22);
+    color: var(--yellow); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em;
+  }
+
+  /* ---------- Content ---------- */
+  .content {
+    flex: 1; padding: 26px 28px calc(var(--composer-h) + 40px);
+    max-width: 1120px; width: 100%; margin: 0 auto;
+  }
+
+  /* Hermes internal nav */
+  .hermes-nav { display: flex; gap: 4px; margin-bottom: 22px; flex-wrap: wrap; }
+  .hermes-nav a {
+    padding: 6px 14px; border-radius: 999px; font-size: 13px; color: var(--text-2);
+    border: 1px solid transparent; display: flex; align-items: center; gap: 7px;
+  }
+  .hermes-nav a:hover { color: var(--text); background: var(--surface-2); }
+  .hermes-nav a.active { background: var(--surface-3); color: var(--text); border-color: var(--border-strong); font-weight: 500; }
+  .hermes-nav .count {
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--yellow);
+    background: var(--yellow-dim); border-radius: 999px; padding: 0 6px;
+  }
+
+  /* Page head */
+  .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  .page-title { font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+  .page-sub { color: var(--text-2); font-size: 13px; margin-top: 3px; }
+  .page-sub strong { color: var(--yellow); font-weight: 600; }
+  .head-actions { display: flex; gap: 8px; flex: none; }
+
+  .btn {
+    border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+    border-radius: 7px; padding: 7px 14px; font-size: 12.5px; font-weight: 500;
+  }
+  .btn:hover { background: var(--surface-3); }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #0C1424; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.ghost { background: transparent; border-color: var(--border); color: var(--text-2); }
+  .btn.sm { padding: 5px 11px; font-size: 12px; }
+
+  /* Status line — replaces notice cards */
+  .status-line {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 9px 0; margin-bottom: 22px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-2); font-size: 12.5px;
+  }
+  .status-item { display: flex; align-items: center; gap: 6px; }
+  .status-item .val { color: var(--text); }
+  .dot-ok, .dot-warn, .dot-err { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .dot-ok { background: var(--green); }
+  .dot-warn { background: var(--yellow); }
+  .dot-err { background: var(--red); }
+  .status-more { margin-left: auto; color: var(--text-3); font-size: 12px; }
+  .status-more:hover { color: var(--text); }
+
+  /* Sections */
+  section { margin-bottom: 30px; }
+  .section-head {
+    display: flex; align-items: baseline; gap: 9px; margin-bottom: 10px;
+  }
+  .section-title { font-size: 13px; font-weight: 600; }
+  .section-count { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); }
+  .section-count.attn { color: var(--yellow); }
+  .section-link { margin-left: auto; font-size: 12px; color: var(--text-3); }
+  .section-link:hover { color: var(--blue); }
+
+  /* Attention rows — the only elevated tier */
+  .attn-list { display: flex; flex-direction: column; gap: 10px; }
+  .attn-row {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 9px; padding: 14px 16px;
+  }
+  .attn-row.gate { background: linear-gradient(0deg, rgba(240,185,11,0.045), rgba(240,185,11,0.045)), var(--surface-2); }
+  .attn-icon {
+    width: 34px; height: 34px; border-radius: 8px; flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+    background: var(--surface-3); border: 1px solid var(--border-strong);
+  }
+  .attn-body { flex: 1; min-width: 0; }
+  .attn-title { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tag {
+    font-size: 10.5px; font-weight: 500; border-radius: 4px; padding: 1px 6px;
+    border: 1px solid var(--border-strong); color: var(--text-2);
+  }
+  .tag.yellow { color: var(--yellow); border-color: rgba(240,185,11,0.35); background: var(--yellow-dim); }
+  .tag.blue { color: var(--blue); border-color: rgba(94,162,255,0.3); background: var(--blue-dim); }
+  .attn-desc { color: var(--text-2); font-size: 12.5px; margin-top: 2px; }
+  .attn-meta { color: var(--text-3); font-size: 11.5px; margin-top: 3px; font-family: var(--font-mono); }
+  .attn-actions { display: flex; gap: 8px; flex: none; }
+
+  /* Compact list rows — replace card grids */
+  .row-list { border-top: 1px solid var(--border); }
+  .row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 4px; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .row:hover { background: rgba(255,255,255,0.015); }
+  .row .r-title { font-weight: 500; }
+  .row .r-sub { color: var(--text-3); font-size: 12px; margin-top: 1px; }
+  .row .r-main { flex: 1; min-width: 0; }
+  .row .r-time { color: var(--text-3); font-size: 11.5px; font-family: var(--font-mono); flex: none; }
+  .row .r-go { color: var(--text-3); flex: none; font-size: 12px; }
+  .row:hover .r-go { color: var(--blue); }
+  .pill {
+    font-family: var(--font-mono); font-size: 10.5px; border-radius: 999px; padding: 1px 8px; flex: none;
+  }
+  .pill.run { color: var(--blue); background: var(--blue-dim); }
+  .pill.ok { color: var(--green); background: rgba(69,183,135,0.12); }
+  .pill.warn { color: var(--yellow); background: var(--yellow-dim); }
+  .progress-inline {
+    flex: none; width: 110px; height: 3px; border-radius: 2px; background: var(--surface-3); overflow: hidden;
+  }
+  .progress-inline i { display: block; height: 100%; width: 60%; background: var(--blue); border-radius: 2px; }
+
+  /* Empty honest — one line, not cards */
+  .empty-line {
+    color: var(--text-3); font-size: 12.5px; padding: 10px 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ---------- Active state: two-column workspace ---------- */
+  .active-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+  .transcript { display: flex; flex-direction: column; gap: 16px; }
+  .msg-user {
+    align-self: flex-end; max-width: 82%;
+    background: var(--surface-3); border: 1px solid var(--border-strong);
+    border-radius: 10px; padding: 10px 14px; font-size: 13.5px;
+  }
+  .msg-hermes { max-width: 100%; }
+  .msg-who { font-size: 11.5px; color: var(--purple); font-weight: 600; margin-bottom: 5px; }
+  .msg-text { color: var(--text); font-size: 13.5px; }
+  .msg-text + .msg-text { margin-top: 8px; }
+  .msg-text.dim { color: var(--text-2); font-size: 12.5px; }
+
+  .plan-card {
+    margin-top: 10px; border: 1px solid var(--border-strong); border-radius: 9px;
+    background: var(--surface); overflow: hidden;
+  }
+  .plan-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); font-size: 12.5px; font-weight: 600;
+  }
+  .plan-steps { padding: 6px 14px 10px; }
+  .plan-step { display: flex; gap: 10px; padding: 6px 0; font-size: 12.5px; color: var(--text-2); align-items: baseline; }
+  .plan-step .n { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); flex: none; width: 16px; }
+  .plan-step.done { color: var(--text-3); }
+  .plan-step.done .n { color: var(--green); }
+  .plan-step.current { color: var(--text); }
+  .plan-step.current .n { color: var(--blue); }
+  .plan-foot {
+    display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+    border-top: 1px solid var(--border); font-size: 12px; color: var(--text-3);
+  }
+
+  .result-card {
+    margin-top: 10px; border: 1px solid var(--border-strong); border-radius: 9px;
+    background: var(--surface); padding: 12px 14px;
+  }
+  .result-title { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .result-metrics { display: flex; gap: 26px; margin-top: 10px; flex-wrap: wrap; }
+  .metric .m-label { font-size: 11px; color: var(--text-3); }
+  .metric .m-value { font-family: var(--font-mono); font-size: 16px; font-weight: 600; margin-top: 1px; }
+  .metric .m-value.neg { color: var(--red); }
+  .result-note { font-size: 12.5px; color: var(--text-2); margin-top: 10px; }
+  .result-link { font-size: 12px; color: var(--blue); margin-top: 8px; display: inline-block; }
+
+  .rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: calc(var(--topbar-h) + 16px); }
+  .rail-card {
+    border: 1px solid var(--border); border-radius: 9px; background: var(--surface);
+    padding: 12px 14px;
+  }
+  .rail-card.needs { border-color: rgba(240,185,11,0.35); background: linear-gradient(0deg, rgba(240,185,11,0.05), rgba(240,185,11,0.05)), var(--surface); }
+  .rail-title { font-size: 11.5px; font-weight: 600; color: var(--text-2); letter-spacing: 0.04em; display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+  .rail-row { font-size: 12.5px; padding: 5px 0; display: flex; gap: 8px; align-items: baseline; color: var(--text-2); }
+  .rail-row .mono { font-size: 11px; color: var(--text-3); }
+  .rail-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+  /* ---------- Composer ---------- */
+  .composer-wrap {
+    position: fixed; bottom: 0; left: var(--sidebar-w); right: 0;
+    background: linear-gradient(180deg, rgba(18,17,14,0), var(--bg) 28%);
+    padding: 18px 28px 16px; z-index: 15;
+  }
+  .composer {
+    max-width: 1064px; margin: 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface-2); border: 1px solid var(--border-strong);
+    border-radius: 11px; padding: 6px 6px 6px 16px;
+  }
+  .composer:focus-within { border-color: rgba(144,133,233,0.5); }
+  .composer input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--text); font-size: 13.5px; font-family: inherit; padding: 8px 0;
+  }
+  .composer input::placeholder { color: var(--text-3); }
+  .composer .hint { font-size: 11px; color: var(--text-3); flex: none; }
+  .send-btn {
+    width: 36px; height: 36px; border-radius: 8px; border: none; flex: none;
+    background: var(--blue); color: #0C1424; font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ---------- State switcher (demo-only) ---------- */
+  .state-switcher {
+    position: fixed; top: 60px; right: 22px; z-index: 30;
+    display: flex; gap: 2px; background: var(--surface-3);
+    border: 1px solid var(--border-strong); border-radius: 999px; padding: 3px;
+  }
+  .state-switcher button {
+    border: none; background: transparent; color: var(--text-2);
+    font-size: 11.5px; padding: 4px 12px; border-radius: 999px;
+  }
+  .state-switcher button.on { background: var(--blue); color: #0C1424; font-weight: 600; }
+  .dir-links { position: fixed; top: 66px; right: 296px; z-index: 30; display: flex; gap: 6px; align-items: center; }
+  .dir-links span { font-size: 11px; color: var(--text-3); }
+  .dir-links a {
+    font-size: 11.5px; color: var(--text-2); border: 1px solid var(--border-strong);
+    border-radius: 6px; padding: 3px 9px; background: var(--surface-2);
+  }
+  .dir-links a.on { color: var(--blue); border-color: rgba(94,162,255,0.4); }
+
+  .state { display: none; }
+  .state.show { display: block; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 1100px) {
+    .active-grid { grid-template-columns: 1fr; }
+    .rail { position: static; }
+  }
+  @media (max-width: 900px) {
+    html, body { overflow-x: clip; }
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .composer-wrap { left: 0; padding: 14px 14px 12px; }
+    .content { padding: 18px 16px calc(var(--composer-h) + 64px); }
+    .topbar { padding: 0 12px; gap: 8px; }
+    .search { flex: 1 1 auto; min-width: 0; }
+    .demo-badge { font-size: 10px; padding: 2px 7px; white-space: nowrap; }
+    .page-head { flex-direction: column; align-items: flex-start; }
+    .status-line { gap: 8px 14px; font-size: 12px; row-gap: 8px; }
+    .status-item { white-space: nowrap; }
+    .status-more { margin-left: 0; width: 100%; }
+    .safety-strip { white-space: nowrap; overflow: hidden; font-size: 9.5px; }
+    .attn-row { flex-wrap: wrap; }
+    .attn-actions { width: 100%; }
+    .row .r-time { display: none; }
+    .progress-inline { width: 64px; }
+    .state-switcher { top: auto; bottom: calc(var(--composer-h) + 10px); right: 12px; }
+    .dir-links { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="dir-links"><span>方向</span><a class="on" href="index.html">A · 概览</a><a href="b.html">B · 密度</a><a href="c.html">C · 叙事</a></div>
+<div class="state-switcher" role="group" aria-label="Demo 状态切换">
+  <button data-state="idle" class="on">有待处理</button>
+  <button data-state="clear">全部正常</button>
+  <button data-state="degraded">部分降级</button>
+  <button data-state="active">对话中</button>
+</div>
+
+<div class="shell">
+
+  <!-- ============ Sidebar ============ -->
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">QUANTUM_CORE</span><span class="brand-sub">研究工作台</span></div>
+    <nav>
+      <div class="nav-group">
+        <div class="nav-group-label">Hermes</div>
+        <a class="nav-item active"><span class="dot"></span>今日</a>
+        <a class="nav-item"><span class="dot"></span>晨报</a>
+        <a class="nav-item"><span class="dot"></span>会话</a>
+        <a class="nav-item"><span class="dot"></span>待我确认<span class="nav-badge">2</span></a>
+        <a class="nav-item"><span class="dot"></span>结果</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">研究</div>
+        <a class="nav-item"><span class="dot"></span>因子实验室</a>
+        <a class="nav-item"><span class="dot"></span>回测器</a>
+        <a class="nav-item"><span class="dot"></span>实验</a>
+        <a class="nav-item"><span class="dot"></span>策略目录</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">模拟盘</div>
+        <a class="nav-item"><span class="dot"></span>持仓地图</a>
+        <a class="nav-item"><span class="dot"></span>订单记录</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">期权研究</div>
+        <a class="nav-item"><span class="dot"></span>卖方筛选</a>
+        <a class="nav-item"><span class="dot"></span>期权雷达</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">系统</div>
+        <a class="nav-item"><span class="dot"></span>自动化</a>
+        <a class="nav-item"><span class="dot"></span>设置</a>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- ============ Main column ============ -->
+  <div class="main-col">
+
+    <header class="topbar">
+      <div class="search">⌕&nbsp; 搜索代码 / 结果 / 会话…</div>
+      <div class="topbar-right">
+        <span class="demo-badge">重设计 Demo · 非生产</span>
+        <div class="lang"><span class="on">中文</span><span>EN</span></div>
+      </div>
+    </header>
+
+    <div class="safety-strip">⚠&nbsp; PAPER-ONLY · LIVE TRADING DISABLED · KILL_SWITCH ON</div>
+
+    <main class="content">
+
+      <!-- ================= STATE: idle（有待处理） ================= -->
+      <div class="state show" id="state-idle">
+
+        <div class="page-head">
+          <div>
+            <div class="page-title">早上好</div>
+            <div class="page-sub">7 月 24 日 周五 · 系统正常，<strong>有 2 件事需要你处理</strong></div>
+          </div>
+          <div class="head-actions">
+            <button class="btn ghost sm">查看晨报</button>
+          </div>
+        </div>
+
+        <div class="status-line">
+          <span class="status-item"><span class="dot-ok"></span>Hermes 在线</span>
+          <span class="status-item"><span class="dot-ok"></span>数据源 <span class="val">Futu 正常</span></span>
+          <span class="status-item"><span class="dot-ok"></span>自动化 <span class="val mono">4/4</span></span>
+          <span class="status-item"><span class="dot-ok"></span>数据库 <span class="val">正常</span></span>
+          <a class="status-more">系统状态 →</a>
+        </div>
+
+        <!-- 待我处理：唯一的行动层，最高视觉权重 -->
+        <section>
+          <div class="section-head">
+            <span class="section-title">待我处理</span>
+            <span class="section-count attn mono">2</span>
+          </div>
+          <div class="attn-list">
+
+            <div class="attn-row gate">
+              <div class="attn-icon">⏻</div>
+              <div class="attn-body">
+                <div class="attn-title">Hermes 请求一次 Futu 只读行情调用 <span class="tag yellow">审批 · 单次</span></div>
+                <div class="attn-desc">运行「卖方期权雷达」需要拉取 SPY 期权链（只读，不产生任何订单）。</div>
+                <div class="attn-meta">10:24 · 30 分钟内有效</div>
+              </div>
+              <div class="attn-actions">
+                <button class="btn primary sm">允许一次</button>
+                <button class="btn ghost sm">拒绝</button>
+              </div>
+            </div>
+
+            <div class="attn-row">
+              <div class="attn-icon">⚖</div>
+              <div class="attn-body">
+                <div class="attn-title">因子候选待评审 <span class="tag blue">Gate 2</span></div>
+                <div class="attn-desc">20 日动量因子 v3：Hermes 已完成源码与说明，等你确认后进入评审。</div>
+                <div class="attn-meta">09:51 · 提交于会话「动量失效分析」</div>
+              </div>
+              <div class="attn-actions">
+                <button class="btn sm">去评审</button>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 运行中 -->
+        <section>
+          <div class="section-head">
+            <span class="section-title">运行中</span>
+            <span class="section-count mono">1</span>
+            <a class="section-link">全部任务 →</a>
+          </div>
+          <div class="row-list">
+            <a class="row">
+              <span class="pill run">运行中</span>
+              <div class="r-main">
+                <div class="r-title">动量因子失效分析</div>
+                <div class="r-sub">事件流 · 已 delivered，等待 Hermes 回执</div>
+              </div>
+              <span class="r-time">开始 10:02</span>
+              <span class="r-go">→</span>
+            </a>
+          </div>
+        </section>
+
+        <!-- 最近结果 -->
+        <section>
+          <div class="section-head">
+            <span class="section-title">最近结果</span>
+            <a class="section-link">查看全部 →</a>
+          </div>
+          <div class="row-list">
+            <a class="row">
+              <div class="r-main"><div class="r-title">组合风险 · 日度快照 <span class="tag">portfolio_risk</span></div></div>
+              <span class="pill ok">已计算</span>
+              <span class="r-time">07:30</span>
+              <span class="r-go">→</span>
+            </a>
+            <a class="row">
+              <div class="r-main"><div class="r-title">市场推演 · 波动率 regime 转入高位 <span class="tag">market_foresight</span></div></div>
+              <span class="pill warn">proposal-only</span>
+              <span class="r-time">昨日 09:12</span>
+              <span class="r-go">→</span>
+            </a>
+            <a class="row">
+              <div class="r-main"><div class="r-title">周复盘 · 2026-W30 <span class="tag">weekly_review</span></div></div>
+              <span class="pill ok">已发布</span>
+              <span class="r-time">周一 06:00</span>
+              <span class="r-go">→</span>
+            </a>
+            <a class="row">
+              <div class="r-main"><div class="r-title">因子研究 · mom20 失效一次性回测 <span class="tag">backtest</span></div></div>
+              <span class="pill ok">完成</span>
+              <span class="r-time">周三</span>
+              <span class="r-go">→</span>
+            </a>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- ================= STATE: clear（全部正常） ================= -->
+      <div class="state" id="state-clear">
+
+        <div class="page-head">
+          <div>
+            <div class="page-title">下午好</div>
+            <div class="page-sub">7 月 24 日 周五 · 一切正常，没有需要你处理的事</div>
+          </div>
+          <div class="head-actions">
+            <button class="btn ghost sm">查看晨报</button>
+          </div>
+        </div>
+
+        <div class="status-line">
+          <span class="status-item"><span class="dot-ok"></span>Hermes 在线</span>
+          <span class="status-item"><span class="dot-ok"></span>数据源 <span class="val">Futu 正常</span></span>
+          <span class="status-item"><span class="dot-ok"></span>自动化 <span class="val mono">4/4</span></span>
+          <span class="status-item"><span class="dot-ok"></span>数据库 <span class="val">正常</span></span>
+          <a class="status-more">系统状态 →</a>
+        </div>
+
+        <section>
+          <div class="section-head">
+            <span class="section-title">最近结果</span>
+            <a class="section-link">查看全部 →</a>
+          </div>
+          <div class="row-list">
+            <a class="row">
+              <div class="r-main"><div class="r-title">组合风险 · 日度快照 <span class="tag">portfolio_risk</span></div></div>
+              <span class="pill ok">已计算</span>
+              <span class="r-time">07:30</span>
+              <span class="r-go">→</span>
+            </a>
+            <a class="row">
+              <div class="r-main"><div class="r-title">市场推演 · 波动率 regime 转入高位 <span class="tag">market_foresight</span></div></div>
+              <span class="pill warn">proposal-only</span>
+              <span class="r-time">昨日 09:12</span>
+              <span class="r-go">→</span>
+            </a>
+            <a class="row">
+              <div class="r-main"><div class="r-title">周复盘 · 2026-W30 <span class="tag">weekly_review</span></div></div>
+              <span class="pill ok">已发布</span>
+              <span class="r-time">周一 06:00</span>
+              <span class="r-go">→</span>
+            </a>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head"><span class="section-title">自动化</span></div>
+          <div class="row-list">
+            <div class="row">
+              <div class="r-main"><div class="r-title mono" style="font-size:12.5px">daily_close · freshness · weekly · notification_drain</div></div>
+              <span class="pill ok">4/4 fresh</span>
+              <span class="r-time">上次成功 昨日 16:35</span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- ================= STATE: degraded（部分降级） ================= -->
+      <div class="state" id="state-degraded">
+
+        <div class="page-head">
+          <div>
+            <div class="page-title">早上好</div>
+            <div class="page-sub">7 月 24 日 周五 · <strong>系统部分降级</strong>，有 1 件事需要你处理</div>
+          </div>
+          <div class="head-actions">
+            <button class="btn ghost sm">查看晨报</button>
+          </div>
+        </div>
+
+        <div class="status-line">
+          <span class="status-item"><span class="dot-ok"></span>Hermes 在线</span>
+          <span class="status-item"><span class="dot-warn"></span>数据源 <span class="val">部分降级</span></span>
+          <span class="status-item"><span class="dot-warn"></span>自动化 <span class="val mono">3/4</span></span>
+          <span class="status-item"><span class="dot-ok"></span>数据库 <span class="val">正常</span></span>
+          <a class="status-more">系统状态 →</a>
+        </div>
+
+        <!-- 降级时：异常与待处理聚在同一行动层，诚实但不堆叠 -->
+        <section>
+          <div class="section-head">
+            <span class="section-title">待我处理</span>
+            <span class="section-count attn mono">1</span>
+          </div>
+          <div class="attn-list">
+            <div class="attn-row gate">
+              <div class="attn-icon">⚠</div>
+              <div class="attn-body">
+                <div class="attn-title">数据新鲜度任务过期 <span class="tag yellow">stale</span></div>
+                <div class="attn-desc">freshness 任务超出新鲜度预算（budget 900s），上次成功 08:41。晨报与组合风险可能基于稍旧的数据。</div>
+                <div class="attn-meta">reason: fresh_budget_exceeded · 下次自动重试按排程进行</div>
+              </div>
+              <div class="attn-actions">
+                <button class="btn sm">查看自动化</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <span class="section-title">最近结果</span>
+            <span class="section-count mono" style="color:var(--yellow)">可能延迟</span>
+            <a class="section-link">查看全部 →</a>
+          </div>
+          <div class="row-list">
+            <a class="row">
+              <div class="r-main"><div class="r-title">组合风险 · 日度快照 <span class="tag">portfolio_risk</span></div></div>
+              <span class="pill ok">已计算</span>
+              <span class="r-time">07:30</span>
+              <span class="r-go">→</span>
+            </a>
+            <a class="row">
+              <div class="r-main"><div class="r-title">周复盘 · 2026-W30 <span class="tag">weekly_review</span></div></div>
+              <span class="pill ok">已发布</span>
+              <span class="r-time">周一 06:00</span>
+              <span class="r-go">→</span>
+            </a>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head"><span class="section-title">自动化</span></div>
+          <div class="row-list">
+            <div class="row">
+              <div class="r-main"><div class="r-title mono" style="font-size:12.5px">daily_close</div></div>
+              <span class="pill ok">fresh</span>
+              <span class="r-time">昨日 16:35</span>
+            </div>
+            <div class="row">
+              <div class="r-main"><div class="r-title mono" style="font-size:12.5px">freshness</div></div>
+              <span class="pill warn">stale</span>
+              <span class="r-time">上次成功 08:41</span>
+            </div>
+            <div class="row">
+              <div class="r-main"><div class="r-title mono" style="font-size:12.5px">weekly · notification_drain</div></div>
+              <span class="pill ok">fresh</span>
+              <span class="r-time">正常</span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- ================= STATE: active（对话中） ================= -->
+      <div class="state" id="state-active">
+
+        <div class="active-grid">
+
+          <!-- 左：对话 -->
+          <div class="transcript">
+
+            <div class="msg-user">
+              帮我验证一下 20 日动量因子在当前波动率 regime 下是不是真的失效了，跑个一次性回测。
+            </div>
+
+            <div class="msg-hermes">
+              <div class="msg-who">HERMES</div>
+              <div class="msg-text">可以。我先确认研究计划，你确认后我再开始执行：</div>
+              <div class="plan-card">
+                <div class="plan-head">研究计划 · 动量失效验证 <span class="pill ok">已确认</span></div>
+                <div class="plan-steps">
+                  <div class="plan-step done"><span class="n">✓</span>拉取 S&P 500 成分近两年日线（Futu 只读）</div>
+                  <div class="plan-step done"><span class="n">✓</span>计算 mom20 因子与滚动 IC</div>
+                  <div class="plan-step done"><span class="n">✓</span>一次性回测（样本内 / 样本外分段）</div>
+                  <div class="plan-step done"><span class="n">✓</span>整理结论与限制说明</div>
+                </div>
+                <div class="plan-foot">执行完成 · 用时 4 分 12 秒 · 样本数据仅用于研究</div>
+              </div>
+              <div class="msg-text" style="margin-top:14px">结论：<strong>近 60 个交易日动量显著失效</strong>。滚动 IC 已转负，且样本外衰减比样本内更明显——更像 regime 切换，而不是噪声。</div>
+              <div class="result-card">
+                <div class="result-title">回测结果摘要 <span class="tag">样本</span></div>
+                <div class="result-metrics">
+                  <div class="metric"><div class="m-label">滚动 IC（60d）</div><div class="m-value neg">-0.031</div></div>
+                  <div class="metric"><div class="m-label">多空年化（60d）</div><div class="m-value neg">-4.2%</div></div>
+                  <div class="metric"><div class="m-label">IC（近 2 年）</div><div class="m-value">+0.018</div></div>
+                </div>
+                <div class="result-note">限制：仅价格动量、未控制行业中性；高波动 regime 下换手成本未计入。</div>
+                <a class="result-link">查看完整结果与图表 →</a>
+              </div>
+              <div class="msg-text dim" style="margin-top:10px">如果你认可这个结论，我可以把候选因子降级并起草新的过滤条件——需要时告诉我。</div>
+            </div>
+
+          </div>
+
+          <!-- 右：上下文 rail -->
+          <aside class="rail">
+
+            <div class="rail-card needs">
+              <div class="rail-title"><span class="dot-warn"></span>需要你的确认 · 1</div>
+              <div class="rail-row">允许 Hermes 再拉取一次 Nasdaq 100 日线做对照验证（只读）。</div>
+              <div class="rail-row"><span class="mono">10:31 · 单次有效</span></div>
+              <div class="rail-actions">
+                <button class="btn primary sm">允许一次</button>
+                <button class="btn ghost sm">拒绝</button>
+              </div>
+            </div>
+
+            <div class="rail-card">
+              <div class="rail-title"><span class="dot-ok"></span>当前任务</div>
+              <div class="rail-row">✓ 动量因子失效分析 <span class="mono">已完成</span></div>
+              <div class="rail-row">· 读取数据 → 验证 → 回测 → 结论</div>
+            </div>
+
+            <div class="rail-card">
+              <div class="rail-title">本次产出</div>
+              <div class="rail-row">📄 回测结果摘要 <span class="mono">10:26</span></div>
+              <div class="rail-row">📊 IC 衰减图表 <span class="mono">10:26</span></div>
+            </div>
+
+            <div class="rail-card">
+              <div class="rail-title">系统</div>
+              <div class="rail-row"><span class="dot-ok"></span>自动化 <span class="mono">4/4</span> · 数据源正常</div>
+            </div>
+
+          </aside>
+        </div>
+
+      </div>
+
+    </main>
+
+    <!-- Composer -->
+    <div class="composer-wrap">
+      <div class="composer">
+        <input type="text" placeholder="向 Hermes 提问，或下达一个研究任务…" />
+        <span class="hint">⏎ 发送</span>
+        <button class="send-btn" aria-label="发送">↑</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var buttons = document.querySelectorAll(".state-switcher button");
+    var states = {
+      idle: document.getElementById("state-idle"),
+      clear: document.getElementById("state-clear"),
+      degraded: document.getElementById("state-degraded"),
+      active: document.getElementById("state-active"),
+    };
+    function show(name) {
+      Object.keys(states).forEach(function (k) {
+        states[k].classList.toggle("show", k === name);
+      });
+      buttons.forEach(function (b) {
+        b.classList.toggle("on", b.dataset.state === name);
+      });
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener("click", function () { show(b.dataset.state); });
+    });
+    var q = new URLSearchParams(location.search).get("state");
+    if (q && states[q]) show(q);
+  })();
+</script>
+
+</body>
+</html>

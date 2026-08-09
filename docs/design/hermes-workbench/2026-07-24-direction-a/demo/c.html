@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hermes 工作台 · 方向 C 编辑叙事派</title>
+<style>
+  :root {
+    --bg: #12110E;
+    --surface: #191713;
+    --border: #2B2820;
+    --text: #EDE7DA;
+    --text-2: #A79E8D;
+    --text-3: #6E6759;
+    --blue: #5EA2FF;
+    --yellow: #F0B90B;
+    --green: #45B787;
+    --red: #D96A6E;
+    --purple: #9085E9;
+    --serif: "Source Serif 4", "Noto Serif SC", Georgia, "Songti SC", serif;
+    --sans: "Inter", -apple-system, "PingFang SC", sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--serif); font-size: 15px; line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* top: minimal masthead */
+  .masthead {
+    max-width: 720px; margin: 0 auto; padding: 22px 24px 0;
+    display: flex; align-items: baseline; gap: 14px;
+  }
+  .wordmark { font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; color: var(--purple); }
+  .mast-nav { margin-left: auto; display: flex; gap: 18px; font-family: var(--sans); font-size: 12px; color: var(--text-3); }
+  .mast-nav a:hover { color: var(--text); }
+  .mast-nav a.on { color: var(--text); border-bottom: 1px solid var(--blue); padding-bottom: 2px; }
+  .mast-nav .n { font-family: var(--mono); font-size: 10px; color: var(--yellow); }
+
+  .safety {
+    max-width: 720px; margin: 14px auto 0; padding: 0 24px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--yellow);
+    opacity: 0.85;
+  }
+
+  main { max-width: 720px; margin: 0 auto; padding: 44px 24px 160px; }
+
+  .dateline {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--text-3); margin-bottom: 14px;
+  }
+  h1 { font-size: 34px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 18px; }
+  .lede { font-size: 16.5px; color: var(--text-2); max-width: 60ch; }
+  .lede strong { color: var(--text); font-weight: 600; }
+  .lede .attn { color: var(--yellow); }
+
+  .sysline {
+    margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--border);
+    font-family: var(--sans); font-size: 12px; color: var(--text-3);
+    display: flex; gap: 16px; flex-wrap: wrap;
+  }
+  .sysline .ok::before { content: "● "; color: var(--green); font-size: 9px; }
+
+  section { margin-top: 56px; }
+  .sec-label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--text-3); margin-bottom: 20px; display: flex; align-items: baseline; gap: 10px;
+  }
+  .sec-label .cnt { color: var(--yellow); }
+  .sec-label a { margin-left: auto; font-family: var(--sans); font-size: 11.5px; letter-spacing: 0; text-transform: none; color: var(--text-3); }
+  .sec-label a:hover { color: var(--blue); }
+
+  /* attention as editorial blocks */
+  .attn-item { margin-bottom: 34px; padding-left: 18px; border-left: 2px solid var(--border); }
+  .attn-item.urgent { border-left-color: var(--yellow); }
+  .attn-item h3 { font-size: 18px; font-weight: 600; line-height: 1.4; }
+  .attn-item .k {
+    font-family: var(--mono); font-size: 10px; color: var(--text-3);
+    border: 1px solid var(--border); border-radius: 3px; padding: 1px 6px; margin-left: 8px;
+    vertical-align: 2px; white-space: nowrap;
+  }
+  .attn-item.urgent .k { color: var(--yellow); border-color: rgba(240,185,11,0.35); }
+  .attn-item p { color: var(--text-2); font-size: 14px; margin-top: 6px; max-width: 58ch; }
+  .attn-item .meta { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 6px; }
+  .attn-item .actions { margin-top: 10px; font-family: var(--sans); font-size: 13px; }
+  .lnk {
+    background: none; border: none; padding: 0; color: var(--blue); font-size: 13px; font-weight: 500;
+  }
+  .lnk:hover { text-decoration: underline; }
+  .lnk.quiet { color: var(--text-3); margin-left: 16px; }
+
+  /* results as reading list */
+  .read-item { display: block; padding: 14px 0; border-top: 1px solid var(--border); }
+  .read-item:last-child { border-bottom: 1px solid var(--border); }
+  .read-item h4 { font-size: 16.5px; font-weight: 600; line-height: 1.45; }
+  .read-item h4 .arrow { color: var(--text-3); font-weight: 400; }
+  .read-item:hover h4 { color: var(--blue); }
+  .read-item:hover h4 .arrow { color: var(--blue); }
+  .read-item .meta {
+    font-family: var(--sans); font-size: 11.5px; color: var(--text-3); margin-top: 3px;
+    display: flex; gap: 10px; align-items: baseline;
+  }
+  .read-item .meta .mono { font-family: var(--mono); font-size: 10.5px; }
+  .read-item .st { font-family: var(--mono); font-size: 10px; }
+  .st.ok { color: var(--green); }
+  .st.warn { color: var(--yellow); }
+
+  .one-line { color: var(--text-2); font-size: 14px; }
+  .one-line .mono { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
+
+  /* active: narrative transcript */
+  .turn { margin-bottom: 40px; }
+  .turn .who {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em; color: var(--text-3); margin-bottom: 8px;
+  }
+  .turn .who.you { text-align: right; }
+  .turn.user p {
+    font-size: 15px; color: var(--text);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    padding: 12px 16px; display: inline-block; max-width: 85%;
+  }
+  .turn.user { text-align: right; }
+  .turn.hermes p { max-width: 62ch; }
+  .turn.hermes p + p { margin-top: 12px; }
+  .turn.hermes .dim { color: var(--text-2); font-size: 13.5px; }
+
+  ol.plan { margin: 14px 0 14px 22px; color: var(--text-2); font-size: 14px; }
+  ol.plan li { margin-bottom: 4px; }
+  ol.plan li.done { color: var(--text-3); text-decoration: none; }
+
+  figure.result {
+    margin: 18px 0; padding: 16px 20px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  }
+  figure.result figcaption {
+    font-family: var(--sans); font-size: 12px; color: var(--text-2); margin-bottom: 10px;
+    display: flex; gap: 10px; align-items: baseline;
+  }
+  figure.result figcaption .k {
+    font-family: var(--mono); font-size: 10px; color: var(--yellow);
+    border: 1px solid rgba(240,185,11,0.3); border-radius: 3px; padding: 0 5px;
+  }
+  .fig-metrics { display: flex; gap: 34px; flex-wrap: wrap; }
+  .fig-metrics .m .l { font-family: var(--sans); font-size: 11px; color: var(--text-3); }
+  .fig-metrics .m .v { font-family: var(--mono); font-size: 19px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .fig-metrics .m .v.neg { color: var(--red); }
+  figure.result .note { font-size: 13px; color: var(--text-2); margin-top: 12px; font-style: italic; }
+  figure.result .more { font-family: var(--sans); font-size: 12px; color: var(--blue); margin-top: 8px; display: inline-block; }
+
+  aside.need {
+    margin-top: 48px; padding: 18px 22px;
+    border: 1px solid rgba(240,185,11,0.3); border-radius: 4px;
+    background: rgba(240,185,11,0.04);
+  }
+  aside.need h4 { font-size: 15px; font-weight: 600; }
+  aside.need p { font-size: 13.5px; color: var(--text-2); margin-top: 5px; }
+  aside.need .actions { margin-top: 10px; }
+
+  /* composer */
+  .composer-wrap {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(180deg, rgba(18,17,14,0), var(--bg) 30%);
+    padding: 24px 24px 20px; z-index: 15;
+  }
+  .composer {
+    max-width: 672px; margin: 0 auto;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border); padding-bottom: 10px;
+  }
+  .composer:focus-within { border-bottom-color: var(--purple); }
+  .composer input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--text); font-size: 15px; font-family: var(--serif);
+  }
+  .composer input::placeholder { color: var(--text-3); font-style: italic; }
+  .composer .send { background: none; border: none; color: var(--blue); font-size: 13px; font-family: var(--sans); font-weight: 500; }
+
+  .state-switcher {
+    position: fixed; top: 20px; right: 20px; z-index: 30;
+    display: flex; gap: 2px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px;
+  }
+  .state-switcher button { border: none; background: transparent; color: var(--text-2); font-size: 11px; padding: 4px 12px; border-radius: 999px; font-family: var(--sans); }
+  .state-switcher button.on { background: var(--blue); color: #0C1424; font-weight: 600; }
+  .dir-links { position: fixed; top: 56px; right: 20px; z-index: 30; display: flex; gap: 6px; align-items: center; font-family: var(--sans); }
+  .dir-links span { font-size: 10.5px; color: var(--text-3); }
+  .dir-links a { font-size: 11px; color: var(--text-2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; background: var(--surface); }
+  .dir-links a.on { color: var(--blue); border-color: rgba(94,162,255,0.4); }
+
+  .state { display: none; }
+  .state.show { display: block; }
+
+  @media (max-width: 640px) {
+    main { padding: 32px 18px 150px; }
+    h1 { font-size: 27px; }
+    .mast-nav { gap: 12px; }
+    .state-switcher { top: auto; bottom: 88px; right: 12px; }
+    .dir-links { display: none; }
+    .mast-nav .hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="state-switcher">
+  <button data-state="idle" class="on">有待处理</button>
+  <button data-state="clear">全部正常</button>
+  <button data-state="active">对话中</button>
+</div>
+<div class="dir-links"><span>方向</span><a href="index.html">A · 概览</a><a href="b.html">B · 密度</a><a class="on" href="c.html">C · 叙事</a></div>
+
+<header class="masthead">
+  <span class="wordmark">HERMES</span>
+  <nav class="mast-nav">
+    <a class="on">今日</a>
+    <a class="hide-sm">会话</a>
+    <a class="hide-sm">任务</a>
+    <a>待确认 <span class="n">2</span></a>
+    <a>结果</a>
+  </nav>
+</header>
+<div class="safety">PAPER-ONLY · LIVE TRADING DISABLED · KILL_SWITCH ON</div>
+
+<main>
+
+  <!-- ================= idle ================= -->
+  <div class="state show" id="state-idle">
+
+    <div class="dateline">2026 年 7 月 24 日 · 周五 · 上海</div>
+    <h1>今日</h1>
+    <p class="lede">
+      系统一切正常。晨报已于 07:30 发布，四个自动化任务全部按时完成。
+      <strong>有两件事等你处理</strong>：一次数据调用的许可，和一份因子候选的评审。
+    </p>
+
+    <div class="sysline">
+      <span class="ok">Hermes 在线</span>
+      <span class="ok">Futu 正常</span>
+      <span class="ok">自动化 4/4</span>
+      <span class="ok">数据库正常</span>
+    </div>
+
+    <section>
+      <div class="sec-label">待你处理 <span class="cnt">· 2</span></div>
+
+      <div class="attn-item urgent">
+        <h3>Hermes 请求一次 Futu 只读行情调用<span class="k">审批 · 单次</span></h3>
+        <p>运行「卖方期权雷达」需要拉取 SPY 期权链。只读，不产生任何订单。</p>
+        <div class="meta">10:24 提出 · 30 分钟内有效</div>
+        <div class="actions"><button class="lnk">允许一次 →</button><button class="lnk quiet">拒绝</button></div>
+      </div>
+
+      <div class="attn-item">
+        <h3>因子候选 mom20 v3 待评审<span class="k">Gate 2</span></h3>
+        <p>Hermes 已完成 20 日动量因子第三版的源码与说明，等你确认后进入评审。</p>
+        <div class="meta">09:51 · 提交于会话「动量失效分析」</div>
+        <div class="actions"><button class="lnk">去评审 →</button></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-label">进行中 <a>全部任务 →</a></div>
+      <p class="one-line">
+        <strong>动量因子失效分析</strong> — 请求已送达 Hermes，等待回执。
+        <span class="mono">开始于 10:02</span>
+      </p>
+    </section>
+
+    <section>
+      <div class="sec-label">最近结果 <a>查看全部 →</a></div>
+
+      <a class="read-item">
+        <h4>组合风险 · 日度快照 <span class="arrow">→</span></h4>
+        <div class="meta"><span class="mono">portfolio_risk</span><span class="st ok">已计算</span><span>07:30</span></div>
+      </a>
+      <a class="read-item">
+        <h4>市场推演 · 波动率 regime 转入高位 <span class="arrow">→</span></h4>
+        <div class="meta"><span class="mono">market_foresight</span><span class="st warn">proposal-only</span><span>昨日 09:12</span></div>
+      </a>
+      <a class="read-item">
+        <h4>周复盘 · 2026-W30 <span class="arrow">→</span></h4>
+        <div class="meta"><span class="mono">weekly_review</span><span class="st ok">已发布</span><span>周一 06:00</span></div>
+      </a>
+      <a class="read-item">
+        <h4>因子研究 · mom20 失效一次性回测 <span class="arrow">→</span></h4>
+        <div class="meta"><span class="mono">backtest</span><span class="st ok">完成</span><span>周三</span></div>
+      </a>
+    </section>
+
+  </div>
+
+  <!-- ================= clear ================= -->
+  <div class="state" id="state-clear">
+
+    <div class="dateline">2026 年 7 月 24 日 · 周五 · 上海</div>
+    <h1>今日</h1>
+    <p class="lede">一切正常，<strong>没有需要你处理的事</strong>。晨报已发布，自动化全部按时完成。</p>
+
+    <div class="sysline">
+      <span class="ok">Hermes 在线</span>
+      <span class="ok">Futu 正常</span>
+      <span class="ok">自动化 4/4</span>
+      <span class="ok">数据库正常</span>
+    </div>
+
+    <section>
+      <div class="sec-label">最近结果 <a>查看全部 →</a></div>
+      <a class="read-item">
+        <h4>组合风险 · 日度快照 <span class="arrow">→</span></h4>
+        <div class="meta"><span class="mono">portfolio_risk</span><span class="st ok">已计算</span><span>07:30</span></div>
+      </a>
+      <a class="read-item">
+        <h4>市场推演 · 波动率 regime 转入高位 <span class="arrow">→</span></h4>
+        <div class="meta"><span class="mono">market_foresight</span><span class="st warn">proposal-only</span><span>昨日 09:12</span></div>
+      </a>
+      <a class="read-item">
+        <h4>周复盘 · 2026-W30 <span class="arrow">→</span></h4>
+        <div class="meta"><span class="mono">weekly_review</span><span class="st ok">已发布</span><span>周一 06:00</span></div>
+      </a>
+    </section>
+
+    <section>
+      <div class="sec-label">自动化</div>
+      <p class="one-line">四个任务全部正常。<span class="mono">daily_close · freshness · weekly · notification_drain — 上次成功 昨日 16:35</span></p>
+    </section>
+
+  </div>
+
+  <!-- ================= active ================= -->
+  <div class="state" id="state-active">
+
+    <div class="dateline">会话 · 动量失效分析</div>
+    <h1 style="font-size:26px">与 Hermes 的对话</h1>
+
+    <div class="turn user">
+      <div class="who you">你 · 10:02</div>
+      <p>帮我验证一下 20 日动量因子在当前波动率 regime 下是不是真的失效了，跑个一次性回测。</p>
+    </div>
+
+    <div class="turn hermes">
+      <div class="who">HERMES · 10:03</div>
+      <p>可以。研究计划如下，你确认后我开始执行：</p>
+      <ol class="plan">
+        <li class="done">拉取 S&P 500 成分近两年日线（Futu 只读）</li>
+        <li class="done">计算 mom20 因子与滚动 IC</li>
+        <li class="done">一次性回测（样本内 / 样本外分段）</li>
+        <li class="done">整理结论与限制说明</li>
+      </ol>
+      <p class="dim">已确认 · 执行完成，用时 4 分 12 秒。</p>
+    </div>
+
+    <div class="turn hermes">
+      <div class="who">HERMES · 10:26</div>
+      <p><strong>结论：近 60 个交易日动量显著失效。</strong>滚动 IC 已转负，且样本外衰减比样本内更明显——更像 regime 切换，而不是噪声。</p>
+      <figure class="result">
+        <figcaption>回测结果摘要 <span class="k">样本 · 非实盘</span></figcaption>
+        <div class="fig-metrics">
+          <div class="m"><div class="l">滚动 IC（60d）</div><div class="v neg">-0.031</div></div>
+          <div class="m"><div class="l">多空年化（60d）</div><div class="v neg">-4.2%</div></div>
+          <div class="m"><div class="l">IC（近 2 年）</div><div class="v">+0.018</div></div>
+        </div>
+        <div class="note">限制：仅价格动量、未控制行业中性；高波动 regime 下换手成本未计入。</div>
+        <a class="more">查看完整结果与图表 →</a>
+      </figure>
+      <p class="dim">如果你认可这个结论，我可以把候选因子降级并起草新的过滤条件——需要时告诉我。</p>
+    </div>
+
+    <aside class="need">
+      <h4>需要你的确认</h4>
+      <p>允许 Hermes 再拉取一次 Nasdaq 100 日线做对照验证（只读，单次有效）。</p>
+      <div class="actions"><button class="lnk">允许一次 →</button><button class="lnk quiet">拒绝</button></div>
+    </aside>
+
+  </div>
+
+</main>
+
+<div class="composer-wrap">
+  <div class="composer">
+    <input type="text" placeholder="向 Hermes 提问，或下达一个研究任务…" />
+    <button class="send">发送 →</button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var buttons = document.querySelectorAll(".state-switcher button");
+    var states = {
+      idle: document.getElementById("state-idle"),
+      clear: document.getElementById("state-clear"),
+      active: document.getElementById("state-active"),
+    };
+    function show(name) {
+      Object.keys(states).forEach(function (k) { states[k].classList.toggle("show", k === name); });
+      buttons.forEach(function (b) { b.classList.toggle("on", b.dataset.state === name); });
+    }
+    buttons.forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.state); }); });
+    var q = new URLSearchParams(location.search).get("state");
+    if (q && states[q]) show(q);
+  })();
+</script>
+
+</body>
+</html>
