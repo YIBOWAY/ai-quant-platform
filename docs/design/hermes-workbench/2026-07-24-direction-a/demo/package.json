@@ -1,0 +1,9 @@
+{
+  "name": "hermes-workbench-redesign-demo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Hermes /hermes workbench redesign proposal demo (static, zero-dependency)",
+  "scripts": {
+    "dev": "node server.js"
+  }
+}
