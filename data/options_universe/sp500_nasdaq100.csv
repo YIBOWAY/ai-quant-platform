@@ -10,7 +10,7 @@ AMAT,Applied Materials,Information Technology,US,both
 AMD,Advanced Micro Devices,Information Technology,US,both
 AMGN,Amgen,Health Care,US,both
 AMZN,Amazon,Consumer Discretionary,US,both
-APP,AppLovin,Information Technology,US,both
+APP,AppLovin,Communication Services,US,both
 AVGO,Broadcom,Information Technology,US,both
 AXON,Axon Enterprise,Industrials,US,both
 BKNG,Booking Holdings,Consumer Discretionary,US,both
@@ -30,7 +30,6 @@ CTSH,Cognizant,Information Technology,US,both
 DASH,DoorDash,Consumer Discretionary,US,both
 DDOG,Datadog,Information Technology,US,both
 DXCM,Dexcom,Health Care,US,both
-EA,Electronic Arts,Communication Services,US,both
 EXC,Exelon,Utilities,US,both
 FANG,Diamondback Energy,Energy,US,both
 FAST,Fastenal,Industrials,US,both
@@ -91,6 +90,7 @@ ALNY,Alnylam Pharmaceuticals,Biotechnology,US,nasdaq100
 ARM,Arm Holdings,Semiconductors,US,nasdaq100
 ASML,ASML Holding,Industrial Machinery,US,nasdaq100
 CCEP,Coca-Cola Europacific Partners,Soft Drinks,US,nasdaq100
+EA,Electronic Arts,Miscellaneous Amusement & Recreation Services,US,nasdaq100
 FER,Ferrovial,"Military, Government, Technical",US,nasdaq100
 INSM,Insmed Incorporated,Biotechnology,US,nasdaq100
 MELI,Mercado Libre,Catalog/Specialty Distribution,US,nasdaq100
@@ -200,7 +200,7 @@ CVS,CVS Health,Health Care,US,sp500
 CVX,Chevron Corporation,Energy,US,sp500
 D,Dominion Energy,Utilities,US,sp500
 DAL,Delta Air Lines,Industrials,US,sp500
-DD,DuPont,Materials,US,sp500
+DD,DuPont,Industrials,US,sp500
 DE,Deere & Company,Industrials,US,sp500
 DECK,Deckers Brands,Consumer Discretionary,US,sp500
 DELL,Dell Technologies,Information Technology,US,sp500
@@ -252,6 +252,7 @@ FDS,FactSet,Financials,US,sp500
 FDX,FedEx,Industrials,US,sp500
 FDXF,FedEx Freight,Industrials,US,sp500
 FE,FirstEnergy,Utilities,US,sp500
+FERG,Ferguson Enterprises,Industrials,US,sp500
 FFIV,"F5, Inc.",Information Technology,US,sp500
 FICO,Fair Isaac,Information Technology,US,sp500
 FIS,Fidelity National Information Services,Financials,US,sp500
