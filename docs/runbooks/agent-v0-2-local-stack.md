@@ -37,7 +37,8 @@ run the production frontend build before installing/reloading the jobs. Use
    `python -m quant_system.cli serve --host 127.0.0.1 --port 8765`;
 3. runs `npm --prefix src/frontend run build` and serves the production build;
 4. installs the Hermes, backend, frontend, and connector user LaunchAgents;
-5. waits for PostgreSQL and all three HTTP ports to become ready.
+5. requires the prior Hermes PID and port to remain quiescent before replacement,
+   then waits for PostgreSQL and all three HTTP ports to become ready.
 
 The local trust mode bypasses identity ceremony only. A trust session is bound
 to the `local_trust` session kind and stops working when trust mode is disabled.

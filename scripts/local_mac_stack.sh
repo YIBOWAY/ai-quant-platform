@@ -100,7 +100,8 @@ install_platform_jobs() {
 }
 
 ensure_hermes_job() {
-  local attempt_no bootstrap_output bootstrap_status old_pid
+  local attempt_no bootstrap_attempt bootstrap_output bootstrap_status old_pid
+  local stable_free_count=0
   [[ -f "$HERMES_PLIST" && ! -L "$HERMES_PLIST" ]] ||
     fail "hermes_launchagent_missing"
   old_pid=""
@@ -113,12 +114,21 @@ ensure_hermes_job() {
   fi
   # kickstart -k can overlap old/new gateway lifetimes and make the new process
   # lose the 8642 bind race. launchctl bootout can return before the previous
-  # PID has actually exited, and that process can briefly release/reacquire its
-  # socket while shutting down. Require both PID exit and port release before
-  # bootstrapping one unambiguous process generation.
+  # PID has actually exited, and the kernel can briefly report no listener
+  # before the previous socket is safely reusable. Require both PID exit and a
+  # four-second stable-free window before bootstrapping one unambiguous process
+  # generation.
   for attempt_no in {1..60}; do
     if [[ -z "$old_pid" ]] || ! /bin/kill -0 "$old_pid" 2>/dev/null; then
       if ! /usr/sbin/lsof -nP -iTCP:8642 -sTCP:LISTEN >/dev/null 2>&1; then
+        stable_free_count=$((stable_free_count + 1))
+      else
+        stable_free_count=0
+      fi
+    else
+      stable_free_count=0
+    fi
+    if [[ "$stable_free_count" -ge 8 ]]; then
       for bootstrap_attempt in {1..10}; do
         if bootstrap_output="$(
           "$LAUNCHCTL_BIN" bootstrap "$DOMAIN" "$HERMES_PLIST" 2>&1
@@ -137,7 +147,6 @@ ensure_hermes_job() {
         sleep 0.5
       done
       fail "hermes_launchagent_bootstrap_failed"
-      fi
     fi
     sleep 0.5
   done

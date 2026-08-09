@@ -56,6 +56,7 @@ data/                     Local cache, fixtures, generated research outputs.
   `bash scripts/local_mac_stack.sh start`. It owns Docker readiness, the
   production frontend build, and four user LaunchAgents (Hermes, backend,
   frontend, connector). Do not bind service lifetime to an AI-tool terminal.
+  Hermes replacement requires a stable old-PID/port quiescence window.
   Local trust bypasses identity ceremony only; trust cookies are mode-bound,
   readiness reports `admission_mode=local_trust` without candidate identity,
   while `live_trading_enabled=false`, `kill_switch=true`, migration authority,
