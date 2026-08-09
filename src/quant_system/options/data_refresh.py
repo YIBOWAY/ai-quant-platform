@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import csv
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import pandas as pd
@@ -15,6 +17,9 @@ from quant_system.options.vix_data import (
     load_vix_history,
     save_vix_history,
 )
+
+REMOTE_CSV_MAX_ATTEMPTS = 3
+REMOTE_CSV_RETRY_BACKOFF_SECONDS = (1.0, 2.0, 4.0)
 
 SP500_RAW_CSV_URL = (
     "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/"
@@ -34,18 +39,45 @@ NASDAQ_USER_AGENT = (
 
 def refresh_options_universe(path: Path, *, source: str = "github") -> dict:
     active_source = _normalize_source(source, public_value="github")
-    if active_source == "sample":
-        rows = _sample_universe_rows()
-    elif active_source == "github":
-        rows = _build_universe_from_github_csv()
-    else:
-        raise ValueError("source must be public, github, or sample")
+    try:
+        if active_source == "sample":
+            rows = _sample_universe_rows()
+        elif active_source == "github":
+            rows = _build_universe_from_github_csv()
+        else:
+            raise ValueError("source must be public, github, or sample")
+    except (URLError, HTTPError, TimeoutError, OSError) as exc:
+        existing_count = _existing_universe_row_count(path)
+        if existing_count > 0:
+            return {
+                **_result("universe", active_source, path, existing_count),
+                "status": "kept_existing",
+                "warning": (
+                    "public universe refresh failed; existing universe CSV was kept "
+                    f"({type(exc).__name__}: {exc})"
+                ),
+            }
+        raise
+
+    if not rows:
+        existing_count = _existing_universe_row_count(path)
+        if existing_count > 0:
+            return {
+                **_result("universe", active_source, path, existing_count),
+                "status": "kept_existing",
+                "warning": (
+                    "public universe refresh returned no rows; "
+                    "existing universe CSV was kept"
+                ),
+            }
+        raise RuntimeError("public universe refresh returned no rows")
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=["ticker", "name", "sector", "exchange", "source"],
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -86,7 +118,11 @@ def refresh_earnings_calendar(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["ticker", "earnings_date"])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["ticker", "earnings_date"],
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(rows)
     return _result("earnings", active_source, output_path, len(rows))
@@ -295,6 +331,15 @@ def _existing_earnings_row_count(path: Path) -> int:
         return sum(1 for row in reader if row.get("ticker") and row.get("earnings_date"))
 
 
+def _existing_universe_row_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    try:
+        return len(OptionsUniverse.load(path))
+    except Exception:
+        return 0
+
+
 def _build_universe_from_github_csv() -> list[dict[str, str]]:
     sp500 = _read_remote_csv(
         SP500_RAW_CSV_URL,
@@ -332,10 +377,30 @@ def _read_remote_csv(
     name_header: str,
     sector_header: str,
     source: str,
+    max_attempts: int = REMOTE_CSV_MAX_ATTEMPTS,
 ) -> list[dict[str, str]]:
     request = Request(url, headers={"User-Agent": USER_AGENT})
-    with urlopen(request, timeout=30) as response:
-        text = response.read().decode("utf-8-sig")
+    attempts = max(int(max_attempts), 1)
+    last_error: Exception | None = None
+    text = ""
+    for attempt in range(attempts):
+        try:
+            with urlopen(request, timeout=30) as response:
+                text = response.read().decode("utf-8-sig")
+            break
+        except (URLError, HTTPError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt + 1 >= attempts:
+                raise
+            delay = REMOTE_CSV_RETRY_BACKOFF_SECONDS[
+                min(attempt, len(REMOTE_CSV_RETRY_BACKOFF_SECONDS) - 1)
+            ]
+            time.sleep(delay)
+    else:
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError(f"failed to download universe CSV: {url}")
+
     rows: list[dict[str, str]] = []
     reader = csv.DictReader(text.splitlines())
     for raw in reader:
