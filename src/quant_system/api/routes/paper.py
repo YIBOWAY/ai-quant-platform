@@ -5,9 +5,9 @@ import threading
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from functools import wraps
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from quant_system.api.dependencies import ApiRunsDirDep, SettingsDep
 from quant_system.api.errors import not_found_404, provider_unavailable_400
@@ -25,6 +25,7 @@ from quant_system.api.schemas.paper import (
     PaperAccountEquityCurveResponse,
     PaperAccountOrderResponse,
     PaperAccountOrdersProcessResponse,
+    PaperAccountPerformanceResponse,
     PaperAccountRebalanceResponse,
     PaperAccountResponse,
     PaperAccountSnapshotResponse,
@@ -55,6 +56,7 @@ from quant_system.execution.account import (
     AccountPosition,
     PaperAccount,
 )
+from quant_system.execution.account_performance import build_account_performance
 from quant_system.execution.account_repository import (
     PaperAccountBootstrapRequired,
     PaperAccountRepository,
@@ -591,10 +593,16 @@ def _replay_account_equity_curve(
 
 
 def _filter_recent_equity_points(points: list[dict], *, days: int) -> list[dict]:
+    """Keep points inside the window, plus one pre-window ledger anchor.
+
+    Without the anchor, a quiet week collapses to a single current_quote mark
+    and the one-week figure looks empty even when the account has history.
+    """
     if days <= 0:
         return points
     cutoff = datetime.now(UTC) - timedelta(days=days)
     filtered: list[dict] = []
+    last_before: dict | None = None
     for point in points:
         if point.get("source") == "current_quote":
             filtered.append(point)
@@ -603,8 +611,15 @@ def _filter_recent_equity_points(points: list[dict], *, days: int) -> list[dict]
         if not isinstance(timestamp, str):
             continue
         parsed = _parse_timestamp(timestamp)
-        if parsed is None or parsed >= cutoff:
+        if parsed is None:
+            continue
+        if parsed >= cutoff:
             filtered.append(point)
+        else:
+            last_before = point
+    has_in_window_ledger = any(point.get("source") != "current_quote" for point in filtered)
+    if not has_in_window_ledger and last_before is not None:
+        filtered.insert(0, last_before)
     return filtered
 
 
@@ -907,6 +922,44 @@ def get_account_equity_curve(
         limit=max(limit, 0),
         offset=max(offset, 0),
     )
+
+
+@router.get(
+    "/paper/account/performance",
+    response_model=PaperAccountPerformanceResponse,
+)
+def get_account_performance(
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+    range_key: Annotated[
+        Literal["7d", "1m", "3m"],
+        Query(alias="range"),
+    ] = "7d",
+    granularity: Literal["1d"] = "1d",
+    benchmarks: str = "SPY,QQQ",
+) -> dict:
+    del granularity
+    requested_benchmarks = [
+        symbol.upper().strip()
+        for symbol in benchmarks.split(",")
+        if symbol.strip()
+    ]
+    try:
+        return build_account_performance(
+            account=_load_account_mapped(
+                _account_repository(api_runs_dir, settings),
+                settings=settings,
+            ),
+            settings=settings,
+            cache_path=api_runs_dir / "_cache" / "futu_equity_bars.duckdb",
+            range_key=range_key,
+            benchmarks=requested_benchmarks,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=_error_detail("invalid_performance_request", str(exc)),
+        ) from exc
 
 
 @router.post("/paper/account/reset", response_model=PaperAccountResponse)

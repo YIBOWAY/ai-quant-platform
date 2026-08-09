@@ -1,9 +1,12 @@
 import Link from "next/link";
+import { BriefDailyChange } from "@/components/brief/BriefDailyChange";
+import { BriefPerformanceChart } from "@/components/brief/BriefPerformanceChart";
 import { getBriefIssue } from "@/lib/api";
 import {
   normalizeBriefIssueEnvelope,
   type BriefArchivePayload,
 } from "@/lib/briefArchive";
+import { selectBriefPerformanceSeries } from "@/lib/briefPerformance";
 
 type Props = { params: Promise<{ publicId: string }> };
 
@@ -54,6 +57,7 @@ export default async function BriefIssueArchivePage({ params }: Props) {
             marketNote={archive.payload.market_note}
             markets={archive.payload.markets}
             paperEquity={archive.payload.paper_equity}
+            performance={archive.payload.performance}
           />
         ) : archive.apiError ? null : (
           <Alert
@@ -122,6 +126,7 @@ function ArchiveDocument({
   marketNote,
   markets,
   paperEquity,
+  performance,
 }: {
   account: BriefArchivePayload["account"];
   aiNews: BriefArchivePayload["ai_news"];
@@ -132,7 +137,11 @@ function ArchiveDocument({
   marketNote: string;
   markets: BriefArchivePayload["markets"];
   paperEquity: BriefArchivePayload["paper_equity"];
+  performance: BriefArchivePayload["performance"];
 }) {
+  const selectedPerformanceSeries = performance
+    ? selectBriefPerformanceSeries(performance)
+    : [];
   return (
     <>
       <section className="border-b border-editorial-rule pb-7 text-center">
@@ -159,7 +168,7 @@ function ArchiveDocument({
                 <Th>{isZh ? "成本" : "Average"}</Th>
                 <Th>{isZh ? "现价" : "Last"}</Th>
                 <Th>{isZh ? "市值" : "Market value"}</Th>
-                <Th>{isZh ? "权重" : "Weight"}</Th>
+                <Th>{isZh ? "日涨跌" : "Daily"}</Th>
                 <Th>{isZh ? "未实现盈亏" : "Unrealized P&L"}</Th>
               </tr>
             </thead>
@@ -172,7 +181,9 @@ function ArchiveDocument({
                     <Td>{money(position.avg_cost, account.base_currency)}</Td>
                     <Td>{money(position.last_price, account.base_currency)}</Td>
                     <Td>{money(position.market_value, account.base_currency)}</Td>
-                    <Td>{percent(position.weight)}</Td>
+                    <Td>
+                      <BriefDailyChange value={position.day_change_ratio} />
+                    </Td>
                     <Td>{money(position.unrealized_pnl, account.base_currency)}</Td>
                   </tr>
                 ))
@@ -185,19 +196,57 @@ function ArchiveDocument({
       </section>
 
       <section className="border-b border-editorial-rule pb-7">
-        <SectionTitle zh="模拟盘权益记录" en="PAPER EQUITY" isZh={isZh} />
-        {paperEquity.length ? (
-          <div className="grid gap-3 md:grid-cols-3">
-            {paperEquity.map((point) => (
-              <Metric
-                key={`${point.timestamp}-${point.source}`}
-                label={`${point.timestamp} · ${point.source}`}
-                value={money(point.equity, account.base_currency)}
-              />
-            ))}
-          </div>
+        {performance ? (
+          <>
+            <SectionTitle
+              zh="模拟盘与基准收益"
+              en="PAPER VS SPY · QQQ"
+              isZh={isZh}
+            />
+            <p className="mb-3 font-data-mono text-xs text-ink-secondary">
+              {isZh ? "归档主范围" : "Archived master range"}: {performance.master_range} ·{" "}
+              {isZh ? "保存时选择" : "Selected when saved"}: {performance.selected_range} ·{" "}
+              {performance.actual_start ?? "--"} → {performance.actual_end ?? "--"}
+            </p>
+            <BriefPerformanceChart
+              ariaLabel={
+                isZh
+                  ? "归档模拟盘、SPY 与 QQQ 收益曲线"
+                  : "Archived paper, SPY, and QQQ performance"
+              }
+              emptyLabel={
+                isZh
+                  ? "归档中没有可对齐的收益数据"
+                  : "No aligned performance data in this archive"
+              }
+              series={selectedPerformanceSeries}
+            />
+          </>
         ) : (
-          <Empty>{isZh ? "快照中没有权益曲线点" : "No equity points in this snapshot"}</Empty>
+          <>
+            <SectionTitle
+              zh="模拟盘权益记录（旧版）"
+              en="LEGACY PAPER EQUITY"
+              isZh={isZh}
+            />
+            {paperEquity.length ? (
+              <div className="grid gap-3 md:grid-cols-3">
+                {paperEquity.map((point) => (
+                  <Metric
+                    key={`${point.timestamp}-${point.source}`}
+                    label={`${point.timestamp} · ${point.source}`}
+                    value={money(point.equity, account.base_currency)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <Empty>
+                {isZh
+                  ? "快照中没有权益曲线点"
+                  : "No equity points in this snapshot"}
+              </Empty>
+            )}
+          </>
         )}
       </section>
 

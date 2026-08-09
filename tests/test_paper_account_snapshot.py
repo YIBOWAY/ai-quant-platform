@@ -4,6 +4,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -141,8 +142,12 @@ def test_account_show_json_matches_snapshot_api_business_view_without_writes(
     assert cli_account["positions"] == [
         {
             "avg_cost": 100.0,
+            "day_change_as_of": None,
+            "day_change_ratio": None,
+            "day_change_source": None,
             "last_price": 120.0,
             "market_value": 1_200.0,
+            "previous_close": None,
             "price_as_of": "2026-07-10T14:30:00+00:00",
             "price_kind": "futu_snapshot",
             "quantity": 10.0,
@@ -248,6 +253,84 @@ def test_snapshot_preserves_mixed_quote_provenance_and_naive_provider_timestamp(
     assert positions["MSFT"]["price_kind"] == "avg_cost_fallback"
     assert "paper_account_price_unavailable" in snapshot.account["warnings"]
     assert _file_tree_snapshot(storage.account_dir) == before
+
+
+def test_snapshot_surfaces_futu_previous_close_and_day_change_without_writes(
+    tmp_path,
+) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    account = PaperAccount.open_new()
+    account.cash = 999_000.0
+    account.positions["AAPL"] = AccountPosition(
+        symbol="AAPL",
+        quantity=10.0,
+        avg_cost=100.0,
+        source_quantity={"manual": 10.0},
+    )
+    storage.save(account, prices={"AAPL": 100.0})
+
+    class FutuSnapshotPriceSource:
+        def get_price(self, symbol):
+            return SimpleNamespace(
+                symbol=symbol,
+                price=105.0,
+                previous_close=100.0,
+                price_kind="futu_snapshot",
+                as_of="2026-07-28T15:59:59-04:00",
+                source="futu",
+            )
+
+    before = _file_tree_snapshot(storage.account_dir)
+
+    snapshot = PaperAccountSnapshotReader(
+        repository=storage,
+        settings=Settings(),
+        price_source=FutuSnapshotPriceSource(),
+    ).read()
+
+    assert snapshot.account is not None
+    position = snapshot.account["positions"][0]
+    assert position["previous_close"] == pytest.approx(100.0)
+    assert position["day_change_ratio"] == pytest.approx(0.05)
+    assert position["day_change_source"] == "futu_snapshot"
+    assert position["day_change_as_of"] == "2026-07-28T15:59:59-04:00"
+    assert _file_tree_snapshot(storage.account_dir) == before
+
+
+def test_snapshot_does_not_invent_day_change_without_previous_close(tmp_path) -> None:
+    storage = PaperAccountStorage(tmp_path)
+    account = PaperAccount.open_new()
+    account.cash = 999_000.0
+    account.positions["AAPL"] = AccountPosition(
+        symbol="AAPL",
+        quantity=10.0,
+        avg_cost=100.0,
+        source_quantity={"manual": 10.0},
+    )
+    storage.save(account, prices={"AAPL": 100.0})
+
+    class SnapshotWithoutPreviousClose:
+        def get_price(self, symbol):
+            return PricedQuote(
+                symbol=symbol,
+                price=105.0,
+                price_kind="futu_snapshot",
+                as_of="2026-07-28T15:59:59-04:00",
+                source="futu",
+            )
+
+    snapshot = PaperAccountSnapshotReader(
+        repository=storage,
+        settings=Settings(),
+        price_source=SnapshotWithoutPreviousClose(),
+    ).read()
+
+    assert snapshot.account is not None
+    position = snapshot.account["positions"][0]
+    assert position["previous_close"] is None
+    assert position["day_change_ratio"] is None
+    assert position["day_change_source"] is None
+    assert position["day_change_as_of"] is None
 
 
 def test_snapshot_uses_valid_backup_and_surfaces_warning_without_repair(

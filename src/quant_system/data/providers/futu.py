@@ -687,6 +687,10 @@ class FutuMarketDataProvider:
                 "symbol": frame.get("code"),
                 "update_time": frame.get("update_time"),
                 "last": pd.to_numeric(frame.get("last_price"), errors="coerce"),
+                "prev_close": pd.to_numeric(
+                    frame.get("prev_close_price"),
+                    errors="coerce",
+                ),
                 "bid": pd.to_numeric(frame.get("bid_price"), errors="coerce"),
                 "ask": pd.to_numeric(frame.get("ask_price"), errors="coerce"),
                 "bid_size": pd.to_numeric(frame.get("bid_vol"), errors="coerce"),

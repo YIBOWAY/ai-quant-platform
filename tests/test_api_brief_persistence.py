@@ -343,6 +343,77 @@ def test_generate_brief_issue_requires_database_when_disabled(tmp_path) -> None:
     assert response.json()["detail"]["code"] == "brief_database_unavailable"
 
 
+def test_generate_brief_issue_accepts_additive_performance_before_database(
+    tmp_path,
+) -> None:
+    db.reset_database_cache()
+    request = _brief_generate_request("2026-07-08", "zh")
+    request["payload"]["account"]["positions"] = [
+        {
+            "symbol": "AAPL",
+            "quantity": 10,
+            "avg_cost": 100,
+            "last_price": 102,
+            "market_value": 1_020,
+            "weight": 0.00102,
+            "unrealized_pnl": 20,
+            "price_kind": "futu_snapshot",
+            "price_as_of": "2026-07-08T08:29:00Z",
+            "previous_close": 101,
+            "day_change_ratio": 0.0099009901,
+            "day_change_source": "futu_snapshot",
+            "day_change_as_of": "2026-07-08T08:29:00Z",
+        }
+    ]
+    request["payload"]["performance"] = {
+        "selected_range": "1m",
+        "master_range": "3m",
+        "granularity": "1d",
+        "benchmarks": ["SPY", "QQQ"],
+        "requested_start": "2026-04-08",
+        "requested_end": "2026-07-08",
+        "actual_start": "2026-04-08",
+        "actual_end": "2026-07-08",
+        "coverage_complete": True,
+        "series": [
+            {
+                "id": "paper",
+                "kind": "paper",
+                "label": "模拟盘",
+                "symbol": None,
+                "status": "available",
+                "source": "paper_account_ledger+futu_qfq_1d",
+                "as_of": "2026-07-08T08:29:00Z",
+                "error_code": None,
+                "points": [
+                    {
+                        "date": "2026-04-08",
+                        "return_ratio": 0,
+                        "equity": 100_000,
+                        "close": None,
+                    },
+                    {
+                        "date": "2026-07-08",
+                        "return_ratio": 0.001,
+                        "equity": 100_100,
+                        "close": None,
+                    },
+                ],
+            }
+        ],
+        "warnings": [],
+    }
+    request["source_watermark"]["sources"][1].update(
+        {"provider": "aihot", "served_from": "cache"}
+    )
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.post("/api/brief/issues/generate", json=request)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "brief_database_unavailable"
+
+
 def test_generate_brief_issue_rejects_empty_placeholder_request(tmp_path) -> None:
     db.reset_database_cache()
     client = TestClient(create_app(output_dir=tmp_path))
@@ -370,6 +441,16 @@ def test_get_latest_brief_issue_requires_database_when_disabled(tmp_path) -> Non
     client = TestClient(create_app(output_dir=tmp_path))
 
     response = client.get("/api/brief/issues/latest", params={"locale": "zh"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "brief_database_unavailable"
+
+
+def test_list_brief_issues_requires_database_when_disabled(tmp_path) -> None:
+    db.reset_database_cache()
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/brief/issues", params={"locale": "zh", "limit": 5})
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "brief_database_unavailable"

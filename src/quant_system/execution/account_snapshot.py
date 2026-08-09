@@ -40,6 +40,16 @@ class PaperAccountSnapshot:
         }
 
 
+@dataclass(frozen=True)
+class AccountObservedQuote:
+    symbol: str
+    price: float
+    price_kind: str
+    as_of: str
+    source: str
+    previous_close: float | None = None
+
+
 class PaperAccountSnapshotReader:
     """Read the selected paper-account repository without mutating it."""
 
@@ -109,12 +119,12 @@ def resolve_account_quotes(
     *,
     settings: Settings,
     price_source: PaperPriceSource | None = None,
-) -> dict[str, PricedQuote]:
+) -> dict[str, PricedQuote | AccountObservedQuote]:
     """Resolve an observational quote or an explicit cost-basis fallback."""
     source = price_source or PaperPriceSource(settings)
-    quotes: dict[str, PricedQuote] = {}
+    quotes: dict[str, PricedQuote | AccountObservedQuote] = {}
     for symbol, position in account.positions.items():
-        quote: PricedQuote | None = None
+        quote: PricedQuote | AccountObservedQuote | None = None
         try:
             candidate = source.get_price(symbol)
             if isfinite(candidate.price) and candidate.price > 0:
@@ -130,6 +140,82 @@ def resolve_account_quotes(
                 source="account",
             )
         quotes[symbol] = quote
+
+    # Preserve the established PaperPriceSource seam first. Only real Futu
+    # observations are replaced by one batch snapshot carrying both last and
+    # previous-close values; injected/stub sources never trigger live OpenD.
+    if price_source is None and any(
+        quote.price_kind == "futu_snapshot" and quote.source == "futu"
+        for quote in quotes.values()
+    ):
+        enriched = _resolve_futu_account_quotes(account, settings=settings)
+        for symbol, quote in list(quotes.items()):
+            if (
+                quote.price_kind == "futu_snapshot"
+                and quote.source == "futu"
+                and symbol in enriched
+            ):
+                quotes[symbol] = enriched[symbol]
+    return quotes
+
+
+def _resolve_futu_account_quotes(
+    account: PaperAccount,
+    *,
+    settings: Settings,
+) -> dict[str, AccountObservedQuote]:
+    """Batch current Futu observations so price and previous close share one snapshot."""
+    if not account.positions or not getattr(settings.futu, "enabled", False):
+        return {}
+    try:
+        from quant_system.data.providers.futu import (
+            FutuMarketDataProvider,
+            FutuProviderError,
+        )
+
+        provider = FutuMarketDataProvider(
+            host=settings.futu.host,
+            port=settings.futu.port,
+            request_timeout_seconds=settings.futu.request_timeout_seconds,
+        )
+        futu_symbols = [
+            FutuMarketDataProvider.normalize_symbol(symbol)[1]
+            for symbol in account.positions
+        ]
+        frame = provider.fetch_market_snapshots(futu_symbols)
+    except (FutuProviderError, ValueError, TypeError):
+        return {}
+    except Exception:  # noqa: BLE001 - observational Futu failures use the existing fallback
+        return {}
+
+    quotes: dict[str, AccountObservedQuote] = {}
+    for row in frame.to_dict(orient="records"):
+        raw_symbol = row.get("symbol")
+        if not isinstance(raw_symbol, str):
+            continue
+        try:
+            symbol, _futu_symbol = FutuMarketDataProvider.normalize_symbol(raw_symbol)
+            price = float(row.get("last"))
+        except (FutuProviderError, TypeError, ValueError):
+            continue
+        if not isfinite(price) or price <= 0:
+            continue
+        previous_close: float | None = None
+        try:
+            candidate_previous_close = float(row.get("prev_close"))
+        except (TypeError, ValueError):
+            candidate_previous_close = 0.0
+        if isfinite(candidate_previous_close) and candidate_previous_close > 0:
+            previous_close = candidate_previous_close
+        raw_as_of = row.get("update_time")
+        quotes[symbol] = AccountObservedQuote(
+            symbol=symbol,
+            price=price,
+            price_kind="futu_snapshot",
+            as_of=str(raw_as_of) if raw_as_of else account.updated_at,
+            source="futu",
+            previous_close=previous_close,
+        )
     return quotes
 
 
@@ -137,7 +223,7 @@ def materialize_account_view(
     account: PaperAccount,
     *,
     settings: Settings,
-    quotes: dict[str, PricedQuote] | None = None,
+    quotes: dict[str, PricedQuote | AccountObservedQuote] | None = None,
     repository: PaperAccountRepository | None = None,
 ) -> dict[str, Any]:
     """Build the canonical price-aware paper-account read model."""
@@ -163,6 +249,22 @@ def materialize_account_view(
         quote = quotes.get(symbol)
         last_price = quote.price if quote is not None else position.avg_cost
         position_price_kind = quote.price_kind if quote is not None else "avg_cost_fallback"
+        previous_close = getattr(quote, "previous_close", None)
+        if (
+            previous_close is None
+            or not isfinite(previous_close)
+            or previous_close <= 0
+            or not isfinite(last_price)
+            or last_price <= 0
+        ):
+            previous_close = None
+            day_change_ratio = None
+            day_change_source = None
+            day_change_as_of = None
+        else:
+            day_change_ratio = (last_price / previous_close) - 1.0
+            day_change_source = position_price_kind
+            day_change_as_of = quote.as_of if quote is not None else None
         if position_price_kind == "avg_cost_fallback":
             price_fallback_used = True
         positions.append(
@@ -177,6 +279,10 @@ def materialize_account_view(
                 "source_breakdown": position.source_breakdown(),
                 "price_kind": position_price_kind,
                 "price_as_of": quote.as_of if quote is not None else account.updated_at,
+                "previous_close": previous_close,
+                "day_change_ratio": day_change_ratio,
+                "day_change_source": day_change_source,
+                "day_change_as_of": day_change_as_of,
             }
         )
 

@@ -62,6 +62,31 @@ footer，不属于 CLI/domain payload。
 - `positions_snapshot.parquet` 与 PostgreSQL position audit snapshot 都是派生保存/审计
   产物，不是当前快照事实源。snapshot 读取不拿 mutation lock、不开户、不改文件。
 
+**持仓日涨跌与账户收益曲线**：
+
+- 账户持仓响应在不删除原 `weight` 字段的前提下，追加
+  `previous_close`、`day_change_ratio`、`day_change_source` 和
+  `day_change_as_of`。其中
+  `day_change_ratio = last_price / previous_close - 1`；昨收缺失时返回
+  `null`，不会拿持仓均价冒充昨收，也不会伪造 `0%`。
+- `GET /api/paper/account/performance?range=7d|1m|3m&granularity=1d&benchmarks=SPY,QQQ`
+  返回 Paper、SPY、QQQ 三条统一归零的日收益序列。区间按自然 7 日、1 个月或
+  3 个月计算，再以实际可用的 Futu 美股交易日对齐；响应同时给出
+  `requested_start/end`、`actual_start/end`、`coverage_complete`、各曲线
+  `status/source/as_of/error_code` 与 warnings。
+- Paper 曲线用账户 ledger 回放现金、成交、佣金和持仓，并用同一组 Futu QFQ
+  日线收盘价逐日估值；开户、重置或账本中的外部入/出金会在事件前后分段并重置
+  收益基数，现金流本身不会被计作收益。持仓在任一已持有交易日缺少当日价格时，
+  Paper 曲线明确 `unavailable`，不会沿用前一日价格、回退成本价或 sample。SPY 与
+  QQQ 独立降级，一条不可用不会抹掉另一条。
+- 日线会按 provider、symbol、interval、adjustment、session date 和完整请求窗口
+  缓存在 `<data>/api_runs/_cache/futu_equity_bars.duckdb`，默认 TTL 24 小时。
+  这是只读 GET 允许的行情缓存懒写，不是账户 mutation，也不是每日账户净值快照。
+- `/brief` 可切换近 7 日、近 1 月和近 3 月。显式保存晨报时，会把一份 3 个月
+  master 曲线连同当时选择的区间写入 Brief snapshot；历史晨报只重放这份已保存
+  数据，不重新查询当前行情。3 个月 master 请求失败时会阻止新归档保存；旧
+  `brief_snapshot_v1` 没有 `performance` 时仍按原 `paper_equity` 兼容显示。
+
 **手动下单**（`POST /api/paper/account/orders`）：
 - 选标的、买/卖、按**数量（股）**或**金额（美元）**下单（二选一），可选**限价**。
 - 成交价：**优先 Futu 实时快照**（`fetch_market_snapshots`，需 OpenD 在线）；OpenD 不在线时只回退到**本地缓存或 Tiingo 的真实历史收盘价**；都拿不到就拒单。持续账户绝不会用 sample 演示价格成交。UI 与账本都标注 `price_kind`（`futu_snapshot` / `last_close`）。
@@ -156,6 +181,10 @@ footer，不属于 CLI/domain payload。
 | 持仓数 | 当前持有的不同标的数量 |
 | avg_cost 均价 | 建仓加权成本（含买入手续费），卖出时据此结算已实现盈亏 |
 | price_kind | 报价来源：`futu_snapshot`（实时）/ `last_close`（最近收盘）/ `avg_cost_fallback`（仅观察降级，不是市场价） |
+| previous_close | Futu 快照中的前一常规收盘价；不可得时为 `null` |
+| day_change_ratio | 相对 `previous_close` 的当日涨跌比例；不是持仓盈亏 |
+| performance status | 单条收益曲线状态：`available` / `partial` / `unavailable` |
+| coverage_complete | 请求区间是否获得完整可用覆盖；账户晚于窗口建立时为 `false` |
 | source_breakdown | 该持仓中「手动 / 策略」各自占比 |
 | aborted | 再平衡是否因某腿被拒而整体中止 |
 | storage_mode | 当前 repository 模式：`file` / `mirror` / `canonical` |
@@ -171,6 +200,13 @@ footer，不属于 CLI/domain payload。
 - 当前运行环境仍是默认 `file`；canonical 是已实现能力，不代表已经完成 live 切换。
 - 历史回放路径仍受全局 `QS_KILL_SWITCH` 约束，与账户级冻结互不相同，别混淆。
 - 期权 / 预测市场不纳入这个现货账户。
+- performance 的 DuckDB 只缓存市场日线；它不会自动定时保存账户净值。可复现的
+  Paper 曲线来自持久账户 ledger 与对应日线，Brief 历史页则来自用户显式保存的
+  snapshot。
+- 当前账户没有盘中入金/出金公共入口；daily performance 对账本现金流使用事件发生
+  前最近已完成的收盘价分段。若以后开放并要求盘中精确 TWR，需要再接入现金流时点
+  行情。当前交易日完成判断以纽约 16:00 为界，提前收市日会保守地等到 16:00 后才
+  纳入当日曲线。
 
 ---
 
@@ -187,12 +223,15 @@ footer，不属于 CLI/domain payload。
 - 账户模型 / 账本：`src/quant_system/execution/account.py`
 - 账户持久化：`src/quant_system/execution/account_storage.py`
 - 统一账户观察快照：`src/quant_system/execution/account_snapshot.py`
+- 账户收益重建：`src/quant_system/execution/account_performance.py`
+- Futu 日线窗口缓存：`src/quant_system/data/equity_bar_cache.py`
 - repository contract/factory：`src/quant_system/execution/account_repository.py`、`account_repository_factory.py`
 - PostgreSQL/mirror repository：`src/quant_system/execution/account_postgres_repository.py`、`account_dual_write_repository.py`
 - 取价（Futu 快照→最近收盘）：`src/quant_system/execution/price_source.py`
 - 下单 / 再平衡服务：`src/quant_system/execution/account_service.py`
 - 撮合 / 风控（复用）：`src/quant_system/execution/paper_broker.py`、`order_manager.py`、`src/quant_system/risk/engine.py`
 - API：`src/quant_system/api/routes/paper.py`、`src/quant_system/api/schemas/paper.py`
+- Brief 归档模型与页面：`src/quant_system/brief/models.py`、`src/frontend/app/brief/page.tsx`、`src/frontend/app/brief/[publicId]/page.tsx`
 - 策略再平衡能力声明：`src/quant_system/strategies/registry.py`（`supports_account_rebalance`）
 - Strategy Sleeves 后端基础、信号生成、pending execution 与 ops runner：`src/quant_system/execution/paper_strategy_sleeves.py`、`src/quant_system/execution/paper_strategy_sleeve_storage.py`、`src/quant_system/execution/paper_strategy_signal_service.py`、`src/quant_system/execution/paper_strategy_execution_service.py`、`src/quant_system/execution/paper_strategy_operations.py`
 - CLI：`src/quant_system/cli.py`（`paper rebalance` / `paper account-show` / `paper strategies generate-signal` / `paper strategies create-execution` / `paper strategies execute-pending`）

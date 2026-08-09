@@ -28,6 +28,10 @@ class BriefAccountPosition(_StrictBriefModel):
     unrealized_pnl: float
     price_kind: str = Field(min_length=1)
     price_as_of: datetime | None
+    previous_close: float | None = None
+    day_change_ratio: float | None = None
+    day_change_source: str | None = None
+    day_change_as_of: datetime | None = None
 
 
 class BriefAccountSnapshot(_StrictBriefModel):
@@ -77,6 +81,39 @@ class BriefHermesLogEntry(_StrictBriefModel):
     summary: str | None
 
 
+class BriefPerformancePoint(_StrictBriefModel):
+    date: date
+    return_ratio: float
+    equity: float | None = None
+    close: float | None = None
+
+
+class BriefPerformanceSeries(_StrictBriefModel):
+    id: str = Field(min_length=1)
+    kind: Literal["paper", "benchmark"]
+    label: str = Field(min_length=1)
+    symbol: str | None = None
+    status: Literal["available", "partial", "unavailable"]
+    source: str | None = None
+    as_of: datetime | None = None
+    error_code: str | None = None
+    points: list[BriefPerformancePoint]
+
+
+class BriefPerformanceSnapshot(_StrictBriefModel):
+    selected_range: Literal["7d", "1m", "3m"]
+    master_range: Literal["3m"]
+    granularity: Literal["1d"]
+    benchmarks: list[Literal["SPY", "QQQ"]]
+    requested_start: date
+    requested_end: date
+    actual_start: date | None = None
+    actual_end: date | None = None
+    coverage_complete: bool
+    series: list[BriefPerformanceSeries]
+    warnings: list[str]
+
+
 class BriefArchivePayload(_StrictBriefModel):
     schema_version: Literal["brief_snapshot_v1"]
     title: str = Field(min_length=1)
@@ -91,6 +128,7 @@ class BriefArchivePayload(_StrictBriefModel):
     ai_news: list[BriefAiNewsItem]
     hermes_log: list[BriefHermesLogEntry]
     warnings: list[str]
+    performance: BriefPerformanceSnapshot | None = None
 
 
 class BriefSourceState(_StrictBriefModel):
@@ -98,6 +136,8 @@ class BriefSourceState(_StrictBriefModel):
     status: Literal["available", "stale", "unavailable"]
     as_of: datetime | None
     detail: str | None
+    provider: str | None = None
+    served_from: str | None = None
 
 
 class BriefSourceWatermark(_StrictBriefModel):
