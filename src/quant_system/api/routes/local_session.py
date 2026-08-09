@@ -29,10 +29,10 @@ from quant_system.api.safety.local_session import (
     mint_owner_session,
     policy_from_settings,
     require_loopback_peer,
+    require_session_mode,
     session_public_view,
     verify_session_cookie,
 )
-from quant_system.hermes.local_trust import trust_mode_active
 from quant_system.api.safety.mutation_rate_limit import OWNER_BOOTSTRAP_ROUTE
 from quant_system.api.schemas.local_session import (
     OwnerBootstrapResponse,
@@ -40,6 +40,7 @@ from quant_system.api.schemas.local_session import (
     OwnerSessionStatusResponse,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID
+from quant_system.hermes.local_trust import trust_mode_active
 
 router = APIRouter()
 
@@ -107,6 +108,7 @@ def owner_bootstrap(
     output_dir: OutputDirDep,
 ) -> dict:
     policy = _policy(settings, request)
+    trust_active = trust_mode_active(settings)
     try:
         require_loopback_peer(request.client.host if request.client else None)
         enforce_browser_request_gates(
@@ -124,7 +126,8 @@ def owner_bootstrap(
         issued = exchange_bootstrap_token(
             output_dir,
             body.bootstrap_token,
-            ttl=TRUST_SESSION_TTL if trust_mode_active(settings) else None,
+            ttl=TRUST_SESSION_TTL if trust_active else None,
+            session_kind="local_trust" if trust_active else "standard",
         )
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _http_error(exc) from exc
@@ -137,7 +140,7 @@ def owner_bootstrap(
         secure=secure,
         ttl_seconds=(
             TRUST_SESSION_TTL_SECONDS
-            if trust_mode_active(settings)
+            if trust_active
             else SESSION_TTL_SECONDS
         ),
     )
@@ -158,6 +161,7 @@ def owner_session_status(
     output_dir: OutputDirDep,
 ) -> dict:
     policy = _policy(settings, request)
+    trust_active = trust_mode_active(settings)
     try:
         require_loopback_peer(request.client.host if request.client else None)
         enforce_browser_request_gates(
@@ -168,8 +172,11 @@ def owner_session_status(
             sec_fetch_site=request.headers.get("sec-fetch-site"),
         )
         try:
-            session = verify_session_cookie(
-                output_dir, request.cookies.get(SESSION_COOKIE_NAME)
+            session = require_session_mode(
+                verify_session_cookie(
+                    output_dir, request.cookies.get(SESSION_COOKIE_NAME)
+                ),
+                local_trust_active=trust_active,
             )
         except LocalSessionAuthError:
             # Solo-owner local trust mode: skip the bootstrap-token ritual and
@@ -177,9 +184,13 @@ def owner_session_status(
             # Host/Origin gates, HMAC-signed cookie and CSRF double-submit are
             # all unchanged — only the manual token paste is removed. Outside
             # trust mode the 401 propagates and the ceremony stays required.
-            if not trust_mode_active(settings):
+            if not trust_active:
                 raise
-            issued = mint_owner_session(output_dir, ttl=TRUST_SESSION_TTL)
+            issued = mint_owner_session(
+                output_dir,
+                ttl=TRUST_SESSION_TTL,
+                session_kind="local_trust",
+            )
             _set_session_cookies(
                 response,
                 session_cookie_value=issued.session_cookie_value,

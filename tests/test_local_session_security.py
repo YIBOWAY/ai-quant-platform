@@ -26,6 +26,7 @@ from quant_system.api.safety.local_session import (
     policy_from_settings,
     require_loopback_peer,
     require_mutation_precheck,
+    require_session_mode,
     signing_key_path,
     verify_csrf,
     verify_session_cookie,
@@ -491,6 +492,28 @@ def test_minted_session_only_root_owner(tmp_path: Path) -> None:
     assert re.fullmatch(r"[A-Za-z0-9_-]+", session.session_id)
 
 
+def test_trust_issued_session_fails_closed_when_trust_is_disabled(
+    tmp_path: Path,
+) -> None:
+    issued = mint_owner_session(tmp_path, session_kind="local_trust")
+    session = verify_session_cookie(tmp_path, issued.session_cookie_value)
+
+    assert session.session_kind == "local_trust"
+    assert require_session_mode(session, local_trust_active=True) is session
+    with pytest.raises(LocalSessionAuthError):
+        require_session_mode(session, local_trust_active=False)
+
+    standard = mint_owner_session(tmp_path)
+    standard_session = verify_session_cookie(
+        tmp_path, standard.session_cookie_value
+    )
+    assert standard_session.session_kind == "standard"
+    assert (
+        require_session_mode(standard_session, local_trust_active=False)
+        is standard_session
+    )
+
+
 def _trust_client(tmp_path: Path) -> TestClient:
     from quant_system.config.settings import LocalMutationSettings, LocalTrustSettings
 
@@ -542,3 +565,22 @@ def test_no_trust_mode_status_get_stays_401(tmp_path: Path) -> None:
     status = client.get("/api/auth/owner/session", headers=_browser_headers())
     assert status.status_code == 401
     assert SESSION_COOKIE_NAME not in status.cookies
+
+
+def test_disabling_trust_rejects_previously_issued_trust_cookie(
+    tmp_path: Path,
+) -> None:
+    trust_client = _trust_client(tmp_path)
+    issued = trust_client.get(
+        "/api/auth/owner/session", headers=_browser_headers()
+    )
+    assert issued.status_code == 200
+    trust_cookie = trust_client.cookies.get(SESSION_COOKIE_NAME)
+    assert trust_cookie
+
+    standard_client = _client(tmp_path)
+    standard_client.cookies.set(SESSION_COOKIE_NAME, trust_cookie)
+    rejected = standard_client.get(
+        "/api/auth/owner/session", headers=_browser_headers()
+    )
+    assert rejected.status_code == 401

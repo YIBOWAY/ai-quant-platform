@@ -36,6 +36,7 @@ TRUST_SESSION_TTL = timedelta(days=30)
 TRUST_SESSION_TTL_SECONDS = int(TRUST_SESSION_TTL.total_seconds())
 
 RequestKind = Literal["top_level_document", "api_read", "sse_follow", "mutation"]
+SessionKind = Literal["standard", "local_trust"]
 
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
@@ -96,6 +97,7 @@ class OwnerSession:
     session_id: str
     csrf_token: str
     expires_at: datetime
+    session_kind: SessionKind
 
     @property
     def expired(self) -> bool:
@@ -433,6 +435,7 @@ def mint_owner_session(
     *,
     now: datetime | None = None,
     ttl: timedelta | None = None,
+    session_kind: SessionKind = "standard",
 ) -> IssuedOwnerSession:
     key = load_signing_key(output_dir)
     current = now.astimezone(UTC) if now is not None else datetime.now(UTC)
@@ -440,15 +443,21 @@ def mint_owner_session(
     session_id = secrets.token_urlsafe(24)
     csrf_token = secrets.token_urlsafe(32)
     exp_unix = int(expires_at.timestamp())
-    # owner|session_id|exp|csrf — csrf bound into signed material; wire form is
-    # base64url(body).base64url(sig) so cookie parsers accept the value.
-    body = f"{ROOT_USER_ID}|{session_id}|{exp_unix}|{csrf_token}"
+    if session_kind not in {"standard", "local_trust"}:
+        raise LocalSessionValidationError("invalid session kind")
+    # v2|owner|session_id|exp|csrf|kind — csrf and issuance mode are bound into
+    # signed material. Ambiguous pre-v2 cookies intentionally fail closed so a
+    # long-lived trust cookie cannot survive after trust mode is disabled.
+    body = (
+        f"v2|{ROOT_USER_ID}|{session_id}|{exp_unix}|{csrf_token}|{session_kind}"
+    )
     cookie_value = f"{_b64url(body.encode('ascii'))}.{_sign(key, body)}"
     session = OwnerSession(
         owner_user_id=ROOT_USER_ID,
         session_id=session_id,
         csrf_token=csrf_token,
         expires_at=expires_at,
+        session_kind=session_kind,
     )
     return IssuedOwnerSession(session=session, session_cookie_value=cookie_value)
 
@@ -459,10 +468,16 @@ def exchange_bootstrap_token(
     *,
     now: datetime | None = None,
     ttl: timedelta | None = None,
+    session_kind: SessionKind = "standard",
 ) -> IssuedOwnerSession:
     """Consume one-time bootstrap token and mint a signed owner session."""
     _consume_bootstrap_token(output_dir, bootstrap_token)
-    return mint_owner_session(output_dir, now=now, ttl=ttl)
+    return mint_owner_session(
+        output_dir,
+        now=now,
+        ttl=ttl,
+        session_kind=session_kind,
+    )
 
 
 def verify_session_cookie(
@@ -481,9 +496,9 @@ def verify_session_cookie(
     except (LocalSessionAuthError, UnicodeDecodeError) as exc:
         raise LocalSessionAuthError() from exc
     parts = body.split("|")
-    if len(parts) != 4:
+    if len(parts) != 6 or parts[0] != "v2":
         raise LocalSessionAuthError()
-    owner_text, session_id, exp_text, csrf_token = parts
+    _, owner_text, session_id, exp_text, csrf_token, session_kind = parts
     try:
         owner = UUID(owner_text)
     except (TypeError, ValueError) as exc:
@@ -493,6 +508,8 @@ def verify_session_cookie(
     if _SESSION_ID_RE.fullmatch(session_id) is None:
         raise LocalSessionAuthError()
     if _TOKEN_RE.fullmatch(csrf_token) is None:
+        raise LocalSessionAuthError()
+    if session_kind not in {"standard", "local_trust"}:
         raise LocalSessionAuthError()
     if not exp_text.isdigit():
         raise LocalSessionAuthError()
@@ -513,7 +530,20 @@ def verify_session_cookie(
         session_id=session_id,
         csrf_token=csrf_token,
         expires_at=expires_at,
+        session_kind=session_kind,
     )
+
+
+def require_session_mode(
+    session: OwnerSession,
+    *,
+    local_trust_active: bool,
+) -> OwnerSession:
+    """Reject a trust-issued session as soon as local trust is switched off."""
+
+    if session.session_kind == "local_trust" and not local_trust_active:
+        raise LocalSessionAuthError("local trust session is no longer active")
+    return session
 
 
 def verify_csrf(session: OwnerSession, header_value: str | None) -> None:

@@ -19,6 +19,7 @@ from quant_system.api.safety.local_session import (
     policy_from_settings,
     require_loopback_peer,
     require_mutation_precheck,
+    require_session_mode,
     verify_session_cookie,
 )
 from quant_system.api.safety.mutation_rate_limit import (
@@ -28,6 +29,7 @@ from quant_system.api.safety.mutation_rate_limit import (
 )
 from quant_system.config.settings import Settings
 from quant_system.hermes.gateway_client import HermesApiReadClient
+from quant_system.hermes.local_trust import trust_mode_active
 
 
 def get_services(request: Request) -> dict[str, Any]:
@@ -113,9 +115,12 @@ def require_owner_session(request: Request) -> OwnerSession:
             origin_header=request.headers.get("origin"),
             sec_fetch_site=request.headers.get("sec-fetch-site"),
         )
-        return verify_session_cookie(
-            get_output_dir(request),
-            request.cookies.get(SESSION_COOKIE_NAME),
+        return require_session_mode(
+            verify_session_cookie(
+                get_output_dir(request),
+                request.cookies.get(SESSION_COOKIE_NAME),
+            ),
+            local_trust_active=trust_mode_active(get_settings(request)),
         )
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _security_http_error(exc) from exc
@@ -131,7 +136,7 @@ def require_mutation_security(request: Request) -> OwnerSession:
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     try:
         require_loopback_peer(request.client.host if request.client else None)
-        return require_mutation_precheck(
+        session = require_mutation_precheck(
             output_dir=get_output_dir(request),
             policy=_local_session_policy(request),
             cookie_value=request.cookies.get(SESSION_COOKIE_NAME),
@@ -140,6 +145,10 @@ def require_mutation_security(request: Request) -> OwnerSession:
             origin_header=request.headers.get("origin"),
             sec_fetch_site=request.headers.get("sec-fetch-site"),
             mutation_enabled=mutation_enabled,
+        )
+        return require_session_mode(
+            session,
+            local_trust_active=trust_mode_active(settings),
         )
     except (LocalSessionAuthError, LocalSessionForbidden, LocalSessionValidationError) as exc:
         raise _security_http_error(exc) from exc

@@ -40,13 +40,13 @@ from quant_system.hermes.connector_worker import (
     PostgresCommandWakeupWaiter,
 )
 from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
-from quant_system.hermes.local_trust import (
-    trust_mode_active,
-    trust_runtime_digest,
-)
 from quant_system.hermes.intent_payload_port import (
     IntentPayloadPortError,
     intent_payload_input_resolver,
+)
+from quant_system.hermes.local_trust import (
+    trust_mode_active,
+    trust_runtime_digest,
 )
 from quant_system.hermes.managed_session_provisioner import (
     ManagedSessionProvisioner,
@@ -374,7 +374,7 @@ def build_connector_runtime(
             is True
         ):
             # Local trust mode: the gate is still consulted every cycle so a
-            # red-line flip (e.g. kill_switch off) closes dispatch immediately.
+            # live-trading red-line flip closes dispatch immediately.
             if not trust_mode_active(settings):
                 return DispatchGateDecision(
                     allow=False,

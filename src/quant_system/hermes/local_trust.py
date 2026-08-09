@@ -1,12 +1,11 @@
-"""Solo-owner local trust mode: bypass identity ritual, never safety.
+"""Solo-owner local trust mode: bypass local identity ritual, never live safety.
 
 Trust mode substitutes the identity-ritual half of candidate admission
 (admission records, preflight evidence, three-repo runtime digests, clean
-checkout, connector ceremony) with a synthetic in-memory decision.  It never
-substitutes trading safety: every red line below is re-asserted before the
-bypass may apply, and a violation silently falls back to the full fail-closed
-ritual gate, which then closes on the same safety blockers.  Trust mode can
-therefore never be the reason a write path opens while an unsafe flag is set.
+checkout, connector ceremony) with a synthetic in-memory decision. It never
+enables live trading or public release. Research and paper toggles remain
+independent controls enforced by their own execution authorities, rather than
+being overloaded as identity requirements.
 
 The checks use only plain ``settings`` attribute reads — no I/O and no
 exceptions — so this module cannot fail open.

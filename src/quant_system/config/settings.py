@@ -613,12 +613,11 @@ class LocalMutationSettings(BaseSettings):
 class LocalTrustSettings(BaseSettings):
     """Solo-owner localhost identity-ritual bypass (default OFF).
 
-    Bypasses ONLY identity binding: candidate admission records, preflight
-    test evidence, three-repo runtime digests, clean-checkout requirement,
-    and connector admission ceremony.  Never bypasses trading safety —
-    kill_switch / paper / dry_run / live flags are re-asserted by
-    ``quant_system.hermes.local_trust.trust_mode_active`` before the bypass
-    may apply, and public write/release fields are never touched.
+    Bypasses ONLY local identity binding: candidate admission records,
+    preflight evidence, three-repo runtime digests, clean-checkout requirement,
+    and connector admission ceremony. Live trading must remain OFF. Research
+    and paper toggles stay independent and are enforced at their own execution
+    boundaries; public write/release fields are never touched.
     """
 
     model_config = SettingsConfigDict(
