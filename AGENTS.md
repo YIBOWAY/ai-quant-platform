@@ -52,6 +52,13 @@ data/                     Local cache, fixtures, generated research outputs.
 
 - This repository is the domain backend for
   `/Users/sunyibo/programs/Hermes-quant-agent`.
+- **Current local operations snapshot (2026-08-09):** normal Mac startup is
+  `bash scripts/local_mac_stack.sh start`. It owns Docker readiness, the
+  production frontend build, and four user LaunchAgents (Hermes, backend,
+  frontend, connector). Do not bind service lifetime to an AI-tool terminal.
+  Local trust bypasses identity ceremony only; trust cookies are mode-bound,
+  while `live_trading_enabled=false`, `kill_switch=true`, migration authority,
+  and human gates remain independent.
 - The only Platform operations authority for the Agent v0.2 local stack is
   [`docs/runbooks/agent-v0-2-local-stack.md`](docs/runbooks/agent-v0-2-local-stack.md).
   Other docs may explain a component, but must link there instead of copying a
@@ -300,6 +307,15 @@ data/                     Local cache, fixtures, generated research outputs.
 | Prediction markets | `docs/polymarket/` |
 
 ## Environment
+
+On macOS, prefer the persistent project-owned stack for normal operation:
+
+```bash
+bash scripts/local_mac_stack.sh start
+bash scripts/local_mac_stack.sh status
+```
+
+Use the manual Python/npm commands below only for foreground debugging.
 
 Use the uv-managed `ai-quant` virtual environment for Python commands:
 

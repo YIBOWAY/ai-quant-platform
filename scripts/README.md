@@ -118,6 +118,7 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 
 | Script | Purpose |
 | --- | --- |
+| `local_mac_stack.sh` | Normal Mac operator entrypoint: `start|restart|build|stop|status|logs`. Starts the existing Docker PostgreSQL container, builds the production frontend, installs/reloads Hermes + backend + frontend + connector LaunchAgents, waits for health, and rejects transient AI-tool executables. |
 | `run_quant_backend.sh` | Agent v0.2 LaunchAgent target for the localhost FastAPI backend on `127.0.0.1:8765`; loads the owner-only runtime env, rejects startup migration, and serves release-worktree source. |
 | `run_quant_frontend.sh` | Agent v0.2 LaunchAgent target for the built Next.js frontend on `127.0.0.1:3001`; requires an owner-only env that explicitly enables Hermes Chat, serves this worktree's `.next`, and can reuse main-repo `node_modules`. |
 | `install_agent_v02_stack_launchagents.sh` | Validate, render, and replay-safely install only the Agent v0.2 backend/frontend LaunchAgents. It never installs strategy schedulers. |
@@ -129,7 +130,9 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 | `install_paper_strategy_sleeves_launchagent.sh` | Render and bootstrap user-level macOS LaunchAgents under `~/Library/LaunchAgents/`; does not use sudo. |
 | `uninstall_paper_strategy_sleeves_launchagent.sh` | Boot out and remove the rendered user-level LaunchAgents. |
 
-See `docs/runbooks/agent-v0-2-local-stack.md` for the dedicated Web stack and
+For everyday Mac use, run `bash scripts/local_mac_stack.sh start`; do not keep
+services alive by leaving an AI-tool terminal open. See
+`docs/runbooks/agent-v0-2-local-stack.md` for the dedicated Web stack and
 `docs/execution/paper_strategy_sleeves_launchd.md` for the separate paper
 schedulers. The backend/frontend jobs are long-running local services;
 strategy-sleeve jobs are one-shot paper commands.

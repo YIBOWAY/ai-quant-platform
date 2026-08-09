@@ -19,13 +19,11 @@ Local `chat_write_ready` is not public authorization. Standing
 `public_chat_write_ready`, `public_write_authorized`, and
 `release_authorized` remain OFF.
 
-The repository change set contains ordered migration source 016–028. A read-only
-2026-07-31 check of live `quantplatform` found the inspected 016–027 markers
-and no 028 marker; the running backend also did not expose the new
-`GET /api/safety/effective` route. That is a dated source/live boundary, not an
-authorization or a claim about a future operator window. This README does not
-prove whether 028 is committed, installed, isolated-replayed, live-applied, or
-authorized. The sole migration, readiness, restart, E2E, and restore authority is the
+The normal 2026-08-09 local runtime is a persistent macOS stack: PostgreSQL in
+Docker plus Hermes, backend, frontend, and connector LaunchAgents. It is not
+owned by a Codex, Claude Code, or terminal process. Historical migration and
+candidate windows remain evidence only; the sole migration, readiness,
+restart, E2E, and restore authority is the
 [Agent v0.2 local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md).
 
 - US equity and ETF historical data workflows.
@@ -59,6 +57,42 @@ This project does not add live trading, broker order submission, wallet
 connection, signing, Futu account unlock, or real order placement.
 
 ## Quick Start
+
+### Normal macOS start (recommended)
+
+From the committed runtime checkout, use the repository-owned stack command:
+
+```bash
+bash scripts/local_mac_stack.sh start
+bash scripts/local_mac_stack.sh status
+```
+
+`start` opens Docker Desktop when needed, starts the existing
+`quantplatform-db` container, builds the Next.js production bundle, installs or
+refreshes the four user LaunchAgents, and waits for ports `8642`, `8765`, and
+`3001`. The services survive closing the terminal and switching between AI
+tools. Other supported operations are:
+
+```bash
+bash scripts/local_mac_stack.sh restart
+bash scripts/local_mac_stack.sh build
+bash scripts/local_mac_stack.sh logs
+bash scripts/local_mac_stack.sh stop
+```
+
+The underlying portable commands remain ordinary project commands:
+
+```bash
+python -m quant_system.cli serve --host 127.0.0.1 --port 8765
+npm --prefix src/frontend run build
+npm --prefix src/frontend run start -- --hostname 127.0.0.1 --port 3001
+```
+
+The LaunchAgent wrappers add stable environment loading, log files, restart,
+and terminal independence. They reject executables inside Codex, Claude,
+ChatGPT, or other transient agent runtime directories.
+
+### Windows / manual development
 
 Create and activate the uv-managed `ai-quant` virtual environment, then install Python dependencies:
 

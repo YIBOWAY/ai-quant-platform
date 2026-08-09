@@ -5,14 +5,45 @@ migration, readiness, service restart, candidate E2E, and database restore.
 The connector runbook covers connector mechanics only and must not duplicate
 this sequence.
 
-The long-running local stack has three independently managed LaunchAgents:
+The long-running local stack has four independently managed LaunchAgents:
 
+- `ai.hermes.gateway` — official Hermes API on `127.0.0.1:8642`;
 - `com.aiquant.backend` — Platform API on `127.0.0.1:8765`;
 - `com.aiquant.frontend` — built Web frontend on `127.0.0.1:3001`;
 - `com.aiquant.agent-v02-connector` — installed separately and kept in
   explicit `reconcile_only` unless a bounded candidate/release window is ready.
 
 These jobs never install or start Paper Strategy Sleeves schedulers.
+
+## Everyday macOS operation (2026-08-09)
+
+The supported daily entrypoint is repository-owned and independent of Codex,
+Claude Code, ChatGPT, or any terminal lifetime:
+
+```bash
+cd /Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform
+bash scripts/local_mac_stack.sh start
+bash scripts/local_mac_stack.sh status
+```
+
+Use `restart` after backend or environment changes. `start` and `restart` both
+run the production frontend build before installing/reloading the jobs. Use
+`build` to compile without restarting, `logs` to tail stable files under
+`data/_runtime/logs/`, and `stop` for an intentional full stop. The script:
+
+1. opens Docker Desktop if necessary and starts the existing
+   `quantplatform-db` container without recreating its volume;
+2. validates the ordinary backend command
+   `python -m quant_system.cli serve --host 127.0.0.1 --port 8765`;
+3. runs `npm --prefix src/frontend run build` and serves the production build;
+4. installs the Hermes, backend, frontend, and connector user LaunchAgents;
+5. waits for PostgreSQL and all three HTTP ports to become ready.
+
+The local trust mode bypasses identity ceremony only. A trust session is bound
+to the `local_trust` session kind and stops working when trust mode is disabled.
+It does not enable real trading: `live_trading_enabled=false` and
+`kill_switch=true` remain independent hard boundaries. Startup never applies a
+database migration.
 
 ## Current source and live boundary
 
