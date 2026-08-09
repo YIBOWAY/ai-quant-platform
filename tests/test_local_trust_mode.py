@@ -256,6 +256,9 @@ def test_trust_mode_never_promotes_public_chat_write_ready(
 
     readiness = composer_readiness.authority_readiness(settings, fresh=True)
     assert readiness["chat_write_ready"] is True
+    assert readiness["admission_mode"] == "local_trust"
+    assert readiness["candidate_admission_id"] is None
+    assert readiness["candidate_admission_digest"] is None
     assert readiness["local_trust_mode"] is True
     assert readiness["public_chat_write_ready"] is False
     assert readiness["release_authorized"] is False

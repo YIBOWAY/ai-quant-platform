@@ -357,7 +357,7 @@ class WorkspaceAuthoritiesResponse(_WorkspaceSchema):
     connector_worker_id: str | None
     connector_mode: str | None
     connector_heartbeat_age_seconds: float | None
-    admission_mode: Literal["closed", "candidate", "release"]
+    admission_mode: Literal["closed", "candidate", "local_trust", "release"]
     admission_workspace_id: str
     configured_release_workspace_id: str
     release_authorized: bool

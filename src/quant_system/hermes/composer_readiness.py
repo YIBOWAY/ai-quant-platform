@@ -93,6 +93,7 @@ def _dedupe(items: list[str]) -> list[str]:
 
 
 def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
+    local_trust_active = trust_mode_active(settings)
     final_blockers: list[str] = []
     release = None
     release_workspace_id = settings.agent_v02_release.workspace_id
@@ -150,7 +151,11 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
         else (
             "release"
             if release_ready
-            else ("candidate" if candidate_ready else "closed")
+            else (
+                "local_trust"
+                if candidate_ready and local_trust_active
+                else ("candidate" if candidate_ready else "closed")
+            )
         )
     )
     blockers: list[str] = []

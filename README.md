@@ -18,6 +18,8 @@ read-only; continuing one requires an explicit fork into a new managed Session.
 Local `chat_write_ready` is not public authorization. Standing
 `public_chat_write_ready`, `public_write_authorized`, and
 `release_authorized` remain OFF.
+In solo-owner trust mode the runtime reports the distinct
+`admission_mode=local_trust`; it does not counterfeit a candidate identity.
 
 The normal 2026-08-09 local runtime is a persistent macOS stack: PostgreSQL in
 Docker plus Hermes, backend, frontend, and connector LaunchAgents. It is not
@@ -196,7 +198,7 @@ committed/installed runtime and then repeat `probe`.
 
 | Page | Purpose |
 |---|---|
-| `/hermes` | Reversible COO workbench with Today, managed-session conversation, Tasks, Approvals, and Unified Results preview. Its composer opens only inside an exact local candidate/release window after every local gate passes; public standing remains OFF. Provider-free health/capability/session reads submit no prompt. |
+| `/hermes` | Reversible COO workbench with Today, managed-session conversation, Tasks, Approvals, and Unified Results preview. Its composer opens only inside explicit solo-owner local trust or an exact candidate/release window after every applicable local gate passes; public standing remains OFF. Provider-free health/capability/session reads submit no prompt. |
 | `/hermes/sessions` | GET-only list/detail view over real saved local-Hermes sessions. The bearer key remains server-side; historical/external transcripts stay read-only and continuing context requires an explicit fork into a new managed Session. |
 | `/hermes/results` | Read-only unified catalog/detail projection over authoritative platform runs, experiments, candidate records, HQA artifacts, and exact run links. Preview is visible while `unifiedResultsCutoverAccepted=false`; no Hermes run is inferred from symbol/name similarity. |
 | `/brief` | Live UI-assembled factual daily-brief preview and PostgreSQL archive control; saving is disabled if the authoritative paper-account source is unavailable. Its AI HOT GET may contact that upstream and best-effort mirror news/cache-audit rows to PostgreSQL; merely viewing the live preview does not create a brief snapshot. The server validates the complete factual-v1 schema and watermarks, but does not independently refetch every upstream source. |

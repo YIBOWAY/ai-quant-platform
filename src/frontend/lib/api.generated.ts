@@ -4039,6 +4039,8 @@ export interface components {
              * @enum {string}
              */
             direction: "higher_is_better" | "lower_is_better" | "neutral";
+            /** Display Name Zh */
+            display_name_zh?: string | null;
             /** Factor Id */
             factor_id: string;
             /** Factor Name */
@@ -4165,6 +4167,8 @@ export interface components {
              * @enum {string}
              */
             direction: "higher_is_better" | "lower_is_better" | "neutral";
+            /** Display Name Zh */
+            display_name_zh?: string | null;
             /** Factor Id */
             factor_id: string;
             /** Factor Name */
@@ -7862,6 +7866,8 @@ export interface components {
             };
             /** Description */
             description: string;
+            /** Display Name Zh */
+            display_name_zh?: string | null;
             /** Id */
             id: string;
             /** Name */
@@ -8222,7 +8228,7 @@ export interface components {
              * Admission Mode
              * @enum {string}
              */
-            admission_mode: "closed" | "candidate" | "release";
+            admission_mode: "closed" | "candidate" | "local_trust" | "release";
             /** Admission Workspace Id */
             admission_workspace_id: string;
             /** Candidate Admission Digest */
@@ -8261,6 +8267,13 @@ export interface components {
             final_release_blockers: string[];
             /** Local Chat Write Ready */
             local_chat_write_ready: boolean;
+            /**
+             * Local Trust Mode
+             * @default false
+             */
+            local_trust_mode: boolean;
+            /** Local Trust Refused Blockers */
+            local_trust_refused_blockers?: string[];
             /** Mutation Enabled */
             mutation_enabled: boolean;
             /** Platform Delivery Blocker Count */

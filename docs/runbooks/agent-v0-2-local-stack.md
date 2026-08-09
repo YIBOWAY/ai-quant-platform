@@ -41,6 +41,8 @@ run the production frontend build before installing/reloading the jobs. Use
 
 The local trust mode bypasses identity ceremony only. A trust session is bound
 to the `local_trust` session kind and stops working when trust mode is disabled.
+Live readiness reports `admission_mode=local_trust` with no candidate ID or
+digest; it must never masquerade as a digest-bound candidate admission.
 It does not enable real trading: `live_trading_enabled=false` and
 `kill_switch=true` remain independent hard boundaries. Startup never applies a
 database migration.

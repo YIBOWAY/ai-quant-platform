@@ -57,6 +57,7 @@ data/                     Local cache, fixtures, generated research outputs.
   production frontend build, and four user LaunchAgents (Hermes, backend,
   frontend, connector). Do not bind service lifetime to an AI-tool terminal.
   Local trust bypasses identity ceremony only; trust cookies are mode-bound,
+  readiness reports `admission_mode=local_trust` without candidate identity,
   while `live_trading_enabled=false`, `kill_switch=true`, migration authority,
   and human gates remain independent.
 - The only Platform operations authority for the Agent v0.2 local stack is

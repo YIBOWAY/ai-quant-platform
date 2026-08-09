@@ -87,7 +87,7 @@ export type HealthResponse = ApiEnvelope & {
     workflow_binding_schema_ready: boolean;
     workflow_binding_schema_version: number | null;
     mutation_enabled: boolean;
-    admission_mode?: "closed" | "candidate" | "release";
+    admission_mode?: "closed" | "candidate" | "local_trust" | "release";
     admission_workspace_id?: string;
     configured_release_workspace_id?: string;
     candidate_admission_id?: string | null;
