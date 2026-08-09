@@ -100,17 +100,25 @@ install_platform_jobs() {
 }
 
 ensure_hermes_job() {
-  local attempt_no bootstrap_output bootstrap_status
+  local attempt_no bootstrap_output bootstrap_status old_pid
   [[ -f "$HERMES_PLIST" && ! -L "$HERMES_PLIST" ]] ||
     fail "hermes_launchagent_missing"
+  old_pid=""
   if "$LAUNCHCTL_BIN" print "$DOMAIN/ai.hermes.gateway" >/dev/null 2>&1; then
+    old_pid="$(
+      "$LAUNCHCTL_BIN" print "$DOMAIN/ai.hermes.gateway" |
+        /usr/bin/awk '/^[[:space:]]*pid = / {print $3; exit}'
+    )"
     "$LAUNCHCTL_BIN" bootout "$DOMAIN/ai.hermes.gateway"
   fi
   # kickstart -k can overlap old/new gateway lifetimes and make the new process
-  # lose the 8642 bind race. A full bootout plus bounded port observation gives
-  # launchd one unambiguous process generation.
-  for attempt_no in {1..30}; do
-    if ! /usr/sbin/lsof -nP -iTCP:8642 -sTCP:LISTEN >/dev/null 2>&1; then
+  # lose the 8642 bind race. launchctl bootout can return before the previous
+  # PID has actually exited, and that process can briefly release/reacquire its
+  # socket while shutting down. Require both PID exit and port release before
+  # bootstrapping one unambiguous process generation.
+  for attempt_no in {1..60}; do
+    if [[ -z "$old_pid" ]] || ! /bin/kill -0 "$old_pid" 2>/dev/null; then
+      if ! /usr/sbin/lsof -nP -iTCP:8642 -sTCP:LISTEN >/dev/null 2>&1; then
       for bootstrap_attempt in {1..10}; do
         if bootstrap_output="$(
           "$LAUNCHCTL_BIN" bootstrap "$DOMAIN" "$HERMES_PLIST" 2>&1
@@ -129,10 +137,11 @@ ensure_hermes_job() {
         sleep 0.5
       done
       fail "hermes_launchagent_bootstrap_failed"
+      fi
     fi
-    sleep 1
+    sleep 0.5
   done
-  fail "hermes_port_did_not_release"
+  fail "hermes_previous_generation_did_not_exit"
 }
 
 wait_for_url() {
